@@ -46,6 +46,11 @@ export type ApiShape =
       readonly head: string;
       readonly params: readonly ParamCode[];
       readonly returns: string;
+      /**
+       * Read from a `type F = (…) => R` alias: a callback an app may IMPLEMENT, so its parameters
+       * may not accept more. The tree's side only — the lock's `shapeBody` never writes it.
+       */
+      readonly implemented?: true;
     }
   | {
       readonly kind: 'literals';

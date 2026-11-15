@@ -52,6 +52,12 @@ describe('unit · /_x answers a loopback peer only, whatever interface x dev bou
     expect(body.error.fix).toContain('http://localhost:4100/_x');
   });
 
+  test('under x dev --tls the refusal fix dials https, the scheme the server speaks', async () => {
+    const answer = hostRefusal(requestFrom('192.168.1.20'), 'https://localhost:4100');
+    const body = (await answer?.json()) as { error: { fix: string } };
+    expect(body.error.fix).toContain('https://localhost:4100/_x');
+  });
+
   test('the Host check still runs first, for a loopback peer naming a rebound Host', async () => {
     expect(await codeOf(hostRefusal(requestFrom('127.0.0.1', 'rebound.evil.test'), DEV_URL))).toBe(
       'X_DEV_HOST_REFUSED',

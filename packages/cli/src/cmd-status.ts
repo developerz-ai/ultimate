@@ -40,7 +40,7 @@ function workersData(workers: readonly WorkerRecord[]): { readonly [key: string]
   const byBuild = new Map<string, number>();
   for (const worker of workers) {
     // Printed: a row's stamp passes the same screen a stranger's `/readyz` header does.
-    const build = printableBuild(worker.build ?? null) ?? UNKNOWN_BUILD;
+    const build = worker.build === undefined ? UNKNOWN_BUILD : printableBuild(worker.build);
     byBuild.set(build, (byBuild.get(build) ?? 0) + 1);
   }
   return {
@@ -50,6 +50,7 @@ function workersData(workers: readonly WorkerRecord[]): { readonly [key: string]
     byBuild: Object.fromEntries(byBuild),
     rows: workers.map((worker) => ({
       ...(workerToJson(worker) as { readonly [key: string]: JsonValue }),
+      build: worker.build === undefined ? null : printableBuild(worker.build),
       draining: worker.drainingAt !== undefined,
     })),
   };

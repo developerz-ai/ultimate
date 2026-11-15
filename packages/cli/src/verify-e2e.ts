@@ -105,12 +105,44 @@ export const e2eBrowserMissingFinding = (env: Env, platform: string): Finding =>
   at: VERIFY_FLOOR_FILE,
 });
 
+/** Between a deferred finding's cause and its fix, in the one line a shard's warning carries. */
+const FIX_SEPARATOR = ' — fix: ';
+
+/**
+ * The finding a `--shard` slice defers, as the warning line its part carries to `x verify merge`:
+ * `code: cause — fix: fix`, the same line a person reads under the step.
+ */
+export const e2eBrowserWarning = (finding: Finding): string =>
+  `${finding.code}: ${finding.cause}${FIX_SEPARATOR}${finding.fix}`;
+
+/**
+ * The deferred finding back out of a part's warnings — the shard's machine is the one that looked
+ * for a browser, never the merging one. `undefined` when no shard deferred it.
+ */
+export function deferredBrowserFinding(warnings: readonly string[]): Finding | undefined {
+  const head = `${E2E_BROWSER_MISSING}: `;
+  const line = warnings.find((warning) => warning.startsWith(head));
+  const at = line?.indexOf(FIX_SEPARATOR) ?? -1;
+  if (line === undefined || at < 0) return undefined;
+  return {
+    code: E2E_BROWSER_MISSING,
+    cause: line.slice(head.length, at),
+    fix: line.slice(at + FIX_SEPARATOR.length),
+    docs: ERROR_DOCS_URL,
+    at: VERIFY_FLOOR_FILE,
+  };
+}
+
 /**
  * The e2e step's outcome, judged for the one case the floor alone words wrong: an APP that
  * requires `e2e`, whose suite ran nothing, on a machine with no browser. `X_VERIFY_SUITE_VANISHED`
  * still follows (`verify-run.ts` reads the same counts) but its fix reruns the suite, which skips
  * again; this finding goes first because its fix is the one that changes the answer. Asked after
  * the run, never before: a floored suite whose tests need no browser keeps passing.
+ *
+ * `sharded`: a `--shard` slice that ran nothing may sit beside one that ran, so it stays green and
+ * carries the finding as a warning; `x verify merge` judges it on the summed counts, as it judges
+ * the floor (`verify-run.ts` defers `X_VERIFY_SUITE_VANISHED` for a shard the same way).
  */
 export async function judgeE2eBrowser(input: {
   readonly root: string;
@@ -118,15 +150,16 @@ export async function judgeE2eBrowser(input: {
   readonly outcome: StepOutcome;
   readonly env: Env;
   readonly platform?: string;
+  readonly sharded?: boolean;
 }): Promise<StepOutcome> {
   const { outcome } = input;
   if (!input.isApp || outcome.tests === undefined || outcome.tests.ran > 0) return outcome;
   if (!floorRequires(await readVerifyFloor(input.root), 'e2e')) return outcome;
   const platform = input.platform ?? process.platform;
   if ((await findChrome(input.env, platform)) !== undefined) return outcome;
-  return {
-    ...outcome,
-    ok: false,
-    findings: [e2eBrowserMissingFinding(input.env, platform), ...outcome.findings],
-  };
+  const finding = e2eBrowserMissingFinding(input.env, platform);
+  if (input.sharded === true) {
+    return { ...outcome, warnings: [...(outcome.warnings ?? []), e2eBrowserWarning(finding)] };
+  }
+  return { ...outcome, ok: false, findings: [finding, ...outcome.findings] };
 }

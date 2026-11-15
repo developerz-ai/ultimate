@@ -88,4 +88,20 @@ describe('unit · route loads served by the app’s API in process', () => {
     expect(got?.[0]).not.toBe('X_TEST_NETWORK_SEALED');
     expect(await sampled.samples?.()).toEqual(['X_TEST_NETWORK_SEALED']);
   });
+
+  // A vendor call in a page read is a call out, never the app's: the pass seals it and records the
+  // refusal — the app's router answering it 404 would hide which host the page dialled.
+  test('a fetch to another origin inside a served load reaches the sealed network, not the API', async () => {
+    const vendor: RouteLoadSubject = {
+      ...subject,
+      load: async () => fetch('https://api.vendor.invalid/v1/rates'),
+    };
+    const [served] = servedInProcess([vendor]);
+    if (served === undefined) return expect.unreachable('one route in, one out');
+    const refused = await loadAs(served, READER).then(
+      () => 'answered',
+      (error: unknown) => (error as { readonly code?: string }).code ?? 'uncoded',
+    );
+    expect(refused).toBe('X_TEST_NETWORK_SEALED');
+  });
 });

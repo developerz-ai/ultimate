@@ -144,6 +144,16 @@ describe('the tally', () => {
     const json = tallyToJson(tallyOf([0, 200, '__proto__'], [1, 200, '__proto__']));
     expect(Object.entries(json.byBuild)).toEqual([['__proto__', 2]]);
   });
+
+  test('a build carrying terminal controls is printed escaped; the grade still matches it raw', () => {
+    const hostile = 'b\u009b2J';
+    const tally = tallyOf([0, 200, hostile]);
+    const json = tallyToJson(tally);
+    expect(JSON.stringify(json)).not.toContain('\u009b');
+    expect(Object.keys(json.byBuild)).toEqual(['b\\u009b2J']);
+    expect(Object.keys(json.share)).toEqual(['b\\u009b2J']);
+    expect(failureOf(tally, hostile)).toBe('X_DEPLOY_UNSTABLE');
+  });
 });
 
 describe('the failure class', () => {

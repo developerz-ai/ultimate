@@ -23,6 +23,7 @@ import { decodeCoverage, mergeCoverage } from './coverage-lcov';
 import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
 import type { TestCounts } from './test-counts';
+import { deferredBrowserFinding } from './verify-e2e';
 import type { VerifyFloor } from './verify-floor';
 import { floorRequires, skippedSuiteFinding } from './verify-floor';
 import { foldSkipReasons, readPartSkipReasons } from './verify-merge-skips';
@@ -33,7 +34,7 @@ import { corpusHash } from './verify-shard';
 import { judgeSkips } from './verify-skip-ceiling';
 import { ranNothingReason, skipLines } from './verify-skip-reason';
 import { GATE_COMMAND, VERIFY_STEP_NAMES } from './verify-step';
-import { judgeUnrun } from './verify-strict';
+import { judgeUnrun, skipWhy } from './verify-strict';
 
 /**
  * A part handed to `x verify merge` that is not an `x verify --json` document. `command` is the
@@ -331,6 +332,11 @@ function mergeStep(
   const nothingRan = sharded.length > 0 && tests !== undefined && tests.ran === 0;
   const required = floorRequires(floor, name);
   const floorGap = nothingRan && required ? [skippedSuiteFinding(name, tests.skipped)] : [];
+  // The browser the e2e shards deferred, on the same sum, ahead of the floor's re-run fix.
+  const browser =
+    name === 'e2e' && floorGap.length > 0
+      ? deferredBrowserFinding(steps.flatMap((step) => step.warnings ?? []))
+      : undefined;
   // Strict, on the same sum: each shard deferred it, exactly as it deferred the floor.
   const strict = nothingRan
     ? judgeUnrun(floor, name, ranNothingReason(tests), required, command)
@@ -344,6 +350,7 @@ function mergeStep(
   const findings = [
     ...steps.flatMap((step) => step.findings),
     ...gaps,
+    ...(browser === undefined ? [] : [browser]),
     ...floorGap,
     ...strict,
     ...skips.findings,
@@ -356,8 +363,13 @@ function mergeStep(
     ...(rider?.output === undefined ? [] : [rider.output]),
   ].join('\n');
   // Every part's advice, once each and in the order the parts reported it.
+  // A `skip` why over a split step the shards together ran: each slice deferred it to the sum.
+  const staleWhy =
+    sharded.length > 0 && tests !== undefined && tests.ran > 0 && skipWhy(floor, name) !== undefined
+      ? [msg('cli.verify.waiverStale', { step: name })]
+      : [];
   const warnings = [
-    ...new Set([...steps.flatMap((step) => step.warnings ?? []), ...skips.warnings]),
+    ...new Set([...steps.flatMap((step) => step.warnings ?? []), ...skips.warnings, ...staleWhy]),
   ];
   const skipped =
     sharded.length > 0

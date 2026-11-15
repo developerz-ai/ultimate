@@ -25,11 +25,21 @@ ${sortedImports([
   `import { db } from '${dbModule}';`,
 ])}
 
+/** Where one org's uploads for this import sit: the only keys an import for that org may read. */
+export const ${name.camel}Prefix = (orgId: string): string => \`imports/${name.kebab}/\${orgId}/\`;
+
 export const ${name.camel} = importRows({
   // Pinned: the queue row, the step trace and every page's step carry this name.
   name: '${name.kebab}',
-  // A pointer to the upload, never its rows.
-  input: t.object({ orgId: t.uuid, key: t.string }),
+  // A pointer to the upload, never its rows. The key is the CALLER'S, so it is held to the org the
+  // run is scoped to: \`tenant\` scopes the writes, and nothing else stops an import reading
+  // another org's upload into this one. The run's dedupe key is the upload key, so it is per org.
+  input: t.object({ orgId: t.uuid, key: t.string }).refine({
+    name: 'key-in-own-org',
+    message: 'key must sit under imports/${name.kebab}/<orgId>/ for the orgId this import names',
+    check: ({ orgId, key }) => key.startsWith(${name.camel}Prefix(orgId)) && !key.includes('..'),
+    path: ['key'],
+  }),
   // The org the rows are written under is the input's: a scoped write fails closed without it.
   tenant: ({ orgId }) => orgId,
   // Thunks, read per page: the app's disks exist after boot, never at import.
@@ -74,7 +84,8 @@ import { ${name.camel} } from './${name.kebab}';
 // The queue is a process-global adapter port, so it is swapped for this file and put back after.
 beforeAll(() => swapAdapter('jobs', memoryJobDriver()));
 
-const input = { orgId: '00000000-0000-4000-8000-000000000002', key: 'uploads/one.csv' };
+const orgId = '00000000-0000-4000-8000-000000000002';
+const input = { orgId, key: \`imports/${name.kebab}/\${orgId}/one.csv\` };
 
 jobTest('is a job scoped to the org its input names', () => {
   expect(${name.camel}.kind).toBe('job');
@@ -90,24 +101,27 @@ const unitSuite = (
 ): string => `// ${name.camel}, RUN: one pass by a worker in this process, from a memory disk into the in-memory
 // driver. What is worth failing on: rows land under the input's org, a bad row is refused by line,
 // and a replay writes nothing twice.
-${rowsTestHead(name, feature, dbModule)}
+${rowsTestHead(name, feature, dbModule, [name.camel, `${name.camel}Prefix`])}
 const idA = '00000000-0000-4000-8000-0000000000a1';
 const idB = '00000000-0000-4000-8000-0000000000b2';
 
 const upload = (key: string, lines: readonly string[]) =>
   disk.put(key, new TextEncoder().encode(\`\${lines.join('\\n')}\\n\`));
 
+/** An upload key under \`orgId\`'s own prefix: the only kind an import for that org may read. */
+const keyOf = (orgId: string, file: string): string => \`\${${name.camel}Prefix(orgId)}\${file}\`;
+
 const titlesOf = (orgId: string): Promise<readonly string[]> =>
   inOrg(orgId, async () => (await db.${feature.plural}.all()).map((row) => row.title).toSorted());
 
 unitTest('writes the valid rows under the input org, refuses the rest', async ({ runJobs }) => {
-  await upload('uploads/one.csv', [
+  await upload(keyOf(orgA, 'one.csv'), [
     'id,title,priceMinor,priceCurrency',
     \`\${idA},first,1250,USD\`,
     'not-a-uuid,second,1,USD',
     \`\${idB},third,0,EUR\`,
   ]);
-  const trace = await runJobs(${name.camel}, { orgId: orgA, key: 'uploads/one.csv' });
+  const trace = await runJobs(${name.camel}, { orgId: orgA, key: keyOf(orgA, 'one.csv') });
   expect(trace.executions.map((run) => run.outcome)).toEqual(['completed']);
   expect(trace.executions[0]?.result).toMatchObject({ rows: 2, rejected: 1 });
   expect(await titlesOf(orgA)).toEqual(['first', 'third']);
@@ -116,10 +130,26 @@ unitTest('writes the valid rows under the input org, refuses the rest', async ({
 
 unitTest('a replayed upload writes nothing twice', async ({ runJobs }) => {
   await store(orgA, 'existing');
-  await upload('uploads/again.csv', ['id,title,priceMinor,priceCurrency', \`\${idA},once,1,USD\`]);
-  await runJobs(${name.camel}, { orgId: orgA, key: 'uploads/again.csv' });
-  await runJobs(${name.camel}, { orgId: orgA, key: 'uploads/again.csv' });
+  const key = keyOf(orgA, 'again.csv');
+  await upload(key, ['id,title,priceMinor,priceCurrency', \`\${idA},once,1,USD\`]);
+  await runJobs(${name.camel}, { orgId: orgA, key });
+  await runJobs(${name.camel}, { orgId: orgA, key });
   expect(await titlesOf(orgA)).toEqual(['existing', 'once']);
+});
+
+// The key is the caller's: an import for org A naming org B's upload is refused at the input,
+// before a byte is read — so B's rows never land under A, and whether B's object exists is not said.
+unitTest('another org upload is refused at the input, and nothing is read', async ({ runJobs }) => {
+  await upload(keyOf(orgB, 'theirs.csv'), ['id,title,priceMinor,priceCurrency', \`\${idB},b,1,USD\`]);
+  const theirs = keyOf(orgB, 'theirs.csv');
+  for (const key of [theirs, \`\${keyOf(orgA, '..')}/\${orgB}/theirs.csv\`]) {
+    const [run] = (await runJobs(${name.camel}, { orgId: orgA, key })).executions;
+    // Terminal on its first attempt, with no step run: the object was never opened.
+    expect(run?.outcome).toBe('dead-lettered');
+    expect(run?.code).toBe('X_VALIDATION_FAILED');
+    expect(run?.steps).toEqual([]);
+  }
+  expect(await titlesOf(orgA)).toEqual([]);
 });
 `;
 

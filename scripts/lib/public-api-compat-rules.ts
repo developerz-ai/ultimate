@@ -129,8 +129,21 @@ function objectParam(
   return { kind: 'compatible', why: `${at} accepts more properties` };
 }
 
-export function params(before: readonly ParamCode[], after: readonly ParamCode[]): ApiChange {
+/**
+ * `implemented`: the parameters of a function type an app may implement rather than call. An
+ * implementation must accept what is passed, so a parameter that accepts more — a wider union, a
+ * new property, made optional — is a break there; a rename or a new optional trailing one is not.
+ */
+export function params(
+  before: readonly ParamCode[],
+  after: readonly ParamCode[],
+  implemented = false,
+): ApiChange {
   const whys: string[] = [];
+  const more = (at: string, what: string): ApiChange | undefined =>
+    implemented
+      ? breaks(`a function type an app may implement: ${at} changed (${what})`)
+      : undefined;
   if (after.length < before.length) return breaks(`parameter ${after.length + 1} was removed`);
   for (const [index, code] of after.entries()) {
     const now = param(code);
@@ -144,16 +157,28 @@ export function params(before: readonly ParamCode[], after: readonly ParamCode[]
     const was = param(recorded);
     if (was.rest !== now.rest) return breaks(`${at} changed between rest and single`);
     if (was.optional && !now.optional) return breaks(`${at} became required`);
-    if (!was.optional && now.optional) whys.push(`${at} became optional`);
+    if (!was.optional && now.optional) {
+      const broke = more(at, 'it became optional');
+      if (broke !== undefined) return broke;
+      whys.push(`${at} became optional`);
+    }
     const object = objectParam(at, was, now);
     if (object?.kind === 'break') return object;
     if (object !== undefined) {
-      if (JSON.stringify(was.object) !== JSON.stringify(now.object)) whys.push(object.why);
+      if (JSON.stringify(was.object) !== JSON.stringify(now.object)) {
+        const broke = more(at, 'it accepts more properties');
+        if (broke !== undefined) return broke;
+        whys.push(object.why);
+      }
       continue;
     }
     const kept = was.union.every((one) => now.union.includes(one));
     if (!kept) return breaks(`${at} changed its type, or no longer accepts what it did`);
-    if (now.union.length > was.union.length) whys.push(`${at} accepts more`);
+    if (now.union.length > was.union.length) {
+      const broke = more(at, 'it accepts more');
+      if (broke !== undefined) return broke;
+      whys.push(`${at} accepts more`);
+    }
   }
   return { kind: 'compatible', why: whys.length > 0 ? whys.join(', ') : 'parameters renamed only' };
 }

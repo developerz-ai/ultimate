@@ -105,13 +105,28 @@ function callShapes(was: ApiShape, now: ApiShape | undefined): ApiChange | undef
   const [recorded, current] = [signaturesOf(was), signaturesOf(now)];
   if (recorded === undefined || current === undefined) return undefined;
   for (const one of recorded) {
-    const candidates = current.filter(
+    // The FIRST overload that accepts the call is the one TypeScript resolves it against: a wider
+    // one put in front answers every existing call with its own return, whatever follows it.
+    const first = current.find(
       (next) => next.head === one.head && params(one.params, next.params).kind !== 'break',
     );
-    if (candidates.some((next) => next.returns === one.returns)) continue;
-    const closest = candidates.length > 0 ? 'its return type changed' : 'no overload accepts it';
+    if (first === undefined) {
+      return breaks(
+        'the recorded call shape matches no overload with the same return — closest: no overload accepts it',
+      );
+    }
+    if (first.returns === one.returns) continue;
+    const later = current.slice(current.indexOf(first) + 1);
+    const shadowed = later.some(
+      (next) =>
+        next.head === one.head &&
+        next.returns === one.returns &&
+        params(one.params, next.params).kind !== 'break',
+    );
     return breaks(
-      `the recorded call shape matches no overload with the same return — closest: ${closest}`,
+      shadowed
+        ? 'the recorded call shape is answered first by an overload with another return'
+        : 'the recorded call shape matches no overload with the same return — closest: its return type changed',
     );
   }
   return compatible('every recorded call shape still matches an overload with the same return');
@@ -140,7 +155,8 @@ export function classify(before: ApiSymbol, after: ApiSymbol): ApiChange {
   }
   if (was.kind === 'function' && now.kind === 'function') {
     if (was.returns !== now.returns) return breaks('its return type changed');
-    return params(was.params, now.params);
+    // Either side read from a `type … = (…) =>` alias: judged as something an app implements.
+    return params(was.params, now.params, was.implemented === true || now.implemented === true);
   }
   if (was.kind === 'literals' && now.kind === 'literals') return literals(was.values, now.values);
   if (was.kind === 'value' && now.kind === 'value') return readOnly(was.members, now.members);

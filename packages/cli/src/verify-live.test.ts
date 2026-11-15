@@ -33,15 +33,24 @@ async function fixtureApp(floor: readonly string[]): Promise<string> {
   return root;
 }
 
-function recording(dockerCode = 0) {
+/** Every child recorded; `docker compose ps` answers `running.before` until `up`, then `.after`. */
+function recording(dockerCode = 0, running = { before: '', after: 'postgres\n' }) {
   const calls: { command: readonly string[]; options: ExecOptions }[] = [];
+  let upped = false;
   const runner: Runner = async (command, options): Promise<ExecResult> => {
     calls.push({ command, options });
-    const code = command[0] === 'docker' ? dockerCode : 0;
-    return { command, code, ok: code === 0, stdout: '', stderr: '', durationMs: 0 };
+    const ps = command.includes('ps');
+    if (command.includes('up')) upped = true;
+    const code = command[0] === 'docker' && !ps ? dockerCode : 0;
+    const stdout = ps ? (upped ? running.after : running.before) : '';
+    return { command, code, ok: code === 0, stdout, stderr: '', durationMs: 0 };
   };
   return { calls, runner };
 }
+
+/** The children that are not compose's own `ps` question. */
+const acts = (calls: readonly { command: readonly string[] }[]) =>
+  calls.filter((call) => !call.command.includes('ps'));
 
 const liveStep = (): VerifyStep => withTestServices(bareTestStep('live'), async () => false);
 
@@ -57,10 +66,11 @@ describe('the live step starts the test database it needs', () => {
     const root = await fixtureApp(['live']);
     const { calls, runner } = recording();
     const outcome = await liveStep().run(ctxOf(root, runner));
-    expect(calls.map((call) => call.command[0])).toEqual(['docker', 'bun']);
-    expect(calls[0]?.command).toEqual(SERVICES_UP);
-    expect(calls[0]?.options.cwd).toBe(root);
-    expect(calls[1]?.options.env?.['TEST_DATABASE_URL']).toBe(DB);
+    const run = acts(calls) as typeof calls;
+    expect(run.map((call) => call.command[0])).toEqual(['docker', 'bun']);
+    expect(run[0]?.command).toEqual(SERVICES_UP);
+    expect(run[0]?.options.cwd).toBe(root);
+    expect(run[1]?.options.env?.['TEST_DATABASE_URL']).toBe(DB);
     expect(outcome.warnings?.join('\n')).toContain(
       'docker compose -f docker/docker-compose.test.yml down',
     );
@@ -70,7 +80,7 @@ describe('the live step starts the test database it needs', () => {
     const root = await fixtureApp([]);
     const { calls, runner } = recording();
     await liveStep().run(ctxOf(root, runner, ['live']));
-    expect(calls[0]?.command).toEqual(SERVICES_UP);
+    expect(acts(calls)[0]?.command).toEqual(SERVICES_UP);
   });
 
   test('neither floor nor --only: nothing is started and the suite runs as it did', async () => {
@@ -85,11 +95,39 @@ describe('the live step starts the test database it needs', () => {
     const root = await fixtureApp(['live']);
     const { calls, runner } = recording(1);
     const outcome = await liveStep().run(ctxOf(root, runner));
-    expect(calls.map((call) => call.command[0])).toEqual(['docker', 'bun']);
-    expect(calls[1]?.options.env?.['TEST_DATABASE_URL']).toBeUndefined();
+    const run = acts(calls) as typeof calls;
+    expect(run.map((call) => call.command[0])).toEqual(['docker', 'bun']);
+    expect(run[1]?.options.env?.['TEST_DATABASE_URL']).toBeUndefined();
     const warning = outcome.warnings?.join('\n') ?? '';
     expect(warning).toContain('X_TEST_SERVICES_UNAVAILABLE');
     expect(warning).toContain(`fix: ${SERVICES_UP.join(' ')}`);
+  });
+});
+
+describe("the 'left running' warning follows what compose started, not the Postgres verdict", () => {
+  const DOWN = 'docker compose -f docker/docker-compose.test.yml down';
+  const reachable = (): VerifyStep =>
+    withTestServices(
+      bareTestStep('live'),
+      async () => true,
+      async () => 'ok',
+    );
+
+  test('Postgres already up, redis and nats started by this run: it says so, with the stop line', async () => {
+    const root = await fixtureApp(['live']);
+    const { runner } = recording(0, { before: 'postgres\n', after: 'postgres\nredis\nnats\n' });
+    const outcome = await reachable().run(ctxOf(root, runner));
+    const warning = outcome.warnings?.join('\n') ?? '';
+    expect(warning).toContain('nats, redis');
+    expect(warning).toContain(DOWN);
+  });
+
+  test('everything already up: the run says nothing', async () => {
+    const root = await fixtureApp(['live']);
+    const all = 'postgres\nredis\nnats\n';
+    const { runner } = recording(0, { before: all, after: all });
+    const outcome = await reachable().run(ctxOf(root, runner));
+    expect(outcome.warnings ?? []).toEqual([]);
   });
 });
 

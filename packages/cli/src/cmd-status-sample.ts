@@ -2,7 +2,7 @@
 // check (`readOrigin`), folded into what answered — status, build header, role. No expectation,
 // no wait: whether a build is fully out is `x deploy verify`'s question, and this only reports.
 
-import { takeSample } from './cmd-deploy-verify-sample';
+import { printableBuild, takeSample } from './cmd-deploy-verify-sample';
 import { readOrigin } from './deploy-verify-flags';
 import { UNREACHABLE } from './deploy-verify-grade';
 
@@ -41,7 +41,8 @@ export async function sampleOrigin(origin: string, samples: number): Promise<Ori
   for (let index = 0; index < samples; index += 1) {
     const answer = await takeSample(origin, SAMPLE_TIMEOUT_MS);
     bump(byStatus, answer.status === null ? UNREACHABLE : String(answer.status));
-    if (answer.build !== null) bump(byBuild, answer.build);
+    // Counted under its printed name: these keys reach the terminal and the `--json` document.
+    if (answer.build !== null) bump(byBuild, printableBuild(answer.build));
     else if (is2xx(answer.status)) unstamped += 1;
     if (answer.role !== null) roles.add(answer.role);
   }

@@ -326,9 +326,14 @@ async function runStep(
   const vanished = nothingRan && required ? [skippedSuiteFinding(step.name, tests.skipped)] : [];
   const unrun = nothingRan ? ranNothingReason(tests) : undefined;
   const strict = unrun === undefined ? [] : judgeUnrun(floor, step.name, unrun, required, command);
-  // A `skip` why over a step that ran is a stale reason: said on the step, never red.
+  // A `skip` why over a suite that RAN tests is stale: said on the step, never red. Only on counts
+  // a whole run holds — a shard's slice is `x verify merge`'s to judge on the sum, and a step that
+  // spawned nothing (`--changed`) proves nothing either way.
   const staleWhy =
-    !nothingRan && skipWhy(floor, step.name) !== undefined
+    tests !== undefined &&
+    tests.ran > 0 &&
+    outcome.shard === undefined &&
+    skipWhy(floor, step.name) !== undefined
       ? [msg('cli.verify.waiverStale', { step: step.name })]
       : [];
   // A mostly skipped suite, judged where the verdict is: CI, and only a whole run (a shard's

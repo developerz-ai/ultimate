@@ -141,3 +141,23 @@ test("an app's launch decision reads the step's own environment: a missing CHROM
   // No browser found, so no preload: the suite runs as given.
   expect(seen).toEqual([['bun', 'test', 'e2e/']]);
 });
+
+test('a --shard slice defers the verdict: it stays green and carries the finding as a warning', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'x-verify-e2e-shard-'));
+  try {
+    await Bun.write(join(root, VERIFY_FLOOR_FILE), JSON.stringify({ steps: ['e2e'] }));
+    const judged = await judgeE2eBrowser({
+      root,
+      isApp: true,
+      outcome: { ok: true, findings: [], tests: { ran: 0, skipped: 2 } },
+      env: { CHROME_PATH: '/nonexistent/chrome-for-the-shard' },
+      platform: 'linux',
+      sharded: true,
+    });
+    expect(judged.ok).toBe(true);
+    expect(judged.findings).toEqual([]);
+    expect(judged.warnings?.[0]).toStartWith(`${E2E_BROWSER_MISSING}: `);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

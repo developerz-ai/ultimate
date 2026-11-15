@@ -3,18 +3,21 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 // why: a trust anchor's own signature is never checked by a handshake; X509Certificate checks it.
-import { createPublicKey, X509Certificate } from 'node:crypto';
-import { chmod, rm, stat } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+import { createPrivateKey, createPublicKey, X509Certificate } from 'node:crypto';
+import { chmod, mkdir, rm, stat, writeFile } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
 import { markListening, resetLifecycle } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
-import { certificateNames, devCertificate, selfSignedCertificate } from './dev-tls';
+import { certificateNames, selfSignedCertificate } from './dev-tls';
+import { devCertificate } from './dev-tls-cache';
 
 const STATE = join(import.meta.dir, '..', `.dev-tls-fixture-${process.pid}`);
 afterAll(async () => {
   await rm(STATE, { recursive: true, force: true });
+  await rm(`${STATE}-torn`, { recursive: true, force: true });
+  await rm(`${STATE}-meta`, { recursive: true, force: true });
   await rm(`${STATE}-mode`, { recursive: true, force: true });
 });
 
@@ -121,6 +124,46 @@ describe("unit · the cached key is this user's alone", () => {
   });
 });
 
+describe('unit · an interrupted regeneration never serves a mismatched pair', () => {
+  test('a new key beside the old cert and a still-fresh meta (killed mid-write) is regenerated', async () => {
+    const state = `${STATE}-torn`;
+    const first = await devCertificate({ stateDir: state, names: ['localhost'], now: wallClock() });
+    // What a kill between the key write and the cert write leaves: the NEXT pair's key, at 0600.
+    const next = await selfSignedCertificate({ names: ['localhost'], now: wallClock() });
+    const keyPath = join(state, 'tls', 'key.pem');
+    await rm(keyPath);
+    await writeFile(keyPath, next.key, { mode: 0o600 });
+    const served = await devCertificate({
+      stateDir: state,
+      names: ['localhost'],
+      now: wallClock(),
+    });
+    expect(served.cert).not.toBe(first.cert);
+    expect(new X509Certificate(served.cert).checkPrivateKey(createPrivateKey(served.key))).toBe(
+      true,
+    );
+  });
+
+  test('a regeneration that fails mid-write leaves no meta.json, so the next run reads stale', async () => {
+    const state = `${STATE}-meta`;
+    await devCertificate({ stateDir: state, names: ['localhost'], now: wallClock() });
+    // The cert write fails: its path is a directory now. The key has been written by then.
+    const certPath = join(state, 'tls', 'cert.pem');
+    await rm(certPath);
+    await mkdir(certPath);
+    const failed = await devCertificate({
+      stateDir: state,
+      names: ['localhost', '::1'],
+      now: wallClock(),
+    }).then(
+      () => 'written',
+      () => 'failed',
+    );
+    expect(failed).toBe('failed');
+    expect(await Bun.file(join(state, 'tls', 'meta.json')).exists()).toBe(false);
+  });
+});
+
 describe('unit · the certificate is well-formed X.509, not merely accepted', () => {
   test('its signature verifies under its own key, and it carries every name it was asked for', async () => {
     const pair = await selfSignedCertificate({
@@ -146,6 +189,11 @@ describe('unit · the names a bind needs its certificate to carry', () => {
       '::1',
       '192.168.1.5',
     ]);
+  });
+
+  test('a loopback address other than 127.0.0.1 and ::1 is carried — it is the url printed', () => {
+    expect(certificateNames('127.0.0.2')).toEqual(['localhost', '127.0.0.1', '::1', '127.0.0.2']);
+    expect(certificateNames('::1')).toEqual(['localhost', '127.0.0.1', '::1']);
   });
 });
 

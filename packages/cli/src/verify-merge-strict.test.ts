@@ -84,4 +84,15 @@ describe('strict: x verify merge over shards that each ran nothing', () => {
     });
     expect(parsePart('p.json', doc).skipReasons).toEqual({ e2e: 'why' });
   });
+
+  test('a why over a split step whose shards together ran tests is stale, said once', () => {
+    const ran = (index: number) => ({ ...emptyShard(index), tests: { ran: 2, skipped: 0 } });
+    const result = mergeParts(
+      [part('static.json', [lint, e2e]), part('u1.json', [ran(1)]), part('u2.json', [ran(2)])],
+      floorOf('{"steps":[],"skip":{"unit":"no suite yet"}}'),
+      DECLARED,
+    );
+    const unit = result.steps?.find((step) => step.name === 'unit');
+    expect(unit?.warnings).toEqual([msg('cli.verify.waiverStale', { step: 'unit' })]);
+  });
 });

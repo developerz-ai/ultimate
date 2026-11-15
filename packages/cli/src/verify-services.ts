@@ -25,8 +25,24 @@ export const SERVICES_UP: readonly string[] = [
   'up',
   '-d',
   '--wait',
+  // Bounded: a healthcheck that never passes would hold the step until its own deadline killed
+  // it, with no word of why. Two minutes is well past a RAM-only stack's cold start.
+  '--wait-timeout',
+  '120',
 ];
 export const SERVICES_DOWN = `docker compose -f ${TEST_COMPOSE_PATH} down`;
+
+/** Compose's own list of the stack's running services, one name a line: asked before and after `up`. */
+export const SERVICES_RUNNING: readonly string[] = [
+  'docker',
+  'compose',
+  '-f',
+  TEST_COMPOSE_PATH,
+  'ps',
+  '--services',
+  '--status',
+  'running',
+];
 
 /** Whether something accepts a TCP connection at a URL's host and port. Injected in tests. */
 export type Probe = (url: string) => Promise<boolean>;
@@ -132,10 +148,22 @@ const foreignFinding = (url: string): Finding => ({
 export type ServicesVerdict =
   /** Nothing to do: the caller's own URL, or a repo with no test stack to start. */
   | { readonly kind: 'ambient' }
-  /** The stack was already listening; the env file's values, for the keys the caller left unset. */
-  | { readonly kind: 'reachable'; readonly env: Readonly<Record<string, string>> }
+  /**
+   * Postgres was already ours: the env file's values for the keys the caller left unset — every one
+   * once `up` brought the rest, only those whose service answers when it could not.
+   */
+  | {
+      readonly kind: 'reachable';
+      readonly env: Readonly<Record<string, string>>;
+      /** What this run's `up` started — compose's answer, never inferred from Postgres. */
+      readonly startedServices: readonly string[];
+    }
   /** This run started it, and left it running. */
-  | { readonly kind: 'started'; readonly env: Readonly<Record<string, string>> }
+  | {
+      readonly kind: 'started';
+      readonly env: Readonly<Record<string, string>>;
+      readonly startedServices: readonly string[];
+    }
   /** It could not be started: the suites run as they would have, and this says why. */
   | { readonly kind: 'unavailable'; readonly finding: Finding };
 
@@ -172,17 +200,71 @@ export async function ensureTestServices(input: ServicesInput): Promise<Services
   if (declared === undefined) return { kind: 'ambient' };
   if (ambient !== undefined && ambient !== declared) return { kind: 'ambient' };
   const env = unsetFrom(file, input.env);
-  if (await (input.probe ?? tcpReachable)(declared)) {
-    const login = await (input.login ?? postgresLogin)(declared);
-    return login === 'refused'
-      ? { kind: 'unavailable', finding: foreignFinding(declared) }
-      : { kind: 'reachable', env };
-  }
+  const probe = input.probe ?? tcpReachable;
+  const login = (): Promise<LoginVerdict | 'down'> =>
+    probe(declared).then((up) => (up ? (input.login ?? postgresLogin)(declared) : 'down'));
+  const before = await login();
+  if (before === 'refused') return { kind: 'unavailable', finding: foreignFinding(declared) };
+  // Always the idempotent `up`, even with Postgres answering: it may still be starting (`unknown`),
+  // and the env file names Redis, NATS and S3 too — a key handed on must have a service behind it.
+  const running = await runningServices(input);
   const refused = await startStack(input);
-  return refused === undefined
-    ? { kind: 'started', env }
-    : { kind: 'unavailable', finding: refused };
+  if (refused === undefined) {
+    const now = (await runningServices(input)) ?? new Set<string>();
+    const startedServices = [...now].filter((name) => running?.has(name) !== true).sort();
+    return { kind: before === 'down' ? 'started' : 'reachable', env, startedServices };
+  }
+  // A failed `up` may be a concurrent run's container-name conflict: ask the database again.
+  const after = await login();
+  if (after === 'refused') return { kind: 'unavailable', finding: foreignFinding(declared) };
+  if (after !== 'ok') return { kind: 'unavailable', finding: refused };
+  return { kind: 'reachable', env: await answering(env, probe), startedServices: [] };
 }
+
+/**
+ * The stack's running services by compose's own answer, or `undefined` when it gave none — then
+ * every service running after `up` counts as this run's: a warning too many, never one too few.
+ */
+async function runningServices(input: ServicesInput): Promise<ReadonlySet<string> | undefined> {
+  try {
+    const result = await input.runner(SERVICES_RUNNING, { cwd: input.root });
+    if (!result.ok) return undefined;
+    return new Set(
+      result.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== ''),
+    );
+  } catch {
+    // No `docker` on PATH: `up` reports that, with its own coded refusal.
+    return undefined;
+  }
+}
+
+/**
+ * The keys whose service answers, when the stack could not be brought up whole: a suite whose URL
+ * is unset skips, one handed a dead URL fails to connect. A value that is no URL (a certificate
+ * path) names no service and is kept.
+ */
+async function answering(
+  env: Readonly<Record<string, string>>,
+  probe: Probe,
+): Promise<Readonly<Record<string, string>>> {
+  const kept = await Promise.all(
+    Object.entries(env).map(async ([key, value]) =>
+      !isServiceUrl(value) || (await probe(value)) ? [key, value] : undefined,
+    ),
+  );
+  return Object.fromEntries(kept.filter((pair) => pair !== undefined));
+}
+
+const isServiceUrl = (value: string): boolean => {
+  try {
+    return new URL(value).hostname !== '';
+  } catch {
+    return false;
+  }
+};
 
 /** `undefined` when the stack came up; otherwise the finding naming why and the line to run. */
 async function startStack(input: ServicesInput): Promise<Finding | undefined> {

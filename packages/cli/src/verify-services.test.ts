@@ -13,7 +13,7 @@ import type { ExecOptions, ExecResult, Runner } from './exec';
 import { ensureTestServices, postgresLogin, SERVICES_UP, tcpReachable } from './verify-services';
 
 const DB = 'postgres://shop:shop-test@127.0.0.1:55432/postgres';
-const ENV_FILE = `# comment\nTEST_DATABASE_URL=${DB}\nTEST_REDIS_URL=redis://127.0.0.1:56379\n`;
+const ENV_FILE = `# comment\nTEST_DATABASE_URL=${DB}\nTEST_REDIS_URL=redis://127.0.0.1:56379\nTEST_NATS_URL=nats://127.0.0.1:54222\nTEST_CA=docker/ca.crt\n`;
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -74,22 +74,126 @@ describe('ensureTestServices', () => {
     expect(probed).toEqual([]);
   });
 
-  test('a stack already listening: its env for every key the caller left unset, nothing started', async () => {
+  test('Postgres already up: the idempotent up brings the rest, then every unset key is handed on', async () => {
     const root = await stackRoot({ env: ENV_FILE });
-    const { calls, runner } = recording(never);
+    const { calls, runner } = recording(async () => result(0));
     const verdict = await ensureTestServices({
       root,
       runner,
-      env: { TEST_REDIS_URL: 'redis://mine:6379' },
+      env: { TEST_NATS_URL: 'nats://mine:4222' },
       probe: async (url) => url === DB,
       login: async () => 'ok',
     });
-    expect(verdict).toEqual({ kind: 'reachable', env: { TEST_DATABASE_URL: DB } });
-    expect(calls).toEqual([]);
+    expect(calls.map((call) => call.command).filter((one) => one.includes('up'))).toEqual([
+      SERVICES_UP,
+    ]);
+    expect(verdict).toEqual({
+      kind: 'reachable',
+      env: {
+        TEST_DATABASE_URL: DB,
+        TEST_REDIS_URL: 'redis://127.0.0.1:56379',
+        TEST_CA: 'docker/ca.crt',
+      },
+      startedServices: [],
+    });
   });
 
-  // Two apps on one machine, one port: B's suites would run against A's container and fail on a
-  // password, or — worse — pass against a database that is not theirs. Never run against it.
+  test('Postgres up, the rest cannot be started: only the keys whose services answer', async () => {
+    const root = await stackRoot({ env: ENV_FILE });
+    const { runner } = recording(async () => result(1, 'Cannot connect to the Docker daemon'));
+    const verdict = await ensureTestServices({
+      root,
+      runner,
+      env: {},
+      probe: async (url) => url === DB,
+      login: async () => 'ok',
+    });
+    // Redis and NATS answer nothing, so their suites keep skipping rather than failing to connect;
+    // a value that is not a URL (a certificate path) is no service and is kept.
+    expect(verdict).toEqual({
+      kind: 'reachable',
+      env: { TEST_DATABASE_URL: DB, TEST_CA: 'docker/ca.crt' },
+      startedServices: [],
+    });
+  });
+
+  test('a Postgres still starting (login unknown) is waited for by the same idempotent up', async () => {
+    const root = await stackRoot({ env: ENV_FILE });
+    const { calls, runner } = recording(async () => result(0));
+    const verdict = await ensureTestServices({
+      root,
+      runner,
+      env: {},
+      probe: async () => true,
+      login: async () => 'unknown',
+    });
+    expect(calls.map((call) => call.command).filter((one) => one.includes('up'))).toEqual([
+      SERVICES_UP,
+    ]);
+    expect(verdict.kind).toBe('reachable');
+  });
+
+  test('up fails beside a concurrent run that brought the stack up: probed again, never unavailable', async () => {
+    const root = await stackRoot({ env: ENV_FILE });
+    let up = false;
+    const runner: Runner = async () => {
+      up = true;
+      return result(1, 'Conflict. The container name "/shop-test-postgres-1" is already in use');
+    };
+    const verdict = await ensureTestServices({
+      root,
+      runner,
+      env: {},
+      probe: async (url) => up && url === DB,
+      login: async () => 'ok',
+    });
+    expect(verdict).toEqual({
+      kind: 'reachable',
+      env: { TEST_DATABASE_URL: DB, TEST_CA: 'docker/ca.crt' },
+      startedServices: [],
+    });
+  });
+
+  test('up is bounded: --wait carries a --wait-timeout, so it cannot outlast the step', () => {
+    const at = SERVICES_UP.indexOf('--wait-timeout');
+    expect(SERVICES_UP).toContain('--wait');
+    expect(Number(SERVICES_UP[at + 1])).toBeGreaterThan(0);
+  });
+
+  /** Answers `ps` with `before`, then `after`; `up` succeeds. */
+  const composeAnswering = (before: string, after: string): Runner => {
+    let upped = false;
+    return async (command) => {
+      if (command.includes('up')) upped = true;
+      return { ...result(0), stdout: command.includes('ps') ? (upped ? after : before) : '' };
+    };
+  };
+
+  test("the services this run's `up` started are named, from compose's own answer", async () => {
+    const root = await stackRoot({ env: ENV_FILE });
+    const verdict = await ensureTestServices({
+      root,
+      runner: composeAnswering('postgres\n', 'postgres\nredis\nnats\n'),
+      env: {},
+      probe: async () => true,
+      login: async () => 'ok',
+    });
+    expect(verdict.kind === 'reachable' ? verdict.startedServices : []).toEqual(['nats', 'redis']);
+  });
+
+  test('a stack already wholly up: `up` changes nothing, and nothing is named', async () => {
+    const root = await stackRoot({ env: ENV_FILE });
+    const all = 'postgres\nredis\nnats\n';
+    const verdict = await ensureTestServices({
+      root,
+      runner: composeAnswering(all, all),
+      env: {},
+      probe: async () => true,
+      login: async () => 'ok',
+    });
+    expect(verdict.kind === 'reachable' ? verdict.startedServices : ['?']).toEqual([]);
+  });
+
   test('something answers but refuses our login: not our database, nothing started or handed on', async () => {
     const root = await stackRoot({ env: ENV_FILE });
     const { calls, runner } = recording(never);
@@ -111,12 +215,35 @@ describe('ensureTestServices', () => {
     const root = await stackRoot({ env: ENV_FILE });
     const { calls, runner } = recording(async () => result(0));
     const verdict = await ensureTestServices({ root, runner, env: {}, probe: async () => false });
-    expect(calls.map((call) => [call.command, call.options.cwd])).toEqual([
-      [['docker', 'compose', '-f', 'docker/docker-compose.test.yml', 'up', '-d', '--wait'], root],
+    expect(
+      calls
+        .filter((call) => call.command.includes('up'))
+        .map((call) => [call.command, call.options.cwd]),
+    ).toEqual([
+      [
+        [
+          'docker',
+          'compose',
+          '-f',
+          'docker/docker-compose.test.yml',
+          'up',
+          '-d',
+          '--wait',
+          '--wait-timeout',
+          '120',
+        ],
+        root,
+      ],
     ]);
     expect(verdict).toEqual({
       kind: 'started',
-      env: { TEST_DATABASE_URL: DB, TEST_REDIS_URL: 'redis://127.0.0.1:56379' },
+      env: {
+        TEST_DATABASE_URL: DB,
+        TEST_REDIS_URL: 'redis://127.0.0.1:56379',
+        TEST_NATS_URL: 'nats://127.0.0.1:54222',
+        TEST_CA: 'docker/ca.crt',
+      },
+      startedServices: [],
     });
   });
 

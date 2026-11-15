@@ -62,6 +62,19 @@ describe('unit · x g export-rows · import-rows', () => {
     expect(entries[0]?.value).toContain("off: 'reads an uploaded object");
   });
 
+  // The upload key is the caller's: without this refine, org A imports org B's file under A.
+  test('import-rows holds the upload key to the run org, and its suite proves the refusal', () => {
+    const files = generate({ kind: 'import-rows', name: 'import-invoices', feature: 'invoice' });
+    const text = (suffix: string): string =>
+      String(files.find((file) => file.path.endsWith(suffix))?.contents);
+    expect(text('/import-invoices.ts')).toContain(
+      "check: ({ orgId, key }) => key.startsWith(importInvoicesPrefix(orgId)) && !key.includes('..')",
+    );
+    expect(text('/import-invoices.test.ts')).toContain(
+      "expect(run?.outcome).toBe('dead-lettered');",
+    );
+  });
+
   test('the export names exactly the columns its row answers', () => {
     const files = generate({ kind: 'export-rows', name: 'export-invoices', feature: 'invoice' });
     const source = String(

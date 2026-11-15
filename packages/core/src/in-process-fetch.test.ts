@@ -54,4 +54,54 @@ describe('unit · the in-process dispatch scope', () => {
     expect(answer).toBe('own');
     expect(inProcess.calls).toEqual([]);
   });
+
+  test('a Request object keeps its method, headers and body on the way to the dispatcher', async () => {
+    const seen: { url: string; method?: string; type?: string | null; body?: string }[] = [];
+    const inProcess = async (url: string, init: RequestInit): Promise<Response> => {
+      const request = new Request(url, init);
+      seen.push({
+        url,
+        method: request.method,
+        type: request.headers.get('content-type'),
+        body: await request.text(),
+      });
+      return json('ok');
+    };
+    await withInProcessFetch(inProcess, () =>
+      fetch(
+        new Request('http://app.invalid/api/posts', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{"title":"t"}',
+        }),
+      ),
+    );
+    expect(seen).toEqual([
+      {
+        url: 'http://app.invalid/api/posts',
+        method: 'POST',
+        type: 'application/json',
+        body: '{"title":"t"}',
+      },
+    ]);
+  });
+
+  test('a url the scope does not own goes to the fetch it wrapped — here, refused as sealed', async () => {
+    const inProcess = fakeFetch(() => json('app'));
+    const owns = (url: string): boolean => new URL(url).origin === 'http://app.invalid';
+    const outside = await withInProcessFetch(
+      inProcess.fetchImpl,
+      () => fetch('http://vendor.invalid/v1/charge').catch((e: unknown) => e),
+      owns,
+    );
+    expect(outside).toBeUltimateError('X_TEST_NETWORK_SEALED');
+    expect(
+      await withInProcessFetch(
+        inProcess.fetchImpl,
+        () => clientTransport({ method: 'GET', url: 'http://app.invalid/x' }),
+        owns,
+      ),
+    ).toBe('app');
+    expect(inProcess.calls.map((call) => call.url)).toEqual(['http://app.invalid/x']);
+  });
 });

@@ -271,6 +271,7 @@ const runSerial = async (
         isApp: isApp(ctx.root),
         outcome,
         env: ctx.env ?? Bun.env,
+        sharded: ctx.shard !== undefined,
       })
     : outcome;
 };

@@ -101,12 +101,36 @@ describe('strict: x verify names every step that ran no check', () => {
     );
   });
 
-  test('a why over a step that ran is stale, and the step says so', async () => {
-    await withFloor('{"steps":[],"strict":true,"skip":{"lint":"never"}}', async (root) => {
-      const result = await runVerify(STEPS.slice(0, 1), { root, runner });
+  /** A `live` step whose run reports these counts, or no counts at all, or a shard's slice. */
+  const live = (outcome: Partial<Awaited<ReturnType<VerifyStep['run']>>>): VerifyStep[] => [
+    { name: 'live', summary: 'live', run: async () => ({ ok: true, findings: [], ...outcome }) },
+  ];
+  const EXCUSED = '{"steps":[],"strict":true,"skip":{"live":"no database here"}}';
+
+  test('a why over a suite that ran tests is stale, and the step says so', async () => {
+    await withFloor(EXCUSED, async (root) => {
+      const result = await runVerify(live({ tests: { ran: 4, skipped: 0 } }), { root, runner });
       expect(result.steps?.[0]?.warnings).toEqual([
-        msg('cli.verify.waiverStale', { step: 'lint' }),
+        msg('cli.verify.waiverStale', { step: 'live' }),
       ]);
+    });
+  });
+
+  test('a --shard slice that ran tests never calls the why stale: merge judges the sum', async () => {
+    await withFloor(EXCUSED, async (root) => {
+      const shard = { index: 1, total: 2, corpusHash: 'h', files: ['a.live.test.ts'] };
+      const result = await runVerify(live({ tests: { ran: 4, skipped: 0 }, shard }), {
+        root,
+        runner,
+      });
+      expect(result.steps?.[0]?.warnings).toBeUndefined();
+    });
+  });
+
+  test('a --changed run that spawned nothing never calls the why stale', async () => {
+    await withFloor(EXCUSED, async (root) => {
+      const result = await runVerify(live({ workers: 0 }), { root, runner });
+      expect(result.steps?.[0]?.warnings).toBeUndefined();
     });
   });
 

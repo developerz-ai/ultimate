@@ -60,7 +60,8 @@ function structural(words: readonly string[], localLines: readonly string[]): Ap
     if (keyword === 'type' && from > 0 && (words[from] === '(' || words[from] === '<')) {
       // `type F = ( … ) => R` and `type F = < T > ( … ) => R`: a function type is a function.
       const open = words[from] === '<' ? closing(words, from) + 1 : from;
-      return words[open] === '(' ? functionOf(words, open, '=>', locals) : undefined;
+      const shape = words[open] === '(' ? functionOf(words, open, '=>', locals) : undefined;
+      return shape?.kind === 'function' ? { ...shape, implemented: true } : shape;
     }
     const open = keyword === 'type' ? trailingObject(words, from) : topLevel(words, '{', 2);
     if (from === 0 || open === -1 || words[open] !== '{') return undefined;

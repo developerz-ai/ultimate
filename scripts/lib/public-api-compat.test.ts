@@ -119,14 +119,34 @@ describe('public-api-compat · functions', () => {
     );
   });
 
-  test('a function type alias is a function: an optional object property is compatible', () => {
+  // A `type F = (…) => R` is as often a callback the app IMPLEMENTS as a function it calls, and
+  // for an implementation both a widened parameter and a new optional property are compile breaks
+  // under `--strict` (its parameter no longer accepts what is passed). So its parameters are held
+  // unchanged — `members()`' strictness — and only a function or const declaration accepts more.
+  test('a function type alias holds its parameters unchanged: more accepted is a break', () => {
     const before =
       'type Build = ( root : string , o ? : { readonly only ? : string ; } ) => Promise < B >';
     expect(
       verdict(before, before.replace('only ? : string ;', 'only ? : string ; c ? : boolean ;')),
-    ).toBe('compatible: parameter 2 accepts more properties');
+    ).toBe(
+      'break: a function type an app may implement: parameter 2 changed (it accepts more properties)',
+    );
+    expect(verdict(before, before.replace('root : string', 'root : string | URL'))).toBe(
+      'break: a function type an app may implement: parameter 1 changed (it accepts more)',
+    );
     expect(verdict(before, before.replace('Promise < B >', 'B'))).toBe(
       'break: its return type changed',
+    );
+  });
+
+  test('a function type alias: a renamed parameter or a new optional one is still compatible', () => {
+    const before = 'type Hook = ( event : E ) => void';
+    expect(verdict(before, 'type Hook = ( e : E ) => void')).toBe(
+      'compatible: parameters renamed only',
+    );
+    // An implementation that ignores a trailing parameter still type-checks against the new one.
+    expect(verdict(before, 'type Hook = ( event : E , at ? : number ) => void')).toBe(
+      'compatible: optional parameter 2 added',
     );
   });
 
@@ -299,6 +319,19 @@ describe('public-api-compat · overloads', () => {
     const widened = MAP.replace('Promise < T [ ] >', 'Promise < T [ ] | S [ ] >');
     expect(verdict(MAP, `${ALL}\n${widened}`)).toBe(
       'break: the recorded call shape matches no overload with the same return — closest: its return type changed',
+    );
+  });
+
+  // TypeScript resolves a call against the FIRST overload whose parameters accept it: a wider
+  // overload put in front answers every existing call with its own return type.
+  test('a wider overload in front of a recorded one changes its calls: a break', () => {
+    const one = 'function f ( x : string ) : string';
+    const wider = 'function f ( x : string | number ) : number';
+    expect(verdict(one, `${wider}\n${one}`)).toBe(
+      'break: the recorded call shape is answered first by an overload with another return',
+    );
+    expect(verdict(one, `${one}\n${wider}`)).toBe(
+      'compatible: every recorded call shape still matches an overload with the same return',
     );
   });
 

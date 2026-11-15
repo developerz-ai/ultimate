@@ -40,6 +40,20 @@ function dispatcher(): (url: string, init: RequestInit) => Promise<Response> {
   };
 }
 
+/**
+ * The app's own origin — `APP_URL` as the typed client reads it, at the call: only its urls are
+ * the app's to answer. Any other host is a call out, left to the pass's sealed network, which
+ * refuses and records it as one (`exercise-report.ts`).
+ */
+const ownOrigin = (url: string): boolean => {
+  const base = process.env['APP_URL'] || EXERCISE_APP_URL;
+  try {
+    return new URL(url).origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
+};
+
 /** `routes`, each load's (and `prerender()`'s) typed-client calls answered by the app's API here. */
 export function servedInProcess(routes: readonly RouteLoadSubject[]): readonly RouteLoadSubject[] {
   let dispatch: ReturnType<typeof dispatcher> | undefined;
@@ -51,10 +65,10 @@ export function servedInProcess(routes: readonly RouteLoadSubject[]): readonly R
     const { samples } = route;
     return {
       ...route,
-      load: (ctx) => withInProcessFetch(served, () => route.load(ctx)),
+      load: (ctx) => withInProcessFetch(served, () => route.load(ctx), ownOrigin),
       ...(samples === undefined
         ? {}
-        : { samples: () => withInProcessFetch(served, () => samples.call(route)) }),
+        : { samples: () => withInProcessFetch(served, () => samples.call(route), ownOrigin) }),
     };
   });
 }

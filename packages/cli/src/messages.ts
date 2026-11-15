@@ -294,7 +294,7 @@ const CATALOG = {
   'cli.secrets.ring': 'retired master key(s) that still open sealed values: {kids}',
   // `verify-live.ts`: the `live` step's warnings about the test stack it found, started or could not.
   'cli.verify.services.started':
-    'no test database answered, so the gate started one ({command}) — left running for the next run; stop it with {stop}',
+    'this run started {services} ({command}) — left running for the next run; stop it with {stop}',
   'cli.verify.services.unavailable': '{code}: {cause} — fix: {fix}',
   // `upgrade-report.ts`: a guard the tree breaks, kept at its measured count (`upgrade-guards.ts`).
   'cli.upgrade.guardBaselined':

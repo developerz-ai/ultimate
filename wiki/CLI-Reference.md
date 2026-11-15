@@ -743,15 +743,20 @@ not run is refused by the `manifest` step (`X_CONFIG_INVALID`) rather than silen
 nothing. Removing a line is allowed; it just has to be a diff somebody reviews.
 
 **`live` starts its own test database, `As of 2026-11-15`.** When `x.verify.json` holds `live`
-(or `--only` names it) and nothing answers at `docker/test-services.env`'s `TEST_DATABASE_URL`, the
-step runs `docker compose -f docker/docker-compose.test.yml up -d --wait` — the stack `x new` wrote
-— and hands that env file's values to the suites, for every key the shell left unset. Already
-listening but not sourced: the values are handed over and nothing is started. A `TEST_DATABASE_URL`
-that is not the env file's is your own server, and is never probed or second-guessed. The stack is
-**left running** (RAM only; the next run reuses it) and the step's warning says so, with the stop
-line, `docker compose -f docker/docker-compose.test.yml down`. No Docker, or a start that fails: a
-warning carrying `X_TEST_SERVICES_UNAVAILABLE` and the start command as its fix, and the suites run
-exactly as before — a floor whose every live test then skipped is still `X_VERIFY_SUITE_VANISHED`.
+(or `--only` names it), the step runs the idempotent `docker compose -f
+docker/docker-compose.test.yml up -d --wait --wait-timeout 120` — the stack `x new` wrote — and
+hands that env file's values to the suites, for every key the shell left unset. It runs even when
+`TEST_DATABASE_URL` already answers: a Postgres still starting is waited for, and Redis, NATS and S3
+come up beside it. If `up` fails while the database answers our login (a concurrent run's container
+conflict, say), only the keys whose service answers are handed over — a suite with no URL skips; one
+with a dead URL would fail. A Postgres on that port that refuses this app's login is another app's
+stack: `X_TEST_SERVICES_UNAVAILABLE`, and nothing is handed over. A `TEST_DATABASE_URL` that is not
+the env file's is your own server, and is never probed or second-guessed. The stack is **left
+running** (RAM only; the next run reuses it) and the step's warning says so, with the stop line,
+`docker compose -f docker/docker-compose.test.yml down`. No Docker, or a start that fails with no
+database answering: a warning carrying `X_TEST_SERVICES_UNAVAILABLE` and the start command as its
+fix, and the suites run exactly as before — a floor whose every live test then skipped is still
+`X_VERIFY_SUITE_VANISHED`.
 `packages/cli/src/verify-live.ts` decides when; `verify-services.ts` probes and starts.
 
 `--workers` widens the test steps only. `unit`, `contract`, `job` and `eval` run as

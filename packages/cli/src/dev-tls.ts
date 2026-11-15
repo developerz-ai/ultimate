@@ -1,12 +1,6 @@
-// `x dev --tls`'s certificate: a self-signed ECDSA P-256 X.509 built from WebCrypto alone and
-// cached under the app's state directory (`.x/tls/`, gitignored, never committed). Regenerated
-// when the names it must carry change or its end is near; otherwise the same bytes every boot, so
-// a browser exception or a `curl --cacert` the developer made once keeps working.
+// `x dev --tls`'s certificate: a self-signed ECDSA P-256 X.509 built from WebCrypto alone, and
+// the names a bind needs it to carry. Cached on disk by `dev-tls-cache.ts`.
 
-// why: Bun.write takes no file mode — the key is CREATED 0600 in a 0700 directory, never chmod'ed after.
-import { chmod, mkdir, rm, stat, writeFile } from 'node:fs/promises';
-// why: Bun exposes no path-join primitive; Bun.file takes one already joined.
-import { join } from 'node:path';
 import { classifyAddress } from '@ultimat3/core';
 import {
   bitString,
@@ -24,11 +18,9 @@ import {
   utf8,
 } from './dev-tls-der';
 
-const DAY_MS = 86_400_000;
+export const DAY_MS = 86_400_000;
 /** Short on purpose: a local certificate is regenerated for free, and browsers cap leaf lifetimes. */
 export const DEV_CERT_DAYS = 90;
-/** Inside this window of its end, a cached certificate is replaced rather than served. */
-const RENEW_WITHIN_MS = 7 * DAY_MS;
 
 const ECDSA_SHA256 = sequence(oid('1.2.840.10045.4.3.2'));
 const SUBJECT = sequence(set(sequence(oid('2.5.4.3'), utf8('x dev local certificate'))));
@@ -121,70 +113,8 @@ export async function selfSignedCertificate(input: {
  */
 export function certificateNames(hostname: string): readonly string[] {
   const base = ['localhost', '127.0.0.1', '::1'];
+  // A wildcard is dialled as loopback; any other literal — `127.0.0.2` included — is the url printed.
   const kind = classifyAddress(hostname);
-  const specific = kind !== undefined && kind !== 'unspecified' && kind !== 'loopback';
-  return specific ? [...base, hostname] : base;
-}
-
-export interface DevCertificate extends CertificatePair {
-  /** Where the certificate sits, for `curl --cacert` or a browser's trust store. */
-  readonly certPath: string;
-}
-
-interface CachedMeta {
-  readonly names: readonly string[];
-  readonly notAfter: number;
-}
-
-async function readMeta(path: string): Promise<CachedMeta | undefined> {
-  const file = Bun.file(path);
-  if (!(await file.exists())) return undefined;
-  const parsed: unknown = await file.json().catch(() => undefined);
-  if (typeof parsed !== 'object' || parsed === null) return undefined;
-  const { names, notAfter } = parsed as Record<string, unknown>;
-  if (!Array.isArray(names) || typeof notAfter !== 'number') return undefined;
-  return { names: names.filter((name): name is string => typeof name === 'string'), notAfter };
-}
-
-/**
- * The cached key exists and no one but its owner can read it. A wider mode — a copy, an editor's
- * save under umask 0002 — is not served: the pair is regenerated. Windows has no POSIX mode bits
- * to read, so there the file's existence is the whole check.
- */
-async function keyIsPrivate(path: string): Promise<boolean> {
-  const found = await stat(path).catch(() => undefined);
-  if (found === undefined || !found.isFile()) return false;
-  return process.platform === 'win32' || (found.mode & 0o077) === 0;
-}
-
-/** The cached pair when it carries exactly `names` and is not near its end; else a new one, written. */
-export async function devCertificate(input: {
-  readonly stateDir: string;
-  readonly names: readonly string[];
-  readonly now: Date;
-}): Promise<DevCertificate> {
-  const dir = join(input.stateDir, 'tls');
-  const certPath = join(dir, 'cert.pem');
-  const keyPath = join(dir, 'key.pem');
-  const metaPath = join(dir, 'meta.json');
-  const names = [...new Set(input.names)].sort();
-  const meta = await readMeta(metaPath);
-  const fresh =
-    meta !== undefined &&
-    meta.names.join(',') === names.join(',') &&
-    meta.notAfter - input.now.getTime() > RENEW_WITHIN_MS;
-  if (fresh && (await Bun.file(certPath).exists()) && (await keyIsPrivate(keyPath))) {
-    return { cert: await Bun.file(certPath).text(), key: await Bun.file(keyPath).text(), certPath };
-  }
-  const pair = await selfSignedCertificate({ names, now: input.now });
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  await chmod(dir, 0o700); // an existing `.x/tls` keeps whatever mode it was made with otherwise
-  // Removed, then created exclusively at 0600: a write over an existing 0644 file keeps 0644, and
-  // a chmod after the write leaves a window in which the key is readable by everyone.
-  await rm(keyPath, { force: true });
-  await writeFile(keyPath, pair.key, { mode: 0o600, flag: 'wx' });
-  await Bun.write(certPath, pair.cert);
-  const notAfter = input.now.getTime() + DEV_CERT_DAYS * DAY_MS;
-  await Bun.write(metaPath, JSON.stringify({ names, notAfter }));
-  return { ...pair, certPath };
+  const dialled = kind !== undefined && kind !== 'unspecified' && !base.includes(hostname);
+  return dialled ? [...base, hostname] : base;
 }

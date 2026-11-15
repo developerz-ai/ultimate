@@ -105,13 +105,21 @@ describe('unit · the worker half: x_job_workers, one build per live row', () =>
     expect(dataOf(result)['origins']).toEqual([]);
   });
 
-  test('a worker row stamped with terminal controls is counted unknown, never printed', async () => {
+  // A stamp is a stamp, whatever it holds: counted under its own name, with every control escaped
+  // where it is printed — the human lines and the `--json` document alike.
+  test('a worker row stamped with terminal controls is counted under its name, escaped', async () => {
     const driver = memoryJobDriver();
     await driver.introspect?.announceWorker(worker('w1', 'b\u009b2J'), 60_000);
+    await driver.introspect?.announceWorker(worker('w2', 'release 31.27.0'), 60_000);
     installJobDriver(driver);
     const result = await run([]);
-    expect((dataOf(result)['workers'] as Json)['byBuild']).toEqual({ unknown: 1 });
-    expect(result.lines?.join('\n')).not.toContain('\u009b');
+    const workers = dataOf(result)['workers'] as Json;
+    expect(workers['byBuild']).toEqual({ 'b\\u009b2J': 1, 'release 31.27.0': 1 });
+    expect((workers['rows'] as Json[]).map((row) => row['build'])).toEqual([
+      'b\\u009b2J',
+      'release 31.27.0',
+    ]);
+    expect(JSON.stringify(result)).not.toContain('\u009b');
   });
 
   test('roles no fleet-wide record covers are named, so silence is never read as health', async () => {
@@ -150,6 +158,20 @@ describe('unit · the origin half: /readyz and x-ultimate-build', () => {
     expect(origin?.['byBuild']).toEqual({});
     // Unstamped is a 2xx with no header — a 503 is not a stamp question.
     expect(origin?.['unstamped']).toBe(0);
+  });
+
+  test('a legal build with a space is counted as itself; a hostile one escaped', async () => {
+    installJobDriver(memoryJobDriver());
+    markReady();
+    const plain = healthPort('worker', 'release 31.27.0');
+    const hostile = healthPort('worker', 'v1\u009b2J');
+    const origins = dataOf(await run(['--url', `${plain},${hostile}`, '--samples', '1', '--json']))[
+      'origins'
+    ] as Json[];
+    expect(origins.map((origin) => [origin['byBuild'], origin['unstamped']])).toEqual([
+      [{ 'release 31.27.0': 1 }, 0],
+      [{ 'v1\\u009b2J': 1 }, 0],
+    ]);
   });
 
   test('a build named __proto__ is a count like any other, not a prototype write', async () => {

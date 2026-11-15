@@ -6,7 +6,7 @@
 import type { Runner } from './exec';
 import { msg } from './messages';
 import { floorRequires, readVerifyFloor } from './verify-floor';
-import type { Probe } from './verify-services';
+import type { LoginProbe, Probe } from './verify-services';
 import { ensureTestServices, SERVICES_DOWN, SERVICES_UP } from './verify-services';
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 
@@ -35,7 +35,7 @@ const withWarning = (outcome: StepOutcome, warning: string): StepOutcome => ({
  * as they did before, and a floor whose every live test skipped is still `X_VERIFY_SUITE_VANISHED`.
  * Never torn down: the next run reuses it, and the warning says how to stop it.
  */
-export function withTestServices(step: VerifyStep, probe?: Probe): VerifyStep {
+export function withTestServices(step: VerifyStep, probe?: Probe, login?: LoginProbe): VerifyStep {
   return {
     ...step,
     async run(ctx) {
@@ -45,6 +45,7 @@ export function withTestServices(step: VerifyStep, probe?: Probe): VerifyStep {
         runner: ctx.runner,
         env: ctx.env ?? Bun.env,
         ...(probe === undefined ? {} : { probe }),
+        ...(login === undefined ? {} : { login }),
       });
       if (verdict.kind === 'ambient') return step.run(ctx);
       if (verdict.kind === 'unavailable') {
@@ -55,10 +56,16 @@ export function withTestServices(step: VerifyStep, probe?: Probe): VerifyStep {
         );
       }
       const outcome = await step.run(withEnv(ctx, verdict.env));
-      if (verdict.kind === 'reachable') return outcome;
+      // Whatever this run's `up` started, by compose's answer — a reachable Postgres beside a
+      // freshly started Redis still leaves containers running; a stack already up says nothing.
+      if (verdict.startedServices.length === 0) return outcome;
       return withWarning(
         outcome,
-        msg('cli.verify.services.started', { command: SERVICES_UP.join(' '), stop: SERVICES_DOWN }),
+        msg('cli.verify.services.started', {
+          services: verdict.startedServices.join(', '),
+          command: SERVICES_UP.join(' '),
+          stop: SERVICES_DOWN,
+        }),
       );
     },
   };

@@ -304,6 +304,11 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
     'error-map': async (request, ctx) => {
       const error = ctx.error;
       const facts = factsOf(error);
+      // Every dev disclosure below — the overlay, an unclassified 5xx's own text in the problem
+      // document — is for THIS machine (`callerLocality`): a LAN peer on `x dev --host`, or a relay
+      // in front of a loopback socket, is answered as a production visitor is.
+      const local =
+        config.dev && callerLocality({ ip: ctx.ip, headers: ctx.requestHeaders }) === 'local';
       // This package's ONE error-reporting call site, and it is the framework's own — `onError`
       // below stays the APP's sink. 5xx only: a 404 or a 422 is the caller's mistake, the problem
       // document already told them, and a monitor that also holds those is a log nobody reads.
@@ -377,13 +382,9 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         // app's own file first (#492, O-492). A 5xx keeps the overlay, and so does a 4xx the app
         // has no file for: in dev the diagnostic beats the framework's generic page.
         // A throw from the hook is caught by `recoverWith` and degrades to the problem document.
-        // The overlay is for THIS machine (`callerLocality`): a LAN peer on `x dev --host`, or a
-        // relay in front of a loopback socket, gets the page a production visitor gets.
-        const overlay =
-          config.dev && callerLocality({ ip: ctx.ip, headers: ctx.requestHeaders }) === 'local';
         const override =
-          overlay && facts.status >= 500 ? undefined : await hooks.errorPage?.(facts.status, ctx);
-        if (overlay && override === undefined) {
+          local && facts.status >= 500 ? undefined : await hooks.errorPage?.(facts.status, ctx);
+        if (local && override === undefined) {
           // Asked for inside the branch, never above it: the overlay is the only surface a notice
           // has, so a production process — or an agent that asked for json — must not pay a
           // diagnostic's per-request cost to produce findings nothing will render.
@@ -417,9 +418,9 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         requestId: ctx.requestId,
         headers: retryAfter,
         // The one call site that can see the config, so it is the one that may reveal an
-        // unclassified 500's own text. Every other `problem()` in this package is a degraded
-        // path and stays opaque by default.
-        dev: config.dev,
+        // unclassified 500's own text — to a local caller only. Every other `problem()` in this
+        // package is a degraded path and stays opaque by default.
+        dev: local,
       });
     },
 

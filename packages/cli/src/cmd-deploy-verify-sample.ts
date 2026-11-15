@@ -20,13 +20,22 @@ export interface ReadyzAnswer {
 /** A `/readyz` body is a few dozen bytes; past this it is not parsed, and the role is unknown. */
 const READYZ_BODY_LIMIT = 4_096;
 
+/** The most of a build id a printed line carries; the rest is cut and marked `…`. */
+const PRINTED_BUILD_MAX = 128;
+
 /**
- * A build id as it may be PRINTED: visible ASCII, 1–128 characters. The origin is a stranger, and
- * a header carrying `\x9b` (CSI) or `\x1b` rewrites the terminal `x status` prints to; anything
- * else is counted unstamped, never shown.
+ * A build id as it may be PRINTED — never as it is MATCHED. The origin is a stranger: a header
+ * carrying `\x9b` (CSI) or `\x1b` rewrites the terminal `x status` prints to, and JSON leaves a C1
+ * control unescaped. Every character outside visible ASCII and space is written `\uXXXX`, and the
+ * result is cut at 128 characters, so a legal id (`release 31.27.0`) prints as itself.
  */
-export const printableBuild = (value: string | null): string | null =>
-  value !== null && /^[\x21-\x7e]{1,128}$/.test(value) ? value : null;
+export const printableBuild = (value: string): string => {
+  const escaped = value.replace(
+    /[^\x20-\x7e]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+  return escaped.length > PRINTED_BUILD_MAX ? `${escaped.slice(0, PRINTED_BUILD_MAX)}…` : escaped;
+};
 
 /** A body that is not JSON, or names no role, is an answer with no role — never a failed sample. */
 async function roleOf(response: Response): Promise<string | null> {
@@ -60,7 +69,8 @@ export async function takeSample(origin: string, limitMs: number): Promise<Ready
     const age = Number(response.headers.get('age') ?? '0');
     return {
       status: response.status,
-      build: printableBuild(header),
+      // As sent: `x deploy verify` matches it against `--build`. Printing screens it, not this.
+      build: header === null || header === '' ? null : header,
       cached: Number.isNaN(age) || age > 0,
       role: await roleOf(response),
     };

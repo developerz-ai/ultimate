@@ -35,8 +35,11 @@ export class DevHostRefusedError extends UltimateError {
  */
 export class DevPeerRefusedError extends UltimateError {
   constructor(input: { devUrl: string; relay?: string }) {
-    const port = URL.parse(input.devUrl)?.port ?? '';
-    const loopback = `http://localhost${port === '' ? '' : `:${port}`}/_x`;
+    // The scheme and port the server speaks (`x dev --tls` is https), on the loopback name.
+    const parsed = URL.parse(input.devUrl);
+    const scheme = parsed?.protocol === 'https:' ? 'https' : 'http';
+    const port = parsed?.port ?? '';
+    const loopback = `${scheme}://localhost${port === '' ? '' : `:${port}`}/_x`;
     super({
       code: 'X_DEV_PEER_REFUSED',
       cause:

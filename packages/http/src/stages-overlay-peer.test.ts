@@ -94,3 +94,26 @@ describe('unit · the dev Server-Timing breakdown answers a loopback caller only
     }
   });
 });
+
+describe('unit · the dev problem document withholds the cause from a caller that is not local', () => {
+  const problemFor = async (ip: string, accept: string, headers: Record<string, string> = {}) => {
+    const response = await pipeline().handle(
+      new Request('http://localhost/boom', { headers: { accept, ...headers } }),
+      { role: 'web', ip },
+    );
+    expect(response.status).toBe(500);
+    return await response.text();
+  };
+
+  test('a loopback agent asking for json gets the cause', async () => {
+    expect(await problemFor('127.0.0.1', 'application/json')).toContain(SECRET);
+  });
+
+  test('a LAN agent asking for json or */*, or a relayed one, gets no cause', async () => {
+    expect(await problemFor('192.168.1.50', 'application/json')).not.toContain(SECRET);
+    expect(await problemFor('192.168.1.50', '*/*')).not.toContain(SECRET);
+    expect(
+      await problemFor('127.0.0.1', 'application/json', { 'x-forwarded-for': '203.0.113.9' }),
+    ).not.toContain(SECRET);
+  });
+});
