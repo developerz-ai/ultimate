@@ -2,6 +2,7 @@
 // one line each and the `x db gen --drop-redundant` that drops them. A listing, never a finding.
 
 import { describe, expect, test } from 'bun:test';
+import type { SchemaDescription } from '@ultimat3/db';
 import type { RegistryEntry } from '@ultimat3/entity';
 import { redundantIndexesProbe, withRedundantIndexes } from './doctor-redundant-indexes';
 import type { CommandResult } from './output';
@@ -27,7 +28,7 @@ const entry = (table: string, covered: readonly string[]): RegistryEntry =>
     references: () => [],
   }) as unknown as RegistryEntry;
 
-const snapshot = (tables: Record<string, readonly string[]>) => ({
+const snapshot = (tables: Record<string, readonly string[]>): SchemaDescription => ({
   tables: Object.entries(tables).map(([name, indexes]) => ({
     schema: 'public',
     name,
@@ -38,6 +39,8 @@ const snapshot = (tables: Record<string, readonly string[]>) => ({
       columns: ['tag_id'],
       unique: false,
       primary: false,
+      where: null,
+      order: null,
     })),
     foreignKeys: [],
   })),

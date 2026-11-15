@@ -17,7 +17,6 @@
 // does. This file only WRITES the app half — a reader imports `hasPublicCause` from core.
 import {
   declaredProblemMeta,
-  metaKeyRefusal,
   problemMetaRefusal,
   recordProblemMeta,
   registerPublicCause,
@@ -47,12 +46,6 @@ export type ProblemMeta = Readonly<Record<string, ProblemMetaValue>>;
  * make room has no way to tell "absent" from "cut".
  */
 export const MAX_PROBLEM_META_BYTES = 4096;
-
-/**
- * The key rule is `@ultimat3/core`'s (`problem-meta-declared.ts`), re-exported for the framework
- * table's test: `defineError({ problemMeta })` and this file refuse on the same one.
- */
-export { metaKeyRefusal };
 
 /** Per code: the `meta` keys, a public cause, or both. A bare list is the keys alone. */
 export type ProblemMetaDeclaration =

@@ -3,6 +3,7 @@
 // (`X_LIFECYCLE_TRIGGER_MISSING`); this is the repair, and the dry run is the report. The parent is
 // walked in key-range windows, one transaction each, so a big table never holds one long lock.
 
+import { finiteCount } from '@ultimat3/core';
 import type { CounterDescriptionLike, DbClient } from '@ultimat3/db';
 import {
   CROSS_TENANT_SETTING,
@@ -65,7 +66,7 @@ export async function recountInBatches(
   counter: CounterDescriptionLike,
   options: { readonly write: boolean; readonly batch?: number },
 ): Promise<RecountReport> {
-  const size = options.batch ?? RECOUNT_BATCH;
+  const size = finiteCount('x db recount', 'batch', options.batch ?? RECOUNT_BATCH, 1);
   const rows: DriftRow[] = [];
   let drifted = 0;
   let batches = 0;

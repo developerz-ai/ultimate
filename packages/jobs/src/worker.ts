@@ -6,7 +6,6 @@
 import type { ShutdownReason } from '@ultimat3/core';
 import {
   beginWork,
-  failureStreak,
   isDraining,
   logger,
   onShutdown,
@@ -23,6 +22,7 @@ import type { JobExecution } from './execute-result';
 import { registeredJobs } from './job';
 import { concurrencyLimiter } from './limits';
 import { JOB_OUTCOME_LABELS } from './metrics';
+import { tickStreak } from './tick-streak';
 import { type ClaimAsk, createAdmission } from './worker-admit';
 import { type ClaimAnswer, createClaimSweep } from './worker-claim-sweep';
 import { armWorkerCutoff, type DrainCutoff } from './worker-drain-cutoff';
@@ -301,12 +301,6 @@ export function jobWorker(options: WorkerOptions): Worker {
    * and a loop that waited for the last job of the previous pass could not refill one until the
    * whole batch was done. `worker-loop.ts` owns the timer and everything that cuts its wait short.
    */
-  // A restart fails every pass until it ends: one line opens the streak, one closes it.
-  const tickFailures = failureStreak({
-    event: 'jobs.worker.tick-failed',
-    recoveredEvent: 'jobs.worker.tick-recovered',
-    fields: { workerId },
-  });
   const loop: ClaimLoop = createClaimLoop({
     subject: 'jobWorker',
     floorMs: pollIntervalMs,
@@ -314,11 +308,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     queues,
     round,
     wake: options.driver.wake?.bind(options.driver), // a hand-back this loop stopped before
-    onError: (error) => {
-      tickFailures.failed(error);
-    },
-    onPassed: () => tickFailures.passed(),
-    onStart: () => tickFailures.reset(),
+    ...tickStreak('worker', { workerId }), // a restart: one line opens the streak, one closes it
   });
 
   /**

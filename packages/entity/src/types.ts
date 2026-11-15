@@ -76,7 +76,9 @@ export interface ReferenceOptions {
 /**
  * What `countedIn` names: the parent integer alone, or with a `where` — a predicate over THIS
  * (child) row, in the invariant language, so only the rows it holds over are counted. A thunk like
- * `to`, resolved once both modules evaluated: `where: () => whereColumns(likes).kind.eq('up')`.
+ * `to`, resolved once both modules evaluated: `where: (): Expr => whereColumns(likes).kind.eq('up')` —
+ * the `: Expr` is required, or TypeScript reads the entity naming itself in its own initializer
+ * as a cycle (TS7022).
  * Compiled once into the trigger's condition and the recount's truth; the memory driver evaluates
  * the same `Expr`. A NULL operand is not counted, as a SQL `where` decides it.
  */

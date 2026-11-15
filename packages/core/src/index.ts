@@ -94,7 +94,6 @@ export type {
 export {
   bootRolesConcerned,
   bootWarning,
-  installBootWarnings,
   resetBootWarnings,
 } from './boot-warning';
 export type {

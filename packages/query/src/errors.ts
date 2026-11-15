@@ -380,7 +380,7 @@ export class QueryScopeUncomposableError extends UltimateError {
   constructor(name: string, reason: 'source' | 'live' | 'rows' = 'source') {
     const cause = {
       source: `query "${name}" has a scoped policy and its sql returns a source that is not from(), so the scope has nowhere to go`,
-      live: `query "${name}" is read live and its scoped policy hands down an or/via tree, which the live matcher's flat shape cannot patch`,
+      live: `query "${name}" is read live and its scoped policy hands down an or/via tree, which the live matcher's flat shape cannot patch — a paged read serves it in one statement`,
       rows: `query "${name}" has a scope with a via hop and its sql reads from() over a list of rows, which has no statement to run the hop in`,
     }[reason];
     super({
@@ -388,7 +388,7 @@ export class QueryScopeUncomposableError extends UltimateError {
       cause,
       fix:
         reason === 'live'
-          ? `read query "${name}" with .page() rather than live, or scope its policy with conditions only — an or/via scope is served by a statement, not by the matcher`
+          ? `${name}.page(input, { first })   # read it paged, not live — or scope its policy with conditions only: an or/via tree is served by a statement, never by the matcher`
           : `sql: (input) => from<Row>('<table>', (window) => repo.window(window))  # in query "${name}": the provider applies window.nodes with .andWhereNode(node) — or drop scoped() from its policy`,
     });
   }

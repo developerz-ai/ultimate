@@ -130,10 +130,10 @@ describe.skipIf(!hasPostgres)('live · postgres · a counter with a where', () =
     const drifted: string[] = [];
     let after: string | null = null;
     for (;;) {
-      const [window] = await client.query<{ last: string | null }>(
-        recountWindowSql(POSTS, counter, after, 1),
-      );
-      const last = window?.last ?? null;
+      const windows: readonly { last: string | null }[] = await client.query<{
+        last: string | null;
+      }>(recountWindowSql(POSTS, counter, after, 1));
+      const last: string | null = windows[0]?.last ?? null;
       if (last === null) break;
       await client.query(recountLockSql(POSTS, counter, after, last));
       const rows = await client.query<{ key: string }>(

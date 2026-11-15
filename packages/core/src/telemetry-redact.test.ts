@@ -2,6 +2,7 @@
 // event's `error.message` and the status message are what an OTLP collector receives.
 
 import { afterEach, expect, test } from 'bun:test';
+import { UltimateError } from './errors';
 import { resetInstrumentation, subscribe } from './instrument';
 import { redactValues } from './logger';
 import { alwaysOnSampler } from './sampler';
@@ -26,7 +27,11 @@ test('a registered pattern never reaches the exception event or the status messa
 
   expect(() =>
     withSpan('charge', () => {
-      throw new Error('charge failed for rvspan_12345678');
+      throw new UltimateError({
+        code: 'X_ENVELOPE_FIXTURE',
+        cause: 'charge failed for rvspan_12345678',
+        fix: 'retry the charge',
+      });
     }),
   ).toThrow('rvspan_12345678');
   const manual = startSpan('refund');

@@ -1,5 +1,5 @@
 // `x db recount`'s sweep on a real Postgres (Bun.SQL): a writer whose trigger holds a parent row
-// while the recount reaches it is counted, never overwritten by a count read before it committed;
+// while the recount waits on it is counted, never overwritten by a count read before it committed;
 // and the text-bound window key works for an integer and a uuid primary key alike.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -25,12 +25,29 @@ const bumpSql = (parents: string, children: string): readonly string[] => [
   `create trigger ${children}_bump after insert on ${children} for each row execute function ${children}_bump()`,
 ];
 
+/** Polls attempts, never a clock: each is one round trip to the server. */
+const MAX_POLLS = 10_000;
+
 describe.skipIf(!hasPostgres)('live · postgres · x db recount', () => {
   let client: PostgresClient;
   const drop = async () => {
     for (const table of ['rcl_kids', 'rcl_parents', 'rcu_kids', 'rcu_parents']) {
       await client.execute(raw(`drop table if exists ${table} cascade`));
     }
+  };
+
+  /**
+   * Resolves once some backend is waiting on a row lock in a statement naming `table` — the
+   * recount, queued behind the writer's trigger. Deterministic: the writer commits only after.
+   */
+  const blockedOnLock = async (table: string): Promise<void> => {
+    for (let poll = 0; poll < MAX_POLLS; poll += 1) {
+      const [row] = await client.query<{ waiting: number }>(
+        sql`select count(*)::integer as waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like ${`%${table}%`}`,
+      );
+      if ((row?.waiting ?? 0) > 0) return;
+    }
+    expect.unreachable(`no statement on ${table} waited on a lock within ${MAX_POLLS} polls`);
   };
 
   beforeAll(async () => {
@@ -66,7 +83,7 @@ describe.skipIf(!hasPostgres)('live · postgres · x db recount', () => {
       inserted = resolve;
     });
     // The writer: its trigger takes the parent row's lock, and it commits only once the recount
-    // is already waiting on it.
+    // is seen waiting on it (`blockedOnLock`).
     const writer = withTransaction(
       async (tx) => {
         await tx.execute(sql`insert into rcl_kids (parent_id) values (${1})`);
@@ -79,7 +96,7 @@ describe.skipIf(!hasPostgres)('live · postgres · x db recount', () => {
     const sweep = recountInBatches(client, 'rcl_parents', counter('rcl_kids'), {
       write: true,
     });
-    await Bun.sleep(200);
+    await blockedOnLock('rcl_parents');
     release();
     await writer;
     await sweep;
@@ -102,10 +119,10 @@ describe.skipIf(!hasPostgres)('live · postgres · x db recount', () => {
       batch: 2,
     });
     expect(report.batches).toBe(2);
-    expect(report.rows.map((row) => [row.key, row.actual])).toEqual([
-      [ids[0], 0],
-      [ids[1], 1],
-      [ids[2], 0],
+    expect(report.rows.map((row) => `${row.key}=${row.actual}`)).toEqual([
+      `${ids[0]}=0`,
+      `${ids[1]}=1`,
+      `${ids[2]}=0`,
     ]);
     const stored = await client.query<{ n: number }>(raw('select n from rcu_parents order by id'));
     expect(stored.map((row) => row.n)).toEqual([0, 1, 0]);

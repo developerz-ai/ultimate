@@ -4,7 +4,8 @@
 // claim, so a role that never says one evaluates neither.
 
 import type { AppConfig, BuildOnceStore, Role } from '@ultimat3/core';
-import { installBootWarnings, resolveEnvironment } from '@ultimat3/core';
+import { resolveEnvironment } from '@ultimat3/core';
+import { installBootWarnings } from '@ultimat3/core/adapter';
 import type { Storage } from '@ultimat3/storage';
 import { retainedPrefix } from './retained-assets-layout';
 

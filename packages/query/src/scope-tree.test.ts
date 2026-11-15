@@ -99,7 +99,9 @@ describe('an or scope', () => {
         ctx: ctx(),
       },
     );
-    expect(seen[0]?.nodes).toEqual([
+    // `ScopedNode` is branded; the tree compared is the plain one the policy declared.
+    const handed: unknown = seen[0]?.nodes;
+    expect(handed).toEqual([
       {
         or: [
           { column: 'authorId', op: 'eq', value: ME },
@@ -149,7 +151,7 @@ describe('a via scope', () => {
     const db = database({ posts }, { driver: postgresDriver() });
     const provider = async (window: RowWindow): Promise<readonly Row[]> => {
       let chain = db.posts.orderBy('id').limit(window.limit ?? 50);
-      for (const node of window.nodes) chain = chain.andWhereNode(node);
+      for (const node of window.nodes ?? []) chain = chain.andWhereNode(node);
       return chain.all();
     };
     await runQuery(

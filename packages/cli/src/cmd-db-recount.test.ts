@@ -3,6 +3,7 @@
 // them all — whatever the batch size.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import type { CounterDescriptionLike } from '@ultimat3/db';
 import { pgliteClient, raw } from '@ultimat3/db';
 import { recountInBatches } from './cmd-db-recount';
@@ -65,5 +66,18 @@ describe('x db recount · key-range batches', () => {
     expect(await stored()).toEqual([2, 0, 0, 1, 0]);
     const again = await recountInBatches(client, 'rc_parents', counter, { write: false, batch: 2 });
     expect(again.drifted).toBe(0);
+  });
+
+  test('a batch that is no whole number of at least 1 is refused before any statement', async () => {
+    for (const batch of [0, 2.5, Number.NaN]) {
+      const refused = await recountInBatches(client, 'rc_parents', counter, {
+        write: true,
+        batch,
+      }).then(
+        () => 'accepted',
+        (error: unknown) => (isUltimateError(error) ? error.code : 'uncoded'),
+      );
+      expect(refused).toBe('X_INVARIANT');
+    }
   });
 });

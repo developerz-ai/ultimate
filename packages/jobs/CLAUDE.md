@@ -192,6 +192,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `type-pins.ts` | compile-time pins for `StepOutput` and `waitForEvent` |
 | `outbox.ts` | staging in a `Tx`, the store seam, the ambient `JobsFacade` slot |
 | `outbox-relay.ts` | the relay: the poll timer, one pass, and its TWO shutdown hooks |
+| `tick-streak.ts` | `tickStreak(loop)`: the scheduler's, worker's and relay's failures as one streak per cause (core's `failureStreak`), `jobs.<loop>.tick-failed` / `-recovered`, as claim-loop hooks |
 | `outbox-pg.ts` | `postgresOutboxStore` — `stage()` on the caller's OWN connection, claim on the pool |
 | `outbox-lease.ts` | the claim lease's one definition and its one normalisation, for both stores |
 | `leases.ts` | `LeaseStore` — fleet-wide slots, the memory one, `jobLeaseKey` |

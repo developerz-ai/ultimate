@@ -10,6 +10,7 @@ import { integer, text, uuid } from './columns';
 import { whereColumns } from './counter';
 import { type Driver, database, memoryDriver } from './database';
 import { entity } from './entity';
+import type { Expr } from './expr';
 import { postgresDriver } from './pg-driver';
 import { clearRegistry } from './registry';
 
@@ -27,7 +28,10 @@ const votes = entity('cntw_votes', {
     id: uuid().primaryKey(),
     postId: uuid().references(() => posts.id, {
       onDelete: 'cascade',
-      countedIn: { to: () => posts.upCount, where: () => whereColumns(votes).voteKind.eq('up') },
+      countedIn: {
+        to: () => posts.upCount,
+        where: (): Expr => whereColumns(votes).voteKind.eq('up'),
+      },
     }),
     otherPostId: uuid()
       .nullable()
@@ -172,7 +176,7 @@ describe('counts · where · refused', () => {
         postId: uuid().references(() => posts.id, {
           countedIn: {
             to: () => posts.upCount,
-            where: () => whereColumns(stray).label.matches((value) => value.length > 0),
+            where: (): Expr => whereColumns(stray).label.matches((value) => value.length > 0),
           },
         }),
         label: text(),

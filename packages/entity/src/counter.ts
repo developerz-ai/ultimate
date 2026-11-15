@@ -37,16 +37,11 @@ const targetOf = (declared: CountedIn) =>
     ? { to: declared, where: undefined }
     : { to: declared.to, where: declared.where };
 
-const countsInvalid = (
-  entity: string,
-  property: string,
-  reason: string,
-  fix = `x db gen "count"   # after ${property}: uuid().references(() => <parent>.id, { countedIn: () => <parent>.<count> }) in entity('${entity}'), where <count> is integer().default(0)`,
-): EntityError =>
+const countsInvalid = (entity: string, property: string, reason: string): EntityError =>
   new EntityError({
     code: 'X_ENTITY_COUNTS_INVALID',
     cause: `${entity}.${property} declares countedIn, and ${reason}`,
-    fix,
+    fix: `${property}: uuid().references(() => <parent>.id, { countedIn: () => <parent>.<count> }) in entity('${entity}'), with <count> an integer().default(0) on the parent — then: x db gen "count"`,
   });
 
 /**
@@ -65,12 +60,11 @@ export const whereColumns = <C extends ColumnMap>(entity: {
  */
 function compileWhere(child: EntityCore, property: string, rule: Expr): Counter['where'] {
   const refuse = (reason: string): never => {
-    throw countsInvalid(
-      child.$name,
-      property,
-      reason,
-      `references(() => <parent>.id, { countedIn: { to: () => <parent>.<count>, where: () => whereColumns(${child.$name}).<column>.eq(<value>) } }) in entity('${child.$name}') — a predicate in the invariant language, never a function — then: x db gen "count"`,
-    );
+    throw new EntityError({
+      code: 'X_ENTITY_COUNTS_INVALID',
+      cause: `${child.$name}.${property} declares countedIn, and ${reason}`,
+      fix: `${property}: uuid().references(() => <parent>.id, { countedIn: { to: () => <parent>.<count>, where: (): Expr => whereColumns(${child.$name}).<column>.eq(<value>) } }) in entity('${child.$name}'), a predicate in the invariant language and never a function — then: x db gen "count"`,
+    });
   };
   const physical = (path: readonly string[]): string => {
     const [name, part] = path;

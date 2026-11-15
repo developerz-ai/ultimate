@@ -72,7 +72,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | the closed route vocabulary every renderer names | `route-vocabulary.ts` |
 | which of two route patterns wins a pathname (`routeRank`) | `route-rank.ts` |
 | runtime roles + `ROLE` resolution | `roles.ts` |
-| an app's role-scoped boot line — `bootWarning({ code, roles, once?, message, fields })`, said only where a booting role can act on it, `once: 'process'` or `'build'` (the boot installs the per-build store with `installBootWarnings`) | `boot-warning.ts` |
+| an app's role-scoped boot line — `bootWarning({ code, roles, once?, message, fields })`, said only where a booting role can act on it, `once: 'process'` or `'build'` (the boot installs the per-build store with `installBootWarnings`, on `@ultimat3/core/adapter`) | `boot-warning.ts` |
 | `Clock` — the only source of "now" | `clock.ts` |
 | UUIDv7, nanoid, branded ids | `ids.ts` |
 | structured JSON logging + redaction; `installLogSink(sink)` — the test seam that sends every default-writer line to a sink instead of the process's streams until the release it returns runs (a stack: releases in any order; `undefined` is the streams) (a test preload drops them; a test asserting on the process logger collects them). The tee is the bus: every such line, redacted, is the `log.record` event — `subscribe('log.record', handler)` | `logger.ts` |

@@ -109,7 +109,7 @@ describe('redactValues · the sinks', () => {
       new UltimateError({
         code: 'X_ENVELOPE_FIXTURE',
         cause: 'account rvsentry_0011aabb refused',
-        fix: 'x accounts unlock rvsentry_0011aabb',
+        fix: 'unlock rvsentry_0011aabb in the billing console, then retry the charge',
         meta: { deep: { id: 'rvsentry_22334455' } },
       }),
       { source: 'http', scope: { extra: { note: ['rvsentry_66778899'] } } },
@@ -156,7 +156,7 @@ describe('redactValues · property', () => {
         new UltimateError({
           code: 'X_ENVELOPE_FIXTURE',
           cause: around(),
-          fix: 'x retry',
+          fix: 'retry the request',
           meta: { m: around(), n: [around()] },
         }),
         { source: 'job', scope: { extra: { e: around() } } },

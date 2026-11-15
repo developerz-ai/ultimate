@@ -59,7 +59,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 | an X.509 certificate's public key | `der.ts` (`x509Spki(der)`) | the ONE DER walk to the `subjectPublicKeyInfo` Web Crypto imports: auth's SAML key and mail's SNS key both read it; trailing bytes refused |
 | the ONE keyed hash | `hmac.ts` (`hmac(alg, key, data, encoding?)`) | `bun run keyed-hasher` (`X_KEYED_HASHER`) † |
 | this process's job | `roles.ts` (`ROLE`) | |
-| a role-scoped boot line | `boot-warning.ts` (`bootWarning`) | `once: 'build'` asks the store the boot installs (`installBootWarnings`); none installed is once per process |
+| a role-scoped boot line | `boot-warning.ts` (`bootWarning`) | `once: 'build'` asks the store the boot installs (`installBootWarnings`, `./adapter`); none installed is once per process |
 | `allowHosts` | `host-rules.ts` | a wildcard admits no inward literal, no `localhost`/`*.localhost`; exact rules do |
 | which surface a route lives on, how it renders, caches offline and hydrates | `route-vocabulary.ts` (`SURFACES`, `RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration. Re-export it, never restate it; `@ultimat3/render` re-exports the `Surface` type only, never `SURFACES` (`X_HELPER_COPY`) |
 | which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments |
