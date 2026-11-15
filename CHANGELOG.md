@@ -10,37 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- `x verify` cannot pass on a skipped step: every step that ran no check is listed as `skipped: <reason>` (`data.skipReasons`), and `x.verify.json` gains `strict` — with `strict: true` every step must run a check or carry a written `skip` why (`X_VERIFY_STRICT_UNRUN`); without it, a warning names the steps an app never runs. New scaffolds are strict and run `live` against real Postgres and `e2e` in a real browser.
-- The `live` step starts the app's own test database (`docker/docker-compose.test.yml`) when nothing answers with the app's credentials; each scaffold gets its own test ports. A floored `e2e` with no browser is red with the install command (`X_VERIFY_E2E_BROWSER_MISSING`).
-- `x exercise` runs every route `load` (`defineExercise(…, { routes })`), records push deliveries as effects, restores the migrated scratch database from a snapshot (setup 1,667 → 782 ms), and splits with `--shard i/n`.
-- `x dev --host` and `--tls` (a self-signed local certificate); `TLS_CERT` / `TLS_KEY` for the production server. Every dev-only disclosure — `/_x`, the error overlay, `Server-Timing` detail, the dev MCP token — goes to a local caller only (`callerLocality`).
-
-### Added
-
-- `@ultimat3/cli`: `x status` (live workers by build, `/readyz` samples), `x profile <route>`, `x g export-rows`, `x g import-rows`, `x exercise --shard`, `x dev --host` / `--tls`; `x.verify.json` keys `strict`, `skip`, `guardBaseline` (`X_GUARD_OVER_BASELINE`, `X_GUARD_BASELINE_STALE` — `x upgrade` installs a withheld guard at its measured baseline); `x doctor` reports the e2e browser. Codes: `X_TEST_SERVICES_UNAVAILABLE`, `X_VERIFY_E2E_BROWSER_MISSING`, `X_VERIFY_STRICT_UNRUN`, `X_GUARD_OVER_BASELINE`, `X_GUARD_BASELINE_STALE`, `X_DEV_LOG_ABSENT`, `X_DEV_PEER_REFUSED`, `X_PROFILE_ROUTE_FAILED`, `X_ROWS_SLICE_ENTITY`.
-- `@ultimat3/testing`: `needs: ['postgres' | 'redis' | 'nats']` on every test type (skipped with the start command when unset); `TestService`, `TEST_SERVICE_ENV`, `TEST_SERVICES_START`, `ISLAND_COVERAGE_ENV`; `defineExercise` `routes` and `empty`.
-- `@ultimat3/http`: `tls` on the listener (boot-owned), `callerLocality`, `RELAY_HEADERS`.
-- `@ultimat3/db`: `PgliteOptions.dataSnapshot`.
-- `@ultimat3/jobs`: `ReceivedEvent`, `WebhookHandleArgs`, `WebhookInbound` exported.
-
-### Changed
-
-- An app's `unit` coverage counts a mounted island's lines against its `.island.tsx` (a coverage-only island build; shipped bytes unchanged).
-- `token grant`, `cache stats`, `db studio` and `jobs drain` left the planned-command registry, each with its reason in `wiki/Known-Gaps.md`; `x logs tail --role` and MCP `logs.tail` read a role's lines out of `dev.log` when it has no file of its own.
-- `scripts/public-api.ts` records a shape for every exported symbol and judges literal-set growth, inherited members and added overloads; its report fell from 35 warnings to 4 real ones (listed in `wiki/Upgrading.md`).
-
-### Fixed
-
-- `mapBounded` accepts a value typed `MapBoundedOptions` again (broken in 31.24.0).
-- The `subscribe` test fixture stopped its replicator at the end of the test; a later file's statement counts no longer read an extra parent row.
-- The MCP host answers a call after `close()` with `X_DRAINING`, not `X_NOT_IMPLEMENTED`.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.27.0](docs/changelog/31.27.0.md) | 2026-11-15 | `x verify` cannot pass on a skipped step: every step that ran no check is listed as `skipped: <reason>` (`data.skipReasons`), and `x.verify.json` gains `strict` — with `strict: true` every step must run a check or carry a written `skip` why (`X_VERIFY_STRICT_UNRUN`); without it, a warning names the steps an app never runs. New scaffolds are strict and run `live` against real Postgres and `e2e` in a real browser. |
 | [31.26.0](docs/changelog/31.26.0.md) | 2026-11-15 | `llm()` and `agent()` take `fallbackModels`: an ordered list tried on a declared failure class (rate limited, overloaded, timeout, unavailable), every attempt billed at its own model's price and traced under one span; and a typed `providerOptions` bag, validated per wire before any request. |
 | [31.25.0](docs/changelog/31.25.0.md) | 2026-11-15 | `limiter(name, { rate, concurrency })` is a named fleet budget every job naming it spends (`job({ limiter })`); a run over it is deferred, never dead-lettered. |
 | [31.24.0](docs/changelog/31.24.0.md) | 2026-11-15 | A policy `scope` takes `or`, `and` and `via` (a hop into another entity, `col in (select …)`), compiled to one statement and tenant-scoped inside every hop — `andWhereNode()` on the chain; a custom driver declares `predicate:or` / `predicate:via` or is refused. |
