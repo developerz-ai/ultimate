@@ -10,36 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- A deploy no longer crash-loops when roles start before migrate: a serving role whose framework schema or app migrations are behind its build **waits** (jittered backoff, one log line, `/healthz` 200 and `/readyz` 503 on its own port), serves once the migrate step lands, and exits with `X_FRAMEWORK_SCHEMA_UNAPPLIED` / `X_APP_MIGRATIONS_UNAPPLIED` after `ULTIMATE_SCHEMA_WAIT_MS` (default 5 minutes; `0` refuses at once).
-- The chart's migrate Job runs before every role under Helm, under Argo CD (a `Sync` hook in wave −1, so a database in an earlier wave no longer deadlocks it) and under appliers that ignore hooks (it is named by a hash of its image, its migrate settings and the chart version, so a new image is a new Job); `helm rollback` runs the older build's migrate first (`pre-rollback`).
-- Nine new chart alerts, each with a severity and a runbook: request latency, connections near max, long transaction, autovacuum lag, replication-slot retention, schema unapplied (critical), version skew, volume near full and a stale stats sampler — with the Postgres and schema gauges they read, and their dashboard panels.
-- `x drill roll-before-migrate` starts the roles on a database stamped by an older build, then migrates; it fails unless every role stays up, logs one wait line and serves after migrate. CI runs it against real Postgres.
-- `docs/ops/07-deploy-contract.md`: what a deploy guarantees — order, the wait, drain, the skew window, rollback, and the alert and runbook for each failure.
-
-### Added
-
-- `@ultimat3/cli`: `ULTIMATE_SCHEMA_WAIT_MS`; codes `X_APP_MIGRATIONS_UNAPPLIED`; codemods `migrate-job-ordered` and `helm-alerts-deploy` carry an existing app's chart, `docker/README.md`, alert rules and dashboard across `x upgrade`.
-- `@ultimat3/db`: `startPostgresStatsGauges()` / `postgresStatsSampler()` publish `db_server_connections`, `db_server_max_connections`, `db_longest_transaction_seconds`, `db_autovacuum_backlog_ratio` and `db_replication_slot_retained_bytes{slot}`; the scheduler role samples them on an external database.
-- `@ultimat3/db`: `db_stats_sample_ok` (1 when the last sample landed) and the chart's `UltimateDbStatsStale` alert, so a failing sampler is visible instead of freezing the values the other rules read; `startPostgresStatsGauges()`' stop is async and awaits the round in flight.
-- The chart's migrate Job carries `ttlSecondsAfterFinished` (`migrate.ttlSecondsAfterFinished`, default 86400), so finished Jobs are collected under an applier that ignores hooks.
-- `@ultimat3/core`: `recordFrameworkSchema()` publishes `framework_schema_applied` and `framework_schema_major_skew`, recorded on every schema check.
-- `@ultimat3/testing`: `startDrillFleet({ beforeMigrate })` and `runRollout`; the `roll-before-migrate` drill.
-
-### Changed
-
-- A successful migrate Job is deleted (`hook-succeeded`); after upgrading from a pre-31.29 chart run `kubectl delete job <release>-migrate` once.
-- A database holding migrations this build does not ship (a rollback) is served with one warning.
-
-### Fixed
-
-- The migrate Job's name no longer exceeds 63 characters for a long release name, and an applier that ignores hooks no longer has a new image refused as an immutable-field change.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.29.0](docs/changelog/31.29.0.md) | 2026-11-15 | A deploy no longer crash-loops when roles start before migrate: a serving role whose framework schema or app migrations are behind its build **waits** (jittered backoff, one log line, `/healthz` 200 and `/readyz` 503 on its own port), serves once the migrate step lands, and exits with `X_FRAMEWORK_SCHEMA_UNAPPLIED` / `X_APP_MIGRATIONS_UNAPPLIED` after `ULTIMATE_SCHEMA_WAIT_MS` (default 5 minutes; `0` refuses at once). |
 | [31.28.0](docs/changelog/31.28.0.md) | 2026-11-15 | `x upgrade` carries an app's scaffold files forward with **codemods**: every scaffold-owned change between your version and the target is applied, and a file you edited is listed with its diff and never overwritten. Apps scaffolded at 31.4, 31.15, 31.20 and 31.22 reach 31.28.0 with no hand edit (`scripts/upgrade-fixtures.ts`, run in CI). |
 | [31.27.0](docs/changelog/31.27.0.md) | 2026-11-15 | `x verify` cannot pass on a skipped step: every step that ran no check is listed as `skipped: <reason>` (`data.skipReasons`), and `x.verify.json` gains `strict` — with `strict: true` every step must run a check or carry a written `skip` why (`X_VERIFY_STRICT_UNRUN`); without it, a warning names the steps an app never runs. New scaffolds are strict and run `live` against real Postgres and `e2e` in a real browser. |
 | [31.26.0](docs/changelog/31.26.0.md) | 2026-11-15 | `llm()` and `agent()` take `fallbackModels`: an ordered list tried on a declared failure class (rate limited, overloaded, timeout, unavailable), every attempt billed at its own model's price and traced under one span; and a typed `providerOptions` bag, validated per wire before any request. |
