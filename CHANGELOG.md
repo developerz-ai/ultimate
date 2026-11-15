@@ -10,37 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- `llm()` and `agent()` take `fallbackModels`: an ordered list tried on a declared failure class (rate limited, overloaded, timeout, unavailable), every attempt billed at its own model's price and traced under one span; and a typed `providerOptions` bag, validated per wire before any request.
-- `inboundMail()` (`@ultimat3/mail/inbound`) receives mail over the delivery-webhook path: provider signature checked first, MIME parsed in-tree under five bounds, attachments stored through storage's upload checks.
-- Scraping's port is complete: no verb is refused on any driver — frame accessibility, downloads off the wire, offline accessibility and offline mode — and a launcher missing a method is refused when the session opens, naming it.
-- The admin search reads an entity's declared `search_tsv` first and fills a short page with the substring search.
-
-### Added
-
-- `@ultimat3/ai`: `fallbackModels`, `providerOptions`, `MODEL_FALLBACK_ON`, `PROVIDER_OPTION_KEYS`; `X_AI_PROVIDER_UNAVAILABLE` carries the chain it walked.
-- `@ultimat3/mail`: `inboundMail()`, `sesInbound()`, `resendInbound()`, `X_MAIL_INBOUND_MALFORMED`, `X_MAIL_INBOUND_TOO_LARGE`.
-- `@ultimat3/scraping`: `CompleteLauncher` (and its page/browser types), `X_SCRAPE_LAUNCHER_INCOMPLETE`, `X_SCRAPE_FRAME_OUT_OF_PROCESS`.
-- `@ultimat3/admin`: `AdminRepo.search` (optional), `AdminSearchQuery`.
-- `@ultimat3/testing`: `E2eTab.touchDrag()` and `E2eTab.press()` — a real finger and a real key through CDP (the framework is the only implementer); the registry-leak guard restores the authenticator, storage, channels, MCP recipes and servers, and the factory persister at each file boundary.
-- `@ultimat3/core`: `currentLogStream()`. `@ultimat3/realtime`: `restoreChannels()`.
-
-### Changed
-
-- UI catalog: Menu closes on Tab and returns focus to its trigger; a Table's scroll region, each tree item and a SearchableSelect listbox are named.
-- `wiki/MCP-And-AI.md` documents prompt caching on your own endpoint (`openAiProvider({ promptCache: { rules } })`, shipped in 31.23.0).
-
-### Fixed
-
-- A pointer drag of a Board card across columns no longer cancels half way: the drag takes back the pointer capture the browser releases when the row moves in the DOM (mouse and touch).
-- A Menu closed by Escape returned focus to `<body>`: its trigger is built once, so focus lands on the node that is still in the document.
-- `x` restores the log stream after a `--json` dispatch, and `x db recount` restores the previous database client.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.26.0](docs/changelog/31.26.0.md) | 2026-11-15 | `llm()` and `agent()` take `fallbackModels`: an ordered list tried on a declared failure class (rate limited, overloaded, timeout, unavailable), every attempt billed at its own model's price and traced under one span; and a typed `providerOptions` bag, validated per wire before any request. |
 | [31.25.0](docs/changelog/31.25.0.md) | 2026-11-15 | `limiter(name, { rate, concurrency })` is a named fleet budget every job naming it spends (`job({ limiter })`); a run over it is deferred, never dead-lettered. |
 | [31.24.0](docs/changelog/31.24.0.md) | 2026-11-15 | A policy `scope` takes `or`, `and` and `via` (a hop into another entity, `col in (select …)`), compiled to one statement and tenant-scoped inside every hop — `andWhereNode()` on the chain; a custom driver declares `predicate:or` / `predicate:via` or is refused. |
 | [31.23.0](docs/changelog/31.23.0.md) | 2026-11-14 | A retried job attempt no longer pages: it counts on `jobs_retried_total{job,code}`, and only a dead letter reaches the error tracker, once, as `error`. A job opts its retries back in with `retry: { report: 'every-attempt' }`. |
