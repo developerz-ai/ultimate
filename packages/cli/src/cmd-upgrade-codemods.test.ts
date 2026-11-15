@@ -178,6 +178,39 @@ describe('unit · x upgrade, codemods', () => {
   });
 });
 
+describe('unit · x upgrade, a codemod that moves a manifest', () => {
+  // A codemod raising a dependency floor in package.json is only half done until bun.lock and
+  // node_modules follow: the hop installs again, before any gate stage reads them.
+  const moved = codemodsDocument(
+    [{ id: 'solid-floor', since: '31.22.0', summary: 's', changed: ['package.json'], skipped: [] }],
+    { from: '31.19.0', to: '31.22.0' },
+  );
+
+  test('the hop installs again right after the codemods, before the manifest', async () => {
+    const dir = await pinned();
+    const { runner, spawned } = withCodemods({ codemods: moved });
+    const { code, output } = await run(dir, runner);
+    expect(code).toBe(0);
+    const at = spawned.indexOf('x upgrade');
+    expect(spawned.slice(at, at + 3)).toEqual(['x upgrade', 'install', 'x manifest']);
+    expect(output.data?.codemods).toMatchObject({ reinstalled: true });
+  });
+
+  test('already at the target, the rerun installs too', async () => {
+    const dir = await pinned({}, '31.22.0');
+    const { runner, spawned } = withCodemods({ versions: ['31.22.0'], codemods: moved });
+    await run(dir, runner);
+    expect(spawned).toEqual(['pm view', 'x upgrade', 'install']);
+  });
+
+  test('codemods that touch no manifest install nothing more', async () => {
+    const dir = await pinned();
+    const { runner, spawned } = withCodemods();
+    await run(dir, runner);
+    expect(spawned.filter((label) => label === 'install')).toHaveLength(1);
+  });
+});
+
 describe('unit · x upgrade, already at the target', () => {
   // No version moves, and still no copy of an old template is left: every codemod is idempotent, so
   // the run asks for all of them up to the release the app is on, and the ones already done say so.

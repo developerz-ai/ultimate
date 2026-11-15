@@ -9,6 +9,8 @@ export type CodemodSource = 'installed' | 'driver';
 
 export interface HopCodemods extends CodemodsReport {
   readonly source: CodemodSource;
+  /** Present when a codemod changed a `package.json` and the hop ran `bun install` again. */
+  readonly reinstalled?: true;
 }
 
 export const codemodCounts = (

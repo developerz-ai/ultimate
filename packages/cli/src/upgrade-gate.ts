@@ -261,7 +261,7 @@ export async function runHopGate(input: {
   let codemods: HopCodemods | null = null;
   if (input.codemods !== undefined) {
     onStage('codemods');
-    codemods = await applyHopCodemods({ cli: installed, root, ...input.codemods });
+    codemods = await applyHopCodemods({ runner, root, ...input.codemods });
   }
   const superseded = (await supersededFindings(root)).map(pick);
   onStage('manifest');

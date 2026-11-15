@@ -11,8 +11,11 @@ import { mergeResults, writeIfAbsent } from './engine-edits';
 
 const NOTHING: CodemodResult = { changed: [], skipped: [] };
 
+/** The values.yaml line `x new` writes right after the monitoring blocks. */
+const BEFORE = "# The image's `bun` user, the same uid as the Dockerfile's USER";
+
 /** The chart's `name`, which its helpers are named after; undefined when it declares none. */
-const chartName = (source: string): string | undefined => {
+export const chartName = (source: string): string | undefined => {
   let parsed: unknown;
   try {
     parsed = Bun.YAML.parse(source);
@@ -28,7 +31,13 @@ async function valuesBlock(app: CodemodApp): Promise<CodemodResult> {
   if (values === undefined) return NOTHING;
   const blocks = missingValueBlocks(values, 'chart-dashboard');
   if (blocks === '') return NOTHING;
-  await app.write(VALUES_FILE, `${values.trimEnd()}\n\n${blocks.trimEnd()}\n`);
+  // Where `x new` puts it, before the pod security block; past an edited values.yaml, at its end.
+  const at = values.indexOf(BEFORE);
+  const next =
+    at === -1
+      ? `${values.trimEnd()}\n\n${blocks.trimEnd()}\n`
+      : `${values.slice(0, at)}${blocks}${values.slice(at)}`;
+  await app.write(VALUES_FILE, next);
   return { changed: [VALUES_FILE], skipped: [] };
 }
 

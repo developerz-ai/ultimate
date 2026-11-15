@@ -10,6 +10,61 @@ export type TemplateCodemodRow =
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   // Written after the release they carry: history, kept so each template names its codemod.
   {
+    template: 'packages/cli/src/templates/scaffold-domain-package.ts',
+    since: '31.4.1',
+    codemod: 'define-error-leaf',
+  },
+  {
+    template: 'packages/cli/src/templates/slice-foundation.ts',
+    since: '31.4.1',
+    codemod: 'define-error-leaf',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude-agents.ts',
+    since: '31.4.1',
+    codemod: 'define-error-leaf',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude-commands.ts',
+    since: '31.4.1',
+    codemod: 'define-error-leaf',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-repo.ts',
+    since: '31.6.0',
+    codemod: 'biome-no-default-export',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-docs.ts',
+    since: '31.15.0',
+    codemod: 'docs-island-rows',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-shell.ts',
+    since: '31.15.0',
+    codemod: 'theme-toggle-mount-over',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-docs.ts',
+    since: '31.17.0',
+    codemod: 'docs-ci-parts',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude-commands.ts',
+    since: '31.17.0',
+    codemod: 'docs-ci-parts',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-helm-alerts.ts',
+    since: '31.18.0',
+    codemod: 'helm-alerts-objective',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-helm.ts',
+    since: '31.18.0',
+    codemod: 'helm-alerts-objective',
+  },
+  {
     template: 'packages/cli/src/templates/scaffold-docs.ts',
     since: '31.22.0',
     codemod: 'docs-gate-prose',

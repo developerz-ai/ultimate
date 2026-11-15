@@ -15,7 +15,8 @@ export const AGENT_TOOLS: Readonly<Record<string, string>> = {
   '.claude/agents/web.md': 'tools: Read, Write, Edit, Glob, Grep, Bash',
 };
 
-const appName = (manifest: string): string | undefined => {
+/** The app's name as its root package.json declares it; undefined when it declares none usable. */
+export const appName = (manifest: string): string | undefined => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(manifest);

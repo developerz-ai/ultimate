@@ -1,12 +1,17 @@
 // 31.27.0: the CI part that runs `e2e` requires a browser (`E2E_BROWSER_REQUIRED=1`), so a runner
 // with no Chrome is red with the command that locates one — never a step that skipped and passed.
-// One step inserted after the test services start; an edited workflow is reported with the diff.
+// One step inserted after the test services start; the one-job workflow of 31.4–31.15, still
+// byte for byte, is replaced whole by today's. An edited workflow is reported with the diff.
 
-import type { Codemod } from './codemod';
+import { CI_WORKFLOW_PATH, githubFiles } from '../templates/github/ci.yml';
+import { names } from '../templates/naming';
+import { appName } from './agents-dev-mcp';
+import { CI_31_15_LINES } from './ci-e2e-browser-stock';
+import type { Codemod, CodemodApp, CodemodResult } from './codemod';
 import type { SnippetEdit } from './engine-edits';
 import { editSnippets } from './engine-edits';
 
-const CI = '.github/workflows/ci.yml';
+const CI = CI_WORKFLOW_PATH;
 
 const lines = (...text: readonly string[]): string => text.join('\n');
 
@@ -31,9 +36,28 @@ export const CI_E2E_EDITS: readonly SnippetEdit[] = [
   },
 ];
 
+/** Every `bun-version:` line alike: a runtime-pin codemod may have moved it already. */
+const pinless = (text: string): string => text.replace(/^(\s*bun-version:).*$/gm, '$1');
+
+/** Today's workflow, when the app's is still the 31.4–31.15 one-job workflow exactly. */
+async function wholeFile(app: CodemodApp, held: string): Promise<CodemodResult | undefined> {
+  const name = appName((await app.read('package.json')) ?? '');
+  if (name === undefined) return undefined;
+  const stock = CI_31_15_LINES.map((line) => line.replace('<APP>', name)).join('\n');
+  if (pinless(held) !== pinless(stock)) return undefined;
+  const today = githubFiles(names(name)).find((file) => file.path === CI)?.contents;
+  if (typeof today !== 'string') return undefined;
+  await app.write(CI, today);
+  return { changed: [CI], skipped: [] };
+}
+
 export const codemod: Codemod = {
   id: 'ci-e2e-browser',
   since: '31.27.0',
   summary: `${CI}: the part that runs e2e requires a browser, so a runner with none is red, never skipped`,
-  run: (app) => editSnippets(app, CI, CI_E2E_EDITS),
+  async run(app) {
+    const held = await app.read(CI);
+    if (held === undefined) return { changed: [], skipped: [] };
+    return (await wholeFile(app, held)) ?? editSnippets(app, CI, CI_E2E_EDITS);
+  },
 };
