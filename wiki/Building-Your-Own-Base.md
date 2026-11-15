@@ -189,7 +189,7 @@ an operator then proves who they are with a short PIN, and that browser's sessio
 |---|---|---|
 | the device account | an `x_users` row with the app's own `device` role, signed in by the normal sign-in | `login()` |
 | the operator's PIN | the app's own entity (`operators`: `userId`, `pinHash`), never `x_users.password_hash` — a PIN is weaker than the password policy allows (`X_PASSWORD_WEAK`) | `hashPassword(pin)` on enrolment |
-| the lockout | **before** the KDF, keyed per operator and per device: a 4-digit PIN is 10 000 guesses, so the budget is the whole defence | `appAuth().limiter.reserve('pin:<operatorId>')` — `X_ACCOUNT_LOCKED` refuses; `recordSuccess` on a match |
+| the lockout | **before** the KDF, keyed per operator and per device: a 4-digit PIN is 10 000 guesses, so the budget is the whole defence | `appAuth().limiter.reserve('pin:<operatorId>:<deviceId>')` — `X_ACCOUNT_LOCKED` refuses; `recordSuccess` on a match |
 | the check | constant cost whether or not the operator exists | `verifyPassword({ hash: row?.pinHash ?? null, password: pin })` |
 | the switch | a session for the operator, capped at the device session's ceiling, set as that browser's cookie; signing the operator out lands on the device sign-in again | `createSession(appAuth().sessions, { userId: operator.userId, absoluteExpiresAt: device.absoluteExpiresAt })`, then `sessionCookie(issued.token, appAuth().sessions.policy)` on the response |
 | who may switch | the app's policy on its own `switchOperator` action: the caller holds the `device` role | `can('operator:switch', …)` |

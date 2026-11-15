@@ -103,6 +103,36 @@ describe.skipIf(!hasPostgres)('live · postgres · lists order by the instant, n
     expect(await names(SQL_WORKERS, [], 'id')).toEqual(OLDEST_FIRST);
   });
 
+  // Two rows sharing one MICROSECOND: the instant cannot order them, so the `id` tiebreak must —
+  // inserted in the reverse of that order, so a scan-order answer fails.
+  test('events and workers at one instant list by id', async () => {
+    const tie = at(950);
+    await client.execute(
+      raw(`insert into x_job_workers (id, host, queues, concurrency, in_flight, started_at,
+                                       expires_at)
+           values ('tie-z', 'h', '[]', 1, '[]', ${tie}, now() + interval '1 hour'),
+                  ('tie-y', 'h', '[]', 1, '[]', ${tie}, now() + interval '1 hour')`),
+    );
+    await client.execute(
+      raw(`insert into x_job_events (id, name, payload, correlation_key, published_at, expires_at)
+           values ('00000000-0000-4000-8000-0000000000f2', 'paid', '{}', 'tie-2', ${tie},
+                   now() + interval '1 hour'),
+                  ('00000000-0000-4000-8000-0000000000f1', 'paid', '{}', 'tie-1', ${tie},
+                   now() + interval '1 hour')`),
+    );
+    try {
+      expect(await names(SQL_WORKERS, [], 'id')).toEqual([...OLDEST_FIRST, 'tie-y', 'tie-z']);
+      expect(await names(SQL_EVENT_LIST, ['paid', 10], 'correlation_key')).toEqual([
+        ...OLDEST_FIRST,
+        'tie-1',
+        'tie-2',
+      ]);
+    } finally {
+      await client.execute(raw(`delete from x_job_workers where id like 'tie-%'`));
+      await client.execute(raw(`delete from x_job_events where correlation_key like 'tie-%'`));
+    }
+  });
+
   test('backfills list newest first', async () => {
     expect(await names(SQL_BACKFILL_LIST, [null, null, null, 10], 'name')).toEqual(
       [...OLDEST_FIRST].reverse(),

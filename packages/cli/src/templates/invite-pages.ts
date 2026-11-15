@@ -118,7 +118,14 @@ import * as page from './page';
 
 unitTest('the page renders its forms, names itself, and ships no island', async () => {${translatorBinding(module)}
 ${renderCall(url)}
-${actions.map((action) => `  expect(view.html).toContain(${POSTS_AT(action)});`).join('\n')}
+${actions.map((action) => `  expect(view.html).toContain(${POSTS_AT(action)});`).join('\n')}${
+  page === 'accept'
+    ? `
+  // The link's org and token reach the form, or every accept posts empty values.
+  expect(view.html).toContain('value="org-1"');
+  expect(view.html).toContain('value="a-token"');`
+    : ''
+}
   expect(view.meta.title).toBe(t('${KEY[page]}.title'));
   expect(view.islands).toEqual([]);
   expect(page.config.budget.js).toBe('0kb');

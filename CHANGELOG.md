@@ -14,7 +14,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - `limiter(name, { rate, concurrency })` is a named fleet budget every job naming it spends (`job({ limiter })`); a run over it is deferred, never dead-lettered.
 - `x g invite` writes an org member-invite flow over the new `defineMemberInvite` from `@ultimat3/auth`: three actions, two pages, `member:invite` granted to `admin`. Links are built from `APP_URL`, never the request's host; revoke removes only a membership an invite granted, and wins a race with accept.
-- Each long-running loop (job worker, outbox relay, replicator) holds a heartbeat; `/healthz` on `METRICS_PORT` answers 503 when one stops turning.
+- Each long-running loop (job worker, outbox relay, scheduler, replicator) holds a heartbeat; `/healthz` on `METRICS_PORT` answers 503 when one stops turning.
 - A row the claim buries on its final attempt now owes its `onSettled` like every other ending: at least once across a crash.
 
 ### Added

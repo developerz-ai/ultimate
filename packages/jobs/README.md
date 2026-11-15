@@ -1450,6 +1450,7 @@ A process that answers is not a loop that turns. Each long-running loop holds a 
 |---|---|---|---|
 | `worker` claim loop (`worker-loop.ts`) | `jobWorker`, periodic | `idlePollMaxMs`, else `WOKEN_IDLE_POLL_CEILING_MS` (5 s) | a claim that never returns (`held`), a timer never re-armed (`silent`) |
 | outbox relay (`outbox-relay.ts`) | `outboxRelay`, periodic | `idlePollMaxMs`, else `WOKEN_IDLE_POLL_CEILING_MS` (5 s) | a claim or publish that never returns (`held`), a timer never re-armed (`silent`) |
+| scheduler dispatch (`scheduler.ts`) | `jobs.scheduler`, periodic | `tickIntervalMs` (1 s) | a round whose lease or fire never answers (`held`), a timer never re-armed (`silent`) |
 | `replicator` (cli `role-replicator.ts`) | `realtime.replicator`, event-driven | 10 s, the feed's status interval | a change whose publish never returns (`held`); a quiet feed is healthy |
 
 A stopped or draining loop is not judged: `stop()` releases its heartbeat.

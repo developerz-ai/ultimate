@@ -254,6 +254,63 @@ describe('a burial owes onSettled', () => {
     expect(tellings).toHaveLength(6);
   });
 
+  test('a buried row of a job with no hook is never reported as left owed', async () => {
+    spyOn(logger, 'error').mockImplementation(() => undefined);
+    const warned = spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const clock = fakeClock();
+    const driver = memoryJobDriver({ clock });
+    job<OrgInput>({
+      name: 'notifyOrg',
+      tenant: 'none',
+      input: passthrough,
+      idempotencyKey: ({ orgId }) => `notify:${orgId}`,
+      retry: { attempts: 1 },
+      run: () => Promise.resolve(),
+      // Slow enough that the grace is spent before the hookless rows are reached.
+      onSettled: () => {
+        clock.advance(ON_SETTLED_TIMEOUT_MS - 1);
+        return Promise.resolve();
+      },
+    });
+    job<OrgInput>({
+      name: 'plainOrg',
+      tenant: 'none',
+      input: passthrough,
+      idempotencyKey: ({ orgId }) => `plain:${orgId}`,
+      retry: { attempts: 1 },
+      run: () => Promise.resolve(),
+    });
+    for (const [name, index] of [
+      ['notifyOrg', 0],
+      ['notifyOrg', 1],
+      ['notifyOrg', 2],
+      ['plainOrg', 3],
+    ] as const) {
+      await driver.enqueue({
+        name,
+        queue: 'default',
+        input: { orgId: `org-${index}` },
+        idempotencyKey: `${name}:org-${index}`,
+        maxAttempts: 1,
+      });
+    }
+    const base = { queues: ['default'], limit: 4, workerId: 'w1' };
+    expect(await driver.claim({ ...base, visibilityTimeoutMs: 0 })).toHaveLength(4);
+    const exhausted: JobRecord[] = [];
+    await driver.claim({
+      ...base,
+      visibilityTimeoutMs: 30_000,
+      ...burialPolicy(),
+      onExhausted: (rows) => exhausted.push(...rows),
+    });
+    await announceExhausted({ exhausted, workerId: 'w1', context, driver, clock });
+
+    const leftOwed = warned.mock.calls.filter(
+      ([event]) => event === 'jobs.claim.exhausted-left-owed',
+    );
+    expect(leftOwed.map(([, fields]) => (fields as { job: string }).job)).not.toContain('plainOrg');
+  });
+
   // The claim pass used to tell its burials BEFORE starting the rows the same claim handed it, so
   // those rows sat leased, with no heartbeat, for as long as the tellings took.
   test("a pass starts the rows it claimed before it tells that claim's burials", async () => {

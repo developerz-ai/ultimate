@@ -67,14 +67,18 @@ describe.skipIf(!hasPostgres)('live · postgres · a page of jobs across one mil
   });
 
   /** One page of one row: `LIST_MATCH` unset, `$8`/`$9` the cursor. */
-  const page = async (sql: string, cursor?: PageRow): Promise<PageRow | undefined> => {
-    const rows = await client.query<PageRow>({
+  const page = async (sql: string, cursor?: PageRow): Promise<PageRow | undefined> =>
+    (await rowsOf(sql, 1, cursor))[0];
+
+  /** One page of `limit` rows, in the order the statement answers them. */
+  const rowsOf = (sql: string, limit: number, cursor?: PageRow): Promise<PageRow[]> =>
+    client.query<PageRow>({
       text: sql,
       values: [
         null,
         null,
         null,
-        1,
+        limit,
         null,
         null,
         null,
@@ -83,8 +87,6 @@ describe.skipIf(!hasPostgres)('live · postgres · a page of jobs across one mil
         null,
       ],
     });
-    return rows[0];
-  };
 
   test('walking forward a row a page answers every row once, newest first', async () => {
     const seen: string[] = [];
@@ -111,5 +113,20 @@ describe.skipIf(!hasPostgres)('live · postgres · a page of jobs across one mil
       cursor = await page(SQL_JOB_LIST_BEFORE, cursor);
     }
     expect(seen).toEqual(MATES.slice(1).map((row) => row.id));
+  });
+
+  // The back-walk seeks nearest-first and then turns the page around: with one row a page the
+  // outer sort never sorts anything, so a page of two is what holds it.
+  test('a page walked back from the oldest still reads newest first', async () => {
+    const oldest = (
+      await client.query<PageRow>({
+        text: `select id, (extract(epoch from created_at) * 1000)::bigint as created_at
+               from x_jobs where id = $1::uuid`,
+        values: [MATES[0].id],
+      })
+    )[0];
+    if (oldest === undefined) expect.unreachable('the oldest probe row is missing');
+    const rows = await rowsOf(SQL_JOB_LIST_BEFORE, 2, oldest);
+    expect(rows.map((row) => row.id)).toEqual(NEWEST_FIRST.slice(0, 2));
   });
 });

@@ -90,7 +90,11 @@ export async function announceExhausted(
     const handle = getJob(record.name);
     if (handle === undefined) continue;
     const ceiling = handle.onSettledTimeoutMs;
-    if (nowMs(options.clock) - buriedAt + ceiling > ceiling * SETTLE_GRACE_FACTOR) {
+    // Only a job with a hook owes a telling; the claim recorded no debt for the rest.
+    if (
+      handle.declaresOnSettled &&
+      nowMs(options.clock) - buriedAt + ceiling > ceiling * SETTLE_GRACE_FACTOR
+    ) {
       logger.warn('jobs.claim.exhausted-left-owed', {
         workerId: options.workerId,
         job: record.name,

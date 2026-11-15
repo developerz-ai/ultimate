@@ -222,6 +222,8 @@ describe('recipes: an error that links to one', () => {
     const inherited = listErrorCodes().flatMap((entry) => recipeNameOf(entry.docs) ?? []);
     const served = (): ReadonlySet<string> => new Set([...servedRecipes(), ...inherited]);
     defineAppMcp({ tools, recipes: [creditNote] });
+    // The seam itself, read without the inherited links: this endpoint serves the recipe.
+    expect([...servedRecipes()]).toContain(creditNote.name);
     expect(() => assertRecipeLinks(served())).not.toThrow();
     // The code is this test's: taken back after it, so a second load of this file declares it again.
     const restoreCodes = errorCodeSnapshot();
@@ -231,6 +233,7 @@ describe('recipes: an error that links to one', () => {
       });
       // Served by the first endpoint: a second endpoint without it does not break the link.
       defineAppMcp({ tools: { findInvoice: tools.findInvoice }, recipes: [] });
+      expect([...servedRecipes()]).toContain(creditNote.name);
       expect(() => assertRecipeLinks(served())).not.toThrow();
       expect(() => assertRecipeLinks(new Set(['other', ...inherited]))).toThrow(
         expect.objectContaining({ code: 'X_MCP_RECIPE_UNKNOWN' }),

@@ -99,7 +99,11 @@ describe('a node that missed changes repairs its quiet windows at once', () => {
     writeBehindTheNode();
     changeHandler(bus)(encodeResync({ producer: 'r1', reason: 'slot recreated' }));
     await turns();
-    expect(ws.snapshots()).toHaveLength(2);
+    // Re-read, not the cached pre-outage window re-sent.
+    expect(ws.snapshots().map((each) => each.map((row) => row['title']))).toEqual([
+      ['before'],
+      ['after'],
+    ]);
   });
 
   // Already true before the fix, held so it stays true: the message that shows the hole is

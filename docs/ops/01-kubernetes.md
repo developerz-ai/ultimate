@@ -56,7 +56,7 @@ construct none — their only socket is the metrics listener
 ([`packages/cli/src/metrics-endpoint.ts`](../../packages/cli/src/metrics-endpoint.ts)), which answers
 `METRICS_PATH`, `/healthz` and `/readyz` (the verdict only, never the check names) — so they get a
 liveness probe on `/healthz` — the loops' heartbeats, 503 once one stops stamping, where `/metrics` answers 200 for as long as the listener is up — and a readiness probe on `/readyz` of the same port (`As of
-2026-10-05`): 503 until the role has started, and again from the first instant of a drain. Without
+2026-11`): 503 until the role has started, and again from the first instant of a drain. Without
 it a worker pod was Ready the moment its scrape port bound, so a rollout could replace every old
 worker with new ones that crashed later in boot. The replicator reads `/readyz?deep=1` — deep, so an app's `readiness: 'process'` cannot report a stopped stream as ready. Probing `/healthz` on a port they never bound is the bug that made sync's readiness
 probe meaningless; leaving them with no probe is how a wedged worker was never restarted.
