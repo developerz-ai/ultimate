@@ -13,7 +13,7 @@ import {
   renderThrowable,
   uuidV7,
 } from '@ultimat3/core';
-import { announceExhausted, burialPolicy } from './claim-exhausted';
+import { burialPolicy, burialTeller } from './claim-exhausted';
 import { nowMs } from './clock';
 import { createDrainBudget, settleAllBy } from './drain-wait';
 import type { ClaimedJob, JobRecord } from './driver';
@@ -81,6 +81,7 @@ export function jobWorker(options: WorkerOptions): Worker {
    * `inFlight` waited on a set the round it was racing had not finished filling.
    */
   const rounds = new Set<Promise<unknown>>();
+  const teller = burialTeller(); // a burial's tellings, beside the passes (`claim-exhausted.ts`)
   /**
    * The drain, as every run hears it: composed into each `ctx.signal` (`worker-run.ts`), aborted
    * with a `JobDrainedError` at the CUT-OFF (`worker-drain-cutoff.ts`), never at SIGTERM itself.
@@ -252,11 +253,8 @@ export function jobWorker(options: WorkerOptions): Worker {
           },
         );
       }
-      // Told AFTER the rows this claim handed over are running, so their leases renew meanwhile; each
-      // telling is bounded inside its debt's grace (`claim-exhausted.ts`).
-      if (buried.length > 0) {
-        tally.buried(await announceExhausted({ ...options, exhausted: buried, workerId }));
-      }
+      // Told beside the pass, after the rows this claim handed over are running: never awaited here.
+      void teller.tell({ ...options, exhausted: buried, workerId }, tally.buried);
       if (fillsAsk(admitted, ask.limit)) full = true;
       return admitted;
     };
@@ -293,6 +291,7 @@ export function jobWorker(options: WorkerOptions): Worker {
   /** One claim+run round: the pass, then the jobs THIS pass started — never the whole pool. */
   const tick = async (): Promise<readonly JobExecution[]> => {
     const settled = await Promise.allSettled(await round());
+    await Promise.all(teller.inFlight()); // and the burials' tellings, which never reject
     return settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
   };
 
@@ -364,7 +363,8 @@ export function jobWorker(options: WorkerOptions): Worker {
       // snapshot: the cut-off's hand-back empties the set under bodies still running, and that
       // ends this wait. What a late round started is handed back below, before the close.
       const rounded = await settleAllBy([...rounds], budget);
-      const drained = (await settleAllBy([inFlight.empty()], budget)) && rounded;
+      const waits = [inFlight.empty(), ...teller.inFlight()]; // tellings too, a late round's included
+      const drained = (await settleAllBy(waits, budget)) && rounded;
       if (!drained) {
         logger.warn('jobs.worker.drain-abandoned', {
           workerId,

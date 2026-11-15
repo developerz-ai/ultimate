@@ -1,7 +1,7 @@
 // The claim round's half of a burial: what the claim is told of the registry (`burialPolicy`), and
-// for a row it settled (`ClaimOptions.onExhausted`) — no body to end it — a log line, its
-// `jobs_total` count and the job's `onSettled`. AT LEAST ONCE: the burial of a hooked job records
-// its debt in the claim's own write, this telling pays it, and a dead burier's is re-driven.
+// for a row it settled (`onExhausted`) — no body to end it — a log line, its `jobs_total` count and
+// the job's `onSettled`, told beside the pass (`burialTeller`). AT LEAST ONCE: the claim records the
+// debt in its own write, the telling pays it, and a dead burier's is re-driven.
 
 import type { Clock, Ctx } from '@ultimat3/core';
 import { logger, recordJob, renderThrowable } from '@ultimat3/core';
@@ -122,4 +122,45 @@ export async function announceExhausted(
     });
   }
   return { deadLettered: options.exhausted.length - dropped, dropped };
+}
+
+/**
+ * The tellings a worker runs BESIDE its claim passes. Inside one, a pass stayed open for as long as
+ * its hooks took — up to `onSettledTimeout` × `SETTLE_GRACE_FACTOR` — and the loop's heartbeat
+ * judges the pass: a `'5m'` hook was a 503 on a healthy worker. Tracked, so a drain waits them out
+ * before the driver closes, and a `tick()` awaits the ones its own pass started.
+ */
+export interface BurialTeller {
+  /** Start telling one claim's burials (none: nothing). Never rejects; `counted` runs as it ends. */
+  tell(
+    options: AnnounceExhaustedOptions,
+    counted: (counts: ExhaustedCounts) => void,
+  ): Promise<void>;
+  /** Every telling still running. */
+  inFlight(): readonly Promise<void>[];
+}
+
+export function burialTeller(): BurialTeller {
+  const running = new Set<Promise<void>>();
+  return {
+    tell(options, counted) {
+      if (options.exhausted.length === 0) return Promise.resolve();
+      const telling = announceExhausted(options)
+        .then(counted)
+        .catch((raised: unknown) => {
+          // `announceExhausted` owns every failure it knows of; this is the one it does not. The
+          // debts stay owed, so the leader re-drives them.
+          logger.error('jobs.claim.exhausted-telling-failed', {
+            workerId: options.workerId,
+            error: renderThrowable(raised),
+          });
+        })
+        .finally(() => {
+          running.delete(telling);
+        });
+      running.add(telling);
+      return telling;
+    },
+    inFlight: () => [...running],
+  };
 }
