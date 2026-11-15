@@ -4,6 +4,7 @@
 
 import type { WorkerRecord } from '@ultimat3/jobs';
 import { requireAppRoot } from './app-root';
+import { printableBuild } from './cmd-deploy-verify-sample';
 import { type OriginReport, sampleOrigin, statusOrigin } from './cmd-status-sample';
 import { STATUS_DEFAULT_SAMPLES, STATUS_MAX_SAMPLES, statusSpec } from './cmd-status-spec';
 import type { CliCommand, CommandContext } from './command';
@@ -38,7 +39,8 @@ function readSamples(ctx: CommandContext): number {
 function workersData(workers: readonly WorkerRecord[]): { readonly [key: string]: JsonValue } {
   const byBuild = new Map<string, number>();
   for (const worker of workers) {
-    const build = worker.build ?? UNKNOWN_BUILD;
+    // Printed: a row's stamp passes the same screen a stranger's `/readyz` header does.
+    const build = printableBuild(worker.build ?? null) ?? UNKNOWN_BUILD;
     byBuild.set(build, (byBuild.get(build) ?? 0) + 1);
   }
   return {

@@ -60,6 +60,12 @@ export function registerFrameworkFixtures(): void {
     // After the spread, so it REPLACES the `unavailableFixture('subscribe')` declaration above it —
     // `defineFixtures` merges and the last registration wins, which is the same seam an app's own
     // driver uses.
-    subscribe: async () => (await subscribeDriver()).subscribe,
+    // The function, carrying the driver's `stop` as its disposer: handing back `.subscribe` alone
+    // dropped it, so the replicator's `entity.row` subscription outlived the test into every later
+    // file — where each `countedIn` write read its parents back as one more statement.
+    subscribe: async () => {
+      const driver = await subscribeDriver();
+      return Object.assign(driver.subscribe, { [Symbol.asyncDispose]: driver.stop });
+    },
   });
 }

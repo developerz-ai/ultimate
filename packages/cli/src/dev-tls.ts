@@ -3,7 +3,8 @@
 // when the names it must carry change or its end is near; otherwise the same bytes every boot, so
 // a browser exception or a `curl --cacert` the developer made once keeps working.
 
-import { chmod, mkdir } from 'node:fs/promises'; // why: Bun.write takes no file mode, and the key must be 0600.
+// why: Bun.write takes no file mode — the key is CREATED 0600 in a 0700 directory, never chmod'ed after.
+import { chmod, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
 import { classifyAddress } from '@ultimat3/core';
@@ -145,6 +146,17 @@ async function readMeta(path: string): Promise<CachedMeta | undefined> {
   return { names: names.filter((name): name is string => typeof name === 'string'), notAfter };
 }
 
+/**
+ * The cached key exists and no one but its owner can read it. A wider mode — a copy, an editor's
+ * save under umask 0002 — is not served: the pair is regenerated. Windows has no POSIX mode bits
+ * to read, so there the file's existence is the whole check.
+ */
+async function keyIsPrivate(path: string): Promise<boolean> {
+  const found = await stat(path).catch(() => undefined);
+  if (found === undefined || !found.isFile()) return false;
+  return process.platform === 'win32' || (found.mode & 0o077) === 0;
+}
+
 /** The cached pair when it carries exactly `names` and is not near its end; else a new one, written. */
 export async function devCertificate(input: {
   readonly stateDir: string;
@@ -161,13 +173,16 @@ export async function devCertificate(input: {
     meta !== undefined &&
     meta.names.join(',') === names.join(',') &&
     meta.notAfter - input.now.getTime() > RENEW_WITHIN_MS;
-  if (fresh && (await Bun.file(certPath).exists()) && (await Bun.file(keyPath).exists())) {
+  if (fresh && (await Bun.file(certPath).exists()) && (await keyIsPrivate(keyPath))) {
     return { cert: await Bun.file(certPath).text(), key: await Bun.file(keyPath).text(), certPath };
   }
   const pair = await selfSignedCertificate({ names, now: input.now });
-  await mkdir(dir, { recursive: true });
-  await Bun.write(keyPath, pair.key);
-  await chmod(keyPath, 0o600);
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await chmod(dir, 0o700); // an existing `.x/tls` keeps whatever mode it was made with otherwise
+  // Removed, then created exclusively at 0600: a write over an existing 0644 file keeps 0644, and
+  // a chmod after the write leaves a window in which the key is readable by everyone.
+  await rm(keyPath, { force: true });
+  await writeFile(keyPath, pair.key, { mode: 0o600, flag: 'wx' });
   await Bun.write(certPath, pair.cert);
   const notAfter = input.now.getTime() + DEV_CERT_DAYS * DAY_MS;
   await Bun.write(metaPath, JSON.stringify({ names, notAfter }));

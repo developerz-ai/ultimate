@@ -27,6 +27,7 @@ import {
 import type { ServerHooks } from './hooks';
 import { acceptsHtml } from './html-render';
 import { type LagSampler, processLagSampler } from './lag-shed';
+import { callerLocality } from './local-caller';
 import { acceptLanguageConsulted, dropVary, routeLocalePrefix } from './locale-prefix';
 import { compose, type Middleware } from './middleware';
 import { navigationGate, redirectForRouter } from './navigation';
@@ -376,11 +377,13 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         // app's own file first (#492, O-492). A 5xx keeps the overlay, and so does a 4xx the app
         // has no file for: in dev the diagnostic beats the framework's generic page.
         // A throw from the hook is caught by `recoverWith` and degrades to the problem document.
+        // The overlay is for THIS machine (`callerLocality`): a LAN peer on `x dev --host`, or a
+        // relay in front of a loopback socket, gets the page a production visitor gets.
+        const overlay =
+          config.dev && callerLocality({ ip: ctx.ip, headers: ctx.requestHeaders }) === 'local';
         const override =
-          config.dev && facts.status >= 500
-            ? undefined
-            : await hooks.errorPage?.(facts.status, ctx);
-        if (config.dev && override === undefined) {
+          overlay && facts.status >= 500 ? undefined : await hooks.errorPage?.(facts.status, ctx);
+        if (overlay && override === undefined) {
           // Asked for inside the branch, never above it: the overlay is the only surface a notice
           // has, so a production process — or an agent that asked for json — must not pay a
           // diagnostic's per-request cost to produce findings nothing will render.
@@ -450,10 +453,13 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       // A handler's CSP and `no-referrer` are kept — it may only narrow (`response.ts`).
       applySecurityHeaders(response, config.security, ctx.https);
       // One reading, two readers: the header and the slow line can never disagree. The breakdown
-      // is `x dev`'s only — a statement's duration is a timing oracle (`request-timings.ts`).
+      // is `x dev`'s only, and its LOCAL caller's (`callerLocality`) — a statement's duration is
+      // a timing oracle (`request-timings.ts`), and `x dev --host` puts the process on a LAN.
       const totalMs = elapsedMs(ctx);
-      const timings = config.dev ? requestTimings(ctx) : undefined;
-      response.headers.set('server-timing', serverTimingValue(totalMs, timings, config.dev));
+      const breakdown =
+        config.dev && callerLocality({ ip: ctx.ip, headers: ctx.requestHeaders }) === 'local';
+      const timings = breakdown ? requestTimings(ctx) : undefined;
+      response.headers.set('server-timing', serverTimingValue(totalMs, timings, breakdown));
       logSlowRequest(ctx, {
         status: response.status,
         route: ctx.route?.path ?? UNMATCHED_ROUTE,

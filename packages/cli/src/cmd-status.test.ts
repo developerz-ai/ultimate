@@ -105,6 +105,15 @@ describe('unit · the worker half: x_job_workers, one build per live row', () =>
     expect(dataOf(result)['origins']).toEqual([]);
   });
 
+  test('a worker row stamped with terminal controls is counted unknown, never printed', async () => {
+    const driver = memoryJobDriver();
+    await driver.introspect?.announceWorker(worker('w1', 'b\u009b2J'), 60_000);
+    installJobDriver(driver);
+    const result = await run([]);
+    expect((dataOf(result)['workers'] as Json)['byBuild']).toEqual({ unknown: 1 });
+    expect(result.lines?.join('\n')).not.toContain('\u009b');
+  });
+
   test('roles no fleet-wide record covers are named, so silence is never read as health', async () => {
     installJobDriver(memoryJobDriver());
     const result = await run(['--json']);

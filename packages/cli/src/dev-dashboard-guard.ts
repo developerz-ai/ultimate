@@ -3,14 +3,16 @@
 // same-origin) and by a cross-site request to the SQL panel. Bound wider (`--host`), a LAN peer
 // can knock too, naming a loopback Host itself — so the peer's own address is asked as well.
 
-import {
-  peerAddressClass,
-  proveSameOrigin,
-  renderFixShellArg,
-  UltimateError,
-} from '@ultimat3/core';
+import { proveSameOrigin, renderFixShellArg, UltimateError } from '@ultimat3/core';
 import type { UltimateRequest } from '@ultimat3/http';
-import { csrfBlocked, HttpError, jsonResponse, selfOrigin } from '@ultimat3/http';
+import {
+  callerLocality,
+  csrfBlocked,
+  HttpError,
+  jsonResponse,
+  RELAY_HEADERS,
+  selfOrigin,
+} from '@ultimat3/http';
 import { t } from '@ultimat3/schema';
 import { isLoopbackHostname } from './loopback-host';
 
@@ -32,25 +34,23 @@ export class DevHostRefusedError extends UltimateError {
  * the same server through loopback, which a wildcard bind answers on too.
  */
 export class DevPeerRefusedError extends UltimateError {
-  constructor(input: { devUrl: string }) {
+  constructor(input: { devUrl: string; relay?: string }) {
     const port = URL.parse(input.devUrl)?.port ?? '';
     const loopback = `http://localhost${port === '' ? '' : `:${port}`}/_x`;
     super({
       code: 'X_DEV_PEER_REFUSED',
       cause:
-        'a /_x request came from a peer address that is not loopback — x dev was bound past loopback with --host, and the dev dashboard answers this machine only',
+        input.relay === undefined
+          ? 'a /_x request came from a peer address that is not loopback — x dev was bound past loopback with --host, and the dev dashboard answers this machine only'
+          : `a /_x request carried ${input.relay}, which a relay writes and a browser never sends — a tunnel or proxy in front of this x dev speaks for callers that are not this machine, and the dev dashboard answers this machine only`,
       fix: `curl -sS -H 'accept: application/json' ${renderFixShellArg(loopback, 'http://localhost:3000/_x')}   # on the machine x dev runs on; x dev --host 0.0.0.0 keeps loopback bound`,
     });
   }
 }
 
-/**
- * The caller's address as the pipeline resolved it — the socket's, or the trusted hop's when
- * `TRUSTED_PROXY_HOPS` says a terminator sits in front. `null` is no socket at all: an in-process
- * `pipeline.fetch()`, which is this process calling itself.
- */
-const peerIsLocal = (request: UltimateRequest): boolean =>
-  request.ctx.ip === null || peerAddressClass(request.ctx.ip) === 'loopback';
+/** The first relay header the request carries — named in the refusal, never its value. */
+const relayOf = (request: UltimateRequest): string | undefined =>
+  RELAY_HEADERS.find((name) => request.header(name) !== null);
 
 /** The Host as sent, else the one the URL was built from — Bun builds it from the header. */
 const hostnameOf = (request: UltimateRequest): string | undefined => {
@@ -74,7 +74,14 @@ export function hostRefusal(request: UltimateRequest, devUrl: string): Response 
   if (hostname === undefined || !isLoopbackHostname(hostname)) {
     return refusal(new DevHostRefusedError({ devUrl }), 421);
   }
-  return peerIsLocal(request) ? undefined : refusal(new DevPeerRefusedError({ devUrl }), 403);
+  // http's one rule (`callerLocality`), the same the dev overlay and the dev MCP token ask.
+  const locality = callerLocality({ ip: request.ctx.ip, headers: request.headers });
+  if (locality === 'local') return undefined;
+  const relay = locality === 'relayed' ? relayOf(request) : undefined;
+  return refusal(
+    new DevPeerRefusedError({ devUrl, ...(relay === undefined ? {} : { relay }) }),
+    403,
+  );
 }
 
 /**

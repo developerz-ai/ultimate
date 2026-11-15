@@ -32,6 +32,7 @@ import { Show } from 'solid-js';
 import type { Api } from '../../../api';
 import { useActor, useCan } from '../../../shared/actor';
 import { memberQueries } from '../../../shared/client';
+import { memberName } from '../../../shared/member-name';
 import { pluralFormsOf } from '../../../shared/plural-forms';
 import { oneRow } from '../../../shared/rows';
 import { Layout, updateBannerIsland } from '../../layout';
@@ -239,7 +240,7 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
           </Show>
 
           <p class={styles.meta}>
-            {t('site.blog.by', { name: props.data.authorName })}
+            {t('site.blog.by', { name: memberName(t, props.data.authorName) })}
             {/* The header's count: the same record the like control below writes. */}
             <LikesBadge postId={props.data.id} likeCount={props.data.likeCount} likes={likes}>
               <span>{t('app.post.likes', { count: props.data.likeCount })}</span>

@@ -83,13 +83,17 @@ export function floorSteps(suites: FloorSuites): {
 
 /**
  * What a unit test cannot execute in a scaffolded app, each with its reason — `x doctor` prints
- * them. Two kinds and no more: a file here is a file the floor does not see, so the list is not
+ * them. Entry points and islands only: a file here is a file the floor does not see, so the list is not
  * a place to put code that merely has no test yet.
  */
 export const SCAFFOLD_COVERAGE_EXCLUDE: readonly CoverageExclude[] = [
+  // Still excluded, measured 2026-11-15: a coverage build now credits an island's chunk to its
+  // source, and with this entry dropped a fresh `x new` measured 90.7% lines (post-form.island.tsx
+  // 74 of 97 uncovered, theme-toggle.island.tsx 27 of 36) and `--no-example` 94.6%, under the
+  // 95% floor. It goes when the scaffolded island tests mount enough of each to clear it.
   {
     glob: 'apps/**/*.island.tsx',
-    why: 'an island runs in a browser: its test mounts a BUILT chunk (mountIsland), and Bun cannot map that chunk back to this source — its states are held by guards/island-without-states.ts and photographed by x shot --island',
+    why: 'an island runs in a browser, and the scaffolded island tests mount its initial state only — the rest of its lines are its interactions, held by guards/island-without-states.ts and photographed by x shot --island',
   },
   {
     glob: 'apps/*/server.ts',

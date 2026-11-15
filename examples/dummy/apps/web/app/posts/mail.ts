@@ -6,6 +6,7 @@
  */
 
 import { blocks, defineMail, type Infer, t } from '@ultimat3/mail';
+import { memberName } from '../../shared/member-name';
 import { MemberView } from '../orgs/entity';
 
 /**
@@ -31,9 +32,12 @@ export const postPublished = defineMail<PostPublishedData>({
   id: 'post.published',
   subject: 'mail.postPublished.subject',
   input: PostPublishedData,
-  template: ({ data }) => [
-    blocks.heading('mail.greeting', { name: data.member.name }),
-    blocks.paragraph('mail.postPublished.body', { author: data.post.authorName, org: data.org }),
+  template: ({ data, t: translate }) => [
+    blocks.heading('mail.greeting', { name: memberName(translate, data.member.name) }),
+    blocks.paragraph('mail.postPublished.body', {
+      author: memberName(translate, data.post.authorName),
+      org: data.org,
+    }),
     blocks.button('mail.postPublished.cta', `/posts/${data.post.id}`),
     blocks.paragraph('mail.signoff'),
   ],

@@ -2,9 +2,11 @@
 // Postly's half — which of a member's rows go, which stay, and that nobody else's are touched —
 // never the paging or the resume, which `@ultimat3/jobs` pins itself.
 import { db, driver } from '@postly/db';
+import { ERASED_MEMBER_NAME } from '@postly/domain';
 import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { afterEach, beforeEach, describe, expect, test, testName } from '@ultimat3/testing';
+import { MemberView } from '../../orgs/entity';
 import { ERASED_EMAIL } from '../subject';
 import { eraseMember } from './erase-member';
 import { exportMember, memberExportPrefix } from './export-member';
@@ -82,12 +84,21 @@ describe(testName('unit', 'eraseMember'), () => {
       comments: (await db.comments.all()).map((c) => c.body),
       likes: (await db.likes.all()).map((l) => l.memberId),
     }));
-    expect(state.members).toContainEqual([me, ERASED_EMAIL, '']);
+    expect(state.members).toContainEqual([me, ERASED_EMAIL, ERASED_MEMBER_NAME]);
     expect(state.members).toContainEqual([you, 'You@x.test', 'You']);
     expect(state.posts).toEqual([myPost, yourPost].sort());
     expect(state.comments).toEqual(['yours']);
     expect(state.likes).toEqual([you]);
     expect(await disk().exists(avatar)).toBe(false);
+  });
+
+  // The retained posts still name their author, so the anonymized row is read again — by the post
+  // page, the digest, the invite mail — through `MemberView`. A value it refuses (`t.string` is
+  // non-empty) turned every one of those reads into `X_VALIDATION_FAILED` after an erasure.
+  test('the anonymized member still reads as a MemberView', async ({ runJobs }) => {
+    await runJobs(eraseMember, { orgId, memberId: me });
+    const erased = await inOrg(async () => (await db.members.where({ orgId, id: me }).one()) ?? {});
+    expect(MemberView.safeParse(erased).issues).toBeUndefined();
   });
 });
 

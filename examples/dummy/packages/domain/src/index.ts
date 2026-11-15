@@ -4,6 +4,7 @@ export { budgetText, typedBudget } from './budget';
 export { InvariantViolation } from './errors';
 export type { CommentId, MemberId, OrgId, PostId } from './ids';
 export { commentId, memberId, orgId, postId } from './ids';
+export { ERASED_MEMBER_NAME, isErasedMember } from './members';
 export type { BillingCurrency, Plan, PlanCode } from './plans';
 export {
   assertBillingCurrency,

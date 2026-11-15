@@ -9,7 +9,7 @@
  */
 
 import { driver, members } from '@postly/db';
-import { memberId as toMemberId, orgId as toOrgId } from '@postly/domain';
+import { ERASED_MEMBER_NAME, memberId as toMemberId, orgId as toOrgId } from '@postly/domain';
 import { defineSubject } from '@ultimat3/jobs';
 import { attachmentPrefix, disk, storageSubjectTarget } from '@ultimat3/storage';
 import { avatarTarget } from '../orgs/avatar';
@@ -26,7 +26,7 @@ export const memberSubject = defineSubject<MemberSubjectInput>(members, {
   driver,
   key: (input) => input.memberId,
   tables: {
-    members: { anonymize: { email: ERASED_EMAIL, name: '', phone: null } },
+    members: { anonymize: { email: ERASED_EMAIL, name: ERASED_MEMBER_NAME, phone: null } },
     posts: { retain: 'published work belongs to the org; its author row is anonymized' },
     comments: 'delete',
     likes: 'delete',

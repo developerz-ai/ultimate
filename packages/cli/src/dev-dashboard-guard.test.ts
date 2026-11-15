@@ -7,9 +7,13 @@ import { hostRefusal } from './dev-dashboard-guard';
 
 const DEV_URL = 'http://localhost:3000';
 
-const requestFrom = (ip: string | null, host = 'localhost:3000'): UltimateRequest => {
+const requestFrom = (
+  ip: string | null,
+  host = 'localhost:3000',
+  extra: Record<string, string> = {},
+): UltimateRequest => {
   const url = new URL(`http://${host}/_x/services`);
-  const headers = { host };
+  const headers = { host, ...extra };
   const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
   const ctx = requestContext({
     url,
@@ -52,5 +56,22 @@ describe('unit · /_x answers a loopback peer only, whatever interface x dev bou
     expect(await codeOf(hostRefusal(requestFrom('127.0.0.1', 'rebound.evil.test'), DEV_URL))).toBe(
       'X_DEV_HOST_REFUSED',
     );
+  });
+});
+
+describe('unit · /_x refuses a relayed caller, whatever address it resolved to', () => {
+  // The resolved `ctx.ip` of a LAN socket forging `x-forwarded-for: 127.0.0.1` past one declared
+  // hop IS 127.0.0.1 — and of a Host-rewriting tunnel on this machine, the socket's 127.0.0.1.
+  test('a loopback ip carrying any relay header is X_DEV_PEER_REFUSED, naming the relay', async () => {
+    for (const relay of ['x-forwarded-for', 'forwarded', 'x-real-ip']) {
+      const answer = hostRefusal(
+        requestFrom('127.0.0.1', 'localhost:3000', { [relay]: '127.0.0.1' }),
+        DEV_URL,
+      );
+      expect([relay, answer?.status]).toEqual([relay, 403]);
+      const body = (await answer?.json()) as { error: { code: string; cause: string } };
+      expect(body.error.code).toBe('X_DEV_PEER_REFUSED');
+      expect(body.error.cause).toContain(relay);
+    }
   });
 });

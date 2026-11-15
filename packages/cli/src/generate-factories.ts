@@ -27,7 +27,7 @@ export const FACTORY_GENERATORS: readonly FactoryGenerator[] = [
   { factory: 'agent', none: MODEL },
   {
     factory: 'agentJob',
-    none: 'wraps one action the app already declares, and that action decides the rest: its input schema is the job input, the org field `tenant` reads off it, and the input a generated test enqueues — x g takes no --action to name it and reads no action file, so the one call it could emit would wrap nothing; paste agentJob(<action>, { name, tenant }) beside the action',
+    none: "a worker runs a job as its tenant alone, with no grant, so an agentJob over any action x g action writes (policy: can('<feature>:write')) is X_FORBIDDEN on every attempt unless its actor() re-reads the member who asked — and how a member is found (its id on the input, the app's own member table and roles) is the app's convention; paste agentJob(<action>, { name, tenant, retry, actor }) beside the action, as examples/dummy/apps/web/app/posts/jobs/review-draft-later.ts does",
   },
   { factory: 'backfill', generator: 'backfill' },
   {

@@ -25,9 +25,9 @@
 ## Tests
 - `bun test ./packages/cli/src/verify-floor.test.ts -t 'strict'` — a floor missing a step fails without its `why`.
 - `bun test ./packages/cli/src/verify-e2e.test.ts` — no browser + `e2e` in the floor is red, with the fix command.
-- Scaffold smoke: a fresh app's first `x verify` runs all 21 steps against real Postgres and a real browser on a clean runner.
+- Scaffold smoke: a fresh app's first `x verify` runs every applicable step against real Postgres and a real browser on a clean runner (`scripts/scaffold-smoke-steps.ts`).
 - Mutation: break the reference app's offline fallback; the gate must go red (the bug one adopter's own gate was written to catch).
 
 ## Done when
-- `scaffold-smoke` in CI shows 21 of 21 steps with a non-zero check count for both shapes.
+- `scaffold-smoke` in CI shows every applicable step with a non-zero check count for both shapes, and each other step excused with a written `skip` why: demoapp 20 of 21 (`roadmap`), bareapp 19 of 21 (`job`, `roadmap`). *Corrected 2026-11-15: "21 of 21" is unreachable in an app — `roadmap` applies only where `docs/idea/14-roadmap.md` exists (`verify-checks.ts`), and a bare app declares no job.*
 - No adopter slice needs its own Postgres runner or browser gate.

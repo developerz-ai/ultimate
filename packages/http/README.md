@@ -33,6 +33,8 @@ configureHttp({ bodyLimitBytes: 8 * 1024 * 1024, requestTimeoutMs: 300_000 });
 | the inbound request id and trace, read before the span | `correlation.ts` |
 | the `server` span (OpenTelemetry's stable `http.*`/`url.*`/`server.*` names, `ultimate.request_id`) and `http.request` on core's instrumentation bus, once per request | `pipeline.ts` |
 | dev error overlay | `overlay.ts` |
+| whether the caller is THIS machine — `callerLocality({ ip, headers })` → `'local' \| 'relayed' \| 'remote'` (`CallerLocality`), `RELAY_HEADERS` | `local-caller.ts` |
+| the listener's own TLS (`tls: { cert, key }`, both PEMs or neither) | `config-tls.ts` |
 
 ## What an app declares: `configureHttp()`
 
@@ -137,6 +139,8 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | a handler's `cache-control` carrying `max-age`, `must-revalidate` or `proxy-revalidate` with no `private`/`no-store` | an offer to a shared cache (RFC 9111 §3): `private, max-age=0` for a request carrying an identity, `vary`-keyed for an anonymous one. `immutable` stays exempt |
 | a `text/*` body | decoded by its `charset` parameter (UTF-8 when none), `As of 2026-11`: `utf-8`, `utf-16le`, `utf-16be`, `windows-1252` (`latin1`/`iso-8859-1` resolve to it); any other label, known or not, is `X_BODY_INVALID`. JSON and forms stay UTF-8 by their own specs (`request-charset.ts`) |
 | a body with no `content-type` | `X_BODY_INVALID` from `bodyRaw()` / the `body` stage — it used to read as "no body", so an all-optional schema validated a request nobody parsed. `bodyBytes()` still reads it |
+| a dev-only disclosure — the overlay, the `Server-Timing` breakdown, `x dev`'s `/_x`, the dev MCP token — to a caller that is not this machine | withheld, `As of 2026-11`: `callerLocality` answers `'local'` only for a direct loopback caller carrying none of `RELAY_HEADERS` (`x-forwarded-for`, `forwarded`, `x-real-ip`). A LAN peer on `x dev --host`, a forged forwarded loopback past a declared hop and a Host-rewriting tunnel on this machine all get the production page and `total` alone |
+| `tls: { cert, key }` in the config | the listener serves TLS; a direct TLS socket counts as https (`ctx.https`, so HSTS) with no header consulted. One half, an empty one or a non-PEM value is `X_CONFIG_INVALID` naming the half, never its bytes. Absent: the options `Bun.serve` always got. The boot sets it from `TLS_CERT`/`TLS_KEY` or `x dev --tls` |
 | two cookies set in one request | two `Set-Cookie` lines: the `response` stage appends them, where `headers.set` in a loop kept the last and dropped any on the handler's own Response |
 | a 5xx whose cause is withheld | its `fix` is the error's `callerFix`, else `x errors explain <CODE> --json` — never the developer's `fix:`, which is written from the same statement, row or path the cause was |
 | `buildId: null` | skew detection off, whatever `BUILD_ID` says; `hostname` never defaults from `HOSTNAME` (the container id under Docker) |

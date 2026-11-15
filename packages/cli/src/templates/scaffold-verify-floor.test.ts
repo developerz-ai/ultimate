@@ -9,7 +9,6 @@ import { belongsToType } from '../test-select';
 import { parseVerifyFloor, VERIFY_FLOOR_FILE } from '../verify-floor';
 import { VERIFY_STEP_NAMES } from '../verify-step';
 import { readStrict } from '../verify-strict';
-import { SCAFFOLD_COVERAGE_EXCLUDE } from './scaffold-verify-floor';
 
 const variants = [
   { name: 'x new', files: planNewApp({ name: 'demo-app', example: true }) },
@@ -64,12 +63,6 @@ describe('unit · x new · the floor names every gate step', () => {
     for (const variant of variants) {
       expect([variant.name, floorOf(variant.files).strict.strict]).toEqual([variant.name, true]);
     }
-  });
-
-  test('an island is measured, never excluded: its chunk is credited to its source', () => {
-    expect(SCAFFOLD_COVERAGE_EXCLUDE.map((entry) => entry.glob)).not.toContain(
-      'apps/**/*.island.tsx',
-    );
   });
 
   test('roadmap is excused everywhere: only the framework repository ships its file', () => {

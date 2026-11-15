@@ -2,7 +2,7 @@
 // connection, uncached, a redirect tallied rather than followed — the status, the build header, the
 // role a health port names. One reader, so the two commands cannot sample the fleet differently.
 
-import { BUILD_ID_HEADER, isRole, renderThrowable } from '@ultimat3/core';
+import { BUILD_ID_HEADER, isRole, readWithinLimit, renderThrowable } from '@ultimat3/core';
 
 export interface ReadyzAnswer {
   /** `null`: nothing answered — refused, reset or timed out. */
@@ -17,9 +17,27 @@ export interface ReadyzAnswer {
   readonly failure?: string;
 }
 
+/** A `/readyz` body is a few dozen bytes; past this it is not parsed, and the role is unknown. */
+const READYZ_BODY_LIMIT = 4_096;
+
+/**
+ * A build id as it may be PRINTED: visible ASCII, 1–128 characters. The origin is a stranger, and
+ * a header carrying `\x9b` (CSI) or `\x1b` rewrites the terminal `x status` prints to; anything
+ * else is counted unstamped, never shown.
+ */
+export const printableBuild = (value: string | null): string | null =>
+  value !== null && /^[\x21-\x7e]{1,128}$/.test(value) ? value : null;
+
 /** A body that is not JSON, or names no role, is an answer with no role — never a failed sample. */
 async function roleOf(response: Response): Promise<string | null> {
-  const body: unknown = await response.json().catch(() => undefined);
+  const read = await readWithinLimit(response.body, READYZ_BODY_LIMIT).catch(() => undefined);
+  if (read === undefined || !('bytes' in read)) return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(new TextDecoder().decode(read.bytes));
+  } catch {
+    return null;
+  }
   if (typeof body !== 'object' || body === null || !('role' in body)) return null;
   return typeof body.role === 'string' && isRole(body.role) ? body.role : null;
 }
@@ -42,7 +60,7 @@ export async function takeSample(origin: string, limitMs: number): Promise<Ready
     const age = Number(response.headers.get('age') ?? '0');
     return {
       status: response.status,
-      build: header === null || header === '' ? null : header,
+      build: printableBuild(header),
       cached: Number.isNaN(age) || age > 0,
       role: await roleOf(response),
     };

@@ -2,6 +2,7 @@
 // the thread as an ORDINAL family — "1st", "2nd", "3rd", "11th" by CLDR's rules, never a suffix
 // table in this app — and in Spanish the one form that language has.
 
+import { ERASED_MEMBER_NAME } from '@postly/domain';
 import { useT } from '@postly/i18n';
 import type { ActionAnswer } from '@ultimat3/action';
 import { ctxOf, runWithContext } from '@ultimat3/core';
@@ -137,4 +138,23 @@ unitTest('a refused native form shows its code as a translated sentence', async 
   expect(await render({ action: 'createComment', outcome: 'success' })).not.toContain(
     'That did not go through.',
   );
+});
+
+// An erased author's row keeps a stored placeholder; the reader sees the catalog's label instead.
+unitTest('an erased author renders as a former member, never as the placeholder', async () => {
+  const erased = {
+    ...page,
+    config: {
+      ...page.config,
+      load: () => Promise.resolve({ ...POST_ROW, authorName: ERASED_MEMBER_NAME }),
+    },
+  };
+  const rendered = (
+    await renderRoute(erased, {
+      url: `https://example.test/posts/${POST}`,
+      actor: demoActorFor('ada'),
+    })
+  ).text;
+  expect(rendered).toContain('by Former member');
+  expect(rendered).not.toContain(`by ${ERASED_MEMBER_NAME}`);
 });

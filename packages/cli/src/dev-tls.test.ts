@@ -4,7 +4,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 // why: a trust anchor's own signature is never checked by a handshake; X509Certificate checks it.
 import { createPublicKey, X509Certificate } from 'node:crypto';
-import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+import { chmod, rm, stat } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
 import { markListening, resetLifecycle } from '@ultimat3/core';
@@ -13,7 +13,10 @@ import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { certificateNames, devCertificate, selfSignedCertificate } from './dev-tls';
 
 const STATE = join(import.meta.dir, '..', `.dev-tls-fixture-${process.pid}`);
-afterAll(() => rm(STATE, { recursive: true, force: true }));
+afterAll(async () => {
+  await rm(STATE, { recursive: true, force: true });
+  await rm(`${STATE}-mode`, { recursive: true, force: true });
+});
 
 /**
  * The real instant, never the preload's frozen one: a TLS client checks validity against the
@@ -102,6 +105,19 @@ describe('unit · x dev --tls: a local certificate with no dependency and no ope
       now: later,
     });
     expect(renewed.cert).not.toBe(wider.cert);
+  });
+});
+
+describe("unit · the cached key is this user's alone", () => {
+  test('.x/tls is 0700, and a cached key readable by others is replaced, never served', async () => {
+    const state = `${STATE}-mode`;
+    const first = await devCertificate({ stateDir: state, names: ['localhost'], now: wallClock() });
+    expect((await stat(join(state, 'tls'))).mode & 0o777).toBe(0o700);
+    // What a umask-0002 editor save, a copy or a `git stash pop` leaves behind.
+    await chmod(join(state, 'tls', 'key.pem'), 0o644);
+    const again = await devCertificate({ stateDir: state, names: ['localhost'], now: wallClock() });
+    expect(again.cert).not.toBe(first.cert);
+    expect((await stat(join(state, 'tls', 'key.pem'))).mode & 0o777).toBe(0o600);
   });
 });
 
