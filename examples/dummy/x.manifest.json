@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "bbe2ec88c7b2020c",
+  "buildId": "7465c9d292edb5be",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -495,7 +495,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "209.9kb"
+        "js": "210kb"
       }
     },
     {
@@ -9435,6 +9435,110 @@
   ],
   "errorCodes": [
     {
+      "code": "X_ANIMATED_LAYOUT_PROPERTY",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_BARE_ERROR",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_ERROR_DECLARED",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_FOCUS_VISIBLE",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_IMAGE_DIMENSIONS",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_ISLAND_MOUNT_CLEARS",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_ISLAND_WITHOUT_STATES",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_NATIVE_CONFIRM",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RAW_BREAKPOINT",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RAW_COLOUR",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RAW_FETCH",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RAW_INTERVAL",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RAW_LENGTH",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RAW_MOTION",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RAW_SHADOW",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RAW_Z_INDEX",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_REPO_AWAIT_IN_LOOP",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_REPO_RAW_SQL",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_REPO_UNBOUNDED",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RUNTIME_PIN",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_SEMANTIC_INTERACTIVE",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_UNBOUNDED_FANOUT",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_UNDECLARED_CUSTOM_PROPERTY",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_UNDEFINED_STYLE_CLASS",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_UNTRANSLATED_STRING",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_UNZONED_DATE",
+      "package": "@ultimat3/cli"
+    },
+    {
       "code": "X_ACTOR_UNRESOLVED",
       "package": "apps/web"
     },
@@ -9489,106 +9593,6 @@
     {
       "code": "X_RUN_QUEUE_UNAVAILABLE",
       "package": "apps/web"
-    },
-    {
-      "code": "X_ANIMATED_LAYOUT_PROPERTY",
-      "package": "guards/animated-layout-property.ts"
-    },
-    {
-      "code": "X_BARE_ERROR",
-      "package": "guards/bare-error.ts"
-    },
-    {
-      "code": "X_ERROR_DECLARED",
-      "package": "guards/error-declared.ts"
-    },
-    {
-      "code": "X_FOCUS_VISIBLE",
-      "package": "guards/focus-visible.ts"
-    },
-    {
-      "code": "X_IMAGE_DIMENSIONS",
-      "package": "guards/image-dimensions.ts"
-    },
-    {
-      "code": "X_ISLAND_MOUNT_CLEARS",
-      "package": "guards/island-mount-clears.ts"
-    },
-    {
-      "code": "X_ISLAND_WITHOUT_STATES",
-      "package": "guards/island-without-states.ts"
-    },
-    {
-      "code": "X_NATIVE_CONFIRM",
-      "package": "guards/native-confirm.ts"
-    },
-    {
-      "code": "X_RAW_BREAKPOINT",
-      "package": "guards/raw-breakpoint.ts"
-    },
-    {
-      "code": "X_RAW_COLOUR",
-      "package": "guards/raw-colour.ts"
-    },
-    {
-      "code": "X_RAW_FETCH",
-      "package": "guards/raw-fetch.ts"
-    },
-    {
-      "code": "X_RAW_INTERVAL",
-      "package": "guards/raw-interval.ts"
-    },
-    {
-      "code": "X_RAW_LENGTH",
-      "package": "guards/raw-length.ts"
-    },
-    {
-      "code": "X_RAW_MOTION",
-      "package": "guards/raw-motion.ts"
-    },
-    {
-      "code": "X_RAW_SHADOW",
-      "package": "guards/raw-shadow.ts"
-    },
-    {
-      "code": "X_RAW_Z_INDEX",
-      "package": "guards/raw-z-index.ts"
-    },
-    {
-      "code": "X_REPO_AWAIT_IN_LOOP",
-      "package": "guards/repo-await-in-loop.ts"
-    },
-    {
-      "code": "X_REPO_RAW_SQL",
-      "package": "guards/repo-raw-sql.ts"
-    },
-    {
-      "code": "X_REPO_UNBOUNDED",
-      "package": "guards/repo-unbounded.ts"
-    },
-    {
-      "code": "X_SEMANTIC_INTERACTIVE",
-      "package": "guards/semantic-interactive.ts"
-    },
-    {
-      "code": "X_UNBOUNDED_FANOUT",
-      "package": "guards/unbounded-fanout.ts"
-    },
-    {
-      "code": "X_UNDECLARED_CUSTOM_PROPERTY",
-      "package": "guards/undeclared-custom-property.ts"
-    },
-    {
-      "code": "X_UNDEFINED_STYLE_CLASS",
-      "package": "guards/undefined-style-class.ts"
-    },
-    {
-      "code": "X_UNTRANSLATED_STRING",
-      "package": "guards/untranslated-string.ts"
-    },
-    {
-      "code": "X_UNZONED_DATE",
-      "package": "guards/unzoned-date.ts"
     },
     {
       "code": "X_BILLING_NOT_AN_UPGRADE",

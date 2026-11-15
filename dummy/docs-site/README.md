@@ -22,7 +22,8 @@ bun run dev     # all roles in one process, embedded Postgres, /_x mounted
 bun run verify  # the gate: typecheck, lint, boundaries, tests, drift, budgets (it builds to weigh)
 ```
 
-Tests against real servers — Postgres 18, Redis, NATS, S3, in RAM and silent, as CI runs them:
+Tests against real servers — Postgres 18, Redis, NATS, S3, in RAM and silent, as CI runs them.
+`bun run verify` starts them when nothing answers and Docker is there; by hand:
 
 ```sh
 docker compose -f docker/docker-compose.test.yml up -d --wait

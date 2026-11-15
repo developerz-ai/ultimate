@@ -22,6 +22,10 @@
     "manifest",
     "seo"
   ],
+  "skip": {
+    "roadmap": "a framework-repository step: it checks docs/idea/14-roadmap.md, which only the Ultimate monorepo ships"
+  },
+  "strict": true,
   "rollingSince": "20261007162256_add_webhook_endpoints_webhook_deliveries_and_post_reviews",
   "coverage": {
     "lines": 79.5,

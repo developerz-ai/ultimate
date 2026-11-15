@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "bb6668c46e8fc885",
+  "buildId": "8597ee03047a33fd",
   "app": {
     "name": "docs-site",
     "version": "0.1.0"
@@ -981,103 +981,107 @@
   "errorCodes": [
     {
       "code": "X_ANIMATED_LAYOUT_PROPERTY",
-      "package": "guards/animated-layout-property.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_BARE_ERROR",
-      "package": "guards/bare-error.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_ERROR_DECLARED",
-      "package": "guards/error-declared.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_FOCUS_VISIBLE",
-      "package": "guards/focus-visible.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_IMAGE_DIMENSIONS",
-      "package": "guards/image-dimensions.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_ISLAND_MOUNT_CLEARS",
-      "package": "guards/island-mount-clears.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_ISLAND_WITHOUT_STATES",
-      "package": "guards/island-without-states.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_NATIVE_CONFIRM",
-      "package": "guards/native-confirm.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_RAW_BREAKPOINT",
-      "package": "guards/raw-breakpoint.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_RAW_COLOUR",
-      "package": "guards/raw-colour.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_RAW_FETCH",
-      "package": "guards/raw-fetch.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_RAW_INTERVAL",
-      "package": "guards/raw-interval.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_RAW_LENGTH",
-      "package": "guards/raw-length.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_RAW_MOTION",
-      "package": "guards/raw-motion.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_RAW_SHADOW",
-      "package": "guards/raw-shadow.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_RAW_Z_INDEX",
-      "package": "guards/raw-z-index.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_REPO_AWAIT_IN_LOOP",
-      "package": "guards/repo-await-in-loop.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_REPO_RAW_SQL",
-      "package": "guards/repo-raw-sql.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_REPO_UNBOUNDED",
-      "package": "guards/repo-unbounded.ts"
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_RUNTIME_PIN",
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_SEMANTIC_INTERACTIVE",
-      "package": "guards/semantic-interactive.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_UNBOUNDED_FANOUT",
-      "package": "guards/unbounded-fanout.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_UNDECLARED_CUSTOM_PROPERTY",
-      "package": "guards/undeclared-custom-property.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_UNDEFINED_STYLE_CLASS",
-      "package": "guards/undefined-style-class.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_UNTRANSLATED_STRING",
-      "package": "guards/untranslated-string.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_UNZONED_DATE",
-      "package": "guards/unzoned-date.ts"
+      "package": "@ultimat3/cli"
     },
     {
       "code": "X_DOCS_CODE_PAGE_MISSING",
