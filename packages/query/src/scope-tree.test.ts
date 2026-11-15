@@ -131,6 +131,26 @@ describe('an or scope', () => {
   });
 });
 
+describe('an and scope', () => {
+  test('is a conjunction, not a tree: flattened into filters, so a live read takes it', async () => {
+    const both = scoped(rule, (actor): readonly ScopeNode<Row>[] => [
+      {
+        and: [
+          { column: 'authorId', op: 'eq', value: actor?.id },
+          { and: [{ column: 'audience', op: 'eq', value: 'private' }] },
+        ],
+      },
+    ]);
+    const target = read(both, () => from<Row>('t', ROWS), 'andLive');
+    const source = await sourceFor(target, {}, { ctx: ctx(), surface: 'live' });
+    expect(source.shape().filters).toEqual([
+      { column: 'authorId', op: '=', value: ME },
+      { column: 'audience', op: '=', value: 'private' },
+    ]);
+    expect(source.shape().unsupported).toEqual([]);
+  });
+});
+
 describe('a via scope', () => {
   test('over a list of rows it is refused: there is no statement to run the hop in', async () => {
     const target = read(friendsOnly, () => from<Row>('t', ROWS), 'viaList');

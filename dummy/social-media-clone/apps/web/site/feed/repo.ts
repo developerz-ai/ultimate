@@ -14,7 +14,7 @@ import type { PredicateNode } from '@ultimat3/entity';
 export type FeedPost = Post;
 
 /**
- * One page of the feed, newest first: exactly the rows `visible` admits — a predicate TREE the
+ * One page of the feed, newest first: exactly the rows `visible` admits — predicate TREES the
  * service builds from `canSeePost` (`andWhereNode`), so a page of `limit` is `limit` rows however
  * much of the table is hidden, and ONE statement whatever the tree holds. The service still runs the
  * rule over every row; this file only asks.
@@ -26,11 +26,10 @@ export type FeedPost = Post;
  */
 export const feedPage = (
   limit: number,
-  visible: PredicateNode<FeedPost>,
+  visible: readonly PredicateNode<FeedPost>[],
 ): Promise<readonly FeedPost[]> =>
-  db.posts
-    .where({ deletedAt: null })
-    .andWhereNode(visible)
+  visible
+    .reduce((chain, node) => chain.andWhereNode(node), db.posts.where({ deletedAt: null }))
     .orderBy('publishedAt', 'desc')
     .orderBy('id')
     .limit(limit)

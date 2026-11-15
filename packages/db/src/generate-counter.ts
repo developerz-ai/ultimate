@@ -5,6 +5,7 @@
 import type { CounterDescriptionLike } from './entity-shape';
 import { triggerInstall } from './generate-history';
 import type { TriggerRecord } from './introspect';
+import { CROSS_TENANT_SETTING } from './row-security';
 import { identifier, raw, type SqlFragment, sql } from './sql';
 
 /**
@@ -60,13 +61,19 @@ export function counterTrigger(parent: string, counter: CounterDescriptionLike):
   ]
     .map((column) => identifier(column).text)
     .join(', ');
-  return triggerInstall(
+  const install = triggerInstall(
     name,
     { name, sql: fn },
     `after insert or delete or update of ${watched}`,
     counter.table,
     '',
   );
+  // Cross-tenant for the one statement: under forced row security an unset tenant matches no row.
+  const recount = [
+    `select set_config('${CROSS_TENANT_SETTING}', 'on', true);`,
+    recountSql(parent, counter),
+  ];
+  return { ...install, recount };
 }
 
 /** The true count of one parent row, as a correlated subquery over `parent` aliased `p`. */

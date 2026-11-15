@@ -182,7 +182,9 @@ export const config = defineRoute({
   // — why: the page boot +360 B, core's `ids.ts` random pool and byte→hex table (`uuidV7` minted
   // with no CSPRNG call per id), and `singleLine` reading its escape table through `Object.hasOwn`
   // (+27 B, also the run console's). Raised 242kb → 242.4kb.
-  budget: { js: '242.4kb' },
+  // measured: 248244 B (2026-11-14, plan 101 sweep 1; x build --target static, against 248,085
+  // at origin/main) — why: the run console +159 B (129,479 B), two framework titles in core's titles table the island carries through the barrel, `X_REDACT_PATTERN_UNSAFE` (`redactValues()`) and `X_OUTBOUND_PROXY_INVALID` (`outbound({ proxy })`). Raised 242.4kb → 242.5kb.
+  budget: { js: '242.5kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),

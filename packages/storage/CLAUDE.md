@@ -143,7 +143,8 @@ Gotchas:
 - **`toBytes` takes a `ByteLimit`, and there is no unbounded variant**; one default,
   `DEFAULT_MAX_UPLOAD_BYTES` (`upload.ts`). †
 - **`serverSideEncryption` is SENT by s3 and refused by local/memory** (`As of 2026-11`): s3 puts it on
-  the signed PUT (`x-amz-server-side-encryption`, `-aws-kms-key-id`; `sseHeaders`), local and memory
+  the signed PUT or a `putStream`'s multipart Create (`x-amz-server-side-encryption`, `-aws-kms-key-id`;
+  `sseHeaders`), local and memory
   refuse it as `X_INVARIANT` (`refuseUnsupportedPut` in `driver-local-write.ts`) — plain bytes are
   not encrypted at rest. No driver raises `X_NOT_IMPLEMENTED`; it stays borrowed (public type).
 - **The `uploadScanner` port is the ONE scan path** (`As of 31.0.0`; the `quarantine: true` segment

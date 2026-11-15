@@ -59,6 +59,14 @@ describe('andWhereNode — refused before any driver', () => {
     );
   });
 
+  test('a leaf on an undeclared column is refused by memory as Postgres refuses it', async () => {
+    expect(await codeOf(() => db.notes.andWhere('nope' as 'kind', 'eq', 'a').all())).toBe(
+      'X_INVARIANT_VIOLATED',
+    );
+    const inGroup = { or: [{ column: 'nope', op: 'eq', value: 'a' }] } as never;
+    expect(await codeOf(() => db.notes.andWhereNode(inGroup).all())).toBe('X_INVARIANT_VIOLATED');
+  });
+
   test('andWhere cannot name a node op: the tree has one door', async () => {
     const chain = () => db.notes.andWhere('kind', 'or' as never, []).all();
     expect(await codeOf(chain)).toBe('X_ENTITY_OPERATOR_UNKNOWN');

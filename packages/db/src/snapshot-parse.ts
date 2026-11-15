@@ -140,8 +140,11 @@ function all<T>(value: unknown, one: (item: unknown) => T | undefined): readonly
 
 function trigger(value: unknown): TriggerRecord | undefined {
   if (!isRow(value)) return undefined;
-  const { name, install } = value;
-  return str(name) && strings(install) ? { name, install } : undefined;
+  const { name, install, recount } = value;
+  if (!str(name) || !strings(install)) return undefined;
+  // `recount` arrived in 31.23 on counter triggers; a record written before carries none.
+  if (recount === undefined) return { name, install };
+  return strings(recount) ? { name, install, recount } : undefined;
 }
 
 function tableOf(value: unknown): TableDescription | undefined {

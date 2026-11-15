@@ -3,7 +3,7 @@
 
 import { assert, describeValue, finiteCount } from '@ultimat3/core';
 import type { PumpLimit } from './byte-pump';
-import { assertPutOptions } from './driver';
+import { assertPutOptions, type ServerSideEncryption } from './driver';
 import { streamTooLarge } from './errors-stream';
 
 export interface PutStreamOptions {
@@ -16,10 +16,15 @@ export interface PutStreamOptions {
   readonly contentType?: string | undefined;
   readonly cacheControl?: string | undefined;
   readonly metadata?: Readonly<Record<string, string>> | undefined;
+  /**
+   * Sent by s3 — on the one signed PUT or the multipart Create, both before a byte is stored;
+   * refused by local and memory, which store plain bytes (`X_INVARIANT`).
+   */
+  readonly serverSideEncryption?: ServerSideEncryption | undefined;
 }
 
 /** `put()` options that need the bytes before the object exists. The type omits them too. */
-const NEEDS_THE_BYTES = ['checksum', 'retention', 'legalHold', 'serverSideEncryption'] as const;
+const NEEDS_THE_BYTES = ['checksum', 'retention', 'legalHold'] as const;
 
 /** Everything judged before a chunk is read. Answers the screened `maxBytes`. */
 export function assertPutStream(

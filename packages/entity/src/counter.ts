@@ -12,6 +12,7 @@ import { EntityError } from './errors';
 import { type Expr, type InvariantColumns, invariantColumns, type Row } from './expr';
 import { type Verdict, verdictOf } from './expr-verdict';
 import { getEntity, registeredEntities, registryGeneration } from './registry';
+import { sealedFields } from './sealed';
 import type { AnyColumn, ColumnMap, CountedIn } from './types';
 
 /** One resolved counter: both entities, both properties. */
@@ -66,11 +67,19 @@ function compileWhere(child: EntityCore, property: string, rule: Expr): Counter[
       fix: `${property}: uuid().references(() => <parent>.id, { countedIn: { to: () => <parent>.<count>, where: (): Expr => whereColumns(${child.$name}).<column>.eq(<value>) } }) in entity('${child.$name}'), a predicate in the invariant language and never a function — then: x db gen "count"`,
     });
   };
+  const sealed = new Set(sealedFields(child).map((field) => field.property));
   const physical = (path: readonly string[]): string => {
     const [name, part] = path;
     const column = name === undefined ? undefined : child.$columns[name];
     if (name === undefined || column === undefined) {
       return refuse(`its where names ${path.join('.')}, no column of ${child.$name}`);
+    }
+    // The stored string is ciphertext: the trigger would compare it with the plaintext literal and
+    // memory would judge the sealed row — a counter that silently never counts (as a CHECK would).
+    if (sealed.has(name)) {
+      return refuse(
+        `its where reads ${name}, and ${name} is sealed: neither half ever sees the plaintext`,
+      );
     }
     if (part === undefined) return columnName(name, column.$meta);
     const parts = moneyColumns(name, column.$meta);

@@ -116,7 +116,9 @@ describe('writeWherePlan', () => {
   });
 
   test('scoped exactly as a read: no tenant is refused, and the empty filter is refused first', () => {
-    expect(() => writeWherePlan(notes, {}, { where: [inUsers] }, 'deleteWhere')).toThrow(
+    // A column `notes` declares: an undeclared one is refused before tenancy is reached.
+    const inIds: Predicate = { column: 'id', op: 'in', value: USERS };
+    expect(() => writeWherePlan(notes, {}, { where: [inIds] }, 'deleteWhere')).toThrow(
       expect.objectContaining({ code: 'X_TENANCY_UNSCOPED' }),
     );
     // The org predicate the framework adds is not a filter the caller named.

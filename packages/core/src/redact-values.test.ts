@@ -102,6 +102,19 @@ describe('redactValues · the sinks', () => {
     });
   });
 
+  test("an error's meta past the depth limit is cut, never left in clear", () => {
+    redactValues([{ pattern: /rvdeep_[0-9]{6}/g, replace: '[deep]' }]);
+    let meta: Record<string, unknown> = { leaf: 'rvdeep_123456' };
+    for (let level = 0; level < 10; level += 1) meta = { level: meta };
+    const lines: string[] = [];
+    const log = structuredLogger({ level: 'info', writer: (line) => lines.push(line) });
+    log.error('failed', {
+      failure: new UltimateError({ code: 'X_ENVELOPE_FIXTURE', cause: 'c', fix: 'retry', meta }),
+    });
+    expect(lines.join('\n')).not.toMatch(/rvdeep_[0-9]{6}/);
+    expect(lines.join('\n')).toContain('[depth-limit]');
+  });
+
   test('the monitor envelope: exception value, fix, extras and meta', () => {
     redactValues([{ pattern: /rvsentry_[a-f0-9]{8}/g, replace: '[acct]' }]);
     configureErrorReporting({ clock: frozenClock(new Date('2026-11-14T00:00:00Z')) });

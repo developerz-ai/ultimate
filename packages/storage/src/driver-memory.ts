@@ -230,6 +230,7 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
       ): Promise<StorageObject> {
         const safe = assertSafeKey(key);
         const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
+        refuseUnsupportedPut(DRIVER_NAME, streamOptions);
         refuseOverwrite(safe, 'overwrite');
         const chunks: Uint8Array[] = [];
         const limit = streamLimit(DRIVER_NAME, safe, maxBytes);

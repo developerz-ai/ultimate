@@ -194,7 +194,6 @@ export const STORAGE_STREAM_CHECKS: readonly StorageCheck[] = [
         { checksum: 'abc' },
         { legalHold: true },
         { retention: { mode: 'GOVERNANCE', retainUntil: new Date(0) } },
-        { serverSideEncryption: { algorithm: 'AES256' } },
       ]) {
         const upFront = await refused({ maxBytes: 64, ...extra });
         expect([upFront.code, names(upFront, 'fix', 'disk.put(')]).toEqual(['X_INVARIANT', true]);

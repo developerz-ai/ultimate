@@ -44,32 +44,48 @@ export const visibleFeed = (
 };
 
 /**
- * `canSeePost` for `viewer`, as the predicate the database serves: deleted rows are the read's own
- * `where`, and the rest is the rule in its own order. A block beats everything — each blocked author
- * is excluded at the top, both directions already unioned into the actor's set; then the author
- * themself, a public post, or a friends-only post by a friend. Anonymous is the ladder's `public`.
+ * Blocked authors excluded IN the statement, at most this many; past it the rest are excluded by
+ * `canSeePost` over the rows read, so a viewer with more blocks than this can get a short page.
+ * An exclusion is a parameter per id — the tree has no `not in (select …)` to hop it into
+ * `blocks` — and Postgres binds at most 65,535 per statement. Friends cost none: they are a hop.
  */
-export const visibleTo = (viewer: Actor | null): PredicateNode<FeedPost> => {
-  if (!isSignedIn(viewer)) return { column: 'audience', op: 'eq', value: 'public' };
-  const friends = [...(actorFact(viewer, 'friendIds') ?? [])];
-  const blocked = [...(actorFact(viewer, 'blockedIds') ?? [])];
+export const MAX_BLOCKS_IN_STATEMENT = 1_000;
+
+/** "A friend of `viewerId`": an accepted friendship in either direction, read where it is stored. */
+const friendOf = (viewerId: string, mine: 'requesterId' | 'addresseeId') => {
+  const theirs = mine === 'requesterId' ? 'addresseeId' : 'requesterId';
   return {
-    and: [
-      ...blocked.map((id) => ({ column: 'authorId' as const, op: 'neq' as const, value: id })),
-      {
-        or: [
-          { column: 'authorId', op: 'eq', value: viewer.id },
-          { column: 'audience', op: 'eq', value: 'public' },
-          {
-            and: [
-              { column: 'audience', op: 'eq', value: 'friends' },
-              { column: 'authorId', op: 'in', value: friends },
-            ],
-          },
-        ],
-      },
+    via: { column: 'authorId' as const, entity: 'friendships', target: theirs },
+    where: [
+      { column: mine, op: 'eq' as const, value: viewerId },
+      { column: 'status', op: 'eq' as const, value: 'accepted' },
     ],
   };
+};
+
+/**
+ * `canSeePost` for `viewer`, as the predicates the database serves — deleted rows are the read's own
+ * `where`, and the rest is the rule in its own order. A block beats everything: each blocked author
+ * is excluded first, both directions already unioned into the actor's set. Then the author
+ * themself, a public post, or a friends-only post by an accepted friend — a hop into `friendships`,
+ * so a viewer with 70,000 friends binds no more than one with a single friend. Anonymous is the
+ * ladder's `public`.
+ */
+export const visibleTo = (viewer: Actor | null): readonly PredicateNode<FeedPost>[] => {
+  if (!isSignedIn(viewer)) return [{ column: 'audience', op: 'eq', value: 'public' }];
+  const blocked = [...(actorFact(viewer, 'blockedIds') ?? [])].slice(0, MAX_BLOCKS_IN_STATEMENT);
+  const friendsOnly = { column: 'audience' as const, op: 'eq' as const, value: 'friends' };
+  return [
+    ...blocked.map((id) => ({ column: 'authorId' as const, op: 'neq' as const, value: id })),
+    {
+      or: [
+        { column: 'authorId', op: 'eq', value: viewer.id },
+        { column: 'audience', op: 'eq', value: 'public' },
+        { and: [friendsOnly, friendOf(viewer.id, 'requesterId')] },
+        { and: [friendsOnly, friendOf(viewer.id, 'addresseeId')] },
+      ],
+    },
+  ];
 };
 
 /**

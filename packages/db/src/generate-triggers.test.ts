@@ -57,4 +57,56 @@ describe('lifecycle triggers in a migration', () => {
     const { snapshot } = generateMigration({ entities, name: 'a', now: NOW });
     expect(parseSnapshot(JSON.parse(JSON.stringify(snapshot)))).toEqual(snapshot);
   });
+
+  test('a changed where reinstalls and recounts on up; down reinstalls the old and recounts under it', () => {
+    const withWhere = (sql: string) =>
+      entities.map((entity) =>
+        entity.counts === undefined
+          ? entity
+          : {
+              ...entity,
+              counts: entity.counts.map((each) => ({
+                ...each,
+                where: { sql, columns: ['org_id'] },
+              })),
+            },
+      );
+    const first = generateMigration({
+      entities: withWhere('c."org_id" is not null'),
+      name: 'a',
+      now: NOW,
+    });
+    const change = gen(withWhere('c."org_id" is null'), first.snapshot);
+    expect(change.up).toContain('and (c."org_id" is null))');
+    expect(change.down).toContain(
+      'exists (select from (select new.*) c where c."org_id" is not null)',
+    );
+    const reinstall = change.down.lastIndexOf('create trigger');
+    const recount = change.down.indexOf('and (c."org_id" is not null))');
+    expect(recount).toBeGreaterThan(reinstall);
+    expect(change.down.slice(reinstall)).toContain("select set_config('x.cross', 'on', true);");
+  });
+
+  test('a record written before recount was recorded rolls back as it always did: no recount', () => {
+    const first = generateMigration({ entities, name: 'a', now: NOW });
+    const old = {
+      ...first.snapshot,
+      tables: first.snapshot.tables.map((table) => ({
+        ...table,
+        ...(table.triggers === undefined
+          ? {}
+          : { triggers: table.triggers.map(({ name, install }) => ({ name, install })) }),
+      })),
+    };
+    const bare = entities.map(({ counts: _c, ...rest }) => rest);
+    const removal = gen(bare, old);
+    expect(removal.down).toContain('create trigger');
+    expect(removal.down).not.toContain('update "unit_posts" p set');
+  });
+
+  test('a dropped counter reinstalled by down is recounted, from the recorded statement', () => {
+    const bare = entities.map(({ counts: _c, ...rest }) => rest);
+    const removal = gen(bare, generateMigration({ entities, name: 'a', now: NOW }).snapshot);
+    expect(removal.down).toContain('update "unit_posts" p set "like_count" =');
+  });
 });

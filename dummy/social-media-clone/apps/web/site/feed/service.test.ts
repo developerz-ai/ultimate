@@ -12,7 +12,7 @@ import { testStatements } from '@ultimat3/testing';
 import { viewerActor } from '../../shared/actor';
 import { canSeePost } from '../../shared/visibility';
 import type { FeedPost } from './repo';
-import { feedForPage, visibleFeed } from './service';
+import { feedForPage, MAX_BLOCKS_IN_STATEMENT, visibleFeed, visibleTo } from './service';
 
 const NOW = new Date('2026-08-11T12:00:00Z');
 
@@ -121,6 +121,15 @@ test('a signed-in feed reads its exact page in one statement: mine, public, a fr
     friendIds: [friend.id],
     blockedIds: [blocker.id],
   });
+  // Stored as the friend's request the viewer accepted: the hop reads BOTH directions.
+  await db.friendships.insert({
+    requesterId: friend.id,
+    addresseeId: me.id,
+    status: 'accepted',
+    respondedAt: new Date(Date.UTC(2031, 0, 1)),
+  });
+  // A friendship the stranger asked for and nobody answered grants nothing.
+  await db.friendships.insert({ requesterId: stranger.id, addresseeId: me.id });
   const at = (minute: number) => new Date(Date.UTC(2031, 0, 1, 0, minute));
   const write = (authorId: string, audience: 'public' | 'friends' | 'private', minute: number) =>
     db.posts.insert({ authorId, body: `${audience} ${minute}`, audience, publishedAt: at(minute) });
@@ -149,4 +158,36 @@ test('a signed-in feed reads its exact page in one statement: mine, public, a fr
   const expected = everyPost.filter((row) => canSeePost(viewer, row)).slice(0, 2);
   expect(items.map((item) => item.post.body)).toEqual(['private 1', 'friends 0']);
   expect(items.map((item) => item.post.id)).toEqual(expected.map((row) => row.id));
+});
+
+/** Every value a tree would bind: one per leaf, one per member of an `in` list. */
+const boundValues = (node: unknown): number => {
+  if (Array.isArray(node)) return node.reduce((sum: number, each) => sum + boundValues(each), 0);
+  if (typeof node !== 'object' || node === null) return 0;
+  const record = node as Record<string, unknown>;
+  if ('or' in record) return boundValues(record['or']);
+  if ('and' in record) return boundValues(record['and']);
+  if ('via' in record) return boundValues(record['where']);
+  return Array.isArray(record['value']) ? record['value'].length : 1;
+};
+
+test('the statement binds a bounded number of values, however many friends and blocks a viewer has', () => {
+  const ids = (n: number, tag: string) =>
+    Array.from(
+      { length: n },
+      (_, i) => `00000000-0000-4000-8000-${tag}${String(i).padStart(10, '0')}`,
+    );
+  const viewer = (friends: number, blocked: number) =>
+    viewerActor({
+      id: '00000000-0000-4000-8000-0000000000f9',
+      role: 'member',
+      friendIds: ids(friends, 'aa'),
+      blockedIds: ids(blocked, 'bb'),
+    });
+  // Friends are a hop into `friendships`: none of them is a parameter.
+  expect(boundValues(visibleTo(viewer(70_000, 0)))).toBe(boundValues(visibleTo(viewer(1, 0))));
+  // Blocks are an exclusion the tree cannot say as a hop: bounded at the documented cap.
+  expect(boundValues(visibleTo(viewer(1, 70_000)))).toBeLessThanOrEqual(
+    boundValues(visibleTo(viewer(1, 0))) + MAX_BLOCKS_IN_STATEMENT,
+  );
 });

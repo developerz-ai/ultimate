@@ -88,6 +88,24 @@ describe('putStream on the s3 wire', () => {
     ]);
   });
 
+  test('serverSideEncryption rides the one signed PUT and the multipart Create alike', async () => {
+    const sse = { algorithm: 'aws:kms', kmsKeyId: 'arn:aws:kms:::key/abc' } as const;
+    await disk.putStream(KEY, chunksOf(3, 1024), { maxBytes: 64 * MIB, serverSideEncryption: sse });
+    await disk.putStream(`${KEY}.big`, chunksOf(12, MIB), {
+      maxBytes: 64 * MIB,
+      serverSideEncryption: sse,
+    });
+    const sent = (call: (typeof fake.signedCalls)[number]) => [
+      call.headers['x-amz-server-side-encryption'],
+      call.headers['x-amz-server-side-encryption-aws-kms-key-id'],
+    ];
+    const single = fake.signedCalls[0];
+    const create = fake.signedCalls.find((call) => call.url.searchParams.has('uploads'));
+    if (single === undefined || create === undefined) expect.unreachable('both writes were sent');
+    expect(sent(single)).toEqual(['aws:kms', 'arn:aws:kms:::key/abc']);
+    expect(sent(create)).toEqual(['aws:kms', 'arn:aws:kms:::key/abc']);
+  });
+
   test('a body ending exactly on a part sends no empty last part', async () => {
     await disk.putStream(KEY, chunksOf(8, MIB), { maxBytes: 64 * MIB });
     expect(callsOf()).toEqual(['POST uploads', 'PUT partNumber,uploadId', 'POST uploadId']);

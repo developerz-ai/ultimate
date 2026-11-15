@@ -117,6 +117,17 @@ describe('the memory disk answers as the local disk does', () => {
           driver.put('a.txt', bytes('x'), { serverSideEncryption: { algorithm: 'AES256' } }),
         ),
       ]).toEqual([name, 'X_INVARIANT']);
+      // A stream can carry it to s3; a disk of plain bytes refuses it streamed too.
+      expect([
+        name,
+        await codeOf(() =>
+          driver.putStream('a.txt', new Blob(['x']).stream(), {
+            maxBytes: 8,
+            serverSideEncryption: { algorithm: 'AES256' },
+          }),
+        ),
+      ]).toEqual([name, 'X_INVARIANT']);
+      expect([name, await driver.exists('a.txt')]).toEqual([name, false]);
     }
   });
 

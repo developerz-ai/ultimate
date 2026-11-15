@@ -168,7 +168,9 @@ export const config = defineRoute({
   // measured: 108523 B (2026-11-13, sweep 15; x build --target static, against 108,509 with the
   // sweep's ui files at HEAD) — SearchableSelect's one filter pass per keystroke (`createMemo`)
   // costs the island +14 B (74,687 → 74,701); still under 106kb (108,544), so no raise.
-  budget: { js: '106kb' },
+  // measured: 108682 B (2026-11-14, plan 101 sweep 1; x build --target static, against 108,523
+  // at origin/main) — why: the settings island +159 B (74,860 B), two framework titles in core's titles table the island carries through the barrel, `X_REDACT_PATTERN_UNSAFE` (`redactValues()`) and `X_OUTBOUND_PROXY_INVALID` (`outbound({ proxy })`). Raised 106kb → 106.2kb.
+  budget: { js: '106.2kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

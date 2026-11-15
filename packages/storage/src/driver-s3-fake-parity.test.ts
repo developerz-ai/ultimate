@@ -207,7 +207,6 @@ describe('writes', () => {
       { checksum: 'abc' },
       { legalHold: true },
       { retention: { mode: 'GOVERNANCE', retainUntil: new Date(0) } },
-      { serverSideEncryption: { algorithm: 'AES256' } },
     ]) {
       const upFront = await refused({ maxBytes: 64, ...extra });
       expect([upFront.code, upFront.fix.includes('disk.put(')]).toEqual(['X_INVARIANT', true]);

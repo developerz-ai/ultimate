@@ -10,8 +10,9 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { declaredSchema, generateMigration, snapshotJson } from '@ultimat3/db';
-import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
+import { clearRegistry, entity, registeredEntities, text, timestamp, uuid } from '@ultimat3/entity';
 import { generateAppMigration, migrationSql, unrenderedJson, unrenderedLines } from './db-generate';
+import { redundantIndexesProbe } from './doctor-redundant-indexes';
 import { checkSourceDrift, schemaHash } from './drift';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 
@@ -366,6 +367,42 @@ test('--drop-redundant drops a covered index once, and plain generation never re
 
     const again = await generateAppMigration(dir, { name: 'd plain again' });
     expect(again.migration).toBeUndefined();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    clearRegistry();
+    registerFixtureEntity();
+  }
+});
+
+// Absent from the newest snapshot is not the same as dropped: a covered index declared on a table
+// that already exists has never been built. Plain generation builds it; only a migration that
+// held it and then dropped it excuses it.
+test('a covered index newly declared on an existing table is built by plain generation', async () => {
+  const dir = tempRoot();
+  const declare = (withLink: boolean): void => {
+    clearRegistry();
+    const tags = entity('db_gen_late_tags', { columns: { id: uuid().primaryKey() } });
+    entity('db_gen_late_links', {
+      columns: {
+        tagId: withLink ? uuid().references(() => tags.id) : uuid(),
+        otherId: uuid(),
+      },
+      primaryKey: ['tagId', 'otherId'],
+    });
+  };
+  try {
+    declare(false);
+    await generateAppMigration(dir, { name: 'a initial' });
+    declare(true);
+    const linked = await generateAppMigration(dir, { name: 'b link' });
+    expect(linked.migration?.up).toContain('db_gen_late_links_tag_id_idx');
+    // …and, now built, `x doctor` lists it until `--drop-redundant` drops it.
+    const current = declaredSchema(await readMigrations(dir)) ?? { tables: [] };
+    const listed = await redundantIndexesProbe(dir, async () => ({
+      entries: registeredEntities(),
+      current,
+    }));
+    expect(listed?.map((each) => each.name)).toEqual(['db_gen_late_links_tag_id_idx']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
     clearRegistry();

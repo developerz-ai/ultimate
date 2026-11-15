@@ -79,7 +79,8 @@ export const screenMeasureFilter = <Row>(
   if (!Array.isArray(where)) {
     throw refused(entity, `a measure's where is ${shown(where)}, not a list of predicates`);
   }
-  screenPredicates(entity, where);
+  // The measure's own refusal first: `screenPredicates` refuses an undeclared column too, under the
+  // read path's code, and a measure's caller is owed the aggregate's.
   for (const predicate of where) {
     const [property = predicate.column] = predicate.column.split('.');
     if (predicate.op !== 'matches' && columnFor(entity.$columns, property) === undefined) {
@@ -90,6 +91,7 @@ export const screenMeasureFilter = <Row>(
       );
     }
   }
+  screenPredicates(entity, where);
   return where;
 };
 

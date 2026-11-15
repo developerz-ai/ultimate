@@ -6,6 +6,7 @@
 import type { EntityCore } from './entity';
 import { describeCommand, EntityError, patchEmpty, writeUnfiltered } from './errors';
 import { namedColumns, readPlan } from './plan';
+import { isGroup, orMembers } from './predicate-node';
 import type { FilteredWriteOptions } from './repo';
 import { SEARCH_PROPERTY } from './search';
 import type { Predicate, QueryPlan } from './tenancy';
@@ -40,6 +41,33 @@ const verbOf = (op: string): 'updateAll' | 'deleteAll' =>
   op.startsWith('update') ? 'updateAll' : 'deleteAll';
 
 /**
+ * The first predicate with no value, at any depth of a group. A `via` is not walked: its inner level
+ * is a READ of another table, whose `undefined` cannot widen this write's rows past the hop.
+ */
+const firstUnnamed = (where: readonly Predicate[]): Predicate | undefined => {
+  for (const predicate of where) {
+    if (isGroup(predicate)) {
+      const inner = firstUnnamed(orMembers(predicate));
+      if (inner !== undefined) return inner;
+    } else if (!named(predicate)) {
+      return predicate;
+    }
+  }
+  return undefined;
+};
+
+/**
+ * Whether a predicate holds for EVERY row — bounds nothing. An empty `and` does, an `and` of only
+ * such groups does, and an `or` with any such arm does (the arm admits every row). An empty `or`
+ * admits none, a leaf or a `via` bounds: neither is unbounded.
+ */
+const boundsNothing = (predicate: Predicate): boolean => {
+  if (predicate.op === 'and') return orMembers(predicate).every(boundsNothing);
+  if (predicate.op === 'or') return orMembers(predicate).some(boundsNothing);
+  return false;
+};
+
+/**
  * A chain predicate written with `undefined` is refused, not dropped. Dropped, `.where({ orgId,
  * postId }).deleteAll()` on a `postId` that came back undefined deletes every row the org has —
  * the remaining predicate still bounds it, so the empty-filter refusal never fires. A chain is
@@ -50,7 +78,7 @@ const chainUndefined = <Row>(
   op: string,
   where: readonly Predicate[],
 ): EntityError | undefined => {
-  const missing = where.find((predicate) => !named(predicate));
+  const missing = firstUnnamed(where);
   if (missing === undefined) return undefined;
   const verb = verbOf(op);
   return new EntityError({
@@ -89,7 +117,9 @@ export const writeWherePlan = <Row>(
   const refused = chainUndefined(entity, op, options?.where ?? []);
   if (refused !== undefined) throw refused;
   const where = boundedBy(filter, options);
-  if (where.length === 0) throw unfiltered(entity, op, options?.where !== undefined);
+  // A tree that holds for every row is no filter: `andWhereNode({ and: [] }).deleteAll()` would
+  // reach the tenant's whole table exactly as an empty chain would, so it is refused as one.
+  if (where.every(boundsNothing)) throw unfiltered(entity, op, options?.where !== undefined);
   const { where: _chain, ...rest } = options ?? {};
   return readPlan(entity, { ...rest, where }, op);
 };

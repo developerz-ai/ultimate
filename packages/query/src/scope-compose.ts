@@ -2,6 +2,7 @@
 // page is cut, so hidden rows never shorten a page — the JS rule stays the authority on every row
 // the narrowed source returns (`ruleCheckOf`, `page-window.ts`). A tree (`or`/`via`) is read by
 // `scope-tree.ts`.
+import type { ScopeNode } from '@ultimat3/policy';
 import { policyScope } from '@ultimat3/policy';
 import { QueryScopeUncomposableError } from './errors';
 import type { QueryPolicy, QuerySubject, QuerySurface } from './policy-gate';
@@ -10,6 +11,14 @@ import { filterOf } from './scope-tree';
 import type { QueryShape, SeekKey } from './shape';
 import type { SqlSource, SqlText } from './source';
 import { Builder } from './source';
+
+/**
+ * A top-level `and` is the scope's own conjunction written as a group: its members join the top
+ * level, at any depth, so only an `or` or a `via` is a tree — and a scope of conditions alone, however
+ * it is grouped, stays filters a live read can patch from.
+ */
+const conjuncts = (node: ScopeNode): readonly ScopeNode[] =>
+  'and' in node ? node.and.flatMap(conjuncts) : [node];
 
 /**
  * `source` narrowed by the policy's scope for `subject.actor`, or `source` itself when the policy
@@ -26,8 +35,9 @@ export function composeScope(
   subject: QuerySubject,
   surface: QuerySurface,
 ): SqlSource<object> {
-  const nodes = policyScope(policy, subject.actor);
-  if (nodes === undefined) return source;
+  const scope = policyScope(policy, subject.actor);
+  if (scope === undefined) return source;
+  const nodes = scope.flatMap(conjuncts);
   if (!(source instanceof Builder)) throw new QueryScopeUncomposableError(subject.query);
   const narrowed = nodes.reduce<Builder<object>>((builder, node) => {
     if (!('column' in node)) return builder.whereNode(node);

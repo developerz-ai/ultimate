@@ -219,9 +219,10 @@ past the end is `X_STORAGE_RANGE_UNSATISFIABLE`. `stream(key, { etag })` and
 `streamRange(key, range, { etag })` serve that revision only — another is `X_STORAGE_OBJECT_CHANGED`
 (409): s3 sends `If-Match`, local checks the etag at the call and again at the first read, memory compares. `/_storage`
 pins every read to the etag its headers came from. `putStream` takes `contentType`, `cacheControl`,
-`metadata` and a REQUIRED `maxBytes` (`PutStreamOptions`). Past it the source is cancelled, nothing
-is stored and the key stays as it was (`X_STORAGE_TOO_LARGE`). `checksum`, `retention`, `legalHold`
-and `serverSideEncryption` need the bytes up front: the type omits them and an untyped caller gets
+`metadata`, `serverSideEncryption` (s3 sends it on the PUT or the multipart Create; local and memory
+refuse it, `X_INVARIANT`) and a REQUIRED `maxBytes` (`PutStreamOptions`). Past it the source is cancelled, nothing
+is stored and the key stays as it was (`X_STORAGE_TOO_LARGE`). `checksum`, `retention` and `legalHold`
+need the bytes up front: the type omits them and an untyped caller gets
 `X_INVARIANT`. On s3 a body under one part is one signed PUT and past it a signed multipart upload,
 8 MiB parts (doubled every 1,000 parts, so 10,000 reach past S3's 5 TiB; never derived from
 `maxBytes`), up to `STREAM_PART_BUFFERS` (4) parts held at once — in flight plus the one filling,
@@ -296,7 +297,8 @@ lock — on S3 it is per version and set by the request. The local refusal is in
 | `s3Driver` | **sent**, on one signed PUT (`Bun.S3Client` has no field for it): `x-amz-server-side-encryption: AES256` or `aws:kms`, plus `x-amz-server-side-encryption-aws-kms-key-id` when `kmsKeyId` is given (absent: the bucket's default key). An unknown algorithm, a `kmsKeyId` with `AES256`, or a key id that cannot travel as a header is `X_INVARIANT` before a byte moves |
 | `localDriver`, `memoryStorageDriver` | **refused**, `X_INVARIANT` (the put-option refusal `assertPutOptions` makes): plain bytes on disk or in a `Map` are not encrypted at rest, and recording the request would answer a security review with a field the disk never honoured |
 
-`putStream` takes none (it needs the bytes up front). A **bucket default** is still the rule for
+`putStream` takes it the same way: s3 sends it on the one signed PUT or the multipart Create,
+local and memory refuse it. A **bucket default** is still the rule for
 everything written without the option — and so are bucket lifecycle rules, storage
 classes and cross-region replication: all four are bucket-side configuration and belong to
 terraform, not to the framework (axiom 7 — zero platform primitives). Ultimate half-building any of

@@ -121,7 +121,7 @@ export async function generateAppMigration(
 
   const entities = settledDescriptions(
     registeredEntities(),
-    current,
+    migrations,
     options.dropRedundant === true,
   );
   // Read AFTER the findings check above, never before: a module that would not import leaves the

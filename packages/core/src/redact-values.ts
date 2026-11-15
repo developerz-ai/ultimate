@@ -120,7 +120,10 @@ export function redactedValue(text: string): string {
 export function redactedStrings(value: unknown, depth = 0): unknown {
   if (matchers.length === 0) return value;
   if (typeof value === 'string') return redactedValue(value);
-  if (value === null || typeof value !== 'object' || depth >= 8) return value;
+  if (value === null || typeof value !== 'object') return value;
+  // Cut, never passed through: a string below the limit would leave unredacted. Same marker and
+  // the same limit as `serialise` (`logger-redact.ts`).
+  if (depth >= 6) return '[depth-limit]';
   if (Array.isArray(value)) return value.map((item) => redactedStrings(item, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) out[key] = redactedStrings(entry, depth + 1);

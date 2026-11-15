@@ -44,7 +44,7 @@ const counter = {
   where: { sql: `c."kind" = 'up'`, columns: ['kind'] },
 };
 
-const entities = (): readonly EntityDescriptionLike[] => [
+const entities = (where = counter.where): readonly EntityDescriptionLike[] => [
   {
     name: POSTS,
     table: POSTS,
@@ -54,7 +54,7 @@ const entities = (): readonly EntityDescriptionLike[] => [
       col('up_count', 'integer', true, { hasDefault: true, default: { kind: 'value', value: 0 } }),
     ],
     indexes: [],
-    counts: [counter],
+    counts: [{ ...counter, where }],
   },
   {
     name: LIKES,
@@ -145,5 +145,31 @@ describe.skipIf(!hasPostgres)('live · postgres · a counter with a where', () =
     }
     expect(drifted).toEqual([A, B]);
     expect(await counts()).toEqual([0, 2]);
+  });
+
+  test('rolling back a changed where restores the old trigger AND counts under it', async () => {
+    const posts = raw(`"${POSTS}"`);
+    const likes = raw(`"${LIKES}"`);
+    await client.execute(sql`delete from ${likes}`);
+    await client.execute(sql`update ${posts} set up_count = 0`);
+    await like(A, 'up');
+    await like(A, 'down');
+    expect(await counts()).toEqual([1, 0]);
+    const base = generateMigration({ entities: entities(), name: 'where', now: new Date(0) });
+    const change = generateMigration({
+      entities: entities({ sql: `c."kind" = 'down'`, columns: ['kind'] }),
+      name: 'where down',
+      now: new Date(1),
+      current: base.snapshot,
+    });
+    for (const statement of statementsOf(change.up)) await client.execute(raw(statement));
+    expect(await counts()).toEqual([1, 0]);
+    await like(A, 'down');
+    expect(await counts()).toEqual([2, 0]);
+    for (const statement of statementsOf(change.down)) await client.execute(raw(statement));
+    // The old trigger counts 'up' again, and the counts are the 'up' rows, not the 'down' ones.
+    expect(await counts()).toEqual([1, 0]);
+    await like(A, 'up');
+    expect(await counts()).toEqual([2, 0]);
   });
 });

@@ -34,6 +34,17 @@ export const screenPredicates = <Row>(
     if (!isOperator(predicate.op)) {
       throw operatorUnknown(entity.$name, predicate.column, predicate.op);
     }
+    // An undeclared column is refused HERE, for both drivers: Postgres could never resolve it
+    // (`physicalName`), and memory read it off the row as NULL — rows in one, a refusal in the other.
+    // `matches` names `SEARCH_PROPERTY`, which is not a column by design.
+    const [property = predicate.column] = predicate.column.split('.');
+    if (predicate.op !== 'matches' && columnFor(entity.$columns, property) === undefined) {
+      throw invariantViolated(
+        entity.$name,
+        'column',
+        `no column "${predicate.column}" — pick from: ${Object.keys(entity.$columns).join(', ')}`,
+      );
+    }
     const column = columnFor(entity.$columns, predicate.column);
     if (column?.$meta.kind === 'money' && !isNullTest(predicate)) {
       const property = predicate.column;
