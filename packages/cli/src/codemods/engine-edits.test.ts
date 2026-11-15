@@ -48,6 +48,24 @@ describe('unit · codemod edits, snippets', () => {
   });
 });
 
+describe('unit · codemod edits, a removal and an insert', () => {
+  test('a removal, whose new text sits inside its old, is applied once', async () => {
+    const edit = { from: 'keep\ngone\n', to: 'keep\n' };
+    const app = memoryCodemodApp({ 'a.toml': 'keep\ngone\n' });
+    expect((await editSnippets(app, 'a.toml', [edit])).changed).toEqual(['a.toml']);
+    expect(app.files['a.toml']).toBe('keep\n');
+    expect((await editSnippets(app, 'a.toml', [edit])).changed).toEqual([]);
+  });
+
+  test('an insert beside a line that stays is applied once, never again', async () => {
+    const edit = { from: 'row a', to: 'row a\nrow b' };
+    const app = memoryCodemodApp({ 'a.md': 'row a\n' });
+    await editSnippets(app, 'a.md', [edit]);
+    expect(await editSnippets(app, 'a.md', [edit])).toEqual({ changed: [], skipped: [] });
+    expect(app.files['a.md']).toBe('row a\nrow b\n');
+  });
+});
+
 describe('unit · codemod edits, optional prose', () => {
   const WITH_COMMENT = [...EDITS, { from: '// old words', to: '// new words', optional: true }];
 

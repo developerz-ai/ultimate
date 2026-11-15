@@ -140,15 +140,6 @@ export async function materializeGuard(root: string, name: string): Promise<stri
   return path;
 }
 
-/** One warning for every copy: the shipped guard is built in now, and `x upgrade` migrates them. */
-export const vendoredWarning = (vendored: readonly string[]): Finding => ({
-  code: GUARD_VENDORED_CODE,
-  cause: `guards/ holds ${String(vendored.length)} copy(ies) of a guard the framework now runs built in (${vendored.join(', ')}): each copy runs in place of the installed guard, so a fix to it never reaches this app`,
-  fix: `x upgrade --json   # deletes each identical copy; an edited one becomes a ${SHIPPED_GUARD_CONFIG} row or an app guard under a new name`,
-  docs: ERROR_DOCS_URL,
-  at: 'guards/',
-});
-
 /** The config's own problems: red, because a row the gate cannot read covers nothing. */
 export const shippedConfigFindings = (problems: readonly string[]): readonly Finding[] =>
   problems.map((problem) => ({

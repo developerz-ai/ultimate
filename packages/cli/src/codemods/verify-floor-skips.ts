@@ -1,24 +1,32 @@
 // 31.27.0: a scaffold's x.verify.json names every gate step — required in `steps`, or excused in
 // `skip` with its why — and sets `strict`. An older app gains the `skip` rows that hold for it
-// (roadmap; job with no job suite; e2e with no page); `strict` it opts into itself, after a run.
+// (roadmap; job with no job suite; e2e with no page). `strict` is 31.28.0's (`verify-floor-steps`).
 
 import { floorSteps } from '../templates/scaffold-verify-floor';
 import { VERIFY_FLOOR_FILE } from '../verify-floor';
 import type { Codemod, CodemodApp } from './codemod';
-import { unifiedDiff } from './engine-diff';
 
-type Floor = Record<string, unknown>;
+export type Floor = Record<string, unknown>;
 
-const isObject = (value: unknown): value is Floor =>
+export const isObject = (value: unknown): value is Floor =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const any = async (app: CodemodApp, pattern: string): Promise<boolean> =>
   (await app.glob(pattern)).length > 0;
 
+/** What the app ships suites for, as `floorSteps` asks it: a job suite, a page to load. */
+export async function floorSuites(
+  app: CodemodApp,
+): Promise<{ readonly jobs: boolean; readonly pages: boolean }> {
+  return {
+    jobs: await any(app, '{apps,packages}/**/*.job.test.ts'),
+    pages: await any(app, 'apps/*/{site,app}/**/page.tsx'),
+  };
+}
+
 /** The steps that cannot run in this app, each with the scaffold's own why. */
 async function excused(app: CodemodApp): Promise<Readonly<Record<string, string>>> {
-  const jobs = await any(app, '{apps,packages}/**/*.job.test.ts');
-  const pages = await any(app, 'apps/*/{site,app}/**/page.tsx');
+  const { jobs, pages } = await floorSuites(app);
   const why = floorSteps({ jobs: false, pages: false }).skip;
   const out: Record<string, string> = {};
   if (!jobs && why.job !== undefined) out['job'] = why.job;
@@ -42,7 +50,7 @@ function withSkip(floor: Floor, skip: Readonly<Record<string, string>>): Floor {
   return out;
 }
 
-const render = (floor: Floor): string => `${JSON.stringify(floor, null, 2)}\n`;
+export const renderFloor = (floor: Floor): string => `${JSON.stringify(floor, null, 2)}\n`;
 
 export const codemod: Codemod = {
   id: 'verify-floor-skips',
@@ -73,23 +81,8 @@ export const codemod: Codemod = {
       ),
     );
     const next = Object.keys(add).length === 0 ? floor : withSkip(floor, add);
-    const changed: string[] = [];
-    if (Object.keys(add).length > 0) {
-      await app.write(VERIFY_FLOOR_FILE, render(next));
-      changed.push(VERIFY_FLOOR_FILE);
-    }
-    if (floor['strict'] !== undefined) return { changed, skipped: [] };
-    // Never flipped here: a step that ran nothing would be red on the very next gate. Said instead.
-    return {
-      changed,
-      skipped: [
-        {
-          path: VERIFY_FLOOR_FILE,
-          reason:
-            'strict left off: a step that runs nothing would turn red under it. Run x verify --json, add each step it reports skipped to "skip" with its why, then set "strict": true',
-          diff: unifiedDiff(VERIFY_FLOOR_FILE, render(next), render({ ...next, strict: true })),
-        },
-      ],
-    };
+    if (Object.keys(add).length === 0) return { changed: [], skipped: [] };
+    await app.write(VERIFY_FLOOR_FILE, renderFloor(next));
+    return { changed: [VERIFY_FLOOR_FILE], skipped: [] };
   },
 };

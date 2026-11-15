@@ -18,8 +18,9 @@ import {
   planBuiltIns,
   readShippedConfig,
   shippedConfigFindings,
-  vendoredWarning,
+  vendoredPath,
 } from './guards-built-in';
+import { vendoredCopy, vendoredFinding } from './guards-vendored';
 import type { Finding } from './output';
 import { readVerifyFloor } from './verify-floor';
 import type { GuardBaseline } from './verify-guard-baseline';
@@ -298,7 +299,11 @@ export const guardReport = async (
       baseline,
     ),
   );
-  if (vendored.length > 0) warnings.push(vendoredWarning(vendored));
+  for (const name of vendored) {
+    const path = vendoredPath(paths, name) ?? `${GUARD_DIR}/${name}.ts`;
+    const source = await Bun.file(join(root, path)).text();
+    warnings.push(vendoredFinding(vendoredCopy(name, path, source)));
+  }
   return { findings, warnings };
 };
 

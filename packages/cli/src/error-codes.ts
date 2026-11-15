@@ -242,6 +242,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_GUARD_BUILT_IN',
   'X_REPRO_BUNDLE_INVALID',
   'X_ADVISORY_FLOOR_UNMET',
+  'X_UPGRADE_CODEMODS_PENDING',
 ] as const;
 
 /**
@@ -472,6 +473,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_GUARD_BUILT_IN: 'x g guard named a shipped guard',
   X_REPRO_BUNDLE_INVALID: 'the file is not a repro bundle this version can open',
   X_ADVISORY_FLOOR_UNMET: 'a resolved dependency is below its advisory floor',
+  X_UPGRADE_CODEMODS_PENDING: 'files an older x upgrade left for codemods',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

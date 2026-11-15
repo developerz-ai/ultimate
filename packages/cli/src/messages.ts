@@ -103,7 +103,7 @@ const CATALOG = {
     'wake off, pickup within idlePollMaxMs ({ms} ms by default): a transaction pooler delivers no notification. For the wake, give this role a direct or session-pooled DATABASE_URL and unset DATABASE_POOLER',
   'cli.doctor.findings': '{count} finding(s)',
   'cli.doctor.guardsDiffer':
-    '{count} shipped guard(s) are copies in guards/ — the framework runs each built in now, and a copy runs in its place, never fixed. This deletes the identical ones and keeps an edit as a guards/shipped.json row or an app guard:',
+    '{count} shipped guard(s) still have a copy in guards/, which runs in place of the built-in guard and never receives a fix. Each line is the edit that resolves one:',
   // `x doctor`'s other listing: what the coverage floor in x.verify.json does not see, and why.
   'cli.doctor.coverageExclude':
     '{count} path(s) x.verify.json excludes from the coverage floor — each with the reason it gives:',

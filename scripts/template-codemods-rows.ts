@@ -8,7 +8,42 @@ export type TemplateCodemodRow =
   | { readonly template: string; readonly since: string; readonly none: string };
 
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
-  // 31.27.0, written after its tag: history, kept so each template names the codemod carrying it.
+  // Written after the release they carry: history, kept so each template names its codemod.
+  {
+    template: 'packages/cli/src/templates/scaffold-docs.ts',
+    since: '31.22.0',
+    codemod: 'docs-gate-prose',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude-agents.ts',
+    since: '31.22.0',
+    codemod: 'agents-dev-mcp',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-container-compose.ts',
+    since: '31.25.0',
+    codemod: 'metrics-probe-healthz',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-helm-templates.ts',
+    since: '31.25.0',
+    codemod: 'metrics-probe-healthz',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-repo.ts',
+    since: '31.27.0',
+    codemod: 'bunfig-island-coverage',
+  },
+  {
+    template: 'packages/cli/src/templates/github/ci.yml.ts',
+    since: '31.27.0',
+    codemod: 'ci-e2e-browser',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-docs.ts',
+    since: '31.27.0',
+    codemod: 'docs-test-services',
+  },
   {
     template: 'packages/cli/src/templates/scaffold-suites.ts',
     since: '31.27.0',
@@ -58,5 +93,20 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     template: 'packages/cli/src/templates/scaffold-repo.ts',
     since: '31.28.0',
     codemod: 'repro-gitignore',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-docs.ts',
+    since: '31.28.0',
+    codemod: 'docs-shipped-guards',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude-agents.ts',
+    since: '31.28.0',
+    codemod: 'docs-shipped-guards',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-verify-floor.ts',
+    since: '31.28.0',
+    codemod: 'verify-floor-steps',
   },
 ];

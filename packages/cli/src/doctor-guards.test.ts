@@ -11,14 +11,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reportDoctor } from './cmd-doctor';
 import { probe } from './cmd-doctor-fixture';
+import { fsCodemodApp } from './codemods/engine-fs';
+import { codemod as vendoredGuards } from './codemods/vendored-guards';
 import {
-  MIGRATE_GUARDS,
   shippedGuardsProbe,
   vendoredGuardWarnings,
   vendoredShippedGuards,
   withGuardListing,
 } from './doctor-guards';
+import { fixProblem } from './error-contract';
 import { GUARD_VENDORED_CODE } from './guards-built-in';
+import { resolvingEdit } from './guards-vendored';
 import { repoUnboundedGuardFiles } from './templates/guard-repo-unbounded';
 import { SHIPPED_GUARD_NAMES, shippedGuardSource } from './templates/scaffold-guards';
 
@@ -43,16 +46,16 @@ describe('unit · x doctor · copies of shipped guards', () => {
         { path: 'guards/bare-error.ts', source: `${template('bare-error')}// edit\n` },
         { path: 'guards/migration-safety.ts', source: 'export {};' },
       ]),
-    ).toEqual([
-      { name: 'bare-error', identical: false },
-      { name: 'raw-length', identical: true },
+    ).toMatchObject([
+      { name: 'bare-error', path: 'guards/bare-error.ts', identical: false },
+      { name: 'raw-length', path: 'guards/raw-length.ts', identical: true },
     ]);
   });
 
   test('a current template is identical whatever line endings the checkout wrote', () => {
     const crlf = template('bare-error').replaceAll('\n', '\r\n');
     expect(vendoredShippedGuards([{ path: 'guards/bare-error.ts', source: crlf }])).toEqual([
-      { name: 'bare-error', identical: true },
+      { name: 'bare-error', path: 'guards/bare-error.ts', identical: true },
     ]);
   });
 
@@ -61,7 +64,7 @@ describe('unit · x doctor · copies of shipped guards', () => {
     expect(reportOnly).toContain("severity: 'warning',");
     expect(
       vendoredShippedGuards([{ path: 'guards/repo-unbounded.ts', source: reportOnly }]),
-    ).toEqual([{ name: 'repo-unbounded', identical: true }]);
+    ).toEqual([{ name: 'repo-unbounded', path: 'guards/repo-unbounded.ts', identical: true }]);
   });
 
   test('the probe reads the directory the gate reads, and never counts a test as a guard', async () => {
@@ -69,7 +72,9 @@ describe('unit · x doctor · copies of shipped guards', () => {
     try {
       await Bun.write(join(root, 'guards/raw-length.ts'), template('raw-length'));
       await Bun.write(join(root, 'guards/focus-visible.test.ts'), '');
-      expect(await shippedGuardsProbe(root)).toEqual([{ name: 'raw-length', identical: true }]);
+      expect(await shippedGuardsProbe(root)).toEqual([
+        { name: 'raw-length', path: 'guards/raw-length.ts', identical: true },
+      ]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -77,30 +82,38 @@ describe('unit · x doctor · copies of shipped guards', () => {
 
   test('the listing rides beside the verdict and never moves it', () => {
     const red = { ok: false, command: 'doctor', summary: '1 finding(s)', data: { count: 1 } };
+    const edited = {
+      name: 'bare-error',
+      path: 'guards/bare-error.ts',
+      identical: false,
+      diff: '-a\n+b\n',
+    };
     const listed = withGuardListing(red, [
-      { name: 'raw-length', identical: true },
-      { name: 'bare-error', identical: false },
+      { name: 'raw-length', path: 'guards/raw-length.ts', identical: true },
+      edited,
     ]);
     expect([listed.ok, listed.summary]).toEqual([false, '1 finding(s)']);
     expect(listed.data).toEqual({
       count: 1,
       guards: {
         missing: [],
-        differs: [{ name: 'bare-error', refresh: MIGRATE_GUARDS }],
+        differs: [{ name: 'bare-error', refresh: resolvingEdit(edited), diff: '-a\n+b\n' }],
         vendored: ['raw-length', 'bare-error'],
       },
     });
-    expect(listed.lines?.[0]).toContain('2 shipped guard(s) are copies');
-    expect(listed.lines?.at(-1)).toBe(`  ${MIGRATE_GUARDS}`);
+    expect(listed.lines?.[0]).toContain('2 shipped guard(s) still have a copy');
+    expect(listed.lines?.at(-1)).toBe(`  ${resolvingEdit(edited)}`);
     expect(withGuardListing(red, []).lines).toBeUndefined();
   });
 
-  test('every copy is one warning, whose fix is the migration', () => {
+  test('every copy is one warning, at its file', () => {
     expect(vendoredGuardWarnings([])).toEqual([]);
-    const [warning, ...rest] = vendoredGuardWarnings([{ name: 'raw-length', identical: true }]);
+    const [warning, ...rest] = vendoredGuardWarnings([
+      { name: 'raw-length', path: 'guards/raw-length.ts', identical: true },
+    ]);
     expect(rest).toEqual([]);
     expect(warning?.code).toBe(GUARD_VENDORED_CODE);
-    expect(warning?.fix).toStartWith(MIGRATE_GUARDS);
+    expect(warning?.at).toBe('guards/raw-length.ts');
   });
 
   test('the doctor stays ok, the copies in data.warnings', async () => {
@@ -111,9 +124,72 @@ describe('unit · x doctor · copies of shipped guards', () => {
       }
       const result = await reportDoctor(probe({ root }));
       expect([result.ok, result.findings]).toEqual([true, []]);
-      expect(result.data).toMatchObject({ warnings: [{ code: GUARD_VENDORED_CODE }] });
+      const warnings = (result.data as { warnings: { code: string }[] }).warnings;
+      expect(warnings.filter(({ code }) => code === GUARD_VENDORED_CODE)).toHaveLength(
+        SHIPPED_GUARD_NAMES.length,
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+// After `x upgrade` the listing must not send the author back to `x upgrade`: a migrated app has
+// nothing to list, and a copy still present is named with its diff and the edit that resolves it.
+describe('unit · x doctor · what is left after the migration', () => {
+  const withCopies = async (
+    copies: Readonly<Record<string, string>>,
+    body: (root: string) => Promise<void>,
+  ): Promise<void> => {
+    const root = await mkdtemp(join(tmpdir(), 'x-doctor-guards-left-'));
+    try {
+      for (const [path, text] of Object.entries(copies)) await Bun.write(join(root, path), text);
+      await body(root);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+
+  test('a migrated app lists nothing and warns of nothing, edited copies included', async () => {
+    const tree: Record<string, string> = {};
+    for (const name of SHIPPED_GUARD_NAMES) tree[`guards/${name}.ts`] = template(name);
+    tree['guards/raw-fetch.ts'] = `${template('raw-fetch')}// our vendor client\n`;
+    await withCopies(tree, async (root) => {
+      await vendoredGuards.run(fsCodemodApp(root));
+      const entries = await shippedGuardsProbe(root);
+      expect(entries).toEqual([]);
+      expect(vendoredGuardWarnings(entries)).toEqual([]);
+      const result = await reportDoctor(probe({ root }));
+      expect(result.data).toMatchObject({ guards: { missing: [], differs: [], vendored: [] } });
+    });
+  });
+
+  test('an edited copy left is named with its diff and the edit that resolves it — never x upgrade', async () => {
+    const edited = `${template('raw-fetch')}// our vendor client\n`;
+    await withCopies({ 'guards/raw-fetch.ts': edited }, async (root) => {
+      const entries = await shippedGuardsProbe(root);
+      const listed = withGuardListing({ ok: true, command: 'doctor', summary: 'clean' }, entries);
+      const [differ] = (listed.data as { guards: { differs: Record<string, string>[] } }).guards
+        .differs;
+      expect(differ?.['diff']).toContain('+// our vendor client');
+      expect(differ?.['refresh']).toStartWith('mv guards/raw-fetch.ts guards/app-raw-fetch.ts');
+      const [warning, ...rest] = vendoredGuardWarnings(entries);
+      expect(rest).toEqual([]);
+      expect(warning?.at).toBe('guards/raw-fetch.ts');
+      expect(warning?.fix).toStartWith('mv guards/raw-fetch.ts guards/app-raw-fetch.ts');
+      expect(warning?.fix).toContain('"raw-fetch": "off"');
+      expect(fixProblem(warning?.fix ?? '')).toBeUndefined();
+      for (const line of [...(listed.lines ?? []), warning?.fix ?? '']) {
+        expect(line).not.toContain('x upgrade');
+      }
+    });
+  });
+
+  test('an identical copy left is one delete', async () => {
+    await withCopies({ 'guards/raw-length.ts': template('raw-length') }, async (root) => {
+      const [warning] = vendoredGuardWarnings(await shippedGuardsProbe(root));
+      expect(warning?.fix).toStartWith('rm -f guards/raw-length.ts guards/raw-length.test.ts');
+      expect(fixProblem(warning?.fix ?? '')).toBeUndefined();
+    });
   });
 });

@@ -13,6 +13,8 @@ import {
   removeFixtures,
   run,
 } from './cmd-upgrade-fixture';
+import { CODEMODS } from './codemods';
+import { pendingCodemods } from './codemods/engine';
 import type { ExecResult, Runner } from './exec';
 import { names } from './templates';
 import { claudeFiles } from './templates/scaffold-claude';
@@ -64,6 +66,9 @@ const pinned = async (
   });
 
 const VERSIONS = ['31.19.0', '31.22.0'];
+
+/** Every codemod after 31.19.0 up to 31.22.0, in run order: the list's own answer. */
+const SPAN_31_19_TO_31_22 = pendingCodemods(CODEMODS, '31.19.0', '31.22.0').map((one) => one.id);
 
 /** The recording runner, plus every argv the installed CLI's `upgrade` was given. */
 const withCodemods = (script: Parameters<typeof recording>[0] = {}) => {
@@ -129,10 +134,7 @@ describe('unit · x upgrade, codemods', () => {
       readonly applied: readonly { readonly id: string; readonly changed: readonly string[] }[];
     };
     expect(codemods.source).toBe('driver');
-    expect(codemods.applied.map((one) => one.id)).toEqual([
-      'authenticator-session-refusal',
-      'format-edited-hook',
-    ]);
+    expect(codemods.applied.map((one) => one.id)).toEqual(SPAN_31_19_TO_31_22);
     expect(await read(dir, SETTINGS)).toContain(HOOK);
     expect(await Bun.file(join(dir, HOOK)).exists()).toBe(true);
     // Left uncommitted beside the pins: the hop is still one reviewable commit.
@@ -217,11 +219,8 @@ describe('unit · x upgrade codemods, by hand', () => {
     const first = output.data?.codemods as {
       readonly applied: readonly { readonly id: string; readonly changed: readonly string[] }[];
     };
-    expect(first.applied.map((one) => one.id)).toEqual([
-      'authenticator-session-refusal',
-      'format-edited-hook',
-    ]);
-    expect(first.applied[1]?.changed).toContain(HOOK);
+    expect(first.applied.map((one) => one.id)).toEqual(SPAN_31_19_TO_31_22);
+    expect(first.applied.find((one) => one.id === 'format-edited-hook')?.changed).toContain(HOOK);
     expect(await read(dir, SETTINGS)).toContain(HOOK);
     const again = await codemods(dir, '--from', '31.19.0', '--to', '31.22.0');
     const second = again.output.data?.codemods as {

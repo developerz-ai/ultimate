@@ -5,6 +5,7 @@
 import { ENV_EXAMPLE_PATH, ERROR_DOCS_URL } from '@ultimat3/core';
 import { REQUIRED_BUN, versionAtLeast } from './app-root';
 import { doctorSpec } from './cmd-doctor-spec';
+import { pendingCodemodFindings } from './codemods/pending';
 import type { CliCommand, CommandContext } from './command';
 import { advisoryFloorFindings } from './doctor-advisory-floors';
 import { appUrlFindings } from './doctor-app-url';
@@ -28,6 +29,7 @@ import { doctorWarnings, withDoctorWarnings } from './doctor-warnings';
 import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
+import { cliVersion } from './registry';
 import { quoteArg } from './shell-quote';
 
 // `src/index.ts` publishes the seam from here; its declaration lives in `doctor-probe.ts`.
@@ -194,6 +196,8 @@ export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
     ...browserWarnings(browser),
     ...(probe.root === undefined ? [] : await supersededFindings(probe.root)),
     ...(probe.root === undefined ? [] : await advisoryFloorFindings(probe.root)),
+    // An `x upgrade` driven by a CLI older than the codemod engine left files it owed.
+    ...(probe.root === undefined ? [] : await pendingCodemodFindings(probe.root, cliVersion())),
   ]);
 }
 

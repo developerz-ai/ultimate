@@ -401,6 +401,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_REPRO_BUNDLE_INVALID:
     'x repro --json   # lists the failing jobs and error groups; then run it again with one id and --bundle, and attach the file it writes',
   X_ADVISORY_FLOOR_UNMET: 'bun update source-map-js immutable',
+  X_UPGRADE_CODEMODS_PENDING: 'x upgrade --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

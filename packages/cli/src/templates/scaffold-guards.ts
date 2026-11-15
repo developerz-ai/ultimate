@@ -145,6 +145,9 @@ export interface ShippedGuardForm {
 /** `severity: 'warning',` on a line of its own: the one spelling a shipped template emits. */
 const REPORT_ONLY = /^\s*severity:\s*'warning',\s*$/m;
 
+/** Whether a guard's rule-file text reports only. */
+export const reportOnlyForm = (source: string): boolean => REPORT_ONLY.test(source);
+
 /**
  * Every current form of a shipped guard with its severity, the template first — what the
  * `vendored-guards` codemod matches an app's copy against. Empty when the name was never shipped.
@@ -152,7 +155,7 @@ const REPORT_ONLY = /^\s*severity:\s*'warning',\s*$/m;
 export const shippedGuardForms = (name: string): readonly ShippedGuardForm[] =>
   shippedGuardSources(name).map((source) => ({
     source,
-    severity: REPORT_ONLY.test(source) ? 'warning' : 'error',
+    severity: reportOnlyForm(source) ? 'warning' : 'error',
   }));
 
 /** The current text of a shipped guard's test (`guards/<name>.test.ts`), or `undefined`. */

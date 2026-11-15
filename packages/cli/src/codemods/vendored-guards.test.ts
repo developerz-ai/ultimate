@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { SHIPPED_GUARD_CONFIG } from '../guards-built-in';
+import { guardFormHash } from '../guards-vendored';
 import { repoUnboundedGuardFiles } from '../templates/guard-repo-unbounded';
 import {
   SHIPPED_GUARD_NAMES,
@@ -11,7 +12,7 @@ import {
   shippedGuardTest,
 } from '../templates/scaffold-guards';
 import { memoryCodemodApp } from './codemod';
-import { codemod } from './vendored-guards';
+import { codemod, vendoredGuardsCodemod } from './vendored-guards';
 
 const rule = (name: string): string => shippedGuardSource(name) ?? '';
 const ruleTest = (name: string): string => shippedGuardTest(name) ?? '';
@@ -124,5 +125,41 @@ describe('unit · codemod vendored-guards', () => {
     expect(result.changed).toEqual([]);
     expect(result.skipped[0]?.path).toBe(SHIPPED_GUARD_CONFIG);
     expect(app.files['guards/raw-fetch.ts']).toBe(rule('raw-fetch'));
+  });
+});
+
+// A copy an older release wrote and nobody edited is not an edit: deleted, the app takes the
+// shipped rule. Without this a 31.4 scaffold kept thirteen frozen app guards with no hand edit made.
+describe('unit · codemod vendored-guards · a stale release form', () => {
+  const OLD =
+    "// raw-fetch as an older release wrote it\nexport const guard = { summary: 'x', check: () => [] };\n";
+
+  test('is deleted with its test, never kept as an app guard', async () => {
+    const released = { 'raw-fetch': [[guardFormHash(OLD), 'error']] as const };
+    const app = memoryCodemodApp({ ...vendoredTree(), 'guards/raw-fetch.ts': OLD });
+    const result = await vendoredGuardsCodemod({ forms: released }).run(app);
+    expect(app.files['guards/raw-fetch.ts']).toBeUndefined();
+    expect(app.files['guards/app-raw-fetch.ts']).toBeUndefined();
+    expect(severities(app.files)).toEqual({});
+    expect(result.skipped).toEqual([]);
+  });
+
+  test('one released report-only keeps reporting only, as a row', async () => {
+    const released = { 'raw-fetch': [[guardFormHash(OLD), 'warning']] as const };
+    const app = memoryCodemodApp({ ...vendoredTree(), 'guards/raw-fetch.ts': OLD });
+    await vendoredGuardsCodemod({ forms: released }).run(app);
+    expect(severities(app.files)).toEqual({ 'raw-fetch': 'warning' });
+  });
+});
+
+describe('unit · codemod vendored-guards · a stale release test', () => {
+  test('an older release’s test goes with its rule, with no note: nobody added a case', async () => {
+    const old = `${ruleTest('raw-fetch')}// as an older release wrote it\n`;
+    const app = memoryCodemodApp({ ...vendoredTree(), 'guards/raw-fetch.test.ts': old });
+    const result = await vendoredGuardsCodemod({
+      tests: { 'raw-fetch': [guardFormHash(old)] },
+    }).run(app);
+    expect(app.files['guards/raw-fetch.test.ts']).toBeUndefined();
+    expect(result.skipped).toEqual([]);
   });
 });

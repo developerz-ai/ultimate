@@ -17,6 +17,13 @@ export interface SnippetEdit {
 const NOTHING: CodemodResult = { changed: [], skipped: [] };
 
 /**
+ * Carried across: `to` is there, and `from` is not — unless `from` is part of `to` (an insert
+ * beside a line that stays). A removal's `to` sits inside its own `from`, so `to` alone is no proof.
+ */
+const done = (source: string, edit: SnippetEdit): boolean =>
+  source.includes(edit.to) && (edit.to.includes(edit.from) || !source.includes(edit.from));
+
+/**
  * Every pending `from` swapped for its `to`, or nothing: an edit whose `to` is already there is
  * done; one whose `from` is gone too means the app wrote its own, and the file is not this
  * codemod's to finish.
@@ -28,7 +35,7 @@ export async function editSnippets(
 ): Promise<CodemodResult> {
   const source = await app.read(path);
   if (source === undefined) return NOTHING;
-  const pending = edits.filter((edit) => !source.includes(edit.to));
+  const pending = edits.filter((edit) => !done(source, edit));
   if (pending.every((edit) => edit.optional === true && !source.includes(edit.from))) {
     return NOTHING;
   }

@@ -1556,6 +1556,7 @@ Two sets override the table, in `failures.ts`:
 | `X_GUARD_BUILT_IN` | x g guard named a shipped guard | the guard already runs from the installed framework; a second copy would shadow it | `x verify --only boundaries --json` — set its severity in guards/shipped.json, or generate an app guard under another name |
 | `X_REPRO_BUNDLE_INVALID` | the file is not a repro bundle this version can open | the file is missing, carries another format tag, or names no reproducer under repro/ | `x repro --json` — lists the failing jobs and error groups; then run it again with one id and --bundle, and attach the file it writes |
 | `X_ADVISORY_FLOOR_UNMET` | a resolved dependency is below its advisory floor | bun.lock resolves a package below the first release past its published advisories | `bun update source-map-js immutable` |
+| `X_UPGRADE_CODEMODS_PENDING` | files an older x upgrade left for codemods | an x upgrade driven by a CLI older than the codemod engine installed this release but applied none of its codemods, so scaffold files are still in their older form | `x upgrade --json` |
 
 ## Reserved codes
 

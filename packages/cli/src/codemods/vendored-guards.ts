@@ -1,9 +1,8 @@
 // Carries an app off vendored copies of shipped guards, once: every shipped guard runs from the
-// installed framework now (`guards-built-in.ts`). An identical copy is deleted; one that differs
-// only in severity becomes a `guards/shipped.json` row; any other edit is kept as the app's own
-// guard under a new name, the shipped one turned off, with the reason and the diff — never lost.
+// installed framework now. An unedited copy — any form a release shipped — is deleted; one that
+// differs only in severity becomes a `guards/shipped.json` row; any other edit is kept as the app's
+// own guard under a new name, the shipped one off, with the reason and the diff — never lost.
 
-import { sameText } from '../doctor-guards';
 import {
   parseShippedConfig,
   SHIPPED_GUARD_CONFIG,
@@ -11,6 +10,8 @@ import {
   type ShippedSeverity,
   vendoredPath,
 } from '../guards-built-in';
+import { guardFormHash, sameText, shippedFormSeverity } from '../guards-vendored';
+import { RELEASED_GUARD_TEST_FORMS } from '../templates/guard-released-forms';
 import {
   SHIPPED_GUARD_NAMES,
   shippedGuardForms,
@@ -36,12 +37,21 @@ type Verdict =
   | { readonly kind: 'keep' };
 
 /** The copy against every current form of its guard: exact, then exact but for severity. */
-const judge = (name: string, copy: string): Verdict => {
-  const forms = shippedGuardForms(name);
-  const exact = forms.find((form) => sameText(copy, form.source));
-  if (exact !== undefined) return { kind: 'delete', severity: exact.severity };
+/** Every rule-file text a release shipped, by guard: `RELEASED_GUARD_FORMS`' shape. */
+type ReleasedForms = Parameters<typeof shippedFormSeverity>[2];
+
+/** The tables a run judges against: the committed ones unless a test passes its own. */
+export interface ReleasedTables {
+  readonly forms?: ReleasedForms;
+  readonly tests?: Readonly<Record<string, readonly string[]>>;
+}
+
+/** The copy against every form of its guard — current or released — then exact but for severity. */
+const judge = (name: string, copy: string, released: ReleasedForms): Verdict => {
+  const shipped = shippedFormSeverity(name, copy, released);
+  if (shipped !== undefined) return { kind: 'delete', severity: shipped };
   const bare = withoutSeverity(copy);
-  if (forms.some((form) => withoutSeverity(form.source) === bare)) {
+  if (shippedGuardForms(name).some((form) => withoutSeverity(form.source) === bare)) {
     return { kind: 'delete', severity: REPORT_ONLY.test(copy) ? 'warning' : 'error' };
   }
   return { kind: 'keep' };
@@ -81,7 +91,7 @@ const moveBaselines = async (
   return true;
 };
 
-async function run(app: CodemodApp): Promise<CodemodResult> {
+async function run(app: CodemodApp, tables: ReleasedTables): Promise<CodemodResult> {
   const changed: string[] = [];
   const skipped: CodemodResult['skipped'] = [];
   const configText = await app.read(SHIPPED_GUARD_CONFIG);
@@ -108,7 +118,7 @@ async function run(app: CodemodApp): Promise<CodemodResult> {
     const copy = (await app.read(path)) ?? '';
     const testPath = `guards/${name}.test.ts`;
     const test = await app.read(testPath);
-    const verdict = judge(name, copy);
+    const verdict = judge(name, copy, tables.forms);
     if (verdict.kind === 'delete') {
       await app.remove(path);
       changed.push(path);
@@ -117,7 +127,10 @@ async function run(app: CodemodApp): Promise<CodemodResult> {
         await app.remove(testPath);
         changed.push(testPath);
         const shipped = shippedGuardTest(name) ?? '';
-        if (!sameText(test, shipped)) {
+        const releasedTests = tables.tests ?? RELEASED_GUARD_TEST_FORMS;
+        const known = Object.hasOwn(releasedTests, name) ? releasedTests[name] : undefined;
+        // A test some release wrote is unedited; only one no release shipped can hold a case.
+        if (!sameText(test, shipped) && !(known ?? []).includes(guardFormHash(test))) {
           skipped.push({
             path: testPath,
             reason: `deleted with its rule, which is the shipped one and tested by the framework now; a case you added is in the diff — carry it to a test of your own`,
@@ -161,10 +174,13 @@ async function run(app: CodemodApp): Promise<CodemodResult> {
   return { changed, skipped };
 }
 
-export const codemod: Codemod = {
+/** The migration over a released-forms table: the committed one, or a test's own. */
+export const vendoredGuardsCodemod = (tables: ReleasedTables = {}): Codemod => ({
   id: 'vendored-guards',
   since: '31.28.0',
   summary:
-    'shipped guards run from the installed framework: identical copies in guards/ deleted, an edit kept as a guards/shipped.json row or an app guard',
-  run,
-};
+    'shipped guards run from the installed framework: unedited copies in guards/ deleted, an edit kept as a guards/shipped.json row or an app guard',
+  run: (app) => run(app, tables),
+});
+
+export const codemod: Codemod = vendoredGuardsCodemod();

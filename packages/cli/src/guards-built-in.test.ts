@@ -96,8 +96,10 @@ describe('unit · shipped guards run from the installed framework', () => {
         const report = await guardReport(root);
         expect(codes(report.findings)).toEqual(['X_RAW_FETCH_LOCAL']);
         expect(codes(report.warnings)).toEqual([GUARD_VENDORED_CODE]);
-        expect(report.warnings[0]?.cause).toContain('(raw-fetch)');
-        expect(report.warnings[0]?.fix).toStartWith('x upgrade');
+        expect(report.warnings[0]?.at).toBe('guards/raw-fetch.ts');
+        expect(report.warnings[0]?.fix).toStartWith(
+          'mv guards/raw-fetch.ts guards/app-raw-fetch.ts',
+        );
       },
     );
   });

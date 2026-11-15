@@ -1,6 +1,6 @@
 // The three 31.27.0 scaffold codemods, over each file as the 31.26.0 scaffold wrote it: the live
 // and e2e suites added where they have something to drive, the floor's `skip` rows for what cannot
-// run (and `strict` only ever suggested), the test ports moved only off a byte-for-byte old file.
+// run (`strict` is 31.28.0's, `verify-floor-steps`), the test ports moved only off a byte-for-byte old file.
 
 import { describe, expect, test } from 'bun:test';
 import { names } from '../templates';
@@ -20,6 +20,7 @@ import { memoryCodemodApp } from './codemod';
 import { codemod as testPorts } from './test-ports';
 import { codemod as testSuites } from './test-suites';
 import { codemod as floorSkips } from './verify-floor-skips';
+import { codemod as floorSteps } from './verify-floor-steps';
 
 const text = (files: readonly { path: string; contents?: unknown }[], path: string): string =>
   String(files.find((file) => file.path === path)?.contents ?? '');
@@ -54,15 +55,14 @@ describe('unit · codemod verify-floor-skips', () => {
   const render = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
   const site = { 'apps/web/site/page.tsx': '' };
 
-  test('the scaffold’s own skip rows land after steps; strict is suggested, never set', async () => {
+  test('the scaffold’s own skip rows land after steps, and strict is left to 31.28.0', async () => {
     const app = memoryCodemodApp({ [FLOOR]: render(old), ...site });
     const result = await floorSkips.run(app);
     expect(result.changed).toEqual([FLOOR]);
     const { strict: _s, ...expected } = today;
     expect(app.files[FLOOR]).toBe(render(expected));
     expect((JSON.parse(app.files[FLOOR] ?? '{}') as { skip: unknown }).skip).toEqual(skip);
-    expect(result.skipped[0]?.reason).toContain('strict left off');
-    expect(result.skipped[0]?.diff).toContain('+  "strict": true');
+    expect(result.skipped).toEqual([]);
     expect((await floorSkips.run(app)).changed).toEqual([]);
   });
 
@@ -84,6 +84,54 @@ describe('unit · codemod verify-floor-skips', () => {
     expect((await floorSkips.run(app)).skipped[0]?.path).toBe(FLOOR);
     expect(app.files[FLOOR]).toBe('[1]\n');
     expect(await floorSkips.run(memoryCodemodApp({}))).toEqual({ changed: [], skipped: [] });
+  });
+});
+
+describe('unit · codemod verify-floor-steps', () => {
+  const FLOOR = 'x.verify.json';
+  const render = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+  const today = JSON.parse(verifyFloor({ jobs: false, pages: true })) as Record<string, unknown>;
+  const steps = today['steps'] as readonly string[];
+  const site = { 'apps/web/site/page.tsx': '' };
+
+  test('the scaffold’s floor steps join in its order, and a floor naming the whole gate goes strict', async () => {
+    // As 31.27.0's skips left it: the newer steps missing, no strict.
+    const { strict: _strict, ...rest } = today;
+    const old = {
+      ...rest,
+      steps: steps.filter((step) => !['seo', 'i18n', 'contract-diff'].includes(step)),
+    };
+    const app = memoryCodemodApp({ [FLOOR]: render(old), ...site });
+    expect(await floorSteps.run(app)).toEqual({ changed: [FLOOR], skipped: [] });
+    expect(app.files[FLOOR]).toBe(render(today));
+    expect(await floorSteps.run(app)).toEqual({ changed: [], skipped: [] });
+  });
+
+  test('a step in skip stays excused, the app’s own steps stay, and a strict it set is its own', async () => {
+    const app = memoryCodemodApp({
+      [FLOOR]: render({
+        ...today,
+        steps: ['typecheck', 'mine'],
+        skip: { seo: 'no pages to rank' },
+        strict: false,
+      }),
+      ...site,
+    });
+    await floorSteps.run(app);
+    const floor = JSON.parse(app.files[FLOOR] ?? '{}') as { steps: string[]; strict: boolean };
+    expect(floor.steps).not.toContain('seo');
+    expect(floor.steps).toContain('i18n');
+    expect(floor.steps.at(-1)).toBe('mine');
+    expect(floor.strict).toBe(false);
+  });
+
+  test('a floor short of the whole gate records strict false once, with the note, and never again', async () => {
+    const app = memoryCodemodApp({ [FLOOR]: render({ steps: ['typecheck'] }), ...site });
+    const first = await floorSteps.run(app);
+    expect(JSON.parse(app.files[FLOOR] ?? '{}').strict).toBe(false);
+    expect(first.skipped[0]?.reason).toContain('"strict": false recorded, once');
+    expect(first.skipped[0]?.diff).toContain('+  "strict": true');
+    expect(await floorSteps.run(app)).toEqual({ changed: [], skipped: [] });
   });
 });
 
