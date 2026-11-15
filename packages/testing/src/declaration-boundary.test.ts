@@ -59,7 +59,41 @@ test('${name} starts with no storage and leaves one defined', () => {
 });
 `;
 
+const RENDER = join(PACKAGES, 'render', 'src', 'index.ts');
+const MODELS = join(PACKAGES, 'ai', 'src', 'models.ts');
+
+/** Both files claim `/boundary` from different files: a second claim in one table is refused. */
+const routeDeclarer = (name: string): string => `import { expect, test } from 'bun:test';
+import { defineRoute, registerRoute, routeEntries } from '${RENDER}';
+import { modelIds, registerModel } from '${MODELS}';
+
+registerRoute({
+  file: 'apps/web/site/boundary-${name}/page.tsx',
+  path: '/boundary',
+  config: defineRoute({ render: 'static', offline: 'precache', hydrate: 'never',
+    meta: () => ({ title: 'T', description: 'd'.repeat(60) }) }),
+});
+registerModel({ id: 'model-${name}', family: 'boundary', contextWindow: 1, maxOutput: 1,
+  cacheMinimumTokens: 0, inputPerMillion: { minor: 1, currency: 'USD' },
+  outputPerMillion: { minor: 1, currency: 'USD' } } as never);
+
+test('${name} holds its own route and model, and no other file’s', () => {
+  expect(routeEntries().map((entry) => entry.file)).toEqual(['apps/web/site/boundary-${name}/page.tsx']);
+  expect(modelIds()).toEqual(['model-${name}']);
+});
+`;
+
 describe('module-scope declaration tables, in one process', () => {
+  test('a route and a model one file declared are gone before the next file declares its own', async () => {
+    const { output, exitCode } = await runFixtures({
+      'one.test.ts': routeDeclarer('one'),
+      'two.test.ts': routeDeclarer('two'),
+    });
+    expect(output).not.toContain('X_ROUTE_DUPLICATE');
+    expect(output).toContain('2 pass');
+    expect(exitCode).toBe(0);
+  }, 30_000);
+
   test('storage one file defined over none is gone before the next file starts', async () => {
     const { output, exitCode } = await runFixtures({
       'one.test.ts': storageDefiner('one'),

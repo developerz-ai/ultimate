@@ -14,7 +14,12 @@ import {
   SurfaceBoundaryError,
 } from './errors';
 import { assertModeInvariants, defaultIslandBudget } from './modes';
-import type { MountedRouteInput, RouteMount, RouteMountInput } from './mounted-routes';
+import type {
+  MountedRoute,
+  MountedRouteInput,
+  RouteMount,
+  RouteMountInput,
+} from './mounted-routes';
 import {
   claimedBy,
   clearMountedRoutes,
@@ -36,6 +41,8 @@ import { locateSurface } from './surfaces';
  * The one filename a route may carry, per route surface. Keyed by `RouteSurface`, so both rows are
  * MANDATORY: a dropped row would read as `undefined` in `assertRouteFilename`.
  */
+export { decodeSegment } from './decode-segment'; // split out at the line ceiling
+
 export const ROUTE_FILENAME = Object.freeze<Record<RouteSurface, string>>({
   site: 'page.tsx',
   app: 'page.tsx',
@@ -359,6 +366,33 @@ export function clearRoutes(): void {
   described = undefined;
 }
 
+/** The whole table: what `restoreRoutes` puts back. Test seam (`@ultimat3/testing`'s boundary). */
+export interface RouteSnapshot {
+  readonly routes: readonly (readonly [string, RouteEntry, RouteConfig | undefined])[];
+  readonly patterns: readonly (readonly [string, string])[];
+  readonly mounted: readonly MountedRoute[];
+}
+
+export const routeSnapshot = (): RouteSnapshot => ({
+  routes: [...routes].map(([path, entry]) => [path, entry, declaredConfigs.get(path)] as const),
+  patterns: [...patternsByFile],
+  mounted: mountedRoutes(),
+});
+
+/** Exactly `snapshot` again — a REPLACE: a module-scope route never registers twice. */
+export function restoreRoutes(snapshot: RouteSnapshot): void {
+  clearRoutes();
+  for (const [path, entry, config] of snapshot.routes) {
+    routes.set(path, entry);
+    if (config !== undefined) declaredConfigs.set(path, config);
+  }
+  for (const [file, path] of snapshot.patterns) patternsByFile.set(file, path);
+  const byMount = new Map<RouteMountInput, MountedRoute[]>();
+  for (const route of snapshot.mounted)
+    byMount.set(route.mount, [...(byMount.get(route.mount) ?? []), route]);
+  for (const [mount, set] of byMount) setMountedRoutes(mount, set);
+}
+
 export function routeCount(): number {
   return routes.size;
 }
@@ -463,21 +497,4 @@ function isPersonal(config: RouteConfig): boolean {
   const cache = config.cache;
   if (cache === undefined) return false;
   return cache === 'no-store' || cache.mode === 'no-store' || cache.mode === 'private';
-}
-
-/**
- * `undefined` for a malformed percent-escape. A pathname is whatever the client typed, and
- * `decodeURIComponent('%zz')` throws a bare `URIError` — no code, no fix line — where a router
- * already has an answer for "this branch does not match".
- *
- * Still exported after this package's own `matchRoute` was deleted for `@ultimat3/http`'s trie
- * (`stages.ts`): it is the one answer to "is this segment decodable?" on this side of the wire,
- * and a second copy of it is how one of the two ends up throwing where the other 404s.
- */
-export function decodeSegment(value: string): string | undefined {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return undefined;
-  }
 }

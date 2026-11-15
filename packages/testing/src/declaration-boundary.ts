@@ -11,6 +11,7 @@ import type {
   resetAuthenticator,
 } from '@ultimat3/http';
 import type { Channel } from '@ultimat3/realtime';
+import type { RouteSnapshot, restoreRoutes, routeSnapshot } from '@ultimat3/render';
 import { loaded } from './per-test-reset';
 
 /** One table: where it lives, how to read it, and the exact restore its owner publishes. */
@@ -26,6 +27,17 @@ export interface DeclarationTable {
 interface ChannelModule {
   readonly registeredChannels: () => readonly Channel[];
   readonly restoreChannels: (declared: readonly Channel[]) => void;
+}
+
+interface RouteModule {
+  readonly routeSnapshot: typeof routeSnapshot;
+  readonly restoreRoutes: typeof restoreRoutes;
+}
+
+/** `@ultimat3/ai`'s catalogue, restated: `ai` is reached dynamically only, never type-imported. */
+interface ModelModule {
+  readonly registeredModels: () => readonly unknown[];
+  readonly restoreModels: (specs: readonly unknown[]) => void;
 }
 
 interface HooksModule {
@@ -84,6 +96,16 @@ const channelModule = (): ChannelModule | undefined => {
   return path === undefined ? undefined : (require(path) as ChannelModule);
 };
 
+const routeModule = (): RouteModule | undefined => {
+  const path = loaded('@ultimat3/render', 'registry.ts');
+  return path === undefined ? undefined : (require(path) as RouteModule);
+};
+
+const modelModule = (): ModelModule | undefined => {
+  const path = loaded('@ultimat3/ai', 'models.ts');
+  return path === undefined ? undefined : (require(path) as ModelModule);
+};
+
 const hooksModule = (): HooksModule | undefined => {
   const path = loaded('@ultimat3/http', 'hooks.ts');
   return path === undefined ? undefined : (require(path) as HooksModule);
@@ -102,6 +124,18 @@ const remoteModule = (): RemoteModule | undefined =>
 
 /** Every table the boundary restores. A new module-scope registry joins here, with its restore. */
 export const DECLARATION_TABLES: readonly DeclarationTable[] = [
+  {
+    // One file's `site/` route was a later fixture app's `budgets` red (`X_STYLES_GLOBAL_MISSING`
+    // in `mcp-host-tools.test.ts`): `documentSurfaces()` reads the whole route table.
+    owner: '@ultimat3/render/registry.ts',
+    capture: () => routeModule()?.routeSnapshot(),
+    restore: (snapshot) => routeModule()?.restoreRoutes(snapshot as RouteSnapshot),
+  },
+  {
+    owner: '@ultimat3/ai/models.ts',
+    capture: () => modelModule()?.registeredModels(),
+    restore: (snapshot) => modelModule()?.restoreModels(snapshot as readonly unknown[]),
+  },
   {
     // A slot, not a table: one file's `configureAuthenticator` answered every later file's socket
     // upgrade with its resolver — `role-sync-dev-origin.test.ts` read 401 where it wanted 101.

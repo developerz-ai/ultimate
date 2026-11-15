@@ -36,7 +36,7 @@ const LEDGER: Readonly<Record<string, Row>> = {
   'packages/action/src/tool-gate.ts': { open: 'no restore for registered tool gates' },
   'packages/ai/src/agent-facts.ts': { open: 'no restore for agent facts' },
   'packages/ai/src/evals.ts': { open: 'no restore for declared evals' },
-  'packages/ai/src/models.ts': { open: 'resetModels only — a reset, not a restore' },
+  'packages/ai/src/models.ts': { restored: 'declaration-boundary.ts' },
   'packages/ai/src/prompt.ts': { open: 'resetPrompts only — a reset, not a restore' },
   'packages/auth/src/oauth-registry.ts': { rerun: true },
   'packages/auth/src/verification-purposes.ts': { open: 'no restore for purposes' },
@@ -69,7 +69,7 @@ const LEDGER: Readonly<Record<string, Row>> = {
   'packages/realtime/src/channel-registry.ts': { restored: 'declaration-boundary.ts' },
   'packages/realtime/src/device-socket.ts': { open: 'no restore for device sockets' },
   'packages/render/src/module-loader.ts': { open: 'no restore for stylesheets' },
-  'packages/render/src/registry.ts': { open: 'clearRoutes only — a reset, not a restore' },
+  'packages/render/src/registry.ts': { restored: 'declaration-boundary.ts' },
   'packages/testing/src/factories.ts': { open: 'defineFactory has no restore' },
 };
 

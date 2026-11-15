@@ -636,7 +636,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `island`, `islandCollector` | one interactive component on a static page |
 | `asset`, `setAssetResolver`, `assetPathProblem`, `AssetPath` | `asset('assets/x.avif')` → the content-hashed URL of a public site file; the table is the CLI's ([Static Assets](../../wiki/Static-Assets.md)) |
 | `MODE_SPECS`, `assertModeShape`, `assertModeInvariants` | the mode invariant table |
-| `registerRoute`, `describePages`, `routeFor`, `routePathFromFile` | the route table |
+| `registerRoute`, `describePages`, `routeFor`, `routePathFromFile` | the route table; `routeSnapshot()` / `restoreRoutes(snapshot)` put it back exactly (tests — `@ultimat3/testing`'s file boundary) |
 | `registerMountedRoutes`, `RouteMount`, `RouteMountInput`, `MountedRouteInput` | routes a package mounts with no surface file: listed by `describePages()` with `mount: { by, permissions }`, absent from `routeEntries()` |
 | `checkSurfaceBoundary`, `surfaceOf` | the hard boundary |
 | `renderStatic`†, `enumeratePrerender`† | build-time render, content hashing |

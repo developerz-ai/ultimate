@@ -262,6 +262,16 @@ export function resetModels(): void {
   registry.clear();
 }
 
+/**
+ * Test-only: exactly `specs` again, in their order — what `registeredModels()` answered earlier.
+ * A REPLACE, never a reset: an app's `models.ts` registers once per process. Rows were screened
+ * when first registered. `@ultimat3/testing`'s file boundary is the caller.
+ */
+export function restoreModels(specs: readonly ModelSpec[]): void {
+  registry.clear();
+  for (const spec of specs) registry.set(spec.id, spec);
+}
+
 const rankOf = (effort: Effort): number => EFFORTS.indexOf(effort);
 
 /**

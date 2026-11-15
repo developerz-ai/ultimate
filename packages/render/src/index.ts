@@ -158,6 +158,7 @@ export type {
   RouteEntry,
   RouteMount,
   RouteMountInput,
+  RouteSnapshot,
 } from './registry';
 export {
   clearRoutes,
@@ -165,9 +166,11 @@ export {
   ROUTE_FILENAME,
   registerMountedRoutes,
   registerRoute,
+  restoreRoutes,
   routeEntries,
   routeFor,
   routePathFromFile,
+  routeSnapshot,
 } from './registry';
 export type {
   InvalidateMode,

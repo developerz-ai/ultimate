@@ -6,7 +6,7 @@
 // hook was running under. Production saw it on every 1 in ~250 bank runs (57 of 168 in 24 h, the
 // rest were real cancels). Driven on a hand-cranked renewal schedule: the interleaving is exact.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
 import { collectMetrics, ctxOf, frozenClock, resetMetrics, UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
@@ -47,6 +47,11 @@ function handCranked(): { schedule: IntervalScheduler; fire(): void } {
   };
 }
 
+// Before too: the counter is process-wide, and on a shared worker an earlier file's lost lease is
+// still in it when this file's first test reads it.
+beforeEach(() => {
+  resetMetrics();
+});
 afterEach(() => {
   resetJobs();
   resetMetrics();
