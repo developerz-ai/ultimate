@@ -102,8 +102,8 @@ export function serveScope(mode: ScopeMode, cacheDir: string): ScopeRegistry {
   const server = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
-    async fetch(request) {
-      const { pathname } = new URL(request.url);
+    async fetch(request: Request): Promise<Response> {
+      const { origin, pathname } = new URL(request.url);
       if (!pathname.startsWith(`${prefix}/`)) return notFound();
       const rest = pathname.slice(prefix.length);
       if (rest.startsWith('/-/tarball/')) {
@@ -119,7 +119,7 @@ export function serveScope(mode: ScopeMode, cacheDir: string): ScopeRegistry {
       }
       const head = byName.get(name);
       if (head === undefined) return upstream === undefined ? notFound() : Response.json(upstream);
-      const tarball = `${server.url.origin}${prefix}/-/tarball/${tarballName(head.name, head.version)}`;
+      const tarball = `${origin}${prefix}/-/tarball/${tarballName(head.name, head.version)}`;
       return Response.json(withHead(upstream, head, tarball));
     },
   });
