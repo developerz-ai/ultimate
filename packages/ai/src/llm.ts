@@ -291,7 +291,7 @@ async function generate<
         let issues = 'no output';
         let rejected: readonly string[] | undefined;
         for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-          const result = await meter.call(gateway.generate({ ...request, messages }));
+          const result = await meter.call(() => gateway.generate({ ...request, messages }));
           span.setAttributes({ 'ultimate.llm.attempts': attempt, ...answerAttributes(result) });
           await observeCall(def, meter, result, attempt, rejected);
           // Branch on the stop reason BEFORE reading the answer. A refusal carries empty or partial

@@ -460,7 +460,7 @@ describe('model fallback', () => {
     });
     const meter = runMeter();
     const result = await gateway.scope({ actorKey: 'actor:u1' }, () =>
-      meter.call(gateway.generate({ ...ask, fallbackModels: [SECOND] })),
+      meter.call(() => gateway.generate({ ...ask, fallbackModels: [SECOND] })),
     );
 
     expect(calls).toEqual([PRIMARY, SECOND]);

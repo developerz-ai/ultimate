@@ -713,7 +713,7 @@ for that model ran out, and only when **every** failure had a class.
 | streams | fall over only before the first chunk reaches the reader; after it, the failure is thrown as it stands |
 | the chain | screened before any request: an unregistered id is `X_AI_MODEL_UNKNOWN`, a repeated one `X_AI_REQUEST_INVALID` |
 | all fail | one `X_AI_PROVIDER_UNAVAILABLE` naming every model, `a → b` |
-| `retry.timeBudgetMs` | one clock for the whole chain; a call that ran out of time does not fall over |
+| `retry.timeBudgetMs` | one clock for the whole chain, checked before every call after the first — the next provider, the next model; a call that ran out of time does not fall over |
 
 ### Provider parameters: `providerOptions`
 

@@ -25,7 +25,7 @@ export function llmReport(span: Span, model: string, meter: RunMeter): LlmReport
   let answeredBy = model;
   const watched: RunMeter = {
     ...meter,
-    call: async (work: Promise<GenerateResult>): Promise<GenerateResult> => {
+    call: async (work: () => Promise<GenerateResult>): Promise<GenerateResult> => {
       const result = await meter.call(work);
       provider = result.provider ?? NO_PROVIDER;
       answeredBy = result.model;

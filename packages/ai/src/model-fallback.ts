@@ -4,6 +4,7 @@
 
 import type { Span } from '@ultimat3/core';
 import {
+  asyncContext,
   isUltimateError,
   renderThrowable,
   SEMCONV,
@@ -150,22 +151,50 @@ const attemptAttributes = (model: ModelId, index: number) => ({
 });
 
 /**
+ * Where a chain reports each model it falls over FROM, the moment it moves on: the run meter of the
+ * call in flight (`RunMeter.call` opens one around the call). Ambient per CALL, never keyed on a
+ * thrown value — one object can reject two calls at once (`signal.reason`), and an attempt read off
+ * it was credited to whichever meter caught it first. The model that ends the walk is the call's
+ * own throw or answer, which the meter counts already.
+ */
+const attemptSinks = asyncContext<(attempt: ModelFallback) => void>(
+  'a model-fallback attempt sink',
+);
+
+/** Run `work` with `sink` hearing every model a chain inside it falls over from. */
+export function withAttemptSink<T>(sink: (attempt: ModelFallback) => void, work: () => T): T {
+  return attemptSinks.run(sink, work);
+}
+
+/** The model failed declared: kept for the answer, reported unless it was the chain's last. */
+function fallOver(
+  fellOver: ModelFallback[],
+  attempt: ModelFallback,
+  last: boolean,
+  chain: readonly ModelId[],
+): void {
+  fellOver.push(attempt);
+  if (last) throw exhausted(chain, fellOver);
+  attemptSinks.get()?.(attempt);
+}
+
+/**
  * One `generate` over the chain. A single-model chain is the call itself — no span, nothing stamped.
  * Otherwise each model runs in its own `ai.model.attempt` span; a failure outside the declared
  * class, or the last model's, ends the walk.
  */
 export async function generateOverModels(
   chain: readonly ModelId[],
-  run: (model: ModelId) => Promise<GenerateResult>,
+  run: (model: ModelId, index: number) => Promise<GenerateResult>,
 ): Promise<GenerateResult> {
   const [only] = chain;
-  if (chain.length === 1 && only !== undefined) return run(only);
+  if (chain.length === 1 && only !== undefined) return run(only, 0);
   const fellOver: ModelFallback[] = [];
   for (const [index, model] of chain.entries()) {
     try {
       const result = await withSpan('ai.model.attempt', (span) => {
         span.setAttributes(attemptAttributes(model, index));
-        return run(model).catch((error: unknown) => {
+        return run(model, index).catch((error: unknown) => {
           markReason(span, error);
           throw error;
         });
@@ -173,9 +202,8 @@ export async function generateOverModels(
       return fellOver.length === 0 ? result : { ...result, fallbacks: fellOver };
     } catch (error) {
       const reason = fallbackClassOf(error);
-      if (reason === undefined) throw withEarlier(error, fellOver);
-      fellOver.push(fellOverAs(model, reason, error));
-      if (index === chain.length - 1) throw exhausted(chain, fellOver);
+      if (reason === undefined) throw error;
+      fallOver(fellOver, fellOverAs(model, reason, error), index === chain.length - 1, chain);
     }
   }
   throw exhausted(chain, fellOver);
@@ -188,11 +216,13 @@ const markReason = (span: Span, error: unknown): void => {
 
 /**
  * One stream over the chain. Falls over ONLY before the first chunk reaches the consumer: from then
- * on a replay would duplicate what it already read, so a later failure is thrown as it stands.
+ * on a replay would duplicate what it already read, so a later failure is thrown as it stands. Nor
+ * once `spent()` says the call's time budget is gone — the same rule `generate`'s retry loop keeps.
  */
 export async function* streamOverModels(
   chain: readonly ModelId[],
   run: (model: ModelId) => AsyncIterable<StreamChunk>,
+  spent: () => boolean = () => false,
 ): AsyncIterable<StreamChunk> {
   const [only] = chain;
   if (chain.length === 1 && only !== undefined) {
@@ -213,43 +243,13 @@ export async function* streamOverModels(
       return;
     } catch (error) {
       span.recordError(error);
-      const reason = delivered ? undefined : fallbackClassOf(error);
-      if (reason === undefined) throw withEarlier(error, fellOver);
+      const last = index === chain.length - 1;
+      const reason = delivered || (!last && spent()) ? undefined : fallbackClassOf(error);
+      if (reason === undefined) throw error;
       span.setAttribute('ultimate.llm.fallback.reason', reason);
-      fellOver.push(fellOverAs(model, reason, error));
-      if (index === chain.length - 1) throw exhausted(chain, fellOver);
+      fallOver(fellOver, fellOverAs(model, reason, error), last, chain);
     } finally {
       span.end();
     }
   }
-}
-
-/**
- * The earlier failed models of a chain whose LAST model failed outside the declared class: the
- * error is thrown as it stands, so the attempts ride beside it — a `WeakMap`, never a write onto a
- * value an app's `Provider` built (it may be frozen, or not an object at all).
- */
-const earlier = new WeakMap<object, readonly ModelFallback[]>();
-
-const withEarlier = (error: unknown, fellOver: readonly ModelFallback[]): unknown => {
-  if (fellOver.length > 0 && typeof error === 'object' && error !== null) {
-    earlier.set(error, [...fellOver]);
-  }
-  return error;
-};
-
-/**
- * The model attempts a thrown chain failure stands for, for the run meter. `whole`: the error IS
- * the chain's (every model failed declared) and counts as nothing more; otherwise the attempts are
- * the models before the one that threw, which the meter counts as it counts any throw.
- */
-export function attemptsOf(
-  error: unknown,
-): { readonly attempts: readonly ModelFallback[]; readonly whole: boolean } | undefined {
-  if (error instanceof AiProviderUnavailableError && error.fellOver !== undefined) {
-    return { attempts: error.fellOver, whole: true };
-  }
-  if (typeof error !== 'object' || error === null) return undefined;
-  const before = earlier.get(error);
-  return before === undefined ? undefined : { attempts: before, whole: false };
 }

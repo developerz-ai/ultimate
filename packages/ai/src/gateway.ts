@@ -83,6 +83,12 @@ export interface ProviderGatewayInput {
    * after the cooldown answers. Per process. `(provider) => breaker({ … })` to choose your own, `'off'` declines.
    */
   readonly breaker?: GatewayBreakerOption | undefined;
+  /**
+   * The clock `retry.timeBudgetMs` is read from. Injectable for the reason `sleep` and `random`
+   * are: a budget that only real time can spend is a rule no unit test can hold. Production
+   * passes none (`systemClock`).
+   */
+  readonly clock?: { monotonic(): number } | undefined;
 }
 
 export interface Gateway {
@@ -127,6 +133,7 @@ class GatewayImpl implements Gateway {
   /** Left `undefined` rather than defaulted, so `backoffDelay` owns the one fallback to `Math.random`. */
   private readonly random: Random | undefined;
   private readonly gateOf: (provider: Provider) => Breaker | undefined;
+  private readonly monotonic: () => number;
 
   get defaultModel(): ModelId | undefined {
     return this.config.defaultModel;
@@ -154,6 +161,8 @@ class GatewayImpl implements Gateway {
     this.sleep = config.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.random = config.random;
     this.gateOf = providerBreakers(config.breaker);
+    const clock = config.clock;
+    this.monotonic = clock === undefined ? () => systemClock.monotonic() : () => clock.monotonic();
   }
 
   /**
@@ -200,9 +209,9 @@ class GatewayImpl implements Gateway {
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     const { resolved, chain } = this.prepared(request);
     // One clock for the chain: `retry.timeBudgetMs` bounds the call, every model included.
-    const startedAt = systemClock.monotonic();
-    return generateOverModels(chain, (model) =>
-      this.generateModel({ ...resolved, model }, startedAt),
+    const startedAt = this.monotonic();
+    return generateOverModels(chain, (model, index) =>
+      this.generateModel({ ...resolved, model }, startedAt, index > 0),
     );
   }
 
@@ -210,6 +219,7 @@ class GatewayImpl implements Gateway {
   private async generateModel(
     resolved: GenerateRequest,
     startedAt: number,
+    continuing: boolean,
   ): Promise<GenerateResult> {
     const model = resolveModel('gateway', resolved.model);
     const cacheKey = promptCacheKey(resolved);
@@ -242,6 +252,8 @@ class GatewayImpl implements Gateway {
         gateOf: this.gateOf,
         call: (provider) => provider.generate(resolved),
         startedAt,
+        monotonic: this.monotonic,
+        continuing,
       });
     } catch (error) {
       // A call that never landed must not go on holding its reservation — and one that DID land
@@ -283,8 +295,12 @@ class GatewayImpl implements Gateway {
 
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
     const { resolved, chain } = this.prepared(request);
-    // A chain falls over only before the first chunk (`streamOverModels`); after it, never.
-    yield* streamOverModels(chain, (model) => this.streamModel({ ...resolved, model }));
+    // A chain falls over only before the first chunk (`streamOverModels`); after it, never — nor
+    // once `retry.timeBudgetMs` is spent: one clock for the call, as `generate` keeps it.
+    const startedAt = this.monotonic();
+    const budget = this.retry.timeBudgetMs;
+    const spent = (): boolean => budget !== undefined && this.monotonic() - startedAt > budget;
+    yield* streamOverModels(chain, (model) => this.streamModel({ ...resolved, model }), spent);
   }
 
   private async *streamModel(resolved: GenerateRequest): AsyncIterable<StreamChunk> {

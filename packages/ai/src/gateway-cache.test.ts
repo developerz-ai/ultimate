@@ -153,11 +153,11 @@ describe('a cache hit', () => {
     const meter = runMeter();
     const scoped = () => gateway.scope({ orgKey: 'org:acme' }, () => gateway.generate(base));
 
-    const miss = await meter.call(scoped());
+    const miss = await meter.call(scoped);
     const once = meter.total();
     const spent = store.spent('org:acme');
 
-    await meter.call(scoped());
+    await meter.call(scoped);
     expect(calls()).toBe(1);
     expect(store.spent('org:acme')).toBe(spent);
     expect(meter.total()?.usage).toEqual(once?.usage ?? miss.usage);

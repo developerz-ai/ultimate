@@ -116,6 +116,10 @@ export interface AttemptInput {
   readonly call: (provider: Provider) => Promise<GenerateResult>;
   /** When the whole call began — a `fallbackModels` chain shares one `timeBudgetMs`. */
   readonly startedAt?: number;
+  /** The clock `startedAt` was read from; `systemClock` absent. */
+  readonly monotonic?: () => number;
+  /** A later model of a chain: the budget is checked before its FIRST call too. */
+  readonly continuing?: boolean;
 }
 
 /**
@@ -144,10 +148,14 @@ export async function attemptProviders(input: AttemptInput): Promise<GenerateRes
     });
   // Read once, and only compared when a budget is set: core's `retryLoop` rule — a wait that would
   // end past `timeBudgetMs` is never started, across every provider (and model) of this call.
-  const startedAt = input.startedAt ?? systemClock.monotonic();
+  const monotonic = input.monotonic ?? (() => systemClock.monotonic());
+  const startedAt = input.startedAt ?? monotonic();
   const overruns = (delayMs: number): boolean =>
-    retry.timeBudgetMs !== undefined &&
-    systemClock.monotonic() - startedAt + delayMs > retry.timeBudgetMs;
+    retry.timeBudgetMs !== undefined && monotonic() - startedAt + delayMs > retry.timeBudgetMs;
+  // Calls this loop made. The very first call of a whole call always goes out; every later one —
+  // the next provider, the next model's first — is checked against the budget first, exactly as a
+  // wait is: a budget spent by the last attempt is spent, whoever would be asked next.
+  let made = 0;
   if (input.candidates.length === 0) {
     throw new AiProviderUnavailableError({
       model,
@@ -164,6 +172,14 @@ export async function attemptProviders(input: AttemptInput): Promise<GenerateRes
       continue;
     }
     for (let attempt = 1; attempt <= retry.attempts; attempt += 1) {
+      if ((made > 0 || input.continuing === true) && overruns(0)) {
+        // Nothing was sent: the probe goes back, and the next model is not asked either.
+        gate?.released(ticket);
+        failures.push(`${provider.name}: retry.timeBudgetMs spent before this call`);
+        classed = false;
+        throw unavailable();
+      }
+      made += 1;
       try {
         const answer = { ...(await input.call(provider)), provider: provider.name };
         gate?.succeeded(ticket);

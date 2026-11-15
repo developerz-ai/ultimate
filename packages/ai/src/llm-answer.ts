@@ -60,7 +60,7 @@ export async function streamedAnswer<
   meter: RunMeter,
 ): Promise<InferOutput<TOutput>> {
   const { output } = def;
-  const result = await meter.call(streamOneTurn(gateway, request, sink));
+  const result = await meter.call(() => streamOneTurn(gateway, request, sink));
   span.setAttributes({ 'ultimate.llm.attempts': 1, ...answerAttributes(result) });
   await observeCall(def, meter, result, 1, undefined);
   if (result.stopReason === 'refusal') {

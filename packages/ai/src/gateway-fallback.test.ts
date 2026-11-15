@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
 import { breaker, resetTelemetry, subscribe, withSpan } from '@ultimat3/core';
 import { echoProvider } from './echo-provider';
-import { AiBudgetExceededError, AiTransportError } from './errors';
+import { AiBudgetExceededError, AiRequestInvalidError, AiTransportError } from './errors';
 import { providerGateway } from './gateway';
 import type { ModelFallbackClass } from './model-fallback';
 import { fallbackClassOf, MODEL_FALLBACK_ON, transportFallbackClass } from './model-fallback';
@@ -134,7 +134,7 @@ describe('a whole chain failing', () => {
     const calls: string[] = [];
     const gateway = gatewayOf(host(PRIMARY, calls, 503), host(SECOND, calls, 529));
     const meter = runMeter();
-    const failure = await meter.call(gateway.generate(ask)).catch((error: unknown) => error);
+    const failure = await meter.call(() => gateway.generate(ask)).catch((error: unknown) => error);
     expect(failure).toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE' });
     expect(String((failure as { cause?: unknown }).cause)).toContain(`${PRIMARY} → ${SECOND}`);
     expect(meter.billed()).toMatchObject({ calls: 0, unsettled: 2 });
@@ -149,7 +149,7 @@ describe('a chain ending on an undeclared failure', () => {
     const calls: string[] = [];
     const gateway = gatewayOf(host(PRIMARY, calls, 529), host(SECOND, calls, 400));
     const meter = runMeter();
-    const failure = await meter.call(gateway.generate(ask)).catch((error: unknown) => error);
+    const failure = await meter.call(() => gateway.generate(ask)).catch((error: unknown) => error);
 
     expect(calls).toEqual([PRIMARY, SECOND]);
     // As it stands: the second model's own verdict, not a chain-wide one naming both.
@@ -180,8 +180,117 @@ describe('a chain ending on an undeclared failure', () => {
       }
       return expect.unreachable('the stream answered');
     };
-    await expect(meter.call(turn())).rejects.toMatchObject({ status: 400 });
+    await expect(meter.call(turn)).rejects.toMatchObject({ status: 400 });
     expect(meter.billed()).toMatchObject({ calls: 0, unsettled: 2 });
+  });
+});
+
+describe('one thrown object shared by two calls', () => {
+  // `signal.reason` under one aborted signal, or a provider's constant: the same object rejects two
+  // calls at once. Chain 1's earlier attempt is chain 1's — never credited to call 2's meter.
+  test('each meter counts its own call only, run side by side', async () => {
+    const shared = Object.freeze(
+      new AiRequestInvalidError({ detail: 'the one shared reason', fix: 'ultimate --fix' }),
+    );
+    const calls: string[] = [];
+    const sharing = (model: string): Provider => ({
+      ...host(model, calls),
+      generate: async () => {
+        calls.push(model);
+        throw shared;
+      },
+    });
+    const chained = gatewayOf(host(PRIMARY, calls, 529), sharing(SECOND));
+    const single = gatewayOf(sharing(PRIMARY));
+    const one = runMeter();
+    const two = runMeter();
+    await Promise.all([
+      one.call(() => chained.generate(ask)).catch(() => undefined),
+      two.call(() => single.generate({ ...ask, fallbackModels: [] })).catch(() => undefined),
+    ]);
+    await two.call(() => single.generate({ ...ask, fallbackModels: [] })).catch(() => undefined);
+    expect(one.billed()).toMatchObject({ calls: 0, unsettled: 2 });
+    expect(two.billed()).toMatchObject({ calls: 0, unsettled: 2 });
+  });
+});
+
+describe('retry.timeBudgetMs is one clock for the whole chain', () => {
+  /** A host whose every call spends `ms` on the fake clock, then fails 503 (or answers). */
+  function slow(model: string, calls: string[], clock: { now: number }, ms: number, fail = true) {
+    return {
+      ...host(model, calls),
+      name: `${model}-slow-${calls.length}-${ms}`,
+      generate: async (request: GenerateRequest) => {
+        calls.push(model);
+        clock.now += ms;
+        if (fail) throw down(503);
+        return echo.generate(request);
+      },
+      async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
+        calls.push(model);
+        clock.now += ms;
+        if (fail) throw down(503);
+        yield* echo.stream(request);
+      },
+    } satisfies Provider;
+  }
+  const budgeted = (clock: { now: number }, ...providers: Provider[]) =>
+    providerGateway({
+      providers,
+      retry: { attempts: 1, base: 0, max: 0, jitter: 'none', timeBudgetMs: 10 },
+      breaker: 'off',
+      clock: { monotonic: () => clock.now },
+    });
+
+  test('a model whose last attempt ran the budget out never asks the next model', async () => {
+    const clock = { now: 0 };
+    const calls: string[] = [];
+    const gateway = budgeted(
+      clock,
+      slow(PRIMARY, calls, clock, 60),
+      slow(SECOND, calls, clock, 0, false),
+    );
+    await expect(gateway.generate(ask)).rejects.toMatchObject({
+      code: 'X_AI_PROVIDER_UNAVAILABLE',
+    });
+    expect(calls).toEqual([PRIMARY]);
+  });
+
+  test('nor the next provider of the same model', async () => {
+    const clock = { now: 0 };
+    const calls: string[] = [];
+    const gateway = budgeted(
+      clock,
+      slow(PRIMARY, calls, clock, 60),
+      slow(PRIMARY, calls, clock, 0, false),
+    );
+    await expect(gateway.generate({ ...ask, fallbackModels: [] })).rejects.toMatchObject({
+      code: 'X_AI_PROVIDER_UNAVAILABLE',
+    });
+    expect(calls).toEqual([PRIMARY]);
+  });
+
+  test('within the budget the chain still falls over', async () => {
+    const clock = { now: 0 };
+    const calls: string[] = [];
+    const gateway = budgeted(
+      clock,
+      slow(PRIMARY, calls, clock, 5),
+      slow(SECOND, calls, clock, 0, false),
+    );
+    expect((await gateway.generate(ask)).model).toBe(SECOND);
+  });
+
+  test('a stream whose first model ran the budget out never asks the next model', async () => {
+    const clock = { now: 0 };
+    const calls: string[] = [];
+    const gateway = budgeted(
+      clock,
+      slow(PRIMARY, calls, clock, 60),
+      slow(SECOND, calls, clock, 0, false),
+    );
+    await expect(drain(gateway.stream(ask))).rejects.toMatchObject({ status: 503 });
+    expect(calls).toEqual([PRIMARY]);
   });
 });
 

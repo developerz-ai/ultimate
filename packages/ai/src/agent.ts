@@ -300,7 +300,7 @@ async function run<
       send: (request) => {
         assertCost(request);
         // `reportedCall`: each turn is one model call, so each is one `ai.llm` (`llm-instrument.ts`).
-        const answered = reportedCall(request.model ?? model, gateway.generate(request));
+        const answered = () => reportedCall(request.model ?? model, gateway.generate(request));
         return deadline.guard(meter.call(answered)).catch((error: unknown) => {
           // The caller left mid-call: the aborted socket reads as a provider failure, which is
           // RETRYABLE. Say what happened instead.

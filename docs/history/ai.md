@@ -1220,9 +1220,13 @@ and untraced. So the swap moved in, on terms that keep the original objection an
   is unknown, the same rule as any transport failure. It is never counted as free. An answer from a fallback model is
   billed at **its** price, apart (`RunMeter.below`, `pricedOn`), because a run's own usage is
   re-priced as one model and summing a fallback's tokens into it charged them at the primary's
-  rate. A chain whose LAST model fails outside the class still counts every model: the earlier
-  attempts ride beside the error in a `WeakMap` (never written onto a value an app's `Provider`
-  built), and the error is thrown as it stands.
+  rate. A chain whose LAST model fails outside the class still counts every model, and the error
+  is thrown as it stands. Each model a chain falls over FROM is reported, as it happens, to the run
+  meter of the call in flight: `RunMeter.call` takes a thunk, so the call starts inside the meter's
+  async context (`withAttemptSink`). A first cut kept the earlier attempts in a `WeakMap` keyed on
+  the thrown error. A concurrency audit (2026-11-15) showed one object can reject two calls at once
+  (`signal.reason` under one aborted signal), and the attempts went to whichever meter caught it
+  first. Ambient per call, nothing is keyed on a value the call does not own.
 
 **The class (`MODEL_FALLBACK_ON`).** A failure falls over only when it is a fact about the model's
 hosts at this moment, never about the request: `rate_limited` (429), `overloaded` (529), `timeout`
@@ -1234,7 +1238,11 @@ is the problem, and the next model is not asked. 409 and 425 are left out on pur
 handshake can resolve there. Neither says anything about the model, and the next model would meet
 the same conflict. Also never: a refusal or a truncation (an answer), a budget refusal, an abort,
 a model no provider lists (`app.config.ts`), and running out of `retry.timeBudgetMs`. That budget
-is one clock for the whole chain.
+is one clock for the whole chain. It is checked before every call after the call's first (the next
+provider, the next model's first call), not only before a backoff wait. The same audit found a
+model whose last attempt spent the budget still handed the call to the next model. A stream
+checks it before falling over. The clock is injectable (`providerGateway({ clock })`), like
+`sleep` and `random`.
 
 **Streams fall over only before the first chunk.** The old argument was that a handshake retry
 "cannot be told from replaying tokens the consumer already read". That holds once a chunk is out.
