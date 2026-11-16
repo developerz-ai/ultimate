@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
 percent: 63
-current_focus: "Sweep 8c (CI speed: weighted shards, 4 unit + 3 live parts, slow-file splits, a slow-test guard; ARM measured and rejected) on feat/sweep-8c-ci-speed; 31.36.0 shipped 8b-4. Next: sweep 9 (13)."
+current_focus: "Sweep 9 (slice 13: five shapes, finished.ts, recipes, roadmap truth) on feat/sweep-9-shapes; 31.37.0 shipped 8c. finished.ts is red on 9 of 10 rows by design until the plan closes. Next: audit rounds (20), infra (30), platform (31), adopters (40–49)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3

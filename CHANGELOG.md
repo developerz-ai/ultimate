@@ -10,7 +10,33 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- **Eight app shapes, each gated twice in CI.** `x new <name> --shape saas | agent | realtime | content | offline` join `api`, `dashboard` and `blog`:
+  - `saas`: tenants, invites and billing as app code;
+  - `agent`: an LLM agent with tools and an MCP surface, its model named by environment alone;
+  - `realtime`: one change seen by two clients on two nodes;
+  - `content`: a two-locale static site at 0 kB of JavaScript;
+  - `offline`: an installable app whose writes queue offline and land once.
+- **`bun run finished --check` reads the definition of finished**: ten rows, each a command, run by the weekly `health` brief. Today it is honestly red on most of them.
+- **No planned commands remain.** `x branch`, `x ai` and `x money` are "not planned" rows in Known gaps, each naming the shipped extension point.
+
+### Added
+
+- Four recipes on [Building your own base](wiki/Building-Your-Own-Base.md) — billing, PDF assembly, a PIN authenticator, a named proxy pool — each a wrap of shipped primitives, compiled and run by `bun test ./scripts/base-recipes/` (in the gate's unit step and `tutorial-run.yml`).
+- `docs/history/finished.md`: what finished means, and maintenance mode.
+
+### Changed
+
+- `PLANNED_COMMANDS` is empty: `x branch`, `x ai` and `x money` are `X_CLI_UNKNOWN_COMMAND`.
+- Milestones 12–14 (desktop, mobile, OTA) and `x branch` moved from the roadmap to [Known gaps](wiki/Known-Gaps.md) as not planned.
+- The scaffold-smoke generator sweep stands in for a translator on the placeholders it wrote, so a two-locale shape gates twice. It also skips `x g invite` in an app that already has its invite.
+
+### Fixed
+
+- `x g sign-in` no longer refuses with `X_GENERATE_CONFLICT` when `apps/web/runtime.ts` or its test was edited. It adds its guard import and call (and for `--oidc`, `routes: signInRoutes`) to the existing file. A runtime it cannot read refuses with `edit apps/web/runtime.ts:<line> — …`.
+- A realtime island builds when `@ultimat3/realtime` is installed from a `file:` spec. Bun 1.4.4's `Bun.build` refuses any plugin-returned path containing `..`, including the isolated store's `@ultimat3+realtime@file+..+..+…` directory names, so such a path is served through a re-export (`island-plugin-path.ts`). Island bytes for registry installs are unchanged.
+- A generator conflict on `apps/web/runtime.ts` no longer suggests `--force`, which would have replaced the app's own ports with the template. It points at `git diff`.
 
 ## Releases
 
