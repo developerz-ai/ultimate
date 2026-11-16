@@ -1,6 +1,6 @@
 {
   "format": 2,
-  "version": "31.32.0",
+  "version": "31.33.0",
   "entries": {
     "@ultimat3/action": {
       "ACTION_ANSWER_COOKIE": {"hash":"0e5d26d4d453af41","shape":{"kind":"declaration","keyword":"const","head":"0e5d26d4"}},
@@ -2700,6 +2700,7 @@
       "traceId": {"hash":"fe7c78296904d752","shape":{"kind":"function","head":"9b6653f5","params":[],"returns":"473287f8"}},
       "traceparent": {"hash":"d9290121431d5aab","shape":{"kind":"function","head":"05fc50d4","params":["e85bd341"],"returns":"473287f8"}},
       "transformImageBytes": {"hash":"b03c6ff952d6ebaa","shape":{"kind":"function","head":"b5ec7fe3","params":["70f87281","?62abce37"],"returns":"68447152"}},
+      "trimTrailingSlashes": {"hash":"b9b63be13f26453b","shape":{"kind":"function","head":"d77be56f","params":["473287f8"],"returns":"473287f8"}},
       "tryOtlpEndpoint": {"hash":"287a82560865bc8e","shape":{"kind":"function","head":"160f75ae","params":["bd48a6f6","?4ec0ddfa"],"returns":"742bc7c4"}},
       "tryResolveEnvironment": {"hash":"f2a523be8fb540d9","shape":{"kind":"function","head":"c5f040cd","params":["?5105c07c"],"returns":"27a13dc1"}},
       "tryUseContext": {"hash":"96c651e505bf99ed","shape":{"kind":"function","head":"d6882de0","params":[],"returns":"a1d8dded"}},
@@ -2896,6 +2897,7 @@
       "stringField": {"hash":"5d4bd8116dccd8b8","shape":{"kind":"function","head":"641cd463","params":["b23a6a84","473287f8"],"returns":"742bc7c4"}},
       "systemClock": {"hash":"583521bf6e9439b0","shape":{"kind":"declaration","keyword":"const","head":"583521bf"}},
       "templateParams": {"hash":"788462a75aba4826","shape":{"kind":"function","head":"a20fae71","params":["473287f8"],"returns":"21c248b4"}},
+      "trimTrailingSlashes": {"hash":"b9b63be13f26453b","shape":{"kind":"function","head":"d77be56f","params":["473287f8"],"returns":"473287f8"}},
       "uuidV7": {"hash":"fd60c86f62513ff4","shape":{"kind":"function","head":"505cc1ed","params":["?93ff9273"],"returns":"473287f8"}},
       "visibleInterval": {"hash":"98a6552b4ec660f5","shape":{"kind":"function","head":"9a771a70","params":["e1d77062","12886f9d","?da1c7d9a"],"returns":"b1498fb1"}},
       "withRequestId": {"hash":"65f611a188c47de8","shape":{"kind":"function","head":"f2c92fd4","params":["9d5b8736","b23a6a84"],"returns":"2b177a2d"}},

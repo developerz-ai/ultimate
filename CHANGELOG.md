@@ -10,27 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- **Every shipped source file opens with its 1–4 line responsibility header, and every `node:` import says why Bun cannot do the job** (plan 101b slice 12 M6, second PR). The `source-headers` pin table is empty: 316 rows fell. `node-imports` fell from 173 explained-or-not sites to 0. Where Bun has the same API, the import is gone instead: `Bun.CryptoHasher` in `@ultimat3/entity`'s seed ids (pinned by a known-answer test against an independent uuid5), `Bun.file().exists()` in four `x verify` readers, and `Bun.Glob` and `Bun.pathToFileURL` in tests.
-
-### Fixed
-
-- `changelog-check`'s guard-refresh rule and `template-codemods` no longer ask for an upgrade row or a codemod when a template changed only in its leading comment, the generator's own header, outside the template text an app receives (`scripts/lib/template-header-only.ts`). A header sweep had demanded rows for five guards whose generated text had not moved.
-
-- A base URL, issuer, origin or path is trimmed of its trailing slashes in one linear pass. `@ultimat3/core`'s new `trimTrailingSlashes` (also on `@ultimat3/core/page`) replaces `/\/+$/` at 26 sites across action, ai, auth, cli, core, mcp, query, render, seo, storage and testing: that regex is quadratic on a long run of slashes, and 200,000 of them did not finish in 20 s (CodeQL `js/polynomial-redos`).
-
-- `@ultimat3/manifest`'s docs scan strips a block comment's close in one pass. `/\s?\*+\/$/` took 3.9 s on a line of 100,000 `*` (CodeQL `js/polynomial-redos`). The sitemap section matcher cuts a path at its first `?` or `#` by index.
-
-### Changed
-
-- `scripts` coverage rose to 86.5% lines / 91.4% functions: the logic of `release.ts`, `trust-publishers.ts`, `side-effects.ts` and the upgrade-fixtures harness now lives in exported functions their tests call.
-- `queue-wake.live.test.ts` prints the job row, the wake state, the poll delay and the LISTEN sessions when its 3 s start wait expires, so the next miss of #1167 names its cause.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.33.0](docs/changelog/31.33.0.md) | 2026-11-16 | **Every shipped source file opens with its 1–4 line responsibility header, and every `node:` import says why Bun cannot do the job** (plan 101b slice 12 M6, second PR). The `source-headers` pin table is empty: 316 rows fell. `node-imports` fell from 173 explained-or-not sites to 0. Where Bun has the same API, the import is gone instead: `Bun.CryptoHasher` in `@ultimat3/entity`'s seed ids (pinned by a known-answer test against an independent uuid5), `Bun.file().exists()` in four `x verify` readers, and `Bun.Glob` and `Bun.pathToFileURL` in tests. |
 | [31.32.0](docs/changelog/31.32.0.md) | 2026-11-16 | **The security and robustness ratchets are burned down** (plan 101b slice 12 M6). Every site eight guards pinned across `cli`, `scripts` and every package was repaired, or keeps one row with a permanent written reason. Done by the guards' own repair, never a dodge: |
 | [31.31.0](docs/changelog/31.31.0.md) | 2026-11-16 | **The `next` lane runs itself up to the merge.** `next-sync.yml` merges `main` into `next` weekly. `scripts/release-due.ts` reports `data.nextLane`: once the major window is open and `next` is green and ahead, it proposes the `chore: release X.0.0` PR, which a person merges. `scripts/next-breaks.ts` renders the tracking issue of every parked break, cited at the line that parked it. |
 | [31.30.0](docs/changelog/31.30.0.md) | 2026-11-16 | **Test determinism.** One helper per flake class in `@ultimat3/testing` and one guard per unsafe form, each pin table empty: |
