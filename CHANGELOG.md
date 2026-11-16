@@ -10,36 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- **A fix line opens with what to paste or run.** 917 `fix:` lines across every package and the repository scripts opened with a sentence; 862 now open with a command, a code shape (`policy: '<resource>:<verb>'`, `assertCurrency('USD')`, `` sql`…` ``) or an `edit <file>:<line> — …`, with the old instruction after it as a comment. The 55 that remain carry a reason per package in `scripts/lib/fix-prose-pins.ts`: a remedy that is judgement, or one at a call site the thrower cannot see.
-
-### Fixed
-
-- Fix lines that named things that do not exist now name the real ones:
-  - `ai.budget` / `ai.providers` in `app.config.ts` → `providerGateway({ budget })` and `runtime.ts`;
-  - `mail.from` → `MAIL_FROM`;
-  - `pwa.startUrl` / `pwa.scope` / `pwa.swPath` → the `generateWebManifest` / `generateServiceWorker` calls that throw;
-  - the cache limit and jitter `app.config.ts` keys → the `lruTier()` / `redisTier()` options;
-  - `x doctor transport` (`X_TRANSPORT_PROTOCOL`) → `x doctor --json`;
-  - `X_LLM_REFUSED`'s `definePrompt('<name>')` → the object form;
-  - `X_SCRAPE_BODY_TOO_LARGE`'s `page.fetch` → `http.request`.
-- `X_MAIL_HEADER_INVALID` no longer says to strip the line break the source refuses rather than strips.
-- A migration fix said `git checkout -- migrations/`, which discards every uncommitted migration; it now restores only the snapshot sidecars.
-- Fixes that splice a value into a command quote it (the SMTP handshake fix's host in `@ultimat3/mail`'s `smtp-socket.ts`, the tenancy and admin `x db gen` lines, `X_ENTITY_RETAIN_UNINDEXED`'s entity name).
-- No fix line destroys data to diagnose or repair: a `sed -i` on `.env.production` keeps a `.bak` copy (and runs on macOS); `X_STORAGE_DELETE_FAILED` grants `s3:DeleteObject` instead of running a `delete-object` that, under a credential that can delete, removes a real object; `X_BRANCH_EXISTS` lists branches before `x db branch delete`, never a raw `drop database`; a multi-command column default greps for the column instead of checking out every `.snapshot.json`, which would discard a new migration's.
-- `x doctor`'s database check reads `@ultimat3/db`'s `X_DB_UNAVAILABLE` fix instead of a copy that had drifted.
-
-### Changed
-
-- `scripts/lib/fix-shape.ts` reads more honest openers as runnable or code: `wc`, `file`, `timedatectl`, `find <path> -<flag>`, a `case <x>:` line, a tagged template, and a call whose receiver is a `${…}` substitution.
-- `fix-sequence`: 14 baselined run-first, edit-later fixes (12 in `scripts/`, 2 in `@ultimat3/entity`) now put the edit first; their baseline rows are gone.
-- `X_COVERAGE_PIN_STALE`'s fix also names `bun run scripts/readme-facts.ts --write`, because README's facts table quotes the pin.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.36.0](docs/changelog/31.36.0.md) | 2026-11-16 | **A fix line opens with what to paste or run.** 917 `fix:` lines across every package and the repository scripts opened with a sentence; 862 now open with a command, a code shape (`policy: '<resource>:<verb>'`, `assertCurrency('USD')`, `` sql`…` ``) or an `edit <file>:<line> — …`, with the old instruction after it as a comment. The 55 that remain carry a reason per package in `scripts/lib/fix-prose-pins.ts`: a remedy that is judgement, or one at a call site the thrower cannot see. |
 | [31.35.0](docs/changelog/31.35.0.md) | 2026-11-16 | **The error reference is an index plus one page per owner**, as the changelog is. `wiki/Error-Codes.md` was one 627 KB page of 1,358 rows. It is now: |
 | [31.34.0](docs/changelog/31.34.0.md) | 2026-11-16 | **A test states its own verdict with `expect`, never a bare `Error`** (plan 101b slice 12 M6, third PR). 80 sites where a test threw a bare `Error` to fail itself now use `expect.unreachable` or a direct assertion: `realtime`, `http`, `query`, `db`, `entity`, `seo`, `cli`, `jobs`, `testing`, `admin`, `ai`, `auth`, `render` and `ui`. Several were silently weak, a throw the subject or the test's own handler swallowed, and are stronger now: `auth`'s JWKS "never asked for a key", `ai`'s SSE frame count. Every remaining pinned site is an INPUT, a stub that throws at the subject, and its row says what it simulates. |
 | [31.33.0](docs/changelog/31.33.0.md) | 2026-11-16 | **Every shipped source file opens with its 1–4 line responsibility header, and every `node:` import says why Bun cannot do the job** (plan 101b slice 12 M6, second PR). The `source-headers` pin table is empty: 316 rows fell. `node-imports` fell from 173 explained-or-not sites to 0. Where Bun has the same API, the import is gone instead: `Bun.CryptoHasher` in `@ultimat3/entity`'s seed ids (pinned by a known-answer test against an independent uuid5), `Bun.file().exists()` in four `x verify` readers, and `Bun.Glob` and `Bun.pathToFileURL` in tests. |
