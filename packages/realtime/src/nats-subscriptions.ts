@@ -1,7 +1,7 @@
-// Single responsibility: the transport's kept list of live subscriptions, so a client the library
-// closed for good can be replaced and every subscription bound again on the new one. The library's
-// own reconnect never reaches this list — it re-establishes the SAME client's subscriptions — so a
-// subscription is bound once per client and a re-bind can never double a delivery.
+// Single responsibility: the transport's subscriptions — kept, so a client the library closed for
+// good is replaced and every one bound again on the new one; and the reconnect told to listeners
+// only once the SERVER holds what was re-sent (a peer's change in that gap was lost). The library's
+// own reconnect re-establishes the SAME client's, so a re-bind can never double a delivery.
 
 import type { NatsClient, NatsMessageHandler, NatsSubscription } from './nats-client';
 
@@ -59,5 +59,52 @@ export class NatsSubscriptions {
       }
     }
     return failures;
+  }
+}
+
+/**
+ * Answers once the server has read every line this client sent before it — a `SUB` included
+ * (`NatsClient.flush`). With no connection there is no server to ask: the client re-sends its SUBs
+ * on the way back, and that reconnect is announced in its turn. A flush that fails is that case.
+ */
+export async function untilServerHolds(client: NatsClient): Promise<void> {
+  if (client.connected) await client.flush().catch(() => undefined);
+}
+
+/** The listeners, and the one way to tell them: after `untilServerHolds`, each in its own `try`. */
+export class NatsReconnectAnnouncer {
+  readonly #listeners = new Set<() => void>();
+  readonly #fault: (error: unknown) => void;
+  #closed = false;
+
+  /** `fault`: where a listener that throws is reported — it must not stop the others hearing. */
+  constructor(fault: (error: unknown) => void) {
+    this.#fault = fault;
+  }
+
+  on(listener: () => void): () => void {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
+  }
+
+  /** The transport closed: an announcement whose flush is still out tells nobody. */
+  close(): void {
+    this.#closed = true;
+  }
+
+  /** Never rejects: the library calls this from its status loop, the re-dial from its own. */
+  async announce(client: NatsClient): Promise<void> {
+    await untilServerHolds(client);
+    // Asked AFTER the await: a close that landed while the flush was out is the answer.
+    if (this.#closed) return;
+    for (const listener of [...this.#listeners]) {
+      try {
+        listener();
+      } catch (error) {
+        this.#fault(error);
+      }
+    }
   }
 }

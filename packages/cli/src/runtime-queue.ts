@@ -10,6 +10,7 @@ import {
   postgresMeterStore,
   requestDeadlineMs,
 } from '@ultimat3/action';
+import { logger, renderThrowable } from '@ultimat3/core';
 import type { PgliteClient, PostgresClient } from '@ultimat3/db';
 import {
   baseClient,
@@ -92,7 +93,12 @@ export interface RunningQueue {
  * neither reports anything. A default here is what let the caller forget; the type is what stops
  * the next one. Exported for the test that proves which environment decides.
  */
-export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
+export function startDb(
+  services: DevServices,
+  env: ReplicaEnv,
+  // A seam for the one failure after the primary exists: the standby refused at construction.
+  attach: typeof attachReplica = attachReplica,
+): StartedDb {
   const binding = services.db;
   // `DATABASE_POOL_MAX` from the env the boot was HANDED, for `env`'s reason below. Installing a
   // client here means `defaultClient()` — the only other reader — never runs in a served role, so
@@ -112,7 +118,19 @@ export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
           extensions: () => appExtensions(services.root),
         })
       : postgresClient({ url: binding.url, profile, env });
-  const attached = attachReplica(client, replicaUrlFor(binding, env), profile);
+  let attached: ReturnType<typeof attachReplica>;
+  try {
+    attached = attach(client, replicaUrlFor(binding, env), profile);
+  } catch (error) {
+    // The primary is built and nothing will hold it: close it here, and say so if that fails too,
+    // without letting the close's answer replace the error the caller is handed.
+    client.close().catch((closeError: unknown) => {
+      logger.warn('ultimate db could not close the primary after the replica failed', {
+        cause: renderThrowable(closeError),
+      });
+    });
+    throw error;
+  }
   setDbClient(attached.client);
   return { client, replica: attached.replica };
 }

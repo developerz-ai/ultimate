@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
-percent: 58
-current_focus: "Sweep 6 (09 deploy contract) on feat/sweep-6-deploy-contract; sweep 5 shipped as 31.28.0 (#1151, #1153). 08 and 09 each close on sweep R: 08 when adopter upgrade PRs are x upgrade alone, 09 when a demo rollout shows zero restarts (30 I5). Next: sweep 7 (10 test determinism)."
+percent: 63
+current_focus: "Sweep 7 (10 test determinism + the patterns list: release rehearsal, changelog-check, preflight, pin-edit, x db status) on feat/sweep-7-determinism-and-patterns; sweep 6 shipped as 31.29.0. 08, 09 close on sweep R; 10 closes after seven green flake-hunt nights. Next: sweep 8 (11 + 12)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -55,8 +55,9 @@ slices:
   - file: 10-test-determinism.md
     tier: 5
     sweep: "7"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 90
+    note: "Helpers and guards for F1–F5 plus the mock.module builtin guard, flake-hunt.yml nightly with its health row, G14 splits. Closes after seven consecutive green flake-hunt nights (run history, not a local pass)."
   - file: 11-compat-and-longevity.md
     tier: 5
     sweep: "8"

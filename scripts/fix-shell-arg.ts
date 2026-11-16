@@ -53,13 +53,24 @@ import {
   fixParamsOf as sinkParamsOf,
 } from './lib/fix-shell-arg-sinks';
 import type { Finding } from './lib/log';
+import type { PinTarget } from './lib/pin-edit';
+import { pinRaiseFix, pinRaiseOf } from './lib/pin-edit';
+import { ratchetPinMain } from './lib/pin-edit-main';
 import type { PinTable, RatchetGap } from './lib/ratchet';
-import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import { ratchetGaps } from './lib/ratchet';
 import type { SiteProbe } from './lib/ratchet-sites';
 import { leadSite, newSitesFirst, siteList } from './lib/ratchet-sites';
 import { isTestPath, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'fix-shell-arg';
+
+/** Where this ratchet's pins live: what its over finding's raise and `--write-pin` edit. */
+export const FIX_SHELL_ARG_PIN_TARGET: PinTarget = {
+  script: 'scripts/fix-shell-arg.ts',
+  file: FIX_SHELL_PINS_FILE,
+  table: 'FIX_SHELL_ARG_PINS',
+};
+
 const EXPLAIN = 'bun run scripts/fix-shell-arg.ts --explain --json lists every one';
 
 /** Source the CLI EMITS rather than executes — a scaffolded app's own fix lines, not this tree's. */
@@ -172,7 +183,7 @@ const overFinding = (gap: FixShellArgGap): Finding => {
   return {
     code: 'X_FIX_SHELL_ARG_UNSCREENED',
     cause: `${gap.pkg} splices ${String(gap.found)} value(s) into the command position of a fix: line and is pinned at ${String(gap.pinned)} — ${listed} — and a fix: is a command meant to be pasted, so a value carrying $(…), a backtick or a ; runs whatever it says`,
-    fix: `wrap it: renderFixShellArg(value, '<what a reader substitutes>') from @ultimat3/core, ${which}; if the value cannot carry shell syntax, raise ${gap.pkg} in FIX_SHELL_ARG_PINS in ${FIX_SHELL_PINS_FILE} with the sentence saying where it comes from`,
+    fix: `wrap it: renderFixShellArg(value, '<what a reader substitutes>') from @ultimat3/core, ${which}; if the value cannot carry shell syntax, ${pinRaiseFix(pinRaiseOf(FIX_SHELL_ARG_PIN_TARGET, gap))}, its reason saying where the value comes from`,
     at: at(leadSite(gap)),
   };
 };
@@ -260,7 +271,8 @@ export const fixShellArgFindings = async (root: string): Promise<readonly Findin
   (await fixShellArgGaps(root)).map(fixShellArgFindingFor);
 
 if (import.meta.main) {
-  await ratchetMain({
+  await ratchetPinMain({
+    target: FIX_SHELL_ARG_PIN_TARGET,
     script: SCRIPT,
     pinsFile: FIX_SHELL_PINS_FILE,
     pins: FIX_SHELL_ARG_PINS,

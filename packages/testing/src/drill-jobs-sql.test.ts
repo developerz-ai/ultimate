@@ -6,17 +6,15 @@ import { describe, expect, test } from 'bun:test';
 import type { DrillSql } from './drill-jobs';
 import { bunDrillSql, drillJobCounts, STUCK_SQL } from './drill-jobs';
 
-/** A loopback port that was just released, so nothing listens on it. */
-const closedPort = (): number => {
-  const listener = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
-  const port = listener.port;
-  listener.stop(true);
-  return port;
-};
+/**
+ * Port 1 (tcpmux): privileged, so no test process can listen there — a dial is refused every time,
+ * where a port probed and released is one another process may be listening on by the dial.
+ */
+const REFUSED_PORT = 1;
 
 describe('bunDrillSql', () => {
   test('a query no server answers rejects rather than counting nothing', async () => {
-    const sql = bunDrillSql(`postgres://u:p@127.0.0.1:${String(closedPort())}/x`);
+    const sql = bunDrillSql(`postgres://u:p@127.0.0.1:${String(REFUSED_PORT)}/x`);
     try {
       let outcome: unknown = 'resolved';
       try {

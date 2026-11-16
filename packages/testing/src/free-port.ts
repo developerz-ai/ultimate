@@ -1,6 +1,7 @@
 // One responsibility: a port the e2e app can listen on AND a browser will open. The OS hands out
 // whatever is free in its ephemeral range, and a box whose range starts at 1024 hands out ports
-// Chrome refuses outright — every navigation of the run then fails `net::ERR_UNSAFE_PORT`.
+// Chrome refuses outright — every navigation of the run then fails `net::ERR_UNSAFE_PORT`. A port
+// asked here is released before its caller binds it: callers go through `bindFreePorts`.
 
 /** What `freePort` needs of a listener: the port the OS gave it, and a way to give it back. */
 export interface PortProbe {
@@ -90,11 +91,13 @@ export const loopbackFree = (
  * was an e2e app that listened, failed its sync bind and exited before `/readyz` — the CLI's own
  * `freeDevPort` rule (`dev-supervisor.ts`), which this package cannot import. A candidate is held
  * while the next is asked for, as a refused port is, so the walk ends. The candidate itself is held
- * on Bun's dual-stack `::`, which covers both loopbacks; the neighbour is asked of each.
+ * on Bun's dual-stack `::`, which covers both loopbacks; the neighbour is asked of each. Neither
+ * is one of `taken` — the ports an earlier, clashed attempt was handed (`bindFreePorts`).
  */
 export const freePortPair = (
   listen: () => PortProbe = listenOnAnyPort,
   canBind: (port: number) => boolean = loopbackFree,
+  taken: readonly number[] = [],
 ): number => {
   const held: PortProbe[] = [];
   try {
@@ -104,6 +107,8 @@ export const freePortPair = (
       if (
         BROWSER_REFUSED_PORTS.has(probe.port) ||
         BROWSER_REFUSED_PORTS.has(next) ||
+        taken.includes(probe.port) ||
+        taken.includes(next) ||
         !canBind(next)
       ) {
         held.push(probe);

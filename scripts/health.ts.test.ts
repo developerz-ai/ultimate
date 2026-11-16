@@ -91,9 +91,13 @@ const healthyReaders: HealthOverrides = {
     },
   }),
   'tutorials-run': async () => ({ runs: [{ conclusion: 'success', status: 'completed' }] }),
+  // Created now: the row reads the real clock, and a fixture night must never be two nights old.
+  'flake-hunt': async () => ({
+    runs: [{ conclusion: 'success', status: 'completed', createdAt: new Date().toISOString() }],
+  }),
 };
 describe('unit · health · healthAt over injected readers', () => {
-  test('a readable world answers ok:true with all ten rows in the brief order', async () => {
+  test('a readable world answers ok:true with all eleven rows in the brief order', async () => {
     const result = await healthAt('.', healthyReaders);
     expect(result.ok).toBe(true);
     expect(result.script).toBe('health');

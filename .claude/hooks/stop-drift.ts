@@ -41,6 +41,43 @@ export function stopVerdict(
   };
 }
 
+/** What `bun run schema-dumps --check --json` left behind; `Bun.spawnSync`'s own fields. */
+export interface DumpCheckRun {
+  readonly exitCode: number | null;
+  readonly exitedDueToTimeout?: boolean | undefined;
+  readonly stdout: string;
+}
+
+const DUMP_DIR = 'packages/db/schema';
+
+const changedPaths = (report: unknown): readonly string[] => {
+  if (typeof report !== 'object' || report === null || !('data' in report)) return [];
+  const { data } = report;
+  if (!Array.isArray(data)) return [];
+  return data.flatMap((app: unknown) =>
+    typeof app === 'object' && app !== null && 'changed' in app && Array.isArray(app.changed)
+      ? app.changed.filter((path: unknown): path is string => typeof path === 'string')
+      : [],
+  );
+};
+
+/**
+ * Stale only when the check names a dump file that differs. A run killed by its timeout (exit code
+ * `null`, which `!== 0` once read as stale) and a replay that failed on a scratch database a gate
+ * or live suite was loading (reported at `packages/db/migrations`) say nothing about the dump, and
+ * `bun run schema-dumps` would not change either: the check re-run alone answers them.
+ */
+export function dumpsStale(run: DumpCheckRun): boolean {
+  if (run.exitedDueToTimeout === true || run.exitCode !== 1) return false;
+  let report: unknown;
+  try {
+    report = JSON.parse(run.stdout);
+  } catch {
+    return false;
+  }
+  return changedPaths(report).some((path) => path === DUMP_DIR || path.startsWith(`${DUMP_DIR}/`));
+}
+
 async function staleIn(root: string, checks: readonly DriftCheck[]): Promise<readonly Stale[]> {
   const stale: Stale[] = [];
   if (checks.includes('manifest')) {
@@ -53,11 +90,11 @@ async function staleIn(root: string, checks: readonly DriftCheck[]): Promise<rea
       });
   }
   if (checks.includes('schema-dumps')) {
-    const proc = Bun.spawnSync(['bun', 'run', 'schema-dumps', '--check'], {
+    const proc = Bun.spawnSync(['bun', 'run', '--silent', 'schema-dumps', '--check', '--json'], {
       cwd: root,
       timeout: 30_000,
     });
-    if (proc.exitCode !== 0)
+    if (dumpsStale({ ...proc, stdout: proc.stdout.toString() }))
       stale.push({ check: 'packages/db/schema/ dumps', fix: 'bun run schema-dumps' });
   }
   return stale;

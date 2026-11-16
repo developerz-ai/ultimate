@@ -3,10 +3,9 @@
 // not open are each one failure at their own stage. `verify-seeds.test.ts` drives the real child.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { tempTrees } from '@ultimat3/testing';
 import { probeSeeds } from './verify-seeds-probe';
 
 const SEED_FILE = 'packages/db/seeds/dev.ts';
@@ -31,22 +30,19 @@ export const dev = defineSeed('probe-dev', async ({ insert, id }) => {
 });
 `;
 
-const dirs: string[] = [];
-afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+// Under this package's ignored `.x/fixtures/`: a child resolves `@ultimat3/*` from the workspace.
+const trees = tempTrees({ inPackage: join(import.meta.dir, '..') });
+afterAll(() => trees.dispose());
 
 /** Inside this package, so the seed resolves `@ultimat3/*` as the child would. */
 const appRoot = async (files: Readonly<Record<string, string>>): Promise<string> => {
-  const dir = mkdtempSync(join(import.meta.dir, '..', '.seeds-probe-fixture-'));
-  dirs.push(dir);
+  const dir = trees.make('seeds-probe-fixture-');
   for (const [file, text] of Object.entries(files)) await Bun.write(join(dir, file), text);
   return dir;
 };
 
 /** One state directory for every run, so the scratch database boots from its snapshot cache. */
-const state = mkdtempSync(join(import.meta.dir, '..', '.seeds-probe-state-'));
-dirs.push(state);
+const state = trees.make('seeds-probe-state-');
 const env = { ULTIMATE_STATE_DIR: state, TEST_DATABASE_URL: undefined, DATABASE_URL: undefined };
 
 describe('unit · the seed probe, in process', () => {

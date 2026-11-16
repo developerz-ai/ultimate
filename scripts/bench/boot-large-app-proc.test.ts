@@ -7,6 +7,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: as above — the platform temp root is only node:os's to name.
 import { tmpdir } from 'node:os';
+import { bindFreePorts } from '../../packages/testing/src/free-port-bind';
 import { allowHost } from '../../packages/testing/src/sealed-network';
 import { ScriptError } from '../lib/script-error';
 import { readiness, timeBoot } from './boot-large-app-proc';
@@ -15,19 +16,6 @@ const scratch: string[] = [];
 afterAll(async () => {
   for (const dir of scratch) await rm(dir, { recursive: true, force: true });
 });
-
-/**
- * A port the kernel just handed out, let go and allowed through the seal. Never a fixed number:
- * `39422` was a port another file — or another copy of this one — already held under the 9-worker
- * unit run, and the stranger's own `Bun.serve` then failed with "Is port in use?".
- */
-function freePort(): number {
-  const probe = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response() });
-  const port = probe.port ?? expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
-  void probe.stop(true);
-  allowHost(`127.0.0.1:${String(port)}`);
-  return port;
-}
 
 const codeOf = async (work: () => Promise<unknown>): Promise<string | undefined> =>
   work().then(
@@ -56,24 +44,36 @@ describe('timeBoot never leaves a process or times a stranger', () => {
   test('a 200 whose body never ends is not ready, and the group is still reaped', async () => {
     // Writes its pid, then answers 200 and sends one byte of a body it never finishes: the read
     // aborts on the poll's own timeout, after the headers said 200.
-    const port = freePort();
-    const dir = await scratchDir({
-      'server.ts': `
+    // The child binds the port itself; one another process took first is its own `EADDRINUSE`,
+    // written down, and the run is asked again on a fresh port — never a port probed and released.
+    const { code, dir } = await bindFreePorts(async ([port = 0]) => {
+      allowHost(`127.0.0.1:${String(port)}`);
+      const dir = await scratchDir({
+        'server.ts': `
 await Bun.write('pid', String(process.pid));
-Bun.serve({ port: ${String(port)}, hostname: '127.0.0.1', fetch: () => new Response(new ReadableStream({
-  start(controller) { controller.enqueue(new TextEncoder().encode('x')); },
-}), { status: 200 }) });
+try {
+  Bun.serve({ port: ${String(port)}, hostname: '127.0.0.1', fetch: () => new Response(new ReadableStream({
+    start(controller) { controller.enqueue(new TextEncoder().encode('x')); },
+  }), { status: 200 }) });
+} catch (error) {
+  await Bun.write('clash', String((error as { code?: string }).code));
+  process.exit(1);
+}
 `,
+      });
+      const code = await codeOf(() =>
+        timeBoot({
+          cmd: ['bun', 'server.ts'],
+          cwd: dir,
+          env: { PATH: Bun.env['PATH'] },
+          url: `http://127.0.0.1:${String(port)}/`,
+          timeoutMs: 2_000,
+        }),
+      );
+      const clash = Bun.file(`${dir}/clash`);
+      if (await clash.exists()) return expect.unreachable(`the child met ${await clash.text()}`);
+      return { code, dir };
     });
-    const code = await codeOf(() =>
-      timeBoot({
-        cmd: ['bun', 'server.ts'],
-        cwd: dir,
-        env: { PATH: Bun.env['PATH'] },
-        url: `http://127.0.0.1:${String(port)}/`,
-        timeoutMs: 2_000,
-      }),
-    );
     expect(code).toBe('X_BENCH_RUN_FAILED');
     const pid = Number(await Bun.file(`${dir}/pid`).text());
     expect(alive(pid)).toBe(false);

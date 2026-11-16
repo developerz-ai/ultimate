@@ -3,20 +3,17 @@
 // reads it, and an agent loop against a dev server left up for a week must not fill the disk.
 
 import { afterAll, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { installLogSink, logger } from '@ultimat3/core';
+import { tempTrees } from '@ultimat3/testing';
 import { DEV_LOG_MAX_BYTES, devLogPath, openDevLog, teeDevLog } from './dev-log';
 
-const dirs: string[] = [];
-afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+// Under this package's ignored `.x/fixtures/`: a child resolves `@ultimat3/*` from the workspace.
+const trees = tempTrees({ inPackage: join(import.meta.dir, '..') });
+afterAll(() => trees.dispose());
 const scratch = (): string => {
-  const dir = mkdtempSync(join(import.meta.dir, '..', '.dev-log-fixture-'));
-  dirs.push(dir);
+  const dir = trees.make('dev-log-fixture-');
   return dir;
 };
 

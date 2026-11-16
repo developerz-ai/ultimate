@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "28b58ad926c4a02415c189a9385da9244f9571b7a33c3bc52cb8afd46da92f4c",
+  "buildId": "2ab38a02d45865b49e8c07856beac8c6de717fe75b0dcab538d8640bb2d472b6",
   "tiers": {
     "0": [
       "core",
@@ -1043,6 +1043,11 @@
       "code": "X_CHANGELOG_HIGHLIGHTS_MISSING",
       "owner": "scripts",
       "at": "scripts/lib/changelog-highlights.ts"
+    },
+    {
+      "code": "X_CHANGELOG_UNRELEASED_EMPTY",
+      "owner": "scripts",
+      "at": "scripts/lib/changelog-unreleased.ts"
     },
     {
       "code": "X_CHANNEL_CATCHUP_POLICY_MISMATCH",
@@ -2413,6 +2418,21 @@
       "code": "X_FLAG_UNKNOWN",
       "owner": "flags",
       "at": "packages/flags/src/errors.ts"
+    },
+    {
+      "code": "X_FLAKE_HUNT_FILE_FAILED",
+      "owner": "scripts",
+      "at": "scripts/flake-hunt-file.ts"
+    },
+    {
+      "code": "X_FLAKE_HUNT_TEST_FAILED",
+      "owner": "scripts",
+      "at": "scripts/flake-hunt.ts"
+    },
+    {
+      "code": "X_FLAKE_HUNT_UNREADABLE",
+      "owner": "scripts",
+      "at": "scripts/flake-hunt-round.ts"
     },
     {
       "code": "X_FLIGHT_GATE_OVERLOADED",
@@ -4135,9 +4155,14 @@
       "at": "scripts/pin-raises.ts"
     },
     {
+      "code": "X_PIN_EDIT_UNPLACED",
+      "owner": "scripts",
+      "at": "scripts/lib/pin-edit.ts"
+    },
+    {
       "code": "X_PIN_RAISE_UNSTATED",
       "owner": "scripts",
-      "at": "scripts/pin-raises.ts"
+      "at": "scripts/lib/pin-edit.ts"
     },
     {
       "code": "X_PIPELINE_FINALIZE_FAILED",
@@ -4193,6 +4218,16 @@
       "code": "X_PREBUILT_REGISTRY_STALE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_PREFLIGHT_BASE_MISSING",
+      "owner": "scripts",
+      "at": "scripts/preflight.ts"
+    },
+    {
+      "code": "X_PREFLIGHT_STEP_FAILED",
+      "owner": "scripts",
+      "at": "scripts/preflight.ts"
     },
     {
       "code": "X_PRELOAD_UNKNOWN_RELATION",
@@ -5990,6 +6025,21 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_TEST_BUS_UNCONFIRMED",
+      "owner": "scripts",
+      "at": "scripts/bus-subscribed.ts"
+    },
+    {
+      "code": "X_TEST_BUS_UNCONFIRMED_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/bus-subscribed.ts"
+    },
+    {
+      "code": "X_TEST_BUS_UNCONFIRMED_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/bus-subscribed.ts"
+    },
+    {
       "code": "X_TEST_DB_UNAVAILABLE",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -6140,6 +6190,21 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_LAUNCH_DEADLINE",
+      "owner": "scripts",
+      "at": "scripts/launch-deadline.ts"
+    },
+    {
+      "code": "X_TEST_LAUNCH_DEADLINE_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/launch-deadline.ts"
+    },
+    {
+      "code": "X_TEST_LAUNCH_DEADLINE_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/launch-deadline.ts"
+    },
+    {
       "code": "X_TEST_LIVE_NODE_EMPTY",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -6158,6 +6223,21 @@
       "code": "X_TEST_MAIL_EXPECTED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_MOCK_BUILTIN",
+      "owner": "scripts",
+      "at": "scripts/test-mock-builtin.ts"
+    },
+    {
+      "code": "X_TEST_MOCK_BUILTIN_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/test-mock-builtin.ts"
+    },
+    {
+      "code": "X_TEST_MOCK_BUILTIN_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/test-mock-builtin.ts"
     },
     {
       "code": "X_TEST_MODULE_MOCK_UNRESTORABLE",
@@ -6208,6 +6288,16 @@
       "code": "X_TEST_POLICY_EXPECTED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_PORT_PROBE_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/port-probe.ts"
+    },
+    {
+      "code": "X_TEST_PORT_PROBED",
+      "owner": "scripts",
+      "at": "scripts/port-probe.ts"
     },
     {
       "code": "X_TEST_PROPERTY_FAILED",
@@ -6275,6 +6365,21 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_TEMP_TREE_LEFT",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_TEMP_TREE_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/temp-tree.ts"
+    },
+    {
+      "code": "X_TEST_TEMP_TREE_UNOWNED",
+      "owner": "scripts",
+      "at": "scripts/temp-tree.ts"
+    },
+    {
       "code": "X_TEST_THROW_NOT_THROWN",
       "owner": "scripts",
       "at": "scripts/to-throw-returns.ts"
@@ -6293,6 +6398,11 @@
       "code": "X_TEST_TYPECHECK_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/test-typecheck-gate.ts"
+    },
+    {
+      "code": "X_TEST_VANISHED",
+      "owner": "scripts",
+      "at": "scripts/vanished-tests.ts"
     },
     {
       "code": "X_THEME_INVALID",

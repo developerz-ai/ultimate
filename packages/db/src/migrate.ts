@@ -358,8 +358,8 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
             if (migration === undefined) {
               throw migrationConflict(
                 `migration "${row.id}" is in the ledger but not in this build, so its down SQL is unknown`,
-                // Same reason as `auditLedger`'s: `x db status` does not exist. The `down` SQL only
-                // exists in the build that shipped it, so the fix is the read that names that build.
+                // Same reason as `auditLedger`'s: psql works where the CLI is absent. The `down` SQL
+                // only exists in the build that shipped it, so the fix reads which build that was.
                 `psql "$DATABASE_URL" -c "select id, app_version from ${renderFixShellArg(LEDGER_TABLE, '<ledger table>')} ` +
                   `order by id desc limit 5"   # deploy the build that shipped the migration ` +
                   `whose id is base64 ${Buffer.from(row.id, 'utf8').toString('base64')}, ` +

@@ -8,6 +8,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { join } from 'node:path';
 import { isolateDeclaredTags } from '@ultimat3/cache';
 import { NotImplementedError, resetLifecycle } from '@ultimat3/core';
+import { bindFreePorts } from '@ultimat3/testing';
 import type { DevServer } from './cmd-dev';
 import { startDev } from './cmd-dev';
 import { DEV_FIXTURE_FILES as FILES, resetRegistries } from './cmd-dev-fixture';
@@ -27,20 +28,12 @@ export interface BootedDev {
   readonly server: DevServer;
   /** The app's root on disk, this process's own. */
   readonly root: string;
-  /** The `METRICS_PORT` this boot was handed. */
+  /** The `METRICS_PORT` this boot was handed — read inside a test, as `server` is. */
   readonly metricsPort: number;
   fetchDev(path: string, init?: RequestInit): Promise<Response>;
   /** A statement for `/_x/db`: POSTed in the body — a GET naming `sql` is refused (a cross-site `<img>`). */
   runSql(sql: string): Promise<Response>;
 }
-
-/** Bound and released: `METRICS_PORT` is read as a NAMED port, so it can be neither 0 nor 9090. */
-const freePort = (): number => {
-  const probe = Bun.serve({ port: 0, hostname: 'localhost', fetch: () => new Response('') });
-  const port = Number(new URL(probe.url).port);
-  probe.stop(true);
-  return port;
-};
 
 /**
  * Boot the fixture app under `packages/cli/<base>/run-<pid>` — under `packages/cli/` so its
@@ -52,8 +45,8 @@ export function bootDevFixture(
   options: { hostname?: string; tls?: ListenerTls } = {},
 ): BootedDev {
   const root = processRoot(join(import.meta.dir, '..', base));
-  const metricsPort = freePort();
   let server: DevServer | undefined;
+  let metricsPort: number | undefined;
 
   beforeAll(async () => {
     await rm(root, { recursive: true, force: true });
@@ -61,12 +54,17 @@ export function bootDevFixture(
       await Bun.write(join(root, path), contents);
     resetRegistries();
     // Port 0 never collides with a running `x dev`; `x dev` ignoring either env value is under test.
-    server = await startDev({
-      root,
-      port: 0,
-      ...options,
-      env: { METRICS_PORT: String(metricsPort), BUILD_ID: 'stamped-7' },
-      roles: ['web', 'sync', 'worker', 'scheduler'],
+    // `METRICS_PORT` is read as a NAMED port, so it can be neither 0 nor 9090: `x dev` binds it, and
+    // one another process took first is its `X_PORT_IN_USE`, booted again on a fresh one.
+    server = await bindFreePorts(async ([port = 0]) => {
+      metricsPort = port;
+      return startDev({
+        root,
+        port: 0,
+        ...options,
+        env: { METRICS_PORT: String(port), BUILD_ID: 'stamped-7' },
+        roles: ['web', 'sync', 'worker', 'scheduler'],
+      });
     });
   }, BOOT_TIMEOUT_MS);
 
@@ -109,7 +107,11 @@ export function bootDevFixture(
       return booted();
     },
     root,
-    metricsPort,
+    get metricsPort() {
+      return (
+        metricsPort ?? expect.unreachable('dev.metricsPort was read before beforeAll booted it')
+      );
+    },
     fetchDev,
     runSql: (sql) =>
       fetchDev('/_x/db?json=1', {

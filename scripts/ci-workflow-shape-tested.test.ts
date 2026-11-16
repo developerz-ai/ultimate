@@ -33,9 +33,17 @@ const PATH_SKIPPED = [
 
 /**
  * Never reused: `deploy-proof` keeps its own due rule; `tested` and `changes` are questions;
- * `flaky` reruns a pull request's changed tests and runs on nothing else.
+ * `flaky` reruns a pull request's changed tests and `release-rehearsal` stamps the next minor
+ * over them, and both run on nothing else.
  */
-const OWN_RULE = ['tested', 'changes', 'deploy-proof', 'verify', 'flaky'] as const;
+const OWN_RULE = [
+  'tested',
+  'changes',
+  'deploy-proof',
+  'verify',
+  'flaky',
+  'release-rehearsal',
+] as const;
 
 const REUSE_IF = "needs.tested.outputs.tested != 'true'";
 const PATH_IF = "needs.changes.outputs.heavy != 'false'";

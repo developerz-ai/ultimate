@@ -17,14 +17,14 @@
 
 import { DEV_BINDING, quoteArg } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
-import type { PortProbe } from '../packages/testing/src/free-port';
-import { freePortPair } from '../packages/testing/src/free-port';
+import { bindFreePorts, isPortClash } from '../packages/testing/src/free-port-bind';
 import type { AdminStep, AdminWalk, Fetcher } from './lib/admin-walk';
 import { adminFindings, walkAdmin } from './lib/admin-walk';
 import { parseScriptArgs } from './lib/args';
 import type { ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { ScriptError } from './lib/script-error';
 import { strangerEnvAt } from './lib/stranger-env';
 import { appBin, generatorName } from './scaffold-first-run';
 
@@ -54,11 +54,47 @@ export interface DevServer {
   stop(): Promise<string>;
 }
 
+/**
+ * How one boot gets its port: `bind` IS the boot, and a port another process held first is the
+ * boot's `X_PORT_IN_USE`, asked again on a fresh pair — never a port probed and released.
+ */
+export type PortBinder = <T>(
+  bind: (port: number) => Promise<T>,
+  /** Whether the last failure `bind` threw was a lost race — read off what the boot PRINTED. */
+  clashed?: () => boolean,
+) => Promise<T>;
+
+/**
+ * The real binder: a free PAIR — `x dev` binds the web role on `port` and its sync node on
+ * `port + 1`, both on `localhost`, so a lone free port whose neighbour was taken booted, listened
+ * and stopped again. Each loopback address is asked (CI run 41764752262), and a pair another
+ * process took before `x dev` bound it is booted again (`bindFreePorts`).
+ */
+export const freeDevPorts: PortBinder = (bind, clashed) =>
+  bindFreePorts(([port = 0]) => bind(port), {
+    pair: true,
+    ...(clashed === undefined ? {} : { clashed }),
+  });
+
+/** One fixed port, for a test whose `x dev` is a fake that binds nothing. */
+export const fixedPort =
+  (port: number): PortBinder =>
+  (bind) =>
+    bind(port);
+
+/** A boot that died because its port was taken: the binder's signal to boot again. */
+export const portTaken = (port: number, output: string, fix: string): ScriptError =>
+  new ScriptError({
+    code: 'X_SCAFFOLD_FIRST_RUN_FAILED',
+    cause: `x dev --port ${String(port)} met a port another process held: ${output.trim().split('\n').slice(-6).join(' | ').slice(0, 600)}`,
+    fix,
+  });
+
 /** Everything the check touches outside its own arguments, so the whole of it runs under test. */
 export interface AdminCheckIo {
   readonly boot: (dir: string, port: number) => DevServer;
   readonly fetcher: Fetcher;
-  readonly port: () => number;
+  readonly ports: PortBinder;
   readonly now: () => number;
   readonly sleep: (ms: number) => Promise<void>;
 }
@@ -81,6 +117,47 @@ const refused = (summary: string, cause: string, fix: string, at: string): Scrip
 /** The last lines a server printed, on one line: what a boot that never answered has to say. */
 const tail = (output: string): string =>
   output.trim().split('\n').slice(-6).join(' | ').slice(0, 600);
+
+/** One boot on `port`: boot `x dev`, wait for it, walk the admin, stop it — always. */
+async function bootAndWalk(
+  dir: string,
+  io: AdminCheckIo,
+  port: number,
+  resource: string,
+  roleCookie: string,
+) {
+  // The NAME `x dev` binds, never a literal address: Bun binds `localhost` as `[::1]` alone on a
+  // host whose hosts file maps it to both loopbacks (GitHub's Ubuntu runner), and a dial at
+  // `127.0.0.1` there is refused for the whole budget while `x dev` reports itself ready.
+  const base = `http://${DEV_BINDING.hostname}:${String(port)}`;
+  const walk: AdminWalk = { base, resource, roleCookie };
+  const fix = `cd ${quoteArg(appDirWord(dir))} && bun run dev --port ${quoteArg(String(port))}`;
+  const started = io.now();
+  const server = io.boot(dir, port);
+  let steps: readonly AdminStep[] = [];
+  let bootMs = 0;
+  let up = false;
+  let output = '';
+  /** Why the last dial failed: a boot log that ends "ready" is no evidence of WHY nothing answered. */
+  let lastDial = 'no dial was made';
+  try {
+    while (!up && !server.exited() && io.now() - started < BOOT_BUDGET_MS) {
+      up = await io.fetcher(`${base}/admin`, { redirect: 'manual' }).then(
+        () => true,
+        (error: unknown) => {
+          lastDial = renderThrowable(error);
+          return false;
+        },
+      );
+      if (!up) await io.sleep(100);
+    }
+    bootMs = Math.round(io.now() - started);
+    if (up) steps = await walkAdmin(walk, io.fetcher);
+  } finally {
+    output = await server.stop();
+  }
+  return { port, walk, steps, bootMs, up, output, lastDial, fix, started };
+}
 
 /** Boot the app in `dir`, walk its admin, stop it — always — and answer the whole verdict. */
 export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptResult> {
@@ -108,41 +185,32 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
     );
   }
 
-  const port = io.port();
-  // The NAME `x dev` binds, never a literal address: Bun binds `localhost` as `[::1]` alone on a
-  // host whose hosts file maps it to both loopbacks (GitHub's Ubuntu runner), and a dial at
-  // `127.0.0.1` there is refused for the whole budget while `x dev` reports itself ready.
-  const base = `http://${DEV_BINDING.hostname}:${String(port)}`;
-  const walk: AdminWalk = { base, resource, roleCookie };
-  const started = io.now();
-  const server = io.boot(dir, port);
-  let steps: readonly AdminStep[] = [];
-  let bootMs = 0;
-  let up = false;
-  let output = '';
-  /** Why the last dial failed: a boot log that ends "ready" is no evidence of WHY nothing answered. */
-  let lastDial = 'no dial was made';
-  try {
-    while (!up && !server.exited() && io.now() - started < BOOT_BUDGET_MS) {
-      up = await io.fetcher(`${base}/admin`, { redirect: 'manual' }).then(
-        () => true,
-        (error: unknown) => {
-          lastDial = renderThrowable(error);
-          return false;
-        },
-      );
-      if (!up) await io.sleep(100);
-    }
-    bootMs = Math.round(io.now() - started);
-    if (up) steps = await walkAdmin(walk, io.fetcher);
-  } finally {
-    output = await server.stop();
+  // Read off the boot's WHOLE output: the refusal's cause keeps only its tail, and a clash
+  // followed by a stack or a drain's log would read as no clash there.
+  let clashed = false;
+  const run = await io
+    .ports(
+      async (port) => {
+        const booted = await bootAndWalk(dir, io, port, resource, roleCookie);
+        clashed = !booted.up && isPortClash(booted.output);
+        if (clashed) throw portTaken(port, booted.output, booted.fix);
+        return booted;
+      },
+      () => clashed,
+    )
+    .catch((error: unknown) => {
+      if (error instanceof ScriptError) return error;
+      throw error;
+    });
+  if (run instanceof ScriptError) {
+    return refused(`x dev did not answer in ${dir}`, run.cause, run.fix, dir);
   }
+  const { port, walk, steps, bootMs, up, output, lastDial, fix, started } = run;
   if (!up) {
     return refused(
       `x dev did not answer in ${dir}`,
-      `x dev --port ${String(port)} answered no request in ${String(bootMs)} ms — the last dial at ${base}/admin: ${lastDial} — it printed: ${tail(output)}`,
-      `cd ${quoteArg(appDirWord(dir))} && bun run dev --port ${quoteArg(String(port))}`,
+      `x dev --port ${String(port)} answered no request in ${String(bootMs)} ms — the last dial at ${walk.base}/admin: ${lastDial} — it printed: ${tail(output)}`,
+      fix,
       dir,
     );
   }
@@ -161,17 +229,7 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
   };
 }
 
-/**
- * A port whose PAIR nothing holds: `x dev` binds the web role on `port` and its sync node on
- * `port + 1`, both on `localhost`, so a lone free port whose neighbour was taken booted, listened
- * and stopped again — red with nothing wrong with the app. `localhost` is `127.0.0.1` AND `::1` on
- * a dual-stack runner and Bun binds whichever resolves first, so a probe ON `localhost` passed a
- * port held on the other one (CI run 41764752262): `@ultimat3/testing`'s `freePortPair` asks each
- * loopback address, the one rule the e2e app's spawn keeps too. `listen` is injectable for the test.
- */
-export const freeDevPair = (listen?: () => PortProbe): number => freePortPair(listen);
-
-/** The real thing: the app's own `x dev`, a free port pair, the wall clock. */
+/** The real thing: the app's own `x dev`, a free port pair it binds itself, the wall clock. */
 const realIo: AdminCheckIo = {
   boot: (dir, port) => {
     const server = Bun.spawn([appBin(dir), 'dev', '--port', String(port), '--json'], {
@@ -195,7 +253,7 @@ const realIo: AdminCheckIo = {
     };
   },
   fetcher: fetch,
-  port: () => freeDevPair(),
+  ports: freeDevPorts,
   now: () => performance.now(),
   sleep: (ms) => Bun.sleep(ms),
 };

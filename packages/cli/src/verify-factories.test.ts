@@ -3,23 +3,20 @@
 // the file to edit. One real child run proves the script itself, the rest feed a report.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { tempTrees } from '@ultimat3/testing';
 import type { ExecResult, Runner } from './exec';
 import { exec } from './exec';
 import { FACTORIES_FILE, factoryFindings } from './verify-factories';
 
-const dirs: string[] = [];
-afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+// Under this package's ignored `.x/fixtures/`: a child resolves `@ultimat3/*` from the workspace.
+const trees = tempTrees({ inPackage: join(import.meta.dir, '..') });
+afterAll(() => trees.dispose());
 
 /** Inside this package, so the child resolves `@ultimat3/*` from its own `node_modules`. */
 const appRoot = async (factories?: string): Promise<string> => {
-  const dir = mkdtempSync(join(import.meta.dir, '..', '.factories-fixture-'));
-  dirs.push(dir);
+  const dir = trees.make('factories-fixture-');
   if (factories !== undefined) await Bun.write(join(dir, FACTORIES_FILE), factories);
   return dir;
 };

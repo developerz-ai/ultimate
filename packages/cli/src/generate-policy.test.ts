@@ -4,10 +4,9 @@
 // collision prints a fix that runs and overwrites nothing.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { tempTrees } from '@ultimat3/testing';
 import { REQUIRED_BUN } from './app-root';
 import { generate, generateCommand } from './cmd-generate';
 import type { CommandContext } from './command';
@@ -17,13 +16,15 @@ import { ROLES_FILE } from './permission-grants';
 import { SPECS } from './registry';
 import { rolesFiles } from './templates/scaffold-roles';
 
-const dirs: string[] = [];
+/**
+ * Inside this package, so a child process resolves `@ultimat3/*` from its `node_modules` — under its
+ * ignored `.x/fixtures/` (a `.policy-append-fixture-XXXXXX/` beside `src/` was swept into a commit).
+ */
+const trees = tempTrees({ inPackage: join(import.meta.dir, '..') });
 let root = '';
 const policyPath = 'apps/web/app/invoice/policy.ts';
 
-afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+afterAll(() => trees.dispose());
 
 const contextFor = (argv: readonly string[]): CommandContext => ({
   args: parseArgs(argv, SPECS),
@@ -35,10 +36,9 @@ const contextFor = (argv: readonly string[]): CommandContext => ({
 
 const run = (argv: readonly string[]) => generateCommand.run(contextFor(argv));
 
-/** Inside this package, so a child process resolves `@ultimat3/*` from its `node_modules`. */
+/** A fresh app per test, under this process's own root. */
 beforeEach(async () => {
-  root = mkdtempSync(join(import.meta.dir, '..', '.policy-append-fixture-'));
-  dirs.push(root);
+  root = trees.make('policy-append-');
   await Bun.write(join(root, 'app.config.ts'), 'export default {};\n');
   // The scaffold's role map, so a run's grants land somewhere and the run can be `ok`.
   for (const file of [...rolesFiles(), ...generate({ kind: 'policy', name: 'invoice' })]) {

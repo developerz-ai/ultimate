@@ -15,7 +15,7 @@ import type { DrillRole, DrillService } from './drills';
 import { E2eAppFailedError } from './e2e-errors';
 import type { FaultProxy } from './fault-proxy';
 import { faultProxy, faultTarget, throughFaultProxy } from './fault-proxy';
-import { freePortApartFrom } from './free-port';
+import { bindFreePorts, isPortClash } from './free-port-bind';
 import { dropSql, urlFor } from './template-db';
 import { testSealKeyEnv } from './test-seal-key';
 
@@ -200,31 +200,52 @@ export async function startDrillFleet(options: DrillFleetOptions): Promise<Drill
     }
 
     const taken: number[] = [...[...proxies.values()].map((proxy) => proxy.port)];
-    const take = (): number => {
-      const port = freePortApartFrom(taken);
-      taken.push(port);
-      return port;
-    };
     let webBase = '';
     // Each role's CURRENT process, read through: what the rollout reports on.
     const outputs = new Map<DrillRole, { exitCode(): number | null; watched(): number }>();
     for (const role of options.roles) {
-      const port = take();
-      // The sync node listens on PORT + 1 (`syncPortFor`): held too, so no other role is handed it.
-      if (role === 'sync') taken.push(port + 1);
-      const metricsPort = take();
-      const origin = `http://127.0.0.1:${String(port)}`;
+      // Whether the last refusal was the role meeting a port another process took after it was
+      // handed out — read off the full tail, which the refusal's cause holds a bounded copy of.
+      let clashed = false;
+      const started = await bindFreePorts(
+        async ([port = 0, metricsPort = 0]) => {
+          clashed = false;
+          const origin = `http://127.0.0.1:${String(port)}`;
+          const env = {
+            ROLE: role,
+            PORT: String(port),
+            METRICS_PORT: String(metricsPort),
+            APP_URL: origin,
+          };
+          const readyz =
+            role === 'web' ? `${origin}/readyz` : `http://127.0.0.1:${String(metricsPort)}/readyz`;
+          const child = spawnRole(env);
+          const output = tailOf([child.stdout, child.stderr], before?.watch);
+          // Before migrate, a role is not ready by design: what it does instead is the drill's
+          // evidence, so its bind is proven by that evidence rather than here.
+          if (before === undefined) {
+            const ready = await waitReady(
+              readyz,
+              options.readyTimeoutMs,
+              () => child.exitCode === null,
+            );
+            if (!ready) {
+              clashed = isPortClash(output.log());
+              children.delete(child);
+              child.kill('SIGKILL');
+              await child.exited;
+              throw refuse(`ROLE=${role} never answered ${readyz}`, output.log());
+            }
+          }
+          // The sync node listens on PORT + 1 (`syncPortFor`): held too, so no other role is handed it.
+          taken.push(port, metricsPort, ...(role === 'sync' ? [port + 1] : []));
+          return { origin, env, readyz, child, output };
+        },
+        { count: 2, pair: role === 'sync', apart: taken, clashed: () => clashed },
+      );
+      const { origin, env, readyz } = started;
+      let { child, output } = started;
       if (role === 'web') webBase = origin;
-      const env = {
-        ROLE: role,
-        PORT: String(port),
-        METRICS_PORT: String(metricsPort),
-        APP_URL: origin,
-      };
-      const readyz =
-        role === 'web' ? `${origin}/readyz` : `http://127.0.0.1:${String(metricsPort)}/readyz`;
-      let child = spawnRole(env);
-      let output = tailOf([child.stdout, child.stderr], before?.watch);
       const boot = async (): Promise<void> => {
         const ready = await waitReady(
           readyz,
@@ -233,8 +254,6 @@ export async function startDrillFleet(options: DrillFleetOptions): Promise<Drill
         );
         if (!ready) throw refuse(`ROLE=${role} never answered ${readyz}`, output.log());
       };
-      // Before migrate, a role is not ready by design: what it does instead is the drill's evidence.
-      if (before === undefined) await boot();
       outputs.set(role, { exitCode: () => child.exitCode, watched: () => output.watched() });
       roles.set(role, {
         role,

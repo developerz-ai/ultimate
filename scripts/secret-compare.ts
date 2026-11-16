@@ -47,8 +47,11 @@ import type { SourceFile } from './boundaries';
 import { balancedClose } from './lib/balanced-paren';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
+import type { PinTarget } from './lib/pin-edit';
+import { pinRaiseFix, pinRaiseOf } from './lib/pin-edit';
+import { ratchetPinMain } from './lib/pin-edit-main';
 import type { PinTable, RatchetGap } from './lib/ratchet';
-import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import { ratchetGaps } from './lib/ratchet';
 import type { SiteProbe } from './lib/ratchet-sites';
 import { leadSite, newSitesFirst, siteList } from './lib/ratchet-sites';
 import {
@@ -329,6 +332,14 @@ export const checkSecretCompares = (input: SecretCompareInput): readonly SecretC
 /** The file a site row names: everything before the first `: `. */
 const fileOf = (key: string): string => key.slice(0, Math.max(0, key.indexOf(': '))) || key;
 
+/** Where this ratchet's pins live: what its over finding's raise and `--write-pin` edit. */
+export const SECRET_COMPARE_PIN_TARGET: PinTarget = {
+  script: 'scripts/secret-compare.ts',
+  file: SECRET_PINS_FILE,
+  table: 'SECRET_COMPARE_PINS',
+  nameOf: (key) => fileOf(key),
+};
+
 const at = (site: SecretCompareSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
 
@@ -340,14 +351,10 @@ const overFinding = (gap: SecretCompareGap): Finding => {
   const listed = siteList(gap, (site) => `${at(site)} \`${site.source}\``, EXPLAIN);
   const lead = leadSite(gap);
   const named = lead === undefined ? 'the value' : `"${lead.name}"`;
-  const row =
-    gap.pinned === 0
-      ? `add the row '${gap.pkg}': { count: ${String(gap.found)}, reason: '<what ${named} is>' } to SECRET_COMPARE_PINS in ${SECRET_PINS_FILE}`
-      : `raise the row '${gap.pkg}' in ${SECRET_PINS_FILE} to ${String(gap.found)} with a // why: on it`;
   return {
     code: 'X_SECRET_COMPARED_UNSAFELY',
     cause: `${gap.pkg} — a value named as a secret compared with a short-circuiting operator in ${String(gap.found)} place(s), pinned at ${String(gap.pinned)} — ${listed} — whose running time depends on how many leading bytes match, so an attacker learns the value one byte at a time`,
-    fix: `replace the comparison at ${at(lead)} with timingSafeEqual(a, b) from @ultimat3/core; if ${named} is not a secret, ${row}`,
+    fix: `replace the comparison at ${at(lead)} with timingSafeEqual(a, b) from @ultimat3/core; if ${named} is not a secret, ${pinRaiseFix(pinRaiseOf(SECRET_COMPARE_PIN_TARGET, gap))}, its reason saying what ${named} is`,
     at: at(lead),
   };
 };
@@ -406,7 +413,8 @@ export const secretCompareFindings = async (root: string): Promise<readonly Find
   (await secretCompareGaps(root)).map(secretCompareFindingFor);
 
 if (import.meta.main) {
-  await ratchetMain({
+  await ratchetPinMain({
+    target: SECRET_COMPARE_PIN_TARGET,
     script: SCRIPT,
     pinsFile: SECRET_PINS_FILE,
     pins: SECRET_COMPARE_PINS,

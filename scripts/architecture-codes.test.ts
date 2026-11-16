@@ -13,6 +13,7 @@ const ROOT = `${import.meta.dir}/..`;
 const NOT_CODES: Readonly<Record<string, string>> = {
   X_SCREAMING_SNAKE: 'the shape every code takes',
   X_PKG_WHAT_FAILED: "new-error-code's placeholder argument",
+  X_SCRIPT_WHAT_FAILED: "new-error-code --script's placeholder argument",
   X_YOUR_CODE: "registerErrorRetry's placeholder argument",
   X_QUERY_UNBOUNDED: 'named to say no such code exists',
   X_CREDENTIALS_INVALID: "an app's own code in a registerErrorStatus example",

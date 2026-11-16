@@ -1,7 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-// why: Bun ships no mkdtemp/rm and exposes no tmpdir(); each case owns a throwaway root.
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { tempTrees } from '../../packages/testing/src/temp-tree';
 import type { GitRunner } from './base-ref';
 import { BASE_REF } from './base-ref';
 import type { RatchetGap } from './ratchet';
@@ -24,18 +22,16 @@ const PROBE: SiteProbe<Site> = {
 };
 const at = (site: Site): string => `${site.path}:${String(site.line)}`;
 
-const roots: string[] = [];
-afterAll(async () => {
-  for (const dir of roots) await rm(dir, { recursive: true, force: true });
-});
+// One owner for every repository: each is removed after the git that ran in it.
+const trees = tempTrees();
+afterAll(() => trees.dispose());
 
 /** A root holding `now`, and a git that answers `then` for the same paths at the base ref. */
 async function tree(
   now: Readonly<Record<string, string>>,
   then: Readonly<Record<string, string>> | undefined,
 ): Promise<{ root: string; git: GitRunner; calls: string[][]; sites: Site[] }> {
-  const root = await mkdtemp(`${tmpdir()}/ratchet-sites-`);
-  roots.push(root);
+  const root = trees.make('ratchet-sites-');
   const sites: Site[] = [];
   for (const [path, text] of Object.entries(now)) {
     await Bun.write(`${root}/${path}`, text);

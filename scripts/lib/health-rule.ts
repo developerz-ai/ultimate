@@ -1,6 +1,7 @@
-// Eight of the ten per-row health verdicts, pure: typed inputs in, one RowVerdict out — no
-// subprocess, no Bun.* anywhere, so scripts/health.ts reads and this file judges; rows 9 and 10
-// keep read, judge and command together in health-release.ts and health-tutorials.ts, the document shapes it
+// Eight of the eleven per-row health verdicts, pure: typed inputs in, one RowVerdict out — no
+// subprocess, no Bun.* anywhere, so scripts/health.ts reads and this file judges; rows 9 to 11 keep
+// read, judge and command together in health-release.ts, health-tutorials.ts and
+// health-flake-hunt.ts, the document shapes it
 // judges over in health-narrow.ts. `unverdicted` always means "no verdict yet — re-run, never
 // unhealthy": an ask filed over an unread world is the false alarm this rule exists to prevent.
 
@@ -21,6 +22,7 @@ export const ROW_IDS = [
   'demo-shipped',
   'release-exists',
   'tutorials-run',
+  'flake-hunt',
 ] as const;
 
 export type RowId = (typeof ROW_IDS)[number];

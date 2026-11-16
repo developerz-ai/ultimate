@@ -57,6 +57,7 @@
     "pin-raises": "bun run scripts/pin-raises.ts",
     "plan-status": "bun run scripts/plan-status.ts",
     "posix-relative": "bun run scripts/posix-relative.ts",
+    "preflight": "bun run scripts/preflight.ts",
     "private-names": "bun run scripts/private-names.ts",
     "probe-databases": "bun run scripts/probe-databases.ts",
     "proto-index": "bun run scripts/proto-index.ts",

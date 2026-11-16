@@ -4,14 +4,12 @@
 // that will not load is one finding, on `manifest`: every other step that loads the app stands down.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// why: Bun has no temp-directory API and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
-// why: Bun exposes no tmpdir().
-import { tmpdir } from 'node:os';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
 import type { RouteFact } from '@ultimat3/manifest';
 import { buildManifest, MANIFEST_FILENAME } from '@ultimat3/manifest';
+import type { TempTree } from '@ultimat3/testing';
+import { tempTree } from '@ultimat3/testing';
 import { writeAppManifest } from './app-manifest';
 import { git } from './cmd-upgrade-fixture';
 import { exec } from './exec';
@@ -27,6 +25,7 @@ const CONFIG = JSON.stringify({
   linter: { rules: { correctness: { noUnusedVariables: 'error' } } },
 });
 
+let lint: TempTree | undefined;
 let root = '';
 
 const check = async () =>
@@ -35,14 +34,15 @@ const check = async () =>
   );
 
 beforeAll(async () => {
-  root = mkdtempSync(join(tmpdir(), 'x-lint-findings-'));
+  lint = tempTree('x-lint-findings-');
+  root = lint.path;
   await Bun.write(join(root, 'biome.json'), CONFIG);
   // Biome holds its own config to its format: a finding about it is not what these read.
   await exec([BIOME, 'check', '--write', 'biome.json'], { cwd: root });
   await Bun.write(join(root, 'bad.ts'), 'const unused = 1;\nexport const used = 2;\n');
 });
 
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+afterAll(() => lint?.dispose());
 
 describe('the lint step', () => {
   test('an unused variable is a finding naming file, line and rule, with an edit as its fix', async () => {
@@ -161,10 +161,15 @@ describe('contract-diff · the baseline is the committed manifest', () => {
     app: { name: 'fixture', version: '1.0.0' },
     routes: [route('/posts')],
   });
-  const dirs: string[] = [];
+  // One owner per repository: each tree removes itself once the git it ran has exited.
+  const trees: TempTree[] = [];
+  const owned = (prefix: string): string => {
+    const tree = tempTree(prefix);
+    trees.push(tree);
+    return tree.path;
+  };
   const app = async (repo: 'git' | 'none') => {
-    const dir = mkdtempSync(join(tmpdir(), 'x-contract-diff-'));
-    dirs.push(dir);
+    const dir = owned('x-contract-diff-');
     if (repo === 'git') await git(dir, 'init', '-q');
     return dir;
   };
@@ -172,8 +177,8 @@ describe('contract-diff · the baseline is the committed manifest', () => {
     await git(dir, 'add', '-A');
     await git(dir, '-c', 'commit.gpgsign=false', 'commit', '-qm', 'publish');
   };
-  afterAll(() => {
-    for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+  afterAll(async () => {
+    await Promise.all(trees.splice(0).map((tree) => tree.dispose()));
   });
 
   test('`x manifest` after a breaking change does not turn contract-diff green', async () => {
@@ -245,8 +250,7 @@ describe('contract-diff · the baseline is the committed manifest', () => {
   test('a depth-1 clone with a depth-1 fetched base (CI): the base ref is the baseline', async () => {
     const origin = await rebaselinedBranch();
     await git(origin, 'branch', '-q', 'main', 'origin/main');
-    const dir = mkdtempSync(join(tmpdir(), 'x-contract-shallow-'));
-    dirs.push(dir);
+    const dir = owned('x-contract-shallow-');
     const url = `file://${origin}`;
     await git(dir, 'clone', '-q', '--depth', '1', '--branch', 'feature', url, '.');
     await git(
@@ -283,15 +287,17 @@ describe('contract-diff · the baseline is the committed manifest', () => {
 describe('a load failure is one finding, on manifest', () => {
   /** Every step that loads the app, bar its owner. `exercise` spawns `x exercise`, which does too. */
   const DEPENDENT = ['exercise', 'drift', 'contract-diff', 'budgets', 'seo', 'i18n', 'policy'];
+  let tree: TempTree | undefined;
   let app = '';
   beforeAll(async () => {
-    app = mkdtempSync(join(tmpdir(), 'x-load-blocked-'));
+    tree = tempTree('x-load-blocked-');
+    app = tree.path;
     await Bun.write(join(app, 'app.config.ts'), 'export const config = {};\n');
     await Bun.write(join(app, 'package.json'), '{"name":"app","version":"1.0.0"}\n');
     await Bun.write(join(app, MANIFEST_FILENAME), '{}\n');
     await Bun.write(join(app, 'apps/web/app/post/entity.ts'), 'export const = ;\n');
   });
-  afterAll(() => rmSync(app, { recursive: true, force: true }));
+  afterAll(() => tree?.dispose());
 
   test.each(DEPENDENT)('%s stands down, finds nothing and spawns nothing', async (name) => {
     const step = VERIFY_STEPS.find((one) => one.name === name);
@@ -304,8 +310,9 @@ describe('a load failure is one finding, on manifest', () => {
 });
 
 describe('the drift step · an index nothing declares', () => {
-  const app = mkdtempSync(join(tmpdir(), 'x-drift-index-'));
-  afterAll(() => rmSync(app, { recursive: true, force: true }));
+  const tree = tempTree('x-drift-index-');
+  const app = tree.path;
+  afterAll(() => tree.dispose());
 
   // No migration records it and no entity names it. The dump also outruns the replay of zero
   // migrations, so the step is red on X_SCHEMA_DUMP_DRIFT — and the index is still only advice.

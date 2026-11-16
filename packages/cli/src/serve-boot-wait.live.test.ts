@@ -9,7 +9,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { METRICS_PATH, probeDatabaseName } from '@ultimat3/core';
-import { allowHost } from '@ultimat3/testing';
+import { allowHost, bindFreePorts } from '@ultimat3/testing';
 import { planNewApp } from './cmd-new';
 import { SCHEMA_WAIT_ENV } from './framework-schema-wait';
 import { processRoot } from './process-root-fixture';
@@ -33,14 +33,6 @@ async function admin(statement: string): Promise<void> {
   } finally {
     await sql.end();
   }
-}
-
-function freePort(): number {
-  const probe = Bun.serve({ port: 0, fetch: () => new Response('') });
-  const { port } = probe;
-  probe.stop(true);
-  if (port === undefined) return expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
-  return port;
 }
 
 async function writeFixture(): Promise<void> {
@@ -67,20 +59,51 @@ async function writeFixture(): Promise<void> {
 function watch(...streams: ReadableStream<Uint8Array>[]) {
   let seen = '';
   const woken: (() => void)[] = [];
-  for (const stream of streams) {
+  const read = streams.map((stream) => {
     const decoder = new TextDecoder();
-    void (async () => {
+    return (async () => {
       for await (const chunk of stream) {
         seen += decoder.decode(chunk, { stream: true });
         for (const wake of woken.splice(0)) wake();
       }
     })();
-  }
-  return async (marker: string): Promise<string> => {
+  });
+  const until = async (marker: string): Promise<string> => {
     while (!seen.includes(marker)) await new Promise<void>((resolve) => woken.push(resolve));
     return seen;
   };
+  /** Everything the child wrote, once both streams have ended. */
+  const all = async (): Promise<string> => {
+    await Promise.all(read);
+    return seen;
+  };
+  return Object.assign(until, { all });
 }
+
+/**
+ * A serving role spawned before its migrate step, resolved once it says it waits — its port and its
+ * scrape port bound by then. One that exits first, meeting a port another process took after it
+ * was handed out, is spawned again on fresh ones (`bindFreePorts`); any other exit is the failure.
+ */
+const waiting = (role: string) =>
+  bindFreePorts(
+    async ([app = 0, metrics = 0]) => {
+      const child = spawnRole(role, { app, metrics });
+      const until = watch(child.stdout, child.stderr);
+      const outcome = await Promise.race([
+        until('ultimate schema waiting').then(() => 'waiting' as const),
+        child.exited.then(() => 'exited' as const),
+      ]);
+      if (outcome === 'exited') {
+        return expect.unreachable(`ROLE=${role} exited before it waited: ${await until.all()}`);
+      }
+      return { child, until, ports: { app, metrics } };
+    },
+    { count: 2 },
+  );
+
+/** `ROLE=migrate` binds nothing — it applies the ledger and exits — so its ports are never asked. */
+const MIGRATE_PORTS = { app: 0, metrics: 0 };
 
 function spawnRole(role: string, ports: { app: number; metrics: number }) {
   return Bun.spawn(['bun', join(ROOT, 'apps/web/server.ts')], {
@@ -111,11 +134,8 @@ describeLive('live · a role started before its migrate step', () => {
       await writeFixture();
       await admin(`drop database if exists ${DB} with (force)`);
       await admin(`create database ${DB}`);
-      const ports = { app: freePort(), metrics: freePort() };
-      const web = spawnRole('web', ports);
-      const until = watch(web.stdout, web.stderr);
+      const { child: web, until, ports } = await waiting('web');
       try {
-        await until('ultimate schema waiting');
         allowHost(`127.0.0.1:${String(ports.app)}`);
         allowHost(`127.0.0.1:${String(ports.metrics)}`);
         const app = `http://127.0.0.1:${String(ports.app)}`;
@@ -126,7 +146,7 @@ describeLive('live · a role started before its migrate step', () => {
         ).text();
         expect(scrape).toContain('\nframework_schema_applied 0\n');
 
-        const migrate = spawnRole('migrate', { app: freePort(), metrics: freePort() });
+        const migrate = spawnRole('migrate', MIGRATE_PORTS);
         const migrated = watch(migrate.stdout, migrate.stderr);
         expect(await migrate.exited).toBe(0);
         await migrated('ultimate migrate applied');
@@ -150,10 +170,8 @@ describeLive('live · a role started before its migrate step', () => {
       await writeFixture();
       await admin(`drop database if exists ${DB} with (force)`);
       await admin(`create database ${DB}`);
-      const web = spawnRole('worker', { app: freePort(), metrics: freePort() });
-      const until = watch(web.stdout, web.stderr);
+      const { child: web } = await waiting('worker');
       try {
-        await until('ultimate schema waiting');
         web.kill('SIGTERM');
         expect(await web.exited).toBe(0);
       } finally {
@@ -171,10 +189,8 @@ describeLive('live · a role started before its migrate step', () => {
       await writeFixture();
       await admin(`drop database if exists ${DB} with (force)`);
       await admin(`create database ${DB}`);
-      const worker = spawnRole('worker', { app: freePort(), metrics: freePort() });
-      const until = watch(worker.stdout, worker.stderr);
+      const { child: worker } = await waiting('worker');
       try {
-        await until('ultimate schema waiting');
         const sentAt = performance.now();
         worker.kill('SIGUSR2');
         expect(await worker.exited).toBe(0);

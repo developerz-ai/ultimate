@@ -70,6 +70,8 @@ export async function importPinSource(
   );
   const path = `${scratch}/pins-${Bun.hash(anchored).toString(16)}.ts`;
   await Bun.write(path, anchored);
-  const loaded: unknown = await import(path);
+  // A file URL, not the path: on Windows a `C:\…\RUNNER~1\…/pins-….ts` spelling is not resolved
+  // as a module specifier (the CI windows job's red), and a URL is the one form every OS reads.
+  const loaded: unknown = await import(Bun.pathToFileURL(path).href);
   return typeof loaded === 'object' && loaded !== null ? { ...loaded } : {};
 }

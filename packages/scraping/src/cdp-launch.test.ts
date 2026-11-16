@@ -1,6 +1,5 @@
-// Which browser a run gets, and what the launcher does when there is none. The launch itself is
-// proved by `e2e/cdp-browser.e2e.test.ts` against a real Chrome; what is testable without one is
-// the candidate order and the refusal.
+// What the launcher does with a browser: none, one that cannot start, fakes over the pipe, and the
+// machine's real Chrome. Which browser a run gets (the candidate order) is `cdp-launch-find.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
 // why: whether the profile directory outlived the close is a filesystem question Bun has no sync answer to.
@@ -13,7 +12,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   BROWSER_LIFETIME_MS,
-  CHROME_CANDIDATES,
   CHROME_PATH_ENV,
   CLOSE_GRACE_MS,
   chromeCandidates,
@@ -23,6 +21,7 @@ import {
   launchFoundChrome,
 } from './cdp-launch';
 import { launchAttempt } from './cdp-launch-attempt';
+import { LAUNCH_TEST_MS } from './cdp-launch-ready';
 import type { CdpWire } from './cdp-launch-wire';
 
 /**
@@ -34,183 +33,22 @@ const WINDOWS = process.platform === 'win32';
 
 const NOWHERE = '/nonexistent/definitely-not-a-browser';
 
-/**
- * A file that a launcher can START and that banners as a browser — what `findChrome` now asks of a
- * candidate, beside mere existence. A `#!` script, so it is skipped on Windows like every other fake
- * here (`cdp-launch-wire.ts`). An EMPTY file no longer stands in for a browser: that is the defect
- * the tests below pin.
- */
-const startableFake = async (path: string): Promise<string> => {
-  // `Bun.write` makes the parents (`…/Google Chrome.app/Contents/MacOS`); `writeFile` does not.
-  await Bun.write(path, '#!/bin/sh\necho "Google Chrome 120.0.6099.109"\n');
-  await chmod(path, 0o755);
-  return path;
-};
-
-describe('findChrome', () => {
-  test('CHROME_PATH wins outright, and nothing else is tried', async () => {
-    // `bun` is a file that exists and is not a browser — this asks WHICH path is answered, which
-    // is the whole question, and never runs it.
-    const bun = process.execPath;
-
-    expect(await findChrome({ [CHROME_PATH_ENV]: bun })).toBe(bun);
-  });
-
-  test('an empty CHROME_PATH falls back to the candidate list rather than answering it', async () => {
-    // The empty string is what an unset variable becomes in a shell that exported it anyway, and
-    // `Bun.file('').exists()` is false — so a rule spelled `!== undefined` would answer undefined
-    // on a machine that really does have a browser.
-    const found = await findChrome({ [CHROME_PATH_ENV]: '' });
-
-    if (found !== undefined) expect(CHROME_CANDIDATES).toContain(found);
-  });
-
-  test('a CHROME_PATH pointing at nothing answers undefined, and does not silently search on', async () => {
-    expect(await findChrome({ [CHROME_PATH_ENV]: NOWHERE })).toBeUndefined();
-  });
-
-  test('the candidate list is ordered, and google-chrome comes before chromium', () => {
-    const order = [...chromeCandidates('linux', {})];
-
-    expect(order[0]).toBe('/usr/bin/google-chrome');
-    // A guard on the needle's presence, because `indexOf` answers -1 for an absent name and -1 is
-    // less than every real index — the assertion below would hold on a list that lost the entry.
-    expect(order).toContain('/usr/bin/chromium');
-    expect(order.indexOf('/usr/bin/google-chrome')).toBeLessThan(
-      order.indexOf('/usr/bin/chromium'),
-    );
-  });
-});
-
-describe('chromeCandidates', () => {
-  // A browser installed where the list never looks is an e2e suite SKIPPED in silence, and an
-  // `x shot` refused — which was every Windows and every macOS machine without CHROME_PATH.
-  const WINDOWS_ENV = {
-    ProgramFiles: 'C:\\Program Files',
-    'ProgramFiles(x86)': 'C:\\Program Files (x86)',
-    LOCALAPPDATA: 'C:\\Users\\ada\\AppData\\Local',
-  };
-
-  test('on Windows: Chrome under each install root, then Edge — the browser every Windows has', () => {
-    expect(chromeCandidates('win32', WINDOWS_ENV)).toEqual([
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Users\\ada\\AppData\\Local\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    ]);
-  });
-
-  test('on Windows a root the environment does not name falls back, or is not guessed at', () => {
-    const found = chromeCandidates('win32', {});
-    expect(found[0]).toBe('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe');
-    // No LOCALAPPDATA: a per-user install has no default root worth inventing.
-    expect(found.some((path) => path.includes('AppData'))).toBe(false);
-  });
-
-  test('on macOS: the app bundles, system-wide then per-user', () => {
-    expect(chromeCandidates('darwin', { HOME: '/Users/ada' })).toEqual([
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/Users/ada/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/Applications/Chromium.app/Contents/MacOS/Chromium',
-      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    ]);
-  });
-
-  test('CHROME_CANDIDATES is this machine’s list', () => {
-    expect(CHROME_CANDIDATES).toEqual(chromeCandidates(process.platform, process.env));
-  });
-
-  test.skipIf(WINDOWS)('findChrome searches the list of the platform it is told', async () => {
-    // A per-user macOS install, made real under a scratch HOME: found only by the darwin list.
-    const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-'));
-    try {
-      const chrome = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
-      await startableFake(chrome);
-      expect(await findChrome({ HOME: home }, 'darwin')).toBe(chrome);
-      expect(await findChrome({ HOME: home }, 'linux')).not.toBe(chrome);
-    } finally {
-      await rm(home, { recursive: true, force: true });
-    }
-  });
-
-  // A file that EXISTS is not a browser that STARTS, and reading the first as the second is a red
-  // gate rather than a skip. Ubuntu 24.04 ships `/usr/bin/chromium-browser` as a wrapper around
-  // `snap`: present and executable everywhere, and here it exits 1 having started nothing, so every
-  // browser-backed suite in the run reported `X_CDP_LAUNCH_FAILED` where its own header promises a
-  // SKIP. The candidate below is that wrapper, and the one after it is a browser.
-  test('a candidate that exists but cannot start is passed over, never launched', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-dead-'));
-    try {
-      const dead = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
-      await Bun.write(dead, '#!/bin/sh\nexit 1\n');
-      await chmod(dead, 0o755);
-      // No CHROME_PATH: the list is searched, finds the dead wrapper, and answers NOTHING — which
-      // the caller reads as "no browser", the skip. A launcher that answered it failed on both
-      // starts instead.
-      expect(await findChrome({ HOME: home }, 'darwin')).toBeUndefined();
-    } finally {
-      await rm(home, { recursive: true, force: true });
-    }
-  });
-
-  test.skipIf(WINDOWS)('a --version that names no browser is not a browser', async () => {
-    // `bun --version` exits 0 and prints `1.4.4`: "exited 0 and printed a number" accepts a runtime
-    // that cannot render a page. The banner must name the product.
-    const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-not-'));
-    try {
-      const notBrowser = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
-      await Bun.write(notBrowser, '#!/bin/sh\necho "1.4.4"\n');
-      await chmod(notBrowser, 0o755);
-      expect(await findChrome({ HOME: home }, 'darwin')).toBeUndefined();
-    } finally {
-      await rm(home, { recursive: true, force: true });
-    }
-  });
-
-  test.skipIf(WINDOWS)('a candidate that starts and stops cleanly in silence', async () => {
-    // Windows' `chrome.exe` prints no console banner even when it starts perfectly. Reading silence
-    // as "not a browser" answers undefined and silently skips every browser-backed test on that
-    // runner; the probe must judge only what it was told.
-    const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-quiet-'));
-    try {
-      const quiet = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
-      await Bun.write(quiet, '#!/bin/sh\nexit 0\n');
-      await chmod(quiet, 0o755);
-      expect(await findChrome({ HOME: home }, 'darwin')).toBe(quiet);
-    } finally {
-      await rm(home, { recursive: true, force: true });
-    }
-  });
-
-  test.skipIf(WINDOWS)('a bannering browser is answered; CHROME_PATH is not probed', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'x-find-chrome-live-'));
-    try {
-      const chrome = `${home}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`;
-      await startableFake(chrome);
-      expect(await findChrome({ HOME: home }, 'darwin')).toBe(chrome);
-      // The operator's answer, taken as given: a wrapper or a non-standard build cannot be described
-      // by any list, and probing it would overrule the one caller who knows better.
-      const bun = process.execPath;
-      expect(await findChrome({ [CHROME_PATH_ENV]: bun })).toBe(bun);
-    } finally {
-      await rm(home, { recursive: true, force: true });
-    }
-  });
-});
-
 describe('launchFoundChrome', () => {
-  test('refuses by name when there is no browser, naming every path it tried', async () => {
-    const thrown = await launchFoundChrome({ [CHROME_PATH_ENV]: NOWHERE }, 1_000).catch(
-      (error: unknown) => error,
-    );
+  test(
+    'refuses by name when there is no browser, naming every path it tried',
+    async () => {
+      const thrown = await launchFoundChrome({ [CHROME_PATH_ENV]: NOWHERE }, 1_000).catch(
+        (error: unknown) => error,
+      );
 
-    expect((thrown as { code?: string }).code).toBe('X_CDP_BROWSER_MISSING');
-    // Rendered as JSON, so a Windows path's backslashes arrive doubled: compare like with like.
-    const first = JSON.stringify(chromeCandidates(process.platform, process.env)[0]).slice(1, -1);
-    expect((thrown as { cause?: string }).cause).toContain(first);
-    expect((thrown as { fix?: string }).fix).toContain(CHROME_PATH_ENV);
-  });
+      expect((thrown as { code?: string }).code).toBe('X_CDP_BROWSER_MISSING');
+      // Rendered as JSON, so a Windows path's backslashes arrive doubled: compare like with like.
+      const first = JSON.stringify(chromeCandidates(process.platform, process.env)[0]).slice(1, -1);
+      expect((thrown as { cause?: string }).cause).toContain(first);
+      expect((thrown as { fix?: string }).fix).toContain(CHROME_PATH_ENV);
+    },
+    LAUNCH_TEST_MS,
+  );
 });
 
 describe('chromeLaunchFlags', () => {
@@ -239,31 +77,35 @@ describe('chromeLaunchFlags', () => {
 describe('launchChrome — a binary that cannot be started', () => {
   // Bun throws from `spawn` itself for a path that is not there or not a format the OS executes —
   // every fake below, on Windows. That throw escaped as a bare ENOENT, not X_CDP_LAUNCH_FAILED.
-  test('is X_CDP_LAUNCH_FAILED naming why, never a bare spawn error', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'x-launch-none-'));
-    try {
-      const error = await launchChrome({
-        executable: join(dir, 'no-such-browser'),
-        timeoutMs: 1_000,
-      }).catch((e: unknown) => e);
-      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
-      const { cause, meta } = error as { cause: string; meta?: Record<string, unknown> };
-      expect(cause).toContain('could not be started');
-      // Its own `why`: `closed` reads "it ran and was killed", which is not what happened.
-      expect(cause).not.toContain('was killed');
-      const never = {
-        why: 'spawn',
-        exitCode: null,
-        stderr: '',
-        // The platform's own words for a missing binary: `ENOENT` on POSIX, "Executable not found"
-        // from Bun on Windows (the windows job, #664). The test is about the shape, not the errno.
-        detail: expect.stringMatching(/ENOENT|Executable not found/),
-      };
-      expect(meta?.['attempts']).toMatchObject([never, never]);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+  test(
+    'is X_CDP_LAUNCH_FAILED naming why, never a bare spawn error',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'x-launch-none-'));
+      try {
+        const error = await launchChrome({
+          executable: join(dir, 'no-such-browser'),
+          timeoutMs: 1_000,
+        }).catch((e: unknown) => e);
+        expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+        const { cause, meta } = error as { cause: string; meta?: Record<string, unknown> };
+        expect(cause).toContain('could not be started');
+        // Its own `why`: `closed` reads "it ran and was killed", which is not what happened.
+        expect(cause).not.toContain('was killed');
+        const never = {
+          why: 'spawn',
+          exitCode: null,
+          stderr: '',
+          // The platform's own words for a missing binary: `ENOENT` on POSIX, "Executable not found"
+          // from Bun on Windows (the windows job, #664). The test is about the shape, not the errno.
+          detail: expect.stringMatching(/ENOENT|Executable not found/),
+        };
+        expect(meta?.['attempts']).toMatchObject([never, never]);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    LAUNCH_TEST_MS,
+  );
 });
 
 describe.skipIf(WINDOWS)('launchChrome', () => {
@@ -279,148 +121,188 @@ describe.skipIf(WINDOWS)('launchChrome', () => {
   /** Answer the launcher's first call over the pipe: read one NUL-ended message, reply to id 1. */
   const ANSWER = `read -r -d '' _ <&3\nprintf '{"id":1,"result":{"product":"Fake"}}\\0' >&4\n`;
 
-  test('is ready once the browser answers over its pipe, after 16 MB of stderr', async () => {
-    // 16 MB of stderr BEFORE the answer: a launcher that read stderr only until some line, then
-    // stopped, stalled here on every run (measured when the endpoint was read off stderr). Named
-    // for what it proves — readiness past a chatty stderr — and NOT for the drain: a launcher that
-    // never touches stderr also passes, because Bun buffers an unread pipe itself. The drain is
-    // asserted by the two cause tests below, which read the tail it keeps.
-    const { fake, dir } = await fakeBrowser(
-      `head -c 16777216 /dev/zero | tr '\\0' 'x' >&2\n${ANSWER}sleep 5\n`,
-    );
-    try {
-      const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
-      await launched.close();
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+  test(
+    'is ready once the browser answers over its pipe, after 16 MB of stderr',
+    async () => {
+      // 16 MB of stderr BEFORE the answer: a launcher that read stderr only until some line, then
+      // stopped, stalled here on every run (measured when the endpoint was read off stderr). Named
+      // for what it proves — readiness past a chatty stderr — and NOT for the drain: a launcher that
+      // never touches stderr also passes, because Bun buffers an unread pipe itself. The drain is
+      // asserted by the two cause tests below, which read the tail it keeps.
+      const { fake, dir } = await fakeBrowser(
+        `head -c 16777216 /dev/zero | tr '\\0' 'x' >&2\n${ANSWER}sleep 5\n`,
+      );
+      try {
+        const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+        await launched.close();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    LAUNCH_TEST_MS,
+  );
 
-  test('close() resolves once the process has exited — at once when SIGTERM ends it', async () => {
-    const { fake, dir } = await fakeBrowser(`${ANSWER}sleep 30\n`);
-    try {
-      const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
-      const started = performance.now();
-      await launched.close();
-      expect(performance.now() - started).toBeLessThan(CLOSE_GRACE_MS);
-      // Idempotent: the second call is the same wait, already over.
-      await launched.close();
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+  test(
+    'close() resolves once the process has exited — at once when SIGTERM ends it',
+    async () => {
+      const { fake, dir } = await fakeBrowser(`${ANSWER}sleep 30\n`);
+      try {
+        const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+        const started = performance.now();
+        await launched.close();
+        expect(performance.now() - started).toBeLessThan(CLOSE_GRACE_MS);
+        // Idempotent: the second call is the same wait, already over.
+        await launched.close();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    LAUNCH_TEST_MS,
+  );
 
   // The spawn's own bound (`lifetimeMs`, the spawn-timeout guard): a caller that crashed or a hook
   // Bun cut short never calls `close()`, and the browser must not outlive every reason it ran for.
-  test('a browser nobody closes is killed by the OS at its lifetime, SIGTERM ignored or not', async () => {
-    const { fake, dir } = await fakeBrowser(
-      `trap '' TERM\n${ANSWER}while true; do sleep 1; done\n`,
-    );
-    try {
-      const launched = await launchChrome({ executable: fake, timeoutMs: 5_000, lifetimeMs: 400 });
-      const answer = await launched.connection
-        .send('Browser.getVersion', {}, undefined, 3_000)
-        .then(
-          () => 'answered',
-          (error: unknown) => (error as { code?: string }).code,
-        );
-      // Never answered past the first call, and the wire closed on the kill: not the 3 s deadline.
-      expect(answer).toBe('X_CDP_CALL_FAILED');
-      await launched.close();
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  }, 10_000);
-
-  test('a lifetime that is not a positive count is refused before a process starts', async () => {
-    const error = await launchChrome({
-      executable: NOWHERE,
-      timeoutMs: 5_000,
-      lifetimeMs: Number.NaN,
-    }).catch((e: unknown) => e);
-    expect(error).toBeUltimateError('X_INVARIANT');
-  });
-
-  test('close() kills a browser that ignores SIGTERM, and still resolves — bounded', async () => {
-    const { fake, dir } = await fakeBrowser(
-      `trap '' TERM\n${ANSWER}while true; do sleep 1; done\n`,
-    );
-    try {
-      const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
-      const started = performance.now();
-      await launched.close();
-      const took = performance.now() - started;
-      expect(took).toBeGreaterThanOrEqual(CLOSE_GRACE_MS - 100);
-      expect(took).toBeLessThan(CLOSE_GRACE_MS * 2 + 1_000);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  }, 20_000);
-
-  test('a browser that dies before answering is X_CDP_LAUNCH_FAILED quoting its own stderr', async () => {
-    const { fake, dir } = await fakeBrowser(
-      `echo 'error while loading shared libraries: libnss3.so' >&2\nexit 127\n`,
-    );
-    try {
-      const error = await launchChrome({ executable: fake, timeoutMs: 5_000 }).catch(
-        (e: unknown) => e,
+  test(
+    'a browser nobody closes is killed by the OS at its lifetime, SIGTERM ignored or not',
+    async () => {
+      const { fake, dir } = await fakeBrowser(
+        `trap '' TERM\n${ANSWER}while true; do sleep 1; done\n`,
       );
-      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
-      expect((error as { cause: string }).cause).toContain('libnss3.so');
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+      try {
+        const launched = await launchChrome({
+          executable: fake,
+          timeoutMs: 5_000,
+          lifetimeMs: 400,
+        });
+        const answer = await launched.connection
+          .send('Browser.getVersion', {}, undefined, 3_000)
+          .then(
+            () => 'answered',
+            (error: unknown) => (error as { code?: string }).code,
+          );
+        // Never answered past the first call, and the wire closed on the kill: not the 3 s deadline.
+        expect(answer).toBe('X_CDP_CALL_FAILED');
+        await launched.close();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    LAUNCH_TEST_MS,
+  );
+
+  test(
+    'a lifetime that is not a positive count is refused before a process starts',
+    async () => {
+      const error = await launchChrome({
+        executable: NOWHERE,
+        timeoutMs: 5_000,
+        lifetimeMs: Number.NaN,
+      }).catch((e: unknown) => e);
+      expect(error).toBeUltimateError('X_INVARIANT');
+    },
+    LAUNCH_TEST_MS,
+  );
+
+  test(
+    'close() kills a browser that ignores SIGTERM, and still resolves — bounded',
+    async () => {
+      const { fake, dir } = await fakeBrowser(
+        `trap '' TERM\n${ANSWER}while true; do sleep 1; done\n`,
+      );
+      try {
+        const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
+        const started = performance.now();
+        await launched.close();
+        const took = performance.now() - started;
+        expect(took).toBeGreaterThanOrEqual(CLOSE_GRACE_MS - 100);
+        expect(took).toBeLessThan(CLOSE_GRACE_MS * 2 + 1_000);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    LAUNCH_TEST_MS,
+  );
+
+  test(
+    'a browser that dies before answering is X_CDP_LAUNCH_FAILED quoting its own stderr',
+    async () => {
+      const { fake, dir } = await fakeBrowser(
+        `echo 'error while loading shared libraries: libnss3.so' >&2\nexit 127\n`,
+      );
+      try {
+        const error = await launchChrome({ executable: fake, timeoutMs: 5_000 }).catch(
+          (e: unknown) => e,
+        );
+        expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+        expect((error as { cause: string }).cause).toContain('libnss3.so');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    LAUNCH_TEST_MS,
+  );
 
   // A browser that neither answers nor prints nor exits — a GUI prompt, a wedged process. The
   // per-call deadline is what ends it; no read of stderr or of the pipe is ever waited on.
-  test('a browser that hangs in silence is X_CDP_LAUNCH_FAILED once the deadline passes', async () => {
-    const { fake, dir } = await fakeBrowser('exec sleep 30\n');
-    try {
-      const started = performance.now();
-      const error = await launchChrome({
-        executable: fake,
-        timeoutMs: 300,
-        launchTimeoutMs: 300,
-      }).catch((e: unknown) => e);
-      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
-      expect((error as { cause: string }).cause).toContain('printed nothing');
-      // Two starts, each its deadline plus a bounded reap and drain — never the process's 30 s.
-      expect(performance.now() - started).toBeLessThan(5_000);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+  test(
+    'a browser that hangs in silence is X_CDP_LAUNCH_FAILED once the deadline passes',
+    async () => {
+      const { fake, dir } = await fakeBrowser('exec sleep 30\n');
+      try {
+        const started = performance.now();
+        const error = await launchChrome({
+          executable: fake,
+          timeoutMs: 300,
+          launchTimeoutMs: 300,
+        }).catch((e: unknown) => e);
+        expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+        expect((error as { cause: string }).cause).toContain('printed nothing');
+        // Two starts, each its deadline plus a bounded reap and drain — never the process's 30 s.
+        expect(performance.now() - started).toBeLessThan(5_000);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    LAUNCH_TEST_MS,
+  );
 
   // The launcher read the tail the moment the pipe ended, and nothing ordered the stderr reader
   // before that: a browser whose reply pipe closes before its last stderr line lands was reported
   // as "printed nothing". Forced here by closing the pipe FIRST and writing the reason after.
-  test('the stderr a dying browser writes after its pipe closes still reaches the cause', async () => {
-    const { fake, dir } = await fakeBrowser(
-      `exec 4>&-\nsleep 0.3\necho 'error while loading shared libraries: libnss3.so' >&2\nexit 127\n`,
-    );
-    try {
-      const error = await launchChrome({ executable: fake, timeoutMs: 5_000 }).catch(
-        (e: unknown) => e,
+  test(
+    'the stderr a dying browser writes after its pipe closes still reaches the cause',
+    async () => {
+      const { fake, dir } = await fakeBrowser(
+        `exec 4>&-\nsleep 0.3\necho 'error while loading shared libraries: libnss3.so' >&2\nexit 127\n`,
       );
-      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
-      expect((error as { cause: string }).cause).toContain('libnss3.so');
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+      try {
+        const error = await launchChrome({ executable: fake, timeoutMs: 5_000 }).catch(
+          (e: unknown) => e,
+        );
+        expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+        expect((error as { cause: string }).cause).toContain('libnss3.so');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    LAUNCH_TEST_MS,
+  );
 
   // A NaN deadline would be `setTimeout(fn, 0)`: every start cancelled 1 ms in and a healthy
   // browser reported silent. Screened before a process is spawned, so a bad option fails by name.
-  test('a NaN launch deadline is X_INVARIANT, never a 1 ms timer', async () => {
-    const error = await launchChrome({
-      executable: 'unused',
-      timeoutMs: 5_000,
-      launchTimeoutMs: Number.NaN,
-    }).catch((e: unknown) => e);
-    expect(error).toBeUltimateError('X_INVARIANT');
-    expect((error as { cause: string }).cause).toContain('launchTimeoutMs');
-  });
+  test(
+    'a NaN launch deadline is X_INVARIANT, never a 1 ms timer',
+    async () => {
+      const error = await launchChrome({
+        executable: 'unused',
+        timeoutMs: 5_000,
+        launchTimeoutMs: Number.NaN,
+      }).catch((e: unknown) => e);
+      expect(error).toBeUltimateError('X_INVARIANT');
+      expect((error as { cause: string }).cause).toContain('launchTimeoutMs');
+    },
+    LAUNCH_TEST_MS,
+  );
 });
 
 const realChrome = await findChrome(process.env);
@@ -461,7 +343,7 @@ describe.skipIf(realChrome === undefined && !browserRequired)(
         // A profile still there is a browser process — on Windows, an orphaned child — holding it.
         expect(existsSync(profile)).toBe(false);
       },
-      150_000,
+      LAUNCH_TEST_MS,
     );
   },
 );

@@ -8,6 +8,7 @@
 //   TEST_NATS_URL=nats://localhost:4222 bun test ./packages/realtime/src/nats-transport.live.test.ts
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { subscribed } from './bus-subscribed-fixture';
 import { parseNatsUrl } from './nats-client';
 import { kvGet } from './nats-jetstream';
 import { encodeToken } from './nats-kv';
@@ -143,7 +144,12 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
     const seen: string[] = [];
     const subject = `x.change.reconnect.${Bun.randomUUIDv7()}`;
     try {
-      await bus.subscribe(subject, (payload) => seen.push(payload));
+      const held = await subscribed({
+        subscriber: bus,
+        publisher: bus,
+        subject,
+        handler: (payload) => seen.push(payload),
+      });
       await bus.publish(subject, 'before');
       await waitFor(() => seen.length === 1);
       expect(reconnects).toBe(0);
@@ -152,8 +158,10 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
       await waitFor(() => reconnects > 0);
       expect(reconnects).toBeGreaterThanOrEqual(1);
 
-      // The subscription came back with the connection: nobody re-subscribed.
+      // The subscription came back with the connection: nobody re-subscribed. A probe through it
+      // is heard before the next publish, which then cannot beat the re-sent SUB to the server.
       await waitFor(() => bus.connected);
+      await held.subscribed();
       await bus.publish(subject, 'after');
       await waitFor(() => seen.length === 2);
       expect(seen).toEqual(['before', 'after']);
@@ -183,7 +191,12 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
     const subject = `x.change.redial.${Bun.randomUUIDv7()}`;
     let restarted: { stop(): void } | undefined;
     try {
-      await bus.subscribe(subject, (payload) => seen.push(payload));
+      const held = await subscribed({
+        subscriber: bus,
+        publisher,
+        subject,
+        handler: (payload) => seen.push(payload),
+      });
       await publisher.publish(subject, 'before');
       await waitFor(() => seen.length === 1);
 
@@ -195,6 +208,9 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
       restarted = await relayTo(target.host, target.port, relay.port);
       await waitFor(() => bus.connected);
       expect(bus.connected).toBe(true);
+      // `connected` is the new client, not the server holding its re-bound SUB: the re-dial writes
+      // it unflushed, and a publish from ANOTHER connection could beat it there and be lost.
+      await held.subscribed();
       await publisher.publish(subject, 'after');
       await waitFor(() => seen.length === 2);
       expect(seen).toEqual(['before', 'after']);

@@ -128,10 +128,9 @@ export function auditLedger(
     throw migrationConflict(
       `the ledger records migration "${first.id}" applied by app version "${first.app_version}" ` +
         `but this build is "${appVersion}" and does not ship it`,
-      // `x db status` has never existed — the subcommands are gen, migrate, reset, studio, branch
-      // and backfill — and this is one of the two errors most likely to fire during a real deploy.
-      // A `fix:` is copied and run verbatim, so it names the ledger read that works anywhere psql
-      // does, and the one edit that resolves the disagreement.
+      // One of the two errors most likely to fire during a real deploy, often on a box with no
+      // CLI. A `fix:` is copied and run verbatim, so it names the ledger read that works anywhere
+      // psql does (`x db status --json` reads the same rows), and the one edit that resolves it.
       conflictFix(first),
     );
   }

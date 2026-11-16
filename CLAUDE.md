@@ -9,7 +9,7 @@ SolidJS, where **the primary developer is an AI agent**. The promise: **reduce t
 problems the author has to worry about** — every decision the framework makes is one an agent does
 not have to.
 
-This repo is the framework: the `@ultimat3/*` packages, the `x` CLI, the docs, the wiki, and three
+This repo is the framework: the `@ultimat3/*` packages, the `x` CLI, the docs, the wiki, three
 tracked apps — the reference app (`examples/dummy`), the deployed demo
 (`dummy/social-media-clone`) and the docs site (`dummy/docs-site`), each gated on its own
 `expectedRed` table. CLI binary `x`, npm scope
@@ -19,7 +19,7 @@ tracked apps — the reference app (`examples/dummy`), the deployed demo
 the tier table and the `X_*` codes; from v30 one major per 90 days (`X_RELEASE_MAJOR_WINDOW`),
 breaks wait on `next` (`X_BREAKING_ON_MAIN`): [`wiki/Stability.md`](wiki/Stability.md).
 
-**This page states no version number, deliberately.** Every fact below is a command. What each
+**This page states no version number, on purpose.** Every fact below is a command. What each
 answer means:
 [`PUBLISHING.md`](PUBLISHING.md#facts-as-commands); history:
 [`publishing-and-provenance.md`](docs/history/publishing-and-provenance.md).
@@ -66,16 +66,17 @@ Run everything from the repo root.
 |---|---|
 | install | `bun install` |
 | fresh clone to running | `bun run setup` — idempotent; safe to re-run after every pull |
-| **the gate** | `bun run verify` — `x verify` at the repo root, 21 steps: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. Green = shippable. The list is `VERIFY_STEP_NAMES` in `packages/cli/src/verify-step.ts` |
+| **the gate** | `bun run verify` — `x verify` at the repo root, 21 steps: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, exercise, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. Green = shippable; list: `VERIFY_STEP_NAMES`, `packages/cli/src/verify-step.ts` |
 | typecheck | `bun run typecheck` · shared: `bun run typecheck:locked` · start over: `bun run typecheck:clean` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included |
-| test (one file) | `bun test ./packages/core/src/errors.test.ts` — **always `./`**: a bare `packages/<pkg>` is a substring filter that also runs `examples/dummy/packages/<pkg>` under the wrong config |
+| test (one file) | `bun test ./packages/core/src/errors.test.ts` — **always `./`**: bare `packages/<pkg>` is a substring filter, also running `examples/dummy/packages/<pkg>` under the wrong config |
 | test services | `docker compose -f docker/docker-compose.test.yml up -d --wait`, then `set -a; . docker/test-services.env; set +a` — in RAM; unset, live suites skip |
 | test (one name) | `bun test ./packages/core/src/errors.test.ts -t '<name>'` — **always with a path** (a bare `-t` loads every file) |
+| before reporting | `bun run preflight [<paths>]` — cheap ratchets, touched units' coverage, serve-graph on a moved src file: one verdict |
 | coverage, per unit | `bun run coverage` — 30 packages, `create-ultimate` and `scripts/` · `bun run coverage:package <pkg>` |
-| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds the three apps (`x build --target static`), then verifies. As of 2026-11 every `expectedRed` table (`scripts/lib/gated-apps.ts`) is empty: every step must pass. `--app <dir>` gates one |
-| a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket) [--browser \| --server-only]` — registration + `wiki/Error-Codes.md` row + HTTP status in one. Tier ≤ 4: one of pair 1, tier 5 none; realtime: one of pair 2 |
+| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds the three apps (`x build --target static`), then verifies. As of 2026-11 every `expectedRed` table (`scripts/lib/gated-apps.ts`) is empty: all steps pass. `--app <dir>` gates one |
+| a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket) [--browser \| --server-only]` — registration + `wiki/Error-Codes.md` row + HTTP status in one. Tier ≤ 4: one of pair 1, tier 5 none; realtime: one of pair 2. A script's code: `--script scripts/<f>.ts`, no `--package` (never-ships list + row) |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | regenerate manifest | `bun run manifest` |
 | both tracked apps' schema dumps | `bun run schema-dumps` regenerates `packages/db/schema/` in each · `--check` only reports |
@@ -128,22 +129,21 @@ Declared sideways edges, one line each ([record](docs/history/tier-decisions.md)
 
 The FLOOR is enforced too: a package above the tier its imports allow needs a `FLOOR_ABOVE` row
 saying what moving it down would legalise (`X_TIER_FLOOR_UNDECLARED` / `X_TIER_FLOOR_STALE`).
-Adding a package means picking its tier first. If it doesn't fit a tier, the design is wrong — fix
-the design, don't widen the table.
+Adding a package picks its tier first; one that fits no tier is a design to fix, never a wider
+table.
 
 ## The eight primitives
 
 `entity` · `policy` · `action` · `mutator` · `query` · `job` · `route` · `task`
 
-Everything in the framework is one of these. **If a feature doesn't fit one of them, it doesn't
-ship.** Don't invent a ninth. Canonical shapes: [`docs/idea/02-primitives.md`](docs/idea/02-primitives.md).
+Everything in the framework is one of these. **A feature that fits none doesn't ship.** No ninth. Canonical shapes: [`docs/idea/02-primitives.md`](docs/idea/02-primitives.md).
 `PRIMITIVE_KINDS` in [`packages/core/src/registrar.ts`](packages/core/src/registrar.ts) is the
 executable list, pinned at eight by `registrar.test.ts`.
 
 A new capability arrives as a **factory over an existing primitive**, never a new kind of thing:
 `llm()` returns an `action`, `backfill()` returns a `job`
 ([`docs/history/primitive-factories.md`](docs/history/primitive-factories.md)). The factories are
-a list, never a count or an ordinal: `PRIMITIVE_FACTORIES` in the same file, held complete by
+a list, never a count or ordinal: `PRIMITIVE_FACTORIES` in the same file, held complete by
 `scripts/primitive-factories.test.ts`.
 
 ## Non-negotiables
@@ -152,7 +152,7 @@ a list, never a count or an ordinal: `PRIMITIVE_FACTORIES` in the same file, hel
 - **No new dependencies** without a strong reason stated in the PR — the bar is [`docs/idea/18-build-vs-wrap.md`](docs/idea/18-build-vs-wrap.md).
 - **No `any`.** Biome fails the build. Use `unknown` + a schema parse.
 - **Never throw a bare `Error`.** Subclass `UltimateError` with a code, a cause, and an executable `fix:`. Codes are `X_SCREAMING_SNAKE` and stable forever once shipped. In tests too: `expect.unreachable` states a test's verdict (`scripts/test-bare-error.ts`); a `new Error` handed to the code under test is input, not a verdict.
-- **SRP.** One file, one job. Target < 200 LOC, hard ceiling ~500. Split before you exceed it.
+- **SRP.** One file, one job. Target < 200 LOC, hard ceiling ~500: split before it.
 - **Named exports only.** No default exports. `src/index.ts` re-exports the public API explicitly — no blind `export *`.
 - **`import type` / `export type`** for type-only imports (`verbatimModuleSyntax` is on).
 - **Tests next to source** as `<file>.test.ts`. A test that can't fail isn't a test.
@@ -191,7 +191,7 @@ a list, never a count or an ordinal: `PRIMITIVE_FACTORIES` in the same file, hel
 
 ## CI
 
-Free runners only: `ubuntu-latest`, `windows-latest`, `macos-latest` (free, public repo). Under 5 min. One runner per unit
+Free runners only (public repo): `ubuntu-latest`, `windows-latest`, `macos-latest`. Under 5 min. One runner per unit
 ([why](docs/history/ci-split.md)); each job's question is the comment above it in `ci.yml`.
 `awk '/^jobs:/{j=1;next} j && /^  [a-z-]+:$/{print $1}' .github/workflows/ci.yml` re-derives the jobs.
 
@@ -203,16 +203,16 @@ Free runners only: `ubuntu-latest`, `windows-latest`, `macos-latest` (free, publ
 - `windows` — native Windows in pwsh: lint, typecheck, a path-heavy unit subset, scaffold smoke.
 - `fault-drills` — `x drill` on the reference app: three faults, real Postgres.
 
-`ci.yml` runs on pushes to `main`, `next` and `release/*`. Every other workflow (release, deploy,
-`workflow-lint.yml`'s zizmor, …) and what triggers it:
+`ci.yml` runs on pushes to `main`, `next` and `release/*`. Other workflows (release, deploy,
+`workflow-lint.yml`'s zizmor, …) and their triggers:
 [`ci-split.md`](docs/history/ci-split.md#the-other-workflows).
 
 ## How to work
 
-Act as an independent, proactive senior engineer and do the full job. Don't ask questions you can
-answer from the code, the docs or a sensible default: decide, then state the decision. Finish the
-work: fix, test, document, run the gate. Don't hand back a half-done step. Find the root cause and
-fix what you find along the way. Ask only before an irreversible or outward-facing act the owner
+Act as an independent, proactive senior engineer: do the full job. Don't ask what the code, the
+docs or a sensible default answers: decide, then state the decision. Finish the
+work: fix, test, document, run the gate. Don't hand back a half-done step. Find the root cause; fix
+what you find along the way. Ask only before an irreversible or outward-facing act the owner
 hasn't already asked for.
 
 ## Note
@@ -220,6 +220,6 @@ hasn't already asked for.
 No git worktrees in this checkout: a team of subagents shares it, on disjoint file sets. (Another
 repo the owner may be editing on a non-`main` checkout: work in a git worktree there.)
 
-**Only the top-level agent spawns subagents.** A subagent does its work and reports back; it never
+**Only the top-level agent spawns subagents.** A subagent works and reports back; it never
 delegates ([why](docs/history/feature-workflow.md)). Too large a scope is said in the report;
 widening the split is the top-level agent's call.

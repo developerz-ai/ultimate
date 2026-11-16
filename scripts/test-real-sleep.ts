@@ -19,8 +19,11 @@
 import { renderFixShellArg } from '../packages/core/src/error-render';
 import { stripComments } from '../packages/core/src/source-mask';
 import type { Finding } from './lib/log';
+import type { PinTarget } from './lib/pin-edit';
+import { pinRaiseFix, pinRaiseOf } from './lib/pin-edit';
+import { ratchetPinMain } from './lib/pin-edit-main';
 import type { PinTable, RatchetGap } from './lib/ratchet';
-import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import { ratchetGaps } from './lib/ratchet';
 import type { SiteProbe } from './lib/ratchet-sites';
 import { leadSite, newSitesFirst, siteList, siteTarget } from './lib/ratchet-sites';
 import { insideString, sourceStrings } from './lib/source-strings';
@@ -28,6 +31,14 @@ import { PINS_FILE, REAL_SLEEP_PINS } from './lib/test-real-sleep-pins';
 import { readTestSources } from './test-fix-citations';
 
 const SCRIPT = 'test-real-sleep';
+
+/** Where this ratchet's pins live: what its over finding's raise and `--write-pin` edit. */
+export const REAL_SLEEP_PIN_TARGET: PinTarget = {
+  script: 'scripts/test-real-sleep.ts',
+  file: PINS_FILE,
+  table: 'REAL_SLEEP_PINS',
+};
+
 const EXPLAIN = 'bun run scripts/test-real-sleep.ts --explain --json lists every one';
 
 /** A wall-clock wait: `Bun.sleep(`, `Bun.sleepSync(`, and a GLOBAL `setTimeout(` / `setInterval(`. */
@@ -132,7 +143,7 @@ const at = (site: RealSleepSite | undefined): string =>
 const overFinding = (gap: RealSleepGap): Finding => ({
   code: 'X_TEST_REAL_SLEEP',
   cause: `${gap.pkg} has ${String(gap.found)} test wait(s) on the wall clock and is pinned at ${String(gap.pinned)} — ${siteList(gap, at, EXPLAIN)} — every run of the suite pays them, and a loaded runner turns "long enough" into a race`,
-  fix: `jest.useFakeTimers(); jest.advanceTimersByTime(ms)   # at ${siteTarget(gap, at)}: move the timers the subject arms instead of waiting for them (bun:test) — advanceClock / the clock fixture for Date.now(), or await the event itself; an event-loop turn is setTimeout(…, 0) or setImmediate. Another process's time only, with "// real-clock: <why>" on the line or the line above`,
+  fix: `jest.useFakeTimers(); jest.advanceTimersByTime(ms)   # at ${siteTarget(gap, at)}: move the timers the subject arms instead of waiting for them (bun:test) — advanceClock / the clock fixture for Date.now(), or await the event itself; an event-loop turn is setTimeout(…, 0) or setImmediate. Another process's time only, with "// real-clock: <why>" on the line or the line above; or ${pinRaiseFix(pinRaiseOf(REAL_SLEEP_PIN_TARGET, gap))}`,
   at: leadSite(gap)?.path ?? PINS_FILE,
 });
 
@@ -171,7 +182,8 @@ export const realSleepFindings = async (root: string): Promise<readonly Finding[
   (await realSleepGaps(root)).map(realSleepFindingFor);
 
 if (import.meta.main) {
-  await ratchetMain({
+  await ratchetPinMain({
+    target: REAL_SLEEP_PIN_TARGET,
     script: SCRIPT,
     pinsFile: PINS_FILE,
     pins: REAL_SLEEP_PINS,

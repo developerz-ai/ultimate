@@ -1,17 +1,17 @@
 // The locale an e2e browser pins: the app's catalog default, or nothing — never a guess.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-// why: a scratch app root; Bun ships no temp-dir or recursive-delete primitive.
-import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path'; // why: Bun ships no path join.
 import { resetCatalogs, resetLocaleConfig } from '@ultimat3/i18n';
 import { APP_CATALOGS_PATH } from '@ultimat3/i18n/app-catalogs';
 import { e2eDefaultLocale } from './e2e-locale';
+import { tempTree } from './temp-tree';
 
 // Inside this package, never the OS temp dir: the fixture module imports `@ultimat3/i18n`, which
-// only resolves from a directory under the workspace.
-const scratch = mkdtempSync(join(import.meta.dir, '.e2e-locale-'));
-afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+// only resolves from a directory under the workspace — under its ignored `.x/fixtures/`.
+const tree = tempTree('e2e-locale-', { inPackage: join(import.meta.dir, '..') });
+const scratch = tree.path;
+afterAll(() => tree.dispose());
 afterEach(() => {
   resetCatalogs();
   resetLocaleConfig();

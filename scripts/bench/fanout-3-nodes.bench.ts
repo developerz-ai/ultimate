@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // Cross-node fan-out latency over a real nats-server: three `sync` node PROCESSES (each the shipped
 // `ChannelHub` + `SocketRegistry` on its own NATS connection) hold `--subscribers` sockets between
 // them on one events channel topic; a fourth process — a worker's half, the bus and nothing else —
@@ -12,6 +13,7 @@
 //
 // `--nats` defaults to `TEST_NATS_URL` (`docker/test-services.env`).
 
+import { finiteOption } from '../../packages/core/src/finite-option';
 import {
   installChannelTransport,
   publishChannelEvent,
@@ -173,7 +175,7 @@ export async function benchFanout3(
   try {
     installChannelTransport(built.publisher);
     const channel = fanoutChannel();
-    await Bun.sleep(input.settleMs ?? SETTLE_MS);
+    await Bun.sleep(finiteOption('fanout bench', 'settleMs', input.settleMs ?? SETTLE_MS));
     for (let index = 0; index < input.events; index += 1) {
       await publishChannelEvent(channel, { org }, { probeIndex: index, probeSentAt: nowMs() });
       await Bun.sleep(input.intervalMs);

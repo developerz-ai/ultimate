@@ -76,9 +76,11 @@ describe('a secret compared with a short-circuiting operator', () => {
     expect(finding.cause).toContain('in 1 place(s), pinned at 0');
     expect(finding.cause).toContain('x.apiSecret === y.apiSecret');
     expect(finding.at).toBe('packages/auth/src/b.ts:1');
+    // The exact pin edit (`lib/pin-edit.ts`): the new row, 0 → 1, and the command that drafts it.
     expect(finding.fix).toContain(
-      "add the row 'packages/auth/src/b.ts: x.apiSecret === y.apiSecret'",
+      "SECRET_COMPARE_PINS['packages/auth/src/b.ts: x.apiSecret === y.apiSecret'] 0 → 1",
     );
+    expect(finding.fix).toContain('--write-pin packages/auth/src/b.ts');
   });
 
   // Sweep 11 R4: per-package counts let a pinned false positive be swapped for a real one.

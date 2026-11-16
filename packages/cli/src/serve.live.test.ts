@@ -15,7 +15,7 @@ import { frameworkVersion, METRICS_PATH } from '@ultimat3/core';
 // (scripts/lib/tiers.ts). It used to be `../../testing/src/sealed-network` with a comment saying
 // the checker refused the real one — but a relative path is the same import wearing a costume, and
 // package.json has listed `@ultimat3/testing` as a dependency of the CLI all along.
-import { allowHost } from '@ultimat3/testing';
+import { allowHost, bindFreePorts } from '@ultimat3/testing';
 import { planNewApp } from './cmd-new';
 import { processRoot } from './process-root-fixture';
 
@@ -50,17 +50,17 @@ const wake = (): void => {
 };
 
 /** One pump per stream; reading a stream twice abandons the first reader forever. */
-function pump(stream: ReadableStream<Uint8Array>): () => string {
+function pump(stream: ReadableStream<Uint8Array>): (() => string) & { ended: Promise<void> } {
   const decoder = new TextDecoder();
   let seen = '';
-  void (async () => {
+  const ended = (async () => {
     for await (const chunk of stream) {
       seen += decoder.decode(chunk, { stream: true });
       wake();
     }
     wake();
   })();
-  return () => seen;
+  return Object.assign(() => seen, { ended });
 }
 
 /**
@@ -74,28 +74,50 @@ async function waitFor(seen: () => string, marker: string): Promise<string> {
   }
 }
 
-/** Every port `freePort` has answered in this file: a released port is the kernel's to re-hand. */
-const handedOut = new Set<number>();
+/** A booted web role: the process, its two streams, and the two ports it bound. */
+interface Served {
+  readonly child: ReturnType<typeof Bun.spawn>;
+  readonly out: () => string;
+  readonly err: () => string;
+  readonly port: number;
+  readonly metricsPort: number;
+}
 
 /**
- * A port the kernel just handed out and immediately gave back — what a platform would inject —
- * and never one this file already answered. Two calls in a row could otherwise return the SAME
- * port (released, then re-handed), and a `PORT` equal to its `METRICS_PORT` is an X_PORT_IN_USE
- * this test did not mean to provoke.
+ * `apps/web/server.ts` as a platform starts it: `PORT` and `METRICS_PORT` named, so the process
+ * binds both itself. Resolved once it logs `ultimate started`; a process that exits first meeting
+ * a port another one took after it was handed out is booted again on fresh ones (`bindFreePorts`),
+ * and any other exit is the test's failure with the process's own output.
  */
-function freePort(): number {
-  for (;;) {
-    const probe = Bun.serve({ port: 0, fetch: () => new Response('') });
-    const port = probe.port;
-    probe.stop(true);
-    // `Server.port` is `number | undefined` — a unix-socket server has none. `port: 0` always
-    // opens a TCP one, so an absent port is a broken assumption rather than a number to default.
-    if (port === undefined) return expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
-    if (handedOut.has(port)) continue;
-    handedOut.add(port);
-    return port;
-  }
-}
+const served = (env: (ports: { port: number; metricsPort: number }) => Record<string, string>) =>
+  bindFreePorts(
+    async ([port = 0, metricsPort = 0]): Promise<Served> => {
+      const child = Bun.spawn(['bun', join(ROOT, 'apps/web/server.ts')], {
+        cwd: ROOT,
+        env: { ...process.env, ...env({ port, metricsPort }) },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const out = pump(child.stdout);
+      const err = pump(child.stderr);
+      const outcome = await Promise.race([
+        waitFor(() => out() + err(), 'ultimate started').then(() => 'started' as const),
+        child.exited.then(() => 'exited' as const),
+      ]);
+      if (outcome === 'exited' && !(out() + err()).includes('ultimate started')) {
+        await Promise.all([out.ended, err.ended]);
+        return expect.unreachable(`the web role exited before it started: ${out() + err()}`);
+      }
+      return { child, out, err, port, metricsPort };
+    },
+    { count: 2 },
+  );
+
+/**
+ * Port 1 (tcpmux): privileged, so no test process can listen there — a dial to it is refused
+ * every time, which is what a dead NATS is, with no probed port another process could take.
+ */
+const REFUSED_PORT = 1;
 
 /** `realtime` is the section's source text; unset is the scaffold's own (the in-process bus). */
 async function writeFixture(realtime?: string): Promise<void> {
@@ -127,25 +149,14 @@ describe('the scaffolded production entry is a runnable artifact', () => {
     'binds $PORT on every interface, answers both health paths, and drains on SIGTERM',
     async () => {
       await writeFixture();
-      const port = freePort();
-      const metricsPort = freePort();
-      const child = Bun.spawn(['bun', join(ROOT, 'apps/web/server.ts')], {
-        cwd: ROOT,
-        // Exactly what a PaaS supplies: the port it routes to, and the role it wants. METRICS_PORT
-        // is the operator's, not the platform's — the scrape lives off the routed port on purpose.
-        env: {
-          ...process.env,
-          PORT: String(port),
-          ROLE: 'web',
-          METRICS_PORT: String(metricsPort),
-        },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const out = pump(child.stdout);
-      const err = pump(child.stderr);
+      // Exactly what a PaaS supplies: the port it routes to, and the role it wants. METRICS_PORT
+      // is the operator's, not the platform's — the scrape lives off the routed port on purpose.
+      const { child, out, err, port, metricsPort } = await served((ports) => ({
+        PORT: String(ports.port),
+        ROLE: 'web',
+        METRICS_PORT: String(ports.metricsPort),
+      }));
       try {
-        await waitFor(() => out() + err(), 'ultimate started');
         // The seal exempts sockets THIS process opened; the artifact under test is a child, and
         // reaching it over a real socket is the whole assertion. Named per port, never unsealed.
         allowHost(`127.0.0.1:${port}`);
@@ -198,24 +209,14 @@ describe('the scaffolded production entry is a runnable artifact', () => {
     'HOST=127.0.0.1 binds loopback, so an app that refuses a public interface can still boot',
     async () => {
       await writeFixture();
-      const port = freePort();
       // Named, as above: the scrape port is not this test's subject, and a fixed 9090 is whatever
       // the box already has bound there.
-      const metricsPort = freePort();
-      const child = Bun.spawn(['bun', join(ROOT, 'apps/web/server.ts')], {
-        cwd: ROOT,
-        env: {
-          ...process.env,
-          PORT: String(port),
-          ROLE: 'web',
-          HOST: '127.0.0.1',
-          METRICS_PORT: String(metricsPort),
-        },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      const out = pump(child.stdout);
-      const err = pump(child.stderr);
+      const { child, out, err, port } = await served((ports) => ({
+        PORT: String(ports.port),
+        ROLE: 'web',
+        HOST: '127.0.0.1',
+        METRICS_PORT: String(ports.metricsPort),
+      }));
       try {
         const started = await waitFor(() => out() + err(), 'ultimate started');
         // The address in the log IS the assertion: `0.0.0.0` here is a public bind reported as
@@ -326,22 +327,13 @@ describe('the boot line says where the bus is', () => {
     url: string,
   ): Promise<{ started: string; logs: () => string; port: number; stop(): Promise<void> }> {
     await writeFixture(NATS);
-    const port = freePort();
-    const child = Bun.spawn(['bun', join(ROOT, 'apps/web/server.ts')], {
-      cwd: ROOT,
-      env: {
-        ...process.env,
-        PORT: String(port),
-        ROLE: 'web',
-        HOST: '127.0.0.1',
-        METRICS_PORT: String(freePort()),
-        NATS_URL: url,
-      },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const out = pump(child.stdout);
-    const err = pump(child.stderr);
+    const { child, out, err, port } = await served((ports) => ({
+      PORT: String(ports.port),
+      ROLE: 'web',
+      HOST: '127.0.0.1',
+      METRICS_PORT: String(ports.metricsPort),
+      NATS_URL: url,
+    }));
     const logs = (): string => out() + err();
     const stop = async (): Promise<void> => {
       child.kill('SIGKILL');
@@ -362,8 +354,7 @@ describe('the boot line says where the bus is', () => {
   test(
     'nats(connecting): a web role boots and serves with nothing listening where NATS should be',
     async () => {
-      // A port the kernel just gave back: a refused connection, which is what a dead NATS is.
-      const app = await bootWeb(`nats://127.0.0.1:${freePort()}`);
+      const app = await bootWeb(`nats://127.0.0.1:${String(REFUSED_PORT)}`);
       try {
         expect(lineWith(app.started, 'ultimate started')).toContain('"bus":"nats(connecting)"');
         allowHost(`127.0.0.1:${app.port}`);

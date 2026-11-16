@@ -8,7 +8,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: joining the script and marker paths.
 import { join } from 'node:path';
-import { launchChrome } from '@ultimat3/scraping/cdp';
+import { LAUNCH_TEST_MS, launchChrome } from '@ultimat3/scraping/cdp';
 import { cdpShotDriver } from './cdp-shot-driver';
 import { attach, evaluating, fakeWire, init, opened } from './cdp-shot-wire-fixture';
 
@@ -95,51 +95,55 @@ describe('unit · a session is one page, configured before it loads anything', (
     expect(closedCount()).toBe(1);
   });
 
-  test('close REAPS a launched browser: its forked processes are gone and its profile stays removed', async () => {
-    // A real process behind the fake wire. Its child ignores SIGTERM and re-creates the profile
-    // every 20 ms — Chrome's network process did that after 6 and 12 of 30 closes — so only a
-    // close that awaits the launcher's `closed()` leaves nothing behind.
-    const dir = await mkdtemp(join(tmpdir(), 'x-shot-fake-'));
-    const fake = join(dir, 'chrome');
-    const script = [
-      '#!/bin/bash',
-      'for a in "$@"; do case "$a" in --user-data-dir=*) PROFILE="$(cut -d= -f2- <<<"$a")";; esac; done',
-      `( trap '' TERM; while true; do mkdir -p "$PROFILE"; echo x >"$PROFILE/late"; sleep 0.02; done ) &`,
-      'echo "$! $PROFILE" >"$(dirname "$0")/forked"',
-      `read -r -d '' _ <&3`,
-      `printf '{"id":1,"result":{}}\\0' >&4`,
-      'sleep 30',
-    ].join('\n');
-    await writeFile(fake, script, 'utf8');
-    await chmod(fake, 0o755);
-    try {
-      const wire = fakeWire(attach);
-      const driver = cdpShotDriver({
-        executablePath: fake,
-        launch: async (executable, timeoutMs) => ({
-          ...(await launchChrome({ executable, timeoutMs })),
-          connection: wire.connection,
-        }),
-      });
-      const session = await driver.open(init());
-
-      await session.close();
-
-      const [pid, profile] = (await Bun.file(join(dir, 'forked')).text()).trim().split(' ');
-      let alive = true;
+  test(
+    'close REAPS a launched browser: its forked processes are gone and its profile stays removed',
+    async () => {
+      // A real process behind the fake wire. Its child ignores SIGTERM and re-creates the profile
+      // every 20 ms — Chrome's network process did that after 6 and 12 of 30 closes — so only a
+      // close that awaits the launcher's `closed()` leaves nothing behind.
+      const dir = await mkdtemp(join(tmpdir(), 'x-shot-fake-'));
+      const fake = join(dir, 'chrome');
+      const script = [
+        '#!/bin/bash',
+        'for a in "$@"; do case "$a" in --user-data-dir=*) PROFILE="$(cut -d= -f2- <<<"$a")";; esac; done',
+        `( trap '' TERM; while true; do mkdir -p "$PROFILE"; echo x >"$PROFILE/late"; sleep 0.02; done ) &`,
+        'echo "$! $PROFILE" >"$(dirname "$0")/forked"',
+        `read -r -d '' _ <&3`,
+        `printf '{"id":1,"result":{}}\\0' >&4`,
+        'sleep 30',
+      ].join('\n');
+      await writeFile(fake, script, 'utf8');
+      await chmod(fake, 0o755);
       try {
-        process.kill(Number(pid), 0);
-      } catch {
-        alive = false;
+        const wire = fakeWire(attach);
+        const driver = cdpShotDriver({
+          executablePath: fake,
+          launch: async (executable, timeoutMs) => ({
+            ...(await launchChrome({ executable, timeoutMs })),
+            connection: wire.connection,
+          }),
+        });
+        const session = await driver.open(init());
+
+        await session.close();
+
+        const [pid, profile] = (await Bun.file(join(dir, 'forked')).text()).trim().split(' ');
+        let alive = true;
+        try {
+          process.kill(Number(pid), 0);
+        } catch {
+          alive = false;
+        }
+        expect(alive).toBe(false);
+        // Read at once, never after a wait: the only writer is the process just proven dead, so no
+        // later write can come, and a `late` file here is one the close removed too early.
+        expect(await Bun.file(join(profile ?? '', 'late')).exists()).toBe(false);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
       }
-      expect(alive).toBe(false);
-      // Read at once, never after a wait: the only writer is the process just proven dead, so no
-      // later write can come, and a `late` file here is one the close removed too early.
-      expect(await Bun.file(join(profile ?? '', 'late')).exists()).toBe(false);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
+    },
+    LAUNCH_TEST_MS,
+  );
 
   test('an attached browser is closed too — it is somebody else’s bill', async () => {
     const wire = fakeWire(attach);

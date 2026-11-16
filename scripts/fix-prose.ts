@@ -24,11 +24,22 @@ import { renderFixShellArg } from '../packages/core/src/error-render';
 import { FIX_PROSE_PINS, FIX_PROSE_PINS_FILE } from './lib/fix-prose-pins';
 import { fixShape } from './lib/fix-shape';
 import type { Finding } from './lib/log';
+import type { PinTarget } from './lib/pin-edit';
+import { pinRaiseFix, pinRaiseOf } from './lib/pin-edit';
+import { ratchetPinMain } from './lib/pin-edit-main';
 import type { RatchetGap } from './lib/ratchet';
-import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import { ratchetGaps } from './lib/ratchet';
 import { siteList } from './lib/ratchet-sites';
 
 const SCRIPT = 'fix-prose';
+
+/** Where this ratchet's pins live: what its over finding's raise and `--write-pin` edit. */
+export const FIX_PROSE_PIN_TARGET: PinTarget = {
+  script: 'scripts/fix-prose.ts',
+  file: FIX_PROSE_PINS_FILE,
+  table: 'FIX_PROSE_PINS',
+};
+
 const EXPLAIN = 'bun run scripts/fix-prose.ts --explain --json lists every one';
 
 /** Source the CLI EMITS into an app rather than runs — held to the contract by its own test. */
@@ -84,7 +95,7 @@ const at = (site: FixProseSite | undefined): string =>
 const overFinding = (gap: FixProseGap): Finding => ({
   code: 'X_FIX_PROSE',
   cause: `${gap.pkg} has ${String(gap.found)} fix: line(s) that open with prose and is pinned at ${String(gap.pinned)} — ${siteList(gap, at, EXPLAIN)} — and a fix is pasted from its first character, so a sentence is an instruction the reader has to translate first. Open the new line with the command or the code to paste, and move the sentence into its cause`,
-  fix: 'bun run scripts/fix-prose.ts --explain --json',
+  fix: `bun run scripts/fix-prose.ts --explain --json   # or, for a line no command can open: ${pinRaiseFix(pinRaiseOf(FIX_PROSE_PIN_TARGET, gap))}`,
   at: at(gap.first),
 });
 
@@ -134,7 +145,8 @@ export const fixProseFindings = async (root: string): Promise<readonly Finding[]
   (await fixProseGaps(root)).map(fixProseFindingFor);
 
 if (import.meta.main) {
-  await ratchetMain({
+  await ratchetPinMain({
+    target: FIX_PROSE_PIN_TARGET,
     script: SCRIPT,
     pinsFile: FIX_PROSE_PINS_FILE,
     pins: FIX_PROSE_PINS,

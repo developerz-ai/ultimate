@@ -31,7 +31,15 @@ export const badFlagFinding = (flag: string, value: string, expected: string): F
  * The flags this script accepts. Anything else is refused before a manifest is touched — see
  * `readReleaseVersion` for why an unrecognised token must never reach the rewrite.
  */
-export const RELEASE_FLAGS = ['version', 'bump', 'check', 'dry-run', 'json', 'security'] as const;
+export const RELEASE_FLAGS = [
+  'version',
+  'bump',
+  'check',
+  'dry-run',
+  'json',
+  'security',
+  'rehearse',
+] as const;
 
 /** Every `--flag` the caller passed that this script does not declare. */
 export const unknownReleaseFlags = (flags: Iterable<string>): readonly string[] =>

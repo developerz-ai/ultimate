@@ -549,6 +549,26 @@ A test passes `renderer:` (any `PdfRenderer`); `chromePdfRenderer({ launch })` t
 
 **The CDP launcher moved.** `findChrome`, `launchChrome`, `launchFoundChrome`, `cdpConnect`, `cdpConnectOver`, the `Cdp*Error` classes and the `CHROME_*` / `LAUNCH_*` constants live in `@ultimat3/scraping/cdp` since 31.0.0 (its own entry, importing core only), and `X_CDP_*` are registered by scraping. It is their one import path: `@ultimat3/testing` no longer re-exports them, and `E2E_BROWSER_CLOSE_MS` is `LAUNCHED_CLOSE_MS` here ([Upgrading](Upgrading) #53).
 
+**A test launches through `launchReady`** (`As of 2026-11-15`), from the same entry: `launchChrome`, then ready once the page it was handed EXISTS — heard as `Target.targetCreated`, never polled for, so a cold start (a Windows runner) is waited for rather than read early. The test takes `launchTestMs(launchTimeoutMs)` as its deadline — `LAUNCH_TEST_MS` at the default — so the launch's own `X_CDP_LAUNCH_FAILED` is what a slow browser reports, never Bun's timeout:
+
+```ts
+import { test } from 'bun:test';
+import { findChrome, LAUNCH_TEST_MS, launchReady } from '@ultimat3/scraping/cdp';
+
+const executable = await findChrome(process.env);
+
+test.skipIf(executable === undefined)('the page the browser was handed', async () => {
+  const browser = await launchReady({ executable: executable ?? '', timeoutMs: 20_000 });
+  try {
+    await browser.connection.send('Target.getTargets');
+  } finally {
+    await browser.close();
+  }
+}, LAUNCH_TEST_MS);
+```
+
+`bun run scripts/launch-deadline.ts` refuses a test that awaits a launch under a deadline of its own (`X_TEST_LAUNCH_DEADLINE`).
+
 A social card for a row published at runtime is the same shape: `page.screenshot()` of the row's
 1200 x 630 card page, `disk().put()`, then `og: { image }` — [SEO](SEO#a-card-the-build-photographs-ogcapture)
 covers the cards a static build takes itself. `examples/dummy`'s `runs/jobs/print-statement.ts` is

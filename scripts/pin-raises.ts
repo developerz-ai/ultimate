@@ -11,7 +11,7 @@
 // `X_PIN_RAISE_UNSTATED`. A table wholly RE-KEYED from per-page to per-site keys (no row key kept,
 // no base key already a site, its total not above the base's) is one debt under new names, stated
 // by a `why:` in its header the base's header did not carry. A checkout without `origin/main` is
-// refused (`X_PIN_BASE_MISSING`).
+// refused (`X_PIN_BASE_MISSING`). The `--write-pin` placeholder (`lib/pin-edit.ts`) is no `why:`.
 //
 //   bun run scripts/pin-raises.ts [--json]
 
@@ -23,6 +23,7 @@ import { parseScriptArgs } from './lib/args';
 import { BASE_REF, baseRef, FETCH_MAIN, textAt } from './lib/base-ref';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
+import { PIN_WHY_MARK } from './lib/pin-edit';
 import { importPinSource, pinRows } from './lib/pin-rows';
 import type { ScriptPinTable } from './lib/pin-tables';
 import { PIN_GLOB, SCRIPT_PIN_TABLES, scriptTableRows, tableDeclaration } from './lib/pin-tables';
@@ -97,7 +98,11 @@ export function whyStatement(source: string, line: number): string | undefined {
     const from = [text.indexOf('//'), text.search(/\bwhy:/)].filter((at) => at >= 0);
     if (from.length > 0) said.push(text.slice(Math.min(...from)).trim());
   }
-  const statement = said.join(' ').replace(/\s+/g, ' ');
+  // The line `--write-pin` drafts carries `why:` and says nothing: it is not a reason.
+  const statement = said
+    .filter((text) => !text.includes(PIN_WHY_MARK))
+    .join(' ')
+    .replace(/\s+/g, ' ');
   return /\bwhy:/.test(statement) ? statement : undefined;
 }
 
