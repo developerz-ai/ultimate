@@ -25,6 +25,7 @@
 
 import type { EntityBulkEvent, EntityRowEvent } from '@ultimat3/core';
 import { subscribe } from '@ultimat3/core';
+import { tenantIn } from './change-tenant';
 import type { ChangeEvent, ChangeOp } from './changefeed';
 import type { LiveRow } from './json';
 import type { LiveQueryRegistry } from './live-query';
@@ -44,7 +45,11 @@ export interface LiveReplicatorOptions {
     deliverChange(change: ChangeEvent): unknown;
     invalidate(entity?: string): unknown;
   };
-  /** Tenant column, hoisted out of the row so fanout filters without parsing it. */
+  /**
+   * @deprecated Ignored since the tenant-column security fix: a change's tenant is read off the
+   * column its entity declares (`$tenantColumn`), the one answer `entity(name, { tenant })` and
+   * `.tenant()` already give. Delete the option; it is removed in the next major.
+   */
   readonly tenantColumn?: string;
   readonly onError?: (error: unknown) => void;
 }
@@ -83,7 +88,6 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
   // no write between the call and the subscribe can slip past unobserved.
   const entity = await import('@ultimat3/entity');
   const { registry } = options;
-  const tenant = options.tenantColumn ?? 'orgId';
   let position = 0;
   let delivered = 0;
   // One promise chain, because ORDERING is the guarantee the whole pipeline is built on — the same
@@ -99,6 +103,9 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
    * passed through, such an entity reached no channel, no window and no bulk re-read here.
    */
   const tableOf = (name: string): string => entity.getEntity(name)?.tableName ?? name;
+  /** The tenant property the entity DECLARES — never assumed to be `orgId` (`change-tenant.ts`). */
+  const tenantColumnOf = (name: string): string | null =>
+    entity.getEntity(name)?.core?.$tenantColumn ?? null;
 
   const enqueue = (work: () => Promise<void>): void => {
     tail = tail.then(work).catch((error: unknown) => {
@@ -114,7 +121,7 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
       position += 1;
       const at = position;
       const row = change.after ?? change.before;
-      const orgId = typeof row?.[tenant] === 'string' ? (row[tenant] as string) : null;
+      const orgId = tenantIn(tenantColumnOf(change.entity), row ?? null);
       const event: ChangeEvent = {
         table: tableOf(change.entity),
         // A repository's three row ops are three of the feed's four; a truncate never comes this way.
