@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import type { Finding, HostCheck } from '@ultimat3/cli';
 import { parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
+import { gitTrackerEdits, undatedFindings } from './lib/plan-tracker-dated';
 import { gitLastTouch, type StaleDeps, stalePlanFindings } from './lib/roadmap-stale-plans';
 import { repoRoot } from './lib/run';
 
@@ -196,10 +197,18 @@ const tableFindings = async (root: string): Promise<Finding[]> => {
 /** The step over its two readers, injectable so a test pins the clock and the history. */
 export const roadmapCheck =
   (deps: StaleDeps): HostCheck =>
-  async (root) => [...(await tableFindings(root)), ...(await stalePlanFindings(root, deps))];
+  async (root) => [
+    ...(await tableFindings(root)),
+    ...(await stalePlanFindings(root, deps)),
+    ...undatedFindings((await deps.trackerEdits?.(root)) ?? []),
+  ];
 
 /** What the gate runs: git for the dates, and the one wall clock read in this step. */
-export const ROADMAP_DEPS: StaleDeps = { now: () => Date.now(), lastTouch: gitLastTouch };
+export const ROADMAP_DEPS: StaleDeps = {
+  now: () => Date.now(),
+  lastTouch: gitLastTouch,
+  trackerEdits: gitTrackerEdits,
+};
 
 export const checkRoadmap: HostCheck = roadmapCheck(ROADMAP_DEPS);
 

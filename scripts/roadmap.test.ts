@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { gitTrackerEdits } from './lib/plan-tracker-dated';
 import { git } from './lib/release-due-git';
 import { gitLastTouch } from './lib/roadmap-stale-plans';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
@@ -52,6 +53,23 @@ describe('unit · the roadmap table is the gate', () => {
     expect(head.ok, head.output).toBe(true);
     const now = (): number => Number(head.output.trim()) * 1000;
     expect(await roadmapCheck({ now, lastTouch: gitLastTouch })(repoRoot())).toEqual([]);
+  });
+
+  test('a tracker edited without its own date is a roadmap finding; the gate reads git for it', async () => {
+    expect(ROADMAP_DEPS.trackerEdits).toBe(gitTrackerEdits);
+    const before = 'plan: x\nstatus: in_progress\nlast_updated: 2026-11-14\ncurrent_focus: "a"\n';
+    const after = before.replace('"a"', '"b"');
+    const path = 'docs/plans/2026/11/14/101-x/status.yml';
+    const head = await git(['log', '-1', '--format=%ct'], repoRoot());
+    const now = (): number => Number(head.output.trim()) * 1000;
+    const check = roadmapCheck({
+      now,
+      lastTouch: gitLastTouch,
+      trackerEdits: async () => [{ path, before, after }],
+    });
+    expect((await check(repoRoot())).map((finding) => finding.code)).toEqual([
+      'X_PLAN_STATUS_UNDATED',
+    ]);
   });
 
   test('the gate step reads git, and its clock is the only wall clock', () => {
