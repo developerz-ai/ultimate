@@ -276,7 +276,9 @@ export function parseVerifyFloor(
 export async function readVerifyFloor(root: string): Promise<VerifyFloor | undefined> {
   const path = join(root, VERIFY_FLOOR_FILE);
   const file = Bun.file(path);
-  if (!(await file.exists())) return undefined;
+  // `stat`, never `exists()`: that answers false for a directory, which would read as no floor and
+  // skip the ratchet silently. Only a path that is not there at all is no floor.
+  if ((await file.stat().catch(() => undefined)) === undefined) return undefined;
   const text = await file.text().catch(() => undefined);
   if (text === undefined) return { steps: [], problems: ['it could not be read as a file'] };
   return parseVerifyFloor(text);
