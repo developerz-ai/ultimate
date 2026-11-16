@@ -1,9 +1,11 @@
 // `mcpConfirmations` — human confirmation for named MCP tools, as a FACTORY OVER `action`, never a
-// ninth primitive. What it returns IS the decision action (`{ id, decision: 'approve' | 'reject' }`):
-// registered like any other, it has its route, OpenAPI operation, typed client and audit record, and
-// its policy is decided by `guard()` like every other write. The gate the agent meets lives in
-// `confirmation-gate.ts`, applied by `defineAppMcp({ confirmations })` for an MCP server and registered
-// by name for an in-app agent's `agent({ tools })`.
+// ninth primitive.
+//
+// What it returns IS the decision action (`{ id, decision: 'approve' | 'reject' }`): registered
+// like any other, it has its route, OpenAPI operation, typed client and audit record, and its
+// policy is decided by `guard()` like every other write. The gate the agent meets lives in
+// `confirmation-gate.ts`, applied by `defineAppMcp({ confirmations })` for an MCP server and
+// registered by name for an in-app agent's `agent({ tools })`.
 
 import type { Action } from '@ultimat3/action';
 import { action, registerToolGate } from '@ultimat3/action';

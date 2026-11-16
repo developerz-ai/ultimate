@@ -1,8 +1,10 @@
 // Single responsibility: what a generated migration declares it could NOT write, and how that
-// reaches the file. A generator that silently emits less than the declaration is the defect this
-// module exists against — ten invariants and nine defaults went missing between an entity and its
-// own regenerated migration, and the `drift` gate step compares a source hash to a sidecar and
-// never reads the SQL, so the loss was GREEN. A comment in the emitted `up` cannot be green.
+// reaches the file.
+//
+// A generator that silently emits less than the declaration is the defect this module exists
+// against — ten invariants and nine defaults went missing between an entity and its own regenerated
+// migration, and the `drift` gate step compares a source hash to a sidecar and never reads the SQL,
+// so the loss was GREEN. A comment in the emitted `up` cannot be green.
 
 import { assert } from '@ultimat3/core';
 import { columnNamesConstraint } from './check-ddl';

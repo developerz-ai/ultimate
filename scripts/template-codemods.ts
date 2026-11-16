@@ -20,6 +20,7 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { git } from './lib/release-due-git';
 import { repoRoot } from './lib/run';
+import { headerOnly } from './lib/template-header-only';
 import { remoteTagProbe, type TagProbe } from './registry-audit';
 import {
   RENDER_LOCK_FILE,
@@ -202,7 +203,12 @@ export async function templateCodemodFindings(
     },
     ...(options.rendered === undefined ? {} : { now: options.rendered }),
   });
-  const changed = [...lines(diff.output), ...lines(untracked.output), ...rendered.changed];
+  // A tracked template whose change is its header alone ships nothing (`template-header-only.ts`).
+  const edited: string[] = [];
+  for (const path of lines(diff.output)) {
+    if (!(await headerOnly(root, [tag], path, runner))) edited.push(path);
+  }
+  const changed = [...edited, ...lines(untracked.output), ...rendered.changed];
   const owned = [...(await scaffoldOwnedTemplates(root)), ...rendered.paths];
   const ownedSet = new Set(owned);
   const findings = templateCodemodGaps({

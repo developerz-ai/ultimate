@@ -1,8 +1,9 @@
 // `x db branch list|create|delete` — the wiring alone: which verb, which database, which refusal.
+//
 // A VERB is required and comes from a closed set, so a branch name can never be read as one:
 // `x db branch ls` used to clone a database called `ls`, because the argument was the name. One
-// verb each across every `x` registry (#709): `list` and `delete`, no `ls`/`drop` alias.
-// The facts (what a branch is, per mode) are `db-branch.ts`; the client lifetime is here.
+// verb each across every `x` registry (#709): `list` and `delete`, no `ls`/`drop` alias. The facts
+// (what a branch is, per mode) are `db-branch.ts`; the client lifetime is here.
 
 import { ERROR_DOCS_URL, nearestName } from '@ultimat3/core';
 import { type DbClient, postgresClient } from '@ultimat3/db';

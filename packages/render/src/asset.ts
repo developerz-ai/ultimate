@@ -1,9 +1,11 @@
 /**
  * `asset('assets/hero.avif')` — the one way a page names a public file of its own: the path under
- * `apps/web/site/assets/` in, its content-hashed URL out. Typed so a path outside that tree or with
- * an extension nothing serves is a compile error, and resolved while the page RENDERS so a file
- * that is not there fails `x build --target static` with `X_ASSET_MISSING`, exactly as a bad
- * `island({ src })` does. The table is the CLI's (`site-assets.ts`); this file holds only the seam.
+ * `apps/web/site/assets/` in, its content-hashed URL out.
+ *
+ * Typed so a path outside that tree or with an extension nothing serves is a compile error, and
+ * resolved while the page RENDERS so a file that is not there fails `x build --target static` with
+ * `X_ASSET_MISSING`, exactly as a bad `island({ src })` does. The table is the CLI's
+ * (`site-assets.ts`); this file holds only the seam.
  */
 
 import { renderCauseValue } from '@ultimat3/core';

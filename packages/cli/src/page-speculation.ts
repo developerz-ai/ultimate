@@ -1,9 +1,11 @@
-// Speculation Rules for the documents that carry NO client router, composed ONCE for `x dev`, the
-// container and the static export: `navigation.speculation` from `app.config.ts`, the pages the
-// route table knows to be a pure read, the one `<script type="speculationrules">` every such
-// document carries, and the `script-src` source that admits exactly that body. A browser fetches
-// the next page's document on pointer rest, so a full-page navigation between prerendered pages
-// paints from memory — and the page still ships 0kb of JavaScript (axiom 6).
+// Speculation Rules for the documents that carry NO client router, composed ONCE for `x dev`,
+// the container and the static export.
+//
+// It composes `navigation.speculation` from `app.config.ts`, the pages the route table knows to be
+// a pure read, the one `<script type="speculationrules">` every such document carries, and the
+// `script-src` source that admits exactly that body. A browser fetches the next page's document on
+// pointer rest, so a full-page navigation between prerendered pages paints from memory — and the
+// page still ships 0kb of JavaScript (axiom 6).
 
 import type { NavigationSurface, SpeculationConfig } from '@ultimat3/core';
 import { DEFAULT_SPECULATION, localeSegment } from '@ultimat3/core';

@@ -1,11 +1,13 @@
 // The ⌘K palette: a filter field over a list of commands and destinations, in a NON-modal
-// `<dialog>` driven by its `open` attribute — never `showModal()`, so a test harness with no
-// dialog methods and a server with no DOM both render it the same way. Controlled and
-// presentational: the open flag, the query and the active item all live in the caller, and the
-// rules (`filterItems`, `stepActive`, `keyAction`) live in `command-palette-view.ts` so the caller
-// does not rewrite them. Renders closed on the server unless told otherwise; with scripting off
-// it is inert markup. Items carrying a `group` render under one `role="group"` heading per run;
-// `useCommandPalette` is the shell that owns the open flag, the query, `⌘K` and focus.
+// `<dialog>` driven by its `open` attribute — never `showModal()`, so a test harness with no dialog
+// methods and a server with no DOM both render it the same way.
+//
+// Controlled and presentational: the open flag, the query and the active item all live in the
+// caller, and the rules (`filterItems`, `stepActive`, `keyAction`) live in
+// `command-palette-view.ts` so the caller does not rewrite them. Renders closed on the server
+// unless told otherwise; with scripting off it is inert markup. Items carrying a `group` render
+// under one `role="group"` heading per run; `useCommandPalette` is the shell that owns the open
+// flag, the query, `⌘K` and focus.
 
 import type { JSX } from 'solid-js';
 import { useId } from '../a11y';

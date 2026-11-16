@@ -1,9 +1,11 @@
-// One WS connection. Bun's WS profile is what makes a million sockets affordable, so this object
-// is deliberately lean: ~8 fields, two small sets and one token bucket (the frame budget, which is
-// five numbers and the only thing standing between one authenticated socket and this node's whole
-// subscribe path). Budget is ~1KB of JS heap per connection on top of Bun's own per-socket cost —
-// anything richer (row caches, per-socket buffers) belongs in the transport or the change buffer,
-// never here. `sync` is stateless: nothing on this object survives a restart, and nothing needs to.
+// One WS connection, deliberately lean: ~8 fields, two small sets and one token bucket.
+//
+// Bun's WS profile is what makes a million sockets affordable, and this object must not spend it.
+// The token bucket is the frame budget: five numbers, and the only thing standing between one
+// authenticated socket and this node's whole subscribe path.
+// Budget is ~1KB of JS heap per connection on top of Bun's own per-socket cost — anything richer
+// (row caches, per-socket buffers) belongs in the transport or the change buffer, never here.
+// `sync` is stateless: nothing on this object survives a restart, and nothing needs to.
 
 import {
   type Actor,

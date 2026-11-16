@@ -1,8 +1,9 @@
 // Single responsibility: what a many-row write is made of, decided once in PROPERTY space so both
 // drivers write the same thing — the columns one statement carries, which of them a collision
-// overwrites, and the chunking that keeps a statement inside Postgres's bind count. The SQL is
-// `pg-sql.ts`'s; everything here is the decision that has to precede it, and the in-memory driver
-// reads the same answer rather than a second copy of the rule.
+// overwrites, and the chunking that keeps a statement inside Postgres's bind count.
+//
+// The SQL is `pg-sql.ts`'s; everything here is the decision that has to precede it, and the
+// in-memory driver reads the same answer rather than a second copy of the rule.
 
 import { keyOf } from './batch-read';
 import { columnFor } from './column';

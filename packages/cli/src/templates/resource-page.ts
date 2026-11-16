@@ -1,9 +1,11 @@
-// `x g resource <name>`'s page: the plural route a slice is reached at. It READS — a `<Hole>` calls
-// the slice's own query a page at a time as the request's actor, after the shell left — renders the
-// rows in a link-mode `DataTable` (loading, failed, empty, ready; paged by URL, no script), and
-// mounts the slice's form island. `x g route`
-// writes a page with a heading and nothing to read; a resource has rows and a form, and a page
-// that showed neither was a slice nobody could reach without wiring it by hand.
+// `x g resource <name>`'s page: the plural route a slice is reached at — its rows in a
+// `DataTable`, read a page at a time, and the slice's form island.
+//
+// It READS — a `<Hole>` calls the slice's own query a page at a time as the request's actor, after
+// the shell left — renders the rows in a link-mode `DataTable` (loading, failed, empty, ready;
+// paged by URL, no script), and mounts the slice's form island. `x g route` writes a page with a
+// heading and nothing to read; a resource has rows and a form, and a page that showed neither was a
+// slice nobody could reach without wiring it by hand.
 
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';

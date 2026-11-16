@@ -1,8 +1,9 @@
-// The resolver every HTTP config goes through, so a value is either a locked default or an
-// explicit override — never "whatever the first caller passed". It is NOT a slice of
-// `app.config.ts`, which this file claimed for four majors while `AppConfig` has never carried an
-// `http` key: an app declares its half through `configureHttp()` (`app-config.ts`) and the boot
-// lays its own facts over it before calling this.
+// The resolver every HTTP config goes through, so a value is either a locked default or an explicit
+// override — never "whatever the first caller passed".
+//
+// It is NOT a slice of `app.config.ts`, which this file claimed for four majors while `AppConfig`
+// has never carried an `http` key: an app declares its half through `configureHttp()`
+// (`app-config.ts`) and the boot lays its own facts over it before calling this.
 import {
   DEFAULT_ENVIRONMENT,
   DEFAULT_HEALTH_DETAIL_PEERS,

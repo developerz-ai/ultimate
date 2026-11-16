@@ -1,7 +1,7 @@
 // Workspace enumeration. Reads the real package.json files rather than the tier table, so a
 // package that exists on disk but is missing from the table is visible instead of invisible.
 
-import { existsSync } from 'node:fs';
+// why: Bun ships no path joiner; workspace globs are joined to the repo root.
 import { join } from 'node:path';
 // The leaf, not core's barrel: `bun run lockfile` reaches this module and must run while a package
 // is mid-edit (DX ledger #10).
@@ -307,6 +307,3 @@ export async function workspaceManifests(root: string): Promise<readonly string[
   }
   return paths.sort();
 }
-
-export const hasFile = (workspace: Workspace, file: string): boolean =>
-  existsSync(join(workspace.path, file));

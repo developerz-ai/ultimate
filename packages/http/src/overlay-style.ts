@@ -1,8 +1,10 @@
-// The stylesheet of every document this package renders — the dev overlay and the production
-// error page — split from both so `security-headers.ts` can hash it into the CSP without importing
-// a renderer, and so the hash is computed from the one copy of the text rather than from a constant
-// that drifted away from what the `<style>` holds. ONE stylesheet and not two: a second inline body
-// is a second `style-src` hash, and the page that shipped without one renders unstyled.
+// The stylesheet of every document this package renders — the dev overlay and the production error
+// page — split from both so `security-headers.ts` can hash it into the CSP without importing a
+// renderer, and so the hash is computed from the one copy of the text rather than from a constant
+// that drifted away from what the `<style>` holds.
+//
+// ONE stylesheet and not two: a second inline body is a second `style-src` hash, and the page that
+// shipped without one renders unstyled.
 
 // Token definitions live here and nowhere else; every rule below uses var().
 export const OVERLAY_STYLE = `

@@ -1,8 +1,10 @@
-// The one place a host hands the framework a driver. `ServeOptions` had `{ root, env, role, port,
-// metricsPort }` and nothing else, so the ONLY way to install a driver was to call an ambient
-// setter from an app module — which `loadApp` imports *after* `startServices` has already captured
-// its own. This type is the seam that removes the need to, and every field is read exactly once,
-// as the first arm of `overrides?.x ?? <the env-selected default>`.
+// The one place a host hands the framework a driver: `RuntimeOverrides`.
+//
+// `ServeOptions` had `{ root, env, role, port, metricsPort }` and nothing else, so the ONLY way to
+// install a driver was to call an ambient setter from an app module — which `loadApp` imports
+// *after* `startServices` has already captured its own. This type is the seam that removes the need
+// to, and every field is read exactly once, as the first arm of
+// `overrides?.x ?? <the env-selected default>`.
 
 import type { IdempotencyStore, MeterStore } from '@ultimat3/action/adapter';
 import type { Embedder, Gateway, SemanticCacheFactory } from '@ultimat3/ai/adapter';

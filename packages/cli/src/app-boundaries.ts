@@ -14,7 +14,7 @@
 // hands the files read here to `app-transport.ts`, so a raw `fetch(` in an island is a finding of
 // this step with no second walk of the app.
 
-// Bun ships no `Bun.*` path API: `joinPath` reaches a file on disk with the host's separator.
+// why: Bun ships no `Bun.*` path API: `joinPath` reaches a file on disk with the host's separator.
 import { join as joinPath } from 'node:path';
 // The POSIX variants resolve specifiers against import-graph keys, which are POSIX on every host.
 import { dirname, join, normalize, relative } from 'node:path/posix';

@@ -1,8 +1,10 @@
 // The SERVER half of the public API: the bus, the Postgres replication path, the sync node and the
-// live-query registry it fans out through. Split from `index.ts` because `nats` require()s
-// `stream/web` and the WAL decoder is a Postgres client — one barrel carrying both made the browser
-// island realtime promises unbuildable. Every name here has exactly one home; the shared
-// vocabulary (the wire, the errors, `LiveRow`, the backoff) stays on `@ultimat3/realtime`.
+// live-query registry it fans out through.
+//
+// Split from `index.ts` because `nats` require()s `stream/web` and the WAL decoder is a Postgres
+// client — one barrel carrying both made the browser island realtime promises unbuildable. Every
+// name here has exactly one home; the shared vocabulary (the wire, the errors, `LiveRow`, the
+// backoff) stays on `@ultimat3/realtime`.
 
 // The server-only codes' titles (`sideEffects`): a process that loads this barrel titles them,
 // whichever class it constructs first.

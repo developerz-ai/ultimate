@@ -47,7 +47,7 @@ Inline message bound to the page, not the viewport. `danger`/`warning` use `role
 
 ### AppShell
 
-The page frame every app screen sits in: skip link, banner, navigation, main, contentinfo. Stateless, and scriptless: below `md` the sidebar `<nav>` is a native `popover` panel at the inline-start edge, opened by a `popovertarget` menu button — the browser holds the open state, Esc and light dismiss, so the frame on every page costs no island. Not `Drawer`: that is a modal `<dialog>` opened from an effect, so it needs a hydrated island, and a `<dialog>` cannot also be the in-flow `navigation` landmark at `md` and up. An engine with no popovers keeps the old band.
+The page frame every app screen sits in: skip link, banner, navigation, main, contentinfo.  Stateless, and scriptless: below `md` the sidebar `<nav>` is a native `popover` panel at the inline-start edge, opened by a `popovertarget` menu button — the browser holds the open state, Esc and light dismiss, so the frame on every page costs no island. Not `Drawer`: that is a modal `<dialog>` opened from an effect, so it needs a hydrated island, and a `<dialog>` cannot also be the in-flow `navigation` landmark at `md` and up. An engine with no popovers keeps the old band.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -288,7 +288,7 @@ A searchable text field with suggestions: one `<input list>` plus a `<datalist>`
 
 ### CommandPalette
 
-The ⌘K palette: a filter field over a list of commands and destinations, in a NON-modal `<dialog>` driven by its `open` attribute — never `showModal()`, so a test harness with no dialog methods and a server with no DOM both render it the same way. Controlled and presentational: the open flag, the query and the active item all live in the caller, and the rules (`filterItems`, `stepActive`, `keyAction`) live in `command-palette-view.ts` so the caller does not rewrite them. Renders closed on the server unless told otherwise; with scripting off it is inert markup. Items carrying a `group` render under one `role="group"` heading per run; `useCommandPalette` is the shell that owns the open flag, the query, `⌘K` and focus.
+The ⌘K palette: a filter field over a list of commands and destinations, in a NON-modal `<dialog>` driven by its `open` attribute — never `showModal()`, so a test harness with no dialog methods and a server with no DOM both render it the same way.  Controlled and presentational: the open flag, the query and the active item all live in the caller, and the rules (`filterItems`, `stepActive`, `keyAction`) live in `command-palette-view.ts` so the caller does not rewrite them. Renders closed on the server unless told otherwise; with scripting off it is inert markup. Items carrying a `group` render under one `role="group"` heading per run; `useCommandPalette` is the shell that owns the open flag, the query, `⌘K` and focus.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -521,7 +521,7 @@ Edge-anchored panel, also a native <dialog> so it inherits the top layer and ine
 
 ### Dropzone
 
-A drop surface that is a real `<label>` around a real, visually-hidden `<input type="file">`. That shape is what makes it usable without a mouse: click, Enter and Space already open the picker, focus already lands somewhere, and the accessible name is the instruction the label renders. A `<div onClick>` with `tabindex` would reimplement all four and get one of them wrong. Dragging is the enhancement on top, never the only way in.
+A drop surface that is a real `<label>` around a real, visually-hidden `<input type="file">`.  That shape is what makes it usable without a mouse: click, Enter and Space already open the picker, focus already lands somewhere, and the accessible name is the instruction the label renders. A `<div onClick>` with `tabindex` would reimplement all four and get one of them wrong. Dragging is the enhancement on top, never the only way in.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -1280,7 +1280,7 @@ Progress through a multi-step flow: an `<ol>`, the current step `aria-current="s
 
 ### Switch
 
-Boolean toggle with immediate effect (as opposed to Checkbox, which is part of a form submit). `role="switch"` on a native checkbox keeps keyboard behaviour — and its checked state, which is why nothing here writes `aria-checked`: `role="switch"` maps the host `checked` state on its own, and an attribute mirroring it never updates on the no-JS path, where ARIA would then outrank the truth and announce the switch stuck in whichever position it was rendered in.
+Boolean toggle with immediate effect (as opposed to Checkbox, which is part of a form submit).  `role="switch"` on a native checkbox keeps keyboard behaviour — and its checked state, which is why nothing here writes `aria-checked`: `role="switch"` maps the host `checked` state on its own, and an attribute mirroring it never updates on the no-JS path, where ARIA would then outrank the truth and announce the switch stuck in whichever position it was rendered in.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -1408,7 +1408,7 @@ What happened, in order: when, what, a marker and a tone. An `<ol>` because the 
 
 ### ToastRegion
 
-Transient notification. ToastRegion is the single live region for the app; individual Toasts are its children, so announcements are not duplicated and the region exists before the first message. That ordering is the whole point: a live region created with its content already in it is not announced by most screen readers, which is why `aria-live` sits on the persistent <ol> here and NOT on the <li> each Toast renders.
+Transient notification. ToastRegion is the single live region for the app; individual Toasts are its children, so announcements are not duplicated and the region exists before the first message.  That ordering is the whole point: a live region created with its content already in it is not announced by most screen readers, which is why `aria-live` sits on the persistent <ol> here and NOT on the <li> each Toast renders.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -1422,7 +1422,7 @@ Transient notification. ToastRegion is the single live region for the app; indiv
 
 ### Toast
 
-Transient notification. ToastRegion is the single live region for the app; individual Toasts are its children, so announcements are not duplicated and the region exists before the first message. That ordering is the whole point: a live region created with its content already in it is not announced by most screen readers, which is why `aria-live` sits on the persistent <ol> here and NOT on the <li> each Toast renders.
+Transient notification. ToastRegion is the single live region for the app; individual Toasts are its children, so announcements are not duplicated and the region exists before the first message.  That ordering is the whole point: a live region created with its content already in it is not announced by most screen readers, which is why `aria-live` sits on the persistent <ol> here and NOT on the <li> each Toast renders.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -1449,7 +1449,7 @@ The one way to render a toast queue: the store's VISIBLE slice, inside the regio
 
 ### Toolbar
 
-The control strip above a table or a list: filters and search at the inline start, actions at the inline end. `role="toolbar"` with the same roving-tabindex helper Tabs uses, so arrow keys move between the strip's buttons. It is NOT one tab stop: the strip holds arbitrary children it cannot reach into to set an initial `tabindex`, and a search field at the inline start keeps its own arrow keys, so making the strip a single stop would strand every control past it.
+The control strip above a table or a list: filters and search at the inline start, actions at the inline end. `role="toolbar"` with the same roving-tabindex helper Tabs uses, so arrow keys move between the strip's buttons.  It is NOT one tab stop: the strip holds arbitrary children it cannot reach into to set an initial `tabindex`, and a search field at the inline start keeps its own arrow keys, so making the strip a single stop would strand every control past it.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|

@@ -1,9 +1,11 @@
 // Single responsibility: turning a provider's id token into claims this handshake is allowed to
-// believe. Every caller must say where its trust comes from: `keys: 'token-endpoint-tls'` is the
-// one channel OIDC Core 3.1.3.7 exempts from a signature check, and anything else — IdP-initiated
-// login, `response_mode=form_post`, back-channel logout, token exchange — passes a `JwksKeySource`
-// and gets the signature verified. The argument is required rather than defaulted because a
-// default is what silently makes the second door as trusting as the first.
+// believe.
+//
+// Every caller must say where its trust comes from: `keys: 'token-endpoint-tls'` is the one channel
+// OIDC Core 3.1.3.7 exempts from a signature check, and anything else — IdP-initiated login,
+// `response_mode=form_post`, back-channel logout, token exchange — passes a `JwksKeySource` and
+// gets the signature verified. The argument is required rather than defaulted because a default is
+// what silently makes the second door as trusting as the first.
 
 import type { Clock } from '@ultimat3/core';
 import { renderCauseValue, timingSafeEqual } from '@ultimat3/core';

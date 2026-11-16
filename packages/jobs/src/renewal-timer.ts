@@ -1,8 +1,9 @@
 // A renewal loop that is TERMINAL once stopped, and the one shape two files renew against.
+//
 // `heartbeat.ts` renews a job's lease and `worker-fleet-slots.ts` a fleet slot, and both decided a
-// LOSS from an answer that arrived after the run had already finished cleanly: `stop()` cleared
-// the interval, which does nothing to the request already on the wire. So a flag is what every
-// branch after an `await` re-reads — the shape `settleWithin`'s `decided` uses in core.
+// LOSS from an answer that arrived after the run had already finished cleanly: `stop()` cleared the
+// interval, which does nothing to the request already on the wire. So a flag is what every branch
+// after an `await` re-reads — the shape `settleWithin`'s `decided` uses in core.
 
 import { logger, renderThrowable } from '@ultimat3/core';
 

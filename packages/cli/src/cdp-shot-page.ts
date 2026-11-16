@@ -1,8 +1,9 @@
-// One `ShotPage` over one attached CDP session: navigate, read, act, photograph. The session is
-// the driver's (`cdp-shot-driver.ts`), the rings and the allow list are `cdp-shot-watch.ts`'s, and
-// what "ready to act on" means is `cdp-shot-element.ts`'s. Acts are real input — a click is a
-// mouse press at the element's centre, a keystroke is a key event — because an in-page `.click()`
-// skips `pointerdown`, which is what a dialog's backdrop listens to.
+// One `ShotPage` over one attached CDP session: navigate, read, act, photograph.
+//
+// The session is the driver's (`cdp-shot-driver.ts`), the rings and the allow list are
+// `cdp-shot-watch.ts`'s, and what "ready to act on" means is `cdp-shot-element.ts`'s. Acts are real
+// input — a click is a mouse press at the element's centre, a keystroke is a key event — because an
+// in-page `.click()` skips `pointerdown`, which is what a dialog's backdrop listens to.
 import { assert, finiteCount, hostDecision } from '@ultimat3/core';
 import type { CdpConnection } from '@ultimat3/scraping/cdp';
 import { CdpCallFailedError, CdpTimeoutError } from '@ultimat3/scraping/cdp';

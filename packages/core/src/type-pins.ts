@@ -1,8 +1,9 @@
-// Compile-time pins for the actor-facts seam, the config surface, the request-context patch and
-// the route and cache-tier vocabularies.
-// Source, not a `.test.ts`, on purpose: `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b`
-// never reads a test file and a type-level assertion written there can never fail. This module
-// emits nothing and exports nothing anybody imports — a regression is a build error.
+// Compile-time pins for the actor-facts seam, the config surface, the request-context patch and the
+// route and cache-tier vocabularies. Source, not a `.test.ts`, on purpose: `tsconfig.json` excludes
+// `src/**/*.test.ts`, so `tsc -b` never reads a test file and a type-level assertion written there
+// can never fail.
+//
+// This module emits nothing and exports nothing anybody imports — a regression is a build error.
 
 import type { Actor, ActorFactMap, FactKeysOf, FactMapOf } from './actor';
 import type { CacheTierName } from './cache-vocabulary';

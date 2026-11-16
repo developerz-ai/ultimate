@@ -1,8 +1,11 @@
-// The compose half of `x deploy`, read off the app's compose file: which serving roles can start
-// their new container BEFORE the old one stops (the sequence is `cmd-deploy-start-first.ts`), and
-// what the file demands of `.env.production` — read by the deploy's pre-flight and `x env init`.
-// `docker compose up -d <role>` alone is stop-first — it recreates, so the role serves nothing
-// between the old container's exit and the new one's healthcheck.
+// The compose half of `x deploy`, read off the app's compose file: which serving roles can
+// start first, and what the file demands of `.env.production`.
+//
+// A start-first role starts its new container BEFORE the old one stops (the sequence is
+// `cmd-deploy-start-first.ts`); the `.env.production` demands are read by the deploy's pre-flight
+// and `x env init`. `docker compose up -d <role>` alone is stop-first — it
+// recreates, so the role serves nothing between the old container's exit and the new one's
+// healthcheck.
 
 /**
  * How one serving role is rolled. `start-first` is the zero-downtime path; `stop-first` is

@@ -1,9 +1,10 @@
 /**
- * The page's client scope, as a `<head>` tag: `<meta name="ultimate-scope" content="…">`, read
- * once by `@ultimat3/core`'s `pageClient()` when the page's client handle is created. Only a
- * PRIVATE document carries one (`documentCarriesScope`): anything a shared cache may hold would
- * serve one visitor's scope to the next, and a store fenced as the wrong principal is the leak the
- * fence exists to stop.
+ * The page's client scope, as a `<head>` tag: `<meta name="ultimate-scope" content="…">`, read once
+ * by `@ultimat3/core`'s `pageClient()` when the page's client handle is created.
+ *
+ * Only a PRIVATE document carries one (`documentCarriesScope`): anything a shared cache may hold
+ * would serve one visitor's scope to the next, and a store fenced as the wrong principal is the
+ * leak the fence exists to stop.
  */
 
 import { CLIENT_PERSIST_META, CLIENT_SCOPE_META } from '@ultimat3/core';

@@ -1,8 +1,11 @@
-// `ui.diff` — the one `ui.*` tool with no browser in it. Two PNGs the others wrote, decoded through
-// `@ultimat3/core`'s raw-pixel seam, compared by `ui-diff.ts`, and written back as a third PNG
-// beside the second. No dependency: the seam already reads and writes 8-bit RGBA, and a capture
-// that arrives in another PNG shape (Chrome writes RGB when a page has no transparency) is
-// normalised through `transformImageBytes`, whose encoder emits the one shape the seam reads.
+// `ui.diff` — the one `ui.*` tool with no browser in it: two captured PNGs compared, the
+// difference written back as a third.
+//
+// Two PNGs the others wrote, decoded through `@ultimat3/core`'s raw-pixel seam, compared by
+// `ui-diff.ts`, and written back as a third PNG beside the second. No dependency: the seam already
+// reads and writes 8-bit RGBA, and a capture that arrives in another PNG shape (Chrome writes RGB
+// when a page has no transparency) is normalised through `transformImageBytes`, whose encoder emits
+// the one shape the seam reads.
 //
 // The path gate is what makes `dev:read` defensible for a tool that opens files: `before`, `after`
 // and `out` are relative to the app root and must resolve — lexically AND through any symlink —

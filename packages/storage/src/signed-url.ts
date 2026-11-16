@@ -1,10 +1,18 @@
-// Single responsibility: time-limited signed URLs for direct upload and download.
-// The HMAC covers the *constraints* (key, method, expiry, max size, content type), not just
-// the key — otherwise a client that receives a URL for a 2MB PNG edits `?x-max=` and uploads
-// a 2GB executable. Verification never throws and never short-circuits on expiry before the
-// signature, so a forged URL can never learn "the signature was fine, just late".
+// Single responsibility: time-limited signed URLs for direct upload and download. The HMAC covers
+// the *constraints* (key, method, expiry, max size, content type), not just the key — otherwise a
+// client that receives a URL for a 2MB PNG edits `?x-max=` and uploads a 2GB executable.
+//
+// Verification never throws and never short-circuits on expiry before the signature, so a forged
+// URL can never learn "the signature was fine, just late".
 
-import { assert, type Clock, finiteCount, systemClock, timingSafeEqual } from '@ultimat3/core';
+import {
+  assert,
+  type Clock,
+  finiteCount,
+  systemClock,
+  timingSafeEqual,
+  trimTrailingSlashes,
+} from '@ultimat3/core';
 import type { SignedUrlMethod } from './driver';
 import { assertSafeKey, isSafeKey } from './path';
 
@@ -97,7 +105,7 @@ export type SignedUrlVerification =
   | { readonly ok: true; readonly constraints: SignedUrlConstraints }
   | { readonly ok: false; readonly reason: SignedUrlFailure; readonly detail: string };
 
-const trimBase = (base: string): string => base.replace(/\/+$/, '');
+const trimBase = (base: string): string => trimTrailingSlashes(base);
 
 /**
  * The PATH a base mounts at — what a route sees, and so the only part of a base both halves can

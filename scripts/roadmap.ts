@@ -8,7 +8,7 @@
 //
 //   bun run scripts/roadmap.ts [--json]
 
-// `existsSync` and `join` have no Bun equivalent for this job: `Bun.file().exists()` is async and
+// why: `existsSync` and `join` have no Bun equivalent for this job: `Bun.file().exists()` is async and
 // answers `false` for a directory, and one required artifact (`packages/cli/src/templates`) is a
 // directory.
 import { existsSync } from 'node:fs';

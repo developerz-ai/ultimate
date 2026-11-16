@@ -5,7 +5,7 @@
 // The decisions a seed itself owns are `@ultimat3/entity`'s: `seedTiersFor` is the one table saying
 // which tiers an environment runs, and two copies of "may this seed run" would be two answers.
 
-// `node:path` for the joiner and the app-root-relative spelling every finding is keyed by; Bun
+// why: `node:path` for the joiner and the app-root-relative spelling every finding is keyed by; Bun
 // exposes neither.
 import { relative, sep } from 'node:path';
 import type { Environment } from '@ultimat3/core';

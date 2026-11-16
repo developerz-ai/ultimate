@@ -2,7 +2,7 @@
 // file adds only what XML needs on top of it — the characters XML cannot carry at all — because a
 // sitemap, a feed and a <head> tag all fail the same way on an unescaped ampersand.
 
-import { escapeHtml } from '@ultimat3/core';
+import { escapeHtml, trimTrailingSlashes } from '@ultimat3/core';
 
 /**
  * The characters XML 1.0 excludes from `Char`: the C0 controls other than tab, LF and CR, and the
@@ -58,7 +58,7 @@ export function attributes(attrs: Readonly<Record<string, string>>): string {
  */
 export function absoluteUrl(baseUrl: string, path: string): string {
   if (/^https?:\/\//.test(path)) return path;
-  const base = baseUrl.replace(/\/+$/, '');
+  const base = trimTrailingSlashes(baseUrl);
   const rest = path.replace(/^\/+/, '');
   return rest === '' ? base : `${base}/${rest}`;
 }

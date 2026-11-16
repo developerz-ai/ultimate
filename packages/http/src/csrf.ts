@@ -1,9 +1,11 @@
-// Whether an unsafe request a BROWSER sent — with the session cookie, or to obtain one — came
-// from somewhere allowed to make it. CORS does not answer this: `application/x-www-form-urlencoded` is a CORS-simple content
-// type, so `<form method="post">` on evil.test is SENT and EXECUTED with the session cookie
-// attached — `cors.origins: []` only stops the attacker reading the reply, long after the refund
-// went through. `setRedirect` exists so those form posts work without JS, which makes them a
-// first-class surface here rather than a legacy one.
+// Whether an unsafe request a BROWSER sent — with the session cookie, or to obtain one — came from
+// somewhere allowed to make it.
+//
+// CORS does not answer this: `application/x-www-form-urlencoded` is a CORS-simple content type, so
+// `<form method="post">` on evil.test is SENT and EXECUTED with the session cookie attached —
+// `cors.origins: []` only stops the attacker reading the reply, long after the refund went through.
+// `setRedirect` exists so those form posts work without JS, which makes them a first-class surface
+// here rather than a legacy one.
 
 import { peerAddressClass, proveSameOrigin, renderFixShellArg } from '@ultimat3/core';
 import type { CorsConfig } from './cors';

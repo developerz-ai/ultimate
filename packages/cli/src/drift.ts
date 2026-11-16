@@ -1,14 +1,18 @@
-// Source drift: the app's schema *source* against what migrations recorded. `x db gen` writes the
-// hash of the entity schema next to the migration it produced, so drift here is "the schema hashes
-// to something no migration recorded". The hash is committed beside the migration, so a fresh clone
-// answers with no local state and CI needs no database. An app with NO migration at all is the one
-// case that also asks how many entities are declared — see `checkSourceDrift`.
+// Source drift: the app's schema *source* against what migrations recorded.
+//
+// `x db gen` writes the hash of the entity schema next to the migration it produced, so drift here
+// is "the schema hashes to something no migration recorded". The hash is committed beside the
+// migration, so a fresh clone answers with no local state and CI needs no database. An app with NO
+// migration at all is the one case that also asks how many entities are declared — see
+// `checkSourceDrift`.
 //
 // This is not the post-migrate verification and deliberately cannot be: that one is the live
 // database against the ledger (`checkDrift`, `@ultimat3/db`), asked by `runMigrations` where a
 // connection is open. Same `X_DB_DRIFT`, two conditions — an entity edited with no migration
 // generated, versus a database that does not match the migrations it ran.
 
+// why: the probes are of DIRECTORIES, which `Bun.file().exists()` answers false for; Bun ships no
+// path API, and `join` builds the paths under the app root.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 // `canonicalJson` is core's, the one serializer every content hash in the framework uses. A private

@@ -1,5 +1,7 @@
-// Every inline `<script>` body a served process can put in a document, as the `script-src` sources
-// that admit it. The mirror of `style-csp.ts`, and needed for the same reason: `script-src` was
+// Every inline `<script>` body a served process can put in a document, as the `script-src`
+// sources that admit it.
+//
+// The mirror of `style-csp.ts`, and needed for the same reason: `script-src` was
 // `'self' 'wasm-unsafe-eval'` while every document carrying an island shipped the hydration runtime
 // INLINE, so under the enforced policy a container serves (`dev: false`) no island ever booted —
 // invisible in `x dev`, where the policy is report-only.

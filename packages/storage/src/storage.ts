@@ -1,8 +1,10 @@
-// Single responsibility: named disks (Laravel's model) and the one module-level accessor.
-// Call sites name a disk, never a driver — swapping `local` for `s3` in app.config.ts must
-// not touch a single `storage.disk('uploads').put(...)` call. This file is also where a driver
-// LEARNS its disk name (`registerAs`), because the registry is the only holder of that fact and
-// a signed URL's `:disk` segment has to be the name the mounted route resolves.
+// Single responsibility: named disks (Laravel's model) and the one module-level accessor. Call
+// sites name a disk, never a driver — swapping `local` for `s3` in app.config.ts must not touch a
+// single `storage.disk('uploads').put(...)` call.
+//
+// This file is also where a driver LEARNS its disk name (`registerAs`), because the registry is the
+// only holder of that fact and a signed URL's `:disk` segment has to be the name the mounted route
+// resolves.
 
 import { ConfigInvalidError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';

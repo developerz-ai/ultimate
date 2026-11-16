@@ -2,6 +2,7 @@
 // refused with the exact move that makes the file a route. Split out of `registry.ts`, which keeps
 // the table itself.
 
+import { trimTrailingSlashes } from '@ultimat3/core/page';
 import { RouteFileInvalidError, SurfaceBoundaryError } from './errors';
 import type { RouteSurface, Surface } from './surfaces';
 import { locateSurface } from './surfaces';
@@ -57,7 +58,7 @@ export function routePathFromFile(file: string): { surface: RouteSurface; path: 
     .filter((s) => !(s.startsWith('(') && s.endsWith(')')))
     .map(toUrlSegment);
 
-  const path = `/${urlSegments.join('/')}`.replace(/\/+$/, '') || '/';
+  const path = trimTrailingSlashes(`/${urlSegments.join('/')}`) || '/';
   return { surface, path };
 }
 

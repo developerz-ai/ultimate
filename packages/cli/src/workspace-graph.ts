@@ -3,8 +3,9 @@
 // second is covered by the first, with no unused framework sibling declarations. A tsconfig-only
 // edge resolves for `tsc` but is invisible to bun, `--filter` ordering and change-detection tools.
 
+// why: Bun ships no path API; `join` builds the host-separator path to each workspace manifest.
 import { join } from 'node:path';
-import { ERROR_DOCS_URL, maskLiterals } from '@ultimat3/core';
+import { ERROR_DOCS_URL, maskLiterals, trimTrailingSlashes } from '@ultimat3/core';
 import { CATALOG_PACKAGES } from './error-catalog';
 import { scanAllImports } from './import-scan';
 import type { Finding } from './output';
@@ -78,10 +79,10 @@ export async function workspaceManifestPaths(
 ): Promise<readonly string[]> {
   const excluded = globs
     .filter((glob) => glob.startsWith('!'))
-    .map((glob) => new Bun.Glob(glob.slice(1).replace(/\/+$/, '')));
+    .map((glob) => new Bun.Glob(trimTrailingSlashes(glob.slice(1))));
   const found = new Set<string>();
   for (const glob of globs.filter((candidate) => !candidate.startsWith('!'))) {
-    const manifests = new Bun.Glob(`${glob.replace(/\/+$/, '')}/package.json`);
+    const manifests = new Bun.Glob(`${trimTrailingSlashes(glob)}/package.json`);
     for await (const path of manifests.scan({ cwd: root, absolute: false })) {
       const manifest = path.replaceAll('\\', '/');
       const dir = manifest.slice(0, -'/package.json'.length);

@@ -1,8 +1,10 @@
 // Single responsibility: the pooled Postgres client and the ambient `db()` handle — the lazy
 // connect, the reserved-connection pin, and the process-wide client every repository reaches
-// through. Sizing lives in `pool-profile.ts`, the connection string in `connection-url.ts`, the
-// `Bun.SQL` slice in `bun-sql.ts` and the observed statement funnel in `statement-funnel.ts`, so
-// importing this module never opens a socket.
+// through.
+//
+// Sizing lives in `pool-profile.ts`, the connection string in `connection-url.ts`, the `Bun.SQL`
+// slice in `bun-sql.ts` and the observed statement funnel in `statement-funnel.ts`, so importing
+// this module never opens a socket.
 
 import { logger, type Role, resolveRole, type Scheduler } from '@ultimat3/core';
 import {

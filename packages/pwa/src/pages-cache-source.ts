@@ -1,9 +1,10 @@
 /**
  * The emitted worker's cache access, as source: the guard every strategy opens a cache through, the
- * background copy, the offline page read and the sign-out purge. Its own module because
- * `service-worker.ts` is the rest of `sw.js`; it is spliced into the fetch block and reads that
- * block's constants (`PAGES`, `PAGES_PREFIX`, `SCOPE_HEADER`) and `warming` from the activate block.
- * `service-worker-pages.test.ts` runs both modes.
+ * background copy, the offline page read and the sign-out purge.
+ *
+ * Its own module because `service-worker.ts` is the rest of `sw.js`; it is spliced into the fetch
+ * block and reads that block's constants (`PAGES`, `PAGES_PREFIX`, `SCOPE_HEADER`) and `warming`
+ * from the activate block. `service-worker-pages.test.ts` runs both modes.
  */
 
 /**

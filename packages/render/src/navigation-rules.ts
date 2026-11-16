@@ -1,9 +1,11 @@
 /**
  * Which clicks and submits the client router takes, and which it leaves to the browser — as pure
  * functions over plain facts, so every rule is testable without a DOM and the router
- * (`navigation.ts`) only gathers the facts. Also the one declaration of every attribute and event
- * name the router shares with the documents the server renders and the apps that listen; the
- * router's headers are core's (`CLIENT_NAVIGATION_*_HEADER`), imported where they are sent.
+ * (`navigation.ts`) only gathers the facts.
+ *
+ * Also the one declaration of every attribute and event name the router shares with the documents
+ * the server renders and the apps that listen; the router's headers are core's
+ * (`CLIENT_NAVIGATION_*_HEADER`), imported where they are sent.
  */
 
 /**

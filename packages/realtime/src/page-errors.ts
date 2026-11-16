@@ -1,8 +1,10 @@
 // The refusals a BROWSER can reach — the page store, the hooks, the socket's wire check, the local
-// store. Apart from `errors.ts` for bytes: that module holds the sync node's refusal classes, which
-// no island constructs. The codes and their titles are `error-titles.ts` (the module
-// `package.json`'s `sideEffects` names, imported bare by the barrel), so a code constructed here is
-// titled wherever the barrel was reached. This module runs nothing at import.
+// store.
+//
+// Apart from `errors.ts` for bytes: that module holds the sync node's refusal classes, which no
+// island constructs. The codes and their titles are `error-titles.ts` (the module `package.json`'s
+// `sideEffects` names, imported bare by the barrel), so a code constructed here is titled wherever
+// the barrel was reached. This module runs nothing at import.
 
 import { renderFixShellArg } from '@ultimat3/core/page';
 import { RealtimeError } from './realtime-error';

@@ -3,7 +3,7 @@
 // pair the note below rules out. fd 2 exists because fd 1 is not always a log: under
 // `x mcp serve --transport stdio` it is the protocol, under `--json` one document a caller parses.
 
-// `node:fs`, and unavoidable: Bun has no synchronous stdout write of its own.
+// why: `node:fs`, and unavoidable: Bun has no synchronous stdout write of its own.
 import { writeSync } from 'node:fs';
 // The one import beyond `node:fs`, and it costs nothing here: `create-ultimate` reaches this
 // module through `@ultimat3/cli`'s barrel, which has already evaluated core.

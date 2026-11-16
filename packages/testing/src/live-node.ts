@@ -1,8 +1,9 @@
-// A whole `sync` node and one client socket, in this process, with no port and no network. What
-// `x dev --role sync` assembles, minus the listener: the real `LiveQueryRegistry`, the real bridge
-// from every `query({ live: true })` the app declared, the real per-subscriber authz, the real
-// cursor. The only thing replaced is the socket, and it is replaced by a pair of objects that hand
-// each other the same JSON strings a WebSocket would.
+// A whole `sync` node and one client socket, in this process, with no port and no network.
+//
+// What `x dev --role sync` assembles, minus the listener: the real `LiveQueryRegistry`, the real
+// bridge from every `query({ live: true })` the app declared, the real per-subscriber authz, the
+// real cursor. The only thing replaced is the socket, and it is replaced by a pair of objects that
+// hand each other the same JSON strings a WebSocket would.
 //
 // Dynamically imported by the `subscribe` fixture, never at module load: a test that never
 // subscribes must not pull `@ultimat3/realtime` and `@ultimat3/query` into its process, which is

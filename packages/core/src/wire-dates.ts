@@ -1,10 +1,11 @@
 /**
  * Which values of an answer were instants. `JSON.stringify` writes a `Date` as its ISO string and
  * nothing on the far side can tell it from text, so a read's row typed `Date` reached its caller as
- * a string — and every app converted at its own edge (`wireDate()`). The server knows: it walks the
- * answer once, names each `Date` by its path in `x-ultimate-dates`, and `clientTransport` turns
- * exactly those strings back into `Date`s. The body is unchanged, so a client that ignores the
- * header reads what it always read.
+ * a string — and every app converted at its own edge (`wireDate()`).
+ *
+ * The server knows: it walks the answer once, names each `Date` by its path in `x-ultimate-dates`,
+ * and `clientTransport` turns exactly those strings back into `Date`s. The body is unchanged, so a
+ * client that ignores the header reads what it always read.
  *
  * A path is a list of segments: a string is an object key, a number an array index, and `null`
  * EVERY element of an array — what a list of rows folds to (`[[null, "publishedAt"]]`), so the

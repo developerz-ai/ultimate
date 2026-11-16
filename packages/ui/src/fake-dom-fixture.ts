@@ -1,8 +1,9 @@
 // TEST-ONLY. A DOM small enough to read and real enough to run this package's keyboard code
 // against: focus that a disabled control silently refuses, `document.activeElement`, `contains`,
-// and `querySelectorAll` for the selector grammar these helpers actually pass. Not exported from
-// `index.ts` — the alternative is a DOM dependency, and the bugs it catches are the ones that only
-// exist because nothing ever called `rovingTabindex` with elements attached.
+// and `querySelectorAll` for the selector grammar these helpers actually pass.
+//
+// Not exported from `index.ts` — the alternative is a DOM dependency, and the bugs it catches are
+// the ones that only exist because nothing ever called `rovingTabindex` with elements attached.
 
 /** The subset of a selector these helpers use: comma groups of tag + `[attr]` + `:not(...)`. */
 const PART = /\[[^\]]*\]|:not\([^)]*\)/g;

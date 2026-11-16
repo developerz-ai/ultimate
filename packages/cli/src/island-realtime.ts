@@ -1,9 +1,11 @@
-// Realtime installed for the author, on exactly the islands that use it: an island whose own import
-// graph reaches `@ultimat3/realtime` is built from a virtual entry that first awaits the page
-// runtime (`island-runtime.ts`), then calls `installRealtime({ signal, cleanup })` with THIS
-// bundle's solid-js, then re-exports the island whole. Every other island pays nothing. An island
-// that reads the record store or the outbox also waits for the page's restore before it mounts
-// (#506); one that only follows the socket does not (`island-realtime-state.ts`).
+// Realtime installed for the author, on exactly the islands that use it: each is built from a
+// virtual entry that awaits the page runtime, installs realtime, then re-exports the island.
+//
+// An island qualifies when its own import graph reaches `@ultimat3/realtime`; its entry first
+// awaits the page runtime (`island-runtime.ts`), then calls `installRealtime({ signal, cleanup })`
+// with THIS bundle's solid-js, then re-exports the island whole. Every other island pays nothing.
+// An island that reads the record store or the outbox also waits for the page's restore before it
+// mounts (#506); one that only follows the socket does not (`island-realtime-state.ts`).
 
 // why: Bun ships no path API; the entry is joined to the root, the runtime named by its basename,
 // core's transport found beside the core module importing it.

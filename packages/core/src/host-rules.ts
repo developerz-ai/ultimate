@@ -1,7 +1,9 @@
-// `allowHosts`, as a decision every browser driver asks before a request leaves — never a note in
-// a README. A headless browser inside your network is the widest SSRF surface an app can own: one
+// `allowHosts`, as a decision every browser driver asks before a request leaves — never a note in a
+// README. A headless browser inside your network is the widest SSRF surface an app can own: one
 // injected `<img src="http://169.254.169.254/…">` on a page you do not control is a credential
-// read. In core because two tier-5 packages drive a browser (`scraping`, and `cli`'s `x shot`) and
+// read.
+//
+// In core because two tier-5 packages drive a browser (`scraping`, and `cli`'s `x shot`) and
 // neither may import the other; two copies of this rule would be two answers to "may it leave".
 
 import { classifyAddress } from './address-class';

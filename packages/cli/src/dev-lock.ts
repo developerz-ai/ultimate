@@ -14,6 +14,9 @@
 // The lock file is what makes the second one nameable at all: nothing else in the process can tell
 // "another dev server owns this directory" from "the database is broken".
 
+// why: Bun has no hard link, rename, mkdir or unlink — and `linkSync` is the one-syscall atomic
+// create-if-absent the claim rests on. Sync because `clearLock` runs from `() => void` shutdown
+// callbacks. Bun ships no path API either.
 import { linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';

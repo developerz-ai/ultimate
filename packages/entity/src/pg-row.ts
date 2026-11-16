@@ -1,8 +1,9 @@
 // Single responsibility: the two-way map between a physical Postgres row and an entity row.
-// Three things are not one-to-one and all three live here: the property key is camelCase while
-// the column is snake_case, money is one property over two columns, and a value that came back
-// from the driver is re-parsed by the column that declared it rather than trusted — int8 arrives
-// as a string, timestamptz may arrive as one, and a silent `NaN` is worse than a loud throw.
+//
+// Three things are not one-to-one and all three live here: the property key is camelCase while the
+// column is snake_case, money is one property over two columns, and a value that came back from the
+// driver is re-parsed by the column that declared it rather than trusted — int8 arrives as a
+// string, timestamptz may arrive as one, and a silent `NaN` is worse than a loud throw.
 
 import { columnFor, columnName, moneyColumns } from './column';
 import { narrowMoney } from './columns';

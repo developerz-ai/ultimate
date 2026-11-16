@@ -125,10 +125,14 @@ export async function packHead(
 }
 
 /** npm's packument for `name`, refreshed into `cacheDir` and read back from it when offline. */
-async function upstreamPackument(name: string, cacheDir: string): Promise<unknown> {
+async function upstreamPackument(
+  name: string,
+  cacheDir: string,
+  upstream: string,
+): Promise<unknown> {
   const cached = Bun.file(join(cacheDir, `${encodeURIComponent(name)}.json`));
   try {
-    const response = await fetch(`${UPSTREAM}/${name.replaceAll('/', '%2f')}`, {
+    const response = await fetch(`${upstream}/${name.replaceAll('/', '%2f')}`, {
       signal: AbortSignal.timeout(30_000),
     });
     if (response.ok) {
@@ -155,8 +159,15 @@ export interface ScopeRegistry {
 
 const notFound = (): Response => new Response(null, { status: 404 });
 
-/** One loopback server for one mode; `stop()` it when the fixture is done with it. */
-export function serveScope(mode: ScopeMode, cacheDir: string): ScopeRegistry {
+/**
+ * One loopback server for one mode; `stop()` it when the fixture is done with it. `upstream` is
+ * npm's registry, or a test's loopback stand-in for it.
+ */
+export function serveScope(
+  mode: ScopeMode,
+  cacheDir: string,
+  upstream: string = UPSTREAM,
+): ScopeRegistry {
   mkdirSync(cacheDir, { recursive: true });
   const prefix = `/${crypto.randomUUID().slice(0, 8)}`;
   const packed = mode.kind === 'head' ? mode.packed : [];
@@ -175,15 +186,15 @@ export function serveScope(mode: ScopeMode, cacheDir: string): ScopeRegistry {
       }
       const name = packageOfPath(rest);
       if (name === undefined) return notFound();
-      const upstream = await upstreamPackument(name, cacheDir);
+      const served = await upstreamPackument(name, cacheDir, upstream);
       if (mode.kind === 'as-of') {
-        const cut = asOf(upstream, mode.version);
+        const cut = asOf(served, mode.version);
         return cut === undefined ? notFound() : Response.json(cut);
       }
       const head = byName.get(name);
-      if (head === undefined) return upstream === undefined ? notFound() : Response.json(upstream);
+      if (head === undefined) return served === undefined ? notFound() : Response.json(served);
       const tarball = `${origin}${prefix}/-/tarball/${tarballName(head.name, head.version)}`;
-      return Response.json(withHead(upstream, head, tarball));
+      return Response.json(withHead(served, head, tarball));
     },
   });
   return { url: `${server.url.origin}${prefix}/`, stop: () => void server.stop(true) };

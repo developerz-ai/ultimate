@@ -1,6 +1,7 @@
 // What a FAILED test carries beside its own message: under e2e, the spawned app's last log lines.
 // The app's log was shown only when it failed to boot, so a live-path bug — a fanout that dropped a
 // change, a 500 behind a page — failed with a browser assertion and nothing from the server.
+//
 // Held on `globalThis` under one `Symbol.for` key: the e2e preload and a test file may each hold
 // their own copy of this module, as `e2e-browser-handle.ts` already explains.
 

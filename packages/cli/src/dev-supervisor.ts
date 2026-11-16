@@ -1,9 +1,12 @@
-// `x dev` as two processes: this one supervises, a child serves. A save that reaches a module which
-// DEFINES a primitive (`app-reload-graph.ts`'s pinned modules — a query over a slice's service, an
-// admin page's view under `defineAdmin`) cannot be served by re-importing: the registries and the
-// route table hold that module's first instance. The child exits `DEV_RESTART_EXIT_CODE` instead
-// of logging "reloaded" over stale code, and this loop boots a fresh one on the same port. Every
-// other save stays the in-process reload it was — a restart is paid only where nothing else works.
+// `x dev` as two processes: this one supervises, a child serves — and a fresh child boots on
+// the same port when a save reaches a module that defines a primitive.
+//
+// A save that reaches a module which DEFINES a primitive (`app-reload-graph.ts`'s pinned modules —
+// a query over a slice's service, an admin page's view under `defineAdmin`) cannot be served by
+// re-importing: the registries and the route table hold that module's first instance. The child
+// exits `DEV_RESTART_EXIT_CODE` instead of logging "reloaded" over stale code, and this loop boots
+// a fresh one on the same port. Every other save stays the in-process reload it was — a restart is
+// paid only where nothing else works.
 
 import type { StalePin } from './app-reload-graph';
 import { devSpec } from './cmd-dev-spec';

@@ -5,7 +5,7 @@
 
 // why: Bun exposes no path-join primitive, and every card path is relative to the export root.
 import { join } from 'node:path';
-import { probeImage, transformImageBytes } from '@ultimat3/core';
+import { probeImage, transformImageBytes, trimTrailingSlashes } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core/adapter';
 import type { OpenGraphImage } from '@ultimat3/seo';
 import type { ShotDriver } from './browser-launcher-port';
@@ -20,7 +20,7 @@ export const STATIC_CARD_DIR = '_og';
 
 /** `/og/post/hello` → `/_og/og/post/hello.png`; `/` → `/_og/index.png`. */
 export function cardUrl(capturePath: string): string {
-  const trimmed = capturePath.replace(/\/+$/, '');
+  const trimmed = trimTrailingSlashes(capturePath);
   return `/${STATIC_CARD_DIR}${trimmed === '' ? '/index' : trimmed}.png`;
 }
 

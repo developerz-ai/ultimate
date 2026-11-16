@@ -3,6 +3,7 @@
 // configs exclude — and attribute each diagnostic to the package whose tests it belongs to.
 // No new dependency: the repo's own `typescript` devDependency is the compiler.
 
+// why: Bun ships no path joiner.
 import { join } from 'node:path';
 import { localBin } from './local-bin';
 import { LONG_RUN_TIMEOUT_MS, run } from './run';

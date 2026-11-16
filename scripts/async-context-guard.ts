@@ -25,6 +25,7 @@
 //
 //   bun run scripts/async-context-guard.ts [--json]
 
+// why: Bun ships no path joiner; app roots are joined to the repo root.
 import { join } from 'node:path';
 import { stripComments } from '../packages/core/src/source-mask';
 import { APP_ROOTS, collectSourceFiles, type SourceFile } from './boundaries';

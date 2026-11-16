@@ -1,8 +1,10 @@
-// `x dev`'s restart, worker first (issue #677). A save that reaches a primitive-defining module
-// restarts the child, and the drain that ends it used to be the FIRST thing it did: a job that ran
-// past the drain budget was aborted `X_DRAINING` and requeued, so a non-idempotent one (a bank
-// login) ran twice. The worker is retired first — `stop()` claims nothing and aborts nothing — and
-// only then is the drain asked to release the port, the lock and the embedded database.
+// `x dev`'s restart, worker first (issue #677): retire the worker, then drain.
+//
+// A save that reaches a primitive-defining module restarts the child, and the drain that ends it
+// used to be the FIRST thing it did: a job that ran past the drain budget was aborted `X_DRAINING`
+// and requeued, so a non-idempotent one (a bank login) ran twice. The worker is retired first —
+// `stop()` claims nothing and aborts nothing — and only then is the drain asked to release the
+// port, the lock and the embedded database.
 
 import { drain, logger, markRetiring, renderThrowable } from '@ultimat3/core';
 import type { Worker } from '@ultimat3/jobs';

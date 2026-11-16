@@ -1,10 +1,11 @@
 /**
- * The fluent surface: every projection this package owns reachable as a method on the query
- * itself, `orgFeed.live(input)` rather than `toLiveQuery(orgFeed, input)`, and every declared
- * field lifted off `def` so app code never reaches through `.def`. The projection functions stay
- * exported for the framework's own call sites — this file only binds them to the query, it never
- * re-implements one. There is no `.tool()`: the MCP tool is `@ultimat3/mcp`'s one projection
- * (`toolFrom(orgFeed)`), a tier this package cannot import.
+ * The fluent surface: every projection this package owns reachable as a method on the query itself,
+ * `orgFeed.live(input)` rather than `toLiveQuery(orgFeed, input)`, and every declared field lifted
+ * off `def` so app code never reaches through `.def`.
+ *
+ * The projection functions stay exported for the framework's own call sites — this file only binds
+ * them to the query, it never re-implements one. There is no `.tool()`: the MCP tool is
+ * `@ultimat3/mcp`'s one projection (`toolFrom(orgFeed)`), a tier this package cannot import.
  */
 
 import { checkDeclaredErrors } from '@ultimat3/core';

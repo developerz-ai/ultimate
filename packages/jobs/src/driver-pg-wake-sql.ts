@@ -1,8 +1,10 @@
 // The cross-process wake, as SQL: the two channels a worker pod LISTENs on, and the fragments that
-// decide whether a statement announces the row it wrote. A NOTIFY is part of its transaction — it
-// is delivered when that commits and never when it rolls back — which is what lets the enqueue
-// and the outbox stage carry one. The payload is the QUEUE NAME and nothing else: never an id, an
-// input or a tenant, because every session listening reads it.
+// decide whether a statement announces the row it wrote.
+//
+// A NOTIFY is part of its transaction — it is delivered when that commits and never when it rolls
+// back — which is what lets the enqueue and the outbox stage carry one. The payload is the QUEUE
+// NAME and nothing else: never an id, an input or a tenant, because every session listening reads
+// it.
 //
 // Why a statement does not always notify: Postgres serialises the commit of every transaction
 // that issued a NOTIFY behind one lock, held through that commit's WAL flush. A notification per

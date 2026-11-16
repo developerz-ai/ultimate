@@ -1,9 +1,10 @@
-// `x pr review|resolve|reply` — the inline review, in a terminal. `gh pr view --comments` prints
-// ISSUE comments, so the findings a reviewer anchored to a line are invisible to it and the thread
-// id needed to resolve one exists nowhere a human can copy. This command is the one place that
-// query lives, and the one place the two facts a reviewer's verdict hides behind are stated: a
-// `reviewDecision` outlives the push that answered it, and a RESOLVED thread is a closed
-// conversation rather than a fixed finding.
+// `x pr review|resolve|reply` — the inline review, in a terminal.
+//
+// `gh pr view --comments` prints ISSUE comments, so the findings a reviewer anchored to a line are
+// invisible to it and the thread id needed to resolve one exists nowhere a human can copy. This
+// command is the one place that query lives, and the one place the two facts a reviewer's verdict
+// hides behind are stated: a `reviewDecision` outlives the push that answered it, and a RESOLVED
+// thread is a closed conversation rather than a fixed finding.
 
 import { PR_SUBCOMMANDS, prSpec } from './cmd-pr-spec';
 import type { CliCommand, CommandContext } from './command';

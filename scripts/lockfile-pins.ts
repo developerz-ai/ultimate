@@ -17,6 +17,7 @@
 //
 //   bun run scripts/lockfile-pins.ts [--write] [--json]
 
+// why: Bun ships no path API; `dirname` names the workspace directory of a manifest path.
 import { dirname } from 'node:path';
 import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';

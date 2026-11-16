@@ -1,8 +1,10 @@
 // Reading TypeScript source without a parser: comments — and optionally string contents — replaced
-// by spaces, newlines kept so line numbers survive. Moved here from `@ultimat3/cli`'s `ts-scan.ts`
-// on 2026-09-05 because `@ultimat3/i18n`'s key extractor (tier 1) needed exactly this and could not
-// import a tier-5 package: a `// … t('…')` in a comment was a phantom key `x i18n sync` would have
-// written as `"…": "⟦…⟧"`. One masking implementation, at the tier every scanner can reach.
+// by spaces, newlines kept so line numbers survive.
+//
+// Moved here from `@ultimat3/cli`'s `ts-scan.ts` on 2026-09-05 because `@ultimat3/i18n`'s key
+// extractor (tier 1) needed exactly this and could not import a tier-5 package: a `// … t('…')` in
+// a comment was a phantom key `x i18n sync` would have written as `"…": "⟦…⟧"`. One masking
+// implementation, at the tier every scanner can reach.
 
 // `ReadonlySet`, so a consumer cannot mutate what every scan reads.
 export const QUOTES: ReadonlySet<string> = new Set(["'", '"', '`']);

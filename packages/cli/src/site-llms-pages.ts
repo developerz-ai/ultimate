@@ -3,7 +3,13 @@
 // `siteLlms` never runs a page's `load` after the build stopped answering the app's own queries.
 
 import type { Environment } from '@ultimat3/core';
-import { ctxOf, DEFAULT_ENVIRONMENT, runWithContext, tryResolveEnvironment } from '@ultimat3/core';
+import {
+  ctxOf,
+  DEFAULT_ENVIRONMENT,
+  runWithContext,
+  trimTrailingSlashes,
+  tryResolveEnvironment,
+} from '@ultimat3/core';
 import type { PrerenderEntry, RouteEntry } from '@ultimat3/render';
 import { metaContextFor, routeDataFor, routeEntries } from '@ultimat3/render';
 import { enumeratePrerenderEntries, fillPath } from '@ultimat3/render/server';
@@ -60,7 +66,7 @@ export async function pageRecords(
   const records: RouteRecord[] = [];
   for (const page of await (options.enumerate ?? enumeratePrerenderEntries)(entry)) {
     const path = fillPath(entry.pattern.source, page.params);
-    const ctx = { url: `${options.baseUrl.replace(/\/+$/, '')}${path}`, params: page.params };
+    const ctx = { url: `${trimTrailingSlashes(options.baseUrl)}${path}`, params: page.params };
     const meta = await runWithContext(
       ctxOf({ role: 'web', locale: options.defaultLocale }),
       async () => entry.config.meta(metaContextFor(ctx, await routeDataFor(entry.config, ctx))),

@@ -8,8 +8,8 @@ import {
   addDays,
   majorWindowFindings,
   nextMajorWindow,
+  outsideWindowResult,
   recordedException,
-  refuseOutsideWindow,
   securityLines,
   withSecurityException,
 } from './major-window';
@@ -163,7 +163,16 @@ describe('unit · major-window · when the next window opens', () => {
 
 describe('unit · major-window · what the bump prints', () => {
   test('no finding is no refusal: the bump carries on', () => {
-    expect(refuseOutsideWindow([], { version: '31.0.0', current: '30.4.0' }, true)).toBeUndefined();
+    expect(outsideWindowResult([], { version: '31.0.0', current: '30.4.0' })).toBeUndefined();
+  });
+
+  test('a finding is the refusal: not ok, the version named, the findings carried', () => {
+    const finding = { code: 'X_RELEASE_MAJOR_WINDOW', cause: 'too soon', fix: 'wait' };
+    const refused = outsideWindowResult([finding], { version: '32.0.0', current: '31.2.0' });
+    expect(refused?.ok).toBe(false);
+    expect(refused?.summary).toContain('refusing to release 32.0.0');
+    expect(refused?.findings).toEqual([finding]);
+    expect(refused?.data).toEqual({ version: '32.0.0', current: '31.2.0' });
   });
 
   test('a --security bump says where the advisory went and what the commit owes', () => {

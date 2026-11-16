@@ -2,7 +2,7 @@
 // `packages/ui/src/errors.ts` and every fix it is handed is written in `icons/build-icons.ts`.
 // One specifier, one file read, one parameter position — deliberately still not `tsc`.
 
-// `dirname`/`join` are `node:`-only by necessity: Bun exposes no path-join primitive.
+// why: `dirname`/`join` are `node:`-only by necessity: Bun exposes no path-join primitive.
 import { dirname, join } from 'node:path';
 import { endOfLiteral, maskLiterals } from '@ultimat3/core';
 import type { FixHelper } from './fix-scan';

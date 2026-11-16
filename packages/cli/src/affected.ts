@@ -9,8 +9,9 @@
 // A ref diff is stable under that concurrency; `--dirty` opts back in, which is right for one
 // developer iterating alone and wrong as a default here.
 
-// `join`/`relative` are `node:`-only by necessity: Bun exposes no path primitive, and a workspace
-// directory is checkout-relative while a caller's scan yields paths relative to its own root.
+// why: `join`/`relative` are `node:`-only by necessity: Bun exposes no path primitive, and a
+// workspace directory is checkout-relative while a caller's scan yields paths relative to its own
+// root.
 import { join, relative } from 'node:path';
 import { singleLine, UltimateError } from '@ultimat3/core';
 import { DEFAULT_BASE, defaultBase, fetchFixFor } from './affected-base';

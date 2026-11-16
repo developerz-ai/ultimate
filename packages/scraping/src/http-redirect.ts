@@ -1,8 +1,10 @@
 // The redirect chain as a decision this leg makes hop by hop, rather than one `fetch` follows on
-// its own. A followed redirect is a request to a URL nobody screened: `allowHosts`, robots and the
-// rate limit are all asked about the url the caller wrote, and the answer comes back from wherever
-// the site pointed. This file is the arithmetic — which status is a hop, where it goes, and what
-// method carries — so `http.ts` re-applies the same three gates per hop and nothing else changes.
+// its own.
+//
+// A followed redirect is a request to a URL nobody screened: `allowHosts`, robots and the rate
+// limit are all asked about the url the caller wrote, and the answer comes back from wherever the
+// site pointed. This file is the arithmetic — which status is a hop, where it goes, and what method
+// carries — so `http.ts` re-applies the same three gates per hop and nothing else changes.
 
 /**
  * The five statuses that carry a `Location` a client may follow. `300` is deliberately absent:

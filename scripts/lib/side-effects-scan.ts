@@ -3,6 +3,7 @@
 // ceiling along the seam the script already drew: this file gathers the facts, `side-effects.ts`
 // judges them.
 
+// why: Bun ships no path API; relative imports are resolved against the importing file's dir.
 import { dirname, join } from 'node:path';
 import { maskLiterals, stripComments } from '../../packages/core/src/source-mask';
 import { isTestPath } from './source-scan';

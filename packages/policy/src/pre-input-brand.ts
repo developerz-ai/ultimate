@@ -1,8 +1,10 @@
 // What each built policy can decide BEFORE its input is parsed, stored beside the policy rather
-// than on it. A WeakMap keyed by the objects `policy.ts` builds, so a foreign `Policy` — one an
-// app assembled by hand, with a `run` this package never saw — has no entry and is answered
-// "depends on input": the before-input gate can only ever DEFER to the full evaluation for it,
-// never decide on its behalf.
+// than on it.
+//
+// A WeakMap keyed by the objects `policy.ts` builds, so a foreign `Policy` — one an app assembled
+// by hand, with a `run` this package never saw — has no entry and is answered "depends on input":
+// the before-input gate can only ever DEFER to the full evaluation for it, never decide on its
+// behalf.
 import type { Ctx } from '@ultimat3/core';
 import type { PolicyDecision, Recorder } from './policy';
 import type { Actor } from './roles';

@@ -1,10 +1,11 @@
 // The dev server's eyes: `ui.shot` (a route), `ui.island` (a component's states), `ui.inspect`
 // (DOM, computed-style and accessibility facts for a set of selectors, in ONE navigation) and
-// `ui.diff` (two captures the others wrote, compared without a browser). Split
-// out of `dev-server.ts` because that file stood at 439 lines against the 500-line ceiling and a
-// third `ui.*` literal would have crossed it — the catalog is still one array; `devTools` spreads
-// this one in. Every type here is re-exported from `dev-server.ts`, so the CLI and the package
-// index import what they always did.
+// `ui.diff` (two captures the others wrote, compared without a browser).
+//
+// Split out of `dev-server.ts` because that file stood at 439 lines against the 500-line ceiling
+// and a third `ui.*` literal would have crossed it — the catalog is still one array; `devTools`
+// spreads this one in. Every type here is re-exported from `dev-server.ts`, so the CLI and the
+// package index import what they always did.
 //
 // A browser is the expensive half of every call here, which is why `ui.inspect` reads MANY
 // selectors per navigation and bounds each answer in the handler: a model that asks for a

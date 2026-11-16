@@ -1,8 +1,9 @@
 // How much of THIS request's budget is left, and the one header that carries it to the next hop.
-// The header name lives here rather than in `@ultimat3/http` because both ends need it and only
-// one of them is tier 2: the reader is http's `resolveTimeoutMs`, the writer is a typed client in
-// tier 0, and a second literal in the writer is a propagation that silently stops working the day
-// either string is edited.
+//
+// The header name lives here rather than in `@ultimat3/http` because both ends need it and only one
+// of them is tier 2: the reader is http's `resolveTimeoutMs`, the writer is a typed client in tier
+// 0, and a second literal in the writer is a propagation that silently stops working the day either
+// string is edited.
 
 import type { Ctx } from './context';
 import { tryUseContext } from './context';

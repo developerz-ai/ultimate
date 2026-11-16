@@ -1,8 +1,10 @@
-// Where a `sync` node's changes come from when this process boots one. Production decodes the
-// write-ahead log (`x dev --role replicator`, `postgresChangeFeed()`, a real `DATABASE_URL`).
-// The embedded database has no walsender, and until 2026-09-05 nothing stood in for it: a live
-// subscription under `x dev` took its snapshot and then heard nothing, so every `--live` query in
-// every scaffolded app was dead in development — which is where an author first tries one.
+// Where a `sync` node's changes come from when this process boots one.
+//
+// Production decodes the write-ahead log (`x dev --role replicator`, `postgresChangeFeed()`, a real
+// `DATABASE_URL`). The embedded database has no walsender, and until 2026-09-05 nothing stood in
+// for it: a live subscription under `x dev` took its snapshot and then heard nothing, so every
+// `--live` query in every scaffolded app was dead in development — which is where an author first
+// tries one.
 //
 // The bridge is `@ultimat3/realtime/server`'s `startLiveReplicator`, the same in-process row observer the
 // framework's own live tests run on: a repository write in THIS process becomes a `ChangeEvent`

@@ -1,8 +1,10 @@
 // The size of what an agent READS from this server, measured off the wire, and a budget an app's
-// test holds it to. `tools/list` is re-sent with every step of every turn and `list_resources` is
-// read once a session and then sits in the transcript — both are standing context the model pays
-// for whether or not it uses them, so a number with a test beside it is the only way they stay
-// small (gold standard: context-budget.md, "guard the numbers with tests").
+// test holds it to.
+//
+// `tools/list` is re-sent with every step of every turn and `list_resources` is read once a session
+// and then sits in the transcript — both are standing context the model pays for whether or not it
+// uses them, so a number with a test beside it is the only way they stay small (gold standard:
+// context-budget.md, "guard the numbers with tests").
 
 import { McpSurfaceOverBudgetError } from './errors';
 import { LIST_RESOURCES } from './meta-surface';

@@ -8,7 +8,7 @@
 // credential and the errors.
 
 import type { Secret } from '@ultimat3/core';
-import { isSecret, revealSecret } from '@ultimat3/core';
+import { isSecret, revealSecret, trimTrailingSlashes } from '@ultimat3/core';
 import { readAnswerBody } from './answer-body';
 import { billedCall } from './billed';
 import { providerFailure } from './context-overflow';
@@ -295,7 +295,7 @@ class OpenAiProvider implements Provider {
   private url(): string {
     const base = this.config.baseUrl ?? DEFAULT_BASE_URL;
     const cut = base.indexOf('?');
-    const path = (cut === -1 ? base : base.slice(0, cut)).replace(/\/+$/, '');
+    const path = trimTrailingSlashes(cut === -1 ? base : base.slice(0, cut));
     return `${path}/chat/completions${cut === -1 ? '' : base.slice(cut)}`;
   }
 }

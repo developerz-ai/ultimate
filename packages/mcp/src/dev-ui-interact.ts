@@ -1,8 +1,9 @@
 // `ui.interact` — the dev server's hand. An agent that needs the ⌘K palette open, a dialog up or a
-// field filled before the picture is worth taking drives the route through a BOUNDED list of
-// steps, and gets the picture, the verdict and (on request) `ui.inspect`'s facts in ONE
-// navigation. Its own file for the reason `dev-ui-tools.ts` has one: that file stands near the
-// 500-line ceiling, and this tool's step schema alone is a screen. `dev-server.ts` spreads both.
+// field filled before the picture is worth taking drives the route through a BOUNDED list of steps,
+// and gets the picture, the verdict and (on request) `ui.inspect`'s facts in ONE navigation.
+//
+// Its own file for the reason `dev-ui-tools.ts` has one: that file stands near the 500-line
+// ceiling, and this tool's step schema alone is a screen. `dev-server.ts` spreads both.
 //
 // Every bound lives in the HANDLER's contract, not the schema — a placement, no longer a limit:
 // `validate-args.ts` enforces `maxItems` now, so the count COULD move into the schema; it has not.

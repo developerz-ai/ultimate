@@ -2,6 +2,8 @@
 // "anywhere that runs a container or a binary"; nothing here knows the name of a cloud. `prebuilt`
 // is the docker target's other half: the line the Dockerfile runs INSIDE the image build.
 
+// why: `requireEntry` is synchronous and Bun's `Bun.file().exists()` is async; Bun ships no
+// path API, and `join`/`resolve` build the entry and `--out` paths.
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ERROR_DOCS_URL, frameworkVersion, UltimateError, VERSION_DEFINE } from '@ultimat3/core';

@@ -1,8 +1,9 @@
-// Single responsibility: what may appear inside an SMTP `MAIL FROM:<>` or `RCPT TO:<>`. One gate
-// for the envelope, exactly as `mime.ts`'s `header()` is the one gate for the message — two wire
-// formats, one check each, at the module that owns the format. It refuses, and it normalises one
-// thing only — the RFC 5322 display form down to the mailbox `RCPT TO:` can carry, always after
-// the control-character check, never before it.
+// Single responsibility: what may appear inside an SMTP `MAIL FROM:<>` or `RCPT TO:<>`.
+//
+// One gate for the envelope, exactly as `mime.ts`'s `header()` is the one gate for the message —
+// two wire formats, one check each, at the module that owns the format. It refuses, and it
+// normalises one thing only — the RFC 5322 display form down to the mailbox `RCPT TO:` can carry,
+// always after the control-character check, never before it.
 
 import { type AddressRefusal, addressInvalid, type EnvelopeAddressField } from './errors';
 import { addressSpec, hasNonAsciiAddrSpec } from './mime';

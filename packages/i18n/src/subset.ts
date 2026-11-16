@@ -1,8 +1,10 @@
 // A slice of a catalog that can cross into an island. A translator is a function and cannot be an
 // island's prop, so the server resolves the raw templates the island will read — plural variants
-// included — and the island builds a full translator over them: the same lookup, interpolation
-// and loud `⟦key⟧` miss as the server's. Its own entry (`@ultimat3/i18n/subset`): the barrel
-// installs the framework catalog at import, and an island chunk must not carry it.
+// included — and the island builds a full translator over them: the same lookup, interpolation and
+// loud `⟦key⟧` miss as the server's.
+//
+// Its own entry (`@ultimat3/i18n/subset`): the barrel installs the framework catalog at import, and
+// an island chunk must not carry it.
 
 import type { Catalog } from './catalog';
 import { pluralVariantsOf } from './interpolate';

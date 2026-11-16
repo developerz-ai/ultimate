@@ -1,8 +1,10 @@
-// One function per stage name: what each stage of the lifecycle DOES. The package's three-way
-// split, each file naming the other two — `pipeline.ts` owns the ORDER the stages run in and the
-// run itself, `finalize.ts` owns the promise that the tail cannot reject, and this file owns the
-// work. The vocabulary (`StageName`, `Stage`) lives here too, beside the fifteen implementations
-// it names, so `Record<StageName, StageRun>` below is the build error that catches a missing one.
+// One function per stage name: what each stage of the lifecycle DOES.
+//
+// The package's three-way split, each file naming the other two — `pipeline.ts` owns the ORDER the
+// stages run in and the run itself, `finalize.ts` owns the promise that the tail cannot reject, and
+// this file owns the work. The vocabulary (`StageName`, `Stage`) lives here too, beside the fifteen
+// implementations it names, so `Record<StageName, StageRun>` below is the build error that catches
+// a missing one.
 
 import { BUILD_ID_HEADER, isAnonymous, reportError } from '@ultimat3/core';
 import { admitRequest } from './admit-stage';

@@ -34,6 +34,7 @@ import {
   remoteTitleOf,
   renderedActionPin,
   renderFixShellArg,
+  trimTrailingSlashes,
 } from '@ultimat3/core/page';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action, StreamAction } from './action';
@@ -166,7 +167,7 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
   const pin = pinned?.path === undefined ? renderedActionPin(name) : pinned;
   const path = pin?.path ?? actionPath(name, options.pathStyle);
   const method = pin?.method ?? pinned?.method ?? 'POST';
-  const base = options.baseUrl.replace(/\/+$/, '');
+  const base = trimTrailingSlashes(options.baseUrl);
   const onResponse = (response: Response): void =>
     assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);
   const decodeError = (

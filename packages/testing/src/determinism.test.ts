@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-// `node:vm` is the only way to get a second realm in-process; Bun has no native equivalent, and a
-// second realm is the whole point of the cross-realm test below.
+// why: `node:vm` is the only way to get a second realm in-process; Bun has no native equivalent,
+// and a second realm is the whole point of the cross-realm test below.
 import { runInNewContext } from 'node:vm';
 import {
   advanceClock,

@@ -1,8 +1,10 @@
-// A generator name whose type spelling the emitted code ALSO uses as a global or a local alias:
-// `x g resource promise` imports `type { Promise }` beside `Promise<Row>`, and `row` writes
+// A generator name whose type or value spelling the emitted code ALSO uses as a global or a
+// local alias, decided on the planned files themselves.
+//
+// A type: `x g resource promise` imports `type { Promise }` beside `Promise<Row>`, and `row` writes
 // `type Row = Row`. Decided on the planned files themselves, so a template that starts using
-// another global is covered the day it does — and the names that clash nowhere stay allowed.
-// The same for a VALUE: `x g job job` imports `{ job }` from `@ultimat3/jobs` and declares
+// another global is covered the day it does — and the names that clash nowhere stay allowed. The
+// same for a VALUE: `x g job job` imports `{ job }` from `@ultimat3/jobs` and declares
 // `export const job = job(…)` beside it, which is TS2440 in the module the run just wrote.
 
 import { BadFlagError } from './errors';

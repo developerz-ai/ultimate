@@ -1,9 +1,8 @@
-import { nearestName, singleLine } from '@ultimat3/core';
 // `x errors explain <CODE>` / `x errors list` — the error table, programmatically. An agent that
 // hits an `X_*` code should not have to leave the terminal to learn what it means, and a code it
-// invented should come back refused: the answer to an unregistered code is "no such code", never
-// a plausible-sounding explanation an agent would then act on.
+// invented should come back refused: "no such code", never a plausible-sounding explanation.
 
+import { nearestName, singleLine } from '@ultimat3/core';
 import type { ErrorExplanation } from '@ultimat3/mcp';
 import { withRecent } from './cmd-errors-recent';
 import { errorsSpec } from './cmd-errors-spec';

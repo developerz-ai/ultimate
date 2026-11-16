@@ -1,8 +1,10 @@
 // Single responsibility: a fingerprint of caller input that is safe to PERSIST. `fingerprint()` is
 // an unkeyed SHA-256 prefix — fine as an in-memory sharing key, but stored beside a row it is an
 // offline oracle: a 6–20-digit account number or an ID number in an input, with the other fields
-// known, is brute-forced from a database read. Keyed with HMAC-SHA-256, the stored value proves
-// nothing to anyone without the app's signing secret.
+// known, is brute-forced from a database read.
+//
+// Keyed with HMAC-SHA-256, the stored value proves nothing to anyone without the app's signing
+// secret.
 
 import { canonicalJson } from './canonical-json';
 import { currentSigningSecret } from './cursor';

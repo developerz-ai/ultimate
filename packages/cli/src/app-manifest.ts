@@ -3,7 +3,7 @@
 // table, which surface enforces each permission, the locales the app registered, and the error
 // codes its source declares.
 
-// Bun ships no `Bun.*` path API: `join` builds the host-separator path to `x.manifest.json`.
+// why: Bun ships no `Bun.*` path API: `join` builds the host-separator path to `x.manifest.json`.
 import { join } from 'node:path';
 import { describeActions } from '@ultimat3/action';
 import { primitiveRegistrar } from '@ultimat3/core';

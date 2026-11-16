@@ -3,6 +3,7 @@
 // mounted alongside the app — mounted, never re-implemented — so an agent can introspect it.
 // No Docker, no env setup: an unset variable means the embedded default.
 
+// why: Bun ships no path API; `join` builds the host-separator paths under the app root.
 import { join } from 'node:path';
 import { METRICS_PATH } from '@ultimat3/core';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';

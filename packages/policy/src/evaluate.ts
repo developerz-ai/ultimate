@@ -1,8 +1,9 @@
-// One entry point for evaluating a policy, and the only place a decision trace is
-// built. The trace is what makes an authz denial debuggable: `/_x` renders it, policy
-// tests assert on it, and an agent reading a 403 can see which clause decided.
-// It is also the one place a `policy.decision` event is emitted — allowed decisions
-// included, since "who was let in" is the half an audit actually needs.
+// One entry point for evaluating a policy, and the only place a decision trace is built. The trace
+// is what makes an authz denial debuggable: `/_x` renders it, policy tests assert on it, and an
+// agent reading a 403 can see which clause decided.
+//
+// It is also the one place a `policy.decision` event is emitted — allowed decisions included, since
+// "who was let in" is the half an audit actually needs.
 import { type Ctx, DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
 import { decisionObserved, emitDecision } from './decisions';
 import type { Policy, PolicyDecision, TraceEntry } from './policy';

@@ -1,4 +1,5 @@
 // `purge()` — the framework's retention sweep, declared as a `job` and NOT as a ninth primitive.
+//
 // Deleting expired rows on a schedule is durable background work with an input schema, a retry
 // policy, an idempotency key and a queue, which is the definition of a `job` — so this file is a
 // FACTORY over `job()`, exactly as `backfill()` is one and `llm()` is one over `action()`. That is

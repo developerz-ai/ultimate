@@ -1,10 +1,12 @@
-// The app root watched one directory at a time, because the watch SET is a registration decision
-// and not a filter. `watch(root, { recursive: true })` takes an inotify descriptor per directory
-// in the tree — including every directory the dev loop then discards events from — so `.git/`,
-// `node_modules/` and `.x/` (which this very process writes to, continuously) each cost a
-// descriptor, a kernel queue entry and a JS callback per write, against a per-user descriptor
-// budget of 8192 on many distributions. Bun 1.4.0's `fs.watch` takes no ignore option, so the
-// only place the answer can be given early is at registration.
+// The app root watched one directory at a time, because the watch SET is a registration
+// decision and not a filter.
+//
+// `watch(root, { recursive: true })` takes an inotify descriptor per directory in the tree —
+// including every directory the dev loop then discards events from — so `.git/`, `node_modules/`
+// and `.x/` (which this very process writes to, continuously) each cost a descriptor, a kernel
+// queue entry and a JS callback per write, against a per-user descriptor budget of 8192 on many
+// distributions. Bun 1.4.0's `fs.watch` takes no ignore option, so the only place the answer can be
+// given early is at registration.
 
 // why: Bun exposes no filesystem watcher, no directory listing and no synchronous stat —
 // `Bun.file().exists()` is async and answers false for a DIRECTORY, which is the one thing this

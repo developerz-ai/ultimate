@@ -1,9 +1,11 @@
 /**
  * What an app says about its API as a WHOLE, beside the primitives it registers: how action names
  * become URLs, which bearer-token mounts expose a cut of it, and what its OpenAPI document calls
- * itself. Declared in the one `defineApi()` call and held here, process-wide like the registries,
- * because every reader — the boot that mounts routes, `x manifest` writing `openapi.json` — runs
- * after that module was imported and never has the call's return value in hand.
+ * itself.
+ *
+ * Declared in the one `defineApi()` call and held here, process-wide like the registries, because
+ * every reader — the boot that mounts routes, `x manifest` writing `openapi.json` — runs after that
+ * module was imported and never has the call's return value in hand.
  */
 
 import type { ActionPathStyle } from '@ultimat3/core';

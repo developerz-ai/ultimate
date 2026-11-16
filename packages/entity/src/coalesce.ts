@@ -1,5 +1,6 @@
-// Single responsibility: collapse the point lookups one request issues in the same microtask into
-// a single `where id in (…)`, and hand a lookup a page already answered straight to the preload.
+// Single responsibility: collapse the point lookups one request issues in the same microtask into a
+// single `where id in (…)`, and hand a lookup a page already answered straight to the preload.
+//
 // A list that resolves an author per row is the N+1 this removes, and it removes it without adding
 // a second way to read — `findById` keeps its signature and its meaning, and pays for one round
 // trip instead of one per row.

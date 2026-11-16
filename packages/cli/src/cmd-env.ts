@@ -2,7 +2,7 @@
 // which variables exist, the answer to "does this process have them?", and (`init`,
 // `cmd-env-init.ts`) the deploy's `.env.production`. All read the one `defineEnv` declaration.
 
-// Bun ships no path-join primitive, and `.env.example` is written app-root-relative.
+// why: Bun ships no path-join primitive, and `.env.example` is written app-root-relative.
 import { join } from 'node:path';
 import {
   checkEnv,

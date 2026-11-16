@@ -1,6 +1,7 @@
-// `x g entity` / `x g resource` hand the entity they wrote to the app's typed database handle. The
-// generated `repo.ts` reads `db.<table>`, and a table is on the handle only when its entity is in
-// the set `packages/db/src/client.ts` passes to `database()` — an edit nothing made, so the repo
+// `x g entity` / `x g resource` hand the entity they wrote to the app's typed database handle.
+//
+// The generated `repo.ts` reads `db.<table>`, and a table is on the handle only when its entity is
+// in the set `packages/db/src/client.ts` passes to `database()` — an edit nothing made, so the repo
 // did not compile. Performed here; where the file is not the scaffold's shape, the finding names
 // the two lines.
 

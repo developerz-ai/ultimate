@@ -1,8 +1,9 @@
-// The island chunk table: every `*.island.tsx` in the app compiled as a bundle entry point,
-// named by a hash of its final BYTES (`island-link.ts`; why not its sources: `island-identity.ts`),
-// plus the resolver that turns a page's `src` specifier into the URL its
-// `data-x-entry` carries. The page's graph never reaches an island, so a `site/` document stays at
-// 0kb whatever the island imports — axiom 6 made mechanical.
+// The island chunk table: every `*.island.tsx` compiled as a bundle entry point named by a hash
+// of its final BYTES, plus the resolver from a page's `src` specifier to its URL.
+//
+// The hash is `island-link.ts`'s (why not its sources: `island-identity.ts`), and the URL is the
+// one `data-x-entry` carries. The page's graph never reaches an island, so a `site/` document stays
+// at 0kb whatever the island imports — axiom 6 made mechanical.
 //
 // Islands every route renders together are ONE split build, sharing what they import as chunks;
 // every other island is built alone (`island-groups.ts` has the rule and the measurement).
@@ -17,7 +18,7 @@
 // `@ultimat3/realtime` (`island-realtime.ts`); the page runtime it awaits is ONE more output,
 // `page-runtime.<identity>.js` beside the entries (`island-runtime.ts`), never inlined into one (#505).
 
-// Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
+// why: Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
 // POSIX by construction), `join`/`basename` the filesystem side.
 import { join, posix, relative, sep } from 'node:path';
 import type { IslandsConfig } from '@ultimat3/core';

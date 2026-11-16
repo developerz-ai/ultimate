@@ -15,7 +15,13 @@ const CHANGELOG = parseChangelog(
 const T = 'packages/cli/src/templates';
 
 /** A git whose local tags, shallowness and diffs are given; every call is recorded. */
-function fakeGit(state: { tags: Set<string>; shallow?: boolean; diffs?: Record<string, string> }): {
+function fakeGit(state: {
+  tags: Set<string>;
+  shallow?: boolean;
+  diffs?: Record<string, string>;
+  /** `git show <ref>:<path>`, keyed `<ref>:<path>`; absent answers as a failed show. */
+  shows?: Record<string, string>;
+}): {
   readonly runner: GitRunner;
   readonly calls: string[][];
 } {
@@ -42,6 +48,10 @@ function fakeGit(state: { tags: Set<string>; shallow?: boolean; diffs?: Record<s
       const tag = /refs\/tags\/([^:]+):/.exec(args.at(-1) ?? '')?.[1];
       if (tag !== undefined) state.tags.add(tag);
       return answer(true);
+    }
+    if (args[0] === 'show') {
+      const shown = state.shows?.[args[1] ?? ''];
+      return answer(shown !== undefined, shown ?? '');
     }
     if (args[0] === 'diff') {
       const refs = args.slice(3, args.indexOf('--')).join(' ');
@@ -168,5 +178,27 @@ describe('guardRefreshFindings', () => {
       '| **31.4.2** changes `raw-motion` | `x g guard raw-motion --force` |',
     ].join('\n');
     expect(await guardRefreshFindings('/r', CHANGELOG, page, options(runner))).toEqual([]);
+  });
+
+  // A header sweep rewrapped the leading comment of five generator sources (sweep 8b-2) and the
+  // rule demanded upgrade rows for guards whose generated text had not moved a byte.
+  test('a change confined to the leading comment block is no guard change; a body change is', async () => {
+    const at = (header: string, body: string) =>
+      `${header}\n\nimport { guardCode } from './guard';\n${body}\n`;
+    const shows = {
+      [`v31.4.0:${T}/guard-bare-error.ts`]: at('// old wrap\n// of the header', 'const a = 1;'),
+      [`v31.4.1:${T}/guard-bare-error.ts`]: `${at('// new wrap of\n//\n// the header', 'const a = 1;').trimEnd()}`,
+      [`v31.4.0:${T}/guard-raw-fetch.ts`]: at('// header', 'const b = 1;'),
+      [`v31.4.1:${T}/guard-raw-fetch.ts`]: at('// header', 'const b = 2;'),
+    };
+    const { runner } = fakeGit({
+      tags: new Set(['v31.4.0', 'v31.4.1']),
+      diffs: { 'v31.4.0 v31.4.1': `${T}/guard-bare-error.ts\n${T}/guard-raw-fetch.ts\n` },
+      shows,
+    });
+    const findings = await guardRefreshFindings('/r', CHANGELOG, '# Upgrading\n', options(runner));
+    expect(findings.map((finding) => finding.cause)).toEqual([
+      expect.stringContaining('31.4.0 → 31.4.1: raw-fetch —'),
+    ]);
   });
 });

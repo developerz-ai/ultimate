@@ -1,6 +1,8 @@
 // Single responsibility: the DDL an entity's INDEX declaration becomes — the `create index` a
 // declaration writes out, what makes two definitions the same index, and what a moved definition
-// rebuilds. Split out of `generate.ts` at the 500-line ceiling, along the seam `check-ddl.ts` and
+// rebuilds.
+//
+// Split out of `generate.ts` at the 500-line ceiling, along the seam `check-ddl.ts` and
 // `generated-column.ts` already drew: `generate.ts` assembles a plan, this file writes the index
 // statements it puts in it, and `invariant-ddl.ts` decides which indexes a table declares.
 

@@ -3,8 +3,9 @@
 // the code moved on, or someone typed into the generated file and left its buildId alone.
 
 import { describe, expect, test } from 'bun:test';
-// Bun ships no temp-directory primitive: `mkdtemp`/`rm` give each test a throwaway tree, because
-// nothing here may write inside the repo or into `examples/`.
+// why: Bun ships no temp-directory primitive: `mkdtemp`/`rm` give each test a throwaway tree,
+// because nothing here may write inside the repo or into `examples/`. No tmpdir() and no path
+// join either.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

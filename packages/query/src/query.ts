@@ -1,8 +1,9 @@
 /**
- * The `query` primitive: a policy-checked read, optionally live, declared once.
- * Row types are inferred from the `SqlSource` the `sql:` function returns, so a
- * component gets the real row shape without a second declaration. Every projection
- * in this package (live subscription, MCP tool, typed client) reads this
+ * The `query` primitive: a policy-checked read, optionally live, declared once. Row types are
+ * inferred from the `SqlSource` the `sql:` function returns, so a component gets the real row shape
+ * without a second declaration.
+ *
+ * Every projection in this package (live subscription, MCP tool, typed client) reads this
  * declaration through `read.ts` — none of them re-declare it.
  */
 

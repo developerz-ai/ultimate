@@ -16,7 +16,7 @@
 //
 //   bun run scripts/package-map-graph.ts [--json]
 
-// `node:` — Bun has no path-join primitive of its own.
+// why: Bun has no path-join primitive of its own.
 import { join } from 'node:path';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';

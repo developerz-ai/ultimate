@@ -1,8 +1,9 @@
-// `x shot --island` — the RUN: which islands, in which order, and which artifacts land. One
-// picture at a time is `island-capture.ts`; the order here is the whole design, because the
-// complete expected picture list is computed from the states files BEFORE a browser exists and
-// what landed on disk is diffed against that list afterwards, so "produced nothing and exited 0"
-// is a state this command can refuse.
+// `x shot --island` — the RUN: which islands, in which order, and which artifacts land.
+//
+// One picture at a time is `island-capture.ts`; the order here is the whole design, because the
+// complete expected picture list is computed from the states files BEFORE a browser exists and what
+// landed on disk is diffed against that list afterwards, so "produced nothing and exited 0" is a
+// state this command can refuse.
 //
 // A sweep never aborts on a failure: every state the app CAN photograph is captured, every verdict
 // and the index are written, and only then does the missing-picture gate turn the reasons into a

@@ -1,8 +1,9 @@
-// The `x_outbox` implementation of `OutboxStore` — the half of the transactional outbox that
-// makes it transactional. `stage()` runs on the CALLER'S OWN connection, so the queue row is in
-// the same Postgres transaction as the business rows and commits or vanishes with them. The
-// memory store hangs rows off the `Tx` object and is correct only inside one process; this is
-// what a deployment installs.
+// The `x_outbox` implementation of `OutboxStore` — the half of the transactional outbox that makes
+// it transactional.
+//
+// `stage()` runs on the CALLER'S OWN connection, so the queue row is in the same Postgres
+// transaction as the business rows and commits or vanishes with them. The memory store hangs rows
+// off the `Tx` object and is correct only inside one process; this is what a deployment installs.
 //
 // `txExecutor` is injected rather than resolved here for the reason `postgresJobDriver` takes a
 // `PgExecutor`: this package holds no `@ultimat3/db` dependency, and "which connection is this

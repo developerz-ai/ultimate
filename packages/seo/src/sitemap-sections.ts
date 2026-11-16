@@ -8,13 +8,16 @@ import {
   type SitemapSectionConfig,
   sectionPatterns,
   sitemapSectionIssues,
+  trimTrailingSlashes,
 } from '@ultimat3/core';
 
 export type SitemapSection = SitemapSectionConfig;
 
 /** A page's path as a pattern reads it: no query, no fragment, no trailing slash. */
 function segmentsOf(path: string): readonly string[] {
-  const bare = path.replace(/[?#].*$/, '').replace(/\/+$/, '');
+  // Cut at the first `?` or `#` by index, never `/[?#].*$/`: linear on every engine (CodeQL).
+  const cut = path.search(/[?#]/);
+  const bare = trimTrailingSlashes(cut === -1 ? path : path.slice(0, cut));
   return bare === '' ? [] : bare.slice(1).split('/');
 }
 

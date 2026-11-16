@@ -279,5 +279,7 @@
  * role gained, `storage/src/storage-instrument-multipart.ts` (`SERVING_ROLE_CEILING`).
  * raised 1727 → 1732, measured 1732 (2026-11-15, plan 101b sweep 6): the five on
  * `SERVING_ROLE_CEILING`.
+ * raised 1732 → 1733, measured 1733 (2026-11-16, plan 101b sweep 8b-2): the one on
+ * `SERVING_ROLE_CEILING`, `core/src/trailing-slashes.ts`.
  */
-export const WEB_ROLE_CEILING = 1732;
+export const WEB_ROLE_CEILING = 1733;

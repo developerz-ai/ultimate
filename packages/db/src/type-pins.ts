@@ -1,12 +1,12 @@
-// Compile-time pins for this package's disposable resources. Source, not a `.test.ts`, on
-// purpose: `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads a test file and a
-// type-level assertion written there can never fail. This module emits nothing and exports
-// nothing anybody imports — a regression is a build error, the only enforcement that counts
-// (axiom 3). `DbConnection` and `Turn` both went through a session where `release()`/`close()`
-// left a resource cached or unreturned; the fix each time was RAII (`Disposable` + `using`), and
-// this pin is what stops a future edit from quietly dropping `Disposable` off either interface —
-// the one place a regression here would otherwise surface is a leaked connection under load, not
-// a red test.
+// Compile-time pins for this package's disposable resources. Source, not a `.test.ts`, on purpose:
+// `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads a test file and a type-level
+// assertion written there can never fail. This module emits nothing and exports nothing anybody
+// imports — a regression is a build error, the only enforcement that counts (axiom 3).
+//
+// `DbConnection` and `Turn` both went through a session where `release()`/`close()` left a resource
+// cached or unreturned; the fix each time was RAII (`Disposable` + `using`), and this pin is what
+// stops a future edit from quietly dropping `Disposable` off either interface — the one place a
+// regression here would otherwise surface is a leaked connection under load, not a red test.
 
 import type { DbConnection } from './client';
 import type { Turn } from './pglite-turns';

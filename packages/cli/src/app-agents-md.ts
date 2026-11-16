@@ -3,7 +3,7 @@
 // express — so the gate runs that package's own check rather than forming a second opinion about
 // what a context file has to be. Warnings never fail: they are judgement calls a human makes.
 
-// Bun ships no `Bun.*` path API: `join` builds the host-separator path the check reads.
+// why: Bun ships no `Bun.*` path API: `join` builds the host-separator path the check reads.
 import { join } from 'node:path';
 import { AGENTS_MD_FILENAME, assertAgentsMd } from '@ultimat3/manifest';
 import type { Finding } from './output';

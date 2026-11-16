@@ -1,9 +1,11 @@
 // The DNS half of `allowHosts`, for the two legs this package dials itself — the HTTP leg and the
-// robots read. Core's `hostDecision` is synchronous and judges NAMES: a wildcard never admits an
-// address literal inside the network, but `allowHosts: ['*']` still admits a hostname that
-// resolves inward. So a name admitted by a wildcard alone is resolved here, every address
-// classified and the connection PINNED to the approved address by core's `screenDial` — the one
-// screen `@ultimat3/jobs`' `webhook-target.ts` and `outbound()` call too. This keeps its own code.
+// robots read.
+//
+// Core's `hostDecision` is synchronous and judges NAMES: a wildcard never admits an address literal
+// inside the network, but `allowHosts: ['*']` still admits a hostname that resolves inward. So a
+// name admitted by a wildcard alone is resolved here, every address classified and the connection
+// PINNED to the approved address by core's `screenDial` — the one screen `@ultimat3/jobs`'
+// `webhook-target.ts` and `outbound()` call too. This keeps its own code.
 
 import type { HostRule } from '@ultimat3/core';
 import { classifyAddress, hostMatches } from '@ultimat3/core';

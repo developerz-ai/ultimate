@@ -3,8 +3,10 @@
 // `process.on('exit')` never fires under `bun test`, so only the run's own hooks can remove those.
 
 import { describe, expect, test } from 'bun:test';
+// why: the assertions are synchronous existence checks on DIRECTORIES — `Bun.file().exists()` is
+// async and answers for files only — and Bun has no mkdtemp, no recursive remove, no tmpdir()
+// and no path-join primitive.
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mountIsland } from './fixture-island';

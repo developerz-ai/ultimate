@@ -1,8 +1,9 @@
 // Single responsibility: machine credentials. This is how an agent — an MCP client driving a
-// generated Ultimate app — authenticates: it presents a key, the key resolves to an
-// `agentActor` carrying exactly the key's scopes, and it goes through the same policy
-// evaluation a human does. The plaintext is shown once; only its SHA-256 is ever stored, and
-// lookup happens by the non-secret id so the secret never appears in a query, an index or a log.
+// generated Ultimate app — authenticates: it presents a key, the key resolves to an `agentActor`
+// carrying exactly the key's scopes, and it goes through the same policy evaluation a human does.
+//
+// The plaintext is shown once; only its SHA-256 is ever stored, and lookup happens by the
+// non-secret id so the secret never appears in a query, an index or a log.
 
 import { type Clock, randomHex, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type { ApiKeyStore, AuthApiKeyRecord, AuthUser, UserStore } from './adapter';

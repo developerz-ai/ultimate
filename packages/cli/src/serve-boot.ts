@@ -1,9 +1,11 @@
-// The serving roles' boot: the services started, the app loaded, its route table built, the roles
-// started. Behind ONE `await import()` in `serve.ts` (the entry points), so `ROLE=migrate` loads
-// none of it; the rules that file's header states — the SAME boot `x dev` runs, minus the watcher,
-// `/_x` and `dev: true` — are this file's. A role imports what it runs: the web surface
-// (`serve-web.ts`) and the manifest projection are behind `await import()` in turn, so a worker's
-// module graph holds neither.
+// The serving roles' boot: the services started, the app loaded, its route table built, the
+// roles started.
+//
+// Behind ONE `await import()` in `serve.ts` (the entry points), so `ROLE=migrate` loads none of it;
+// the rules that file's header states — the SAME boot `x dev` runs, minus the watcher, `/_x` and
+// `dev: true` — are this file's. A role imports what it runs: the web surface (`serve-web.ts`) and
+// the manifest projection are behind `await import()` in turn, so a worker's module graph holds
+// neither.
 
 import type { DrainConfig, LifecycleOptions, Role } from '@ultimat3/core';
 import { configureLifecycle, logger, UltimateError } from '@ultimat3/core';

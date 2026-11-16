@@ -1,9 +1,11 @@
 /**
  * The COMPLETE document an app opts into with `defineApi({ openapi })`: its own `info` and
- * `servers`, the security schemes its routes are reached through, and the refusals an
- * authenticated, limited or metered operation can answer — 401 and 429, with `Retry-After` — which
- * the per-primitive projections cannot state: they do not know the route an operation is mounted
- * as. Plus the second document a bearer mount publishes: only the cut, at the mounted paths.
+ * `servers`, its security schemes, and the 401/429 refusals no per-primitive projection can state —
+ * none knows the route an operation is mounted as.
+ *
+ * The security schemes are the ones its routes are reached through; the refusals, the ones an
+ * authenticated, limited or metered operation can answer: 401, and 429 with `Retry-After`.
+ * Plus the second document a bearer mount publishes: only the cut, at the mounted paths.
  *
  * Built over the merged document (actions AND reads — `@ultimat3/cli` merges the two packages'
  * paths) and over the `Route`s that serve it, so "is this operation authenticated" is the answer

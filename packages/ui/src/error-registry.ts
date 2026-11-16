@@ -1,8 +1,10 @@
-// @ultimat3/ui's error TITLES, registered at import. Its own module, and the one `sideEffects`
-// names, so `errors.ts` — the constructors — can be declared pure: a barrel re-export of a pure
-// module costs a chunk nothing, while a module declared side-effectful is kept by every bundler
-// that honours the field the moment the barrel is imported, which under Bun 1.4.2 put core's
-// whole error registry (~10 kB) into an island that did nothing but register a runtime.
+// @ultimat3/ui's error TITLES, registered at import.
+//
+// Its own module, and the one `sideEffects` names, so `errors.ts` — the constructors — can be
+// declared pure: a barrel re-export of a pure module costs a chunk nothing, while a module declared
+// side-effectful is kept by every bundler that honours the field the moment the barrel is imported,
+// which under Bun 1.4.2 put core's whole error registry (~10 kB) into an island that did nothing
+// but register a runtime.
 //
 // `errors.ts` imports this file bare, so a chunk that constructs a `UiError` still registers its
 // titles first — anchored by use, exactly as `scripts/lib/side-effects-scan.ts` describes.

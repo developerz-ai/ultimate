@@ -1,8 +1,9 @@
-// Single responsibility: whether `x dev` must declare `ULTIMATE_ENV` for the app it is about to
-// boot, and the one-liner side effect that declares it. Split out of `cmd-dev.ts` (which the
-// filesize gate holds to ~500 lines) rather than folded into it — this is one decision with one
-// consumer, and keeping it separate is what lets a test pin the decision without paying for a
-// whole app boot.
+// Whether `x dev` must declare `ULTIMATE_ENV` for the app it is about to boot, and the one-liner
+// side effect that declares it.
+//
+// Split out of `cmd-dev.ts` (which the filesize gate holds to ~500 lines) rather than folded into
+// it — this is one decision with one consumer, and keeping it separate is what lets a test pin the
+// decision without paying for a whole app boot.
 
 import { ENVIRONMENT_KEY } from '@ultimat3/core';
 

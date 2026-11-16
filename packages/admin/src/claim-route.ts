@@ -1,8 +1,10 @@
 // `claimAdminRoute()` — an app FILE serves one admin path in the catch-all's place, so the page
 // keeps the app's own shell and its islands (`hydrate`, budget and island bundle are a file
-// route's). The guard is not the app's: the route's gate, its `meta`, and a `load` that answers
-// through the SAME screen the catch-all serves (`screenFor`), unframed. `claims.ts` records the
-// config issued, and the route table accepts no other on that path.
+// route's).
+//
+// The guard is not the app's: the route's gate, its `meta`, and a `load` that answers through the
+// SAME screen the catch-all serves (`screenFor`), unframed. `claims.ts` records the config issued,
+// and the route table accepts no other on that path.
 
 import { type HydrateStrategy, hasContext, isUltimateError } from '@ultimat3/core';
 import { setRedirect, useRequestHeaders } from '@ultimat3/http';

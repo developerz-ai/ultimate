@@ -1,8 +1,9 @@
-// The per-request deadline: the one thing that makes `ctx.signal` real. Nothing in this package
-// created an `AbortController` before, so `throwIfAborted()` and `fetch(url, { signal })` were
-// documented seams wired to nothing — a hung vendor call held its connection and its DB pool slot
-// until the process died, and SIGTERM then waited out the whole drain budget for work that would
-// never finish.
+// The per-request deadline: the one thing that makes `ctx.signal` real.
+//
+// Nothing in this package created an `AbortController` before, so `throwIfAborted()` and
+// `fetch(url, { signal })` were documented seams wired to nothing — a hung vendor call held its
+// connection and its DB pool slot until the process died, and SIGTERM then waited out the whole
+// drain budget for work that would never finish.
 
 import { MAX_TIMER_MS, REQUEST_TIMEOUT_HEADER, systemClock } from '@ultimat3/core';
 import type { HttpConfig } from './config';

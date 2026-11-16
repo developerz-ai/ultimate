@@ -2,7 +2,7 @@
 // at import, and a top-level cross-package import from there is what broke module initialisation
 // order before — so the value is fetched at the call, not at module scope.
 
-// Bun has no path-join primitive; `import.meta.dir` is this module's directory in both the
+// why: Bun has no path-join primitive; `import.meta.dir` is this module's directory in both the
 // checked-out `src/` layout and the published `dist/` one, each one level below the package root.
 import { resolve } from 'node:path';
 import { resolveVersion } from '@ultimat3/core';

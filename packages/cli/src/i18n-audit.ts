@@ -2,10 +2,10 @@
 // key sets. No CLI shapes and no msg() — an app root in, plain data out, so every path here is
 // testable without a ParsedArgs or a rendered message.
 
-// `node:` and not Bun: Bun exposes no existence check (`existsSync`, which is how a missing
-// `catalogs/` directory reads as "nothing shipped" instead of a throw) and no path API at all —
-// `join` builds the absolute path `Bun.file` reads; `posixRelative` turns it back into the
-// root-relative POSIX shape every CLI-reported path is keyed by.
+// why: `node:` and not Bun: `Bun.file().exists()` answers false for a directory, and `existsSync`
+// is how a missing `catalogs/` directory reads as "nothing shipped" instead of a throw; Bun has no
+// path API at all — `join` builds the absolute path `Bun.file` reads; `posixRelative` turns it
+// back into the root-relative POSIX shape every CLI-reported path is keyed by.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_LOCALE, renderThrowable } from '@ultimat3/core';

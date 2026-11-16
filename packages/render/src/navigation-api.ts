@@ -1,10 +1,11 @@
 /**
  * Navigating from code: the client router's public face for an island or an app script —
- * `navigate`, `refresh`, `openModal`, `closeModal`. Each goes through the router when the page
- * carries one (`window.__xNavigation`, started by `@ultimat3/render/navigation`), and falls back to
- * what the browser does without it — so the same call is right on a `site/` page, a
- * `navigation: 'document'` page, or with the router's script blocked. Imports the router's TYPE
- * only: an island that navigates never ships the router.
+ * `navigate`, `refresh`, `openModal`, `closeModal`.
+ *
+ * Each goes through the router when the page carries one (`window.__xNavigation`, started by
+ * `@ultimat3/render/navigation`), and falls back to what the browser does without it — so the same
+ * call is right on a `site/` page, a `navigation: 'document'` page, or with the router's script
+ * blocked. Imports the router's TYPE only: an island that navigates never ships the router.
  */
 
 import type { NavigationRouter } from './navigation';

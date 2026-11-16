@@ -1,9 +1,11 @@
 // The META surface: three tools — `list_resources`, `describe_resource`, `manage_resource` — in
 // place of one tool per primitive, so `tools/list` stays the same size however many primitives an
-// app grows. The catalog, the lazy schemas and the address book live here; the DISPATCH stays in
-// `server.ts`, on the same resolve → run → audit path a flat `tools/call` takes, so the three
-// security outcomes, the policy inside `invoke` and the synchronous audit line are one code path
-// reached through two doors — never a second implementation.
+// app grows.
+//
+// The catalog, the lazy schemas and the address book live here; the DISPATCH stays in `server.ts`,
+// on the same resolve → run → audit path a flat `tools/call` takes, so the three security outcomes,
+// the policy inside `invoke` and the synchronous audit line are one code path reached through two
+// doors — never a second implementation.
 //
 // A grouped tool is reachable ONLY through `manage_resource` for a meta caller, and a flat caller
 // never sees the meta tools: what `tools/list` shows is what `tools/call` answers, per caller.

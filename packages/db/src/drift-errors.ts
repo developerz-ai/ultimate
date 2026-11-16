@@ -1,10 +1,12 @@
 // Single responsibility: the `X_DB_DRIFT` constructor — the error form of the finding
 // `drift-findings.ts`'s `unexpectedColumn` reports, thrown where a caller has no report to hand
-// back. Split out of `errors.ts` for the import it needs and nothing else: the fix line puts a
-// column name into a shell command, so it screens through `shellInertIdentifier` (`sql.ts`) —
-// and `sql.ts` imports `errors.ts`, so this cannot live there without a cycle around the module
-// whose evaluation registers every code. The code is still declared, titled and registered in
-// `errors.ts`, exactly as `migration-errors.ts` and `invariant-errors.ts` are.
+// back.
+//
+// Split out of `errors.ts` for the import it needs and nothing else: the fix line puts a column
+// name into a shell command, so it screens through `shellInertIdentifier` (`sql.ts`) — and `sql.ts`
+// imports `errors.ts`, so this cannot live there without a cycle around the module whose evaluation
+// registers every code. The code is still declared, titled and registered in `errors.ts`, exactly
+// as `migration-errors.ts` and `invariant-errors.ts` are.
 
 import { renderFixShellArg } from '@ultimat3/core';
 import { DbError } from './errors';

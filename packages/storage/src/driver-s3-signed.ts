@@ -1,8 +1,10 @@
 // Single responsibility: the s3 disk's SIGNED requests — the ones `Bun.S3Client` has no option for
-// (`x-amz-meta-*`, `Cache-Control`, object lock, a ranged GET read off its own `Content-Range`) — built,
-// signed through core's one SigV4 signer and sent with `fetch`. The endpoint, the addressing style,
-// the region and the credentials are read from the SAME `S3DriverOptions` the Bun client is built
-// from, so the two transports of one disk cannot point at two buckets.
+// (`x-amz-meta-*`, `Cache-Control`, object lock, a ranged GET read off its own `Content-Range`) —
+// built, signed through core's one SigV4 signer and sent with `fetch`.
+//
+// The endpoint, the addressing style, the region and the credentials are read from the SAME
+// `S3DriverOptions` the Bun client is built from, so the two transports of one disk cannot point at
+// two buckets.
 
 import {
   type AwsCredentials,
@@ -12,6 +14,7 @@ import {
   presignAwsUrl,
   signAwsRequest,
   systemClock,
+  trimTrailingSlashes,
 } from '@ultimat3/core';
 import type { SignedPart } from './signed-url';
 
@@ -206,7 +209,7 @@ export function s3ObjectUrl(options: S3WireOptions, key: string): URL {
   if (options.forcePathStyle === false) {
     return new URL(`${base.protocol}//${options.bucket}.${base.host}/${path}`);
   }
-  const prefix = base.pathname.replace(/\/+$/, '');
+  const prefix = trimTrailingSlashes(base.pathname);
   return new URL(
     `${base.protocol}//${base.host}${prefix}/${encodeURIComponent(options.bucket)}/${path}`,
   );

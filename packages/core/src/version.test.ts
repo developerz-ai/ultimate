@@ -5,7 +5,9 @@
 // build-define fallback that a binary has instead of one, and pin the failure loud.
 
 import { describe, expect, spyOn, test } from 'bun:test';
+// why: the namespace object is what `spyOn` patches — `readFileSync` is `version.ts`'s own read.
 import * as fs from 'node:fs';
+// why: Bun has no path-join primitive.
 import { join } from 'node:path';
 import { UltimateError } from './errors';
 import {

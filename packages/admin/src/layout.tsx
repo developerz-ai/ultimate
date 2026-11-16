@@ -1,6 +1,7 @@
 // The admin shell: skip link, sidebar (brand, who is acting, search, permission-filtered nav, the
 // way back to the app), main region. Landmarks and a visible focus order are the accessibility
 // contract; the theme attributes come from the token system, so nothing here knows a colour.
+//
 // Every control is a link, a native form or a native popover — the shell ships no script: below
 // `md` the sidebar is a `popover` panel the menu button opens by `popovertarget`, and an engine
 // with no popovers keeps it as a block above the screen (`admin.module.scss`).

@@ -4,7 +4,7 @@
 // wrong key, no `email_verified` — so a sign-in test proves the refusals, not just the happy path.
 
 import type { Clock } from '@ultimat3/core';
-import { assert, systemClock, timingSafeEqual } from '@ultimat3/core';
+import { assert, systemClock, timingSafeEqual, trimTrailingSlashes } from '@ultimat3/core';
 import { mockFetch } from './sealed-network';
 
 export interface FakeIdpUser {
@@ -72,7 +72,7 @@ export async function fakeIdentityProvider(
     'fakeIdentityProvider was given no users',
     'pass users: [{ sub, email }]',
   );
-  const issuer = (input.issuer ?? 'https://idp.test').replace(/\/+$/, '');
+  const issuer = trimTrailingSlashes(input.issuer ?? 'https://idp.test');
   const clientId = input.clientId ?? 'fake-client';
   const clientSecret = random();
   const clock = input.clock ?? systemClock;

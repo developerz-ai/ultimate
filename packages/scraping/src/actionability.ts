@@ -1,8 +1,9 @@
-// What "the element is ready" means, in one place. `page.click` in a raw driver waits for the
-// SELECTOR and nothing else, so every app that has ever used one re-learns the same lesson and
-// writes the same `waitForTimeout(800)` — or the same hand-rolled
-// `waitForSelector('#aceptar:not([disabled])')`, which is this rule, spelled once, by hand, at
-// one call site out of forty.
+// What "the element is ready" means, in one place.
+//
+// `page.click` in a raw driver waits for the SELECTOR and nothing else, so every app that has ever
+// used one re-learns the same lesson and writes the same `waitForTimeout(800)` — or the same
+// hand-rolled `waitForSelector('#aceptar:not([disabled])')`, which is this rule, spelled once, by
+// hand, at one call site out of forty.
 
 import type { SleepClock } from '@ultimat3/core';
 import { finiteCount } from '@ultimat3/core';

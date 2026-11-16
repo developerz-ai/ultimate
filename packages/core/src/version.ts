@@ -3,8 +3,9 @@
 // manifest is `private` and carries no `version`, and after `npm install` a walk above the package
 // lands in `node_modules/` where there is no manifest at all. Both mistakes fail silently.
 
+// why: `frameworkVersion()` is synchronous and `Bun.file` reads only asynchronously.
 import { existsSync, readFileSync } from 'node:fs';
-// Bun has no path-join primitive; `import.meta.dir` is the module's own directory in both the
+// why: Bun has no path-join primitive; `import.meta.dir` is the module's own directory in both the
 // checked-out `src/` layout and the published `dist/` one, each exactly one level below the
 // package root.
 import { resolve } from 'node:path';

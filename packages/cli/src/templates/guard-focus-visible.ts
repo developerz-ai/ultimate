@@ -1,8 +1,10 @@
-// The `focus-visible` guard `x new` ships: a stylesheet never takes the focus ring away and leaves
-// nothing in its place. `outline: none` is the single most-copied line on the web and it deletes
-// the only thing telling a keyboard user where they are — WCAG 2.2 SC 2.4.11 and 2.4.13 ask for an
-// indicator at least 2px around the control at 3:1 against what is behind it. Nothing in the gate
-// could see it: `x verify`'s `seo` and `i18n` steps read pages, and lint reads TypeScript.
+// The `focus-visible` guard `x new` ships: a stylesheet never takes the focus ring away and
+// leaves nothing in its place.
+//
+// `outline: none` is the single most-copied line on the web and it deletes the only thing telling a
+// keyboard user where they are — WCAG 2.2 SC 2.4.11 and 2.4.13 ask for an indicator at least 2px
+// around the control at 3:1 against what is behind it. Nothing in the gate could see it:
+// `x verify`'s `seo` and `i18n` steps read pages, and lint reads TypeScript.
 
 import { guardCode } from './guard';
 import type { GeneratedFile } from './naming';

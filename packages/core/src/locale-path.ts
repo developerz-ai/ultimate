@@ -1,8 +1,10 @@
 // A locale in a URL, as pure path arithmetic over an explicit locale list: the default locale is
-// the UNPREFIXED path, every other one is `/<locale>/…`. Tier 0 for `locale-direction.ts`' reason:
-// `@ultimat3/ui`'s `LocaleSwitcher` spells its links with it, and reaching the i18n barrel for one
-// function puts the whole framework catalog into every browser chunk (issue #490). i18n wraps these
-// with the app's configured locales (`localizedPath`, `splitLocalePrefix`), so apps call those.
+// the UNPREFIXED path, every other one is `/<locale>/…`.
+//
+// Tier 0 for `locale-direction.ts`' reason: `@ultimat3/ui`'s `LocaleSwitcher` spells its links with
+// it, and reaching the i18n barrel for one function puts the whole framework catalog into every
+// browser chunk (issue #490). i18n wraps these with the app's configured locales (`localizedPath`,
+// `splitLocalePrefix`), so apps call those.
 
 /** The segment a locale is written as in a URL: lowercase, so `pt-BR` is `/pt-br/`. */
 export function localeSegment(locale: string): string {

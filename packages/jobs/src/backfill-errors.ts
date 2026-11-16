@@ -1,9 +1,11 @@
-// The eight `X_BACKFILL_*` codes, apart from `errors.ts` for the reason `driver-pg-rows.ts` is
-// apart from `driver-pg.ts`: one file, one job, and `errors.ts` was over the 500-line ceiling
-// `x verify`'s `filesize` step enforces. The registry is `error-codes.ts` — `JOB_OWNED_ERROR_CODES`,
-// `JOB_ERROR_TITLES` and the single `registerErrorCodes()` call — because a package's codes are
-// declared in ONE place; only the classes that throw them live here, beside `backfill-ledger.ts`,
-// `backfill-pending.ts` and `backfill-registry.ts`.
+// The eight `X_BACKFILL_*` error classes, thrown by the backfill files beside this one.
+//
+// Apart from `errors.ts` for the reason `driver-pg-rows.ts` is apart from `driver-pg.ts`: one
+// file, one job, and `errors.ts` was over the 500-line ceiling `x verify`'s `filesize` step
+// enforces. The registry is `error-codes.ts` — `JOB_OWNED_ERROR_CODES`, `JOB_ERROR_TITLES` and the
+// single `registerErrorCodes()` call — because a package's codes are declared in ONE place; only
+// the classes that throw them live here, beside `backfill-ledger.ts`, `backfill-pending.ts` and
+// `backfill-registry.ts`.
 
 import { renderFixShellArg, UltimateError } from '@ultimat3/core';
 

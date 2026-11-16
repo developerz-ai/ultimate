@@ -1,8 +1,10 @@
-// THE single invalidation entry point. `action.cache.invalidates`, `x cache bust`, the MCP
-// tool and the admin panel all call this one function — nothing else may talk to a tier's
-// `invalidateTags` directly. One hop reaches memo, LRU, Redis, ISR routes and the CDN; the
-// returned report answers the caller, and one `cache.invalidate` event answers every subscriber
-// (the `/_x` cache panel keeps its own buffer), so "did it actually clear?" needs no log dive.
+// THE single invalidation entry point. `action.cache.invalidates`, `x cache bust`, the MCP tool and
+// the admin panel all call this one function — nothing else may talk to a tier's `invalidateTags`
+// directly.
+//
+// One hop reaches memo, LRU, Redis, ISR routes and the CDN; the returned report answers the caller,
+// and one `cache.invalidate` event answers every subscriber (the `/_x` cache panel keeps its own
+// buffer), so "did it actually clear?" needs no log dive.
 
 import {
   CACHE_TIERS,

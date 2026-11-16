@@ -3,7 +3,7 @@
 // opens its scope through this seam, so "what happens where there is no async context" has one
 // answer instead of one per module.
 
-// `node:async_hooks` is unavoidable and deliberate: nothing else in Bun makes a value ambient
+// why: `node:async_hooks` is unavoidable and deliberate: nothing else in Bun makes a value ambient
 // across an `await` without threading it through every signature in the framework.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { UltimateError } from './errors';

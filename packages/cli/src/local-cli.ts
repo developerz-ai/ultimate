@@ -1,10 +1,12 @@
 // A globally installed `x` defers to the app's own `@ultimat3/cli` when the two are different
-// files. Measured 2026-09-05 in an app whose global `x` was a `bun link` of this checkout: the
-// global CLI's `@ultimat3/entity` was a second module instance with an EMPTY registry, so `x g`,
-// `x db gen` and `x manifest` wrote a manifest with zero entities and proposed dropping every
-// table — silently, with a green exit code. The app's entities register into the instance under
-// its `node_modules`; only the CLI under that same `node_modules` can see them. So the rule is the
-// one `tsc` and `eslint` follow: the project-local binary wins, and the global one only says so.
+// files.
+//
+// Measured 2026-09-05 in an app whose global `x` was a `bun link` of this checkout: the global
+// CLI's `@ultimat3/entity` was a second module instance with an EMPTY registry, so `x g`,
+// `x db gen` and `x manifest` wrote a manifest with zero entities and proposed dropping every table
+// — silently, with a green exit code. The app's entities register into the instance under its
+// `node_modules`; only the CLI under that same `node_modules` can see them. So the rule is the one
+// `tsc` and `eslint` follow: the project-local binary wins, and the global one only says so.
 //
 // The same registry split is what turned `x verify` green over that app: `@ultimat3/policy`'s
 // `isKnownPermission` deliberately checks nothing while no permission is declared, and the global

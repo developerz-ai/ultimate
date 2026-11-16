@@ -1,9 +1,10 @@
-// Single responsibility: which OAuth providers this process knows about. A closed union of three
-// consumer IdPs made an enterprise OP — Okta, Entra, Ping, an in-house OP — *unrepresentable*: the
-// constraint was a type, so there was no runtime escape and the only ways out were forking the
-// package or bypassing the whole subsystem, losing PKCE, the sealed handshake, issuer pinning and
-// account linking with it. The two built-ins register through the same call an app uses, so the
-// opening does not create a second path.
+// Single responsibility: which OAuth providers this process knows about.
+//
+// A closed union of three consumer IdPs made an enterprise OP — Okta, Entra, Ping, an in-house OP —
+// *unrepresentable*: the constraint was a type, so there was no runtime escape and the only ways
+// out were forking the package or bypassing the whole subsystem, losing PKCE, the sealed handshake,
+// issuer pinning and account linking with it. The two built-ins register through the same call an
+// app uses, so the opening does not create a second path.
 
 import { renderCauseValue, renderFixLiteral } from '@ultimat3/core';
 import { AuthError } from './errors';

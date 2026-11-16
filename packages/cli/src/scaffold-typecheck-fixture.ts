@@ -2,10 +2,10 @@
 // the real workspace packages, the real compiler. A template that merely parses has not been
 // checked — it has moved its failure from this gate to the first command the user runs.
 
-// `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`), for a
-// symlink (`symlinkSync`, how the sandbox borrows the workspace's node_modules), or for a
-// recursive delete (`rmSync`). `node:path` comes with them — `Bun.write` takes the joined path,
-// but only `resolve`/`sep` can prove that path stayed inside the sandbox.
+// why: `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`),
+// for a symlink (`symlinkSync`, how the sandbox borrows the workspace's node_modules), or for a
+// recursive delete (`rmSync`). `node:path` comes with them — `Bun.write` takes the joined path, but
+// only `resolve`/`sep` can prove that path stayed inside the sandbox.
 import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';

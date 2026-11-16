@@ -9,6 +9,7 @@
 // does not, the process still fails loudly rather than reporting `undefined`.
 
 import { afterAll, expect, test } from 'bun:test';
+// why: mkdtempSync/tmpdir/rmSync — Bun has no temp-directory or recursive-remove API, nor a path join.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

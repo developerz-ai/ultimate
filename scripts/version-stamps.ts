@@ -15,6 +15,7 @@
 //
 //   bun run scripts/version-stamps.ts [--json]
 
+// why: Bun ships no path API; `dirname` names the workspace directory of a manifest path.
 import { dirname } from 'node:path';
 import { renderFixShellArg } from '../packages/core/src/error-render';
 import { flagList, parseScriptArgs } from './lib/args';

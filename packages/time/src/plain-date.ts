@@ -1,8 +1,9 @@
-// A calendar date: a year, a month and a day, with no time and therefore no zone. The framework's
-// "never format a date without an IANA zone" rule is about INSTANTS — a `PlainDate` needs no zone
-// because it names no instant, and that is the whole reason it exists: `effective_on` is the date
-// a rate applies, not a moment, and storing it as a `timestamptz` makes it a different date either
-// side of midnight for half the planet.
+// A calendar date: a year, a month and a day, with no time and therefore no zone.
+//
+// The framework's "never format a date without an IANA zone" rule is about INSTANTS — a `PlainDate`
+// needs no zone because it names no instant, and that is the whole reason it exists: `effective_on`
+// is the date a rate applies, not a moment, and storing it as a `timestamptz` makes it a different
+// date either side of midnight for half the planet.
 
 import { scheduleInvalid } from './errors';
 import { type Instant, instant } from './instant';

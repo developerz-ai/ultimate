@@ -2,6 +2,8 @@
 // streaming dashboard, an admin app with MCP on, and an example feature slice with passing tests.
 // Interactive-free: every choice is a flag with a default, because an agent cannot answer prompts.
 
+// why: the target is a DIRECTORY, which `Bun.file().exists()` answers false for; Bun ships no
+// path API, and `isAbsolute`/`join`/`relative`/`resolve` place the new app.
 import { existsSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';

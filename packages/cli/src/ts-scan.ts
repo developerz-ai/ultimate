@@ -1,8 +1,10 @@
 // Reading TypeScript source without a parser: the masking every scan here shares, and the `X_*`
-// codes a package declares. Deliberately not `tsc` — a regex over a masked file is the whole job.
-// Masking is the load-bearing part: the contract's own 3-line rendering appears verbatim in doc
-// blocks and template literals, and a scanner that reads it as code invents work. What a `fix:`
-// can evaluate to is `fix-scan.ts`, which reads these primitives and is the only file that grew.
+// codes a package declares.
+//
+// Deliberately not `tsc` — a regex over a masked file is the whole job. Masking is the load-bearing
+// part: the contract's own 3-line rendering appears verbatim in doc blocks and template literals,
+// and a scanner that reads it as code invents work. What a `fix:` can evaluate to is `fix-scan.ts`,
+// which reads these primitives and is the only file that grew.
 
 export interface SourceSite {
   /** Repo-relative file the site was read from. */

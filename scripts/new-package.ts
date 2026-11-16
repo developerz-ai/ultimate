@@ -6,6 +6,8 @@
 //   bun run scripts/new-package.ts seo --tier 1 --description "Metadata, sitemaps, robots"
 //   bun run scripts/new-package.ts seo --only CLAUDE.md      # fill in one missing contract file
 
+// why: existsSync — the target is a DIRECTORY, and `Bun.file().exists()` answers false for one;
+// readFileSync — the LICENSE text feeds a synchronous template list; `join` — Bun has no joiner.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeReferencePath } from '@ultimat3/cli';

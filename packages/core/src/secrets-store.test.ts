@@ -3,7 +3,7 @@
 // environment variable is never overwritten by the committed file.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway app roots.
+// why: Bun ships no temp-directory primitive: `mkdtemp`/`rm` build and remove the throwaway app roots.
 import { chmod, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

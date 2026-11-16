@@ -3,9 +3,10 @@
 // state the same thing. A skipped route with no reason is what turned "the island did not mount"
 // into a bug report about a page that had never been in `.x/static/` at all (#242).
 
-// `node:` twice, and only where Bun answers nothing: Bun ships no path API, and `rm(…, { force })`
-// deletes a report that may not be there without a branch. `existsSync` was a third and is gone —
-// `Bun.file(path).json()` already rejects on a missing file, into the catch that answers `undefined`.
+// why: `node:` twice, and only where Bun answers nothing: Bun ships no path API, and
+// `rm(…, { force })` deletes a report that may not be there without a branch. `existsSync` was a
+// third and is gone — `Bun.file(path).json()` already rejects on a missing file, into the catch
+// that answers `undefined`.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RenderMode } from '@ultimat3/core';

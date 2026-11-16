@@ -1,4 +1,5 @@
 // `x g route <path>` — a URL, its render mode, its metadata, its offline strategy and its budget.
+//
 // Two generated tests, because the gate types a test by its filename: `page.test.ts` pins metadata
 // presence and the budget declaration on the `unit` step, `page.e2e.test.ts` pins the offline
 // fallback on the `e2e` step. A route with no title is an SEO regression and a route with no

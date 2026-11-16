@@ -254,4 +254,9 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.29.0',
     codemod: 'migrate-job-ordered',
   },
+  {
+    template: 'packages/cli/src/templates/island.ts',
+    since: '31.33.0',
+    none: "the generator trims its --dir argument with core's trimTrailingSlashes instead of /\\/+$/; the island file it writes is byte-identical, so no app holds anything to migrate",
+  },
 ];

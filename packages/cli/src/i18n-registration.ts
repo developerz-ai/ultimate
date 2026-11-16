@@ -1,8 +1,10 @@
 // Every finding about an app's strings, and the one composition `x i18n check` and `x verify`'s
 // `i18n` step both report — two callers, one answer, so the command and the gate can never
-// disagree. The runtime half is here because nothing else could ask it: `i18n-audit.ts` compares
-// source against files on disk and was green for every string of a shipped app whose catalog
-// module nothing imported (issue #249).
+// disagree.
+//
+// The runtime half is here because nothing else could ask it: `i18n-audit.ts` compares source
+// against files on disk and was green for every string of a shipped app whose catalog module
+// nothing imported (issue #249).
 
 // why: Bun ships no path API, so `join` is the only way to reach the app's own i18n module on
 // the host's separator.

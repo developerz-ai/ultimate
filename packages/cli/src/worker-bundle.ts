@@ -1,8 +1,10 @@
-// The page's framework scripts (plan 101), each built as its own classic-script browser bundle,
-// named by a hash of its bytes, served `immutable` by the same route in `x dev` and the
-// container: the ONE sync worker (`@ultimat3/realtime/sync-worker`, slice 11) and the ONE page boot
-// (`@ultimat3/realtime/boot` — the disk restore and the outbox, once per page instead of once per
-// island). A new deploy is a new URL, so an old tab keeps what it started with.
+// The page's framework scripts (plan 101) — the ONE sync worker and the ONE page boot — each
+// built as a classic-script browser bundle, named by a hash of its bytes, served `immutable`.
+//
+// One route serves them in `x dev` and the container. The sync worker is
+// `@ultimat3/realtime/sync-worker` (slice 11); the page boot is `@ultimat3/realtime/boot` — the
+// disk restore and the outbox, once per page instead of once per island. A new deploy is a new URL,
+// so an old tab keeps what it started with.
 
 // why: Bun ships no path API; the entry is resolved to a file and named in the cause.
 import { dirname, join, relative } from 'node:path';

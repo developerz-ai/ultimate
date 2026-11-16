@@ -1,8 +1,9 @@
-// Which realtime islands have page state to RESTORE, and which only follow the socket. A held
-// island (#506, `@ultimat3/render`'s `island-hold.ts`) is hidden until it mounts because its server
-// markup can be older than the record store and the outbox the page boot restores. An island whose
-// whole realtime use is a channel's events, a roster or the connection reads neither: its server
-// markup is as current as any other island's, so hiding it only delayed the page's content.
+// Which realtime islands have page state to RESTORE, and which only follow the socket.
+//
+// A held island (#506, `@ultimat3/render`'s `island-hold.ts`) is hidden until it mounts because its
+// server markup can be older than the record store and the outbox the page boot restores. An island
+// whose whole realtime use is a channel's events, a roster or the connection reads neither: its
+// server markup is as current as any other island's, so hiding it only delayed the page's content.
 
 import { registeredEntities } from '@ultimat3/entity';
 import { firstInGraph } from './live-routes';

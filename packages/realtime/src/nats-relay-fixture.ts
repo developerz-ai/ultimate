@@ -1,9 +1,10 @@
 // A TCP relay in front of a real nats-server, so a live test can break ONE connection without
-// touching the server: the container is shared, and stopping it is not a test file's to do. Two
-// breaks, because they are two different outages. `cut()` ends every relayed connection the way a
-// partition with a reset does. `hold()` is the black hole: every socket stays open and accepting,
-// and nothing is forwarded in either direction — the failure only a ping can notice.
-// A `-fixture.ts` file is test material and is excluded from the package tarball.
+// touching the server: the container is shared, and stopping it is not a test file's to do.
+//
+// Two breaks, because they are two different outages. `cut()` ends every relayed connection the way
+// a partition with a reset does. `hold()` is the black hole: every socket stays open and accepting,
+// and nothing is forwarded in either direction — the failure only a ping can notice. A
+// `-fixture.ts` file is test material and is excluded from the package tarball.
 
 import { parseNatsUrl } from './nats-client';
 

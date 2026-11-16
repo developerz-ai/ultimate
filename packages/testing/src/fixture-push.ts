@@ -1,8 +1,10 @@
 // The `push` fixture: a Web Push runtime for one test, with the push service AND the device played
-// in-process. `push.subscribe(actorId)` gives that person a browser — a real P-256 key and auth
-// secret, as `PushSubscription.toJSON()` carries — and `push.sent()` is what each device would SHOW:
-// every delivery decrypted with that browser's own key, so a test asserts the notification, not
-// the bytes. Nothing reaches the network.
+// in-process.
+//
+// `push.subscribe(actorId)` gives that person a browser — a real P-256 key and auth secret, as
+// `PushSubscription.toJSON()` carries — and `push.sent()` is what each device would SHOW: every
+// delivery decrypted with that browser's own key, so a test asserts the notification, not the
+// bytes. Nothing reaches the network.
 
 import type { PushReceiverKeys } from '@ultimat3/pwa';
 import { frozenNow } from './determinism';

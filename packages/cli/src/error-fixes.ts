@@ -1,10 +1,11 @@
-// Every `X_*` code's REAL `fix:`, read off the throw site that raises it. `x errors explain` used
-// to answer `x verify --json` for every code the CLI does not own — 327 of 378 — which is a shrug,
-// not an instruction. The framework already writes an executable fix at each throw site and the
-// `errors` gate step already proves each one runnable, so the answer is to project that text
-// rather than to restate it in a second table nobody keeps current (axiom 2).
+// Every `X_*` code's REAL `fix:`, read off the throw site that raises it.
+//
+// `x errors explain` used to answer `x verify --json` for every code the CLI does not own — 327 of
+// 378 — which is a shrug, not an instruction. The framework already writes an executable fix at
+// each throw site and the `errors` gate step already proves each one runnable, so the answer is to
+// project that text rather than to restate it in a second table nobody keeps current (axiom 2).
 
-// Bun ships no path join: the scan needs an absolute path per globbed, scope-relative entry.
+// why: Bun ships no path join: the scan needs an absolute path per globbed, scope-relative entry.
 import { join } from 'node:path';
 import { staticFix } from './error-contract';
 import { frameworkScopeDir } from './framework-scope';

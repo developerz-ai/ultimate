@@ -1,8 +1,9 @@
-// A route whose `Page` is an `async` function and which declares no `load`. It renders — the
-// renderer awaits whatever the component returns — so no suite fails on it, and its data read
-// silently skips everything `load` is for: the route's cache, `meta` computed from the data, the
-// streaming boundary and the measurement render `x build` weighs. The social demo shipped eleven
-// (plan 101 slice 11 l); nothing asked.
+// A route whose `Page` is an `async` function and which declares no `load`, refused.
+//
+// It renders — the renderer awaits whatever the component returns — so no suite fails on it, and
+// its data read silently skips everything `load` is for: the route's cache, `meta` computed from
+// the data, the streaming boundary and the measurement render `x build` weighs. The social demo
+// shipped eleven (plan 101 slice 11 l); nothing asked.
 
 import type { RouteEntry } from '@ultimat3/render';
 import { routeEntries } from '@ultimat3/render';

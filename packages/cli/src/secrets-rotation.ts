@@ -1,8 +1,10 @@
-// A master-key rotation in an order a crash cannot turn into data loss. The new key is STAGED at
-// `<key>.next` (owner-only: 0600, and an ACL on Windows) before anything is sealed with it, the committed file is sealed second, and
-// the rename that makes the new key live is last. Interrupted anywhere, some key on disk opens the
-// committed file — and `recoverRotation`, which every `x secrets` command runs first, finishes or
-// abandons the move by asking the file which key it answers to.
+// A master-key rotation in an order a crash cannot turn into data loss.
+//
+// The new key is STAGED at `<key>.next` (owner-only: 0600, and an ACL on Windows) before anything
+// is sealed with it, the committed file is sealed second, and the rename that makes the new key
+// live is last. Interrupted anywhere, some key on disk opens the committed file — and
+// `recoverRotation`, which every `x secrets` command runs first, finishes or abandons the move by
+// asking the file which key it answers to.
 
 import { existsSync, readFileSync, rmSync } from 'node:fs'; // why: Bun has no sync exists/remove; the key is WRITTEN and RENAMED only by core's owner-only writers.
 import type { MasterKeyRef, SecretValues } from '@ultimat3/core';

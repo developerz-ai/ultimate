@@ -2,19 +2,17 @@
 // version, an unreadable surface is a finding with that report's own fix, and `release.ts --bump`
 // really calls it — a lock left at the previous release would judge the next one against it.
 
-import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp/rm of its own; a unique directory per run keeps test workers apart.
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 // why: Bun has no tmpdir() of its own; node:os is the only way to find the platform temp root.
 import { tmpdir } from 'node:os';
+import { parseScriptArgs } from './lib/args';
 import { LOCK_PATH, parseLock } from './lib/public-api-lock';
-import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { PublicApiReport } from './public-api';
 import { BREAK_CODE, UNSCANNED_CODE } from './public-api';
+import { releaseResult } from './release';
 import { API_LOCK_COMMAND, plannedApiLockLine, writeApiLock } from './release-api-lock';
-
-// The last case reads `scripts/release.ts` off the real tree.
-setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const made: string[] = [];
 afterAll(async () => {
@@ -81,13 +79,48 @@ describe('writeApiLock', () => {
     expect(plannedApiLockLine()).toContain(API_LOCK_COMMAND);
   });
 
+  // Driven, not grepped: the order and both outcomes are what `releaseResult` does over a tree.
   test('release.ts --bump calls it, after the derived writes, and reports both outcomes', async () => {
-    const source = await Bun.file(`${repoRoot()}/scripts/release.ts`).text();
-    const performed = source.indexOf('await performReleaseWrites(root, version)');
-    const locked = source.indexOf('await writeApiLock(root)');
-    expect(performed).toBeGreaterThan(-1);
-    expect(locked).toBeGreaterThan(performed);
-    expect(source).toContain('plannedApiLockLine()');
-    expect(source).toContain('apiLock?.finding === undefined');
+    const dir = await tree();
+    await Bun.write(`${dir}/package.json`, '{ "name": "fixture", "private": true }');
+    await Bun.write(
+      `${dir}/packages/core/package.json`,
+      '{ "name": "@ultimat3/core", "version": "1.0.0" }',
+    );
+    await Bun.write(
+      `${dir}/CHANGELOG.md`,
+      '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- one.\n\n## Releases\n',
+    );
+    const calls: string[] = [];
+    const written = { code: 'X_LOCKFILE_STALE', cause: 'bun.lock missing', fix: 'bun install' };
+    const unread = { code: UNSCANNED_CODE, cause: 'no surface', fix: API_LOCK_COMMAND };
+    const deps = {
+      root: dir,
+      now: new Date('2026-09-01T00:00:00Z'),
+      run: async (command: readonly string[]) => {
+        const branch = command.join(' ') === 'git branch --show-current';
+        const output = command[0] === 'git' ? (branch ? 'chore/release-1.1.0' : '') : '[]';
+        return { command, code: 0, ok: true, output, durationMs: 1, timedOut: false };
+      },
+      performWrites: async () => {
+        calls.push('derived');
+        return { writes: [], findings: [written] };
+      },
+      writeLock: async () => {
+        calls.push('api-lock');
+        return { line: '  api-lock  NOT written', finding: unread };
+      },
+    };
+    // A dry run performs neither, and plans the lock beside the other derived files.
+    const planned = await releaseResult(parseScriptArgs(['--bump', 'minor', '--dry-run']), deps);
+    expect(calls).toEqual([]);
+    expect(planned.lines).toContain(plannedApiLockLine());
+    // The real bump: the derived writes first, the lock last, and each outcome reported.
+    const bumped = await releaseResult(parseScriptArgs(['--bump', 'minor']), deps);
+    expect(bumped.summary).toBe('1 packages set to 1.1.0');
+    expect(calls).toEqual(['derived', 'api-lock']);
+    expect(bumped.ok).toBe(false);
+    expect(bumped.findings).toEqual([written, unread]);
+    expect(bumped.lines).toContain('  api-lock  NOT written');
   });
 });

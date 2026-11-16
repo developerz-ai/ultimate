@@ -8,6 +8,7 @@ import {
   renderFixLiteral,
   renderFixShellArg,
   renderThrowable,
+  trimTrailingSlashes,
 } from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
 import { isRecord } from './json';
@@ -23,7 +24,7 @@ const TIMEOUT_CONSEQUENCE =
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 /** An issuer as it is compared and built on: its trailing slashes are not part of its identity. */
-const bareIssuer = (issuer: string): string => issuer.replace(/\/+$/, '');
+const bareIssuer = (issuer: string): string => trimTrailingSlashes(issuer);
 
 /** The document lives at a fixed suffix off the issuer; the issuer keeps its own path. */
 export const discoveryUrl = (issuer: string): string =>

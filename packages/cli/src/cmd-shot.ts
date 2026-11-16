@@ -5,6 +5,7 @@
 // Never a step of `x verify`: it needs a real browser, and a gate that goes red because a machine
 // has no Chrome is a gate that fails for reasons unrelated to the change.
 
+// why: Bun ships no path API; `resolve` anchors `--out` at the caller's cwd, `join` the files.
 import { join, resolve } from 'node:path';
 import { renderFixShellArg } from '@ultimat3/core';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';

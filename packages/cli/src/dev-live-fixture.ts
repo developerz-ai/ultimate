@@ -1,8 +1,9 @@
-// The `x dev` live tests' process discipline, in one place: spawn the supervisor, read its two
-// streams, and — on every path, a failing one included — reap every process it started and prove
-// none is left. Two children of `cmd-dev-restart.live.test.ts` ran for six hours with ppid 1 and a
-// deleted cwd because the test's `finally` SIGKILLed the supervisor, which cannot forward a signal
-// it never gets, and nothing then looked for what it had started (2026-09-29).
+// The `x dev` live tests' process discipline: spawn the supervisor, read its two streams, and —
+// on every path, a failing one included — reap every process it started and prove none is left.
+//
+// Two children of `cmd-dev-restart.live.test.ts` ran for six hours with ppid 1 and a deleted cwd
+// because the test's `finally` SIGKILLed the supervisor, which cannot forward a signal it never
+// gets, and nothing then looked for what it had started (2026-09-29).
 
 import { readdirSync, readlinkSync } from 'node:fs'; // why: /proc is read synchronously; Bun has no readlink.
 

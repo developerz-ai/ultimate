@@ -1,8 +1,9 @@
 // `x auth seal-mfa` — seal every `x_users.mfa_secret` still stored in the clear, in place, under
-// the app's master key. The one-shot an upgrade onto sealed second-factor secrets owes: readers
-// refuse a plaintext value (`X_MFA_SECRET_UNSEALED`), and this is the command that refusal names.
-// Idempotent — a sealed value is counted and left alone — so an interrupted run is finished by
-// running it again.
+// the app's master key.
+//
+// The one-shot an upgrade onto sealed second-factor secrets owes: readers refuse a plaintext value
+// (`X_MFA_SECRET_UNSEALED`), and this is the command that refusal names. Idempotent — a sealed
+// value is counted and left alone — so an interrupted run is finished by running it again.
 
 import type { MfaSecretStore } from '@ultimat3/auth';
 import { postgresAuthAdapter, sealMfaSecrets } from '@ultimat3/auth';

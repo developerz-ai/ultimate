@@ -4,8 +4,13 @@
  * on every machine and the output diffs across deploys the way the HTML does.
  */
 
+// why: Sass's `FileImporter` is synchronous and `Bun.file().exists()` is async (and files-only);
+// Bun ships no path API.
 import { existsSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
+// why: `node:url` and not `Bun.fileURLToPath` ON PURPOSE — its browser polyfill exports neither
+// name, so `bun build --target=browser` cannot link this file: `scripts/browser-barrel.test.ts`
+// relies on that to prove the client barrel never reaches the build-time half.
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renderThrowable } from '@ultimat3/core';
 import type * as Sass from 'sass';

@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp and no recursive remove; each test needs a throwaway directory.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.write takes a path already joined.
 import { join } from 'node:path';
 import { asyncRefusal } from './bounds-fixture';
 import { echoProvider } from './echo-provider';

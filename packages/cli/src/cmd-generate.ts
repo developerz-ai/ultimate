@@ -2,6 +2,8 @@
 // emits a TODO has moved the work, not done it; every file this writes typechecks, and every
 // primitive arrives with the test that pins its distant invariants (policy, idempotency, budget).
 
+// why: the follow-up filters ask "is it on disk?" synchronously, inside `.filter()`, and Bun's
+// only existence check, `Bun.file().exists()`, is async.
 import { existsSync } from 'node:fs';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { indexBindingFindings } from './api-registration';

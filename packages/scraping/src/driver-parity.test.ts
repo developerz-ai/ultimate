@@ -5,6 +5,8 @@
 // drivers genuinely CANNOT agree (no layout engine offline), the divergence is pinned here.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp, no recursive remove and no tmpdir(); the fixture page needs a
+// throwaway directory outside the checkout.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { frozenClock, structuredLogger } from '@ultimat3/core';

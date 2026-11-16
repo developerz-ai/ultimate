@@ -1,6 +1,7 @@
-// `x db backfill`, everything except the argv: the ledger `--list` reports, the declared-minus-
-// completed diff `--pending` reports, and the gate-plus-enqueue `<name>`/`--all` performs. A
-// driver plus plain strings in, plain data out — the `cmd-jobs.ts` / `jobs-report.ts` split
+// `x db backfill`, everything except the argv: the ledger `--list` reports, the pending diff
+// `--pending` reports, and the gate-plus-enqueue `<name>`/`--all` performs.
+//
+// A driver plus plain strings in, plain data out — the `cmd-jobs.ts` / `jobs-report.ts` split
 // repeated, so every projection here is testable with no `ParsedArgs`, no app boot and no queue.
 // `cmd-db.ts` is the CLI wiring and nothing else.
 //

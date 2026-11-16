@@ -1,8 +1,9 @@
 // Single responsibility: how many of one kind of work may run at once, and how many callers may
 // wait. THREE bounded pools shipped before this one — `@ultimat3/auth`'s kdf gate, `@ultimat3/ai`'s
-// hive pool, `@ultimat3/http`'s `maxInflight` — and only the first refuses past its queue. This
-// header counted `@ultimat3/scraping`'s pacer as a fourth until 2026-08-23 and it is not one: a
-// pacer bounds how OFTEN work starts, not how many run at once, so ten concurrent navigations all
+// hive pool, `@ultimat3/http`'s `maxInflight` — and only the first refuses past its queue.
+//
+// This header counted `@ultimat3/scraping`'s pacer as a fourth until 2026-08-23 and it is not one:
+// a pacer bounds how OFTEN work starts, not how many run at once, so ten concurrent navigations all
 // proceed merely staggered — no `maxConcurrent`, no queue bound, no refusal. Past the bound the
 // answer here is a refusal, never a longer queue: an unbounded queue converts a load spike into a
 // memory fault and answers it minutes late.

@@ -1,8 +1,10 @@
 // THE request lifecycle: which stages exist, in what ORDER, why — and the one loop that drives a
-// request through them. The order IS the framework's guarantee, an explicit array and not a
-// middleware stack, so nothing can skip a stage and `/_x` and `pipeline.test.ts` can both read it.
-// The other two thirds of the lifecycle are siblings: `stages.ts` owns what each stage does, and
-// `finalize.ts` owns the promise that the tail always answers rather than rejecting.
+// request through them.
+//
+// The order IS the framework's guarantee, an explicit array and not a middleware stack, so nothing
+// can skip a stage and `/_x` and `pipeline.test.ts` can both read it. The other two thirds of the
+// lifecycle are siblings: `stages.ts` owns what each stage does, and `finalize.ts` owns the promise
+// that the tail always answers rather than rejecting.
 import {
   beginWork,
   instrument,

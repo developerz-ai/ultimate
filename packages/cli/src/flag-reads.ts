@@ -7,7 +7,7 @@
 // plan JSON, where nothing read the field; that flag is deleted rather than wired, and a second
 // one of its shape would pass here too.
 
-// `join`/`relative` are `node:`-only by necessity: Bun exposes no path-join primitive.
+// why: `join`/`relative` are `node:`-only by necessity: Bun exposes no path-join primitive.
 import { join, relative } from 'node:path';
 import { ERROR_DOCS_URL, stripComments } from '@ultimat3/core';
 import type { Finding } from './output';

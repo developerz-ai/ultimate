@@ -3,7 +3,6 @@
 // `insert` where the seed owns the id (`id('post:tenancy')` is a v5 uuid of the label, the same on
 // every machine), `upsert` where the table owns it and a natural key is all there is.
 
-import { createHash } from 'node:crypto';
 import { type Environment, resolveEnvironment } from '@ultimat3/core';
 import { overwrittenBy } from './bulk-write';
 import { entityNow } from './clock';
@@ -35,7 +34,7 @@ export const seedId = (label: string): string => {
   const input = new Uint8Array(16 + name.length);
   input.set(bytesOf(NAMESPACE));
   input.set(name, 16);
-  const digest = new Uint8Array(createHash('sha1').update(input).digest());
+  const digest = new Uint8Array(new Bun.CryptoHasher('sha1').update(input).digest());
   const bytes = digest.slice(0, 16);
   bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50;
   bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;

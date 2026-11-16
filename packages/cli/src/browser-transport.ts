@@ -1,8 +1,11 @@
-// The browser has ONE HTTP function and ONE socket, as a rule over a file tree: a raw `fetch(`,
-// `new WebSocket(`, `new XMLHttpRequest(` or `new EventSource(` in browser-reachable code skips
-// `@ultimat3/core`'s `clientTransport` — credentials, the idempotency header, the record envelope,
-// the principal fence — so its rows never reach the page's store and it keeps running for the
-// previous principal after a sign-out. A package's SERVER BARREL in that closure is refused too.
+// The browser has ONE HTTP function and ONE socket, as a rule over a file tree: a raw transport
+// or a package's SERVER BARREL in browser-reachable code is refused.
+//
+// A raw `fetch(`, `new WebSocket(`, `new XMLHttpRequest(` or `new EventSource(` in
+// browser-reachable code skips `@ultimat3/core`'s `clientTransport` — credentials, the idempotency
+// header, the record envelope, the principal fence — so its rows never reach the page's store and
+// it keeps running for the previous principal after a sign-out. A package's SERVER BARREL in that
+// closure is refused too.
 //
 // BROWSER-REACHABLE is derived, never listed: every `*.island.tsx`, every module that names the
 // client seam itself, and the import closure of each, followed name by name through barrels
