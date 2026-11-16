@@ -19,7 +19,13 @@ export type { DocHit } from './docs-search';
 export { nearestTopics, searchDocs } from './docs-search';
 export { tokenize } from './docs-tokens';
 export type { WikiHeading, WikiOrigin } from './docs-wiki';
-export { githubSlug, scanWikiDocs, wikiHeadings, wikiSection } from './docs-wiki';
+export {
+  githubSlug,
+  isErrorCodesPage,
+  scanWikiDocs,
+  wikiHeadings,
+  wikiSection,
+} from './docs-wiki';
 export type { EmitInput, EmitResult } from './emit';
 export {
   assertNoDrift,

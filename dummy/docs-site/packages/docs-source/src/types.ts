@@ -33,7 +33,7 @@ export interface CodeCell {
   readonly markdown: string;
 }
 
-/** One row of `wiki/Error-Codes.md` that documents a code. */
+/** One row of a `wiki/Error-Codes*.md` page that documents a code. */
 export interface CodeRow {
   /** The row's section: `Entity and database`, with the index URL that lists it. */
   readonly section: { readonly title: string; readonly url: string };

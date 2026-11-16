@@ -1,6 +1,7 @@
 // One manual page per `wiki/*.md` file: `/getting-started`, `/cli-reference`, `/docs` for the
 // wiki's Home. Static, 0 KB: the body is markdown rendered on the server, links already rewritten
-// to this site by the reader. The two split pages (`/error-codes`, `/upgrading`) are indexes here.
+// to this site by the reader. The split pages (`/error-codes` and each `/error-codes-<owner>`,
+// `/upgrading`) are indexes here.
 
 import { assertCoded } from '@ultimat3/core';
 import { defineRoute } from '@ultimat3/render';
@@ -50,6 +51,10 @@ export const config = defineRoute({
 
 type Piece = NonNullable<Awaited<ReturnType<typeof docPage>>>;
 
+/** An owner page (`/error-codes-db`) is part of the error reference, so it is the errors nav too. */
+const navOf = (url: string): DocsNav =>
+  NAV.get(url) ?? (url.startsWith('/error-codes-') ? 'errors' : 'manual');
+
 export function Page(props: { readonly data: Piece }): JSX.Element {
-  return <DocArticle piece={props.data} nav={NAV.get(props.data.url) ?? 'manual'} />;
+  return <DocArticle piece={props.data} nav={navOf(props.data.url)} />;
 }

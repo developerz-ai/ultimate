@@ -1,6 +1,7 @@
-// `wiki/Error-Codes.md` split: one page per row of a `| Code | Means | … |` table, and an index
-// that keeps every table as `Code | Means` with the code linked to its page. The file is 448 KB as
-// one page; split, a code is a URL a search engine and an error's `docs:` can point at.
+// One page of the error reference split: one page per row of a `| Code | Means | … |` table, and
+// the page itself kept as an index — every such table as `Code | Means`, the code linked to its
+// page. Run on the index `wiki/Error-Codes.md` and every `Error-Codes-<owner>.md`; split, a code is
+// a URL a search engine and an error's `docs:` can point at.
 
 import type { WikiHeading } from '@ultimat3/manifest';
 import { type Draft, type DraftLine, linesOf } from './draft';
@@ -17,6 +18,9 @@ export interface CodeDraft {
 
 /** A code cell: one backticked `X_*` code, or several joined by `/` or `,`. */
 const CODE_CELL = /^`X_[A-Z0-9_]+`(?:\s*[/,]\s*`X_[A-Z0-9_]+`)*$/;
+
+/** The index's generated table names a code PLAIN, so no row scanner counts it as a row. */
+const PLAIN_CODE = /^X_[A-Z0-9_]+$/;
 
 /** Every code a code cell names; empty for a cell that is not one. */
 export const codesOf = (cell: string): readonly string[] =>
@@ -40,20 +44,41 @@ export const codeUrl = (code: string): string => `/errors/${code}`;
 const isCodeHeader = (cells: readonly string[]): boolean =>
   cells[0] === 'Code' && cells.length >= 3;
 
+/** A plain code the page links to its `/errors/<CODE>` page: the corpus holds it to a built one. */
+export interface CodeLink {
+  readonly code: string;
+  readonly origin: number;
+}
+
 /**
- * The index draft and one draft per code row. A row whose first cell names no `X_*` code stays on
- * the index as written; only a code table's rows become pages.
+ * What a code table's rows are, read off its first row: `rows` (a backticked code — each row a
+ * page, the table cut to `Code | Means`) or `index` (a plain code — the index's generated table,
+ * every column kept, the code linked).
+ */
+const kindOf = (row: string | undefined): 'rows' | 'index' =>
+  PLAIN_CODE.test(cellsOf(row ?? '')[0] ?? '') ? 'index' : 'rows';
+
+/**
+ * The page's own draft, at `url`, and one draft per code row. A row whose first cell names no
+ * `X_*` code stays on the page as written; only a code table's rows become pages.
  */
 export function splitErrorCodes(
   file: string,
+  url: string,
   lines: readonly string[],
   headings: readonly WikiHeading[],
   body: { readonly from: number; readonly title: string },
-): { readonly index: Draft; readonly codes: readonly CodeDraft[] } {
+): {
+  readonly index: Draft;
+  readonly codes: readonly CodeDraft[];
+  readonly links: readonly CodeLink[];
+} {
   const fenced = fencedLines(lines);
   const out: DraftLine[] = [];
   const codes: CodeDraft[] = [];
+  const links: CodeLink[] = [];
   let header: readonly string[] | undefined;
+  let kind: 'rows' | 'index' = 'rows';
   let section = { title: body.title, anchor: '' };
   for (const line of linesOf(lines, body.from, lines.length)) {
     const heading = headings.find((one) => one.line === line.origin);
@@ -66,11 +91,25 @@ export function splitErrorCodes(
     const cells = cellsOf(line.text);
     if (header === undefined) {
       header = cells;
-      out.push(isCodeHeader(cells) ? { ...line, text: `| ${cells[0]} | ${cells[1]} |` } : line);
+      // The row after the separator says what the table is.
+      kind = kindOf(lines[line.origin + 2]);
+      const cut = isCodeHeader(cells) && kind === 'rows';
+      out.push(cut ? { ...line, text: `| ${cells[0]} | ${cells[1]} |` } : line);
       continue;
     }
     if (!isCodeHeader(header)) {
       out.push(line);
+      continue;
+    }
+    if (kind === 'index') {
+      const code = cells[0] ?? '';
+      if (!PLAIN_CODE.test(code)) {
+        out.push(line);
+        continue;
+      }
+      links.push({ code, origin: line.origin });
+      const rest = cells.slice(1).join(' | ');
+      out.push({ ...line, text: `| [\`${code}\`](${codeUrl(code)}) | ${rest} |` });
       continue;
     }
     if (SEPARATOR.test(line.text)) {
@@ -94,5 +133,5 @@ export function splitErrorCodes(
     const linked = named.map((code) => `[\`${code}\`](${codeUrl(code)})`).join(' / ');
     out.push({ ...line, text: `| ${linked} | ${cells[1] ?? ''} |` });
   }
-  return { index: { url: '/error-codes', file, title: body.title, lines: out }, codes };
+  return { index: { url, file, title: body.title, lines: out }, codes, links };
 }

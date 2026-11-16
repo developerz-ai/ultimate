@@ -119,6 +119,8 @@ describe('what is not read, and why', () => {
   test('the error reference has one owner, and it is scripts/doc-fixes.ts', () => {
     // Its Fix column is held to a STRICTER rule there — a fix may not cite a planned command.
     expect(skipDocPath('wiki/Error-Codes.md')).toBe(true);
+    expect(skipDocPath('wiki/Error-Codes-cli.md')).toBe(true);
+    expect(skipDocPath('wiki/CLI-Reference.md')).toBe(false);
   });
 
   test('one line naming one invocation twice is one finding', () => {

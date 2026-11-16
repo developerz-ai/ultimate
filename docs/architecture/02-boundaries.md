@@ -107,7 +107,7 @@ Same reasoning for budgets: a failure names the *transitive import that added th
 | 4 | Declare deps explicitly in `package.json`, pinned at the lockstep version | `packages/<name>/package.json` |
 | 5 | If it needs a same-tier sibling: move the shared **type** down to `core`, and wire the concrete value where both are already visible — or declare the edge, with its reason | `packages/core/src/` · [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) |
 | 6 | Add its tier row to **all three** copies — the executable one and the two prose ones `tier-table-drift.test.ts` pins. If it sits above the floor its imports allow, write its `FLOOR_ABOVE` row in the same edit or `bun run boundaries` refuses it | [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) + root `CLAUDE.md` + [`01-package-map.md`](./01-package-map.md) |
-| 7 | Add its `X_*` codes, and a row per code in the error reference | `packages/<name>/src/errors.ts` + [`wiki/Error-Codes.md`](../../wiki/Error-Codes.md) |
+| 7 | Add its `X_*` codes, and a row per code in the error reference (`bun run new-error-code` writes both) | `packages/<name>/src/errors.ts` + `wiki/Error-Codes-<name>.md`, indexed by [`wiki/Error-Codes.md`](../../wiki/Error-Codes.md) |
 | 8 | Add it to the root `tsconfig.json` `references` — `tsc -b` builds referenced projects and nothing else | root `tsconfig.json` (`X_PACKAGE_UNREFERENCED`) |
 | 9 | Prove the graph still holds | `bun run boundaries` then `bun run verify` |
 

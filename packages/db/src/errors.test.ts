@@ -22,7 +22,8 @@ describe('DB_OWNED_ERROR_CODES', () => {
     // A code leaving without its row, or arriving without one, is still a failing test.
     // No `X_READONLY_VIOLATION`: it was thrown only by `readOnly()`, a regex-gated client wrapper
     // with zero callers whose keyword list was weaker than `@ultimat3/mcp`'s parse guard.
-    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes.md`).text();
+    // The row lives on db's OWN page of the split reference, the page the manifest files it under.
+    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes-db.md`).text();
     expect(new Set(DB_OWNED_ERROR_CODES).size).toBe(DB_OWNED_ERROR_CODES.length);
     for (const code of DB_OWNED_ERROR_CODES) {
       expect(code).toMatch(/^X_[A-Z0-9_]+$/);

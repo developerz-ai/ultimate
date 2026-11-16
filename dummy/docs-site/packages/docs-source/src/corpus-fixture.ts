@@ -1,5 +1,5 @@
-// A wiki in miniature: a page with a cross-page link, a split Error-Codes page and a split
-// Upgrading page. Each test file builds its corpus from these, so a rule is held on one shape.
+// A wiki in miniature: a page with a cross-page link, the split error reference (an
+// index and two owner pages) and a split Upgrading page. Each test file builds its corpus from these, so a rule is held on one shape.
 
 import type { WikiFile } from './types';
 
@@ -10,7 +10,7 @@ export const HOME: WikiFile = {
   markdown: [
     '# Ultimate',
     '',
-    'The manual. See [codes](Error-Codes#core) and [the footer](_Footer).',
+    'The manual. See [codes](Error-Codes#reserved-codes) and [the footer](_Footer).',
   ].join('\n'),
 };
 
@@ -23,10 +23,11 @@ export const GUIDE: WikiFile = {
     '',
     '## Install',
     '',
-    'Run it. [up](#install) [drift](Error-Codes) [repo](https://github.com/developerz-ai/ultimate)',
+    'Run it. [up](#install) [drift](Error-Codes-db) [repo](https://github.com/developerz-ai/ultimate)',
   ].join('\n'),
 };
 
+/** The index: rules, the generated per-code index (codes PLAIN), and the reserved block. */
 export const CODES: WikiFile = {
   file: 'Error-Codes.md',
   markdown: [
@@ -38,19 +39,48 @@ export const CODES: WikiFile = {
     '|---|---|',
     '| `X_NOT_A_ROW` | a rule table row stays |',
     '',
-    '## Core',
+    '<!-- error-codes:index -->',
+    '## Every code',
+    '',
+    '| Code | Means | Page |',
+    '|---|---|---|',
+    '| X_DB_DRIFT | schema differs | [db](Error-Codes-db) |',
+    '<!-- /error-codes:index -->',
+    '',
+    '## Reserved codes',
     '',
     '| Code | Means | Typical cause | Fix |',
     '|---|---|---|---|',
-    '| `X_DB_DRIFT` | schema differs | a column [moved](Getting-Started#install) | `x db gen` |',
-    '| `X_A` / `X_B` | two at once | either \\| both | see [core](#core) |',
-    '| plain | not a code | x | y |',
+    '| `X_R` | reserved | nothing throws it | `x help` |',
+  ].join('\n'),
+};
+
+/** Two owner pages: each one table, no `##` sections, a code (`X_A`) with a row on both. */
+export const CORE_CODES: WikiFile = {
+  file: 'Error-Codes-core.md',
+  markdown: [
+    '# Error codes: `@ultimat3/core`',
     '',
-    '## Later',
+    'Part of [Error codes](Error-Codes): what core throws.',
+    '',
+    '| Code | Means | Typical cause | Fix |',
+    '|---|---|---|---|',
+    '| `X_A` / `X_B` | two at once | either \\| both | see [reserved](Error-Codes#reserved-codes) |',
+    '| plain | not a code | x | y |',
+  ].join('\n'),
+};
+
+export const DB_CODES: WikiFile = {
+  file: 'Error-Codes-db.md',
+  markdown: [
+    '# Error codes: `@ultimat3/db`',
+    '',
+    'Part of [Error codes](Error-Codes): what db throws.',
     '',
     '| Code | Means | Typical cause | Fix |',
     '|---|---|---|---|',
     '| `X_A` | again | from another side | z |',
+    '| `X_DB_DRIFT` | schema differs | a column [moved](Getting-Started#install) | `x db gen` |',
   ].join('\n'),
 };
 
@@ -86,6 +116,9 @@ export const UPGRADING: WikiFile = {
 export const WIKI: readonly WikiFile[] = [
   HOME,
   GUIDE,
+  // In the order the site reads them: sorted by file name, so the owner pages come first.
+  CORE_CODES,
+  DB_CODES,
   CODES,
   UPGRADING,
   { file: '_Sidebar.md', markdown: '[Home](Home)' },

@@ -1,5 +1,6 @@
 // Both directions of the never-ships parenthesis, each proved against a fixture that breaks exactly
-// it — then the real `wiki/Error-Codes.md`, which is the assertion that makes this a gate.
+// it — then the real error-code pages (the list on `wiki/Error-Codes.md`, the rows on the owner
+// pages), which is the assertion that makes this a gate.
 
 import { describe, expect, test } from 'bun:test';
 import {
@@ -10,6 +11,7 @@ import {
   tableRows,
 } from './gate-codes';
 import { GATE_CODE_NO_ROW, GATE_CODE_UNLISTED } from './gate-codes-backlog';
+import { ERROR_CODE_INDEX, ownerPage, readErrorCodePages } from './lib/error-code-pages';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 /** A page that satisfies both directions: one listed code, one wildcard family, both with rows. */
@@ -34,6 +36,7 @@ const check = (
   checkGateCodes({
     declared,
     page,
+    pages: [page],
     noRowPins: pins.noRow ?? [],
     unlistedPins: pins.unlisted ?? [],
   });
@@ -122,18 +125,45 @@ describe('findings', () => {
   });
 });
 
-describe('the committed wiki/Error-Codes.md', () => {
+describe('a row on any page of the set counts', () => {
+  test('the list on the index, the row on the owner page: no gap', () => {
+    const index = PAGE.replace('| `X_GATE_ONE` | a thing | a cause | a fix |\n', '');
+    const owner =
+      '| Code | Means | Cause | Fix |\n|---|---|---|---|\n| `X_GATE_ONE` | a | b | c |\n';
+    expect(check(index, ['X_GATE_ONE'])).toEqual([{ kind: 'no-row', code: 'X_GATE_ONE' }]);
+    const both = checkGateCodes({
+      declared: ['X_GATE_ONE'],
+      page: index,
+      pages: [index, owner],
+      noRowPins: [],
+      unlistedPins: [],
+    });
+    expect(both).toEqual([]);
+  });
+
+  test('a no-row finding sends its reader to the scripts page', () => {
+    expect(gateCodeFinding({ kind: 'no-row', code: 'X_GATE_ONE' }).fix).toContain(
+      ownerPage('scripts'),
+    );
+  });
+});
+
+describe('the committed error-code pages', () => {
   test(
-    'is wrong about exactly the codes the backlog pins, and no others',
+    'are wrong about exactly the codes the backlog pins, and no others',
     async () => {
       const root = repoRoot();
-      const page = await Bun.file(`${root}/wiki/Error-Codes.md`).text();
+      const all = await readErrorCodePages(root);
+      const page = all.find((one) => one.path === ERROR_CODE_INDEX)?.text ?? '';
+      const scripts = all.find((one) => one.path === ownerPage('scripts'))?.text ?? '';
+      const pages = all.map((one) => one.text);
       const declared = await scriptDeclaredCodes(root);
       expect(declared.length).toBeGreaterThan(50);
       expect(
         checkGateCodes({
           declared,
           page,
+          pages,
           noRowPins: GATE_CODE_NO_ROW,
           unlistedPins: GATE_CODE_UNLISTED,
         }),
@@ -148,14 +178,15 @@ describe('the committed wiki/Error-Codes.md', () => {
       // red over the file it guards is the false green this whole script exists for.
       const unlisted = page.replace('`X_GATE_CODE_BACKLOG_STALE`, ', '');
       expect(unlisted).not.toBe(page);
-      expect(checkGateCodes({ declared, page: unlisted, noRowPins: [], unlistedPins: [] })).toEqual(
-        [{ kind: 'unlisted', code: 'X_GATE_CODE_BACKLOG_STALE' }],
-      );
-      const noRow = page.replace('| `X_GATE_CODE_UNDOCUMENTED` |', '| `X_SOMETHING_ELSE` |');
-      expect(noRow).not.toBe(page);
-      expect(checkGateCodes({ declared, page: noRow, noRowPins: [], unlistedPins: [] })).toEqual([
-        { kind: 'no-row', code: 'X_GATE_CODE_UNDOCUMENTED' },
-      ]);
+      expect(
+        checkGateCodes({ declared, page: unlisted, pages, noRowPins: [], unlistedPins: [] }),
+      ).toEqual([{ kind: 'unlisted', code: 'X_GATE_CODE_BACKLOG_STALE' }]);
+      const noRow = scripts.replace('| `X_GATE_CODE_UNDOCUMENTED` |', '| `X_SOMETHING_ELSE` |');
+      expect(noRow).not.toBe(scripts);
+      const withoutRow = all.map((one) => (one.text === scripts ? noRow : one.text));
+      expect(
+        checkGateCodes({ declared, page, pages: withoutRow, noRowPins: [], unlistedPins: [] }),
+      ).toEqual([{ kind: 'no-row', code: 'X_GATE_CODE_UNDOCUMENTED' }]);
     },
     REPO_SCAN_TIMEOUT_MS,
   );

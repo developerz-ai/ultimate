@@ -25,7 +25,7 @@ Who *raises* it is a separate question, and the answer differs by surface:
 
 `packages/cli/src/statement-loop.ts` is what keeps them identical: it calls `@ultimat3/entity`'s
 `nPlusOne` and reads `code`/`cause`/`fix` off the resulting error rather than restating any of it.
-Full row, verbatim: [Error codes → Entity and database](Error-Codes#entity-and-database).
+Full row, verbatim: [Error codes → `@ultimat3/entity`](Error-Codes-entity).
 
 ## Before / after
 

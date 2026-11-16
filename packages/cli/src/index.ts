@@ -48,17 +48,21 @@ export { dispatch } from './dispatch';
 export { checkSourceDrift, reconcileSchemaHash, writeSchemaHash } from './drift';
 export { registeredErrorCodes } from './error-catalog';
 export type { CliErrorCode } from './error-codes';
+export type { ErrorCodePage } from './error-contract';
 export {
   BANNED_PHRASES,
   COMMAND_TOKENS,
   checkErrorCodeDocs,
+  checkErrorCodeDocsIn,
   checkErrorCodeRegistry,
+  checkErrorCodeRegistryIn,
   checkErrorFixes,
   collectDeclaredCodes,
   documentedCodes,
+  documentedCodesIn,
   fixProblem,
 } from './error-contract';
-export { checkErrorCodesThrown } from './error-unthrown';
+export { checkErrorCodesThrown, checkErrorCodesThrownIn } from './error-unthrown';
 export {
   BadFlagError,
   MissingPositionalError,

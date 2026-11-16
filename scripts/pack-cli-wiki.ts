@@ -10,6 +10,7 @@ import { copyFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { flagBool, parseScriptArgs } from './lib/args';
+import { isErrorCodePage } from './lib/error-code-pages';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -17,13 +18,14 @@ import { repoRoot } from './lib/run';
 const SCRIPT = 'pack-cli-wiki';
 
 /**
- * Every page but `Error-Codes.md` — `x errors explain` is the one way to a code, and its 479 kB
- * would be the largest page in the tarball for an index that skips it — and GitHub's `_Sidebar`
+ * Every page but the error-code set (`Error-Codes.md` and its `Error-Codes-<owner>.md` pages) —
+ * `x errors explain` is the one way to a code, and the set's ~600 kB would be the largest part of
+ * the tarball for an index that skips it — and GitHub's `_Sidebar`
  * and `_Footer` chrome, which is navigation, not prose.
  */
 export function shippedPages(files: readonly string[]): readonly string[] {
   return files
-    .filter((file) => file.endsWith('.md') && !file.startsWith('_') && file !== 'Error-Codes.md')
+    .filter((file) => file.endsWith('.md') && !file.startsWith('_') && !isErrorCodePage(file))
     .sort();
 }
 

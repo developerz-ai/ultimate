@@ -36,6 +36,7 @@
     "fetch-deadline": "bun run scripts/fetch-deadline.ts",
     "dev": "bun run --filter @ultimat3/cli dev",
     "fix-shell-arg": "bun run scripts/fix-shell-arg.ts",
+    "error-code-pages": "bun run scripts/error-code-pages.ts",
     "error-render": "bun run scripts/error-render.ts",
     "format": "biome format --write .",
     "framework-tables": "bun run scripts/framework-tables.ts",

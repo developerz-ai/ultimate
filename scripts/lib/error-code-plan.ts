@@ -1,7 +1,7 @@
-// The edits a new error code is: its REGISTRATION in the owning package's `errors.ts`, its ROW in
-// `wiki/Error-Codes.md`, its HTTP status and — where the package types one — its fix-table row,
-// planned together from one input so they can never land apart. Pure
-// text in, text out — `scripts/new-error-code.ts` does the reading and the writing. A package whose
+// The edits a new error code is: its REGISTRATION in the owning package's `errors.ts`, its ROW
+// (`codeRowFor`; `error-code-page-edit.ts` puts it on its owner's page), its HTTP status and —
+// where the package types one — its fix-table row, planned together from one input so they can
+// never land apart. Pure text in, text out — `scripts/new-error-code.ts` does the reading and the writing. A package whose
 // `errors.ts` is written in a shape this planner does not recognise is refused by name rather than
 // edited by guess.
 
@@ -22,46 +22,7 @@ export interface NewErrorCode {
    * (`scripts/doc-fixes.ts` refuses that row on the page, `X_DOC_CAUSE_ECHOES_TITLE`).
    */
   readonly cause: string;
-  /** A `## ` heading of the page, overriding the package's default section. */
-  readonly section?: string | undefined;
 }
-
-/**
- * Which `## ` section a package's codes go under. The one hand table here, held to the real page by
- * `scripts/new-error-code.test.ts`: a heading renamed on the page reds that test, not a later run.
- */
-export const PACKAGE_SECTIONS: ReadonlyMap<string, string> = new Map([
-  ['core', 'Core and runtime'],
-  ['schema', 'Schema and validation'],
-  ['http', 'HTTP'],
-  ['policy', 'Policy and authz'],
-  ['auth', 'Auth and sessions'],
-  ['entity', 'Entity and database'],
-  ['db', 'Entity and database'],
-  ['action', 'Actions'],
-  ['query', 'Queries and live queries'],
-  ['jobs', 'Jobs'],
-  ['realtime', 'Realtime'],
-  ['cache', 'Cache'],
-  ['storage', 'Storage'],
-  ['flags', 'Flags'],
-  ['render', 'Routes, render and budgets'],
-  ['seo', 'SEO'],
-  ['pwa', 'PWA and build skew'],
-  ['i18n', 'i18n, money, time'],
-  ['money', 'i18n, money, time'],
-  ['time', 'i18n, money, time'],
-  ['mail', 'Mail'],
-  ['notify', 'Notifications'],
-  ['mcp', 'MCP and AI'],
-  ['ai', 'MCP and AI'],
-  ['scraping', 'Scraping'],
-  ['admin', 'Admin and manifest'],
-  ['manifest', 'Admin and manifest'],
-  ['testing', 'Testing'],
-  ['ui', 'UI'],
-  ['cli', 'CLI and verify'],
-]);
 
 const CODE = /^X_[A-Z0-9]+(?:_[A-Z0-9]+)*$/;
 const RERUN =
@@ -155,7 +116,7 @@ const unknownShape = (path: string, code: string): ScriptError =>
   new ScriptError({
     code: 'X_NEW_ERROR_CODE_PATTERN_UNKNOWN',
     cause: `${path} has no …TITLES object, no literal registerErrorCodes({ … }) and no frozen …ERROR_CODES declarations this planner can add to, so there is no shape to add ${code} to without guessing`,
-    fix: `edit ${path} to register ${code} by hand, and add its row to wiki/Error-Codes.md in the same change`,
+    fix: `edit ${path} to register ${code} by hand, and add its row to wiki/Error-Codes-<package>.md in the same change, then: bun run scripts/error-code-pages.ts --write`,
   });
 
 /**
@@ -324,50 +285,9 @@ export function fixCell(fix: string): string {
   return note.length === 0 ? `\`${command.trim()}\`` : `\`${command.trim()}\` — ${note}`;
 }
 
-/** The row, appended to the first `| Code | …` table under the section's `## ` heading. */
-export function rowIn(wiki: string, input: NewErrorCode): string {
-  const section = input.section ?? PACKAGE_SECTIONS.get(input.pkg);
-  if (section === undefined) {
-    throw invalid(
-      `@ultimat3/${input.pkg} has no default section on wiki/Error-Codes.md`,
-      `rerun with --section '<a ## heading on wiki/Error-Codes.md>': ${RERUN}`,
-    );
-  }
-  if (wiki.includes(`\`${input.code}\``)) {
-    throw new ScriptError({
-      code: 'X_NEW_ERROR_CODE_EXISTS',
-      cause: `wiki/Error-Codes.md already documents ${input.code}`,
-      fix: `x errors explain ${renderFixShellArg(input.code, '<CODE>')} --json — then pick a new code, or edit its existing row in wiki/Error-Codes.md`,
-    });
-  }
-  const lines = wiki.split('\n');
-  const heading = lines.indexOf(`## ${section}`);
-  if (heading < 0) {
-    throw invalid(
-      `wiki/Error-Codes.md has no "## ${section}" heading`,
-      `rerun with --section '<a ## heading on wiki/Error-Codes.md>': ${RERUN}`,
-    );
-  }
-  // The CODE table: a section can open with another one first — Scraping's retry-override table.
-  let last = -1;
-  let inCodes = false;
-  for (let index = heading + 1; index < lines.length; index += 1) {
-    const line = lines[index] ?? '';
-    if (/^#{2,3} /.test(line)) break;
-    if (/^\|\s*Code\s*\|/.test(line)) inCodes = true;
-    else if (inCodes && line.startsWith('|')) last = index;
-    else if (inCodes) break;
-  }
-  if (last < 0) {
-    throw invalid(
-      `"## ${section}" on wiki/Error-Codes.md carries no | Code | table to add a row to`,
-      `rerun with --section '<a ## heading whose table lists codes>': ${RERUN}`,
-    );
-  }
-  const row = `| \`${input.code}\` | ${cell(input.title)} | ${cell(input.cause)} | ${cell(fixCell(input.fix))} |`;
-  lines.splice(last + 1, 0, row);
-  return lines.join('\n');
-}
+/** The code's row as its owner page writes one; `planPageEdits` puts it at its sorted place. */
+export const codeRowFor = (input: NewErrorCode): string =>
+  `| \`${input.code}\` | ${cell(input.title)} | ${cell(input.cause)} | ${cell(fixCell(input.fix))} |`;
 
 /**
  * The row that answers `status` for the code, added at the END of the status table's literal with

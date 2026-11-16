@@ -1,5 +1,5 @@
 // The throwaway root both halves of the generator's test read: copies of real registrations, the
-// real `wiki/Error-Codes.md` and the two files that decide a code's HTTP status — never the
+// real error-code page set (`wiki/Error-Codes*.md`) and the two files that decide a code's HTTP status — never the
 // committed ones. Shared so `new-error-code.test.ts` and `new-error-code-status.test.ts` prove
 // their refusals against the same tree.
 
@@ -8,10 +8,11 @@ import { expect } from 'bun:test';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 // why: Bun has no tmpdir() of its own; node:os is the only way to find the platform temp root.
 import { tmpdir } from 'node:os';
+import { errorCodePageFiles } from './lib/error-code-pages';
 import { UNDECIDED_FILE } from './lib/error-map-undecided';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
-import { STATUS_BACKLOG, STATUS_TABLE, STATUS_TABLE_SLICES, WIKI_PAGE } from './new-error-code';
+import { STATUS_BACKLOG, STATUS_TABLE, STATUS_TABLE_SLICES } from './new-error-code';
 
 export const ROOT = repoRoot();
 const made: string[] = [];
@@ -23,7 +24,7 @@ export async function removeFixtureRoots(): Promise<void> {
   for (const dir of made.splice(0)) await rm(dir, { recursive: true, force: true });
 }
 
-/** A root with the real money and seo registrations, a query one in no known shape, and the page. */
+/** A root with the real money and seo registrations, an odd one in no known shape, and the pages. */
 export async function fixtureRoot(): Promise<string> {
   const dir = await mkdtemp(`${tmpdir()}/new-error-code-`);
   made.push(dir);
@@ -40,7 +41,10 @@ export async function fixtureRoot(): Promise<string> {
     "export const odd = new Map([['X_ODD', 't']]);\n",
   );
   await mkdir(`${dir}/wiki`, { recursive: true });
-  await Bun.write(`${dir}/${WIKI_PAGE}`, Bun.file(`${ROOT}/${WIKI_PAGE}`));
+  // Every page: the row lands on its owner's page and the index is regenerated over all of them.
+  for (const page of await errorCodePageFiles(ROOT)) {
+    await Bun.write(`${dir}/${page}`, Bun.file(`${ROOT}/${page}`));
+  }
   // The files that decide a code's HTTP status, real copies: a row in a slice or a pin there.
   // `UNDECIDED_FILE` because the backlog imports it: a copy without it would not load.
   for (const file of [STATUS_TABLE, ...STATUS_TABLE_SLICES, STATUS_BACKLOG, UNDECIDED_FILE]) {

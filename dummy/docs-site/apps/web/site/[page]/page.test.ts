@@ -8,6 +8,8 @@ unitTest('it prerenders every wiki page by its slug, and is 0 KB', async () => {
   const slugs = await page.config.prerender?.();
   expect(slugs).toContain('getting-started');
   expect(slugs).toContain('error-codes');
+  // Every owner page of the split error reference is a page too.
+  expect(slugs).toContain('error-codes-db');
   expect(page.config.budget.js).toBe('0kb');
 });
 
@@ -29,6 +31,12 @@ unitTest('the split indexes mark their own destination', async () => {
     params: { page: 'upgrading' },
   });
   expect(view.html).toMatch(/href="\/upgrading"[^>]*aria-current="page"/);
+  // An owner page is part of the error reference, so it marks the errors destination.
+  const owner = await renderRoute(page, {
+    url: 'https://example.test/error-codes-db',
+    params: { page: 'error-codes-db' },
+  });
+  expect(owner.html).toMatch(/href="\/error-codes"[^>]*aria-current="page"/);
 });
 
 unitTest('a slug no wiki page has is X_NOT_FOUND', async () => {

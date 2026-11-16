@@ -2,9 +2,9 @@
 // target. One pass: split each page, learn where every wiki anchor landed, then rewrite. A link
 // that lands nowhere stops the build here, naming `wiki/<file>:<line>`.
 
-import { type WikiHeading, wikiHeadings } from '@ultimat3/manifest';
+import { isErrorCodesPage, type WikiHeading, wikiHeadings } from '@ultimat3/manifest';
 import { type Draft, draftHeadings, linesOf } from './draft';
-import { codeUrl, splitErrorCodes } from './error-table';
+import { type CodeLink, codeUrl, splitErrorCodes } from './error-table';
 import {
   DocsLeadEmptyError,
   DocsLinkDeadError,
@@ -40,6 +40,8 @@ interface Split {
   readonly pages: readonly Draft[];
   readonly majors: readonly (Draft & { readonly major: number })[];
   readonly codes: ReturnType<typeof splitErrorCodes>['codes'];
+  /** The plain codes an error-reference page links to `/errors/<CODE>`, each owed a built page. */
+  readonly links: readonly CodeLink[];
 }
 
 function split(page: string, file: string, markdown: string): Split {
@@ -51,14 +53,15 @@ function split(page: string, file: string, markdown: string): Split {
   // one would be a second title on the page.
   if (second !== undefined) throw new DocsSecondTitleError({ file, heading: second.heading });
   const body = { from: h1 === undefined ? 0 : h1.line + 1, title: h1?.heading ?? page };
-  const base = { page, file, headings, majors: [], codes: [] };
+  const base = { page, file, headings, majors: [], codes: [], links: [] };
   if (page === 'Upgrading') {
     const { index, majors } = splitUpgrading(file, lines, headings, body);
     return { ...base, main: index.url, drafts: [index, ...majors], pages: [index], majors };
   }
-  if (page === 'Error-Codes') {
-    const { index, codes } = splitErrorCodes(file, lines, headings, body);
-    return { ...base, main: index.url, drafts: [index], pages: [index], codes };
+  // The index and every owner page: each one keeps its URL, and each code row on it is a page.
+  if (isErrorCodesPage(page)) {
+    const { index, codes, links } = splitErrorCodes(file, pageUrl(page), lines, headings, body);
+    return { ...base, main: index.url, drafts: [index], pages: [index], codes, links };
   }
   const url = pageUrl(page);
   const draft = { url, file, title: body.title, lines: linesOf(lines, body.from, lines.length) };
@@ -154,6 +157,17 @@ export function readCorpus(files: readonly WikiFile[], options: CorpusOptions): 
         const known = codes.get(code);
         codes.set(code, { code, url, rows: [...(known?.rows ?? []), rendered] });
       }
+    }
+  }
+  for (const one of splits) {
+    for (const link of one.links) {
+      if (codes.has(link.code)) continue;
+      throw new DocsLinkDeadError({
+        file: one.file,
+        line: link.origin + 1,
+        target: codeUrl(link.code),
+        why: `no row on any wiki/Error-Codes*.md page documents ${link.code}`,
+      });
     }
   }
   return { pages, codes: [...codes.values()], majors };

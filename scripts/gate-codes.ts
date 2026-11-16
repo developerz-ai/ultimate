@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 // Enforce, as a gate rule, that `wiki/Error-Codes.md`'s "never ships to an app" parenthesis is
-// complete in both directions: every code it names has a table row, and every code `scripts/`
-// declares is named in it.
+// complete in both directions: every code it names has a table row on one of the error-code pages
+// (`wiki/Error-Codes-scripts.md`, for a script's own), and every code `scripts/` declares is named
+// in it.
 //
 // The gap this closes: nothing read that parenthesis. `checkErrorCodeDocs` is satisfied by ANY
 // `X_FOO` in a backtick anywhere on the page — `documentedCodes` is one regex over the whole file —
@@ -20,12 +21,16 @@
 import { collectDeclaredCodes } from '../packages/cli/src/error-contract';
 import { GATE_CODE_NO_ROW, GATE_CODE_UNLISTED } from './gate-codes-backlog';
 import { parseScriptArgs } from './lib/args';
+import { ERROR_CODE_INDEX, ownerPage, readErrorCodePages } from './lib/error-code-pages';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 
 const SCRIPT = 'gate-codes';
-export const ERROR_REFERENCE = 'wiki/Error-Codes.md';
+/** The page the never-ships list is on: the index. The rows are on the owner pages. */
+export const ERROR_REFERENCE = ERROR_CODE_INDEX;
+/** Where a script code's row goes. */
+const SCRIPTS_PAGE = ownerPage('scripts');
 export const BACKLOG_FILE = 'scripts/gate-codes-backlog.ts';
 
 /**
@@ -68,7 +73,10 @@ export interface GateCodeGap {
 export interface GateCodeInput {
   /** Every `X_*` code declared under `scripts/`, from `collectDeclaredCodes`. */
   readonly declared: readonly string[];
+  /** The index's text: the never-ships list. */
   readonly page: string;
+  /** Every error-code page's text, the index included: a row on any of them is a row. */
+  readonly pages: readonly string[];
   readonly noRowPins: readonly string[];
   readonly unlistedPins: readonly string[];
 }
@@ -80,7 +88,7 @@ const covers = (listed: ReadonlySet<string>, code: string): boolean =>
 
 export function checkGateCodes(input: GateCodeInput): readonly GateCodeGap[] {
   const listed = neverShipsList(input.page);
-  const rows = tableRows(input.page);
+  const rows = new Set(input.pages.flatMap((page) => [...tableRows(page)]));
   const gaps: GateCodeGap[] = [];
 
   // Every code the list stands for: the names it spells, AND each declared code a wildcard covers.
@@ -113,8 +121,8 @@ const FINDINGS: Readonly<Record<GateCodeGapKind, (code: string) => Finding>> = O
   {
     'no-row': (code) => ({
       code: 'X_GATE_CODE_UNDOCUMENTED',
-      cause: `${ERROR_REFERENCE} names ${code} in the never-ships list and gives it no table row, so an agent handed ${code} finds the name and no cause and no fix`,
-      fix: `add a \`| \`${code}\` | … |\` row to ${ERROR_REFERENCE}, or drop ${code} from the never-ships list`,
+      cause: `${ERROR_REFERENCE} names ${code} in the never-ships list and no error-code page gives it a table row, so an agent handed ${code} finds the name and no cause and no fix`,
+      fix: `add a \`| \`${code}\` | … |\` row to ${SCRIPTS_PAGE} at its place in code order, then: bun run scripts/error-code-pages.ts --write — or drop ${code} from the never-ships list in ${ERROR_REFERENCE}`,
       at: ERROR_REFERENCE,
     }),
     unlisted: (code) => ({
@@ -140,13 +148,16 @@ export const scriptDeclaredCodes = async (root: string): Promise<readonly string
     .filter((site) => site.at.startsWith('scripts/'))
     .map((site) => site.code);
 
-export const gateCodeGaps = async (root: string): Promise<readonly GateCodeGap[]> =>
-  checkGateCodes({
+export async function gateCodeGaps(root: string): Promise<readonly GateCodeGap[]> {
+  const pages = await readErrorCodePages(root);
+  return checkGateCodes({
     declared: await scriptDeclaredCodes(root),
-    page: await Bun.file(`${root}/${ERROR_REFERENCE}`).text(),
+    page: pages.find((one) => one.path === ERROR_REFERENCE)?.text ?? '',
+    pages: pages.map((one) => one.text),
     noRowPins: GATE_CODE_NO_ROW,
     unlistedPins: GATE_CODE_UNLISTED,
   });
+}
 
 /** Every finding this rule contributes, for a caller that folds it into a gate step. */
 export const gateCodeFindings = async (root: string): Promise<readonly Finding[]> =>

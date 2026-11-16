@@ -42,7 +42,7 @@ declaration, and `UltimateErrorJSON` beside it is what `--json` serialises.
 | `stack` | `Error` | the JS stack | serialised, printed only under `--verbose` |
 
 **`ERROR_DOCS_URL` is the whole docs story: one constant, one page.** There is no per-code URL
-because there is no per-code **anchor** — codes live in `wiki/Error-Codes.md` as table rows, and a
+because there is no per-code **anchor** — codes live on `wiki/Error-Codes-<owner>.md` as table rows, and a
 row has no fragment to link to, so `#X_DB_DRIFT` would be a second dead declaration rather than a
 fix for the first. `ERROR_DOCS_BASE` and `errorDocsUrl(code)` are deleted; the
 `https://ultimate.dev/errors/<code>` links they built answered **404, host included**, on every
@@ -143,11 +143,11 @@ one written FIRST is the one printed — put the case an author meets first ther
 | # | Step | File |
 |---|---|---|
 | 1 | Confirm no existing code fits (discriminate with `meta` if it nearly does) | `packages/*/src/errors.ts` |
-| 2 | Register the code **and** write its wiki row in one command: `bun run new-error-code X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --fix '<command or edit>' (--status <n> \| --off-socket) --cause '<what usually makes it happen>' [--section '<## heading>']`. It adds the title to the package's `…TITLES` table and codes list (or its literal `registerErrorCodes({ … })`), the row to `wiki/Error-Codes.md`, and the code's HTTP status decision, planned together so none lands alone. The registration file is the first of `error-codes.ts`, `<pkg>-error-codes.ts`, `errors.ts`, `<pkg>-error.ts` in a shape it recognises; none is `X_NEW_ERROR_CODE_PATTERN_UNKNOWN`, and then steps 2 and 6 are done by hand, in the same change. **The status is required for a tier ≤ 4 package**, exactly one of: `--status <n>` — the code can answer a request, so it gets a row in `packages/http/src/error-map.ts`; `--off-socket` — it never does, so it is pinned in `scripts/error-map-backlog.ts`. Neither or both is refused naming both; a tier-5 package takes neither. Without it the `errors` step is red with `X_ERROR_STATUS_MISSING` one command later | `packages/<pkg>/src/errors.ts`, `wiki/Error-Codes.md`, `packages/http/src/error-map.ts` or `scripts/error-map-backlog.ts` |
+| 2 | Register the code **and** write its wiki row in one command: `bun run new-error-code X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --fix '<command or edit>' (--status <n> \| --off-socket) --cause '<what usually makes it happen>'`. It adds the title to the package's `…TITLES` table and codes list (or its literal `registerErrorCodes({ … })`), the row to `wiki/Error-Codes-<pkg>.md` (the index on `wiki/Error-Codes.md` regenerated), and the code's HTTP status decision, planned together so none lands alone. The registration file is the first of `error-codes.ts`, `<pkg>-error-codes.ts`, `errors.ts`, `<pkg>-error.ts` in a shape it recognises; none is `X_NEW_ERROR_CODE_PATTERN_UNKNOWN`, and then steps 2 and 6 are done by hand, in the same change. **The status is required for a tier ≤ 4 package**, exactly one of: `--status <n>` — the code can answer a request, so it gets a row in `packages/http/src/error-map.ts`; `--off-socket` — it never does, so it is pinned in `scripts/error-map-backlog.ts`. Neither or both is refused naming both; a tier-5 package takes neither. Without it the `errors` step is red with `X_ERROR_STATUS_MISSING` one command later | `packages/<pkg>/src/errors.ts`, `wiki/Error-Codes.md`, `packages/http/src/error-map.ts` or `scripts/error-map-backlog.ts` |
 | 3 | Write the `fix` as a command you have actually run | same |
 | 4 | Classify it with `registerErrorRetry({ X_YOUR_CODE: 'retryable' })` **only** if it is not terminal — `terminal` is the default and the safe one | same |
 | 5 | Add a test that asserts the code **and** that `fix` is non-empty | `packages/<pkg>/src/errors.test.ts` |
-| 6 | Check the row step 2 wrote: the cause and fix columns are what a reader acts on. The `errors` step requires a row for every declared code | `wiki/Error-Codes.md` |
+| 6 | Check the row step 2 wrote: the cause and fix columns are what a reader acts on. The `errors` step requires a row for every declared code | `wiki/Error-Codes-<pkg>.md` |
 | 7 | If cross-cutting, add a row to the table below | `docs/architecture/04-error-contract.md` |
 | 8 | Verify: uniqueness at registration, `fix` shape and docs coverage in the `errors` step | `x verify` |
 
@@ -180,7 +180,10 @@ becomes a status, for the reason the next section gives.
 **A code a repo script owns** never ships, so it has no package, no registration and no status:
 `bun run new-error-code X_SCRIPT_WHAT_FAILED --script scripts/<file>.ts --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>'`
 adds it to `wiki/Error-Codes.md`'s never-ships list (unless an `X_FAMILY_*` entry already covers
-it) and writes its row under `## CLI and verify` (`--section` overrides). `--package`, `--status`,
+it) and writes its row on `wiki/Error-Codes-scripts.md`, in code order. A package code's row goes
+on `wiki/Error-Codes-<pkg>.md` the same way; either form regenerates the index on
+`wiki/Error-Codes.md` (`bun run error-code-pages --check` refuses a stale one,
+`X_ERROR_CODE_INDEX_STALE`), and `--section` is refused. `--package`, `--status`,
 `--off-socket`, `--browser` and `--server-only` beside it are refused. `scripts/gate-codes.ts`
 holds both halves: a code declared under `scripts/` and missing from the list, or listed with no
 row, is `X_GATE_CODE_UNDOCUMENTED`. `bun run new-error-code --help` prints both forms.
@@ -231,7 +234,7 @@ Enforced by the **`errors` step** of `x verify`. It reads every `fix:` string li
 | an empty `fix` | `X_ERROR_FIX_INVALID` |
 | a `fix` carrying `check`, `make sure`, `try` or `see the docs` with no command token | `X_ERROR_FIX_INVALID` |
 | a `fix` citing an `x <command>` the registry does not hold, or one that is **planned** | `X_ERROR_FIX_INVALID` |
-| a declared `X_*` code with no row in `wiki/Error-Codes.md` | `X_ERROR_CODE_UNDOCUMENTED` |
+| a declared `X_*` code with no row on its owner's page, `wiki/Error-Codes-<owner>.md` | `X_ERROR_CODE_UNDOCUMENTED` |
 
 A **command token** is the `x` CLI, a known tool (`bun`, `bunx`, `git`, `docker`, `psql`, `curl`, …), a literal call expression (`name(`), or a file path (`app.config.ts`, `apps/web/api/index.ts`). "check `x doctor --json`" passes; "check your database connection" does not.
 
@@ -286,7 +289,7 @@ Thrown by more than one package, or by the gate about any of them; every package
 | `X_DB_DRIFT` | `entity` | 500 | schema differs from migrations | `x db gen "<name>"` |
 | `X_BOUNDARY_VIOLATION` | `cli` | build | an import rule broke; `data.chain` is the path | `x fix boundary <file>` |
 | `X_ERROR_FIX_INVALID` | `cli` | build | a `fix:` literal is empty, or advice with no command token | `rewrite the fix at <file>:<line> as a runnable command` |
-| `X_ERROR_CODE_UNDOCUMENTED` | `cli` | build | a declared `X_*` code has no row in the error reference | `add a row for <CODE> to wiki/Error-Codes.md` |
+| `X_ERROR_CODE_UNDOCUMENTED` | `cli` | build | a declared `X_*` code has no row in the error reference | `add a row for <CODE> to wiki/Error-Codes-<owner>.md` |
 | `X_MANIFEST_STALE` | `manifest` | build | `x.manifest.json` / `openapi.json` differ from the code | `x manifest` |
 | `X_BUDGET_EXCEEDED` | `render` | build | route bytes / LCP over budget; `data.cause` names the import | `x fix boundary <file>` |
 | `X_BUILD_SKEW` | `http` | 409 | client build ID incompatible with the server contract | `reload` (client-side signal) |

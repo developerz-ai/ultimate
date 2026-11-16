@@ -7,8 +7,8 @@
 import { join } from 'node:path';
 import type { HostCheck, VerifyStepName } from '@ultimat3/cli';
 import {
-  checkErrorCodeDocs,
-  checkErrorCodeRegistry,
+  checkErrorCodeDocsIn,
+  checkErrorCodeRegistryIn,
   checkFlagReads,
   collectDeclaredCodes,
   registeredErrorCodes,
@@ -16,7 +16,7 @@ import {
 } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
 // The leaf, not the barrel (DX ledger #10): a guard must load while a package is mid-edit.
-import { checkErrorCodesThrown } from '../packages/cli/src/error-unthrown';
+import { checkErrorCodesThrownIn } from '../packages/cli/src/error-unthrown';
 import { adapterPortFindings } from './adapter-ports';
 import { adoptionClaimFindings } from './adoption-claims';
 import { benchClaimFindings } from './bench-claims';
@@ -55,6 +55,7 @@ import { keyedHasherFindings } from './keyed-hasher';
 import { knownGapLinkFindings } from './known-gaps-links';
 import { launchDeadlineFindings } from './launch-deadline';
 import { checkConfigImports, configImportFindingFor } from './lib/config-import';
+import { ERROR_CODE_INDEX, readErrorCodePages } from './lib/error-code-pages';
 import { allOf, atMost, compilerWidth, oneAtATime } from './lib/host-check-run';
 import { stabilityFindings } from './lib/stability-findings';
 import { llmsTxtFindings } from './llms-txt';
@@ -219,11 +220,12 @@ export const frameworkManifest: HostCheck = async (root) => {
 };
 
 /**
- * The reference page every shipped `X_*` code must appear on. A framework monorepo publishes one
- * and a generated app does not, so naming it is the host's job — the CLI owns the rule, this repo
- * owns the file it is checked against.
+ * The index of the reference every shipped `X_*` code must appear in: its rows are on the
+ * `wiki/Error-Codes-<owner>.md` pages, and the checks read the whole set (`readErrorCodePages`). A
+ * framework monorepo publishes one and a generated app does not, so naming it is the host's job —
+ * the CLI owns the rule, this repo owns the files it is checked against.
  */
-export const ERROR_REFERENCE = 'wiki/Error-Codes.md';
+export const ERROR_REFERENCE = ERROR_CODE_INDEX;
 
 /**
  * The codes this repo's own gate emits. `scripts/` never ships, so no package may register
@@ -247,14 +249,16 @@ const hostOwnedCodes = async (root: string): Promise<readonly string[]> =>
  * every row this page presents as live resolves through `x errors explain` — the second half is
  * what stops the page documenting a code the registry never heard of.
  */
-export const errorCodeDocs: HostCheck = allOf([
-  (root) => checkErrorCodeDocs(root, ERROR_REFERENCE),
-  async (root) => {
-    const known = new Set([...(await registeredErrorCodes()), ...(await hostOwnedCodes(root))]);
-    return checkErrorCodeRegistry(root, ERROR_REFERENCE, known);
-  },
-  (root) => checkErrorCodesThrown(root, ERROR_REFERENCE),
-]);
+export const errorCodeDocs: HostCheck = async (root) => {
+  // One read of the page set, handed to all three: the index and every owner page.
+  const pages = await readErrorCodePages(root);
+  const known = new Set([...(await registeredErrorCodes()), ...(await hostOwnedCodes(root))]);
+  const [documented, thrown] = await Promise.all([
+    checkErrorCodeDocsIn(root, pages),
+    checkErrorCodesThrownIn(root, pages),
+  ]);
+  return [...documented, ...checkErrorCodeRegistryIn(pages, known), ...thrown];
+};
 
 /**
  * The `errors` step's host half: the reference page's three rules, the rule that an error factory

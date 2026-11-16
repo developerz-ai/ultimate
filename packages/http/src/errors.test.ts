@@ -291,7 +291,8 @@ describe('HTTP_ERROR_CODES', () => {
     // Derived, not counted: `bun run new-error-code` adds a code to the owned array, its title and
     // the wiki row in one edit, and a `toBe(33)` plus a literal copy went red after every one.
     // The partition test below holds owned + borrowed equal to the whole list.
-    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes.md`).text();
+    // The row lives on http's OWN page of the split reference, the page the manifest files it under.
+    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes-http.md`).text();
     expect(new Set(EVERY_CODE).size).toBe(EVERY_CODE.length);
     for (const code of OWNED_CODES) {
       expect(code).toMatch(/^X_[A-Z0-9_]+$/);

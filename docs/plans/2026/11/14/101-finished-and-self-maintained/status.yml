@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
 percent: 63
-current_focus: "Sweep 8b-3 (12 M6: test-bare-error verdicts burned down, inputs pinned with reasons; linear regexes) on feat/sweep-8b-3-bare-errors; 8b-2 shipped as 31.33.0. Next: the owner-asked wiki/Error-Codes.md split (index + per-package pages), 8b-4 (fix-prose), then 8c (CI speed), sweep 9 (13)."
+current_focus: "The owner-asked error-reference split (index + 31 owner pages) on feat/error-codes-split; 8b-3 shipped as 31.34.0. Next: 8b-4 (fix-prose), then 8c (CI speed), sweep 9 (13)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3

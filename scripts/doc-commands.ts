@@ -25,6 +25,7 @@ import { DOC_COMMAND_ALLOWANCES } from './doc-commands-allow';
 import { parseScriptArgs } from './lib/args';
 import type { DocCitation, MarkdownFile } from './lib/doc-citations';
 import { readMarkdown, scanDocCitations } from './lib/doc-citations';
+import { isErrorCodePage } from './lib/error-code-pages';
 import { loadOrReport } from './lib/guard-load';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -68,8 +69,9 @@ export const PINS_FILE = 'scripts/doc-commands.ts';
  * produced this check quotes every broken command it found as evidence. A rule that failed on a bug
  * report is a rule that makes bug reports unwritable.
  *
- * `wiki/Error-Codes.md` belongs to `scripts/doc-fixes.ts`, which holds its `Fix` column to a
- * STRICTER rule than this one: a fix may not cite a planned command, and a doc sentence may. Two
+ * The error-code pages (`wiki/Error-Codes.md` and every `wiki/Error-Codes-<owner>.md`) belong to
+ * `scripts/doc-fixes.ts`, which holds their `Fix` column to a STRICTER rule than this one: a fix
+ * may not cite a planned command, and a doc sentence may. Two
  * reporters of one condition is the duplication this repo forbids by name, so the error reference
  * has exactly one owner.
  */
@@ -77,7 +79,7 @@ export const skipDocPath = (path: string): boolean =>
   path.startsWith('docs/plans/') ||
   path.startsWith('docs/changelog/') ||
   path === 'CHANGELOG.md' ||
-  path === 'wiki/Error-Codes.md' ||
+  (path.startsWith('wiki/') && isErrorCodePage(path)) ||
   // An installed dependency's or a build's pages are not this repo's to keep runnable.
   /(?:^|\/)(?:node_modules|dist|\.x)\//.test(path);
 

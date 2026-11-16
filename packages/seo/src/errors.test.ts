@@ -1,12 +1,13 @@
 // Single responsibility: seo's registry of codes is a closed set. A code is a shipped promise —
-// `x errors explain` answers from it and `wiki/Error-Codes.md` documents it — so one arriving or
+// `x errors explain` answers from it and `wiki/Error-Codes-seo.md` documents it — so one arriving or
 // leaving without those two edits has to be a failing test rather than a silent diff.
 
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
 import { SEO_ERROR_CODES } from './errors';
 
-const WIKI = Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes.md`);
+// seo's OWN page of the split reference: the page the manifest files these codes under.
+const WIKI = Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes-seo.md`);
 
 describe('SEO_ERROR_CODES', () => {
   // Derived, not listed: `bun run new-error-code` writes a registration, its wiki row and this

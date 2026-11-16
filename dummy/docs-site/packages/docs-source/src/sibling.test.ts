@@ -18,5 +18,8 @@ test('a code sibling carries every row, each cell under the wiki column header',
   if (a === undefined) return expect.unreachable('no X_A page');
   const text = codeMarkdown(a);
   expect(text.startsWith('# X_A\n\n## Means\n\ntwo at once')).toBe(true);
-  expect(text).toContain('[Core](/error-codes#core)\n\n---\n\n## Means\n\nagain');
+  // Each row links the owner page it sits on.
+  expect(text).toContain(
+    '[Error codes: @ultimat3/core](/error-codes-core)\n\n---\n\n## Means\n\nagain',
+  );
 });
