@@ -170,7 +170,8 @@ export interface StepInput {
 function stepPattern(steps: readonly string[]): RegExp {
   const alternation = [...steps]
     .sort((a, b) => b.length - a.length)
-    .map((name) => name.replace(/[-]/g, '\\-'))
+    // Every regex metacharacter, the backslash first: a step name is data, never a pattern.
+    .map((name) => name.replace(/[\\^$.*+?()[\]{}|-]/g, '\\$&'))
     .join('|');
   return new RegExp(`\\b(?:${alternation})\\b`, 'g');
 }
