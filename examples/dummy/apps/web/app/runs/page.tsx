@@ -191,7 +191,11 @@ export const config = defineRoute({
   // before) — why: the run console +34 B (129,657 B), solid-js 1.9.17 → 1.9.18 (+27 B in every
   // chunk that bundles Solid), the release that closes the seroval advisories for every app.
   // Raised 242.6kb → 242.7kb.
-  budget: { js: '242.7kb' },
+  // measured: 248,627 B (2026-11-16, plan 101b sweep 8b-2; x build --target static) — why: the run
+  // console and the page boot +89 B each: the action and query clients trim their base URL with
+  // `@ultimat3/core`'s linear `trimTrailingSlashes`, the one trim that replaced the quadratic
+  // `/\/+$/` at 26 sites (CodeQL js/polynomial-redos). Raised 242.7kb → 242.8kb.
+  budget: { js: '242.8kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),

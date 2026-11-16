@@ -174,7 +174,11 @@ export const config = defineRoute({
   // island +609 B (75,469 B): SearchableSelect names its open listbox by the field's own labels and
   // each described option by its label alone (+497 B), and the Menu trigger is built once so focus
   // returns to it on Escape and Tab. Raised 106.2kb → 106.8kb.
-  budget: { js: '106.8kb' },
+  // measured: 109,434 B (2026-11-16, plan 101b sweep 8b-2; x build --target static) — why: the
+  // settings island +89 B: the action and query clients trim their base URL with `@ultimat3/core`'s
+  // linear `trimTrailingSlashes`, the one trim that replaced the quadratic `/\/+$/` at 26 sites
+  // (CodeQL js/polynomial-redos). Raised 106.8kb → 106.9kb.
+  budget: { js: '106.9kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 
