@@ -1666,7 +1666,7 @@
       "plannedSubcommand": {"hash":"27ede6f197bc98c9","shape":{"kind":"function","head":"4894cee8","params":["473287f8","473287f8"],"returns":"fbd3a2a2"}},
       "prerenderSite": {"hash":"a3cf72b2a74dba36","shape":{"kind":"function","head":"95c28f2d","params":["a1a2562a"],"returns":"8305a455"}},
       "publicOrigin": {"hash":"f6aeedf2bfd7d245","shape":{"kind":"function","head":"095eb99a","params":["e4c11486","f8d18532"],"returns":"742bc7c4"}},
-      "quoteArg": {"hash":"b62413024ed19b88","shape":{"kind":"function","head":"a57d92fd","params":["473287f8"],"returns":"473287f8"}},
+      "quoteArg": {"hash":"a2be149bbbf38222","shape":{"kind":"function","head":"a57d92fd","params":["21c248b4|473287f8"],"returns":"473287f8"}},
       "readAppSources": {"hash":"1b8f649135221323","shape":{"kind":"function","head":"e5234b28","params":["473287f8","?68f05093|df3022f2"],"returns":"f0532af2"}},
       "readMigrations": {"hash":"c4a7f17c759084da","shape":{"kind":"function","head":"fdf2a3e8","params":["473287f8"],"returns":"0e6d53f7"}},
       "readTarget": {"hash":"465615578e4a97f2","shape":{"kind":"function","head":"7df7abef","params":["473287f8|eb045d78"],"returns":"c0181a92"}},

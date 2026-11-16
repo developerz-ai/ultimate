@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
 percent: 63
-current_focus: "Sweep 8a (11 compat and longevity + 12 M1–M5) on feat/sweep-8a-compat-and-maintainer-loop; sweep 7 shipped as 31.30.0 (#1157, #1158). 08, 09 close on sweep R; 10 closes after seven green flake-hunt nights. Next: sweep 8b (12 M6 pin burn-down), then sweep 9 (13)."
+current_focus: "Sweep 8b-1 (12 M6: the eight security ratchets burned down) on feat/sweep-8b-pins-and-guards; 8a shipped as 31.31.0 (#1161, #1163) with next, release/30.x and maint-30 live. Next: 8b-2 (source headers, node-import whys), 8b-3 (test-bare-error), 8b-4 (fix-prose), then 8c (CI speed), sweep 9 (13)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -68,7 +68,7 @@ slices:
     tier: 5
     sweep: "8"
     status: in_progress
-    percent: 60
+    percent: 70
     note: "M1 trackers superseded + stale-tracker guard, M2, M3 briefs, M4 health rows, M5 runbooks done (sweep 8a). M6 pin burn-down is sweep 8b. Each new brief must run once and leave evidence."
   - file: 13-shapes-and-declaration.md
     tier: 5
