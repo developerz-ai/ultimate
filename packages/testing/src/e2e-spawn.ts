@@ -10,7 +10,7 @@ import { get } from 'node:http';
 import { dirname, join } from 'node:path';
 import { assert, DRAIN_DEADLINE_DEFAULT_MS, READINESS_GRACE_DEFAULT_MS } from '@ultimat3/core';
 import { E2eAppFailedError } from './e2e-errors';
-import { freePortApartFrom, freePortPair } from './free-port';
+import { bindFreePorts, isPortClash } from './free-port-bind';
 
 /** `x dev` (sync included), or the production entry `apps/web/server.ts` under `ROLE=web`. */
 export type E2eAppMode = 'dev' | 'serve';
@@ -113,64 +113,75 @@ export const refuse = (step: string, output: string): E2eAppFailedError =>
 /** Spawn the app and answer once `/readyz` does; refuses with the app's own output tail. */
 export async function spawnE2eApp(options: SpawnE2eAppOptions): Promise<SpawnedE2eApp> {
   const deadline = options.readyTimeoutMs;
+  const termGraceMs = options.termGraceMs ?? TERM_GRACE_MS;
+  const bin = options.mode === 'serve' ? undefined : (options.bin ?? (await xBin(options.root)));
+  // Whether the last refusal was the app meeting a port another process took after it was handed
+  // out: read off the FULL tail, since the refusal's own cause carries a bounded copy of it.
+  let clashed = false;
   // A PAIR: `x dev` binds its sync node on `port + 1`, and a held neighbour exited the app at boot.
-  const port = freePortPair();
   // Its own scrape port too: every role opens one, the default is a fixed 9090, and a second app —
   // or a developer's `x dev` — already holding it is an app that dies at boot with X_PORT_IN_USE.
-  // Apart from the web port AND its neighbour, which `x dev` binds the sync node on: the OS may hand
-  // a just-released port straight back (`freePortApartFrom`).
-  const metricsPort = freePortApartFrom([port, port + 1]);
-  const base = `http://localhost:${String(port)}`;
-  const command =
-    options.mode === 'serve'
-      ? ['bun', 'apps/web/server.ts']
-      : ['bun', options.bin ?? (await xBin(options.root)), 'dev', '--port', String(port)];
-  const spawnApp = (extra: Readonly<Record<string, string>>) =>
-    Bun.spawn(command, {
-      cwd: options.root,
-      env: {
-        ...inherited(),
-        ...options.env,
-        METRICS_PORT: String(metricsPort),
-        // The origin the app is actually reachable at. A page that renders a typed client builds
-        // its absolute URLs from it, and without it `/feed` answered 500 with X_ENV_MISSING APP_URL.
-        APP_URL: base,
-        ...(options.mode === 'serve' ? { ROLE: 'web', PORT: String(port) } : {}),
-        ...extra,
-      },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-  const termGraceMs = options.termGraceMs ?? TERM_GRACE_MS;
-  // On the monotonic clock: counted in polls, every probe an app wedged mid-boot held for its
-  // whole `READY_PROBE_MS` stretched a 90 s deadline to 450 s, past any hook derived from it.
-  const ready = async (child: ReturnType<typeof spawnApp>, tail: () => string): Promise<void> => {
-    const until = performance.now() + deadline;
-    while (performance.now() < until) {
-      if (child.exitCode !== null) break;
-      if (await answersOk(`${base}/readyz`)) return;
-      await Bun.sleep(POLL_MS);
-    }
-    await end(child, termGraceMs);
-    throw refuse(`${command.join(' ')} never answered ${base}/readyz`, tail());
-  };
+  // Both are bound by the app, never probed here and trusted: a port taken between the ask and
+  // the bind is an app that exits at boot, and `bindFreePorts` boots it again on fresh ports.
+  const booted = await bindFreePorts(
+    async ([port = 0, metricsPort = 0]) => {
+      clashed = false;
+      const base = `http://localhost:${String(port)}`;
+      const command =
+        bin === undefined
+          ? ['bun', 'apps/web/server.ts']
+          : ['bun', bin, 'dev', '--port', String(port)];
+      const spawnApp = (extra: Readonly<Record<string, string>>) =>
+        Bun.spawn(command, {
+          cwd: options.root,
+          env: {
+            ...inherited(),
+            ...options.env,
+            METRICS_PORT: String(metricsPort),
+            // The origin the app is actually reachable at. A page that renders a typed client builds
+            // its absolute URLs from it, and without it `/feed` answered 500 with X_ENV_MISSING APP_URL.
+            APP_URL: base,
+            ...(options.mode === 'serve' ? { ROLE: 'web', PORT: String(port) } : {}),
+            ...extra,
+          },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+      // On the monotonic clock: counted in polls, every probe an app wedged mid-boot held for its
+      // whole `READY_PROBE_MS` stretched a 90 s deadline to 450 s, past any hook derived from it.
+      const ready = async (
+        child: ReturnType<typeof spawnApp>,
+        tail: () => string,
+      ): Promise<void> => {
+        const until = performance.now() + deadline;
+        while (performance.now() < until) {
+          if (child.exitCode !== null) break;
+          if (await answersOk(`${base}/readyz`)) return;
+          await Bun.sleep(POLL_MS);
+        }
+        await end(child, termGraceMs);
+        const output = tail();
+        clashed = isPortClash(output);
+        throw refuse(`${command.join(' ')} never answered ${base}/readyz`, output);
+      };
+      const child = spawnApp({});
+      // Drained from the start and kept bounded: an app's log is unbounded, and a pipe nobody reads
+      // fills its buffer and blocks the child on its next write — an app that "never got ready".
+      const tail = drainTail(child.stdout, child.stderr);
+      await ready(child, tail);
+      return { base, spawnApp, ready, child, tail };
+    },
+    { count: 2, pair: true, clashed: () => clashed },
+  );
 
-  let child = spawnApp({});
-  // Drained from the start and kept bounded: an app's log is unbounded, and a pipe nobody reads
-  // fills its buffer and blocks the child on its next write — an app that "never got ready".
-  let tail = drainTail(child.stdout, child.stderr);
+  const { base, spawnApp, ready } = booted;
+  let { child, tail } = booted;
   let stopped = false;
   const stop = async (): Promise<void> => {
     if (stopped) return;
     stopped = true;
     await end(child, termGraceMs);
   };
-  try {
-    await ready(child, tail);
-  } catch (error) {
-    await stop();
-    throw error;
-  }
   return {
     base,
     log: () => tail(),
@@ -185,6 +196,7 @@ export async function spawnE2eApp(options: SpawnE2eAppOptions): Promise<SpawnedE
       );
       // The same port and the same state directory — a deploy, not a second app: a tab already
       // open on `base` sees the new build on its next request, and the data it wrote is still there.
+      // A deploy cannot move: the port is the one this app held a moment ago, never a fresh ask.
       await end(child, termGraceMs);
       child = spawnApp(next);
       tail = drainTail(child.stdout, child.stderr);

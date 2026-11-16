@@ -110,8 +110,6 @@ export const DOC_COMMAND_PINS: Readonly<Record<string, number>> = {
   // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
   'docs/history/cli.md: x db branch <name>': 3,
   // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
-  'docs/history/cli.md: x db status': 1,
-  // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
   'docs/history/cli.md: x deploy --critical': 1,
   // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
   'docs/history/cli.md: x g migration': 1,

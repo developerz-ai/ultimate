@@ -5,6 +5,7 @@
 //
 //   bun run scripts/release.ts --bump minor [--dry-run] [--json]
 //   bun run scripts/release.ts --bump major --security GHSA-xxxx-xxxx-xxxx   (inside the window)
+//   bun run scripts/release.ts --bump minor --rehearse   (CI: the bump minus the changelog, uncommitted)
 
 import { join } from 'node:path';
 import { SEMVER } from '@ultimat3/cli';
@@ -49,6 +50,7 @@ import {
   workspaceManifests,
 } from './lib/workspaces';
 import { plannedApiLockLine, writeApiLock } from './release-api-lock';
+import { unlessRehearsed } from './release-rehearse';
 
 export { bumpWindowFindings } from './lib/major-window';
 // The ask query lives with the other release subjects (`lib/release-subject.ts`), one definition
@@ -75,6 +77,7 @@ export const releaseInvocation = (input: {
   readonly json: boolean;
   /** Only after `bumpWindowFindings` held it to `ADVISORY_ID`: no shell syntax can reach here. */
   readonly security?: string | undefined;
+  readonly rehearse?: boolean | undefined;
 }): string =>
   [
     'bun run scripts/release.ts',
@@ -83,6 +86,7 @@ export const releaseInvocation = (input: {
       : `--version ${input.explicit}`,
     ...(input.security === undefined ? [] : [`--security ${input.security}`]),
     ...(input.dryRun ? ['--dry-run'] : []),
+    ...(input.rehearse === true ? ['--rehearse'] : []),
     ...(input.json ? ['--json'] : []),
   ].join(' ');
 
@@ -221,6 +225,7 @@ if (import.meta.main) {
   }
   const version = resolved.version;
   const dryRun = flagBool(args, 'dry-run');
+  const rehearse = flagBool(args, 'rehearse');
   const security = flagString(args, 'security');
   refuseOutsideWindow(
     bumpWindowFindings({ version, changelog, today: date, security }),
@@ -241,6 +246,7 @@ if (import.meta.main) {
       dryRun,
       json: args.json,
       security,
+      rehearse,
     }),
   );
   if (dirty.length > 0) {
@@ -305,10 +311,12 @@ if (import.meta.main) {
   });
   // A section from 30.0.0 without its Highlights would red the gate the moment it exists: read
   // off the new release file itself, the one the Release body is cut from.
-  const unpromotable =
+  const unpromotable = unlessRehearsed(
+    rehearse,
     'findings' in promoted
       ? promoted.findings
-      : highlightFindings(parseChangelog(promoted.file.text, promoted.file.path));
+      : highlightFindings(parseChangelog(promoted.file.text, promoted.file.path)),
+  );
   if (unpromotable.length > 0) {
     report(
       {
@@ -338,31 +346,34 @@ if (import.meta.main) {
         optional: true,
       },
       // The release's own file, then the index that links it: [Unreleased] reset, one row added.
-      ...('findings' in promoted
-        ? []
-        : [
-            {
-              path: join(root, promoted.file.path),
-              rewrite: () => promoted.file.text,
-              create: true,
-            },
-            { path: changelogPath, rewrite: () => promoted.index },
-          ]),
-      // The same step as the promotion: a Known-Gaps `main` cell names what [Unreleased] carried,
-      // and this release is where it shipped (`doc-unreleased.ts` refuses one left behind).
-      {
-        path: join(root, 'wiki/Known-Gaps.md'),
-        rewrite: (raw: string) => rewriteMainCells(raw, version).text,
-        optional: true,
-      },
-      // wiki/Stability.md's next-window date, from the changelog just promoted: a major's own
-      // release PR would otherwise red the gate on the date it was never told (`stability-findings`).
-      {
-        path: join(root, STABILITY_PATH),
-        rewrite: (raw: string) =>
-          'findings' in promoted ? raw : withNextWindowLine(raw, promoted.changelog),
-        optional: true,
-      },
+      // A rehearsal stops before this side (`release-rehearse.ts`): it is the release PR's own act.
+      ...unlessRehearsed(rehearse, [
+        ...('findings' in promoted
+          ? []
+          : [
+              {
+                path: join(root, promoted.file.path),
+                rewrite: () => promoted.file.text,
+                create: true,
+              },
+              { path: changelogPath, rewrite: () => promoted.index },
+            ]),
+        // The same step as the promotion: a Known-Gaps `main` cell names what [Unreleased] carried,
+        // and this release is where it shipped (`doc-unreleased.ts` refuses one left behind).
+        {
+          path: join(root, 'wiki/Known-Gaps.md'),
+          rewrite: (raw: string) => rewriteMainCells(raw, version).text,
+          optional: true,
+        },
+        // wiki/Stability.md's next-window date, from the changelog just promoted: a major's own
+        // release PR would otherwise red the gate on the date it was never told (`stability-findings`).
+        {
+          path: join(root, STABILITY_PATH),
+          rewrite: (raw: string) =>
+            'findings' in promoted ? raw : withNextWindowLine(raw, promoted.changelog),
+          optional: true,
+        },
+      ]),
     ]);
     if (stamped.findings.length > 0) {
       report(
@@ -392,7 +403,9 @@ if (import.meta.main) {
   // so no answer from `gh` (absent binary, failed auth, timeout, garbage) may throw or touch
   // `ok`. The lookup can only add the `Fixes #<n>` close link to the next line, or one printed
   // line saying it could not confirm; a release never waits on it being more.
-  const lookup = await run(['gh', ...askIssueArgs(version)], { cwd: root }).catch(() => undefined);
+  const lookup = rehearse
+    ? undefined
+    : await run(['gh', ...askIssueArgs(version)], { cwd: root }).catch(() => undefined);
   const openAsks = lookup?.ok === true ? parseAskIssues(lookup.output) : undefined;
   const twin = openAsks === undefined ? undefined : askTwin(openAsks, version);
 
@@ -405,9 +418,11 @@ if (import.meta.main) {
       // behind is the one the tag would be cut on, and the gate reads all three files.
       ok: skew.length === 0 && performed.findings.length === 0 && apiLock?.finding === undefined,
       script: 'release',
-      summary: dryRun
-        ? `would release ${publishable.length} packages at ${version}`
-        : `${publishable.length} packages set to ${version}`,
+      summary: rehearse
+        ? `rehearsed ${publishable.length} packages at ${version}, the changelog untouched — never commit this tree`
+        : dryRun
+          ? `would release ${publishable.length} packages at ${version}`
+          : `${publishable.length} packages set to ${version}`,
       findings: [
         ...skew,
         ...performed.findings,
@@ -442,6 +457,7 @@ if (import.meta.main) {
         previousTagFound: log.ok,
         changelogDate: date,
         dryRun,
+        rehearse,
         ...(security === undefined ? {} : { security }),
         ...(twin === undefined ? {} : { openAsk: { number: twin.number, title: twin.title } }),
         writes: dryRun

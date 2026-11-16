@@ -11,8 +11,11 @@ import { maskLiterals } from '../packages/core/src/source-mask';
 import { balancedClose } from './lib/balanced-paren';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
+import type { PinTarget } from './lib/pin-edit';
+import { pinRaiseFix, pinRaiseOf } from './lib/pin-edit';
+import { ratchetPinMain } from './lib/pin-edit-main';
 import type { PinTable, RatchetGap } from './lib/ratchet';
-import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import { ratchetGaps } from './lib/ratchet';
 import type { SiteProbe } from './lib/ratchet-sites';
 import { leadSite, newSitesFirst, siteList, siteTarget } from './lib/ratchet-sites';
 import { isTestPath, lineOf } from './lib/source-scan';
@@ -20,6 +23,14 @@ import { SPAWN_TIMEOUT_PINS, SPAWN_TIMEOUT_PINS_FILE } from './lib/spawn-timeout
 import { hasTopLevelKey } from './lib/top-level-key';
 
 const SCRIPT = 'spawn-timeout';
+
+/** Where this ratchet's pins live: what its over finding's raise and `--write-pin` edit. */
+export const SPAWN_TIMEOUT_PIN_TARGET: PinTarget = {
+  script: 'scripts/spawn-timeout.ts',
+  file: SPAWN_TIMEOUT_PINS_FILE,
+  table: 'SPAWN_TIMEOUT_PINS',
+};
+
 const EXPLAIN = 'bun run scripts/spawn-timeout.ts --explain --json lists every one';
 
 /** The calls that block until the child exits. Bare names cover a `node:child_process` import. */
@@ -112,7 +123,7 @@ const at = (site: SpawnSite | undefined): string =>
 const overFinding = (gap: SpawnGap): Finding => ({
   code: 'X_SPAWN_UNTIMED',
   cause: `${gap.pkg} spawns ${String(gap.found)} child process(es) with no timeout and is pinned at ${String(gap.pinned)} — ${siteList(gap, (site) => `${at(site)} (${site.call})`, EXPLAIN)} — and a child that hangs hangs whatever waits on it, the gate included`,
-  fix: `add a timeout, in milliseconds, to the options of the call at ${siteTarget(gap, at)}; for a child its caller kills itself, raise ${gap.pkg} in SPAWN_TIMEOUT_PINS in ${SPAWN_TIMEOUT_PINS_FILE} with a why: naming who ends it`,
+  fix: `add a timeout, in milliseconds, to the options of the call at ${siteTarget(gap, at)}; for a child its caller kills itself, ${pinRaiseFix(pinRaiseOf(SPAWN_TIMEOUT_PIN_TARGET, gap))}, the reason naming who ends it`,
   at: at(leadSite(gap)),
 });
 
@@ -166,7 +177,8 @@ export const spawnGaps = async (root: string): Promise<readonly SpawnGap[]> =>
   newSitesFirst(root, checkSpawns(await spawnSites(root), SPAWN_TIMEOUT_PINS, true), PROBE);
 
 if (import.meta.main) {
-  await ratchetMain({
+  await ratchetPinMain({
+    target: SPAWN_TIMEOUT_PIN_TARGET,
     script: SCRIPT,
     pinsFile: SPAWN_TIMEOUT_PINS_FILE,
     pins: SPAWN_TIMEOUT_PINS,

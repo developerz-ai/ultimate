@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CdpLaunchFailedError } from './cdp-errors';
 import { LAUNCH_ATTEMPTS, LAUNCH_TIMEOUT_MS, launchChrome } from './cdp-launch';
+import { LAUNCH_TEST_MS } from './cdp-launch-ready';
 
 /**
  * Every fake appends one line per START to `$LOG` — its pid, its `--user-data-dir`, and whether the
@@ -83,189 +84,227 @@ describe.skipIf(WINDOWS)('launchChrome — the launch deadline', () => {
     expect(LAUNCH_ATTEMPTS).toBe(2);
   });
 
-  test('a browser slower than the PER-CALL deadline still launches, on its first start', async () => {
-    // A cold start is not a call: 1 s to answer against a 300 ms call deadline. The launcher gave
-    // the first call the per-call deadline, so this was X_CDP_LAUNCH_FAILED quoting start-up noise.
-    await using it = await fakeBrowser(`sleep 1\n${ANSWER}sleep 30\n`);
+  test(
+    'a browser slower than the PER-CALL deadline still launches, on its first start',
+    async () => {
+      // A cold start is not a call: 1 s to answer against a 300 ms call deadline. The launcher gave
+      // the first call the per-call deadline, so this was X_CDP_LAUNCH_FAILED quoting start-up noise.
+      await using it = await fakeBrowser(`sleep 1\n${ANSWER}sleep 30\n`);
 
-    const launched = await launchChrome({ executable: it.fake, timeoutMs: 300 });
-    try {
-      expect(await it.launches()).toHaveLength(1);
-      // …and every call AFTER the first keeps the caller's own deadline: the fake answers nothing
-      // more, and that is reported in 300 ms, not in the launch's sixty seconds.
-      const started = performance.now();
-      const late = await launched.connection.send('Browser.getVersion').catch((e: unknown) => e);
-      expect(late).toBeUltimateError('X_CDP_TIMEOUT');
-      expect(performance.now() - started).toBeLessThan(3_000);
-    } finally {
+      const launched = await launchChrome({ executable: it.fake, timeoutMs: 300 });
+      try {
+        expect(await it.launches()).toHaveLength(1);
+        // …and every call AFTER the first keeps the caller's own deadline: the fake answers nothing
+        // more, and that is reported in 300 ms, not in the launch's sixty seconds.
+        const started = performance.now();
+        const late = await launched.connection.send('Browser.getVersion').catch((e: unknown) => e);
+        expect(late).toBeUltimateError('X_CDP_TIMEOUT');
+        expect(performance.now() - started).toBeLessThan(3_000);
+      } finally {
+        await launched.close();
+      }
+    },
+    LAUNCH_TEST_MS,
+  );
+
+  test(
+    'the first reply split across three writes, after 64 kB of D-Bus noise, is one reply',
+    async () => {
+      const noise =
+        '[2919:2944:1002/123125.064472:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address';
+      await using it = await fakeBrowser(
+        [
+          `for i in $(seq 1 560); do echo '${noise}' >&2; done`,
+          `read -r -d '' _ <&3`,
+          // Cut inside the JSON and then inside a two-byte character (ä is c3 a4).
+          `printf '{"id":1,"res' >&4; sleep 0.1`,
+          `printf 'ult":{"product":"F\\xc3' >&4; sleep 0.1`,
+          `printf '\\xa4ke"}}\\0' >&4`,
+          'sleep 30',
+        ].join('\n'),
+      );
+
+      const launched = await launchChrome({ executable: it.fake, timeoutMs: 5_000 });
       await launched.close();
-    }
-  });
 
-  test('the first reply split across three writes, after 64 kB of D-Bus noise, is one reply', async () => {
-    const noise =
-      '[2919:2944:1002/123125.064472:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address';
-    await using it = await fakeBrowser(
-      [
-        `for i in $(seq 1 560); do echo '${noise}' >&2; done`,
-        `read -r -d '' _ <&3`,
-        // Cut inside the JSON and then inside a two-byte character (ä is c3 a4).
-        `printf '{"id":1,"res' >&4; sleep 0.1`,
-        `printf 'ult":{"product":"F\\xc3' >&4; sleep 0.1`,
-        `printf '\\xa4ke"}}\\0' >&4`,
-        'sleep 30',
-      ].join('\n'),
-    );
+      expect(await it.launches()).toHaveLength(1);
+    },
+    LAUNCH_TEST_MS,
+  );
 
-    const launched = await launchChrome({ executable: it.fake, timeoutMs: 5_000 });
-    await launched.close();
+  test(
+    'an unreadable launchTimeoutMs is refused before anything is spawned',
+    async () => {
+      await using it = await fakeBrowser(`${ANSWER}sleep 30\n`);
 
-    expect(await it.launches()).toHaveLength(1);
-  });
+      const error = await launchChrome({
+        executable: it.fake,
+        timeoutMs: 300,
+        launchTimeoutMs: Number.NaN,
+      }).catch((e: unknown) => e);
 
-  test('an unreadable launchTimeoutMs is refused before anything is spawned', async () => {
-    await using it = await fakeBrowser(`${ANSWER}sleep 30\n`);
-
-    const error = await launchChrome({
-      executable: it.fake,
-      timeoutMs: 300,
-      launchTimeoutMs: Number.NaN,
-    }).catch((e: unknown) => e);
-
-    expect(error).toBeUltimateError();
-    expect(await it.launches()).toHaveLength(0);
-  });
+      expect(error).toBeUltimateError();
+      expect(await it.launches()).toHaveLength(0);
+    },
+    LAUNCH_TEST_MS,
+  );
 });
 
 describe.skipIf(WINDOWS)('launchChrome — the one relaunch', () => {
-  test('a first start that never answers is reaped, and the second start is the browser', async () => {
-    await using it = await fakeBrowser(
-      `if [ "$N" = 1 ]; then exec sleep 30; fi\n${ANSWER}sleep 30\n`,
-    );
+  test(
+    'a first start that never answers is reaped, and the second start is the browser',
+    async () => {
+      await using it = await fakeBrowser(
+        `if [ "$N" = 1 ]; then exec sleep 30; fi\n${ANSWER}sleep 30\n`,
+      );
 
-    const launched = await launchChrome({
-      executable: it.fake,
-      timeoutMs: 300,
-      launchTimeoutMs: 300,
-    });
-    await launched.close();
+      const launched = await launchChrome({
+        executable: it.fake,
+        timeoutMs: 300,
+        launchTimeoutMs: 300,
+      });
+      await launched.close();
 
-    const [first, second, ...rest] = await it.launches();
-    expect(rest).toHaveLength(0);
-    // What the SECOND start saw of the first: no process, no profile directory. A relaunch beside a
-    // half-dead browser is two Chromes on one runner, which is the load that made the first late.
-    expect(second?.[2]).toBe('reaped,removed');
-    expect(second?.[1]).not.toBe(first?.[1]);
-  });
+      const [first, second, ...rest] = await it.launches();
+      expect(rest).toHaveLength(0);
+      // What the SECOND start saw of the first: no process, no profile directory. A relaunch beside a
+      // half-dead browser is two Chromes on one runner, which is the load that made the first late.
+      expect(second?.[2]).toBe('reaped,removed');
+      expect(second?.[1]).not.toBe(first?.[1]);
+    },
+    LAUNCH_TEST_MS,
+  );
 
-  test('a first start that ignores SIGTERM is killed outright before the second', async () => {
-    await using it = await fakeBrowser(
-      `if [ "$N" = 1 ]; then trap '' TERM; while true; do sleep 1; done; fi\n${ANSWER}sleep 30\n`,
-    );
+  test(
+    'a first start that ignores SIGTERM is killed outright before the second',
+    async () => {
+      await using it = await fakeBrowser(
+        `if [ "$N" = 1 ]; then trap '' TERM; while true; do sleep 1; done; fi\n${ANSWER}sleep 30\n`,
+      );
 
-    const launched = await launchChrome({
-      executable: it.fake,
-      timeoutMs: 300,
-      launchTimeoutMs: 300,
-    });
-    await launched.close();
+      const launched = await launchChrome({
+        executable: it.fake,
+        timeoutMs: 300,
+        launchTimeoutMs: 300,
+      });
+      await launched.close();
 
-    expect((await it.launches())[1]?.[2]).toBe('reaped,removed');
-  }, 20_000);
+      expect((await it.launches())[1]?.[2]).toBe('reaped,removed');
+    },
+    LAUNCH_TEST_MS,
+  );
 
-  test('what the browser FORKED is reaped with it, so the profile stays removed', async () => {
-    // Chrome's network process outlives the browser process and writes into the profile: measured
-    // on Chrome 150, the directory was re-created after 6 and 12 of 30 closes. The fake's child
-    // ignores SIGTERM and re-creates the profile every 20 ms, for as long as it lives.
-    await using it = await fakeBrowser(
-      [
-        `( trap '' TERM; while true; do mkdir -p "$PROFILE"; echo x >"$PROFILE/late"; sleep 0.02; done ) &`,
-        `echo "$!" >"$(dirname "$0")/forked-$N"`,
-        ANSWER,
-        'sleep 30',
-      ].join('\n'),
-    );
+  test(
+    'what the browser FORKED is reaped with it, so the profile stays removed',
+    async () => {
+      // Chrome's network process outlives the browser process and writes into the profile: measured
+      // on Chrome 150, the directory was re-created after 6 and 12 of 30 closes. The fake's child
+      // ignores SIGTERM and re-creates the profile every 20 ms, for as long as it lives.
+      await using it = await fakeBrowser(
+        [
+          `( trap '' TERM; while true; do mkdir -p "$PROFILE"; echo x >"$PROFILE/late"; sleep 0.02; done ) &`,
+          `echo "$!" >"$(dirname "$0")/forked-$N"`,
+          ANSWER,
+          'sleep 30',
+        ].join('\n'),
+      );
 
-    const launched = await launchChrome({ executable: it.fake, timeoutMs: 5_000 });
-    await launched.close();
+      const launched = await launchChrome({ executable: it.fake, timeoutMs: 5_000 });
+      await launched.close();
 
-    const [first] = await it.launches();
-    const forked = (await Bun.file(join(it.fake, '..', 'forked-1')).text()).trim();
-    expect(alive(forked)).toBe(false);
-    // real-clock: a forked shell child rewrites the profile every 20 ms while it lives.
-    await Bun.sleep(100);
-    expect(await Bun.file(join(first?.[1] ?? '', 'late')).exists()).toBe(false);
-  });
+      const [first] = await it.launches();
+      const forked = (await Bun.file(join(it.fake, '..', 'forked-1')).text()).trim();
+      expect(alive(forked)).toBe(false);
+      // real-clock: a forked shell child rewrites the profile every 20 ms while it lives.
+      await Bun.sleep(100);
+      expect(await Bun.file(join(first?.[1] ?? '', 'late')).exists()).toBe(false);
+    },
+    LAUNCH_TEST_MS,
+  );
 
-  test('two silent starts are X_CDP_LAUNCH_FAILED carrying BOTH stderr tails, and no third', async () => {
-    await using it = await fakeBrowser('exec sleep 30\n');
+  test(
+    'two silent starts are X_CDP_LAUNCH_FAILED carrying BOTH stderr tails, and no third',
+    async () => {
+      await using it = await fakeBrowser('exec sleep 30\n');
 
-    const started = performance.now();
-    const error = await launchChrome({
-      executable: it.fake,
-      timeoutMs: 300,
-      launchTimeoutMs: 300,
-    }).catch((e: unknown) => e);
+      const started = performance.now();
+      const error = await launchChrome({
+        executable: it.fake,
+        timeoutMs: 300,
+        launchTimeoutMs: 300,
+      }).catch((e: unknown) => e);
 
-    expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
-    const { cause, meta } = error as CdpLaunchFailedError;
-    expect(cause).toContain('launch-1-said-this');
-    expect(cause).toContain('launch-2-said-this');
-    expect(cause).toContain('300ms');
-    expect(meta?.['attempts']).toMatchObject([
-      { why: 'deadline', exitCode: null, stderr: 'launch-1-said-this' },
-      { why: 'deadline', exitCode: null, stderr: 'launch-2-said-this' },
-    ]);
-    const launches = await it.launches();
-    expect(launches).toHaveLength(LAUNCH_ATTEMPTS);
-    for (const [pid, profile] of launches) {
-      expect(alive(pid ?? '')).toBe(false);
-      expect(await Bun.file(profile ?? '').exists()).toBe(false);
-    }
-    // Two deadlines and two reaps — bounded, never the fakes' 30 s.
-    expect(performance.now() - started).toBeLessThan(5_000);
-  });
+      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+      const { cause, meta } = error as CdpLaunchFailedError;
+      expect(cause).toContain('launch-1-said-this');
+      expect(cause).toContain('launch-2-said-this');
+      expect(cause).toContain('300ms');
+      expect(meta?.['attempts']).toMatchObject([
+        { why: 'deadline', exitCode: null, stderr: 'launch-1-said-this' },
+        { why: 'deadline', exitCode: null, stderr: 'launch-2-said-this' },
+      ]);
+      const launches = await it.launches();
+      expect(launches).toHaveLength(LAUNCH_ATTEMPTS);
+      for (const [pid, profile] of launches) {
+        expect(alive(pid ?? '')).toBe(false);
+        expect(await Bun.file(profile ?? '').exists()).toBe(false);
+      }
+      // Two deadlines and two reaps — bounded, never the fakes' 30 s.
+      expect(performance.now() - started).toBeLessThan(5_000);
+    },
+    LAUNCH_TEST_MS,
+  );
 
-  test('a browser that EXITS says so, with its code, and is not reported as a deadline', async () => {
-    await using it = await fakeBrowser(`echo 'libnss3.so: cannot open' >&2\nexit 127\n`);
+  test(
+    'a browser that EXITS says so, with its code, and is not reported as a deadline',
+    async () => {
+      await using it = await fakeBrowser(`echo 'libnss3.so: cannot open' >&2\nexit 127\n`);
 
-    const error = await launchChrome({ executable: it.fake, timeoutMs: 5_000 }).catch(
-      (e: unknown) => e,
-    );
+      const error = await launchChrome({ executable: it.fake, timeoutMs: 5_000 }).catch(
+        (e: unknown) => e,
+      );
 
-    expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
-    const { cause, meta } = error as CdpLaunchFailedError;
-    expect(cause).toContain('exited with code 127');
-    expect(cause).toContain('libnss3.so');
-    expect(meta?.['attempts']).toMatchObject([
-      { why: 'closed', exitCode: 127 },
-      { why: 'closed', exitCode: 127 },
-    ]);
-  });
+      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+      const { cause, meta } = error as CdpLaunchFailedError;
+      expect(cause).toContain('exited with code 127');
+      expect(cause).toContain('libnss3.so');
+      expect(meta?.['attempts']).toMatchObject([
+        { why: 'closed', exitCode: 127 },
+        { why: 'closed', exitCode: 127 },
+      ]);
+    },
+    LAUNCH_TEST_MS,
+  );
 
-  test('a browser that announced its port and then refused the dial says WHICH dial, and why', async () => {
-    // Seen once on windows: "DevTools listening" printed, then `why: 'closed'` and nothing else —
-    // the dial's own error was dropped, so the report read like a browser that died. Port 1 on
-    // loopback: nothing unprivileged listens there, so the dial is refused on every machine.
-    const endpoint = '/devtools/browser/fake';
-    await using it = await fakeBrowser(
-      `printf '1\\n${endpoint}\\n' >"$PROFILE/DevToolsActivePort"\nexec sleep 30\n`,
-    );
+  test(
+    'a browser that announced its port and then refused the dial says WHICH dial, and why',
+    async () => {
+      // Seen once on windows: "DevTools listening" printed, then `why: 'closed'` and nothing else —
+      // the dial's own error was dropped, so the report read like a browser that died. Port 1 on
+      // loopback: nothing unprivileged listens there, so the dial is refused on every machine.
+      const endpoint = '/devtools/browser/fake';
+      await using it = await fakeBrowser(
+        `printf '1\\n${endpoint}\\n' >"$PROFILE/DevToolsActivePort"\nexec sleep 30\n`,
+      );
 
-    const error = await launchChrome({ executable: it.fake, timeoutMs: 5_000, wire: 'port' }).catch(
-      (e: unknown) => e,
-    );
+      const error = await launchChrome({
+        executable: it.fake,
+        timeoutMs: 5_000,
+        wire: 'port',
+      }).catch((e: unknown) => e);
 
-    expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
-    const { cause, meta } = error as CdpLaunchFailedError;
-    expect(cause).toContain(`ws://127.0.0.1:1${endpoint}`);
-    expect(cause).toContain('refused the connection');
-    expect(cause).not.toContain('closed its DevTools pipe');
-    expect(meta?.['attempts']).toMatchObject([
-      { why: 'closed', detail: expect.stringContaining('refused the connection') },
-      { why: 'closed', detail: expect.stringContaining('refused the connection') },
-    ]);
-  }, 20_000);
+      expect(error).toBeUltimateError('X_CDP_LAUNCH_FAILED');
+      const { cause, meta } = error as CdpLaunchFailedError;
+      expect(cause).toContain(`ws://127.0.0.1:1${endpoint}`);
+      expect(cause).toContain('refused the connection');
+      expect(cause).not.toContain('closed its DevTools pipe');
+      expect(meta?.['attempts']).toMatchObject([
+        { why: 'closed', detail: expect.stringContaining('refused the connection') },
+        { why: 'closed', detail: expect.stringContaining('refused the connection') },
+      ]);
+    },
+    LAUNCH_TEST_MS,
+  );
 });
 
 describe('CdpLaunchFailedError', () => {

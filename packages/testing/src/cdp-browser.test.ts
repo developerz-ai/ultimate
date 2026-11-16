@@ -9,6 +9,7 @@ import {
   CLOSE_GRACE_MS,
   LAUNCH_ATTEMPTS,
   LAUNCH_BUDGET_MS,
+  LAUNCH_TEST_MS,
   LAUNCH_TIMEOUT_MS,
   LAUNCHED_CLOSE_MS,
 } from '@ultimat3/scraping/cdp';
@@ -29,17 +30,25 @@ import { cdpE2eSession } from './cdp-e2e-session';
 const NOWHERE = { [CHROME_PATH_ENV]: '/nonexistent/definitely-not-a-browser' };
 
 describe('opening a browser on a machine that has none', () => {
-  test('openE2eBrowserIfAvailable answers undefined, so the suite above it SKIPS', async () => {
-    expect(await openE2eBrowserIfAvailable({ env: NOWHERE, timeoutMs: 1_000 })).toBeUndefined();
-  });
+  test(
+    'openE2eBrowserIfAvailable answers undefined, so the suite above it SKIPS',
+    async () => {
+      expect(await openE2eBrowserIfAvailable({ env: NOWHERE, timeoutMs: 1_000 })).toBeUndefined();
+    },
+    LAUNCH_TEST_MS,
+  );
 
-  test('openE2eBrowser refuses by name, for a caller that has already decided it needs one', async () => {
-    const thrown = await openE2eBrowser({ env: NOWHERE, timeoutMs: 1_000 }).catch(
-      (error: unknown) => error,
-    );
+  test(
+    'openE2eBrowser refuses by name, for a caller that has already decided it needs one',
+    async () => {
+      const thrown = await openE2eBrowser({ env: NOWHERE, timeoutMs: 1_000 }).catch(
+        (error: unknown) => error,
+      );
 
-    expect((thrown as { code?: string }).code).toBe('X_CDP_BROWSER_MISSING');
-  });
+      expect((thrown as { code?: string }).code).toBe('X_CDP_BROWSER_MISSING');
+    },
+    LAUNCH_TEST_MS,
+  );
 });
 
 describe('the open budget a browser hook is given', () => {

@@ -16,6 +16,7 @@
 
 import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import { frozenClock, isUltimateError, logger } from '@ultimat3/core';
+import { subscribed } from './bus-subscribed-fixture';
 import { channel } from './channel-decl';
 import { clearChannels } from './channel-registry';
 import { parseNatsUrl } from './nats-client';
@@ -93,7 +94,12 @@ describe.skipIf(url === undefined)('a nats-server that goes silent under open co
         await transport.connect();
         await direct.connect();
         await waitFor(() => publisher.connected, 400, 25);
-        await direct.subscribe(subject, (payload) => seen.push(payload));
+        const held = await subscribed({
+          subscriber: direct,
+          publisher,
+          subject,
+          handler: (payload) => seen.push(payload),
+        });
         await publisher.publish(subject, 'before');
         await waitFor(() => seen.length === 1, 200, 25);
         expect(seen).toEqual(['before']);
@@ -123,6 +129,7 @@ describe.skipIf(url === undefined)('a nats-server that goes silent under open co
           // the at-most-once contract: the event said "re-read", and a reader that reconnects
           // re-reads. That is why the window is kept this short.
           expect(publisher.connected).toBe(true);
+          // bus-order: lost by design — the relay forwards nothing inside the window
           await publisher.publish(subject, 'into the void');
           // The node's presence write under the page's beat goes unanswered, and the node says
           // so — coded, under the membership's sid — one request timeout later.
@@ -171,6 +178,8 @@ describe.skipIf(url === undefined)('a nats-server that goes silent under open co
         await waitFor(() => publisher.connected && transport.connected, 800, 25);
         expect(publisher.connected).toBe(true);
         expect(transport.connected).toBe(true);
+        // The publisher's connection is new: heard through `direct` before the publish that counts.
+        await held.subscribed();
         await publisher.publish(subject, 'after');
         await waitFor(() => seen.length === 2, 200, 25);
         // The one lost in the window stays lost; nothing was queued and replayed late.
@@ -180,6 +189,9 @@ describe.skipIf(url === undefined)('a nats-server that goes silent under open co
         await waitFor(() => t.membership.state() === 'live', 400, 25);
         expect(t.membership.state()).toBe('live');
         expect((await t.presence.list(t.topic)).map((member) => member.id)).toEqual(['sock-1']);
+        // The beat above is a request on the node's connection, sent after the SUBs its reconnect
+        // re-sent; the node answering it (`live`) is the server having read them.
+        // bus-order: the room's re-sent SUB was read before the beat that made it `live`
         await t.publish({ typing: 'ana' });
         await waitFor(() => t.events.length > 0, 400, 25);
         expect(t.events).toEqual([{ typing: 'ana' }]);

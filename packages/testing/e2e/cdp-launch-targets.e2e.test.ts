@@ -2,11 +2,11 @@
 // extensions survive `--disable-extensions`, each with a page of its own, and one of them loading
 // `thunk.js` at start-up was paused by `x shot`'s browser-wide interception and logged as the page's
 // off-list request (CI, 2026-10-09). Skips with no Chrome, and refuses to skip under
-// `E2E_BROWSER_REQUIRED=1`.
+// `E2E_BROWSER_REQUIRED=1`. Launched through `launchReady`: the targets are read once the page
+// EXISTS (heard as `Target.targetCreated`), never on the first answer, when a cold one may not yet.
 
 import { describe, expect, test } from 'bun:test';
-import { findChrome, launchChrome } from '@ultimat3/scraping/cdp';
-import { E2E_BROWSER_OPEN_MS } from '../src/cdp-browser';
+import { findChrome, LAUNCH_TEST_MS, launchReady } from '@ultimat3/scraping/cdp';
 
 const chrome = await findChrome(process.env);
 const required = process.env['E2E_BROWSER_REQUIRED'] === '1';
@@ -28,7 +28,7 @@ describe.skipIf(chrome === undefined && !required)('launchChrome — the browser
     async () => {
       if (chrome === undefined)
         expect.unreachable('E2E_BROWSER_REQUIRED=1 and no Chrome was found');
-      const browser = await launchChrome({ executable: chrome, timeoutMs: 20_000 });
+      const browser = await launchReady({ executable: chrome, timeoutMs: 20_000 });
       try {
         const answer = await browser.connection.send('Target.getTargets');
         const infos = (answer.result as { targetInfos?: unknown } | undefined)?.targetInfos;
@@ -44,6 +44,6 @@ describe.skipIf(chrome === undefined && !required)('launchChrome — the browser
         await browser.close();
       }
     },
-    E2E_BROWSER_OPEN_MS,
+    LAUNCH_TEST_MS,
   );
 });

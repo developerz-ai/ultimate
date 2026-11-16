@@ -25,7 +25,7 @@ import { ensureKvBucket } from './nats-jetstream';
 import { NatsKvSet } from './nats-kv';
 import { openNatsClient } from './nats-open';
 import { NatsReports } from './nats-reports';
-import { NatsSubscriptions } from './nats-subscriptions';
+import { NatsReconnectAnnouncer, NatsSubscriptions, untilServerHolds } from './nats-subscriptions';
 import {
   defaultBackoff,
   policyDelay,
@@ -105,7 +105,7 @@ export class NatsTransport implements Transport {
   /** Where background failures go: a fault every time, an outage thinned (`nats-reports.ts`). */
   readonly #reports: NatsReports;
   readonly #subscriptions = new NatsSubscriptions();
-  readonly #reconnectListeners = new Set<() => void>();
+  readonly #announcer: NatsReconnectAnnouncer;
 
   constructor(options: NatsTransportOptions) {
     // Parsed here rather than at the first publish: a malformed NATS_URL is a boot-time fault, and
@@ -117,6 +117,7 @@ export class NatsTransport implements Transport {
       onError: options.onError,
       outageLevel: options.outageLevel ?? 'error',
     });
+    this.#announcer = new NatsReconnectAnnouncer((error) => this.#reports.fault(error, this.name));
     this.#connect = options.connect ?? openNatsClient;
     this.#backoff = options.backoff ?? defaultBackoff;
     this.#attempts = finiteOption(
@@ -222,7 +223,7 @@ export class NatsTransport implements Transport {
     // writing the SUB and the server reading it was lost (`nats-black-hole.live.test.ts`, CI run
     // 39145087176). Mid-reconnect there is no server to ask: the library re-sends the SUB on the
     // way back, and `onReconnect` reports that gap. A flush that fails is that same case.
-    if (client.connected) await client.flush().catch(() => undefined);
+    await untilServerHolds(client);
     return { subject, unsubscribe: release };
   }
 
@@ -233,10 +234,7 @@ export class NatsTransport implements Transport {
    * the unsubscribe.
    */
   onReconnect(listener: () => void): () => void {
-    this.#reconnectListeners.add(listener);
-    return () => {
-      this.#reconnectListeners.delete(listener);
-    };
+    return this.#announcer.on(listener);
   }
 
   async close(): Promise<void> {
@@ -393,7 +391,8 @@ export class NatsTransport implements Transport {
               failure.subject,
             );
           }
-          this.#announce();
+          // Announced once the server holds what `bindAll` re-sent (`nats-subscriptions.ts`).
+          await this.#announcer.announce(client);
         } catch (error) {
           if (this.#closed) return;
           this.#lastFailure = renderThrowable(error);
@@ -451,17 +450,7 @@ export class NatsTransport implements Transport {
     // A lazy bucket is forgotten instead, and asserted again by whoever next reads `shared`.
     if (this.#lazyBucket) this.#bucketed.delete(client);
     else void this.#ensureBucket(client).catch((error: unknown) => this.#reports.outage(error));
-    this.#announce();
-  }
-
-  #announce(): void {
-    for (const listener of [...this.#reconnectListeners]) {
-      try {
-        listener();
-      } catch (error) {
-        this.#reports.fault(error, this.name);
-      }
-    }
+    void this.#announcer.announce(client);
   }
 
   /**

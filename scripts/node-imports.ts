@@ -34,13 +34,24 @@ import type { SourceFile } from './boundaries';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import { NODE_IMPORT_PINS, NODE_PINS_FILE } from './lib/node-import-pins';
+import type { PinTarget } from './lib/pin-edit';
+import { pinRaiseFix, pinRaiseOf } from './lib/pin-edit';
+import { ratchetPinMain } from './lib/pin-edit-main';
 import type { PinTable, RatchetGap } from './lib/ratchet';
-import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import { ratchetGaps } from './lib/ratchet';
 import type { SiteProbe } from './lib/ratchet-sites';
 import { leadSite, newSitesFirst, siteList, siteTarget } from './lib/ratchet-sites';
 import { isCode, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'node-imports';
+
+/** Where this ratchet's pins live: what its over finding's raise and `--write-pin` edit. */
+export const NODE_IMPORT_PIN_TARGET: PinTarget = {
+  script: 'scripts/node-imports.ts',
+  file: NODE_PINS_FILE,
+  table: 'NODE_IMPORT_PINS',
+};
+
 const EXPLAIN = 'bun run scripts/node-imports.ts --explain --json lists every one';
 
 /**
@@ -193,7 +204,7 @@ const at = (site: NodeImportSite | undefined): string =>
 const overFinding = (gap: NodeImportGap): Finding => ({
   code: 'X_NODE_IMPORT_UNEXPLAINED',
   cause: `${gap.pkg} imports a node: builtin without saying why in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${siteList(gap, (site) => `${at(site)} (${site.specifier})`, EXPLAIN)} — and no comment says which Bun native was missing, so nobody can tell whether it is still unavoidable`,
-  fix: `add a comment above ${siteTarget(gap, at)} beginning "why:" and naming the Bun API that does not exist — e.g. // why: Bun has no synchronous stdout write, and process.stdout.write drops its queue on exit`,
+  fix: `add a comment above ${siteTarget(gap, at)} beginning "why:" and naming the Bun API that does not exist — e.g. // why: Bun has no synchronous stdout write, and process.stdout.write drops its queue on exit; or ${pinRaiseFix(pinRaiseOf(NODE_IMPORT_PIN_TARGET, gap))}`,
   at: at(leadSite(gap)),
 });
 
@@ -238,7 +249,8 @@ export const nodeImportFindings = async (root: string): Promise<readonly Finding
   (await nodeImportGaps(root)).map(nodeImportFindingFor);
 
 if (import.meta.main) {
-  await ratchetMain({
+  await ratchetPinMain({
+    target: NODE_IMPORT_PIN_TARGET,
     script: SCRIPT,
     pinsFile: NODE_PINS_FILE,
     pins: NODE_IMPORT_PINS,

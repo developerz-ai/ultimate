@@ -11,6 +11,7 @@ import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { busPublishFindings } from './bus-subscribed';
 import { carriedKeySites } from './catalog-keys';
 import { catchRenderFindings } from './catch-render';
 import { configReaderInput } from './config-readers';
@@ -23,6 +24,7 @@ import { fixShellArgFindings } from './fix-shell-arg';
 import { flightCopyFindings } from './flight-copies';
 import { frameworkEnvCheck } from './framework-env';
 import { frozenRecordReport } from './frozen-records';
+import { launchDeadlineFindings } from './launch-deadline';
 import { CORPUS_FLOORS, corpus } from './lib/corpus';
 import { scanFrameworkCatalogSources } from './lib/i18n-scan';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
@@ -64,6 +66,8 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['spawn-timeout', spawnSites],
   ['test-bare-error', bareErrorFindings],
   ['test-real-sleep', realSleepFindings],
+  ['bus-subscribed', busPublishFindings],
+  ['launch-deadline', launchDeadlineFindings],
   ['test-fix-citations', testFixFindings],
   ['url-pathname', urlPathnameFindings],
   ['posix-relative', relativeSites],

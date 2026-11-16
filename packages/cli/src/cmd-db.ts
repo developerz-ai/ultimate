@@ -1,7 +1,7 @@
-// `x db gen|migrate|reset|seed|studio|branch|backfill|diagnostics|recount` — everything that touches the
+// `x db gen|migrate|reset|seed|studio|branch|backfill|diagnostics|recount|status` — everything that touches the
 // database. One subcommand per line and no fall-through: a word this file does not know is refused,
 // never re-read as an argument to the last branch. `branch` is `cmd-db-branch.ts`, `diagnostics`
-// is `db-diagnostics.ts`.
+// is `db-diagnostics.ts`, `status` is `cmd-db-status.ts`.
 //
 // Every subcommand here runs `@ultimat3/db`'s own engine, which is the engine `ROLE=migrate` runs
 // (`serve.ts`): one `x_migrations` ledger, one checksum rule, one advisory lock, from a laptop to
@@ -20,6 +20,7 @@ import { runBackfillCommand } from './cmd-db-backfill';
 import { runBranchCommand } from './cmd-db-branch';
 import { runRecountCommand } from './cmd-db-recount';
 import { DB_SUBCOMMANDS, dbSpec } from './cmd-db-spec';
+import { runDbStatus } from './cmd-db-status';
 import type { CliCommand, CommandContext } from './command';
 import { runDiagnostics } from './db-diagnostics';
 import { stepFinding } from './db-finding';
@@ -71,6 +72,7 @@ export const dbCommand: CliCommand = {
     if (sub === 'branch') return runBranchCommand(ctx, root);
     if (sub === 'diagnostics') return runDiagnostics(ctx, root);
     if (sub === 'recount') return runRecountCommand(ctx, root);
+    if (sub === 'status') return runDbStatus(ctx, root);
 
     // Never a fall-through. This used to end `return runBranch(ctx, root, argument ?? 'preview')`,
     // so ANY subcommand the parser had not already refused was reinterpreted as a branch NAME and

@@ -32,6 +32,7 @@ import {
   sharedLeafFindingFor,
 } from './boundaries';
 import { boundaryRuleDocFindings } from './boundary-rule-docs';
+import { busPublishFindings } from './bus-subscribed';
 import { chartVersionFindings } from './chart-version';
 import { cliOutboundFindings } from './cli-outbound';
 import { derivedDocCountFindings } from './derived-doc-counts';
@@ -51,6 +52,7 @@ import { imageContractFindings } from './image-contract';
 import { instrumentSlotFindings } from './instrument-slots';
 import { keyedHasherFindings } from './keyed-hasher';
 import { knownGapLinkFindings } from './known-gaps-links';
+import { launchDeadlineFindings } from './launch-deadline';
 import { checkConfigImports, configImportFindingFor } from './lib/config-import';
 import { allOf, atMost, compilerWidth, oneAtATime } from './lib/host-check-run';
 import { stabilityFindings } from './lib/stability-findings';
@@ -286,6 +288,8 @@ export const ERROR_CHECKS: readonly HostCheck[] = [
   testFixFindings,
   bareErrorFindings,
   realSleepFindings,
+  busPublishFindings,
+  launchDeadlineFindings,
   throwFindings,
   fixProseFindings,
 ];

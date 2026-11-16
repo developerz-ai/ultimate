@@ -44,3 +44,4 @@ export {
   launchFoundChrome,
 } from './cdp-launch';
 export { LAUNCHED_CLOSE_MS } from './cdp-launch-attempt';
+export { LAUNCH_TEST_MS, launchReady, launchTestMs, pageTargetReady } from './cdp-launch-ready';

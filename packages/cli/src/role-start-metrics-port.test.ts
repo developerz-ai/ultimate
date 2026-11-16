@@ -13,10 +13,12 @@ import { fixtureRuntime, resetDevRolesState } from './role-start-fixture';
 
 const ROOT = `${import.meta.dir}/../.roles-metrics-port-fixture`;
 let running: RunningRoles | undefined;
+const held: ReturnType<typeof Bun.serve>[] = [];
 
 afterEach(async () => {
   await running?.stop();
   running = undefined;
+  for (const server of held.splice(0)) server.stop(true);
   resetDevRolesState();
   resetLifecycle();
 });
@@ -25,12 +27,15 @@ afterAll(async () => {
   await rm(ROOT, { recursive: true, force: true });
 });
 
-/** A port nothing holds, released at once — the number a caller would put in `METRICS_PORT`. */
-const releasedPort = (): number => {
-  const probe = Bun.serve({ port: 0, fetch: () => new Response() });
-  const port = probe.port ?? 0;
-  probe.stop(true);
-  return port;
+/**
+ * A port THIS file holds until the test ends — the number a caller would put in `METRICS_PORT`.
+ * Held, never released: the refusals below come before anything binds, so a boot that bound it
+ * would meet Bun's own `EADDRINUSE` instead of the named refusal, and no other process can take it.
+ */
+const heldPort = (): number => {
+  const holder = Bun.serve({ port: 0, fetch: () => new Response() });
+  held.push(holder);
+  return holder.port ?? expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
 };
 
 const boot = (roles: readonly ('web' | 'sync')[], port: number, metricsPort: number) =>
@@ -48,7 +53,7 @@ const boot = (roles: readonly ('web' | 'sync')[], port: number, metricsPort: num
 describe('unit · the scrape port is apart from the role ports', () => {
   test('METRICS_PORT equal to the web port is refused by name, before anything binds', async () => {
     resetLifecycle();
-    const port = releasedPort();
+    const port = heldPort();
     const refused = await boot(['web'], port, port).then(
       (roles) => {
         running = roles;
@@ -63,7 +68,7 @@ describe('unit · the scrape port is apart from the role ports', () => {
 
   test('so is the web port’s neighbour when the sync node is bound on it', async () => {
     resetLifecycle();
-    const port = releasedPort();
+    const port = heldPort();
     const refused = await boot(['web', 'sync'], port, port + 1).then(
       (roles) => {
         running = roles;
@@ -135,7 +140,7 @@ test('unit · the fix never names a port a role holds, at the top of the range t
 
 test('unit · a container refuses METRICS_PORT equal to its web port before it binds either', async () => {
   const { serveApp } = await import('./serve');
-  const port = releasedPort();
+  const port = heldPort();
   const refused = await serveApp({
     root: ROOT,
     env: { ULTIMATE_ENV: 'development' },

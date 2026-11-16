@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { defineAuth, postgresAuthAdapter, register } from '@ultimat3/auth';
 import { pgliteClient } from '@ultimat3/db';
 import { seedId } from '@ultimat3/entity';
-import { allowHost } from '@ultimat3/testing';
+import { allowHost, bindFreePorts, isPortClash } from '@ultimat3/testing';
 import { writeNewApp } from '../src/cmd-new';
 import { linkWorkspace } from '../src/generate-sign-in-fixture';
 
@@ -57,16 +57,8 @@ const x = async (argv: readonly string[], env: Record<string, string> = {}): Pro
   return text;
 };
 
-/** A port nothing here holds: the seeded test RNG would hand two suites the same one. */
-const freePort = (): number => {
-  const probe = Bun.serve({ port: 0, fetch: () => new Response() });
-  const port = probe.port ?? 0;
-  probe.stop(true);
-  return port;
-};
-
 /** The production boot, started from the app tree the way the container starts it. */
-const boot = (env: Record<string, string>) =>
+const boot = (env: Record<string, string>, metricsPort: number) =>
   Bun.spawn([process.execPath, 'apps/web/server.ts'], {
     cwd: dir,
     env: {
@@ -76,7 +68,7 @@ const boot = (env: Record<string, string>) =>
       ULTIMATE_ENV: 'production',
       ULTIMATE_STATE_DIR: stateDir,
       HOST: '127.0.0.1',
-      METRICS_PORT: String(freePort()),
+      METRICS_PORT: String(metricsPort),
       ...env,
     },
     stdout: 'pipe',
@@ -115,6 +107,36 @@ const started = async (child: ReturnType<typeof Bun.spawn>): Promise<void> => {
   expect.unreachable(`the web role never started: ${seen.slice(-2000)} ${stderr.slice(-2000)}`);
 };
 
+/**
+ * The web role on ports it binds itself, resolved once it started. One that exits first meeting a
+ * port another process took after it was handed out is booted again on fresh ones; `started`'s
+ * failure carries the role's output, which is what `bindFreePorts` reads the clash from.
+ */
+const bootServing = (env: (port: number) => Record<string, string>) =>
+  bindFreePorts(
+    async ([port = 0, metricsPort = 0]) => {
+      const child = boot({ ...env(port), PORT: String(port) }, metricsPort);
+      await started(child);
+      return { child, port };
+    },
+    { count: 2 },
+  );
+
+/** A boot that must refuse: its exit code and output, asked again only when a port was taken. */
+const bootRefused = (env: Record<string, string>) =>
+  bindFreePorts(
+    async ([port = 0, metricsPort = 0]) => {
+      const child = boot({ ...env, PORT: String(port) }, metricsPort);
+      const code = await child.exited;
+      const stderr = await new Response(child.stderr as ReadableStream).text();
+      const stdout = await new Response(child.stdout as ReadableStream).text();
+      const output = `${stdout}${stderr}`;
+      if (isPortClash(output)) return expect.unreachable(`a port was taken first: ${output}`);
+      return { code, output };
+    },
+    { count: 2 },
+  );
+
 describe('x g sign-in --password, deployed', () => {
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'x-sign-in-e2e-'));
@@ -136,12 +158,14 @@ describe('x g sign-in --password, deployed', () => {
     } finally {
       await client.close();
     }
-    const port = freePort();
-    origin = `http://127.0.0.1:${String(port)}`;
+    const booted = await bootServing((port) => ({
+      ...SECRETS,
+      APP_URL: `http://127.0.0.1:${String(port)}`,
+    }));
+    server = booted.child;
+    origin = `http://127.0.0.1:${String(booted.port)}`;
     // The sealed network admits the one origin this suite booted, and nothing else.
-    allowHost(`127.0.0.1:${String(port)}`);
-    server = boot({ ...SECRETS, PORT: String(port), APP_URL: origin });
-    await started(server);
+    allowHost(`127.0.0.1:${String(booted.port)}`);
   }, BOOT_MS * 3);
 
   // The boot drains on SIGTERM inside its own deadline, so the hook waits that out.
@@ -183,12 +207,9 @@ describe('x g sign-in --password, deployed', () => {
   test(
     'a deployed web role with sign-in unconfigured refuses to start',
     async () => {
-      const child = boot({ ...DEPLOYED, PORT: String(freePort()) });
-      const code = await child.exited;
-      const stderr = await new Response(child.stderr as ReadableStream).text();
-      const stdout = await new Response(child.stdout as ReadableStream).text();
+      const { code, output } = await bootRefused(DEPLOYED);
       expect(code).not.toBe(0);
-      expect(`${stdout}${stderr}`).toContain('X_AUTH_SIGN_IN_UNCONFIGURED');
+      expect(output).toContain('X_AUTH_SIGN_IN_UNCONFIGURED');
     },
     BOOT_MS,
   );
@@ -200,13 +221,10 @@ describe('x g sign-in --password, deployed', () => {
       // Throws on import: a TypeError reading a property of undefined.
       await Bun.write(broken, 'export const broken = (undefined as unknown as { x: number }).x;\n');
       try {
-        const child = boot({ ...SECRETS, PORT: String(freePort()) });
-        const code = await child.exited;
-        const stderr = await new Response(child.stderr as ReadableStream).text();
-        const stdout = await new Response(child.stdout as ReadableStream).text();
+        const { code, output } = await bootRefused(SECRETS);
         expect(code).not.toBe(0);
-        expect(`${stdout}${stderr}`).toContain('X_APP_MODULE_LOAD_FAILED');
-        expect(`${stdout}${stderr}`).toContain('apps/web/app/broken.ts');
+        expect(output).toContain('X_APP_MODULE_LOAD_FAILED');
+        expect(output).toContain('apps/web/app/broken.ts');
       } finally {
         await rm(broken, { force: true });
       }

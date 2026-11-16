@@ -151,10 +151,10 @@ describe('the checks, over a repo', () => {
     // The failure that shipped six times: the text rule sees a command and passes, and the reader
     // gets X_CLI_UNKNOWN_COMMAND instead of the fix. Resolving it against the registry is the
     // only thing that can tell the two apart.
-    await write('packages/db/src/thing.ts', "throw new E({ fix: 'x db status --json' });\n");
+    await write('packages/db/src/thing.ts', "throw new E({ fix: 'x db dump --json' });\n");
     const [finding] = await checkErrorFixes(root);
     expect(finding?.code).toBe('X_ERROR_FIX_INVALID');
-    expect(finding?.cause).toContain('x db status');
+    expect(finding?.cause).toContain('x db dump');
   });
 
   test('a fix that names no command at all is still runnable', async () => {

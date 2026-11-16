@@ -3,20 +3,18 @@
 // page it serves; the same boot as a container must not.
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+import { bindFreePorts } from '@ultimat3/testing';
 import type { RunningRoles } from './role-start';
 import { selectRoles, startRoles } from './role-start';
 import { fixtureRuntime, resetDevRolesState } from './role-start-fixture';
-import { syncPortFor } from './role-sync';
 import type { WebBinding } from './web-binding';
 
 const ROOT = `${import.meta.dir}/../.roles-fixture-dev-origin`;
 
 let running: RunningRoles | undefined;
-const held: { stop(closeActive: boolean): unknown }[] = [];
 afterEach(async () => {
   await running?.stop();
   running = undefined;
-  for (const server of held.splice(0)) server.stop(true);
   resetDevRolesState();
 });
 afterAll(async () => {
@@ -24,39 +22,25 @@ afterAll(async () => {
 });
 
 /**
- * A port whose neighbour is free too — the boot binds `PORT` and `PORT + 1`. Both are bound and
- * released rather than assumed; a pair that is not free stays held so it is not handed out again.
+ * The boot binds `PORT` and its neighbour `PORT + 1` itself: a pair, so both were free when asked,
+ * and one another process took before the boot bound it is the boot's `X_PORT_IN_USE`, asked again.
  */
-function freePair(): number {
-  for (;;) {
-    const first = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response() });
-    const port = first.port ?? 0;
-    try {
-      Bun.serve({
-        port: syncPortFor(port),
-        hostname: '127.0.0.1',
-        fetch: () => new Response(),
-      }).stop(true);
-      first.stop(true);
-      return port;
-    } catch {
-      held.push(first);
-    }
-  }
-}
-
 async function boot(http: WebBinding): Promise<string> {
-  running = await startRoles({
-    roles: selectRoles('web,sync'),
-    port: freePair(),
-    metricsPort: 0,
-    buildId: 'test',
-    runtime: fixtureRuntime(ROOT),
-    // What both tracked apps and the scaffold ship in `.env.example`.
-    env: { APP_URL: 'http://localhost:3000' },
-    routes: [],
-    http,
-  });
+  running = await bindFreePorts(
+    ([port = 0]) =>
+      startRoles({
+        roles: selectRoles('web,sync'),
+        port,
+        metricsPort: 0,
+        buildId: 'test',
+        runtime: fixtureRuntime(ROOT),
+        // What both tracked apps and the scaffold ship in `.env.example`.
+        env: { APP_URL: 'http://localhost:3000' },
+        routes: [],
+        http,
+      }),
+    { pair: true },
+  );
   return running.url ?? expect.unreachable('the web role bound no port');
 }
 

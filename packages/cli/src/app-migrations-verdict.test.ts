@@ -58,6 +58,6 @@ describe('unit · the app migrations verdict', () => {
       release();
     }
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.['fix']).toBe('x db migrate --json');
+    expect(lines[0]?.['fix']).toBe('x db status --json');
   });
 });

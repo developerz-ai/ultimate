@@ -3,12 +3,10 @@
 // run goes through `dispatch`, so `--json` and the exit code are what an agent actually receives.
 
 import { expect } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import type { TempTree } from '@ultimat3/testing';
+import { TEMP_TREE_GIT_ENV, tempTree } from '@ultimat3/testing';
 
 export { REQUIRED_BUN } from './app-root';
 
@@ -17,54 +15,34 @@ import { dispatch } from './dispatch';
 import type { ExecResult, Runner } from './exec';
 import { exec } from './exec';
 
-export const dirs: string[] = [];
-/** Each test file's own `afterEach`: a hook made here would bind to whichever file loaded this first. */
-export const removeFixtures = (): void => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-};
-
+const trees: TempTree[] = [];
 /**
- * Git as every fixture spawn runs it, the product's own included (`recording`): steered at no other
- * repository by an inherited `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`, never walking up into the
- * temp root, so a `TMPDIR` inside some checkout cannot answer for a fixture that has no `.git`.
+ * Each test file's own `afterEach`: a hook made here would bind to whichever file loaded this first.
+ * Each tree removes itself once every child it ran has exited, and proves it is gone.
  */
-const GIT_ENV: Readonly<Record<string, string | undefined>> = {
-  GIT_DIR: undefined,
-  GIT_WORK_TREE: undefined,
-  GIT_INDEX_FILE: undefined,
-  GIT_CEILING_DIRECTORIES: tmpdir(),
+export const removeFixtures = async (): Promise<void> => {
+  await Promise.all(trees.splice(0).map((tree) => tree.dispose()));
+};
+
+const owned = (prefix: string): string => {
+  const tree = tempTree(prefix);
+  trees.push(tree);
+  return tree.path;
 };
 
 /**
- * `maintenance.auto=false`: from git 2.56 the `maintenance run --auto --detach` a commit starts hands
- * `.git/objects/maintenance.lock` to its daemon (`daemonize()`'s `reassign_tempfile_ownership`),
- * which unlinks it AFTER `git commit` has returned. A Bun 1.4.4 `rmSync(…, { recursive, force })`
- * meeting that vanished entry stops silently and keeps every later sibling — on CI `HEAD`, `refs/`
- * and `config`, a repository where the test had removed one (run 43546649352).
+ * Git as every fixture spawn runs it, the product's own included (`recording`): the temp tree's
+ * environment (`TEMP_TREE_GIT_ENV`) — steered at no other repository, never walking up into the
+ * temp root, and with none of the background work that outlives a command. From git 2.56 the
+ * `maintenance run --auto --detach` a commit starts unlinks `.git/objects/maintenance.lock` AFTER
+ * `git commit` has returned, and a Bun 1.4.4 `rmSync(…, { recursive, force })` meeting that vanished
+ * entry stopped silently and kept `HEAD`, `refs/` and `config` (run 43546649352).
  */
 export const git = async (cwd: string, ...args: readonly string[]): Promise<string> =>
-  (
-    await exec(
-      [
-        'git',
-        '-c',
-        'user.name=t',
-        '-c',
-        'user.email=t@t.t',
-        '-c',
-        'maintenance.auto=false',
-        ...args,
-      ],
-      { cwd, env: GIT_ENV },
-    )
-  ).stdout;
+  (await exec(['git', ...args], { cwd, env: TEMP_TREE_GIT_ENV })).stdout;
 
-/** An empty temp directory, owned here so `removeFixtures` (this file's `rmSync`) removes it. */
-export const emptyFixture = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), 'ultimate-upgrade-noapp-'));
-  dirs.push(dir);
-  return dir;
-};
+/** An empty temp directory, owned here so `removeFixtures` removes it. */
+export const emptyFixture = (): string => owned('ultimate-upgrade-noapp-');
 
 const GUARD = 'guards/no-raw-colors.ts';
 
@@ -73,8 +51,7 @@ export const fixture = async (
   files: Readonly<Record<string, string>> = {},
   options: { readonly repository?: boolean } = {},
 ): Promise<string> => {
-  const dir = mkdtempSync(join(tmpdir(), 'ultimate-upgrade-'));
-  dirs.push(dir);
+  const dir = owned('ultimate-upgrade-');
   const all: Readonly<Record<string, string>> = {
     'app.config.ts': 'export const config = {};\n',
     'package.json': `${JSON.stringify(
@@ -238,7 +215,7 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
   const spawned: string[] = [];
   const runner: Runner = async (command, options) => {
     if (command[0] === 'git')
-      return exec(command, { ...options, env: { ...options.env, ...GIT_ENV } });
+      return exec(command, { ...options, env: { ...options.env, ...TEMP_TREE_GIT_ENV } });
     expect(command[0]).toBe(process.execPath);
     const args = command.slice(1);
     const only = args[2] === '--only' ? ` --only ${args[3] ?? ''}` : '';
@@ -404,7 +381,7 @@ export const fixtureWithoutApp = async (
       2,
     )}\n`,
   });
-  rmSync(join(dir, 'app.config.ts'));
+  await Bun.file(join(dir, 'app.config.ts')).delete();
   await git(dir, 'add', '-A');
   await git(dir, 'commit', '-qm', 'no app');
   return dir;

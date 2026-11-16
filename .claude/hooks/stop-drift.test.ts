@@ -2,7 +2,7 @@
 // stop in a row (`stop_hook_active`) is never blocked — a hook that blocks forever is a hang.
 
 import { describe, expect, test } from 'bun:test';
-import { driftChecksFor, stopVerdict } from './stop-drift';
+import { driftChecksFor, dumpsStale, stopVerdict } from './stop-drift';
 
 describe('which derived files a change can stale', () => {
   test('source under packages/ or scripts/ selects the framework manifest', () => {
@@ -45,5 +45,39 @@ describe('the verdict', () => {
 
   test('nothing stale: no verdict', () => {
     expect(stopVerdict({}, [])).toBeUndefined();
+  });
+});
+
+describe('the schema-dump check, read the way `schema-dumps --check` means it', () => {
+  const run = (data: readonly { app: string; changed: readonly string[] }[]) => ({
+    exitCode: 1,
+    exitedDueToTimeout: false,
+    stdout: JSON.stringify({ ok: false, findings: [{ code: 'X_SCHEMA_DUMP_DRIFT' }], data }),
+  });
+
+  test('a dump file that differs is stale', () => {
+    expect(
+      dumpsStale(run([{ app: 'examples/dummy', changed: ['packages/db/schema/04_tables/x.sql'] }])),
+    ).toBe(true);
+    expect(dumpsStale(run([{ app: 'examples/dummy', changed: ['packages/db/schema'] }]))).toBe(
+      true,
+    );
+  });
+
+  test('a check killed by its timeout under load proves nothing', () => {
+    expect(dumpsStale({ exitCode: null, exitedDueToTimeout: true, stdout: '' })).toBe(false);
+  });
+
+  test('a replay that failed on a busy scratch database is not a stale dump', () => {
+    expect(dumpsStale(run([{ app: 'examples/dummy', changed: ['packages/db/migrations'] }]))).toBe(
+      false,
+    );
+  });
+
+  test('a clean check, or output that is not the report, is not stale', () => {
+    expect(dumpsStale({ exitCode: 0, exitedDueToTimeout: false, stdout: '{"ok":true}' })).toBe(
+      false,
+    );
+    expect(dumpsStale({ exitCode: 1, exitedDueToTimeout: false, stdout: 'boom' })).toBe(false);
   });
 });

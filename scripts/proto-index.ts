@@ -38,14 +38,25 @@ import { maskLiterals } from '../packages/core/src/source-mask';
 import type { SourceFile } from './boundaries';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
+import type { PinTarget } from './lib/pin-edit';
+import { pinRaiseFix, pinRaiseOf } from './lib/pin-edit';
+import { ratchetPinMain } from './lib/pin-edit-main';
 import { PROTO_INDEX_PINS, PROTO_PINS_FILE } from './lib/proto-index-pins';
 import type { PinTable, RatchetGap } from './lib/ratchet';
-import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import { ratchetGaps } from './lib/ratchet';
 import type { SiteProbe } from './lib/ratchet-sites';
 import { leadSite, newSitesFirst, siteList } from './lib/ratchet-sites';
 import { isTestPath, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'proto-index';
+
+/** Where this ratchet's pins live: what its over finding's raise and `--write-pin` edit. */
+export const PROTO_INDEX_PIN_TARGET: PinTarget = {
+  script: 'scripts/proto-index.ts',
+  file: PROTO_PINS_FILE,
+  table: 'PROTO_INDEX_PINS',
+};
+
 const EXPLAIN = 'bun run scripts/proto-index.ts --explain --json lists every one';
 
 /** `const X: Readonly<Record<K, V>> = {…}` — the annotation form, `Partial<>` and all. */
@@ -263,7 +274,7 @@ const overFinding = (gap: ProtoIndexGap): Finding => {
   return {
     code: 'X_PROTO_CHAIN_INDEX',
     cause: `${gap.pkg} reads a Record object literal with a computed key in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${listed} — and when that key is the string "constructor", "toString" or "__proto__" the answer is an Object.prototype member rather than undefined`,
-    fix: `${guard}; if the table is deliberately prototype-free, build it with Object.create(null) and this rule stops reporting it`,
+    fix: `${guard}; if the table is deliberately prototype-free, build it with Object.create(null) and this rule stops reporting it; or ${pinRaiseFix(pinRaiseOf(PROTO_INDEX_PIN_TARGET, gap))}`,
     at: at(leadSite(gap)),
   };
 };
@@ -318,7 +329,8 @@ export const protoIndexFindings = async (root: string): Promise<readonly Finding
   (await protoIndexGaps(root)).map(protoIndexFindingFor);
 
 if (import.meta.main) {
-  await ratchetMain({
+  await ratchetPinMain({
+    target: PROTO_INDEX_PIN_TARGET,
     script: SCRIPT,
     pinsFile: PROTO_PINS_FILE,
     pins: PROTO_INDEX_PINS,
