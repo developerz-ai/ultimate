@@ -62,12 +62,14 @@ slices:
     tier: 5
     sweep: "8"
     status: in_progress
-    percent: 0
+    percent: 85
+    note: "L1 next lane, L2 maint lane, L3 compat matrix, L4 playbooks, L5 health rows built. Closes when next, release/30.x and maint-30 exist on the remote and compat.yml has one recorded run (coordinator acts after merge)."
   - file: 12-maintainer-loop.md
     tier: 5
     sweep: "8"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 60
+    note: "M1 trackers superseded + stale-tracker guard, M2, M3 briefs, M4 health rows, M5 runbooks done (sweep 8a). M6 pin burn-down is sweep 8b. Each new brief must run once and leave evidence."
   - file: 13-shapes-and-declaration.md
     tier: 5
     sweep: "9"

@@ -273,6 +273,9 @@ describe('unit · maint · release-tag.yml refuses a maintenance release that is
     expect(String(lane?.env?.['BRANCH'])).toContain('workflow_run.head_branch');
     expect(String(lane?.env?.['VERSION'])).toContain('steps.release.outputs.version');
     const ids = stepsOf('prepare').map((step) => step.id);
+    expect(ids).toContain('release');
+    expect(ids).toContain('lane');
+    expect(ids).toContain('notes');
     expect(ids.indexOf('lane')).toBeGreaterThan(ids.indexOf('release'));
     expect(ids.indexOf('lane')).toBeLessThan(ids.indexOf('notes'));
   });

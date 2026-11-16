@@ -87,7 +87,7 @@ A removal or a rename ships its alias, marked `@deprecated`, on `main` for at le
 | Branch | Holds |
 |---|---|
 | `main` | minors and patches only while the window is closed; a `BREAKING —` changelog entry there is refused |
-| `next` | every breaking change waiting for the window. **Convention, not enforced:** it merges `main` weekly, by hand, so it never falls behind a fix; `ci.yml` gates every push to it |
+| `next` | every breaking change waiting for the window. `next-sync.yml` merges `main` into it weekly (a conflict opens one issue, closed by the next clean merge), so it never falls behind a fix; `ci.yml` gates every push to it. `scripts/release-due.ts` proposes it as the `chore: release X.0.0` PR once the window opens; a person merges |
 | `release/<major>.x` | the previous major's security patches |
 
 A change with both kinds of edit splits into two pull requests: the non-breaking half to `main`, the break to `next`.
