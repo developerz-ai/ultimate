@@ -37,9 +37,18 @@ export type Runner = (command: readonly string[], cwd: string) => Promise<RunRes
 export const isSeed = (value: number): boolean =>
   Number.isInteger(value) && value >= 1 && value <= MAX_SEED;
 
-/** A fresh seed for a round nobody asked to replay. */
-export const randomSeed = (): number =>
-  ((crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) % MAX_SEED) + 1;
+/**
+ * A fresh seed for a round nobody asked to replay: a uniform draw over 1..MAX_SEED. The seeds are
+ * exactly the non-zero u32s, so a zero is redrawn — never folded in with a modulo, which biases.
+ */
+export function randomSeed(
+  draw: () => number = () => crypto.getRandomValues(new Uint32Array(1))[0] ?? 0,
+): number {
+  for (;;) {
+    const value = draw();
+    if (isSeed(value)) return value;
+  }
+}
 
 /** `x test`'s reproduce line made pasteable at the repo root; live needs the services' URLs. */
 export function rerunCommand(

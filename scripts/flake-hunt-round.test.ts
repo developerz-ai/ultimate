@@ -3,7 +3,7 @@
 // the document's own `reproduce`, and a document that never parsed refused as unreadable.
 
 import { describe, expect, test } from 'bun:test';
-import { huntRound, isSeed, rerunCommand } from './flake-hunt-round';
+import { huntRound, isSeed, randomSeed, rerunCommand } from './flake-hunt-round';
 import type { RunResult } from './lib/run';
 
 const result = (output: string, code = 1): RunResult => ({
@@ -107,5 +107,14 @@ describe('unit · flake-hunt · the rerun line and the seed', () => {
     expect(isSeed(0)).toBe(false);
     expect(isSeed(4_294_967_296)).toBe(false);
     expect(isSeed(1.5)).toBe(false);
+  });
+});
+
+describe('unit · flake-hunt · a fresh seed', () => {
+  test('a zero draw is redrawn, never folded in: every seed is a non-zero u32, unbiased', () => {
+    const draws = [0, 0, 4_294_967_295];
+    expect(randomSeed(() => draws.shift() ?? 1)).toBe(4_294_967_295);
+    expect(randomSeed(() => 1)).toBe(1);
+    expect(isSeed(randomSeed())).toBe(true);
   });
 });
