@@ -21,7 +21,14 @@ import { testName } from './test-types';
 export type IslandStateMountOptions = Omit<MountIslandOptions, 'file' | 'props'>;
 
 /** The suite form's: the mount's own, plus the deadline of the `beforeAll` that runs it. */
-export interface IslandStateSuiteOptions extends IslandStateMountOptions, TestOptions {}
+export interface IslandStateSuiteOptions extends IslandStateMountOptions, TestOptions {
+  /**
+   * Run in the block's own `afterAll`, after the island is disposed: process state the island's
+   * modules hold beyond the DOM (a realtime island's page connection, `resetPageRealtime`). The
+   * one place a generated island test resets anything — never a raw `afterAll` of its own.
+   */
+  readonly teardown?: () => void;
+}
 
 /**
  * The deadline a block's mount gets when it names none. The first mount in a file pays the island
@@ -100,7 +107,7 @@ export function describeIslandState(
   options: IslandStateSuiteOptions,
   body: (island: () => MountedIsland) => void,
 ): void {
-  const { timeoutMs, ...mount } = options;
+  const { timeoutMs, teardown, ...mount } = options;
   describe(testName('unit', `the ${manifest.name} island, ${id}`), () => {
     let mounted: MountedIsland | undefined;
     let over = false;
@@ -116,6 +123,7 @@ export function describeIslandState(
       over = true;
       mounted?.[Symbol.dispose]();
       mounted = undefined;
+      teardown?.();
     });
     body(() => {
       assert(

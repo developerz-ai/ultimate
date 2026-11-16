@@ -5,16 +5,19 @@ Three targets, one backend, **two view layers** — and the second one is admitt
 Web is SolidJS + SCSS modules. Desktop is that same build inside a Tauri window. Mobile is React
 Native, which shares no component with either. Everything *below* the view is shared on all three.
 
-**Design only, `As of 2026-08` — none of it exists.** No `@ultimat3/tokens`, no `@ultimat3/native`,
-no `desktop` or `native` build target (`BUILD_TARGETS` is `docker | binary | static | prebuilt`
-`As of 2026-10` — `prebuilt` is the image build's own step, not an app target), no
-`route.targets`, no `screen.tsx`, no gate step. 1.1.0 shipped without any of it; the target is a
-future minor, because every change here is additive — two new packages, two new `x build --target`
-values, one optional field on `route` — so no major.
+**Not planned, `As of 2026-11-16` — none of it exists, and no plan intends to build it.** No
+`@ultimat3/tokens`, no `@ultimat3/native`, no `desktop` or `native` build target (`BUILD_TARGETS` is
+`docker | binary | static | prebuilt` `As of 2026-10` — `prebuilt` is the image build's own step,
+not an app target), no `route.targets`, no `screen.tsx`, no gate step. Every change here would be
+additive — two new packages, two new `x build --target` values, one optional field on `route` — so
+a future plan that takes it up needs no major.
 
-What this document does today is lift [`14-roadmap.md`](./14-roadmap.md)'s "mobile/desktop app
-targets beyond placeholders" out of the deferred column and into the *designed* column, as
-milestones 12–14. Designed is not started.
+This document lifted [`14-roadmap.md`](./14-roadmap.md)'s "mobile/desktop app targets beyond
+placeholders" out of the deferred column into a design, as milestones 12–14. It never left the
+design: the roadmap's "Not planned" section records them, and each is a
+[Known gaps](../../wiki/Known-Gaps.md#open-by-decision) "Open by decision" row naming the extension
+point an app builds on instead ([`finished.md`](../history/finished.md)). The design below stands
+as the record a future plan starts from.
 
 ## What is shared, and what is not
 
@@ -289,8 +292,9 @@ The mirror can drift. That is why `screens` is a gate step and not a convention.
 
 ## Staging
 
-Roadmap milestones 12–14. Each ends in the same demo app advanced visibly plus a green gate — a
-milestone is done when the gate covers it, never when the code exists.
+Roadmap milestones 12–14, **not planned** `As of 2026-11-16` ([`14-roadmap.md`](./14-roadmap.md)).
+As designed, each would end in the same demo app advanced visibly plus a green gate — a milestone
+is done when the gate covers it, never when the code exists.
 
 | # | Milestone | Ships | Done when |
 |---|---|---|---|

@@ -15,6 +15,7 @@ import {
   signInPageSource,
   signInPageTest,
 } from './sign-in-pages';
+import { OIDC_RUNTIME_ROUTES } from './sign-in-runtime';
 import { AUTH_DIR, sharedSignInFiles } from './sign-in-shared';
 
 /** `bigco-sso` → `BIGCO_SSO`: the prefix `discoverOAuthProvider` derives its two env keys from. */
@@ -180,10 +181,7 @@ export function oidcSignInFiles(
     ...sharedSignInFiles(
       oidcSignInEnv(provider),
       `The issuer and the client are ${provider}'s; SESSION_SECRET seals the handshake and APP_URL is where the provider sends the browser back.`,
-      {
-        importLine: "import { signInRoutes } from './app/auth/sign-in-routes';",
-        expression: 'signInRoutes',
-      },
+      OIDC_RUNTIME_ROUTES,
     ),
     { path: `${AUTH_DIR}/oidc.ts`, contents: oidcSource(provider) },
     { path: `${AUTH_DIR}/oidc.test.ts`, contents: oidcTest(provider) },

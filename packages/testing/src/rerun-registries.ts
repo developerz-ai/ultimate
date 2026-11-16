@@ -111,6 +111,14 @@ interface LayoutModule {
   readonly layoutFor: typeof layoutFor;
   readonly restoreLayouts: typeof restoreLayouts;
 }
+/** `@ultimat3/flags`' registry, by shape: testing declares no dependency on flags. */
+interface FlagEntry {
+  readonly key: string;
+}
+interface FlagModule {
+  readonly allFlags: () => readonly FlagEntry[];
+  readonly restoreFlags: (entries: readonly FlagEntry[]) => void;
+}
 interface OAuthModule {
   readonly registeredOAuthProviders: typeof registeredOAuthProviders;
   readonly restoreOAuthProviders: typeof restoreOAuthProviders;
@@ -196,6 +204,12 @@ export function frameworkDeclarationRegistries(): readonly DeclarationRegistry[]
   }
   const layouts = moduleOf<LayoutModule>('@ultimat3/mail', 'layout.ts');
   if (layouts !== undefined) registries.push(layoutRegistry(layouts));
+  const flags = moduleOf<FlagModule>('@ultimat3/flags', 'registry.ts');
+  if (flags !== undefined) {
+    registries.push(
+      listedRegistry<FlagEntry>('flag', flags.allFlags, (entry) => entry.key, flags.restoreFlags),
+    );
+  }
   const oauth = moduleOf<OAuthModule>('@ultimat3/auth', 'oauth-registry.ts');
   if (oauth !== undefined) {
     registries.push(

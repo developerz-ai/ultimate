@@ -83,6 +83,16 @@ export function applyFlagSnapshot(
   return { applied, unknown };
 }
 
+/**
+ * Test-only: the declared set becomes exactly `entries`. `@ultimat3/testing`'s rerun boundary reads
+ * this module from the require cache, so a file that declares a flag runs twice in one process
+ * (the `flaky` job) without `X_FLAG_DUPLICATE`. Not on the barrel: production never withdraws.
+ */
+export function restoreFlags(entries: readonly Flag[]): void {
+  flags.clear();
+  for (const flag of entries) flags.set(flag.key, flag);
+}
+
 /** Test-only. Production declares once at import and never withdraws. */
 export function resetFlags(): void {
   flags.clear();

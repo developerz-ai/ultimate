@@ -122,16 +122,12 @@ describe('unit · a planned command answers X_NOT_IMPLEMENTED however it is invo
   const finding = (out: string): { code?: string; fix?: string } =>
     (JSON.parse(out) as { findings?: { code: string; fix: string }[] }).findings?.[0] ?? {};
 
-  test('a flag the planned command never declared is still not-implemented', async () => {
-    // `x branch`, not the `x logs tail --follow` or `x status --follow` this was written against:
-    // both shipped.
+  test('a command that left the planned table is unknown, flags or not', async () => {
+    // `x branch` was this test's planned example until plan 101b slice 13 emptied the table: it is
+    // no longer a command, so a flag on it is the unknown command, never a bad flag.
     const result = await run(['branch', '--follow', '--json']);
     expect(result.code).toBe(1);
-    // The same fix the command's own `run` would have thrown — one answer for one command.
-    expect(finding(result.out)).toMatchObject({
-      code: 'X_NOT_IMPLEMENTED',
-      fix: PLANNED_COMMANDS.find((planned) => planned.name === 'branch')?.fix ?? 'unplanned',
-    });
+    expect(finding(result.out).code).toBe('X_CLI_UNKNOWN_COMMAND');
   });
 
   test('every planned command answers it, with its own fix, for a flag it never declared', async () => {

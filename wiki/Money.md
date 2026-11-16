@@ -293,7 +293,7 @@ the person, never round or guess.
 | Site | Shape |
 |---|---|
 | LLM budgets | `budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } }` — exceeding it throws before spending |
-| LLM cost accounting | per call, per tenant, per prompt version. No MCP tool reports it yet — `budgets.report` is designed and not built. `x ai cache --json` is **planned** and exits `X_NOT_IMPLEMENTED`; `x test eval --json` is the shipped command it points at |
+| LLM cost accounting | per call, per tenant, per prompt version. No MCP tool reports it yet — `budgets.report` is designed and not built. Each call's tokens are on the bus as `ai.llm` (`inputTokens`, `outputTokens`, `cacheHit`) and on `/metrics` as `gen_ai_client_token_usage` → [Observability](Observability) |
 | Job cost accounting | per job run and per step, so an expensive retry loop is visible in the queue view |
 | Admin columns | a money column renders as a right-aligned formatted amount with the currency code; the raw minor value is shown on hover |
 | OTel span attributes | `cost.minor` + `cost.currency` as separate attributes, never a formatted string |

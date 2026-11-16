@@ -1,8 +1,7 @@
 // The repository's own agent harness, read as the harness reads it: every tool an agent or command
 // lists exists or is wired in `.mcp.json.example` (`bun run setup` copies it to the gitignored
 // `.mcp.json`), the dev MCP server line runs a real `x mcp` flag, every
-// allow-listed command is a rule Claude Code can match, every hook names a file that exists, and a
-// slash command stays under its byte ceiling.
+// allow rule is one Claude Code can match, and a slash command stays under its byte ceiling.
 
 import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun has no temp-directory native; the ceiling case needs a throwaway repo root.
@@ -45,13 +44,6 @@ const BUILT_IN = new Set([
 
 const McpJson = t.object({
   mcpServers: t.record(t.object({ command: t.string, args: t.array(t.string) })),
-});
-
-const Settings = t.object({
-  permissions: t.object({ allow: t.array(t.string) }),
-  hooks: t.record(
-    t.array(t.object({ hooks: t.array(t.object({ type: t.string, command: t.string })) })),
-  ),
 });
 
 const read = async (path: string): Promise<string> => Bun.file(join(ROOT, path)).text();
@@ -146,7 +138,9 @@ function badRule(rule: string): string | undefined {
   return undefined;
 }
 
-describe('.claude/settings.json', () => {
+// `.claude/settings.json` is each developer's own (gitignored since 2026-11-16): the checker stays,
+// for whoever writes an allow rule; no committed file is read.
+describe('a Claude Code allow rule', () => {
   test('the rule check refuses what Claude Code would misread', () => {
     expect(badRule('Bash(git:* push)')).toContain(':*');
     expect(badRule('Bash(git * main)')).toContain('subcommand');
@@ -154,34 +148,6 @@ describe('.claude/settings.json', () => {
     expect(badRule('Bash(git*:*)')).toContain('subcommand');
     expect(badRule('Bash(git stash list:*)')).toBeUndefined();
     expect(badRule('Bash(git diff:*)')).toBeUndefined();
-  });
-
-  test('every allow rule parses', async () => {
-    const settings = parse(Settings, JSON.parse(await read('.claude/settings.json')), 'settings');
-    const bad = settings.permissions.allow.flatMap((rule) => {
-      const why = badRule(rule);
-      return why === undefined ? [] : [`${rule}: ${why}`];
-    });
-    expect(bad).toEqual([]);
-  });
-
-  test('every hook names a script that exists', async () => {
-    const settings = parse(Settings, JSON.parse(await read('.claude/settings.json')), 'settings');
-    const commands = Object.values(settings.hooks).flatMap((entries) =>
-      entries.flatMap((entry) => entry.hooks.map((hook) => hook.command)),
-    );
-    expect(commands.length).toBeGreaterThan(0);
-    for (const command of commands) {
-      const script = /\.claude\/hooks\/[\w.-]+/.exec(command)?.[0];
-      expect({ command, exists: await Bun.file(join(ROOT, script ?? '-')).exists() }).toEqual({
-        command,
-        exists: true,
-      });
-    }
-  });
-
-  test('no hook reads $CLAUDE_FILE_PATHS, which the harness never sets', async () => {
-    expect(await read('.claude/settings.json')).not.toContain('CLAUDE_FILE_PATHS');
   });
 });
 

@@ -104,10 +104,6 @@ export const DOC_COMMAND_PINS: Readonly<Record<string, number>> = {
   'packages/action/README.md: x db up': 1,
   // why: re-keyed per site in plan 101 sweep 11c; was `packages/admin/README.md: 1`.
   'packages/admin/README.md: x g admin': 1,
-  // why: re-keyed per site in plan 101 sweep 11c — `docs/history/cli.md`'s 12 moved verbatim with
-  // its history (plan 101 slice 17 f, 2026-09-23); the record quotes the commands its rules were
-  // written against.
-  'docs/history/cli.md: x ai prompts': 1,
   // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
   'docs/history/cli.md: x auth whoami': 1,
   // why: re-keyed per site in plan 101 sweep 11c, from `docs/history/cli.md: 12`.
