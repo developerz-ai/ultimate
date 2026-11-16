@@ -37,6 +37,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `x g sign-in` no longer refuses with `X_GENERATE_CONFLICT` when `apps/web/runtime.ts` or its test was edited. It adds its guard import and call (and for `--oidc`, `routes: signInRoutes`) to the existing file. A runtime it cannot read refuses with `edit apps/web/runtime.ts:<line> — …`.
 - A realtime island builds when `@ultimat3/realtime` is installed from a `file:` spec. Bun 1.4.4's `Bun.build` refuses any plugin-returned path containing `..`, including the isolated store's `@ultimat3+realtime@file+..+..+…` directory names, so such a path is served through a re-export (`island-plugin-path.ts`). Island bytes for registry installs are unchanged.
 - A file that declares a flag reruns in one process without `X_FLAG_DUPLICATE`: `@ultimat3/testing`'s rerun boundary now forgets and restores `@ultimat3/flags`' registry, as it does jobs and services.
+- `@ultimat3/testing`'s `loaded()` answers absent for a package it cannot resolve: in an app's isolated install the flags row's lookup threw `Cannot find module '@ultimat3/flags'` into every test.
 - `--shape content`'s frame imports the app's catalogs itself, so its language links are right however test files share a worker.
 - A generator conflict on `apps/web/runtime.ts` no longer suggests `--force`, which would have replaced the app's own ports with the template. It points at `git diff`.
 

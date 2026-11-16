@@ -7,7 +7,7 @@ import { installedRateLimitStore, memoryRateLimitStore } from '@ultimat3/http';
 import { installRateLimitStore } from '@ultimat3/http/adapter';
 import { eventBus, memoryEventBus, publishEvent } from '@ultimat3/jobs';
 import { installEventBus } from '@ultimat3/jobs/adapter';
-import { installPerTestReset } from './per-test-reset';
+import { installPerTestReset, loaded } from './per-test-reset';
 import { testName } from './test-types';
 
 // What the app preload does once per process; the framework repository's own preload is another
@@ -85,5 +85,19 @@ describe(testName('unit', 'a bus installed for the file survives every test'), (
 
   test('the second test still reads it', () => {
     expect(eventBus()).toBe(mine);
+  });
+});
+
+describe(testName('unit', 'loaded answers absent for a package it cannot resolve'), () => {
+  test('an app install that never reaches the package: undefined, never a throw', () => {
+    // `@ultimat3/flags` is not testing's dependency, so in an app's isolated install it does not
+    // resolve from here — every scaffold's tests threw `Cannot find module` until this held.
+    expect(loaded('@ultimat3/not-a-package', 'registry.ts')).toBeUndefined();
+    // Asked twice: the cached answer is the same absence.
+    expect(loaded('@ultimat3/not-a-package', 'registry.ts')).toBeUndefined();
+  });
+
+  test('a package that resolves and is loaded is still found', () => {
+    expect(loaded('@ultimat3/jobs', 'events.ts')).toEndWith('events.ts');
   });
 });

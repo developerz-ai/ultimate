@@ -20,13 +20,26 @@ export function loaded(pkg: string, file: string): string | undefined {
   const key = `${pkg}/${file}`;
   let path = paths.get(key);
   if (path === undefined) {
-    path = Bun.resolveSync(pkg, import.meta.dir).replace(/index\.ts$/, file);
+    path = resolvedFrom(pkg)?.replace(/index\.ts$/, file) ?? null;
     paths.set(key, path);
   }
-  return path in require.cache ? path : undefined;
+  return path !== null && path in require.cache ? path : undefined;
 }
 
-const paths = new Map<string, string>();
+/**
+ * Where `pkg` resolves from this package, or `null` when it does not. A package testing declares no
+ * dependency on (`@ultimat3/flags`) is unresolvable from here in an app's isolated install, and one
+ * this process cannot resolve here is one it did not load through here: absent, never a throw.
+ */
+function resolvedFrom(pkg: string): string | null {
+  try {
+    return Bun.resolveSync(pkg, import.meta.dir);
+  } catch {
+    return null;
+  }
+}
+
+const paths = new Map<string, string | null>();
 
 /**
  * Before each test: a fresh DEFAULT event bus and the DEFAULT rate-limit buckets emptied — each
