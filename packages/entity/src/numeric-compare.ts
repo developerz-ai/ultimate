@@ -62,6 +62,16 @@ const DECIMAL_PARTS = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/;
 /** Past this an exponent would have the padding below build a string nobody asked for. */
 const MAX_EXPONENT = 1000;
 
+/**
+ * `digits` without its trailing zeros. A loop, never `/0+$/`: that retried a zero run from each of
+ * its zeros — 10.7 s on 100k zeros and a 1 (CodeQL polynomial-redos).
+ */
+const trimTrailingZeros = (digits: string): string => {
+  let end = digits.length;
+  while (end > 0 && digits[end - 1] === '0') end -= 1;
+  return digits.slice(0, end);
+};
+
 const textOf = (value: unknown): string | undefined => {
   if (typeof value === 'string') return value.trim();
   return isNumber(value) ? plainDecimal(value) : undefined;
@@ -94,7 +104,7 @@ export const canonicalDecimal = (value: unknown): string | undefined => {
   const integer = point <= 0 ? '' : digits.slice(0, point).padEnd(point, '0');
   const rest = point <= 0 ? '0'.repeat(-point) + digits : digits.slice(point);
   const before = integer.replace(/^0+/, '') || '0';
-  const after = rest.replace(/0+$/, '');
+  const after = trimTrailingZeros(rest);
   const unsigned = after === '' ? before : `${before}.${after}`;
   return sign === '-' && unsigned !== '0' ? `-${unsigned}` : unsigned;
 };

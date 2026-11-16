@@ -160,7 +160,7 @@ async function until(predicate: () => boolean): Promise<void> {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
-  throw new Error('the node never answered');
+  expect.unreachable('the node never answered');
 }
 
 describe('the sync node authenticates an upgrade', () => {
@@ -222,7 +222,7 @@ describe('the sync node authenticates an upgrade', () => {
     expect(await node.fetch(upgradeRequest, server)).toBeUndefined();
     const data = server.data;
     const ws = server.ws;
-    if (!data || !ws) throw new Error('the upgrade was refused');
+    if (!data || !ws) expect.unreachable('the upgrade was refused');
 
     // Read with no `open` call of its own: the socket already exists, because `upgrade()` opened
     // it. Which is the whole failure — the grant has to be in the book by then, not after.
@@ -254,9 +254,9 @@ describe('the sync node authenticates an upgrade', () => {
     const server = upgradeTarget(node);
     await node.fetch(upgradeRequest, server);
     const data = server.data;
-    if (!data) throw new Error('the upgrade was refused');
+    if (!data) expect.unreachable('the upgrade was refused');
     const socket = sockets.get(data.socketId);
-    if (!socket) throw new Error('the socket was never registered');
+    if (!socket) expect.unreachable('the socket was never registered');
 
     const feed = (orgId: string) =>
       ({ kind: 'channel', channel: 'auth-feed', params: { orgId } }) as const;
@@ -305,7 +305,7 @@ describe('the sync node authenticates an upgrade', () => {
 
     expect(await node.fetch(upgradeRequest, server)).toBeUndefined();
     const data = server.data;
-    if (!data) throw new Error('the upgrade was refused');
+    if (!data) expect.unreachable('the upgrade was refused');
 
     expect(sockets.get(data.socketId)?.actor).toBeNull();
     await node.stop();
@@ -331,7 +331,7 @@ describe('a grant the node cannot renew', () => {
     await node.fetch(upgradeRequest, server);
     const data = server.data;
     const ws = server.ws;
-    if (!data || !ws) throw new Error('the upgrade was refused');
+    if (!data || !ws) expect.unreachable('the upgrade was refused');
     expect(sockets.get(data.socketId)).toBeDefined();
 
     await until(() => ws.closes.length > 0);

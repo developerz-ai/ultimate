@@ -373,7 +373,8 @@ describe('adminMcp() resolves a session token into an agent actor', () => {
     authorization: string | null,
   ): Promise<Response> => {
     const route = mcp.route;
-    if (route === undefined) throw new Error('adminMcp() published no HTTP route to drive');
+    if (route === undefined)
+      return expect.unreachable('adminMcp() published no HTTP route to drive');
     return route.handle(
       new Request('https://admin.test/mcp', {
         method: 'POST',

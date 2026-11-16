@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
 percent: 63
-current_focus: "Sweep 8b-2 (12 M6: source headers and node: whys burned to zero) on feat/sweep-8b-2-headers-node-whys; 8b-1 shipped as 31.32.0 (#1166, #1168). Next: 8b-3 (test-bare-error), 8b-4 (fix-prose), then 8c (CI speed), sweep 9 (13)."
+current_focus: "Sweep 8b-3 (12 M6: test-bare-error verdicts burned down, inputs pinned with reasons; linear regexes) on feat/sweep-8b-3-bare-errors; 8b-2 shipped as 31.33.0. Next: the owner-asked wiki/Error-Codes.md split (index + per-package pages), 8b-4 (fix-prose), then 8c (CI speed), sweep 9 (13)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -68,7 +68,7 @@ slices:
     tier: 5
     sweep: "8"
     status: in_progress
-    percent: 80
+    percent: 88
     note: "M1 trackers superseded + stale-tracker guard, M2, M3 briefs, M4 health rows, M5 runbooks done (sweep 8a). M6 pin burn-down is sweep 8b. Each new brief must run once and leave evidence."
   - file: 13-shapes-and-declaration.md
     tier: 5

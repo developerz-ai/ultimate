@@ -51,7 +51,7 @@ const runErrorMap = async (error: unknown): Promise<Record<string, unknown>[]> =
 };
 
 const never = (): never => {
-  throw new Error('the limiter is not consulted by the error-map stage');
+  expect.unreachable('the limiter is not consulted by the error-map stage');
 };
 
 describe('the error-map log line', () => {

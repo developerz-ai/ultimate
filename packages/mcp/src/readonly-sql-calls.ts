@@ -92,8 +92,13 @@ export function forbiddenFamily(called: string): string | undefined {
 /**
  * A call: an identifier immediately before `(`. Schema qualification falls out of the scan —
  * `pg_catalog.set_config(` matches on the last segment, which is the function being called.
+ *
+ * A match STARTS where a run of identifier characters starts (the lookbehind), skipping the run's
+ * leading digits and `$` to its first letter — the start the plain `([a-z_][a-z0-9_$]*)\s*\(`
+ * found too, which also retried every later letter of a run with no `(`: 15.9 s on 100k letters
+ * (CodeQL polynomial-redos).
  */
-const CALL_PATTERN = /([a-z_][a-z0-9_$]*)\s*\(/g;
+const CALL_PATTERN = /(?<![a-z0-9_$])[0-9$]*([a-z_][a-z0-9_$]*)\s*\(/g;
 
 /** Every function `sql` calls, lowercased. Read from the identifier-preserving strip. */
 export function calledFunctions(sql: string): readonly string[] {

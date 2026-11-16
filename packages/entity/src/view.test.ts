@@ -38,14 +38,15 @@ const row = {
 /** Every column parser is synchronous, so a Promise here is itself the failure. */
 const project = (value: unknown): PostView => {
   const result = PostView['~standard'].validate(value);
-  if (result instanceof Promise) throw new Error('a view must validate synchronously');
-  if (result.issues !== undefined) throw new Error(result.issues[0]?.message ?? 'rejected');
+  if (result instanceof Promise) return expect.unreachable('a view must validate synchronously');
+  if (result.issues !== undefined)
+    return expect.unreachable(result.issues[0]?.message ?? 'rejected');
   return result.value;
 };
 
 const issueFor = (value: unknown): string => {
   const result = PostView['~standard'].validate(value);
-  if (result instanceof Promise) throw new Error('a view must validate synchronously');
+  if (result instanceof Promise) return expect.unreachable('a view must validate synchronously');
   return result.issues?.[0]?.message ?? '';
 };
 
@@ -186,7 +187,7 @@ describe('$view()', () => {
     const dynamic = posts.$view as (keys: readonly string[]) => unknown;
     try {
       dynamic(['nope']);
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       expect((error as { code?: string }).code).toBe('X_INVARIANT_VIOLATED');
       expect(String((error as { cause?: string }).cause)).toContain("$view(['nope'])");

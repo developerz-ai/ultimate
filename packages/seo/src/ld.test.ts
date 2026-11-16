@@ -33,7 +33,7 @@ describe('ld builders', () => {
   test('an empty required string throws X_LD_INVALID naming the field', () => {
     try {
       ld.Product({ name: '', offers: { price: '19.99', priceCurrency: 'USD' } });
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; cause?: string; fix?: string };
       expect(err.code).toBe(SEO_ERROR_CODES.ldInvalid);
@@ -113,7 +113,7 @@ describe('ld.Product offers', () => {
   test('an empty offer price throws X_LD_INVALID naming Offer.price, not Product.name', () => {
     try {
       ld.Product({ name: 'Ultimate Pro', offers: { price: '  ', priceCurrency: 'USD' } });
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; cause?: string; fix?: string };
       expect(err.code).toBe(SEO_ERROR_CODES.ldInvalid);
@@ -126,7 +126,7 @@ describe('ld.Product offers', () => {
   test('an empty priceCurrency throws even when the price is present', () => {
     try {
       ld.Product({ name: 'Ultimate Pro', offers: { price: '19.99', priceCurrency: '' } });
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; cause?: string };
       expect(err.code).toBe(SEO_ERROR_CODES.ldInvalid);
@@ -161,7 +161,7 @@ describe('ld.BreadcrumbList and ld.FAQPage refuse empty lists', () => {
   test('a breadcrumb list with no crumbs throws X_LD_INVALID naming items', () => {
     try {
       ld.BreadcrumbList({ items: [] });
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; cause?: string; fix?: string };
       expect(err.code).toBe(SEO_ERROR_CODES.ldInvalid);
@@ -175,7 +175,7 @@ describe('ld.BreadcrumbList and ld.FAQPage refuse empty lists', () => {
   test('an FAQPage with no questions throws X_LD_INVALID naming questions', () => {
     try {
       ld.FAQPage({ questions: [] });
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; cause?: string };
       expect(err.code).toBe(SEO_ERROR_CODES.ldInvalid);
@@ -209,7 +209,7 @@ describe('ld.BreadcrumbList and ld.FAQPage refuse empty lists', () => {
   test('a blank answer is refused by field name, not swallowed as an empty answer', () => {
     try {
       ld.FAQPage({ questions: [{ question: 'Is it Bun-only?', answer: '   ' }] });
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; cause?: string };
       expect(err.code).toBe(SEO_ERROR_CODES.ldInvalid);
@@ -263,7 +263,7 @@ describe('ld.SoftwareApplication', () => {
   ] as const)('an empty %s is refused by name', (field, input) => {
     try {
       ld.SoftwareApplication(input);
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; cause?: string };
       expect(err.code).toBe(SEO_ERROR_CODES.ldInvalid);

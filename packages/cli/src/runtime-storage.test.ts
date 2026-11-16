@@ -50,7 +50,7 @@ interface CallInit {
 async function call(routes: readonly Route[], init: CallInit = {}): Promise<Response> {
   const route = routes[0];
   expect(route?.path).toBe(`${DEFAULT_SIGNED_URL_BASE}/:disk/*key`);
-  if (route === undefined) throw new Error('no route');
+  if (route === undefined) return expect.unreachable('no route');
   const key = init.key ?? KEY;
   const url = new URL(`http://dev.test${DEFAULT_SIGNED_URL_BASE}/${init.disk ?? 'local'}/${key}`);
   const ctx: RequestContext = requestContext({

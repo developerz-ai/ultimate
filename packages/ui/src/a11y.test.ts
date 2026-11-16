@@ -335,7 +335,7 @@ describe('announce', () => {
       getElementById: (id: string): FakeNode | null =>
         appended.find((element) => element.id === id) ?? null,
       createElement: (tag: string): FakeNode => {
-        if (tag !== 'div') throw new Error(`announce created an unexpected <${tag}>`);
+        if (tag !== 'div') return expect.unreachable(`announce created an unexpected <${tag}>`);
         return node();
       },
       body: {

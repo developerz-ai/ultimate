@@ -159,11 +159,23 @@ export function localizedAlternates(
     : [...cluster, { hreflang: 'x-default', href: fallback.path }];
 }
 
+/** One separator a title template puts between the slot and the brand. */
+const TEMPLATE_SEPARATOR = /[\s\-–—|·:>/]/;
+
 /**
- * Separators a title template puts between the slot and the brand. Stripped so the BRAND is what
- * the containment test reads: `'%s — Ultimate'` means the brand is `Ultimate`, not `— Ultimate`.
+ * The template's BRAND: the slot removed and the separators around it stripped, so the
+ * containment test reads it: `'%s — Ultimate'` means the brand is `Ultimate`, not `— Ultimate`.
+ * Two index walks, never `/^[…]+|[…]+$/g`: its trailing half retried a separator run from each
+ * character of it — 9.2 s on a template of 100k spaces (CodeQL polynomial-redos).
  */
-const TEMPLATE_SEPARATORS = /^[\s\-–—|·:>/]+|[\s\-–—|·:>/]+$/g;
+export function templateBrand(template: string): string {
+  const text = template.replace(TITLE_SLOT, '');
+  let start = 0;
+  let end = text.length;
+  while (start < end && TEMPLATE_SEPARATOR.test(text[start] ?? '')) start += 1;
+  while (end > start && TEMPLATE_SEPARATOR.test(text[end - 1] ?? '')) end -= 1;
+  return text.slice(start, end);
+}
 
 const WORD_CHARACTER = /[\p{L}\p{N}]/u;
 
@@ -202,7 +214,7 @@ export function applyTitleTemplate(title: string, template?: string): string {
   // `renderMeta` runs per request, so the refusal belongs in `validate.ts`'s build gate, where it
   // can name the file.
   if (!template.includes(TITLE_SLOT)) return title;
-  const brand = template.replace(TITLE_SLOT, '').replace(TEMPLATE_SEPARATORS, '');
+  const brand = templateBrand(template);
   if (brand !== '' && containsWord(title, brand)) return title;
   // A FUNCTION as the replacement, never the string: `replace` expands `$$`, `$&` and `$'` in a
   // replacement literal, and a title is app data — "Save $$ on shoes" rendered one dollar.

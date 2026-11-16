@@ -74,9 +74,9 @@ describe('step.run replay', () => {
     expect(value).toEqual({ total: 42, currency: 'EUR' });
 
     const second = stepRunner({ runId: 'run-2', jobName: 'j', store });
-    const replayed = await second.step.run<{ total: number; currency: string }>('compute', () => {
-      throw new Error('must not run');
-    });
+    const replayed = await second.step.run<{ total: number; currency: string }>('compute', () =>
+      expect.unreachable('a completed step ran again on replay'),
+    );
     expect(replayed).toEqual({ total: 42, currency: 'EUR' });
     expect(second.replayedNames()).toEqual(['compute']);
   });
@@ -128,7 +128,7 @@ describe('step.sleep', () => {
 
     const suspension = await attempt().catch((error: unknown) => error);
     expect(isStepSuspension(suspension)).toBe(true);
-    if (!isStepSuspension(suspension)) throw new Error('expected a suspension');
+    if (!isStepSuspension(suspension)) return expect.unreachable('expected a suspension');
     expect(suspension.reason).toBe('sleep');
     expect(suspension.resumeAt).toBe(T0 + 3 * 86_400_000);
     expect(nudges).toBe(0);

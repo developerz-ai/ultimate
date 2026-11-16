@@ -140,3 +140,67 @@ describe('unit · scanWikiDocs', () => {
     expect(await scanWikiDocs(join(root, 'absent'), ORIGIN)).toEqual([]);
   });
 });
+
+// CodeQL js/polynomial-redos (sweep 8b-3): the heading, link and tag patterns each retried a run
+// from every character of it — over 15 s on a CRLF heading of 10k spaces, over 15 s on 100k `![`,
+// 4.3 s on 100k `<`. The readers are forward walks now; the old patterns are the oracle.
+describe('headings and slugs are read in linear time, with the old answers', () => {
+  const OLD_HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
+  const oldSlug = (heading: string): string =>
+    heading
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/<[^>]+>/g, '')
+      .replaceAll('`', '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '')
+      .replaceAll(' ', '-');
+  const every = (alphabet: readonly string[], max: number, check: (text: string) => void) => {
+    let level = [''];
+    for (let length = 0; length <= max; length += 1) {
+      for (const text of level) check(text);
+      level = level.flatMap((head) => alphabet.map((one) => head + one));
+    }
+  };
+
+  test('every slug of up to 5 link, tag and word characters', () => {
+    every(['!', '[', ']', '(', ')', '<', '>', 'a', ' '], 5, (text) => {
+      expect([text, githubSlug(text)]).toEqual([text, oldSlug(text)]);
+    });
+  });
+
+  // Longer than the exhaustive run reaches: a URL is only observable once a link closes, and a
+  // failed `[…]` before a real link takes eight characters to spell.
+  test('a failed bracket, a nested one, an image and a tag around a link', () => {
+    const cases = [
+      '[]a[](b)',
+      '[a [b] c](d) e',
+      'x ![alt](img.png) y [t](u)',
+      '[a](b <c>) <d [e](f)> g',
+      'see [the `api`](./api) and <kbd>x</kbd>',
+      '[a](b(c)d)',
+      'a <> b <c',
+    ];
+    for (const text of cases) expect([text, githubSlug(text)]).toEqual([text, oldSlug(text)]);
+  });
+
+  test('every heading line of up to 7 marks, blanks, words and carriage returns', () => {
+    every([' ', '\t', '#', 'a', '\r'], 7, (line) => {
+      const match = OLD_HEADING.exec(line);
+      const heading = match?.[2] ?? '';
+      const expected =
+        match === null
+          ? []
+          : [{ level: (match[1] ?? '').length, heading, anchor: oldSlug(heading), line: 0 }];
+      expect([line, wikiHeadings(line)]).toEqual([line, expected]);
+    });
+  });
+
+  test('hostile headings of 100k characters are read in well under a second', () => {
+    const started = performance.now();
+    expect(wikiHeadings(`# ${' '.repeat(100_000)}\r`)).toEqual([]);
+    expect(githubSlug('!['.repeat(100_000))).toBe('');
+    expect(githubSlug('[](x'.repeat(100_000))).toBe('x'.repeat(100_000));
+    expect(githubSlug('<'.repeat(100_000))).toBe('');
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+});

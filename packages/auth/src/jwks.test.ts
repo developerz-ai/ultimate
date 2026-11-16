@@ -129,15 +129,19 @@ describe('verifyJwtSignature', () => {
   });
 
   test('alg: none and alg: HS256 are refused before a key is ever looked up', async () => {
+    // Counted, not only thrown: a throw inside the verifier could be caught and read as `false`.
+    let requested = 0;
     const keys: { keyFor: () => Promise<CryptoKey> } = {
       keyFor: () => {
-        throw new Error('a key must never be requested for an unsupported alg');
+        requested += 1;
+        return expect.unreachable('a key must never be requested for an unsupported alg');
       },
     };
     for (const alg of ['none', 'HS256', 'RS512']) {
       const token = `${text(JSON.stringify({ alg }))}.${text('{"sub":"the-vp"}')}.sig`;
       expect(await verifyJwtSignature(token, keys)).toBe(false);
     }
+    expect(requested).toBe(0);
   });
 
   test('a header that is not base64url JSON is null, never a throw', () => {

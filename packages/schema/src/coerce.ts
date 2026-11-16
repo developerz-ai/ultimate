@@ -15,8 +15,11 @@ const FALSE_VALUES = new Set(['0', 'false', 'no', 'off', '']);
  * A DECIMAL numeral, and nothing else `Number()` reads: it also takes `0x10`, `0b11` and `0o17`,
  * so `?page=0x10` arrived as page 16 — a number the caller never wrote in the only notation a
  * query string, a form field and the published `type: number` have in common.
+ *
+ * The dot owns the digits after it (`\d+(?:\.\d*)?`): `\d+\.?\d*` split a dotless run between two
+ * quantifiers and retried every split, 18.5 s on 100k digits and an `x` (CodeQL polynomial-redos).
  */
-const DECIMAL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
+const DECIMAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
 
 /**
  * A numeric string as a number, or `undefined` for anything that is not confidently one. Exported

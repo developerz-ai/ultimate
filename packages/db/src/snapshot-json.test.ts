@@ -83,7 +83,7 @@ async function formatted(json: string): Promise<string> {
   const code = await proc.exited;
   const stderr = await new Response(proc.stderr).text();
   // A formatter that could not run would otherwise read as "no change" and pass every case here.
-  if (code > 1) throw new Error(`biome did not run (${code}): ${stderr}`);
+  if (code > 1) expect.unreachable(`biome did not run (${code}): ${stderr}`);
   const out = await Bun.file(join(dir, 'subject.json')).text();
   await rm(dir, { recursive: true, force: true });
   return out;

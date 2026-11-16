@@ -157,7 +157,7 @@ describe('N real workers, one killed mid-flight, under load', () => {
     }
     const [chaosOne, chaosTwo] = enqueued;
     if (chaosOne === undefined || chaosTwo === undefined) {
-      throw new Error('expected at least two enqueued jobs to designate as chaos jobs');
+      return expect.unreachable('expected at least two enqueued jobs to designate as chaos jobs');
     }
     chaosJobIds.add(chaosOne.id);
     chaosJobIds.add(chaosTwo.id);

@@ -81,7 +81,7 @@ const sweep = async (handle: AnyJobHandle, seen: Post[], pages: () => number): P
     visibilityTimeoutMs: 30_000,
     workerId: 'w1',
   });
-  if (claimed === undefined) throw new Error('the driver claimed nothing');
+  if (claimed === undefined) return expect.unreachable('the driver claimed nothing');
   // What a worker builds: a context with an actor and NO org. The declaration is the only thing
   // that can put one on the run. Held rather than inlined so a caller can re-enter it after the
   // pass and ask whether the pass widened it.

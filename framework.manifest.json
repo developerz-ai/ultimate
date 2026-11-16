@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3497214ac029103c14797d9ee5a4cbf8206d6456ef29ebecf29c0c32eef22935",
+  "buildId": "5a507c1f0e3a1e5adcf7c90f4d2ca364622d2b99bd5c0f942c67938a478d466a",
   "tiers": {
     "0": [
       "core",
@@ -6523,6 +6523,11 @@
       "code": "X_TOPIC_FORBIDDEN",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_TRAILING_SLASH_REGEX",
+      "owner": "scripts",
+      "at": "scripts/trailing-slash-regex.ts"
     },
     {
       "code": "X_TRANSPORT_PROTOCOL",

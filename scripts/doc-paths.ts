@@ -35,6 +35,7 @@
 import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { trimTrailingSlashes } from '../packages/core/src/trailing-slashes';
 import { parseScriptArgs } from './lib/args';
 import type { MarkdownFile } from './lib/doc-citations';
 import { readMarkdown } from './lib/doc-citations';
@@ -95,11 +96,12 @@ const BUILD_OUTPUT = /(?:^|\/)(?:dist|node_modules|\.x|coverage)(?:\/|$)|\.tsbui
 /** The path as a file system names it: no `:line[:col]`, `:a-b`, `#anchor` or closing punctuation. */
 export function normalizePath(token: string): string | undefined {
   if (PLACEHOLDER.test(token)) return undefined;
-  const path = token
-    .replace(/#.*$/, '')
-    .replace(/(?::\d+(?:-\d+)?)+$/, '')
-    .replace(/[.:]+$/, '')
-    .replace(/\/+$/, '');
+  const path = trimTrailingSlashes(
+    token
+      .replace(/#.*$/, '')
+      .replace(/(?::\d+(?:-\d+)?)+$/, '')
+      .replace(/[.:]+$/, ''),
+  );
   if (path.split('/').length < 2 || path.endsWith('/')) return undefined;
   if (BUILD_OUTPUT.test(path)) return undefined;
   return path;

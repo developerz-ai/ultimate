@@ -4,10 +4,11 @@
 
 import { renderFixShellArg } from '../../packages/core/src/error-render';
 import { nearestName } from '../../packages/core/src/nearest-name';
+import { trimTrailingSlashes } from '../../packages/core/src/trailing-slashes';
 import type { GatedApp } from './gated-apps';
 import type { Finding } from './log';
 
-const spelled = (dir: string): string => dir.replace(/^\.\//, '').replace(/\/+$/, '');
+const spelled = (dir: string): string => trimTrailingSlashes(dir.replace(/^\.\//, ''));
 
 /**
  * The apps this run gates, or the refusal. A name that is not a gated app is never "no apps": a

@@ -134,16 +134,17 @@ describe('readSse', () => {
       },
     });
 
+    // Counted, not thrown from the loop: a throw there would be caught as the rejection below.
+    let frames = 0;
     const read = async (): Promise<void> => {
-      for await (const _frame of readSse(body, 'openai')) {
-        throw new Error('a frame was yielded from a body that carries no frame boundary');
-      }
+      for await (const _frame of readSse(body, 'openai')) frames += 1;
     };
 
     const error: unknown = await read().then(
       () => undefined,
       (thrown: unknown) => thrown,
     );
+    expect(frames, 'a frame was yielded from a body that carries no frame boundary').toBe(0);
     expect(isUltimateError(error)).toBe(true);
     if (!isUltimateError(error)) return;
     expect(error.code).toBe('X_AI_PROVIDER_UNAVAILABLE');

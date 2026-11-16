@@ -4,6 +4,7 @@
 // — the same gate `pg-driver.live.test.ts` uses; CI's service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { renderThrowable } from '@ultimat3/core';
 import { type PostgresClient, postgresClient, raw, sql, statementsOf } from '@ultimat3/db';
 import { normalizeVector } from './embeddings';
 import { type PostgresVectorStore, postgresVectorStore } from './pg-vector';
@@ -103,10 +104,10 @@ describe.skipIf(!hasPostgres)('live · pgvector · PostgresVectorStore', () => {
     // Deliberately a FAILURE and not a skip. A suite that quietly stands down when the extension
     // is absent reports green for the one store that runs in front of real traffic.
     if (!available) {
-      throw new Error(
+      expect.unreachable(
         'TEST_DATABASE_URL names a Postgres without pgvector, so PostgresVectorStore is untested.\n' +
+          `cause: ${renderThrowable(unavailable)}\n` +
           'fix: docker run -d -e POSTGRES_PASSWORD=ultimate -p 5432:5432 pgvector/pgvector:pg17',
-        { cause: unavailable },
       );
     }
     expect(available).toBe(true);

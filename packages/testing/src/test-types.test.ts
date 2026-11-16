@@ -59,7 +59,7 @@ jobTest('jobTest hands its body the fixtures it destructures', async ({ runJobs 
 // drives a browser, and a skip that silently executed the body would run an app-less browser test
 // in every suite in the tree. This file goes red if that branch stops skipping.
 e2eTest('e2eTest skips its body while no driver is registered', () => {
-  throw new Error('the e2e body ran with no browser driver registered');
+  expect.unreachable('the e2e body ran with no browser driver registered');
 });
 
 const driverCalls: { readonly name: string; readonly body: E2eBody }[] = [];

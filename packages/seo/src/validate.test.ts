@@ -85,7 +85,7 @@ describe('validateMeta', () => {
     const report = validateMeta([route({ path: '/x', file: 'site/x/page.tsx' })]);
     try {
       assertMeta(report);
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       const err = error as { code?: string; fix?: string; cause?: string };
       expect(err.code).toBe(SEO_ERROR_CODES.metaMissing);
