@@ -10,27 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Changed
-
-- **CI deals its shards on measured time.** The gate parts pass `x verify --shard … --timings scripts/lib/ci/test-weights.json`, the committed per-file wall times of a CI run. Heaviest file first, each to the lightest shard; a file the weights do not know costs the median. Unit shards go from 3 to 4 and live from 2 to 3 (`PARTS` 9). The slowest unit part is predicted at 232 s, down from 378 s (run 43903381662's timings). `bun run scripts/test-weights.ts <artifacts-dir>` rewrites the weights from a run's part artifacts. Apps that pass no `--timings` keep the round-robin deal.
-- The slowest framework test files are split so test workers run them in parallel:
-  - `generate-sign-in` per shape;
-  - `scaffold-typecheck` per scaffold group;
-  - `fix-truth` with its barrel row apart;
-  - `mcp-host` parity per tool;
-  - PGlite entity-driver conformance in three parts;
-  - `error-catalog-process`.
-
-  Each split keeps every case, and a test proves the parts cover the whole.
-
-### Added
-
-- `bun run test-slow`: a test file whose committed weight is over 20 s states why in a `// slow: <reason>` header line (`X_TEST_SLOW_UNSTATED`). A reason on a file now under 10 s is `X_TEST_SLOW_REASON_STALE`; weights that read nothing are `X_TEST_SLOW_UNSCANNED`. It runs in the gate's `errors` step.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.37.0](docs/changelog/31.37.0.md) | 2026-11-16 | **CI is faster where it was slowest.** Shards are dealt on measured per-file time, with 4 unit shards and 3 live shards: the slowest unit part went from 415 s to 315 s on CI. |
 | [31.36.0](docs/changelog/31.36.0.md) | 2026-11-16 | **A fix line opens with what to paste or run.** 917 `fix:` lines across every package and the repository scripts opened with a sentence; 862 now open with a command, a code shape (`policy: '<resource>:<verb>'`, `assertCurrency('USD')`, `` sql`…` ``) or an `edit <file>:<line> — …`, with the old instruction after it as a comment. The 55 that remain carry a reason per package in `scripts/lib/fix-prose-pins.ts`: a remedy that is judgement, or one at a call site the thrower cannot see. |
 | [31.35.0](docs/changelog/31.35.0.md) | 2026-11-16 | **The error reference is an index plus one page per owner**, as the changelog is. `wiki/Error-Codes.md` was one 627 KB page of 1,358 rows. It is now: |
 | [31.34.0](docs/changelog/31.34.0.md) | 2026-11-16 | **A test states its own verdict with `expect`, never a bare `Error`** (plan 101b slice 12 M6, third PR). 80 sites where a test threw a bare `Error` to fail itself now use `expect.unreachable` or a direct assertion: `realtime`, `http`, `query`, `db`, `entity`, `seo`, `cli`, `jobs`, `testing`, `admin`, `ai`, `auth`, `render` and `ui`. Several were silently weak, a throw the subject or the test's own handler swallowed, and are stronger now: `auth`'s JWKS "never asked for a key", `ai`'s SSE frame count. Every remaining pinned site is an INPUT, a stub that throws at the subject, and its row says what it simulates. |
