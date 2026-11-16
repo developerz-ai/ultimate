@@ -284,5 +284,7 @@
  * raised 1733 → 1734, measured 1734 (2026-11-16, plan 101b sweep 9): `cli/src/island-plugin-path.ts`,
  * the one spelling an island plugin hands `Bun.build` a file in — Bun 1.4.4 refuses a path holding
  * `..`, which a `file:` install's store directory names do.
+ * raised 1734 → 1735, measured 1735 (2026-11-16, plan 101b audit round 1, security): the one on
+ * `SERVING_ROLE_CEILING`, `realtime/src/change-tenant.ts`.
  */
-export const WEB_ROLE_CEILING = 1734;
+export const WEB_ROLE_CEILING = 1735;

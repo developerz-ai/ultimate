@@ -324,5 +324,7 @@
  * port while the schema wait runs) and `cli/src/role-pg-stats.ts` (the scheduler's gauge sampler).
  * raised 1534 → 1535, measured 1535 (2026-11-16, plan 101b sweep 8b-2): the one on `MIGRATE_CEILING`,
  * `core/src/trailing-slashes.ts`.
+ * raised 1535 → 1536, measured 1536 (2026-11-16, plan 101b audit round 1, security):
+ * `realtime/src/change-tenant.ts`, the one answer to a change's tenant column every producer reads.
  */
-export const SERVING_ROLE_CEILING = 1535;
+export const SERVING_ROLE_CEILING = 1536;
