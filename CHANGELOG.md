@@ -10,32 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-### Highlights
-
-- **A test states its own verdict with `expect`, never a bare `Error`** (plan 101b slice 12 M6, third PR). 80 sites where a test threw a bare `Error` to fail itself now use `expect.unreachable` or a direct assertion: `realtime`, `http`, `query`, `db`, `entity`, `seo`, `cli`, `jobs`, `testing`, `admin`, `ai`, `auth`, `render` and `ui`. Several were silently weak, a throw the subject or the test's own handler swallowed, and are stronger now: `auth`'s JWKS "never asked for a key", `ai`'s SSE frame count. Every remaining pinned site is an INPUT, a stub that throws at the subject, and its row says what it simulates.
-- **Seven quadratic and exponential regular expressions are linear**, each measured on Bun before it was touched and proven against the old pattern as an oracle (CodeQL `js/polynomial-redos`).
-
-### Fixed
-
-- `@ultimat3/schema`: numeral coercion no longer backtracks on a long digit run (100k digits took 18.5 s).
-- `@ultimat3/mcp`: the read-only SQL tool's function-call scan is linear on a long identifier (15.9 s before).
-- `@ultimat3/entity`: `canonicalDecimal` trims trailing zeros in one pass (10.7 s before).
-- `@ultimat3/seo`: `applyTitleTemplate` strips the brand's separators in one pass (9.2 s before).
-- `@ultimat3/manifest`: `githubSlug` and wiki heading parsing are linear; a CRLF heading of long whitespace no longer hangs `x docs`.
-- `@ultimat3/core`: the version check no longer backtracks exponentially on a run of dashes.
-- `@ultimat3/testing`: the e2e evaluate helper's function-signature read is linear.
-- Five more `/\/+$/` trims, missed by 31.33.0's sweep, use `trimTrailingSlashes`: the S3 live fixtures and three scripts.
-- `entity/batch.test.ts` reruns cleanly: a preloaded-relation test wrote to the process-wide default driver.
-
-### Changed
-
-- `bun run trailing-slash-regex` (`X_TRAILING_SLASH_REGEX`) refuses `/\/+$/` and its variants in shipped source and scripts: `trimTrailingSlashes` is the one way.
-- Bare-error source exemptions are keyed by the throw's own text, not its line, so a header edit above an exempt throw no longer breaks the gate.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.34.0](docs/changelog/31.34.0.md) | 2026-11-16 | **A test states its own verdict with `expect`, never a bare `Error`** (plan 101b slice 12 M6, third PR). 80 sites where a test threw a bare `Error` to fail itself now use `expect.unreachable` or a direct assertion: `realtime`, `http`, `query`, `db`, `entity`, `seo`, `cli`, `jobs`, `testing`, `admin`, `ai`, `auth`, `render` and `ui`. Several were silently weak, a throw the subject or the test's own handler swallowed, and are stronger now: `auth`'s JWKS "never asked for a key", `ai`'s SSE frame count. Every remaining pinned site is an INPUT, a stub that throws at the subject, and its row says what it simulates. |
 | [31.33.0](docs/changelog/31.33.0.md) | 2026-11-16 | **Every shipped source file opens with its 1â€“4 line responsibility header, and every `node:` import says why Bun cannot do the job** (plan 101b slice 12 M6, second PR). The `source-headers` pin table is empty: 316 rows fell. `node-imports` fell from 173 explained-or-not sites to 0. Where Bun has the same API, the import is gone instead: `Bun.CryptoHasher` in `@ultimat3/entity`'s seed ids (pinned by a known-answer test against an independent uuid5), `Bun.file().exists()` in four `x verify` readers, and `Bun.Glob` and `Bun.pathToFileURL` in tests. |
 | [31.32.0](docs/changelog/31.32.0.md) | 2026-11-16 | **The security and robustness ratchets are burned down** (plan 101b slice 12 M6). Every site eight guards pinned across `cli`, `scripts` and every package was repaired, or keeps one row with a permanent written reason. Done by the guards' own repair, never a dodge: |
 | [31.31.0](docs/changelog/31.31.0.md) | 2026-11-16 | **The `next` lane runs itself up to the merge.** `next-sync.yml` merges `main` into `next` weekly. `scripts/release-due.ts` reports `data.nextLane`: once the major window is open and `next` is green and ahead, it proposes the `chore: release X.0.0` PR, which a person merges. `scripts/next-breaks.ts` renders the tracking issue of every parked break, cited at the line that parked it. |
