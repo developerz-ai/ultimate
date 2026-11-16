@@ -7,12 +7,12 @@ import type { ScriptResult } from './lib/log';
 /** Every line the help prints: the package form, the script form, and what each one writes. */
 export const NEW_ERROR_CODE_USAGE: readonly string[] = [
   'usage:',
-  "  bun run new-error-code X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>' (--status <n> | --off-socket) [--browser | --server-only] [--section '<## heading>'] [--dry-run] [--json]",
-  '      a framework package code: its registration, its wiki/Error-Codes.md row and its HTTP status decision, in one edit.',
+  "  bun run new-error-code X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>' (--status <n> | --off-socket) [--browser | --server-only] [--dry-run] [--json]",
+  '      a framework package code: its registration, its row on wiki/Error-Codes-<pkg>.md (the index regenerated) and its HTTP status decision, in one edit.',
   '      --status/--off-socket: exactly one for a tier <= 4 package, neither above it.',
   '      --browser/--server-only: exactly one where the package keeps error-titles-server.ts (realtime), neither elsewhere.',
-  "  bun run new-error-code X_SCRIPT_WHAT_FAILED --script scripts/<file>.ts --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>' [--section '<## heading>'] [--dry-run] [--json]",
-  "      a code a repo script owns: the wiki/Error-Codes.md never-ships list entry and its row (default section 'CLI and verify'); no package registration, no HTTP status.",
+  "  bun run new-error-code X_SCRIPT_WHAT_FAILED --script scripts/<file>.ts --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>' [--dry-run] [--json]",
+  '      a code a repo script owns: the wiki/Error-Codes.md never-ships list entry and its row on wiki/Error-Codes-scripts.md; no package registration, no HTTP status.',
 ];
 
 /** The flags that take the next word as their value: that word is never a request for help. */

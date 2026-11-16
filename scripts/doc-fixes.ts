@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// Enforce, as a gate step, that the `Fix` column of `wiki/Error-Codes.md` is runnable — the same
-// rule `x verify`'s `errors` step already applies to every `fix:` in shipped source.
+// Enforce, as a gate step, that the `Fix` column of every error-code page (`wiki/Error-Codes*.md`)
+// is runnable — the same rule `x verify`'s `errors` step already applies to every `fix:` in
+// shipped source.
 //
 // The gap this closes, in the audit's own words: `checkErrorFixes` resolves cited commands only for
 // `fix:` string literals in shipped source; the reference page's `fix` column was held to coverage
@@ -19,14 +20,16 @@ import { citationFault, fixCitations, fixProblem, loadCommandCatalog } from '@ul
 import { docConfigKeyFindings } from './doc-config-keys';
 import { parseScriptArgs } from './lib/args';
 import { arityFault } from './lib/citation-arity';
+import type { ErrorCodePage } from './lib/error-code-pages';
+import { ERROR_CODE_INDEX, readErrorCodePages } from './lib/error-code-pages';
 import { sameSentence } from './lib/error-code-plan';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { isDelimiterRow, splitRow } from './wiki-tables';
 
-/** The page the host repo publishes. `scripts/verify.ts` names the same file for the other half. */
-export const FIX_REFERENCE = 'wiki/Error-Codes.md';
+/** The index of the page set the host repo publishes; every `wiki/Error-Codes*.md` page is read. */
+export const FIX_REFERENCE = ERROR_CODE_INDEX;
 
 /** The header cell that marks the column. Matched case-insensitively, trimmed. */
 export const FIX_HEADER = 'fix';
@@ -104,7 +107,7 @@ export const CAUSE_HEADER = 'typical cause';
  * title into both cells when no cause was given, so the page read one sentence twice and the cause
  * not at all — the half of a row an agent reads to know what to look for.
  */
-function causeEchoes(markdown: string): readonly DocFixGap[] {
+function causeEchoes(path: string, markdown: string): readonly DocFixGap[] {
   return tableRows(markdown).flatMap((row) => {
     const means = row.header.indexOf(MEANS_HEADER);
     const cause = row.header.indexOf(CAUSE_HEADER);
@@ -114,6 +117,7 @@ function causeEchoes(markdown: string): readonly DocFixGap[] {
     return [
       {
         kind: 'echoed' as const,
+        path,
         line: row.line,
         code: codeOf(row),
         problem: `its Typical cause cell repeats its Means cell ("${title}")`,
@@ -132,14 +136,16 @@ export type DocFixGapKind = 'unrunnable' | 'advice' | 'vacuous' | 'echoed';
 
 export interface DocFixGap {
   readonly kind: DocFixGapKind;
+  /** The page the row is on: the cited place is `path:line`. */
+  readonly path: string;
   readonly line: number;
   readonly code: string;
   readonly problem: string;
 }
 
 export interface DocFixInput {
-  /** The page's text, or `undefined` when it is not on disk. */
-  readonly markdown: string | undefined;
+  /** Every error-code page, index first; none when the set is not on disk. */
+  readonly pages: readonly ErrorCodePage[];
   readonly catalog: CommandCatalog;
 }
 
@@ -151,18 +157,25 @@ export interface DocFixInput {
  * hands them a second error in place of the fix for the first.
  */
 export function checkDocFixes(input: DocFixInput): readonly DocFixGap[] {
-  if (input.markdown === undefined) {
-    return [{ kind: 'vacuous', line: 0, code: '', problem: `${FIX_REFERENCE} is not on disk` }];
-  }
-  const cells = readFixCells(input.markdown);
-  if (cells.length === 0) {
-    return [{ kind: 'vacuous', line: 0, code: '', problem: 'no table declares a `Fix` column' }];
-  }
+  const vacuous = (problem: string): DocFixGap[] => [
+    { kind: 'vacuous', path: FIX_REFERENCE, line: 0, code: '', problem },
+  ];
+  if (input.pages.length === 0) return vacuous(`no ${FIX_REFERENCE} page set is on disk`);
+  const cells = input.pages.flatMap((page) =>
+    readFixCells(page.text).map((cell) => ({ ...cell, path: page.path })),
+  );
+  if (cells.length === 0) return vacuous('no table on any error-code page declares a `Fix` column');
   const gaps: DocFixGap[] = [];
   for (const cell of cells) {
     const advice = fixProblem(cell.fix);
     if (advice !== undefined) {
-      gaps.push({ kind: 'advice', line: cell.line, code: cell.code, problem: advice });
+      gaps.push({
+        kind: 'advice',
+        path: cell.path,
+        line: cell.line,
+        code: cell.code,
+        problem: advice,
+      });
       continue;
     }
     const fault =
@@ -172,15 +185,16 @@ export function checkDocFixes(input: DocFixInput): readonly DocFixGap[] {
     if (fault === undefined) continue;
     gaps.push({
       kind: 'unrunnable',
+      path: cell.path,
       line: cell.line,
       code: cell.code,
       problem: `cites "${fault.subject}", ${fault.reason}`,
     });
   }
-  return [...gaps, ...causeEchoes(input.markdown)];
+  return [...gaps, ...input.pages.flatMap((page) => causeEchoes(page.path, page.text))];
 }
 
-const where = (gap: DocFixGap): string => `${FIX_REFERENCE}:${gap.line}`;
+const where = (gap: DocFixGap): string => `${gap.path}:${gap.line}`;
 
 const unrunnableFinding = (gap: DocFixGap): Finding => ({
   code: 'X_DOC_FIX_UNRUNNABLE',
@@ -199,7 +213,7 @@ const adviceFinding = (gap: DocFixGap): Finding => ({
 const vacuousFinding = (gap: DocFixGap): Finding => ({
   code: 'X_DOC_FIX_UNSCANNED',
   cause: `${gap.problem}, so this rule reported green over a fix column it never read`,
-  fix: `restore ${FIX_REFERENCE} with a table whose header names a Fix column, or point FIX_REFERENCE in scripts/doc-fixes.ts at the page this repo publishes`,
+  fix: `restore the wiki/Error-Codes-<owner>.md pages with a table whose header names a Fix column, or point FIX_REFERENCE in scripts/doc-fixes.ts at the index this repo publishes`,
   at: FIX_REFERENCE,
 });
 
@@ -223,9 +237,8 @@ const FINDINGS: Readonly<Record<DocFixGapKind, (gap: DocFixGap) => Finding>> = O
 export const docFixFindingFor = (gap: DocFixGap): Finding => FINDINGS[gap.kind](gap);
 
 export async function docFixGaps(root: string): Promise<readonly DocFixGap[]> {
-  const page = Bun.file(`${root}/${FIX_REFERENCE}`);
   return checkDocFixes({
-    markdown: (await page.exists()) ? await page.text() : undefined,
+    pages: await readErrorCodePages(root),
     catalog: await loadCommandCatalog(),
   });
 }
@@ -247,8 +260,8 @@ export const docFixFindings = async (root: string): Promise<readonly Finding[]> 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
-  const page = Bun.file(`${root}/${FIX_REFERENCE}`);
-  const cells = (await page.exists()) ? readFixCells(await page.text()).length : 0;
+  const pages = await readErrorCodePages(root);
+  const cells = pages.reduce((sum, page) => sum + readFixCells(page.text).length, 0);
   // `docFixFindings`, not `docFixGaps`: the standalone command must answer exactly what the gate
   // step answers, or `bun run scripts/doc-fixes.ts` prints green over a red `errors` step.
   const findings = await docFixFindings(root);
@@ -258,8 +271,8 @@ if (import.meta.main) {
       script: 'doc-fixes',
       summary:
         findings.length === 0
-          ? `${cells} Fix cells in ${FIX_REFERENCE} and every documented app.config.ts key, all resolvable`
-          : `${findings.length} unrunnable instruction(s) — ${cells} Fix cells in ${FIX_REFERENCE} read, plus every app.config.ts key the docs cite`,
+          ? `${cells} Fix cells on ${pages.length} error-code pages and every documented app.config.ts key, all resolvable`
+          : `${findings.length} unrunnable instruction(s) — ${cells} Fix cells on ${pages.length} error-code pages read, plus every app.config.ts key the docs cite`,
       findings,
     },
     args.json,

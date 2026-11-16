@@ -30,9 +30,16 @@ function fixtureRoot(pages: readonly string[]): string {
 }
 
 describe('unit · shippedPages', () => {
-  test('every page but Error-Codes and the GitHub chrome, sorted', () => {
+  test('every page but the Error-Codes set and the GitHub chrome, sorted', () => {
     expect(
-      shippedPages(['Upgrading.md', 'Error-Codes.md', '_Sidebar.md', 'Home.md', 'notes.txt']),
+      shippedPages([
+        'Upgrading.md',
+        'Error-Codes.md',
+        'Error-Codes-cli.md',
+        '_Sidebar.md',
+        'Home.md',
+        'notes.txt',
+      ]),
     ).toEqual(['Home.md', 'Upgrading.md']);
   });
 });
@@ -72,7 +79,7 @@ describe('unit · the real tarball', () => {
     expect({ code, err: code === 0 ? '' : err }).toEqual({ code: 0, err: '' });
     expect(out).toContain('wiki/Home.md');
     expect(out).toContain('wiki/Upgrading.md');
-    expect(out).not.toContain('wiki/Error-Codes.md');
+    expect(out).not.toContain('wiki/Error-Codes');
     expect(existsSync(join(cli, 'wiki'))).toBe(false);
   }, 60_000);
 });

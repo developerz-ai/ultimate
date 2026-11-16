@@ -1,11 +1,14 @@
 // The generator, proved on a throwaway root holding copies of real `errors.ts` files and of the
-// real `wiki/Error-Codes.md` — never the committed page. Every refusal leaves BOTH files as found,
+// real error-code pages — never the committed ones. Every refusal leaves every file as found,
 // because a registration without its row is the gap this exists to close.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun has no mkdtemp/rm of its own; a unique directory per run keeps test workers apart.
 import { mkdir } from 'node:fs/promises';
-import { PACKAGE_SECTIONS, registerIn, rowIn } from './lib/error-code-plan';
+import { planPageEdits } from './lib/error-code-page-edit';
+import { codeRows, errorCodePageFiles, ownerOfPage, ownerPage } from './lib/error-code-pages';
+import { codeRowFor, registerIn } from './lib/error-code-plan';
+import { snapshotReader } from './lib/planned-writes';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 
 // Reads the real tree or spawns real processes, so it runs on the repo-scan backstop.
@@ -24,7 +27,7 @@ import {
 } from './new-error-code.fixtures';
 
 describe('a new code, registered and documented in one edit', () => {
-  test('money: into the codes array AND the titles table, and a row under its section', async () => {
+  test('money: into the codes array AND the titles table, a row on its page, the index', async () => {
     const dir = await fixtureRoot();
     const result = await newErrorCode(dir, [
       'X_MONEY_ROUNDING_LOST',
@@ -41,6 +44,7 @@ describe('a new code, registered and documented in one edit', () => {
     ]);
     expect(result.written).toEqual([
       'packages/money/src/errors.ts',
+      ownerPage('money'),
       WIKI_PAGE,
       statusTableFor('money'),
     ]);
@@ -51,35 +55,54 @@ describe('a new code, registered and documented in one edit', () => {
     );
     expect(transpiles(errors)).toBe(true);
 
-    const wiki = (await read(dir, WIKI_PAGE)).split('\n');
-    const row = wiki.findIndex((line) => line.startsWith('| `X_MONEY_ROUNDING_LOST`'));
-    const section = wiki.indexOf('## i18n, money, time');
-    const next = wiki.findIndex((line, index) => index > section && line.startsWith('## '));
-    // Present first: a renamed heading answers -1, and `row > -1` passes for a row anywhere.
-    expect(section).toBeGreaterThanOrEqual(0);
-    expect(row).toBeGreaterThan(section);
-    expect(row).toBeLessThan(next);
-    // In the table, not after it: the line above is a row too.
-    expect(wiki[row - 1]).toStartWith('|');
-    expect(wiki[row]).toContain('more \\| decimals');
+    const page = await read(dir, ownerPage('money'));
+    const codes = codeRows(page).map((row) => row.codes[0] ?? '');
+    // Present, and at its place in code order: the rows either side sort below and above it.
+    const at = codes.indexOf('X_MONEY_ROUNDING_LOST');
+    expect(at).toBeGreaterThan(0);
+    expect((codes[at - 1] ?? '') < 'X_MONEY_ROUNDING_LOST').toBe(true);
+    expect((codes[at + 1] ?? 'X_~') > 'X_MONEY_ROUNDING_LOST').toBe(true);
+    expect(page).toContain('more \\| decimals');
+    // …and the index lists it, so no second command is needed for the gate to stay green.
+    expect(await read(dir, WIKI_PAGE)).toContain(
+      "| X_MONEY_ROUNDING_LOST | a conversion that can't keep its minor units | [money](Error-Codes-money) |",
+    );
   });
 
-  test('the row goes in the section`s CODE table, not the first table it opens with', async () => {
-    // Scraping opens with a retry-override table (`| Set | Codes | Effect |`) before its codes.
+  test('the row goes in the CODE table, never the notes table further down', async () => {
+    // Scraping's page carries a retry-override table (`| Set | Codes | Effect |`) in its notes.
     const dir = await fixtureRoot();
-    const before = (await read(dir, WIKI_PAGE)).split('\n');
-    const heading = before.indexOf('## Scraping');
-    const header = before.findIndex((line, index) => index > heading && /^\| Code \|/.test(line));
-    let end = header;
-    while ((before[end + 1] ?? '').startsWith('|')) end += 1;
-    const after = rowIn(before.join('\n'), {
-      code: 'X_SCRAPE_PROBE',
-      pkg: 'scraping',
-      title: 't',
-      cause: 'c',
-      fix: 'f',
-    }).split('\n');
-    expect(after[end + 1]).toStartWith('| `X_SCRAPE_PROBE`');
+    const before = await read(dir, ownerPage('scraping'));
+    const input = { code: 'X_SCRAPE_ZZ_PROBE', pkg: 'scraping', title: 't', cause: 'c', fix: 'f' };
+    const [page] = await planPageEdits({
+      root: dir,
+      read: snapshotReader(dir, new Map()),
+      input,
+      owner: 'scraping',
+    });
+    const lines = (page?.text ?? '').split('\n');
+    const at = lines.indexOf(codeRowFor(input));
+    expect(at).toBeGreaterThan(0);
+    expect(lines.indexOf('| Set | Codes | Effect |')).toBeGreaterThan(at);
+    expect(lines[at - 1]).toStartWith('| `X_SCRAPE_');
+    expect(page?.text.replace(`${codeRowFor(input)}\n`, '')).toBe(before);
+  });
+
+  test("an owner's first code opens its page, linked from the regenerated index", async () => {
+    const dir = await fixtureRoot();
+    const input = { code: 'X_FRESH_PROBE', pkg: 'fresh', title: 't', cause: 'c', fix: 'f' };
+    const [page, index] = await planPageEdits({
+      root: dir,
+      read: snapshotReader(dir, new Map()),
+      input,
+      owner: 'fresh',
+    });
+    expect(page?.path).toBe('wiki/Error-Codes-fresh.md');
+    expect(page?.text).toStartWith('# Error codes: `@ultimat3/fresh`');
+    expect(codeRows(page?.text ?? '').map((row) => row.codes)).toEqual([['X_FRESH_PROBE']]);
+    expect(index?.text).toContain(
+      '| `@ultimat3/fresh` | [Error-Codes-fresh](Error-Codes-fresh) | 1 |',
+    );
   });
 
   test('seo: a literal registerErrorCodes({ … }) gets a { title } entry', async () => {
@@ -134,7 +157,7 @@ describe('a registry kept as frozen declarations, not titles', () => {
     const codes = await read(dir, 'packages/schema/src/error-codes.ts');
     expect(codes).toContain("    X_SCHEMA_PROBE: { title: 'a probe' },\n  });");
     expect(transpiles(codes)).toBe(true);
-    expect(await read(dir, WIKI_PAGE)).toContain('| `X_SCHEMA_PROBE` | a probe |');
+    expect(await read(dir, ownerPage('schema'))).toContain('| `X_SCHEMA_PROBE` | a probe |');
     // The pin joins schema's OFF_SOCKET group — never schema's UNDECIDED group. Opening a group a
     // package lacks is `new-error-code-status.test.ts`'s `time` case.
     const backlog = await read(dir, STATUS_BACKLOG);
@@ -184,6 +207,7 @@ describe('a package whose titles are not in the first file the planner looks at'
     ]);
     expect(result.written).toEqual([
       'packages/core/src/core-error-codes.ts',
+      ownerPage('core'),
       WIKI_PAGE,
       STATUS_BACKLOG,
     ]);
@@ -192,7 +216,7 @@ describe('a package whose titles are not in the first file the planner looks at'
     expect(transpiles(titles)).toBe(true);
     // The registry it could not add to is left exactly as found.
     expect(await read(dir, 'packages/core/src/error-codes.ts')).toBe(registry);
-    expect(await read(dir, WIKI_PAGE)).toContain('| `X_CORE_PROBE_ONLY` | a probe |');
+    expect(await read(dir, ownerPage('core'))).toContain('| `X_CORE_PROBE_ONLY` | a probe |');
   });
 
   // `@ultimat3/entity` keeps its registry in `entity-error.ts` — split from `errors.ts` so a
@@ -221,6 +245,7 @@ describe('a package whose titles are not in the first file the planner looks at'
     ]);
     expect(result.written).toEqual([
       'packages/entity/src/entity-error.ts',
+      ownerPage('entity'),
       WIKI_PAGE,
       statusTableFor('entity'),
     ]);
@@ -262,17 +287,7 @@ describe('the wiki fix cell reads like its neighbours', () => {
   // `--fix 'x db gen'` landed on the page as bare text between rows whose commands are in
   // backticks (W-DB, plan 101): a command a reader copies is code, and the page says so.
   const cellOf = (fix: string): string => {
-    const page = rowIn(
-      '## Core and runtime\n\n| Code | Means | Typical cause | Fix |\n|---|---|---|---|\n| `X_A` | a | a | `x a` |\n',
-      {
-        code: 'X_CORE_PROBE',
-        pkg: 'core',
-        title: 't',
-        cause: 'c',
-        fix,
-      },
-    );
-    const row = page.split('\n').find((line) => line.startsWith('| `X_CORE_PROBE`')) ?? '';
+    const row = codeRowFor({ code: 'X_CORE_PROBE', pkg: 'core', title: 't', cause: 'c', fix });
     return row.split(' | ').at(-1)?.replace(/ \|$/, '') ?? '';
   };
 
@@ -344,8 +359,6 @@ describe('every refusal is coded and writes nothing', () => {
         'what usually makes it happen',
         '--fix',
         'f',
-        '--section',
-        'Core and runtime',
       ]),
     );
     expect(code).toBe('X_NEW_ERROR_CODE_PATTERN_UNKNOWN');
@@ -377,7 +390,7 @@ describe('every refusal is coded and writes nothing', () => {
     expect(await read(dir, 'packages/money/src/errors.ts')).not.toContain("'X_ABORTED'");
   });
 
-  test('a malformed code, a missing flag, an unknown package or section is refused', async () => {
+  test('a malformed code, a missing flag, an unknown package or a --section is refused', async () => {
     const dir = await fixtureRoot();
     const ok = [
       '--package',
@@ -414,6 +427,31 @@ describe('every refusal is coded and writes nothing', () => {
       'X_NEW_ERROR_CODE_INVALID',
     );
   });
+
+  test('--section is retired: refused by name, pointing at the owner page, nothing written', async () => {
+    const dir = await fixtureRoot();
+    const before = await read(dir, ownerPage('money'));
+    const argv = [
+      'X_MONEY_PROBE',
+      '--package',
+      'money',
+      '--title',
+      't',
+      '--cause',
+      'c',
+      '--fix',
+      'f',
+    ];
+    const run = newErrorCode(dir, [...argv, '--status', '400', '--section', 'Money']);
+    const error = await run.then(
+      () => expect.unreachable('a --section run wrote'),
+      (thrown: unknown) => thrown,
+    );
+    expect(error).toBeInstanceOf(ScriptError);
+    expect((error as ScriptError).cause).toContain('--section is retired');
+    expect((error as ScriptError).cause).toContain(ownerPage('money'));
+    expect(await read(dir, ownerPage('money'))).toBe(before);
+  });
 });
 
 describe('the cause cell is its own sentence, never the title again', () => {
@@ -421,11 +459,11 @@ describe('the cause cell is its own sentence, never the title again', () => {
 
   test('no --cause is refused before anything is written', async () => {
     const dir = await fixtureRoot();
-    const before = await read(dir, WIKI_PAGE);
+    const before = await read(dir, ownerPage('money'));
     expect(await refusal(newErrorCode(dir, [...base, '--status', '400']))).toBe(
       'X_NEW_ERROR_CODE_INVALID',
     );
-    expect(await read(dir, WIKI_PAGE)).toBe(before);
+    expect(await read(dir, ownerPage('money'))).toBe(before);
   });
 
   test('a --cause that repeats the title is refused — the row would say one thing twice', async () => {
@@ -437,7 +475,7 @@ describe('the cause cell is its own sentence, never the title again', () => {
   test('the row carries title, cause and fix in their own cells', async () => {
     const dir = await fixtureRoot();
     await newErrorCode(dir, [...base, '--cause', 'what usually causes it', '--status', '400']);
-    const row = (await read(dir, WIKI_PAGE))
+    const row = (await read(dir, ownerPage('money')))
       .split('\n')
       .find((line) => line.startsWith('| `X_MONEY_PROBE`'));
     expect(row).toBe('| `X_MONEY_PROBE` | a probe | what usually causes it | `f` |');
@@ -445,16 +483,23 @@ describe('the cause cell is its own sentence, never the title again', () => {
 });
 
 describe('the real tree', () => {
-  test('every default section is a heading the real page carries', async () => {
-    const page = await Bun.file(`${ROOT}/${WIKI_PAGE}`).text();
-    for (const section of new Set(PACKAGE_SECTIONS.values())) {
-      expect(page.split('\n')).toContain(`## ${section}`);
-    }
+  /** Every owner a page exists for, but the repo scripts: the packages that register codes. */
+  const packages = async (): Promise<readonly string[]> =>
+    (await errorCodePageFiles(ROOT)).flatMap((path) => {
+      const owner = ownerOfPage(path);
+      return owner === undefined || owner === 'scripts' ? [] : [owner];
+    });
+
+  test('every owner page names a package directory of this repository', async () => {
+    const owners = await packages();
+    expect(owners.length).toBeGreaterThan(20);
+    for (const pkg of owners)
+      expect(await Bun.file(`${ROOT}/packages/${pkg}/package.json`).exists()).toBe(true);
   });
 
   test('most real packages are in a shape it can add to — the rest are refused, never guessed', async () => {
     const shapes: Record<string, string> = {};
-    for (const pkg of PACKAGE_SECTIONS.keys()) {
+    for (const pkg of await packages()) {
       // A package that split its titles out (`ai`, `cli`, `jobs`) is probed where the planner writes.
       const split = Bun.file(`${ROOT}/packages/${pkg}/src/error-codes.ts`);
       const file = (await split.exists())

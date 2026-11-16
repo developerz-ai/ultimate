@@ -216,9 +216,17 @@ export function wikiSection(markdown: string, anchor: string): string | undefine
 }
 
 /**
- * Every page in a shipped `wiki/` directory. `Error-Codes.md` is never read: `x errors explain` is
- * the one way to a code, and indexing 400 rows of it would bury every other answer. A directory that
- * is not there is no pages, not a throw — the caller decides whether that is a broken install.
+ * The error reference's page set: the index `Error-Codes` and one `Error-Codes-<owner>` per owner.
+ * The one predicate `x docs` and its section reader both exclude by — `x errors explain` is the one
+ * way to a code, and indexing a thousand rows would bury every other answer.
+ */
+export const isErrorCodesPage = (page: string): boolean =>
+  page === 'Error-Codes' || page.startsWith('Error-Codes-');
+
+/**
+ * Every page in a shipped `wiki/` directory but the error reference (`isErrorCodesPage`). A
+ * directory that is not there is no pages, not a throw — the caller decides whether that is a
+ * broken install.
  */
 export async function scanWikiDocs(dir: string, origin: WikiOrigin): Promise<readonly DocEntry[]> {
   let files: readonly string[];
@@ -230,7 +238,7 @@ export async function scanWikiDocs(dir: string, origin: WikiOrigin): Promise<rea
   const pages = [...files]
     .sort()
     .map(wikiPageOf)
-    .filter((page): page is string => page !== undefined && page !== 'Error-Codes');
+    .filter((page): page is string => page !== undefined && !isErrorCodesPage(page));
   const perPage = await Promise.all(
     pages.map(async (page) => {
       // A listed page can vanish or turn unreadable before it is read — `bun update` rewrites the

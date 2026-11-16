@@ -106,7 +106,8 @@ describe('unit · the repo gate is the CLI gate', () => {
         const findings = await errorCodeDocs(dir);
         expect(findings).toHaveLength(1);
         expect(findings[0]?.code).toBe('X_ERROR_CODE_UNDOCUMENTED');
-        expect(findings[0]?.at).toBe(ERROR_REFERENCE);
+        // Cited where the row goes: the owner page of the package that declares it.
+        expect(findings[0]?.at).toBe('wiki/Error-Codes-core.md');
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

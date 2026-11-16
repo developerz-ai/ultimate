@@ -16,6 +16,8 @@ describe('readCorpus · pages', () => {
     expect(corpus.pages.map((piece) => piece.url).sort()).toEqual([
       '/docs',
       '/error-codes',
+      '/error-codes-core',
+      '/error-codes-db',
       '/getting-started',
       '/upgrading',
     ]);
@@ -36,10 +38,10 @@ describe('readCorpus · pages', () => {
     // `Removed` is `removed-1` on the whole wiki page and `removed` on major 29's own page.
     expect(guide).toContain('[removed](/upgrading/29#removed)');
     expect(guide).toContain('[up](#install)');
-    expect(guide).toContain('[drift](/error-codes)');
+    expect(guide).toContain('[drift](/error-codes-db)');
     expect(guide).toContain('(https://github.com/developerz-ai/ultimate)');
     expect(page('/docs').markdown).toContain(
-      '[codes](/error-codes#core) and [the footer](#footer)',
+      '[codes](/error-codes#reserved-codes) and [the footer](#footer)',
     );
     expect(page('/upgrading/30').markdown).toContain('[back](/upgrading#what-semver-covers)');
   });
@@ -57,30 +59,47 @@ describe('readCorpus · splits', () => {
     expect(index).not.toContain('Thirty moved things');
   });
 
-  test('a code per row, several codes in one cell each get it, and a repeated code gathers rows', () => {
-    expect(corpus.codes.map((piece) => piece.code)).toEqual(['X_DB_DRIFT', 'X_A', 'X_B']);
+  // Every page of the set splits: an owner page's rows and the index's reserved rows alike, and a
+  // code with a row on two owner pages gathers both — each linking back to the page it sits on.
+  test('a code per row on every Error-Codes page; a repeated code gathers rows', () => {
+    expect(corpus.codes.map((piece) => piece.code)).toEqual(['X_A', 'X_B', 'X_DB_DRIFT', 'X_R']);
     const a = corpus.codes.find((piece) => piece.code === 'X_A');
     expect(a?.rows.map((row) => row.section)).toEqual([
-      { title: 'Core', url: '/error-codes#core' },
-      { title: 'Later', url: '/error-codes#later' },
+      { title: 'Error codes: @ultimat3/core', url: '/error-codes-core' },
+      { title: 'Error codes: @ultimat3/db', url: '/error-codes-db' },
     ]);
     expect(a?.rows[0]?.cells).toEqual([
       { label: 'Means', markdown: 'two at once' },
       { label: 'Typical cause', markdown: 'either \\| both' },
-      { label: 'Fix', markdown: 'see [core](/error-codes#core)' },
+      { label: 'Fix', markdown: 'see [reserved](/error-codes#reserved-codes)' },
     ]);
-    const drift = corpus.codes[0]?.rows[0]?.cells[1]?.markdown;
-    expect(drift).toBe('a column [moved](/getting-started#install)');
+    const drift = corpus.codes.find((piece) => piece.code === 'X_DB_DRIFT');
+    expect(drift?.rows[0]?.cells[1]?.markdown).toBe('a column [moved](/getting-started#install)');
+    const reserved = corpus.codes.find((piece) => piece.code === 'X_R');
+    expect(reserved?.rows[0]?.section).toEqual({
+      title: 'Reserved codes',
+      url: '/error-codes#reserved-codes',
+    });
   });
 
-  test('the code index keeps Code | Means, linked; other tables and rows stay as written', () => {
+  test('an owner page keeps Code | Means, linked; other rows stay as written', () => {
+    const db = page('/error-codes-db').markdown;
+    expect(db).toContain('| Code | Means |\n|---|---|\n| [`X_A`](/errors/X_A) | again |');
+    expect(db).toContain('| [`X_DB_DRIFT`](/errors/X_DB_DRIFT) | schema differs |');
+    const core = page('/error-codes-core').markdown;
+    expect(core).toContain('| [`X_A`](/errors/X_A) / [`X_B`](/errors/X_B) | two at once |');
+    expect(core).toContain('| plain | not a code | x | y |');
+  });
+
+  // The index's generated table names each code PLAIN (so no gate counts it as a row): the site
+  // keeps every column and links the code to its page.
+  test('the index links each plain code to its page and keeps its owner-page column', () => {
     const index = page('/error-codes').markdown;
     expect(index).toContain(
-      '| Code | Means |\n|---|---|\n| [`X_DB_DRIFT`](/errors/X_DB_DRIFT) | schema differs |',
+      '| Code | Means | Page |\n|---|---|---|\n| [`X_DB_DRIFT`](/errors/X_DB_DRIFT) | schema differs | [db](/error-codes-db) |',
     );
-    expect(index).toContain('| [`X_A`](/errors/X_A) / [`X_B`](/errors/X_B) | two at once |');
     expect(index).toContain('| `X_NOT_A_ROW` | a rule table row stays |');
-    expect(index).toContain('| plain | not a code | x | y |');
+    expect(index).toContain('| Code | Means |\n|---|---|\n| [`X_R`](/errors/X_R) | reserved |');
   });
 });
 
@@ -108,6 +127,16 @@ describe('readCorpus · refusals', () => {
       markdown: '# E\n\nLead.\n\n| Code | Means | Fix |\n|---|---|---|\n| `X_Q` | q | [x](FAQ) |',
     };
     expect(() => readCorpus([codes], FIXTURE_OPTIONS)).toThrow(/FAQ/);
+  });
+
+  // The index's plain codes link to `/errors/<CODE>`, a URL only a row builds: a code listed there
+  // with no row on any page would be a 404 the build printed, so it stops the build instead.
+  test('an index code no page has a row for is X_DOCS_LINK_DEAD', () => {
+    const index = {
+      file: 'Error-Codes.md',
+      markdown: '# E\n\nLead.\n\n| Code | Means | Page |\n|---|---|---|\n| X_GONE | gone | x |',
+    };
+    expect(() => readCorpus([index], FIXTURE_OPTIONS)).toThrow(/X_GONE/);
   });
 
   test('a page with a second # heading is X_DOCS_SECOND_TITLE', () => {

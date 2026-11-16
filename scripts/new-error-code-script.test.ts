@@ -1,6 +1,6 @@
-// `new-error-code --script <file>`: a code a repo script owns gets its never-ships entry and its
-// row on a scratch copy of wiki/Error-Codes.md — no package registration, no HTTP status — and the
-// gate's own reader (`gate-codes.ts`) sees both.
+// `new-error-code --script <file>`: a code a repo script owns gets its never-ships entry on a
+// scratch copy of wiki/Error-Codes.md and its row on wiki/Error-Codes-scripts.md — no package
+// registration, no HTTP status — and the gate's own reader (`gate-codes.ts`) sees both.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import {
@@ -9,14 +9,21 @@ import {
   neverShipsList,
   tableRows,
 } from './gate-codes';
+import { INDEX_CLOSE, INDEX_OPEN } from './lib/error-code-index';
+import { codeRows, ownerPage } from './lib/error-code-pages';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { newErrorCode, WIKI_PAGE } from './new-error-code';
 import { fixtureRoot, read, refusal, removeFixtureRoots } from './new-error-code.fixtures';
-import { NEVER_SHIPS_LEAD, neverShipsIn, SCRIPT_SECTION } from './new-error-code-script';
+import { NEVER_SHIPS_LEAD, neverShipsIn, SCRIPT_OWNER } from './new-error-code-script';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 afterAll(removeFixtureRoots);
+
+const SCRIPTS_PAGE = ownerPage(SCRIPT_OWNER);
+/** The index outside its generated block: the part a script code edits by hand, its list. */
+const outsideIndex = (text: string): string =>
+  text.slice(0, text.indexOf(INDEX_OPEN)) + text.slice(text.indexOf(INDEX_CLOSE));
 
 const scripted = (code: string, ...rest: string[]) => [
   code,
@@ -38,36 +45,39 @@ async function root(): Promise<string> {
 }
 
 describe('--script', () => {
-  test('writes the never-ships entry and the row, and nothing else', async () => {
+  test('writes the never-ships entry, the row on the scripts page and the index, nothing else', async () => {
     const dir = await root();
     const before = await read(dir, WIKI_PAGE);
+    const pageBefore = await read(dir, SCRIPTS_PAGE);
     const result = await newErrorCode(dir, scripted('X_PROBE_GUARD_UNSCANNED'));
-    expect(result.written).toEqual([WIKI_PAGE]);
+    expect(result.written).toEqual([SCRIPTS_PAGE, WIKI_PAGE]);
     const after = await read(dir, WIKI_PAGE);
+    const page = await read(dir, SCRIPTS_PAGE);
     expect(neverShipsList(before).has('X_PROBE_GUARD_UNSCANNED')).toBe(false);
     expect(neverShipsList(after).has('X_PROBE_GUARD_UNSCANNED')).toBe(true);
-    expect(tableRows(after).has('X_PROBE_GUARD_UNSCANNED')).toBe(true);
+    expect(tableRows(page).has('X_PROBE_GUARD_UNSCANNED')).toBe(true);
+    expect(after).toContain('| X_PROBE_GUARD_UNSCANNED | the probe guard read nothing | [scripts]');
     // The gate's own reader, as `gate-codes` runs it, finds neither gap for the new code.
     const gaps = checkGateCodes({
       declared: ['X_PROBE_GUARD_UNSCANNED'],
       page: after,
+      pages: [after, page],
       noRowPins: [],
       unlistedPins: [],
     });
     expect(gaps.filter((gap) => gap.code === 'X_PROBE_GUARD_UNSCANNED')).toEqual([]);
-    // In the scripts' section, as the last row of its code table.
-    const lines = after.split('\n');
-    const row = lines.findIndex((line) => line.startsWith('| `X_PROBE_GUARD_UNSCANNED` |'));
-    const heading = lines.findLastIndex((line, index) => index < row && line.startsWith('## '));
-    expect(lines[heading]).toBe(`## ${SCRIPT_SECTION}`);
-    expect(lines[row]).toBe(
-      '| `X_PROBE_GUARD_UNSCANNED` | the probe guard read nothing | its glob matched no file in this layout | `bun run scripts/probe-guard.ts --json` |',
+    // At its place in code order on the scripts page.
+    const row =
+      '| `X_PROBE_GUARD_UNSCANNED` | the probe guard read nothing | its glob matched no file in this layout | `bun run scripts/probe-guard.ts --json` |';
+    const codes = codeRows(page).map((one) => one.codes[0] ?? '');
+    const at = codes.indexOf('X_PROBE_GUARD_UNSCANNED');
+    expect((codes[at - 1] ?? '') < 'X_PROBE_GUARD_UNSCANNED').toBe(true);
+    expect((codes[at + 1] ?? 'X_~') > 'X_PROBE_GUARD_UNSCANNED').toBe(true);
+    // Everything but the edits is byte-for-byte what it read: the row, and the list entry.
+    expect(page.replace(`${row}\n`, '')).toBe(pageBefore);
+    expect(outsideIndex(after).replace(', `X_PROBE_GUARD_UNSCANNED`)', ')')).toBe(
+      outsideIndex(before),
     );
-    // Everything but the two edits is byte-for-byte the page it read.
-    const restored = after
-      .replace(`${lines[row]}\n`, '')
-      .replace(', `X_PROBE_GUARD_UNSCANNED`)', ')');
-    expect(restored).toBe(before);
   });
 
   test('--dry-run reports both edits and writes neither', async () => {
@@ -75,7 +85,7 @@ describe('--script', () => {
     const before = await read(dir, WIKI_PAGE);
     const result = await newErrorCode(dir, scripted('X_PROBE_GUARD_DRY', '--dry-run'));
     expect(result.written).toEqual([]);
-    expect(result.planned.map((edit) => edit.path)).toEqual([WIKI_PAGE]);
+    expect(result.planned.map((edit) => edit.path)).toEqual([SCRIPTS_PAGE, WIKI_PAGE]);
     expect(await read(dir, WIKI_PAGE)).toBe(before);
   });
 
@@ -86,12 +96,13 @@ describe('--script', () => {
     await newErrorCode(dir, scripted('X_ROADMAP_PROBE_ROW'));
     const after = await read(dir, WIKI_PAGE);
     expect(after).not.toContain('`X_ROADMAP_PROBE_ROW`)');
-    expect(tableRows(after).has('X_ROADMAP_PROBE_ROW')).toBe(true);
+    expect(tableRows(await read(dir, SCRIPTS_PAGE)).has('X_ROADMAP_PROBE_ROW')).toBe(true);
   });
 
   test('a script that is not in the tree, a package or a status beside it, and a known code are refused', async () => {
     const dir = await root();
     const before = await read(dir, WIKI_PAGE);
+    const pageBefore = await read(dir, SCRIPTS_PAGE);
     const missing = scripted('X_PROBE_A').map((word) =>
       word === 'scripts/probe-guard.ts' ? 'scripts/nope.ts' : word,
     );
@@ -109,6 +120,7 @@ describe('--script', () => {
       'X_NEW_ERROR_CODE_EXISTS',
     );
     expect(await read(dir, WIKI_PAGE)).toBe(before);
+    expect(await read(dir, SCRIPTS_PAGE)).toBe(pageBefore);
   });
 });
 

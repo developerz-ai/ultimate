@@ -5,7 +5,11 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import type { CommandCatalog } from '@ultimat3/cli';
 import { checkDocFixes, docFixFindingFor, docFixGaps, readFixCells } from './doc-fixes';
+import { readErrorCodePages } from './lib/error-code-pages';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+/** One owner page holding `markdown`: what every fixture here is checked as. */
+const one = (markdown: string) => [{ path: 'wiki/Error-Codes-x.md', text: markdown }];
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
 // default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
@@ -24,7 +28,7 @@ const catalog: CommandCatalog = {
 const table = (fix: string) =>
   ['| Code | Means | Fix |', '|---|---|---|', `| \`X_A\` | a thing broke | ${fix} |`].join('\n');
 
-const gaps = (fix: string) => checkDocFixes({ markdown: table(fix), catalog });
+const gaps = (fix: string) => checkDocFixes({ pages: one(table(fix)), catalog });
 
 describe('a Fix cell that cannot be run as written', () => {
   test('an unreal subcommand is the finding, and it names the code and the line', () => {
@@ -32,7 +36,7 @@ describe('a Fix cell that cannot be run as written', () => {
     expect(found).toHaveLength(1);
     expect(found[0]?.code).toBe('X_A');
     expect(found[0]?.line).toBe(3);
-    expect(docFixFindingFor(found[0] as never).at).toBe('wiki/Error-Codes.md:3');
+    expect(docFixFindingFor(found[0] as never).at).toBe('wiki/Error-Codes-x.md:3');
   });
 
   test('a PLANNED command in a Fix cell is the finding — a fix may not hand over a second error', () => {
@@ -62,7 +66,7 @@ describe('a Fix cell passing a positional its command does not take', () => {
       { name: 'routes', summary: '', usage: 'x routes [--surface site|app] [--json]' },
     ],
   };
-  const arity = (fix: string) => checkDocFixes({ markdown: table(fix), catalog: routes });
+  const arity = (fix: string) => checkDocFixes({ pages: one(table(fix)), catalog: routes });
 
   test('`x routes list --json` is the finding — the retired spelling the 404 fix lines shipped', () => {
     const [gap] = arity('`x routes list --json`');
@@ -82,17 +86,17 @@ describe('a cause cell that repeats its title', () => {
     ].join('\n');
 
   test('is the finding, naming the code and the line — the row says what failed twice', () => {
-    const found = checkDocFixes({ markdown: page('a thing broke', ' A thing broke '), catalog });
+    const found = checkDocFixes({ pages: one(page('a thing broke', ' A thing broke ')), catalog });
     expect(found.map((gap) => [gap.kind, gap.code, gap.line])).toEqual([['echoed', 'X_A', 3]]);
     const finding = docFixFindingFor(found[0] as never);
     expect(finding.code).toBe('X_DOC_CAUSE_ECHOES_TITLE');
-    expect(finding.at).toBe('wiki/Error-Codes.md:3');
+    expect(finding.at).toBe('wiki/Error-Codes-x.md:3');
   });
 
   test('a cause of its own holds, and a table with no cause column is not read for one', () => {
-    expect(checkDocFixes({ markdown: page('a thing broke', 'the disk filled'), catalog })).toEqual(
-      [],
-    );
+    expect(
+      checkDocFixes({ pages: one(page('a thing broke', 'the disk filled')), catalog }),
+    ).toEqual([]);
     expect(gaps('`x db migrate`')).toEqual([]);
   });
 });
@@ -100,7 +104,7 @@ describe('a cause cell that repeats its title', () => {
 describe('the column is found by its header, never by position', () => {
   test('a table with the Fix column somewhere else is still read', () => {
     const markdown = ['| Fix | Code |', '|---|---|', '| `x db query` | `X_B` |'].join('\n');
-    expect(checkDocFixes({ markdown, catalog })[0]?.problem).toContain('x db query');
+    expect(checkDocFixes({ pages: one(markdown), catalog })[0]?.problem).toContain('x db query');
   });
 
   test('a fenced block that looks like a table is not one', () => {
@@ -108,7 +112,7 @@ describe('the column is found by its header, never by position', () => {
       '\n',
     );
     // No Fix column outside the fence — which this rule reports as vacuous, not as green.
-    expect(checkDocFixes({ markdown, catalog })[0]?.kind).toBe('vacuous');
+    expect(checkDocFixes({ pages: one(markdown), catalog })[0]?.kind).toBe('vacuous');
   });
 
   test('the code is read off the row, so the finding names what an agent hit', () => {
@@ -117,15 +121,15 @@ describe('the column is found by its header, never by position', () => {
 });
 
 describe('the rule cannot quietly stop being one', () => {
-  test('a MISSING page is a failure, never a pass', () => {
-    const found = checkDocFixes({ markdown: undefined, catalog });
+  test('a MISSING page set is a failure, never a pass', () => {
+    const found = checkDocFixes({ pages: [], catalog });
     expect(found[0]?.kind).toBe('vacuous');
     expect(docFixFindingFor(found[0] as never).code).toBe('X_DOC_FIX_UNSCANNED');
   });
 
   test('a page with no Fix column anywhere is a failure too', () => {
     const markdown = ['| Code | Means |', '|---|---|', '| `X_A` | a thing broke |'].join('\n');
-    expect(checkDocFixes({ markdown, catalog })[0]?.kind).toBe('vacuous');
+    expect(checkDocFixes({ pages: one(markdown), catalog })[0]?.kind).toBe('vacuous');
   });
 });
 
@@ -135,8 +139,30 @@ describe('against this repo', () => {
     expect(found.some((one) => one.kind === 'vacuous')).toBe(false);
   }, 20_000);
 
-  test('the page carries far more Fix cells than any fixture', async () => {
-    const page = await Bun.file(`${repoRoot()}/wiki/Error-Codes.md`).text();
-    expect(readFixCells(page).length).toBeGreaterThan(300);
+  test('the pages carry far more Fix cells than any fixture, the owner pages all of them', async () => {
+    const pages = await readErrorCodePages(repoRoot());
+    const cells = pages.map((page) => readFixCells(page.text).length);
+    expect(cells.reduce((sum, count) => sum + count, 0)).toBeGreaterThan(300);
+    // The index states no fix: its Every-code table has no Fix column, so it adds no cell.
+    expect(cells[0]).toBe(0);
+  });
+
+  test('a finding cites the owner page and line the row is on', async () => {
+    const pages = await readErrorCodePages(repoRoot());
+    const cli = pages.find((page) => page.path === 'wiki/Error-Codes-cli.md');
+    const row = (cli?.text ?? '').split('\n').findIndex((line) => line.startsWith('| `X_'));
+    const broken = (cli?.text ?? '')
+      .split('\n')
+      .map((line, index) =>
+        index === row ? line.replace(/\| [^|]*\|$/, '| `x db query` |') : line,
+      )
+      .join('\n');
+    const found = checkDocFixes({
+      pages: [{ path: 'wiki/Error-Codes-cli.md', text: broken }],
+      catalog,
+    });
+    expect(
+      found.some((gap) => gap.path === 'wiki/Error-Codes-cli.md' && gap.line === row + 1),
+    ).toBe(true);
   });
 });

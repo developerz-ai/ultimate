@@ -110,11 +110,11 @@ describe('one token across tenants', () => {
     expect(resolveCalls).toBe(0);
   });
 
-  test('row 857 of the wiki page carries that fix verbatim', async () => {
+  test('its row on the mcp error page carries that fix verbatim', async () => {
     // The page is the copy an agent reads before it has the code, so it says what the error says.
     // `new-error-code` writes a row from the registered fix; this is the same identity, held the
     // other way round, so hand-editing one of the two is what turns it red.
-    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes.md`).text();
+    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes-mcp.md`).text();
     const row = page.split('\n').find((line) => line.startsWith('| `X_MCP_TENANT_REQUIRED` |'));
     const cells = (row ?? '').split('|').map((cell) => cell.trim());
     // The Fix cell is the last one; `fixCell` wraps an unformatted fix in backticks.

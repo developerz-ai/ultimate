@@ -26,9 +26,9 @@ export const DocsCodePageMissingError = defineError<{ readonly codes: readonly s
   title: 'a declared X_* code has no built page',
   offSocket: true,
   cause: ({ codes }) =>
-    `${codes.length} code(s) the framework registers have no row in wiki/Error-Codes.md, so no page: ${codes.slice(0, 10).join(', ')}`,
+    `${codes.length} code(s) the framework registers have no row on any wiki/Error-Codes*.md page, so no page: ${codes.slice(0, 10).join(', ')}`,
   fix: ({ codes }) =>
-    `bunx x errors explain ${codes[0] ?? 'X_CODE'} --json   # its title, cause and fix: add the row to wiki/Error-Codes.md under the owning package's section`,
+    `bunx x errors explain ${codes[0] ?? 'X_CODE'} --json   # its title, cause and fix: add the row to wiki/Error-Codes-<owner>.md, the owner framework.manifest.json files it under`,
 });
 
 export const DocsLeadEmptyError = defineError<{ readonly file: string; readonly piece: string }>({

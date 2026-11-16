@@ -1,12 +1,19 @@
 // The wiki scanner's contract: a topic is the page's public fragment, a fence is never a heading,
-// a section read is the whole section and nothing past it, and `Error-Codes` stays out.
+// a section read is the whole section and nothing past it, and `every `Error-Codes` page stays out.
 
 import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun has no temp-directory or path primitive; the fixture is a real directory on disk.
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { githubSlug, scanWikiDocs, wikiEntries, wikiHeadings, wikiSection } from './docs-wiki';
+import {
+  githubSlug,
+  isErrorCodesPage,
+  scanWikiDocs,
+  wikiEntries,
+  wikiHeadings,
+  wikiSection,
+} from './docs-wiki';
 
 const ORIGIN = { package: '@ultimat3/cli', version: '30.0.0' } as const;
 
@@ -114,11 +121,29 @@ describe('unit · scanWikiDocs', () => {
     madeDirs.push(dir);
     writeFileSync(join(dir, 'Upgrading.md'), UPGRADING);
     writeFileSync(join(dir, 'Error-Codes.md'), '# Error codes\n\n## X_A\n');
+    writeFileSync(join(dir, 'Error-Codes-db.md'), '# Error codes: db\n\n## X_DB_A\n');
+    // Only the prefix `Error-Codes-` is the page set: a page that merely starts with the word is read.
+    writeFileSync(join(dir, 'Error-Codesmith.md'), '# Smith\n');
     writeFileSync(join(dir, '_Sidebar.md'), '## Nav\n');
     writeFileSync(join(dir, 'notes.txt'), '## not markdown\n');
     const topics = (await scanWikiDocs(dir, ORIGIN)).map((entry) => entry.topic);
     expect(topics).toContain('wiki.Upgrading#28x--2900-entry-by-entry');
-    expect(topics.filter((topic) => !topic.startsWith('wiki.Upgrading'))).toEqual([]);
+    expect(topics.filter((topic) => !topic.startsWith('wiki.Upgrading'))).toEqual([
+      'wiki.Error-Codesmith',
+    ]);
+  });
+
+  test('isErrorCodesPage names the index and every owner page, nothing else', () => {
+    expect(['Error-Codes', 'Error-Codes-db', 'Error-Codes-scripts'].map(isErrorCodesPage)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(['Error-Codesmith', 'Errors', 'Home'].map(isErrorCodesPage)).toEqual([
+      false,
+      false,
+      false,
+    ]);
   });
 
   // `bun update` rewrites the tarball's pages while `x docs` reads them: a page that is listed

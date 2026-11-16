@@ -1,11 +1,12 @@
-// Every X_* code `docs/architecture/` names is one a reader can look up: a row in
-// `wiki/Error-Codes.md` (registered or reserved — the `errors` step holds the rows to the
+// Every X_* code `docs/architecture/` names is one a reader can look up: a row on an error-code
+// page, `wiki/Error-Codes*.md` (registered or reserved — the `errors` step holds the rows to the
 // registries), a code a tracked app owns, or a placeholder this file names with its reason. The
 // doc named two codes nothing raised (plan 101 19b, Y10); this is what makes the third a red test.
 
 import { describe, expect, test } from 'bun:test';
 import { Glob } from 'bun';
 import { SHIPPED_GUARD_NAMES, shippedGuardCode } from '../packages/cli/src/guards-shipped-names';
+import { readErrorCodePages } from './lib/error-code-pages';
 
 const ROOT = `${import.meta.dir}/..`;
 
@@ -82,9 +83,13 @@ describe('unit · the codes docs/architecture/ names', () => {
     );
   });
 
-  test('every one has a row in wiki/Error-Codes.md, an owning app, or a stated reason', async () => {
+  test('every one has a row on an error-code page, an owning app, or a stated reason', async () => {
     const pages = await read('*.md', `${ROOT}/docs/architecture`);
-    const listed = wikiCodes(await Bun.file(`${ROOT}/wiki/Error-Codes.md`).text());
+    const listed = new Set(
+      (await readErrorCodePages(ROOT)).flatMap((page) => [...wikiCodes(page.text)]),
+    );
+    // The rows moved to the owner pages: read from the index alone, this set is the 3 reserved.
+    expect(listed.size).toBeGreaterThan(1000);
     const owned = await appCodes();
     const unknown = [...namedCodes(pages)]
       .filter(([code]) => !listed.has(code) && !owned.has(code) && !(code in NOT_CODES))

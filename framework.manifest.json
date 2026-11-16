@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "5a507c1f0e3a1e5adcf7c90f4d2ca364622d2b99bd5c0f942c67938a478d466a",
+  "buildId": "4e58c2f420df2410921a3f66ab91144c367cd7b91d1db9876b8405061dcf2c6c",
   "tiers": {
     "0": [
       "core",
@@ -2143,6 +2143,16 @@
       "code": "X_ERROR_CODE_DUPLICATE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_ERROR_CODE_INDEX_STALE",
+      "owner": "scripts",
+      "at": "scripts/error-code-pages.ts"
+    },
+    {
+      "code": "X_ERROR_CODE_ROW_MISPLACED",
+      "owner": "scripts",
+      "at": "scripts/error-code-pages.ts"
     },
     {
       "code": "X_ERROR_CODE_UNDOCUMENTED",
