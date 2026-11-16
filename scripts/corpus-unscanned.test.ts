@@ -29,6 +29,7 @@ import { CORPUS_FLOORS, corpus } from './lib/corpus';
 import { scanFrameworkCatalogSources } from './lib/i18n-scan';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { nodeImportFindings } from './node-imports';
+import { portProbeFindings } from './port-probe';
 import { relativeSites } from './posix-relative';
 import { probeDatabaseScan } from './probe-databases';
 import { protoIndexFindings } from './proto-index';
@@ -36,6 +37,7 @@ import { vocabularyFindings } from './render-modes';
 import { secretCompareFindings } from './secret-compare';
 import { sourceHeaderFindings } from './source-headers';
 import { spawnSites } from './spawn-timeout';
+import { tempTreeFindings } from './temp-tree';
 import { bareErrorFindings } from './test-bare-error';
 import { testFixFindings } from './test-fix-citations';
 import { mockBuiltinFindings } from './test-mock-builtin';
@@ -74,6 +76,8 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['url-pathname', urlPathnameFindings],
   ['posix-relative', relativeSites],
   ['probe-databases', probeDatabaseScan],
+  ['port-probe', portProbeFindings],
+  ['temp-tree', tempTreeFindings],
 ];
 
 const codeOf = async (run: () => Promise<unknown>): Promise<string> => {

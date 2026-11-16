@@ -2,10 +2,7 @@
 // proved over a throwaway git repository with a recording runner, so no step really runs.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtemp, rm } from 'node:fs/promises';
-// why: Bun exposes no tmpdir().
-import { tmpdir } from 'node:os';
+import { TEMP_TREE_GIT_ENV, tempTrees } from '../packages/testing/src/temp-tree';
 import type { RunResult } from './lib/run';
 import { run } from './lib/run';
 import type { StepRunner } from './preflight';
@@ -113,19 +110,20 @@ describe('a step', () => {
   });
 });
 
-const made: string[] = [];
-afterAll(async () => {
-  for (const dir of made.splice(0)) await rm(dir, { recursive: true, force: true });
-});
+// One owner for every repository: each is removed after the git that ran in it.
+const trees = tempTrees();
+afterAll(() => trees.dispose());
 
 const git = async (cwd: string, ...args: string[]) => {
-  const ran = await run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd });
+  const ran = await run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+    cwd,
+    env: { ...Bun.env, ...TEMP_TREE_GIT_ENV },
+  });
   if (!ran.ok) expect.unreachable(`git ${args.join(' ')}: ${ran.output}`);
 };
 
 async function repo(): Promise<string> {
-  const dir = await mkdtemp(`${tmpdir()}/preflight-`);
-  made.push(dir);
+  const dir = trees.make('preflight-');
   await git(dir, 'init', '-q', '-b', 'work');
   for (const pkg of ['cli', 'core']) await Bun.write(`${dir}/packages/${pkg}/src/a.ts`, '1;\n');
   await Bun.write(`${dir}/CHANGELOG.md`, '# Changelog\n\n## [Unreleased]\n\nNothing yet.\n');

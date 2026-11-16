@@ -2,10 +2,7 @@
 // `[Unreleased]` line is refused, and a test-only, docs-only, release or labelled change is not.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtemp, rm } from 'node:fs/promises';
-// why: Bun exposes no tmpdir().
-import { tmpdir } from 'node:os';
+import { TEMP_TREE_GIT_ENV, tempTrees } from '../../packages/testing/src/temp-tree';
 import {
   addedUnreleasedEntries,
   eventLabels,
@@ -117,20 +114,21 @@ describe('the parts', () => {
   });
 });
 
-const made: string[] = [];
-afterAll(async () => {
-  for (const dir of made.splice(0)) await rm(dir, { recursive: true, force: true });
-});
+// One owner for every repository: each is removed after the git that ran in it.
+const trees = tempTrees();
+afterAll(() => trees.dispose());
 
 const git = async (cwd: string, ...args: string[]) => {
-  const result = await run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd });
+  const result = await run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+    cwd,
+    env: { ...Bun.env, ...TEMP_TREE_GIT_ENV },
+  });
   if (!result.ok) expect.unreachable(`git ${args.join(' ')}: ${result.output}`);
 };
 
 /** A repository whose `origin/main` is its first commit: shipped source and an empty changelog. */
 async function repo(): Promise<string> {
-  const dir = await mkdtemp(`${tmpdir()}/changelog-unreleased-`);
-  made.push(dir);
+  const dir = trees.make('changelog-unreleased-');
   await git(dir, 'init', '-q', '-b', 'work');
   await Bun.write(`${dir}/CHANGELOG.md`, EMPTY);
   await Bun.write(`${dir}/packages/cache/src/bus.ts`, 'export const a = 1;\n');

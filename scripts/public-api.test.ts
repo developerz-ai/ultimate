@@ -4,10 +4,9 @@
 // invisible, and a format-1 lock is re-baselined from its release tag.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
-// why: Bun has no mkdtemp/rm of its own; a unique directory per run keeps test workers apart.
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-// why: Bun has no tmpdir() of its own; node:os is the only way to find the platform temp root.
-import { tmpdir } from 'node:os';
+// why: Bun has no recursive mkdir of its own.
+import { mkdir } from 'node:fs/promises';
+import { TEMP_TREE_GIT_ENV, tempTrees } from '../packages/testing/src/temp-tree';
 import { localBin } from './lib/local-bin';
 import { LOCK_PATH, renderLock } from './lib/public-api-lock';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
@@ -24,10 +23,9 @@ import {
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const TSC = localBin(repoRoot(), 'tsc');
-const made: string[] = [];
-afterAll(async () => {
-  for (const dir of made.splice(0)) await rm(dir, { recursive: true, force: true });
-});
+// One owner for every repository: each is removed after the git that ran in it.
+const trees = tempTrees();
+afterAll(() => trees.dispose());
 
 const BASE = {
   compilerOptions: {
@@ -69,8 +67,7 @@ const PACKAGE = {
 };
 
 async function fixture(): Promise<string> {
-  const dir = await mkdtemp(`${tmpdir()}/public-api-`);
-  made.push(dir);
+  const dir = trees.make('public-api-');
   await mkdir(`${dir}/packages/alpha/src/glyphs`, { recursive: true });
   await mkdir(`${dir}/docs/changelog`, { recursive: true });
   await Bun.write(`${dir}/tsconfig.base.json`, JSON.stringify(BASE));
@@ -329,9 +326,7 @@ describe('public API lock · a format-1 lock', () => {
   const git = async (dir: string, ...args: string[]): Promise<void> => {
     const ran = await run(
       ['git', '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'tag.gpgsign=false', ...args],
-      {
-        cwd: dir,
-      },
+      { cwd: dir, env: { ...Bun.env, ...TEMP_TREE_GIT_ENV } },
     );
     if (!ran.ok) expect.unreachable(`git ${args.join(' ')} must succeed in ${dir}: ${ran.output}`);
   };

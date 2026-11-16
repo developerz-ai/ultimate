@@ -15,7 +15,9 @@ import {
   appDirWord,
   checkAdmin,
   devRoleCookie,
-  freeDevPair,
+  fixedPort,
+  freeDevPorts,
+  portTaken,
 } from './scaffold-admin';
 
 const BASE = 'http://127.0.0.1:4000';
@@ -297,7 +299,7 @@ describe('unit · the command: boot, walk, stop', () => {
         }
         return fetcher(url, init);
       },
-      port: () => 4000,
+      ports: fixedPort(4000),
       now: () => clock,
       sleep: (ms) => {
         clock += ms;
@@ -342,6 +344,49 @@ describe('unit · the command: boot, walk, stop', () => {
     expect(result.findings?.[0]?.cause).toContain('X_CONFIG_INVALID: no database');
     expect(calls.stopped).toBe(1);
     expect(app.seen).toEqual([]);
+  });
+
+  test('an x dev that died on a held port is booted again on the next one, and walked there', async () => {
+    const dir = await appDir(['manifest', 'actor', 'bin']);
+    const app = fakeApp();
+    const { made, calls } = io(app.fetcher);
+    let stops = 0;
+    const result = await checkAdmin(dir, {
+      ...made,
+      // The first boot dies at once printing the CLI's own refusal; the second one serves.
+      boot: (bootDir, port) => {
+        const server = made.boot(bootDir, port);
+        if (port !== 4000) return server;
+        return {
+          exited: () => true,
+          stop: async () => {
+            stops += 1;
+            await server.stop();
+            return 'X_PORT_IN_USE: the dev port is taken';
+          },
+        };
+      },
+      ports: (bind) =>
+        bind(4000).catch((error: unknown) => {
+          expect(String((error as { cause?: unknown }).cause)).toContain('X_PORT_IN_USE');
+          return bind(4002);
+        }),
+    });
+    expect(result.ok).toBe(true);
+    expect(calls.booted.map(([, port]) => port)).toEqual([4000, 4002]);
+    expect(stops).toBe(1);
+  });
+
+  test('a boot whose every port was taken is refused with what it printed, never thrown', async () => {
+    const dir = await appDir(['manifest', 'actor', 'bin']);
+    const { made } = io(fakeApp().fetcher);
+    const result = await checkAdmin(dir, {
+      ...made,
+      boot: () => ({ exited: () => true, stop: async () => 'X_PORT_IN_USE: taken' }),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.findings?.[0]?.cause).toContain('met a port another process held');
+    expect(result.findings?.[0]?.fix).toContain('bun run dev --port 4000');
   });
 
   test('an x dev that never answers is given up on at the budget, not waited on forever', async () => {
@@ -439,29 +484,31 @@ describe('unit · the command: boot, walk, stop', () => {
   });
 });
 
-describe('freeDevPair', () => {
-  // `x dev` binds `port` and `port + 1` on `localhost`, which a dual-stack runner resolves to
-  // `127.0.0.1` AND `::1`: a neighbour held on EITHER is a boot that listens and stops. Held on each
-  // in turn, never on `localhost`, which names only one of them on a given box (CI run 41764752262).
-  test.each(['127.0.0.1', '::1', 'localhost'])(
-    'a candidate whose neighbour is held on %s is skipped',
-    (hostname) => {
-      const held = Bun.listen({ hostname, port: 0, socket: { data: () => undefined } });
-      try {
-        const busy = held.port - 1;
-        const candidates = [busy];
-        // The busy candidate first (never bound: the test hands its number), then a real ask.
-        const picked = freeDevPair(() => {
-          const port = candidates.shift();
-          if (port !== undefined) return { port, stop: () => undefined };
-          const probe = Bun.serve({ port: 0, fetch: () => new Response() });
-          return { port: probe.port ?? 0, stop: () => void probe.stop(true) };
-        });
-        expect(picked).not.toBe(busy);
-        expect(picked).toBeGreaterThan(0);
-      } finally {
-        held.stop(true);
+describe('the port binder', () => {
+  test('a pair is bound by the boot itself, and its neighbour binds too', async () => {
+    const [web, sync] = await freeDevPorts(async (port) => [
+      Bun.serve({ port, hostname: '127.0.0.1', fetch: () => new Response() }),
+      Bun.serve({ port: port + 1, hostname: '127.0.0.1', fetch: () => new Response() }),
+    ]);
+    expect(sync?.port).toBe((web?.port ?? 0) + 1);
+    web?.stop(true);
+    sync?.stop(true);
+  });
+
+  test('a boot that met a held port is booted again on a fresh one', async () => {
+    const tried: number[] = [];
+    const port = await freeDevPorts(async (candidate) => {
+      tried.push(candidate);
+      if (tried.length === 1) {
+        throw portTaken(candidate, 'X_PORT_IN_USE: the dev port is taken', 'x dev --port 0');
       }
-    },
-  );
+      return candidate;
+    });
+    expect(tried).toHaveLength(2);
+    expect(port).not.toBe(tried[0]);
+  });
+
+  test('a fixed port is handed as it is, for a fake x dev that binds nothing', async () => {
+    expect(await fixedPort(4000)(async (port) => port)).toBe(4000);
+  });
 });

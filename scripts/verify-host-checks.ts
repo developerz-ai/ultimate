@@ -60,6 +60,7 @@ import { llmsTxtFindings } from './llms-txt';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { opsUidFindings } from './ops-uid-docs';
 import { packageFrontFindings } from './package-front';
+import { portProbeFindings } from './port-probe';
 import { privateNameFindings } from './private-names';
 import { productionAppsFindings } from './production-apps';
 import { publicApiFindings } from './public-api';
@@ -71,6 +72,7 @@ import { publishListFindings } from './release-workflow';
 import { checkRoadmap } from './roadmap';
 import { sealCallFindings } from './seal-calls';
 import { setupCommandFindings } from './setup-commands';
+import { tempTreeFindings } from './temp-tree';
 import { bareErrorFindings } from './test-bare-error';
 import { testDiscoveryFindings } from './test-discovery';
 import { testFixFindings } from './test-fix-citations';
@@ -294,6 +296,8 @@ export const ERROR_CHECKS: readonly HostCheck[] = [
   mockBuiltinFindings,
   throwFindings,
   fixProseFindings,
+  portProbeFindings,
+  tempTreeFindings,
 ];
 
 export const errorContract: HostCheck = allOf(ERROR_CHECKS);

@@ -3,9 +3,9 @@
 // format the edited file, say what biome cannot fix, and pass the app's own lint itself.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-// why: a throwaway app directory per test, and a link to this checkout's biome; Bun has neither.
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+// why: a link to this checkout's biome; Bun has no symlink or recursive-mkdir primitive.
+import { mkdirSync, symlinkSync } from 'node:fs';
+import { TEMP_TREE_GIT_ENV, tempTrees } from '@ultimat3/testing';
 import type { GeneratedFile } from './naming';
 import { names } from './naming';
 import { claudeFiles } from './scaffold-claude';
@@ -14,15 +14,15 @@ import { repoFiles } from './scaffold-repo';
 
 const BIOME = `${import.meta.dir}/../../../../node_modules/.bin/biome`;
 const app = names('ledger-demo');
-const dirs: string[] = [];
+/** One owner for every app directory: each is removed after the git that ran in it. */
+const trees = tempTrees();
 
 const contentsOf = (files: readonly GeneratedFile[], path: string): string =>
   String(files.find((file) => file.path === path)?.contents ?? '');
 
 /** An app root with the scaffold's biome.json, its hook, and — unless `installed: false` — biome. */
 async function appDir(installed = true): Promise<string> {
-  const root = mkdtempSync(`${tmpdir()}/scaffold-hook-`);
-  dirs.push(root);
+  const root = trees.make('scaffold-hook-');
   if (installed) {
     mkdirSync(`${root}/node_modules/.bin`, { recursive: true });
     symlinkSync(BIOME, `${root}/node_modules/.bin/biome`);
@@ -30,7 +30,11 @@ async function appDir(installed = true): Promise<string> {
   const repo = repoFiles(app, '0.0.0', false);
   for (const path of ['biome.json', '.gitignore'])
     await Bun.write(`${root}/${path}`, contentsOf(repo, path));
-  Bun.spawnSync(['git', 'init', '-q'], { cwd: root, timeout: 30_000 });
+  Bun.spawnSync(['git', 'init', '-q'], {
+    cwd: root,
+    env: { ...Bun.env, ...TEMP_TREE_GIT_ENV },
+    timeout: 30_000,
+  });
   await Bun.write(`${root}/${HOOK_PATH}`, contentsOf(claudeFiles(app), HOOK_PATH));
   return root;
 }
@@ -49,9 +53,7 @@ function hook(root: string, file: string): { readonly code: number; readonly std
   return { code: proc.exitCode, stderr: proc.stderr.toString() };
 }
 
-afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+afterEach(() => trees.dispose());
 
 describe('unit · the scaffolded format hook', () => {
   test('formats the file named on stdin, in place', async () => {

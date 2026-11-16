@@ -24,7 +24,7 @@ the off-barrel entry points `registry-isolation.ts`, `conformance.ts`. Full rule
 | One way offline | the `network` fixture. `setNetworkState` is the gate's only writer and is not exported — setting it from a test body skips the fixture's disposal and leaves every later file offline |
 | The seal key is a test process's, and nobody's export | `test-seal-key.ts`: installed by the preload only when `NODE_ENV === 'test'` and neither `ULTIMATE_SECRETS_KEY` nor `.secrets.key` exists. Full rule: `docs/history/testing.md` |
 | `toEqualRow` never prints a server-only value | `matcher-row.ts` compares every OWN property (`toEqual` cannot see a `.sealed()` column — empty diff). Full rule: `docs/history/testing.md` |
-| No retries | a flake is fixed or deleted the day it flakes; there is no `retry: 3` |
+| No retries | a flake is fixed or deleted the day it flakes; there is no `retry: 3`. `bindFreePorts` asking again for a port another process took is a bind, not a test retry |
 | A mutator's `local()` runs against `memoryLocalTx()` | `local-tx.ts`: keyed rows with the record store's rules (update invents nothing, `undefined` leaves a column, rows frozen). Never a hand-rolled table per test |
 | A page test RENDERS, with no cast | `renderRoute(module, { url, actor })` / `renderView(Component, props)` (`render-view.ts`) † |
 | `toBeUltimateError` reads THREE fields | an `X_` code plus a `cause` plus a `fix`, all through core's `stringField`. `typeof value.code === 'string'` alone passed a Node `ENOENT` |

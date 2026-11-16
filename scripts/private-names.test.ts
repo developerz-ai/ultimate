@@ -3,12 +3,9 @@
 // then the same guard over this repository's own public tree.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
-// why: Bun has no temporary-directory primitive.
-import { mkdtemp, rm } from 'node:fs/promises';
-// why: Bun exposes no OS temp-dir lookup.
-import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { TEMP_TREE_GIT_ENV, tempTrees } from '../packages/testing/src/temp-tree';
 import { render } from './lib/log';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
@@ -28,10 +25,9 @@ const NAMES = 'zorblax.io\nquimtel';
 /** Built from parts, as the guard builds it: this file never carries the name whole. */
 const MODE = ['dz', 'runner'].join('-');
 const EMPTY = { names: [], repositories: [] } as const;
-const roots: string[] = [];
-afterAll(async () => {
-  for (const root of roots) await rm(root, { recursive: true, force: true });
-});
+/** One owner for every fixture tree: each is removed after the git that ran in it. */
+const trees = tempTrees();
+afterAll(() => trees.dispose());
 
 /**
  * A git tree holding `tracked` in the index and `untracked` beside it, plus a stand-in for the
@@ -42,8 +38,7 @@ async function tree(
   untracked: Readonly<Record<string, string>> = {},
   self = true,
 ): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'ultimate-private-names-'));
-  roots.push(root);
+  const root = trees.make('ultimate-private-names-');
   const tracked = self ? { [SELF]: '// the guard\n', ...given } : given;
   for (const [path, text] of Object.entries({ ...tracked, ...untracked })) {
     await Bun.write(join(root, path), text);
@@ -51,6 +46,7 @@ async function tree(
   const git = (args: readonly string[]) =>
     Bun.spawnSync(['git', ...args], {
       cwd: root,
+      env: { ...Bun.env, ...TEMP_TREE_GIT_ENV },
       stdout: 'ignore',
       stderr: 'ignore',
       timeout: 10_000,
@@ -137,8 +133,7 @@ describe('private-names · a listed name in the tree', () => {
   });
 
   test('a tree holding the guard that git cannot list is refused, never a clean scan of nothing', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'ultimate-private-names-bare-'));
-    roots.push(root);
+    const root = trees.make('ultimate-private-names-bare-');
     await Bun.write(join(root, SELF), '// the guard\n');
     await expect(scanPrivateNames(root, EMPTY)).rejects.toMatchObject({
       code: 'X_PRIVATE_NAME',
@@ -148,8 +143,7 @@ describe('private-names · a listed name in the tree', () => {
   // The host checks' own fixtures plant a few files in a temp directory that is no repository and
   // holds no guard: there is no public tree to vouch for, so the guard says it skipped.
   test('a planted directory that is neither a git tree nor holds the guard is a skip', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'ultimate-private-names-planted-'));
-    roots.push(root);
+    const root = trees.make('ultimate-private-names-planted-');
     await Bun.write(join(root, 'a.md'), `${MODE}\nquimtel\n`);
     expect(await scanPrivateNames(root, EMPTY)).toBeUndefined();
     const result = await run(root);

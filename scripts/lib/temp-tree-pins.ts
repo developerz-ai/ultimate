@@ -10,19 +10,8 @@
 export const TEMP_TREE_PINS_FILE = 'scripts/lib/temp-tree-pins.ts';
 
 /**
- * Measured 2026-11-15, on the rule's first run, after every `packages/cli/src/*.test.ts` and
- * fixture it named moved onto `tempTree()`. What is left was outside the sweep that wrote it.
+ * Empty since 2026-11-15 (sweep 7): every test temp tree beside git, and every one inside the
+ * checkout, is a `tempTree()` (or, in a tier-4 test, a tree under its package's `.x/fixtures/`).
+ * A package absent is zero.
  */
-export const TEMP_TREE_PINS: Readonly<Record<string, number>> = {
-  // why: the rule is new — `packages/cli/e2e/upgrade.e2e.test.ts` (commits in its app) and
-  // `packages/cli/src/templates/scaffold-claude-hook.test.ts` (`git init`) were outside its sweep.
-  cli: 2,
-  // why: a tier-4 test cannot import `@ultimat3/testing` (tier 5), so `server.test.ts`'s in-repo
-  // `.server-fixture-XXXXXX/` needs a render-local home or an ignore line: not this sweep's file.
-  render: 1,
-  // why: the rule is new — `scripts/upgrade-fixtures-run.ts` (3), `scripts/private-names.test.ts`
-  // (3), `scripts/preflight.test.ts`, `scripts/public-api.test.ts`,
-  // `scripts/lib/changelog-unreleased.test.ts` and `scripts/lib/ratchet-sites.test.ts` were outside
-  // the sweep that wrote it.
-  scripts: 10,
-};
+export const TEMP_TREE_PINS: Readonly<Record<string, number>> = {};

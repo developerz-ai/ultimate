@@ -2,7 +2,7 @@
 // the three row shapes the pins tables really use, and against the real tables for the placeholder
 // that must never reach a commit.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { FIX_PROSE_PIN_TARGET } from '../fix-prose';
 import { FIX_SHELL_ARG_PIN_TARGET } from '../fix-shell-arg';
 import { NODE_IMPORT_PIN_TARGET } from '../node-imports';
@@ -18,8 +18,11 @@ import {
   placeholderFindings,
   treePlaceholderFindings,
 } from './pin-edit';
-import { repoRoot } from './run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 import { ScriptError } from './script-error';
+
+// A test here reads the real tree: the repo-scan budget, never Bun's 5 s default.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const COUNT_TABLE = `// header
 export const THING_PINS_FILE = 'scripts/lib/thing-pins.ts';

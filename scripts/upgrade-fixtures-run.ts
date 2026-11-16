@@ -3,12 +3,11 @@
 // it, HEAD served as if published. Nothing between the two is an author's edit: the `.npmrc` that
 // points the scope at loopback is excluded from git, so the hop sees the tree its author committed.
 
-// why: Bun has no recursive copy, mkdtemp, mkdir or remove; the fixture tree is managed here.
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-// why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
+// why: Bun has no recursive copy, mkdir or remove; the fixture tree is managed here.
+import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { TEMP_TREE_GIT_ENV, tempTree } from '../packages/testing/src/temp-tree';
 import { LONG_RUN_TIMEOUT_MS, run } from './lib/run';
 import { adoptInto } from './upgrade-fixtures-cache';
 import { driftOf, readTree } from './upgrade-fixtures-drift';
@@ -40,16 +39,24 @@ export interface FixtureInput {
 }
 
 const GIT = ['git', '-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid'];
-const GIT_ENV = (env: Readonly<Record<string, string>>): Record<string, string> => ({
+/**
+ * Every child here runs under the temp tree's git environment: discovery stopped at the temp root,
+ * and none of the background maintenance a commit (the fixture's, or the hop's own) would leave
+ * writing under the tree while `upgrade-fixtures.ts` removes it.
+ */
+const GIT_ENV = (
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> => ({
   ...env,
-  GIT_CEILING_DIRECTORIES: tmpdir(),
+  ...TEMP_TREE_GIT_ENV,
 });
 
 /** The release's `x new` output, from the cache or from npm once — never with its `.git`. */
 async function scaffold(input: FixtureInput): Promise<string | { output: string }> {
   const cached = join(input.cacheDir, 'scaffold', input.version, FIXTURE_APP);
   if (existsSync(join(cached, 'package.json'))) return cached;
-  const parent = mkdtempSync(join(tmpdir(), `upgrade-fixture-new-${input.version}-`));
+  const tree = tempTree(`upgrade-fixture-new-${input.version}-`);
+  const parent = tree.path;
   try {
     const result = await run(
       [
@@ -71,11 +78,14 @@ async function scaffold(input: FixtureInput): Promise<string | { output: string 
     // Another run may have cached this release meanwhile: its copy is used, never overwritten.
     return adoptInto(join(parent, FIXTURE_APP), cached);
   } finally {
-    rmSync(parent, { recursive: true, force: true });
+    await tree.dispose();
   }
 }
 
-const porcelain = async (dir: string, env: Readonly<Record<string, string>>): Promise<string[]> => {
+const porcelain = async (
+  dir: string,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<string[]> => {
   const status = await run([...GIT, 'status', '--porcelain'], { cwd: dir, env: GIT_ENV(env) });
   return status.output
     .split('\n')
@@ -85,7 +95,7 @@ const porcelain = async (dir: string, env: Readonly<Record<string, string>>): Pr
 
 const commitAll = async (
   dir: string,
-  env: Readonly<Record<string, string>>,
+  env: Readonly<Record<string, string | undefined>>,
   message: string,
 ): Promise<boolean> => {
   const add = await run([...GIT, 'add', '-A'], { cwd: dir, env: GIT_ENV(env) });
@@ -97,7 +107,7 @@ const commitAll = async (
 };
 
 /** `bun run verify --json`'s verdict line: whether the app's own gate is green, and its summary. */
-async function gate(dir: string, env: Readonly<Record<string, string>>) {
+async function gate(dir: string, env: Readonly<Record<string, string | undefined>>) {
   const result = await run([process.execPath, 'run', 'verify', '--json'], {
     cwd: dir,
     env,
@@ -115,7 +125,8 @@ export async function scaffoldHead(
   root: string,
   env: Readonly<Record<string, string>>,
 ): Promise<ReadonlyMap<string, string> | undefined> {
-  const parent = mkdtempSync(join(tmpdir(), 'upgrade-fixture-head-'));
+  const tree = tempTree('upgrade-fixture-head-');
+  const parent = tree.path;
   try {
     const result = await run(
       [
@@ -132,16 +143,18 @@ export async function scaffoldHead(
     );
     return result.ok ? await readTree(join(parent, FIXTURE_APP)) : undefined;
   } finally {
-    rmSync(parent, { recursive: true, force: true });
+    await tree.dispose();
   }
 }
 
 /** Builds the fixture at `version` and hops it to HEAD; every outcome is returned, none thrown. */
 export async function runFixture(input: FixtureInput): Promise<FixtureRun> {
   const started = performance.now();
-  const work = mkdtempSync(join(tmpdir(), `upgrade-fixture-${input.version}-`));
+  // Made here and removed by `upgrade-fixtures.ts` (unless `--keep`): every child that writes
+  // under it is awaited by `run` before this returns, and none leaves git's maintenance behind.
+  const work = tempTree(`upgrade-fixture-${input.version}-`).path;
   const dir = join(work, FIXTURE_APP);
-  const { env } = input;
+  const env = GIT_ENV(input.env);
   const elapsed = () => Math.round(performance.now() - started);
   // Wall time per stage, in run order: what decides whether a row fits a free runner's budget.
   const stages: Record<string, number> = {};

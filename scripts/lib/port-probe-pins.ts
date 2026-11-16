@@ -9,12 +9,7 @@
 export const PORT_PROBE_PINS_FILE = 'scripts/lib/port-probe-pins.ts';
 
 /**
- * Measured 2026-11-15, on the rule's first run, after every probe under `packages/` moved onto
- * `bindFreePorts`, a held listener, or port 1 for a dial that must be refused.
+ * Empty since 2026-11-15 (sweep 7): every probe in the tree binds through `bindFreePorts`, holds its
+ * listener, or dials port 1 where a refused connection is the subject. A package absent is zero.
  */
-export const PORT_PROBE_PINS: Readonly<Record<string, number>> = {
-  // why: the rule is new — `scripts/bench/boot-large-app-proc.test.ts` (its own `freePort`, a probe
-  // whose number goes into a child's source) and `scripts/scaffold-admin.ts` (`freeDevPair` over
-  // `freePortPair`, handed to a scaffolded app's `x dev`) were outside the sweep that wrote it.
-  scripts: 5,
-};
+export const PORT_PROBE_PINS: Readonly<Record<string, number>> = {};

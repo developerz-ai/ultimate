@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // `node:` and not `Bun.write`: Bun ships neither a temp-directory maker nor a recursive remove, and
 // this fixture needs both — a unique directory per run, deleted whole. `join` for the same reason.
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 type ServerBarrel = typeof import('./server');
@@ -18,9 +18,12 @@ beforeAll(async () => {
   // The import under test. Everything below is loaded after it, on purpose.
   barrel = await import('./server');
   // Inside the checkout, not the system temp dir: the loader's prelude imports
-  // `@ultimat3/render`, and a file outside the workspace cannot resolve it. Outside `src/` so no
-  // repo scanner reads a throwaway `.tsx` as source.
-  dir = await mkdtemp(join(import.meta.dir, '..', '.server-fixture-'));
+  // `@ultimat3/render`, and a file outside the workspace cannot resolve it. Under the package's
+  // `.x/fixtures/` — `@ultimat3/testing`'s `IN_PACKAGE_TEMP_ROOT`, which a tier-4 test cannot
+  // import — so the repository's `.x/` ignore rule covers it and no repo scanner reads it as source.
+  const parent = join(import.meta.dir, '..', '.x', 'fixtures');
+  await mkdir(parent, { recursive: true });
+  dir = await mkdtemp(join(parent, 'server-'));
 });
 
 afterAll(async () => {
