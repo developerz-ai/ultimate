@@ -413,7 +413,7 @@ jobs:
     name: gate (${{ matrix.part }})
     needs: tested
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     # A runaway kill-switch, not a budget: the slowest part was 320-338 s on main 2026-11-14 (runs
     # 43542607182, 43562415694, `unit` at three workers, no timings).
     timeout-minutes: 10
@@ -682,7 +682,7 @@ jobs:
     name: reference-app-verify (${{ matrix.app }})
     needs: tested
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     # A runaway kill-switch, not a budget: the first two apps together measured 106 s on main,
     # 2026-10-01; one runner per app since.
     timeout-minutes: 10
@@ -773,7 +773,7 @@ jobs:
     name: scaffold-smoke (${{ matrix.app }})
     needs: [tested, changes]
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -1464,7 +1464,7 @@ jobs:
     name: packages (${{ matrix.shard }})
     needs: tested
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     strategy:
       fail-fast: false
