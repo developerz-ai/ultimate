@@ -13,6 +13,19 @@ describe('staticFix', () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
     expect(staticFix('check egress to ${new URL(url).host}')).toBe('check egress to <value>');
   });
+
+  // The fix lines come from source the scan reads, so a file of unclosed `${{` is input it gets.
+  test('is linear on many unclosed interpolations', () => {
+    const hostile = '${{'.repeat(50_000);
+    const started = performance.now();
+    expect(staticFix(hostile)).toBe(hostile);
+    expect(performance.now() - started).toBeLessThan(50);
+  }, 30_000);
+
+  test('blanks every closed interpolation, an unclosed tail kept as written', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: source text under test
+    expect(staticFix('a ${b} c ${d{e} f ${g')).toBe('a <value> c <value> f ${g');
+  });
 });
 
 describe('fixProblem', () => {

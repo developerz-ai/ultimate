@@ -57,8 +57,21 @@ export const COMMAND_TOKENS: readonly RegExp[] = [
  * `${…}` holds a value only the throw site knows, so it is blanked before the rule runs. Without
  * this, `check egress to ${new URL(url).host}` reads as a call expression and passes as a command
  * — the interpolation would launder pure advice into an instruction.
+ *
+ * Two `indexOf` scans, never `/\$\{[^}]*\}/g`: that pattern re-scanned to the end from every
+ * unclosed `${`, quadratic on a line of them. No `}` after one `${` means none after any later one.
  */
-export const staticFix = (raw: string): string => raw.replaceAll(/\$\{[^}]*\}/g, '<value>');
+export const staticFix = (raw: string): string => {
+  let out = '';
+  let from = 0;
+  for (let open = raw.indexOf('${'); open >= 0; open = raw.indexOf('${', from)) {
+    const close = raw.indexOf('}', open + 2);
+    if (close < 0) break;
+    out += `${raw.slice(from, open)}<value>`;
+    from = close + 1;
+  }
+  return out + raw.slice(from);
+};
 
 /** The rule, on one fix line. `undefined` means it holds. */
 export function fixProblem(raw: string): string | undefined {

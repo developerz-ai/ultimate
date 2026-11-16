@@ -112,8 +112,11 @@ export const missingFileFinding = (dir: string, file: string, scaffolder: boolea
  * (`@ultimat3/core`'s `frameworkVersion()`, the CLI's `loadVersion()`, every dependency `x new` pins).
  * A manifest with no semver `version` therefore breaks the MCP handshake and every scaffold — so
  * the gate refuses the publish here, where the fix is one line, rather than at someone's install.
+ *
+ * One `[-+]` lead, then `+`-separated runs: `(?:[-+][\w.-]+)*` read the same strings, but `-` is
+ * in both the lead and the run, so a prerelease of `--` pairs backtracked exponentially.
  */
-export const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
+export const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+(?:\+[\w.-]+)*)?$/;
 
 export const badVersionFinding = (dir: string, found: unknown): Finding => ({
   code: 'X_PACKAGE_SHAPE',

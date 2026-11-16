@@ -153,7 +153,9 @@ const UNITS: Readonly<Record<string, number>> = {
  * rather than a typo silently meaning "the default".
  */
 export const parseBytes = (raw: string): number | undefined => {
-  const match = /^\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*$/i.exec(raw);
+  // Trimmed first: `\s*` on both sides of an optional unit split one run of spaces two ways, which
+  // was quadratic on a long one.
+  const match = /^(\d+(?:\.\d+)?)\s*([a-z]*)$/i.exec(raw.trim());
   if (match === null) return undefined;
   const unit = (match[2] ?? '').toLowerCase();
   if (!Object.hasOwn(UNITS, unit)) return undefined;

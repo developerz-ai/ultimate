@@ -18,7 +18,7 @@ import {
   VERSION_MANIFEST,
 } from './version';
 
-const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
+const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+(?:\+[\w.-]+)*)?$/;
 
 const missing = join(import.meta.dir, '.no-such-manifest-here', 'package.json');
 
