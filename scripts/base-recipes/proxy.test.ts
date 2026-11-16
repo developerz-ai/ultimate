@@ -2,13 +2,16 @@
 // through one exit, the subjects spread over every exit, an empty pool is the recipe's own refusal,
 // and a real `runScrape` hands the driver the pool's exit as the session's proxy.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { ctxOf, frozenClock, structuredLogger } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { fakeBrowser, runScrape, type ScrapeDriver, type SessionInit } from '@ultimat3/scraping';
 import { exportsOf, type LoadedRecipe, loadRecipe } from '../lib/base-recipes';
-import { repoRoot } from '../lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from '../lib/run';
+
+// Reads the wiki page and compiles its fences, so it runs on the repo-scan backstop.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 interface Input {
   readonly connectionId: string;

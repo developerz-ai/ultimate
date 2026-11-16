@@ -35,11 +35,12 @@ A service worker registers only on a secure origin â€” \`localhost\`, or https â
 network needs TLS to install this app. Bind your machine's LAN address and serve it over https:
 
 \`\`\`sh
-bunx x dev --host 192.168.1.5 --tls   # your address: \`ip -4 addr\` / \`ipconfig getifaddr en0\`
+LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || hostname -I | cut -d' ' -f1)
+bunx x dev --host "$LAN_IP" --tls
 \`\`\`
 
 \`--tls\` writes a self-signed certificate for \`localhost\` and that address to \`.x/tls/cert.pem\`.
-Trust it once on the device (install it as a CA profile), open \`https://192.168.1.5:3000\`, and
+Trust it once on the device (install it as a CA profile), open \`https://$LAN_IP:3000\`, and
 install the app from the browser menu. Then cut the network:
 
 | Offline | What answers |

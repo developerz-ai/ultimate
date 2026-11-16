@@ -225,7 +225,6 @@ import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
 import { resetPageRealtime } from '@ultimat3/realtime';
 import {
-  afterAll,
   describeIslandState,
   expect,
   type FakeElement,
@@ -247,6 +246,8 @@ let refuse = false;
 const island = {
   build: buildIslands,
   root: join(import.meta.dir, '..', '..', '..', '..'),
+  // The island's page connection outlives its DOM: reset with the block, never a raw afterAll.
+  teardown: resetPageRealtime,
   // What the server rendered inside the island's wrapper. \`mount\` replaces it.
   shell: '<p>Loading</p>',
   globals: {
@@ -276,10 +277,6 @@ async function statusSettled(mounted: MountedIsland): Promise<void> {
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
 }
-
-afterAll(() => {
-  resetPageRealtime();
-});
 
 describeIslandState(postFormStates, 'idle', island, (mounted) => {
   test('mount replaces the server shell with the editor', () => {

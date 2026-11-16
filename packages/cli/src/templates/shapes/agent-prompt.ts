@@ -144,11 +144,10 @@ export const suggestTitleEval = defineEval({
 });
 `;
 
-const evalTest = (): string => `/**
- * eval — \`${EVAL}\`, the agent arm: each case a whole \`suggestTitle\` run, answered by recorded
- * turns on the scripted model, gated on a drop from the committed baseline. One run that holds,
- * one regression that is caught.
- */
+const evalTest =
+  (): string => `// eval — \`${EVAL}\`, the agent arm: each case a whole \`suggestTitle\` run, answered by recorded
+// turns on the scripted model, gated on a drop from the committed baseline. One run that holds,
+// one regression that is caught.
 
 import type { ScriptedTurn } from '@ultimat3/ai';
 import { baselinePath, readBaseline } from '@ultimat3/ai';

@@ -2,7 +2,7 @@
 // session capped at the device's, a wrong PIN and an unknown operator are one refusal, and the
 // attempt that fills the window locks that operator on that device — and only there.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import {
   type Auth,
   type AuthSession,
@@ -11,7 +11,10 @@ import {
   memoryAuthAdapter,
 } from '@ultimat3/auth';
 import { exportsOf, type LoadedRecipe, loadRecipe } from '../lib/base-recipes';
-import { repoRoot } from '../lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from '../lib/run';
+
+// Reads the wiki page and compiles its fences, so it runs on the repo-scan backstop.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 interface OperatorRow {
   readonly userId: string;

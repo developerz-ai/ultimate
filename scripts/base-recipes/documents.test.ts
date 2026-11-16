@@ -2,7 +2,7 @@
 // app's `documentPdf` prints the route that assembles it, in the house layout, and lands under the
 // caller's org on the `documents` disk — gated by its policy, refused for a caller with no org.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import type { Action, ActionPolicy } from '@ultimat3/action';
 import { registerAction } from '@ultimat3/action/loader';
 import { userActor } from '@ultimat3/core';
@@ -11,7 +11,10 @@ import { type StandardSchemaV1, t } from '@ultimat3/schema';
 import type { PdfLayout, PdfRenderer, PdfRenderRequest } from '@ultimat3/scraping';
 import { defineStorage, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { exportsOf, type LoadedRecipe, loadRecipe } from '../lib/base-recipes';
-import { repoRoot } from '../lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from '../lib/run';
+
+// Reads the wiki page and compiles its fences, so it runs on the repo-scan backstop.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 interface DocumentRecipe {
   readonly HOUSE_LAYOUT: PdfLayout;

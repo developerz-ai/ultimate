@@ -61,8 +61,10 @@ describe('unit · x new --shape offline', () => {
 
   test('README says how to open it from a phone: a LAN address, TLS, a trusted certificate', () => {
     const readme = textAt('README.md');
-    expect(readme).toContain('bunx x dev --host 192.168.1.5 --tls');
+    expect(readme).toContain('bunx x dev --host "$LAN_IP" --tls');
     expect(readme).toContain('.x/tls/cert.pem');
+    expect(readme).toContain('## 📶 Offline');
+    expect(readme).toContain('## 🗺 Layout');
     expect(readme.indexOf('## 📶 Offline')).toBeLessThan(readme.indexOf('## 🗺 Layout'));
   });
 });

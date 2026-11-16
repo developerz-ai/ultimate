@@ -259,4 +259,129 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.33.0',
     none: "the generator trims its --dir argument with core's trimTrailingSlashes instead of /\\/+$/; the island file it writes is byte-identical, so no app holds anything to migrate",
   },
+  {
+    template: 'packages/cli/src/templates/shapes/agent-actions.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/agent-job.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/agent-model.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/agent-prompt.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/agent-scripted.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/agent.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/content-admin-es.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/content-pages.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/content-site.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/content.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/index.ts',
+    since: '31.38.0',
+    none: "the shape table gains five rows; it decides what `x new --shape` writes, never an app's existing files",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/offline-e2e.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/offline-form.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/offline.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/realtime-mutator.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/realtime-nodes.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/realtime-slice.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/realtime.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/saas-billing-tests.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/saas-billing.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/saas-receiver.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/saas.ts',
+    since: '31.38.0',
+    none: "a new shape's overlay (plan 101b sweep 9): only `x new --shape <it>` renders it, and no app was made with a shape that did not exist at the last release, so none holds anything to migrate",
+  },
+  {
+    template: 'packages/cli/src/templates/sign-in-oidc.ts',
+    since: '31.38.0',
+    none: 'imports OIDC_RUNTIME_ROUTES from sign-in-runtime.ts instead of declaring it; what `x g sign-in --oidc` writes is byte-identical',
+  },
+  {
+    template: 'packages/cli/src/templates/sign-in-runtime.ts',
+    since: '31.38.0',
+    none: '`x g sign-in` now splices its guard into an edited runtime.ts instead of refusing; on an untouched scaffold it writes byte-identical bytes, and an app that already ran it holds the same files',
+  },
+  {
+    template: 'packages/cli/src/templates/sign-in-shared.ts',
+    since: '31.38.0',
+    none: "the runtime templates moved to sign-in-runtime.ts with their output unchanged; an app's sign-in files are byte-identical",
+  },
 ];

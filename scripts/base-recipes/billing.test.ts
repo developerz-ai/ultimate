@@ -3,13 +3,16 @@
 // it. A bad signature, a body that is not JSON and an amount that is not the plan's price move
 // nothing.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { type Actor, hmac, userActor } from '@ultimat3/core';
 import { defineHttpConfig, httpPipeline, httpRouter, type Pipeline } from '@ultimat3/http';
 import type { WebhookReceiver } from '@ultimat3/jobs';
 import { testJobs } from '@ultimat3/testing';
 import { exportsOf, type LoadedRecipe, loadRecipe } from '../lib/base-recipes';
-import { repoRoot } from '../lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from '../lib/run';
+
+// Reads the wiki page and compiles its fences, so it runs on the repo-scan backstop.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const SECRET = 'whsec_billing_recipe_proof';
 

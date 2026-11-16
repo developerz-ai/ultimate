@@ -29,6 +29,10 @@ describe('unit · template-codemods, the rendered scaffold', () => {
   test('a path whose bytes moved in any variant, or that came or went, is one change', () => {
     expect(renderedChanges(lock, { ...lock, 'example:ci.yml': 'cc' })).toEqual(['ci.yml']);
     expect(renderedChanges(lock, { ...lock, 'bare:new.ts': 'dd' })).toEqual(['new.ts']);
+    // A variant the tag never rendered (a shape added since) owes no codemod: no app is on it yet.
+    expect(
+      renderedChanges(lock, { ...lock, 'saas:ci.yml': 'ee', 'saas:billing.ts': 'ff' }),
+    ).toEqual([]);
     expect(renderedChanges(lock, lock)).toEqual([]);
   });
 

@@ -4,15 +4,12 @@
 // slow: one shape, end to end — x new, x g, Biome, the generated tests and tsc on the scaffold.
 
 import { describe, expect, test } from 'bun:test';
-// why: Bun ships no temp-directory primitive.
-import { mkdtemp } from 'node:fs/promises';
-// why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
+import { tempTree } from '@ultimat3/testing';
 import { writeNewApp } from './cmd-new';
 import { dispatch } from './dispatch';
-import { firstRun, type Generated, removeGenerated } from './generate-contract-fixture';
+import { firstRun, type Generated } from './generate-contract-fixture';
 import type { GeneratedFile } from './templates';
 import { RUNTIME_MODULE } from './templates/scaffold-runtime-ports';
 
@@ -27,7 +24,9 @@ export const extraPorts = (env: Env): RuntimeOverrides =>
 
 describe('contract · x g sign-in splices into an edited runtime.ts', () => {
   test('--password over an extra import and spread: compiles, lints, its tests pass', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'x-sign-in-runtime-contract-'));
+    // The tree's one owner removes it at scope end, whatever the run threw.
+    await using tree = tempTree('x-sign-in-runtime-contract-');
+    const root = tree.path;
     await writeNewApp(root, { name: 'probe', example: true });
     const runtime = Bun.file(join(root, RUNTIME_MODULE));
     await Bun.write(
@@ -56,18 +55,14 @@ describe('contract · x g sign-in splices into an edited runtime.ts', () => {
       files.push({ path, contents: await Bun.file(join(root, path)).bytes() });
     }
     const app: Generated = { root, code, out: out.join('\n'), files };
-    try {
-      expect({ code: app.code, out: app.out }).toMatchObject({ code: 0 });
-      const spliced = await runtime.text();
-      expect(spliced).toContain('assertSignInConfigured(process.env);');
-      expect(spliced).toContain('...extraPorts(Bun.env),');
-      const run = await firstRun(app, ['apps/web/app/auth', 'apps/web/runtime']);
-      expect(run.diagnostics).toBe('');
-      expect(run.lint).not.toContain('×');
-      expect(run.tests.output).toMatch(/\b0 fail\b/);
-      expect(run.tests.code).toBe(0);
-    } finally {
-      await removeGenerated(app);
-    }
+    expect({ code: app.code, out: app.out }).toMatchObject({ code: 0 });
+    const spliced = await runtime.text();
+    expect(spliced).toContain('assertSignInConfigured(process.env);');
+    expect(spliced).toContain('...extraPorts(Bun.env),');
+    const run = await firstRun(app, ['apps/web/app/auth', 'apps/web/runtime']);
+    expect(run.diagnostics).toBe('');
+    expect(run.lint).not.toContain('×');
+    expect(run.tests.output).toMatch(/\b0 fail\b/);
+    expect(run.tests.code).toBe(0);
   }, 180_000);
 });
