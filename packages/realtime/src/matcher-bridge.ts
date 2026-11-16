@@ -22,6 +22,12 @@ export interface SubscriptionShape {
   readonly orgId: string | null;
   /** Read set. An update touching none of these columns cannot change the result. */
   readonly columns?: readonly string[];
+  /**
+   * The tables of `entities` whose entity declares a tenant column. A change to one that carries
+   * no tenant is refused by a window scoped to an org: its rows belong to SOME tenant, and which
+   * one is unknown. Every window the registry builds names them (`queryEntry`).
+   */
+  readonly tenantTables?: readonly string[];
 }
 
 export interface BridgeResult {
@@ -44,7 +50,10 @@ export interface IncrementalMatcher {
 /** The cheap pre-filter. Pure, and the only thing that runs for a change nobody subscribed to. */
 export function canAffect(shape: SubscriptionShape, change: ChangeEvent): boolean {
   if (!shape.entities.includes(change.table)) return false;
-  if (shape.orgId !== null && change.orgId !== null && shape.orgId !== change.orgId) return false;
+  if (shape.orgId !== null && shape.orgId !== change.orgId) {
+    // Fail closed: a tenanted table's change with no tenant is no evidence it is this org's.
+    if (change.orgId !== null || shape.tenantTables?.includes(change.table)) return false;
+  }
   if (shape.columns && change.op === 'update' && change.after !== null) {
     const touched = Object.keys(changedColumns(change.before, change.after));
     if (touched.length > 0 && !touched.some((column) => shape.columns?.includes(column)))

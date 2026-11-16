@@ -111,6 +111,10 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
   re-lookup (`live-definition-input.test.ts`). A cold window is staled only by a table it reads.
 - **A WINDOW is per TENANT** (`windowId(queryHash, tenant)`, `live-tenant.ts`); the read runs as a
   service actor carrying ONLY that org, never the subscriber. †
+- **A change's tenant is its entity's `$tenantColumn`, on every producer** (`change-tenant.ts`),
+  never a property assumed to be `orgId`; a window lists its tenanted tables (`shape.tenantTables`)
+  and `canAffect` refuses a tenant-less change on one for an org-scoped window
+  (`live-tenant-column.test.ts`, `tenant-column-producers.test.ts`).
 - **A `sid` is CLIENT data: a subscription is keyed by `(socket, sid)`** (`subscription-book.ts`);
   reusing one the same socket holds is `X_SUBSCRIPTION_ID_TAKEN`.
 - **`rateLimit:` is spent once per NEW subscription** (`live-spend.ts`).

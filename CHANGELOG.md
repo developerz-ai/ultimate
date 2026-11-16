@@ -10,7 +10,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- **Security: live queries no longer cross tenants on a tenant column not named `orgId`.** Upgrade; no code change needed.
+
+### Security
+
+- Live queries and channel records on an entity whose tenant column isn't named `orgId` (`entity(name, { tenant: 'workspaceId' })`, or `.tenant()` on any column) could deliver another org's rows to subscribers.
+  - Every change producer now reads the tenant from the entity's declared tenant column: the write-ahead-log replicator, the in-process replicator under `x dev` and in tests, and `recordPublisher`.
+  - A live window also refuses any change on a tenant-scoped table that carries no tenant.
+  - Found by audit round 1 of plan 101b and reproduced end to end: org A's socket received org B's row.
+
+### Deprecated
+
+- The `tenantColumn` option of `startLiveReplicator` and `recordPublisher` is ignored and will be removed in the next major: the tenant column is the entity's own. Delete it where you pass it.
 
 ## Releases
 

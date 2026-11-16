@@ -183,7 +183,7 @@ describe("the window's reads say why they run", () => {
   });
 
   test('an oversized value is never kept on the window', () => {
-    const definition = { name: 'stub' } as LiveQueryDefinition;
+    const definition = { name: 'stub', entities: [] } as LiveQueryDefinition;
     const entry = queryEntry(
       'q1',
       definition,

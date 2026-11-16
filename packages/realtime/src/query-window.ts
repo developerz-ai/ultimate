@@ -3,6 +3,7 @@
 // decision is never here — `live-query.ts` owns that, once per subscriber, over what this returns.
 
 import type { LiveReadPhase } from '@ultimat3/query';
+import { tenantColumnOfTable } from './change-tenant';
 import { WindowReadTimeoutError } from './errors';
 import type { JsonValue, LiveRow } from './json';
 import type {
@@ -45,7 +46,8 @@ export interface QueryEntry {
   readonly rowEntity: string | null;
   /** The record key a row travels under; `null` = its `id` (a plain table). */
   readonly rowKey: ((row: LiveRow) => string) | null;
-  readonly shape: SubscriptionShape;
+  /** `tenantTables` required here: a window the registry builds always names them. */
+  readonly shape: SubscriptionShape & { readonly tenantTables: readonly string[] };
   readonly matcher: IncrementalMatcher;
   readonly subscribers: Map<string, LiveSubscription>;
   /**
@@ -107,6 +109,10 @@ export function queryEntry(
   },
 ): QueryEntry {
   const tenant = options?.tenant ?? null;
+  // The matcher knows the dependency set this *input* produced; `definition.entities` is the
+  // static declaration and can only be a superset of it. Preferring the matcher is what lets a
+  // definition built from a real query carry no static list at all.
+  const entities = matcher.entities.length > 0 ? matcher.entities : definition.entities;
   // `stale` is written from four modules; an accessor is the one place every write passes, so the
   // registry's owing set (`live-entries.ts`) is kept here rather than found by a walk per change.
   let stale = false;
@@ -121,13 +127,13 @@ export function queryEntry(
     ...rowScope(definition, input, options?.prepared),
     shape: {
       qid,
-      // The matcher knows the dependency set this *input* produced; `definition.entities` is the
-      // static declaration and can only be a superset of it. Preferring the matcher is what lets a
-      // definition built from a real query carry no static list at all.
-      entities: matcher.entities.length > 0 ? matcher.entities : definition.entities,
+      entities,
       // The window's own tenant first: a change in another org is dropped before any predicate
       // runs, whether or not the query's `where` happens to name one.
       orgId: tenant ?? orgIdOf(input),
+      // Resolved once per window, so `canAffect` refuses a tenant-less change on these with a
+      // lookup in a short list rather than a registry walk per change.
+      tenantTables: entities.filter((table) => tenantColumnOfTable(table) !== null),
       ...(definition.columns ? { columns: definition.columns } : {}),
     },
     matcher,
