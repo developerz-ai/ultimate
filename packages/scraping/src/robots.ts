@@ -51,12 +51,26 @@ export function parseRobots(text: string, agent: string): RobotsRules {
       const rules = groups.get(name) ?? [];
       // An empty `Disallow:` is the documented spelling of "allow everything", not a rule about
       // the empty path — read as a path it would match every URL and refuse the whole site.
-      if (value !== '' || field === 'allow') rules.push({ allow: field === 'allow', path: value });
+      if (value !== '' || field === 'allow') {
+        rules.push({ allow: field === 'allow', path: encodedPath(value) });
+      }
       groups.set(name, rules);
     }
   }
   return { rules: groups.get(wanted) ?? groups.get('*') ?? [] };
 }
+
+/**
+ * RFC 9309 §2.2.2: a rule and a URL path are compared percent-encoded. A rule is the site author's
+ * text (`/café`) and a URL's `pathname` arrives encoded (`/caf%C3%A9`), so a raw comparison never
+ * matched a non-ASCII rule and the page was fetched. Every character outside printable ASCII is
+ * encoded as UTF-8 and every `%xx` upper-cased, on both sides. Printable ASCII is left alone: a
+ * rule's `?`, `*` and `$` keep their meaning, which a URL pathname serializer would encode away.
+ */
+const encodedPath = (text: string): string =>
+  text
+    .replace(/[^\x21-\x7E]/gu, (char) => encodeURIComponent(char))
+    .replace(/%[0-9a-f]{2}/gi, (escape) => escape.toUpperCase());
 
 /**
  * `/private/*.pdf$` — the two wildcards robots.txt defines, and no others, matched by WALKING the
@@ -105,7 +119,8 @@ const patternMatches = (pattern: string, path: string): boolean => {
  * Longest match wins, and a tie goes to `Allow` — the rule every major crawler implements. A
  * naive "first disallow wins" reading refuses paths an operator explicitly re-allowed.
  */
-export function robotsAllows(rules: RobotsRules, path: string): boolean {
+export function robotsAllows(rules: RobotsRules, rawPath: string): boolean {
+  const path = encodedPath(rawPath);
   let verdict = true;
   let best = -1;
   for (const rule of rules.rules) {
