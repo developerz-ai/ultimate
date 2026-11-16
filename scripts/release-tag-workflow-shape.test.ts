@@ -307,14 +307,17 @@ describe('unit · maint · release-tag.yml refuses a maintenance release that is
   const runLaneReal = async (version: string, latest: string) => {
     const real = join(bin, 'real');
     const preload = join(real, 'registry.ts');
+    // The answer is DATA in a file the preload reads, never text spliced into its code.
+    const answer = join(real, 'registry.json');
+    await Bun.write(answer, JSON.stringify({ 'dist-tags': { latest } }));
     await Bun.write(
       preload,
-      `globalThis.fetch = (async () => new Response(${JSON.stringify(JSON.stringify({ 'dist-tags': { latest } }))}, { status: 200 })) as unknown as typeof fetch;\n`,
+      "const body = await Bun.file(Bun.env['FAKE_REGISTRY'] ?? '').text();\nglobalThis.fetch = (async () => new Response(body, { status: 200 })) as unknown as typeof fetch;\n",
     );
     // `bun run X` becomes `bun run --preload <registry> X`: the flag must follow `run`.
     await Bun.write(
       join(real, 'bun'),
-      `#!/usr/bin/env bash\n[ "$1" = run ] && shift\nexec ${JSON.stringify(process.execPath)} run --preload ${JSON.stringify(preload)} "$@"\n`,
+      '#!/usr/bin/env bash\n[ "$1" = run ] && shift\nexec "$REAL_BUN" run --preload "$REAL_PRELOAD" "$@"\n',
     );
     await chmod(join(real, 'bun'), 0o755);
     const child = Bun.spawnSync(['bash', '-c', lane?.run ?? 'exit 99'], {
@@ -323,6 +326,9 @@ describe('unit · maint · release-tag.yml refuses a maintenance release that is
         PATH: `${real}:${process.env['PATH'] ?? ''}`,
         BRANCH: 'release/30.x',
         VERSION: version,
+        REAL_BUN: process.execPath,
+        REAL_PRELOAD: preload,
+        FAKE_REGISTRY: answer,
       },
       stdout: 'pipe',
       stderr: 'pipe',
