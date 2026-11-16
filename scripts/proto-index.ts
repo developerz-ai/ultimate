@@ -291,7 +291,7 @@ const staleFinding = (gap: ProtoIndexGap): Finding => ({
 const unexplainedFinding = (gap: ProtoIndexGap): Finding => ({
   code: 'X_PROTO_CHAIN_INDEX_PIN_UNEXPLAINED',
   cause: `${gap.pkg} is pinned with a blank reason, so nothing records which of its ${String(gap.found)} prototype-reachable read(s) are keyed by a closed union and which are keyed by data — the pin holds nothing and the sites are reported`,
-  fix: `write what ${gap.pkg}'s tables are keyed by and why that key cannot be "constructor", in ${PROTO_PINS_FILE} — or guard the reads with Object.hasOwn and run bun run scripts/proto-index.ts --unpin ${gap.pkg}`,
+  fix: `grep -n ${renderFixShellArg(gap.pkg, '<pkg>')} ${PROTO_PINS_FILE}   # write in that row what ${gap.pkg}'s tables are keyed by and why that key cannot be "constructor" — or guard the reads with Object.hasOwn and run bun run scripts/proto-index.ts --unpin ${gap.pkg}`,
   at: PROTO_PINS_FILE,
 });
 
@@ -299,7 +299,7 @@ const unscannedFinding = (): Finding => ({
   code: 'X_PROTO_CHAIN_INDEX_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree with no unguarded index in it',
-  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/proto-index.ts',
+  fix: "grep -n 'CORPUS_PATTERNS' scripts/lib/corpus.ts   # edit it so it matches this repo layout, then: bun run scripts/proto-index.ts",
   at: 'scripts/lib/corpus.ts',
 });
 

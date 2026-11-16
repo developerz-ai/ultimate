@@ -24,8 +24,8 @@ export class IdempotencyConflictError extends UltimateError {
       // are the CLIENT's to act on, and one header built two ways is two ways to get it wrong.
       fix:
         reason === 'payload-mismatch'
-          ? 'set the Idempotency-Key header to a fresh crypto.randomUUID() — one key per payload, since this one already names a different request'
-          : 'resend this request with the same Idempotency-Key once the first one settles — a fresh crypto.randomUUID() here would run the mutation twice',
+          ? '{ idempotencyKey: crypto.randomUUID() }   // a fresh Idempotency-Key per payload: this one already names a different request'
+          : '{ idempotencyKey }   // resend with the SAME Idempotency-Key once the first one settles — a fresh crypto.randomUUID() here would run the mutation twice',
     });
   }
 }
@@ -52,7 +52,7 @@ export class IdempotencyKeyInvalidError extends UltimateError {
         problem === 'empty'
           ? `action "${action}" was called with an empty Idempotency-Key, which every caller sending a blank header would share`
           : `action "${action}" was called with an Idempotency-Key of ${length} characters, past the 255 its OpenAPI operation publishes`,
-      fix: 'set the Idempotency-Key header to a fresh crypto.randomUUID() on the client, one per request — or omit the header entirely to run this call without idempotency',
+      fix: '{ idempotencyKey: crypto.randomUUID() }   // on the client, one Idempotency-Key per request — or omit the header entirely to run this call without idempotency',
       meta: { action, problem, length },
     });
   }
@@ -104,7 +104,7 @@ export class IdempotencyReplayedFailureError extends UltimateError {
     const recorded: IdempotencyFailure = failure ?? {
       code: 'X_IDEMPOTENCY_REPLAYED_FAILURE',
       cause: 'the first attempt under this key failed and the store kept no detail of it',
-      fix: 'read the first attempt in the logs, then send a fresh Idempotency-Key once the cause is fixed',
+      fix: 'x logs tail --json   # in dev; elsewhere your log index: find the first attempt, fix its cause, then send a fresh Idempotency-Key',
     };
     super({
       code: recorded.code,
@@ -152,7 +152,7 @@ export class MutatorNotIdempotentError extends UltimateError {
       code: 'X_MUTATOR_NOT_IDEMPOTENT',
       cause:
         'a mutator is declared without idempotent: true, so a replay of its write under the same Idempotency-Key would run the server half a second time',
-      fix: 'add `idempotent: true` to the mutator definition',
+      fix: 'idempotent: true   // in the mutator definition',
     });
   }
 }
@@ -168,7 +168,7 @@ export class IdempotencyReservationLostError extends UltimateError {
     super({
       code: 'X_IDEMPOTENCY_RESERVATION_LOST',
       cause: `idempotency key "${key}" was reclaimed by a retry while this attempt was still in flight past the request deadline, so its transaction is rolled back rather than committed beside the retry's`,
-      fix: 'resend this request with the same Idempotency-Key — the attempt that took the key over answers it, and this one was rolled back',
+      fix: '{ idempotencyKey }   // resend with the SAME Idempotency-Key — the attempt that took the key over answers it, and this one was rolled back',
       meta: { key },
     });
   }

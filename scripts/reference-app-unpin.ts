@@ -68,7 +68,7 @@ export const unpin = async (
         {
           code: 'X_REFERENCE_APP_PIN_STALE',
           cause,
-          fix: `delete the ${request.steps.join(', ')} entr${request.steps.length === 1 ? 'y' : 'ies'} from ${app.dir}'s expectedRed in ${PINS_FILE}`,
+          fix: `grep -n 'expectedRed' ${PINS_FILE}   # delete the ${request.steps.join(', ')} entr${request.steps.length === 1 ? 'y' : 'ies'} from ${app.dir}'s expectedRed there`,
           at: PINS_FILE,
         },
       ],

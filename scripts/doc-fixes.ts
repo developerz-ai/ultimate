@@ -199,28 +199,28 @@ const where = (gap: DocFixGap): string => `${gap.path}:${gap.line}`;
 const unrunnableFinding = (gap: DocFixGap): Finding => ({
   code: 'X_DOC_FIX_UNRUNNABLE',
   cause: `${where(gap)} is ${gap.code}'s fix and it ${gap.problem} — the page an agent is sent to when it hits ${gap.code} answers with a second failure`,
-  fix: `rewrite ${gap.code}'s Fix cell at ${where(gap)} as an invocation this build ships; x help --json lists every command, subcommand and flag`,
+  fix: `edit ${gap.path}:${gap.line} — rewrite ${gap.code}'s Fix cell as an invocation this build ships; x help --json lists every command, subcommand and flag`,
   at: where(gap),
 });
 
 const adviceFinding = (gap: DocFixGap): Finding => ({
   code: 'X_DOC_FIX_UNRUNNABLE',
   cause: `${where(gap)} is ${gap.code}'s fix and ${gap.problem}`,
-  fix: `rewrite ${gap.code}'s Fix cell at ${where(gap)} as a command to run, a call to paste, or an edit naming a file`,
+  fix: `edit ${gap.path}:${gap.line} — rewrite ${gap.code}'s Fix cell as a command to run, a call to paste, or an edit naming a file`,
   at: where(gap),
 });
 
 const vacuousFinding = (gap: DocFixGap): Finding => ({
   code: 'X_DOC_FIX_UNSCANNED',
   cause: `${gap.problem}, so this rule reported green over a fix column it never read`,
-  fix: `restore the wiki/Error-Codes-<owner>.md pages with a table whose header names a Fix column, or point FIX_REFERENCE in scripts/doc-fixes.ts at the index this repo publishes`,
+  fix: "git log --stat -- 'wiki/Error-Codes*.md'   # restore the wiki/Error-Codes-<owner>.md pages with a table whose header names a Fix column, or point FIX_REFERENCE in scripts/doc-fixes.ts at the index this repo publishes",
   at: FIX_REFERENCE,
 });
 
 const echoedFinding = (gap: DocFixGap): Finding => ({
   code: 'X_DOC_CAUSE_ECHOES_TITLE',
   cause: `${where(gap)} is ${gap.code}'s row and ${gap.problem} — the row states what failed twice and why it fails never`,
-  fix: `edit ${gap.code}'s Typical cause cell at ${where(gap)} to name what usually makes it happen; a new code takes it as bun run new-error-code … --cause '…'`,
+  fix: `edit ${gap.path}:${gap.line} — write ${gap.code}'s Typical cause cell as what usually makes it happen; a new code takes it as bun run new-error-code … --cause '…'`,
   at: where(gap),
 });
 

@@ -3,7 +3,7 @@
 // the default sort, i18n keys become labels. Every derived decision is overridable per
 // field, but the zero-config result is the one the generator emits and the one the docs show.
 
-import { finiteCount } from '@ultimat3/core';
+import { finiteCount, renderFixShellArg } from '@ultimat3/core';
 import { type AdminColumnFacts, adminColumnsOf, adminSealedColumnsOf } from './entity-columns';
 import {
   AdminEntityUnknownError,
@@ -176,7 +176,7 @@ function idFieldOf(entity: AdminEntity, columns: readonly AdminColumnFacts[]): s
       field: entity.$primaryKey.join(','),
       cause:
         'has a composite primary key; the admin addresses a row by a single id and cannot yet carry every key part',
-      fix: 'give the entity a single-column id, or wait for composite-key support in AdminRepo',
+      fix: 'id: uuid().primaryKey()   // give the entity a single-column id — or wait for composite-key support in AdminRepo',
     });
   }
   const declared = entity.$primaryKey[0] ?? columns.find((column) => column.primaryKey)?.name;
@@ -241,7 +241,7 @@ function pickListFields(
           cause: 'listed in listFields but not a column of the entity',
           // `x db gen` and NOT `x g migration`: there is no `migration` generator, and the fix
           // line an operator pastes has to be a command the CLI actually dispatches.
-          fix: `remove "${name}" from listFields, or add the column with x db gen "add ${name} to ${entityName}"`,
+          fix: `x db gen "add ${renderFixShellArg(name, '<column>')} to ${renderFixShellArg(entityName, '<entity>')}"   # adds the column — or remove "${name}" from listFields`,
         });
       }
       return field;

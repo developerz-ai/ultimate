@@ -12,6 +12,7 @@
 //
 //   bun run scripts/instrument-slots.ts [--json]
 
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import { parseScriptArgs } from './lib/args';
 import { corpus } from './lib/corpus';
 import type { Finding, ScriptResult } from './lib/log';
@@ -103,7 +104,7 @@ export function instrumentSlotResult(
       code: 'X_INSTRUMENT_SLOT_ALLOWANCE_STALE',
       at: 'scripts/instrument-slots.ts',
       cause: `INSTRUMENT_SLOT_ALLOWED names ${row}, which no scanned file exports — the row excuses nothing, and a stale excuse is the next slot's cover`,
-      fix: `bun run scripts/instrument-slots.ts --json   # after dropping or renaming the ${row} row of INSTRUMENT_SLOT_ALLOWED in scripts/instrument-slots.ts`,
+      fix: `grep -n ${quoteArg(row)} scripts/instrument-slots.ts   # drop or rename that row of INSTRUMENT_SLOT_ALLOWED, then: bun run scripts/instrument-slots.ts --json`,
     });
   }
   return {

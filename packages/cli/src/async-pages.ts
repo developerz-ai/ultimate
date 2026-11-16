@@ -17,7 +17,7 @@ export function asyncPageFinding(file: string): Finding {
   return {
     code: 'X_ROUTE_ASYNC_PAGE',
     cause: `${file} exports an async Page, so its data read bypasses load's caching and meta`,
-    fix: `in ${file}: move each await in Page into export const load = (ctx) => …, and read it with the page's data prop`,
+    fix: `export const load = (ctx) => …   // in ${file}: move each await in Page here, and read it with the page's data prop`,
     at: file,
   };
 }

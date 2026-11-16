@@ -383,7 +383,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       if (!dispatched) {
         logger.warn('jobs.scheduler.drain-abandoned', {
           reason,
-          fix: 'raise the drain budget past a dispatch round — configureLifecycle({ deadlineMs: 60_000 }) — and set terminationGracePeriodSeconds to at least as many seconds',
+          fix: 'configureLifecycle({ deadlineMs: 60_000 })   // raise the drain budget past a dispatch round — and set terminationGracePeriodSeconds to at least as many seconds',
         });
       } else if (isLeader) {
         await leader.release();

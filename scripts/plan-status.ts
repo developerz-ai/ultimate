@@ -11,6 +11,7 @@
 // why: host-separator paths into the checkout; Bun ships no path API.
 import { join } from 'node:path';
 import { renderCauseValue } from '@ultimat3/core';
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -45,7 +46,12 @@ const shown = (value: unknown): string =>
 const invalid = (path: string, field: string, value: unknown): Finding => ({
   code: 'X_PLAN_STATUS_INVALID',
   cause: `${path} ${field} is ${shown(value)}, which is not one of the template's values (${ENUM})`,
-  fix: `bun run plan-status --json   # after setting ${field} in ${path} to one of: ${ENUM}`,
+  fix: `grep -n ${quoteArg(
+    field
+      .split(/[.[\]]/)
+      .filter(Boolean)
+      .at(-1) ?? field,
+  )} ${quoteArg(path)}   # set ${field} to one of: ${ENUM}, then: bun run plan-status --json`,
   at: path,
 });
 
@@ -59,7 +65,7 @@ export function statusFindings(path: string, text: string): readonly Finding[] {
       {
         code: 'X_PLAN_STATUS_INVALID',
         cause: `${path} is not valid YAML, so no tracker can read it`,
-        fix: `bun run plan-status --json   # after repairing the YAML in ${path} until it parses`,
+        fix: `bun -e ${quoteArg(`Bun.YAML.parse(await Bun.file(${JSON.stringify(path)}).text())`)}   # prints the parse error: repair the YAML until it parses, then: bun run plan-status --json`,
         at: path,
       },
     ];
@@ -76,7 +82,7 @@ export function statusFindings(path: string, text: string): readonly Finding[] {
     findings.push({
       code: 'X_PLAN_STATUS_INVALID',
       cause: `${path} slices is ${shown(raw)}, which is not a list, so no slice status in it was checked`,
-      fix: `bun run plan-status --json   # after making slices in ${path} a list of { file, status } rows`,
+      fix: `grep -n 'slices' ${quoteArg(path)}   # make it a list of { file, status } rows, then: bun run plan-status --json`,
       at: path,
     });
   }

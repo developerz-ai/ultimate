@@ -117,7 +117,7 @@ export class MessageReader {
       throw new ReplicationProtocolError({
         stage: 'read',
         detail: `a message declared a length of ${length} bytes`,
-        fix: 'point the replication URL at postgres itself — a proxy or a TLS port frames like this',
+        fix: 'export REPLICATION_URL=postgres://<user>:<password>@<postgres-host>:5432/<db>   # postgres itself — a proxy or a TLS port frames like this',
       });
     }
     const total = length + 1;

@@ -112,7 +112,7 @@ export class BackfillStalledError extends UltimateError {
     super({
       code: 'X_BACKFILL_STALLED',
       cause: `backfill "${input.backfill}" swept ${input.swept} rows, exhausted its source, and count() still matches ${input.remaining} — a WHERE the sweep narrows and the count does not is what leaves rows behind`,
-      fix: `make count() select on exactly what source() selects on in backfill("${input.backfill}")`,
+      fix: `backfill({ name: "${input.backfill}", source, count, … })   // count() selects on exactly what source() selects on`,
     });
   }
 }

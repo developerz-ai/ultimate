@@ -70,8 +70,8 @@ export const tenancyUnscoped = (
         : `${entityName}.${operation}() was checked against a plan with no org predicate, though the acting actor's tenant is ${renderValue(actorOrg)} — a plan is verified here, never rewritten, so the tenant had to be on it already`,
     fix:
       actorOrg === undefined
-        ? `run it inside runWithContext(ctxOf({ actor: userActor({ id, orgId }) }), fn) — the actor's org scopes the plan — or name the tenant: ${entityName}.${operation}({ orgId }), which orgScoped(plan, orgId) is the plan-level form of`
-        : `build the plan with scopedPlan('${entityName}', tenantColumn, '${operation}', plan) — it applies the actor's tenant — or add the predicate first: orgScoped(plan, ${asLiteral(actorOrg, "'<org>'")})`,
+        ? `runWithContext(ctxOf({ actor: userActor({ id, orgId }) }), fn)   // the actor's org scopes the plan — or name the tenant: ${entityName}.${operation}({ orgId }), which orgScoped(plan, orgId) is the plan-level form of`
+        : `scopedPlan('${entityName}', tenantColumn, '${operation}', plan)   // applies the actor's tenant — or add the predicate first: orgScoped(plan, ${asLiteral(actorOrg, "'<org>'")})`,
   });
 
 /**
@@ -97,7 +97,7 @@ export const tenancyActorMismatch = (init: {
   return new EntityError({
     code: 'X_TENANCY_ACTOR_MISMATCH',
     cause: `${init.entityName}.${init.operation}() was scoped to tenant ${renderValue(init.named)} but the acting actor's tenant is ${renderValue(init.actorOrg)}`,
-    fix: `drop the orgId argument from ${init.entityName}.${init.operation}() — the actor's tenant scopes it — or act as that tenant: withChildContext({ actor: userActor({ id, orgId: ${asLiteral(init.named, "'<org>'")} }) }, fn). A read that must span tenants is crossTenant('<why>', fn)`,
+    fix: `withChildContext({ actor: userActor({ id, orgId: ${asLiteral(init.named, "'<org>'")} }) }, fn)   // act as that tenant — or drop the orgId argument from ${init.entityName}.${init.operation}(): the actor's tenant scopes it. A read that must span tenants is crossTenant('<why>', fn)`,
   });
 };
 
@@ -123,7 +123,7 @@ export const tenancyRowMismatch = (init: {
     // A row literal is the least constrained input in the framework — this guard runs BEFORE
     // `$assert`, on purpose, so the value has been through no parse at all when it is rendered.
     cause: `${init.entityName}.${init.operation}() would write ${init.column} ${renderValue(init.named)} but the acting actor's tenant is ${renderValue(init.actorOrg)}`,
-    fix: `set ${init.column} to ${asLiteral(init.actorOrg, "'<org>'")} in the row passed to ${init.entityName}.${init.operation}(), or write into another tenant deliberately: crossTenant('<why>', fn)`,
+    fix: `{ ${init.column}: ${asLiteral(init.actorOrg, "'<org>'")} }   // in the row passed to ${init.entityName}.${init.operation}() — or write into another tenant deliberately: crossTenant('<why>', fn)`,
   });
 
 /**
@@ -143,7 +143,7 @@ export const tenancyActorOrgRequired = (init: {
   new EntityError({
     code: 'X_TENANCY_ACTOR_ORG_REQUIRED',
     cause: `${init.entityName}.${init.operation}() reads a tenant-scoped entity, but the ${init.actorKind} actor ${renderValue(init.actorId)} carries no orgId — there is no tenant to scope it to`,
-    fix: `mint the actor with its tenant at the request boundary — userActor({ id: ${asLiteral(init.actorId, "'<actor id>'")}, orgId: '<org>' }) — or, for a sweep that legitimately spans tenants, crossTenant('<why>', fn)`,
+    fix: `userActor({ id: ${asLiteral(init.actorId, "'<actor id>'")}, orgId: '<org>' })   // mint the actor with its tenant at the request boundary — or, for a sweep that legitimately spans tenants, crossTenant('<why>', fn)`,
   });
 
 /**
@@ -159,7 +159,7 @@ export const crossTenantDenied = (init: {
   new EntityError({
     code: 'X_TENANCY_CROSS_DENIED',
     cause: `crossTenant(${JSON.stringify(init.reason)}) was entered by ${init.actor}, which does not carry the ${JSON.stringify(init.scope)} scope`,
-    fix: `grant the capability where the actor is minted — serviceActor({ id: 'reconciler', scopes: ['${init.scope}'] }) — and run the sweep inside runWithContext(ctxOf({ actor }), fn); an ordinary request scopes to its own tenant instead and needs no crossTenant()`,
+    fix: `serviceActor({ id: 'reconciler', scopes: ['${init.scope}'] })   // grant the capability where the actor is minted, then run the sweep inside runWithContext(ctxOf({ actor }), fn); an ordinary request scopes to its own tenant instead and needs no crossTenant()`,
   });
 
 /**
@@ -343,7 +343,7 @@ export const nPlusOneQuery = (subject: string, count: number, batch: QueryLoopBa
         ? preloadCalls(batch.candidates)
         : batch.form === 'in'
           ? `db.${batch.entity}.andWhere('id', 'in', ids).all()   # read the set once, then look each row up in memory`
-          : `send one statement for the set — "where <key> = any($1)" — or expectedQueryLoop('<why one per row is optimal>', fn) when the loop is deliberate`,
+          : `SELECT … WHERE <key> = any($1)   -- one statement for the set — or expectedQueryLoop('<why one per row is optimal>', fn) when the loop is deliberate`,
   });
 
 /** The same loop, writing. One statement per row is one round trip and one transaction entry each. */
@@ -354,5 +354,5 @@ export const nPlusOneWrite = (subject: string, count: number, batch: WriteLoopBa
     fix:
       batch.form === 'bulk'
         ? `${bulkWriteCall(batch.entity, batch.op)}   # one statement for the whole set`
-        : `send one statement for the set — "insert … values" over every row, or "update … where id = any($1)" — or expectedQueryLoop('<why one per row is optimal>', fn) when the loop is deliberate`,
+        : `INSERT … VALUES (…), (…)   -- one statement over every row, or UPDATE … WHERE id = any($1) — or expectedQueryLoop('<why one per row is optimal>', fn) when the loop is deliberate`,
   });

@@ -127,7 +127,8 @@ describe('a nullable tenant column', () => {
     expect(declared).toBeUltimateError('X_INVARIANT_VIOLATED');
     expect(String(declared?.cause)).toContain('workspaceId');
     // The fix is one edit to the declaration, and names the backfill the edit needs.
-    expect(String(declared?.fix)).toContain('drop .nullable()');
+    expect(String(declared?.fix)).toStartWith('columns: { workspaceId: uuid() }   // in entity(');
+    expect(String(declared?.fix)).toContain('without .nullable()');
     expect(String(declared?.fix)).toContain('x db gen');
 
     // Marked with `.tenant()` — the inference path, which used to skip the check entirely.

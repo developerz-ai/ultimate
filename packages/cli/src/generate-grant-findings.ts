@@ -16,14 +16,24 @@ import {
 import type { Finding } from './output';
 import { ROLES_FILE } from './permission-grants';
 
-/** `member: 'run:read'; admin: 'run:write', 'runs:read'` — each role, and what its `grants` owes. */
-const linesFor = (grants: readonly RoleGrant[]): string => {
+/** Each role, and the quoted permissions its `grants` owes, in first-seen order. */
+const byRoleOf = (grants: readonly RoleGrant[]): ReadonlyMap<string, readonly string[]> => {
   const byRole = new Map<string, string[]>();
   for (const grant of grants) {
     byRole.set(grant.role, [...(byRole.get(grant.role) ?? []), `'${grant.permission}'`]);
   }
-  return [...byRole].map(([role, permissions]) => `${role}: ${permissions.join(', ')}`).join('; ');
+  return byRole;
 };
+
+/** `member: 'run:read'; admin: 'run:write', 'runs:read'` — each role, and what its `grants` owes. */
+const linesFor = (grants: readonly RoleGrant[]): string =>
+  [...byRoleOf(grants)].map(([role, owed]) => `${role}: ${owed.join(', ')}`).join('; ');
+
+/** `member: { grants: [..., 'run:read'] }` — the same, as role-map entries to merge in. */
+const roleEntries = (grants: readonly RoleGrant[]): string =>
+  [...byRoleOf(grants)]
+    .map(([role, owed]) => `${role}: { grants: [..., ${owed.join(', ')}] }`)
+    .join(', ');
 
 /** The grants the role map as it stands still lacks: no such role, no `grants`, or undeclared. */
 function stillMissing(source: string, grants: readonly RoleGrant[], admin: readonly RoleGrant[]) {
@@ -71,7 +81,7 @@ export async function ungrantedByGenerator(
     {
       code: 'X_PERMISSION_UNGRANTED',
       cause: `${ROLES_FILE} has no role, no "grants: [...]" list or no definePermissions([...]) these could be safely added to, so nothing granted: ${linesFor(missing)}`,
-      fix: `edit ${ROLES_FILE} — add to each role's grants (and declare any the map does not know in definePermissions([...])) — ${linesFor(missing)} — then x verify --only policy`,
+      fix: `{ ${roleEntries(missing)} }   // merge into the role map in ${ROLES_FILE}, declaring any the map does not know in definePermissions([...]) — then x verify --only policy`,
       at: ROLES_FILE,
     },
   ];

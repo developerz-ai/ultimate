@@ -94,7 +94,9 @@ describe('McpArgsInvalidError', () => {
     expect(error.cause).toBe(
       'arguments for "publishPost" are invalid: postId: expected string; notify: expected boolean',
     );
-    expect(error.fix).toBe("re-read the tool's inputSchema from tools/list and resend");
+    expect(error.fix).toBe(
+      `{ jsonrpc: '2.0', id, method: 'tools/list' }   // re-read the inputSchema of "publishPost", then resend tools/call with arguments it accepts`,
+    );
   });
 });
 
@@ -103,7 +105,7 @@ describe('McpProtocolError', () => {
     const error = new McpProtocolError({ cause: 'body is not an object' });
     expect(error.code).toBe('X_MCP_PROTOCOL');
     expect(error.cause).toBe('body is not an object');
-    expect(error.fix).toBe("send a JSON-RPC 2.0 body: { jsonrpc: '2.0', id, method, params }");
+    expect(error.fix).toBe("{ jsonrpc: '2.0', id, method, params }   // a JSON-RPC 2.0 body");
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 

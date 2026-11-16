@@ -4,7 +4,7 @@
 // tier 4 and auth is tier 2, so the app wires mail's `send` in and auth imports nothing upward.
 
 import type { Clock } from '@ultimat3/core';
-import { timingSafeEqual } from '@ultimat3/core';
+import { renderFixLiteral, timingSafeEqual } from '@ultimat3/core';
 import type { AuthVerification, VerificationStore } from './adapter';
 import { normaliseEmail } from './email';
 import { AuthError } from './errors';
@@ -128,7 +128,7 @@ const verificationInvalid = (purpose: string): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause: `the ${purpose} token is unknown, already used, expired or does not match`,
-    fix: `request a new link — ${purpose} tokens are single-use`,
+    fix: `await issueVerification(runtime, { purpose: ${renderFixLiteral(purpose, "'<purpose>'")}, identifier: email, locale })   // a new link — ${purpose} tokens are single-use`,
   });
 
 export interface ConsumeVerificationInput {

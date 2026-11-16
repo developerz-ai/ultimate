@@ -194,7 +194,9 @@ export async function backfillPass<Row>(
         backfill: name,
         completedAs: previous?.checksum,
         now: checksum,
-        fix: `enqueue ${name} with { force: true } to sweep again under the new definition`,
+        // A scoped pass's ledger name (`<name>:<scope>`) is no declaration `x db backfill` knows,
+        // and the warning fires on a checksum a bundler can move: enqueue, never an immediate sweep.
+        fix: `await ${definition.name}.enqueue(<the run's input>, { force: true })   // sweeps again under the new definition`,
       });
     }
     logger.info('jobs.backfill.skipped', { backfill: name, completedBy: previous?.runId });

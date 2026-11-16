@@ -7,7 +7,7 @@
 // logger. The third is not, because pixels cannot be redacted after the fact.
 
 import type { Secret } from '@ultimat3/core';
-import { escapeHtml, revealSecret, secret, UltimateError } from '@ultimat3/core';
+import { escapeHtml, renderFixShellArg, revealSecret, secret, UltimateError } from '@ultimat3/core';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
 
 export interface ScrapeSecrets {
@@ -45,7 +45,7 @@ export function secretBag(
       throw new UltimateError({
         code: 'X_ENV_MISSING',
         cause: `scrape secret "${name}" is declared and the environment has no value for it`,
-        fix: `add ${name}= to .env.local, or drop "${name}" from secrets: on the scrape() definition`,
+        fix: `printf '%s=%s\\n' ${renderFixShellArg(name, '<the secret name>')} '<its value>' >> .env.local   # or drop "${name}" from secrets: on the scrape() definition`,
         meta: { name },
       });
     }
@@ -62,7 +62,7 @@ export function secretBag(
         throw new UltimateError({
           code: 'X_ENV_MISSING',
           cause: `scrape secret "${name}" was read and never declared`,
-          fix: `add "${name}" to secrets: on the scrape() definition — a run resolves only what it declares`,
+          fix: `secrets: [${JSON.stringify(name)}]   // on the scrape() definition — a run resolves only what it declares`,
           meta: { name },
         });
       }

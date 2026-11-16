@@ -167,6 +167,15 @@ describe('the ratchet', () => {
     );
   });
 
+  // README's facts table quotes every pin; an edit without `readme-facts --write` reds its drift.
+  test('both stale-pin fixes name the readme-facts rewrite the pin edit owes', () => {
+    const pin = { lines: 80, funcs: 80, why: 'being written' };
+    for (const measured of [96, 80 + PIN_SLACK]) {
+      const [finding] = judge(reading(measured, measured), pin).findings;
+      expect(finding?.fix).toContain('then: bun run scripts/readme-facts.ts --write');
+    }
+  });
+
   test('drift under the slack is not reported — one uncovered line must not fail the build twice', () => {
     const pin = { lines: 80, funcs: 80, why: 'being written' };
     expect(judge(reading(80.5, 80.5), pin).findings).toEqual([]);

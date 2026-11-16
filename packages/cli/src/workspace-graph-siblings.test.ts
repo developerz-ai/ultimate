@@ -108,7 +108,7 @@ describe('unit · declared framework siblings are used by shipped source', () =>
           expect(findings[0]?.code).toBe('X_WORKSPACE_DEP_UNDECLARED');
           expect(findings[0]?.cause).toContain('helper-fixture.ts');
           expect(findings[0]?.fix).toBe(
-            'add "@ultimat3/core": "0.0.0" to "devDependencies" in packages/owner/package.json',
+            '{ "devDependencies": { "@ultimat3/core": "0.0.0" } }   // merge into packages/owner/package.json',
           );
           expect(fixProblem(findings[0]?.fix ?? '')).toBeUndefined();
           return;

@@ -85,7 +85,7 @@ export async function run(
   if (head === undefined) {
     return refuse(
       'run() was called with an empty command, so there is no program to spawn',
-      'pass the program as the first element: run(["bun", "test"], { cwd })',
+      'run(["bun", "test"], { cwd })   // the program is the first element of the command',
     );
   }
   const timeoutMs = options.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;

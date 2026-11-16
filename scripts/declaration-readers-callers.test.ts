@@ -62,7 +62,8 @@ describe('a throwing core export', () => {
     ]);
     const finding = throwerFindingFor(gaps[0] ?? expect.unreachable('one gap'));
     expect(finding.code).toBe('X_CORE_THROWER_UNCALLED');
-    expect(finding.fix.startsWith(`bun run ${THROWER_PINS_FILE} --json`)).toBe(true);
+    expect(finding.fix).toStartWith('grep -rn assertEnvExample packages/core/src   #');
+    expect(finding.fix).toEndWith(`then: bun run ${THROWER_PINS_FILE} --json`);
     expect(finding.fix).toContain('CORE_THROWER_PINS');
   });
 

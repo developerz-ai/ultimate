@@ -112,7 +112,7 @@ export function checkFrameworkTables(input: FrameworkTableInput): readonly Findi
         code: 'X_FRAMEWORK_TABLE_UNSCANNED',
         cause:
           'FRAMEWORK_SCHEMA names no table, so every declared table would have read as unapplied',
-        fix: 'restore FRAMEWORK_SCHEMA in packages/cli/src/framework-schema.ts — `bun run x -- db migrate --json` applies it',
+        fix: 'git log -p -- packages/cli/src/framework-schema.ts   # restore FRAMEWORK_SCHEMA from history; `bun run x -- db migrate --json` applies it',
         at: 'packages/cli/src/framework-schema.ts',
       },
     ];
@@ -122,7 +122,7 @@ export function checkFrameworkTables(input: FrameworkTableInput): readonly Findi
       {
         code: 'X_FRAMEWORK_TABLE_UNSCANNED',
         cause: 'no `create table` was found in packages/*/src, so this rule read nothing',
-        fix: 'run `bun run scripts/framework-tables.ts` from the repo root',
+        fix: 'bun run scripts/framework-tables.ts   # from the repo root',
         at: 'scripts/framework-tables.ts',
       },
     ];
@@ -137,7 +137,7 @@ export function checkFrameworkTables(input: FrameworkTableInput): readonly Findi
     findings.push({
       code: 'X_FRAMEWORK_TABLE_UNAPPLIED',
       cause: `${at} declares the framework table ${entry.table} and no boot path creates it — FRAMEWORK_SCHEMA does not name it`,
-      fix: `add ${entry.table} to a FRAMEWORK_SCHEMA row in packages/cli/src/framework-schema.ts, with the DDL constant packages/${packageOf(entry.file) ?? '<pkg>'} exports, so every boot creates it — or delete the declaration at ${at} if the table is the app's to create`,
+      fix: `grep -n 'FRAMEWORK_SCHEMA' packages/cli/src/framework-schema.ts   # add ${entry.table} to a row there, with the DDL constant packages/${packageOf(entry.file) ?? '<pkg>'} exports, so every boot creates it — or delete the declaration at ${at} if the table is the app's to create`,
       at,
     });
   }

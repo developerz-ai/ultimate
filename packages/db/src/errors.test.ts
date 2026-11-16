@@ -143,7 +143,7 @@ describe('driverError', () => {
     expect(error.cause).toContain('econnrefused 127.0.0.1:5432');
     // Byte-for-byte the wording that shipped, because that code's meaning has not changed.
     expect(driverError('x', new Error('y')).fix).toBe(
-      'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
+      'DATABASE_URL=postgres://user@host:5432/database   # a reachable Postgres url — or run `x dev` to use the embedded PGlite',
     );
   });
 

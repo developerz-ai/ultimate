@@ -184,7 +184,7 @@ const overFinding = (gap: FixShellArgGap): Finding => {
   return {
     code: 'X_FIX_SHELL_ARG_UNSCREENED',
     cause: `${gap.pkg} splices ${String(gap.found)} value(s) into the command position of a fix: line and is pinned at ${String(gap.pinned)} — ${listed} — and a fix: is a command meant to be pasted, so a value carrying $(…), a backtick or a ; runs whatever it says`,
-    fix: `wrap it: renderFixShellArg(value, '<what a reader substitutes>') from @ultimat3/core, ${which}; if the value cannot carry shell syntax, ${pinRaiseFix(pinRaiseOf(FIX_SHELL_ARG_PIN_TARGET, gap))}, its reason saying where the value comes from`,
+    fix: `renderFixShellArg(value, '<what a reader substitutes>')   // from @ultimat3/core, wrapping the value ${which}; if the value cannot carry shell syntax, ${pinRaiseFix(pinRaiseOf(FIX_SHELL_ARG_PIN_TARGET, gap))}, its reason saying where the value comes from`,
     at: at(leadSite(gap)),
   };
 };
@@ -199,7 +199,7 @@ const staleFinding = (gap: FixShellArgGap): Finding => ({
 const unexplainedFinding = (gap: FixShellArgGap): Finding => ({
   code: 'X_FIX_SHELL_ARG_PIN_UNEXPLAINED',
   cause: `${gap.pkg} is pinned with a blank reason, so nothing records where its ${String(gap.found)} spliced value(s) come from — a count with no sentence is the waiver axiom 3 refuses, and the pin holds nothing`,
-  fix: `write where each remaining value in ${gap.pkg} comes from — a literal this process wrote, a name a schema parsed — in ${FIX_SHELL_PINS_FILE}; or wrap them in renderFixShellArg and run bun run scripts/fix-shell-arg.ts --unpin ${gap.pkg}`,
+  fix: `grep -n ${renderFixShellArg(gap.pkg, '<pkg>')} ${FIX_SHELL_PINS_FILE}   # write in that row where each remaining value in ${gap.pkg} comes from — a literal this process wrote, a name a schema parsed; or wrap them in renderFixShellArg and run bun run scripts/fix-shell-arg.ts --unpin ${gap.pkg}`,
   at: FIX_SHELL_PINS_FILE,
 });
 
@@ -207,7 +207,7 @@ const unscannedFinding = (): Finding => ({
   code: 'X_FIX_SHELL_ARG_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree with no spliced fix: value in it',
-  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/fix-shell-arg.ts',
+  fix: "grep -n 'CORPUS_PATTERNS' scripts/lib/corpus.ts   # edit it so it matches this repo layout, then: bun run scripts/fix-shell-arg.ts",
   at: 'scripts/lib/corpus.ts',
 });
 

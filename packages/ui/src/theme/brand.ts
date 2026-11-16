@@ -148,7 +148,7 @@ export function brandStyleCspSource(brand: Brand): string {
   if (typeof Bun === 'undefined') {
     throw runtimeMissingError(
       'Bun.CryptoHasher to hash the brand stylesheet',
-      'call brandStyleCspSource() during build or SSR, never in browser code',
+      'brandStyleCspSource(brand)   // during build or SSR, never in browser code',
     );
   }
   return `'sha256-${new Bun.CryptoHasher('sha256').update(brand.css).digest('base64')}'`;

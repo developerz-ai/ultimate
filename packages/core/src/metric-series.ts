@@ -66,7 +66,7 @@ function reportOverflow(instrument: Instrument): void {
   const { name, kind } = instrument.descriptor;
   const error = new MetricCardinalityError({
     cause: `${name} reached its ceiling of ${instrument.maxSeries} label set(s); every further label set folds into one ${OVERFLOW_ATTRIBUTE}="true" series`,
-    fix: `drop the unbounded label from the ${name} call site (an id, a path, an email is never a label), or raise it deliberately: ${kind}('${name}', { maxSeries: ${instrument.maxSeries * 2} })`,
+    fix: `{ maxSeries: ${instrument.maxSeries * 2} }   // raised deliberately in ${kind}('${name}', …) — or drop the unbounded label from its call site (an id, a path, an email is never a label)`,
     meta: { metric: name, maxSeries: instrument.maxSeries },
   });
   logger.error(error.format(), { code: error.code, metric: name });

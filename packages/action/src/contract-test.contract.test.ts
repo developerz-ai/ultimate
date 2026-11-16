@@ -252,7 +252,9 @@ describe('the garbage assertion', () => {
     expect(failure).toBeUltimateError('X_CONTRACT_DRIFT');
     // The value is a logger FIELD, never a rendered one: the cause names the action and the fix
     // names the edit, and neither reaches for a value that refuses to be a string.
-    expect(fixOf(failure)).toContain('tighten `input:` in the acceptAnything definition');
+    expect(fixOf(failure)).toStartWith(
+      'input: t.object({ ... })   // tighten it in the acceptAnything definition',
+    );
   });
 });
 

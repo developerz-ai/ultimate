@@ -30,6 +30,7 @@ import {
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { siteAt } from './lib/site-at';
 
 const SCRIPT = 'error-code-pages';
 const WRITE = INDEX_WRITE;
@@ -100,7 +101,7 @@ export async function errorCodeIndexFindings(root: string): Promise<readonly Fin
     findings.push({
       code: 'X_ERROR_CODE_INDEX_STALE',
       cause: `${ERROR_CODE_INDEX} has no ${INDEX_OPEN} … ${INDEX_CLOSE} block, so the index of every code has nowhere to be written`,
-      fix: `edit ${ERROR_CODE_INDEX} to put the two lines ${INDEX_OPEN} and ${INDEX_CLOSE} above "${RESERVED_HEADING}", then: ${WRITE}`,
+      fix: `grep -n '${RESERVED_HEADING}' ${ERROR_CODE_INDEX}   # above that heading put the two lines ${INDEX_OPEN} and ${INDEX_CLOSE}, then: ${WRITE}`,
       at: ERROR_CODE_INDEX,
     });
   } else if (generated !== index) {
@@ -115,7 +116,7 @@ export async function errorCodeIndexFindings(root: string): Promise<readonly Fin
     findings.push({
       code: 'X_ERROR_CODE_ROW_MISPLACED',
       cause: `${row.at} documents ${row.code}, which ${MANIFEST} says ${ownerName(row.owner)} owns, so a reader sent to wiki/Error-Codes-${row.owner}.md does not find it`,
-      fix: `move the row at ${row.at} into wiki/Error-Codes-${row.owner}.md at its sorted place, then: ${WRITE}`,
+      fix: `edit ${siteAt(row.at).path}:${siteAt(row.at).line} — move this row into wiki/Error-Codes-${row.owner}.md at its sorted place, then: ${WRITE}`,
       at: row.at,
     });
   }

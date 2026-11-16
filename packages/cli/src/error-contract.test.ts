@@ -137,7 +137,7 @@ describe('the checks, over a repo', () => {
     expect(rest).toEqual([]);
     expect(finding?.code).toBe('X_ERROR_FIX_INVALID');
     expect(finding?.at).toBe('packages/db/src/thing.ts:2');
-    expect(finding?.fix).toContain('rewrite the fix at packages/db/src/thing.ts:2');
+    expect(finding?.fix).toStartWith('edit packages/db/src/thing.ts:2 — rewrite the fix');
   });
 
   test('checkErrorFixes passes a repo whose fixes are all runnable', async () => {

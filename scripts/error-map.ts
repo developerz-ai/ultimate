@@ -11,6 +11,7 @@
 //
 //   bun run scripts/error-map.ts [--json]
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { ERROR_STATUS } from '@ultimat3/http';
 import {
   backlogCodes,
@@ -130,7 +131,7 @@ const missingFinding = (gap: StatusGap): Finding => ({
   code: 'X_ERROR_STATUS_MISSING',
   cause: `${gap.code} is owned by @ultimat3/${gap.owner} (tier ${tierOf(gap.owner)}) and has no row in ${ERROR_MAP_FILE}, so a request carrying it answers 500 and pages the on-call`,
   // The SLICE, never the composed table: `error-map.ts` holds no rows of its own.
-  fix: `add \`${gap.code}: <status>,\` to ${statusTableFor(gap.owner)} (a slice of ERROR_STATUS in ${ERROR_MAP_FILE}), or, if it can never reach a request, add '${gap.code}' to the ${gap.owner} group of OFF_SOCKET in ${BACKLOG_FILE} with the reason above it — never UNDECIDED, which only shrinks`,
+  fix: `grep -n 'X_' ${renderFixShellArg(statusTableFor(gap.owner), '<status slice>')}   # add \`${gap.code}: <status>,\` to that slice of ERROR_STATUS in ${ERROR_MAP_FILE}, or, if it can never reach a request, add '${gap.code}' to the ${gap.owner} group of OFF_SOCKET in ${BACKLOG_FILE} with the reason above it — never UNDECIDED, which only shrinks`,
   at: gap.at,
 });
 
@@ -140,14 +141,14 @@ const pinnedFinding = (gap: StatusGap): Finding => ({
     gap.status === undefined
       ? `${gap.code} is pinned in ${BACKLOG_FILE} but no tier <= ${HTTP_STATUS_MAX_TIER} package declares it any more`
       : `${gap.code} is pinned in ${BACKLOG_FILE} and ${ERROR_MAP_FILE} now maps it to ${gap.status} — a pin nobody removes is a pin nobody reads`,
-  fix: `delete '${gap.code}' from ${groupOf(gap.code, gap.owner)} in ${fileOf(gap.code, gap.owner)}`,
+  fix: `grep -n ${renderFixShellArg(gap.code, '<CODE>')} ${fileOf(gap.code, gap.owner)}   # delete '${gap.code}' from ${groupOf(gap.code, gap.owner)}`,
   at: gap.at,
 });
 
 const orphanFinding = (gap: StatusGap): Finding => ({
   code: 'X_ERROR_STATUS_UNKNOWN_CODE',
   cause: `${ERROR_MAP_FILE} maps ${gap.code}, which no package declares — a mistyped row maps nothing and the real code still answers 500`,
-  fix: `delete the \`${gap.code}\` row from ERROR_STATUS in ${ERROR_MAP_FILE}, or register ${gap.code} in its owning package's errors.ts`,
+  fix: `grep -rn ${renderFixShellArg(gap.code, '<CODE>')} packages/http/src   # delete that row from ERROR_STATUS (${ERROR_MAP_FILE} composes it), or register ${gap.code} in its owning package's errors.ts`,
   at: gap.at,
 });
 

@@ -18,7 +18,9 @@ export class JobDuplicateError extends UltimateError {
     super({
       code: 'X_JOB_DUPLICATE',
       cause: `job "${input.job}" already queued as ${input.existingId} with idempotencyKey "${input.idempotencyKey}"`,
-      fix: input.fix ?? 'pass onConflict: "dedupe" to enqueue, or make idempotencyKey narrower',
+      fix:
+        input.fix ??
+        "{ onConflict: 'dedupe' }   // the enqueue option — or make idempotencyKey narrower",
     });
   }
 }
@@ -87,7 +89,7 @@ export class ActionJobUnbridgedError extends UltimateError {
     super({
       code: 'X_ACTION_JOB_UNBRIDGED',
       cause: `export "${input.export}" is the action projection "${input.job}", which is not a job handle and cannot be registered as one`,
-      fix: `wrap it: agentJob(${input.export}, { name: '${input.export}', tenant, retry }) from @ultimat3/ai — that composes job() and returns a handle the queue accepts`,
+      fix: `agentJob(${input.export}, { name: '${input.export}', tenant, retry })   // from @ultimat3/ai: composes job() and returns a handle the queue accepts`,
     });
   }
 }
@@ -98,7 +100,7 @@ export class StepDuplicateError extends UltimateError {
     super({
       code: 'X_STEP_DUPLICATE',
       cause: `job "${input.job}" used step name "${input.step}" twice in one run`,
-      fix: `rename one of them, e.g. step.run('${input.step}-2', ...) — step names are the replay key`,
+      fix: `step.run('${input.step}-2', ...)   // rename one of the two — step names are the replay key`,
     });
   }
 }
@@ -113,7 +115,8 @@ export class JobTimeoutError extends UltimateError {
           ? `job "${input.job}" exceeded its ${input.timeoutMs}ms timeout`
           : `job "${input.job}" step "${input.step}" exceeded its ${input.timeoutMs}ms timeout`,
       fix:
-        input.fix ?? `raise timeout on the job definition, or split the work into step.run() calls`,
+        input.fix ??
+        `timeout: '15m'   // a longer one on the job definition — or split the work into step.run() calls`,
     });
   }
 }
@@ -142,7 +145,7 @@ export class JobAbortedError extends UltimateError {
       fix:
         input.ended === true
           ? `await step.run('${input.step ?? '<name>'}', fn) inside run(); work meant to outlive the attempt (a flush, a deferred enqueue): runToCompletion(() => work) from @ultimat3/core`
-          : 'add throwIfAborted(ctx) before expensive work, or pass fetch(url, { signal: ctx.signal }) — the queue re-runs the job, so stop at the deadline instead of running past it; work meant to outlive the attempt: runToCompletion(() => work) from @ultimat3/core',
+          : 'throwIfAborted(ctx)   // before expensive work, or pass fetch(url, { signal: ctx.signal }) — the queue re-runs the job, so stop at the deadline instead of running past it; work meant to outlive the attempt: runToCompletion(() => work) from @ultimat3/core',
     });
   }
 }
@@ -163,7 +166,7 @@ export class JobDrainedError extends UltimateError {
     super({
       code: 'X_DRAINING',
       cause: `worker "${input.workerId}" is draining (${input.signal}) — this attempt is cut short and the job handed back to the queue with the attempt uncounted`,
-      fix: 'nothing on the job: another worker claims it. To unwind inside the drain budget instead of being killed at it, pass ctx.signal to every outbound call — fetch(url, { signal: ctx.signal }) — and call throwIfAborted(ctx) between steps',
+      fix: 'fetch(url, { signal: ctx.signal })   // nothing on the job: another worker claims it — to unwind inside the drain budget instead of being killed at it, pass ctx.signal to every outbound call and call throwIfAborted(ctx) between steps',
     });
   }
 }
@@ -206,8 +209,8 @@ export class IdempotencyRequiredError extends UltimateError {
       cause: `job "${input.job}" has no idempotencyKey — at-least-once delivery would run it twice`,
       fix:
         input.positional === true
-          ? `give the job a stable name first — job({ name: 'syncInvoices', … }), or register it in apps/web/api/index.ts so its export name is stamped — then add idempotencyKey: (input) => \`syncInvoices:\${input.id}\``
-          : `add idempotencyKey: (input) => \`${input.job}:\${input.id}\` to the job definition`,
+          ? `job({ name: 'syncInvoices', idempotencyKey: (input) => \`syncInvoices:\${input.id}\`, … })   // a stable name first — or register it in apps/web/api/index.ts so its export name is stamped`
+          : `idempotencyKey: (input) => \`${input.job}:\${input.id}\`   // on the job definition`,
     });
   }
 }
@@ -233,7 +236,7 @@ export class JobTenantRequiredError extends UltimateError {
       // scoped read fails closed — but a backfill declaring it is how a sweep says it spans every
       // tenant, and the pass opens the cross-tenant scope for exactly that declaration. Half the
       // callers of this code arrive through `backfill()`, which forwards its `tenant` to `job()`.
-      fix: `add tenant: (input) => input.orgId to job("${input.job}") — or tenant: 'none', which declares NO org: right for a job that touches no tenant-scoped table, and the spelling a backfill() uses to sweep every tenant`,
+      fix: `tenant: (input) => input.orgId   // on job("${input.job}") — or tenant: 'none', which declares NO org: right for a job that touches no tenant-scoped table, and the spelling a backfill() uses to sweep every tenant`,
     });
   }
 }
@@ -322,7 +325,7 @@ export class OutboxNoTxError extends UltimateError {
     super({
       code: 'X_OUTBOX_NO_TX',
       cause: `ctx.jobs.enqueue(${input.job}) ran outside a transaction with outbox: 'required'`,
-      fix: 'wrap the call in ctx.tx(async (tx) => ...), or enqueue with { outbox: false }',
+      fix: 'ctx.tx(async (tx) => ...)   // wrap the call in it — or enqueue with { outbox: false }',
     });
   }
 }
@@ -343,7 +346,7 @@ export class ClaimQueuesEmptyError extends UltimateError {
     super({
       code: 'X_JOB_CLAIM_QUEUES_EMPTY',
       cause: `the ${driver} driver was asked to claim with queues: [] — an empty list names no queue, and "every queue" and "the default queue" are different deployments`,
-      fix: "pass the queue by name — driver.claim({ queues: ['default'], limit, visibilityTimeoutMs, workerId }) — or read the list from config.jobs.queues, which is what jobWorker walks one queue at a time",
+      fix: "driver.claim({ queues: ['default'], limit, visibilityTimeoutMs, workerId })   // the queue by name — or read the list from config.jobs.queues, which is what jobWorker walks one queue at a time",
       meta: { driver },
     });
   }

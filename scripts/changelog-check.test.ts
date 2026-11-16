@@ -385,7 +385,8 @@ describe('findings', () => {
     const finding = changelogFinding(gap ?? { kind: 'missing-row', at: '', detail: '' });
     expect(finding.code).toBe('X_DOC_MIGRATION_COUNT_STALE');
     expect(finding.fix).toContain(UPGRADING_PATH);
-    expect(finding.fix).toStartWith('add a row');
+    expect(finding.fix).toStartWith("grep -n 'section](#' wiki/Upgrading.md");
+    expect(finding.fix).toContain('add a row');
     expect(finding.fix).not.toContain('set that count');
   });
 

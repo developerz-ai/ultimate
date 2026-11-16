@@ -85,8 +85,10 @@ describe('a refusal fix never splices a key, a prefix or a bucket into the shell
     const refused = (await catchError(() => driver.delete(key))) as StorageError;
     expect(codeOf(refused)).toBe('X_STORAGE_DELETE_FAILED');
     expect(refused.fix).not.toContain('$(');
-    // Quoted: a bare `<key>` is read by the shell as a redirection from a file named `key`.
-    expect(refused.fix).toContain("aws s3api delete-object --bucket b --key '<key>'");
+    // The fix is the grant, never a delete-object that would remove a real object under a
+    // credential that can, so the hostile key has no command to reach.
+    expect(refused.fix).toStartWith('{ "Effect": "Allow", "Action": "s3:DeleteObject"');
+    expect(refused.fix).not.toContain('delete-object');
   });
 
   test('a refused listing screens the prefix', async () => {

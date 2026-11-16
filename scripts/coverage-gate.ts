@@ -24,6 +24,7 @@ import { finiteOption, renderFixShellArg } from '@ultimat3/core';
 import { parseLcov, percent } from '../packages/cli/src/coverage-lcov';
 import { hasExecutableCode, TEST_FILE, unloadedWeight } from '../packages/cli/src/coverage-source';
 import { BadFlagError } from '../packages/cli/src/errors';
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import { E2E_PATH_GLOBS } from '../packages/cli/src/verify-tests';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { CoveragePin } from './lib/coverage-pins';
@@ -42,6 +43,7 @@ import { report } from './lib/log';
 import type { RunResult } from './lib/run';
 import { repoRoot, run } from './lib/run';
 import { ScriptError } from './lib/script-error';
+import { README_FACTS_FIX, README_FILE } from './readme-facts';
 
 export interface CoverageReading {
   /** The unit's name — a package, or `scripts`. */
@@ -163,7 +165,7 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
       code: 'X_COVERAGE_UNMEASURED',
       at,
       cause: `no lcov record names a file under ${unit.source}, so its coverage is a percentage of nothing`,
-      fix: `run bun test --coverage ${unit.test} and confirm the suite runs; a unit whose tests do not run cannot pass this gate`,
+      fix: `bun test --coverage ${quoteArg(unit.test)}   # confirm the suite runs; a unit whose tests do not run cannot pass this gate`,
     });
     return { reading, required: pin, findings };
   }
@@ -193,8 +195,8 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
         `under the ${pin === undefined ? `${COVERAGE_TARGET}% target` : `pin of ${floorLines}% / ${floorFuncs}%`}`,
       fix:
         pin === undefined
-          ? `cover the gap with tests beside the source, then re-run bun run scripts/coverage-gate.ts --package ${reading.pkg}`
-          : `restore the coverage this commit removed — a pinned unit may not fall further; the pin in ${PINS_FILE} records what it was`,
+          ? `bun test --coverage ${quoteArg(unit.test)}   # prints the uncovered lines: cover them with tests beside the source, then: bun run scripts/coverage-gate.ts --package ${quoteArg(reading.pkg)}`
+          : `bun test --coverage ${quoteArg(unit.test)}   # prints the uncovered lines: restore the coverage this commit removed — a pinned unit may not fall further, and the pin in ${PINS_FILE} records what it was — then: bun run scripts/coverage-gate.ts --package ${quoteArg(reading.pkg)}`,
     });
   }
 
@@ -203,7 +205,7 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
       code: 'X_COVERAGE_PIN_STALE',
       at,
       cause: `${at} now clears the ${COVERAGE_TARGET}% target at ${reading.lines}% / ${reading.funcs}%, and ${PINS_FILE} still pins it lower`,
-      fix: `delete the "${reading.pkg}" entry from COVERAGE_PINS in ${PINS_FILE}`,
+      fix: `grep -nE "^  '?${renderFixShellArg(reading.pkg, '<pkg>')}'?:" ${PINS_FILE}   # delete that entry from COVERAGE_PINS, then: ${README_FACTS_FIX} — ${README_FILE}'s facts table quotes every pin (X_README_FACTS_DRIFT)`,
     });
   } else if (
     pin !== undefined &&
@@ -214,7 +216,7 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
       code: 'X_COVERAGE_PIN_STALE',
       at,
       cause: `${at} is at ${reading.lines}% / ${reading.funcs}%, more than ${PIN_SLACK} points above its pin of ${pin.lines}% / ${pin.funcs}%`,
-      fix: `raise the "${reading.pkg}" pin in ${PINS_FILE} to the measured numbers, so the next regression is caught against today rather than against last quarter`,
+      fix: `grep -nE "^  '?${renderFixShellArg(reading.pkg, '<pkg>')}'?:" ${PINS_FILE}   # raise that entry of COVERAGE_PINS to lines: ${String(Math.floor(reading.lines))}, funcs: ${String(Math.floor(reading.funcs))}, so the next regression is caught against today rather than against last quarter; then: ${README_FACTS_FIX} — ${README_FILE}'s facts table quotes every pin (X_README_FACTS_DRIFT)`,
     });
   }
 
@@ -253,7 +255,7 @@ export function suiteFailure(
   return {
     code: 'X_TEST_FAILED',
     cause: `bun test ${unit.test} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}${diff.length > 0 ? ` — the assertion's diff: ${diff.join(' | ')}` : ''}${tail.length > 0 ? ` — exit ${String(exitCode)}, and the run ended: ${tail.join(' | ')}` : ''}`,
-    fix: `run bun test ${unit.test} and fix what it reports — a suite green only beside other packages depends on something another package registered first`,
+    fix: `bun test ${quoteArg(unit.test)}   # fix what it reports — a suite green only beside other packages depends on something another package registered first`,
   };
 }
 
@@ -383,7 +385,7 @@ async function measure(root: string, name: string, workers: number): Promise<Cov
     throw new ScriptError({
       code: 'X_COVERAGE_UNMEASURED',
       cause: `bun test wrote no lcov report for ${unit.test}: ${ran.output.trim().split('\n').at(-1) ?? 'no output'}`,
-      fix: `run bun test ${unit.test} and fix the failure it reports; coverage cannot be read from a suite that did not finish`,
+      fix: `bun test ${quoteArg(unit.test)}   # fix the failure it reports; coverage cannot be read from a suite that did not finish`,
     });
   }
   const lcov = await file.text();

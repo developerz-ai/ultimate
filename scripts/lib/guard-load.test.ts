@@ -68,7 +68,7 @@ describe('which failures are load failures', () => {
     expect(finding.at).toBe('packages/entity/src/index.ts');
     expect(finding.cause).not.toContain(ROOT);
     expect(finding.fix).toBe(
-      'edit packages/entity/src/index.ts until bun run typecheck is clean, then rerun: bun run gate-codes',
+      'bun run typecheck   # until it is clean — packages/entity/src/index.ts is mid-edit or broken — then rerun: bun run gate-codes',
     );
   });
 });

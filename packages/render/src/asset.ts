@@ -100,14 +100,14 @@ export function asset(path: AssetPath): string {
   if (problem !== undefined) {
     throw new AssetMissingError(
       `asset(${renderCauseValue(path)}): ${problem}`,
-      `name a file under apps/web/site/${ASSET_DIR}/ with one of: ${ASSET_EXTENSIONS.join(', ')}`,
+      `asset('logo.svg')   // a file under apps/web/site/${ASSET_DIR}/ with one of: ${ASSET_EXTENSIONS.join(', ')}`,
     );
   }
   const resolver = holder[RESOLVER_SLOT];
   if (resolver === undefined) {
     throw new AssetMissingError(
       `asset(${renderCauseValue(path)}) ran with no site asset table installed — in a browser (an island), or in a test that never loaded the app`,
-      'call asset() in the page and pass the URL to the island as a prop; a unit test installs a table with setAssetResolver((path) => "/" + path)',
+      'asset(path)   // in the page, the URL passed to the island as a prop; a unit test installs a table with setAssetResolver((path) => "/" + path)',
     );
   }
   return resolver(path);

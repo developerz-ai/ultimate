@@ -99,7 +99,8 @@ function spawnOrRefuse(command: readonly string[], options: ExecOptions) {
     throw new UltimateError({
       code: 'X_CLI_UNEXPECTED',
       cause: `the CLI could not run "${head}" from ${options.cwd}: ${renderThrowable(error)}`,
-      fix: `install ${quoteArg(head)} and put it on PATH, then re-run — confirm with: command -v ${quoteArg(head)}`,
+      // `Bun.which`, not `command -v`: the one lookup this process ran, and a word every shell runs.
+      fix: `bun --print ${quoteArg(`Bun.which(${JSON.stringify(head)})`)}   # null: install ${quoteArg(head)} and put it on PATH, then re-run`,
     });
   }
 }
@@ -114,7 +115,7 @@ export const exec: Runner = async (command, options) => {
     throw new UltimateError({
       code: 'X_CLI_UNEXPECTED',
       cause: 'exec() was called with an empty command, so there is no program to spawn',
-      fix: 'pass the program as the first element: exec(["bun", "test"], { cwd })',
+      fix: 'exec(["bun", "test"], { cwd })   // the program as the first element',
     });
   }
   const proc = spawnOrRefuse([head, ...rest], options);

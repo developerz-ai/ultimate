@@ -56,7 +56,7 @@ export async function webhookTarget(
     refuse(
       input,
       'has an http: url outside a local environment, so the signed body would cross the network in clear',
-      `give the endpoint an https:// url before webhook("${input.webhook}").endpoint returns it`,
+      `url: 'https://…'   // on the row webhook("${input.webhook}").endpoint returns`,
     );
   }
   const verdict = await screenDial(input.url, {
@@ -68,7 +68,7 @@ export async function webhookTarget(
     return refuse(
       input,
       `resolves to a ${verdict.refused} address, and a delivery only opens a public one`,
-      `point the endpoint at a public https:// receiver — or, for a receiver inside your own network, pass allowPrivate: true to webhook("${input.webhook}")`,
+      `url: 'https://…'   // a public receiver on the endpoint row — or, for a receiver inside your own network, allowPrivate: true on webhook("${input.webhook}")`,
     );
   }
   // Pinned by the screen: connecting by name would resolve again, and a name that answered public

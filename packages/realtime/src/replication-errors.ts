@@ -96,9 +96,7 @@ export class ReplicaIdentityError extends RealtimeError {
       cause:
         `${args.tables.join(', ')} have no replica identity (no primary key, or REPLICA IDENTITY ` +
         'NOTHING), so once published an UPDATE or DELETE on them fails and a change cannot be keyed',
-      fix:
-        `${args.tables.map((table) => `ALTER TABLE ${table} REPLICA IDENTITY FULL;`).join(' ')}` +
-        ' -- or give each a primary key; rows already in the WAL keep the identity they were written with',
+      fix: `ALTER TABLE ${args.tables.join(' REPLICA IDENTITY FULL; ALTER TABLE ')} REPLICA IDENTITY FULL; -- or give each a primary key; rows already in the WAL keep the identity they were written with`,
     });
   }
 }

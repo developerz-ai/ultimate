@@ -220,7 +220,7 @@ describe('a write loop, fixed by the bulk form of the same call', () => {
       // The cause is the SQL form's, word for word: the subject repeated, one write per row.
       expect(error.cause).toBe(nPlusOneWrite(subject, 9, { form: 'sql' }).cause);
       expect(error.fix).toStartWith('handle.enqueueMany(inputs)');
-      expect(error.fix).not.toContain('insert … values');
+      expect(error.fix).not.toContain('INSERT … VALUES');
     }
   });
 
@@ -230,12 +230,12 @@ describe('a write loop, fixed by the bulk form of the same call', () => {
       subject: 'insert into x_jobs_archive (id) values ($1)',
       count: 9,
     }).fix;
-    expect(fix).toContain('insert … values');
+    expect(fix).toStartWith('INSERT … VALUES');
   });
 
   test('hand-written SQL names the statement and the suppression, never a chain', () => {
     const fix = write(undefined, undefined).fix;
-    expect(fix).toContain('insert … values');
+    expect(fix).toStartWith('INSERT … VALUES');
     expect(fix).toContain("expectedQueryLoop('<why one per row is optimal>', fn)");
     expect(fix).not.toContain('db.undefined');
   });

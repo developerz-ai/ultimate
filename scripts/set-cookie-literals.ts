@@ -24,6 +24,7 @@
 //
 //   bun run set-cookie-literals  ·  bun run scripts/set-cookie-literals.ts [--json]
 
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import {
   endOfLiteral,
   maskLiterals,
@@ -204,7 +205,7 @@ const stalePin = (file: string, found: number, pinned: number, table: string): F
   code: 'X_SET_COOKIE_PIN_STALE',
   at: THIS_FILE,
   cause: `${file} is pinned at ${String(pinned)} in ${table} and holds ${String(found)}, so the pin would let ${String(pinned - found)} back in`,
-  fix: `bun run set-cookie-literals --json   # after setting ${file} to sites: ${String(found)} in ${table} (${THIS_FILE})${found === 0 ? ', or deleting its entry' : ''}`,
+  fix: `grep -n ${quoteArg(file)} ${THIS_FILE}   # set its ${table} row to sites: ${String(found)}${found === 0 ? ', or delete the entry' : ''}, then: bun run set-cookie-literals --json`,
 });
 
 type Pins = Readonly<Record<string, SetCookiePin>>;
@@ -252,7 +253,7 @@ export function setCookieResult(
           code: 'X_SET_COOKIE_UNSCANNED',
           at: THIS_FILE,
           cause: `${COOKIE_SEAM} was not among the files scanned, so the exemption names nothing and a clean run proves nothing`,
-          fix: `bun run set-cookie-literals --json   # after pointing COOKIE_SEAM in ${THIS_FILE} at the module that declares serializeSetCookie`,
+          fix: `grep -n 'COOKIE_SEAM' ${THIS_FILE}   # point it at the module that declares serializeSetCookie, then: bun run set-cookie-literals --json`,
         },
       ];
   return {

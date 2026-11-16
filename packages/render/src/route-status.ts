@@ -50,7 +50,7 @@ export function withStatus<TData extends object>(status: number, data: TData): T
   if (isRedirect(screened)) {
     throw new RouteStatusInvalidError(
       `withStatus(${String(screened)}, …) asks a page to be a redirect, and a rendered document has no Location to send`,
-      "answer 2xx, 4xx or 5xx from load; a redirect is `redirect(location)` from '@ultimat3/http', thrown or returned by the handler",
+      "redirect(location)   // from '@ultimat3/http', thrown or returned by the handler — a page answers 2xx, 4xx or 5xx from load",
     );
   }
   STATUSES.set(data, screened);

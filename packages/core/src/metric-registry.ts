@@ -2,6 +2,7 @@
 // refused at declaration (bounds, ceiling, a conflicting redeclaration) rather than at the first
 // recording. `metric-series.ts` stores points under an instrument; `metrics.ts` is the public seam.
 
+import { renderFixShellArg } from './error-render';
 import { MetricCardinalityError } from './metric-errors';
 import { assertMetricName, MetricNameInvalidError } from './metric-names';
 import type {
@@ -67,7 +68,7 @@ function assertBounds(name: string, bounds: readonly number[] | undefined): void
   );
   throw new MetricNameInvalidError({
     cause: `${name} declared bounds [${bounds.map((bound) => String(bound)).join(', ')}], which are not strictly ascending finite numbers — [${String(bad)}] is ${String(bounds[bad])}`,
-    fix: `sort the bounds and drop the duplicates: histogram('${name}', { bounds: [${repaired.join(', ')}] })`,
+    fix: `histogram('${name}', { bounds: [${repaired.join(', ')}] })   // sorted, duplicates dropped`,
     meta: { metric: name, bounds: bounds.map((bound) => String(bound)), at: bad },
   });
 }
@@ -84,7 +85,7 @@ export function declare(
     if (existing.descriptor.kind !== kind) {
       throw new MetricNameInvalidError({
         cause: `"${name}" is already declared as a ${existing.descriptor.kind}, redeclared as a ${kind}`,
-        fix: `rename one of the two instruments named "${name}" — one metric name, one kind`,
+        fix: `git grep -n ${renderFixShellArg(name, '<the metric the cause names>')}   # rename one of the two instruments — one metric name, one kind`,
         meta: { name, declared: existing.descriptor.kind, requested: kind },
       });
     }
@@ -95,7 +96,7 @@ export function declare(
   if (!Number.isInteger(maxSeries) || maxSeries < 1) {
     throw new MetricCardinalityError({
       cause: `${name} declared maxSeries ${String(maxSeries)}, which is not a positive integer`,
-      fix: `pass a positive integer: counter('${name}', { maxSeries: ${DEFAULT_MAX_SERIES} })`,
+      fix: `{ maxSeries: ${DEFAULT_MAX_SERIES} }   // a positive integer, in the ${kind}('${name}', …) declaration`,
       meta: { metric: name, maxSeries: String(maxSeries) },
     });
   }
@@ -134,14 +135,14 @@ function assertSameDeclaration(
   if (bounds !== undefined && !sameBounds(existing.bounds, bounds)) {
     throw new MetricNameInvalidError({
       cause: `"${name}" is already declared with bounds [${existing.bounds.join(', ')}] and is redeclared with [${bounds.join(', ')}]; the first declaration wins, so the second set would never be used`,
-      fix: `declare "${name}" once and export the handle — import it where you record — or give the second instrument its own name`,
+      fix: `git grep -n ${renderFixShellArg(name, '<the metric the cause names>')}   # declare it once and export the handle — import it where you record — or give the second instrument its own name`,
       meta: { name, declared: existing.bounds.join(','), requested: bounds.join(',') },
     });
   }
   if (observe !== undefined && observe !== existing.observe) {
     throw new MetricNameInvalidError({
       cause: `"${name}" is already declared with an observe() callback and is redeclared with a different one; the first declaration wins, so the second callback would never be read`,
-      fix: `declare "${name}" once and export the handle — import it where you read — or give the second gauge its own name`,
+      fix: `git grep -n ${renderFixShellArg(name, '<the metric the cause names>')}   # declare it once and export the handle — import it where you read — or give the second gauge its own name`,
       meta: { name },
     });
   }

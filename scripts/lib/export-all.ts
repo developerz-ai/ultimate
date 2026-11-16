@@ -23,7 +23,7 @@ export function exportAllViolations(file: {
     return {
       code: 'X_HELPER_COPY',
       cause: `${file.at}:${lineOf(file.text, match.index)} re-exports ${from} blind — \`export *\` publishes names no reader can see, so no rule can tell a second import path from a first`,
-      fix: `bun run flight-copies   # after naming each value: export { … } from '${from}' in ${file.at}`,
+      fix: `edit ${file.at}:${lineOf(file.text, match.index)} — name each value, export { … } from '${from}', in place of export *, then: bun run flight-copies`,
       at: file.at,
     };
   });

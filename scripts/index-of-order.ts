@@ -334,7 +334,7 @@ export function checkOrdering(input: OrderInput): readonly Finding[] {
       {
         code: 'X_INDEX_ORDER_UNSCANNED',
         cause: 'no test file was scanned, so no ordering assertion was checked',
-        fix: 'run `bun run index-of-order` from the repo root; a Bun.Glob pattern it cannot expand matches zero files',
+        fix: 'bun run index-of-order   # from the repo root; a Bun.Glob pattern it cannot expand matches zero files',
         at: 'scripts/index-of-order.ts',
       },
     ];
@@ -360,7 +360,7 @@ export function checkOrdering(input: OrderInput): readonly Finding[] {
     findings.push({
       code: 'X_INDEX_ORDER_UNGUARDED',
       cause: `${pkg} has ${String(count)} ordering assertion(s) whose indexOf operand is never asserted present, above its pin of ${String(allowed)} — ${siteList(gap, where)} — indexOf answers -1 for a needle it never found, and -1 passes ${worst?.matcher.startsWith('toBeGreaterThan') === true ? 'as the greater-than ARGUMENT' : 'as the less-than RECEIVER'}, so the assertion holds when the thing it orders is not emitted at all`,
-      fix: `assert presence first at ${siteTarget(gap, where)} — \`expect(<haystack>).toContain(<needle>)\`, or \`expect(<the index>).toBeGreaterThanOrEqual(0)\` — then compare. Prove it: delete what the assertion orders and watch the test go red`,
+      fix: `expect(<haystack>).toContain(<needle>)   // first, at ${siteTarget(gap, where)} — or expect(<the index>).toBeGreaterThanOrEqual(0) — then compare. Prove it: delete what the assertion orders and watch the test go red`,
       at,
     });
   }
@@ -372,7 +372,7 @@ export function checkOrdering(input: OrderInput): readonly Finding[] {
       findings.push({
         code: 'X_INDEX_ORDER_PIN_UNEXPLAINED',
         cause: `${pin.pkg} is pinned with a blank reason, so nothing records what its remaining sites are or why they stand`,
-        fix: `edit scripts/index-of-order.ts — write what the remaining site(s) in ${pin.pkg} are and why they stand on that pin, or repair them and delete it`,
+        fix: `grep -n 'pins: \\[' scripts/index-of-order.ts   # in the ${pin.pkg} pin there, write what the remaining site(s) are and why they stand on it, or repair them and delete it`,
         at: 'scripts/index-of-order.ts',
       });
     }
@@ -381,7 +381,7 @@ export function checkOrdering(input: OrderInput): readonly Finding[] {
       findings.push({
         code: 'X_INDEX_ORDER_PIN_STALE',
         cause: `${pin.pkg} is pinned at ${String(pin.count)} unguarded ordering assertion(s) and now has ${String(count)}`,
-        fix: `edit scripts/index-of-order.ts — lower the pin for ${pin.pkg} to ${String(count)}, or delete it at 0`,
+        fix: `grep -n 'pins: \\[' scripts/index-of-order.ts   # lower the ${pin.pkg} pin there to ${String(count)}, or delete it at 0`,
         at: 'scripts/index-of-order.ts',
       });
     }

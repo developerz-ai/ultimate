@@ -165,7 +165,7 @@ describe('floorFindingFor', () => {
     const finding = floorFindingFor({ package: 'pwa', tier: 4, floor: 2, fault: 'undeclared' });
     expect(finding.code).toBe('X_TIER_FLOOR_UNDECLARED');
     expect(finding.at).toBe('scripts/lib/tiers.ts');
-    expect(finding.fix).toContain('FLOOR_ABOVE in scripts/lib/tiers.ts');
+    expect(finding.fix).toStartWith("grep -n 'FLOOR_ABOVE' scripts/lib/tiers.ts   #");
     expect(finding.fix).toContain('move it to tier 2');
   });
 
@@ -175,7 +175,7 @@ describe('floorFindingFor', () => {
     // The edit AND the command that confirms it took: a fix line whose repair is a source change
     // still ends in something an agent can run and read (`X_DB_DRIFT`'s shape).
     expect(finding.fix).toBe(
-      'delete the "mail" row from FLOOR_ABOVE in scripts/lib/tiers.ts, then bun run boundaries --json',
+      `grep -n 'FLOOR_ABOVE' scripts/lib/tiers.ts   # delete its "mail" row, then: bun run boundaries --json`,
     );
   });
 });

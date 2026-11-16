@@ -1,6 +1,7 @@
 // Single responsibility: the runtime role table. One image, N processes; `ROLE` selects
 // behaviour. Every role exposes /healthz + /readyz and drains on SIGTERM.
 
+import { renderFixShellArg } from './error-render';
 import { UltimateError } from './errors';
 
 export const ROLES = ['web', 'sync', 'worker', 'scheduler', 'migrate', 'replicator'] as const;
@@ -58,7 +59,7 @@ export function resolveRole(options?: ResolveRoleOptions): Role {
     throw new UltimateError({
       code: 'X_ROLE_INVALID',
       cause: `${key}="${raw}" is not one of ${ROLES.join(' | ')}`,
-      fix: `set ${key} to one of: ${ROLES.join(', ')}`,
+      fix: `export ${renderFixShellArg(key, '<the variable the cause names>')}=web   # or one of: ${ROLES.join(', ')}`,
       meta: { key, received: raw, allowed: ROLES },
     });
   }

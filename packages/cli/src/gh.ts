@@ -44,7 +44,7 @@ export class GhUnavailableError extends UltimateError {
     super({
       code: 'X_GH_UNAVAILABLE',
       cause: `the GitHub CLI could not be run from ${input.cwd}: ${input.detail}`,
-      fix: 'install the GitHub CLI from https://cli.github.com, then run: gh auth login',
+      fix: 'bun --print \'Bun.which("gh")\'   # null: install the GitHub CLI from https://cli.github.com, then: gh auth login',
     });
   }
 }

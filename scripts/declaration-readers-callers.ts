@@ -23,6 +23,7 @@
 //
 //   bun run scripts/declaration-readers-callers.ts [--json]
 
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import { maskLiterals } from '../packages/core/src/source-mask';
 import { parseScriptArgs } from './lib/args';
 import { corpus } from './lib/corpus';
@@ -165,13 +166,13 @@ const FINDINGS: Readonly<Record<ThrowerGapKind, (gap: ThrowerGap) => Finding>> =
   uncalled: (gap) => ({
     code: 'X_CORE_THROWER_UNCALLED',
     cause: `${gap.name} (${gap.at ?? ''}) is a @ultimat3/core export that throws a coded error, and no non-test file in packages/*/src or a tracked app calls it — a refusal nobody receives, the shape assertEnvExample was`,
-    fix: `bun run scripts/declaration-readers-callers.ts --json   # after deleting ${gap.name} and its index.ts export, calling it where it is needed, or pinning it in CORE_THROWER_PINS with the sentence naming its app-facing caller`,
+    fix: `grep -rn ${quoteArg(gap.name)} packages/core/src   # delete it and its index.ts export, call it where it is needed, or pin it in CORE_THROWER_PINS with the sentence naming its app-facing caller — then: bun run scripts/declaration-readers-callers.ts --json`,
     at: gap.at ?? THROWER_PINS_FILE,
   }),
   stale: (gap) => ({
     code: 'X_CORE_THROWER_PIN_STALE',
     cause: `${gap.name} is pinned as uncalled ("${gap.reason ?? ''}") and now has a caller or no longer exists — the pin would let the next uncalled thrower in beside it`,
-    fix: `bun run scripts/declaration-readers-callers.ts --json   # after deleting the CORE_THROWER_PINS row for ${gap.name}`,
+    fix: `grep -n ${quoteArg(gap.name)} scripts/declaration-readers-callers.ts   # delete its CORE_THROWER_PINS row, then: bun run scripts/declaration-readers-callers.ts --json`,
     at: THROWER_PINS_FILE,
   }),
   unscanned: (gap) => ({

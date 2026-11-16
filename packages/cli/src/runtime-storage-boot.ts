@@ -86,7 +86,7 @@ export function startStorage(services: DevServices, env: Env, override?: Storage
     if (bucket === '') {
       throw new StorageUnwritableError(
         `S3_ENDPOINT is set to ${binding.url} but S3_BUCKET is empty, so there is no disk to write to`,
-        'set S3_BUCKET to the bucket name, or unset S3_ENDPOINT to use the embedded disk',
+        "S3_BUCKET='<bucket>'   # the bucket name, in the env — or unset S3_ENDPOINT to use the embedded disk",
       );
     }
     return bootDefine({
@@ -133,7 +133,7 @@ export function startStorage(services: DevServices, env: Env, override?: Storage
     const detail = renderThrowable(cause);
     throw new StorageUnwritableError(
       `the embedded storage disk needs ${root} and it could not be created: ${detail}`,
-      `mount a writable volume at ${root}, or set S3_ENDPOINT and S3_BUCKET to use object storage instead`,
+      `S3_ENDPOINT='<url>' S3_BUCKET='<bucket>'   # object storage instead — or mount a writable volume at ${root}`,
     );
   }
   // The guard three lines up reads `env`; so must the disk it guards. Otherwise the boot's

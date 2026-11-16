@@ -160,7 +160,7 @@ const missingFileFinding = (): Finding => ({
 const missingStatusFinding = (n: number): Finding => ({
   code: 'X_ROADMAP_STATUS_MISSING',
   cause: `milestone ${n} has no row in the milestone table, or its row's status cell holds neither ${STATUS_MARK.shipped} nor ${STATUS_MARK['in-progress']}`,
-  fix: `edit ${ROADMAP_FILE}: put "${STATUS_MARK.shipped}" or "${STATUS_MARK['in-progress']}" in the second cell of the row starting "| ${n} |", then: bun run scripts/roadmap.ts --json`,
+  fix: `grep -n '^| ${renderFixShellArg(String(n), '<n>')} |' ${ROADMAP_FILE}   # put "${STATUS_MARK.shipped}" or "${STATUS_MARK['in-progress']}" in that row's second cell, then: bun run scripts/roadmap.ts --json`,
   at: ROADMAP_FILE,
 });
 
@@ -174,7 +174,7 @@ const unverifiedFinding = (row: MilestoneRow, missing: readonly string[]): Findi
 const untrackedFinding = (row: MilestoneRow): Finding => ({
   code: 'X_ROADMAP_MILESTONE_UNTRACKED',
   cause: `milestone ${row.n} ("${row.title}") has a row in ${ROADMAP_FILE} but scripts/roadmap.ts declares no artifacts for it, so its status marker verifies nothing`,
-  fix: `add a "${row.n}: [...]" entry to REQUIRED_ARTIFACTS in scripts/roadmap.ts naming the paths that row's "Ships" column promises — an empty list is the deliberate answer for a milestone that ships nothing yet — then: bun run scripts/roadmap.ts --json`,
+  fix: `grep -n 'REQUIRED_ARTIFACTS' scripts/roadmap.ts   # add a "${row.n}: [...]" entry there naming the paths that row's "Ships" column promises — an empty list is the deliberate answer for a milestone that ships nothing yet — then: bun run scripts/roadmap.ts --json`,
   at: ROADMAP_FILE,
 });
 

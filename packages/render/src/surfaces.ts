@@ -300,7 +300,7 @@ function classify(i: ClassifyInput): BoundaryViolation | null {
       ...base,
       rule: 'shared-is-a-leaf',
       cause: `${chainText}  (shared/ is a leaf — it may not import a surface)`,
-      fix: `move the shared part of ${i.imported} into shared/ and import it from ${i.importer}`,
+      fix: `x fix boundary ${renderFixShellArg(i.importer, "'<the importing file>'")}   # or move the shared part of ${i.imported} into shared/ and import it from ${i.importer}`,
     };
   }
   if (from === 'app' && to === 'api' && !i.typeOnly) {
@@ -308,7 +308,7 @@ function classify(i: ClassifyInput): BoundaryViolation | null {
       ...base,
       rule: 'app-imports-api-at-runtime',
       cause: `${chainText}  (app/ → api/ is types-only)`,
-      fix: `change to \`import type\` in ${i.importer} and call the typed client instead`,
+      fix: `import type { … } from '<the api module>'   // in ${i.importer} — and call the typed client instead`,
     };
   }
   const field = i.typeOnly ? 'mayImportTypes' : 'mayImport';
@@ -316,7 +316,7 @@ function classify(i: ClassifyInput): BoundaryViolation | null {
     ...base,
     rule: 'surface-imports-surface',
     cause: `${chainText}  (${from}/ may not import ${to}/${i.typeOnly ? ', even as a type' : ''}: SURFACE_SPECS.${from}.${field} is [${spec[field].join(', ')}])`,
-    fix: `move what ${i.importer} needs from ${i.imported} into shared/ and import it from there`,
+    fix: `x fix boundary ${renderFixShellArg(i.importer, "'<the importing file>'")}   # or move what ${i.importer} needs from ${i.imported} into shared/ and import it from there`,
   };
 }
 

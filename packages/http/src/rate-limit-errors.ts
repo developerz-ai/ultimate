@@ -14,7 +14,7 @@ export const rateLimited = (key: string, retryAfterSeconds: number): HttpError =
   new HttpError({
     code: 'X_RATE_LIMITED',
     cause: `the rate limit for this caller is exhausted; it refills in ${retryAfterSeconds}s`,
-    fix: 'retry after the Retry-After header, or raise the bucket in configureHttp({ rateLimit: { buckets } }) at module scope in a file under apps/*/',
+    fix: 'configureHttp({ rateLimit: { buckets } })   // raise the bucket, at module scope in a file under apps/*/ — or retry after the Retry-After header',
     meta: { key, retryAfterSeconds },
   });
 
@@ -105,7 +105,7 @@ export const rateLimitBucketConflict = (input: {
     fix:
       input.otherRoute === null
         ? `delete rateLimit.buckets.${input.bucket} from the app's configureHttp() call — the route's declaration is the one the OpenAPI operation publishes, so edit the numbers there if ${numbers(input.declared)} is wrong`
-        : `rename the bucket route "${input.route}" declares — one name is one limit, and "${input.bucket}" is already route "${input.otherRoute}"'s`,
+        : `rateLimit: '<another bucket name>'   // on route "${input.route}" — one name is one limit, and "${input.bucket}" is already route "${input.otherRoute}"'s`,
   });
 
 /**
@@ -166,7 +166,7 @@ export const tenantBucketUnknown = (name: string, declared: readonly string[]): 
     cause: `rateLimit.tenantBucket names "${name}" and rateLimit.buckets declares ${
       declared.length === 0 ? 'no buckets' : declared.join(', ')
     }`,
-    fix: `add ${name} to the same rateLimit.buckets — configureHttp({ rateLimit: { tenantBucket: '${name}', buckets: { ${name}: { capacity: 5000, refillPerSecond: 100 } } } }) — or drop tenantBucket to leave this app with no per-tenant allowance`,
+    fix: `configureHttp({ rateLimit: { tenantBucket: '${name}', buckets: { ${name}: { capacity: 5000, refillPerSecond: 100 } } } })   // ${name} added to the same rateLimit.buckets — or drop tenantBucket to leave this app with no per-tenant allowance`,
     meta: { bucket: name },
   });
 
@@ -200,6 +200,6 @@ export const rateLimitInvalid = (input: {
   new HttpError({
     code: 'X_RATE_LIMIT_INVALID',
     cause: `"${input.owner}" declares rateLimit { limit: ${input.limit}, windowMs: ${input.windowMs} }: ${input.reason}`,
-    fix: `edit the \`rateLimit:\` on ${input.owner} to a whole allowance over a real window — e.g. { limit: 5, windowMs: 600_000 } for five per ten minutes — or delete it to keep the default bucket`,
+    fix: `rateLimit: { limit: 5, windowMs: 600_000 }   // on ${input.owner}: a whole allowance over a real window, here five per ten minutes — or delete it to keep the default bucket`,
     meta: { owner: input.owner, limit: input.limit, windowMs: input.windowMs },
   });

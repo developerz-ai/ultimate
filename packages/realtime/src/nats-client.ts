@@ -159,7 +159,7 @@ export function parseNatsUrl(url: string): NatsTarget {
     throw new TransportUnavailableError({
       transport: 'nats',
       reason: `the connection URL for ${parsed.hostname} carries a password with no user`,
-      fix: 'set the URL to nats://<user>:<pass>@host:4222, or the bare-token form nats://<token>@host:4222',
+      fix: 'export NATS_URL=nats://<user>:<pass>@host:4222   # or the bare-token form nats://<token>@host:4222',
     });
   }
   const user = hasUser ? decodeCredential(parsed.username, 'user', parsed.hostname) : undefined;

@@ -32,7 +32,7 @@ export class WebhookEndpointUnknownError extends UltimateError {
     super({
       code: 'X_WEBHOOK_ENDPOINT_UNKNOWN',
       cause: `webhook "${input.webhook}" has no endpoint ${input.endpointId}`,
-      fix: `return the endpoint row for ${input.endpointId} from webhook("${input.webhook}").endpoint, or stop enqueueing deliveries for endpoints your app has deleted`,
+      fix: `endpoint: ({ endpointId, orgId, ctx }) => <the app's row for endpointId>   // on webhook("${input.webhook}"), so ${input.endpointId} resolves — or stop enqueueing deliveries for endpoints your app has deleted`,
       meta: { endpointId: input.endpointId },
     });
   }
@@ -47,7 +47,7 @@ export class WebhookEndpointInvalidError extends UltimateError {
       cause: `webhook "${input.webhook}" endpoint ${input.endpointId} ${input.reason}`,
       fix:
         input.fix ??
-        `give the endpoint an https:// url and a non-empty secret before webhook("${input.webhook}").endpoint returns it — a delivery with neither is an unsigned POST to wherever the row points`,
+        `{ id, url: 'https://…', secret: '<non-empty>' }   // the row webhook("${input.webhook}").endpoint returns — a delivery with neither is an unsigned POST to wherever the row points`,
       meta: { endpointId: input.endpointId },
     });
   }
@@ -71,7 +71,7 @@ export class WebhookEndpointDisabledError extends UltimateError {
     super({
       code: 'X_WEBHOOK_ENDPOINT_DISABLED',
       cause: `webhook "${input.webhook}" endpoint ${input.endpointId} ${why}`,
-      fix: `fix the receiver, then re-enable the endpoint in your own table and enqueue the deliveries it missed — the framework never re-enables one on its own, because a dead endpoint that heals itself is a retry loop with no end`,
+      fix: `{ disabled: false }   // on the endpoint's row in your own table, once the receiver is fixed — then enqueue the deliveries it missed; the framework never re-enables one on its own, because a dead endpoint that heals itself is a retry loop with no end`,
       meta: { endpointId: input.endpointId },
     });
   }
@@ -83,7 +83,7 @@ export class WebhookEventUnknownError extends UltimateError {
     super({
       code: 'X_WEBHOOK_EVENT_UNKNOWN',
       cause: `webhook "${input.webhook}" has no event ${input.eventId}`,
-      fix: `write the event row before enqueueing its delivery — inside the same transaction, so webhook("${input.webhook}").event can never be asked for a row that is not committed yet`,
+      fix: `ctx.tx(async (tx) => { /* write the event row, then enqueue its delivery */ })   // one transaction, so webhook("${input.webhook}").event can never be asked for a row that is not committed yet`,
       meta: { eventId: input.eventId },
     });
   }
@@ -122,7 +122,7 @@ export class WebhookDeliveryFailedError extends UltimateError {
     super({
       code: 'X_WEBHOOK_DELIVERY_FAILED',
       cause: `webhook "${input.webhook}" delivery to ${webhookTarget(input.url)} ${answer}: ${input.detail}`,
-      fix: 'no edit here — the job retries on its declared backoff; watch the endpoint with x jobs list --json and fix the receiver before it reaches disableAfter',
+      fix: 'x jobs list --json   # no edit here: the job retries on its declared backoff — watch the endpoint and fix the receiver before it reaches disableAfter',
       meta: { endpointId: input.endpointId, status: input.status },
     });
   }
@@ -144,7 +144,7 @@ export class WebhookDeliveryThrottledError extends UltimateError {
     super({
       code: 'X_WEBHOOK_DELIVERY_THROTTLED',
       cause: `webhook "${input.webhook}" delivery to ${webhookTarget(input.url)} answered ${input.status} and asked for ${input.retryAfterSeconds}s`,
-      fix: 'no edit here — the next attempt waits the delay the receiver named; if this endpoint throttles constantly, raise its retry.maxDelay or fan out fewer events to it',
+      fix: "retry: { maxDelay: '1h' }   // only if this endpoint throttles constantly — or fan out fewer events to it; otherwise no edit: the next attempt waits the delay the receiver named",
       meta: {
         endpointId: input.endpointId,
         status: input.status,

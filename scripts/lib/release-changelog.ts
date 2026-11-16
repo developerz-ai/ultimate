@@ -81,7 +81,7 @@ export function promoteUnreleased(input: {
         {
           code: 'X_RELEASE_UNRELEASED_MISSING',
           cause: 'CHANGELOG.md has no `## [Unreleased]` heading, so there is nothing to promote',
-          fix: 'add `## [Unreleased]` under the preamble of CHANGELOG.md, above the newest version',
+          fix: "grep -n '^## ' CHANGELOG.md   # add `## [Unreleased]` above the first, the newest version, under the preamble",
           at: 'CHANGELOG.md',
         },
       ],
@@ -106,7 +106,7 @@ export function promoteUnreleased(input: {
         {
           code: 'X_DOC_CHANGELOG_SECTION_INVALID',
           cause: `[Unreleased] is empty and no commit landed since the previous tag, so ${input.version} would ship a section that says nothing`,
-          fix: 'write the release notes under `## [Unreleased]` in CHANGELOG.md, then run this again',
+          fix: "grep -n '^## \\[Unreleased\\]' CHANGELOG.md   # write the release notes under that heading, then run this again",
           at: 'CHANGELOG.md',
         },
       ],

@@ -21,7 +21,7 @@ const hasControl = (text: string): boolean => {
 const refuse = (pattern: string, param: string, value: unknown, why: string): never => {
   throw new PrerenderFailedError(
     `prerender() gave ${pattern} the ${param} ${renderCauseValue(value)}, which ${why}`,
-    `return a value for every param of ${pattern} from prerender(), each one plain path text — slugify it (lowercase, [a-z0-9-]) where it comes from a title or a user`,
+    `prerender: () => [{ ${param}: '<slug>' }]   // a value for every param of ${pattern}, each one plain path text — slugify it (lowercase, [a-z0-9-]) where it comes from a title or a user`,
   );
 };
 

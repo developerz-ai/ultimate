@@ -220,14 +220,14 @@ const finding = (site: FreezeSite): Finding => ({
   code: 'X_FROZEN_RECORD_INFERRED',
   at: `${site.at}:${site.line}`,
   cause: `${site.name} in ${site.at} annotates a Record keyed on ${site.keyType ?? ''} but lets Object.freeze infer it, so an extra key compiles silently`,
-  fix: `write it as Object.freeze<...>({ ... }) with the type argument spelled out, and drop the annotation — run \`bun run scripts/frozen-records.ts --json\` to re-read the sites`,
+  fix: `Object.freeze<…>({ … })   // ${site.name} at ${site.at}:${site.line}: spell the type argument out and drop the annotation, then: bun run scripts/frozen-records.ts --json`,
 });
 
 const vacuous = (cause: string): Finding => ({
   code: 'X_FROZEN_RECORD_UNSCANNED',
   at: 'scripts/frozen-records.ts',
   cause,
-  fix: 'fix the scan in scripts/frozen-records.ts — a rule that reads nothing reports the same "ok" as a clean tree',
+  fix: "grep -n 'Object.freeze' scripts/frozen-records.ts   # the scan's pattern: repair it — a rule that reads nothing reports the same 'ok' as a clean tree — then: bun run scripts/frozen-records.ts --json",
 });
 
 export interface FrozenReport {

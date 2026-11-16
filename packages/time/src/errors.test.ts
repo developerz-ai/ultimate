@@ -3,7 +3,18 @@
 
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, ERROR_DOCS_URL, hasErrorCode } from '@ultimat3/core';
-import { scheduleInvalid, TIME_ERROR_CODES, TIME_ERROR_TITLES } from './errors';
+import {
+  cronInvalid,
+  cronNotDescribable,
+  dstAmbiguous,
+  dstNonexistent,
+  durationInvalid,
+  instantInvalid,
+  scheduleInvalid,
+  TIME_ERROR_CODES,
+  TIME_ERROR_TITLES,
+  timezoneInvalid,
+} from './errors';
 
 describe('time error titles', () => {
   test('every code in TIME_ERROR_CODES has a title, and every title maps to a declared code', () => {
@@ -114,5 +125,36 @@ describe('scheduleInvalid gives each calendar refusal its own runnable fix', () 
     expect(scheduleInvalid('slot.hour', 25, 'an integer 0-23').fix).toStartWith(
       'pass an integer in an integer 0-23 for slot.hour',
     );
+  });
+});
+
+// A fix is pasted from its first character: each of these opens with the corrected call, and the
+// whole line — call plus `//` explanation — is source a reader can drop into a file as written.
+describe('a refusal opens its fix with the call that works', () => {
+  const transpiler = new Bun.Transpiler({ loader: 'ts' });
+  test.each([
+    ['X_TIMEZONE_INVALID', timezoneInvalid('Japan'), "Intl.supportedValuesOf('timeZone')"],
+    ['X_CRON_INVALID', cronInvalid('* *', 'two fields'), "parseCron('0 3 * * *')"],
+    [
+      'X_CRON_NOT_DESCRIBABLE',
+      cronNotDescribable({ source: '30 0 3 * * *', seconds: [30] }),
+      "nextCronOccurrences('30 0 3 * * *', zone, from, 3)",
+    ],
+    ['X_DURATION_INVALID', durationInvalid('3 days'), "parseDuration('2h30m')"],
+    [
+      'X_DST_AMBIGUOUS',
+      dstAmbiguous('2026-11-01 01:30', 'America/New_York'),
+      "fromZoned(wall, 'America/New_York', { overlap: 'first' })",
+    ],
+    [
+      'X_DST_NONEXISTENT',
+      dstNonexistent('2026-03-08 02:30', 'America/New_York'),
+      "fromZoned(wall, 'America/New_York', { gap: 'next' })",
+    ],
+    ['X_INSTANT_INVALID', instantInvalid('3/14/2026'), "fromIso('2026-03-14T09:00:00Z')"],
+  ])('%s', (code, error, call) => {
+    expect(error.code).toBe(code);
+    expect(error.fix).toStartWith(`${call}   // `);
+    expect(() => transpiler.transformSync(error.fix)).not.toThrow();
   });
 });

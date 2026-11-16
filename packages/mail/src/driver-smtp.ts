@@ -67,19 +67,19 @@ function parseSmtpUrl(raw: string): SmtpUrl {
   } catch {
     throw new ConfigInvalidError({
       cause: 'SMTP_URL is not a URL',
-      fix: 'set SMTP_URL to smtps://user:pass@host:465 (implicit TLS) or smtp://host:587',
+      fix: 'SMTP_URL="smtps://user:pass@host:465"   # implicit TLS — or smtp://host:587 for STARTTLS',
     });
   }
   if (url.protocol !== 'smtp:' && url.protocol !== 'smtps:') {
     throw new ConfigInvalidError({
       cause: `SMTP_URL uses the "${url.protocol}" scheme, which is not an SMTP one`,
-      fix: 'set SMTP_URL to smtps://user:pass@host:465 (implicit TLS) or smtp://host:587',
+      fix: 'SMTP_URL="smtps://user:pass@host:465"   # implicit TLS — or smtp://host:587 for STARTTLS',
     });
   }
   if (url.hostname === '') {
     throw new ConfigInvalidError({
       cause: 'SMTP_URL names no host',
-      fix: 'set SMTP_URL to smtps://user:pass@host:465 (implicit TLS) or smtp://host:587',
+      fix: 'SMTP_URL="smtps://user:pass@host:465"   # implicit TLS — or smtp://host:587 for STARTTLS',
     });
   }
   const tls = url.protocol === 'smtps:';
@@ -105,7 +105,7 @@ function decodedCredential(part: 'user' | 'password', raw: string): string {
     throw new ConfigInvalidError({
       cause: `the SMTP_URL ${part} holds a "%" that starts no percent-escape, so it cannot be decoded`,
       // `prompt`, so the credential reaches neither shell history nor this message.
-      fix: `percent-encode the ${part} and put the output in SMTP_URL: bun -e 'console.log(encodeURIComponent(prompt("${renderFixShellArg(part, 'value')}:") ?? ""))'`,
+      fix: `bun -e 'console.log(encodeURIComponent(prompt("${renderFixShellArg(part, 'value')}:") ?? ""))'   # percent-encodes the ${part}: put the output in SMTP_URL`,
       meta: { part },
     });
   }
@@ -122,7 +122,7 @@ function resolvePoolSize(poolSize: number | undefined): number {
   if (!Number.isInteger(poolSize) || poolSize < 1) {
     throw new ConfigInvalidError({
       cause: `the smtp driver was configured with poolSize: ${poolSize}, which opens no connection`,
-      fix: `set poolSize to a whole number >= 1 in app.config.ts, or drop it for ${DEFAULT_POOL_SIZE}`,
+      fix: `smtpMailDriver({ url, from, poolSize: 1 })   // a whole number >= 1, or drop it for ${DEFAULT_POOL_SIZE}; selectMailDriver(env) reads MAIL_POOL_SIZE`,
       meta: { poolSize },
     });
   }
@@ -157,7 +157,7 @@ export function smtpMailDriver(options: SmtpDriverOptions): MailDriver {
   if (options.from.trim() === '') {
     throw new ConfigInvalidError({
       cause: 'the smtp driver was configured without a from address',
-      fix: 'set mail.from in app.config.ts to an address the SMTP server will relay for',
+      fix: "smtpMailDriver({ url, from: 'App <no-reply@yourdomain.test>' })   // an address the SMTP server will relay for; selectMailDriver(env) reads MAIL_FROM",
     });
   }
   const connect = options.connect ?? bunSmtpStream;

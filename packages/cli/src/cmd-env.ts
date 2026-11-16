@@ -33,7 +33,7 @@ export class EnvSchemaMissingError extends UltimateError {
     super({
       code: 'X_CONFIG_INVALID',
       cause: `x env ${input.subcommand} needs the env declaration, and app.config.ts exports no "envSchema"`,
-      fix: "add to app.config.ts: export const envSchema = { DATABASE_URL: { type: 'url', description: 'Postgres connection URL' } } satisfies EnvSchema; export const env = defineEnv(envSchema);",
+      fix: "export const envSchema = { DATABASE_URL: { type: 'url', description: 'Postgres connection URL' } } satisfies EnvSchema; export const env = defineEnv(envSchema);   // in app.config.ts",
     });
   }
 }

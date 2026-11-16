@@ -102,7 +102,7 @@ export const missingFileFinding = (dir: string, file: string, scaffolder: boolea
   cause: `packages/${dir} has no ${file}`,
   fix: scaffolder
     ? `bun run scripts/new-package.ts ${quoteArg(dir)} --only ${quoteArg(file)}`
-    : `add packages/${dir}/${file}, shaped like the one in a sibling package`,
+    : `ls packages/*/${quoteArg(file)}   # a sibling's: add packages/${dir}/${file} shaped like it`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/${file}`,
 });
@@ -121,7 +121,7 @@ export const badVersionFinding = (dir: string, found: unknown): Finding => ({
   // Bare `JSON.stringify` throws on a bigint and a cycle and runs any `toJSON`, which would replace
   // this finding with a TypeError from inside the gate.
   cause: `packages/${dir}/package.json has no semver "version" (found ${renderCauseValue(found)})`,
-  fix: `set a semver "version" in packages/${dir}/package.json, then: bun run verify`,
+  fix: `{ "version": "0.0.0" }   // a semver one, in packages/${dir}/package.json — then: bun run verify`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
@@ -227,10 +227,14 @@ export const FIXTURE_EXCLUSION = '!src/**/*-fixture.ts';
 /** Every exclusion a published package's `files` carries, in the order it is written. */
 export const TEST_CODE_EXCLUSIONS: readonly string[] = [TEST_EXCLUSION, FIXTURE_EXCLUSION];
 
-export const missingPublishedFileFinding = (dir: string, entry: string): Finding => ({
+export const missingPublishedFileFinding = (
+  dir: string,
+  entry: string,
+  files: readonly string[],
+): Finding => ({
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/package.json ships "${entry}" in "files", but packages/${dir}/${entry} does not exist`,
-  fix: `add packages/${dir}/${entry}, or drop "${entry}" from "files" in packages/${dir}/package.json`,
+  fix: `{ "files": ${JSON.stringify(files.filter((kept) => kept !== entry))} }   // in packages/${dir}/package.json, "${entry}" dropped — or add packages/${dir}/${entry}`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
@@ -238,7 +242,7 @@ export const missingPublishedFileFinding = (dir: string, entry: string): Finding
 export const publishesTestsFinding = (dir: string, exclusion: string): Finding => ({
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/package.json does not exclude ${exclusion} from "files"`,
-  fix: `add "${exclusion}" to "files" in packages/${dir}/package.json, after "src"`,
+  fix: `{ "files": ["src", "${exclusion}", …] }   // in packages/${dir}/package.json — "${exclusion}" after "src"`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
@@ -272,7 +276,7 @@ export const buildArtifactsFinding = (dir: string, count: number): Finding => ({
 export const noFilesAllowlistFinding = (dir: string): Finding => ({
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/package.json publishes with no "files" allowlist, so the tarball carries whatever is in the directory`,
-  fix: `add "files": ["src", ${TEST_CODE_EXCLUSIONS.map((entry) => `"${entry}"`).join(', ')}, "README.md", "LICENSE"] to packages/${dir}/package.json`,
+  fix: `{ "files": ["src", ${TEST_CODE_EXCLUSIONS.map((entry) => `"${entry}"`).join(', ')}, "README.md", "LICENSE"] }   // in packages/${dir}/package.json`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
@@ -306,7 +310,7 @@ export function checkPublishShape(root: string, manifests: readonly ManifestFact
       // A negation removes files; only a positive literal can promise one that is not there.
       if (entry.startsWith('!') || /[*?[\]]/.test(entry)) continue;
       if (existsSync(join(root, 'packages', manifest.dir, entry))) continue;
-      findings.push(missingPublishedFileFinding(manifest.dir, entry));
+      findings.push(missingPublishedFileFinding(manifest.dir, entry, manifest.files));
     }
     for (const exclusion of TEST_CODE_EXCLUSIONS) {
       if (!manifest.files.includes(exclusion)) {

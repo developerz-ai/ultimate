@@ -31,7 +31,7 @@ export function defineService<T>(name: string, factory: ServiceFactory<T>): Serv
     throw new UltimateError({
       code: 'X_SERVICE_DUPLICATE',
       cause: `a service named "${name}" is already registered`,
-      fix: `rename one of the two defineService('${name}', ...) declarations`,
+      fix: `git grep -n defineService   # two declare '${name}': rename one of them`,
       meta: { name },
     });
   }

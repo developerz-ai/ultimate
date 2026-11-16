@@ -129,7 +129,7 @@ export class AdminActionDuplicateError extends UltimateError {
       cause: `two admin actions are named "${input.name}" (on ${where}); an action name addresses one handler`,
       // The convention the framework's own examples already follow, made into the instruction:
       // an entity-qualified name is unique by construction.
-      fix: `rename one in defineAdmin's actions — name: '<entity>.${input.name}' — so "${input.name}" belongs to one of them`,
+      fix: `name: '<entity>.${input.name}'   // rename one in defineAdmin's actions, so "${input.name}" belongs to one of them`,
     });
   }
 }
@@ -148,7 +148,7 @@ export class AdminPolicyMissingError extends UltimateError {
     super({
       code: 'X_ADMIN_POLICY_MISSING',
       cause: `${input.kind} "${input.subject}" is exposed in the admin with no policy`,
-      fix: `add \`policy: can('<resource>:<verb>')\` to the ${input.kind} "${input.subject}" — a permission your definePermissions() call declares, never the ${input.kind}'s own name`,
+      fix: `policy: can('<resource>:<verb>')   // on the ${input.kind} "${input.subject}" — a permission your definePermissions() call declares, never the ${input.kind}'s own name`,
     });
   }
 }
@@ -163,7 +163,7 @@ export class AdminRepoUnboundError extends UltimateError {
     super({
       code: 'X_ADMIN_REPO_UNBOUND',
       cause: `the admin resource "${input.entity}" has no repo: defineAdmin() was given no db handle that carries it (tables in the handle: ${carried}) and no resources.${input.entity}.repo`,
-      fix: `pass the app's handle once: defineAdmin({ entities, db })   # with "${input.entity}" in the database() call that built db`,
+      fix: `defineAdmin({ entities, db })   # pass the app's handle once, with "${input.entity}" in the database() call that built db`,
     });
   }
 }
@@ -241,7 +241,7 @@ export class AdminPageUnguardedError extends UltimateError {
     super({
       code: 'X_ADMIN_PAGE_UNGUARDED',
       cause: `the admin page "${input.path}" declares no permissions, so nothing gates it`,
-      fix: `add permissions: ['${input.path.replace(/^\//, '').split('/')[0] ?? 'ops'}:read'] to the pages entry for "${input.path}"`,
+      fix: `permissions: ['${input.path.replace(/^\//, '').split('/')[0] ?? 'ops'}:read']   // on the pages entry for "${input.path}"`,
     });
   }
 }
@@ -293,7 +293,7 @@ export class DevDashboardInProdError extends UltimateError {
     super({
       code: 'X_DEV_DASHBOARD_IN_PROD',
       cause: `devDashboard() was called with role="${input.role}" env="${input.env}"; /_x exposes SQL, policy traces, and caught mail`,
-      fix: 'delete the /_x mount from the production entrypoint; run `x dev` locally instead',
+      fix: 'x dev   # serves /_x locally — and delete the devDashboard() mount from the production entrypoint',
     });
   }
 }

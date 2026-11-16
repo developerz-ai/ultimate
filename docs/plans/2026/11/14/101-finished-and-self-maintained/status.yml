@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
 percent: 63
-current_focus: "The owner-asked error-reference split (index + 31 owner pages) on feat/error-codes-split; 8b-3 shipped as 31.34.0. Next: 8b-4 (fix-prose), then 8c (CI speed), sweep 9 (13)."
+current_focus: "Sweep 8b-4 (fix-prose 917 → 55, every remaining row reasoned) on feat/sweep-8b-4-fix-prose; 31.35.0 shipped the error-reference split. Next: 8c (CI speed), sweep 9 (13)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3

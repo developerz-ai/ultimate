@@ -72,7 +72,7 @@ export function islandHarnessRoutes(input: HarnessRouteInput): readonly Route[] 
         if (manifest === undefined) {
           return refused(
             `this dev server declares no island states for ${address.island === '' ? '(no island named)' : address.island} — it knows ${islandStatesNames(all).join(', ') || 'none'}`,
-            'restart x dev, then: x shot --island <name> --json',
+            'x stop --json && x dev   # restart it, then: x shot --island <name> --json',
           );
         }
         // `wanted`, never a local called `state`: `bun run secret-compare` reads the NAME of a

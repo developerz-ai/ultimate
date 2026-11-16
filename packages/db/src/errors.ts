@@ -234,7 +234,7 @@ export const dbUnavailable = (detail: string, sourceError?: unknown): DbError =>
     // The driver's own words ride along when there are any: `ECONNREFUSED 127.0.0.1:5432` is the
     // half of "cannot reach the database" an operator acts on, and it was dropped on the floor.
     cause: sourceError === undefined ? detail : `${detail}: ${renderThrowable(sourceError)}`,
-    fix: 'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
+    fix: 'DATABASE_URL=postgres://user@host:5432/database   # a reachable Postgres url — or run `x dev` to use the embedded PGlite',
     sourceError,
   });
 
@@ -288,7 +288,7 @@ const UNNAMED_CONSTRAINT = 'the constraint named in cause';
  * Every driver failure, typed by what the server actually said. The SQLSTATE has always been on
  * the error — `isLedgerMissing` proved the read worked — and nothing exposed it, so a `23505`
  * unique violation, a `40001` serialization failure and a `57014` timeout all reached the caller
- * as `X_DB_UNAVAILABLE`, whose fix is "set DATABASE_URL to a reachable Postgres url". Two clicks
+ * as `X_DB_UNAVAILABLE`, whose fix is a reachable DATABASE_URL. Two clicks
  * racing a signup paged on-call for an outage that never happened.
  *
  * `X_DB_UNAVAILABLE` stays the answer for everything the table does not classify, including every
@@ -363,7 +363,7 @@ export const drainTimeout = (ms: number, role: string): DbError =>
   new DbError({
     code: 'X_DB_DRAIN_TIMEOUT',
     cause: `the ${role} pool still held connections after ${String(ms)}ms, so close() stopped waiting`,
-    fix: `find the statement that will not finish — psql "$DATABASE_URL" -c "select pid, state, query from pg_stat_activity where state <> 'idle'" — or raise drainTimeoutMs in postgresClient({ profile }) for the ${role} role`,
+    fix: `psql "$DATABASE_URL" -c "select pid, state, query from pg_stat_activity where state <> 'idle'"   # finds the statement that will not finish — or raise drainTimeoutMs in postgresClient({ profile }) for the ${role} role`,
     meta: { drainTimeoutMs: ms, role },
   });
 
@@ -409,9 +409,7 @@ export const serializationExhausted = (attempts: number, sourceError: unknown): 
     cause:
       `the transaction lost its serialization race on all ${attempts} attempts: ` +
       renderThrowable(sourceError),
-    fix:
-      'raise the retry budget — withTransaction(fn, { retry: 8 }) — or cut the contention: ' +
-      "narrow what the transaction reads, or drop to isolation: 'repeatable read'",
+    fix: "withTransaction(fn, { retry: 8 })   // raise the retry budget — or cut the contention: narrow what the transaction reads, or drop to isolation: 'repeatable read'",
     meta: { attempts },
     sourceError,
   });
@@ -422,7 +420,8 @@ export const sqlUnsafe = (received: string, position: number): DbError =>
     cause:
       `interpolation #${position} in a sql\`\` template is ${received}, ` +
       'which cannot be bound as a parameter',
-    fix: 'pass a scalar (it becomes $n), a nested sql`` fragment, or wrap audited SQL in raw()',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the fix shows the tagged template to paste
+    fix: 'sql`… ${scalar} …`   // a scalar binds as $n; a nested sql`` fragment composes; wrap audited SQL in raw()',
     meta: { position, received },
   });
 
@@ -430,7 +429,7 @@ export const identifierUnsafe = (name: string, why?: string): DbError =>
   new DbError({
     code: 'X_SQL_UNSAFE',
     cause: `${JSON.stringify(name)} is not usable as a Postgres identifier${why === undefined ? '' : `: ${why}`}`,
-    fix: 'pass a plain table/column name — identifiers cannot be bound as parameters',
+    fix: "identifier('users')   // a plain table/column name — identifiers cannot be bound as parameters",
     meta: { name },
   });
 

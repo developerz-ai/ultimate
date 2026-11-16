@@ -15,7 +15,7 @@ export const notPending = (key: string, orgId: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_NOT_PENDING',
     cause: `"${key}" is not under org "${orgId}"'s pending/ prefix, so it is not an upload waiting for a row — it may already belong to one`,
-    fix: 'promote the key grantUpload returned with no target: promoteAttachment({ disk, key: pendingKey(orgId, name), orgId, target })',
+    fix: 'promoteAttachment({ disk, key: pendingKey(orgId, name), orgId, target })   // promote the key grantUpload returned with no target',
     meta: { key, orgId },
   });
 

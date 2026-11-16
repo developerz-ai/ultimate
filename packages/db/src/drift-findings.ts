@@ -218,9 +218,7 @@ export function unexpectedTable(schema: string, table: string): DriftDifference 
             `inspect the table this difference names with \\d, then claim it in a migration ` +
               'with create table if not exists or drop it',
           )
-        : `${psqlCommand(`\\d ${name}`)}   # nothing declares it: put create table if not exists ` +
-          `${spoken} (…) in a migration, then x db migrate — or, if nothing owns it, run ` +
-          `drop table ${spoken}; here`,
+        : `${psqlCommand(`\\d ${name}`)}   # nothing declares it: put create table if not exists ${spoken} (…) in a migration, then x db migrate — or, if nothing owns it, run drop table ${spoken}; here`,
   };
 }
 
@@ -258,12 +256,8 @@ export function unknownSchema(migrations: readonly Migration[]): DriftDifference
     // fix pointed back here — a cycle a scaffolded app hit on its first `x db migrate`. The
     // pathspec is a glob because this package is tier 1: only `@ultimat3/cli` knows the directory.
     fix: spellable
-      ? `git checkout -- "*${renderFixShellArg(id, '')}.snapshot.json"   # or, if it was never written: ` +
-        `delete migration "${id}" and rerun x db gen "${name}"`
-      : 'git status --short -- "*.snapshot.json"   # shows the sidecar that is gone: git ' +
-        'checkout it, or delete that migration and rerun x db gen with its description — the ' +
-        "migration named in this difference's cause carries a backtick, a dollar sign, a " +
-        'quote, a backslash or whitespace in its file name, so no command here can spell it',
+      ? `git checkout -- "*${renderFixShellArg(id, '')}.snapshot.json"   # or, if it was never written: delete migration "${id}" and rerun x db gen "${name}"`
+      : `git status --short -- "*.snapshot.json"   # shows the sidecar that is gone: git checkout it, or delete that migration and rerun x db gen with its description — the migration named in this difference's cause carries a backtick, a dollar sign, a quote, a backslash or whitespace in its file name, so no command here can spell it`,
   };
 }
 

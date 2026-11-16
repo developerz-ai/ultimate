@@ -69,7 +69,7 @@ describe('errorParts', () => {
         expect(parts?.code).toBe('X_INTERNAL');
         // No command: `x logs` is planned and exits X_NOT_IMPLEMENTED, and nothing shipped can
         // name a throw site the framework never saw typed. The fix is the throw-site edit.
-        expect(parts?.fix).toContain('throw an UltimateError subclass');
+        expect(parts?.fix).toStartWith('new UltimateError({ code, cause, fix })');
         expect(parts?.fix).not.toContain('x logs');
         expect(parts?.cause.length).toBeGreaterThan(0);
       });

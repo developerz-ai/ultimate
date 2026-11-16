@@ -50,7 +50,7 @@ export interface OfflineFallback {
  * command writes `apps/web/site/offline/page.tsx`, which is what `x new` scaffolds.
  */
 const FIX =
-  "set pwa: { offline: { fallback: '/offline' } } in app.config.ts, then create the route it names: x g route offline --surface site";
+  "pwa: { offline: { fallback: '/offline' } }   // in app.config.ts, then create the route it names: x g route offline --surface site";
 
 /**
  * Build-time gate, called by `generateServiceWorker` and by `x doctor`. The fix line is
@@ -76,7 +76,7 @@ export function requireOfflineFallback(
   if (!fallback.startsWith('/')) {
     throw new PwaNoOfflineFallbackError(
       `offline.fallback is ${JSON.stringify(fallback)}, which is not an absolute route path`,
-      `set pwa.offline.fallback to '/${fallback.replace(/^\/+/, '')}' in app.config.ts`,
+      `pwa: { offline: { fallback: '/${fallback.replace(/^\/+/, '')}' } }   // in app.config.ts — an absolute route path`,
     );
   }
   // Core's predicate, judged by resolution: every URL here is precached at install and served as

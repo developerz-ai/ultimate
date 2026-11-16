@@ -130,7 +130,7 @@ export function registerRoute<TData = RouteData>(
     throw new RouteUnnormalizedError(
       `${input.file} registered a route declaration, not a descriptor: defineRoute normalizes ` +
         '`meta` and `budget`, and the route table has no other normalizer',
-      `wrap the declaration in ${input.file}: registerRoute({ file, config: defineRoute({ … }) })`,
+      `registerRoute({ file, config: defineRoute({ … }) })   // wrap the declaration in ${input.file}`,
     );
   }
 
@@ -152,7 +152,7 @@ export function registerRoute<TData = RouteData>(
   if (existing !== undefined && existing.file !== input.file) {
     throw new RouteDuplicateError(
       `${path} is claimed by both ${existing.file} and ${input.file}`,
-      `rename or delete one of them — the route table is keyed by URL`,
+      `x routes --json   # rename or delete one of the two files at ${path} — the route table is keyed by URL`,
     );
   }
   const claimed = mountedAt(path);

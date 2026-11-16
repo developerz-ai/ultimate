@@ -99,7 +99,7 @@ export function roleLoadFinding(missing: MissingRegistration): Finding {
   return {
     code: 'X_ROLE_LOAD_INCOMPLETE',
     cause: `${missing.kind} ${JSON.stringify(missing.name)} is registered by importing ${missing.module}, which reaches a component or a stylesheet and which ${API_INDEX} does not import — so a worker and a scheduler, which import no document, run without it`,
-    fix: `edit ${API_INDEX}: add import '${specifierFor(missing.module)}'; — or move the ${missing.kind} out of ${missing.module} into a module that imports no .tsx and no stylesheet`,
+    fix: `import '${specifierFor(missing.module)}';   // in ${API_INDEX} — or move the ${missing.kind} out of ${missing.module} into a module that imports no .tsx and no stylesheet`,
     docs: ERROR_DOCS_URL,
     at: missing.module,
   };

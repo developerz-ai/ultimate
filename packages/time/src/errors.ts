@@ -97,7 +97,7 @@ export function timezoneInvalid(zone: unknown): TimeError {
     // `unknown`, because the refusal is reached by exactly the callers the `string` type did not
     // stop — an omitted `zone` is `undefined` here. A string keeps its quoted spelling.
     cause: `${typeof zone === 'string' ? `"${zone}"` : renderCauseValue(zone)} is not an IANA Area/Location zone name`,
-    fix: "use Area/Location, or UTC. A single-label legacy name swaps mechanically — Japan → Asia/Tokyo, GB → Europe/London, Universal → UTC. An abbreviation or a numeric offset does not: CET and EST5EDT name no jurisdiction and carry no DST rule, so name the city whose clock you mean (Europe/Paris, America/New_York). Every accepted name: Intl.supportedValuesOf('timeZone')",
+    fix: "Intl.supportedValuesOf('timeZone')   // every accepted name — use Area/Location, or UTC. A single-label legacy name swaps mechanically — Japan → Asia/Tokyo, GB → Europe/London, Universal → UTC. An abbreviation or a numeric offset does not: CET and EST5EDT name no jurisdiction and carry no DST rule, so name the city whose clock you mean (Europe/Paris, America/New_York)",
   });
 }
 
@@ -105,7 +105,7 @@ export function cronInvalid(expression: string, reason: string): TimeError {
   return new TimeError({
     code: 'X_CRON_INVALID',
     cause: `cron "${expression}": ${reason}`,
-    fix: "use 5 fields (m h dom mon dow) or 6 with seconds, e.g. '0 3 * * *' for 03:00 daily, '*/15 * * * *' every 15 minutes, '0 9 * * MON-FRI' weekday mornings",
+    fix: "parseCron('0 3 * * *')   // 5 fields (m h dom mon dow), or 6 with seconds: '0 3 * * *' is 03:00 daily, '*/15 * * * *' every 15 minutes, '0 9 * * MON-FRI' weekday mornings",
   });
 }
 
@@ -121,7 +121,7 @@ export function cronNotDescribable(cron: {
   return new TimeError({
     code: 'X_CRON_NOT_DESCRIBABLE',
     cause: `cron "${cron.source}" fires on second ${cron.seconds.join(',')}, and CronPhrases has no seconds vocabulary`,
-    fix: `render the real runs instead of a summary — nextCronOccurrences('${cron.source}', zone, from, 3) — or, if second-level precision is not wanted, describe the 5-field schedule describeCron('${cron.source.split(/\s+/).slice(1).join(' ')}', locale, phrases)`,
+    fix: `nextCronOccurrences('${cron.source}', zone, from, 3)   // render the real runs instead of a summary — or, if second-level precision is not wanted, describe the 5-field schedule describeCron('${cron.source.split(/\s+/).slice(1).join(' ')}', locale, phrases)`,
   });
 }
 
@@ -129,7 +129,7 @@ export function durationInvalid(input: string): TimeError {
   return new TimeError({
     code: 'X_DURATION_INVALID',
     cause: `"${input}" is not a duration`,
-    fix: "use a unit-suffixed duration: '90s', '2h30m', '3d', '1w', '250ms' — or an ISO-8601 form like 'PT2H30M'",
+    fix: "parseDuration('2h30m')   // a unit-suffixed duration: '90s', '3d', '1w', '250ms' — or an ISO-8601 form like 'PT2H30M'",
   });
 }
 
@@ -137,7 +137,7 @@ export function dstAmbiguous(wall: string, zone: string): TimeError {
   return new TimeError({
     code: 'X_DST_AMBIGUOUS',
     cause: `${wall} happens twice in ${zone} (the fall-back hour repeats)`,
-    fix: "pass { overlap: 'first' } for the pre-transition instant or { overlap: 'second' } for the post-transition one",
+    fix: `fromZoned(wall, '${zone}', { overlap: 'first' })   // the pre-transition instant — { overlap: 'second' } for the post-transition one`,
   });
 }
 
@@ -145,7 +145,7 @@ export function dstNonexistent(wall: string, zone: string): TimeError {
   return new TimeError({
     code: 'X_DST_NONEXISTENT',
     cause: `${wall} never happens in ${zone} (the spring-forward gap skips it)`,
-    fix: "pass { gap: 'next' } to shift forward past the gap or { gap: 'previous' } to shift back before it",
+    fix: `fromZoned(wall, '${zone}', { gap: 'next' })   // shift forward past the gap — { gap: 'previous' } to shift back before it`,
   });
 }
 
@@ -153,6 +153,6 @@ export function instantInvalid(input: string): TimeError {
   return new TimeError({
     code: 'X_INSTANT_INVALID',
     cause: `"${input}" is not a valid instant`,
-    fix: 'pass an ISO-8601 timestamp with an offset or Z, e.g. 2026-03-14T09:00:00Z',
+    fix: "fromIso('2026-03-14T09:00:00Z')   // an ISO-8601 timestamp with an offset or Z",
   });
 }

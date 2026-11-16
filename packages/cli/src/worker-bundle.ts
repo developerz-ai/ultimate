@@ -216,7 +216,7 @@ function scriptRoute(
             error: {
               code: 'X_ROUTE_NOT_FOUND',
               cause: `no ${what} is built at ${request.pathname} — the document that named it was rendered against another build`,
-              fix: `reload the page — this process serves only the ${what} it built`,
+              fix: `location.reload()   // in the browser — this process serves only the ${what} it built`,
             },
           },
           { status: 404 },

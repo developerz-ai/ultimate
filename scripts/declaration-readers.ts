@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // Enforce that every leaf key of every DECLARATION an app writes — the type each primitive and
 // each `define*` factory takes — is read by something in `packages/*/src`. `config-readers.ts` asks
 // this of `AppConfig` alone; this is the same question over the other twenty declaration surfaces,
@@ -43,6 +44,8 @@
 // needed, is a `{ reason }` row passed in as `pins` — never a bare entry: a blank reason waives
 // nothing, the rule `FLOOR_ABOVE` in `scripts/lib/tiers.ts` also keeps.
 
+import { quoteArg } from '../packages/cli/src/shell-quote';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { readPattern } from './config-readers';
 import { parseScriptArgs } from './lib/args';
 import { CORPUS_PATTERNS, corpus } from './lib/corpus';
@@ -139,7 +142,7 @@ const unreadFinding = (gap: DeclarationReaderGap): Finding => ({
     gap.blank === true
       ? `${gap.leaf} is declared in ${gap.at ?? ''} and no file in packages/*/src reads it, and its row in ${DECLARATION_PINS_FILE} carries no reason — a waiver that says nothing waives nothing`
       : `${gap.leaf} is declared in ${gap.at ?? ''} and no file in packages/*/src reads it — an app that sets it is setting a switch with no wire, exactly as route budget.cls and budget.tbt were`,
-  fix: `delete ${gap.leaf} from ${gap.at ?? 'its declaration'}, or wire it and prove the read; to keep it deliberately, add it to DECLARATION_READER_PINS in ${DECLARATION_PINS_FILE} with the sentence naming who reads it`,
+  fix: `grep -n ${quoteArg(gap.leaf.split('.').at(-1) ?? gap.leaf)} ${quoteArg(gap.at ?? DECLARATION_PINS_FILE)}   # delete ${gap.leaf} there, or wire it and prove the read, then: bun run scripts/declaration-readers.ts --json; to keep it deliberately, add it to DECLARATION_READER_PINS in ${DECLARATION_PINS_FILE} with the sentence naming who reads it`,
   at: gap.at ?? DECLARATION_PINS_FILE,
 });
 
@@ -163,14 +166,14 @@ const staleCauseOf = (gap: DeclarationReaderGap): string => {
 const staleFinding = (gap: DeclarationReaderGap): Finding => ({
   code: 'X_DECLARATION_READER_PIN_STALE',
   cause: staleCauseOf(gap),
-  fix: `edit ${DECLARATION_PINS_FILE} — delete the waiver for ${gap.leaf}`,
+  fix: `grep -n ${renderFixShellArg(gap.leaf, '<key>')} ${DECLARATION_PINS_FILE}   # delete that waiver from DECLARATION_READER_PINS`,
   at: DECLARATION_PINS_FILE,
 });
 
 const unscannedFinding = (gap: DeclarationReaderGap): Finding => ({
   code: 'X_DECLARATION_READERS_UNSCANNED',
   cause: `nothing was walked for ${gap.leaf}, so every declaration key reports a reader and the rule enforces nothing — a glob that matches no file, and a factory signature this scan no longer recognises, both read exactly like a tree with no dead key in it`,
-  fix: `check that ${SOURCE_GLOB} still matches this repo layout and that a primitive factory still takes a named interface, then bun run scripts/declaration-readers.ts --json`,
+  fix: `grep -n 'CORPUS_PATTERNS' scripts/lib/corpus.ts   # its shipped globs (${SOURCE_GLOB}) must still match this repo layout, and a primitive factory must still take a named interface; then: bun run scripts/declaration-readers.ts --json`,
   at: 'scripts/lib/declaration-scan.ts',
 });
 

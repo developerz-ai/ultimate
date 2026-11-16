@@ -188,7 +188,7 @@ describe('unit · the step reports one finding per place, and carries the load',
     expect(finding?.code).toBe('X_PERMISSION_UNGRANTED');
     expect(finding?.at).toBe('shared/policies.ts');
     expect(finding?.fix).toContain(
-      "add 'posts:write' to the grants of a role in shared/policies.ts",
+      "grants: [..., 'posts:write']   // one role's, in shared/policies.ts",
     );
   });
 

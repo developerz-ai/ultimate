@@ -204,7 +204,7 @@ export class SubscriptionLimitError extends RealtimeError {
       fix:
         args.scope === 'actor'
           ? `defineConfig({ realtime: { maxSubscriptionsPerActor: ${args.limit * 2} } })   # in app.config.ts — realtime.maxSubscriptionsPerActor; or maxPerActor on new LiveQueryRegistry({…}) where a host builds its own; or unsubscribe unused live queries`
-          : `raise ${knob} where this sync node is constructed, or unsubscribe unused live queries`,
+          : `{ ${knob}: ${args.limit * 2} }   # where this sync node is constructed — or unsubscribe unused live queries`,
     });
   }
 }
@@ -222,7 +222,7 @@ export class FrameRateLimitError extends RealtimeError {
     super({
       code: 'X_FRAME_RATE_LIMIT',
       cause: `socket ${args.socketId} exceeded ${args.perSecond} frames per second`,
-      fix: 'batch subscribes into one frame per subscription and retry after the delay, or raise maxFramesPerSecond where syncNode() is called',
+      fix: `syncNode({ maxFramesPerSecond: ${args.perSecond * 2} })   # or batch subscribes into one frame per subscription and retry after the delay`,
     });
   }
 }
@@ -237,7 +237,7 @@ export class SubscriptionIdTakenError extends RealtimeError {
     super({
       code: 'X_SUBSCRIPTION_ID_TAKEN',
       cause: `socket ${args.socketId} already holds a live subscription with sid "${args.sid}"`,
-      fix: 'send a fresh sid with each subscribe frame — crypto.randomUUID() is what the bundled client uses',
+      fix: 'crypto.randomUUID()   # a fresh sid with each subscribe frame — what the bundled client uses',
     });
   }
 }
@@ -268,7 +268,7 @@ export class RealtimeTopologyError extends RealtimeError {
         'role sync runs on an external database over the in-process transport with no replicator in this process, so no committed change can reach it',
       // Since 31.0.0 the env is the bus (`selectTransport`): NATS_URL set is NATS. A bus of the
       // app's own is `transport` in its runtime.ts — the line to paste, never a setter to call.
-      fix: 'set NATS_URL for every realtime role (web, sync, replicator) — or, for a bus of your own, add transport: myTransport to export const runtime = { … } in apps/<app>/runtime.ts — or run the replicator in this process: x dev --role sync,replicator',
+      fix: 'export NATS_URL=nats://<host>:4222   # for every realtime role (web, sync, replicator) — or, for a bus of your own, add transport: myTransport to export const runtime = { … } in apps/<app>/runtime.ts — or run the replicator in this process: x dev --role sync,replicator',
     });
   }
 }
@@ -286,7 +286,7 @@ export class TransportProtocolError extends RealtimeError {
       cause: `transport "${args.transport}" ${args.stage}: ${args.detail}`,
       fix:
         args.fix ??
-        'x doctor transport — the bus must be nats-server >= 2.11 with JetStream enabled (`nats-server -js`)',
+        'docker run -d -p 4222:4222 nats:2.11-alpine -js   # the bus must be nats-server >= 2.11 with JetStream — or point NATS_URL at one',
     });
   }
 }
@@ -308,7 +308,10 @@ export class LiveRowUnidentifiedError extends RealtimeError {
         ? {
             code: 'X_LIVE_ROW_UNIDENTIFIED',
             cause: `live query "${args.query}" returned a row with no id (columns: ${columns})`,
-            fix: `select the primary key in ${args.query}'s sql(), or drop live: true from it`,
+            // The command when the name travels, the list when it does not — then the sql() edit.
+            fix: isFixShellSafe(args.query)
+              ? `x queries show ${renderFixShellArg(args.query, 'name')} --json   # select the primary key in its sql(), or drop live: true from it`
+              : 'x queries list --json   # select the primary key in its sql(), or drop live: true from it',
           }
         : {
             code: 'X_LIVE_ROW_UNIDENTIFIED',
@@ -359,7 +362,7 @@ export class SocketUnauthenticatedError extends RealtimeError {
     super({
       code: 'X_SOCKET_UNAUTHENTICATED',
       cause: `the websocket upgrade was refused: ${args.reason}`,
-      fix: 'send the credential syncNode({ authenticate }) reads on the upgrade request, or return an anonymous Actor from it to admit this socket',
+      fix: 'syncNode({ authenticate })   # send the credential it reads on the upgrade request, or return an anonymous Actor from it to admit this socket',
     });
   }
 }

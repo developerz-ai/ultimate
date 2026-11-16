@@ -63,6 +63,8 @@ describe('an address list is header-bound too', () => {
     );
     expect(error.code).toBe('X_MAIL_HEADER_INVALID');
     expect(error.cause).toContain('Cc');
+    // Rejected at the field's own boundary, never stripped here.
+    expect(error.fix).toStartWith('t.string.pattern(/^[^\\r\\n]*$/)');
   });
 
   test("bcc is NOT this gate's business — it is an envelope field, gated on its own wire", () => {

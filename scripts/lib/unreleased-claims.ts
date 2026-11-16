@@ -103,7 +103,7 @@ export function claimGaps(
       gaps.push({
         code: 'X_DOC_UNRELEASED_PIN_STALE',
         cause: `${site} has ${found.length} stale "unreleased" line(s) and ${UNRELEASED_PINS_FILE} still allows ${pinned}`,
-        fix: `edit ${UNRELEASED_PINS_FILE} — set the row '${site}' to ${found.length}, or delete it at 0`,
+        fix: `grep -n 'UNRELEASED_CLAIM_PINS' ${UNRELEASED_PINS_FILE}   # set its row '${site}' to ${found.length}, or delete it at 0`,
         at: UNRELEASED_PINS_FILE,
       });
     }

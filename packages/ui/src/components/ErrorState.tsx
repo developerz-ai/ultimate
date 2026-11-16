@@ -71,7 +71,7 @@ export function errorParts(error: unknown): ErrorParts {
     // No command can name a throw site the framework never saw typed. The one repair is at the
     // throw itself, which is also the repo's own rule — never a bare Error — so the fix says that
     // rather than sending the reader to a log that holds the same message this screen already has.
-    fix: 'throw an UltimateError subclass where this failed — new UltimateError({ code, cause, fix }) — so this screen renders that code and its fix instead of X_INTERNAL',
+    fix: 'new UltimateError({ code, cause, fix })   // throw an UltimateError subclass where this failed, so this screen renders that code and its fix instead of X_INTERNAL',
     docs: described.docs,
   };
 }

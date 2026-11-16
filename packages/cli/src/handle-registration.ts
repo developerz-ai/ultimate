@@ -42,7 +42,8 @@ export const resolveDbModule = async (root: string): Promise<string | undefined>
 export const handleUnregisteredFinding = (entry: HandleEntry, reason: string): Finding => ({
   code: 'X_DB_HANDLE_UNREGISTERED',
   cause: `${HANDLE_FILE} ${reason}, so db.${entry.key} does not exist and the generated repo.ts does not compile`,
-  fix: `add ${handleImportLine(entry)} and the line "${handleEntryLine(entry).trim()}" to the entity set passed to database() in ${HANDLE_FILE}`,
+  // Opened with the import itself: `handleImportLine`'s own text, so the two can never disagree.
+  fix: `import ${handleImportLine(entry).slice('import '.length)}   // in ${HANDLE_FILE}, with the line "${handleEntryLine(entry).trim()}" in the entity set passed to database()`,
   docs: ERROR_DOCS_URL,
   at: HANDLE_FILE,
 });
@@ -181,7 +182,7 @@ async function indexFindings(disk: GenerateDisk, dbModule: string): Promise<read
     {
       code: 'X_DB_HANDLE_UNREGISTERED',
       cause: `${INDEX_FILE} does not export the typed handle, so "import { db } from '${dbModule}'" in the generated repo.ts is not database()'s`,
-      fix: `add export { db, driver, selectDriver } from './client'; to ${INDEX_FILE} and drop db from its '@ultimat3/db' re-export`,
+      fix: `export { db, driver, selectDriver } from './client';   // in ${INDEX_FILE} — and drop db from its '@ultimat3/db' re-export`,
       docs: ERROR_DOCS_URL,
       at: INDEX_FILE,
     },
@@ -241,7 +242,7 @@ export async function registerGeneratedEntities(
     findings.push({
       code: 'X_DB_HANDLE_UNREGISTERED',
       cause: `${DB_WORKSPACE}/package.json supplies no "name", so the generated repo.ts imports the placeholder ${PLACEHOLDER_DB_MODULE}`,
-      fix: `add "name": "@<app>/db" to ${DB_WORKSPACE}/package.json, then re-run this command with --force`,
+      fix: `{ "name": "@<app>/db" }   // in ${DB_WORKSPACE}/package.json, then re-run this command with --force`,
       docs: ERROR_DOCS_URL,
       at: `${DB_WORKSPACE}/package.json`,
     });

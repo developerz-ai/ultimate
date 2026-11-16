@@ -191,7 +191,7 @@ describe('the value guards refuse rather than render something wrong', () => {
     }
     expect(thrown.code).toBe('X_ADMIN_FIELD_UNSUPPORTED');
     expect(thrown.cause).toContain('money value is a string');
-    expect(thrown.fix).toContain('{ minor, currency }');
+    expect(thrown.fix).toStartWith("{ minor: 1234, currency: 'EUR' }");
   });
 
   test('a boolean money value is refused the same way', () => {

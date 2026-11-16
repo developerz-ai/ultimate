@@ -5,6 +5,7 @@
 // `errors.ts` is written in a shape this planner does not recognise is refused by name rather than
 // edited by guess.
 
+import { quoteArg } from '../../packages/cli/src/shell-quote';
 // The leaf, not core's barrel: a generator must run while a package is mid-edit (DX ledger #10).
 import { renderFixShellArg } from '../../packages/core/src/error-render';
 import { ScriptError } from './script-error';
@@ -25,8 +26,6 @@ export interface NewErrorCode {
 }
 
 const CODE = /^X_[A-Z0-9]+(?:_[A-Z0-9]+)*$/;
-const RERUN =
-  "bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'";
 
 const invalid = (cause: string, fix: string): ScriptError =>
   new ScriptError({ code: 'X_NEW_ERROR_CODE_INVALID', cause, fix });
@@ -35,7 +34,7 @@ export function validateNewCode(input: NewErrorCode): void {
   if (!CODE.test(input.code)) {
     throw invalid(
       `"${input.code}" is not an X_SCREAMING_SNAKE code`,
-      `rerun with a code like X_${input.pkg.toUpperCase()}_WHAT_FAILED: ${RERUN}`,
+      `bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'   # rerun, <CODE> like X_${input.pkg.toUpperCase()}_WHAT_FAILED`,
     );
   }
   for (const [name, value] of [
@@ -46,14 +45,14 @@ export function validateNewCode(input: NewErrorCode): void {
     if (value.trim().length === 0 || value.includes('\n')) {
       throw invalid(
         `--${name} is empty or spans lines, and it is printed as one line`,
-        `rerun with a one-line --${name}: ${RERUN}`,
+        `bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'   # rerun with a one-line --${name}`,
       );
     }
   }
   if (sameSentence(input.cause, input.title)) {
     throw invalid(
       '--cause repeats --title, so the row would state what failed twice and why it failed never',
-      `rerun with a --cause naming what usually makes ${input.code} happen: ${RERUN}`,
+      `bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'   # rerun with a --cause naming what usually makes ${input.code} happen`,
     );
   }
 }
@@ -116,7 +115,7 @@ const unknownShape = (path: string, code: string): ScriptError =>
   new ScriptError({
     code: 'X_NEW_ERROR_CODE_PATTERN_UNKNOWN',
     cause: `${path} has no …TITLES object, no literal registerErrorCodes({ … }) and no frozen …ERROR_CODES declarations this planner can add to, so there is no shape to add ${code} to without guessing`,
-    fix: `edit ${path} to register ${code} by hand, and add its row to wiki/Error-Codes-<package>.md in the same change, then: bun run scripts/error-code-pages.ts --write`,
+    fix: `grep -nE 'TITLES|registerErrorCodes|ERROR_CODES' ${quoteArg(path)}   # register ${code} there by hand, and add its row to wiki/Error-Codes-<package>.md in the same change, then: bun run scripts/error-code-pages.ts --write`,
   });
 
 /**
@@ -212,7 +211,7 @@ export function codeNameIn(
   if (new RegExp(`^\\s+${key}:`, 'm').test(body)) {
     throw invalid(
       `${path} already has a name "${key}" in its code table, so ${input.code} has no distinct key there`,
-      `${RERUN}   # with a code whose name after X_${input.pkg.toUpperCase()}_ is not ${key}, or edit ${path} by hand`,
+      `bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'   # with a code whose name after X_${input.pkg.toUpperCase()}_ is not ${key}, or edit ${path} by hand`,
     );
   }
   const line = entry(key, `'${input.code}'`);
@@ -263,14 +262,20 @@ export function fixRowIn(table: string, path: string, input: NewErrorCode): stri
   if (added === undefined) {
     throw invalid(
       `${path} no longer holds a "const …_FIXES = { … };" literal, so there is no table to add the fix of ${input.code} to`,
-      `edit ${path} to add the fix of ${input.code} by hand, then: bun test scripts/new-error-code-fixes.test.ts`,
+      `grep -n '_FIXES' ${quoteArg(path)}   # add the fix of ${input.code} to that table by hand, then: bun test ./scripts/new-error-code-fixes.test.ts`,
     );
   }
   return added;
 }
 
 /** A wiki table cell: a `|` would end it early, a newline would end the row. */
-const cell = (value: string): string => value.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+// why: no backslash escape — a fix cell's commands sit in code spans, where GFM keeps `\\` literal
+// (`psql -c '\\c postgres'` would double); only `|` is escaped, which GFM tables honour even there.
+const cell = (value: string): string =>
+  value
+    .split('|')
+    .join('\\|')
+    .replace(/\s*\n\s*/g, ' ');
 
 /**
  * The fix as the page writes one: the command in backticks, the way every neighbouring row has it.
@@ -311,7 +316,7 @@ export function statusRowIn(
   if (close < 0) {
     throw invalid(
       `${path} no longer ends its table with "} satisfies …", so there is no literal to add a row to`,
-      `edit ${path} to add \`${input.code}: ${status},\` by hand, then: bun run scripts/error-map.ts --json`,
+      `grep -n 'satisfies' ${quoteArg(path)}   # add \`${input.code}: ${status},\` to that table by hand, then: bun run scripts/error-map.ts --json`,
     );
   }
   // The trailing comment block, when the literal ends with one: the row goes above it.
@@ -351,7 +356,7 @@ export function backlogPinIn(backlog: string, path: string, input: NewErrorCode)
   if (close < 0) {
     throw invalid(
       `${path} has no object literal to add a group for @ultimat3/${input.pkg} to`,
-      `edit ${path} to pin ${input.code} under ${input.pkg} by hand, then: bun run scripts/error-map.ts --json`,
+      `grep -n '= {' ${quoteArg(path)}   # pin ${input.code} under ${input.pkg} in that literal by hand, then: bun run scripts/error-map.ts --json`,
     );
   }
   return `${backlog.slice(0, close)}\n  ${input.pkg}: ['${input.code}'],${backlog.slice(close)}`;

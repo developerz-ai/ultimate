@@ -7,6 +7,7 @@
 //
 //   bun run scripts/bench-claims.ts [--json]
 
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import { parseScriptArgs } from './lib/args';
 import type { BenchClaim, BenchFormat } from './lib/bench-claims-table';
 import { CLAIMS, CLAIMS_FILE } from './lib/bench-claims-table';
@@ -122,21 +123,21 @@ const pageOf = (claim: BenchClaim): string => claim.doc ?? CLAIMS_FILE;
 const mismatchFinding = (gap: BenchGap): Finding => ({
   code: 'X_BENCH_CLAIM_STALE',
   cause: `${pageOf(gap.claim)} states ${gap.stated ?? ''} for ${gap.claim.label} and ${gap.claim.file} measured ${gap.measured ?? ''}`,
-  fix: `bun run scripts/bench-claims.ts --json   # after editing ${pageOf(gap.claim)}: write ${gap.measured ?? ''} where it says ${gap.stated ?? ''} for ${gap.claim.label}`,
+  fix: `grep -nF ${quoteArg(gap.stated ?? '')} ${quoteArg(pageOf(gap.claim))}   # write ${gap.measured ?? ''} where it says ${gap.stated ?? ''} for ${gap.claim.label}, then: bun run scripts/bench-claims.ts --json`,
   at: pageOf(gap.claim),
 });
 
 const unstatedFinding = (gap: BenchGap): Finding => ({
   code: 'X_BENCH_CLAIM_STALE',
   cause: `no sentence in ${pageOf(gap.claim)} states ${gap.claim.label} any more, so this rule stopped checking ${gap.claim.file}'s ${gap.claim.path} without failing`,
-  fix: `restore the sentence stating ${gap.claim.label} (${gap.measured ?? ''}) in ${pageOf(gap.claim)}, or drop that claim from CLAIMS in scripts/bench-claims.ts`,
+  fix: `git log -p -- ${quoteArg(pageOf(gap.claim))}   # restore the sentence stating ${gap.claim.label} (${gap.measured ?? ''}) there, or drop that claim from CLAIMS in scripts/lib/bench-claims-table.ts — then: bun run scripts/bench-claims.ts --json`,
   at: pageOf(gap.claim),
 });
 
 const unmeasuredFinding = (gap: BenchGap): Finding => ({
   code: 'X_BENCH_CLAIM_STALE',
   cause: `${gap.claim.file} carries no number at ${gap.claim.path}, so ${CLAIMS_FILE}'s ${gap.claim.label} is compared against nothing`,
-  fix: `point the ${gap.claim.label} entry of CLAIMS in scripts/bench-claims.ts at a key ${gap.claim.file} actually carries`,
+  fix: `grep -rn ${quoteArg(gap.claim.label)} scripts/lib/bench-claims-table.ts scripts/bench   # point that CLAIMS entry at a key ${gap.claim.file} actually carries, then: bun run scripts/bench-claims.ts --json`,
   at: gap.claim.file,
 });
 

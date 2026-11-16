@@ -38,7 +38,7 @@ export function buildId(input: BuildIdInput = {}): string {
   if (base === '' || base === '0') {
     throw new BuildIdMissingError(
       'cannot derive a build id: no gitSha and no timestamp',
-      'set GIT_SHA in the build environment (docker build --build-arg GIT_SHA=$(git rev-parse HEAD))',
+      'docker build --build-arg GIT_SHA="$(git rev-parse HEAD)" .   # or set GIT_SHA in the build environment some other way',
     );
   }
   const short = base.slice(0, 12);
@@ -58,7 +58,7 @@ export function assertBuildId(value: string | undefined | null): asserts value i
   if (value === undefined || value === null || value.trim() === '') {
     throw new BuildIdMissingError(
       'the build id is empty, so caches cannot be keyed and skew cannot be detected',
-      'set GIT_SHA in the build environment and pass it to generateServiceWorker(routes, config, buildId)',
+      'generateServiceWorker(routes, config, buildId({ gitSha: process.env.GIT_SHA }))   // with GIT_SHA set in the build environment',
     );
   }
 }

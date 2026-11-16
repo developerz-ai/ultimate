@@ -58,7 +58,7 @@ export function registerReadinessCheck(
     throw new UltimateError({
       code: 'X_READINESS_CHECK_DUPLICATE',
       cause: `a readiness check named "${name}" is already registered (have: ${[...checks.keys()].join(', ')})`,
-      fix: `name the second check for what it actually probes, e.g. registerReadinessCheck('${name}-replica', check) — or hold the unregister the first registration returned and call it first`,
+      fix: `registerReadinessCheck('${name}-replica', check)   // name the second check for what it actually probes — or hold the unregister the first registration returned and call it first`,
       meta: { name },
     });
   }

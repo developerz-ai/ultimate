@@ -64,14 +64,14 @@ function assertHttpJson(signal: OtlpSignal, url: URL, env: OtlpEnv): void {
   if (protocol !== '' && protocol !== 'http/json') {
     throw new OtlpProtocolUnsupportedError({
       cause: `${OTLP_PROTOCOL_KEY}="${protocol}" — this exporter speaks OTLP/HTTP JSON and nothing else`,
-      fix: `unset ${OTLP_PROTOCOL_KEY} (or set it to http/json) and point ${OTLP_ENDPOINT_KEY} at the collector's HTTP receiver, e.g. http://otel-collector:4318`,
+      fix: `export OTEL_EXPORTER_OTLP_PROTOCOL=http/json OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318   # the collector's HTTP receiver; unsetting ${OTLP_PROTOCOL_KEY} works too`,
       meta: { protocol, signal },
     });
   }
   if (url.port === GRPC_PORT) {
     throw new OtlpProtocolUnsupportedError({
       cause: `${url.origin} is the collector's gRPC receiver (:${GRPC_PORT}); OTLP/HTTP JSON is served on :4318`,
-      fix: `set ${OTLP_ENDPOINT_KEY}=${url.protocol}//${url.hostname}:4318`,
+      fix: `export OTEL_EXPORTER_OTLP_ENDPOINT=${renderFixShellArg(`${url.protocol}//${url.hostname}:4318`, '<the collector origin, on :4318>')}`,
       meta: { endpoint: url.origin, signal },
     });
   }
@@ -85,14 +85,14 @@ function parseEndpoint(signal: OtlpSignal, raw: string, perSignal: boolean, env:
     // Not echoed: an unparsable value may still be `user:password@…` with one character wrong.
     throw new OtlpEndpointInvalidError({
       cause: `the ${signal} OTLP endpoint is not a URL (${raw.length} characters, not echoed: it may carry a credential)`,
-      fix: `set ${OTLP_ENDPOINT_KEY}=http://otel-collector:4318`,
+      fix: `export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318`,
       meta: { signal },
     });
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new OtlpEndpointInvalidError({
       cause: `"${otlpEndpointLabel(raw)}" is ${url.protocol}, and OTLP/HTTP needs http or https`,
-      fix: `set ${OTLP_ENDPOINT_KEY}=http://otel-collector:4318`,
+      fix: `export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318`,
       meta: { endpoint: otlpEndpointLabel(raw), signal },
     });
   }
@@ -161,7 +161,7 @@ export function otlpEndpoint(
   if (resolved !== undefined) return resolved;
   throw new OtlpEndpointInvalidError({
     cause: `no OTLP endpoint: neither ${signalKey(signal, 'ENDPOINT')} nor ${OTLP_ENDPOINT_KEY} is set, and none was passed`,
-    fix: `set ${OTLP_ENDPOINT_KEY}=http://otel-collector:4318, or skip the exporter when tryOtlpEndpoint('${signal}') is undefined`,
+    fix: `export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318   # or skip the exporter when tryOtlpEndpoint('${signal}') is undefined`,
     meta: { signal },
   });
 }
@@ -179,7 +179,7 @@ function decodeHeaderValue(variable: string, key: string, raw: string): string {
   } catch {
     throw new OtlpHeadersInvalidError({
       cause: `${variable} carries a malformed percent-escape in the "${key}" value, so the header cannot be decoded`,
-      fix: `set ${variable}=${key}=<encoded>, where <encoded> is what bun -e 'console.log(encodeURIComponent(process.argv[1]))' <value> prints — or drop the stray % from the "${key}" value if it was meant literally`,
+      fix: `bun -e 'console.log(encodeURIComponent(process.argv[1]))' <value>   # prints <encoded>: set ${variable}=${key}=<encoded> — or drop the stray % from the "${key}" value if it was meant literally`,
       meta: { header: key },
     });
   }

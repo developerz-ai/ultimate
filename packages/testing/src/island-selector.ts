@@ -61,7 +61,7 @@ export class IslandSelectorUnsupportedError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_SELECTOR_UNSUPPORTED',
       cause: `${JSON.stringify(input.selector)} is not in the island DOM's selector grammar — the part it cannot read starts at ${JSON.stringify(fragment)} (offset ${input.at})`,
-      fix: `spell the selector as ${SELECTOR_GRAMMAR}; a pseudo-class, a comma or a sibling combinator needs a browser test`,
+      fix: `host.querySelector('li[data-role="row"] > .name')   // the grammar: ${SELECTOR_GRAMMAR}; a pseudo-class, a comma or a sibling combinator needs a browser test`,
     });
   }
 }

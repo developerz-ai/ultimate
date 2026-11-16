@@ -125,7 +125,7 @@ function guardCycle(value: object, path: string, seen: Set<object>, file: string
   }
   throw new IslandPropsInvalidError(
     `${path} closes a cycle, so it can never be serialized for the browser`,
-    `break the cycle at ${path} in ${file} — pass ids instead of linked objects`,
+    `{ id: value.id }   // break the cycle at ${path} in ${file} — pass ids instead of linked objects`,
   );
 }
 

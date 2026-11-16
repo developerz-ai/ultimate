@@ -109,7 +109,7 @@ export function templateCodemodGaps(input: {
       findings.push({
         code: CODE,
         cause: `${ROWS_FILE} answers for ${row.template}, which is no scaffold-owned template: a row for nothing excuses nothing`,
-        fix: `edit ${ROWS_FILE} — remove the ${row.template} row, or name the template as it is; then bun run scripts/template-codemods.ts --json`,
+        fix: `grep -n ${quoteArg(row.template)} ${ROWS_FILE}   # remove that row, or name the template as it is; then: bun run scripts/template-codemods.ts --json`,
         at: ROWS_FILE,
       });
     } else if ('codemod' in row) {
@@ -118,7 +118,7 @@ export function templateCodemodGaps(input: {
         findings.push({
           code: CODE,
           cause: `${ROWS_FILE} carries ${row.template} by codemod ${row.codemod} since ${row.since}, and packages/cli/src/codemods/index.ts lists ${listed === undefined ? 'no codemod of that id' : `it since ${listed.since}`}`,
-          fix: `edit packages/cli/src/codemods/index.ts — list ${row.codemod} there with since ${row.since}, or correct its row in ${ROWS_FILE}; then bun test ./packages/cli/src/codemods/index.test.ts`,
+          fix: `grep -n ${quoteArg(row.codemod)} packages/cli/src/codemods/index.ts   # list it there with since ${row.since}, or correct its row in ${ROWS_FILE}, then: bun test ./packages/cli/src/codemods/index.test.ts`,
           at: ROWS_FILE,
         });
       }
@@ -126,7 +126,7 @@ export function templateCodemodGaps(input: {
       findings.push({
         code: CODE,
         cause: `${ROWS_FILE} excuses ${row.template} with "${row.none}", which says no reason an app needs no codemod`,
-        fix: `edit ${ROWS_FILE} — write in the ${row.template} row's none why an app that keeps the old file is not broken by it; then bun run scripts/template-codemods.ts --json`,
+        fix: `grep -n ${quoteArg(row.template)} ${ROWS_FILE}   # write in that row's none why an app that keeps the old file is not broken by it; then: bun run scripts/template-codemods.ts --json`,
         at: ROWS_FILE,
       });
     }

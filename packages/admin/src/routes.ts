@@ -70,10 +70,7 @@ export function adminRouteFor(app: AdminApp, path: string): AdminRouteConfig {
     throw new AdminPagePathInvalidError({
       path,
       cause: 'is not a route this admin declares',
-      fix:
-        'serve one of the paths defineAdmin() built — ' +
-        `${app.routes.map((candidate) => candidate.path).join(', ')} — ` +
-        'or declare this one in `pages:` on defineAdmin()',
+      fix: `pages: [{ path, titleKey, permissions, component }]   // declare this one on defineAdmin() — or serve one of the paths it built: ${app.routes.map((candidate) => candidate.path).join(', ')}`,
     });
   }
   return adminRouteConfig(app, route);

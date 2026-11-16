@@ -9,6 +9,7 @@ import {
   liveClock,
   logger,
   renderCauseValue,
+  renderFixLiteral,
   renderFixShellArg,
   renderThrowable,
 } from '@ultimat3/core';
@@ -96,7 +97,7 @@ export function oauthCredentials(
   if (missing.length > 0) {
     throw new EnvMissingError({
       cause: `${provider} oauth is enabled but ${missing.join(' and ')} ${missing.length === 1 ? 'is' : 'are'} not set`,
-      fix: `add ${missing.join(' and ')} to .env from the ${provider} app's credentials, then run: x doctor --json`,
+      fix: `export ${renderFixShellArg(missing[0], '<KEY>')}=<value>   # each of ${missing.join(' and ')}, from the ${provider} app's credentials, in .env or the deployed environment — then x doctor --json`,
       meta: { provider, missing },
     });
   }
@@ -273,7 +274,7 @@ async function postForm(
       provider,
       stage: 'token',
       detail: 'the token endpoint answered 200 with a body that is not a JSON object',
-      fix: `confirm ${url} is the provider's real token endpoint and not a proxy`,
+      fix: `curl -sS -m 5 -X POST ${renderFixShellArg(url, '<the provider token endpoint>')}   # a real token endpoint answers a JSON error object; HTML or a redirect means a proxy or a login page`,
     });
   }
 
@@ -353,7 +354,7 @@ export async function exchangeOAuthCode(
       provider: provider.id,
       stage: 'token',
       detail: 'the response carried no access_token',
-      fix: `confirm the ${provider.id} app grants the scopes in providerFor('${provider.id}').scopes`,
+      fix: `providerFor(${renderFixLiteral(provider.id, "'<id>'")}).scopes   // the scopes the ${provider.id} app must grant`,
     });
   }
 
@@ -369,7 +370,7 @@ export async function exchangeOAuthCode(
       provider: provider.id,
       stage: 'token',
       detail: 'the response carried no id_token',
-      fix: `include "openid" in the scopes passed to beginOAuth() for ${provider.id}`,
+      fix: `beginOAuth({ provider: ${renderFixLiteral(provider.id, "'<id>'")}, clientId, redirectUri, scopes: ['openid', ...providerFor(${renderFixLiteral(provider.id, "'<id>'")}).scopes] })   // an OIDC provider answers an id_token only for openid`,
     });
   }
 

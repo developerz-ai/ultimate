@@ -244,7 +244,7 @@ export function coverageFindings(
       {
         code: 'X_COVERAGE_FLOOR_UNSTATED',
         cause: `${FLOOR_FILE} states no coverage floor; the unit suite covers ${measured} of this app's own source (${String(measure.files)} files, one no test loads counted at 0%)`,
-        fix: `edit ${FLOOR_FILE} — add ${floorLine(measure)}`,
+        fix: `{ ${floorLine(measure)} }   // in ${FLOOR_FILE}, beside its other keys`,
         docs: ERROR_DOCS_URL,
         at: FLOOR_FILE,
       },
@@ -257,7 +257,7 @@ export function coverageFindings(
     findings.push({
       code: 'X_COVERAGE_FLOOR_UNSTATED',
       cause: `${FLOOR_FILE} states a coverage floor of ${stated}, under the ${String(COVERAGE_BAR)}% bar, and no reason for it`,
-      fix: `edit ${FLOOR_FILE} — add "why": "${WHY_PLACEHOLDER}" inside "${COVERAGE_FIELD}", or raise both numbers to ${String(COVERAGE_BAR)}`,
+      fix: `{ "${COVERAGE_FIELD}": { "why": "${WHY_PLACEHOLDER}" } }   // in ${FLOOR_FILE}, beside its numbers — or raise both numbers to ${String(COVERAGE_BAR)}`,
       docs: ERROR_DOCS_URL,
       at: FLOOR_FILE,
     });
@@ -282,7 +282,8 @@ export function coverageFindings(
           : options.exists(test)
             ? // Quoted: a route directory is `[id]`, which a shell reads as a glob.
               `bun test --coverage ${quoteArg(test)}`
-            : `edit ${test} — no test sits beside ${first?.file ?? test}; write one that fails when the source is broken, then: bun test --coverage ${quoteArg(test)}`,
+            : // Line 1 is real: the file does not exist yet, so the edit starts it.
+              `edit ${test}:1 — no test sits beside ${first?.file ?? test}; write one that fails when the source is broken, then: bun test --coverage ${quoteArg(test)}`,
       docs: ERROR_DOCS_URL,
       ...(first === undefined ? {} : { at: first.file }),
     });
@@ -297,7 +298,7 @@ export function coverageFindings(
     findings.push({
       code: 'X_COVERAGE_FLOOR_STALE',
       cause: `the unit suite now covers ${measured}, more than ${String(FLOOR_SLACK)} points over the floor of ${stated} in ${FLOOR_FILE} — the floor only rises`,
-      fix: `edit ${FLOOR_FILE} — set "lines": ${String(lines)} and "funcs": ${String(funcs)} inside "${COVERAGE_FIELD}"${cleared ? ', and delete its "why"' : ''}`,
+      fix: `{ "${COVERAGE_FIELD}": { "lines": ${String(lines)}, "funcs": ${String(funcs)} } }   // in ${FLOOR_FILE}, set inside "${COVERAGE_FIELD}"${cleared ? ', and delete its "why"' : ''}`,
       docs: ERROR_DOCS_URL,
       at: FLOOR_FILE,
     });

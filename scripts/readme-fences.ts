@@ -102,7 +102,7 @@ const overFinding = (gap: FenceGap): Finding => {
   return {
     code: 'X_README_EXAMPLE_UNCOMPILED',
     cause: `${gap.failures.length} fenced example(s) in ${readme(gap.pkg)} opening \`${gap.site.slice(gap.pkg.length + 2)}\` do not typecheck and ${gap.pinned} are pinned — failing at line(s) ${lines}; the first says: ${first?.reason ?? ''}`,
-    fix: `make the example at ${readme(gap.pkg)}:${first?.readmeLine ?? 0} compile — bun run scripts/readme-fences.ts --json prints every diagnostic — or pin its row in ${BACKLOG_FILE} at ${gap.failures.length} on purpose, with a // why:`,
+    fix: `edit ${readme(gap.pkg)}:${first?.readmeLine ?? 0} — make the example compile (bun run scripts/readme-fences.ts --json prints every diagnostic), or pin its row in ${BACKLOG_FILE} at ${gap.failures.length} on purpose, with a // why:`,
     at: `${readme(gap.pkg)}:${first?.readmeLine ?? 0}`,
   };
 };

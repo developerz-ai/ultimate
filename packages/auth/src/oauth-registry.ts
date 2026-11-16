@@ -21,7 +21,7 @@ export const oauthProviderDuplicate = (provider: string): AuthError =>
   new AuthError({
     code: 'X_OAUTH_PROVIDER_DUPLICATE',
     cause: `an oauth provider is already registered as ${renderCauseValue(provider)}, so the second registration would silently replace the first`,
-    fix: `give one of them a different id, or delete the duplicate registerOAuthProvider({ id: ${renderFixLiteral(provider, '<id>')} }) call`,
+    fix: `grep -rn registerOAuthProvider apps packages   # give one of the two calls claiming ${renderFixLiteral(provider, '<id>')} a different id, or delete the duplicate — github and google are registered by @ultimat3/auth itself`,
     meta: { provider },
   });
 

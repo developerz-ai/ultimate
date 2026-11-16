@@ -52,7 +52,7 @@ describe("conflict: 'last-write-wins' needs a clock", () => {
     const thrown = declare(Unclocked.$schema, 'last-write-wins');
     expect(codeOf(thrown)).toBe('X_MUTATOR_CLOCK_MISSING');
     expect(isUltimateError(thrown) && thrown.fix).toBe(
-      "add updatedAt (a number, epoch ms, written by the server) to mutator_clock_unclocked, or declare conflict: 'server-wins'",
+      "conflict: 'server-wins'   // or add updatedAt (a number, epoch ms, written by the server) to mutator_clock_unclocked",
     );
   });
 

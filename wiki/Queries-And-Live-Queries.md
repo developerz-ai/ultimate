@@ -422,7 +422,7 @@ Load shedding is a decision with a typed error, not a fall-over.
 |---|---|---|
 | `X_SUBSCRIPTION_LIMIT` | a socket, tenant or node reached a cap; the error names which scope refused, and which knob | `raise maxPerSocket / maxPerTenant / maxEntries on the LiveQueryRegistry (per socket, default 128), or unsubscribe unused live queries` — and a **channel topic** cap answers `maxTopicsPerSocket` / `maxTopicsPerNode` on the `ChannelHub`. All constructor options, none an `app.config.ts` field |
 | `X_CURSOR_STALE` | resume cursor outside the change buffer and no snapshot path supplied | `pass 'snapshot' to resumeFrom() so the fallback path can re-snapshot instead of failing` |
-| `X_TRANSPORT_UNAVAILABLE` | the fanout bus is unreachable | `x doctor transport` |
+| `X_TRANSPORT_UNAVAILABLE` | the fanout bus is unreachable | point `NATS_URL` at a reachable nats-server |
 
 Verbatim shapes: [`packages/realtime/src/errors.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/errors.ts). Full index: [Error codes](Error-Codes).
 

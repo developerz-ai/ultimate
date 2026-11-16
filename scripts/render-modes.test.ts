@@ -139,7 +139,7 @@ describe('a second declaration of the vocabulary', () => {
     const findings = checkVocabulary([...OWNERS, file('packages/core/src/config.ts', legacy)]);
     expect(findings).toHaveLength(1);
     expect(findings[0]?.cause).toContain('CACHE_TIERS');
-    expect(findings[0]?.fix).toContain("import CACHE_TIERS from '@ultimat3/core'");
+    expect(findings[0]?.fix).toContain("import { CACHE_TIERS } from '@ultimat3/core';");
   });
 
   test('is not reported against the one module allowed to declare it', () => {
@@ -232,7 +232,7 @@ describe('a vocabulary of ordinary words, compared by NAME', () => {
     const copy = asConst('JOB_STATES', ['ready', 'running', 'done']);
     const findings = checkVocabulary([...OWNERS, file('packages/cli/src/jobs-report.ts', copy)]);
     expect(findings).toHaveLength(1);
-    expect(findings[0]?.fix).toContain("import JOB_STATES from '@ultimat3/jobs'");
+    expect(findings[0]?.fix).toContain("import { JOB_STATES } from '@ultimat3/jobs';");
   });
 
   test('a RELATED set under its own name is not a copy — the eleven that would have red', () => {
@@ -348,7 +348,7 @@ describe('a second AsyncState status union', () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?.code).toBe('X_VOCABULARY_REDECLARED');
     expect(findings[0]?.cause).toContain('RegionState');
-    expect(findings[0]?.fix).toContain("import AsyncState from '@ultimat3/core'");
+    expect(findings[0]?.fix).toContain("import type { AsyncState } from '@ultimat3/core';");
   });
 
   test('is reported as a plain literal union, and as a copy that dropped one status', () => {

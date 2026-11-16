@@ -80,21 +80,21 @@ export function checkFrameDocs(input: FrameDocInput): readonly FrameDocGap[] {
 const undocumentedFinding = (gap: FrameDocGap): Finding => ({
   code: 'X_FRAME_DOCS_STALE',
   cause: `${PROTOCOL_FILE} sends a "${gap.frame}" frame and ${FRAMES_PAGE} never names it, so the only public description of the wire protocol is missing a frame clients receive`,
-  fix: `document the ${gap.frame} frame in ${FRAMES_PAGE} — one row of the "Inbound frame order" table, or a sentence naming \`${gap.frame}\``,
+  fix: `grep -n 'Inbound frame order' ${FRAMES_PAGE}   # document the ${gap.frame} frame there — one row of that table, or a sentence naming \`${gap.frame}\``,
   at: FRAMES_PAGE,
 });
 
 const unknownFinding = (gap: FrameDocGap): Finding => ({
   code: 'X_FRAME_DOCS_STALE',
   cause: `${FRAMES_PAGE} names a \`${gap.frame}\` frame and FRAME_KINDS has no such kind, so the published protocol documents a frame no node sends`,
-  fix: `rename \`${gap.frame}\` in ${FRAMES_PAGE} to the kind that replaced it (FRAME_KINDS in ${PROTOCOL_FILE} is the list), or delete the sentence`,
+  fix: `grep -n ${renderFixShellArg(gap.frame, '<frame>')} ${FRAMES_PAGE}   # rename \`${gap.frame}\` there to the kind that replaced it (FRAME_KINDS in ${PROTOCOL_FILE} is the list), or delete the sentence`,
   at: FRAMES_PAGE,
 });
 
 const absentFinding = (): Finding => ({
   code: 'X_FRAME_DOCS_STALE',
   cause: `${PROTOCOL_FILE} ships ${FRAME_KINDS.length} wire frames and ${FRAMES_PAGE} does not exist, so the protocol has no public description at all — and every rule that compares the two passes by having nothing to compare`,
-  fix: `restore ${FRAMES_PAGE} (git checkout -- ${renderFixShellArg(FRAMES_PAGE, '<page>')}), or move the page and update FRAMES_PAGE in scripts/wiki-frames.ts to where it went`,
+  fix: `git checkout -- ${renderFixShellArg(FRAMES_PAGE, '<page>')}   # restores the deleted page — or, if it moved, update FRAMES_PAGE in scripts/wiki-frames.ts to where it went`,
   at: FRAMES_PAGE,
 });
 

@@ -40,8 +40,8 @@ export class McpBodyTooLargeError extends UltimateError {
         ? `request body is at least ${input.over ?? input.limit} bytes, limit is ${input.limit}`
         : `one message exceeded ${input.limit} bytes and was dropped`,
       fix: http
-        ? `send less in one request — page a large read, split a long prompt across calls — or raise the cap where the route is built: mcpHttpRoute({ bodyLimitBytes: ${raised} }) or defineAppMcp({ bodyLimitBytes: ${raised} })`
-        : `send one JSON-RPC message per line, each under the cap — split a large tool result into paged calls — or raise it where the transport is started: serveStdio({ lineLimitBytes: ${raised} })`,
+        ? `defineAppMcp({ bodyLimitBytes: ${raised} })   // or mcpHttpRoute({ bodyLimitBytes: ${raised} }), where the route is built — or send less in one request: page a large read, split a long prompt across calls`
+        : `serveStdio({ lineLimitBytes: ${raised} })   // where the transport is started — or send one JSON-RPC message per line, each under the cap: split a large tool result into paged calls`,
       // The numbers as FIELDS, not only prose: a `--json` reader and the wire's `data` both want
       // the limit without re-parsing a sentence.
       meta: {
@@ -72,7 +72,7 @@ export class McpRateLimitedError extends UltimateError {
     super({
       code: 'X_MCP_RATE_LIMITED',
       cause: `this caller has spent its ${input.limit} ${input.verbClass} requests per minute; the bucket refills in ${input.retryAfterSeconds}s`,
-      fix: `wait ${input.retryAfterSeconds}s — the Retry-After header carries the same number — or raise it where the route is built: mcpHttpRoute({ rateLimits: { ${input.verbClass}: <n> } }), or defineAppMcp({ rateLimits })`,
+      fix: `defineAppMcp({ rateLimits: { ...MCP_RATE_LIMITS, ${input.verbClass}: ${2 * input.limit} } })   // or mcpHttpRoute({ rateLimits }), where the route is built — or wait ${input.retryAfterSeconds}s: the Retry-After header carries the same number`,
       // why `meta` and not only the sentence: `transport-http.ts` writes `Retry-After` by hand, so
       // this route is correct today. `@ultimat3/http`'s `retryAfterOf` reads the header off
       // `meta.retryAfterSeconds` — so the day an MCP host is mounted inside that pipeline, an error

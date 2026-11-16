@@ -58,15 +58,15 @@ function assertPath(page: AdminCustomPage, fullPath: string, taken: ReadonlySet<
     throw new AdminPagePathInvalidError({ path: page.path, cause, fix });
   };
   if (!page.path.startsWith('/')) {
-    refuse('is not rooted', `write path: '/${page.path}' — every page path starts with a slash`);
+    refuse('is not rooted', `path: '/${page.path}'   // every page path starts with a slash`);
   }
   if (page.path.length < 2 || page.path.endsWith('/') || page.path.includes('//')) {
-    refuse('is not a usable path', "write path: '/ops' — one leading slash, no trailing slash");
+    refuse('is not a usable path', "path: '/ops'   // one leading slash, no trailing slash");
   }
   if (taken.has(fullPath)) {
     refuse(
       `is already served by another admin route (${fullPath})`,
-      `rename the page, e.g. path: '${page.path}-ops'`,
+      `path: '${page.path}-ops'   // rename the page`,
     );
   }
 }

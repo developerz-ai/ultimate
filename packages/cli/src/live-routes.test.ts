@@ -183,7 +183,7 @@ describe('a module that never runs in a browser', () => {
       ['apps/web/app/update-banner.tsx', 'hasPageSocket'],
     ]);
     const [finding] = await liveRouteFindings(ROOT);
-    expect(finding?.fix).toContain('move it into an island');
+    expect(finding?.fix).toContain('# moves it into an island');
   });
 
   test('one module reached from many routes is reported once', async () => {

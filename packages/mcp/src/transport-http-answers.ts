@@ -108,7 +108,7 @@ export function notAnAgent(): Response {
     JSON.stringify({
       code: 'X_MCP_PROTOCOL',
       cause: 'resolveToken returned an actor whose kind is not "agent"',
-      fix: 'return { kind: "agent", ... } from resolveToken; MCP callers are agents, not users',
+      fix: '{ actor: agentActor({ id }), scopes }   // returned from resolveToken — MCP callers are agents, not users',
     }),
     { status: 403, headers: JSON_HEADERS },
   );
@@ -119,7 +119,7 @@ export function unauthorized(challenge: string): Response {
     JSON.stringify({
       code: 'X_MCP_PROTOCOL',
       cause: 'missing or unrecognised bearer token',
-      fix: "send Authorization: Bearer <token> with a token the app's resolveToken(token) resolves to { actor, scopes } — it is the only issuer this route has",
+      fix: "authorization: 'Bearer <token>'   // a header carrying a token the app's resolveToken(token) resolves to { actor, scopes } — it is the only issuer this route has",
     }),
     { status: 401, headers: { ...JSON_HEADERS, 'www-authenticate': challenge } },
   );

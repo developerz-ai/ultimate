@@ -253,7 +253,7 @@ export async function openText(sealed: string, options: SealPurposeOptions): Pro
     throw new UltimateError({
       code: 'X_INVARIANT',
       cause: `the value opened to ${bytes.length} byte(s) that are not UTF-8 text, so it was sealed from bytes and openText() cannot return it`,
-      fix: 'call open() instead of openText() for a value sealed from a Uint8Array',
+      fix: 'await open(sealed, { purpose })   // not openText(): this value was sealed from a Uint8Array',
     });
   }
 }

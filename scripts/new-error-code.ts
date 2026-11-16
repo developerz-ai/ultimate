@@ -28,6 +28,7 @@
 // The throw site is still the author's: this registers the code and documents it, and the class or
 // factory that raises it is the edit only the author can make.
 
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import type { KnownFlags } from './lib/args';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import { planPageEdits } from './lib/error-code-page-edit';
@@ -102,7 +103,7 @@ export function statusDecision(pkg: string, argv: readonly string[]): StatusDeci
     throw new ScriptError({
       code: 'X_NEW_ERROR_CODE_INVALID',
       cause: `@ultimat3/${pkg} is tier ${tierOf(pkg)}, and ${STATUS_TABLE} covers tiers <= ${STATUS_TABLE_MAX_TIER} — its codes take neither --status nor --off-socket`,
-      fix: "rerun without --status and --off-socket: bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'",
+      fix: "bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'   # rerun without --status and --off-socket",
     });
   }
   if ((status === undefined) === !offSocket) {
@@ -151,7 +152,7 @@ export function offSocketPinIn(backlog: string, path: string, input: NewErrorCod
     throw new ScriptError({
       code: 'X_NEW_ERROR_CODE_INVALID',
       cause: `${path} has no \`${OFF_SOCKET_LITERAL}\` literal to pin ${input.code} in, so it is not the two-list backlog this generator writes`,
-      fix: `bun run scripts/error-map.ts --json   # after pinning ${input.code} under ${input.pkg} in OFF_SOCKET in ${path} by hand`,
+      fix: `grep -n 'OFF_SOCKET' ${quoteArg(path)}   # pin ${input.code} under ${input.pkg} there by hand, then: bun run scripts/error-map.ts --json`,
     });
   }
   const end = close + '\n};'.length;

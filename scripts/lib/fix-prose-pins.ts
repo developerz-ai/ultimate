@@ -13,41 +13,67 @@
 export const FIX_PROSE_PINS_FILE = 'scripts/lib/fix-prose-pins.ts';
 
 export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
-  action: 25,
-  admin: 30,
-  ai: 21,
-  auth: 46,
-  cache: 10,
-  cli: 77,
-  core: 51,
-  db: 28,
-  entity: 48,
-  flags: 7,
-  http: 24,
-  jobs: 33,
-  mail: 40,
-  manifest: 6,
-  mcp: 34,
-  money: 10,
-  notify: 4,
-  policy: 6,
-  pwa: 11,
-  query: 16,
-  realtime: 43,
-  render: 48,
-  schema: 7,
-  scraping: 39,
-  // 173 → 174: the `commits-only` finding in `changelog-check.ts`, one more fix: line in that file.
-  // why: the edit it names is to write release notes into the release's docs/changelog/X.Y.Z.md,
-  // which no command in this repo performs, so the line cannot open with a command — the sibling
-  // findings that edit the changelog are already inside this number. 172 → 171 at the changelog
-  // split (31.3.0): the duplicate-version refusal in `lib/release-changelog.ts` opens with its command.
-  // why: 167 → 170 (31.28.0) — template-codemods.ts' three fixes lead with the edit to
-  // template-codemods-rows.ts or codemods/index.ts, as fix-sequence requires; `edit` is no command.
-  scripts: 170,
-  seo: 13,
-  storage: 24,
-  testing: 25,
-  time: 8,
-  ui: 13,
+  // why: plan 101b sweep 8b-4 (917 → 55) — X_AI_PROMPT_SECRET's honest fix removes a variable (a
+  // paste of revealSecret would make the leak the default); X_HIVE_EMPTY's two remedies are at a
+  // call site the thrower cannot see
+  ai: 2,
+  // why: plan 101b sweep 8b-4 (917 → 55) — a forged token and a re-signing proxy have no safe
+  // paste (trusting the claimed issuer trusts the attacker); azp is set in the identity provider
+  // console
+  auth: 3,
+  // why: plan 101b sweep 8b-4 (917 → 55) — two Dockerfile edits (no line known, no extension);
+  // two generator bugs whose template the thrower cannot locate; "split this file" is judgement
+  cli: 5,
+  // why: plan 101b sweep 8b-4 (917 → 55) — assert.ts's caller switch, toInternalError's default
+  // for any thrown value, an image asset to shrink outside code, an env name no shell can assign,
+  // a broken framework publish
+  core: 6,
+  // why: plan 101b sweep 8b-4 (917 → 55) — unrendered.ts: a framework bug in entity/describe.ts,
+  // and an edit fix may not hard-code a line
+  db: 1,
+  // why: plan 101b sweep 8b-4 (917 → 55) — X_DRAINING: the caller can only wait and retry;
+  // deleting a config key has no code shape
+  http: 2,
+  // why: plan 101b sweep 8b-4 (917 → 55) — webhook-errors.ts: how an app names its own event ids
+  // is the app's convention
+  jobs: 1,
+  // why: plan 101b sweep 8b-4 (917 → 55) — the SMTP server's reply names the remedy; an accepted
+  // message has nothing to run; the remote server's log is somewhere the framework cannot know
+  mail: 3,
+  // why: plan 101b sweep 8b-4 (917 → 55) — AGENTS.md is hand-written by design; which facts count
+  // as generated is judgement; two manifest positions the thrower cannot map to a declaration
+  manifest: 4,
+  // why: plan 101b sweep 8b-4 (917 → 55) — X_MCP_TOOL_DUPLICATE: a rename at one of two sites of
+  // three kinds, the author picks; X_MCP_LIST_PARAMS_INVALID: the field type is unknown, so a
+  // shape would be a guess
+  mcp: 3,
+  // why: plan 101b sweep 8b-4 (917 → 55) — two browser-side cases with nothing to paste (the
+  // queue's own retry, a browser setting); an entity rename; a schema change through a migration;
+  // an internal stream misuse
+  realtime: 5,
+  // why: plan 101b sweep 8b-4 (917 → 55) — a Sass failure with no line; the app's own prerender()
+  // and load() threw; a self-rendering component the walker cannot locate
+  render: 4,
+  // why: plan 101b sweep 8b-4 (917 → 55) — X_VALIDATION_FAILED: the reader is the API caller
+  // correcting its own data
+  schema: 1,
+  // why: plan 101b sweep 8b-4 (917 → 55) — the app's own resolver, two extract-vs-page judgements
+  // over an artifact no command opens, recover() widening, and a credential only the site can
+  // judge
+  scraping: 5,
+  // why: plan 101b sweep 8b-4 (917 → 55) — error-code-page-edit.ts: a page with no code table;
+  // the original new-error-code command cannot be rebuilt
+  scripts: 1,
+  // why: plan 101b sweep 8b-4 (917 → 55) — an image URL's query value (?q=75, ?f=webp, ?w=640),
+  // which no shape reads as code
+  seo: 3,
+  // why: plan 101b sweep 8b-4 (917 → 55) — improving an eval prompt is judgement (a threshold:
+  // opener invites gaming it); a nested props value only the app can choose
+  testing: 2,
+  // why: plan 101b sweep 8b-4 (917 → 55) — X_SCHEDULE_INVALID's general branch: callers pass
+  // different fields and ranges, so no one call is honest
+  time: 1,
+  // why: plan 101b sweep 8b-4 (917 → 55) — a colour role chosen from the cause, one factory
+  // behind ~20 call shapes, and a control name that is the author's choice
+  ui: 3,
 };

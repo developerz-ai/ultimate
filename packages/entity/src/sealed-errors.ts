@@ -41,12 +41,12 @@ export const sealedPredicate = (
     ? new EntityError({
         code: 'X_ENTITY_SEALED_PREDICATE',
         cause: `${entityName}.${column} is sealed and was named in ${use} — the database holds ciphertext sealed with a fresh IV, so no two values match and nothing there can find, order or group by it`,
-        fix: `find the row by another column, or declare ${entityName}.${column} as text().sealed({ lookup: true }) to allow equality in where() and .unique() — equal plaintexts then store as visibly equal ciphertexts, so never for a low-entropy value, and rows already stored must be written again before they match`,
+        fix: `text().sealed({ lookup: true })   // declare ${entityName}.${column} so to allow equality in where() and .unique(), or find the row by another column — equal plaintexts then store as visibly equal ciphertexts, so never for a low-entropy value, and rows already stored must be written again before they match`,
       })
     : new EntityError({
         code: 'X_ENTITY_SEALED_PREDICATE',
         cause: `${entityName}.${column} is sealed for lookup and was named in ${use} that is not an equality — the database holds ciphertext, and a deterministic seal preserves equality and nothing else: no order, no range, no like`,
-        fix: `match it by equality — where({ ${column}: value }) or andWhere('${column}', 'in', values) — and order or range by a column that is not sealed`,
+        fix: `where({ ${column}: value })   // match it by equality, or andWhere('${column}', 'in', values) — and order or range by a column that is not sealed`,
       });
 
 /**
@@ -62,7 +62,7 @@ export const sealedLookupValue = (
   new EntityError({
     code: 'X_ENTITY_SEALED_PREDICATE',
     cause: `${entityName}.${column} is sealed for lookup and was matched against a ${shape === 'list' ? 'list holding a value' : 'value'} that is not a string — the column holds sealed strings or NULL, so the filter could only ever match nothing`,
-    fix: `pass the plaintext as a string — where({ ${column}: String(value) }) — or null to ask for the rows where ${entityName}.${column} is NULL`,
+    fix: `where({ ${column}: String(value) })   // the plaintext as a string — or null to ask for the rows where ${entityName}.${column} is NULL`,
   });
 
 /**
@@ -83,7 +83,7 @@ export const sealedInView = (entityName: string, column: string): EntityError =>
   new EntityError({
     code: 'X_ENTITY_SEALED_IN_VIEW',
     cause: `${entityName}.$view([...]) names ${column}, which is sealed — a view is an action's output, an OpenAPI schema and an MCP tool result, and a sealed column leaves the server through none of them`,
-    fix: `remove '${column}' from the $view([...]) list — server code reads it off the row; a caller that must be shown it gets its own field on a t.object output, set by the handler`,
+    fix: `$view([…])   // without '${column}' — server code reads it off the row; a caller that must be shown it gets its own field on a t.object output, set by the handler`,
   });
 
 /**

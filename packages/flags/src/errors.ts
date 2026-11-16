@@ -52,7 +52,7 @@ export const flagDuplicate = (key: string): FlagsError =>
   new FlagsError({
     code: 'X_FLAG_DUPLICATE',
     cause: `"${key}" is already declared, so one of the two declarations would decide nothing`,
-    fix: `rename one of the two defineFlag({ key: '${key}' }) declarations`,
+    fix: `defineFlag({ key: '<another key>' })   // "${key}" is declared twice: rename one of the two declarations`,
     meta: { key },
   });
 
@@ -60,7 +60,7 @@ export const flagUnknown = (key: string, known: readonly string[]): FlagsError =
   new FlagsError({
     code: 'X_FLAG_UNKNOWN',
     cause: `"${key}" is not declared (${known.length} flags known), so it has no default, no owner and no expiry`,
-    fix: `declare it with defineFlag({ key: '${key}', ... }), or correct the key at the isEnabled() call site`,
+    fix: `defineFlag({ key: '${key}', ... })   // declare it, or correct the key at the isEnabled() call site`,
     meta: { key },
   });
 
@@ -69,7 +69,9 @@ export const flagTargetingInvalid = (key: string, problem: string, fix?: string)
   new FlagsError({
     code: 'X_FLAG_TARGETING_INVALID',
     cause: `${key}: ${problem}`,
-    fix: fix ?? `set rollout to an integer 0-100 in defineFlag({ key: '${key}' })`,
+    fix:
+      fix ??
+      `defineFlag({ key: '${key}', targeting: { rollout: 50 } })   // rollout is an integer 0-100`,
     meta: { key },
   });
 
@@ -99,8 +101,8 @@ export const flagSubjectRequired = (init: {
     // does not parse. Axiom 4: an instruction that cannot be run is not one.
     fix:
       init.kind === 'org'
-        ? `mint the actor with its tenant — userActor({ id: ${JSON.stringify(init.actorId)}, orgId: '<org>' }) — before the isEnabled(${JSON.stringify(init.key)}) call, or drop ${init.via} from defineFlag({ key: ${JSON.stringify(init.key)} })`
-        : `pass the record at the call site — isEnabled(${JSON.stringify(init.key)}, actor, { [${JSON.stringify(init.kind)}]: '<id>' }) — or drop the ${JSON.stringify(init.kind)} ${init.via} entry from defineFlag({ key: ${JSON.stringify(init.key)} })`,
+        ? `userActor({ id: ${JSON.stringify(init.actorId)}, orgId: '<org>' })   // mint the actor with its tenant before the isEnabled(${JSON.stringify(init.key)}) call — or drop ${init.via} from defineFlag({ key: ${JSON.stringify(init.key)} })`
+        : `isEnabled(${JSON.stringify(init.key)}, actor, { [${JSON.stringify(init.kind)}]: '<id>' })   // pass the record at the call site — or drop the ${JSON.stringify(init.kind)} ${init.via} entry from defineFlag({ key: ${JSON.stringify(init.key)} })`,
     meta: { key: init.key, kind: init.kind, actorId: init.actorId, via: init.via },
   });
 
@@ -125,7 +127,7 @@ export const flagExpiryInvalid = (key: string, given: unknown): FlagsError =>
   new FlagsError({
     code: 'X_FLAG_EXPIRY_INVALID',
     cause: `${key} is a temporary flag whose expiresAt is ${renderGiven(given)}, which is not a date`,
-    fix: `set expiresAt to an ISO-8601 date such as '2026-12-01' in defineFlag({ key: '${key}' })`,
+    fix: `defineFlag({ key: '${key}', expiresAt: '2026-12-01' })   // an ISO-8601 date`,
     meta: { key },
   });
 
@@ -139,6 +141,6 @@ export const flagExpired = (init: {
   new FlagsError({
     code: 'X_FLAG_EXPIRED',
     cause: `${init.key} expired ${init.overdueDays} day(s) ago (${init.expiresAt}, owner ${init.owner}) and is still being evaluated`,
-    fix: `delete the ${init.key} branch and its defineFlag() declaration, or move it to kind: 'permanent' if it is a real product switch`,
+    fix: `defineFlag({ key: '${init.key}', kind: 'permanent' })   // a real product switch — otherwise delete the ${init.key} branch and its defineFlag() declaration`,
     meta: { key: init.key, owner: init.owner, expiresAt: init.expiresAt },
   });

@@ -22,6 +22,7 @@ import { execOutput } from './exec';
 import type { JsonValue } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
+import { quoteArg } from './shell-quote';
 import type { WorkspaceNode } from './workspace-graph';
 import { readWorkspaceGraph } from './workspace-graph';
 
@@ -274,7 +275,8 @@ export async function changedFiles(
     throw new UltimateError({
       code: 'X_CLI_UNEXPECTED',
       cause: `"${failed.command.join(' ')}" exited ${failed.code} in ${options.cwd}: ${singleLine(execOutput(failed))}`,
-      fix: `run it yourself to see why: ${failed.command.join(' ')}`,
+      // Every run above is `git(…)`, so its head is always `git`: the fix opens with it and quotes the rest.
+      fix: `git -C ${quoteArg(options.cwd)} ${quoteArg(failed.command.slice(1))}   # run it yourself to see why`,
     });
   }
   return [...new Set(runs.flatMap((run) => paths(run.stdout)))].sort();

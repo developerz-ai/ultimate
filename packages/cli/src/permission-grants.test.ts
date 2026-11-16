@@ -77,7 +77,7 @@ describe('unit · a permission an action requires must be one some role grants',
     expect(finding.code).toBe('X_PERMISSION_UNGRANTED');
     expect(finding.at).toBe('shared/roles.ts');
     expect(finding.fix).toContain(
-      `add 'customer:write' to the grants of a role in shared/roles.ts`,
+      `grants: [..., 'customer:write']   // one role's, in shared/roles.ts`,
     );
   });
 
@@ -150,7 +150,7 @@ describe('unit · a permission a MOUNTED route asks must be one some role grants
       },
     ]);
     expect(ungrantedFinding(ungranted[0] ?? { permission: '', by: '' }, 'roles.ts').fix).toContain(
-      `add 'widgets:read' to the grants of a role in roles.ts`,
+      `grants: [..., 'widgets:read']   // one role's, in roles.ts`,
     );
   });
 

@@ -281,6 +281,9 @@ describe('unit · x mcp serve --transport http', () => {
   test('any other path is 404 — one route, nothing to probe', async () => {
     const response = await fetch(`${data.url.replace('/mcp', '')}/tools`, { method: 'POST' });
     expect(response.status).toBe(404);
+    // The fix is the request that works: a POST to the one route this server answers on.
+    const { fix } = (await response.json()) as { fix: string };
+    expect(fix).toStartWith(`curl -sS -X POST ${data.url} `);
   });
 });
 

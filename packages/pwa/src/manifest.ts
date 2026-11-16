@@ -212,7 +212,7 @@ function assertValid(config: WebManifestInput): void {
   if (config.name.trim() === '') {
     throw new PwaManifestInvalidError(
       'pwa.name is empty, so the install prompt would have no title',
-      'set pwa.name in app.config.ts',
+      "pwa: { name: 'My App' }   // in app.config.ts",
     );
   }
   const scope = config.scope ?? '/';
@@ -221,7 +221,7 @@ function assertValid(config: WebManifestInput): void {
     throw new PwaManifestInvalidError(
       `pwa.startUrl ${JSON.stringify(startUrl)} is outside pwa.scope ${JSON.stringify(scope)}, ` +
         'so the installed app would open out of scope',
-      `set pwa.startUrl to a path under ${scope} in app.config.ts`,
+      `generateWebManifest({ ...config, startUrl: '${scope}' })   // a start URL under the scope ${scope}`,
     );
   }
   for (const scheme of ['light', 'dark'] as const) {
@@ -229,7 +229,7 @@ function assertValid(config: WebManifestInput): void {
     if (colors.themeColor.trim() === '' || colors.backgroundColor.trim() === '') {
       throw new PwaManifestInvalidError(
         `pwa.tokens.${scheme} is missing themeColor or backgroundColor`,
-        `resolve the ${scheme} theme tokens in app.config.ts — both schemes are required`,
+        `pwa: { colors: { ${scheme}: { themeColor: '<colour>', backgroundColor: '<colour>' } } }   // in app.config.ts, beside the other scheme — both are required`,
       );
     }
   }

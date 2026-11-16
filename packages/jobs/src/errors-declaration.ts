@@ -9,7 +9,7 @@ import { UltimateError } from '@ultimat3/core';
 const REQUIRED_FIELD_FIX = Object.freeze<Record<string, string>>({
   input: 'input: t.object({ … })',
   idempotencyKey: `idempotencyKey: (input) => \`<name>:\${input.id}\``,
-  tenant: "tenant: (input) => input.orgId — or tenant: 'none' for a job no org owns",
+  tenant: "tenant: (input) => input.orgId /* or 'none', for a job no org owns */",
   retry: "retry: { attempts: 5, backoff: 'exponential' }",
   run: 'run: async ({ input, step }) => { … }',
 });
@@ -28,7 +28,7 @@ export class JobDeclarationInvalidError extends UltimateError {
     super({
       code: 'X_JOB_DECLARATION_INVALID',
       cause: `job "${input.job}" is missing ${input.missing.join(', ')}, which every job declares`,
-      fix: `set ${edits.join('; ')} on job('${input.job}')`,
+      fix: `{ ${edits.join(', ')} }   // add to job('${input.job}')`,
       meta: { job: input.job, missing: [...input.missing] },
     });
   }

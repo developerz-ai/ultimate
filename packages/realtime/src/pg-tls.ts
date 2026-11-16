@@ -43,14 +43,14 @@ export function parseSsl(params: URLSearchParams): SslSettings {
     throw new ReplicationFailedError({
       stage: 'connect',
       detail: `sslmode=${mode} is not one of ${SSL_MODES.join(', ')}`,
-      fix: 'use ?sslmode=verify-full for a managed database, ?sslmode=disable for a local one',
+      fix: "export REPLICATION_URL='postgres://<user>:<password>@<host>:5432/<db>?sslmode=verify-full'   # a managed database — sslmode=disable for a local one",
     });
   }
   if (rootCert === 'system' && mode !== 'verify-full') {
     throw new ReplicationFailedError({
       stage: 'connect',
       detail: `sslrootcert=system trusts every public CA, so sslmode=${mode} would prove nothing`,
-      fix: 'use ?sslrootcert=system&sslmode=verify-full, or name your CA: ?sslrootcert=/path/ca.crt',
+      fix: "export REPLICATION_URL='postgres://<user>:<password>@<host>:5432/<db>?sslrootcert=system&sslmode=verify-full'   # or name your CA: ?sslrootcert=/path/ca.crt",
     });
   }
   if (mode === 'require' && rootCert !== undefined && rootCert !== 'system') {
@@ -110,7 +110,7 @@ export function judgeHandshake(
   }
   return new ReplicationTlsError({
     detail: `the server certificate did not verify (${code}) and sslmode=${target.ssl} checks it`,
-    fix: 'pass the server CA with ?sslrootcert=/path/to/ca.crt, or use ?sslmode=require to encrypt without verifying',
+    fix: "export REPLICATION_URL='postgres://<user>:<password>@<host>:5432/<db>?sslrootcert=/path/to/ca.crt'   # the server CA — or ?sslmode=require to encrypt without verifying",
   });
 }
 
@@ -126,7 +126,7 @@ export async function rootCertificate(rootCert: string | undefined): Promise<str
   if (!(await file.exists())) {
     throw new ReplicationTlsError({
       detail: 'sslrootcert names a file that does not exist',
-      fix: 'mount the server CA and point ?sslrootcert= at it, or use ?sslrootcert=system for a public CA',
+      fix: "export REPLICATION_URL='postgres://<user>:<password>@<host>:5432/<db>?sslrootcert=system'   # a public CA — or mount the server CA and point ?sslrootcert= at it",
     });
   }
   // `exists()` is not readability: a secret mounted 0600 for another user exists and still refuses
@@ -136,7 +136,7 @@ export async function rootCertificate(rootCert: string | undefined): Promise<str
   } catch (error) {
     throw new ReplicationTlsError({
       detail: `sslrootcert names a file this process cannot read: ${renderThrowable(error)}`,
-      fix: 'id -u   # the replicator runs as this user: mount the CA readable by it, or use ?sslrootcert=system for a public CA',
+      fix: 'ls -ln <ca-path>   # owner and mode: the replicator runs as $(id -u), so mount the CA readable by it, or use ?sslrootcert=system for a public CA',
     });
   }
 }

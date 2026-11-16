@@ -117,6 +117,6 @@ function envelopeInvalid(where: string, what: string): UltimateError {
   return new UltimateError({
     code: 'X_CLIENT_RECORD_ENVELOPE_INVALID',
     cause: `a response marked ${RECORDS_HEADER}: 1 carried a body where ${where} ${what}`,
-    fix: 'build the body with encodeRecordEnvelope() from @ultimat3/core in the handler that set the header, or stop setting the header',
+    fix: 'encodeRecordEnvelope()   // from @ultimat3/core, in the handler that set the header — or stop setting it',
   });
 }

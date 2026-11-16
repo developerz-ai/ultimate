@@ -220,7 +220,7 @@ describe('unit · an unstubbed request fails the run rather than being photograp
     expect(thrown).toMatchObject({ code: 'X_SHOT_ISLAND_UNSTUBBED_REQUEST' });
     expect((thrown as { cause: string }).cause).toContain('GET /api/settings');
     // The fix line is the edit, and it carries the request verbatim so it is a paste.
-    expect((thrown as { fix: string }).fix).toContain("match: 'GET /api/settings'");
+    expect((thrown as { fix: string }).fix).toContain('match: "GET /api/settings"');
     expect(existsSync(join(dir, 'leaky', 'settings/empty-options-light.png'))).toBe(false);
   });
 });

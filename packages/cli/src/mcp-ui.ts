@@ -73,7 +73,7 @@ export function assertBudgetedRoute(raw: string, declared: readonly DeclaredRout
     throw new UltimateError({
       code: 'X_UI_SHOT_ROUTE_UNBUDGETED',
       cause: `${hit.file} declares no budget.js, so x verify would refuse it as X_BUDGET_UNMEASURED — a picture of it would be a picture of a draft`,
-      fix: `declare budget: { js: '<n>kb' } in ${hit.file}, then: x build --target static --json && x verify --only budgets --json`,
+      fix: `budget: { js: '<n>kb' }   // in ${hit.file}, then: x build --target static --json && x verify --only budgets --json`,
     });
   }
   return route;

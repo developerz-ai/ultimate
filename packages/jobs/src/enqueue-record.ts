@@ -47,7 +47,7 @@ export function namedRunId(job: string, runId: unknown): string | undefined {
     code: 'X_ID_INVALID',
     // `describeValue`, never the value: what arrives here wrong is as often a key as a typo.
     cause: `enqueue of job "${job}" was given runId ${describeValue(runId)}, and a run id is a lowercase uuid (8-4-4-4-12 hex) — the queue stores it in a uuid column`,
-    fix: "pass { runId: uuidV7() } to enqueue(), with import { uuidV7 } from '@ultimat3/core'",
+    fix: "await handle.enqueue(input, { runId: uuidV7() })   // with import { uuidV7 } from '@ultimat3/core'",
     meta: { job, option: 'runId' },
   });
 }

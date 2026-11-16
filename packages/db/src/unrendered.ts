@@ -94,9 +94,7 @@ function unrenderedInvariant(
     cause:
       `the entity declares "${invariant.name}" as an assert — a rule only the app can judge — ` +
       'and this migration drops the CHECK a migration recorded for it',
-    fix:
-      `invariant('${invariant.name}', …)   # express it in SQL to keep the CHECK — ` +
-      'an assert has none, so the next x db gen drops it',
+    fix: `invariant('${invariant.name}', …)   # express it in SQL to keep the CHECK — an assert has none, so the next x db gen drops it`,
   };
 }
 
@@ -156,9 +154,7 @@ export function unrenderedOf(
         table: entity.table,
         name: column.column,
         cause: 'the entity description carries hasDefault with no expression beside it',
-        fix:
-          'project ColumnMeta.default onto ColumnDescription in ' +
-          'packages/entity/src/describe.ts, then re-run x db gen',
+        fix: 'project ColumnMeta.default onto ColumnDescription in packages/entity/src/describe.ts, then re-run x db gen',
       });
     }
     entries.push(

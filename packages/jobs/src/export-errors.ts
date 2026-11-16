@@ -26,7 +26,7 @@ export class ExportRowInvalidError extends UltimateError {
     super({
       code: 'X_EXPORT_ROW_INVALID',
       cause: `export "${input.export}" row() answered a "${input.column}" that ${input.reason}`,
-      fix: `return exactly the declared columns from row() on exportRows("${input.export}"), each one a string, a finite number, a boolean or null — format a date with an explicit timeZone and a Money with its own currency before it gets here`,
+      fix: `row: (source) => ({ …, ${input.column}: <a string, a finite number, a boolean or null> })   // on exportRows("${input.export}"): exactly the declared columns — format a date with an explicit timeZone and a Money with its own currency before it gets here`,
       meta: { column: input.column },
     });
   }
@@ -43,7 +43,7 @@ export class ExportPartTooLargeError extends UltimateError {
     super({
       code: 'X_EXPORT_PART_TOO_LARGE',
       cause: `export "${input.export}" part ${input.part} encoded to ${input.bytes} bytes and a part may hold ${input.maxBytes}`,
-      fix: `lower batch on exportRows("${input.export}") until a page fits, or raise maxPartBytes if this deployment really can hold that much per part — the number is a heap bound, not a file-size preference`,
+      fix: `{ batch: <fewer rows> }   // on exportRows("${input.export}"), until a page fits — or raise maxPartBytes if this deployment really can hold that much per part: the number is a heap bound, not a file-size preference`,
       meta: { part: input.part, bytes: input.bytes, maxBytes: input.maxBytes },
     });
   }

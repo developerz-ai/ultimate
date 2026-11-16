@@ -17,7 +17,7 @@ export const egressUnsupported = (input: {
   new ScrapeError({
     code: 'X_SCRAPE_EGRESS_UNSUPPORTED',
     cause: `the ${input.driver} driver cannot give this session the exit ${endpointLabel(input.egress)}: ${input.reason}`,
-    fix: 'pass remoteBrowser({ cdpUrl: resolver }) so each run rents a browser on its own exit, or drop egress: from the scrape() definition and set the exit once on the driver — remoteBrowser({ proxy })',
+    fix: 'remoteBrowser({ cdpUrl: resolver })   // so each run rents a browser on its own exit — or drop egress: from the scrape() definition and set the exit once on the driver: remoteBrowser({ proxy })',
     meta: { driver: input.driver, egress: endpointLabel(input.egress) },
   });
 
@@ -34,7 +34,7 @@ export const egressInPayload = (input: {
   new ScrapeError({
     code: 'X_SCRAPE_EGRESS_IN_PAYLOAD',
     cause: `scrape "${input.scrape}" was given the exit ${endpointLabel(input.egress)} with a credential that is also in the run's input, so the credential is stored in the queue row in the clear`,
-    fix: `enqueue the id of the row that holds the exit, and resolve it in the worker: egress: async ({ connectionId }) => (await repo.connectionById(connectionId))?.exit on scrape("${input.scrape}") — a .sealed() column keeps it encrypted at rest — then rotate the exposed credential`,
+    fix: `{ egress: async ({ connectionId }) => (await repo.connectionById(connectionId))?.exit }   // on scrape("${input.scrape}"): enqueue the id of the row that holds the exit and resolve it in the worker — a .sealed() column keeps it encrypted at rest — then rotate the exposed credential`,
     meta: { scrape: input.scrape, egress: endpointLabel(input.egress) },
   });
 
@@ -51,7 +51,7 @@ export const promptTimedOut = (input: {
   new ScrapeError({
     code: 'X_SCRAPE_PROMPT_UNANSWERED',
     cause: `scrape "${input.scrape}" asked for "${input.label}" and no answer was published to ${input.event} within ${String(input.waitedMs)}ms`,
-    fix: 'call answerPrompt({ runId, index, answer }) with the run id and index the event name in the cause ends with, from a process on the same STORED event bus — eventBus: postgresEventBus({ executor }) in apps/<app>/runtime.ts — or raise eventPrompt({ timeout })',
+    fix: 'answerPrompt({ runId, index, answer })   // the run id and index the event name in the cause ends with, from a process on the same STORED event bus — eventBus: postgresEventBus({ executor }) in apps/<app>/runtime.ts — or raise eventPrompt({ timeout })',
     meta: {
       scrape: input.scrape,
       label: input.label,
@@ -69,7 +69,7 @@ export const promptAnswerInvalid = (input: {
   new ScrapeError({
     code: 'X_SCRAPE_PROMPT_UNANSWERED',
     cause: `scrape "${input.scrape}" asked for "${input.label}" and the event published to ${input.event} does not carry a sealed answer`,
-    fix: 'publish the answer with answerPrompt({ runId, index, answer }) and never publishEvent() by hand — the answer is sealed for this one prompt, so a plain payload is refused rather than typed into the site',
+    fix: 'answerPrompt({ runId, index, answer })   // publish the answer with it, never publishEvent() by hand — the answer is sealed for this one prompt, so a plain payload is refused rather than typed into the site',
     meta: { scrape: input.scrape, label: input.label, event: input.event },
   });
 
@@ -106,7 +106,7 @@ export const hostResolvesInward = (url: string, hostname: string, kind: string):
     cause: `${url} is admitted by a wildcard in allowHosts, and ${hostname} resolves to ${
       kind === 'unresolvable' ? 'no address' : `a ${kind} address`
     } — a wildcard admits public addresses only`,
-    fix: `name the host exactly on the scrape() definition — allowHosts: [${JSON.stringify(hostname)}] — if it is meant to be reached inside your network`,
+    fix: `allowHosts: [${JSON.stringify(hostname)}]   // the host named exactly on the scrape() definition, if it is meant to be reached inside your network`,
     meta: { url, host: hostname, addressClass: kind },
   });
 

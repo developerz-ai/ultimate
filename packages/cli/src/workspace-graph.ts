@@ -185,7 +185,7 @@ export function importedPackages(source: string, path = 'source.ts'): readonly s
 export const unreadableWorkspaceFinding = (path: string): Finding => ({
   code: 'X_APP_PACKAGE_INVALID',
   cause: `${path} is claimed by the root "workspaces" globs and supplies no readable "name"`,
-  fix: `repair the JSON and the "name" in ${path}, or drop its directory from "workspaces" in package.json`,
+  fix: `bun --print ${quoteArg(`JSON.parse(await Bun.file(${JSON.stringify(path)}).text()).name`)}   # must print its name: repair the JSON and the "name" until it does — or drop its directory from "workspaces" in package.json`,
   docs: ERROR_DOCS_URL,
   at: path,
 });
@@ -199,7 +199,7 @@ export const undeclaredWorkspaceDepFinding = (
   cause: `${at} imports ${to.name}, which ${from.dir}/package.json does not declare`,
   // The exact line to paste, at the version the target really carries: a `workspace:*` range would
   // resolve and then fail `checkLockstep`, which compares a sibling pin against the version.
-  fix: `add "${to.name}": "${to.version ?? '0.0.0'}" to "${at.endsWith(FIXTURE_SUFFIX) ? 'devDependencies' : 'dependencies'}" in ${from.dir}/package.json`,
+  fix: `{ "${at.endsWith(FIXTURE_SUFFIX) ? 'devDependencies' : 'dependencies'}": { "${to.name}": "${to.version ?? '0.0.0'}" } }   // merge into ${from.dir}/package.json`,
   docs: ERROR_DOCS_URL,
   at: `${from.dir}/package.json`,
 });

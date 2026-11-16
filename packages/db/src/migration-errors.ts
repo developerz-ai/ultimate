@@ -24,10 +24,7 @@ export const migrateConcurrent = (lockKey: number, waitedMs: number): DbError =>
     cause:
       `another session still holds pg_advisory_lock(${lockKey}) after waiting ${waitedMs}ms, ` +
       'so this migrator refused rather than block a deploy forever',
-    fix:
-      'psql "$DATABASE_URL" -c "select pid, application_name, state from pg_stat_activity ' +
-      "join pg_locks using (pid) where locktype = 'advisory'\"" +
-      '   # pg_terminate_backend(pid) the wedged migrator, then: x db migrate',
+    fix: `psql "$DATABASE_URL" -c "select pid, application_name, state from pg_stat_activity join pg_locks using (pid) where locktype = 'advisory'"   # pg_terminate_backend(pid) the wedged migrator, then: x db migrate`,
     meta: { lockKey, waitedMs },
   });
 
@@ -132,10 +129,7 @@ export const migrationSnapshotMissing = (id: string, file: string): DbError => {
     fix: spellable
       ? `git checkout -- ${renderFixShellArg(file, '')}   # or, if it was never written: ` +
         `rm ${renderFixShellArg(snapshotStem(file), '')}.* && x db gen "${renderFixShellArg(migrationNameOf(id), '')}"`
-      : 'restore the .snapshot.json committed beside this migration, or delete every file that ' +
-        'migration owns and rerun x db gen with its description — the file named in this ' +
-        "error's cause carries a backtick, a dollar sign, a quote, a backslash or whitespace, " +
-        'so no command here can spell it',
+      : `git status --short -- "*.snapshot.json"   # shows the sidecar that is gone: restore the .snapshot.json committed beside this migration, or delete every file that migration owns and rerun x db gen with its description — the file named in this error's cause carries a backtick, a dollar sign, a quote, a backslash or whitespace, so no command here can spell it`,
     meta: { id, file },
   });
 };
@@ -159,7 +153,7 @@ export const migrationDestructive = (
     cause:
       `${file} ${DESTRUCTIVE_CAUSE[first.kind]} and does not declare it` +
       `${more === 0 ? '' : ` (and ${more} more destructive)`}: ${first.statement}`,
-    fix: `add the line "${DESTRUCTIVE_MARKER}" to ${file}, or regenerate it: x db gen "<name>" --allow-destructive`,
+    fix: `x db gen "<name>" --allow-destructive   # regenerate it — or add the line "${DESTRUCTIVE_MARKER}" to ${file}`,
     meta: { file, kind: first.kind, statements: more + 1 },
   });
 

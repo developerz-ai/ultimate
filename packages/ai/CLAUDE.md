@@ -36,7 +36,7 @@ Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
 | `gateway.ts` / `gateway-settle.ts` | routing, cache, budget wiring; a failed settle, the cache key |
 | `model-fallback.ts` / `provider-options.ts` | `MODEL_FALLBACK_ON`, the chain walk; the `providerOptions` screen |
 | `gateway-providers.ts` | the retry loop across providers, `backoffMs`, `isRetryable`, the breakers |
-| `budget.ts` / `budget-store.ts` | token ledgers per request/actor/org, ALS carrier; the `BudgetStore` contract and `memoryBudgetStore()` |
+| `budget*.ts` | ledgers per request/actor/org, ALS carrier; `BudgetStore`, `memoryBudgetStore()`; the refusal's fix |
 | `prompt.ts` | `definePrompt`, `promptHash`, version registry |
 | `prompt-fence.ts` | a template's data fences: which tag pairs enclose each slot (`promptFences`), and the closer-breaking `render` applies inside one |
 | `embeddings.ts` | `Embedder`, `hashEmbedder()`, cosine helpers |

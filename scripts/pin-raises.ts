@@ -183,7 +183,7 @@ export function raiseFinding(raise: PinRaise): Finding {
   return {
     code: 'X_PIN_RAISE_UNSTATED',
     cause: `${raise.path} ${raise.row} rose ${raise.was}→${raise.now} since ${BASE_REF} with no why: of its own — none on the row, or only the one ${BASE_REF} already had, which was written for ${raise.was}`,
-    fix: `edit ${at} — add // why: <the reason these sites cannot be fixed yet> on that row or directly above it, or fix the new sites and lower the row back to ${raise.was}`,
+    fix: `edit ${raise.path}:${raise.line} — add // why: <the reason these sites cannot be fixed yet> on that row or directly above it, or fix the new sites and lower the row back to ${raise.was}`,
     at,
   };
 }

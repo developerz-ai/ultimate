@@ -229,7 +229,7 @@ async function releaseWithin(
       // Rounded: `deadlineAt - monotonic()` is a float, and `4923.185900000001ms` in a shutdown
       // log reads as a bug in the number rather than as the budget it is.
       cause: `the "${name}" release was still running ${Math.round(budgetMs)}ms after the drain finished and has been ABANDONED — the process exits without it, so anything it held may not be closed`,
-      fix: 'raise the budget past the slowest teardown — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute one — and set terminationGracePeriodSeconds to at least as many seconds',
+      fix: 'configureLifecycle({ deadlineMs: 600_000 })   // a budget past the slowest teardown, 10 minutes here — and set terminationGracePeriodSeconds to at least as many seconds',
     });
     return false;
   } finally {

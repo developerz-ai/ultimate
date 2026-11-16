@@ -25,6 +25,16 @@ import { repoRoot } from './lib/run';
 export const CATALOG_FILE = 'packages/i18n/src/catalogs/en.json';
 
 /**
+ * A dotted key as the members of the nested JSON the catalog holds it in: `a.b` → `"a": { "b": "…" }`.
+ * The fix wraps it in its own braces, so the line opens with the JSON a reader pastes.
+ */
+export const nestedMembers = (key: string): string => {
+  const [head = key, ...rest] = key.split('.');
+  const value = rest.reduceRight((inner, part) => `{ "${part}": ${inner} }`, '"…"');
+  return `"${head}": ${value}`;
+};
+
+/**
  * `missing` is the hazard: a key the source renders and the catalog does not answer. `unused` is
  * the other direction — a catalog key nothing can reach — and it is scoped, see `coveredNamespaces`.
  */
@@ -137,14 +147,14 @@ const missingFinding = (gap: CatalogGap): Finding => ({
   // never a second name for one fact.
   code: 'X_CATALOG_MISSING_KEYS',
   cause: `${gap.at} renders t('${gap.key}') and ${CATALOG_FILE} has no such key, so the screen shows the literal ⟦${gap.key}⟧`,
-  fix: `add "${gap.key}" to ${CATALOG_FILE}, nested — "${gap.key.split('.').join('" › "')}"`,
+  fix: `{ ${nestedMembers(gap.key)} }   // merge into ${CATALOG_FILE}, the value the English text`,
   at: gap.at,
 });
 
 const unusedFinding = (gap: CatalogGap): Finding => ({
   code: 'X_CATALOG_KEY_UNREACHABLE',
   cause: `${CATALOG_FILE} defines "${gap.key}" and no framework source names it, so it describes a screen that no longer exists`,
-  fix: `delete "${gap.key}" from ${CATALOG_FILE}, or render it — t('${gap.key}') in the view that needs it`,
+  fix: `t('${gap.key}')   // in the view that needs it — or delete "${gap.key}" from ${CATALOG_FILE}`,
   at: CATALOG_FILE,
 });
 

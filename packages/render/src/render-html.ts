@@ -127,7 +127,7 @@ async function renderPage(
       `rendering the component in ${file} threw: ${renderThrowable(error)}`,
       // The route file is author text and `$(…)` is a legal name: screened where it enters the
       // reproduce command (security audit of plan 101 sweep 1c).
-      `run \`bun test ${renderFixShellArg(file.replace(/\.tsx?$/, '.test.ts'), "'<the route's test file>'")}\` to reproduce, then fix ${file}`,
+      `bun test ${renderFixShellArg(file.replace(/\.tsx?$/, '.test.ts'), "'<the route test file>'")}   # reproduces it — then fix ${file}`,
     );
   }
 }

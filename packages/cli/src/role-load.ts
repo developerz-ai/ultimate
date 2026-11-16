@@ -54,7 +54,7 @@ export class RoleLoadIncompleteError extends UltimateError {
     super({
       code: 'X_ROLE_LOAD_INCOMPLETE',
       cause: `the ${input.role} role imported ${API_INDEX} and every module that reaches no component or stylesheet, and ${MANIFEST_FILE} names ${String(input.missing.length)} job(s) or task(s) that load did not register (${input.missing.join(', ')}), so the whole app was imported instead`,
-      fix: `add import * as <module> from the file that declares it and <module> to jobs: [...] or tasks: [...] in ${API_INDEX}, then x manifest`,
+      fix: `import * as <module> from '<the file that declares it>';   // in ${API_INDEX}, with <module> in jobs: [...] or tasks: [...] — then x manifest`,
       meta: { role: input.role, missing: input.missing },
     });
   }

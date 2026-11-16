@@ -52,9 +52,7 @@ export class PostgresAdvisoryLock implements AdvisoryLock {
       throw new ReplicationFailedError({
         stage: 'preflight',
         detail: `advisory lock key "${options.key}" is not [A-Za-z0-9:_.-]+`,
-        fix:
-          'rename the lock key to match [A-Za-z0-9:_.-]+ — it is interpolated into ' +
-          'pg_try_advisory_lock(hashtext(...))',
+        fix: "postgresAdvisoryLock({ url, key: 'x:replicator:<slot>' })   # a key matching [A-Za-z0-9:_.-]+ — it is interpolated into pg_try_advisory_lock(hashtext(...))",
       });
     }
     this.key = options.key;

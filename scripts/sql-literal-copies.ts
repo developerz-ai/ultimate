@@ -172,7 +172,7 @@ export function checkLiteralCopies(input: LiteralCopyInput): readonly Finding[] 
       {
         code: 'X_SQL_LITERAL_UNSCANNED',
         cause: `${OWNER} was not among the scanned files, so every copy of the escape would have read as absent`,
-        fix: `restore ${OWNER}, or update OWNER in scripts/sql-literal-copies.ts if literal() moved — then bun run sql-literal-copies`,
+        fix: `grep -rn 'export function literal(' packages/*/src   # if literal() moved, point OWNER in scripts/sql-literal-copies.ts at that file, or restore ${OWNER} — then: bun run sql-literal-copies`,
         at: OWNER,
       },
     ];

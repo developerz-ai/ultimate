@@ -140,7 +140,7 @@ describe('the findings', () => {
     });
 
     expect(finding.code).toBe('X_CATALOG_MISSING_KEYS');
-    expect(finding.fix).toContain('"admin" › "list" › "loading"');
+    expect(finding.fix).toStartWith('{ "admin": { "list": { "loading": "…" } } }   // merge into');
     expect(finding.fix).toContain(CATALOG_FILE);
   });
 

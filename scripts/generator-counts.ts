@@ -24,6 +24,7 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
+import { siteAt } from './lib/site-at';
 
 /**
  * Every generator an `x g <kind>` / `x new` span on a line names, modelled or not. Unmodelled ones
@@ -299,14 +300,14 @@ export function checkGeneratorCounts(input: CountGapInput): readonly CountGap[] 
 const staleFinding = (gap: CountGap): Finding => ({
   code: 'X_DOC_FILE_COUNT_STALE',
   cause: `${gap.at} says ${gap.generator} produces ${String(gap.claimed)} files, and it ${gap.detail}`,
-  fix: `set the count at ${gap.at} to ${gap.expected.join(' or ')}, or re-derive it with \`x g --dry-run --json\` / \`x new --dry-run --json\` and count data.files (a real run after setup adds data.refreshes)`,
+  fix: `edit ${siteAt(gap.at).path}:${siteAt(gap.at).line} — set the count to ${gap.expected.join(' or ')}, then: bun run scripts/generator-counts.ts --json — or re-derive it with \`x g --dry-run --json\` / \`x new --dry-run --json\` and count data.files (a real run after setup adds data.refreshes)`,
   at: gap.at,
 });
 
 const vacuousFinding = (gap: CountGap): Finding => ({
   code: 'X_DOC_FILE_COUNT_UNSCANNED',
   cause: gap.detail,
-  fix: 'check DOC_GLOBS in scripts/doc-commands.ts still matches the pages, and CLAIM in scripts/generator-counts.ts still matches how they state a count',
+  fix: "grep -n 'const CLAIM' scripts/generator-counts.ts   # it must still match how the pages state a count, and DOC_GLOBS in scripts/doc-commands.ts must still match the pages",
   at: 'scripts/generator-counts.ts',
 });
 

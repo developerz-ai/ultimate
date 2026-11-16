@@ -47,7 +47,7 @@ export const text = (options: TextOptions = {}): TextColumn => {
         return refuseColumn(
           'length',
           `expected at most ${max} characters, got ${charCount(value)}`,
-          `truncate at the call site, or widen the column — text({ max: ${charCount(value)} }) — and run x db gen "widen the text"`,
+          `text({ max: ${charCount(value)} })   // widen the column, then run x db gen "widen the text" — or truncate at the call site`,
         );
       }
       return refuseNul(value);
@@ -81,6 +81,6 @@ export const boolean = (): Column<boolean> =>
       : refuseColumn(
           'type',
           `expected a boolean, ${got(value)}`,
-          "value === 'true' at the call site for a text flag, and boolean().nullable() when the column has a third state",
+          "boolean().nullable()   // when the column has a third state — and value === 'true' at the call site for a text flag",
         ),
   );

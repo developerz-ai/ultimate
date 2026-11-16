@@ -213,7 +213,7 @@ describe('the sitemap index cap', () => {
     expect(thrown?.code).toBe(SEO_ERROR_CODES.sitemapTooLarge);
     expect(thrown?.cause).toContain(String(SITEMAP_INDEX_MAX_FILES + 1));
     expect(thrown?.cause).toContain(String(SITEMAP_INDEX_MAX_FILES));
-    expect(thrown?.fix).toContain('noindex');
+    expect(thrown?.fix).toStartWith('meta: { robots: { index: false } }');
   });
 
   test('exactly the limit is allowed — the refusal is > and not >=', async () => {

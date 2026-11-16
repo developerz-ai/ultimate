@@ -31,7 +31,7 @@ export class RebaseConflictError extends RealtimeError {
     super({
       code: 'X_REBASE_CONFLICT',
       cause: `mutation ${args.key} on ${args.entity} could not be rebased: ${args.reason}`,
-      fix: "set conflict: 'server-wins' on the mutator, or return a row from custom(merge)",
+      fix: "conflict: 'server-wins'   # on the mutator — or return a row from custom(merge)",
     });
   }
 }
@@ -140,7 +140,7 @@ export class ServerRenderLiveError extends RealtimeError {
     super({
       code: 'X_LIVE_SERVER_RENDER',
       cause: `${args.operation} ran during a server render, where this app has no live socket`,
-      fix: 'move the call into an island: x g island <route-dir> --at <route-dir>, import from its mount(), declare island({ src })',
+      fix: 'x g island <route-dir> --at <route-dir>   # move the call into it: import from its mount(), declare island({ src })',
     });
   }
 }
@@ -151,7 +151,7 @@ export class CursorStaleError extends RealtimeError {
     super({
       code: 'X_CURSOR_STALE',
       cause: `cursor for query ${args.qid} at lsn ${args.lsn} cannot be resumed: ${args.reason}`,
-      fix: 'pass `snapshot` to resumeFrom() so the fallback path can re-snapshot instead of failing',
+      fix: 'resumeFrom(cursor, { source, snapshot })   # so the fallback path can re-snapshot instead of failing',
     });
   }
 }

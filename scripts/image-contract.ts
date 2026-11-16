@@ -147,14 +147,14 @@ const buildFile = (gap: ImageGap): string => renderFixShellArg(gap.file, DOCKERF
 const libcFinding = (gap: ImageGap): Finding => ({
   code: 'X_IMAGE_LIBC_MISMATCH',
   cause: `${gap.file} builds its artifact in stage ${gap.detail} and ships it on ${gap.runtime}, so the binary asks for a loader the runtime does not have — every container exits "exec: no such file or directory" and the build stays green`,
-  fix: `change that stage's FROM to a base of the same libc family as the runtime, then docker build -f ${buildFile(gap)} -t ultimate-app:libc-check .`,
+  fix: `edit ${gap.file}:${gap.line} — change that stage's FROM to a base of the same libc family as the runtime, then docker build -f ${buildFile(gap)} -t ultimate-app:libc-check .`,
   at: where(gap),
 });
 
 const guardFinding = (gap: ImageGap): Finding => ({
   code: 'X_IMAGE_GUARD_MISSING',
   cause: `the final stage of ${gap.file} ships ${gap.detail} as its ENTRYPOINT and never runs it, so a binary that cannot exec passes the build and fails on the first command an operator runs — a guard in an earlier stage proves the build image, which is not what ships`,
-  fix: `add \`RUN ["${gap.detail}", "--version"]\` to the FINAL stage (exec form — a distroless stage has no shell), then docker build -f ${buildFile(gap)} -t ultimate-app:guard-check .`,
+  fix: `edit ${gap.file}:${gap.line} — add \`RUN ["${gap.detail}", "--version"]\` to the FINAL stage (exec form — a distroless stage has no shell), then docker build -f ${buildFile(gap)} -t ultimate-app:guard-check .`,
   at: where(gap),
 });
 
@@ -283,7 +283,7 @@ export async function ignoreFilesOf(root: string): Promise<readonly IgnoreFile[]
 export const ignoreGapFindingFor = (gap: IgnoreGap): Finding => ({
   code: 'X_IMAGE_SECRET_UNIGNORED',
   cause: `${gap.file} excludes .env and .npmrc but not ${SECRETS_KEY_FILE}, so a build stage's \`COPY . .\` bakes the AES master key into a layer beside the committed secrets.enc.json it decrypts — and \`findMasterKey\` reads the file whenever ULTIMATE_SECRETS_KEY is unset, so the container boots on the baked key and the platform's own key is never exercised`,
-  fix: `add \`${SECRET_IGNORE_PATTERN}\` beside the .npmrc line in ${gap.file}, then bun run scripts/image-contract.ts --json`,
+  fix: `grep -n npmrc ${renderFixShellArg(gap.file, '<the .dockerignore>')}   # add \`${SECRET_IGNORE_PATTERN}\` beside that line, then: bun run scripts/image-contract.ts --json`,
   at: gap.file,
 });
 

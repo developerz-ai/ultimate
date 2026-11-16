@@ -12,7 +12,7 @@ export function scopeChanged(subject: string, issued: number, current: number): 
   return new UltimateError({
     code: 'X_CLIENT_SCOPE_CHANGED',
     cause: `${subject} was issued for client scope epoch ${issued} and the page is now at ${current}, so its answer belongs to the previous principal`,
-    fix: 'discard this answer and read again — test it with isSuperseded(error) from @ultimat3/core and render nothing for it',
+    fix: 'isSuperseded(error)   // from @ultimat3/core: true for this one — render nothing, discard the answer and read again',
     meta: { subject, issued, current },
   });
 }

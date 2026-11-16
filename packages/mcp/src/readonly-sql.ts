@@ -85,12 +85,15 @@ export function assertReadOnlyQuery(sql: string): string {
     .filter((s) => s.length > 0);
 
   if (statements.length === 0) {
-    throw rejected('the statement is empty', 'send one SELECT statement');
+    throw rejected(
+      'the statement is empty',
+      'SELECT * FROM <table> LIMIT 10   -- one SELECT statement',
+    );
   }
   if (statements.length > 1) {
     throw rejected(
       `${statements.length} statements were sent; batching hides a write behind a read`,
-      'send exactly one SELECT statement per db.query call',
+      'SELECT * FROM <table> LIMIT 10   -- exactly one SELECT statement per db.query call',
     );
   }
 
@@ -102,7 +105,7 @@ export function assertReadOnlyQuery(sql: string): string {
   if (!READ_LEADERS.has(leader)) {
     throw rejected(
       `statement begins with "${leader}", which is not a read`,
-      `begin with one of: ${[...READ_LEADERS].sort().join(', ')}`,
+      `SELECT * FROM <table> LIMIT 10   -- a read begins with one of: ${[...READ_LEADERS].sort().join(', ')}`,
     );
   }
   for (const word of words) {
@@ -130,7 +133,7 @@ export function assertReadOnlyQuery(sql: string): string {
         family === called
           ? `the statement calls ${called}(), which db.query may not call`
           : `the statement calls ${called}(), one of the ${family}* functions db.query may not call`,
-        'query tables only: no file access, no locks, no session settings, no sleeps',
+        'SELECT * FROM <table> LIMIT 10   -- query tables only: no file access, no locks, no session settings, no sleeps',
       );
     }
   }
@@ -138,7 +141,7 @@ export function assertReadOnlyQuery(sql: string): string {
   if (/\bfor\s+(update|no\s+key\s+update|share|key\s+share)\b/i.test(statement)) {
     throw rejected(
       'the statement takes row locks (FOR UPDATE/SHARE)',
-      'drop the locking clause; db.query may not hold locks',
+      'SELECT * FROM <table> LIMIT 10   -- the same read with no FOR UPDATE/SHARE clause: db.query may not hold locks',
     );
   }
   return verbatim(sql);
@@ -173,7 +176,7 @@ export function assertBranchDatabase(target: DatabaseTarget): string {
   if (target.production) {
     throw notBranch(
       `"${target.label}" is a production database`,
-      'run migrations in production through the migrate role: ROLE=migrate in your deploy hook',
+      'ROLE=migrate bun apps/web/server.ts   # in your deploy hook: production migrates through the migrate role, never from MCP',
     );
   }
   if (target.branch === null) {
@@ -253,7 +256,7 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
       throw rejected(
         'the statement quotes an identifier with Unicode escapes (U&"…"), which this check ' +
           'cannot read',
-        'spell the identifier plainly: select "column name" from posts',
+        'SELECT "column name" FROM posts   -- the identifier spelled plainly, no U&"…" escape',
       );
     }
     if (char === "'" || char === '"') {

@@ -140,7 +140,7 @@ export function gateOverloaded(state: FlightGateState): UltimateError {
   return new UltimateError({
     code: 'X_FLIGHT_GATE_OVERLOADED',
     cause: `${state.active} of ${state.subject} are running at the ceiling of ${state.maxConcurrent} and ${state.queued} more are queued at the limit of ${state.maxQueued}`,
-    fix: 'retry after the Retry-After header, or widen the ceiling at the flightGate({ maxConcurrent, maxQueued }) call site — only if the box has the capacity the extra slots buy',
+    fix: `flightGate({ maxConcurrent: ${state.maxConcurrent * 2}, maxQueued: ${state.maxQueued * 2} })   // only if the box has the capacity the extra slots buy — or retry after the Retry-After header`,
     meta: {
       active: state.active,
       queued: state.queued,

@@ -196,7 +196,7 @@ describe('the code checks, over a repo', () => {
     expect(finding?.code).toBe('X_ERROR_CODE_UNDOCUMENTED');
     expect(finding?.cause).toContain('X_B is declared at packages/db/src/errors.ts:1');
     expect(finding?.fix).toBe(
-      'add a row for X_B to wiki/Error-Codes-db.md, with its cause and the command that fixes it',
+      'x errors explain X_B --json   # its title and fix: add a row for X_B to wiki/Error-Codes-db.md, with its cause and the command that fixes it',
     );
     expect(finding?.at).toBe(DB_PAGE);
   });
@@ -383,7 +383,7 @@ describe('the deprecated single-page names', () => {
       const [finding, ...rest] = await checkErrorCodeDocs(root, INDEX);
       expect(rest).toEqual([]);
       expect(finding?.fix).toBe(
-        'add a row for X_B to wiki/Error-Codes.md, with its cause and the command that fixes it',
+        'x errors explain X_B --json   # its title and fix: add a row for X_B to wiki/Error-Codes.md, with its cause and the command that fixes it',
       );
     });
 

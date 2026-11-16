@@ -3,7 +3,7 @@
 // discover six missing variables.
 
 import { numeric } from '@ultimat3/schema';
-import { describeValue } from './error-render';
+import { describeValue, renderFixShellArg } from './error-render';
 import { EnvMissingError } from './errors';
 import { REDACTED, redactKeys } from './logger';
 import { type Role, resolveRole } from './roles';
@@ -180,7 +180,9 @@ export function checkEnv(schema: EnvSchema, options?: EnvOptions): EnvCheckRepor
           reason: 'missing',
           expected: expectation(decl),
           received: undefined,
-          fix: decl.fix ?? `add ${key}= to .env`,
+          fix:
+            decl.fix ??
+            `grep '^${renderFixShellArg(key, '<KEY>')}=' .env.example >> .env   # then give it ${expectation(decl)}`,
         });
       } else {
         values[key] = undefined;
@@ -197,7 +199,9 @@ export function checkEnv(schema: EnvSchema, options?: EnvOptions): EnvCheckRepor
       reason: 'invalid',
       expected: expectation(decl),
       received: decl.secret === true ? '***' : raw,
-      fix: decl.fix ?? `set ${key} to ${expectation(decl)} in .env`,
+      fix:
+        decl.fix ??
+        `grep -n '^${renderFixShellArg(key, '<KEY>')}=' .env   # the line to set to ${expectation(decl)}`,
     });
   }
 
@@ -239,7 +243,7 @@ export function defineEnv<const S extends EnvSchema>(schema: S, options?: EnvOpt
     const keys = report.issues.map((issue) => issue.key).join(' ');
     throw new EnvMissingError({
       cause,
-      fix: `add ${keys} to .env (copy .env.example), then run: x env check`,
+      fix: `x env check   # each key to add to .env (copy .env.example): ${keys}`,
       meta: { issues: described },
     });
   }

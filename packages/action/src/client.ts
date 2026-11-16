@@ -277,7 +277,7 @@ function assertSameBuild(
   if (clientBuild === serverBuild) return;
   throw new ContractDriftError(
     `client build ${clientBuild} called ${name} on server build ${serverBuild}`,
-    'reload the page to pick up the new client bundle',
+    'location.reload()   // picks up the new client bundle',
   );
 }
 

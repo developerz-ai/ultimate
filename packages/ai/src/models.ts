@@ -387,6 +387,6 @@ function assertDisableAllowed(model: ModelId, rules: ModelReasoning, effort: Eff
   if (cap === undefined || rankOf(effort) <= rankOf(cap)) return;
   throw new AiRequestInvalidError({
     detail: `model "${model}" allows thinking: 'disabled' only at effort '${cap}' or below, not '${effort}'`,
-    fix: `set effort: '${cap}' in definePrompt alongside thinking: 'disabled', or drop thinking from it`,
+    fix: `effort: '${cap}'   # in definePrompt, alongside thinking: 'disabled' — or drop thinking from it`,
   });
 }

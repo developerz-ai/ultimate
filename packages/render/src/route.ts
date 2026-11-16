@@ -332,26 +332,26 @@ export function defineRoute<TData = RouteData>(
   if (def.offline === undefined) {
     throw new RouteOfflineMissingError(
       'defineRoute() called without an `offline` strategy',
-      "add offline: 'precache' | 'runtime' | 'network-only' to defineRoute",
+      "offline: 'precache'   // or 'runtime' | 'network-only', in defineRoute",
     );
   }
   if (!OFFLINE_STRATEGIES.includes(def.offline)) {
     throw new RouteOfflineMissingError(
       `offline: ${renderCauseValue(def.offline)} is not a known strategy`,
-      `use one of ${OFFLINE_STRATEGIES.join(' | ')}`,
+      `offline: 'precache'   // one of ${OFFLINE_STRATEGIES.join(' | ')}`,
     );
   }
   if (typeof def.meta !== 'function') {
     throw new RouteMetaMissingError(
       'defineRoute() called without a `meta` function',
-      'add meta: () => ({ title, description }) to defineRoute',
+      'meta: () => ({ title, description })   // in defineRoute',
     );
   }
 
   if (def.load !== undefined && typeof def.load !== 'function') {
     throw new RouteLoadInvalidError(
       `load: ${renderCauseValue(def.load)} is not a function`,
-      'make load a function of ({ params, url }) returning the page data, or remove it',
+      'load: ({ params, url }) => ({ … })   // returns the page data — or remove load',
     );
   }
 

@@ -8,7 +8,7 @@ import type { Catalog } from '@ultimat3/i18n';
 import { loadCatalog } from '@ultimat3/i18n';
 import { maskLiterals } from '../packages/core/src/source-mask';
 import { MAIL_CATALOG } from '../packages/mail/src/catalog';
-import { CATALOG_FILE } from './i18n-catalog';
+import { CATALOG_FILE, nestedMembers } from './i18n-catalog';
 import { parseScriptArgs } from './lib/args';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
@@ -167,7 +167,7 @@ export function catalogKeyFinding(gap: CatalogKeyGap): Finding {
       code: 'X_CATALOG_CARRIER_UNSCANNED',
       cause:
         'no framework source hands t() a key through a constant or a property this scan recognises, so the rule checked nothing — a renamed t() or a moved corpus reads exactly like a tree with no carried key',
-      fix: 'edit DYNAMIC_CALL in scripts/catalog-keys.ts so it matches how the framework calls t(), then bun run scripts/catalog-keys.ts --json',
+      fix: "grep -n 'DYNAMIC_CALL' scripts/catalog-keys.ts   # edit it so it matches how the framework calls t(), then: bun run scripts/catalog-keys.ts --json",
       at: 'scripts/catalog-keys.ts',
     };
   }
@@ -178,7 +178,7 @@ export function catalogKeyFinding(gap: CatalogKeyGap): Finding {
     // one name, whether the key was a literal argument or carried in by `${site.via}`.
     code: 'X_CATALOG_MISSING_KEYS',
     cause: `${at} carries "${site.key}" (${site.via}) to t(), and neither ${CATALOG_FILE} nor ${MAIL_CATALOG_FILE} has it, so the screen shows ⟦${site.key}⟧`,
-    fix: `add "${site.key}" to ${CATALOG_FILE}, nested as "${site.key.split('.').join('" › "')}" — or correct the key at ${at}`,
+    fix: `{ ${nestedMembers(site.key)} }   // merge into ${CATALOG_FILE} — or correct the key at ${at}`,
     at,
   };
 }

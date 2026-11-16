@@ -14,6 +14,7 @@ import { createHelperResolver } from './fix-imports';
 import { citedPathProblem, FILE_TOKEN_PATTERN } from './fix-path';
 import { scanFixSites } from './fix-scan';
 import type { Finding } from './output';
+import { quoteArg } from './shell-quote';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
 import type { CodeSite, FixSite, UnresolvedCodeSite } from './ts-scan';
 import { isCodeRegistry, scanBorrowedCodes, scanCodeDeclarations, scanCodes } from './ts-scan';
@@ -72,7 +73,7 @@ export function fixProblem(raw: string): string | undefined {
 const fixFinding = (site: FixSite, problem: string): Finding => ({
   code: 'X_ERROR_FIX_INVALID',
   cause: problem,
-  fix: `rewrite the fix at ${site.at}:${site.line} as a command to run, a call to paste, or an edit naming a file`,
+  fix: `edit ${site.at}:${site.line} — rewrite the fix as a command to run, a call to paste, or an edit naming a file`,
   docs: ERROR_DOCS_URL,
   at: `${site.at}:${site.line}`,
 });
@@ -85,7 +86,7 @@ const fixFinding = (site: FixSite, problem: string): Finding => ({
 const pathFinding = (site: FixSite, problem: string): Finding => ({
   code: 'X_ERROR_FIX_PATH_MISSING',
   cause: `the fix at ${site.at}:${site.line} ${problem}`,
-  fix: `correct the path in the fix at ${site.at}:${site.line} to one this repo holds, or create the file it names`,
+  fix: `edit ${site.at}:${site.line} — correct the path in the fix to one this repo holds, or create the file it names`,
   docs: ERROR_DOCS_URL,
   at: `${site.at}:${site.line}`,
 });
@@ -258,7 +259,7 @@ export const documentedCodes = (markdown: string): ReadonlySet<string> =>
 const undocumentedFinding = (code: string, at: string, line: number, page: string): Finding => ({
   code: 'X_ERROR_CODE_UNDOCUMENTED',
   cause: `${code} is declared at ${at}:${line} and no error reference page has an entry for it`,
-  fix: `add a row for ${code} to ${page}, with its cause and the command that fixes it`,
+  fix: `x errors explain ${quoteArg(code)} --json   # its title and fix: add a row for ${code} to ${page}, with its cause and the command that fixes it`,
   docs: ERROR_DOCS_URL,
   at: page,
 });
@@ -307,7 +308,7 @@ export async function readLegacyPage(
 const unregisteredFinding = (code: string, page: string, index: string): Finding => ({
   code: 'X_ERROR_CODE_UNREGISTERED',
   cause: `${page} documents ${code} as a live code and nothing registers it, so "x errors explain ${code}" refuses a code this page promises`,
-  fix: `register ${code} through registerErrorCodes() in its package's src/errors.ts, or move its row under "${RESERVED_HEADING}" in ${index}`,
+  fix: `registerErrorCodes({ ${code}: { title: '<what it means>' } })   // in its package's src/errors.ts — or move its row under "${RESERVED_HEADING}" in ${index}`,
   docs: ERROR_DOCS_URL,
   at: page,
 });
@@ -400,7 +401,7 @@ export async function collectDeclaredCodes(root: string): Promise<readonly CodeS
 const unresolvedCodeFinding = (site: UnresolvedCodeSite): Finding => ({
   code: 'X_ERROR_CODE_UNRESOLVED',
   cause: `the code at ${site.at}:${site.line} is the name ${site.name}, and no module-scope const in that file gives it a value — so the manifest, the reference page and "x errors explain" are all blind to whatever code it holds`,
-  fix: `write the X_* code as a string literal at ${site.at}:${site.line}, or declare it as a module-scope const in that same file`,
+  fix: `edit ${site.at}:${site.line} — write the X_* code as a string literal, or declare it as a module-scope const in that same file`,
   docs: ERROR_DOCS_URL,
   at: `${site.at}:${site.line}`,
 });
@@ -467,7 +468,8 @@ export async function checkErrorCodeDocs(root: string, page: string): Promise<re
       {
         code: 'X_ERROR_CODE_UNDOCUMENTED',
         cause: `the error reference ${page} does not exist, so no code can be documented`,
-        fix: `create ${page} with a row per X_* code, or stop naming it as the error reference`,
+        // Line 1 is real: the page does not exist, so the edit starts it.
+        fix: `edit ${page}:1 — create it with a row per X_* code, or stop naming it as the error reference`,
         docs: ERROR_DOCS_URL,
         at: page,
       },

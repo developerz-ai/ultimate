@@ -234,8 +234,8 @@ function codeOf(run: () => unknown): string {
 }
 
 /**
- * `maxBytes` is an `app.config.ts` knob — `CacheTooLargeError`'s own `fix:` says so — which makes
- * it a value that arrives as `Number(process.env.CACHE_MAX_BYTES)`. `NaN` is not nullish, so `??`
+ * `maxBytes` is an `lruTier({ maxBytes })` option — `CacheTooLargeError`'s own `fix:` says so —
+ * which makes it a value that can arrive as `Number(process.env.CACHE_MAX_BYTES)`. `NaN` is not nullish, so `??`
  * passes it through, and every comparison it then reaches answers FALSE: the too-large refusal
  * never fires and, worse, `while (bytes > maxBytes)` never evicts. A cache that never evicts is
  * an unbounded `Map` keyed by whatever the app caches, which is the one failure this class exists
@@ -254,7 +254,7 @@ describe('LruCache refuses a byte budget that is not a budget', () => {
     );
   });
 
-  test('the refusal names the value and the config key that carries it', () => {
+  test('the refusal names the value and pastes the corrected constructor option', () => {
     let caught: unknown;
     try {
       new LruCache({ maxBytes: Number.NaN });
@@ -264,7 +264,9 @@ describe('LruCache refuses a byte budget that is not a budget', () => {
     expect(isUltimateError(caught)).toBe(true);
     expect((caught as UltimateError).code).toBe('X_CACHE_LIMIT_INVALID');
     expect((caught as UltimateError).cause).toContain('NaN');
-    expect((caught as UltimateError).fix).toContain('lru.maxBytes');
+    expect((caught as UltimateError).fix).toStartWith('{ maxBytes: 10_000 }');
+    expect((caught as UltimateError).fix).toContain('lruTier(...)');
+    expect((caught as UltimateError).fix).not.toContain('lru.maxBytes in app.config.ts');
   });
 
   test('the default and an ordinary budget still construct', () => {

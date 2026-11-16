@@ -122,7 +122,12 @@ export function memorySemanticCache(options: SemanticCacheOptions = {}): Semanti
       const floor =
         override === undefined
           ? threshold
-          : assertFiniteSimilarityFloor('semantic', 'threshold', override);
+          : assertFiniteSimilarityFloor(
+              'semantic',
+              'threshold',
+              override,
+              'the override argument to lookup(embedding, override)',
+            );
       let best: SemanticHit<T> | undefined;
       for (const record of live()) {
         const similarity = cosineSimilarity(embedding, record.embedding);

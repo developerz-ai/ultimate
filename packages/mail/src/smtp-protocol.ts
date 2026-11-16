@@ -61,7 +61,7 @@ export function createReplyParser(): ReplyParser {
       stage: 'reply',
       detail: `the server sent more than ${MAX_REPLY_BYTES} bytes without completing one reply`,
       retryable: true,
-      fix: 'point SMTP_URL at the SMTP port itself — a proxy or an HTTP port answers like this',
+      fix: 'SMTP_URL="smtp://host:587"   # the SMTP port itself — a proxy or an HTTP port answers like this',
     });
   };
 
