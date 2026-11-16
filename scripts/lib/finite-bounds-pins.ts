@@ -39,14 +39,9 @@ export interface FiniteBoundPin {
  * `config-readers`, `proto-index`, `flight-copies` and `sql-literal-copies` were each written at.
  */
 export const FINITE_BOUNDS_PINS: Readonly<Record<string, FiniteBoundPin>> = {
-  admin: {
-    count: 1,
-    reason:
-      '`layout.tsx` — `width`. AUDITED in the tier 5 slice of the 17.0.0 sweep, and left on purpose. `branding.logo.width` reaches an `<img>` attribute and nothing else: a `NaN` renders a `width` the HTML parser rejects, so the browser falls back to the image intrinsic size — a wrong-looking logo on one element, with no loop, no silent zero-work and no bound that stops being enforced. Screening it means throwing `X_INVARIANT` out of `AdminLayout`, which blanks EVERY admin screen over a cosmetic typo; the same trade the tier 4 slice made for `@ultimat3/ui`\'s `Textarea` `rows`. `layout.test.ts` holds the evidence — it asserts the shell, the nav and the main landmark still render under a NaN width, so adding the screen turns that test red rather than passing silently. Overturn with one `finiteCount("AdminLayout", "logo.width", props.app.branding.logo.width ?? 24, 1)` at layout.tsx:40.',
-  },
   ui: {
-    count: 3,
+    count: 2,
     reason:
-      '`Combobox.tsx`, `Section.tsx`, `Textarea.tsx` — `debounceMs`, `level`, `rows`. AUDITED in the tier 4 slice of the 17.0.0 sweep, and left on purpose. `debounceMs` and `level` are screened ONE HOP AWAY, which this rule cannot see (its own blind spot 3): `debounce()` throws `X_UI_INVALID_VALUE` for a non-finite delay and `headingTag()` throws it for a level off the 1-6 scale, so a second screen at the prop would give one value two codes. `rows` is the only genuinely unscreened one, and it is the only prop of the four whose bad value produces neither silent zero-work nor a throw: a `rows` attribute the HTML parser rejects falls back to the element default, a two-row box instead of three, so there is no unbounded read and no crash — and throwing an X_INVARIANT out of a render would blank a whole form over a cosmetic typo. `layout.test.ts` and `file-controls.test.ts` hold the evidence for the first two. Overturn `rows` with one `finiteCount("Textarea", "rows", props.rows ?? 3, 1)` at Textarea.tsx:42.',
+      "why: `Combobox.tsx`'s `debounceMs` and `Section.tsx`'s `level` are screened ONE HOP AWAY, which this rule cannot see (its blind spot 3): `debounce()` throws `X_UI_INVALID_VALUE` for a non-finite delay and `headingTag()` for a level off 1-6, so a second screen at the prop would give one value two codes (`file-controls.test.ts`, `layout.test.ts`). `Textarea.tsx`'s `rows` was screened in plan 101b sweep 8b.",
   },
 };
