@@ -114,3 +114,4 @@ docker/.tls/
 # scripts/remote-verify.ts writes these per run: the shifted ports and URLs for a shared host.
 docker/.remote-gate.override.yml
 docker/.remote-gate.env
+docker/.remote-gate.list

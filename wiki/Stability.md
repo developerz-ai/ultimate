@@ -76,7 +76,7 @@ Ruling 2026-11-09: the clock moved from v30 to v31. v30 shipped 2026-11-07 while
 | the previous major | security fixes, as patches on `release/<major>.x` | 6 months after the current major's `## X.0.0` date |
 | anything older | none | [Upgrading](Upgrading), one major per `x upgrade` run |
 
-**Convention, not enforced:** `release/<major>.x` is cut by hand at each major and kept at that major's newest minor; no script cuts it. Its name is enforced: `ci.yml` and `release-tag.yml` match exactly `release/[0-9]+.x`, and `scripts/release.ts --bump` refuses any other `release/*` branch (`X_RELEASE_BRANCH_NAME`). A bump PR's own branch is `chore/release-X.Y.Z`, never `release/X.Y.Z` (#1054). Once it exists, a patch is `latest` while its major is current and `maint-<major>` once its successor ships. `scripts/dist-tag.ts` decides the tag from the registry's `latest`, and `npm publish` never runs without it.
+`release/<major>.x` is cut by `bun run scripts/release-maint.ts --major <N>` (idempotent, `--dry-run` first) at the major's last tag, with `maint-<N>` on every package; on it `scripts/release.ts` ships patches only (`X_RELEASE_LANE_PATCH_ONLY`). Its name is enforced: `ci.yml` and `release-tag.yml` match exactly `release/[0-9]+.x`, and `scripts/release.ts --bump` refuses any other `release/*` branch (`X_RELEASE_BRANCH_NAME`). A bump PR's own branch is `chore/release-X.Y.Z`, never `release/X.Y.Z` (#1054). Once it exists, a patch is `latest` while its major is current and `maint-<major>` once its successor ships. `scripts/dist-tag.ts` decides the tag from the registry's `latest`, and `npm publish` never runs without it.
 
 ## Deprecation
 

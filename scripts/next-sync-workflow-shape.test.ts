@@ -1,6 +1,6 @@
 // The shape of `.github/workflows/next-sync.yml` that keeps `next` a branch a major can be cut from:
-// weekly, `main` merged in and gated by a dispatched ci.yml, ONE conflict issue found by its exact
-// title and closed by the next clean run, write tokens held per job with no dependency code beside
+// weekly, `main` merged in and gated by a dispatched ci.yml, ONE tracking issue (a conflict, or a
+// workflow change the job token may not push) found by its exact title and closed by the next clean run, write tokens held per job with no dependency code beside
 // them, and no expression spliced into shell. Reads the REAL workflow.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
@@ -22,8 +22,8 @@ const merge = workflow.jobs?.['merge'];
 const report = workflow.jobs?.['report'];
 const runOf = (job: Job | undefined): string =>
   (job?.steps ?? []).map((step: Step) => step.run ?? '').join('\n');
-/** The one conflict issue's title: the workflow finds, comments on and closes it by this. */
-const TITLE = 'next-sync: main does not merge cleanly into next';
+/** The one tracking issue's title: the workflow finds, comments on and closes it by this. */
+const TITLE = 'next-sync: main is not merged into next';
 
 describe('unit · next-sync.yml runs weekly and on dispatch, never on a push', () => {
   test('a weekly schedule and a manual dispatch, nothing else', () => {
@@ -57,11 +57,21 @@ describe('unit · next-sync.yml merges main into next and gates the result', () 
     const script = runOf(merge);
     expect(script).toContain('git merge --abort');
     expect(script).toContain('git diff --name-only --diff-filter=U');
-    expect(script).toContain('conflict=true');
+    expect(script).toContain('blocked conflict "$files"');
+  });
+
+  test('a merge changing .github/workflows/ is never pushed with the job token', () => {
+    // GitHub refuses it: the run would fail with no issue and next fall behind unseen.
+    const script = runOf(merge);
+    expect(script).toContain('git diff --name-only origin/next HEAD -- .github/workflows/');
+    expect(script).toContain('blocked workflows "$workflows"');
+    expect(merge?.steps?.find((s) => s.run)?.env?.['NEXT_SYNC_TOKEN']).toBe(
+      '${{ secrets.NEXT_SYNC_TOKEN }}',
+    );
   });
 });
 
-describe('unit · next-sync.yml files one issue per conflict, closed by its own clean run', () => {
+describe('unit · next-sync.yml files one issue per blocked week, closed by its own clean run', () => {
   test('the report runs after the merge and only on its answer', () => {
     expect(report?.needs).toBe('merge');
     expect(report?.if).toContain("needs.merge.result == 'success'");
@@ -76,7 +86,7 @@ describe('unit · next-sync.yml files one issue per conflict, closed by its own 
     expect(script).toContain('gh issue close "$open"');
   });
 
-  test('a conflicted week stays red', () => {
+  test('a blocked week stays red', () => {
     expect(runOf(report)).toMatch(/gh issue create[^\n]*\n[\s\S]*exit 1/);
   });
 });

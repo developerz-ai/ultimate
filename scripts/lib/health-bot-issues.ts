@@ -3,7 +3,7 @@
 // have shut it did not. Each bot label maps to its closer here; an unmapped label is no verdict
 // that names this table, so a new alarm cannot slip past the row unread.
 
-import { renderFixShellArg } from '../../packages/core/src/error-render';
+import { renderFixShellArg } from '@ultimat3/core';
 import { jsonDocument } from './health-narrow';
 import type { RowVerdict } from './health-rule';
 import type { Finding } from './log';

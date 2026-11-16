@@ -380,7 +380,8 @@ an id with no row, or a row naming another release is `X_DOC_WORKAROUND_UNTABLED
 (`bun run scripts/changelog-check.ts --json`).
 
 **Branches and dist-tags.** `main` ships minors and patches under `latest`; `next` holds the breaks
-and is gated on push; merging `main` into it weekly is a convention, by hand. A superseded major
+and is gated on push; `next-sync.yml` merges `main` into it weekly (a conflict opens one issue,
+closed by the next clean run). A superseded major
 from v30 keeps a **maintenance lane** for six calendar months from its successor's opening release
 (SECURITY.md): the branch `release/<major>.x` and the npm dist-tag `maint-<major>`, both derived from
 the dated headings in `docs/changelog/` (`maintWindows`, `scripts/lib/release-maint.ts`) — 30's runs

@@ -3,7 +3,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+  highestPublishedPort,
   isSshHost,
+  mirrorList,
   remoteScript,
   shellQuote,
   shiftedEnv,
@@ -82,5 +84,34 @@ describe('unit · remote-verify', () => {
 
   test('a directory name is one quoted word on the host: a checkout named with ; runs nothing', () => {
     expect(shellQuote('ultimate;touch pwned')).toBe("'ultimate;touch pwned'");
+  });
+
+  test('the mirror ships no .git/config or reflog, and nothing this tree deleted (review of #1161)', () => {
+    const list = mirrorList({
+      listed: ['a.ts', 'gone.ts', 'b.ts', ''],
+      deleted: ['gone.ts'],
+      git: ['.git/HEAD', '.git/config', '.git/logs/HEAD', '.git/objects/pack/p.pack'],
+    });
+    expect(list).toEqual([
+      'a.ts',
+      'b.ts',
+      '.git/HEAD',
+      '.git/objects/pack/p.pack',
+      'docker/.remote-gate.override.yml',
+      'docker/.remote-gate.env',
+      'docker/.remote-gate.list',
+    ]);
+  });
+
+  test('the host drops what the list does not name before it installs: the mirror is this tree', () => {
+    const script = remoteScript({ dir: 'd', offset: 1, verifyArgs: [] });
+    const prune = script.indexOf('grep -vxF -f docker/.remote-gate.list');
+    expect(prune).toBeGreaterThan(-1);
+    expect(prune).toBeLessThan(script.indexOf('bun install'));
+  });
+
+  test('the offset ceiling is 65535 minus the highest published port', () => {
+    expect(highestPublishedPort(COMPOSE)).toBe(5440);
+    expect(highestPublishedPort("    ports: ['127.0.0.1:16379:6379']")).toBe(16_379);
   });
 });

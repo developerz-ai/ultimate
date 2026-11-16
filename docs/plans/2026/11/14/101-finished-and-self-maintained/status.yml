@@ -145,4 +145,4 @@ evidence:
   - "sweep 0: #1138 merged; 31.23.0 released (#1139) — registry-audit: 31/31 publishable packages are on npm at 31.23.0, every one attested; demo /readyz 200, /llms.txt 200 (2026-11-14)"
   - "sweep 0 corrections: H3 premise false (sweep used the partial index; cost was dead index entries); H7 failures already fixed on main (#1036, #1060); bench release trigger never fired (GITHUB_TOKEN); released as a minor (additive API)" 
 notes: "Written 2026-11-14 at 31.22.3 from four read-only passes: residual work in this tree, ten adopter repositories, 7–14 days of production evidence from two deployed apps, and a trace of the maintenance loop. Carries every open row of the 2026/11/02 and 2026/11/11 plans (12 step 1 marks them superseded). 90-owner-decisions.md is not a slice. Audit rounds (20) record per-round P0/P1/P2 counts and the read ledger here. Adopter letter mapping is off-tree with the owner."
-last_updated: 2026-11-14
+last_updated: 2026-11-16

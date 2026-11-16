@@ -17,10 +17,9 @@ limits.
 | an issue already names it | `gh issue list --state open --search 'main is red in:title' --json number,title,url` | one is open: add the run's URL to it, start nothing new |
 | a fix already in flight | `gh pr list --state open --search 'main red in:title' --json number,title,url` | one is open: drive it, start nothing new |
 
-`bun run x -- ci --workflow ci.yml --event push --branch main --json` reads the same runs, but
-refuses with `X_GH_RESPONSE_INVALID` while any run is still in flight (`As of 2026-11-15`: `gh`
-prints `conclusion: ""` and `packages/cli/src/ci-runs.ts:17` accepts only `null`) — hence the raw
-`gh run list` above.
+`bun run x -- ci --workflow ci.yml --event push --branch main --json` reads the same runs as one
+document; a run still in flight answers with no verdict (since 31.31.0 — earlier builds refused it
+with `X_GH_RESPONSE_INVALID`, which is why the raw `gh run list` above stays the portable read).
 
 ## Act
 

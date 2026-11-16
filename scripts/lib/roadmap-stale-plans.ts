@@ -61,7 +61,8 @@ interface Dated {
 
 /**
  * When the tracker was last worked. A real commit is the answer. A shallow boundary only bounds
- * it from above, so the tracker's own `last_updated` dates it when older; neither, no answer.
+ * it from above, so the tracker's own `last_updated` dates it when older, else the boundary's time
+ * is the date. Hence an edit to a tracker bumps its `last_updated`: a depth-1 CI clone reads that.
  */
 const datedBy = (touch: LastTouch, doc: Readonly<Record<string, unknown>>): Dated => {
   if (!touch.boundary) return { at: touch.at, source: 'commit touching it' };
@@ -76,7 +77,7 @@ const day = (at: number): string => new Date(at).toISOString().slice(0, 10);
 const staleFinding = (path: string, dir: string, days: number, dated: Dated): Finding => ({
   code: 'X_ROADMAP_TRACKER_STALE',
   cause: `${path} reads status: in_progress, but nothing has touched ${dir} for ${String(days)} days (last ${dated.source}: ${day(dated.at)} UTC), past the ${String(STALE_PLAN_DAYS)}-day limit — a tracker nobody works reads as live work`,
-  fix: `sed -i 's/^status: in_progress/status: superseded/' ${renderFixShellArg(path, '<status.yml>')} && bun run scripts/roadmap.ts --json   # and name the plan that carries its open rows in current_focus — or commit the work that moves it`,
+  fix: `sed -i.bak 's/^status: in_progress/status: superseded/' ${renderFixShellArg(path, '<status.yml>')} && rm ${renderFixShellArg(path, '<status.yml>')}.bak && bun run scripts/roadmap.ts --json   # and name the plan that carries its open rows in current_focus — or commit the work that moves it`,
   at: path,
 });
 

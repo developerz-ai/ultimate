@@ -8,7 +8,7 @@
 //   bun run scripts/remote-verify.ts --host <ssh-alias> [--offset 20000] [--json] [<verify args>]
 //   ULTIMATE_REMOTE_HOST=<ssh-alias> bun run gate:remote -- --only unit
 
-import { renderFixShellArg } from '../packages/core/src/error-render';
+import { renderFixShellArg } from '@ultimat3/core';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
@@ -24,6 +24,8 @@ const REMOTE_GATE_TIMEOUT_MS = 3_600_000;
 const COMPOSE_FILE = 'docker/docker-compose.test.yml';
 const ENV_FILE = 'docker/test-services.env';
 const OVERRIDE_FILE = 'docker/.remote-gate.override.yml';
+/** The mirror's own file list, shipped so the host can drop what this tree no longer has. */
+const LIST_FILE = 'docker/.remote-gate.list';
 
 /** `127.0.0.1:5432:5432` → `127.0.0.1:15432:5432`: only the host side moves. */
 const shiftBinding = (binding: string, offset: number): string =>
@@ -79,6 +81,9 @@ export function remoteScript(input: {
     'export PATH="$HOME/.bun/bin:$PATH"',
     // The mirror carries no `.git/config` (see syncList): the minimum git needs to read the repo.
     `[ -f .git/config ] || printf '[core]\\n\\trepositoryformatversion = 0\\n\\tbare = false\\n' > .git/config`,
+    // Exactly this tree: a path the host still has (deleted or renamed here since the last run)
+    // and the list does not name is removed, so the gate never tests sources the laptop dropped.
+    `git ls-files -co --exclude-standard | grep -vxF -f ${LIST_FILE} | while IFS= read -r stale; do rm -f -- "$stale"; done || true`,
     'bun install --frozen-lockfile >/dev/null',
     `${compose} up -d --wait >/dev/null`,
     'set -a',
@@ -107,26 +112,49 @@ export function splitArgs(argv: readonly string[]): {
   return { own, verifyArgs };
 }
 
-/** Every path the mirror carries: what git tracks or would track, plus `.git` itself. */
-async function syncList(root: string): Promise<string> {
+/**
+ * The mirror's file list: what git tracks or would track, minus what this working tree deleted
+ * (rsync refuses a missing source), plus `.git` without its config (a credential helper or a token
+ * in a remote URL) and reflogs — the host may be shared, and the suites need objects and refs only.
+ */
+export function mirrorList(input: {
+  readonly listed: readonly string[];
+  readonly deleted: readonly string[];
+  readonly git: readonly string[];
+}): readonly string[] {
+  const gone = new Set(input.deleted);
+  return [
+    ...input.listed.filter((path) => path !== '' && !gone.has(path)),
+    ...input.git.filter((path) => path !== '.git/config' && !path.startsWith('.git/logs/')),
+    OVERRIDE_FILE,
+    'docker/.remote-gate.env',
+    LIST_FILE,
+  ];
+}
+
+/** The highest host port the compose file publishes: an offset may not push it past 65535. */
+export const highestPublishedPort = (compose: string): number =>
+  Math.max(
+    0,
+    ...[...compose.matchAll(/'(?:(?:\d{1,3}\.){3}\d{1,3}:)?(\d+):\d+'/g)].map((m) => Number(m[1])),
+  );
+
+async function syncList(root: string): Promise<readonly string[] | undefined> {
   const listed = await run(['git', 'ls-files', '-co', '--exclude-standard'], { cwd: root });
-  if (!listed.ok) return '';
-  // `.git` without its config (a credential helper or a token in a remote URL) and reflogs: the
-  // host may be shared, and history-reading suites need the objects and refs, not those.
-  const kept = (
-    await Array.fromAsync(new Bun.Glob('.git/**').scan({ cwd: root, dot: true }))
-  ).filter((path) => path !== '.git/config' && !path.startsWith('.git/logs/'));
-  return `${listed.output.trimEnd()}\n${kept.join('\n')}\n`;
+  const deleted = await run(['git', 'ls-files', '-d'], { cwd: root });
+  if (!listed.ok || !deleted.ok) return undefined;
+  const lines = (text: string): string[] => text.split('\n').filter((line) => line !== '');
+  const git = await Array.fromAsync(new Bun.Glob('.git/**').scan({ cwd: root, dot: true }));
+  return mirrorList({ listed: lines(listed.output), deleted: lines(deleted.output), git });
 }
 
 async function main(): Promise<void> {
   // `bun run` swallows a `--`, so the split is by name: this script's three flags, and every other
   // word is the gate's (`--only unit`, `--shard 1/3` …).
   const { own, verifyArgs } = splitArgs(Bun.argv.slice(2));
-  const args = { flags: own };
-  const json = args.flags.has('json');
-  const host = args.flags.get('host') ?? Bun.env['ULTIMATE_REMOTE_HOST'];
-  const offset = Number(args.flags.get('offset') ?? DEFAULT_PORT_OFFSET);
+  const json = own.has('json');
+  const host = own.get('host') ?? Bun.env['ULTIMATE_REMOTE_HOST'];
+  const offset = Number(own.get('offset') ?? DEFAULT_PORT_OFFSET);
   const refuse = (finding: Finding): never =>
     report(
       { ok: false, script: SCRIPT, summary: 'the remote gate did not run', findings: [finding] },
@@ -140,27 +168,35 @@ async function main(): Promise<void> {
     });
     return;
   }
-  if (!Number.isSafeInteger(offset) || offset < 1 || offset > 50_000) {
+  const root = repoRoot();
+  const compose = await Bun.file(`${root}/${COMPOSE_FILE}`).text();
+  const ceiling = 65_535 - highestPublishedPort(compose);
+  if (!Number.isSafeInteger(offset) || offset < 1 || offset > ceiling) {
     refuse({
-      code: 'X_REMOTE_VERIFY_HOST_MISSING',
-      cause: `--offset must be a whole number of ports between 1 and 50000, got ${String(offset)}`,
+      code: 'X_REMOTE_VERIFY_OFFSET_INVALID',
+      cause: `--offset must be a whole number from 1 to ${String(ceiling)} (65535 minus the highest port ${COMPOSE_FILE} publishes), got ${String(offset)}`,
       fix: 'bun run scripts/remote-verify.ts --host <ssh-alias> --offset 20000',
     });
     return;
   }
-  const root = repoRoot();
   const name = root.split('/').filter(Boolean).at(-1) ?? 'ultimate';
   const dir = `${REMOTE_DIR}/${name}`;
-  await Bun.write(
-    `${root}/${OVERRIDE_FILE}`,
-    shiftedPortsOverride(await Bun.file(`${root}/${COMPOSE_FILE}`).text(), offset),
-  );
+  await Bun.write(`${root}/${OVERRIDE_FILE}`, shiftedPortsOverride(compose, offset));
   await Bun.write(
     `${root}/docker/.remote-gate.env`,
     shiftedEnv(await Bun.file(`${root}/${ENV_FILE}`).text(), offset),
   );
-  const list = `${root}/node_modules/.cache/remote-verify.list`;
-  await Bun.write(list, `${await syncList(root)}${OVERRIDE_FILE}\ndocker/.remote-gate.env\n`);
+  const paths = await syncList(root);
+  if (paths === undefined) {
+    refuse({
+      code: 'X_REMOTE_VERIFY_SYNC_FAILED',
+      cause: 'git could not list this tree, so the host would gate whatever it already had',
+      fix: 'git status --short   # run from inside the checkout, then rerun',
+    });
+    return;
+  }
+  const list = `${root}/${LIST_FILE}`;
+  await Bun.write(list, `${paths.join('\n')}\n`);
   const prepared = await run(
     [
       'ssh',

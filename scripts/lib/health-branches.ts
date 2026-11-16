@@ -3,7 +3,7 @@
 // branch's tip date and newest pull request; the row lists the stale ones and names the delete,
 // and never deletes: removing a remote branch is an operator's act.
 
-import { renderFixShellArg } from '../../packages/core/src/error-render';
+import { renderFixShellArg } from '@ultimat3/core';
 import { jsonDocument } from './health-narrow';
 import type { RowVerdict, StaleBranch } from './health-rule';
 import type { Finding } from './log';

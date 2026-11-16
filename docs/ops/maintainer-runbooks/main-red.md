@@ -15,11 +15,9 @@ releases from a red `main`: `release-tag.yml` tags only a release commit whose `
 
 A run with `status` not `completed` has no verdict yet: wait for it, never file on it.
 
-**Known defect, `As of 2026-11-15`:** while any push run on `main` is still in progress, the first
-command refuses with `X_GH_RESPONSE_INVALID` (`gh` prints `conclusion: ""` for a run in flight;
-`packages/cli/src/ci-runs.ts:17` accepts `null` but not an empty string). Read the run list with
-`gh run list --workflow ci.yml --branch main --event push --limit 5 --json status,conclusion,headSha,url`
-until it is fixed.
+Before 31.31.0 the first command refused with `X_GH_RESPONSE_INVALID` while a push run on `main`
+was still in progress (`gh` prints `conclusion: ""` for a run in flight). On an older CLI read the
+runs with `gh run list --workflow ci.yml --branch main --event push --limit 5 --json status,conclusion,headSha,url`.
 
 ## Do
 
