@@ -83,7 +83,9 @@ describe('X_MANIFEST_BREAKING says something a reader can act on', () => {
   test('a never-shipped 0.x app is offered the action that fits it', () => {
     const fix = new ManifestBreakingError({ changes, from: '0.1.0', to: '0.1.0' }).fix;
     expect(fix).toContain('x manifest');
-    expect(fix).toStartWith('bun pm pkg set version=1.0.0   # ');
+    // The fitting action LEADS: a 0.x app re-commits its baseline; 1.0.0 is the promise it may make.
+    expect(fix).toStartWith('x manifest   # ');
+    expect(fix).toContain('bun pm pkg set version=1.0.0');
     // The half a reader would otherwise discover by trying it: 0.2.0 is not a major bump here.
     expect(fix).toContain('0.2.0 does not');
   });

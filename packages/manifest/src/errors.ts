@@ -93,7 +93,7 @@ export class ManifestBreakingError extends UltimateError {
           : `${input.changes.length} breaking change(s) from ${input.from} to ${input.to} ` +
             `with no major version bump: ${summarize(input.changes)}`,
       fix: neverShippedAMajor(input.from)
-        ? 'bun pm pkg set version=1.0.0   # package.json: a 0.x app has published no compatibility promise, and only 1.0.0 satisfies this gate (0.2.0 does not) — or re-commit the baseline: x manifest'
+        ? 'x manifest   # re-commit the baseline: a 0.x app has published no compatibility promise — or make one in package.json: bun pm pkg set version=1.0.0 (0.2.0 does not satisfy this gate)'
         : `bun pm pkg set version=${renderFixShellArg(nextMajor(input.from), '<next-major>.0.0')}   # the major bump in package.json — or restore the removed contract`,
     });
   }

@@ -17,7 +17,6 @@ import {
   appVersion,
   assert,
   logger,
-  renderFixShellArg,
   renderThrowable,
   resolveEnvironment,
 } from '@ultimat3/core';
@@ -201,7 +200,9 @@ export async function backfillPass<Row>(
         backfill: name,
         completedAs: previous?.checksum,
         now: checksum,
-        fix: `x db backfill ${renderFixShellArg(name, '<backfill>')} --write --force --json   # sweeps again under the new definition — or enqueue it with { force: true }`,
+        // A scoped pass's ledger name (`<name>:<scope>`) is no declaration `x db backfill` knows,
+        // and the warning fires on a checksum a bundler can move: enqueue, never an immediate sweep.
+        fix: `await ${definition.name}.enqueue(<the run's input>, { force: true })   // sweeps again under the new definition`,
       });
     }
     logger.info('jobs.backfill.skipped', { backfill: name, completedBy: previous?.runId });

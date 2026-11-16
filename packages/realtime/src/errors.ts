@@ -286,7 +286,7 @@ export class TransportProtocolError extends RealtimeError {
       cause: `transport "${args.transport}" ${args.stage}: ${args.detail}`,
       fix:
         args.fix ??
-        'x doctor --json   # names what answered on the bus port; it must be nats-server >= 2.11 with JetStream enabled (`nats-server -js`)',
+        'docker run -d -p 4222:4222 nats:2.11-alpine -js   # the bus must be nats-server >= 2.11 with JetStream — or point NATS_URL at one',
     });
   }
 }

@@ -325,7 +325,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       // `--dry-run` writes NOTHING (release.ts, `if (!dryRun)`), so naming it here handed the
       // reader a command that validates the promotion and does not perform it. Axiom 4 at the one
       // point it is read: state the edit, and say which command performs it and which only checks.
-      fix: 'bun run scripts/release.ts --bump major   # performs this promotion, moving those entries into the file of that release under docs/changelog/ — --dry-run only validates it',
+      fix: "grep -n '^## \\[Unreleased\\]' CHANGELOG.md   # move the BREAKING entries below it into the docs/changelog/ file of the tagged release the cause names, then: bun run scripts/changelog-check.ts --json — never --bump major, which cuts the NEXT major",
       at: gap.at,
     };
   }
