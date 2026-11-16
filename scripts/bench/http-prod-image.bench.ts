@@ -13,6 +13,7 @@
 // The scaffold's read bucket must be raised before the image is built (bench.yml's step does the
 // same for `x dev`): one client past a 120-request burst is a 429, and a 429 is not a figure.
 
+import { finiteOption } from '../../packages/core/src/finite-option';
 import { parseScriptArgs } from '../lib/args';
 import { ScriptError } from '../lib/script-error';
 import { boxFacts, MIN_SECONDS, readCount } from './http-hello';
@@ -93,11 +94,16 @@ export interface PodsInput {
 
 export async function benchPods(input: PodsInput): Promise<PodsRun> {
   const { pods, path, seconds, concurrency } = input;
-  const basePort = input.basePort ?? BASE_PORT;
+  const basePort = finiteOption('prod-image bench', 'basePort', input.basePort ?? BASE_PORT);
+  const readyMs = finiteOption(
+    'prod-image bench',
+    'readyTimeoutMs',
+    input.readyTimeoutMs ?? READY_TIMEOUT_MS,
+  );
   const extra = extraPods(input.app, pods, basePort);
   try {
     const ports = Array.from({ length: pods }, (_, index) => basePort + index);
-    await Promise.all(ports.map((port) => ready(port, input.readyTimeoutMs ?? READY_TIMEOUT_MS)));
+    await Promise.all(ports.map((port) => ready(port, readyMs)));
     const perPod = await Promise.all(
       ports.map((port) =>
         runLoad({

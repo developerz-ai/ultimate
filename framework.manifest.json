@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "e8e30eabd8a2ad53228e92f748435a842e1e8cc815722ca7df5b19f6804812ce",
+  "buildId": "a9f1e8075771c9ddfb0b76d812981ff2ba82720d9f821f8828ee2ea55aa9d84c",
   "tiers": {
     "0": [
       "core",
@@ -4225,6 +4225,11 @@
       "at": "scripts/preflight.ts"
     },
     {
+      "code": "X_PREFLIGHT_STEP_FAILED",
+      "owner": "scripts",
+      "at": "scripts/preflight.ts"
+    },
+    {
       "code": "X_PRELOAD_UNKNOWN_RELATION",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
@@ -6362,17 +6367,17 @@
     {
       "code": "X_TEST_TEMP_TREE_LEFT",
       "owner": "testing",
-      "at": "packages/testing/src/temp-tree-error.ts"
+      "at": "packages/testing/src/errors.ts"
     },
     {
       "code": "X_TEST_TEMP_TREE_PIN_STALE",
       "owner": "scripts",
-      "at": "scripts/temp-tree-git.ts"
+      "at": "scripts/temp-tree.ts"
     },
     {
       "code": "X_TEST_TEMP_TREE_UNOWNED",
       "owner": "scripts",
-      "at": "scripts/temp-tree-git.ts"
+      "at": "scripts/temp-tree.ts"
     },
     {
       "code": "X_TEST_THROW_NOT_THROWN",

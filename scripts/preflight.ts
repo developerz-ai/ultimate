@@ -61,11 +61,13 @@ export function scriptDocument(output: string): { ok: boolean; findings: Finding
 }
 
 /** A step that answered no document still answers: a finding with nowhere to point, so it counts. */
-const silent = (step: PreflightStep, result: RunResult): Finding => ({
-  code: result.timedOut ? 'X_SPAWN_TIMED_OUT' : 'X_PREFLIGHT_STEP_FAILED',
-  cause: `${step.name} exited ${String(result.code)} with no verdict document: ${result.output.split('\n').slice(-3).join(' / ').slice(0, 300)}`,
-  fix: step.command.filter((word) => word !== '--json').join(' '),
-});
+const silent = (step: PreflightStep, result: RunResult): Finding => {
+  const cause = `${step.name} exited ${String(result.code)} with no verdict document: ${result.output.split('\n').slice(-3).join(' / ').slice(0, 300)}`;
+  const fix = step.command.filter((word) => word !== '--json').join(' ');
+  // One literal per code: the declaration scan reads `code: '…'`, never a ternary's branches.
+  if (result.timedOut) return { code: 'X_SPAWN_TIMED_OUT', cause, fix };
+  return { code: 'X_PREFLIGHT_STEP_FAILED', cause, fix };
+};
 
 export async function runStep(
   root: string,

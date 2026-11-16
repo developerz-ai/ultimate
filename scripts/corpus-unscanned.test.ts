@@ -19,6 +19,7 @@ import { deadHostFindings } from './dead-docs-host';
 import { declarationReaderInput } from './declaration-readers';
 import { throwerInput } from './declaration-readers-callers';
 import { errorRendering } from './error-render';
+import { fetchSites } from './fetch-deadline';
 import { finiteBoundFindings } from './finite-bounds';
 import { fixShellArgFindings } from './fix-shell-arg';
 import { flightCopyFindings } from './flight-copies';
@@ -55,6 +56,7 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['declaration-readers', declarationReaderInput],
   ['declaration-readers-callers', throwerInput],
   ['error-render', errorRendering],
+  ['fetch-deadline', fetchSites],
   ['finite-bounds', finiteBoundFindings],
   ['fix-shell-arg', fixShellArgFindings],
   ['flight-copies', flightCopyFindings],

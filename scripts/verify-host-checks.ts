@@ -81,6 +81,7 @@ import { realSleepFindings } from './test-real-sleep';
 import { testTypecheckFindings } from './test-typecheck-gate';
 import { throwFindings } from './to-throw-returns';
 import { tsconfigPathFindings } from './tsconfig-paths';
+import { RATCHET_CHECKS } from './verify-ratchets';
 import { versionStampFindings } from './version-stamps';
 import { wikiAnchorFindings } from './wiki-anchors';
 import { wikiFenceFindings } from './wiki-fences';
@@ -298,6 +299,8 @@ export const ERROR_CHECKS: readonly HostCheck[] = [
   fixProseFindings,
   portProbeFindings,
   tempTreeFindings,
+  // Every pin ratchet whose CLI has no other host check: the CLI verdict is the gate's.
+  ...RATCHET_CHECKS,
 ];
 
 export const errorContract: HostCheck = allOf(ERROR_CHECKS);

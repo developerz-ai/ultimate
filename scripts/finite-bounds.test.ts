@@ -9,6 +9,7 @@ import { collectSourceFiles } from './boundaries';
 import {
   checkFiniteBounds,
   finiteBoundFindingFor,
+  finiteBoundGaps,
   finiteBoundSites,
   numericConstants,
   scanFiniteBounds,
@@ -443,6 +444,12 @@ describe('the real tree', () => {
     for (const pkg of swept) {
       expect(sites.get(pkg) ?? [], `${pkg} has no unchecked numeric option`).toEqual([]);
     }
+  });
+
+  // The CLI's own verdict over the WHOLE tree, never a hand list of packages: `scripts` was missing
+  // from the list above, and five unscreened sites in it stayed red on main under a green gate.
+  test('the ratchet the CLI runs is clean over every package and scripts/', async () => {
+    expect(await finiteBoundGaps(repoRoot())).toEqual([]);
   });
 
   test('every site the rule reports is a real `??` over a property read', async () => {
