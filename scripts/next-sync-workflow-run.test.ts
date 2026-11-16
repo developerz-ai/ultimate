@@ -4,21 +4,21 @@
 // comments on its twin, and closes it on a clean week. The shape test holds the text; this, the act.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { chmod, mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp or chmod.
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
+import { chmod } from 'node:fs/promises'; // why: Bun has no chmod.
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { TEMP_TREE_GIT_ENV, tempTrees } from '../packages/testing/src/temp-tree';
 import { readWorkflow } from './lib/ci-workflow-read';
-import { gitEnv } from './lib/release-due-git';
 import { REPO_SCAN_TIMEOUT_MS, run } from './lib/run';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-const made: string[] = [];
-afterAll(async () => {
-  for (const dir of made.splice(0)) await rm(dir, { recursive: true, force: true });
-});
+const trees = tempTrees();
+afterAll(() => trees.dispose());
+/** Every child here may run git: the temp tree's environment, so no hook's GIT_* leaks in. */
+const gitEnv = (): Record<string, string | undefined> => ({ ...Bun.env, ...TEMP_TREE_GIT_ENV });
+let steps = 0;
+const TREE_CONFIG = Number(TEMP_TREE_GIT_ENV['GIT_CONFIG_COUNT'] ?? '0');
 
 const workflow = await readWorkflow('next-sync.yml');
 const script = (job: string): string => workflow.jobs?.[job]?.steps?.find((s) => s.run)?.run ?? '';
@@ -26,9 +26,7 @@ const REPO = 'owner/repo';
 const PUSH_URL = `https://x-access-token:tok@github.com/${REPO}.git`;
 
 async function scratch(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'next-sync-'));
-  made.push(dir);
-  return dir;
+  return trees.make('next-sync-');
 }
 
 /** A `gh` that appends its argv to `calls` and answers `issue list` with `$GH_ISSUES`. */
@@ -36,14 +34,15 @@ async function ghStub(dir: string): Promise<string> {
   const bin = join(dir, 'bin');
   await Bun.write(
     join(bin, 'gh'),
-    '#!/usr/bin/env bash\necho "$*" >> "$GH_CALLS"\nif [ "$1 $2" = "issue list" ]; then echo "${GH_ISSUES:-[]}"; fi\n',
+    '#!/usr/bin/env bash\necho "$*" >> "$GH_CALLS"\nif [ "$1 $2" = "issue list" ]; then echo "$GH_ISSUES"; fi\n',
   );
   await chmod(join(bin, 'gh'), 0o755);
   return bin;
 }
 
 const bash = async (body: string, cwd: string, env: Record<string, string>) => {
-  const file = join(cwd, '..', `step-${made.length}.sh`);
+  steps += 1;
+  const file = join(cwd, '..', `step-${steps}.sh`);
   await Bun.write(file, body);
   return run(['bash', file], { cwd, env: { ...gitEnv(), ...env } });
 };
@@ -80,15 +79,16 @@ async function repos(conflict: boolean) {
   await g(work, 'branch', '--quiet', '-D', 'side');
   const bin = await ghStub(dir);
   const env = {
-    PATH: `${bin}:${Bun.env.PATH ?? ''}`,
+    PATH: `${bin}:${Bun.env['PATH'] ?? ''}`,
     GH_CALLS: join(dir, 'calls'),
     GH_TOKEN: 'tok',
     GITHUB_REPOSITORY: REPO,
     GITHUB_OUTPUT: join(dir, 'output'),
     // The push URL the step names, routed to the local origin.
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: `url.${origin}.insteadOf`,
-    GIT_CONFIG_VALUE_0: PUSH_URL,
+    // Appended after the temp tree's own config entries, which it numbers from 0.
+    GIT_CONFIG_COUNT: String(TREE_CONFIG + 1),
+    [`GIT_CONFIG_KEY_${TREE_CONFIG}`]: `url.${origin}.insteadOf`,
+    [`GIT_CONFIG_VALUE_${TREE_CONFIG}`]: PUSH_URL,
   };
   const calls = async () =>
     (await Bun.file(env.GH_CALLS).exists()) ? Bun.file(env.GH_CALLS).text() : '';
@@ -126,7 +126,7 @@ describe('unit · next-sync.yml · the report step, run', () => {
     const dir = await scratch();
     const bin = await ghStub(dir);
     const env = {
-      PATH: `${bin}:${Bun.env.PATH ?? ''}`,
+      PATH: `${bin}:${Bun.env['PATH'] ?? ''}`,
       GH_CALLS: join(dir, 'calls'),
       GH_ISSUES: JSON.stringify(issues),
       CONFLICT: String(conflict),
@@ -136,24 +136,18 @@ describe('unit · next-sync.yml · the report step, run', () => {
     };
     await Bun.write(join(dir, 'work', '.keep'), '');
     const out = await bash(script('report'), join(dir, 'work'), env);
-    const calls = (await Bun.file(env.GH_CALLS).text()).split('\n').filter(Boolean);
-    return {
-      ok: out.ok,
-      calls: calls.slice(1),
-      body: (await Bun.file(join(dir, 'next-sync.md')).exists())
-        ? await Bun.file(join(dir, 'next-sync.md')).text()
-        : '',
-    };
+    const [list, ...calls] = (await Bun.file(env.GH_CALLS).text()).split('\n').filter(Boolean);
+    // The lookup comes first, every time: nothing is filed or closed unread.
+    expect(list).toStartWith('issue list --state open --search ');
+    const bodyFile = Bun.file(join(dir, 'next-sync.md'));
+    return { ok: out.ok, calls, body: (await bodyFile.exists()) ? await bodyFile.text() : '' };
   };
 
   test('a conflict with no twin open files one issue, and the run is red', async () => {
     const got = await report(true, [{ number: 9, title: `${TITLE} (old)` }]);
     expect(got.ok).toBe(false);
-    expect(got.calls).toEqual([
-      `issue create --title ${TITLE} --body-file ${''}`
-        .trimEnd()
-        .concat(got.calls[0]?.slice(got.calls[0].indexOf(' --body-file') + 12) ?? ''),
-    ]);
+    expect(got.calls).toHaveLength(1);
+    expect(got.calls[0]).toStartWith(`issue create --title ${TITLE} --body-file `);
     expect(got.body).toContain('a.txt');
   });
 

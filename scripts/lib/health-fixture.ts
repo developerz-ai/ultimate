@@ -53,7 +53,9 @@ export const healthyReaders = (now: string = new Date().toISOString()): HealthRe
       runs: [{ conclusion: 'success', status: 'completed', createdAt: now }],
     }),
     bench: async () => ({ runs: [{ conclusion: 'success', status: 'completed', createdAt: now }] }),
-    compat: async () => ({ runs: [{ conclusion: 'success', status: 'completed', createdAt: now }] }),
+    compat: async () => ({
+      runs: [{ conclusion: 'success', status: 'completed', createdAt: now }],
+    }),
     // No superseded major in an empty changelog: no window is owed a lane.
     'maint-lane': async () => ({ changelog: [], branches: [], distTags: {} }),
     'registry-trust': async () => ({ otp: true, doc: { ok: true } }),

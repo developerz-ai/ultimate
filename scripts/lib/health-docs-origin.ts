@@ -3,6 +3,7 @@
 // and serves that host, and its certificate is approved and enforced. Each defect is named with the
 // one `gh` call that repairs it; the host is read, never spelled here.
 
+import { renderFixShellArg } from '../../packages/core/src/error-render';
 import { forbiddenReason, isForbidden } from './health-forbidden';
 import { jsonDocument } from './health-narrow';
 import type { RowVerdict } from './health-rule';
@@ -86,7 +87,7 @@ export const judgeDocsOrigin = (read: DocsOriginRead, nowMs: number): RowVerdict
   if (origin === null) {
     return ill(
       `${VARIABLE} is unset: every deploy-docs-site.yml job skips, nothing publishes`,
-      `gh variable set ${VARIABLE} --body https://${cname ?? '<host>'}`,
+      `gh variable set ${renderFixShellArg(VARIABLE, '<variable>')} --body https://${renderFixShellArg(cname, '<host>')}`,
     );
   }
   if (pages['message'] === 'Not Found') {

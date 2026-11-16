@@ -3,8 +3,9 @@
 // live trackers once sat beside the real one for weeks, one still saying "Next: 31.22.1"; a
 // tracker nobody works must be closed (`superseded`, pointing at its successor), not left to read as live.
 
-// why: host-separator paths into the checkout; Bun ships no path API.
 import { join, posix } from 'node:path';
+// why: host-separator paths into the checkout; Bun ships no path API.
+import { renderFixShellArg } from '../../packages/core/src/error-render';
 import { PLAN_STATUS_GLOB } from '../plan-status';
 import type { Finding } from './log';
 import { git } from './release-due-git';
@@ -75,7 +76,7 @@ const day = (at: number): string => new Date(at).toISOString().slice(0, 10);
 const staleFinding = (path: string, dir: string, days: number, dated: Dated): Finding => ({
   code: 'X_ROADMAP_TRACKER_STALE',
   cause: `${path} reads status: in_progress, but nothing has touched ${dir} for ${String(days)} days (last ${dated.source}: ${day(dated.at)} UTC), past the ${String(STALE_PLAN_DAYS)}-day limit — a tracker nobody works reads as live work`,
-  fix: `bun run scripts/roadmap.ts --json   # after editing ${path}: set status: superseded and a current_focus naming the plan that carries its open rows (or status: complete) — or commit the work that moves it`,
+  fix: `sed -i 's/^status: in_progress/status: superseded/' ${renderFixShellArg(path, '<status.yml>')} && bun run scripts/roadmap.ts --json   # and name the plan that carries its open rows in current_focus — or commit the work that moves it`,
   at: path,
 });
 

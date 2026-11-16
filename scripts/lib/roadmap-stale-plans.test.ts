@@ -75,7 +75,9 @@ describe('unit · a tracker nobody touches stops reading as live work', () => {
     expect(finding?.cause).toContain(`${String(STALE_PLAN_DAYS + 1)} days`);
     expect(finding?.cause).toContain('2026-10-15');
     // The fix names the exact edit and the command that re-checks it.
-    expect(finding?.fix).toStartWith('bun run scripts/roadmap.ts --json');
+    expect(finding?.fix).toStartWith(
+      "sed -i 's/^status: in_progress/status: superseded/' docs/plans/2026/01/01/101-x/status.yml && bun run scripts/roadmap.ts --json",
+    );
     expect(finding?.fix).toContain(`status: superseded`);
     expect(finding?.fix).toContain(PATH);
   });

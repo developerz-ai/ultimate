@@ -3,6 +3,7 @@
 // have shut it did not. Each bot label maps to its closer here; an unmapped label is no verdict
 // that names this table, so a new alarm cannot slip past the row unread.
 
+import { renderFixShellArg } from '../../packages/core/src/error-render';
 import { jsonDocument } from './health-narrow';
 import type { RowVerdict } from './health-rule';
 import type { Finding } from './log';
@@ -121,7 +122,7 @@ export const judgeBotIssues = (read: BotIssuesRead): RowVerdict | Finding => {
   const unmapped = issues.filter((one) => !one.labels.some((label) => label in BOT_ALARMS));
   const stale = issues.filter((one) =>
     one.labels.some((label) => {
-      const closer = BOT_ALARMS[label];
+      const closer = Object.hasOwn(BOT_ALARMS, label) ? BOT_ALARMS[label] : undefined;
       const green = closer === null || closer === undefined ? undefined : greens.get(closer);
       return green !== undefined && green > Date.parse(one.updatedAt ?? '');
     }),
@@ -132,7 +133,12 @@ export const judgeBotIssues = (read: BotIssuesRead): RowVerdict | Finding => {
       ...base,
       verdict: 'unhealthy',
       reason: `${stale.length} bot issue(s) outlived their condition — the closer ran green after the last re-fire: ${stale.map((one) => `#${one.number}`).join(', ')}`,
-      fix: stale.map((one) => `gh issue close ${one.number} --reason completed`).join(' && '),
+      fix: stale
+        .map(
+          (one) =>
+            `gh issue close ${renderFixShellArg(String(one.number), '<number>')} --reason completed`,
+        )
+        .join(' && '),
       issues: listed(stale),
     };
   }

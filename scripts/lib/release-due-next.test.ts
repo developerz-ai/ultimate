@@ -40,6 +40,13 @@ const ready = (overrides: Partial<NextFacts> = {}): NextFacts => ({
   ...overrides,
 });
 
+/** `ready()` with one optional fact absent: a lookup that could not answer leaves no key. */
+const without = (key: 'changedFiles' | 'openPrTitles'): NextFacts => {
+  const facts: Partial<Record<keyof NextFacts, unknown>> = { ...ready() };
+  delete facts[key];
+  return facts as NextFacts;
+};
+
 const lane = (today: string, facts?: NextFacts) =>
   nextLane({ stamped: '31.30.0', changelog: CHANGELOG, today, facts: () => facts ?? ready() });
 
@@ -96,7 +103,7 @@ describe('unit · release-due-next · an open window proposes only a ready next'
       'cannot_tell',
     ],
     ['next carries nothing main lacks', ready({ changedFiles: 0 }), 'not_ahead'],
-    ['the compare failed', ready({ changedFiles: undefined }), 'cannot_tell'],
+    ['the compare failed', without('changedFiles'), 'cannot_tell'],
     [
       'red at its tip',
       ready({ ci: { kind: 'red', conclusion: 'failure', url: 'u' } }),
@@ -109,7 +116,7 @@ describe('unit · release-due-next · an open window proposes only a ready next'
       ready({ ci: { kind: 'unreadable', why: 'gh missing' } }),
       'cannot_tell',
     ],
-    ['the PR lookup failed', ready({ openPrTitles: undefined }), 'cannot_tell'],
+    ['the PR lookup failed', without('openPrTitles'), 'cannot_tell'],
     ['the proposal is open', ready({ openPrTitles: ['chore: release 32.0.0'] }), 'proposal_open'],
   ];
   for (const [name, facts, reason] of cases) {
@@ -137,7 +144,8 @@ describe('unit · release-due-next · an open window proposes only a ready next'
   });
 
   test('every reason the rule can give is in the closed list', () => {
-    expect([...NEXT_LANE_REASONS].sort()).toEqual(
+    const reasons: string[] = [...NEXT_LANE_REASONS].sort();
+    expect(reasons).toEqual(
       ['cannot_tell', 'no_next', 'not_ahead', 'not_green', 'proposal_open', 'window_closed'].sort(),
     );
   });

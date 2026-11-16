@@ -124,10 +124,14 @@ describe('unit · release-due-next-read · the facts together', () => {
       ci: { kind: 'green', url: 'u' },
       openPrTitles: [],
     });
-    const thrown = await readNextFacts(async (args) => {
-      if (args[1] === NEXT_BRANCH_ARGS[1]) return answer(TIP);
-      throw new TypeError('spawn failed');
-    }, '32.0.0');
+    // A spawn that rejects (the binary missing, say) is input here, handed to the code under test.
+    const thrown = await readNextFacts(
+      (args) =>
+        args[1] === NEXT_BRANCH_ARGS[1]
+          ? Promise.resolve(answer(TIP))
+          : Promise.reject(new TypeError('spawn failed')),
+      '32.0.0',
+    );
     expect(thrown.changedFiles).toBeUndefined();
     expect(thrown.ci.kind).toBe('unreadable');
     expect(thrown.openPrTitles).toBeUndefined();

@@ -3,6 +3,7 @@
 // branch's tip date and newest pull request; the row lists the stale ones and names the delete,
 // and never deletes: removing a remote branch is an operator's act.
 
+import { renderFixShellArg } from '../../packages/core/src/error-render';
 import { jsonDocument } from './health-narrow';
 import type { RowVerdict, StaleBranch } from './health-rule';
 import type { Finding } from './log';
@@ -85,7 +86,9 @@ export const judgeBranches = (read: BranchesRead, nowMs: number): RowVerdict | F
     ...base,
     verdict: 'unhealthy',
     reason: `${stale.length} stale ${PREFIX}* branch(es): merged or closed, or a week idle with no pull request`,
-    fix: `git push origin --delete ${stale.map((one) => one.name).join(' ')}`,
+    fix: stale
+      .map((one) => `git push origin --delete ${renderFixShellArg(one.name, '<branch>')}`)
+      .join(' && '),
     branches: stale,
   };
 };

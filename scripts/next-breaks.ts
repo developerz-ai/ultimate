@@ -27,10 +27,14 @@ export interface Citation {
 }
 export type LocatedBreak = ParkedBreak & { readonly citations: readonly Citation[] };
 
-const moved = (path: string, anchor: string, found: number): Finding => ({
+/** The 1-based line of the list file holding `needle`, so a fix opens at the row to edit. */
+const listLine = (listText: string, needle: string): number =>
+  listText.split('\n').findIndex((text) => text.includes(needle)) + 1 || 1;
+
+const moved = (path: string, anchor: string, found: number, line: number): Finding => ({
   code: 'X_NEXT_BREAK_SOURCE_MOVED',
   cause: `${path} holds ${found} line(s) containing ${JSON.stringify(anchor)}, so the break it parked cannot be cited at one line`,
-  fix: `edit ${LIST}: point the anchor at the one line of ${path} that now records the break, or drop the source if the break shipped`,
+  fix: `edit ${LIST}:${line} — point this anchor at the one line of ${path} that now records the break, or drop the source if the break shipped`,
   at: path,
 });
 
@@ -46,6 +50,7 @@ export async function locateBreaks(
 ): Promise<{ readonly located: readonly LocatedBreak[]; readonly findings: readonly Finding[] }> {
   const findings: Finding[] = [];
   const located: LocatedBreak[] = [];
+  const listText = (await readText(root, LIST)) ?? '';
   for (const parked of list) {
     const citations: Citation[] = [];
     for (const { path, anchor } of parked.sources) {
@@ -53,7 +58,7 @@ export async function locateBreaks(
       const hits = lines.flatMap((text, index) => (text.includes(anchor) ? [index + 1] : []));
       const [line] = hits;
       if (hits.length === 1 && line !== undefined) citations.push({ path, line });
-      else findings.push(moved(path, anchor, hits.length));
+      else findings.push(moved(path, anchor, hits.length, listLine(listText, anchor)));
     }
     located.push({ ...parked, citations });
   }
@@ -61,7 +66,12 @@ export async function locateBreaks(
 }
 
 /** Known-Gaps rows that park a fix on `next` and that no break in `list` cites. */
-export function unlistedGaps(gaps: string, list: readonly ParkedBreak[]): readonly Finding[] {
+export function unlistedGaps(
+  gaps: string,
+  list: readonly ParkedBreak[],
+  listText = '',
+): readonly Finding[] {
+  const line = listLine(listText, 'export const PARKED_BREAKS');
   const anchors = list.flatMap((parked) =>
     parked.sources.filter((source) => source.path === KNOWN_GAPS).map((source) => source.anchor),
   );
@@ -72,7 +82,7 @@ export function unlistedGaps(gaps: string, list: readonly ParkedBreak[]): readon
       {
         code: 'X_NEXT_BREAK_UNLISTED',
         cause: `${KNOWN_GAPS}:${index + 1} parks a break on \`next\` that the tracking issue does not list: ${text.slice(0, 120)}`,
-        fix: `edit ${LIST}: add a PARKED_BREAKS row whose source is { path: '${KNOWN_GAPS}', anchor: <a phrase from that row> }`,
+        fix: `edit ${LIST}:${line} — add a row whose source is { path: '${KNOWN_GAPS}', anchor: <a phrase from line ${index + 1}> }`,
         at: `${KNOWN_GAPS}:${index + 1}`,
       },
     ];
@@ -108,11 +118,12 @@ export async function nextBreaks(root: string): Promise<{
 }> {
   const { located, findings } = await locateBreaks(root, PARKED_BREAKS);
   const gaps = (await readText(root, KNOWN_GAPS)) ?? '';
+  const listText = (await readText(root, LIST)) ?? '';
   return {
     title: NEXT_TRACKING_TITLE,
     body: renderBody(located),
     located,
-    findings: [...findings, ...unlistedGaps(gaps, PARKED_BREAKS)],
+    findings: [...findings, ...unlistedGaps(gaps, PARKED_BREAKS, listText)],
   };
 }
 

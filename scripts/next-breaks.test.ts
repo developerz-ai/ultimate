@@ -51,7 +51,7 @@ describe('unit · next-breaks · each source resolves to exactly one line', () =
       const dir = await tree(files);
       const { findings } = await locateBreaks(dir, [ONE]);
       expect(findings.map((finding) => finding.code)).toEqual(['X_NEXT_BREAK_SOURCE_MOVED']);
-      expect(findings[0]?.fix).toContain('scripts/lib/next-breaks-list.ts');
+      expect(findings[0]?.fix).toStartWith('edit scripts/lib/next-breaks-list.ts:1 — ');
     }
   });
 });
@@ -72,6 +72,8 @@ describe('unit · next-breaks · the ledger cannot park a break the issue omits'
     const findings = unlistedGaps(gaps, [cited]);
     expect(findings.map((finding) => finding.code)).toEqual(['X_NEXT_BREAK_UNLISTED']);
     expect(findings[0]?.cause).toContain('wiki/Known-Gaps.md:5');
+    expect(findings[0]?.fix).toStartWith('edit scripts/lib/next-breaks-list.ts:1 — ');
+    expect(unlistedGaps(gaps, [cited], 'x\nexport const PARKED_BREAKS')[0]?.fix).toContain(':2 — ');
     expect(unlistedGaps(gaps.replace('waits on `next`', 'shipped'), [cited])).toEqual([]);
   });
 });
