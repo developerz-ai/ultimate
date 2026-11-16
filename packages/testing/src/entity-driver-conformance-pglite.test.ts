@@ -1,10 +1,13 @@
 // The entity driver suite over `postgresDriver()` on the embedded Postgres (PGlite): the driver
-// `x dev` runs, in the unit step. The same suite against a server is the `.live.` twin. Two claims
+// `x dev` runs, in the unit step — part 1 here, parts 2 and 3 in the `-2`/`-3` siblings, each on
+// its own PGlite. The same suite against a server is the `.live.` twin. Two claims
 // below the suite are this engine's alone — they turn on SESSION state and on PGlite's `C`
 // collation, neither of which a driver can promise for a server it did not create.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { pgliteClient, raw, setDbClient } from '@ultimat3/db';
+import { describe, expect, test } from 'bun:test';
+// why: Bun ships no path-join primitive.
+import { join } from 'node:path';
+import { raw } from '@ultimat3/db';
 import {
   database,
   entity,
@@ -15,30 +18,41 @@ import {
   timestamp,
   uuid,
 } from '@ultimat3/entity';
+import { ENTITY_DRIVER_CHECKS } from './entity-conformance-checks';
 import { remember } from './entity-conformance-entities';
-import { recreateTables, sqlSubject } from './entity-conformance-sql-fixture';
+import { recreateTables } from './entity-conformance-sql-fixture';
 import { idAt } from './entity-conformance-support';
-import { entityDriverConformance } from './entity-driver-conformance';
-import { behavesLike } from './shared-examples';
+import {
+  checksOfPart,
+  PGLITE_BOOT_MS,
+  PGLITE_PARTS,
+  pgliteConformancePart,
+} from './entity-driver-conformance-pglite-fixture';
 import { testName } from './test-types';
 
-// A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget.
-const PGLITE_BOOT_MS = 30_000;
+const client = pgliteConformancePart(0);
 
-// `pg_trgm`: the text `contains` checks migrate a `gin_trgm_ops` index, which needs it linked at boot.
-const client = pgliteClient({ extensions: ['pg_trgm'] });
+/** Each part's call, as the sibling files spell it: a part with no file is a part never run. */
+const partCalls = async (): Promise<readonly number[]> => {
+  const parts: number[] = [];
+  const glob = new Bun.Glob('entity-driver-conformance-pglite*.test.ts');
+  for await (const name of glob.scan({ cwd: import.meta.dir })) {
+    const source = await Bun.file(join(import.meta.dir, name)).text();
+    for (const match of source.matchAll(/pgliteConformancePart\((\d+)\)/g)) {
+      parts.push(Number(match[1]));
+    }
+  }
+  return parts.sort((a, b) => a - b);
+};
 
-beforeAll(() => {
-  setDbClient(client);
-}, PGLITE_BOOT_MS);
-
-afterAll(async () => {
-  setDbClient(undefined);
-  await client.close();
-});
-
-describe(testName('unit', 'the postgres entity driver on PGlite'), () => {
-  behavesLike(entityDriverConformance, () => sqlSubject(() => client));
+describe(testName('unit', 'PGlite · the suite is dealt across files whole'), () => {
+  test('every part runs in exactly one file, and the parts hold every check once', async () => {
+    expect(await partCalls()).toEqual(Array.from({ length: PGLITE_PARTS }, (_, part) => part));
+    const dealt = Array.from({ length: PGLITE_PARTS }, (_, part) => checksOfPart(part)).flat();
+    expect(dealt.map((check) => check.name).sort()).toEqual(
+      ENTITY_DRIVER_CHECKS.map((check) => check.name).sort(),
+    );
+  });
 });
 
 const events = remember(

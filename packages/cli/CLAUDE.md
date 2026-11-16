@@ -88,7 +88,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `job-budget.ts` | `X_JOB_OUTLASTS_DRAIN` (`manifest`): `timeout` vs `workerBudgetMs(drain)`, from the registry † |
 | `output-findings.ts` | render layer only: `runnableFix` (`bunx x`, decided by `dispatch.ts`'s `readerFor`) and `collapseFindings`. Throw sites keep `x …` |
 | `app-load-unresolved.ts` | `X_APP_IMPORT_UNRESOLVED`, read by the scan, `findingFrom` and `x doctor`'s `snapshots` probe |
-| `fix-truth.test.ts` / `fix-truth-fixture.ts` / `db-fix-truth.job.test.ts` | a printed fix, executed against a broken scaffold † |
+| `fix-truth*.ts` / `db-fix-truth.job.test.ts` | a printed fix, executed against a broken scaffold † |
 
 ### Generators (`x g`, `x new`)
 

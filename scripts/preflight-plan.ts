@@ -16,6 +16,7 @@ export const PREFLIGHT_RATCHETS = [
   'url-pathname',
   'test-bare-error',
   'test-real-sleep',
+  'test-slow',
   'factory-names',
   'test-typecheck-gate',
   // Not a ratchet: a test case gone from a directory whose code did not change (`X_TEST_VANISHED`).

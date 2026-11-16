@@ -681,7 +681,9 @@ at most one per core, printed on the step line; `ULTIMATE_TEST_MEMORY_BUDGET` /
 `ULTIMATE_TEST_MAX_WORKERS` override, `--workers` wins), shared machine-wide across concurrent runs,
 and test files are NOT isolated unless `--isolate` or `x.verify.json` `"isolate": true` says so →
 [Testing](Testing#memory-width-and-isolation). `--shard i/n` (with `--only unit|contract|live|job|e2e`)
-runs one CI job's deterministic slice — `live` and `e2e` stay one process inside it, a slice per
+runs one CI job's deterministic slice — round-robin over the sorted files, or with `--timings
+<file>` (`{ "path": ms }`, committed so every job reads one) heaviest-first to the lightest shard,
+an unknown file at the median; `live` and `e2e` stay one process inside it, a slice per
 runner, each runner with its own services (`As of 2026-11-07`) — and `x verify merge` folds every job's `--json` part back
 into the gate verdict (`X_VERIFY_SHARD_INVALID`, `X_VERIFY_MERGE_INCOMPLETE`,
 `X_VERIFY_MERGE_INPUT`) → [CI: the gate across parallel jobs](CI-Parallel-Gate). The paragraphs

@@ -126,7 +126,7 @@ jobs:
       - name: x verify plan — the gate's parts, as the matrix
         id: plan
         env:
-          PARTS: '7'
+          PARTS: '9'
           DATABASE_SERVICES: postgres
           DATABASE_URLS: TEST_DATABASE_URL
           ALL_SERVICES: postgres postgres-standby postgres-tls pooler redis nats s3
@@ -346,20 +346,35 @@ jobs:
   # THE PARTS, sized from the per-step wall times the parts printed on main (run 37101906027,
   # 2026-10-03, 4-core runners):
   #
-  #   unit-N   200-276 s of `unit` per   (2026-11-14, run 43562415694, at 3 workers and no timings;
-  #            shard, + contract, job    the gate job's `env` and timings cache below address both)
-  #            the one step worth splitting; `--shard i/n` is a pure
-  #            + contract, job           function of the sorted file list, so 2/3 is the same files
-  #                                      on every runner and reproduces locally with the same flags.
-  #                                      `contract` and `job` are split the same way, a third each
-  #   live-N   ~150 s per shard          every suite that needs more than one Postgres, split in
-  #                                      two (`--shard i/2`, every service in both: which shard a
-  #                                      suite lands on is the sorted file list's, so
+  #   unit-N   ~230 s of `unit`,         the one group worth splitting, FOUR ways since 2026-11-16.
+  #            contract and job per      Each shard is dealt on the COMMITTED per-file wall ms in
+  #            shard (4 shards)          `scripts/lib/ci/test-weights.json` (`--shard i/n --timings
+  #                                      <it>`): every file, heaviest first (ties by path), to the
+  #                                      lightest shard so far; a file the weights do not know costs
+  #                                      their median. Still a pure function of (sorted files,
+  #                                      weights, n), so 2/4 is the same files on every runner and
+  #                                      locally with the same flags, and `x verify merge` proves the
+  #                                      four slices one corpus exactly once. Round-robin over the
+  #                                      sorted list was 395/361/211 s on run 43903381662 (unit +
+  #                                      contract + job, 4 workers): the slow cli files sort together.
+  #                                      Predicted from that run's own per-file timings
+  #                                      (`bun run scripts/test-weights.ts`, which prints this table):
+  #                                        3 shards  round-robin 378 343 207 · weighted 309 309 309
+  #                                        4 shards  round-robin 227 248 236 216 · weighted 232 x4
+  #                                      Refresh: the command in that script's header, after a green
+  #                                      run on main; stale weights cost balance, never a verdict.
+  #   live-N   ~110 s per shard          every suite that needs more than one Postgres, split in
+  #                                      three (`--shard i/3`, every service in all: which shard a
+  #                                      suite lands on is the deal's, so
   #                                      `scripts/lib/test-service-coverage.ts` holds EVERY part
-  #                                      running `live` to the whole service set). One part was
-  #                                      313-347 s on main 2026-11-08/09 (runs 42447766689,
-  #                                      42480668181, 42540901591: `live` 280-302 s, serial by
-  #                                      design) — the gate's critical path, over the 5-min target.
+  #                                      running `live` to the whole service set). `live` writes no
+  #                                      timings, so the weights know none of its files and the deal
+  #                                      is exactly round-robin. Two shards were 190/148 s of `live`
+  #                                      on run 43903381662; `x verify plan` gives the unit group the
+  #                                      odd runner, so a fourth unit shard (`PARTS: '9'`) brings a
+  #                                      third live one. One part was 313-347 s on main 2026-11-08/09
+  #                                      (runs 42447766689, 42480668181, 42540901591: `live` 280-302 s,
+  #                                      serial by design) — the gate's critical path then.
   #   static   ~100 s, the six static    a shard may name no other step (`X_VERIFY_SHARD_INVALID`),
   #            steps BESIDE `eval`       so the static steps left `live` for a part of their own.
   #                                      They run BESIDE the first serial suite listed — the
@@ -382,9 +397,9 @@ jobs:
   #
   # `contract` and `job` moved out of `live` on 2026-10-03, when `live` was the slowest part, and
   # out of `e2e` on 2026-11-05, when it was. They read only TEST_DATABASE_URL, which every unit
-  # shard already starts, and both are in `SHARDABLE_STEPS`: each shard runs a third of their files,
-  # after its unit slice, and `x verify merge` checks the three slices are one corpus exactly once,
-  # as it does for `unit`.
+  # shard already starts, and both are in `SHARDABLE_STEPS`: each shard runs its dealt slice of
+  # their files after its unit slice, and `x verify merge` checks the four slices are one corpus
+  # exactly once, as it does for `unit`.
   #
   # Fixed cost per part, measured on main: 7-11 s for checkout and setup (the install cache is a
   # 168 MB restore keyed on bun.lock and the install after it is under a second), plus 10-20 s for
@@ -414,8 +429,8 @@ jobs:
     needs: tested
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
-    # A runaway kill-switch, not a budget: the slowest part was 320-338 s on main 2026-11-14 (runs
-    # 43542607182, 43562415694, `unit` at three workers, no timings).
+    # A runaway kill-switch, not a budget: the slowest part was 415 s on main 2026-11-16 (run
+    # 43903381662, unit-1, round-robin shards), ~260 s predicted on the weighted four.
     timeout-minutes: 10
     # One test worker per core. The default budget is a QUARTER of the machine (`test-workers.ts`),
     # sized for a laptop that also runs an editor and another agent's gate: on this 4-core 16 GB
@@ -488,9 +503,10 @@ jobs:
       # slowest files first from it — but a checkout has no `.x/`, so every batch here began in
       # sorted order and waited on whichever slow file (`scripts/*` sorts last) started late.
       # Modelled on unit-2's 1289 files and their measured durations: 18 batches at 3 workers lose
-      # ~46 s to those tails, ~5 s longest-first. ORDER only: which files a shard and a batch hold
-      # stays a pure function of the sorted list, so a stale or missing entry costs time, never a
-      # verdict, and the key never matches — the newest `test-timings-*` is always the one restored.
+      # ~46 s to those tails, ~5 s longest-first. ORDER only: which files a SHARD holds is dealt on
+      # the committed `scripts/lib/ci/test-weights.json` (`--timings`, below), never on this cache,
+      # so a stale or missing entry here costs time, never a verdict, and the key never matches —
+      # the newest `test-timings-*` is always the one restored.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: contains(matrix.only, 'unit')
         with:
@@ -510,7 +526,7 @@ jobs:
       #
       # Written under $RUNNER_TEMP, never in the checkout: the file is open and EMPTY while the
       # part's own steps run, and `lint` (biome walks the tree) failed the `live` part on it once.
-      - name: x verify --only ${{ matrix.only }} ${{ matrix.shard && format('--shard {0}', matrix.shard) || '' }}
+      - name: x verify --only ${{ matrix.only }} ${{ matrix.shard && format('--shard {0} --timings scripts/lib/ci/test-weights.json', matrix.shard) || '' }}
         env:
           PART: ${{ matrix.part }}
           ONLY: ${{ matrix.only }}
@@ -528,7 +544,7 @@ jobs:
           mkdir -p "$parts"
           doc="$parts/${PART}.attempt-${GITHUB_RUN_ATTEMPT}.json"
           status=0
-          bun run scripts/verify.ts --only "$ONLY" ${SHARD:+--shard "$SHARD"} --json \
+          bun run scripts/verify.ts --only "$ONLY" ${SHARD:+--shard "$SHARD" --timings scripts/lib/ci/test-weights.json} --json \
             > "$doc" || status=$?
           echo "the part's document: $(wc -c < "$doc") bytes, uploaded as verify-part-${PART}-attempt-${GITHUB_RUN_ATTEMPT}"
           table="$(jq -r '
@@ -602,8 +618,11 @@ jobs:
           path: ${{ runner.temp }}/parts
           merge-multiple: true
       # The unit parts' timings, one directory per part, merged into the cache the next run's unit
-      # parts restore (`gate`, above). Each part holds a third of the corpus measured now and the rest
-      # as last run restored it; either is a fine estimate, so a plain union in any order serves.
+      # parts restore (`gate`, above). Each part holds its slice of the corpus measured now and the
+      # rest as last run restored it; either is a fine estimate, so a plain union in any order
+      # serves — for ORDER. The shard weights are never read from here: `jq add` keeps the last
+      # part's restored, stale copy of every other part's files, so `scripts/test-weights.ts`
+      # pairs each part's timings with the files its own document says it ran.
       # Before the verdict, so a red one still saves: the timings are not the verdict.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

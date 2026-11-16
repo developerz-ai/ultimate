@@ -145,3 +145,51 @@ describe('unit · the split', () => {
     expect(shards[0]?.files).toContain('a');
   });
 });
+
+// CI deals its shards on a COMMITTED weights file (`scripts/lib/ci/test-weights.json`), so the
+// weighted deal must be as reproducible as round-robin: every runner and a laptop, one answer.
+describe('unit · the weighted split is a pure function of (files, weights, n)', () => {
+  const weights: Record<string, number> = Object.fromEntries(
+    corpus.map((file, i) => [file, ((i * 37) % 23) * 100 + 5]),
+  );
+
+  test('any discovery order, any key order in the weights: the same shards', () => {
+    const shuffled = [...corpus].sort((a, b) => (a.slice(-9) < b.slice(-9) ? 1 : -1));
+    const reKeyed = Object.fromEntries(Object.entries(weights).reverse());
+    for (const index of [1, 2, 3, 4]) {
+      expect(shardFiles(shuffled, { index, total: 4 }, reKeyed)).toEqual(
+        shardFiles(corpus, { index, total: 4 }, weights),
+      );
+    }
+  });
+
+  test('longest first, each to the lightest shard: the max load is within the largest file of the mean', () => {
+    const shards = [1, 2, 3].map((index) => shardFiles(corpus, { index, total: 3 }, weights));
+    const loads = shards.map((s) => s.files.reduce((sum, f) => sum + (weights[f] as number), 0));
+    const total = loads.reduce((a, b) => a + b, 0);
+    const largest = Math.max(...Object.values(weights));
+    expect(Math.max(...loads)).toBeLessThanOrEqual(total / 3 + largest);
+    // The heaviest file is dealt first, to shard 1 (ties to the lowest index).
+    const heaviest = [...corpus].sort((a, b) => (weights[b] as number) - (weights[a] as number))[0];
+    expect(shards[0]?.files).toContain(heaviest as string);
+  });
+
+  test('weights that know none of the files cost each the same: exactly the round-robin deal', () => {
+    // So an app, or a step (`live`) that never wrote timings, handed the same file is unchanged.
+    for (const index of [1, 2, 3, 4]) {
+      expect(shardFiles(corpus, { index, total: 4 }, { 'other.test.ts': 9 })).toEqual(
+        shardFiles(corpus, { index, total: 4 }),
+      );
+    }
+  });
+
+  test('a file the weights do not know costs their median, never zero and never the max', () => {
+    const files = ['a', 'b', 'c', 'd', 'new'];
+    const known = { a: 100, b: 60, c: 50, d: 40 };
+    // Median 60, so `new` is dealt third: a | b new, then c and d to the lighter side. Costed 0 the
+    // deal reads [a, d] [b, c, new]; costed the max, [a, b] [c, d, new].
+    const [one, two] = [1, 2].map((index) => shardFiles(files, { index, total: 2 }, known));
+    expect(one?.files).toEqual(['a', 'c']);
+    expect(two?.files).toEqual(['b', 'd', 'new']);
+  });
+});

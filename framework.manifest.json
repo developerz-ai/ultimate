@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f374c029b8ccd47e9e7ce49c4199ccf371d6d4c6a111790f510f2fff9551eba3",
+  "buildId": "fd1e477928e7e8c1695fd102ed68b25654e7ec3cbf53508fb1142b8e9053b5b1",
   "tiers": {
     "0": [
       "core",
@@ -6443,6 +6443,21 @@
       "code": "X_TEST_SHARD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_TEST_SLOW_REASON_STALE",
+      "owner": "scripts",
+      "at": "scripts/test-slow.ts"
+    },
+    {
+      "code": "X_TEST_SLOW_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/test-slow.ts"
+    },
+    {
+      "code": "X_TEST_SLOW_UNSTATED",
+      "owner": "scripts",
+      "at": "scripts/test-slow.ts"
     },
     {
       "code": "X_TEST_SOAK_HEAP_GROWTH",
