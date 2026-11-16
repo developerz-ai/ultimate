@@ -93,6 +93,12 @@ describe('unit · flake-hunt · file', () => {
       expect(created).toEqual(['flake: packages/a.test.ts > a > b']);
       expect(answer.ok).toBe(false);
       expect(answer.findings?.map((one) => one.code)).toEqual(['X_FLAKE_HUNT_UNREADABLE']);
+      // The path is argv: carried verbatim when it is one inert shell word, a placeholder else.
+      expect(answer.findings?.[0]?.fix).toEndWith(`> ${junk}`);
+      const oddPath = join(dir, '$(boom).json');
+      await Bun.write(oddPath, 'not a document');
+      const odd = await flakeHunt(['file', oddPath], '.', { gh });
+      expect(odd.findings?.[0]?.fix).toEndWith('> <round.json>');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -50,6 +50,7 @@ import { snapshotReader, writePlanned } from './lib/planned-writes';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { tierOf } from './lib/tiers';
+import { newErrorCodeHelp, wantsHelp } from './new-error-code-help';
 import { PACKAGE_ONLY_FLAGS, planScriptCode } from './new-error-code-script';
 
 const SCRIPT = 'new-error-code';
@@ -431,7 +432,9 @@ export async function newErrorCode(root: string, argv: readonly string[]) {
   };
 }
 
-if (import.meta.main) {
+if (import.meta.main && wantsHelp(Bun.argv.slice(2))) {
+  report(newErrorCodeHelp(SCRIPT), Bun.argv.includes('--json'));
+} else if (import.meta.main) {
   const argv = Bun.argv.slice(2);
   const json = parseScriptArgs(argv).json;
   try {

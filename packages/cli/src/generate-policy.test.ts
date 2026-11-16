@@ -4,8 +4,8 @@
 // collision prints a fix that runs and overwrites nothing.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
+// why: Bun has no recursive remove.
+import { rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { REQUIRED_BUN } from './app-root';
@@ -14,15 +14,22 @@ import type { CommandContext } from './command';
 import { exec } from './exec';
 import { parseArgs } from './parse';
 import { ROLES_FILE } from './permission-grants';
+import { processRoot } from './process-root-fixture';
 import { SPECS } from './registry';
 import { rolesFiles } from './templates/scaffold-roles';
 
-const dirs: string[] = [];
+/**
+ * Inside this package, so a child process resolves `@ultimat3/*` from its `node_modules` — and
+ * under `packages/cli/.policy-append-fixture/`, which `.gitignore` names (a `mkdtemp` suffix it does
+ * not, and the trees were swept into a commit), as this process's own `run-<pid>` root.
+ */
+const BASE = processRoot(join(import.meta.dir, '..', '.policy-append-fixture'));
+let runs = 0;
 let root = '';
 const policyPath = 'apps/web/app/invoice/policy.ts';
 
 afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  rmSync(BASE, { recursive: true, force: true });
 });
 
 const contextFor = (argv: readonly string[]): CommandContext => ({
@@ -35,10 +42,11 @@ const contextFor = (argv: readonly string[]): CommandContext => ({
 
 const run = (argv: readonly string[]) => generateCommand.run(contextFor(argv));
 
-/** Inside this package, so a child process resolves `@ultimat3/*` from its `node_modules`. */
+/** A fresh app per test, under this process's own root. */
 beforeEach(async () => {
-  root = mkdtempSync(join(import.meta.dir, '..', '.policy-append-fixture-'));
-  dirs.push(root);
+  runs += 1;
+  root = join(BASE, `app-${String(runs)}`);
+  rmSync(root, { recursive: true, force: true });
   await Bun.write(join(root, 'app.config.ts'), 'export default {};\n');
   // The scaffold's role map, so a run's grants land somewhere and the run can be `ok`.
   for (const file of [...rolesFiles(), ...generate({ kind: 'policy', name: 'invoice' })]) {

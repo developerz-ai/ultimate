@@ -74,6 +74,7 @@ import { setupCommandFindings } from './setup-commands';
 import { bareErrorFindings } from './test-bare-error';
 import { testDiscoveryFindings } from './test-discovery';
 import { testFixFindings } from './test-fix-citations';
+import { mockBuiltinFindings } from './test-mock-builtin';
 import { realSleepFindings } from './test-real-sleep';
 import { testTypecheckFindings } from './test-typecheck-gate';
 import { throwFindings } from './to-throw-returns';
@@ -290,6 +291,7 @@ export const ERROR_CHECKS: readonly HostCheck[] = [
   realSleepFindings,
   busPublishFindings,
   launchDeadlineFindings,
+  mockBuiltinFindings,
   throwFindings,
   fixProseFindings,
 ];

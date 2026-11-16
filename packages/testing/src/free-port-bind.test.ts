@@ -69,6 +69,11 @@ describe('bindFreePorts', () => {
     ]);
   });
 
+  test('a port the caller already holds is never handed out, though the OS answers it', async () => {
+    const listen = scripted([40_001, 40_002]);
+    expect(await bindFreePorts((ports) => ports, { apart: [40_001], listen })).toEqual([40_002]);
+  });
+
   test('a failure that is no clash is rethrown on the first attempt', async () => {
     let calls = 0;
     const failure = { code: 'X_DB_UNAVAILABLE', cause: 'refused' };

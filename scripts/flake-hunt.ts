@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // The nightly flake hunt's two commands: `run` one shuffled round of a suite under a recorded seed,
 // and `file` the rounds' failures as one GitHub issue per test. `.github/workflows/flake-hunt.yml`
 // runs both; never a gate step — a red night is a lead to read, not a merge to block.
@@ -6,6 +7,7 @@
 //   bun run scripts/flake-hunt.ts run --suite unit|live [--seed N] [--round N] [--json]
 //   bun run scripts/flake-hunt.ts file <round.json…> [--json]
 
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import type { Gh } from './flake-hunt-file';
 import { fileIssues, issuesFor } from './flake-hunt-file';
 import type { HuntSuite, RoundDoc, Runner } from './flake-hunt-round';
@@ -73,7 +75,7 @@ async function fileCommand(
       unreadable.push({
         code: 'X_FLAKE_HUNT_UNREADABLE',
         cause: `${path} is not a flake-hunt round document`,
-        fix: `bun run scripts/flake-hunt.ts run --suite unit --json > ${path}`,
+        fix: `bun run scripts/flake-hunt.ts run --suite unit --json > ${renderFixShellArg(path, '<round.json>')}`,
       });
     }
   }

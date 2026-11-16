@@ -4,6 +4,7 @@ import { rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(); the scratch copy must live outside the checkout.
 import { tmpdir } from 'node:os';
 import { BASE_REF, baseRef } from './lib/base-ref';
+import { PIN_WHY_PLACEHOLDER } from './lib/pin-edit';
 import { importPinSource, pinRows } from './lib/pin-rows';
 import {
   expectedRedLine,
@@ -73,6 +74,28 @@ describe('unit · a ratchet pin that rises needs a why: on the row', () => {
       checkPinRaises([table(FLAT_WHY, { 'DEMO_PINS.cli': 12 }, { 'DEMO_PINS.cli': 10 })]),
     ).toEqual([]);
     expect(checkPinRaises([table(NESTED, { 'DEMO_PINS.cli': 12 }, {})])).toEqual([]);
+  });
+
+  // `--write-pin` drafts the raise with a placeholder `why:` (`lib/pin-edit.ts`): it carries the
+  // token so the row has the shape this rule reads, and it is no reason a person wrote.
+  test('the --write-pin draft placeholder states nothing, flat or nested', () => {
+    const drafted = FLAT_WHY.replace(
+      '  // why: the new sites',
+      `  ${PIN_WHY_PLACEHOLDER}\n  // old: the new sites`,
+    );
+    expect(
+      checkPinRaises([table(drafted, { 'DEMO_PINS.cli': 12 }, { 'DEMO_PINS.cli': 10 })]),
+    ).toHaveLength(1);
+    const nested = NESTED.replace(
+      '    count: 12,',
+      `    ${PIN_WHY_PLACEHOLDER}\n    count: 12,`,
+    ).replace('why: the CDP driver has no Bun native yet', 'the CDP driver');
+    expect(checkPinRaises([table(nested, { 'DEMO_PINS.cli': 12 }, {})])).toHaveLength(1);
+    // Beside a reason a person wrote, the placeholder takes nothing away (pin-edit.test refuses it).
+    const both = FLAT_WHY.replace('  cli: 12,', `  ${PIN_WHY_PLACEHOLDER}\n  cli: 12,`);
+    expect(checkPinRaises([table(both, { 'DEMO_PINS.cli': 12 }, { 'DEMO_PINS.cli': 10 })])).toEqual(
+      [],
+    );
   });
 
   test('a why: on a NEIGHBOURING row states nothing for this one', () => {

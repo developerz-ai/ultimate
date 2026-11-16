@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "e8cb52f367b63a766336b875005ca12e3d2e2bf659faf03b7819a0bdc5f0faa7",
+  "buildId": "e8e30eabd8a2ad53228e92f748435a842e1e8cc815722ca7df5b19f6804812ce",
   "tiers": {
     "0": [
       "core",
@@ -6218,6 +6218,21 @@
       "code": "X_TEST_MAIL_EXPECTED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_MOCK_BUILTIN",
+      "owner": "scripts",
+      "at": "scripts/test-mock-builtin.ts"
+    },
+    {
+      "code": "X_TEST_MOCK_BUILTIN_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/test-mock-builtin.ts"
+    },
+    {
+      "code": "X_TEST_MOCK_BUILTIN_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/test-mock-builtin.ts"
     },
     {
       "code": "X_TEST_MODULE_MOCK_UNRESTORABLE",
