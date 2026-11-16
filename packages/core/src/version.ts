@@ -12,7 +12,13 @@ import { resolve } from 'node:path';
 import { renderCauseValue } from './error-render';
 import { UltimateError } from './errors';
 
-const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
+/**
+ * `X.Y.Z`, one optional `-` part, any number of `+` parts. The same strings as
+ * `(?:[-+][\w.-]+)*`, which let a `-` open a part or sit inside one and tried every split: 40
+ * dashes and a `!` ran into JSC's backtrack limit (CodeQL polynomial-redos). A `+` is in no part's
+ * class, so each part ends where the next begins.
+ */
+const SEMVER = /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)*$/;
 
 /** `@ultimat3/core`'s own manifest — the only file that can answer what version shipped. */
 export const VERSION_MANIFEST = resolve(import.meta.dir, '..', 'package.json');

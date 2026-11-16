@@ -33,7 +33,8 @@ const takesParameters = (source: string): boolean => {
   // `x => x * 2` — a single unparenthesised parameter, which is still a parameter.
   if (/^(?:async\s+)?[A-Za-z_$][\w$]*\s*=>/.test(source)) return true;
   // The name is OPTIONAL: an anonymous `function (rows)` read as taking nothing without it.
-  const fn = /^(?:async\s+)?function\s*\*?\s*(?:[A-Za-z_$][\w$]*)?\s*\(([^)]*)\)/.exec(source);
+  // One whitespace run per gap: `\s*\*?\s*(?:name)?\s*` was cubic on `function` + spaces.
+  const fn = /^(?:async\s+)?function(?:\s*\*)?\s*(?:[A-Za-z_$][\w$]*\s*)?\(([^)]*)\)/.exec(source);
   return fn !== null && fn[1]?.trim() !== '';
 };
 

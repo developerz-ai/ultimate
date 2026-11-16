@@ -154,7 +154,7 @@ describe('the authority a cached read was answered under', () => {
   test("scope: 'tenant' narrows a null orgId to the actor, exactly as it does undefined", () => {
     const nullOrg = testActor('u-a').actor;
     const otherNullOrg = testActor('u-b').actor;
-    if (nullOrg === null || otherNullOrg === null) throw new Error('testActor mints an actor');
+    if (nullOrg === null || otherNullOrg === null) expect.unreachable('testActor mints an actor');
 
     expect(readAuthority(nullOrg, 'tenant')).not.toBe(readAuthority(otherNullOrg, 'tenant'));
     expect(readAuthority(nullOrg, 'tenant')).toBe(readAuthority(nullOrg, 'actor'));

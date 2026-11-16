@@ -105,7 +105,7 @@ const overJob = async (handle: AnyJobHandle, input: unknown, worker?: Ctx): Prom
     visibilityTimeoutMs: 30_000,
     workerId: 'w1',
   });
-  if (claimed === undefined) throw new Error('the driver claimed nothing');
+  if (claimed === undefined) return expect.unreachable('the driver claimed nothing');
   const execution = await executeJob({
     driver,
     claimed: claimed as ClaimedJob,
@@ -241,17 +241,13 @@ describe('backfill() inherits tenant like every other job field', () => {
     const scoped = backfill<typeof posts.$row>({
       name: 'cross-surface-backfill-scoped',
       tenant: () => ORG_A,
-      source: () => {
-        throw new Error('never read');
-      },
+      source: () => expect.unreachable('a backfill source read at declaration'),
       handle: () => undefined,
     });
     const unscoped = backfill<typeof posts.$row>({
       name: 'cross-surface-backfill-none',
       tenant: 'none',
-      source: () => {
-        throw new Error('never read');
-      },
+      source: () => expect.unreachable('a backfill source read at declaration'),
       handle: () => undefined,
     });
 

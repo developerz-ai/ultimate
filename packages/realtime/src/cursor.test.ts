@@ -33,7 +33,7 @@ describe('cursor resume', () => {
     const result = await resumeFrom(cursor, { source: buffer, snapshot, clock: at(1_000) });
 
     expect(result.kind).toBe('delta');
-    if (result.kind !== 'delta') throw new Error('unreachable');
+    if (result.kind !== 'delta') expect.unreachable('a delta resume');
     expect(result.patches.map((patch) => patch.id)).toEqual(['p1', 'p2', 'p3']);
     expect(result.cursor.lsn).toBe(formatLsn(3));
   });
@@ -52,7 +52,7 @@ describe('cursor resume', () => {
     });
 
     expect(result.kind).toBe('snapshot');
-    if (result.kind !== 'snapshot') throw new Error('unreachable');
+    if (result.kind !== 'snapshot') expect.unreachable('a snapshot resume');
     expect(result.rows).toEqual(snapshotRows);
     expect(result.cursor.lsn).toBe(formatLsn(500));
     // What a snapshot must seat is the id list a later delta patches — the whole of what a resume

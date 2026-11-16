@@ -38,30 +38,96 @@
 export const PINS_FILE = 'scripts/lib/test-bare-error-pins.ts';
 
 export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
-  action: 9, // why: 0 -> 9, the K19 class list; the new sites are stubs (input)
-  admin: 11, // why: 10 -> 11, sweep 11 reads a thrown string: action-gate.test.ts:267 is the stub under test (input)
-  ai: 18,
-  auth: 11, // why: 4 -> 11, the K19 class list; the new sites are stubs (input)
-  cache: 5, // why: 3 -> 6, the K19 class list; the new sites are stubs (input). 6 -> 5: the duplicate redis fake in invalidate.test.ts is gone
-  cli: 29, // why: 9 -> 29, the K19 class list; the new sites are stubs (input)
-  core: 42, // why: 30 -> 43, the K19 class list; the new sites are stubs (input)
-  db: 32, // why: 24 -> 34, the K19 class list; the new sites are stubs (input)
-  entity: 25, // why: 17 -> 25, the K19 class list; the new sites are stubs (input)
+  // why: 9 input(s), never a verdict (plan 101b sweep 8b-3) — each throw is a stub raising a
+  // foreign failure at the subject (a dead audit sink, hostile proxy traps, a driver TypeError, an
+  // outer transaction's RangeError, a hostile issue getter) to prove it is reported, never
+  // swallowed.
+  action: 9,
+  // why: 5 input(s), never a verdict (plan 101b sweep 8b-3) — action handlers throwing a
+  // RangeError, Error or bare string at the action gate, and value getters throwing a TypeError at
+  // the dev panel's renderer.
+  admin: 5,
+  // why: 14 input(s), never a verdict (plan 101b sweep 8b-3) — provider stubs throwing rate-limit
+  // or bad-request errors (and never-used stream stubs), hostile Proxy/getter/toJSON values for the
+  // error renderers, and tool or onTurn handlers throwing at the agent loop and hive.
+  ai: 14,
+  // why: 9 input(s), never a verdict (plan 101b sweep 8b-3) — fetch stubs throwing the TypeErrors a
+  // failed network or timeout produces, a KDF job that throws, and a Proxy whose getPrototypeOf
+  // refuses classification.
+  auth: 9,
+  // why: 5 input(s), never a verdict (plan 101b sweep 8b-3) — a single-flight loader or tier
+  // throwing synchronously, and Proxy traps in invalidation and purge inputs.
+  cache: 5,
+  // why: 24 input(s), never a verdict (plan 101b sweep 8b-3) — a step, seed, route, renderer,
+  // listener, reload or teardown failing with an uncoded error, or a hostile value (a throwing
+  // message/code getter or Proxy trap) the renderers and guards must survive.
+  cli: 24,
+  // why: 42 input(s), never a verdict (plan 101b sweep 8b-3) — hostile values (a throwing
+  // toJSON/toString/getter or Proxy trap) fed to the error and log renderers, plus stubs for a
+  // failing fetch, log sink, monitor, clock, pool, telemetry provider or lifecycle hook.
+  core: 42,
+  // why: 28 input(s), never a verdict (plan 101b sweep 8b-3) — the caller's transaction or loop
+  // body failing on purpose, plus fake drivers raising Postgres or socket failures (connection
+  // reset, EACCES, module not found, invalid URL) and hostile Proxy reads.
+  db: 28,
+  // why: 18 input(s), never a verdict (plan 101b sweep 8b-3) — a unit of work throwing to force a
+  // rollback, fake drivers raising a duplicate key or a send failure, and hostile objects refusing
+  // reads or prototype lookups.
+  entity: 18,
+  // why: 1 input(s), never a verdict (plan 101b sweep 8b-3) — an error monitor that is down.
   flags: 1,
-  http: 32, // why: 11 -> 32, the K19 class list; the new sites are stubs (input)
-  jobs: 28, // why: 23 -> 33, the K19 class list; the new sites are stubs (input)
-  mail: 5, // why: 0 -> 5, the K19 class list; the new sites are stubs (input)
-  mcp: 11, // why: 6 -> 11, the K19 class list; the new sites are stubs (input)
-  notify: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)
-  pwa: 4, // why: 0 -> 4, the K19 class list; the new sites are stubs (input)
-  query: 12, // why: 11 -> 12, the K19 class list; the new sites are stubs (input)
-  realtime: 50, // why: 25 -> 50, the K19 class list; the new sites are stubs (input)
-  render: 15, // why: 6 -> 15, the K19 class list; the new sites are stubs (input)
-  schema: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)
+  // why: 26 input(s), never a verdict (plan 101b sweep 8b-3) — each throw is a route handler, hook
+  // (onError, errorPage, devNotices), getter or proxy trap raising a non-framework error, to prove
+  // the pipeline degrades to a problem document, never rejects and never leaks the message.
+  http: 26,
+  // why: 15 input(s), never a verdict (plan 101b sweep 8b-3) — a job body, step, key derivation,
+  // checkpoint store, renewal, task callback or app context throwing a foreign Error/TypeError, to
+  // drive retry, dead-letter, refusal and step failure.
+  jobs: 15,
+  // why: 5 input(s), never a verdict (plan 101b sweep 8b-3) — a Resend fetch failing at DNS, and
+  // mail transforms that throw (throwing getters and Proxy traps included).
+  mail: 5,
+  // why: 11 input(s), never a verdict (plan 101b sweep 8b-3) — visibility, surface and instructions
+  // callbacks that throw, Proxy and getter traps, an unserialisable toJSON, and dev-host fixture
+  // drivers refusing the methods they don't cover.
+  mcp: 11,
+  // why: 1 input(s), never a verdict (plan 101b sweep 8b-3) — a provider rejection whose toString
+  // throws.
+  notify: 1,
+  // why: 4 input(s), never a verdict (plan 101b sweep 8b-3) — network fetch rejections and
+  // showNotification throwing the WebIDL TypeError.
+  pwa: 4,
+  // why: 11 input(s), never a verdict (plan 101b sweep 8b-3) — each throw is a refusing cache tier,
+  // a failing read run or an sql builder's TypeError, to prove a tier failure degrades the cache
+  // and not the read, and a rejected read is never memoized.
+  query: 11,
+  // why: 34 input(s), never a verdict (plan 101b sweep 8b-3) — each throw stands in for a foreign
+  // failure (socket, network, fetch, bus, walsender close, token service, subscriber, handler, lane
+  // task, hostile toString) to prove the node, client or lane isolates, retries or classifies it as
+  // a failure rather than a denial.
+  realtime: 34,
+  // why: 11 input(s), never a verdict (plan 101b sweep 8b-3) — components, loaders and meta
+  // throwing at the renderer, throwing message/toString getters, and browser APIs that throw
+  // (FormData, adoptNode).
+  render: 11,
+  // why: 1 input(s), never a verdict (plan 101b sweep 8b-3) — a hostile value whose read throws
+  // TypeError.
+  schema: 1,
+  // why: 1 input(s), never a verdict (plan 101b sweep 8b-3) — a fake storage driver refusing the
+  // methods it doesn't implement.
   scraping: 1,
-  scripts: 1, // why: 0 -> 1, the K19 class list; the new sites are stubs (input)
-  seo: 8,
-  testing: 22, // why: 19 -> 24, the K19 class list; the new sites are stubs (input)
+  // why: 1 input(s), never a verdict (plan 101b sweep 8b-3) — verify.test.ts's Proxy whose
+  // getPrototypeOf trap throws, to prove the renderer survives a hostile value.
+  scripts: 1,
+  // why: 15 input(s), never a verdict (plan 101b sweep 8b-3) — a fixture teardown, app boot or
+  // close, seed, clone drop, SQL runner, migrate, clock listener, driver close() or hostile getter
+  // throwing, to prove the harness still tears down, restores state and reports the right code.
+  testing: 15,
+  // why: 1 input(s), never a verdict (plan 101b sweep 8b-3) — a hostile toString fed to the
+  // renderer.
   time: 1,
-  ui: 11, // why: 6 -> 11, the K19 class list; the new sites are stubs (input)
+  // why: 8 input(s), never a verdict (plan 101b sweep 8b-3) — throwing toString/toJSON/getter traps
+  // on rendered errors, a schema validator and a translator that throw, and storage throwing
+  // SecurityError.
+  ui: 8,
 };

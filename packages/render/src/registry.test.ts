@@ -52,7 +52,7 @@ function shellWords(command: string): readonly string[] {
     inWord = true;
     if (ch === "'") {
       const close = command.indexOf("'", i + 1);
-      if (close === -1) throw new Error(`unterminated quote in: ${command}`);
+      if (close === -1) return expect.unreachable(`unterminated quote in: ${command}`);
       current += command.slice(i + 1, close);
       i = close + 1;
       continue;

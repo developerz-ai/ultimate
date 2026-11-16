@@ -102,7 +102,7 @@ describe('transactional outbox', () => {
 
     await enqueueInTx({ store, driver }, tx, notify, { orgId: 'org-1' });
     const [record] = await store.commit(tx);
-    if (record === undefined) throw new Error('expected one staged record');
+    if (record === undefined) return expect.unreachable('expected one staged record');
 
     // Simulate a relay crash between publish and markPublished: publish twice.
     const first = await driver.enqueue({

@@ -28,7 +28,7 @@ const thrown = (run: () => unknown): { code?: string; cause?: string; fix?: stri
   } catch (error) {
     return error as { code?: string; cause?: string; fix?: string };
   }
-  throw new Error('expected a refusal, and nothing was thrown');
+  return expect.unreachable('expected a refusal, and nothing was thrown');
 };
 
 describe('an entity the admin cannot address a row of', () => {

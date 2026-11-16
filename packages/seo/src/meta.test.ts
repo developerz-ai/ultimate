@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import * as seo from './index';
-import { applyTitleTemplate, hreflangSet, type RouteMeta, renderMeta } from './meta';
+import {
+  applyTitleTemplate,
+  hreflangSet,
+  type RouteMeta,
+  renderMeta,
+  TITLE_SLOT,
+  templateBrand,
+} from './meta';
 
 const META: RouteMeta = {
   title: 'Ship it',
@@ -182,5 +189,32 @@ describe('a title carrying a replacement pattern', () => {
     for (const title of ['Save $$ on shoes', 'A $& B', "C $' D", 'E $` F']) {
       expect(applyTitleTemplate(title, '%s — Shop')).toBe(`${title} — Shop`);
     }
+  });
+});
+
+// CodeQL js/polynomial-redos (sweep 8b-3): `/^[…]+|[…]+$/g` stripped the brand's separators, and
+// its trailing half retried a separator run from each character — 9.2 s on 100k spaces. The old
+// spelling is the oracle here; the walk must answer what it answered.
+describe('templateBrand strips separators in linear time, with the old answers', () => {
+  const OLD_SEPARATORS = /^[\s\-–—|·:>/]+|[\s\-–—|·:>/]+$/g;
+  const oldBrand = (template: string): string =>
+    template.replace(TITLE_SLOT, '').replace(OLD_SEPARATORS, '');
+
+  test('every template of up to 5 characters over separators, the slot and a word', () => {
+    const alphabet = [' ', '\t', '—', '|', '/', ':', 'a', 'é', '%s', ' '];
+    let level = [''];
+    for (let length = 0; length <= 5; length += 1) {
+      for (const template of level) {
+        expect([template, templateBrand(template)]).toEqual([template, oldBrand(template)]);
+      }
+      level = level.flatMap((head) => alphabet.map((one) => head + one));
+    }
+  });
+
+  test('a template of 100k spaces around a word is read in well under a second', () => {
+    const spaces = ' '.repeat(100_000);
+    const started = performance.now();
+    expect(templateBrand(`%s${spaces}a${spaces}a`)).toBe(`a${spaces}a`);
+    expect(performance.now() - started).toBeLessThan(250);
   });
 });

@@ -41,7 +41,7 @@ const plans = entity('invariants_test_plans', {
 
 const named = (name: string) => {
   const found = posts.$invariants.find((inv) => inv.name === name);
-  if (found === undefined) throw new Error(`no invariant ${name}`);
+  if (found === undefined) return expect.unreachable(`no invariant ${name}`);
   return found;
 };
 

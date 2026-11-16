@@ -143,7 +143,7 @@ describe('unit · determinism', () => {
         counter += 1;
         return counter;
       });
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       expect(error).toBeUltimateError('X_TEST_NONDETERMINISTIC');
       expect((error as { fix: string }).fix).toBe(

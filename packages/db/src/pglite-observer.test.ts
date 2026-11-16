@@ -20,7 +20,7 @@ const failure = async (run: () => Promise<unknown>): Promise<{ code: string; fix
   } catch (error) {
     return error as { code: string; fix: string };
   }
-  throw new Error('expected the call to reject');
+  return expect.unreachable('expected the call to reject');
 };
 
 /** Every `db.statement` from here on; `off()` unsubscribes, `resetInstrumentation` is the backstop. */

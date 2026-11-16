@@ -29,7 +29,7 @@ describe(testName('unit', 'sealed network'), () => {
   test('an unmocked request fails with the URL and the line that fixes it', async () => {
     try {
       await fetch('https://api.stripe.com/v1/charges', { method: 'POST' });
-      throw new Error('expected the sealed network to refuse this');
+      expect.unreachable('expected the sealed network to refuse this');
     } catch (error) {
       const failure = error as { code?: string; cause?: string; fix?: string };
       expect(failure.code).toBe('X_TEST_NETWORK_SEALED');
@@ -61,7 +61,7 @@ describe(testName('unit', 'sealed network'), () => {
     allowHost('allowed.example.com');
     try {
       await fetch('https://blocked.example.com/x');
-      throw new Error('expected a refusal');
+      expect.unreachable('expected a refusal');
     } catch (error) {
       expect((error as { cause?: string }).cause).toContain('allowed.example.com');
     }

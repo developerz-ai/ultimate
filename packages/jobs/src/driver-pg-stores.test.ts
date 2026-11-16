@@ -42,7 +42,7 @@ function executorFor(answers: Readonly<Record<string, readonly unknown[]>> = {})
       calls.push({ sql, params });
       const match = entries.find(([fragment]) => sql.includes(fragment));
       if (match === undefined && entries.length > 0) {
-        throw new Error(`this fake cannot answer: ${sql.trim().slice(0, 80)}`);
+        return expect.unreachable(`this fake cannot answer: ${sql.trim().slice(0, 80)}`);
       }
       return Promise.resolve((match?.[1] ?? []) as readonly R[]);
     },

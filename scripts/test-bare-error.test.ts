@@ -202,9 +202,9 @@ describe('the ratchet', () => {
 describe('the source scope', () => {
   const script = (text: string) => ({ path: 'scripts/bench/thing.ts', text });
   const fixture = (text: string) => ({ path: 'packages/x/src/thing-fixture.ts', text });
-  const exempt = (path: string, line: number): SourceBareErrorExemption => ({
+  const exempt = (path: string, throws: string): SourceBareErrorExemption => ({
     path,
-    line,
+    throws,
     reason: 'the fixture stands in for the test',
   });
 
@@ -244,7 +244,7 @@ describe('the source scope', () => {
   test('a site the exemption inventory covers is not reported', () => {
     const gaps = checkSourceBareErrors(
       [fixture("throw new Error('boom');\n")],
-      [exempt('packages/x/src/thing-fixture.ts', 1)],
+      [exempt('packages/x/src/thing-fixture.ts', "throw new Error('boom');")],
     );
     expect(gaps).toEqual([]);
   });
@@ -252,13 +252,68 @@ describe('the source scope', () => {
   test('an exemption matching no site is reported as stale', () => {
     const gaps = checkSourceBareErrors(
       [fixture('export const a = 1;\n')],
-      [exempt('packages/x/src/thing-fixture.ts', 9)],
+      [exempt('packages/x/src/thing-fixture.ts', "throw new Error('boom');")],
     );
     expect(gaps).toHaveLength(1);
     expect(gaps[0]?.kind).toBe('stale');
     const finding = bareErrorFindingFor(gaps[0] as BareErrorGap);
     expect(finding.code).toBe('X_SOURCE_BARE_ERROR_EXEMPT_STALE');
     expect(finding.at).toBe('scripts/lib/source-bare-error-exemptions.ts');
+  });
+});
+
+// Sweep 8b-3: a row keyed by `line` broke the gate every time a header sweep moved a throw down
+// a line (8b-2 did). A row is keyed by the throw's OWN text now, so an edit above it is no event,
+// and an edit TO it is — and a site is still one row, identical throws included.
+describe('a source exemption names the throw by its text, never by its line', () => {
+  const path = 'packages/x/src/thing-fixture.ts';
+  const throws = "throw new TypeError('socket refused');";
+  const row = (): SourceBareErrorExemption => ({ path, throws, reason: 'the fixture' });
+
+  test('a site the lines above it moved is still the same exempt site', () => {
+    const moved = `// a new header line\n// and another\n\nfunction f() {\n  ${throws}\n}\n`;
+    expect(checkSourceBareErrors([{ path, text: moved }], [row()])).toEqual([]);
+  });
+
+  test('a throw whose text changed is a new site, and the old row is stale', () => {
+    const changed = "  throw new TypeError('socket refused, again');\n";
+    const gaps = checkSourceBareErrors([{ path, text: changed }], [row()]);
+    expect(gaps.map((gap) => gap.kind).sort()).toEqual(['over', 'stale']);
+    const over = gaps.find((gap) => gap.kind === 'over') as BareErrorGap;
+    expect(bareErrorFindingFor(over).code).toBe('X_SOURCE_BARE_ERROR');
+    expect(bareErrorFindingFor(over).at).toBe(`${path}:1`);
+  });
+
+  test('the same text in ANOTHER file is not covered by this file’s row', () => {
+    const gaps = checkSourceBareErrors(
+      [{ path: 'packages/y/src/y-fixture.ts', text: throws }],
+      [row()],
+    );
+    expect(gaps.map((gap) => gap.kind).sort()).toEqual(['over', 'stale']);
+  });
+
+  test('two identical throws in one file are two rows — one row covers one of them', () => {
+    const twice = `${throws}\n${throws}\n`;
+    expect(checkSourceBareErrors([{ path, text: twice }], [row(), row()])).toEqual([]);
+    const short = checkSourceBareErrors([{ path, text: twice }], [row()]);
+    expect(short.map((gap) => gap.kind)).toEqual(['over']);
+    // And a third identical throw added beside two rows is the one the rows do not cover.
+    const thrice = checkSourceBareErrors([{ path, text: `${twice}${throws}\n` }], [row(), row()]);
+    expect(thrice.map((gap) => gap.kind)).toEqual(['over']);
+  });
+
+  test('two rows over one remaining throw is stale: the repaired site leaves a row behind', () => {
+    const gaps = checkSourceBareErrors([{ path, text: `${throws}\n` }], [row(), row()]);
+    expect(gaps.map((gap) => gap.kind)).toEqual(['stale']);
+    const finding = bareErrorFindingFor(gaps[0] as BareErrorGap);
+    expect(finding.code).toBe('X_SOURCE_BARE_ERROR_EXEMPT_STALE');
+    expect(finding.cause).toContain('2 exemption(s)');
+    expect(finding.cause).toContain('1 matching bare throw(s)');
+  });
+
+  test('the text is the throw to the end of its line, with no leading indent or trailing space', () => {
+    const found = scanBareErrorThrows(path, `if (x) {  ${throws}   \n}\n`);
+    expect(found.map((site) => site.throws)).toEqual([throws]);
   });
 });
 

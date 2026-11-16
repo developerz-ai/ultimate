@@ -93,13 +93,15 @@ describe('island · a declaration that cannot ship', () => {
   });
 
   test('the fix names the rename, because the filename is what makes a file a client entry', () => {
+    let thrown: unknown;
     try {
       island({ src: './contact-modal.tsx' });
-      throw new Error('unreachable');
     } catch (error) {
-      expect(error).toBeInstanceOf(UltimateError);
-      expect((error as UltimateError).fix).toContain(`contact-modal${ISLAND_EXTENSION}`);
+      thrown = error;
     }
+    if (thrown === undefined) return expect.unreachable('expected the rename refusal');
+    expect(thrown).toBeInstanceOf(UltimateError);
+    expect((thrown as UltimateError).fix).toContain(`contact-modal${ISLAND_EXTENSION}`);
   });
 });
 
@@ -178,16 +180,18 @@ describe('island · an island that can never boot', () => {
   test('the fix names the route file, and one edit — not a menu to choose from', async () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}` });
     const collector = islandCollector({ file: PAGE, hydrate: 'never' });
+    let thrown: unknown;
     try {
       await renderToHtml(h(Modal, null, 'x'), { islands: collector });
-      throw new Error('unreachable');
     } catch (error) {
-      expect(error).toBeInstanceOf(UltimateError);
-      expect((error as UltimateError).fix).toContain(PAGE);
-      // Which edit depends on the cause, and the throw site knows it — see the two-cause test
-      // below. What must never happen is both, leaving the reader to work out which half is theirs.
-      expect((error as UltimateError).fix).toContain('island');
+      thrown = error;
     }
+    if (thrown === undefined) return expect.unreachable('expected the island refusal');
+    expect(thrown).toBeInstanceOf(UltimateError);
+    expect((thrown as UltimateError).fix).toContain(PAGE);
+    // Which edit depends on the cause, and the throw site knows it — see the two-cause test
+    // below. What must never happen is both, leaving the reader to work out which half is theirs.
+    expect((thrown as UltimateError).fix).toContain('island');
   });
 });
 

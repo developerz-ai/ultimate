@@ -25,7 +25,7 @@ const FACTS: AiPaneFacts = {
 
 const paneNamed = (key: string, panes: readonly AiPane[] = AI_PANES): AiPane => {
   const pane = panes.find((candidate) => candidate.key === key);
-  if (pane === undefined) throw new Error(`no pane named ${key}`);
+  if (pane === undefined) return expect.unreachable(`no pane named ${key}`);
   return pane;
 };
 

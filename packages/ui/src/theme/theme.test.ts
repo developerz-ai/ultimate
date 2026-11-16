@@ -242,7 +242,7 @@ describe('browserThemeEnv', () => {
         return host.dark;
       },
       addEventListener: (type: string, listener: () => void): void => {
-        if (type !== 'change') throw new Error(`unexpected media listener "${type}"`);
+        if (type !== 'change') expect.unreachable(`unexpected media listener "${type}"`);
         listeners.push(listener);
       },
       removeEventListener: (_type: string, listener: () => void): void => {

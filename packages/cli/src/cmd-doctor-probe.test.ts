@@ -157,9 +157,7 @@ describe('unit · x doctor · the command', () => {
     args: parseArgs(argv, [doctorCommand.spec]),
     cwd,
     // `x doctor` diagnoses in-process; a subprocess from it is the bug, not a fixture.
-    runner: (command) => {
-      throw new Error(`x doctor spawned ${command.join(' ')}`);
-    },
+    runner: (command) => expect.unreachable(`x doctor spawned ${command.join(' ')}`),
     env: NO_CHROME,
     bunVersion: REQUIRED_BUN,
   });

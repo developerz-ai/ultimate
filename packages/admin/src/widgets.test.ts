@@ -53,7 +53,7 @@ async function renderIn(timeZone: string): Promise<{ control: number; text: stri
   ]);
   await child.exited;
   const line = out.trim().split('\n').at(-1) ?? '';
-  if (line === '') throw new Error(`the probe printed nothing; stderr: ${err}`);
+  if (line === '') return expect.unreachable(`the probe printed nothing; stderr: ${err}`);
   return JSON.parse(line) as { control: number; text: string };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { coerceInput, coerceNode, coerceQuery } from './coerce';
+import { coerceInput, coerceNode, coerceQuery, numeric } from './coerce';
 import { parse, validate } from './standard';
 import { t } from './t';
 
@@ -241,5 +241,38 @@ describe('coerceNode never invents data', () => {
     // No member claims it: untouched, so validation names the real problem.
     const stray = { kind: 'other', body: '5' };
     expect(coerceNode(event.node, stray)).toBe(stray);
+  });
+});
+
+// CodeQL js/polynomial-redos (sweep 8b-3): `\d+\.?\d*` split a digit run between two quantifiers
+// once the dot was absent, so `'1'.repeat(100_000) + 'x'` cost 18.5 s on Bun before it refused.
+// The dot owns its digits now (`\d+(?:\.\d*)?`): one way to read each numeral, the same answers.
+describe('numeric reads a numeral in linear time, with the answers it always gave', () => {
+  const OLD_DECIMAL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
+  const oldNumeric = (raw: string): number | undefined => {
+    if (!OLD_DECIMAL.test(raw.trim())) return undefined;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : undefined;
+  };
+  const strings = (alphabet: readonly string[], max: number): string[] => {
+    const out = [''];
+    let level = [''];
+    for (let length = 1; length <= max; length += 1) {
+      level = level.flatMap((head) => alphabet.map((one) => head + one));
+      out.push(...level);
+    }
+    return out;
+  };
+
+  test('every string of up to 5 numeral characters answers as the old pattern did', () => {
+    for (const raw of strings(['1', '0', '.', 'e', 'E', '+', '-', 'x', ' '], 5)) {
+      expect([raw, numeric(raw)]).toEqual([raw, oldNumeric(raw)]);
+    }
+  });
+
+  test('a 100k digit run that is not a numeral is refused in well under a second', () => {
+    const started = performance.now();
+    expect(numeric(`${'1'.repeat(100_000)}x`)).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(250);
   });
 });

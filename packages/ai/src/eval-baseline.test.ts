@@ -50,14 +50,15 @@ describe('unit · where a baseline lives', () => {
 
     // A cwd-relative path resolves differently depending on where the suite started, which is
     // how a gate silently stops gating — so it is refused with the one form that always works.
+    let thrown: { code?: unknown; fix?: unknown } | undefined;
     try {
       baselinePath('./x.baseline.json', 'summarize');
-      throw new Error('expected a refusal');
     } catch (error) {
-      const thrown = error as { code?: unknown; fix?: unknown };
-      expect(thrown.code).toBe('X_EVAL_BASELINE_MISSING');
-      expect(String(thrown.fix)).toContain("import.meta.resolve('./x.baseline.json')");
+      thrown = error as { code?: unknown; fix?: unknown };
     }
+    if (thrown === undefined) return expect.unreachable('expected a refusal');
+    expect(thrown.code).toBe('X_EVAL_BASELINE_MISSING');
+    expect(String(thrown.fix)).toContain("import.meta.resolve('./x.baseline.json')");
   });
 });
 
