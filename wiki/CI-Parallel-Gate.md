@@ -41,11 +41,16 @@ x verify --only unit --shard 2/4 --json > part-unit-2.json
   services — so when sharded, their shards split across runners, never across workers. `As of 2026-11-07` this
   repository's CI still runs each as one part: its longest job is a `packages` coverage shard, so
   a second live or e2e runner would cost runner minutes and save no wall clock.
-- The split is a pure function of the step's **sorted** file list: round-robin by default, so job
-  2 of 4 is the same files on every runner and on your laptop. `--timings <file>` (Bun's
-  `--timings` file, e.g. the `.x/test-timings.json` every parallel run refreshes — cache it
-  between CI runs) splits greedy longest-first instead; a file the timings do
-  not know is costed at their median.
+- The split is a pure function of the step's **sorted** file list, `n` and the `--timings` file
+  when given: round-robin by default, so job 2 of 4 is the same files on every runner and on your
+  laptop. `--timings <file>` — `{ "path": ms }`, or any JSON object whose `files` is that map
+  (Bun's own `--update-timings` file is one) — deals longest-first instead: every file, heaviest
+  first (ties by path), to the lightest shard so far (ties to the lowest index). A file the timings
+  do not know costs their median; timings that know none of the step's files deal exactly
+  round-robin. **Commit the file** and pass the same path to every shard: the deal is then as
+  reproducible as round-robin. A per-run cache (`.x/test-timings.json`) restored in one job and not
+  another splits two ways — `merge` names the file that ran twice or nowhere. Stale timings cost
+  balance, never a verdict.
 - The part's JSON carries `data.shard` (`index`, `total`, and per step the `corpusHash` of the whole
   list plus the `files` this shard ran), and each step carries the same facts as `steps[].shard`.
 - A shard whose slice is empty, or ran only skipped tests, is not red: the zero-tests floor
@@ -111,9 +116,14 @@ green; `verify` downloads every part and runs `bun run verify merge`. An app sca
 keeps its one-job workflow, which still works; to adopt, copy a fresh scaffold's
 `.github/workflows/ci.yml`.
 
-This repository's own `ci.yml` reads the same plan: its `tested` job runs `x verify plan --parts 7`
-and `jq` gives each row the test services its `needs` level names; `gate` is `fromJSON` of that.
-`scripts/ci-workflow-shape.test.ts` runs the step and holds every row to `verifyPlan(7)`.
+This repository's own `ci.yml` reads the same plan: its `tested` job runs `x verify plan --parts 9`
+(four unit shards, three live) and `jq` gives each row the test services its `needs` level names;
+`gate` is `fromJSON` of that. `scripts/ci-workflow-shape.test.ts` runs the step and holds every row
+to `verifyPlan(9)`. Every shard passes `--timings scripts/lib/ci/test-weights.json`, the per-file
+wall ms of one green run's unit parts, written by `bun run scripts/test-weights.ts <artifacts-dir>`
+(the download command is its header) and held canonical by
+`scripts/lib/ci/test-weights.test.ts`. As of 2026-11-16, from run 43903381662's own timings: three
+round-robin shards 378/343/207 s, three weighted 309 each, four weighted 232 each.
 
 ## A GitHub Actions workflow, by hand
 

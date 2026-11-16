@@ -80,6 +80,7 @@
     "side-effects": "bun run scripts/side-effects.ts",
     "skip-if-cleanup": "bun run scripts/skip-if-cleanup.ts",
     "test-discovery": "bun run scripts/test-discovery.ts",
+    "test-slow": "bun run scripts/test-slow.ts",
     "source-headers": "bun run scripts/source-headers.ts",
     "spawn-timeout": "bun run scripts/spawn-timeout.ts",
     "log-levels": "bun run scripts/log-levels.ts",

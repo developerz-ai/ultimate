@@ -288,6 +288,28 @@ Expected: unit-2 276 s → ~190–230 s, the part under 5 minutes. Estimated, no
 runner; the first run's step table (`4 workers (budget 5.0 GB)`, the `unit` ms) is the proof.
 Held by `scripts/ci-workflow-shape-unit-speed.test.ts`, which runs the merge step.
 
+## ARM runners, measured and not adopted, 2026-11-16
+
+`ubuntu-24.04-arm` is free for public repositories, so sweep 8c ran the gate parts, the package shards, `reference-app-verify` and `scaffold-smoke` on it twice (runs 43922474956 and 43923955231, the second with Chromium installed) against x64 main run 43903381662:
+
+| Job | x64 | arm 1 | arm 2 |
+|---|---|---|---|
+| gate (unit-1) | 415 s | 273 s | 303 s |
+| gate (unit-2) | 388 s | 269 s | 289 s |
+| packages (1/3) | 394 s | 318 s | 333 s |
+| gate (e2e) | 242 s | 153 s* | 282 s |
+| reference-app-verify (examples/dummy) | 241 s | 175 s* | 291 s |
+| scaffold-smoke (blogapp) | 124 s | 12 s* | 160 s |
+
+`*` failed early, so it ran short.
+
+- **No Chrome:** Google ships none for linux/arm64. Playwright's Chromium launches under the CDP driver, but three phone-frame e2e tests fail on it (pull-to-refresh, last-row clearance at 390×844), so the gate would test a browser adopters do not run.
+- **Install cost:** installing Chromium costs 30–40 s per job.
+- **Cache key:** the bun cache key carries no `runner.arch`.
+- **Gain:** only `unit-1` and `unit-2` were faster both times.
+
+The same imbalance is cut on x64 by weighting the shards (below), with one architecture, one browser, one cache.
+
 ## Fault drills, 2026-11-06
 
 `fault-drills` asks one question no other job can: does the reference app keep the framework's

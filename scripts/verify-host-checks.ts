@@ -80,6 +80,7 @@ import { testDiscoveryFindings } from './test-discovery';
 import { testFixFindings } from './test-fix-citations';
 import { mockBuiltinFindings } from './test-mock-builtin';
 import { realSleepFindings } from './test-real-sleep';
+import { slowTestFindings } from './test-slow';
 import { testTypecheckFindings } from './test-typecheck-gate';
 import { throwFindings } from './to-throw-returns';
 import { tsconfigPathFindings } from './tsconfig-paths';
@@ -297,6 +298,7 @@ export const ERROR_CHECKS: readonly HostCheck[] = [
   testFixFindings,
   bareErrorFindings,
   realSleepFindings,
+  slowTestFindings,
   busPublishFindings,
   launchDeadlineFindings,
   mockBuiltinFindings,

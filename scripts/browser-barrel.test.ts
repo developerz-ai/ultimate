@@ -1,5 +1,6 @@
 // Every package that touches the AsyncLocalStorage seam, bundled for the browser and evaluated —
 // the end property, not the mechanism, one place for the whole repo.
+// slow: a real Bun.build per package entry, then an evaluation of each bundle — the property is the built output, so no stub stands in.
 //
 // The guard in `scripts/async-context-guard.ts` reads source for `new AsyncLocalStorage()` at
 // module scope and documents two blind spots it cannot see: `await import('node:async_hooks')`,
