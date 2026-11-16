@@ -2,7 +2,7 @@
 // whose own CLI is older and has no such command. The real `bin.ts`, spawned, over a planted app CLI
 // that only says who it is — so a hand-over that came back is visible as that CLI's answer.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -12,6 +12,11 @@ import { join } from 'node:path';
 import { exec } from './exec';
 import { LOCAL_CLI_BIN } from './local-cli';
 import { cliVersion } from './registry';
+
+// Each test cold-spawns the real `bin.ts`: a fresh process loading the CLI, which under coverage
+// passed Bun's 5 s default (release 31.38.0's `packages (1/3)`). `cmd-impact.test.ts`'s budget.
+const SPAWN_TIMEOUT_MS = 60_000;
+setDefaultTimeout(SPAWN_TIMEOUT_MS);
 
 const BIN = join(import.meta.dir, 'bin.ts');
 const CANARY = 'the-app-cli-answered';
