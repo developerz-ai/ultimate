@@ -287,7 +287,7 @@ const OWNED_CODES: readonly string[] = HTTP_OWNED_ERROR_CODES;
 const BORROWED_CODES: readonly string[] = HTTP_BORROWED_ERROR_CODES;
 
 describe('HTTP_ERROR_CODES', () => {
-  test('is a duplicate-free set, each owned code with a row on its owner page', async () => {
+  test('is a duplicate-free set, each owned code with a row on the wiki page', async () => {
     // Derived, not counted: `bun run new-error-code` adds a code to the owned array, its title and
     // the wiki row in one edit, and a `toBe(33)` plus a literal copy went red after every one.
     // The partition test below holds owned + borrowed equal to the whole list.

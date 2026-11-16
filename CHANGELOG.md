@@ -31,6 +31,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 ### Changed
 
 - `bun run new-error-code` writes the row on its owner's page, in code order, and regenerates the index. `--section` is retired and refused with the page it would now write.
+- `scripts/vanished-tests.ts`: a test renamed on purpose declares its old title on a `// was: "<old title>"` line above it, so a title correction is no longer read as a dropped case (`X_TEST_VANISHED`).
 - `X_DOC_SETUP_COMMAND_STALE` and `X_DOC_SETUP_COMMANDS_UNSCANNED` each had two disagreeing rows; each is one row now.
 
 ## Releases

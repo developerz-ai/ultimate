@@ -16,7 +16,7 @@ import { migrateConcurrent } from './migration-errors';
 import { DB_SQLSTATE_CODES } from './sqlstate';
 
 describe('DB_OWNED_ERROR_CODES', () => {
-  test('is a duplicate-free set, each code with a row on its owner page', async () => {
+  test('is a duplicate-free set, each code with a row on the wiki page', async () => {
     // Derived, not listed: `bun run new-error-code` adds a code to this array, its title and the
     // wiki row in one edit, and a literal copy of the array here went red after every one of them.
     // A code leaving without its row, or arriving without one, is still a failing test.

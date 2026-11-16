@@ -110,6 +110,7 @@ describe('one token across tenants', () => {
     expect(resolveCalls).toBe(0);
   });
 
+  // was: "row 857 of the wiki page carries that fix verbatim"
   test('its row on the mcp error page carries that fix verbatim', async () => {
     // The page is the copy an agent reads before it has the code, so it says what the error says.
     // `new-error-code` writes a row from the registered fix; this is the same identity, held the

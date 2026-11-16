@@ -7,7 +7,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun exposes no tmpdir().
 import { TEMP_TREE_GIT_ENV, tempTrees } from '../packages/testing/src/temp-tree';
 import { run } from './lib/run';
-import { vanishedGaps, vanishedTests } from './vanished-tests';
+import { renamedTitles, vanishedGaps, vanishedTests } from './vanished-tests';
 
 describe('vanishedGaps', () => {
   test('a title gone from a directory whose source did not change is an error', () => {
@@ -98,5 +98,26 @@ describe('vanishedTests, over a real repository', () => {
     const result = await vanishedTests(dir);
     expect(result.ok).toBe(false);
     expect(result.findings[0]?.code).toBe('X_PREFLIGHT_BASE_MISSING');
+  });
+});
+
+describe('a test renamed on purpose says what it was called', () => {
+  test('a // was: line names the old title, and only that line counts', () => {
+    const source = [
+      '  // was: "row 857 of the wiki page carries that fix verbatim"',
+      "  test('its row on the mcp error page carries that fix verbatim', () => {});",
+      '  const note = \'// was: "not a declaration"\';',
+    ].join('\n');
+    expect(renamedTitles(source)).toEqual(['row 857 of the wiki page carries that fix verbatim']);
+  });
+
+  test('the old title it names is no vanished case', () => {
+    const titles = new Map([
+      [
+        'packages/mcp/src',
+        { base: ['row 857 of the wiki page'], head: ['row 857 of the wiki page'] },
+      ],
+    ]);
+    expect(vanishedGaps(titles, new Set())).toEqual([]);
   });
 });

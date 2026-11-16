@@ -13,7 +13,7 @@ describe('SEO_ERROR_CODES', () => {
   // Derived, not listed: `bun run new-error-code` writes a registration, its wiki row and this
   // table's entry together, and a literal copy here went red after every one of them while saying
   // nothing the registry and the page do not. A code gone from the wiki or the registry still fails.
-  test('is exactly the set this package registers, and each has a row on its owner page', async () => {
+  test('is exactly the set this package registers, and each has a row on the wiki page', async () => {
     // No performance-budget code: the budget gate is `@ultimat3/cli`'s `checkBudgets`, throwing
     // `@ultimat3/render`'s `X_BUDGET_EXCEEDED`; seo owned a second code for that one condition.
     const page = await WIKI.text();

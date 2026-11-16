@@ -70,7 +70,7 @@ describe('--dry-run', () => {
     ]);
     // The index gains the code's line and money's new count — and only lines it lacked.
     const index = result.planned.find((edit) => edit.path === WIKI_PAGE);
-    expect(index?.added).toContain('| X_MONEY_DRY_PROBE | a title | [money](Error-Codes-money) |');
+    expect(index?.added).toContain('| X_MONEY_DRY_PROBE | [money](Error-Codes-money) |');
   });
 
   test('without it the same run writes, and reports what it wrote', async () => {

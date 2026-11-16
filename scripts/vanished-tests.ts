@@ -20,6 +20,16 @@ const SCRIPT = 'vanished-tests';
 const TEST_FILE = /\.test\.[cm]?tsx?$/;
 const SOURCE_FILE = /\.[cm]?tsx?$/;
 
+/**
+ * A test renamed on purpose names its old title on a `// was: "<old title>"` line, alone on its
+ * line: a title CORRECTION (a row number that moved) is not a dropped case, and the comment is the
+ * reviewable claim that it is the same test (#1175).
+ */
+const WAS = /^[ \t]*\/\/ was: "(.+)"[ \t]*$/gm;
+
+export const renamedTitles = (source: string): readonly string[] =>
+  [...source.matchAll(WAS)].map((match) => match[1] as string);
+
 const dirOf = (path: string): string => path.slice(0, Math.max(0, path.lastIndexOf('/'))) || '.';
 
 export interface VanishedGap {
@@ -88,7 +98,10 @@ export async function vanishedTests(root: string, base?: string): Promise<Vanish
     titles.set(dirOf(path), entry);
     entry.base.push(...testTitles((await textAt(root, diff.base, path)) ?? ''));
     const now = Bun.file(`${root}/${path}`);
-    if (await now.exists()) entry.head.push(...testTitles(await now.text()));
+    if (await now.exists()) {
+      const text = await now.text();
+      entry.head.push(...testTitles(text), ...renamedTitles(text));
+    }
   }
   const gaps = vanishedGaps(titles, sourceTouched);
   const findings = gaps.filter((gap) => gap.blocking).map(findingFor);
