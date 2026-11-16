@@ -87,7 +87,8 @@ describe('s3Driver', () => {
       // The provider's own words reach the cause, and the fix names an executable command.
       expect(error.cause).toContain('AccessDenied');
       expect(error.fix).toContain('s3:DeleteObject');
-      expect(error.fix).toContain('aws s3api delete-object --bucket b --key org/org-1/c.txt');
+      expect(error.fix).toContain('arn:aws:s3:::b/*');
+      expect(error.fix).not.toContain('delete-object');
       // Still there: the refusal was real, and the driver did not pretend otherwise.
       expect(fake.store.has('org/org-1/c.txt')).toBe(true);
     });

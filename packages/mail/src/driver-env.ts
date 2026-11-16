@@ -122,7 +122,7 @@ export function selectMailDriver(
   if (selected.length > 1) {
     throw new ConfigInvalidError({
       cause: `${selected.join(' and ')} are ${selected.length === 2 ? 'both' : 'all'} set — ${selected.length} transports claim the same mail`,
-      fix: `sed -i '/^${renderFixShellArg(selected[selected.length - 1], 'SMTP_URL')}=/d' .env.production   # or drop another: keep one of ${selected.join(', ')} — a process delivers through exactly one transport`,
+      fix: `sed -i.bak '/^${renderFixShellArg(selected[selected.length - 1], 'SMTP_URL')}=/d' .env.production   # or drop another: keep one of ${selected.join(', ')} — a process delivers through exactly one transport`,
       meta: { selected },
     });
   }

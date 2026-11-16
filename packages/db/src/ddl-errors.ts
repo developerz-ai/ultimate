@@ -3,7 +3,7 @@
 // is at its ceiling — `invariant-errors.ts`' reason. All three are `X_SQL_UNSAFE`, declared there:
 // an unchecked operand reaching statement text is one situation, and axiom 1 gives it one code.
 
-import { describeValue } from '@ultimat3/core';
+import { describeValue, renderFixShellArg } from '@ultimat3/core';
 import { DbError } from './errors';
 
 /**
@@ -67,6 +67,8 @@ export const columnDefaultUnsafe = (column: string, count: number): DbError =>
   new DbError({
     code: 'X_SQL_UNSAFE',
     cause: `the default of column "${column}" holds ${count} commands; a default is one expression`,
-    fix: `git checkout -- "*.snapshot.json"   # restore the migration's snapshot from version control — or give "${column}" a single .default(), then x db gen`,
+    // The edit leads: a blanket `git checkout` of every snapshot would also discard a new
+    // migration's uncommitted one. Restoring a hand-edited snapshot names that one file.
+    fix: `grep -rn ${renderFixShellArg(column, '<column>')} --include=entity.ts .   # give that column a single .default(<one expression>); a hand-edited snapshot is restored by checking out that one .snapshot.json; then: x db gen`,
     meta: { column, count },
   });

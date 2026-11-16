@@ -73,7 +73,7 @@ export function selectPurgeDriver(env: PurgeEnvironment): PurgeSelection {
     const configured = configuredKeys(env);
     throw new ConfigInvalidError({
       cause: `two CDNs claim the same purge: ${configured.join(', ')} are set`,
-      fix: "sed -i -E '/^CLOUDFLARE_(API_TOKEN|ZONE_ID)=/d' .env.production   # or '/^FASTLY_(API_TOKEN|SERVICE_ID)=/d' — keep one pair: a process purges exactly one edge",
+      fix: "sed -i.bak -E '/^CLOUDFLARE_(API_TOKEN|ZONE_ID)=/d' .env.production   # or '/^FASTLY_(API_TOKEN|SERVICE_ID)=/d' — keep one pair: a process purges exactly one edge",
       meta: { configured },
     });
   }
