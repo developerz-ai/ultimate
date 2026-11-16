@@ -160,7 +160,7 @@ describe('unit · x doctor · the command', () => {
     runner: (command) => {
       throw new Error(`x doctor spawned ${command.join(' ')}`);
     },
-    env: {},
+    env: NO_CHROME,
     bunVersion: REQUIRED_BUN,
   });
 
@@ -197,7 +197,7 @@ describe('unit · x doctor · the chart listing', () => {
         args: parseArgs(['doctor', '--json'], [doctorCommand.spec]),
         cwd: root,
         runner: (command) => Promise.reject(new Error(`x doctor spawned ${command.join(' ')}`)),
-        env: {},
+        env: NO_CHROME,
         bunVersion: REQUIRED_BUN,
       };
       const missing = [
@@ -226,7 +226,7 @@ describe('unit · x doctor · the chart listing', () => {
         args: parseArgs(['doctor', '--json'], [doctorCommand.spec]),
         cwd: root,
         runner: (command) => Promise.reject(new Error(`x doctor spawned ${command.join(' ')}`)),
-        env: {},
+        env: NO_CHROME,
         bunVersion: REQUIRED_BUN,
       });
       expect(result.data).not.toHaveProperty('chartAlerts');
@@ -235,6 +235,13 @@ describe('unit · x doctor · the chart listing', () => {
     }
   });
 });
+
+/**
+ * The doctor's env in these tests: a declared Chrome that is not there. `findChrome` LAUNCHES each
+ * installed candidate to prove it starts, so `{}` on a runner with Chrome paid a real browser start
+ * inside a port assertion and timed out under coverage (#1166). The declared path short-circuits it.
+ */
+const NO_CHROME = { CHROME_PATH: '/nonexistent/x-doctor-test-chrome' } as const;
 
 /** The smallest thing `findAppRoot` accepts, plus one subdirectory to be called from. */
 function doctorAppRoot(): string {
