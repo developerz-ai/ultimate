@@ -75,6 +75,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   - Two NATS live tests confirm the subscription before they publish.
 - Every pin ratchet with its own script (finite-bounds, fetch-deadline, log-levels, claude-md-size, config-readers, node-imports, proto-index, secret-compare, source-headers, spawn-timeout) now runs in `x verify`'s `errors` step, so its CLI verdict is the gate's. `scripts/verify-ratchets.test.ts` fails when a new pins table's ratchet is left out. finite-bounds had been red on `main` over five unscreened `scripts/` sites; they are fixed.
 - `x db diagnostics`, `x db recount` and the runtime's `startDb` close every pool they opened and put the process's `db()` back, even when a close or the replica attach fails.
+- `scripts/upgrade-fixtures.ts` gives each fixture its own fresh database on the `TEST_DATABASE_URL` server (dropped after), so the proof no longer reads another suite's leftovers when the test services are up.
 - The stop-drift hook no longer reports the schema dumps stale when `schema-dumps --check` timed out or its scratch replay failed.
 
 ## Releases

@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { TEMP_TREE_GIT_ENV, tempTree } from '../packages/testing/src/temp-tree';
 import { LONG_RUN_TIMEOUT_MS, run } from './lib/run';
 import { adoptInto } from './upgrade-fixtures-cache';
+import { type AdminStatement, openFixtureDatabase } from './upgrade-fixtures-database';
 import { driftOf, readTree } from './upgrade-fixtures-drift';
 import type { FixtureRun, FixtureStage } from './upgrade-fixtures-findings';
 import type { PackedPackage } from './upgrade-fixtures-packument';
@@ -148,13 +149,12 @@ export async function scaffoldHead(
 }
 
 /** Builds the fixture at `version` and hops it to HEAD; every outcome is returned, none thrown. */
-export async function runFixture(input: FixtureInput): Promise<FixtureRun> {
+export async function runFixture(input: FixtureInput, admin?: AdminStatement): Promise<FixtureRun> {
   const started = performance.now();
   // Made here and removed by `upgrade-fixtures.ts` (unless `--keep`): every child that writes
   // under it is awaited by `run` before this returns, and none leaves git's maintenance behind.
   const work = tempTree(`upgrade-fixture-${input.version}-`).path;
   const dir = join(work, FIXTURE_APP);
-  const env = GIT_ENV(input.env);
   const elapsed = () => Math.round(performance.now() - started);
   // Wall time per stage, in run order: what decides whether a row fits a free runner's budget.
   const stages: Record<string, number> = {};
@@ -175,74 +175,83 @@ export async function runFixture(input: FixtureInput): Promise<FixtureRun> {
     stages,
   });
 
-  const source = await scaffold(input);
-  if (typeof source !== 'string') return unbuilt('scaffold', source.output);
-  lap('scaffold');
-  // Verbatim: `x new` writes AGENTS.md as a RELATIVE link, and a resolved one points outside the
-  // app — Biome's walk dies on it ("path is expected to be under the root"), a red no author meets.
-  cpSync(source, dir, { recursive: true, verbatimSymlinks: true });
-
-  const packuments = join(input.cacheDir, 'packuments');
-  const then = serveScope({ kind: 'as-of', version: input.version }, packuments);
+  // A database of its own on the test server, when there is one: the shared one is dirty from the
+  // gate's suites, and fixture N met fixture N-1's ledger (`upgrade-fixtures-database.ts`).
+  const database = await openFixtureDatabase(input.env, input.version, admin);
+  if ('refused' in database) return unbuilt('setup', database.refused);
+  const env = GIT_ENV(database.env);
   try {
-    await run([...GIT, 'init', '-q'], { cwd: dir, env: GIT_ENV(env) });
-    await Bun.write(join(dir, '.git', 'info', 'exclude'), '.npmrc\n');
-    await Bun.write(join(dir, '.npmrc'), scopeLine(then.url));
-    const setup = await run([process.execPath, 'run', 'setup'], {
-      cwd: dir,
-      env,
-      timeoutMs: LONG_RUN_TIMEOUT_MS,
-    });
-    if (!setup.ok) return unbuilt('setup', setup.output);
-  } finally {
-    then.stop();
-  }
-  if (!(await commitAll(dir, env, `x new + bun run setup at ${input.version}`))) {
-    return unbuilt('setup', 'git could not commit the scaffold');
-  }
-  lap('setup');
-  const before = input.before ? await gate(dir, env) : null;
-  // The gate at V may refresh tracked files it owns; the hop needs a clean tree either way.
-  if (before !== null) {
-    await commitAll(dir, env, `x verify at ${input.version}`);
-    lap('before');
-  }
+    const source = await scaffold(input);
+    if (typeof source !== 'string') return unbuilt('scaffold', source.output);
+    lap('scaffold');
+    // Verbatim: `x new` writes AGENTS.md as a RELATIVE link, and a resolved one points outside the
+    // app — Biome's walk dies on it ("path is expected to be under the root"), a red no author meets.
+    cpSync(source, dir, { recursive: true, verbatimSymlinks: true });
 
-  const now = serveScope({ kind: 'head', packed: input.packed }, packuments);
-  try {
-    await Bun.write(join(dir, '.npmrc'), scopeLine(now.url));
-    // This checkout's CLI, as `bunx @ultimat3/cli@latest upgrade` would run it: the app's own older
-    // CLI does not answer `upgrade` for it (`local-cli.ts`, OUTLIVES_THE_APP_CLI).
-    const hop = await run(
-      [
-        process.execPath,
-        join(input.root, 'packages', 'cli', 'src', 'bin.ts'),
-        'upgrade',
-        '--to',
-        input.head,
-        '--json',
-      ],
-      { cwd: dir, env, timeoutMs: HOP_TIMEOUT_MS },
-    );
-    lap('hop');
-    const reading = readHop(commandDocument(hop.output, 'upgrade'));
-    const wrote = await porcelain(dir, env);
-    const after = input.verify ? await gate(dir, env) : null;
-    if (after !== null) lap('after');
-    const drift =
-      input.headScaffold === undefined ? null : driftOf(input.headScaffold, await readTree(dir));
-    return {
-      version: input.version,
-      dir,
-      before,
-      ...(reading === undefined ? { hopOutput: hop.output.slice(-800) } : { hop: reading }),
-      wrote,
-      after,
-      drift,
-      ms: elapsed(),
-      stages,
-    };
+    const packuments = join(input.cacheDir, 'packuments');
+    const then = serveScope({ kind: 'as-of', version: input.version }, packuments);
+    try {
+      await run([...GIT, 'init', '-q'], { cwd: dir, env: GIT_ENV(env) });
+      await Bun.write(join(dir, '.git', 'info', 'exclude'), '.npmrc\n');
+      await Bun.write(join(dir, '.npmrc'), scopeLine(then.url));
+      const setup = await run([process.execPath, 'run', 'setup'], {
+        cwd: dir,
+        env,
+        timeoutMs: LONG_RUN_TIMEOUT_MS,
+      });
+      if (!setup.ok) return unbuilt('setup', setup.output);
+    } finally {
+      then.stop();
+    }
+    if (!(await commitAll(dir, env, `x new + bun run setup at ${input.version}`))) {
+      return unbuilt('setup', 'git could not commit the scaffold');
+    }
+    lap('setup');
+    const before = input.before ? await gate(dir, env) : null;
+    // The gate at V may refresh tracked files it owns; the hop needs a clean tree either way.
+    if (before !== null) {
+      await commitAll(dir, env, `x verify at ${input.version}`);
+      lap('before');
+    }
+
+    const now = serveScope({ kind: 'head', packed: input.packed }, packuments);
+    try {
+      await Bun.write(join(dir, '.npmrc'), scopeLine(now.url));
+      // This checkout's CLI, as `bunx @ultimat3/cli@latest upgrade` would run it: the app's own older
+      // CLI does not answer `upgrade` for it (`local-cli.ts`, OUTLIVES_THE_APP_CLI).
+      const hop = await run(
+        [
+          process.execPath,
+          join(input.root, 'packages', 'cli', 'src', 'bin.ts'),
+          'upgrade',
+          '--to',
+          input.head,
+          '--json',
+        ],
+        { cwd: dir, env, timeoutMs: HOP_TIMEOUT_MS },
+      );
+      lap('hop');
+      const reading = readHop(commandDocument(hop.output, 'upgrade'));
+      const wrote = await porcelain(dir, env);
+      const after = input.verify ? await gate(dir, env) : null;
+      if (after !== null) lap('after');
+      const drift =
+        input.headScaffold === undefined ? null : driftOf(input.headScaffold, await readTree(dir));
+      return {
+        version: input.version,
+        dir,
+        before,
+        ...(reading === undefined ? { hopOutput: hop.output.slice(-800) } : { hop: reading }),
+        wrote,
+        after,
+        drift,
+        ms: elapsed(),
+        stages,
+      };
+    } finally {
+      now.stop();
+    }
   } finally {
-    now.stop();
+    await database.close();
   }
 }
