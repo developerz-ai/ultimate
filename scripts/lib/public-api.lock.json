@@ -1,6 +1,6 @@
 {
   "format": 2,
-  "version": "31.34.0",
+  "version": "31.35.0",
   "entries": {
     "@ultimat3/action": {
       "ACTION_ANSWER_COOKIE": {"hash":"0e5d26d4d453af41","shape":{"kind":"declaration","keyword":"const","head":"0e5d26d4"}},
@@ -1519,6 +1519,7 @@
       "DEV_BINDING": {"hash":"b36f952ebe94c69d","shape":{"kind":"declaration","keyword":"const","head":"b36f952e"}},
       "DEV_ROLES": {"hash":"07002d90bbf3eb91","shape":{"kind":"declaration","keyword":"const","head":"07002d90"}},
       "DoctorProbe": {"hash":"be0df56aa3713cde","shape":{"kind":"members","head":"f89af633","members":{"appUrl":"6c665e22","authStorage":"1e94bd6a","bunVersion":"1fb0a448","database":"5451f576","drift":"fdc77de0","embeddedDatabase":"367bc00b","envNames":"d863606e","exists":"5b86e268","frameworkFindings":"a4c2a735","offlineFallback":"82e1ee67","pins":"c98810d0","pooler":"1e7e13de","port":"4e57c805","portFree":"b6d6532d","root":"6c665e22","rowSecurity":"?fdc77de0","rowSecurityOff":"4c6cda06","sealedKeys":"9187134c","snapshots":"fdc77de0","typescript":"f667253c","unflooredSteps":"6d71d972"}}},
+      "ErrorCodePage": {"hash":"aeb3d867808268d7","shape":{"kind":"members","head":"89b36b24","members":{"path":"1fb0a448","text":"1fb0a448"}}},
       "ExecOptions": {"hash":"fdee07f07c562213","shape":{"kind":"members","head":"c3190773","members":{"cwd":"1fb0a448","env":"?fa15e968","onSpawn":"?b0744bb9","stdin":"?1fb0a448"}}},
       "ExecResult": {"hash":"c238441be9cbf483","shape":{"kind":"members","head":"1f747144","members":{"code":"4e57c805","command":"f8639a23","durationMs":"4e57c805","ok":"a001763a","stderr":"1fb0a448","stdout":"1fb0a448"}}},
       "FRAMEWORK_INLINE_SCRIPTS": {"hash":"57fbbb56aec54c29","shape":{"kind":"declaration","keyword":"const","head":"57fbbb56"}},
@@ -1604,8 +1605,11 @@
       "candidatePaths": {"hash":"c7c63215c18d1967","shape":{"kind":"function","head":"f7877cb6","params":["473287f8","473287f8"],"returns":"21c248b4"}},
       "checkBudgets": {"hash":"352600b725948b61","shape":{"kind":"function","head":"96685c62","params":["3c99f1f3","413d0c13|eb045d78","?dea1fd53","?228e9012"],"returns":"e1e0fc13"}},
       "checkErrorCodeDocs": {"hash":"61f62484e732a729","shape":{"kind":"function","head":"047af22c","params":["473287f8","473287f8"],"returns":"e4bf4566"}},
+      "checkErrorCodeDocsIn": {"hash":"a7af462ff1a6432f","shape":{"kind":"function","head":"9866c79a","params":["473287f8","47f1cd48"],"returns":"e4bf4566"}},
       "checkErrorCodeRegistry": {"hash":"553961d3650d6e2c","shape":{"kind":"function","head":"c1ae15ab","params":["473287f8","473287f8","4cd3437f"],"returns":"e4bf4566"}},
+      "checkErrorCodeRegistryIn": {"hash":"172917244a36b670","shape":{"kind":"function","head":"3a010ab3","params":["47f1cd48","4cd3437f"],"returns":"e1e0fc13"}},
       "checkErrorCodesThrown": {"hash":"ff3f170b15e1b074","shape":{"kind":"function","head":"7239fe0d","params":["473287f8","473287f8","?4cd3437f"],"returns":"e4bf4566"}},
+      "checkErrorCodesThrownIn": {"hash":"10c26636118f67a5","shape":{"kind":"function","head":"247f05c9","params":["473287f8","47f1cd48","?4cd3437f"],"returns":"e4bf4566"}},
       "checkErrorFixes": {"hash":"0cd617931ca64659","shape":{"kind":"function","head":"5df48f4c","params":["473287f8"],"returns":"e4bf4566"}},
       "checkFileSizes": {"hash":"8c081f1fdfb0e812","shape":{"kind":"function","head":"c589620a","params":["473287f8"],"returns":"e4bf4566"}},
       "checkFlagReads": {"hash":"ade6f5cecb9d1324","shape":{"kind":"function","head":"6debbdc4","params":["bd36b6c7","473287f8"],"returns":"e4bf4566"}},
@@ -1624,6 +1628,7 @@
       "devHooks": {"hash":"2cf0ae45cd6fadce","shape":{"kind":"function","head":"83fa44bb","params":["?f5dcb858"],"returns":"590ee30d"}},
       "dispatch": {"hash":"915cf20ef080480c","shape":{"kind":"function","head":"7933f543","params":["2fb02ed4"],"returns":"2998512c"}},
       "documentedCodes": {"hash":"f1452e99482d383f","shape":{"kind":"function","head":"6f6488e7","params":["473287f8"],"returns":"4cd3437f"}},
+      "documentedCodesIn": {"hash":"229f2fab6d931cde","shape":{"kind":"function","head":"205c2a53","params":["47f1cd48"],"returns":"2db0a2d1"}},
       "eachSourceFile": {"hash":"44759c9165270006","shape":{"kind":"function","head":"6e572d4f","params":["473287f8"],"returns":"74ee2676"}},
       "exec": {"hash":"248dcc0b5fdf3158","shape":{"kind":"declaration","keyword":"const","head":"248dcc0b"}},
       "execOutput": {"hash":"be1115da461d1ab1","shape":{"kind":"function","head":"85444dac","params":["30051365"],"returns":"473287f8"}},
@@ -4826,6 +4831,7 @@
       "githubSlug": {"hash":"afedb0ada90e6659","shape":{"kind":"function","head":"2c527302","params":["473287f8"],"returns":"473287f8"}},
       "headerComment": {"hash":"e6fb1e936f3a4f34","shape":{"kind":"function","head":"424aa79b","params":["473287f8"],"returns":"473287f8"}},
       "impactOf": {"hash":"c3314ac3905d7500","shape":{"kind":"function","head":"cb96f149","params":["d715f035","473287f8"],"returns":"d1f23f0d"}},
+      "isErrorCodesPage": {"hash":"5750cdbc1066a075","shape":{"kind":"function","head":"4dfa313c","params":["473287f8"],"returns":"bf84d3d6"}},
       "isManifest": {"hash":"095220ad56a2b0e5","shape":{"kind":"function","head":"af19f4fb","params":["b23a6a84"],"returns":"b8c41eb1"}},
       "nearestTopics": {"hash":"ecedb6913e209856","shape":{"kind":"function","head":"9fe9e726","params":["4754710a","473287f8","?12886f9d"],"returns":"21c248b4"}},
       "nodeId": {"hash":"44fc9f22b9685e18","shape":{"kind":"function","head":"2e952fae","params":["6d5f927b","473287f8"],"returns":"473287f8"}},

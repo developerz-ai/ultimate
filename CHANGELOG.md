@@ -10,34 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- **The error reference is an index plus one page per owner**, as the changelog is. `wiki/Error-Codes.md` was one 627 KB page of 1,358 rows. It is now:
-  - a 93 KB index at the same URL every error's `docs:` link names: the rules, the never-ships list, the reserved codes, and a generated table of every code and its page;
-  - 31 `wiki/Error-Codes-<owner>.md` pages, the largest 156 KB, every row moved byte for byte.
-
-  `bun run error-code-pages --write` generates the index, and the gate refuses drift (`X_ERROR_CODE_INDEX_STALE`) and a row on a page its manifest owner does not hold (`X_ERROR_CODE_ROW_MISPLACED`).
-
-### Added
-
-- `@ultimat3/cli`: `ErrorCodePage`, `checkErrorCodeDocsIn`, `checkErrorCodeRegistryIn`, `checkErrorCodesThrownIn` and `documentedCodesIn` read the error reference as its page set.
-- `@ultimat3/manifest`: `isErrorCodesPage`. `x docs` indexes none of the error-code pages.
-- Docs site: each owner's codes on their own page (`/error-codes-<owner>`); every `/errors/<CODE>` page links its owner page.
-
-### Deprecated
-
-- `@ultimat3/cli`: `checkErrorCodeDocs`, `checkErrorCodeRegistry`, `checkErrorCodesThrown`, `documentedCodes` (and `liveCodes`, `declaredUnthrown` in their modules). Each still answers for one page, removed at the next major: use the `…In(pages)` names.
-
-### Changed
-
-- `bun run new-error-code` writes the row on its owner's page, in code order, and regenerates the index. `--section` is retired and refused with the page it would now write.
-- `scripts/vanished-tests.ts`: a test renamed on purpose declares its old title on a `// was: "<old title>"` line above it, so a title correction is no longer read as a dropped case (`X_TEST_VANISHED`).
-- `X_DOC_SETUP_COMMAND_STALE` and `X_DOC_SETUP_COMMANDS_UNSCANNED` each had two disagreeing rows; each is one row now.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.35.0](docs/changelog/31.35.0.md) | 2026-11-16 | **The error reference is an index plus one page per owner**, as the changelog is. `wiki/Error-Codes.md` was one 627 KB page of 1,358 rows. It is now: |
 | [31.34.0](docs/changelog/31.34.0.md) | 2026-11-16 | **A test states its own verdict with `expect`, never a bare `Error`** (plan 101b slice 12 M6, third PR). 80 sites where a test threw a bare `Error` to fail itself now use `expect.unreachable` or a direct assertion: `realtime`, `http`, `query`, `db`, `entity`, `seo`, `cli`, `jobs`, `testing`, `admin`, `ai`, `auth`, `render` and `ui`. Several were silently weak, a throw the subject or the test's own handler swallowed, and are stronger now: `auth`'s JWKS "never asked for a key", `ai`'s SSE frame count. Every remaining pinned site is an INPUT, a stub that throws at the subject, and its row says what it simulates. |
 | [31.33.0](docs/changelog/31.33.0.md) | 2026-11-16 | **Every shipped source file opens with its 1–4 line responsibility header, and every `node:` import says why Bun cannot do the job** (plan 101b slice 12 M6, second PR). The `source-headers` pin table is empty: 316 rows fell. `node-imports` fell from 173 explained-or-not sites to 0. Where Bun has the same API, the import is gone instead: `Bun.CryptoHasher` in `@ultimat3/entity`'s seed ids (pinned by a known-answer test against an independent uuid5), `Bun.file().exists()` in four `x verify` readers, and `Bun.Glob` and `Bun.pathToFileURL` in tests. |
 | [31.32.0](docs/changelog/31.32.0.md) | 2026-11-16 | **The security and robustness ratchets are burned down** (plan 101b slice 12 M6). Every site eight guards pinned across `cli`, `scripts` and every package was repaired, or keeps one row with a permanent written reason. Done by the guards' own repair, never a dodge: |
