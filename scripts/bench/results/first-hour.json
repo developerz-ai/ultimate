@@ -2,96 +2,355 @@
   "version": "latest",
   "box": {
     "os": "linux-x64",
-    "cpu": "Intel(R) Core(TM) i7-10610U CPU @ 1.80GHz",
-    "cores": 8,
-    "memoryGb": 31,
+    "cpu": "AMD EPYC 7763 64-Core Processor",
+    "cores": 4,
+    "memoryGb": 16,
     "bun": "1.4.4",
-    "runner": "local"
+    "runner": "ubuntu26"
   },
   "runs": [
     {
-      "work": "/tmp/first-hour-8JkfeX",
+      "work": "/tmp/first-hour-8U3mTF",
+      "resolved": "31.32.0",
       "steps": [
         {
           "name": "scaffold",
           "command": "bun x create-ultimate@latest firsthour --no-git",
-          "ms": 4696,
+          "ms": 2318,
           "status": "ok"
         },
         {
           "name": "setup",
           "command": "bun run setup",
-          "ms": 43347,
+          "ms": 11185,
           "status": "ok"
         },
         {
           "name": "verify",
           "command": "bun run verify --json",
-          "ms": 60619,
-          "status": "failed",
-          "tail": "{\"step\":\"seo\",\"ok\":true,\"ms\":136} | {\"step\":\"i18n\",\"ok\":true,\"ms\":179} | {\"step\":\"policy\",\"ok\":true,\"ms\":259} | {\"step\":\"roadmap\",\"ok\":true,\"ms\":0,\"skipped\":true} | error: script \"verify\" exited with code 1"
+          "ms": 49178,
+          "status": "ok"
         },
         {
           "name": "first feature",
-          "command": "bun x x g resource note",
-          "ms": null,
-          "status": "skipped"
+          "command": "bun x x g resource note --json",
+          "ms": 1114,
+          "status": "ok"
+        },
+        {
+          "name": "feature next steps",
+          "command": "bun x x db gen create notes && bun x x db migrate && bun x x verify --only budgets",
+          "ms": 10401,
+          "status": "ok"
         },
         {
           "name": "setup after feature",
           "command": "bun run setup",
-          "ms": null,
-          "status": "skipped"
+          "ms": 3211,
+          "status": "ok"
         },
         {
           "name": "verify after feature",
           "command": "bun run verify --json",
-          "ms": null,
-          "status": "skipped"
+          "ms": 30778,
+          "status": "ok"
         }
       ],
       "sizes": {
-        "appFiles": 261,
-        "nodeModulesMb": 165,
-        "packages": 106,
-        "homeBytes": null,
-        "homeJsBytes": null,
+        "appFiles": 311,
+        "nodeModulesMb": 196,
+        "packages": 107,
+        "homeBytes": 3856,
+        "homeJsBytes": 0,
+        "imageMb": null
+      }
+    },
+    {
+      "work": "/tmp/first-hour-FwmpkH",
+      "resolved": "31.32.0",
+      "steps": [
+        {
+          "name": "scaffold",
+          "command": "bun x create-ultimate@latest firsthour --no-git",
+          "ms": 2000,
+          "status": "ok"
+        },
+        {
+          "name": "setup",
+          "command": "bun run setup",
+          "ms": 11228,
+          "status": "ok"
+        },
+        {
+          "name": "verify",
+          "command": "bun run verify --json",
+          "ms": 35487,
+          "status": "ok"
+        },
+        {
+          "name": "first feature",
+          "command": "bun x x g resource note --json",
+          "ms": 1081,
+          "status": "ok"
+        },
+        {
+          "name": "feature next steps",
+          "command": "bun x x db gen create notes && bun x x db migrate && bun x x verify --only budgets",
+          "ms": 10347,
+          "status": "ok"
+        },
+        {
+          "name": "setup after feature",
+          "command": "bun run setup",
+          "ms": 3182,
+          "status": "ok"
+        },
+        {
+          "name": "verify after feature",
+          "command": "bun run verify --json",
+          "ms": 30575,
+          "status": "ok"
+        }
+      ],
+      "sizes": {
+        "appFiles": 311,
+        "nodeModulesMb": 196,
+        "packages": 107,
+        "homeBytes": 3856,
+        "homeJsBytes": 0,
+        "imageMb": null
+      }
+    },
+    {
+      "work": "/tmp/first-hour-3cRKty",
+      "resolved": "31.32.0",
+      "steps": [
+        {
+          "name": "scaffold",
+          "command": "bun x create-ultimate@latest firsthour --no-git",
+          "ms": 2033,
+          "status": "ok"
+        },
+        {
+          "name": "setup",
+          "command": "bun run setup",
+          "ms": 11641,
+          "status": "ok"
+        },
+        {
+          "name": "verify",
+          "command": "bun run verify --json",
+          "ms": 34458,
+          "status": "ok"
+        },
+        {
+          "name": "first feature",
+          "command": "bun x x g resource note --json",
+          "ms": 1098,
+          "status": "ok"
+        },
+        {
+          "name": "feature next steps",
+          "command": "bun x x db gen create notes && bun x x db migrate && bun x x verify --only budgets",
+          "ms": 10414,
+          "status": "ok"
+        },
+        {
+          "name": "setup after feature",
+          "command": "bun run setup",
+          "ms": 3190,
+          "status": "ok"
+        },
+        {
+          "name": "verify after feature",
+          "command": "bun run verify --json",
+          "ms": 30099,
+          "status": "ok"
+        }
+      ],
+      "sizes": {
+        "appFiles": 311,
+        "nodeModulesMb": 196,
+        "packages": 107,
+        "homeBytes": 3856,
+        "homeJsBytes": 0,
+        "imageMb": null
+      }
+    },
+    {
+      "work": "/tmp/first-hour-j3c4ku",
+      "resolved": "31.32.0",
+      "steps": [
+        {
+          "name": "scaffold",
+          "command": "bun x create-ultimate@latest firsthour --no-git",
+          "ms": 2372,
+          "status": "ok"
+        },
+        {
+          "name": "setup",
+          "command": "bun run setup",
+          "ms": 13065,
+          "status": "ok"
+        },
+        {
+          "name": "verify",
+          "command": "bun run verify --json",
+          "ms": 35138,
+          "status": "ok"
+        },
+        {
+          "name": "first feature",
+          "command": "bun x x g resource note --json",
+          "ms": 1164,
+          "status": "ok"
+        },
+        {
+          "name": "feature next steps",
+          "command": "bun x x db gen create notes && bun x x db migrate && bun x x verify --only budgets",
+          "ms": 10414,
+          "status": "ok"
+        },
+        {
+          "name": "setup after feature",
+          "command": "bun run setup",
+          "ms": 3166,
+          "status": "ok"
+        },
+        {
+          "name": "verify after feature",
+          "command": "bun run verify --json",
+          "ms": 29696,
+          "status": "ok"
+        }
+      ],
+      "sizes": {
+        "appFiles": 311,
+        "nodeModulesMb": 196,
+        "packages": 107,
+        "homeBytes": 3856,
+        "homeJsBytes": 0,
+        "imageMb": null
+      }
+    },
+    {
+      "work": "/tmp/first-hour-Xi7aq3",
+      "resolved": "31.32.0",
+      "steps": [
+        {
+          "name": "scaffold",
+          "command": "bun x create-ultimate@latest firsthour --no-git",
+          "ms": 2051,
+          "status": "ok"
+        },
+        {
+          "name": "setup",
+          "command": "bun run setup",
+          "ms": 11555,
+          "status": "ok"
+        },
+        {
+          "name": "verify",
+          "command": "bun run verify --json",
+          "ms": 34448,
+          "status": "ok"
+        },
+        {
+          "name": "first feature",
+          "command": "bun x x g resource note --json",
+          "ms": 1081,
+          "status": "ok"
+        },
+        {
+          "name": "feature next steps",
+          "command": "bun x x db gen create notes && bun x x db migrate && bun x x verify --only budgets",
+          "ms": 10456,
+          "status": "ok"
+        },
+        {
+          "name": "setup after feature",
+          "command": "bun run setup",
+          "ms": 3139,
+          "status": "ok"
+        },
+        {
+          "name": "verify after feature",
+          "command": "bun run verify --json",
+          "ms": 30207,
+          "status": "ok"
+        }
+      ],
+      "sizes": {
+        "appFiles": 311,
+        "nodeModulesMb": 196,
+        "packages": 107,
+        "homeBytes": 3856,
+        "homeJsBytes": 0,
         "imageMb": null
       }
     }
   ],
   "spread": {
     "scaffold ms": {
-      "min": 4696,
-      "median": 4696,
-      "n": 1
+      "min": 2000,
+      "median": 2051,
+      "n": 5
     },
     "setup ms": {
-      "min": 43347,
-      "median": 43347,
-      "n": 1
+      "min": 11185,
+      "median": 11555,
+      "n": 5
     },
-    "verify ms": null,
-    "first feature ms": null,
-    "setup after feature ms": null,
-    "verify after feature ms": null,
+    "verify ms": {
+      "min": 34448,
+      "median": 35138,
+      "n": 5
+    },
+    "first feature ms": {
+      "min": 1081,
+      "median": 1098,
+      "n": 5
+    },
+    "feature next steps ms": {
+      "min": 10347,
+      "median": 10414,
+      "n": 5
+    },
+    "setup after feature ms": {
+      "min": 3139,
+      "median": 3182,
+      "n": 5
+    },
+    "verify after feature ms": {
+      "min": 29696,
+      "median": 30207,
+      "n": 5
+    },
     "appFiles": {
-      "min": 261,
-      "median": 261,
-      "n": 1
+      "min": 311,
+      "median": 311,
+      "n": 5
     },
     "nodeModulesMb": {
-      "min": 165,
-      "median": 165,
-      "n": 1
+      "min": 196,
+      "median": 196,
+      "n": 5
     },
     "packages": {
-      "min": 106,
-      "median": 106,
-      "n": 1
+      "min": 107,
+      "median": 107,
+      "n": 5
     },
-    "homeBytes": null,
-    "homeJsBytes": null,
+    "homeBytes": {
+      "min": 3856,
+      "median": 3856,
+      "n": 5
+    },
+    "homeJsBytes": {
+      "min": 0,
+      "median": 0,
+      "n": 5
+    },
     "imageMb": null
   }
 }
