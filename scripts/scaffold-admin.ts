@@ -58,7 +58,11 @@ export interface DevServer {
  * How one boot gets its port: `bind` IS the boot, and a port another process held first is the
  * boot's `X_PORT_IN_USE`, asked again on a fresh pair — never a port probed and released.
  */
-export type PortBinder = <T>(bind: (port: number) => Promise<T>) => Promise<T>;
+export type PortBinder = <T>(
+  bind: (port: number) => Promise<T>,
+  /** Whether the last failure `bind` threw was a lost race — read off what the boot PRINTED. */
+  clashed?: () => boolean,
+) => Promise<T>;
 
 /**
  * The real binder: a free PAIR — `x dev` binds the web role on `port` and its sync node on
@@ -66,8 +70,11 @@ export type PortBinder = <T>(bind: (port: number) => Promise<T>) => Promise<T>;
  * and stopped again. Each loopback address is asked (CI run 41764752262), and a pair another
  * process took before `x dev` bound it is booted again (`bindFreePorts`).
  */
-export const freeDevPorts: PortBinder = (bind) =>
-  bindFreePorts(([port = 0]) => bind(port), { pair: true });
+export const freeDevPorts: PortBinder = (bind, clashed) =>
+  bindFreePorts(([port = 0]) => bind(port), {
+    pair: true,
+    ...(clashed === undefined ? {} : { clashed }),
+  });
 
 /** One fixed port, for a test whose `x dev` is a fake that binds nothing. */
 export const fixedPort =
@@ -178,13 +185,19 @@ export async function checkAdmin(dir: string, io: AdminCheckIo): Promise<ScriptR
     );
   }
 
+  // Read off the boot's WHOLE output: the refusal's cause keeps only its tail, and a clash
+  // followed by a stack or a drain's log would read as no clash there.
+  let clashed = false;
   const run = await io
-    .ports(async (port) => {
-      const booted = await bootAndWalk(dir, io, port, resource, roleCookie);
-      if (!booted.up && isPortClash(booted.output))
-        throw portTaken(port, booted.output, booted.fix);
-      return booted;
-    })
+    .ports(
+      async (port) => {
+        const booted = await bootAndWalk(dir, io, port, resource, roleCookie);
+        clashed = !booted.up && isPortClash(booted.output);
+        if (clashed) throw portTaken(port, booted.output, booted.fix);
+        return booted;
+      },
+      () => clashed,
+    )
     .catch((error: unknown) => {
       if (error instanceof ScriptError) return error;
       throw error;

@@ -6,15 +6,14 @@
 // why: Bun has no directory probe — `Bun.file().exists()` answers about a file.
 import { existsSync } from 'node:fs';
 import {
-  baseClient,
   type DbClient,
-  dbClientInstalled,
   isLedgerMissing,
   pgliteDataDir,
+  ROLLBACK_ALLOW_DESTRUCTIVE_ENV,
   readLedger,
-  setDbClient,
 } from '@ultimat3/db';
 import type { CommandContext } from './command';
+import { withOpenedDb } from './db-client-displace';
 import {
   type DbStatusRead,
   dbStatus,
@@ -56,22 +55,19 @@ async function readFromApp(ctx: CommandContext, root: string): Promise<DbStatusR
       });
     }
   }
-  const previous = dbClientInstalled() ? baseClient() : undefined;
-  const started = startDb(services, ctx.env);
-  try {
-    return await readDbStatus(started.client);
-  } finally {
-    setDbClient(previous);
-    await started.client.close();
-    await started.replica?.close();
-  }
+  return withOpenedDb(() => startDb(services, ctx.env), readDbStatus);
 }
 
 export async function runDbStatus(ctx: CommandContext, root: string): Promise<CommandResult> {
   const migrations = await readMigrations(root);
   const read = await readFromApp(ctx, root);
   const status = dbStatus(read, migrations, thisBuild());
-  const findings = dbStatusFindings(status, migrations, read.ledger);
+  const findings = dbStatusFindings(
+    status,
+    migrations,
+    read.ledger,
+    ctx.env[ROLLBACK_ALLOW_DESTRUCTIVE_ENV],
+  );
   return {
     ok: findings.length === 0,
     command: 'db',

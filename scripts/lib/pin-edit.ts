@@ -109,20 +109,65 @@ export function applyPinRaise(source: string, raise: PinRaise): string {
     const row = `${indent}${PIN_WHY_PLACEHOLDER}\n${indent}${head}${to},`;
     return splice(source, open + flat.index, flat[0].length, row);
   }
-  const nested = new RegExp(
-    `^[ \\t]*${key}:\\s*\\{[\\s\\S]*?^(?<indent>[ \\t]*)count:\\s*\\d+,`,
-    'm',
-  ).exec(body);
-  if (nested?.groups !== undefined) {
-    const { indent = '' } = nested.groups;
-    const count = nested[0].lastIndexOf('\n') + 1;
-    const row = `${indent}${PIN_WHY_PLACEHOLDER}\n${indent}count: ${to},`;
-    return splice(source, open + nested.index + count, nested[0].length - count, row);
-  }
+  const object = objectRow(body, key, to);
+  if (object !== undefined) return splice(source, open + object.at, object.length, object.text);
   const added = counted
     ? `  ${PIN_WHY_PLACEHOLDER}\n  ${keySource(raise.key)}: ${to},\n`
     : `  ${keySource(raise.key)}: {\n    ${PIN_WHY_PLACEHOLDER}\n    count: ${to},\n    reason: '',\n  },\n`;
   return inline ? splice(source, open, 0, `\n${added}`) : splice(source, close, 0, added);
+}
+
+/**
+ * The `}` closing the `{` at `open`, skipping string, template and comment runs: a reason holding
+ * `{unit}` must not end the row. -1 when it never closes.
+ */
+export function braceClose(src: string, open: number): number {
+  let depth = 0;
+  for (let index = open; index < src.length; index += 1) {
+    const char = src[index] as string;
+    if (char === "'" || char === '"' || char === '`') {
+      for (index += 1; index < src.length && src[index] !== char; index += 1) {
+        if (src[index] === '\\') index += 1;
+      }
+    } else if (char === '/' && src[index + 1] === '/') {
+      index = src.indexOf('\n', index);
+      if (index === -1) return -1;
+    } else if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+/**
+ * An object row `key: { count: N, … }` raised inside its OWN braces — one line or several. The
+ * lazy match this replaced ran past a one-line row to the next row's `count:`. A one-line row
+ * takes the placeholder on the line above the row; a wrapped one, above its `count:`.
+ */
+function objectRow(body: string, key: string, to: string) {
+  const head = new RegExp(`^(?<indent>[ \\t]*)${key}:\\s*\\{`, 'm').exec(body);
+  if (head === null) return undefined;
+  const brace = head.index + head[0].length - 1;
+  const end = braceClose(body, brace);
+  if (end === -1) return undefined;
+  const row = body.slice(head.index, end + 1);
+  const count = /(?<=[{,\s])count:\s*\d+/.exec(row);
+  if (count === null) return undefined;
+  const raised = `${row.slice(0, count.index)}count: ${to}${row.slice(count.index + count[0].length)}`;
+  const indent = head.groups?.['indent'] ?? '';
+  if (!row.includes('\n')) {
+    return {
+      at: head.index,
+      length: row.length,
+      text: `${indent}${PIN_WHY_PLACEHOLDER}\n${raised}`,
+    };
+  }
+  const lineStart = row.lastIndexOf('\n', count.index) + 1;
+  const inner = row.slice(lineStart, count.index);
+  const text = `${raised.slice(0, lineStart)}${inner}${PIN_WHY_PLACEHOLDER}\n${raised.slice(lineStart)}`;
+  return { at: head.index, length: row.length, text };
 }
 
 const splice = (text: string, at: number, length: number, insert: string): string =>

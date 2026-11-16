@@ -70,6 +70,25 @@ describe('unit · x db status, the verdict', () => {
     expect(dbStatusLines(status).join('\n')).toContain('0002_b');
   });
 
+  test('ahead BETWEEN shipped ids is no rollback: the conflict x db migrate refuses with', () => {
+    const three = migration('0003_c');
+    const ledger = [row(one), row(two), row(three)];
+    const status = dbStatus({ stamp: stamped, ledger }, [one, three], mine);
+    expect(status.ahead).toEqual(['0002_b']);
+    expect(dbStatusFindings(status, [one, three], ledger).map((finding) => finding.code)).toEqual([
+      'X_MIGRATION_CONFLICT',
+    ]);
+  });
+
+  test('a rollback over a destructive row is the refusal migrate gives, unless allowed', () => {
+    const ledger = [row(one), { ...row(two), destructive: true }];
+    const status = dbStatus({ stamp: stamped, ledger }, [one], mine);
+    expect(dbStatusFindings(status, [one], ledger, '').map((finding) => finding.code)).toEqual([
+      'X_MIGRATION_ROLLBACK_DESTRUCTIVE',
+    ]);
+    expect(dbStatusFindings(status, [one], ledger, '0002_b')).toEqual([]);
+  });
+
   test('an applied migration edited since: the ledger conflict, with its restore fix', () => {
     const ledger = [row(one, 'f'.repeat(64))];
     const status = dbStatus({ stamp: stamped, ledger }, [one], mine);

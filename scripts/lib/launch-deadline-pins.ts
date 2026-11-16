@@ -14,5 +14,4 @@ export const PINS_FILE = 'scripts/lib/launch-deadline-pins.ts';
 
 import type { PinTable } from './ratchet';
 
-export const LAUNCH_DEADLINE_PINS: PinTable = {
-};
+export const LAUNCH_DEADLINE_PINS: PinTable = {};

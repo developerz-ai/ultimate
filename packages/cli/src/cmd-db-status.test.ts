@@ -9,10 +9,19 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { migrate, pgliteClient, pgliteDataDir, setDbClient } from '@ultimat3/db';
+import {
+  baseClient,
+  type DbClient,
+  dbUnavailable,
+  migrate,
+  pgliteClient,
+  pgliteDataDir,
+  setDbClient,
+} from '@ultimat3/db';
 import { REQUIRED_BUN } from './app-root';
 import { DB_SUBCOMMANDS, dbCommand } from './cmd-db';
 import type { CommandContext } from './command';
+import { withOpenedDb } from './db-client-displace';
 import { exec } from './exec';
 import { citedCommandProblem, loadCommandCatalog } from './fix-command';
 import { applyLockedSchema } from './framework-schema-apply';
@@ -124,4 +133,57 @@ describe('unit · x db status', () => {
     },
     PGLITE_BOOT_MS,
   );
+});
+
+/** A client whose `close` is recorded, and rejects when told to. */
+const closable = (log: string[], name: string, rejects = false) =>
+  ({
+    close: () => {
+      log.push(name);
+      return rejects ? Promise.reject(dbUnavailable(name)) : Promise.resolve();
+    },
+  }) as unknown as DbClient & { close(): Promise<void> };
+
+describe('unit · x db status closes what it opened', () => {
+  const previous = {} as DbClient;
+
+  test('a read that fails still closes both pools, puts db() back, and is what is thrown', async () => {
+    setDbClient(previous);
+    const log: string[] = [];
+    const opened = { client: closable(log, 'primary', true), replica: closable(log, 'replica') };
+    const failure = dbUnavailable('read');
+    const caught = await withOpenedDb(
+      () => opened,
+      () => Promise.reject(failure),
+    ).catch((error: unknown) => error);
+    expect(caught).toBe(failure);
+    expect(log).toEqual(['primary', 'replica']);
+    expect(baseClient()).toBe(previous);
+  });
+
+  test('a close that rejects after a good read skips no pool and is surfaced', async () => {
+    const log: string[] = [];
+    const opened = { client: closable(log, 'primary', true), replica: closable(log, 'replica') };
+    const caught = await withOpenedDb(
+      () => opened,
+      () => Promise.resolve('read'),
+    ).catch((error: unknown) => error);
+    expect(log).toEqual(['primary', 'replica']);
+    expect((caught as { code?: string }).code).toBe('X_DB_UNAVAILABLE');
+  });
+
+  test('an open that installs a client then throws still restores db() and propagates', async () => {
+    setDbClient(previous);
+    const failure = dbUnavailable('open');
+    const caught = await withOpenedDb(
+      () => {
+        // Installed, then failed: what `startDb` leaves when its replica attach throws.
+        setDbClient({} as DbClient);
+        throw failure;
+      },
+      () => Promise.resolve('never'),
+    ).catch((error: unknown) => error);
+    expect(caught).toBe(failure);
+    expect(baseClient()).toBe(previous);
+  });
 });

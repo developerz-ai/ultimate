@@ -3,10 +3,16 @@
 // launch takes, derived from the launch's budget (`scripts/launch-deadline.ts` refuses any other).
 
 import type { CdpConnection } from './cdp-connection';
-import { CdpTimeoutError } from './cdp-errors';
+import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
 import type { LaunchedBrowser, LaunchOptions } from './cdp-launch';
 import { LAUNCH_ATTEMPTS, LAUNCH_TIMEOUT_MS, launchChrome } from './cdp-launch';
 import { LAUNCH_REAP_MS } from './cdp-launch-attempt';
+
+/**
+ * How early a timer may fire against `performance.now()`: a fractional delay is floored. A `false`
+ * from `once` with less than this left is the deadline, not a closed connection.
+ */
+const TIMER_GRAIN_MS = 1;
 
 /** Handshake deadlines after the launch: discovery switched on, then its announcement of a page. */
 const READY_DEADLINES = 2;
@@ -52,7 +58,15 @@ export async function pageTargetReady(
       !ready && left > 0;
       left = until - performance.now()
     ) {
-      await connection.once('Target.targetCreated', undefined, left);
+      const heard = await connection.once('Target.targetCreated', undefined, left);
+      // `false` with time left is a CLOSED connection — `once` answers it at once, and looping on
+      // it spun the event loop to the deadline and called a dead browser a slow one.
+      if (!heard && !ready && until - performance.now() > TIMER_GRAIN_MS) {
+        throw new CdpCallFailedError({
+          method: 'the connection',
+          detail: 'the CDP connection closed while waiting for the page target',
+        });
+      }
     }
     if (!ready)
       throw new CdpTimeoutError({ method: 'Target.targetCreated', timeoutMs: deadlineMs });

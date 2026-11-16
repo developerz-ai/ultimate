@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 // why: Bun has no existence check for a directory and no recursive remove.
 import { existsSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type { TrackedChild } from './temp-tree';
 import { IN_PACKAGE_TEMP_ROOT, TEMP_TREE_GIT_ENV, tempTree } from './temp-tree';
 
@@ -128,5 +128,64 @@ describe('tempTree', () => {
     expect(outcome).toBeUltimateError('X_TEST_TEMP_TREE_LEFT');
     expect(String((outcome as { cause: string }).cause)).toContain('HEAD');
     tempTreeRemoved(tree.path);
+  });
+
+  test('a relative inPackage is resolved: git never walks past the tree into the checkout', async () => {
+    // A relative GIT_CEILING_DIRECTORIES entry is ignored by git, so the checkout would answer.
+    const pkg = relative(process.cwd(), join(import.meta.dir, '..'));
+    await using tree = tempTree('ultimate-temp-tree-', { inPackage: pkg });
+    expect(tree.gitEnv['GIT_CEILING_DIRECTORIES']?.startsWith('/')).toBe(true);
+    expect((await tree.git(['rev-parse', '--show-toplevel'])).code).not.toBe(0);
+  });
+
+  test.skipIf(process.platform === 'win32')(
+    'a child the tree spawned is ended with everything it started, grandchildren included',
+    async () => {
+      const tree = tempTree('ultimate-temp-tree-');
+      // `sh` starts a writer that would outlive it, then waits: the fix-truth shape. Its pid is
+      // read off the child's stdout — the event, never a poll of a file.
+      const child = tree.spawn(['sh', '-c', 'sleep 60 & echo $!; wait']);
+      const { value } = await child.stdout.getReader().read();
+      const grandchild = Number(new TextDecoder().decode(value).trim());
+      expect(grandchild).toBeGreaterThan(0);
+      await tree.dispose();
+      expect(child.signalCode ?? child.exitCode).not.toBeNull();
+      expect(() => process.kill(grandchild, 0)).toThrow();
+    },
+  );
+
+  test('a dispose that failed is attempted again, never answered from the first failure', async () => {
+    let removes = 0;
+    const tree = tempTree('ultimate-temp-tree-', {
+      remove: (path) => {
+        removes += 1;
+        if (removes > 1) rmSync(path, { recursive: true, force: true });
+      },
+    });
+    expect(await tree.dispose().catch((error: unknown) => error)).toBeUltimateError(
+      'X_TEST_TEMP_TREE_LEFT',
+    );
+    await tree.dispose();
+    expect(removes).toBe(2);
+    expect(existsSync(tree.path)).toBe(false);
+  });
+
+  test('a child handed over while the remove waits is ended and awaited too', async () => {
+    const tree = tempTree('ultimate-temp-tree-');
+    const first = heldChild(true);
+    const late = heldChild(true);
+    tree.track(first.child);
+    // The first child's exit hands the tree another — a hook that spawns as it tears down.
+    void first.child.exited.then(() => tree.track(late.child));
+    await tree.dispose();
+    expect(late.signals).toEqual(['SIGKILL']);
+    expect(existsSync(tree.path)).toBe(false);
+  });
+
+  test('a spawn timeout that is no whole number of milliseconds is refused before anything runs', async () => {
+    await using tree = tempTree('ultimate-temp-tree-');
+    expect(() => tree.spawn(['true'], { timeout: Number.NaN })).toThrow(
+      expect.objectContaining({ code: 'X_INVARIANT' }),
+    );
   });
 });

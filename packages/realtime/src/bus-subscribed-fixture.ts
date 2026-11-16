@@ -4,6 +4,7 @@
 //
 // A `-fixture.ts` file is test material and is excluded from the package tarball.
 
+import { isUltimateError } from '@ultimat3/core';
 import { TransportUnavailableError } from './errors';
 import type { Transport, TransportHandler, TransportSubscription } from './fanout';
 
@@ -57,7 +58,11 @@ export async function subscribed(options: SubscribedOptions): Promise<ConfirmedS
   const confirm = async (): Promise<void> => {
     const probe = `${PROBE}${crypto.randomUUID()}`;
     for (let poll = 0; poll < polls; poll += 1) {
-      await options.publisher.publish(probeSubject, probe);
+      // A publisher whose connection is still coming back refuses, coded: an unheard probe, not
+      // the verdict — the next poll asks again. Anything else is the test's failure, as thrown.
+      await options.publisher.publish(probeSubject, probe).catch((error: unknown) => {
+        if (!isUltimateError(error) || error.code !== 'X_TRANSPORT_UNAVAILABLE') throw error;
+      });
       // Two looks: a bus that delivers on its own time gets one pause to do it in.
       if (heard.has(probe)) return;
       await pause();

@@ -5,10 +5,10 @@ import { describe, expect, test } from 'bun:test';
 import { jobOf, readWorkflow, text } from './lib/ci-workflow-read';
 import { releaseInvocation, unknownReleaseFlags } from './release';
 import {
-  REHEARSAL_CLI_SUITES,
   REHEARSAL_PATHS,
   rehearsalDue,
   rehearsalSuites,
+  rehearsalSuitesHere,
   unlessRehearsed,
 } from './release-rehearse';
 
@@ -66,16 +66,36 @@ describe('unit · which suites a rehearsal runs', () => {
       { path: 'scripts/release.test.ts', text: 'expect(nextVersion(x)).toBe(y)' },
       { path: 'scripts/guards-doc.test.ts', text: "expect(render(rows)).toContain('|')" },
     ];
-    expect(rehearsalSuites(files)).toEqual([
-      ...REHEARSAL_CLI_SUITES,
+    expect(rehearsalSuites(files, [])).toEqual([
       './scripts/release.test.ts',
       './scripts/template-codemods-render.test.ts',
     ]);
   });
 
-  test("the CLI's template, codemod and upgrade suites always run, each with its ./", () => {
-    expect(rehearsalSuites([])).toEqual(REHEARSAL_CLI_SUITES);
-    for (const suite of REHEARSAL_CLI_SUITES) expect(suite).toStartWith('./packages/cli/src/');
+  test("the CLI's template, codemod and upgrade test FILES, never a prefix bun would match nothing on", () => {
+    const cli = [
+      'packages/cli/src/upgrade-plan.test.ts',
+      'packages/cli/src/cmd-upgrade.test.ts',
+      'packages/cli/src/templates/scaffold-ci.test.ts',
+      'packages/cli/src/codemods/engine-edits.test.ts',
+      'packages/cli/src/cmd-db.test.ts',
+    ];
+    expect(rehearsalSuites([], cli)).toEqual([
+      './packages/cli/src/cmd-upgrade.test.ts',
+      './packages/cli/src/codemods/engine-edits.test.ts',
+      './packages/cli/src/templates/scaffold-ci.test.ts',
+      './packages/cli/src/upgrade-plan.test.ts',
+    ]);
+  });
+
+  test('on this tree: every emitted path is a file, and the upgrade tests are among them', async () => {
+    const suites = await rehearsalSuitesHere();
+    for (const suite of suites) {
+      expect({ suite, file: await Bun.file(suite).exists() }).toEqual({ suite, file: true });
+    }
+    expect(suites).toContain('./packages/cli/src/upgrade-plan.test.ts');
+    expect(suites).toContain('./packages/cli/src/cmd-upgrade.test.ts');
+    expect(suites).toContain('./scripts/release.test.ts');
   });
 });
 

@@ -37,7 +37,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
     - `track(child)` hands a child over.
     - `dispose()` / `await using` awaits every child, removes the tree and proves it gone.
     - `inPackage` places the tree under the package's ignored `.x/fixtures/`.
+    - `tree.spawn(argv, options?)` starts a child as its own process group; `dispose()` ends it with everything it started.
 - `@ultimat3/scraping/cdp`: `launchReady()`, `pageTargetReady()`, `launchTestMs()`, `LAUNCH_TEST_MS`. A launch is ready once the page target exists (heard as `Target.targetCreated`, never polled); `LAUNCH_TEST_MS` is the one deadline a test awaiting a launch takes.
+- `@ultimat3/scraping/cdp`: `killTree(pid, platform?)`, the close's own reap (a POSIX process group, `taskkill /T` on Windows), now exported for `tempTree`.
+- `@ultimat3/db`: `ledgerAheadOfBuild`, `ROLLBACK_ALLOW_DESTRUCTIVE_ENV` (with `LedgerAhead`, `LedgerAheadOptions`), so `x db status` judges an ahead ledger exactly as `x db migrate` does; `ambientClient()` reads the process's client without building one.
 - `@ultimat3/realtime`: `subscribed()` (`bus-subscribed-fixture.ts`), a subscription confirmation awaited before a test publishes.
 - `x db status [--json]`: app migrations shipped against the `x_migrations` ledger, and the framework stamp verdict. It exits non-zero with the boot's own findings when behind.
 - Guards on the `errors` step, every pin table empty:
@@ -69,6 +72,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   - `audit-postgres-outside-tx.test.ts` no longer boots Postgres inside a 5 s test timeout.
   - Two NATS live tests confirm the subscription before they publish.
 - Every pin ratchet with its own script (finite-bounds, fetch-deadline, log-levels, claude-md-size, config-readers, node-imports, proto-index, secret-compare, source-headers, spawn-timeout) now runs in `x verify`'s `errors` step, so its CLI verdict is the gate's. `scripts/verify-ratchets.test.ts` fails when a new pins table's ratchet is left out. finite-bounds had been red on `main` over five unscreened `scripts/` sites; they are fixed.
+- `x db diagnostics`, `x db recount` and the runtime's `startDb` close every pool they opened and put the process's `db()` back, even when a close or the replica attach fails.
 - The stop-drift hook no longer reports the schema dumps stale when `schema-dumps --check` timed out or its scratch replay failed.
 
 ## Releases

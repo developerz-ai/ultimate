@@ -3,7 +3,8 @@
 // never polled for on a clock. And the test deadline is the launch's designed budget, derived.
 
 import { describe, expect, test } from 'bun:test';
-import type { CdpConnection, CdpEventListener, CdpResult } from './cdp-connection';
+import type { CdpConnection, CdpTransport } from './cdp-connection';
+import { cdpConnectOver } from './cdp-connection';
 import { LAUNCH_ATTEMPTS, LAUNCH_BUDGET_MS, LAUNCH_TIMEOUT_MS } from './cdp-launch';
 import { LAUNCH_REAP_MS } from './cdp-launch-attempt';
 import { LAUNCH_TEST_MS, launchTestMs, pageTargetReady } from './cdp-launch-ready';
@@ -15,36 +16,43 @@ interface FakeBrowser {
   created(type: string, url: string): void;
 }
 
-/** A connection whose browser announces `existing` the moment discovery is switched on. */
-function fakeBrowser(existing: readonly { type: string; url: string }[]): FakeBrowser {
-  const listeners = new Map<string, Set<CdpEventListener>>();
+/**
+ * The REAL connection (`cdpConnectOver`) over a stub transport whose browser announces `existing`
+ * the moment discovery is switched on — and, with `dies`, hangs up right after answering that call.
+ */
+function fakeBrowser(
+  existing: readonly { type: string; url: string }[],
+  dies = false,
+): FakeBrowser {
   const sent: string[] = [];
+  let handlers: { message(text: string): void; closed(reason: string): void } | undefined;
   const created = (type: string, url: string): void => {
-    for (const listener of listeners.get('Target.targetCreated') ?? []) {
-      listener({ targetInfo: { type, url, targetId: `${type}-${url}` } }, undefined);
-    }
+    handlers?.message(
+      JSON.stringify({
+        method: 'Target.targetCreated',
+        params: { targetInfo: { type, url, targetId: `${type}-${url}` } },
+      }),
+    );
   };
-  const connection: CdpConnection = {
-    async send(method, params): Promise<CdpResult> {
-      sent.push(`${method} ${JSON.stringify(params ?? {})}`);
-      if (method === 'Target.setDiscoverTargets' && params?.['discover'] === true) {
-        // Chrome answers the call, then sends one `targetCreated` per target that already exists.
-        queueMicrotask(() => {
-          for (const target of existing) created(target.type, target.url);
-        });
-      }
-      return { result: {} };
-    },
-    once: async () => false,
-    on(method, listener) {
-      const set = listeners.get(method) ?? new Set<CdpEventListener>();
-      set.add(listener);
-      listeners.set(method, set);
-      return () => set.delete(listener);
+  const transport: CdpTransport = {
+    listen(installed) {
+      handlers = installed;
     },
     close: () => undefined,
+    send(text) {
+      const frame = JSON.parse(text) as { id: number; method: string; params?: unknown };
+      sent.push(`${frame.method} ${JSON.stringify(frame.params ?? {})}`);
+      queueMicrotask(() => {
+        handlers?.message(JSON.stringify({ id: frame.id, result: {} }));
+        const on = (frame.params as { discover?: unknown } | undefined)?.discover === true;
+        if (frame.method !== 'Target.setDiscoverTargets' || !on) return;
+        // Chrome answers the call, then sends one `targetCreated` per target that already exists.
+        for (const target of existing) created(target.type, target.url);
+        if (dies) handlers?.closed('the browser exited');
+      });
+    },
   };
-  return { connection, sent, created };
+  return { connection: cdpConnectOver(transport, 1_000), sent, created };
 }
 
 describe('pageTargetReady — the page the browser was handed exists', () => {
@@ -86,6 +94,19 @@ describe('pageTargetReady — the page the browser was handed exists', () => {
     expect(error).toBeUltimateError('X_CDP_TIMEOUT');
     expect((error as { cause: string }).cause).toContain('Target.targetCreated');
     expect(browser.sent.at(-1)).toBe('Target.setDiscoverTargets {"discover":false}');
+  });
+
+  test('a browser that dies mid-wait is X_CDP_CALL_FAILED at once, never a deadline spent spinning', async () => {
+    const browser = fakeBrowser([{ type: 'browser', url: '' }], true);
+    const started = performance.now();
+
+    const error = await pageTargetReady(browser.connection, 5_000).catch((e: unknown) => e);
+
+    expect(error).toBeUltimateError('X_CDP_CALL_FAILED');
+    expect((error as { cause: string }).cause).toContain(
+      'closed while waiting for the page target',
+    );
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 });
 

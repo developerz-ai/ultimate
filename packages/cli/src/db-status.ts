@@ -4,7 +4,7 @@
 // would refuse; the read is `cmd-db-status.ts`'s.
 
 import type { LedgerRow, Migration } from '@ultimat3/db';
-import { auditLedger, migrationChecksum } from '@ultimat3/db';
+import { auditLedger, ledgerAheadOfBuild, migrationChecksum } from '@ultimat3/db';
 import { AppMigrationsUnappliedError, appMigrationsVerdict } from './app-migrations-verdict';
 import {
   aheadByMajor,
@@ -90,6 +90,8 @@ export function dbStatusFindings(
   status: DbStatus,
   migrations: readonly Migration[],
   ledger: DbStatusRead['ledger'],
+  /** `ROLLBACK_ALLOW_DESTRUCTIVE` as the migrate role would read it. */
+  allow?: string | undefined,
 ): Finding[] {
   const findings: Finding[] = [];
   const { framework } = status;
@@ -109,12 +111,13 @@ export function dbStatusFindings(
       ),
     );
   }
-  if (status.edited.length > 0) {
-    // `auditLedger` over the edited rows alone, so its conflict is the checksum one and its fix the
-    // restore line `x db migrate` would print — never a second spelling of either.
-    const rows = (ledger ?? []).filter((row) => status.edited.includes(row.id));
+  if (ledger !== undefined) {
+    // `x db migrate`'s own two steps, in its order (migrate.ts): a ledger that is exactly a
+    // rollback is accepted and audited over its known rows; anything else ahead, and any applied
+    // migration edited since, is the conflict it refuses with — never a second spelling of either.
     try {
-      auditLedger(rows, migrations, framework.version);
+      const rolledBack = ledgerAheadOfBuild(ledger, migrations, { allow });
+      auditLedger(rolledBack?.known ?? ledger, migrations, framework.version);
     } catch (error) {
       findings.push(findingFrom(error));
     }

@@ -95,6 +95,57 @@ describe('applyPinRaise: the draft --write-pin writes', () => {
     expect(text).toContain("'scripts/a.ts: x === y': {\n    count: 1,");
   });
 
+  // The bug: the row search ran lazily to the NEXT `count:`, so `--write-pin time` on
+  // proto-index-pins.ts raised `ui` (5 → 2) and left `time` at 1. A row is its own `{…}` span.
+  test('a one-line object row is raised in place, never the multi-line row after it', () => {
+    const table = [
+      'export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {',
+      "  time: { count: 1, reason: '`duration.ts:52` scales by a {unit} this package declares.' },",
+      '  ui: {',
+      '    // why: closed tables.',
+      '    count: 5,',
+      "    reason: 'token tables { keyed } by a role',",
+      '  },',
+      '};',
+      '',
+    ].join('\n');
+    const raise = pinRaiseOf(
+      { ...TARGET, table: 'PROTO_INDEX_PINS' },
+      { pkg: 'time', found: 2, pinned: 1 },
+    );
+    const text = applyPinRaise(table, raise);
+    expect(text).toContain(
+      `  ${PIN_WHY_PLACEHOLDER}\n  time: { count: 2, reason: '\`duration.ts:52\` scales by a {unit} this package declares.' },`,
+    );
+    expect(text).toContain('    count: 5,');
+  });
+
+  test('a one-line row keyed by a path, then a quoted multi-line one (source-header-pins shape)', () => {
+    const table = [
+      'export const SOURCE_HEADER_PINS: Readonly<Record<string, Pin>> = {',
+      "  'packages/i18n/src/subset.ts': { count: 1, reason: TOO_LONG },",
+      "  'packages/cache/src/graph.ts': {",
+      '    count: 3,',
+      '    reason: TOO_LONG,',
+      '  },',
+      '};',
+      '',
+    ].join('\n');
+    const target = { ...TARGET, table: 'SOURCE_HEADER_PINS' };
+    const first = applyPinRaise(
+      table,
+      pinRaiseOf(target, { pkg: 'packages/i18n/src/subset.ts', found: 2, pinned: 1 }),
+    );
+    expect(first).toContain("'packages/i18n/src/subset.ts': { count: 2, reason: TOO_LONG },");
+    expect(first).toContain('    count: 3,');
+    const second = applyPinRaise(
+      table,
+      pinRaiseOf(target, { pkg: 'packages/cache/src/graph.ts', found: 4, pinned: 3 }),
+    );
+    expect(second).toContain(`    ${PIN_WHY_PLACEHOLDER}\n    count: 4,`);
+    expect(second).toContain('{ count: 1, reason: TOO_LONG }');
+  });
+
   test('an absent row is added at the end of the table, in the shape its type declares', () => {
     const counted = applyPinRaise(
       COUNT_TABLE,

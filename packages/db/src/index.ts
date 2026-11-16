@@ -24,6 +24,7 @@ export type {
   ReservableClient,
 } from './client';
 export {
+  ambientClient,
   baseClient,
   db,
   dbClientInstalled,
@@ -177,6 +178,8 @@ export {
   rollback,
   runningAppVersion,
 } from './migrate';
+export type { LedgerAhead, LedgerAheadOptions } from './migrate-rollback';
+export { ledgerAheadOfBuild, ROLLBACK_ALLOW_DESTRUCTIVE_ENV } from './migrate-rollback';
 export {
   migrationConcurrentPartitioned,
   migrationDestructive,

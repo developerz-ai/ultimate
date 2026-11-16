@@ -30,13 +30,12 @@ export const REHEARSAL_PATHS: readonly RegExp[] = [
 export const rehearsalDue = (paths: readonly string[]): boolean =>
   paths.some((path) => REHEARSAL_PATHS.some((pattern) => pattern.test(path.trim())));
 
-/** Whatever reads the stamped version on the CLI's side: every file, the stamp is theirs to print. */
-export const REHEARSAL_CLI_SUITES: readonly string[] = [
-  './packages/cli/src/templates',
-  './packages/cli/src/codemods',
-  './packages/cli/src/upgrade',
-  './packages/cli/src/cmd-upgrade',
-];
+/**
+ * Whatever reads the stamped version on the CLI's side: every test file, the stamp is theirs to
+ * print. Expanded to FILES — `bun test ./packages/cli/src/upgrade` names neither a file nor a
+ * directory, so bun ran none of the 21 `upgrade*` / `cmd-upgrade*` tests and the job was green.
+ */
+const CLI_STAMP_TESTS = /^packages\/cli\/src\/(templates\/|codemods\/|upgrade|cmd-upgrade)/;
 
 /**
  * A test that can bake in a version says one: the word, or a semver literal (`'31.28.0'` was the
@@ -45,30 +44,42 @@ export const REHEARSAL_CLI_SUITES: readonly string[] = [
  */
 const VERSION_SENSITIVE = /version|\b\d+\.\d+\.\d+\b/i;
 
-/** The CLI suites, then every `scripts/` test file whose text is version-sensitive, sorted. */
+/** The CLI's stamp-reading test files, then every version-sensitive `scripts/` one; `./`, sorted. */
 export const rehearsalSuites = (
   scriptTests: readonly { readonly path: string; readonly text: string }[],
+  cliTests: readonly string[],
 ): readonly string[] => [
-  ...REHEARSAL_CLI_SUITES,
+  ...cliTests
+    .filter((path) => CLI_STAMP_TESTS.test(path))
+    .map((path) => `./${path}`)
+    .sort(),
   ...scriptTests
     .filter((file) => VERSION_SENSITIVE.test(file.text))
     .map((file) => `./${file.path}`)
     .sort(),
 ];
 
-async function scriptTestFiles(): Promise<readonly { path: string; text: string }[]> {
-  const files: { path: string; text: string }[] = [];
-  for await (const path of new Bun.Glob('scripts/**/*.test.ts').scan({ cwd: '.' })) {
-    const posix = path.replaceAll('\\', '/');
-    files.push({ path: posix, text: await Bun.file(posix).text() });
+async function testPaths(pattern: string): Promise<readonly string[]> {
+  const paths: string[] = [];
+  for await (const path of new Bun.Glob(pattern).scan({ cwd: '.' })) {
+    paths.push(path.replaceAll('\\', '/'));
   }
-  return files;
+  return paths;
+}
+
+/** `rehearsalSuites` over this checkout, read from the repository root. */
+export async function rehearsalSuitesHere(): Promise<readonly string[]> {
+  const scripts = await testPaths('scripts/**/*.test.ts');
+  const scriptTests = await Promise.all(
+    scripts.map(async (path) => ({ path, text: await Bun.file(path).text() })),
+  );
+  return rehearsalSuites(scriptTests, await testPaths('packages/cli/src/**/*.test.ts'));
 }
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   if (flagBool(args, 'suites')) {
-    const suites = rehearsalSuites(await scriptTestFiles());
+    const suites = await rehearsalSuitesHere();
     report(
       {
         ok: true,

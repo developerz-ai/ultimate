@@ -276,4 +276,62 @@ describe('NatsTransport, once the library has given up on a connection', () => {
     expect(transport.connected).toBe(true);
     await transport.close();
   });
+
+  // The announcement waits for a flush the PORT does not bound — an app's own `connect` may answer
+  // one never. Awaited inside the memoised re-dial loop, that flush held the loop open forever: the
+  // next loss was handed the stuck loop back, nothing dialled again and every publish was refused.
+  test('a re-dialled client whose flush never answers does not wedge the next re-dial', async () => {
+    const bus = harness();
+    const open = fakeNatsConnect(bus.broker);
+    const clients: Dialled[] = [];
+    const connect: NatsConnect = async (options) => {
+      const client = await open(options);
+      if (clients.length === 1) client.flush = () => new Promise<void>(() => undefined);
+      clients.push({ client, options });
+      return client;
+    };
+    const transport = bus.transport({ connect });
+    await transport.connect();
+    const lose = async (index: number): Promise<void> => {
+      const dial = clients[index];
+      if (dial === undefined) expect.unreachable(`no dial #${index}`);
+      await dial.client.close();
+      dial.options.onClosed?.();
+    };
+
+    await lose(0);
+    await untilTurn(() => clients.length === 2 && transport.connected, 'the first re-dial landed');
+    await lose(1);
+    await untilTurn(
+      () => clients.length === 3 && transport.connected,
+      'a re-dial after the one whose flush hangs',
+    );
+
+    expect(transport.connected).toBe(true);
+    await transport.close();
+  });
+
+  test('a transport closed while a reconnect announcement flushes tells no listener', async () => {
+    const bus = harness();
+    const transport = bus.transport();
+    await transport.connect();
+    const dial = bus.dialled[0];
+    if (dial === undefined) expect.unreachable('no dial #0');
+    let answer: () => void = () => undefined;
+    dial.client.flush = () =>
+      new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+    let announced = 0;
+    transport.onReconnect(() => {
+      announced += 1;
+    });
+
+    dial.options.onReconnect?.();
+    await transport.close();
+    answer();
+    await turns(10);
+
+    expect(announced).toBe(0);
+  });
 });

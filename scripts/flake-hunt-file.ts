@@ -2,6 +2,7 @@
 // that fails every night collects comments on one issue instead of a pile of duplicates. A closed
 // issue whose test failed again is reopened: a flake that recurs was not fixed.
 
+import { isFixShellSafe } from '../packages/core/src/error-render';
 import type { RoundDoc } from './flake-hunt-round';
 import { jsonDocument } from './lib/health-narrow';
 import type { Finding } from './lib/log';
@@ -26,7 +27,16 @@ const titleOf = (name: string): string => {
   return title.length <= TITLE_MAX ? title : `${title.slice(0, TITLE_MAX - 1)}…`;
 };
 
-const fence = (lang: string, text: string): string => `\`\`\`\`${lang}\n${text}\n\`\`\`\``;
+/**
+ * A code fence no line of `text` can close: one backtick longer than the longest run it holds,
+ * three at least. A fixed four broke on output carrying four, and the rest of the excerpt was
+ * Markdown — where an `@scope/x` in a stack trace notifies a real account.
+ */
+const fence = (lang: string, text: string): string => {
+  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((run) => run[0].length));
+  const ticks = '`'.repeat(Math.max(3, longest + 1));
+  return `${ticks}${lang}\n${text}\n${ticks}`;
+};
 
 const bodyOf = (
   hits: readonly { readonly round: RoundDoc; readonly file?: string; readonly excerpt: string }[],
@@ -50,7 +60,12 @@ const bodyOf = (
       'The file alone, same seed — order across files is lost, so green here is not a fix:',
     );
     lines.push(
-      fence('sh', `${env}bun test ./${first.file} --randomize --seed=${first.round.seed}`),
+      fence(
+        'sh',
+        // The path came off a test's output: pasted only when a shell reads it as one word
+        // (`renderFixShellArg`'s rule; `./` keeps it a path to `bun test`, never a filter).
+        `${env}bun test ${isFixShellSafe(first.file) ? `./${first.file}` : '<the failing test file>'} --randomize --seed=${first.round.seed}`,
+      ),
     );
   }
   lines.push('', 'What Bun printed:', fence('text', (first?.excerpt ?? '').slice(-EXCERPT_MAX)));

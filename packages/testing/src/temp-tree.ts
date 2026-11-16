@@ -8,7 +8,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { finiteCount } from '@ultimat3/core';
+import { killTree } from '@ultimat3/scraping/cdp';
 import { TempTreeLeftError } from './temp-tree-error';
 
 /** A read or a commit in a temp repository does no work worth 30 s: past it, git has hung. */
@@ -68,7 +70,18 @@ export interface TempTree extends AsyncDisposable {
   readonly gitEnv: Readonly<Record<string, string | undefined>>;
   /** git in `cwd` (default `path`), under `gitEnv`, tracked and awaited; the exit is the caller's to read. */
   git(args: readonly string[], options?: { readonly cwd?: string }): Promise<TempTreeGitResult>;
-  /** Hand a child to the tree: `dispose()` ends it if it still runs, and awaits its exit. */
+  /**
+   * Spawn a child as its own process group (POSIX) and hand it to the tree: `dispose()` ends it
+   * with everything it started — a `sh -c` line's grandchild included — and awaits its exit.
+   */
+  spawn(
+    argv: readonly string[],
+    options?: TempTreeSpawnOptions,
+  ): Bun.Subprocess<'ignore', 'pipe', 'pipe'>;
+  /**
+   * Hand a child spawned elsewhere to the tree: `dispose()` ends it if it still runs, and awaits
+   * its exit. Only the child itself: what it started is out of reach — prefer `spawn`.
+   */
   track<T extends TrackedChild>(child: T): T;
   /** Await every child, remove the tree, and prove it is gone (`X_TEST_TEMP_TREE_LEFT`). Idempotent. */
   dispose(): Promise<void>;
@@ -107,37 +120,75 @@ export interface TempTreeOptions {
 
 const removeTree = (path: string): void => rmSync(path, { recursive: true, force: true });
 
+/** What `tree.spawn` takes: the tree's own directory by default, and `Bun.env` under `env`. */
+export interface TempTreeSpawnOptions {
+  readonly cwd?: string;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly stdout?: 'pipe' | 'ignore';
+  readonly stderr?: 'pipe' | 'ignore';
+  /** Default `TEMP_TREE_GIT_TIMEOUT_MS`: a child still running past it is killed by Bun. */
+  readonly timeout?: number;
+}
+
+/** One child and how it is ended: its whole group, or only itself when spawned elsewhere. */
+interface Held {
+  readonly child: TrackedChild;
+  readonly group: boolean;
+}
+
 /** A temp tree named `<prefix><random>`; `await using tree = tempTree('x-')` removes it at scope end. */
 export function tempTree(prefix: string, options: TempTreeOptions = {}): TempTree {
+  // Absolute, always: git ignores a relative `GIT_CEILING_DIRECTORIES` entry, and a tree inside a
+  // package would then answer for the checkout around it.
   const parent =
-    options.inPackage === undefined ? tmpdir() : join(options.inPackage, IN_PACKAGE_TEMP_ROOT);
+    options.inPackage === undefined ? tmpdir() : resolve(options.inPackage, IN_PACKAGE_TEMP_ROOT);
   mkdirSync(parent, { recursive: true });
   const path = mkdtempSync(join(parent, prefix));
   // Discovery stops at the tree's own parent: inside a package, git would otherwise find the
   // checkout itself and run there.
   const gitEnv = { ...TEMP_TREE_GIT_ENV, GIT_CEILING_DIRECTORIES: parent };
-  const children = new Set<TrackedChild>();
+  const children = new Set<Held>();
   let disposed: Promise<void> | undefined;
 
   const track = <T extends TrackedChild>(child: T): T => {
-    children.add(child);
+    children.add({ child, group: false });
     return child;
+  };
+
+  const spawn = (argv: readonly string[], spawnOptions: TempTreeSpawnOptions = {}) => {
+    const child = Bun.spawn([...argv], {
+      cwd: spawnOptions.cwd ?? path,
+      env: overlaid(spawnOptions.env ?? {}),
+      stdin: 'ignore',
+      stdout: spawnOptions.stdout ?? 'pipe',
+      stderr: spawnOptions.stderr ?? 'pipe',
+      timeout: finiteCount(
+        'tree.spawn',
+        'timeout',
+        spawnOptions.timeout ?? TEMP_TREE_GIT_TIMEOUT_MS,
+        1,
+      ),
+      // Its own process group on POSIX, so the group is what `dispose()` ends; on Windows
+      // `detached` is a console flag, and `taskkill /T` walks the tree instead.
+      detached: process.platform !== 'win32',
+    }) as Bun.Subprocess<'ignore', 'pipe', 'pipe'>;
+    children.add({ child, group: true });
+    return child;
+  };
+
+  /** End one child — its whole group when the tree spawned it, even after it exited — and await it. */
+  const end = async ({ child, group }: Held): Promise<void> => {
+    const pid = Reflect.get(child, 'pid');
+    if (group && typeof pid === 'number') await killTree(pid);
+    else if (child.exitCode === null) child.kill('SIGKILL');
+    await child.exited.catch(() => undefined);
   };
 
   const git = async (
     args: readonly string[],
     options: { readonly cwd?: string } = {},
   ): Promise<TempTreeGitResult> => {
-    const child = track(
-      Bun.spawn(['git', ...args], {
-        cwd: options.cwd ?? path,
-        env: overlaid(gitEnv),
-        stdin: 'ignore',
-        stdout: 'pipe',
-        stderr: 'pipe',
-        timeout: TEMP_TREE_GIT_TIMEOUT_MS,
-      }),
-    );
+    const child = spawn(['git', ...args], { cwd: options.cwd ?? path, env: gitEnv });
     const [stdout, stderr, code] = await Promise.all([
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
@@ -147,16 +198,23 @@ export function tempTree(prefix: string, options: TempTreeOptions = {}): TempTre
   };
 
   const remove = async (): Promise<void> => {
-    for (const child of children) if (child.exitCode === null) child.kill('SIGKILL');
-    await Promise.allSettled([...children].map((child) => child.exited));
-    children.clear();
+    // Pass by pass: a child handed over while an earlier pass waited is ended by the next one.
+    while (children.size > 0) {
+      const pass = [...children];
+      for (const held of pass) children.delete(held);
+      await Promise.all(pass.map(end));
+    }
     (options.remove ?? removeTree)(path);
     // Bun's recursive remove can stop at an entry that vanished under it and report success.
     if (existsSync(path)) throw new TempTreeLeftError({ path, left: readdirSync(path) });
   };
 
+  // A failed removal is no answer to keep: the next `dispose()` tries again.
   const dispose = (): Promise<void> => {
-    disposed ??= remove();
+    disposed ??= remove().catch((error: unknown) => {
+      disposed = undefined;
+      throw error;
+    });
     return disposed;
   };
 
@@ -164,6 +222,7 @@ export function tempTree(prefix: string, options: TempTreeOptions = {}): TempTre
     path,
     gitEnv,
     git,
+    spawn,
     track,
     dispose,
     [Symbol.asyncDispose]: dispose,

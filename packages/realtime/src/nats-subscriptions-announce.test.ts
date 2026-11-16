@@ -42,6 +42,21 @@ describe('NatsReconnectAnnouncer', () => {
     expect(told).toEqual(['a']);
   });
 
+  test('a transport closed while the flush was out tells no listener', async () => {
+    const told: string[] = [];
+    const announcer = new NatsReconnectAnnouncer(() => undefined);
+    announcer.on(() => told.push('a'));
+    const held = heldClient(true);
+
+    const announced = announcer.announce(held.client);
+    await Promise.resolve();
+    announcer.close();
+    held.answer();
+    await announced;
+
+    expect(told).toEqual([]);
+  });
+
   test('a client with no connection is not asked; a throwing listener is reported, the rest told', async () => {
     const told: string[] = [];
     const faults: unknown[] = [];

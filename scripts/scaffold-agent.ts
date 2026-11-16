@@ -201,13 +201,18 @@ async function bootAndAsk(dir: string, io: AgentCheckIo, port: number) {
  * on a port another process held is booted again on a fresh pair (`io.ports`).
  */
 async function checkEndpoint(dir: string, io: AgentCheckIo): Promise<readonly Finding[]> {
+  // Read off the boot's WHOLE output: the refusal's cause keeps only its tail.
+  let clashed = false;
   const run = await io
-    .ports(async (port) => {
-      const booted = await bootAndAsk(dir, io, port);
-      if (!booted.up && isPortClash(booted.output))
-        throw portTaken(port, booted.output, booted.fix);
-      return booted;
-    })
+    .ports(
+      async (port) => {
+        const booted = await bootAndAsk(dir, io, port);
+        clashed = !booted.up && isPortClash(booted.output);
+        if (clashed) throw portTaken(port, booted.output, booted.fix);
+        return booted;
+      },
+      () => clashed,
+    )
     .catch((error: unknown) => {
       if (error instanceof ScriptError) return error;
       throw error;

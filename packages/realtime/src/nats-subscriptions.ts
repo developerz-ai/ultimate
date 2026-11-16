@@ -75,6 +75,7 @@ export async function untilServerHolds(client: NatsClient): Promise<void> {
 export class NatsReconnectAnnouncer {
   readonly #listeners = new Set<() => void>();
   readonly #fault: (error: unknown) => void;
+  #closed = false;
 
   /** `fault`: where a listener that throws is reported — it must not stop the others hearing. */
   constructor(fault: (error: unknown) => void) {
@@ -88,9 +89,16 @@ export class NatsReconnectAnnouncer {
     };
   }
 
+  /** The transport closed: an announcement whose flush is still out tells nobody. */
+  close(): void {
+    this.#closed = true;
+  }
+
   /** Never rejects: the library calls this from its status loop, the re-dial from its own. */
   async announce(client: NatsClient): Promise<void> {
     await untilServerHolds(client);
+    // Asked AFTER the await: a close that landed while the flush was out is the answer.
+    if (this.#closed) return;
     for (const listener of [...this.#listeners]) {
       try {
         listener();

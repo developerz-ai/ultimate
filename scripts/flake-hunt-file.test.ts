@@ -66,6 +66,24 @@ describe('unit · flake-hunt · issuesFor', () => {
     expect(first?.title.length).toBeLessThanOrEqual(240);
     expect(first?.title).toBe(again?.title ?? '');
   });
+
+  test('an excerpt holding a fence of its own stays inside a longer one: no mention escapes', () => {
+    const excerpt = 'before\n````\n@scope/x was here\n`````\nafter';
+    const [plan] = issuesFor([round({ failures: [{ ...flake, excerpt }] })], undefined);
+    const body = plan?.body ?? '';
+    // Six backticks open and close it: one more than the longest run the output holds.
+    expect(body).toContain(`\`\`\`\`\`\`text\n${excerpt}\n\`\`\`\`\`\``);
+    // An ordinary excerpt keeps the plain three.
+    const [plain] = issuesFor([round({ failures: [flake] })], undefined);
+    expect(plain?.body).toContain('```text\nExpected: 1\n```');
+  });
+
+  test('a test file path a shell would read as code is never pasted into the rerun line', () => {
+    const file = 'packages/core/src/$(touch pwned).test.ts';
+    const [plan] = issuesFor([round({ failures: [{ ...flake, file }] })], undefined);
+    expect(plan?.body).not.toContain('$(touch pwned)');
+    expect(plan?.body).toContain('bun test <the failing test file> --randomize --seed=11');
+  });
 });
 
 const ok = (output = ''): RunResult => ({

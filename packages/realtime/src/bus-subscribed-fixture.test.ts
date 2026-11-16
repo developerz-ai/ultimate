@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { probeSubjectFor, subscribed } from './bus-subscribed-fixture';
+import { TransportUnavailableError } from './errors';
 import type { Transport } from './fanout';
 import { InProcessTransport } from './fanout';
 
@@ -75,6 +76,30 @@ describe('subscribed — a subscription is held once a probe through it was hear
     await lag.bus.publish('x.change.reconnect.one', 'after');
 
     expect(seen).toEqual(['after']);
+  });
+
+  test('a probe the publisher refuses (its connection still coming back) counts as unheard', async () => {
+    const { bus } = laggingBus(0);
+    let refusals = 2;
+    const publisher: Transport = {
+      ...bus,
+      publish: (subject, payload) =>
+        refusals-- > 0
+          ? Promise.reject(
+              new TransportUnavailableError({ transport: 'nats', reason: 'redialling' }),
+            )
+          : bus.publish(subject, payload),
+    };
+    const held = await subscribed({
+      subscriber: bus,
+      publisher,
+      subject: 'x.change.refused',
+      handler: () => undefined,
+      pause: noPause,
+    });
+
+    expect(refusals).toBeLessThan(0);
+    held.unsubscribe();
   });
 
   test('a subscription never heard is refused, coded, naming the subject and the probes', async () => {

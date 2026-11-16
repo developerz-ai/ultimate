@@ -377,6 +377,26 @@ describe('unit · the command: boot, walk, stop', () => {
     expect(stops).toBe(1);
   });
 
+  test('a clash followed by a long shutdown log is still a clash: the real binder boots again', async () => {
+    const dir = await appDir(['manifest', 'actor', 'bin']);
+    const app = fakeApp();
+    const { made } = io(app.fetcher);
+    const booted: number[] = [];
+    // The refusal first, then more lines than any cause keeps: a stack, the drain's own log.
+    const tail = Array.from({ length: 20 }, (_, n) => `shutdown line ${String(n)}`).join('\n');
+    const result = await checkAdmin(dir, {
+      ...made,
+      boot: (bootDir, port) => {
+        booted.push(port);
+        if (booted.length > 1) return made.boot(bootDir, port);
+        return { exited: () => true, stop: async () => `X_PORT_IN_USE: taken\n${tail}` };
+      },
+      ports: freeDevPorts,
+    });
+    expect(result.ok).toBe(true);
+    expect(booted).toHaveLength(2);
+  });
+
   test('a boot whose every port was taken is refused with what it printed, never thrown', async () => {
     const dir = await appDir(['manifest', 'actor', 'bin']);
     const { made } = io(fakeApp().fetcher);

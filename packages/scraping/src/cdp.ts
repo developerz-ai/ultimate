@@ -45,3 +45,6 @@ export {
 } from './cdp-launch';
 export { LAUNCHED_CLOSE_MS } from './cdp-launch-attempt';
 export { LAUNCH_TEST_MS, launchReady, launchTestMs, pageTargetReady } from './cdp-launch-ready';
+// Everything a process started, gone — its POSIX group or its Windows tree — for any caller that
+// spawned it as a group leader: `@ultimat3/testing`'s `tempTree` ends its children by it.
+export { killTree } from './cdp-launch-reap';

@@ -239,6 +239,7 @@ export class NatsTransport implements Transport {
 
   async close(): Promise<void> {
     this.#closed = true;
+    this.#announcer.close();
     this.#wakeRedial?.();
     const client = this.#client;
     this.#client = undefined;
@@ -391,8 +392,9 @@ export class NatsTransport implements Transport {
               failure.subject,
             );
           }
-          // Announced once the server holds what `bindAll` re-sent (`nats-subscriptions.ts`).
-          await this.#announcer.announce(client);
+          // Announced once the server holds what `bindAll` re-sent (`nats-subscriptions.ts`), and
+          // never awaited: a flush that hangs would hold this memoised loop, and no loss re-dials.
+          void this.#announcer.announce(client);
         } catch (error) {
           if (this.#closed) return;
           this.#lastFailure = renderThrowable(error);
