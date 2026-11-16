@@ -24,6 +24,12 @@ describe('row 11 · the nightly flake hunt is green', () => {
     expect('url' in red && red.url).toBe('u');
   });
 
+  test('a red night carries the commit it ran at, as the brief says row 11 does', () => {
+    const red = judgeFlakeHunt(run({ conclusion: 'failure', headSha: 'abc123' }), NOW);
+    expect('headSha' in red && red.headSha).toBe('abc123');
+    expect(FLAKE_HUNT_COMMAND).toContain('headSha');
+  });
+
   test('a night still running, or cancelled, is no verdict yet', () => {
     expect(verdict(run({ conclusion: null, status: 'in_progress' }))).toBe('unverdicted');
     expect(verdict(run({ conclusion: 'cancelled', status: 'completed' }))).toBe('unverdicted');

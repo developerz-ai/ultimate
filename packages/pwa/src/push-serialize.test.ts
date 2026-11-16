@@ -252,9 +252,3 @@ describe('serializePushMessage, read by the emitted push handler', () => {
     expect(sw.shown[0]?.options['data']).toEqual({ url: '/', actions: {} });
   });
 });
-
-/**
- * `subscribeSource` is emitted client code, so it is executed rather than read: an existing
- * subscription must be reused (subscribing twice invalidates the first endpoint) and the locale
- * must travel with the subscription, which is the whole reason this file exists.
- */

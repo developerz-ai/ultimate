@@ -58,6 +58,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - `.claude/hooks/guard-unbounded-wait.ts`: an agent's `while`/`until â€¦ sleep` polling loop with no `timeout`, clock or counter is refused before it runs.
 
+- `scripts/vanished-tests.ts` refuses a test case that vanished from a directory whose code did not change (`X_TEST_VANISHED`); a case leaving with changed source is a warning. It runs in `bun run preflight` and CI's PR-only `flaky` job.
+
 ### Changed
 
 - lefthook pre-push runs Biome on the pushed files and `test-typecheck-gate`, in parallel with typecheck and boundaries.

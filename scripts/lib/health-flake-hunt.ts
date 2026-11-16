@@ -9,7 +9,7 @@ import type { Finding } from './log';
 import { gh } from './release-due-gh';
 import type { RunResult } from './run';
 
-const FIELDS = 'databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt';
+const FIELDS = 'databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt';
 const ARGS = ['run', 'list', '--workflow', 'flake-hunt.yml', '--limit', '1', '--json', FIELDS];
 /** Two nights: a newest run older than this means the schedule stopped firing. */
 const STALE_MS = 48 * 60 * 60 * 1000;
@@ -31,6 +31,7 @@ const fieldsOf = (run: RunRow): Partial<RowVerdict> => ({
   status: run.status,
   event: run.event,
   headBranch: run.headBranch,
+  headSha: run.headSha,
   url: run.url,
   createdAt: run.createdAt,
   id: run.id,

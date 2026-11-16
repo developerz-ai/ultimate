@@ -201,6 +201,11 @@ describe('the emitted notificationclick handler, executed', () => {
   });
 });
 
+/**
+ * `subscribeSource` is emitted client code, so it is executed rather than read: an existing
+ * subscription must be reused (subscribing twice invalidates the first endpoint) and the locale
+ * must travel with the subscription, which is the whole reason this file exists.
+ */
 describe('subscribeSource, executed', () => {
   interface SubscribeCall {
     readonly userVisibleOnly: boolean;

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "a9f1e8075771c9ddfb0b76d812981ff2ba82720d9f821f8828ee2ea55aa9d84c",
+  "buildId": "2ab38a02d45865b49e8c07856beac8c6de717fe75b0dcab538d8640bb2d472b6",
   "tiers": {
     "0": [
       "core",
@@ -6398,6 +6398,11 @@
       "code": "X_TEST_TYPECHECK_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/test-typecheck-gate.ts"
+    },
+    {
+      "code": "X_TEST_VANISHED",
+      "owner": "scripts",
+      "at": "scripts/vanished-tests.ts"
     },
     {
       "code": "X_THEME_INVALID",

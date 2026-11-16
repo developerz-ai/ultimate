@@ -38,6 +38,11 @@ describe('scanMockBuiltins', () => {
         "mock.module('./run', () => ({}));",
         "mock.module('@ultimat3/render', () => ({}));",
         "mock.module('puppeteer-core', () => ({}));",
+        // Bun's own `builtinModules` lists these; they are not Node's, and the verdict must not
+        // move with the runtime's list.
+        "mock.module('ws', () => ({}));",
+        "mock.module('undici', () => ({}));",
+        "mock.module('bun', () => ({}));",
         "// mock.module('node:fs') leaks into the next file",
         `const fixture = "mock.module('node:fs', () => ({}));";`,
       ),

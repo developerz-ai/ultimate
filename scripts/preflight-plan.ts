@@ -18,6 +18,8 @@ export const PREFLIGHT_RATCHETS = [
   'test-real-sleep',
   'factory-names',
   'test-typecheck-gate',
+  // Not a ratchet: a test case gone from a directory whose code did not change (`X_TEST_VANISHED`).
+  'vanished-tests',
 ] as const;
 
 export const SERVE_GRAPH_TEST = './packages/cli/src/serve-graph.test.ts';

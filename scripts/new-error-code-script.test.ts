@@ -10,6 +10,7 @@ import {
   tableRows,
 } from './gate-codes';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
+import { ScriptError } from './lib/script-error';
 import { newErrorCode, WIKI_PAGE } from './new-error-code';
 import { fixtureRoot, read, refusal, removeFixtureRoots } from './new-error-code.fixtures';
 import { NEVER_SHIPS_LEAD, neverShipsIn, SCRIPT_SECTION } from './new-error-code-script';
@@ -108,6 +109,35 @@ describe('--script', () => {
       'X_NEW_ERROR_CODE_EXISTS',
     );
     expect(await read(dir, WIKI_PAGE)).toBe(before);
+  });
+});
+
+describe('--script refusals speak the --script form', () => {
+  const fixOf = async (run: Promise<unknown>): Promise<string> =>
+    run.then(
+      () => expect.unreachable('the generator wrote where it had to refuse'),
+      (error: unknown) => (error instanceof ScriptError ? `${error.cause} | ${error.fix}` : ''),
+    );
+
+  test('a missing --cause names --script, never --package', async () => {
+    const dir = await root();
+    const argv = scripted('X_PROBE_D').filter((_, index, all) => all[index - 1] !== '--cause');
+    const said = await fixOf(
+      newErrorCode(
+        dir,
+        argv.filter((word) => word !== '--cause'),
+      ),
+    );
+    expect(said).toContain('--script scripts/');
+    expect(said).not.toContain('--package');
+  });
+
+  test('a mistyped flag beside --script is refused in the --script form', async () => {
+    const dir = await root();
+    const said = await fixOf(newErrorCode(dir, scripted('X_PROBE_E', '--titel', 'x')));
+    expect(said).toContain('--titel');
+    expect(said).toContain('--script scripts/');
+    expect(said.split(' | ')[1]).not.toContain('--package');
   });
 });
 

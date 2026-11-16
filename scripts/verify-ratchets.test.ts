@@ -44,9 +44,18 @@ async function scriptFor(name: string): Promise<string | undefined> {
   return undefined;
 }
 
-/** Every `./x` module a file imports, as `scripts/x.ts`. */
-const importsOf = (source: string, from = 'scripts'): readonly string[] =>
-  [...source.matchAll(/from '\.\/([\w./-]+)'/g)].map((match) => `${from}/${match[1]}.ts`);
+/** Every `./x` module a file imports, resolved against that file's own directory. */
+const importsOf = (source: string, from = 'scripts/verify-host-checks.ts'): readonly string[] => {
+  const dir = from.slice(0, from.lastIndexOf('/'));
+  return [...source.matchAll(/from '\.\/([\w./-]+)'/g)].map((match) => `${dir}/${match[1]}.ts`);
+};
+
+describe('importsOf', () => {
+  test('a relative import resolves against the importing module, not scripts/', () => {
+    expect(importsOf("import { a } from './x';", 'scripts/lib/y.ts')).toEqual(['scripts/lib/x.ts']);
+    expect(importsOf("import { a } from './x';", 'scripts/y.ts')).toEqual(['scripts/x.ts']);
+  });
+});
 
 describe('every pin ratchet is on the gate', () => {
   test('a pins table with a ratchet script is reached from the host checks, or exempted with its runner', async () => {
@@ -56,7 +65,7 @@ describe('every pin ratchet is on the gate', () => {
     const reached = new Set(direct);
     for (const module of direct) {
       if (!(await Bun.file(`${ROOT}/${module}`).exists())) continue;
-      for (const next of importsOf(await text(module))) reached.add(next);
+      for (const next of importsOf(await text(module), module)) reached.add(next);
     }
     const pins = [...new Bun.Glob('scripts/lib/*-pins.ts').scanSync({ cwd: ROOT })].map((path) =>
       path.replaceAll('\\', '/').replace(/^scripts\/lib\/(.*)-pins\.ts$/, '$1'),

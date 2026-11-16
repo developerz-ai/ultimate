@@ -248,6 +248,12 @@ jobs:
           fi
       - uses: ./.github/actions/setup
         if: steps.diff.outputs.tests == 'true'
+      # Did a changed test file lose a case its directory's code did not lose? A split of the mail
+      # and render suites dropped 19 tests and only a review bot noticed. HEAD^1 is the base tip
+      # this merge commit was made on (depth 2, above); a loss beside a source change is a warning.
+      - name: test cases this pull request removed
+        if: steps.diff.outputs.tests == 'true'
+        run: bun run scripts/vanished-tests.ts --base HEAD^1
       - name: the changed files the unit parts run
         id: select
         if: steps.diff.outputs.tests == 'true'

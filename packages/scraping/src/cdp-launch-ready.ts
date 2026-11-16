@@ -6,7 +6,7 @@ import type { CdpConnection } from './cdp-connection';
 import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
 import type { LaunchedBrowser, LaunchOptions } from './cdp-launch';
 import { LAUNCH_ATTEMPTS, LAUNCH_TIMEOUT_MS, launchChrome } from './cdp-launch';
-import { LAUNCH_REAP_MS } from './cdp-launch-attempt';
+import { CLOSE_GRACE_MS, LAUNCH_REAP_MS, LAUNCHED_CLOSE_MS } from './cdp-launch-attempt';
 
 /**
  * How early a timer may fire against `performance.now()`: a fractional delay is floored. A `false`
@@ -14,17 +14,19 @@ import { LAUNCH_REAP_MS } from './cdp-launch-attempt';
  */
 const TIMER_GRAIN_MS = 1;
 
-/** Handshake deadlines after the launch: discovery switched on, then its announcement of a page. */
-const READY_DEADLINES = 2;
-
 /**
- * The longest a test that awaits ONE launch at `launchTimeoutMs` is designed to take: every start
- * its deadline and its reap, then the handshake. A test given less is killed by Bun first, and the
- * `X_CDP_LAUNCH_FAILED` naming the slow step never surfaces — a cold Chrome on a loaded Windows
- * runner read as a test timeout (`be5b7edb8`).
+ * The longest a test that awaits ONE `launchReady` at `launchTimeoutMs` is designed to take, on its
+ * worst path — a browser that started and went silent: every start its deadline and its reap, the
+ * handshake its whole deadline (the off-switch spends only what is left of it), then the close
+ * `launchReady` makes — plus one `CLOSE_GRACE_MS` of slack for timers on a loaded runner. A test
+ * given less is killed by Bun first, and the refusal naming the slow step never surfaces — a cold
+ * Chrome on a loaded Windows runner read as a test timeout (`be5b7edb8`).
  */
 export const launchTestMs = (launchTimeoutMs: number): number =>
-  LAUNCH_ATTEMPTS * (launchTimeoutMs + LAUNCH_REAP_MS) + READY_DEADLINES * launchTimeoutMs;
+  LAUNCH_ATTEMPTS * (launchTimeoutMs + LAUNCH_REAP_MS) +
+  launchTimeoutMs +
+  LAUNCHED_CLOSE_MS +
+  CLOSE_GRACE_MS;
 
 /** `launchTestMs` at the default launch deadline: the test deadline for `launchReady`. */
 export const LAUNCH_TEST_MS = launchTestMs(LAUNCH_TIMEOUT_MS);
@@ -72,8 +74,15 @@ export async function pageTargetReady(
       throw new CdpTimeoutError({ method: 'Target.targetCreated', timeoutMs: deadlineMs });
   } finally {
     off();
+    // Inside what is LEFT of the deadline, never a fresh one: a silent browser cost two deadlines
+    // and the close past `launchTestMs`. Best-effort — at the deadline it is sent and not awaited.
     await connection
-      .send('Target.setDiscoverTargets', { discover: false }, undefined, deadlineMs)
+      .send(
+        'Target.setDiscoverTargets',
+        { discover: false },
+        undefined,
+        Math.max(TIMER_GRAIN_MS, until - performance.now()),
+      )
       .catch(() => undefined);
   }
 }

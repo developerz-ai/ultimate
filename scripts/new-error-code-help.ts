@@ -15,9 +15,24 @@ export const NEW_ERROR_CODE_USAGE: readonly string[] = [
   "      a code a repo script owns: the wiki/Error-Codes.md never-ships list entry and its row (default section 'CLI and verify'); no package registration, no HTTP status.",
 ];
 
-/** Whether the command line asks for help: `--help` or `-h`, anywhere on it. */
+/** The flags that take the next word as their value: that word is never a request for help. */
+const VALUED = new Set([
+  '--package',
+  '--title',
+  '--cause',
+  '--fix',
+  '--status',
+  '--section',
+  '--script',
+]);
+
+/** Whether the command line asks for help: `--help` or `-h` as a word of its own, not a flag's value. */
 export const wantsHelp = (argv: readonly string[]): boolean =>
-  argv.some((word) => word === '--help' || word === '-h' || word.startsWith('--help='));
+  argv.some(
+    (word, index) =>
+      (word === '--help' || word === '-h' || word.startsWith('--help=')) &&
+      !VALUED.has(argv[index - 1] ?? ''),
+  );
 
 /** The help, as the one result shape every script reports. */
 export const newErrorCodeHelp = (script: string): ScriptResult => ({

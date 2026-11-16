@@ -32,5 +32,9 @@ describe('new-error-code --help', () => {
     expect(wantsHelp(['X_A', '--help'])).toBe(true);
     expect(wantsHelp(['-h'])).toBe(true);
     expect(wantsHelp(['X_A', '--title', 'help'])).toBe(false);
+    // A VALUE is not a request: `--fix -h` documents a fix that is `-h`, and must still write.
+    expect(wantsHelp(['X_A', '--fix', '-h'])).toBe(false);
+    expect(wantsHelp(['X_A', '--title', '--help'])).toBe(false);
+    expect(wantsHelp(['X_A', '--dry-run', '-h'])).toBe(true);
   });
 });

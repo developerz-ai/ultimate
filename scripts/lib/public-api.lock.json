@@ -7677,6 +7677,7 @@
       "TempTreeGitResult": {"hash":"9352d007e5affc22","shape":{"kind":"members","head":"c7afc88b","members":{"code":"4e57c805","stderr":"1fb0a448","stdout":"1fb0a448"}}},
       "TempTreeLeftError": {"hash":"651d60c756f6a8af","shape":{"kind":"class","head":"705998cf","members":{},"ctor":["{left=f8639a23,path=1fb0a448}"]}},
       "TempTreeOptions": {"hash":"239227f49e50e9d8","shape":{"kind":"members","head":"84862593","members":{"inPackage":"?1fb0a448","remove":"?9295a51a"}}},
+      "TempTreeSpawnOptions": {"hash":"005054d89651e2ca","shape":{"kind":"members","head":"38ca0687","members":{"cwd":"?1fb0a448","env":"?fa15e968","stderr":"?1c8ecb4c","stdout":"?1c8ecb4c","timeout":"?4e57c805"}}},
       "TempTrees": {"hash":"52a9f8027fee1985","shape":{"kind":"members","head":"42c89402","members":{"dispose":"6c20bfe0","make":"6bc8ed9d"}}},
       "TemplateDbConfig": {"hash":"c167e8f0a34877dc","shape":{"kind":"members","head":"a9e1119d","members":{"adminUrl":"?6c665e22","migrate":"?2a29a8b6","rowSecurity":"?f4af6dab","templateName":"?1fb0a448"}}},
       "TenantFinding": {"hash":"d53f6eb2ba5733be","shape":{"kind":"members","head":"d0e7f1ca","members":{"code":"5c7c0d40","id":"?1fb0a448","leg":"a34441fa","path":"?1fb0a448","sweep":"?0cf4dddb","table":"?1fb0a448"}}},

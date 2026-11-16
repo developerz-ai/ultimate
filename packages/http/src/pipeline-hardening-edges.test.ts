@@ -30,10 +30,6 @@ const call = (
 ): Promise<Response> =>
   pipeline.handle(new Request('http://app.test/probe', init), { role: 'web' });
 
-// --- H1: the context published through ALS is a REAL Ctx --------------------------------------
-// `asCtx` was `as unknown as Ctx` over an object missing five members. `ctx.now()` threw on every
-// audited action served over HTTP, and the audit trail the flag was turned on for stayed empty.
-
 // --- H6: the caller behind a proxy ------------------------------------------------------------
 describe('the proxy-aware request', () => {
   test('the forwarded client address reaches ctx.ip, not the proxy address', async () => {

@@ -289,6 +289,12 @@ async function planFrom(
 }
 
 /** Every flag this script reads. Anything else is refused: a misspelt `--dry-run` used to write. */
+/** The full command, in the form the caller is using: a package code or a script code. */
+const rerunFor = (script: boolean): string =>
+  script
+    ? "bun run scripts/new-error-code.ts X_SCRIPT_WHAT_FAILED --script scripts/<file>.ts --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>'"
+    : "bun run scripts/new-error-code.ts X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>'";
+
 const KNOWN: KnownFlags = {
   names: [
     'package',
@@ -303,11 +309,11 @@ const KNOWN: KnownFlags = {
     'dry-run',
     'script',
   ],
-  refuse: (unknown) =>
+  refuse: (unknown, flags) =>
     new ScriptError({
       code: 'X_NEW_ERROR_CODE_INVALID',
       cause: `unknown flag(s): ${unknown.map((name) => `--${name}`).join(', ')} — refused rather than ignored, so nothing was written (known: ${KNOWN.names.map((name) => `--${name}`).join(' ')} --json)`,
-      fix: "bun run scripts/new-error-code.ts X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>' [--dry-run]",
+      fix: `${rerunFor(flags.has('script'))} [--dry-run]`,
     }),
 };
 
@@ -328,9 +334,8 @@ export function inputFrom(argv: readonly string[]): NewErrorCode {
   ) {
     throw new ScriptError({
       code: 'X_NEW_ERROR_CODE_INVALID',
-      cause:
-        'a code, --package, --title, --cause and --fix are all required — the registration needs the title and the wiki row needs the cause and the fix',
-      fix: "bun run scripts/new-error-code.ts X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>'",
+      cause: `a code, ${pkg === 'scripts' ? '--script' : '--package'}, --title, --cause and --fix are all required — the wiki row needs the title, the cause and the fix`,
+      fix: rerunFor(pkg === 'scripts'),
     });
   }
   return {

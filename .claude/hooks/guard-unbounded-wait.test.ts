@@ -9,6 +9,10 @@ describe('unboundedWait', () => {
     'until ! pgrep -f "bun test ./packages/cli/e2e/sign-in.e2e.test.ts" >/dev/null; do sleep 10; done; echo done',
     'while pgrep -f verify >/dev/null; do sleep 5; done',
     'cd /repo && until gh pr checks 12 | grep -q pass; do\n  sleep 30\ndone',
+    // Review of #1157: a heredoc fed to a shell IS shell, and a clock read in the body bounds nothing.
+    "bash <<'EOF'\nwhile pgrep x; do sleep 5; done\nEOF",
+    'until gh pr checks 12 | grep -q pass; do echo "$(date) waiting"; sleep 30; done',
+    'deadline=1; until gh pr checks 12 | grep -q pass; do sleep 30; done',
   ])('refuses the loop sweep 7 left running: %s', (command) => {
     expect(unboundedWait(command)).toBe(true);
   });

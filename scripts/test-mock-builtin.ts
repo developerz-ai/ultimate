@@ -3,17 +3,16 @@
 // mock is PROCESS-global and outlives the file that installed it: under the `flaky` job (every
 // changed test in one process) and `--randomize`, a mocked `node:fs` or `node:child_process` is
 // what the NEXT file reads. Every spelling counts — `node:fs`, `fs`, `fs/promises` — checked
-// against `node:module`'s `builtinModules`. The alternative is a seam: inject the dependency, or
+// against the written-out list in `scripts/lib/node-builtins.ts`. The alternative is a seam: inject the dependency, or
 // `spyOn` the function the code under test is handed, which `mock.restore()` undoes per test.
 //
 //   bun run scripts/test-mock-builtin.ts [--json]
 //   bun run scripts/test-mock-builtin.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
-// why: the authoritative list of node's builtin module names; Bun has no equivalent.
-import { builtinModules } from 'node:module';
 import { renderFixShellArg } from '../packages/core/src/error-render';
 import { stripComments } from '../packages/core/src/source-mask';
 import type { Finding } from './lib/log';
+import { isBuiltinSpecifier } from './lib/node-builtins';
 import type { PinTable, RatchetGap } from './lib/ratchet';
 import { ratchetGaps, ratchetMain } from './lib/ratchet';
 import type { SiteProbe } from './lib/ratchet-sites';
@@ -29,11 +28,6 @@ const EXPLAIN = 'bun run scripts/test-mock-builtin.ts --explain --json lists eve
 const MOCK = /(?<![\w$])mock\.module\s*\(\s*(['"`])([^'"`]+)\1/g;
 /** A test file, the only place `mock` is in scope. */
 const TEST_FILE = /\.test\.tsx?$/;
-const BUILTINS = new Set(builtinModules);
-
-/** `node:fs/promises`, `fs`, `fs/promises`: a builtin by any of its names. */
-export const isBuiltin = (specifier: string): boolean =>
-  specifier.startsWith('node:') || BUILTINS.has(specifier);
 
 export interface MockBuiltinSite {
   readonly path: string;
@@ -52,7 +46,7 @@ export function scanMockBuiltins(path: string, source: string): readonly MockBui
     const at = match.index ?? 0;
     if (insideString(literals, at)) continue;
     const module = source.slice(at, at + match[0].length).match(/(['"`])([^'"`]+)\1/)?.[2] ?? '';
-    if (!isBuiltin(module)) continue;
+    if (!isBuiltinSpecifier(module)) continue;
     out.push({ path, line: source.slice(0, at).split('\n').length, module });
   }
   return out;

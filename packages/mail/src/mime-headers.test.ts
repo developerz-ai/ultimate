@@ -1,10 +1,11 @@
-// What a header may carry: injection refused, and a non-ASCII display name or mailbox encoded the
-// way RFC 2047 and RFC 6531 say. Split from mime.test.ts, which keeps the message builder.
+// The computed headers on the wire: `Reply-To` through the address path, a display phrase that
+// needs quoting, and `List-Unsubscribe` normalised to 7-bit. Apart from `mime.test.ts`, which holds
+// the builder's framing, folding and body encoding.
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { type MailMessage, messageHeaders } from './driver';
-import { buildMimeMessage, hasNonAsciiAddrSpec, type MimeOptions } from './mime';
+import { buildMimeMessage, encodeAddressPhrase, type MimeOptions } from './mime';
 
 function baseMessage(overrides: Partial<MailMessage> = {}): MailMessage {
   return {
@@ -29,194 +30,103 @@ function baseOptions(overrides: Partial<MimeOptions> = {}): MimeOptions {
   };
 }
 
-describe('header injection', () => {
-  const codeOf = (value: unknown): string =>
-    isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
+function headerLine(built: string, name: string): string {
+  const block = built.slice(0, built.indexOf('\r\n\r\n'));
+  const unfolded = block.split('\r\n ').join(' ');
+  return unfolded.split('\r\n').find((line) => line.startsWith(`${name}: `)) ?? '';
+}
 
-  const thrown = (fn: () => unknown): unknown => {
-    try {
-      fn();
-      return undefined;
-    } catch (error) {
-      return error;
-    }
-  };
-
-  test('a CR or LF in the subject is refused, ASCII or not', () => {
-    const injected = 'Welcome\r\nBcc: attacker@evil.test';
-
-    expect(
-      codeOf(thrown(() => buildMimeMessage(baseMessage({ subject: injected }), baseOptions()))),
-    ).toBe('X_MAIL_HEADER_INVALID');
-    // Encoding runs after the check, so a non-ASCII subject cannot hide a break inside an
-    // encoded word and take a different path from the same input in ASCII.
-    expect(
-      codeOf(
-        thrown(() => buildMimeMessage(baseMessage({ subject: `café${injected}` }), baseOptions())),
-      ),
-    ).toBe('X_MAIL_HEADER_INVALID');
-  });
-
-  test('a CR or LF in a recipient or in the from address is refused', () => {
-    expect(
-      codeOf(
-        thrown(() =>
-          buildMimeMessage(
-            baseMessage({ to: ['ada@example.test\r\nBcc: x@evil.test'] }),
-            baseOptions(),
-          ),
-        ),
-      ),
-    ).toBe('X_MAIL_HEADER_INVALID');
-    expect(
-      codeOf(
-        thrown(() =>
-          buildMimeMessage(baseMessage(), baseOptions({ from: 'a@b.test\nSubject: forged' })),
-        ),
-      ),
-    ).toBe('X_MAIL_HEADER_INVALID');
-  });
-
-  // `replyTo` and `unsubscribeUrl` reach `header()` through the `messageHeaders()` loop, not
-  // through a named call — the loop a future edit is most likely to hoist above the CR/LF gate
-  // because computed-by-the-framework data looks trustworthy. It is not: both values are the
-  // caller's, and `Reply-To` / `List-Unsubscribe` inject headers exactly like `Subject` does.
-  test('a CR or LF in replyTo is refused, even though it arrives as a computed header', () => {
-    expect(
-      codeOf(
-        thrown(() =>
-          buildMimeMessage(
-            baseMessage({ replyTo: 'support@postly.test\r\nBcc: x@evil.test' }),
-            baseOptions(),
-          ),
-        ),
-      ),
-    ).toBe('X_MAIL_HEADER_INVALID');
-  });
-
-  test('a CR or LF in unsubscribeUrl is refused too', () => {
-    const message = baseMessage({
-      unsubscribeUrl: 'https://postly.test/u/abc\r\nBcc: x@evil.test',
-    });
-
-    // It reaches two headers (`List-Unsubscribe` and `List-Unsubscribe-Post`); the first one to
-    // see it refuses, and the name in the error is whichever that is.
-    expect(Object.keys(messageHeaders(message))).toContain('List-Unsubscribe');
-    expect(codeOf(thrown(() => buildMimeMessage(message, baseOptions())))).toBe(
-      'X_MAIL_HEADER_INVALID',
-    );
-  });
-
-  test('a break in the body is fine — only headers can be injected', () => {
-    const message = baseMessage({ text: 'line one\r\nline two', html: '<p>a</p>\n<p>b</p>' });
-
-    expect(buildMimeMessage(message, baseOptions())).toContain('line one');
-  });
-});
-
-/**
- * `Subject` has always been RFC 2047 encoded and the address headers were not, so a message whose
- * subject was safely 7-bit put `José Muñoz` on the wire as raw UTF-8 — an 8-bit header no
- * `smtp-protocol.ts` negotiation covers, because SMTPUTF8 is never offered. Only the display
- * PHRASE is encoded: encoding the whole list would base64 the commas and the angle brackets that
- * make it an address list at all.
- */
-describe('a non-ASCII display name in an address header', () => {
-  function headerLine(built: string, name: string): string {
-    const block = built.slice(0, built.indexOf('\r\n\r\n'));
-    const unfolded = block.split(`${'\r\n'} `).join(' ');
-    return unfolded.split('\r\n').find((line) => line.startsWith(`${name}: `)) ?? '';
+function isSevenBit(line: string): boolean {
+  for (let index = 0; index < line.length; index += 1) {
+    if (line.charCodeAt(index) > 0x7f) return false;
   }
+  return true;
+}
 
-  function isSevenBit(line: string): boolean {
-    for (let index = 0; index < line.length; index += 1) {
-      if (line.charCodeAt(index) > 0x7f) return false;
-    }
-    return true;
+function thrown(fn: () => unknown): unknown {
+  try {
+    fn();
+    return undefined;
+  } catch (error) {
+    return error;
   }
+}
 
-  test('the To line is 7-bit and the addr-spec is verbatim', () => {
+describe('Reply-To goes through the address path', () => {
+  test('a non-ASCII display name becomes an encoded word over a verbatim mailbox', () => {
     const built = buildMimeMessage(
-      baseMessage({ to: ['José Muñoz <jose@x.test>', 'ada@example.test'] }),
+      baseMessage({ replyTo: 'José Muñoz <jose@x.test>' }),
       baseOptions(),
     );
-    const line = headerLine(built, 'To');
-
+    const line = headerLine(built, 'Reply-To');
     expect(isSevenBit(line)).toBe(true);
     expect(line).toContain('=?UTF-8?B?');
-    expect(line).toContain('<jose@x.test>');
-    // The list separator and the second address survive as themselves.
-    expect(line.endsWith(', ada@example.test')).toBe(true);
+    expect(line.endsWith(' <jose@x.test>')).toBe(true);
   });
 
-  test('From and Cc are encoded the same way', () => {
-    const built = buildMimeMessage(
-      baseMessage({ cc: ['Åsa Ö <asa@x.test>'] }),
-      baseOptions({ from: 'Pöstly <no-reply@postly.test>' }),
+  test('a non-ASCII mailbox is refused, and the refusal says why', () => {
+    const error = thrown(() =>
+      buildMimeMessage(baseMessage({ replyTo: 'josé@exämple.test' }), baseOptions()),
     );
-
-    expect(isSevenBit(headerLine(built, 'From'))).toBe(true);
-    expect(headerLine(built, 'From')).toContain('<no-reply@postly.test>');
-    expect(isSevenBit(headerLine(built, 'Cc'))).toBe(true);
-    expect(headerLine(built, 'Cc')).toContain('<asa@x.test>');
+    expect(isUltimateError(error) ? [error.code, error.meta?.['reason']] : error).toEqual([
+      'X_MAIL_HEADER_INVALID',
+      'non-ascii',
+    ]);
+    expect(isUltimateError(error) ? error.cause : '').not.toContain('CR or LF');
   });
 
-  test('an ASCII address list is byte-identical to the unencoded form', () => {
-    const built = buildMimeMessage(
-      baseMessage({ to: ['Jane Doe <jane@x.test>', 'ada@example.test'], cc: ['lin@example.test'] }),
-      baseOptions(),
+  test('a line break keeps its own reason', () => {
+    const error = thrown(() =>
+      buildMimeMessage(baseMessage({ replyTo: 'a@x.test\r\nBcc: e@evil.test' }), baseOptions()),
     );
-
-    expect(built).toContain('From: Postly <no-reply@postly.test>\r\n');
-    expect(built).toContain('To: Jane Doe <jane@x.test>, ada@example.test\r\n');
-    expect(built).toContain('Cc: lin@example.test\r\n');
-  });
-
-  test('a CRLF in a display name is still refused, never hidden inside an encoded word', () => {
-    let code = 'no error thrown';
-    try {
-      buildMimeMessage(
-        baseMessage({ to: ['Jösé\r\nBcc: x@evil.test <jose@x.test>'] }),
-        baseOptions(),
-      );
-    } catch (error) {
-      code = isUltimateError(error) ? error.code : 'not an UltimateError';
-    }
-    expect(code).toBe('X_MAIL_HEADER_INVALID');
+    expect(isUltimateError(error) ? error.meta?.['reason'] : error).toBe('line-break');
   });
 });
-describe('a non-ASCII mailbox', () => {
-  // RFC 2047 encoded words are legal in a display PHRASE and nowhere else, so there is no encoding
-  // `encodeAddressPhrase` could apply to the addr-spec — and SMTPUTF8 (RFC 6531), which is what
-  // would make a raw UTF-8 mailbox legal, is negotiated by nothing in this package. So the message
-  // gate refuses it, at the same place the CR/LF check runs, rather than putting 8-bit octets in a
-  // `To:` header and the envelope beside it.
-  test('is refused by the header gate, in every address list', () => {
-    const hostile = 'josé@exämple.test';
-    expect(() => buildMimeMessage(baseMessage({ to: [hostile] }), baseOptions())).toThrow(
-      'X_MAIL_HEADER_INVALID',
-    );
-    expect(() => buildMimeMessage(baseMessage({ cc: [hostile] }), baseOptions())).toThrow(
-      'X_MAIL_HEADER_INVALID',
-    );
-    expect(() => buildMimeMessage(baseMessage(), baseOptions({ from: hostile }))).toThrow(
-      'X_MAIL_HEADER_INVALID',
-    );
-  });
 
-  test('while a non-ASCII display name over an ASCII mailbox still encodes', () => {
+describe('a display phrase holding a special is quoted', () => {
+  test('a comma in a To phrase no longer splits the address list', () => {
     const built = buildMimeMessage(
-      baseMessage({ to: ['José Muñoz <jose@example.test>'] }),
+      baseMessage({ to: ['Doe, Jane <jane@x.test>', 'ada@example.test'] }),
       baseOptions(),
     );
-    expect(built).toContain('=?UTF-8?B?');
-    expect(built).toContain('<jose@example.test>');
+    expect(headerLine(built, 'To')).toBe('To: "Doe, Jane" <jane@x.test>, ada@example.test');
   });
 
-  test('hasNonAsciiAddrSpec reads the mailbox and never the phrase', () => {
-    expect(hasNonAsciiAddrSpec('José Muñoz <jose@example.test>')).toBe(false);
-    expect(hasNonAsciiAddrSpec('josé@exämple.test')).toBe(true);
-    expect(hasNonAsciiAddrSpec('Ada <josé@exämple.test>')).toBe(true);
-    expect(hasNonAsciiAddrSpec('ada@example.test')).toBe(false);
+  test('From, Cc and Reply-To are quoted the same way', () => {
+    const built = buildMimeMessage(
+      baseMessage({ cc: ['Ops; Night <ops@x.test>'], replyTo: 'Support (EU) <s@x.test>' }),
+      baseOptions({ from: 'Postly, Inc. <no-reply@postly.test>' }),
+    );
+    expect(headerLine(built, 'From')).toBe('From: "Postly, Inc." <no-reply@postly.test>');
+    expect(headerLine(built, 'Cc')).toBe('Cc: "Ops; Night" <ops@x.test>');
+    expect(headerLine(built, 'Reply-To')).toBe('Reply-To: "Support (EU)" <s@x.test>');
+  });
+
+  test('a quote or backslash inside the phrase is escaped; a quoted phrase is left alone', () => {
+    expect(encodeAddressPhrase('Jane "JD", Doe <jane@x.test>')).toBe(
+      '"Jane \\"JD\\", Doe" <jane@x.test>',
+    );
+    expect(encodeAddressPhrase('"Doe, Jane" <jane@x.test>')).toBe('"Doe, Jane" <jane@x.test>');
+    expect(encodeAddressPhrase('Jane Q. Doe <jane@x.test>')).toBe('Jane Q. Doe <jane@x.test>');
+    expect(encodeAddressPhrase('jane@x.test')).toBe('jane@x.test');
+  });
+});
+
+describe('List-Unsubscribe is normalised', () => {
+  const url = 'https://exämple.test/ünsub?u=é';
+
+  test('a non-ASCII url reaches the wire as 7-bit, in the Resend headers and in the SMTP message', () => {
+    const headers = messageHeaders(baseMessage({ unsubscribeUrl: url }));
+    expect(headers['List-Unsubscribe']).toBe('<https://xn--exmple-cua.test/%C3%BCnsub?u=%C3%A9>');
+    const line = headerLine(
+      buildMimeMessage(baseMessage({ unsubscribeUrl: url }), baseOptions()),
+      'List-Unsubscribe',
+    );
+    expect(isSevenBit(line)).toBe(true);
+  });
+
+  test('a bracket in the url cannot close the angle-bracket early', () => {
+    const headers = messageHeaders(baseMessage({ unsubscribeUrl: 'https://x.test/u?a=>b' }));
+    expect(headers['List-Unsubscribe']).toBe('<https://x.test/u?a=%3Eb>');
   });
 });

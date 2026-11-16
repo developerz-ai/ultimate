@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import type { CdpConnection, CdpTransport } from './cdp-connection';
 import { cdpConnectOver } from './cdp-connection';
 import { LAUNCH_ATTEMPTS, LAUNCH_BUDGET_MS, LAUNCH_TIMEOUT_MS } from './cdp-launch';
-import { LAUNCH_REAP_MS } from './cdp-launch-attempt';
+import { LAUNCH_REAP_MS, LAUNCHED_CLOSE_MS } from './cdp-launch-attempt';
 import { LAUNCH_TEST_MS, launchTestMs, pageTargetReady } from './cdp-launch-ready';
 
 interface FakeBrowser {
@@ -23,6 +23,7 @@ interface FakeBrowser {
 function fakeBrowser(
   existing: readonly { type: string; url: string }[],
   dies = false,
+  silentAfterOn = false,
 ): FakeBrowser {
   const sent: string[] = [];
   let handlers: { message(text: string): void; closed(reason: string): void } | undefined;
@@ -43,8 +44,10 @@ function fakeBrowser(
       const frame = JSON.parse(text) as { id: number; method: string; params?: unknown };
       sent.push(`${frame.method} ${JSON.stringify(frame.params ?? {})}`);
       queueMicrotask(() => {
-        handlers?.message(JSON.stringify({ id: frame.id, result: {} }));
         const on = (frame.params as { discover?: unknown } | undefined)?.discover === true;
+        // A browser gone silent once discovery is on: nothing after it is ever answered.
+        if (silentAfterOn && !on) return;
+        handlers?.message(JSON.stringify({ id: frame.id, result: {} }));
         if (frame.method !== 'Target.setDiscoverTargets' || !on) return;
         // Chrome answers the call, then sends one `targetCreated` per target that already exists.
         for (const target of existing) created(target.type, target.url);
@@ -96,6 +99,17 @@ describe('pageTargetReady — the page the browser was handed exists', () => {
     expect(browser.sent.at(-1)).toBe('Target.setDiscoverTargets {"discover":false}');
   });
 
+  test('a browser gone silent costs the deadline once: switching discovery off is bounded by what is left', async () => {
+    const browser = fakeBrowser([{ type: 'browser', url: '' }], false, true);
+    const started = performance.now();
+
+    const error = await pageTargetReady(browser.connection, 300).catch((e: unknown) => e);
+
+    expect(error).toBeUltimateError('X_CDP_TIMEOUT');
+    // A fresh deadline for the off-switch made this 600 ms: two deadlines, past `launchTestMs`.
+    expect(performance.now() - started).toBeLessThan(450);
+  });
+
   test('a browser that dies mid-wait is X_CDP_CALL_FAILED at once, never a deadline spent spinning', async () => {
     const browser = fakeBrowser([{ type: 'browser', url: '' }], true);
     const started = performance.now();
@@ -111,8 +125,14 @@ describe('pageTargetReady — the page the browser was handed exists', () => {
 });
 
 describe('launchTestMs — a test that awaits a launch outlives the launch', () => {
-  test('every start its deadline and its reap, and the handshake after the last', () => {
-    expect(launchTestMs(300)).toBe(LAUNCH_ATTEMPTS * (300 + LAUNCH_REAP_MS) + 2 * 300);
+  test('the worst path fits: every start and its reap, the handshake, then the close', () => {
+    // A browser that started and then went silent: both starts as long as allowed, the handshake
+    // its whole deadline (the off-switch takes what is left of it), then `launchReady` closes it.
+    const worst = (ms: number): number =>
+      LAUNCH_ATTEMPTS * (ms + LAUNCH_REAP_MS) + ms + LAUNCHED_CLOSE_MS;
+    for (const ms of [300, 5_000, LAUNCH_TIMEOUT_MS]) {
+      expect(launchTestMs(ms)).toBeGreaterThan(worst(ms));
+    }
     expect(LAUNCH_TEST_MS).toBe(launchTestMs(LAUNCH_TIMEOUT_MS));
     expect(LAUNCH_TEST_MS).toBeGreaterThan(LAUNCH_BUDGET_MS);
   });

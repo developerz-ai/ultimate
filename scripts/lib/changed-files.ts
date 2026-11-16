@@ -46,6 +46,18 @@ export async function changedSinceBase(
 ): Promise<ChangedFiles> {
   const { base, via } = await baseCommit(root, runner);
   if (base === undefined) return { base, via, changed: [], added: [] };
+  return { ...(await changedSince(root, base, runner)), via };
+}
+
+/**
+ * The paths that differ from `base`, a ref the caller names — CI's `HEAD^1`, the base tip a pull
+ * request's merge commit was made on. `via` is `tip`: no merge base was computed.
+ */
+export async function changedSince(
+  root: string,
+  base: string,
+  runner: GitRunner = run,
+): Promise<ChangedFiles> {
   const diff = (filter: readonly string[]) =>
     runner(['git', 'diff', '--name-only', '--no-renames', ...filter, base, '--'], { cwd: root });
   const [all, created, untracked] = await Promise.all([
@@ -56,5 +68,5 @@ export async function changedSinceBase(
   const fresh = untracked.ok ? lines(untracked.output) : [];
   const changed = [...new Set([...(all.ok ? lines(all.output) : []), ...fresh])].sort();
   const added = [...new Set([...(created.ok ? lines(created.output) : []), ...fresh])].sort();
-  return { base, via, changed, added };
+  return { base, via: 'tip', changed, added };
 }

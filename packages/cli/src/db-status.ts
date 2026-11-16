@@ -4,7 +4,12 @@
 // would refuse; the read is `cmd-db-status.ts`'s.
 
 import type { LedgerRow, Migration } from '@ultimat3/db';
-import { auditLedger, ledgerAheadOfBuild, migrationChecksum } from '@ultimat3/db';
+import {
+  auditLedger,
+  ledgerAheadOfBuild,
+  migrationChecksum,
+  runningAppVersion,
+} from '@ultimat3/db';
 import { AppMigrationsUnappliedError, appMigrationsVerdict } from './app-migrations-verdict';
 import {
   aheadByMajor,
@@ -90,8 +95,12 @@ export function dbStatusFindings(
   status: DbStatus,
   migrations: readonly Migration[],
   ledger: DbStatusRead['ledger'],
-  /** `ROLLBACK_ALLOW_DESTRUCTIVE` as the migrate role would read it. */
-  allow?: string | undefined,
+  options: {
+    /** `ROLLBACK_ALLOW_DESTRUCTIVE` as the migrate role would read it. */
+    readonly allow?: string | undefined;
+    /** `APP_VERSION` from the command's env, as `runMigrations` hands it to `migrate()`. */
+    readonly appVersion?: string | undefined;
+  } = {},
 ): Finding[] {
   const findings: Finding[] = [];
   const { framework } = status;
@@ -116,8 +125,9 @@ export function dbStatusFindings(
     // rollback is accepted and audited over its known rows; anything else ahead, and any applied
     // migration edited since, is the conflict it refuses with — never a second spelling of either.
     try {
-      const rolledBack = ledgerAheadOfBuild(ledger, migrations, { allow });
-      auditLedger(rolledBack?.known ?? ledger, migrations, framework.version);
+      const rolledBack = ledgerAheadOfBuild(ledger, migrations, { allow: options.allow });
+      // `migrate()`'s own reader of the build's name, so both commands' causes name the same one.
+      auditLedger(rolledBack?.known ?? ledger, migrations, runningAppVersion(options.appVersion));
     } catch (error) {
       findings.push(findingFrom(error));
     }

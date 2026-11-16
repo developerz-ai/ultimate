@@ -62,12 +62,10 @@ export async function runDbStatus(ctx: CommandContext, root: string): Promise<Co
   const migrations = await readMigrations(root);
   const read = await readFromApp(ctx, root);
   const status = dbStatus(read, migrations, thisBuild());
-  const findings = dbStatusFindings(
-    status,
-    migrations,
-    read.ledger,
-    ctx.env[ROLLBACK_ALLOW_DESTRUCTIVE_ENV],
-  );
+  const findings = dbStatusFindings(status, migrations, read.ledger, {
+    allow: ctx.env[ROLLBACK_ALLOW_DESTRUCTIVE_ENV],
+    appVersion: ctx.env['APP_VERSION'],
+  });
   return {
     ok: findings.length === 0,
     command: 'db',

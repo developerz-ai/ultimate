@@ -83,10 +83,21 @@ describe('unit · x db status, the verdict', () => {
   test('a rollback over a destructive row is the refusal migrate gives, unless allowed', () => {
     const ledger = [row(one), { ...row(two), destructive: true }];
     const status = dbStatus({ stamp: stamped, ledger }, [one], mine);
-    expect(dbStatusFindings(status, [one], ledger, '').map((finding) => finding.code)).toEqual([
-      'X_MIGRATION_ROLLBACK_DESTRUCTIVE',
-    ]);
-    expect(dbStatusFindings(status, [one], ledger, '0002_b')).toEqual([]);
+    expect(
+      dbStatusFindings(status, [one], ledger, { allow: '' }).map((finding) => finding.code),
+    ).toEqual(['X_MIGRATION_ROLLBACK_DESTRUCTIVE']);
+    expect(dbStatusFindings(status, [one], ledger, { allow: '0002_b' })).toEqual([]);
+  });
+
+  test('a conflict names the app version x db migrate would: APP_VERSION, else dev', () => {
+    const three = migration('0003_c');
+    const ledger = [row(one), row(two), row(three)];
+    const status = dbStatus({ stamp: stamped, ledger }, [one, three], mine);
+    const cause = (options: { appVersion?: string }) =>
+      dbStatusFindings(status, [one, three], ledger, options)[0]?.cause ?? '';
+    expect(cause({ appVersion: 'web@abc123' })).toContain('this build is "web@abc123"');
+    expect(cause({})).toContain('this build is "dev"');
+    expect(cause({})).not.toContain(mine.version);
   });
 
   test('an applied migration edited since: the ledger conflict, with its restore fix', () => {

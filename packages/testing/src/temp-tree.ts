@@ -64,7 +64,10 @@ export interface TempTreeGitResult {
 }
 
 export interface TempTree extends AsyncDisposable {
-  /** The directory, made empty under the platform temp root. */
+  /**
+   * The directory, made empty under the platform temp root — or under `<pkg>/.x/fixtures/` when
+   * `inPackage` names the package.
+   */
   readonly path: string;
   /** Overlay it on `Bun.env` for any child that may run git here — the code under test's too. */
   readonly gitEnv: Readonly<Record<string, string | undefined>>;
