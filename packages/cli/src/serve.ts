@@ -1,8 +1,11 @@
-// What a container starts. `apps/web/server.ts` is three lines that call `runRole`, so the boot a
-// production process performs is framework code with tests rather than app code the author has to
-// get right — and it is the SAME code `x dev` runs, minus the watcher, minus `/_x`, minus
-// `dev: true`. The only production-shaped decisions live here: which role, which port, and which
-// interface — every one by default, because a container is reached through a port mapping.
+// What a container starts: the role, the port and the interface — the same boot `x dev` runs,
+// minus the watcher, `/_x` and `dev: true`.
+//
+// `apps/web/server.ts` is three lines that call `runRole`, so the boot a production process
+// performs is framework code with tests rather than app code the author has to get right — and it
+// is the SAME code `x dev` runs, minus the watcher, minus `/_x`, minus `dev: true`. The only
+// production-shaped decisions live here: which role, which port, and which interface — every one by
+// default, because a container is reached through a port mapping.
 
 import { assertNoDevSecretsOutsideLocal, frameworkVersion, logger } from '@ultimat3/core';
 import { assertNoSchemaDrift, checkDrift, migrate } from '@ultimat3/db';

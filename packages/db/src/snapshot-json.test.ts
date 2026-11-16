@@ -61,7 +61,7 @@ const BIOME_CONFIG = `${JSON.stringify(
   2,
 )}\n`;
 
-// `node:os`/`node:fs` — Bun ships no temp-directory locator or recursive remove of its own, and a
+// why: `node:os`/`node:fs` — Bun ships no temp-directory locator or recursive remove of its own, and a
 // scratch tree inside the checkout would be a formatter subject two concurrent suites share.
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

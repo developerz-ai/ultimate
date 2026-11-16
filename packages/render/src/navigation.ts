@@ -2,6 +2,7 @@
  * The client router: soft navigation over server-rendered documents. A same-surface link or form
  * fetches the next document the server renders anyway (its own mode, its own policy, its own cache
  * headers) and swaps it in, so the tab keeps its islands, its socket and its state between pages.
+ *
  * NOT a render mode — every page is still rendered by its route; without this script, or with
  * `data-x-reload`, the same markup is an ordinary full-page web app.
  *

@@ -1,9 +1,11 @@
 // @ultimat3/http's owned codes, their TITLES and the two retry classes, registered at import — the
-// one module `sideEffects` names, imported bare by the barrel and by `errors.ts`. Its readers are
-// in the SERVER realm (`x errors list`, a problem document, a job's retry), which reaches the
-// barrel. A browser never needs it: core's decoders take an unregistered code's title from the
-// problem body and a 429's `retry-after` from its `Retry-After` header. Until the package declared
-// `sideEffects`, all of http — router, limiter, error maps, 11.5 kB — rode into every action island.
+// one module `sideEffects` names, imported bare by the barrel and by `errors.ts`.
+//
+// Its readers are in the SERVER realm (`x errors list`, a problem document, a job's retry), which
+// reaches the barrel. A browser never needs it: core's decoders take an unregistered code's title
+// from the problem body and a 429's `retry-after` from its `Retry-After` header. Until the package
+// declared `sideEffects`, all of http — router, limiter, error maps, 11.5 kB — rode into every
+// action island.
 
 import { registerErrorCodes, registerErrorRetry } from '@ultimat3/core';
 

@@ -11,7 +11,7 @@ import type { EntityError } from './errors';
 import { invariant } from './invariants';
 import { clearRegistry } from './registry';
 import type { Repo } from './repo';
-import { defineSeed, isSeed, seedTiersFor } from './seed';
+import { defineSeed, isSeed, seedId, seedTiersFor } from './seed';
 
 const orgs = entity('seed_test_orgs', {
   columns: {
@@ -115,6 +115,14 @@ beforeEach(() => {
 
 afterAll(() => {
   clearRegistry();
+});
+
+describe('seedId()', () => {
+  // The known answer is RFC 4122's, computed outside this codebase (Python's `uuid.uuid5`): a
+  // changed hash or namespace moves every seeded id on every machine, and only a fixed value says so.
+  test('is the RFC 4122 v5 uuid of the label under the framework namespace', () => {
+    expect(seedId('post:tenancy')).toBe('c1115252-3f22-58ae-abca-bc849bf1169a');
+  });
 });
 
 describe('defineSeed() · replay', () => {

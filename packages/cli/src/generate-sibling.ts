@@ -1,8 +1,10 @@
 // Whether a feature's `entity.ts` makes the next `x g entity --feature` a SIBLING
-// (`entity-<name>.ts`). Decided on what the file READABLY declares, and conservatively: the
-// sibling path skips the conflict on `entity.ts`, so taking the same table for "another one" —
-// because it is spelled as a template literal, or held in a constant — wrote a second module for
-// one table where the run should have refused.
+// (`entity-<name>.ts`), decided conservatively on what the file READABLY declares.
+//
+// Decided on what the file READABLY declares, and conservatively: the sibling path skips the
+// conflict on `entity.ts`, so taking the same table for "another one" — because it is spelled as a
+// template literal, or held in a constant — wrote a second module for one table where the run
+// should have refused.
 
 import { endOfLiteral, maskLiterals, QUOTES } from '@ultimat3/core';
 import { names } from './templates/naming';

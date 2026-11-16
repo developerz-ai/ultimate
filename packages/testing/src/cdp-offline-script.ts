@@ -1,11 +1,13 @@
 // One responsibility: `navigator.onLine` reads `false` from a document's FIRST script while the
 // session's offline switch is thrown, and reads `true` again — with the `online` event a page
-// reconnects on — when it goes back. `Network.emulateNetworkConditions` cuts the NETWORK for a
-// document created under the switch but, measured on Chrome 150, never tells it so: a reload under
-// the switch read `navigator.onLine === true` at its first script every time, COOP or not, still
-// read `true` a second later, and got no `online` event when the switch went back.
-// `Network.overrideNetworkState` changed nothing. The dummy's page boot asks at its first script
-// and replayed its outbox with a real POST under the cut (`offline-like.e2e.test.ts`, two attempts).
+// reconnects on — when it goes back.
+//
+// `Network.emulateNetworkConditions` cuts the NETWORK for a document created under the switch but,
+// measured on Chrome 150, never tells it so: a reload under the switch read
+// `navigator.onLine === true` at its first script every time, COOP or not, still read `true` a second later, and got no
+// `online` event when the switch went back. `Network.overrideNetworkState` changed nothing. The
+// dummy's page boot asks at its first script and replayed its outbox with a real POST under the cut
+// (`offline-like.e2e.test.ts`, two attempts).
 //
 // The override is an OWN property on `navigator`, so the real getter on `Navigator.prototype` is one
 // `delete` away. A document Chrome DID tell (it saw `offline`) gets Chrome's own `online` event on

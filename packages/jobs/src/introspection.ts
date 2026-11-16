@@ -1,8 +1,10 @@
-// What an OPERATOR may ask of a queue, and the bounds on each answer. Every capability a
-// dashboard, `x jobs` or an MCP tool has is a member of `JobIntrospection`, implemented by the pg
-// and the memory driver alike, so a surface that reads only this file reads nothing a driver does
-// not promise. Apart from `driver.ts` because that file is the six-method claim/settle contract;
-// this one is everything said ABOUT the rows it moves.
+// What an OPERATOR may ask of a queue, and the bounds on each answer. Every capability a dashboard,
+// `x jobs` or an MCP tool has is a member of `JobIntrospection`, implemented by the pg and the
+// memory driver alike, so a surface that reads only this file reads nothing a driver does not
+// promise.
+//
+// Apart from `driver.ts` because that file is the six-method claim/settle contract; this one is
+// everything said ABOUT the rows it moves.
 
 import { finiteCount } from '@ultimat3/core';
 import type { ClaimIdentity, JobRecord, JobState } from './driver';

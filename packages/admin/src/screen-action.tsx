@@ -1,8 +1,10 @@
-// The two writes an action makes from a screen: ONE row, posted at the row's URL (its form, when
-// it takes input, is that URL asked for the action), and a BATCH, posted at the list's URL whose
-// query string is the filter "all matching" means. Both decide through the gate first and render
-// what it answered — a 422 form with the schema's issues, a 409 for a row the action's `when`
-// excludes, a 403 for a refusal, and an honest count of what a batch did.
+// The two writes an action makes from a screen: ONE row, posted at the row's URL (its form, when it
+// takes input, is that URL asked for the action), and a BATCH, posted at the list's URL whose query
+// string is the filter "all matching" means.
+//
+// Both decide through the gate first and render what it answered — a 422 form with the schema's
+// issues, a 409 for a row the action's `when` excludes, a 403 for a refusal, and an honest count of
+// what a batch did.
 
 import { t } from '@ultimat3/i18n';
 import { Button, Card, ErrorState, Link } from '@ultimat3/ui';

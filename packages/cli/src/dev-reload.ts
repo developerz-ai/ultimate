@@ -1,8 +1,10 @@
-// One rebuild at a time. A reload is a full `appManifest()` plus a `buildIslands()` over every
-// island, and the watcher had no in-flight guard: a 45ms drip of writes — a slow `git checkout`, a
-// formatter walking the tree, `x db gen` — started one per file, 40 for 40 files, each assigning
-// the same two state slots in COMPLETION order. So a slower earlier rebuild could land on top of a
-// newer one, and the dev server then served a manifest built from source that had already changed.
+// One rebuild at a time: the in-flight guard over the dev loop's reloads.
+//
+// A reload is a full `appManifest()` plus a `buildIslands()` over every island, and the watcher had
+// no in-flight guard: a 45ms drip of writes — a slow `git checkout`, a formatter walking the tree,
+// `x db gen` — started one per file, 40 for 40 files, each assigning the same two state slots in
+// COMPLETION order. So a slower earlier rebuild could land on top of a newer one, and the dev
+// server then served a manifest built from source that had already changed.
 
 /** What a tick does while a rebuild is already running: nothing, except become the next one. */
 export type ReloadTrigger = (file: string) => void;

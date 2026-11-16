@@ -1,8 +1,9 @@
 // The seams the HTTP layer cannot own itself: who the actor is (auth lives in `@ultimat3/auth`,
-// tier 3), whether a policy allows the call (`@ultimat3/policy` is a sibling tier, so it cannot
-// be imported here), and — a seam of a different kind, deciding nothing — what a dev diagnostic
-// found. All three are declared structurally, which keeps the import boundary intact and keeps
-// the pipeline testable.
+// tier 3), whether a policy allows the call (`@ultimat3/policy` is a sibling tier, so it cannot be
+// imported here), and — a seam of a different kind, deciding nothing — what a dev diagnostic found.
+//
+// All three are declared structurally, which keeps the import boundary intact and keeps the
+// pipeline testable.
 import type { Actor, UltimateError } from '@ultimat3/core';
 import { assert, finiteCount } from '@ultimat3/core';
 import type { RequestContext } from './context';

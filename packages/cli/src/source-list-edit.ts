@@ -1,9 +1,11 @@
-// Adding an entry to an array literal in a file the app owns, read off the MASKED source. Every
-// generator that grows a list — a role's `grants`, `definePermissions([…])`, a `defineApi` list —
-// found its `]` with `indexOf` and its entries with a quote regex, so an apostrophe in a comment
-// was a string delimiter and a `]` in one closed the list: `x g entity` rewrote a role map's
-// comments into permissions. Here a comment and a literal's contents are never read as code, and
-// an edit that does not read back as "the same list plus the new entries" is refused, not written.
+// Adding an entry to an array literal in a file the app owns, read off the MASKED source.
+//
+// Every generator that grows a list — a role's `grants`, `definePermissions([…])`, a `defineApi`
+// list — found its `]` with `indexOf` and its entries with a quote regex, so an apostrophe in a
+// comment was a string delimiter and a `]` in one closed the list: `x g entity` rewrote a role
+// map's comments into permissions. Here a comment and a literal's contents are never read as code,
+// and an edit that does not read back as "the same list plus the new entries" is refused, not
+// written.
 
 import { maskLiterals, stripComments } from '@ultimat3/core';
 import { wrapList } from './templates/wrap';

@@ -1,10 +1,12 @@
 /**
- * An in-memory IndexedDB with exactly the surface `local-store-idb.ts` uses — open with an
- * upgrade, one transaction over named stores, `put` / `delete` / `getAll` / `getAllKeys` — and
- * IndexedDB's own asynchrony: every request answers on a later microtask and a transaction
- * completes after its last request. Bun ships no IndexedDB, and no dependency is worth a test seam.
- * Values are structured-cloned in and out, as the real one does. `reloaded()` is the disk a page
- * reloaded NOW would open: only transactions that COMPLETED — one still running is lost with the page.
+ * An in-memory IndexedDB with exactly the surface `local-store-idb.ts` uses — open with an upgrade,
+ * one transaction over named stores, `put` / `delete` / `getAll` / `getAllKeys` — and IndexedDB's
+ * own asynchrony: every request answers on a later microtask and a transaction completes after its
+ * last request.
+ *
+ * Bun ships no IndexedDB, and no dependency is worth a test seam. Values are structured-cloned in
+ * and out, as the real one does. `reloaded()` is the disk a page reloaded NOW would open: only
+ * transactions that COMPLETED — one still running is lost with the page.
  */
 
 import type { IdbDatabaseLike, IdbFactoryLike, IdbRequestLike, IdbStoreLike } from './idb-types';

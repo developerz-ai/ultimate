@@ -1,9 +1,11 @@
-// The MCP half of `idempotent: true`: the Idempotency-Key an HTTP caller sends as a header, sent
-// by an MCP caller as one reserved, optional tool ARGUMENT. An argument and not `params._meta`:
-// `_meta` is protocol metadata a host fills (a progress token), and no model-driven client lets the
-// model set it — the retry that needs a key is the agent's own, so the key goes where the agent
-// writes. It is advertised in `tools/list`, enforced by `validate-args.ts` like every other field,
-// and taken back out before `invoke`, so the action's own input parse never sees it.
+// The MCP half of `idempotent: true`: the Idempotency-Key an HTTP caller sends as a header, sent by
+// an MCP caller as one reserved, optional tool ARGUMENT.
+//
+// An argument and not `params._meta`: `_meta` is protocol metadata a host fills (a progress token),
+// and no model-driven client lets the model set it — the retry that needs a key is the agent's own,
+// so the key goes where the agent writes. It is advertised in `tools/list`, enforced by
+// `validate-args.ts` like every other field, and taken back out before `invoke`, so the action's
+// own input parse never sees it.
 
 import { MAX_IDEMPOTENCY_KEY_LENGTH } from '@ultimat3/action';
 import { McpIdempotencyKeyShadowedError } from './errors';

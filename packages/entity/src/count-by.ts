@@ -1,8 +1,9 @@
 // Single responsibility: what a grouped count is made of — which columns a count may be keyed by,
 // how many groups one statement is allowed to answer with, and the order the map comes back in.
-// Both drivers read those three rules from here, so a `countBy` against memory means exactly what
-// a `countBy` against Postgres means; a rule added to one driver alone is the drift this file
-// exists to prevent.
+//
+// Both drivers read those three rules from here, so a `countBy` against memory means exactly what a
+// `countBy` against Postgres means; a rule added to one driver alone is the drift this file exists
+// to prevent.
 
 import { renderFixShellArg } from '@ultimat3/core';
 import { columnFor } from './column';

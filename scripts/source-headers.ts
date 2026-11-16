@@ -11,7 +11,11 @@ import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { SOURCE_HEADER_PINS, SOURCE_HEADER_PINS_FILE } from './lib/source-header-pins';
+import {
+  SOURCE_HEADER_PINS,
+  SOURCE_HEADER_PINS_FILE,
+  type SourceHeaderPin,
+} from './lib/source-header-pins';
 
 const SCRIPT = 'source-headers';
 
@@ -137,7 +141,11 @@ const unscannedFinding = (): Finding => ({
 });
 
 /** Every finding this rule contributes, read off the shared corpus and the per-file pin table. */
-export async function sourceHeaderFindings(root: string): Promise<readonly Finding[]> {
+/** `pins` defaults to the table; a fixture hands its own, so the stale-row path stays tested at zero. */
+export async function sourceHeaderFindings(
+  root: string,
+  pins: Readonly<Record<string, SourceHeaderPin>> = SOURCE_HEADER_PINS,
+): Promise<readonly Finding[]> {
   const files = await corpus(root, 'shipped');
   if (files.length === 0) return [unscannedFinding()];
   const findings: Finding[] = [];
@@ -149,11 +157,11 @@ export async function sourceHeaderFindings(root: string): Promise<readonly Findi
     if (problem === undefined) continue;
     const found = (counts.get(file.path) ?? 0) + 1;
     counts.set(file.path, found);
-    const pinned = SOURCE_HEADER_PINS[file.path];
+    const pinned = pins[file.path];
     if (pinned !== undefined && found <= pinned.count) continue;
     findings.push(overFinding({ ...header, problem }));
   }
-  for (const [path, pin] of Object.entries(SOURCE_HEADER_PINS)) {
+  for (const [path, pin] of Object.entries(pins)) {
     // A pin describes THIS repository: a fixture root does not hold the pinned files, and their
     // absence there is not a stale row.
     if (!(await Bun.file(`${root}/${path}`).exists())) continue;

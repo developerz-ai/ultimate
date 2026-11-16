@@ -1,8 +1,11 @@
-// Everything `x g` edits OUTSIDE the files it creates, in the one order they have to happen: a
-// declared permission granted to a role, a primitive listed in `defineApi`, an entity added to the
-// typed handle, an `--admin` override wired, a contract test's exercise entry declared, each new
-// workspace edge declared, and every catalog made selectable. One function over one disk seam, so a real run and a dry run are the same code
-// — and the dry run's list of touched files is what the run touches, not a second guess at it.
+// Everything `x g` edits OUTSIDE the files it creates, in the one order they have to happen,
+// over one disk seam so a real run and a dry run are the same code.
+//
+// In order: a declared permission granted to a role, a primitive listed in `defineApi`, an entity
+// added to the typed handle, an `--admin` override wired, a contract test's exercise entry
+// declared, each new workspace edge declared, and every catalog made selectable. One function over
+// one disk seam, so a real run and a dry run are the same code — and the dry run's list of touched
+// files is what the run touches, not a second guess at it.
 
 import { registerAdminResources } from './admin-registration';
 import { registerGeneratedPrimitives } from './api-registration';

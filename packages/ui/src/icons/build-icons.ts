@@ -2,7 +2,7 @@
 // `lucide-static` data: `bun run --filter @ultimat3/ui icons`. We wrap Lucide, we do not draw
 // icons, so an upstream fix is a version bump plus a re-run and never a hand edit.
 
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import { renderCauseValue } from '@ultimat3/core';
 import type { IconGlyph } from '../components/icon-glyph';
 import { iconElements } from '../components/icon-glyph';

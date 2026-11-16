@@ -1,8 +1,9 @@
 // `x actions`, `x queries`, `x entities` — the declaration registries as a table or as JSON.
-// Replaces grepping a source tree, which is what an agent does when the framework has no answer
-// to "what actions/queries/entities exist". One table, one generic command body: the three
-// commands differ only in which registry they read, a row's columns, and (for a query only) the
-// one extra field `show` surfaces that its descriptor does not already carry.
+//
+// Replaces grepping a source tree, which is what an agent does when the framework has no answer to
+// "what actions/queries/entities exist". One table, one generic command body: the three commands
+// differ only in which registry they read, a row's columns, and (for a query only) the one extra
+// field `show` surfaces that its descriptor does not already carry.
 
 import type { ActionDescriptor, AnyAction } from '@ultimat3/action';
 import { describeActions, getAction, jsonSchemaOf } from '@ultimat3/action';

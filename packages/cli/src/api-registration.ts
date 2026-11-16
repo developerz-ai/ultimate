@@ -1,8 +1,10 @@
-// Every generator hands the primitives it wrote to `apps/web/api/index.ts`. The scan registers
-// actions and queries by export name on its own and registers NO job: a job module nothing lists
-// keeps the positional `anonymous-job-2` that `job()` minted, on the queue row, in
-// `x.manifest.json` and in every dead-letter trace — under a green gate (plan 101 slice 11 b).
-// Actions and queries are listed for the TYPE: `Api` is what the browser's client is shaped from.
+// Every generator hands the primitives it wrote to `apps/web/api/index.ts`.
+//
+// The scan registers actions and queries by export name on its own and registers NO job: a job
+// module nothing lists keeps the positional `anonymous-job-2` that `job()` minted, on the queue
+// row, in `x.manifest.json` and in every dead-letter trace — under a green gate (plan 101 slice 11
+// b). Actions and queries are listed for the TYPE: `Api` is what the browser's client is shaped
+// from.
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { API_INDEX } from './app-root';

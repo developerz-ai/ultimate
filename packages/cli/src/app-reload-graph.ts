@@ -1,10 +1,12 @@
-// Which modules a rescan must evaluate again, and making Bun do it. `import()` caches by path for
-// the life of the process, so a re-import sees the edited file only once that path has left Bun's
-// module registry (`delete require.cache[path]`, which Bun 1.4 honours for ES modules too). Until
-// 2026-09-27 `x dev` re-imported only the edited ROUTE module, under `?x-reload=<hash>`, and every
-// module that route imports resolved to the instance already cached: a save to a component, its
-// `.module.scss` or a helper logged "reloaded" and rendered the old code until a restart
-// (one adopter: the panel's balance card and the home page, observed twice on one day).
+// Which modules a rescan must evaluate again, and making Bun do it.
+//
+// `import()` caches by path for the life of the process, so a re-import sees the edited file only
+// once that path has left Bun's module registry (`delete require.cache[path]`, which Bun 1.4
+// honours for ES modules too). Until 2026-09-27 `x dev` re-imported only the edited ROUTE module,
+// under `?x-reload=<hash>`, and every module that route imports resolved to the instance already
+// cached: a save to a component, its `.module.scss` or a helper logged "reloaded" and rendered the
+// old code until a restart (one adopter: the panel's balance card and the home page, observed twice
+// on one day).
 //
 // The rule is a reverse-dependency closure. A rescan hashes every file this graph knows; each
 // changed file, and every module that imports it transitively, leaves the registry, and the scan's

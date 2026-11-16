@@ -1,8 +1,10 @@
-// The two entry files a deploy needs — `apps/web/server.ts` and `apps/web/prerender.ts`. Split out
-// of `scaffold-app.ts` because that file is the three SURFACES and these are neither: they are what
-// a container starts and what a CDN is handed. Both are deliberately thin — which role a container
-// is, which port it binds, how it drains and what a static build enumerates are the framework's
-// answers, so an upgrade moves them without a codemod in every app that ever shipped.
+// The two entry files a deploy needs — `apps/web/server.ts` and `apps/web/prerender.ts`.
+//
+// Split out of `scaffold-app.ts` because that file is the three SURFACES and these are neither:
+// they are what a container starts and what a CDN is handed. Both are deliberately thin — which
+// role a container is, which port it binds, how it drains and what a static build enumerates are
+// the framework's answers, so an upgrade moves them without a codemod in every app that ever
+// shipped.
 
 import type { GeneratedFile } from './naming';
 import { baseRuntimeFiles } from './scaffold-runtime-ports';

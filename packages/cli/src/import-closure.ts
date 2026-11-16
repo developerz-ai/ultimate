@@ -1,9 +1,10 @@
-// The modules a set of entry files can EXECUTE, followed name by name through barrels. A package
-// barrel re-exports its whole surface by name (the house forbids `export *`), so a closure taken
-// module by module reaches every server file of every package an island touches — `@ultimat3/action`'s
-// barrel reaches `http.ts` — while a bundler with honest `sideEffects` keeps only the modules the
-// imported NAMES live in. This follows the names, which is what makes "browser-reachable" a
-// question with a useful answer instead of "everything".
+// The modules a set of entry files can EXECUTE, followed name by name through barrels.
+//
+// A package barrel re-exports its whole surface by name (the house forbids `export *`), so a
+// closure taken module by module reaches every server file of every package an island touches —
+// `@ultimat3/action`'s barrel reaches `http.ts` — while a bundler with honest `sideEffects` keeps
+// only the modules the imported NAMES live in. This follows the names, which is what makes
+// "browser-reachable" a question with a useful answer instead of "everything".
 //
 // Pure over an injected reader, so a test's fixture tree is a Map rather than files on disk.
 

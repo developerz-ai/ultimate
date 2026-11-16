@@ -1,6 +1,7 @@
 // Single responsibility: the production disk over Bun's native S3 client. One driver covers AWS,
 // Cloudflare R2 and any S3-compatible gateway — the difference is `endpoint`, `region` and
 // `forcePathStyle`, nothing else.
+//
 // The client is built lazily on first use so importing this module never opens a socket, and
 // credentials arrive as env var NAMES: a literal key in app.config.ts is a key in git.
 

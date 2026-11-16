@@ -1,9 +1,12 @@
-// The app's `RuntimeOverrides`, found rather than handed over. `runRole({ runtime })` has taken
-// them since the seam existed, and the scaffolded `apps/web/server.ts` passes none — so an app's
-// own middleware reached no process the framework boots, and `x dev` had no parameter to reach at
-// all (measured 2026-09-05: `x dev` passed only the read-replica override). The contract is one
-// file: `apps/<app>/runtime.ts` exports `runtime`, a `RuntimeOverrides`; `x dev` reads it, and
-// `runRole` reads it when its caller passed nothing, so the two boots compose the same chain.
+// The app's `RuntimeOverrides`, found rather than handed over: `apps/<app>/runtime.ts` exports
+// `runtime`, read by `x dev` and by `runRole` when its caller passed nothing.
+//
+// `runRole({ runtime })` has taken them since the seam existed, and the scaffolded
+// `apps/web/server.ts` passes none — so an app's own middleware reached no process the framework
+// boots, and `x dev` had no parameter to reach at all (measured 2026-09-05: `x dev` passed only the
+// read-replica override). The contract is one file: `apps/<app>/runtime.ts` exports `runtime`, a
+// `RuntimeOverrides`; `x dev` reads it, and `runRole` reads it when its caller passed nothing, so
+// the two boots compose the same chain.
 
 // why: a directory's existence — `Bun.file().exists()` answers for files, and `apps/` is a directory.
 import { existsSync } from 'node:fs';

@@ -1,9 +1,11 @@
-// The two error pages `x new` writes — `apps/web/site/errors/404.html` and `500.html`, the files
-// `packages/cli/src/error-pages.ts` serves verbatim for those statuses and the static export
-// carries as `404.html`. Self-contained documents by construction: a 500 is answered when the app's
-// own stylesheet may be the thing that failed, so nothing here links a bundle, loads a font or runs
-// a script. The `<style>` body is hashed into `style-src` at boot (`error-page-csp.ts`), which is
-// what lets the enforced policy a container sends admit it.
+// The two error pages `x new` writes — `apps/web/site/errors/404.html` and `500.html` —
+// self-contained documents by construction.
+//
+// `packages/cli/src/error-pages.ts` serves them verbatim for those statuses, and the static export
+// carries `404.html`. A 500 is answered when the app's own stylesheet may be the thing that failed,
+// so nothing here links a bundle, loads a font or runs a script. The `<style>` body is hashed into
+// `style-src` at boot (`error-page-csp.ts`), which is what lets the enforced policy a container
+// sends admit it.
 
 import type { GeneratedFile, NameSet } from './naming';
 import { titleCase } from './naming';

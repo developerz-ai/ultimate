@@ -1,8 +1,9 @@
 // One admin, as plain data: its resources with the filters, sorts and scopes each list answers,
 // whether a row scope narrows it, how its detail and form are arranged, the related lists and the
 // actions it offers — and its routes with the permissions that gate them.
-// JSON-safe and deterministic — what `x manifest` records, read off `AdminApp.describe()` by a
-// tier that may not import this package.
+//
+// JSON-safe and deterministic — what `x manifest` records, read off `AdminApp.describe()` by a tier
+// that may not import this package.
 
 import type { AdminRoute } from './admin';
 import { batchPlan } from './batch';

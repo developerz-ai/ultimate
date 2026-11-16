@@ -1,10 +1,12 @@
-// The client router a document may carry, composed ONCE for `x dev`, the container and the static
-// export: which surfaces opted in (`navigation: { client: [...] }` in `app.config.ts`), the router
-// script built from the app's own `@ultimat3/render`, its route, the head a document of an opted-in
-// surface carries, and the SERVER's half per page — which router may swap it in, whether it may be
-// prefetched (`@ultimat3/http`'s navigation gate reads that off the route meta), and the principal
-// check a soft visit gets before `load`. No surface opted in: nothing is built, served or named — a
-// `site/` page that did not ask stays 0kb (axiom 6).
+// The client router a document may carry, composed ONCE for `x dev`, the container and the
+// static export. No surface opted in: nothing is built, served or named (axiom 6).
+//
+// It composes which surfaces opted in (`navigation: { client: [...] }` in `app.config.ts`), the
+// router script built from the app's own `@ultimat3/render`, its route, the head a document of an
+// opted-in surface carries, and the SERVER's half per page — which router may swap it in, whether
+// it may be prefetched (`@ultimat3/http`'s navigation gate reads that off the route meta), and the
+// principal check a soft visit gets before `load`. No surface opted in: nothing is built, served or
+// named — a `site/` page that did not ask stays 0kb (axiom 6).
 
 import { clientScopeOf } from '@ultimat3/auth';
 import type { Ctx, NavigationSurface } from '@ultimat3/core';

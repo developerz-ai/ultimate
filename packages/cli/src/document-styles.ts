@@ -1,8 +1,10 @@
-// One question the gate asks of what a render actually emits: does the document carry its global
-// style layer? Every rule `@ultimat3/ui` emits reads a custom property — `background:rgb(var(
-// --color-bg)/1)`, `padding:var(--space-8)` — so CSS with no `:root` definitions is a document the
-// browser drops every one of those declarations from, byte-for-byte identical to a working page
-// apart from the styling nobody sees missing. A silent failure is exactly what axiom 3 exists for.
+// One question the gate asks of what a render actually emits: does the document carry its
+// global style layer?
+//
+// Every rule `@ultimat3/ui` emits reads a custom property — `background:rgb(var( --color-bg)/1)`,
+// `padding:var(--space-8)` — so CSS with no `:root` definitions is a document the browser drops
+// every one of those declarations from, byte-for-byte identical to a working page apart from the
+// styling nobody sees missing. A silent failure is exactly what axiom 3 exists for.
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Surface } from '@ultimat3/render';

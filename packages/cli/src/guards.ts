@@ -3,8 +3,8 @@
 // every guard the framework ships (`guards-built-in.ts`). The framework decides what a guard IS —
 // a function returning findings, held to the error contract — and nothing about what it checks.
 
-// Bun ships no equivalent for either: `join` builds the host-separator path, and `pathToFileURL` is
-// the only spelling of an absolute path `import()` accepts on every host.
+// why: Bun ships no equivalent for either: `join` builds the host-separator path, and
+// `pathToFileURL` is the only spelling of an absolute path `import()` accepts on every host.
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ERROR_DOCS_URL, renderCauseValue, renderThrowable } from '@ultimat3/core';

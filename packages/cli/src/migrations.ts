@@ -2,6 +2,8 @@
 // because the release phase and the developer must apply the identical list through the identical
 // ledger — a deploy that migrated by some other route is a schema nobody can reconstruct.
 
+// why: the migrations folder is a DIRECTORY, which `Bun.file().exists()` answers false for; Bun
+// ships no path API, and `join` builds the paths under it.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Migration, SchemaDescription } from '@ultimat3/db';

@@ -1,8 +1,11 @@
-// One cause, one finding. A module that will not import leaves every registry half-filled, and each
-// step that loaded the app reported what half a registry looks like — a permission typo read as 9
-// findings across 7 steps (plan 101 19a FX8). The `manifest` step owns the load's findings: it runs
-// in every repo, and "does the projection describe the code?" is the question a broken module
-// answers first. Every other step that loads the app stands down while the load is red.
+// One cause, one finding: the `manifest` step owns an app load's findings, and every other step
+// that loads the app stands down while the load is red.
+//
+// A module that will not import leaves every registry half-filled, and each step that loaded the
+// app reported what half a registry looks like — a permission typo read as 9 findings across 7
+// steps (plan 101 19a FX8). The `manifest` step owns the load's findings: it runs in every repo,
+// and "does the projection describe the code?" is the question a broken module answers first. Every
+// other step that loads the app stands down while the load is red.
 
 import { loadApp } from './app-load';
 import { msg } from './messages';

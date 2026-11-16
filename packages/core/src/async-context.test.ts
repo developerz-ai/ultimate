@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+// why: mkdtemp/tmpdir/rm — Bun has no temp-directory or recursive-remove API, nor a path join.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

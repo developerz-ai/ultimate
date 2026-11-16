@@ -2,8 +2,10 @@
  * The ONE URL rule for the two HTTP primitives: an action's export name derives `POST
  * /api/<resource>/<verb>`, a query's derives `GET /_x/query/<kebab>`. Tier 0 and string math, so
  * `action`, `query` and `realtime` (all tier 3) derive the same URL with no sideways import and a
- * browser bundle pays a few hundred bytes for it. The one thing read rather than computed is the
- * style a caller did not name: `actionPath` takes it from the document the server rendered.
+ * browser bundle pays a few hundred bytes for it.
+ *
+ * The one thing read rather than computed is the style a caller did not name: `actionPath` takes it
+ * from the document the server rendered.
  */
 
 import { CLIENT_PATH_STYLE_META } from './page-meta';

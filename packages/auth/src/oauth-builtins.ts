@@ -1,8 +1,9 @@
 // Single responsibility: the two consumer IdPs Ultimate ships with, as plain data. Apple left in
-// 26.0.0: it POSTs its callback and both callback routes are GET, so it could never complete. They live
-// apart from `oauth-registry.ts` so the registry can be seeded from them while `oauth.ts` reads
-// the registry — the only edge back to `oauth.ts` is the type, and a type is erased, so there is
-// no runtime cycle between the three files.
+// 26.0.0: it POSTs its callback and both callback routes are GET, so it could never complete.
+//
+// They live apart from `oauth-registry.ts` so the registry can be seeded from them while `oauth.ts`
+// reads the registry — the only edge back to `oauth.ts` is the type, and a type is erased, so there
+// is no runtime cycle between the three files.
 
 import type { OAuthProvider } from './oauth';
 

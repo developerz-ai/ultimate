@@ -1,11 +1,13 @@
 /**
  * The route-presented modal: ONE native `<dialog>` over the page on screen, holding the `<main>` of
- * a page whose route declared `navigation: 'modal'`. The page beneath is never touched — its
- * islands, socket and state stay live, out of reach behind the top layer — and the modal is
- * addressed by the URL's hash (`/runs#/runs/new`), so a reload, Back/Forward and a pasted link
- * reopen it. A route the document names a modal (`NAVIGATION_MODALS_META`) opens on the click, as a
- * busy frame the answer fills. `navigation.ts` decides WHEN (`navigation-modal-rules.ts`); this
- * file only shows and hides, and `navigation-modal-frame.ts` is the dialog's DOM.
+ * a page whose route declared `navigation: 'modal'`.
+ *
+ * The page beneath is never touched — its islands, socket and state stay live, out of reach behind
+ * the top layer — and the modal is addressed by the URL's hash (`/runs#/runs/new`), so a reload,
+ * Back/Forward and a pasted link reopen it. A route the document names a modal
+ * (`NAVIGATION_MODALS_META`) opens on the click, as a busy frame the answer fills. `navigation.ts`
+ * decides WHEN (`navigation-modal-rules.ts`); this file only shows and hides, and
+ * `navigation-modal-frame.ts` is the dialog's DOM.
  */
 
 import { disposeIslands } from './island-dispose';

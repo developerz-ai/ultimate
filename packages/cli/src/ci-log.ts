@@ -1,8 +1,9 @@
-// A GitHub Actions log, read back into the findings that produced it. `gh run view --log-failed`
-// prints `<job>\t<step>\t<timestamp> <text>` with a BOM, ANSI colour and `##[group]` markers in
-// it — and underneath all of that, for a `verify` job, is `renderFinding`'s own three lines. So
-// this file undoes the transport and reconstructs the `Finding`, rather than printing a wall of
-// text and asking the reader to spot the code in it.
+// A GitHub Actions log, read back into the findings that produced it.
+//
+// `gh run view --log-failed` prints `<job>\t<step>\t<timestamp> <text>` with a BOM, ANSI colour and
+// `##[group]` markers in it — and underneath all of that, for a `verify` job, is `renderFinding`'s
+// own three lines. So this file undoes the transport and reconstructs the `Finding`, rather than
+// printing a wall of text and asking the reader to spot the code in it.
 
 import type { Finding, JsonValue } from './output';
 

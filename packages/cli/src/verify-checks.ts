@@ -2,7 +2,7 @@
 // now the `x verify` command surface alone: the list is the definition of shippable and grows with
 // the framework, while the command that runs it does not.
 
-import { existsSync } from 'node:fs';
+// why: Bun ships no path API; `join` builds the host-separator path each step's `applies` probes.
 import { join } from 'node:path';
 import { APP_CONFIG_FILE, ERROR_DOCS_URL } from '@ultimat3/core';
 import { AGENTS_MD_FILENAME } from '@ultimat3/manifest';
@@ -222,7 +222,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // The destructive rail rides here rather than becoming a step of its own because it asks this
     // step's own question — do the committed migrations still describe what the app is doing to its
     // schema? — off the same directory, in the same pass, with no database either.
-    applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
+    applies: async (ctx) => Bun.file(join(ctx.root, APP_CONFIG_FILE)).exists(),
     run: async (ctx) => {
       // Loaded first: the drivers the app's modules construct are what decide (`drift-store.ts`).
       await loadApp(ctx.root);
@@ -275,7 +275,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     //
     // A repo with no `app.config.ts` is the framework monorepo, which renders no documents and has
     // no stylesheet registry to read; there is nothing for either half to weigh.
-    applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
+    applies: async (ctx) => Bun.file(join(ctx.root, APP_CONFIG_FILE)).exists(),
     async run(ctx) {
       // No stats file is NOT "nothing to weigh" — it is every declared budget unmeasured. So the
       // step MEASURES first, whenever the stats are missing, of an earlier rule, or older than the
@@ -334,7 +334,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // this one asks what it SAYS, and a missing `<title>` reported under `budgets` would hand the
     // reader a fix for the wrong question (axiom 4). It costs no second app load — `loadApp`
     // imports each module once per process, so this runs on the registries `budgets` just filled.
-    applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
+    applies: async (ctx) => Bun.file(join(ctx.root, APP_CONFIG_FILE)).exists(),
     async run(ctx) {
       const scan = await scanSiteMeta(ctx.root);
       // No `baseUrl`: an app declares no base URL anywhere (`packages/core/src/config.ts` has no
@@ -376,7 +376,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // second load. A repo with no `app.config.ts` is the framework monorepo, which registers no
     // app catalogs — SKIPPED there, never passed, because a step that answers `ok` about nothing
     // is the vacuous green this check exists to refuse.
-    applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
+    applies: async (ctx) => Bun.file(join(ctx.root, APP_CONFIG_FILE)).exists(),
     run: async (ctx) => fromFindings(await catalogFindings(ctx.root)),
   }),
   blockedByLoad({
@@ -385,7 +385,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // A repo with no `app.config.ts` is the framework monorepo, which declares no roles and
     // registers no routes — SKIPPED there, never passed, for the reason `i18n` gives: a step that
     // answers `ok` about nothing is the vacuous green these checks exist to refuse.
-    applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
+    applies: async (ctx) => Bun.file(join(ctx.root, APP_CONFIG_FILE)).exists(),
     run: async (ctx) => fromFindings(await policyFindings(ctx.root)),
   }),
   {
@@ -409,7 +409,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       const floor = await readVerifyFloor(ctx.root);
       const agents = await checkAgentsMd(ctx.root, floor?.agentsMdMaxBytes);
       // The app's load failures, once, here — every other step that loaded it points at this one.
-      const app = existsSync(join(ctx.root, APP_CONFIG_FILE));
+      const app = await Bun.file(join(ctx.root, APP_CONFIG_FILE)).exists();
       // Started first and awaited last: it is a child process, and it runs beside the rest.
       const roleLoad = app ? roleLoadFindings(ctx.root, ctx.runner) : Promise.resolve([]);
       const drift = await driftFindings(ctx.root);
@@ -418,7 +418,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       const findings = [
         ...(app ? await withLoadFindings(ctx.root, drift) : drift),
         // An app only: the framework monorepo declares no `defineApi`, so it has no list to be in.
-        ...(existsSync(join(ctx.root, APP_CONFIG_FILE))
+        ...(app
           ? [
               ...(await unregisteredJobFindings(ctx.root)),
               ...(await retainUnsweptFindings(ctx.root)),
@@ -462,7 +462,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // is a fact about the CALL: a caller of the exported `runVerify(VERIFY_STEPS, ctx)` passing no
     // `hostChecks`, in a repo whose committed `x.verify.json` names `roadmap`, got
     // `X_VERIFY_SUITE_VANISHED` — whose `fix:` is the command that had just failed.
-    applies: async (ctx) => existsSync(join(ctx.root, ROADMAP_FILE)),
+    applies: async (ctx) => Bun.file(join(ctx.root, ROADMAP_FILE)).exists(),
     run: async (ctx) => fromFindings(await hostFindings(ctx, 'roadmap')),
   },
 ];

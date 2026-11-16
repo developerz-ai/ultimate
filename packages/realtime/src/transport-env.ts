@@ -1,8 +1,10 @@
-// Single responsibility: environment → fanout transport. The one place a boot
-// decides whether this process fans changes out inside its own heap or over NATS, so `x dev`, a
-// `sync` container and any custom host resolve it identically. The KV bucket and the presence TTL are decided here too:
-// the bucket's whole-stream age limit and `PresenceRegistry`'s TTL are the same number seen from
-// two sides, and a caller that had to pass each one separately could quietly set them apart.
+// Single responsibility: environment → fanout transport. The one place a boot decides whether this
+// process fans changes out inside its own heap or over NATS, so `x dev`, a `sync` container and any
+// custom host resolve it identically.
+//
+// The KV bucket and the presence TTL are decided here too: the bucket's whole-stream age limit and
+// `PresenceRegistry`'s TTL are the same number seen from two sides, and a caller that had to pass
+// each one separately could quietly set them apart.
 
 import type { Clock } from '@ultimat3/core';
 import { finiteOption } from '@ultimat3/core';

@@ -1,8 +1,10 @@
 // Single responsibility: session lifetime and the cookie that carries it. Two expiries are
 // evaluated independently — `absoluteExpiresAt` is a ceiling activity can never push out, and
-// `idleTtlMs` measures from `lastSeenAt` — because sliding-only expiry means a stolen session
-// lives forever. `RequestLike`/`CookieJar` are structural on purpose: `@ultimat3/http` binds
-// to them without this package importing it (same-tier packages must not depend on each other).
+// `idleTtlMs` measures from `lastSeenAt` — because sliding-only expiry means a stolen session lives
+// forever.
+//
+// `RequestLike`/`CookieJar` are structural on purpose: `@ultimat3/http` binds to them without this
+// package importing it (same-tier packages must not depend on each other).
 
 import type { Clock } from '@ultimat3/core';
 import { readCookie, serializeSetCookie, timingSafeEqual } from '@ultimat3/core';

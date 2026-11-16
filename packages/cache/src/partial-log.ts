@@ -1,8 +1,10 @@
-// Single responsibility: how often `cache.invalidate.partial` is said. A tier that keeps refusing
-// — the broadcast, while the bus is away — is ONE condition on a process that is still serving:
-// a warning on its 1st, 2nd, 4th, 8th, … refusal and one line when it clears again, never one
-// line per bust per publisher for as long as an outage lasts. The report itself is unchanged:
-// every caller still gets every error, and the `/_x` panel still records every bust.
+// Single responsibility: how often `cache.invalidate.partial` is said. A tier that keeps refusing —
+// the broadcast, while the bus is away — is ONE condition on a process that is still serving: a
+// warning on its 1st, 2nd, 4th, 8th, … refusal and one line when it clears again, never one line
+// per bust per publisher for as long as an outage lasts.
+//
+// The report itself is unchanged: every caller still gets every error, and the `/_x` panel still
+// records every bust.
 
 import { isOutageMilestone, logger } from '@ultimat3/core';
 

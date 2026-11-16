@@ -1,8 +1,10 @@
 // Single responsibility: where a webhook delivery is allowed to connect, decided BEFORE the first
-// byte leaves. A tenant-supplied URL was opened as-is: loopback, RFC 1918, link-local — the cloud
-// metadata service at 169.254.169.254 — so anyone who could register an endpoint could make the
-// worker POST into the cluster. The screen is core's `screenDial` — resolve, classify every address,
-// pin — and this file keeps only what is a webhook's: the `http:` rule and its own refusal code.
+// byte leaves.
+//
+// A tenant-supplied URL was opened as-is: loopback, RFC 1918, link-local — the cloud metadata
+// service at 169.254.169.254 — so anyone who could register an endpoint could make the worker POST
+// into the cluster. The screen is core's `screenDial` — resolve, classify every address, pin — and
+// this file keeps only what is a webhook's: the `http:` rule and its own refusal code.
 
 import { isLocal } from '@ultimat3/core';
 import type { DialResolve } from '@ultimat3/core/outbound';

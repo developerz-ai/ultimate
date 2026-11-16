@@ -1,8 +1,10 @@
 // `x g admin:page <name>` — a screen the admin derives from nothing: a reconciliation fixer, a
-// proxy health board, a deploy button. What the template has to get right is what it does NOT
-// emit: no `defineRoute`, because `pages:` is the one thing that puts a page in the admin's route
-// table and `guardedPage()` is the one thing that decides it. A scaffold that wrote a route
-// declaration here would hand back the unguarded second way in that seam exists to close.
+// proxy health board, a deploy button.
+//
+// What the template has to get right is what it does NOT emit: no `defineRoute`, because `pages:`
+// is the one thing that puts a page in the admin's route table and `guardedPage()` is the one thing
+// that decides it. A scaffold that wrote a route declaration here would hand back the unguarded
+// second way in that seam exists to close.
 
 import { ADMIN_FILE } from '../admin-registration';
 import { catalogJson } from './catalog-json';

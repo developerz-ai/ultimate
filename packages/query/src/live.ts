@@ -1,10 +1,10 @@
 /**
- * What `live: true` actually produces: the descriptor @ultimat3/realtime
- * subscribes to. It carries the SQL shape (for the matcher), the dependency set
- * (which entities/tags a change feed must touch to matter), the policy (re-run
- * per subscriber, never once for a channel) and a cursor for cheap reconnects —
- * and it runs that read (`execute`), so the shared window and the matcher over it
- * come from one build of one `(query, input)` rather than two that agree by luck.
+ * What `live: true` actually produces: the descriptor @ultimat3/realtime subscribes to.
+ *
+ * It carries the SQL shape (for the matcher), the dependency set (which entities/tags a change feed
+ * must touch to matter), the policy (re-run per subscriber, never once for a channel) and a cursor
+ * for cheap reconnects — and it runs that read (`execute`), so the shared window and the matcher
+ * over it come from one build of one `(query, input)` rather than two that agree by luck.
  */
 import { tagKeys } from '@ultimat3/cache';
 import type { Ctx } from '@ultimat3/core';

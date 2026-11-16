@@ -1,6 +1,8 @@
 // The one derived question a SURFACE asks of a policy tree: can an anonymous caller be allowed at
-// all. Apart from `policy.ts` so each file stays one responsibility — that one CONSTRUCTS trees,
-// this one projects a single boolean out of a built one — and in this package rather than in the
+// all.
+//
+// Apart from `policy.ts` so each file stays one responsibility — that one CONSTRUCTS trees, this
+// one projects a single boolean out of a built one — and in this package rather than in the
 // surfaces, because the answer is a property of the combinators and a copy per surface drifts from
 // them the first time one changes.
 import type { Policy, PolicyKind } from './policy';

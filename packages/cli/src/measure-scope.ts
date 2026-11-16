@@ -1,11 +1,13 @@
-// The request a measurement render runs inside. `x build` renders every app/ route it cannot
-// prerender only to WEIGH it, and that render reads its data the way a real one does: a `load`
-// calls the app's typed client, over `APP_URL`, as the request's own member. So it needs a request
-// context (`useRequestHeader('cookie')` throws X_NO_REQUEST outside one), an actor the app chose
-// (`defineMeasurementActor()` in `app.config.ts`, core's `measurementActor()` otherwise), and a
-// server to answer — the app's own API pipeline, dispatched IN PROCESS through core's
-// `withInProcessFetch`, because no server is listening during a build (plan 101 slice 11 m) — and
-// `runtime.ts`'s ports as `offline-ports.ts` decides them, for every render the build runs.
+// The request a measurement render runs inside.
+//
+// `x build` renders every app/ route it cannot prerender only to WEIGH it, and that render reads
+// its data the way a real one does: a `load` calls the app's typed client, over `APP_URL`, as the
+// request's own member. So it needs a request context (`useRequestHeader('cookie')` throws
+// X_NO_REQUEST outside one), an actor the app chose (`defineMeasurementActor()` in `app.config.ts`,
+// core's `measurementActor()` otherwise), and a server to answer — the app's own API pipeline,
+// dispatched IN PROCESS through core's `withInProcessFetch`, because no server is listening during
+// a build (plan 101 slice 11 m) — and `runtime.ts`'s ports as `offline-ports.ts` decides them, for
+// every render the build runs.
 
 import type { Actor, Ctx } from '@ultimat3/core';
 import { actorLabel, measurementActor, runWithContext, withInProcessFetch } from '@ultimat3/core';

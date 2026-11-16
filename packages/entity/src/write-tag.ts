@@ -1,9 +1,11 @@
-// A keyed write names itself in the write-ahead log. The Postgres driver opens the transaction a
-// keyed request's write lands in with `pg_logical_emit_message(true, WRITE_ORIGIN_WAL_PREFIX,
-// <digest>)`, and `@ultimat3/realtime`'s replication stream names every change after it with that
-// digest — which is how a `records` frame produced by the replicator, in another process, still
-// tells the page that wrote it that this is its own echo. The in-process row observer reads the
-// same fact off the request scope and needs none of this.
+// A keyed write names itself in the write-ahead log.
+//
+// The Postgres driver opens the transaction a keyed request's write lands in with
+// `pg_logical_emit_message(true, WRITE_ORIGIN_WAL_PREFIX, <digest>)`, and `@ultimat3/realtime`'s
+// replication stream names every change after it with that digest — which is how a `records` frame
+// produced by the replicator, in another process, still tells the page that wrote it that this is
+// its own echo. The in-process row observer reads the same fact off the request scope and needs
+// none of this.
 
 import { currentWriteOrigin, runToCompletion, WRITE_ORIGIN_WAL_PREFIX } from '@ultimat3/core';
 import { currentTx, type DbClient, type DbTx, db, sql, withTransaction } from '@ultimat3/db';

@@ -1,9 +1,10 @@
-// `RouteMeta.links`: the `<link>` tags a route adds to `<head>` beyond the two this package
-// already derives (canonical, hreflang). A font preload, a preconnect, a feed. Typed so a rel the
-// framework owns elsewhere — `canonical` (`meta.canonical`), `stylesheet` (the surface bundle) —
-// is not spellable here, and checked so an href is always a URL a browser fetches: the value lands
-// in an attribute of the document every visitor loads, and `javascript:` in a `<link href>` is
-// script the page never meant to carry.
+// `RouteMeta.links`: the `<link>` tags a route adds to `<head>` beyond the two this package already
+// derives (canonical, hreflang). A font preload, a preconnect, a feed.
+//
+// Typed so a rel the framework owns elsewhere — `canonical` (`meta.canonical`), `stylesheet` (the
+// surface bundle) — is not spellable here, and checked so an href is always a URL a browser
+// fetches: the value lands in an attribute of the document every visitor loads, and `javascript:`
+// in a `<link href>` is script the page never meant to carry.
 
 import { linkInvalid, type SeoError } from './errors';
 import type { HeadTag } from './meta';

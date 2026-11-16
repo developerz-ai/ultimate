@@ -55,18 +55,4 @@ export const NODE_PINS_FILE = 'scripts/lib/node-import-pins.ts';
  * justification, and `--unpin` matches the row whole.
  */
 export const NODE_IMPORT_PINS: Readonly<Record<string, number>> = {
-  admin: 1,
-  ai: 9,
-  cli: 76,
-  core: 14,
-  db: 8,
-  entity: 1,
-  i18n: 3,
-  jobs: 2,
-  manifest: 11,
-  render: 15,
-  scraping: 2,
-  scripts: 23,
-  testing: 6,
-  ui: 1,
 };

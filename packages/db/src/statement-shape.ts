@@ -2,6 +2,7 @@
 // writes, and the identity repeated statements are counted under. Two detectors above this package
 // group statements by that identity (`x dev`'s ledger, the `statements` test fixture) and a third
 // names spans from the same verb, so the rule lives once, next to the `DbStatementEvent` it reads.
+//
 // Nothing here counts anything: a threshold is a verdict's, and a verdict is `@ultimat3/entity`'s.
 
 import type { DbStatementEvent } from '@ultimat3/core';

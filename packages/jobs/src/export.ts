@@ -1,9 +1,11 @@
 // `exportRows()` — a paged read streamed to object storage with a resumable cursor, declared as a
-// `job` and NOT as a ninth primitive. An export is durable background work with an input schema, a
-// retry policy, an idempotency key and a queue, which is the definition of a `job` — so this file
-// is a FACTORY over `job()`, exactly as `backfill()`, `purge()` and `webhook()` are and as `llm()`
-// is over `action()`. That is what gives an export `.enqueue()`, the worker's cancellation, the
-// dead-letter path, `x jobs show` and a manifest row without a line here.
+// `job` and NOT as a ninth primitive.
+//
+// An export is durable background work with an input schema, a retry policy, an idempotency key and
+// a queue, which is the definition of a `job` — so this file is a FACTORY over `job()`, exactly as
+// `backfill()`, `purge()` and `webhook()` are and as `llm()` is over `action()`. That is what gives
+// an export `.enqueue()`, the worker's cancellation, the dead-letter path, `x jobs show` and a
+// manifest row without a line here.
 //
 // WHY IT IS THE FRAMEWORK'S: the memory bound. Accumulating a result set before writing it is the
 // failure this exists to prevent, and it is the failure every hand-rolled exporter starts with —

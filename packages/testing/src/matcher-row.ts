@@ -1,8 +1,10 @@
-// Single responsibility: equality over a repository ROW, own properties included. `@ultimat3/entity`
-// answers a `.sealed()` column as a server-only property — own, readable by name, not enumerable —
-// and `toEqual` walks enumerable properties only: `expect(row).toEqual({ …, password })` fails with
-// an EMPTY diff (both sides print alike), and `toEqual(otherRow)` cannot see a wrong secret at all.
-// `toEqualRow` compares what the row HOLDS, and names what differs without printing a secret.
+// Single responsibility: equality over a repository ROW, own properties included.
+//
+// `@ultimat3/entity` answers a `.sealed()` column as a server-only property — own, readable by
+// name, not enumerable — and `toEqual` walks enumerable properties only:
+// `expect(row).toEqual({ …, password })` fails with an EMPTY diff (both sides print alike), and
+// `toEqual(otherRow)` cannot see a wrong secret at all. `toEqualRow` compares what the row HOLDS, and names what differs
+// without printing a secret.
 
 import { describeValue, renderCauseValue } from '@ultimat3/core';
 import type { MatcherResult } from './matcher-result';

@@ -16,6 +16,8 @@
 // (`UNIT_SECONDS`), so shard 1/2 is the same units on every runner. The lcov reader is the CLI's (`coverage-lcov.ts`),
 // the one an app's `x verify` reads its own floor through.
 
+// why: rmSync — Bun has no recursive directory removal; readFileSync — the unimported-source scan
+// is synchronous (`Bun.file().text()` is async only); `join` — Bun ships no path joiner.
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { finiteOption, renderFixShellArg } from '@ultimat3/core';

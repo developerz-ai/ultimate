@@ -32,7 +32,6 @@
 // (restart-bench-seq.ts): every client counts holes in the probe sequence it received on each
 // connection, and `seq.missing` is what a lost channel frame looks like.
 
-import { cpus } from 'node:os';
 import { ScriptError } from '../lib/script-error';
 import type { ClientStats } from './restart-bench-client';
 import { type BenchReport, type PhaseSummary, summarizeDurations } from './restart-bench-report';
@@ -51,7 +50,7 @@ interface Args {
 }
 
 function defaultWorkers(): number {
-  return Math.max(2, cpus().length - 2);
+  return Math.max(2, navigator.hardwareConcurrency - 2);
 }
 
 function parseArgs(argv: readonly string[]): Args {

@@ -1,8 +1,10 @@
-// `x g island <name>` — the one file on a route that ships JavaScript. Not a ninth primitive and
-// not a component generator: an island is a client ENTRY POINT, so what the scaffold has to get
-// right is the filename (the bundler discovers by it), the `mount` export (the hydration runtime
-// calls it by name) and what `mount` DOES — Solid's `render`, the one client shape the island build
-// compiles. All three are pinned by the emitted test, which builds the chunk and mounts it.
+// `x g island <name>` — the one file on a route that ships JavaScript.
+//
+// Not a ninth primitive and not a component generator: an island is a client ENTRY POINT, so what
+// the scaffold has to get right is the filename (the bundler discovers by it), the `mount` export
+// (the hydration runtime calls it by name) and what `mount` DOES — Solid's `render`, the one client
+// shape the island build compiles. All three are pinned by the emitted test, which builds the chunk
+// and mounts it.
 
 import type { GeneratedFile } from './naming';
 import { camel, kebab, pascal } from './naming';

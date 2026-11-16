@@ -1,9 +1,11 @@
-// Projecting the framework's one image pipeline onto the routes `x dev` serves. Three packages
-// declare what an image is — `@ultimat3/seo` a variant URL, `@ultimat3/storage` a variant key,
-// `@ultimat3/pwa` the icons a web manifest promises — and `@ultimat3/core`'s pipeline owns every
-// pixel, so this file picks the two base paths they hang off and decides nothing else. The one
-// thing it does NOT decide is who may read a stored object: `/media` borrows that whole answer
-// from `runtime-storage.ts`, because the same bytes are reachable through both.
+// Projecting the framework's one image pipeline onto the routes `x dev` serves: the two base
+// paths variant URLs, variant keys and manifest icons hang off, and nothing else.
+//
+// Three packages declare what an image is — `@ultimat3/seo` a variant URL, `@ultimat3/storage` a
+// variant key, `@ultimat3/pwa` the icons a web manifest promises — and `@ultimat3/core`'s pipeline
+// owns every pixel, so this file picks the two base paths they hang off and decides nothing else.
+// The one thing it does NOT decide is who may read a stored object: `/media` borrows that whole
+// answer from `runtime-storage.ts`, because the same bytes are reachable through both.
 
 import { probeImage } from '@ultimat3/core';
 import type { ObjectSource, RequestContext, Route, UltimateRequest } from '@ultimat3/http';

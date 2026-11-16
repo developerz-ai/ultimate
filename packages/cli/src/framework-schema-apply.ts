@@ -1,8 +1,10 @@
-// The three ways a boot meets the framework schema (plan 101, s1-con #5): `applyLockedSchema` runs
-// the DDL in ONE transaction behind the migration advisory lock with a bounded `lock_timeout`, then
-// stamps the build; `verifySchema` (`framework-schema-verify.ts`) runs none; `ensureSchema` reads
-// the stamp and applies only when this build is absent from it. Which boot takes which is
-// `runtime-queue.ts`'s `SchemaMode`.
+// The three ways a boot meets the framework schema (plan 101, s1-con #5): locked apply, verify
+// only, or ensure — apply only when this build is absent from the stamp.
+//
+// `applyLockedSchema` runs the DDL in ONE transaction behind the migration advisory lock with a
+// bounded `lock_timeout`, then stamps the build; `verifySchema` (`framework-schema-verify.ts`) runs
+// none; `ensureSchema` reads the stamp and applies only when this build is absent from it. Which
+// boot takes which is `runtime-queue.ts`'s `SchemaMode`.
 
 import { frameworkVersion, logger } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';

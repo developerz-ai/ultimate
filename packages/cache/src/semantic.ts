@@ -1,8 +1,9 @@
-// The semantic cache for LLM calls: a near-duplicate prompt should not pay for a second
-// completion. Keyed by embedding, matched by cosine similarity above a threshold — exact
-// string keys miss on "list my orders" vs "show me my orders", which is most of the traffic.
-// The in-memory default is correct but O(n); pgvector is the production backing (an ivfflat
-// index over `x_semantic_cache.embedding`), which is why the interface is a driver.
+// The semantic cache for LLM calls: a near-duplicate prompt should not pay for a second completion.
+// Keyed by embedding, matched by cosine similarity above a threshold — exact string keys miss on
+// "list my orders" vs "show me my orders", which is most of the traffic.
+//
+// The in-memory default is correct but O(n); pgvector is the production backing (an ivfflat index
+// over `x_semantic_cache.embedding`), which is why the interface is a driver.
 
 import type { Clock } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core';

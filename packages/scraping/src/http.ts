@@ -1,8 +1,10 @@
-// The second transport, and the one that makes a scraper fast: drive the BROWSER through login,
-// 2FA and navigation, then reverse-engineer the site's own JSON endpoints and pull the bulk over
-// plain HTTP. Two hundred paginated pages clicked through is minutes and a hundred chances to
-// break; the same data off the endpoint behind them is seconds, and a JSON endpoint changes far
-// less often than a DOM.
+// The second transport, and the one that makes a scraper fast: drive the BROWSER through login, 2FA
+// and navigation, then reverse-engineer the site's own JSON endpoints and pull the bulk over plain
+// HTTP.
+//
+// Two hundred paginated pages clicked through is minutes and a hundred chances to break; the same
+// data off the endpoint behind them is seconds, and a JSON endpoint changes far less often than a
+// DOM.
 //
 // It is SESSION-BOUND, never a bare `fetch`. The browser's cookies, the browser's headers, the
 // browser's proxy, the same `allowHosts`, the same robots gate, the same rate limit, the same

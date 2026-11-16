@@ -78,12 +78,9 @@ const defaultConnect = async (url: string): Promise<ProbeServer> => {
 async function strayStateDirs(root: string): Promise<readonly string[]> {
   const found: string[] = [];
   const walk = async (dir: string, top: boolean): Promise<void> => {
-    let entries: import('node:fs').Dirent[];
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
+    // A directory that cannot be listed holds nothing this sweep may touch: skipped, not fatal.
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => undefined);
+    if (entries === undefined) return;
     if (!top && entries.some((entry) => entry.isFile() && entry.name === APP_CONFIG_FILE)) return;
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;

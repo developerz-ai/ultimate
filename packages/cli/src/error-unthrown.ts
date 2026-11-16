@@ -1,9 +1,11 @@
-// A registered code nothing constructs. The registry and the reference keep a shipped code alive
-// forever — which is right — and that is exactly why a code can outlive its last thrower with no
-// gate noticing: `X_RPC_FAILED` sat registered and documented as live after the transport change
-// took its only throw site away. It has to be LISTED as unthrown (`UNTHROWN_CODES`), or this
-// reports it.
+// A registered code nothing constructs, reported unless listed in `UNTHROWN_CODES`.
+//
+// The registry and the reference keep a shipped code alive forever — which is right — and that is
+// exactly why a code can outlive its last thrower with no gate noticing: `X_RPC_FAILED` sat
+// registered and documented as live after the transport change took its only throw site away. It
+// has to be LISTED as unthrown (`UNTHROWN_CODES`), or this reports it.
 
+// why: Bun ships no path API; `join` builds the absolute path of each scanned file.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, maskLiterals, stripComments } from '@ultimat3/core';
 import { RESERVED_HEADING } from './error-contract';

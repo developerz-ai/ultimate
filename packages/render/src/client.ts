@@ -1,8 +1,10 @@
 // `@ultimat3/render/client` — THE browser entry of this package: what an island or a page script
-// may call, and nothing that drags the rest along. The `.` barrel bare-retains `errors.ts` (render's
-// whole code table, registered at import, plus core's titles tables); this entry's graph is
-// `navigation-api.ts`, `navigation-errors.ts`, `island-dispose.ts`, `island-mount.ts`,
-// `refresh-idle.ts`, the pure rules and `@ultimat3/core/page`, held by `client-bundle.test.ts`.
+// may call, and nothing that drags the rest along.
+//
+// The `.` barrel bare-retains `errors.ts` (render's whole code table, registered at import, plus
+// core's titles tables); this entry's graph is `navigation-api.ts`, `navigation-errors.ts`,
+// `island-dispose.ts`, `island-mount.ts`, `refresh-idle.ts`, the pure rules and
+// `@ultimat3/core/page`, held by `client-bundle.test.ts`.
 //
 //   import { navigate, refresh, scheduleRefresh } from '@ultimat3/render/client';
 //

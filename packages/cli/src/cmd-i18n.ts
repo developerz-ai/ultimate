@@ -2,10 +2,11 @@
 // X_CATALOG_MISSING_KEYS and X_CATALOG_INVALID fix line already names. CLI wiring only: the
 // facts come from `i18n-audit.ts`, the audit itself from `@ultimat3/i18n`'s own `auditCatalogs`.
 
-// `node:` and not Bun: Bun has no exclusive-create write, and `open(path, 'wx')` is the only one
-// there is — `Bun.write` overwrites, so an existence check before it is a race a second `x i18n
-// add` wins. `mkdir` comes with it because `open` does not create the parent directory `Bun.write`
-// would, and `node:path` because Bun exposes no path API to build what either of them takes.
+// why: `node:` and not Bun: Bun has no exclusive-create write, and `open(path, 'wx')` is the only
+// one there is — `Bun.write` overwrites, so an existence check before it is a race a second
+// `x i18n add` wins. `mkdir` comes with it because `open` does not create the parent directory
+// `Bun.write` would, and `node:path` because Bun exposes no path API to build what either of them
+// takes.
 import { type FileHandle, mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { DEFAULT_LOCALE, stringField } from '@ultimat3/core';

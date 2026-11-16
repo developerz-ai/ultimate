@@ -3,7 +3,7 @@
 //
 //   bun run scripts/setup.ts [--json] [--skip-install]
 
-import { existsSync } from 'node:fs';
+// why: Bun ships no path joiner.
 import { join } from 'node:path';
 import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
@@ -77,7 +77,7 @@ if (findings.length === 0 && !flagBool(args, 'skip-install')) {
 }
 
 const localEnv = join(root, '.env.development.local');
-if (!existsSync(localEnv)) {
+if (!(await Bun.file(localEnv).exists())) {
   await Bun.write(
     localEnv,
     '# Per-box overrides and secrets. Gitignored; wins over .env.development.\n',

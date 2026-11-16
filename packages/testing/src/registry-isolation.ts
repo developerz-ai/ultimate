@@ -1,8 +1,10 @@
 // One test seam: an empty entity registry for the test that needs one, and the process's own
-// registry back afterwards. `entity()` registers at MODULE scope — which is idiomatic, an app
-// declares its domain by importing it — so a test asserting on the WHOLE registry inherits every
-// entity any earlier file in the same `bun test` process imported, and its premise becomes
-// whatever ran before it rather than what it declared.
+// registry back afterwards.
+//
+// `entity()` registers at MODULE scope — which is idiomatic, an app declares its domain by
+// importing it — so a test asserting on the WHOLE registry inherits every entity any earlier file
+// in the same `bun test` process imported, and its premise becomes whatever ran before it rather
+// than what it declared.
 //
 // Its OWN entry point (`@ultimat3/testing/registry-isolation`), off the barrel: the value import
 // below is static because the restore has to be handed back synchronously, so re-exporting this

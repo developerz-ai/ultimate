@@ -1,8 +1,10 @@
-// The DEFAULT driver: a Postgres queue. Zero infra to start — the database you already have
-// is the queue. `SELECT ... FOR UPDATE SKIP LOCKED` lets N workers claim disjoint batches
-// without a coordinator, and the visibility timeout (`visible_at`) makes a worker crash cost
-// one lease instead of one job. Settles' counts are batched (`counter-batch.ts`) and written every
-// ten seconds and on `close()`. Statements: `driver-pg-sql.ts`; schema: `driver-pg-ddl.ts`.
+// The DEFAULT driver: a Postgres queue. Zero infra to start — the database you already have is the
+// queue.
+//
+// `SELECT ... FOR UPDATE SKIP LOCKED` lets N workers claim disjoint batches without a coordinator,
+// and the visibility timeout (`visible_at`) makes a worker crash cost one lease instead of one job.
+// Settles' counts are batched (`counter-batch.ts`) and written every ten seconds and on `close()`.
+// Statements: `driver-pg-sql.ts`; schema: `driver-pg-ddl.ts`.
 
 import type { Clock, PgExecutor } from '@ultimat3/core';
 import { finiteCount, liveClock, renderCauseValue, uuidV7 } from '@ultimat3/core';

@@ -3,6 +3,7 @@
 // validated before it ever reaches a path, and why the caller must have closed the source first:
 // this copies files, it does not take a snapshot of a running instance.
 
+// why: cp/rm recursive and an empty-directory mkdir — Bun copies and writes single files only.
 import { cp, mkdir, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { NotImplementedError, systemClock } from '@ultimat3/core';

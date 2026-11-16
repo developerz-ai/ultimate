@@ -1,8 +1,9 @@
-// The doubles two client suites drive: an injected socket, an injected scheduler, and the
-// harness that wires a `LiveClient` to both. Shared rather than copied because `client.test.ts`
-// and `client-reconnect.test.ts` must exercise the SAME client wiring — two harnesses that
-// drifted would be two clients agreeing only by construction. A `-fixture.ts` file is test
-// material and is excluded from the package tarball.
+// The doubles two client suites drive: an injected socket, an injected scheduler, and the harness
+// that wires a `LiveClient` to both.
+//
+// Shared rather than copied because `client.test.ts` and `client-reconnect.test.ts` must exercise
+// the SAME client wiring — two harnesses that drifted would be two clients agreeing only by
+// construction. A `-fixture.ts` file is test material and is excluded from the package tarball.
 
 import { frozenClock } from '@ultimat3/core';
 import { type ClientSocket, LiveClient } from './client';

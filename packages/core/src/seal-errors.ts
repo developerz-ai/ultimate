@@ -1,9 +1,10 @@
 // Single responsibility: the three X_SEAL_* refusals and the errors that carry them. Three codes
 // rather than one "it will not open" because each names a different fact — no key at all, a key
-// this process was not given, a value that did not authenticate — and a different thing to do
-// next. No error here carries a key, a plaintext or the sealed string itself. Titles live in
-// `core-error-codes.ts` and the retry class in `error-retry.ts`, so this module runs nothing at
-// import and stays out of every bundle that does not seal.
+// this process was not given, a value that did not authenticate — and a different thing to do next.
+// No error here carries a key, a plaintext or the sealed string itself.
+//
+// Titles live in `core-error-codes.ts` and the retry class in `error-retry.ts`, so this module runs
+// nothing at import and stays out of every bundle that does not seal.
 
 import { renderCauseValue } from './error-render';
 import { UltimateError } from './errors';

@@ -3,6 +3,7 @@
 // `@ultimat3/render`'s `renderStatic`; the document is the one `x dev` serves. This file decides
 // only which routes qualify and where the bytes land.
 
+// why: Bun ships no path API; `join` builds the host-separator path of each file the export writes.
 import { join } from 'node:path';
 import {
   ctxOf,

@@ -10,6 +10,8 @@
 // public subject. `isReExportManifest` is the whole carve-out — one statement of logic in such a
 // file re-arms the ceiling on the same save, which is what keeps it from being a hole.
 
+// why: a published `files` entry is often a DIRECTORY, which `Bun.file().exists()` answers false
+// for; `readFileSync` fills a sources map inside one glob walk. Bun ships no path API either.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, renderCauseValue } from '@ultimat3/core';

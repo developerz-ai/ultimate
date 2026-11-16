@@ -1,10 +1,12 @@
-// The error contract, enforced (axiom 3: a convention that is not a build error does not exist).
+// The error contract, enforced (axiom 3): every `fix:` executable and every code documented,
+// decided before the code runs.
+//
 // Axiom 4 says an error is an instruction, so a `fix:` an agent cannot act on is a defect in the
 // error, not a matter of taste — and a code no reference page documents strands whoever hits it.
 // Both halves are decidable before the code runs, which is why they are a gate step and not a
 // runtime assertion nobody sees until the failure they describe has already happened.
 
-// `join` is `node:`-only by necessity: Bun exposes no path-join primitive.
+// why: `join` is `node:`-only by necessity: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { citedCommandProblem, loadCommandCatalog } from './fix-command';

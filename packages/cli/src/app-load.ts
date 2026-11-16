@@ -3,7 +3,7 @@
 // `registerQueries` / `registerRoute` name the rest — so `x manifest`, `x routes` and `x verify`
 // read exactly the tables the running server reads.
 
-// Bun ships no `Bun.*` path API: `join`/`resolve` reach the files a scan imports.
+// why: Bun ships no `Bun.*` path API: `join`/`resolve` reach the files a scan imports.
 import { join, resolve } from 'node:path';
 import { listActions } from '@ultimat3/action';
 import { APP_CONFIG_FILE } from '@ultimat3/core';

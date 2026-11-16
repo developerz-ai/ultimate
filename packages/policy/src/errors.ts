@@ -1,8 +1,10 @@
-// The policy layer's stable error codes. `X_POLICY_MISSING` is enforced by the TYPE system,
-// not by a throw: `ActionDef.policy` is a required field (`@ultimat3/action`'s `action.ts`), so
-// an action with no policy never compiles. The code and its factory stay published for a
-// declaration site that cannot express the requirement in a type — a config-driven route table,
-// a policy resolved by name — and `policyMissing()` is how such a site says it.
+// The policy layer's stable error codes. `X_POLICY_MISSING` is enforced by the TYPE system, not by
+// a throw: `ActionDef.policy` is a required field (`@ultimat3/action`'s `action.ts`), so an action
+// with no policy never compiles.
+//
+// The code and its factory stay published for a declaration site that cannot express the
+// requirement in a type — a config-driven route table, a policy resolved by name — and
+// `policyMissing()` is how such a site says it.
 import {
   deniedCallerFix,
   type ErrorRetry,

@@ -1,8 +1,10 @@
-import { writeSync } from 'node:fs';
-import { backoffDelay } from '../../packages/core/src/backoff';
-
 // Output for the root scripts. Same rule as the CLI: one data shape, two renderers, `--json` on
 // every script — so the repo's own automation is as machine-readable as the framework it builds.
+
+// why: writeSync — Bun has no synchronous stdout write, and an async one truncates under a pipe
+// when the process exits (see `writeOut`).
+import { writeSync } from 'node:fs';
+import { backoffDelay } from '../../packages/core/src/backoff';
 
 export interface Finding {
   readonly code: string;

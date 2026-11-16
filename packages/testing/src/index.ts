@@ -1,11 +1,3 @@
-export type {
-  FixtureBody,
-  FixtureFactory,
-  FixtureMap,
-  FixtureRegistration,
-  Fixtures,
-} from './fixtures';
-export { defineFixtures, fixtureSnapshot, fixtureTest, requestedFixtures } from './fixtures';
 // Public API of @ultimat3/testing. Explicit re-exports: the preload has its own entry point so a
 // bunfig can load side effects without importing the whole harness.
 
@@ -272,7 +264,20 @@ export type { ObservedStatement, StatementShape, TestStatements } from './fixtur
 export { testStatements } from './fixture-statements';
 export type { SubscribeDriver } from './fixture-subscribe';
 export { subscribeDriver } from './fixture-subscribe';
-export { fixtureTest as test } from './fixtures';
+export type {
+  FixtureBody,
+  FixtureFactory,
+  FixtureMap,
+  FixtureRegistration,
+  Fixtures,
+} from './fixtures';
+export {
+  defineFixtures,
+  fixtureSnapshot,
+  fixtureTest,
+  fixtureTest as test,
+  requestedFixtures,
+} from './fixtures';
 export {
   DRIVER_FIXTURE_NAMES,
   FRAMEWORK_FIXTURE_NAMES,

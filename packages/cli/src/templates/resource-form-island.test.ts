@@ -5,6 +5,7 @@
 // the chunk builds, `mount` renders, the field tracks, and the submit posts what was typed.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun ships no path API; `dirname`/`join` place the fixture's files under its app root.
 import { dirname, join } from 'node:path';
 import { mountIsland } from '@ultimat3/testing';
 import { buildIslands, islandBundle } from '../island-bundle';

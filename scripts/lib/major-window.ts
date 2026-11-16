@@ -3,8 +3,7 @@
 // caller's — so `release.ts --bump`, `release.ts --check` and the gate all ask one function.
 
 import { type Changelog, parseChangelog } from './changelog-sections';
-import type { Finding } from './log';
-import { report } from './log';
+import type { Finding, ScriptResult } from './log';
 
 export const MAJOR_WINDOW_DAYS = 90;
 /**
@@ -209,21 +208,17 @@ export const securityLines = (version: string, id: string | undefined): readonly
         `  security  ${id} recorded under "## ${version}"; the commit body carries "Security-Exception: ${id}"`,
       ];
 
-/** The bump's refusal, before a file moves; returns only when the window lets `version` through. */
-export function refuseOutsideWindow(
+/** The bump's refusal, before a file moves; `undefined` when the window lets `version` through. */
+export function outsideWindowResult(
   findings: readonly Finding[],
   data: { readonly version: string; readonly current: string },
-  json: boolean,
-): void {
-  if (findings.length === 0) return;
-  report(
-    {
-      ok: false,
-      script: 'release',
-      summary: `refusing to release ${data.version}: the major window refuses it (wiki/Stability.md)`,
-      findings,
-      data,
-    },
-    json,
-  );
+): ScriptResult | undefined {
+  if (findings.length === 0) return undefined;
+  return {
+    ok: false,
+    script: 'release',
+    summary: `refusing to release ${data.version}: the major window refuses it (wiki/Stability.md)`,
+    findings,
+    data,
+  };
 }

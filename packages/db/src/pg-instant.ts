@@ -1,4 +1,5 @@
 // Single responsibility: Postgres' TEXT form of `timestamptz` and `timestamp`, read as an instant.
+//
 // PGlite's own parser — and Bun.SQL's on the text protocol — read year `0099` as 1999, and under a
 // session zone that is not UTC answered Invalid Date for an offset carrying seconds (local mean
 // time before a zone's standard time: `-04:56:02`), which `@ultimat3/entity` then refused as

@@ -1,8 +1,10 @@
-// Which cache tiers this process reads through, and the hop that tells the other replicas what it
-// just dropped. The ladder is exactly what `cache.tiers` names: a rung the config lists is built or
-// the boot refuses, and a rung it does not list is never built — this file used to register memo
-// and lru unconditionally, redis on `REDIS_URL` and cdn on any real purge driver, so the key was
-// declared, validated at boot, documented, and read by nothing.
+// Which cache tiers this process reads through, and the hop that tells the other replicas what
+// it just dropped.
+//
+// The ladder is exactly what `cache.tiers` names: a rung the config lists is built or the boot
+// refuses, and a rung it does not list is never built — this file used to register memo and lru
+// unconditionally, redis on `REDIS_URL` and cdn on any real purge driver, so the key was declared,
+// validated at boot, documented, and read by nothing.
 
 import type {
   CacheTier,

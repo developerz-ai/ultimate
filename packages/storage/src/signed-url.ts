@@ -1,8 +1,9 @@
-// Single responsibility: time-limited signed URLs for direct upload and download.
-// The HMAC covers the *constraints* (key, method, expiry, max size, content type), not just
-// the key — otherwise a client that receives a URL for a 2MB PNG edits `?x-max=` and uploads
-// a 2GB executable. Verification never throws and never short-circuits on expiry before the
-// signature, so a forged URL can never learn "the signature was fine, just late".
+// Single responsibility: time-limited signed URLs for direct upload and download. The HMAC covers
+// the *constraints* (key, method, expiry, max size, content type), not just the key — otherwise a
+// client that receives a URL for a 2MB PNG edits `?x-max=` and uploads a 2GB executable.
+//
+// Verification never throws and never short-circuits on expiry before the signature, so a forged
+// URL can never learn "the signature was fine, just late".
 
 import { assert, type Clock, finiteCount, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type { SignedUrlMethod } from './driver';

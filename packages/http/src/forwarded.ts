@@ -1,8 +1,9 @@
-// Who the caller really is when a proxy is in front of us. `trustProxy` documented reading
-// `x-forwarded-for` and nothing in the framework ever read it: every anonymous request behind an
-// ingress keyed the rate limiter to the proxy's address — ONE bucket for the whole internet — and
-// `ctx.https` was false on a TLS-terminated hop, so HSTS was never emitted in the shape the
-// framework's own chart ships.
+// Who the caller really is when a proxy is in front of us.
+//
+// `trustProxy` documented reading `x-forwarded-for` and nothing in the framework ever read it:
+// every anonymous request behind an ingress keyed the rate limiter to the proxy's address — ONE
+// bucket for the whole internet — and `ctx.https` was false on a TLS-terminated hop, so HSTS was
+// never emitted in the shape the framework's own chart ships.
 
 import type { HttpConfig } from './config';
 

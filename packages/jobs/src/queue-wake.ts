@@ -1,9 +1,11 @@
-// The cross-process wake: one `LISTEN` session per worker pod, turning "another process committed
-// a job / an outbox row" into the two in-process signals the idle loops already hear
-// (`enqueue-signal.ts`). An optimisation, never the guarantee — a notification is lost with the
-// session that would have carried it, and a transaction-pooling proxy delivers none at all — so
-// the poll keeps running underneath, and this file's other job is to say whether the wake is
-// PROVEN: the loops raise their idle ceiling only while it is.
+// The cross-process wake: one `LISTEN` session per worker pod, turning "another process committed a
+// job / an outbox row" into the two in-process signals the idle loops already hear
+// (`enqueue-signal.ts`).
+//
+// An optimisation, never the guarantee — a notification is lost with the session that would have
+// carried it, and a transaction-pooling proxy delivers none at all — so the poll keeps running
+// underneath, and this file's other job is to say whether the wake is PROVEN: the loops raise their
+// idle ceiling only while it is.
 
 import type { PgExecutor, Random } from '@ultimat3/core';
 import { backoffDelay, failureStreak, finiteOption, logger } from '@ultimat3/core';

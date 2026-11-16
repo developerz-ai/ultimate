@@ -1,8 +1,9 @@
 // The chainable read. Every chain terminates in a cursor page — `page()` returns rows plus the
 // cursor for the next one, `all()`/`one()` are that page's rows, and `inBatches()` is that page
-// repeated until the cursor runs out. There is no `offset()` and there will not be one: under
-// concurrent writes an insert before the offset shifts every later page, so a client silently
-// skips and repeats rows.
+// repeated until the cursor runs out.
+//
+// There is no `offset()` and there will not be one: under concurrent writes an insert before the
+// offset shifts every later page, so a client silently skips and repeats rows.
 
 import type { Page } from '@ultimat3/core';
 import { pageOf } from '@ultimat3/core';

@@ -1,10 +1,11 @@
 // Single responsibility: every CHECK constraint a table declares — a COLUMN's own and an
-// INVARIANT's — and which of them a migration adds, rebuilds or drops. Split out of `generate.ts`
-// and `invariant-ddl.ts` because a column check was the one part of a column that reached
-// `create table` and nothing else: `columnClause` wrote `check (…)` inline and ANONYMOUS,
-// `snapshotOf` recorded nothing for it and `diffTable` had no arm for it, so the SECOND `x db gen`
-// turned `enumerated(POST_STATUSES)` into bare `text` accepting any string, and the value set the
-// entity still declares left the database with no statement anywhere saying so.
+// INVARIANT's — and which of them a migration adds, rebuilds or drops.
+//
+// Split out of `generate.ts` and `invariant-ddl.ts` because a column check was the one part of a
+// column that reached `create table` and nothing else: `columnClause` wrote `check (…)` inline and
+// ANONYMOUS, `snapshotOf` recorded nothing for it and `diffTable` had no arm for it, so the SECOND
+// `x db gen` turned `enumerated(POST_STATUSES)` into bare `text` accepting any string, and the
+// value set the entity still declares left the database with no statement anywhere saying so.
 //
 // One list, for the reason `declaredIndexes` is one list: `createTable`, `diffTable` and
 // `snapshotOf` must agree about what exists, and two producers of `add constraint` that never met

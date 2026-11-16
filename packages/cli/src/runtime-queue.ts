@@ -1,8 +1,9 @@
-// The database and the job queue, started together and released together. Split from
-// `runtime-services.ts` because `x jobs` needs exactly this pair and nothing else — and because a
-// process that installs ambient accessors (`db()`, `jobDriver()`, the jobs facade, the event bus)
-// must have one place that takes them all back, or the next command in the same process inherits
-// a driver over a closed socket.
+// The database and the job queue, started together and released together.
+//
+// Split from `runtime-services.ts` because `x jobs` needs exactly this pair and nothing else — and
+// because a process that installs ambient accessors (`db()`, `jobDriver()`, the jobs facade, the
+// event bus) must have one place that takes them all back, or the next command in the same process
+// inherits a driver over a closed socket.
 
 import {
   type PostgresIdempotencyStore,

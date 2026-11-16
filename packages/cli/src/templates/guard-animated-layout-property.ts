@@ -1,8 +1,10 @@
-// The `animated-layout-property` guard `x new` ships: only `transform` and `opacity` animate for
-// free. Everything else — a `top`, a `width`, a `margin`, a `box-shadow` — costs the browser a
-// layout or a paint on EVERY frame, on the same main thread the app's own JavaScript is on, and
-// feeds the layout-shift metric while it does it. `transition: all` is worse than any single one of
-// them: it animates properties nobody chose, including the ones that have not been written yet.
+// The `animated-layout-property` guard `x new` ships: only `transform` and `opacity` animate
+// for free.
+//
+// Everything else — a `top`, a `width`, a `margin`, a `box-shadow` — costs the browser a layout or
+// a paint on EVERY frame, on the same main thread the app's own JavaScript is on, and feeds the
+// layout-shift metric while it does it. `transition: all` is worse than any single one of them: it
+// animates properties nobody chose, including the ones that have not been written yet.
 
 import { guardCode } from './guard';
 import type { GeneratedFile } from './naming';

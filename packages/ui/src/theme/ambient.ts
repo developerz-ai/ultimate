@@ -1,9 +1,11 @@
-// The presentation context of a SERVER render, read from the request the framework already
-// resolved — and the one module of the theme directory that reaches `@ultimat3/i18n` and
-// `@ultimat3/time` for a value. `index.ts` imports it bare, so every server that imports the
-// barrel has the reader registered before the first `useUi()`; `package.json`'s `browser` field
-// maps this file to `ambient.browser.ts` for a browser bundler, which is what keeps the i18n
-// barrel — and the framework catalog it installs at import — out of an island chunk (issue #490).
+// The presentation context of a SERVER render, read from the request the framework already resolved
+// — and the one module of the theme directory that reaches `@ultimat3/i18n` and `@ultimat3/time`
+// for a value.
+//
+// `index.ts` imports it bare, so every server that imports the barrel has the reader registered
+// before the first `useUi()`; `package.json`'s `browser` field maps this file to
+// `ambient.browser.ts` for a browser bundler, which is what keeps the i18n barrel — and the
+// framework catalog it installs at import — out of an island chunk (issue #490).
 
 import { currentDirection, currentLocale, useI18n } from '@ultimat3/i18n';
 import { currentTimeZone } from '@ultimat3/time';

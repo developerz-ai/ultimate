@@ -1,7 +1,8 @@
 // The list's batch bar: one native form posted at the LIST's own URL — whose query string is the
-// filter "all matching" means — holding which action, over which rows, and the submit. The row
-// checkboxes sit in the table and join this form through their `form` attribute, because a form
-// cannot hold a table that already holds the filter bar's. No script: selection is a checkbox,
+// filter "all matching" means — holding which action, over which rows, and the submit.
+//
+// The row checkboxes sit in the table and join this form through their `form` attribute, because a
+// form cannot hold a table that already holds the filter bar's. No script: selection is a checkbox,
 // "every row this filter matches" is a radio, and the server answers with what it did.
 
 import { t } from '@ultimat3/i18n';

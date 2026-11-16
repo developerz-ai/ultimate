@@ -1,9 +1,11 @@
-// The script a capture runs ahead of the document when a theme was ASKED for. Since 20.2.0 the
-// boot inlines a theme script (`@ultimat3/render`'s `themeScriptBody`) whose fallback is the app's
-// `theme.defaultMode`, and only a stored choice under `THEME_STORAGE_KEY` beats it — so emulating
-// `prefers-color-scheme` alone photographs a `defaultMode: 'dark'` app dark whatever was requested
-// (issue #489). A requested theme is therefore stored as the visitor's CHOICE, on the page's origin,
-// before the boot reads it: the picture is then what a visitor who chose that theme sees.
+// The script a capture runs ahead of the document when a theme was ASKED for.
+//
+// Since 20.2.0 the boot inlines a theme script (`@ultimat3/render`'s `themeScriptBody`) whose
+// fallback is the app's `theme.defaultMode`, and only a stored choice under `THEME_STORAGE_KEY`
+// beats it — so emulating `prefers-color-scheme` alone photographs a `defaultMode: 'dark'` app dark
+// whatever was requested (issue #489). A requested theme is therefore stored as the visitor's
+// CHOICE, on the page's origin, before the boot reads it: the picture is then what a visitor who
+// chose that theme sees.
 
 import { THEME_STORAGE_KEY } from '@ultimat3/core';
 import type { ShotColorScheme } from './browser-launcher-port';

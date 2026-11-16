@@ -1,6 +1,7 @@
-// Single responsibility: turn an authenticated identity into core's `Actor`. There is exactly
-// one authz system in Ultimate — `@ultimat3/policy` — and auth's only job is producing the actor
-// it evaluates. Nothing downstream ever authorizes on a session row, a user row or an api key.
+// Single responsibility: turn an authenticated identity into core's `Actor`. There is exactly one
+// authz system in Ultimate — `@ultimat3/policy` — and auth's only job is producing the actor it
+// evaluates. Nothing downstream ever authorizes on a session row, a user row or an api key.
+//
 // `PolicyActorFields` mirrors `@ultimat3/policy`'s shape structurally so this package does not
 // import a same-tier package; policy binds to it by structure, in whichever order they land.
 

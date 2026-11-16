@@ -1,8 +1,9 @@
 // Single responsibility: the transport seam. One `MailDriver` interface, the two local
-// implementations (memory + log), and a module-level ambient driver so `send()` never knows
-// which one is installed. The two production transports live in `driver-smtp.ts` and
-// `driver-resend.ts`; swapping one for the other is an `app.config.ts` line and zero template
-// changes.
+// implementations (memory + log), and a module-level ambient driver so `send()` never knows which
+// one is installed.
+//
+// The two production transports live in `driver-smtp.ts` and `driver-resend.ts`; swapping one for
+// the other is an `app.config.ts` line and zero template changes.
 
 import {
   type Clock,

@@ -10,7 +10,18 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- **Every shipped source file opens with its 1â€“4 line responsibility header, and every `node:` import says why Bun cannot do the job** (plan 101b slice 12 M6, second PR). The `source-headers` pin table is empty: 316 rows fell. `node-imports` fell from 173 explained-or-not sites to 0. Where Bun has the same API, the import is gone instead: `Bun.CryptoHasher` in `@ultimat3/entity`'s seed ids (pinned by a known-answer test against an independent uuid5), `Bun.file().exists()` in four `x verify` readers, and `Bun.Glob` and `Bun.pathToFileURL` in tests.
+
+### Fixed
+
+- `changelog-check`'s guard-refresh rule and `template-codemods` no longer ask for an upgrade row or a codemod when a template changed only in its leading comment, the generator's own header, outside the template text an app receives (`scripts/lib/template-header-only.ts`). A header sweep had demanded rows for five guards whose generated text had not moved.
+
+### Changed
+
+- `scripts` coverage rose to 86.5% lines / 91.4% functions: the logic of `release.ts`, `trust-publishers.ts`, `side-effects.ts` and the upgrade-fixtures harness now lives in exported functions their tests call.
+- `queue-wake.live.test.ts` prints the job row, the wake state, the poll delay and the LISTEN sessions when its 3 s start wait expires, so the next miss of #1167 names its cause.
 
 ## Releases
 

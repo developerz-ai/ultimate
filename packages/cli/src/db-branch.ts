@@ -3,8 +3,8 @@
 // Plain inputs, plain rows — no `ParsedArgs`, no `CommandResult` — so every rule here is testable
 // against a temp directory and a recording client, and `cmd-db-branch.ts` owns only the wiring.
 
-// `node:fs/promises` for `readdir`/`rm`/`stat` — Bun exposes no directory listing, no recursive
-// delete and no birthtime. `node:path` for the joiner Bun also does not have.
+// why: `node:fs/promises` for `readdir`/`rm`/`stat` — Bun exposes no directory listing, no
+// recursive delete and no birthtime. `node:path` for the joiner Bun also does not have.
 import { readdir, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import type { DbClient } from '@ultimat3/db';

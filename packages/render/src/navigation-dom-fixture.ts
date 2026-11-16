@@ -1,9 +1,11 @@
 /**
  * Just enough DOM for the client router's unit tests, written for them the way `hydrate-replay`'s
- * fakes are: elements with attributes and children, the selectors the router uses (tag, `[a]`,
- * `[a="v"]`, `[a~="v"]`, `:not([src])`, comma lists), documents that adopt and swap bodies, a
- * window with history, location and timers, and a `DOMParser` that answers a fetched string with a
- * document the test built. What a browser DOES with a document is proven in Chrome
+ * fakes are.
+ *
+ * Elements with attributes and children, the selectors the router uses (tag, `[a]`, `[a="v"]`,
+ * `[a~="v"]`, `:not([src])`, comma lists), documents that adopt and swap bodies, a window with
+ * history, location and timers, and a `DOMParser` that answers a fetched string with a document the
+ * test built. What a browser DOES with a document is proven in Chrome
  * (`packages/cli/e2e/client-navigation-*.e2e.test.ts`); this is the branch coverage beside it.
  */
 

@@ -2,7 +2,7 @@
 // migration files already declare, written as one reversible `.sql` plus the two sidecars the gate
 // reads back — the snapshot the next generation diffs against, and the schema hash `drift` checks.
 
-// `node:path` — Bun ships no path joiner of its own, and these paths are built, not opened.
+// why: `node:path` — Bun ships no path joiner of its own, and these paths are built, not opened.
 import { join } from 'node:path';
 import type { GeneratedMigration, UnrenderedDeclaration } from '@ultimat3/db';
 import {

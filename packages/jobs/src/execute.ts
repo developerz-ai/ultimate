@@ -1,9 +1,11 @@
-// One claimed job run to completion, suspension or failure and settled with the driver — the
-// single execution path, shared by the worker loop (`worker-run.ts`) and by the one caller outside
-// this package, `@ultimat3/testing`'s job fixture. There is no `x jobs run` to share it with: the
-// subcommands are `ls`, `show`, `retry`, `cancel`, `drain`. It owns the run's deadline, and
-// a deadline here means CANCEL: the nack that follows makes the job claimable again, so a body
-// still running past it would be a second copy of one job, racing the attempt that replaced it.
+// One claimed job run to completion, suspension or failure and settled with the driver — the single
+// execution path, shared by the worker loop (`worker-run.ts`) and by the one caller outside this
+// package, `@ultimat3/testing`'s job fixture.
+//
+// There is no `x jobs run` to share it with: the subcommands are `ls`, `show`, `retry`, `cancel`,
+// `drain`. It owns the run's deadline, and a deadline here means CANCEL: the nack that follows
+// makes the job claimable again, so a body still running past it would be a second copy of one job,
+// racing the attempt that replaced it.
 
 import type { Clock, Ctx } from '@ultimat3/core';
 import {

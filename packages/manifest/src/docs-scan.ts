@@ -10,7 +10,7 @@
 // the installed version. Same split `agents-md.ts` states: facts are derived, prose is
 // human-authored — this module derives, and quotes human prose verbatim. It never writes.
 
-// `node:` by necessity, not habit. Bun exposes no native directory listing: `Bun.Glob` walks a
+// why: `node:` by necessity, not habit. Bun exposes no native directory listing: `Bun.Glob` walks a
 // pattern and yields matches, while this needs the immediate children of the scope directory —
 // including the ones that turn out not to be packages. And Bun ships no path module at all, so
 // `basename`/`join` are the only way to build a path without hand-rolling separator handling.

@@ -1,9 +1,10 @@
 /**
- * A live read may not FILTER or ORDER on a sealed column, refused at subscribe. The matcher places
- * a change from the row the change feed carries, and that row names no sealed column — the log
- * holds the stored string, which `@ultimat3/realtime` drops rather than forwards. So a window keyed
- * on one could be read once and never patched: every later change would miss the filter or land
- * at no position, silently.
+ * A live read may not FILTER or ORDER on a sealed column, refused at subscribe.
+ *
+ * The matcher places a change from the row the change feed carries, and that row names no sealed
+ * column — the log holds the stored string, which `@ultimat3/realtime` drops rather than forwards.
+ * So a window keyed on one could be read once and never patched: every later change would miss the
+ * filter or land at no position, silently.
  */
 
 import { entityForTable, sealedFields } from '@ultimat3/entity';

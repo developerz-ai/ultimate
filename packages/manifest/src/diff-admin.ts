@@ -1,9 +1,11 @@
-// The admin in a contract diff. An admin's list URLs are bookmarked and its MCP tools are called
-// by agents, so what a list ANSWERS is contract: a filter, a sort or a scope that goes away
-// refuses a caller it served, a default scope that moves changes what a bare URL lists, and a row
-// scope that appears hides rows from actors who saw them. An action is an MCP tool: one that goes
-// away, stops taking `ids`, or starts excluding rows (`when`) refuses a call it answered. A
-// route's permissions are judged like any operation's; layout and related lists are internal.
+// The admin in a contract diff. An admin's list URLs are bookmarked and its MCP tools are called by
+// agents, so what a list ANSWERS is contract: a filter, a sort or a scope that goes away refuses a
+// caller it served, a default scope that moves changes what a bare URL lists, and a row scope that
+// appears hides rows from actors who saw them.
+//
+// An action is an MCP tool: one that goes away, stops taking `ids`, or starts excluding rows
+// (`when`) refuses a call it answered. A route's permissions are judged like any operation's;
+// layout and related lists are internal.
 
 import type { ManifestChange } from './diff-change';
 import { diffNamedSet, index } from './diff-change';

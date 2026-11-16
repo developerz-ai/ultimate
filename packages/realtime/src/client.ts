@@ -1,8 +1,10 @@
 // The client half of the sync protocol: one socket's lifecycle — dial, beat, reconnect — and the
-// live windows and topics riding it. Framework-agnostic and reactive-runtime-free on purpose: ONE
-// client serves the whole page (every island bundle reaches it through the page handle), and a
-// signal belongs to one bundle's solid-js, so everything here is a plain read plus a listener.
-// Read-only: the socket carries no writes (`useMutation` is HTTP).
+// live windows and topics riding it.
+//
+// Framework-agnostic and reactive-runtime-free on purpose: ONE client serves the whole page (every
+// island bundle reaches it through the page handle), and a signal belongs to one bundle's solid-js,
+// so everything here is a plain read plus a listener. Read-only: the socket carries no writes
+// (`useMutation` is HTTP).
 
 import { type Clock, finiteOption, systemClock, uuidV7 } from '@ultimat3/core/page';
 import {

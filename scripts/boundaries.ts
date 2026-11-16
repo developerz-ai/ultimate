@@ -19,6 +19,7 @@
 //
 //   bun run scripts/boundaries.ts [--json] [--package cli]
 
+// why: Bun ships no path API — `join` builds disk paths, the posix trio resolves import specifiers.
 import { join } from 'node:path';
 import { dirname, join as joinPosix, normalize } from 'node:path/posix';
 import { scanAllImports, scanRuntimeImports } from '../packages/cli/src/import-scan';

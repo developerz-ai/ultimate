@@ -1,8 +1,10 @@
 // Single responsibility: taking turns on PGlite's one connection. Embedded Postgres is a single
 // session, not a pool, so two units of work that each `BEGIN` would be sharing one transaction —
 // the second `COMMIT` commits the first's uncommitted rows and the first `ROLLBACK` finds nothing
-// to undo. This queue makes them consecutive instead, which is what a pinned pool connection
-// gives `withTransaction` and `readOnlyQuery` on a real server.
+// to undo.
+//
+// This queue makes them consecutive instead, which is what a pinned pool connection gives
+// `withTransaction` and `readOnlyQuery` on a real server.
 
 /**
  * Gives the connection back. `release()` is idempotent for free: it is a settled promise's

@@ -1,8 +1,10 @@
-// The four ways `x shot`'s raw-CDP page refuses a verb. A browser that is
-// missing, dies or never answers is `@ultimat3/testing`'s `X_CDP_*` — the wire is the same one the
-// e2e driver runs on. These four are what only a shot can be wrong about: which host it may open,
-// which element it was pointed at, and which key it was asked to press. Their codes and titles are
-// registered with every other CLI code, in `error-codes.ts` — never a second registration here.
+// The four ways `x shot`'s raw-CDP page refuses a verb.
+//
+// A browser that is missing, dies or never answers is `@ultimat3/testing`'s `X_CDP_*` — the wire is
+// the same one the e2e driver runs on. These four are what only a shot can be wrong about: which
+// host it may open, which element it was pointed at, and which key it was asked to press. Their
+// codes and titles are registered with every other CLI code, in `error-codes.ts` — never a second
+// registration here.
 import { renderCauseValue, UltimateError } from '@ultimat3/core';
 
 /** A navigation to a host the run did not allow. Refused before a byte leaves. */

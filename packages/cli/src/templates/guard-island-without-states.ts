@@ -1,6 +1,8 @@
-// The `island-without-states` guard `x new` ships, and it closes a loop the framework already built
-// half of. `x shot --island <name>` photographs an island in every state its sibling
-// `<name>.island.states.ts` declares — including the ones nobody can reach by clicking: a save the
+// The `island-without-states` guard `x new` ships: an island with no sibling
+// `<name>.island.states.ts` has never been seen in the states `x shot --island` photographs.
+//
+// It closes a loop the framework already built half of: `x shot --island <name>` photographs every
+// state the states file declares — including the ones nobody can reach by clicking: a save the
 // server refused, a read that came back empty, a label three times as long in the next locale. An
 // island with no states file has never been seen in any of them, by a reviewer or by a model.
 

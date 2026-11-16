@@ -1,8 +1,9 @@
-// Single responsibility: the Postgres array TEXT literal — `{a,b}`, `{"a,b",NULL}`,
-// `{{1,2},{3,4}}` — read into a JS array. The one grammar in the framework: the repository reads a
-// literal a driver left unparsed (`pg-array-decode.ts`) and `@ultimat3/realtime` reads the one the
-// WAL carries, and two readers of one grammar are how a quoted `"NULL"` becomes a null in one of
-// them. The element decoder arrives as a parameter, so this file knows no type.
+// Single responsibility: the Postgres array TEXT literal — `{a,b}`, `{"a,b",NULL}`, `{{1,2},{3,4}}`
+// — read into a JS array. The one grammar in the framework: the repository reads a literal a driver
+// left unparsed (`pg-array-decode.ts`) and `@ultimat3/realtime` reads the one the WAL carries, and
+// two readers of one grammar are how a quoted `"NULL"` becomes a null in one of them.
+//
+// The element decoder arrives as a parameter, so this file knows no type.
 //
 // The writer is `arrayLiteral` in `pg-row.ts`; `pg-array-literal.test.ts` holds the two to each
 // other, so what this package writes is what it can read.

@@ -1,9 +1,10 @@
 // Single responsibility: the refusals a MIGRATION earns — the lock it could not take, a ledger that
 // disagrees with this build, a plan that cannot be reversed, a plan that destroys rows without
-// saying so, a snapshot never written, a view in a retype's way, a concurrent build. Split out of
-// `errors.ts` only because that file reached the 500-line ceiling, exactly as `invariant-errors.ts`
-// was: every code below is still declared, titled and registered there, and `DbError` is still the
-// one class. One direction only — nothing here is imported back.
+// saying so, a snapshot never written, a view in a retype's way, a concurrent build.
+//
+// Split out of `errors.ts` only because that file reached the 500-line ceiling, exactly as
+// `invariant-errors.ts` was: every code below is still declared, titled and registered there, and
+// `DbError` is still the one class. One direction only — nothing here is imported back.
 
 import { renderFixShellArg } from '@ultimat3/core';
 import { DESTRUCTIVE_CAUSE, DESTRUCTIVE_MARKER, type DestructiveStatement } from './destructive';

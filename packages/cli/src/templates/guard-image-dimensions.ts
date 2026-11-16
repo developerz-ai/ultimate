@@ -1,8 +1,11 @@
-// The `image-dimensions` guard `x new` ships: an image reserves its box before its bytes arrive.
-// An unsized `<img>` is the largest single contributor to Cumulative Layout Shift — the page reflows
-// under the reader's finger the moment the bytes land — and the second half is its mirror image: a
-// `loading="lazy"` on the image the page is judged by is a deliberate delay on the one paint the
-// metric measures. Both are decidable from the attributes and nothing in the gate could see either.
+// The `image-dimensions` guard `x new` ships: an image reserves its box before its bytes
+// arrive, and the image a page is judged by is never `loading="lazy"`.
+//
+// An unsized `<img>` is the largest single contributor to Cumulative Layout Shift — the page
+// reflows under the reader's finger the moment the bytes land — and the second half is its mirror
+// image: a `loading="lazy"` on the image the page is judged by is a deliberate delay on the one
+// paint the metric measures. Both are decidable from the attributes and nothing in the gate could
+// see either.
 
 import { guardCode } from './guard';
 import type { GeneratedFile } from './naming';

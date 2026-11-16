@@ -1,8 +1,10 @@
 // Single responsibility: the attributes of an EXISTING column that move in place — its default, its
-// collation and its nullability. Split from `generate.ts` because `diffTable` emitted SQL for a type change only:
-// a changed or removed `.default()`, or a nullability change, emitted nothing while the snapshot
-// beside it recorded the move, so `x verify` answered `X_DB_SCHEMA_UNMIGRATED` and its own fix,
-// `x db gen`, produced an empty diff. A gate red forever, with the repair being the thing that failed.
+// collation and its nullability.
+//
+// Split from `generate.ts` because `diffTable` emitted SQL for a type change only: a changed or
+// removed `.default()`, or a nullability change, emitted nothing while the snapshot beside it
+// recorded the move, so `x verify` answered `X_DB_SCHEMA_UNMIGRATED` and its own fix, `x db gen`,
+// produced an empty diff. A gate red forever, with the repair being the thing that failed.
 
 import { defaultExpression, hasUnrenderedDefault } from './column-default';
 import { columnDefaultUnsafe } from './ddl-errors';

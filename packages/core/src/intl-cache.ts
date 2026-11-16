@@ -1,8 +1,9 @@
-// One bounded cache, on one canonical key, and one screen, for every `Intl` formatter the
-// framework builds.
-// A locale and a zone both arrive from a request header, so an unbounded `Map` keyed on the
+// One bounded cache, on one canonical key, and one screen, for every `Intl` formatter the framework
+// builds. A locale and a zone both arrive from a request header, so an unbounded `Map` keyed on the
 // caller's spelling is memory the client chooses — 31 MB and 55.1 MB, measured `As of 2026-08` and
-// written up in the README. The bound and the canonical key are two halves of ONE rule.
+// written up in the README.
+//
+// The bound and the canonical key are two halves of ONE rule.
 
 import { UltimateError } from './errors';
 

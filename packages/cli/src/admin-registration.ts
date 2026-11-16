@@ -1,8 +1,9 @@
-// `x g resource --admin` wires the override it wrote. The entity is already an admin screen — it
-// is in the handle `defineAdmin({ entities: adminEntitiesOf(db) })` reads — so the override file is
-// the ONLY thing `--admin` adds, and an override nothing lists under `resources:` is a dead file.
-// Performed here; where the admin is not a `defineAdmin({ … })` this can add to, the finding names
-// the two lines.
+// `x g resource --admin` wires the override it wrote.
+//
+// The entity is already an admin screen — it is in the handle `defineAdmin({ entities:
+// adminEntitiesOf(db) })` reads — so the override file is the ONLY thing `--admin` adds, and an
+// override nothing lists under `resources:` is a dead file. Performed here; where the admin is not
+// a `defineAdmin({ … })` this can add to, the finding names the two lines.
 
 import { ERROR_DOCS_URL, maskLiterals, stripComments } from '@ultimat3/core';
 import type { GenerateDisk } from './generate-disk';

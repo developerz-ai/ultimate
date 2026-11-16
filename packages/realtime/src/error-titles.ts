@@ -1,10 +1,12 @@
 // @ultimat3/realtime's PAGE codes and their TITLES — every code a browser can raise or receive on
-// the wire — registered at import. Server-only codes are `error-titles-server.ts`. Listed in
-// `sideEffects`, so `errors.ts` (the sync node's refusal classes) is unlisted and no hook's
-// chunk carries it (`page-errors-bundle.test.ts`): measured on Bun 1.4.2, −1,081 B on `feed`, −1,051 B on `likes-badge`, −1,047 B on
-// `run-console`, every title still registered. Imported bare by `index.ts` (a page
-// rebuilds a node's refusal by code in `refusalError`, and `page-errors.ts` constructs codes from
-// here without importing it) and by `errors.ts`, so constructing a server refusal registers too.
+// the wire — registered at import. Server-only codes are `error-titles-server.ts`.
+//
+// Listed in `sideEffects`, so `errors.ts` (the sync node's refusal classes) is unlisted and no
+// hook's chunk carries it (`page-errors-bundle.test.ts`): measured on Bun 1.4.2, −1,081 B on
+// `feed`, −1,051 B on `likes-badge`, −1,047 B on `run-console`, every title still registered.
+// Imported bare by `index.ts` (a page rebuilds a node's refusal by code in `refusalError`, and
+// `page-errors.ts` constructs codes from here without importing it) and by `errors.ts`, so
+// constructing a server refusal registers too.
 
 // From `/page`, never core's barrel: this module is in every island chunk that reaches realtime,
 // and the barrel's own anchors are core's and schema's titles tables — 4,571 B minified of titles

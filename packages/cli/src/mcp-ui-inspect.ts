@@ -1,11 +1,13 @@
-// `ui.inspect` — the dev MCP server's third eye, and the one that reads instead of looking. A
-// browser is the cost of every `ui.*` call, so this one reads MANY facts per navigation: for each
+// `ui.inspect` — the dev MCP server's third eye, the one that reads instead of looking: many
+// DOM facts per navigation, as `runShot` with an `act` hook.
+//
+// A browser is the cost of every `ui.*` call, so this one reads MANY facts per navigation: for each
 // selector the tag, text, box, visibility, attributes, named computed styles and (on request) the
 // browser-computed role and name; for the document its title, `data-theme`, the focused element,
-// the island count and both error streams. It is `runShot` with an `act` hook — the same boot,
-// the same driver, the same verdict, the same PNG under an `inspect/` subdirectory — so `ok` here
-// means exactly what `ui.shot`'s `ok` means, and a page that threw while an agent was reading
-// its styles is a finding beside the styles.
+// the island count and both error streams. It is `runShot` with an `act` hook — the same boot, the
+// same driver, the same verdict, the same PNG under an `inspect/` subdirectory — so `ok` here means
+// exactly what `ui.shot`'s `ok` means, and a page that threw while an agent was reading its styles
+// is a finding beside the styles.
 
 // why: Bun exposes no path-join primitive, and the directory is a path an agent opens.
 import { join } from 'node:path';

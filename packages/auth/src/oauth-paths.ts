@@ -1,8 +1,10 @@
 // Single responsibility: the one declaration of where the OAuth login routes live. It imports
-// nothing so that `errors.ts` and `oauth-route.ts` can both read it without a cycle — which is
-// the point: three shipped `fix:` lines told the caller to restart at `GET /auth/oauth/<provider>`
-// while no route was mounted anywhere. Deriving both the mount and the fix from here makes a fix
-// line that names a route nothing serves impossible rather than merely discouraged.
+// nothing so that `errors.ts` and `oauth-route.ts` can both read it without a cycle — which is the
+// point: three shipped `fix:` lines told the caller to restart at `GET /auth/oauth/<provider>`
+// while no route was mounted anywhere.
+//
+// Deriving both the mount and the fix from here makes a fix line that names a route nothing serves
+// impossible rather than merely discouraged.
 
 /**
  * The base and the start path are not configurable, on purpose: a movable start path is a `fix:`

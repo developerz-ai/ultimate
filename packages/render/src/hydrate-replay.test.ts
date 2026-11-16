@@ -5,10 +5,11 @@
 // longer in the document: "the button does nothing on the first press, and works on the second".
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp, no recursive remove, no tmpdir() and no path-join primitive; the
+// runtime and its chunks are imported from a throwaway directory.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { hydrateRuntime, type IslandDirective } from './hydrate';
 
 /** A pointer event carries coordinates; a keyboard one carries none, and that is the whole
@@ -189,7 +190,7 @@ async function bootReplayRuntime(
     'export function mount(el){return globalThis.__xTestMount(el)}\n',
     'utf8',
   );
-  root.setAttribute('data-x-entry', pathToFileURL(island).href);
+  root.setAttribute('data-x-entry', Bun.pathToFileURL(island).href);
   // What `emitIslandAttributes` writes for the same directive. Without it the runtime falls back
   // to `click` alone and a `keydown` fired below reaches no listener at all.
   root.setAttribute('data-x-events', REPLAY_EVENTS.join(' '));
@@ -217,7 +218,7 @@ async function bootReplayRuntime(
     .replace('<script type="module">', '')
     .replace('</script>', '');
   await writeFile(runtime, source, 'utf8');
-  await import(pathToFileURL(runtime).href);
+  await import(Bun.pathToFileURL(runtime).href);
 
   return {
     root,

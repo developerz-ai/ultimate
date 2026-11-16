@@ -1,8 +1,10 @@
 // Single responsibility: the production `Transport` — core NATS for fanout, JetStream KV for the
-// shared presence sets. The client underneath owns the wire and the reconnect, including
-// re-establishing subscriptions, which is what makes a `sync` node stateless. The one loss it does
-// not own is its own end: a client closed for good once its reconnect budget is spent is replaced
-// here, on our backoff, and every kept subscription is bound again on the new one.
+// shared presence sets.
+//
+// The client underneath owns the wire and the reconnect, including re-establishing subscriptions,
+// which is what makes a `sync` node stateless. The one loss it does not own is its own end: a
+// client closed for good once its reconnect budget is spent is replaced here, on our backoff, and
+// every kept subscription is bound again on the new one.
 //
 // Two ways to open it, because two kinds of process hold one. A node that SERVES from the bus
 // awaits `connect()` and refuses to boot without it; a process that only PUBLISHES calls

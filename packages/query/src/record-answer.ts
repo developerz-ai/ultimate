@@ -2,9 +2,10 @@
  * A read's HTTP answer. Decided ONCE per query, at projection, from its `rows:` schema — the rule
  * `@ultimat3/action`'s `record-wire.ts` already follows: a query whose `rows:` is an entity row
  * schema ALWAYS answers `{ data, records }` behind `x-ultimate-records: 1` (records may be `{}`),
- * and every other query answers the bare rows (or `Page`) it always did. One body shape per
- * operation — until 21.0.0 a read sent the envelope only when a row came back, so its OpenAPI was a
- * `oneOf` over "sometimes" and a generated client had to branch on the data.
+ * and every other query answers the bare rows (or `Page`) it always did.
+ *
+ * One body shape per operation — until 21.0.0 a read sent the envelope only when a row came back,
+ * so its OpenAPI was a `oneOf` over "sometimes" and a generated client had to branch on the data.
  */
 
 import type { RecordRows, Row } from '@ultimat3/core';

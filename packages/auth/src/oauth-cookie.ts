@@ -1,8 +1,10 @@
 // Single responsibility: the handshake's server-side codec (`sealHandshake` / `openHandshake`), its
-// secret and its deadline. The two legs of an authorization-code login are separate HTTP requests,
-// so `beginOAuth`'s state, nonce and PKCE verifier have to survive the round trip — and a framework
-// that leaves that to the app gets one hand-rolled store per app, which is exactly where PKCE
-// quietly stops proving anything. The cookie is `oauth-handshake-cookie.ts`.
+// secret and its deadline.
+//
+// The two legs of an authorization-code login are separate HTTP requests, so `beginOAuth`'s state,
+// nonce and PKCE verifier have to survive the round trip — and a framework that leaves that to the
+// app gets one hand-rolled store per app, which is exactly where PKCE quietly stops proving
+// anything. The cookie is `oauth-handshake-cookie.ts`.
 
 import type { Clock } from '@ultimat3/core';
 import { EnvMissingError, hmac, systemClock, timingSafeEqual } from '@ultimat3/core';

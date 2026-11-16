@@ -1,4 +1,5 @@
 // Single responsibility: verifying a workload's own JWT and turning it into a `ServiceIdentity`.
+//
 // Before this, `ServiceIdentity` was a plain struct with no non-test caller and nothing in the
 // framework verified a service credential at all — no workload identity, no `client_credentials`,
 // no token exchange — so two Ultimate services could only trust each other through a long-lived

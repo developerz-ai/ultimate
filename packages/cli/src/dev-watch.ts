@@ -1,8 +1,10 @@
-// Which paths under the app root `x dev` must not watch, and the rule is REGISTRATION rather than
-// filtering: `watch(root, { recursive: true })` takes one inotify descriptor per directory before
-// any filter runs, so an answer given after the event has already cost the kernel queue, a JS
-// callback and a slot out of `max_user_watches`. Measured on a monorepo root: 1901 descriptors,
-// 1490 of them under `.git/` and `node_modules/`, and one `git status` delivering 5 events.
+// Which paths under the app root `x dev` must not watch — decided at REGISTRATION, not by
+// filtering events.
+//
+// `watch(root, { recursive: true })` takes one inotify descriptor per directory before any filter
+// runs, so an answer given after the event has already cost the kernel queue, a JS callback and a
+// slot out of `max_user_watches`. Measured on a monorepo root: 1901 descriptors, 1490 of them under
+// `.git/` and `node_modules/`, and one `git status` delivering 5 events.
 //
 // The ignore set is the app's own `.gitignore`, read with git's own anchoring (`gitignore.ts`),
 // plus a floor of directory names an ignore file need not name. It was seven hand-listed names,

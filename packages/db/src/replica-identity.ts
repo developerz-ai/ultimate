@@ -1,7 +1,9 @@
-// Single responsibility: the `alter table … replica identity full` a live query needs, emitted once.
-// `@ultimat3/realtime` refuses a subscription to a table without it — logical replication carries no
-// old row on an UPDATE, so no patch can be computed — and which tables need it is a tier-3 fact no
-// entity carries, so it arrives as `GenerateOptions.replicaIdentityFull` and is recorded on the
+// Single responsibility: the `alter table … replica identity full` a live query needs, emitted
+// once.
+//
+// `@ultimat3/realtime` refuses a subscription to a table without it — logical replication carries
+// no old row on an UPDATE, so no patch can be computed — and which tables need it is a tier-3 fact
+// no entity carries, so it arrives as `GenerateOptions.replicaIdentityFull` and is recorded on the
 // snapshot: the record is what stops the statement being re-emitted on every `x db gen`.
 
 import type { Plan } from './foreign-key-plan';

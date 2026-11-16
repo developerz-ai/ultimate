@@ -1,10 +1,12 @@
 /**
  * `@ultimat3/core/page` — the ONE light entry for browser code: the page handle, the principal
  * fence, the names a document, a service worker and an island agree on, and `UltimateError` with
- * the render helper a refusal's `fix:` needs. What it never carries is a titles TABLE: any barrel
- * import retains the anchored `core-error-codes.ts` and `schema-error-codes.ts`, and a browser
- * that loaded no table titles a code from its name. The barrel re-exports every name here;
- * `page-bundle.test.ts` fails if this entry ever grows a table back.
+ * the render helper a refusal's `fix:` needs.
+ *
+ * What it never carries is a titles TABLE: any barrel import retains the anchored
+ * `core-error-codes.ts` and `schema-error-codes.ts`, and a browser that loaded no table titles a
+ * code from its name. The barrel re-exports every name here; `page-bundle.test.ts` fails if this
+ * entry ever grows a table back.
  */
 
 // The client seam's own functions, for the hooks a browser island calls: the one transport, the

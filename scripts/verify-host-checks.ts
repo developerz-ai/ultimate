@@ -3,6 +3,7 @@
 // order, so the report is the one the serial run gave; `verify-host-checks.test.ts` holds that.
 // Split out of `scripts/verify.ts`, which keeps the entry point and re-exports every name here.
 
+// why: Bun ships no path joiner.
 import { join } from 'node:path';
 import type { HostCheck, VerifyStepName } from '@ultimat3/cli';
 import {

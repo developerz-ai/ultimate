@@ -4,10 +4,11 @@
 // Every test here runs the real runtime text against a hand-built document.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp, no recursive remove, no tmpdir() and no path-join primitive; the
+// runtime and its chunks are imported from a throwaway directory.
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { hydrateRuntime, type IslandDirective } from './hydrate';
 
 const directive = (overrides: Partial<IslandDirective> = {}): IslandDirective => ({
@@ -78,7 +79,7 @@ describe('the interaction runtime, executed', () => {
     const listeners = new Map<string, ((event: FakeEvent) => void)[]>();
     const element = {
       getAttribute: (name: string): string | null =>
-        name === 'data-x-entry' ? pathToFileURL(island).href : null,
+        name === 'data-x-entry' ? Bun.pathToFileURL(island).href : null,
       // Every real element has one, and `boot` marks the mount outcome through it.
       setAttribute: (): void => undefined,
       // This element is both the island root and every event's target, and it has no children — so
@@ -111,7 +112,7 @@ describe('the interaction runtime, executed', () => {
       .replace('<script type="module">', '')
       .replace('</script>', '');
     await writeFile(runtime, source, 'utf8');
-    await import(pathToFileURL(runtime).href);
+    await import(Bun.pathToFileURL(runtime).href);
 
     return {
       fire: (type) => {
@@ -265,7 +266,7 @@ describe('the mount markers, executed', () => {
 
     // A Map, not a record: `getAttribute('toString')` off an object walks the prototype chain and
     // hands the runtime a function, which is the trap `render/CLAUDE.md` names for real elements.
-    const attributes = new Map<string, string>([['data-x-entry', pathToFileURL(island).href]]);
+    const attributes = new Map<string, string>([['data-x-entry', Bun.pathToFileURL(island).href]]);
     const element: FakeElement = {
       getAttribute: (name) => attributes.get(name) ?? null,
       setAttribute: (name, value) => {
@@ -288,7 +289,7 @@ describe('the mount markers, executed', () => {
       .replace('<script type="module">', '')
       .replace('</script>', '');
     await writeFile(runtime, source, 'utf8');
-    await import(pathToFileURL(runtime).href);
+    await import(Bun.pathToFileURL(runtime).href);
     await waitFor(() => mounting);
 
     return {
@@ -412,7 +413,7 @@ describe('the visible runtime, executed', () => {
     const island = join(dir, 'island.mjs');
     await writeFile(island, 'export function mount(){return globalThis.__xTestMount()}\n', 'utf8');
 
-    const attributes = new Map<string, string>([['data-x-entry', pathToFileURL(island).href]]);
+    const attributes = new Map<string, string>([['data-x-entry', Bun.pathToFileURL(island).href]]);
     const element = {
       getAttribute: (name: string): string | null => attributes.get(name) ?? null,
       setAttribute: (name: string, value: string): void => {
@@ -444,7 +445,7 @@ describe('the visible runtime, executed', () => {
         .replace('<script type="module">', '')
         .replace('</script>', '');
       await writeFile(runtime, source, 'utf8');
-      await import(pathToFileURL(runtime).href);
+      await import(Bun.pathToFileURL(runtime).href);
 
       failMount('mount is not a function');
       await waitFor(() => attributes.has('data-x-failed'));

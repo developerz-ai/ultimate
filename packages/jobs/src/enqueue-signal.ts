@@ -1,8 +1,10 @@
 // "Work just arrived." A worker or relay that has backed off (`idle-backoff.ts`) is woken by it at
-// once, so the backoff is never the latency of a job. Two signals, because they wake two loops: a
-// job on the queue wakes workers, a row staged in the outbox wakes the relay. Raised in-process by
-// whatever queued the work here, and by `queue-wake.ts` for work ANOTHER process committed — it
-// holds the `LISTEN` this file knows nothing about.
+// once, so the backoff is never the latency of a job.
+//
+// Two signals, because they wake two loops: a job on the queue wakes workers, a row staged in the
+// outbox wakes the relay. Raised in-process by whatever queued the work here, and by
+// `queue-wake.ts` for work ANOTHER process committed — it holds the `LISTEN` this file knows
+// nothing about.
 
 function channel<A extends readonly unknown[]>(): {
   on(listener: (...args: A) => void): () => void;

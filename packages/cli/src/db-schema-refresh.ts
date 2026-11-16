@@ -1,8 +1,9 @@
 // The schema dump, regenerated on behalf of a command: `x db gen` and `x db migrate` both end by
-// making `packages/db/schema/` equal to what the migrations produce. Split from
-// `db-schema-dump.ts`, which replays and writes; this decides what a command REPORTS when the dump
-// was written, was already right, was not owed, or could not be produced — and holds the two
-// findings that are about the dump as a whole rather than about one file in it.
+// making `packages/db/schema/` equal to what the migrations produce.
+//
+// Split from `db-schema-dump.ts`, which replays and writes; this decides what a command REPORTS
+// when the dump was written, was already right, was not owed, or could not be produced — and holds
+// the two findings that are about the dump as a whole rather than about one file in it.
 
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import type { Migration } from '@ultimat3/db';

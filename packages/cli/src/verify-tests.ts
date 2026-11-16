@@ -6,8 +6,8 @@
 // `eval` carries one rule beyond its suite — every prompt must have an eval — so it is the only
 // step here that can fail with no test file of its own.
 
-// Bun ships no `Bun.*` equivalent for either: `existsSync` answers whether this root is an app,
-// and `join` builds the host-separator path to its config file.
+// why: Bun ships no synchronous existence check (`Bun.file().exists()` is async, and `isApp` is
+// read inside sync object literals) and no path API — `join` builds the path to the config file.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { APP_CONFIG_FILE } from '@ultimat3/core';

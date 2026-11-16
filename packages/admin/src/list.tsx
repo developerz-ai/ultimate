@@ -1,9 +1,10 @@
 // The list view: scope tabs, the filter bar, the batch bar, derived and computed columns, keyset
-// pagination, and the states a server-rendered table has (rows, empty, error). Every control is a
-// link or a native form — a row opens through a real `<a href>`, a header sorts through one,
-// paging is `<Pagination hrefFor>`, a row is selected by a checkbox the batch form owns — so the
-// page ships no script and there is nothing to hydrate.
-// Prev/Next are the only navigation: there is no page number, because there is no offset.
+// pagination, and the states a server-rendered table has (rows, empty, error).
+//
+// Every control is a link or a native form — a row opens through a real `<a href>`, a header sorts
+// through one, paging is `<Pagination hrefFor>`, a row is selected by a checkbox the batch form
+// owns — so the page ships no script and there is nothing to hydrate. Prev/Next are the only
+// navigation: there is no page number, because there is no offset.
 
 import { t } from '@ultimat3/i18n';
 import { Card, DataTable, ErrorState } from '@ultimat3/ui';

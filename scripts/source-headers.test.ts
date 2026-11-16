@@ -132,7 +132,9 @@ describe('a fixture tree', () => {
     // A pinned path, present and clean: its pin outlived its violation.
     await Bun.write(`${root}/packages/i18n/src/subset.ts`, '// Owns one thing.\nexport {};\n');
 
-    const findings = await sourceHeaderFindings(root);
+    const findings = await sourceHeaderFindings(root, {
+      'packages/i18n/src/subset.ts': { count: 1, reason: 'fixture row' },
+    });
     const byAt = new Map(findings.map((finding) => [finding.at, finding]));
     expect(byAt.get('packages/demo/src/bare.ts')?.code).toBe('X_SOURCE_HEADER_MISSING');
     expect(byAt.get('packages/demo/src/empty.ts')?.cause).toContain('empty header comment');

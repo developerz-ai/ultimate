@@ -3,7 +3,7 @@
 // the docs `x docs` quotes and the `fix:` lines `x errors explain` projects come from the same
 // directory or they describe different builds.
 
-// `node:fs`/`node:path` because Bun ships neither: `dirname` walks a resolved module up to the
+// why: `node:fs`/`node:path` because Bun ships neither: `dirname` walks a resolved module up to the
 // directory that owns it, `basename` names the two segments the store layout is recognised by,
 // and `existsSync` is what says which directory is really there.
 import { existsSync } from 'node:fs';

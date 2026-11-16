@@ -1,8 +1,10 @@
-// A package barrel a browser must not import, and the entry it imports instead. `@ultimat3/entity`'s
-// barrel reaches the SQL renderer and `@ultimat3/db` — about a megabyte in an island — while
-// `@ultimat3/entity/record` is the browser half. DERIVED from each manifest's `exports`: a package
-// that publishes a `./record`, `./browser` or `./client` subpath has said its barrel is the server
-// half, so a new browser entry enters this rule by being published, never by being listed here.
+// A package barrel a browser must not import, and the entry it imports instead.
+//
+// `@ultimat3/entity`'s barrel reaches the SQL renderer and `@ultimat3/db` — about a megabyte in an
+// island — while `@ultimat3/entity/record` is the browser half. DERIVED from each manifest's
+// `exports`: a package that publishes a `./record`, `./browser` or `./client` subpath has said its
+// barrel is the server half, so a new browser entry enters this rule by being published, never by
+// being listed here.
 
 import { stripComments } from '@ultimat3/core';
 import { lineIndex } from './ts-scan';

@@ -1,8 +1,9 @@
 // Single responsibility: the numeric screen over every option this package bounds anything with —
 // the three policies `defineAuth` resolves, and the runtime options (`jwks`, the OAuth legs, TOTP
-// drift, the limiter's key cap) that arrive on a call rather than through config. One file, because
-// the rule is one rule: a duration, a length and an allowance are all "a whole positive number, and
-// NaN is what an unset environment variable parses to".
+// drift, the limiter's key cap) that arrive on a call rather than through config.
+//
+// One file, because the rule is one rule: a duration, a length and an allowance are all "a whole
+// positive number, and NaN is what an unset environment variable parses to".
 
 import { authPolicyNumberInvalid } from './errors';
 import type { PasswordPolicy } from './password';

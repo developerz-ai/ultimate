@@ -2,6 +2,8 @@
 // here is a way a scan could hand an agent a doc entry that does not correspond to shipped code.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp, no mkdir, no recursive remove and no synchronous write; the fixtures
+// are built synchronously at module scope, before the scan under test runs.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

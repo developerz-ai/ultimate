@@ -8,6 +8,7 @@
 // carries the prompt ref and hash that produced it, because a score with no prompt attached is
 // not a measurement.
 
+// why: Bun ships no path API; `isAbsolute` also knows a Windows drive-letter path is absolute.
 import { isAbsolute } from 'node:path';
 import { EvalBaselineInvalidError, EvalBaselineMissingError } from './eval-errors';
 

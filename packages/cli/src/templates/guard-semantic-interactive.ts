@@ -1,4 +1,5 @@
 // The `semantic-interactive` guard `x new` ships: an element that answers a click IS a control.
+//
 // The cheapest a11y win there is, and the one an agent undoes by reflex — WebAIM's annual survey of
 // a million home pages finds pages using ARIA average ~41% MORE detected errors than pages using
 // none, because `role="button"` is a PROMISE (Space, Enter, focus, disabled) and only the native

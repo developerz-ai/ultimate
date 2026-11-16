@@ -1,8 +1,10 @@
 // URL ⇄ the list a resource is asked for. A list page's whole state lives in its query string —
-// cursor, sort, scope and filters — so paging, sorting, scoping and filtering are links and one
-// GET form, and a list needs no script. One parser and one builder, so the two cannot disagree
-// about a parameter's name. A parameter the resource does not derive is refused, never ignored:
-// a typo that silently showed every row is how an operator acts on the wrong list.
+// cursor, sort, scope and filters — so paging, sorting, scoping and filtering are links and one GET
+// form, and a list needs no script.
+//
+// One parser and one builder, so the two cannot disagree about a parameter's name. A parameter the
+// resource does not derive is refused, never ignored: a typo that silently showed every row is how
+// an operator acts on the wrong list.
 //
 //   ?cursor=<signed>            keyset position (pagination.ts)
 //   ?sort=<field>:<asc|desc>    a sortable field; the direction defaults to desc

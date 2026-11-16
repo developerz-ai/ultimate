@@ -1,9 +1,11 @@
 // `backfill()` — one pass over every row a chain matches, declared as a `job` and NOT as a ninth
-// primitive. A backfill is durable background work with an input schema, a retry policy, an
-// idempotency key and a queue, which is the definition of a `job` — so this file is a FACTORY over
-// `job()`, exactly as `llm()` is one over `action()`. That is what gives a backfill `.enqueue()`,
-// the worker's cancellation, the dead-letter path, `x jobs show` and a manifest row without a line
-// here, and it is why nothing in the framework grows a ninth kind of thing to hold table sweeps.
+// primitive.
+//
+// A backfill is durable background work with an input schema, a retry policy, an idempotency key
+// and a queue, which is the definition of a `job` — so this file is a FACTORY over `job()`, exactly
+// as `llm()` is one over `action()`. That is what gives a backfill `.enqueue()`, the worker's
+// cancellation, the dead-letter path, `x jobs show` and a manifest row without a line here, and it
+// is why nothing in the framework grows a ninth kind of thing to hold table sweeps.
 //
 // The declaration lives here and the pass lives in `backfill-pass.ts` — the same split `job.ts`
 // and `execute.ts` already have, and the reason the iteration, the checkpoints and the

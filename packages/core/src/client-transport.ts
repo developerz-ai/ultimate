@@ -2,8 +2,10 @@
  * The ONE browser HTTP function. Every client surface — `rpc()`, `queryClient()`, a signed upload,
  * the store's refetch — sends through here, so credentials, headers, the error decode, the records
  * envelope and the principal fence are decided once. A GET is a read: abortable on `rescope()`,
- * deduped when a `ClientFlight` is supplied. Anything else is a write: never deduped, never
- * aborted by the fence, and its records never adopted across one.
+ * deduped when a `ClientFlight` is supplied.
+ *
+ * Anything else is a write: never deduped, never aborted by the fence, and its records never
+ * adopted across one.
  *
  * `clientFlight` is NOT imported here at value level — a caller passes one, and only then
  * does its graph enter the bundle. Neither is `traceHeaders()`: the trace and budget headers come

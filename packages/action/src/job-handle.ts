@@ -1,9 +1,10 @@
 /**
- * Projection 5: an action as durable work — its input schema, a payload-derived
- * idempotency key, and an `invoke` that runs the action's one execution path under
- * `surface: 'job'`, so a queued run takes the same validation and policy path as the HTTP call —
- * under the worker's system authority: the enqueuer is `enqueuedBy`, attribution only, and never
- * authorises the run. An action that acts for a user takes that user's id and re-authorises it.
+ * Projection 5: an action as durable work — its input schema, a payload-derived idempotency key,
+ * and an `invoke` that runs the action's one execution path under `surface: 'job'`.
+ *
+ * A queued run takes the same validation and policy path as the HTTP call — under the worker's
+ * system authority: the enqueuer is `enqueuedBy`, attribution only, and never authorises the run.
+ * An action that acts for a user takes that user's id and re-authorises it.
  * `@ultimat3/ai`'s `agentJob()` is the framework's one consumer — it takes any `Action` and
  * composes `job()` around this shape — and an app may write the same three lines.
  */

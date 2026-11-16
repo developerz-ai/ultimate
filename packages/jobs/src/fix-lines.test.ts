@@ -15,8 +15,6 @@
 // declaration that made the instruction look plausible; this is what keeps it from coming back.
 
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 const SRC = import.meta.dir;
 
@@ -27,13 +25,15 @@ const DEAD_FIELD = /jobs\s*[:.]\s*\{?\s*driver|jobs\.driver/;
 const FIX_LINE = /fix:\s*(['"`])((?:\\.|(?!\1).)*)\1/gs;
 
 const sources = (): readonly string[] =>
-  readdirSync(SRC).filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'));
+  [...new Bun.Glob('*.ts').scanSync({ cwd: SRC })].filter((name) => !name.endsWith('.test.ts'));
+
+const read = (name: string): Promise<string> => Bun.file(`${SRC}/${name}`).text();
 
 describe('fix lines', () => {
-  test('no fix: instructs the reader to edit jobs.driver, which selects nothing', () => {
+  test('no fix: instructs the reader to edit jobs.driver, which selects nothing', async () => {
     const offenders: string[] = [];
     for (const name of sources()) {
-      const text = readFileSync(join(SRC, name), 'utf8');
+      const text = await read(name);
       for (const [, , body] of text.matchAll(FIX_LINE)) {
         if (body !== undefined && DEAD_FIELD.test(body)) offenders.push(`${name}: ${body}`);
       }
@@ -49,9 +49,9 @@ describe('fix lines', () => {
     expect(DEAD_FIELD.test('drop jobs: from apps/<app>/runtime.ts')).toBe(false);
   });
 
-  test('every fix: in this package is non-empty', () => {
+  test('every fix: in this package is non-empty', async () => {
     for (const name of sources()) {
-      const text = readFileSync(join(SRC, name), 'utf8');
+      const text = await read(name);
       for (const [, , body] of text.matchAll(FIX_LINE)) {
         expect(body?.trim().length ?? 0).toBeGreaterThan(0);
       }

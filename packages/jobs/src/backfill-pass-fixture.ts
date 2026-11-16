@@ -1,6 +1,7 @@
-// The fixture two files drive one `backfill()` pass through: a real `@ultimat3/entity` chain over
-// a real `memoryRepo`, wrapped so every statement, iteration and close is counted. Shared rather
-// than copied because `backfill-pass.test.ts` (the iteration and its checkpoints) and
+// The fixture two files drive one `backfill()` pass through: a real `@ultimat3/entity` chain over a
+// real `memoryRepo`, wrapped so every statement, iteration and close is counted.
+//
+// Shared rather than copied because `backfill-pass.test.ts` (the iteration and its checkpoints) and
 // `backfill-pass-ledger.test.ts` (the `x_backfills` row it writes) must drive the SAME pass — two
 // harnesses that drifted would be two passes agreeing only by construction.
 import type { Ctx, Environment } from '@ultimat3/core';

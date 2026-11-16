@@ -1,9 +1,10 @@
 // The one feature layout, made a build error: a primitive module `actions.ts` (or `live`,
-// `queries`, `jobs`, `tasks`) beside the directory of the same name is refused. `x g` writes the
-// directory form — `<slice>/actions/<name>.ts`, one primitive per file — and an app that also keeps
-// `actions.ts` has two homes for one kind of thing, where `./actions` resolves to the file and never
-// the directory. A component module beside its folder (`ui.tsx` + `ui/`) is not a primitive's home,
-// and `x g resource` writes exactly that pair.
+// `queries`, `jobs`, `tasks`) beside the directory of the same name is refused.
+//
+// `x g` writes the directory form — `<slice>/actions/<name>.ts`, one primitive per file — and an
+// app that also keeps `actions.ts` has two homes for one kind of thing, where `./actions` resolves
+// to the file and never the directory. A component module beside its folder (`ui.tsx` + `ui/`) is
+// not a primitive's home, and `x g resource` writes exactly that pair.
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { SourceFile } from './app-boundaries';

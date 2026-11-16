@@ -1,9 +1,10 @@
-// The human-authored half of what `x new` writes: the READMEs, the agent-facing convention files,
-// the bin/ scripts and the optional dev compose. Separated from the config half so neither file has
-// to be scrolled to find the other — one file, one job applies to templates too. The image, its
-// ignore file, the production topology and the deploy page are `scaffold-container.ts`; the
-// `.claude/` harness that reads CLAUDE.md is `scaffold-claude.ts`; the one workflow is
-// `github/ci.yml.ts`.
+// The human-authored half of what `x new` writes: the READMEs, the agent-facing convention
+// files, the bin/ scripts and the optional dev compose.
+//
+// Separated from the config half so neither file has to be scrolled to find the other — one file,
+// one job applies to templates too. The image, its ignore file, the production topology and the
+// deploy page are `scaffold-container.ts`; the `.claude/` harness that reads CLAUDE.md is
+// `scaffold-claude.ts`; the one workflow is `github/ci.yml.ts`.
 
 import { LINE_CEILING } from '../workspace-checks';
 import { githubFiles } from './github/ci.yml';
