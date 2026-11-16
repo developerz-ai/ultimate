@@ -2,8 +2,8 @@
 // separators, `..` folded, a Windows drive letter upper-cased — so "is this sheet below that
 // directory" means the same on Windows, where Bun hands every path over as `D:\app\…`, as on POSIX.
 
-import { posix, resolve } from 'node:path';
 // why: Bun ships no path API, and a relative root must be resolved against the working directory.
+import { posix, resolve } from 'node:path';
 import { trimTrailingSlashes } from '@ultimat3/core/page';
 
 /** POSIX-absolute (`/srv/app`), drive-absolute (`D:\app`, `d:/app`) or UNC (`\\host\share`). */

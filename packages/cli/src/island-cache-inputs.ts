@@ -3,10 +3,10 @@
 // (`resolutionDirs`), and the environment every group shares (`environmentDigest`: the lockfile,
 // the tsconfig chain, the package manifests). Each is a digest, read at most once per build.
 
+// why: Bun ships no directory listing; `readdir` answers the names a resolver chooses between.
 import { readdir } from 'node:fs/promises';
 // why: Bun ships no path API; the bundler names its inputs relative to the building process's cwd.
 import { basename, dirname, join, resolve } from 'node:path';
-// why: Bun ships no directory listing; `readdir` answers the names a resolver chooses between.
 import { trimTrailingSlashes } from '@ultimat3/core';
 import { contentHash } from '@ultimat3/render/server';
 import { hasPathSegment } from './path-segments';
