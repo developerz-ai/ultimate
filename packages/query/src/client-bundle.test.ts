@@ -78,8 +78,11 @@ describe('@ultimat3/query/client in a browser', () => {
   // measured: 15,997 B (2026-11-09, Bun 1.4.4), 15,784 without this change. why: +213 B, core's
   // `boundedCause` in `UltimateError`'s constructor — every cause, a decoded problem's included, is
   // cut at 4 KiB (plan 101 slice 02, K2). The ceiling moves by the measured growth: 15,872 + 213.
-  test('stays under 16.1 kB minified (15,997 B as of 2026-11-09)', async () => {
+  // measured: 16,170 B (2026-11-16, plan 101b sweep 8b-2), 16,081 with main's client.ts. why:
+  // +89 B, core's linear `trimTrailingSlashes` on the base URL, the one trim that replaced the
+  // quadratic `/\/+$/` at 26 sites (CodeQL polynomial-redos). The ceiling moves by it: 16,085 + 89.
+  test('stays under 16.2 kB minified (16,170 B as of 2026-11-16)', async () => {
     const { bytes } = await build(true);
-    expect(bytes).toBeLessThan(16_085);
+    expect(bytes).toBeLessThan(16_174);
   }, 60_000);
 });
