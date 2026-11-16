@@ -14,6 +14,7 @@ import type { RouteEntry } from '@ultimat3/render';
 import { ISLAND_EXTENSION, routeEntries } from '@ultimat3/render';
 import { discoverIslands } from './island-bundle';
 import type { Finding } from './output';
+import { quoteArg } from './shell-quote';
 
 /**
  * The exports that only work in a booted browser page: each one reads the page's store, its socket
@@ -161,12 +162,6 @@ export interface LiveRouteGap extends LiveReach {
   readonly islands: readonly string[];
 }
 
-/** The `x g island` invocation that fixes it, built from this route's own file — never a placeholder. */
-const generatorFor = (file: string): string => {
-  const dir = posix.dirname(file);
-  return `x g island ${posix.basename(dir)} --at ${dir}`;
-};
-
 /**
  * Every browser-only read a route's SERVER graph holds that no browser will ever run. A page's
  * imports are server-rendered — an island is reached by a `src` string, never an import — so a
@@ -199,6 +194,12 @@ export async function liveRouteGaps(
   return gaps;
 }
 
+/**
+ * The `x g island` invocation that fixes it, built from this route's own file — never a
+ * placeholder. Each value quoted where it is spliced, so the shell-arg scan can see it.
+ */
+const dirOf = (gap: LiveRouteGap): string => posix.dirname(gap.file);
+
 export const liveRouteFindingFor = (gap: LiveRouteGap): Finding => ({
   code: 'X_LIVE_ROUTE_NO_ISLAND',
   cause:
@@ -206,7 +207,7 @@ export const liveRouteFindingFor = (gap: LiveRouteGap): Finding => ({
     (gap.hydrate === 'never' ? `sits on a route declaring hydrate: 'never'` : 'no island imports') +
     ' — so it only ever runs on the server, where it answers its server state (nothing, or loading) forever, at 200',
   fix:
-    `move it into an island: ${generatorFor(gap.file)}, import ${gap.at} from that island's mount(), and declare it with island({ src: './${posix.basename(posix.dirname(gap.file))}${ISLAND_EXTENSION}' }) in ${gap.file}` +
+    `x g island ${quoteArg(posix.basename(dirOf(gap)))} --at ${quoteArg(dirOf(gap))}   # moves it into an island: import ${gap.at} from that island's mount(), and declare it with island({ src: './${posix.basename(posix.dirname(gap.file))}${ISLAND_EXTENSION}' }) in ${gap.file}` +
     (gap.hydrate === 'never' ? `, with a hydrate other than 'never'` : ''),
   docs: ERROR_DOCS_URL,
   at: gap.at,

@@ -52,20 +52,26 @@ export function layoutOf(
   const groups = declared.map((group): AdminSection => {
     const fields = group.fields.map((name) => {
       const field = layout.fields.find((known) => known.name === name);
+      // This group's list without the refused name: the edit to paste over the declared one.
+      const without = (): string =>
+        group.fields
+          .filter((known) => known !== name)
+          .map((known) => JSON.stringify(known))
+          .join(', ');
       const refuse = (cause: string, fix: string): never => {
         throw new AdminFieldUnsupportedError({ entity: layout.entity, field: name, cause, fix });
       };
       if (field === undefined) {
         return refuse(
           `named in ${layout.option} ("${group.titleKey}") and ${layout.excluded}`,
-          `remove "${name}" from resources.${layout.entity}.${layout.option} — it may name: ${layout.fields.map((known) => known.name).join(', ')}`,
+          `fields: [${without()}]   // resources.${layout.entity}.${layout.option} without "${name}" — it may name: ${layout.fields.map((known) => known.name).join(', ')}`,
         );
       }
       const owner = claimed.get(name);
       if (owner !== undefined) {
         return refuse(
           `named in two ${layout.option} groups ("${owner}" and "${group.titleKey}")`,
-          `keep "${name}" in one group of resources.${layout.entity}.${layout.option}`,
+          `fields: [${without()}]   // keep "${name}" in one group of resources.${layout.entity}.${layout.option}: "${owner}"`,
         );
       }
       claimed.set(name, group.titleKey);

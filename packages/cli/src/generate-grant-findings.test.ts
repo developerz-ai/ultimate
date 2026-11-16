@@ -60,8 +60,8 @@ describe('unit · a grant the generator could not make is a finding with the lin
     expect(await grantGeneratedPermissions(root, WRITTEN)).toEqual([]);
     const [finding] = await ungrantedByGenerator(root, WRITTEN);
     expect(finding?.code).toBe('X_PERMISSION_UNGRANTED');
-    expect(finding?.fix).toStartWith(`edit ${ROLES_FILE} — `);
-    expect(finding?.fix).toContain("member: 'run:read'");
+    expect(finding?.fix).toStartWith("{ member: { grants: [..., 'run:read'");
+    expect(finding?.fix).toContain(`in ${ROLES_FILE}`);
     expect(finding?.at).toBe(ROLES_FILE);
     expect(await Bun.file(join(root, ROLES_FILE)).text()).toBe(custom);
   });

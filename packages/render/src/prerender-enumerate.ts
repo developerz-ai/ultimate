@@ -16,6 +16,10 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
  * Decided by `params` holding an object: a param VALUE is always a string, so `{ params: 'a' }` on a
  * route whose own dynamic segment is `[params]` stays the plain params it has always been.
  */
+/** One params object to paste into a fix: `{ slug: '…' }`, each dynamic param named. */
+const paramsShape = (keys: readonly string[]): string =>
+  `{ ${keys.map((key) => `${key}: '…'`).join(', ')} }`;
+
 const isEntry = (item: Readonly<Record<string, unknown>>): boolean => isRecord(item['params']);
 
 function entryOf(entry: RouteEntry, item: Readonly<Record<string, unknown>>): PrerenderEntry {
@@ -74,7 +78,7 @@ export async function enumeratePrerenderEntries(
   if (!Array.isArray(produced)) {
     throw new PrerenderFailedError(
       `prerender() for ${entry.path} returned ${typeof produced}, expected an array`,
-      `return an array of params from prerender in ${entry.file}`,
+      `prerender: () => [${paramsShape(entry.pattern.keys)}]   // in ${entry.file}: an array of params`,
     );
   }
 
@@ -86,7 +90,7 @@ export async function enumeratePrerenderEntries(
         throw new PrerenderFailedError(
           `prerender() for ${entry.path} returned the bare string ${renderCauseValue(item)} ` +
             `but the route has ${keys.length} dynamic params (${keys.join(', ')})`,
-          `return objects from prerender in ${entry.file}, e.g. { ${keys.join(': …, ')}: … }`,
+          `prerender: () => [${paramsShape(keys)}]   // in ${entry.file}: objects, one key per dynamic param`,
         );
       }
       return { params: { [only]: item } };
@@ -95,7 +99,7 @@ export async function enumeratePrerenderEntries(
     if (!isRecord(item)) {
       throw new PrerenderFailedError(
         `prerender() for ${entry.path} returned ${renderCauseValue(item)} as one of its items, which is neither a params object nor a string`,
-        `return an array of params objects (or strings, for a one-param route) from prerender in ${entry.file}`,
+        `prerender: () => [${paramsShape(keys)}]   // in ${entry.file}: params objects, or strings for a one-param route`,
       );
     }
     return isEntry(item) ? entryOf(entry, item) : { params: item as RouteParams };

@@ -47,7 +47,7 @@ export function entityRow(
     throw new ReplicationProtocolError({
       stage: 'value',
       detail: `table "${relation.name}" has no registered entity, so its rows cannot be decoded`,
-      fix: 'load the app before starting the replicator — runRole({ root, env }) does — or drop the table from the entity list',
+      fix: 'runRole({ root, env })   # loads the app before starting the replicator — or drop the table from the entity list',
     });
   }
   const source = image === 'before' ? replicatedOnly(relation, physical) : physical;

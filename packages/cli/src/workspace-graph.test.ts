@@ -244,7 +244,7 @@ describe('unit · every workspace import is declared', () => {
     // The version is the target's own: a range that resolves and then fails the lockstep rule is
     // an edit that trades one red gate for another.
     expect(findings[0]?.fix).toBe(
-      'add "@demo/web": "0.0.0" to "dependencies" in packages/mcp/package.json',
+      '{ "dependencies": { "@demo/web": "0.0.0" } }   // merge into packages/mcp/package.json',
     );
   });
 

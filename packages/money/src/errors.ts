@@ -140,7 +140,7 @@ export function notRoundable(value: number): MoneyError {
   return new MoneyError({
     code: 'X_MONEY_NOT_INTEGER',
     cause: `cannot round a non-finite amount: ${String(value)}`,
-    fix: 'trace the amount back to its source — a NaN or Infinity here means a division or a float multiply upstream; build amounts with fromDecimal(string, currency)',
+    fix: "fromDecimal('12.99', 'EUR')   // build amounts from a decimal string — a NaN or Infinity here means a division or a float multiply upstream: trace it to its source",
   });
 }
 
@@ -176,7 +176,7 @@ export function digitsInvalid(digits: number): MoneyError {
   return new MoneyError({
     code: 'X_MONEY_SCALE_INVALID',
     cause: `a digit count must be a whole number between -${MAX_MONEY_SCALE} and ${MAX_MONEY_SCALE}, got ${String(digits)}`,
-    fix: "pass an integer digit count — roundToDigits(value, 2, 'half-up') for two decimal places",
+    fix: "roundToDigits(value, 2, 'half-up')   // an integer digit count: 2 is two decimal places",
   });
 }
 
@@ -197,7 +197,7 @@ export function scaleInvalid(scale: number): MoneyError {
   return new MoneyError({
     code: 'X_MONEY_SCALE_INVALID',
     cause: `a money scale must be a whole number of decimal places between 0 and ${MAX_MONEY_SCALE}, got ${String(scale)}`,
-    fix: `use a scale in range — fromMinor(minor, currency, 6) for micros, or omit it for the currency's own minor unit`,
+    fix: `fromMinor(minor, currency, 6)   // a scale in range, 6 for micros — or omit it for the currency's own minor unit`,
   });
 }
 
@@ -218,7 +218,7 @@ export function scaleOverflow(
     cause: `this ${currency} amount needs more digits at scale ${scale} than a safe integer holds`,
     fix:
       fits === undefined
-        ? `the amount is too large for any scale — split it, or carry it as two ${codeExample(currency)} values`
+        ? `[fromMinor(firstPart, ${codeLiteral(currency)}), fromMinor(secondPart, ${codeLiteral(currency)})]   // the amount is too large for any scale: split it, carried as two ${codeExample(currency)} values`
         : `rescale(theFinerOperand, ${fits}, 'half-up') before combining — scale ${fits} is the finest that fits`,
   });
 }
@@ -263,7 +263,7 @@ export function decimalNotNumeric(value: unknown, currency: string): MoneyError 
       typeof value === 'string'
         ? `${shown} is not a decimal amount — no grouping separators, no exponent notation`
         : `${shown} is not a string — fromDecimal reads a decimal string, never a ${value === null ? 'null' : typeof value}`,
-    fix: `pass a plain decimal string: fromDecimal('12.99', ${codeLiteral(currency)})`,
+    fix: `fromDecimal('12.99', ${codeLiteral(currency)})   // a plain decimal string`,
   });
 }
 
@@ -275,7 +275,7 @@ export function currencyUnknown(currency: string): MoneyError {
   return new MoneyError({
     code: 'X_CURRENCY_UNKNOWN',
     cause: `"${currency}" is not a currency this process knows — not in the shipped ISO-4217 rows, and not registered by the app`,
-    fix: `pass a code currencyCodes() lists, uppercased — assertCurrency(${example}) — or declare it once at boot: registerCurrency({ code: ${example}, exponent: 2, name: ${example} })`,
+    fix: `assertCurrency(${example})   // a code currencyCodes() lists, uppercased — or declare it once at boot: registerCurrency({ code: ${example}, exponent: 2, name: ${example} })`,
   });
 }
 
@@ -310,7 +310,7 @@ export function currencyRedefined(
     // `renderFixLiteral` on the name and nowhere else: a name is free text by design — `O'Reilly
     // Points` is a currency an app may legitimately register — and it is the one value here that
     // cannot be gated into a safe shape, so it is escaped instead.
-    fix: `keep one registerCurrency({ code: ${codeLiteral(code)}, exponent: ${existing.exponent}, name: ${renderFixLiteral(existing.name, "'the name already registered'")} }) call and delete the other — to change a live exponent you must migrate every stored ${codeExample(code)} amount, because each one shifts by a power of ten`,
+    fix: `registerCurrency({ code: ${codeLiteral(code)}, exponent: ${existing.exponent}, name: ${renderFixLiteral(existing.name, "'the name already registered'")} })   // keep this one call and delete the other — to change a live exponent you must migrate every stored ${codeExample(code)} amount, because each one shifts by a power of ten`,
   });
 }
 
@@ -318,7 +318,7 @@ export function currencyRequired(context: string): MoneyError {
   return new MoneyError({
     code: 'X_CURRENCY_UNKNOWN',
     cause: `${context}: no currency to infer, and none was passed`,
-    fix: "pass the currency explicitly, e.g. sum([], 'EUR')",
+    fix: "sum([], 'EUR')   // pass the currency explicitly",
   });
 }
 
@@ -334,7 +334,7 @@ export function allocationInvalid(cause: string): MoneyError {
   return new MoneyError({
     code: 'X_ALLOCATION_INVALID',
     cause,
-    fix: 'pass a positive integer part count, or ratios that are finite, non-negative and not all zero',
+    fix: 'allocate(amount, 3)   // a positive integer part count — or allocateByRatios(amount, [70, 20, 10]): finite, non-negative, not all zero',
   });
 }
 
@@ -355,6 +355,6 @@ export function rateMissing(from: string, to: string): MoneyError {
   return new MoneyError({
     code: 'X_RATE_MISSING',
     cause: `no exchange rate available for ${from}→${to}`,
-    fix: 'register a RateProvider that covers this pair — there is no default provider, because a wrong rate is worse than a missing one',
+    fix: `convertWith(fixedRateProvider({ '${codeExample(from)}/${codeExample(to)}': 0.92 }, new Date('2026-03-14T00:00:00Z')), amount, ${codeLiteral(to)})   // a RateProvider that covers this pair — none is default: a wrong rate is worse than a missing one`,
   });
 }

@@ -44,7 +44,7 @@ export function paramsUndeclared(entry: RouteEntry, listed: boolean): Unmeasured
     reason: cause,
     code: 'X_BUDGET_PARAMS_UNDECLARED',
     cause,
-    fix: `add prerender: () => [{ ${example} }] to defineRoute in ${quoteArg(entry.file)}, then x build --target static`,
+    fix: `prerender: () => [{ ${example} }]   // on defineRoute in ${quoteArg(entry.file)}, then x build --target static`,
   };
 }
 

@@ -21,7 +21,7 @@ export function jobsOperator(): JobsOperator {
     throw new DriverUnavailableError({
       driver: 'none',
       cause: 'the jobs dashboard was asked for rows and this process installed no queue',
-      fix: 'run the app through x dev or the container entry, which install the queue — or in a test: installJobDriver(memoryJobDriver()) from @ultimat3/jobs/adapter',
+      fix: 'installJobDriver(memoryJobDriver())   // in a test, from @ultimat3/jobs/adapter — or run the app through x dev or the container entry, which install the queue',
     });
   }
   // Jobs' own guard: one refusal (X_JOB_INTROSPECTION_UNSUPPORTED) for every operator surface.

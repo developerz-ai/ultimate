@@ -133,21 +133,21 @@ const overFinding = (gap: DeadHostGap): Finding =>
 const docFinding = (gap: DeadHostGap): Finding => ({
   code: 'X_DEAD_DOCS_HOST',
   cause: `${HOST}, a host that answers HTTP 404 on every path, is linked at ${siteList(gap, at, EXPLAIN)}`,
-  fix: `edit ${siteTarget(gap, at)} — link https://github.com/developerz-ai/ultimate/wiki/Error-Codes for an error, or https://github.com/developerz-ai/ultimate for the project`,
+  fix: `bun run scripts/dead-docs-host.ts --explain --json   # lists every site: at ${siteTarget(gap, at)} link https://github.com/developerz-ai/ultimate/wiki/Error-Codes for an error, or https://github.com/developerz-ai/ultimate for the project`,
   at: at(leadSite(gap)),
 });
 
 const codeFinding = (gap: DeadHostGap): Finding => ({
   code: 'X_DEAD_DOCS_HOST',
   cause: `${gap.pkg} builds ${String(gap.found)} URL(s) on ${HOST} and is pinned at ${String(gap.pinned)} — ${siteList(gap, at, EXPLAIN)} — and that host answers HTTP 404 on every path, so the link an operator is handed at the moment of a failure goes nowhere`,
-  fix: `delete the docs: line at ${siteTarget(gap, at)} — UltimateError resolves the registered descriptor, whose default is ${REPLACEMENT} from @ultimat3/core; if this is not an error link, import ${REPLACEMENT} rather than writing a second host`,
+  fix: `bun run scripts/dead-docs-host.ts --explain --json   # lists every site: delete the docs: line at ${siteTarget(gap, at)} — UltimateError resolves the registered descriptor, whose default is ${REPLACEMENT} from @ultimat3/core; if this is not an error link, import ${REPLACEMENT} rather than writing a second host`,
   at: at(leadSite(gap)),
 });
 
 const staleFinding = (gap: DeadHostGap): Finding => ({
   code: 'X_DEAD_DOCS_HOST_PIN_STALE',
   cause: `${gap.pkg} is pinned at ${String(gap.pinned)} ${HOST} URL(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `edit scripts/dead-docs-host.ts — the rule is zero-pinned and holds no table, so delete the pin for ${gap.pkg}`,
+  fix: `grep -n 'pins: {' scripts/dead-docs-host.ts   # zero-pinned, so it holds no table: delete the pin for ${gap.pkg} there, leaving pins: {}`,
   at: 'scripts/dead-docs-host.ts',
 });
 
@@ -155,7 +155,7 @@ const unscannedFinding = (): Finding => ({
   code: 'X_DEAD_DOCS_HOST_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree with no dead link in it',
-  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/dead-docs-host.ts',
+  fix: "grep -n 'CORPUS_PATTERNS' scripts/lib/corpus.ts   # edit it so it matches this repo layout, then: bun run scripts/dead-docs-host.ts",
   at: 'scripts/lib/corpus.ts',
 });
 

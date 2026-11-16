@@ -2,7 +2,7 @@
 // and the SSLRequest handshake that has to happen before the first protocol byte. Bun pushes bytes
 // at handlers while the connection pulls messages, so a queue sits between them.
 
-import { renderThrowable } from '@ultimat3/core';
+import { renderFixShellArg, renderThrowable } from '@ultimat3/core';
 import { ReplicationFailedError, ReplicationProtocolError, ReplicationTlsError } from './errors';
 import { judgeHandshake, parseSsl, rootCertificate, type SslMode } from './pg-tls';
 import { type PgStream, sslRequest } from './pg-wire';
@@ -81,14 +81,14 @@ export function parsePgUrl(url: string): PgTarget {
     throw new ReplicationFailedError({
       stage: 'connect',
       detail: 'DATABASE_URL is not a connection URL',
-      fix: 'set DATABASE_URL to postgres://user:password@host:5432/database',
+      fix: 'export DATABASE_URL=postgres://<user>:<password>@<host>:5432/<database>',
     });
   }
   if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
     throw new ReplicationFailedError({
       stage: 'connect',
       detail: `the connection URL uses "${parsed.protocol}" rather than postgres:`,
-      fix: 'set DATABASE_URL to postgres://user:password@host:5432/database',
+      fix: 'export DATABASE_URL=postgres://<user>:<password>@<host>:5432/<database>',
     });
   }
   const { ssl, rootCert } = parseSsl(parsed.searchParams);
@@ -278,7 +278,7 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
     const lost = (detail: string): ReplicationTlsError =>
       new ReplicationTlsError({
         detail,
-        fix: `confirm ${target.host}:${target.port} is postgres with ssl=on, or use ?sslmode=disable if it does not speak TLS`,
+        fix: `openssl s_client -starttls postgres -connect ${renderFixShellArg(`${target.host}:${target.port}`, '"$PGHOST:$PGPORT"')} </dev/null   # a handshake means postgres with ssl=on — or use ?sslmode=disable if it does not speak TLS`,
       });
     const tlsHandlers: SocketHandlers = {
       data: (_socket, data) => queue.push(data.slice()),
@@ -346,7 +346,7 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
       throw new ReplicationFailedError({
         stage: 'ssl',
         detail: 'the server closed the connection instead of answering the TLS request',
-        fix: `use ?sslmode=disable if ${target.host} does not speak TLS`,
+        fix: `openssl s_client -starttls postgres -connect ${renderFixShellArg(`${target.host}:${target.port}`, '"$PGHOST:$PGPORT"')} </dev/null   # no handshake: use ?sslmode=disable if it does not speak TLS`,
       });
     }
     if (verdict === 0x53) {
@@ -356,7 +356,7 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
         throw new ReplicationProtocolError({
           stage: 'ssl',
           detail: `the server sent ${answer.length - 1} bytes after accepting TLS`,
-          fix: 'point the replication URL at postgres itself — a proxy answers like this',
+          fix: 'export REPLICATION_URL=postgres://<user>:<password>@<postgres-host>:5432/<db>   # postgres itself — a proxy answers like this',
         });
       }
       socket = await upgrade();
@@ -366,7 +366,7 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
       throw new ReplicationFailedError({
         stage: 'ssl',
         detail: `the server refused TLS but sslmode=${target.ssl} was asked for`,
-        fix: `enable ssl on ${target.host}, or use ?sslmode=prefer to accept a cleartext session`,
+        fix: "export REPLICATION_URL='postgres://<user>:<password>@<host>:5432/<db>?sslmode=prefer'   # accepts a cleartext session — or enable ssl on the server",
       });
     }
   }

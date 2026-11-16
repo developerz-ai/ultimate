@@ -60,7 +60,7 @@ export function assertNoPerRequestState(file: string): void {
     throw new RouteModeInvalidError(
       `${file} declares render: 'static' but rendered inside a request context ` +
         '(actor/request visible), so its output would leak per-request state',
-      `change render to 'ssr' in ${file}, or move the request-dependent part into an island`,
+      `render: 'ssr'   // in ${file} — or move the request-dependent part into an island`,
     );
   }
 }

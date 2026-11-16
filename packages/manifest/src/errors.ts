@@ -1,7 +1,7 @@
 // The X_* codes owned by @ultimat3/manifest. `x verify` raises these, so each fix line is a
 // command the developer (or the agent) can run verbatim.
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, renderFixShellArg, UltimateError } from '@ultimat3/core';
 
 export const MANIFEST_ERROR_CODES = [
   'X_MANIFEST_DRIFT',
@@ -59,6 +59,12 @@ export class ManifestDriftError extends UltimateError {
  */
 const neverShippedAMajor = (version: string): boolean => version.trim().startsWith('0.');
 
+/** The leading integer, plus one: `majorOf` compares nothing else, so `1.4.2` needs `2.0.0`. */
+const nextMajor = (version: string): string => {
+  const major = Number.parseInt(version.trim(), 10);
+  return Number.isInteger(major) ? `${major + 1}.0.0` : '<next-major>.0.0';
+};
+
 /**
  * A breaking contract change landed without a version bump.
  *
@@ -87,8 +93,8 @@ export class ManifestBreakingError extends UltimateError {
           : `${input.changes.length} breaking change(s) from ${input.from} to ${input.to} ` +
             `with no major version bump: ${summarize(input.changes)}`,
       fix: neverShippedAMajor(input.from)
-        ? 'a 0.x app has published no compatibility promise, and only 1.0.0 satisfies this gate — 0.2.0 does not: re-commit the baseline with x manifest, or bun pm pkg set version=1.0.0 in package.json'
-        : 'bump the major version in package.json — the leading integer, so 1.4.2 becomes 2.0.0 — or restore the removed contract',
+        ? 'bun pm pkg set version=1.0.0   # package.json: a 0.x app has published no compatibility promise, and only 1.0.0 satisfies this gate (0.2.0 does not) — or re-commit the baseline: x manifest'
+        : `bun pm pkg set version=${renderFixShellArg(nextMajor(input.from), '<next-major>.0.0')}   # the major bump in package.json — or restore the removed contract`,
     });
   }
 }

@@ -135,7 +135,7 @@ const matchOperator = (pattern: RegExp): string => {
       'matches',
       `/${pattern.source}/${pattern.flags} carries the flag${flags.length === 1 ? '' : 's'} ` +
         `"${flags}", which Postgres has no operator for`,
-      `drop the flag and fold the behaviour into the pattern, or pass a predicate instead: matches((value) => /${pattern.source}/${pattern.flags.replaceAll(/[gy]/g, '')}.test(value)) — app-only, and it reports sql: null. Never g or y in that predicate: .test() advances lastIndex, so one row's verdict depends on the row before it`,
+      `matches((value) => /${pattern.source}/${pattern.flags.replaceAll(/[gy]/g, '')}.test(value))   // app-only, and it reports sql: null — or drop the flag and fold the behaviour into the pattern. Never g or y in that predicate: .test() advances lastIndex, so one row's verdict depends on the row before it`,
     );
   }
   return pattern.ignoreCase ? '~*' : '~';
@@ -185,7 +185,9 @@ const finite = <T>(rule: 'atLeast' | 'eq', operand: T): T => {
     refuseInvariant(
       rule,
       `${String(operand)} is not a number a CHECK can compare a column against`,
-      `pass a finite number — c.total.${rule}(0) — or a bigint for a bound past 2^53: c.total.${rule}(9007199254740993n)`,
+      rule === 'eq'
+        ? 'c.total.eq(0)   // a finite number — or a bigint for a bound past 2^53: c.total.eq(9007199254740993n)'
+        : 'c.total.atLeast(0)   // a finite number — or a bigint for a bound past 2^53: c.total.atLeast(9007199254740993n)',
     );
   }
   return operand;
@@ -329,7 +331,7 @@ const sameAs = (left: Term, other: ColumnExpr): Expr => {
     refuseInvariant(
       'eq',
       'not a column expression',
-      "pass a column of the same c — c.total.eq(c.subtotal) — or compare against a value: c.total.eq(0). A column of another entity cannot appear in this table's CHECK",
+      "c.total.eq(c.subtotal)   // a column of the same c — or compare against a value: c.total.eq(0). A column of another entity cannot appear in this table's CHECK",
     );
   return check(
     [left.path, right.path],

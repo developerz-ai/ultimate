@@ -2,6 +2,7 @@
 // is required and the app's — no default anywhere; `on` is an indexed timestamp, or every sweep is a
 // table scan; and `appendOnly` beside it is refused, because that trigger refuses every delete.
 
+import { renderFixLiteral } from '@ultimat3/core';
 import { retainInvalid } from '@ultimat3/db';
 import { parseDuration } from '@ultimat3/time';
 import { columnName } from './column';
@@ -64,7 +65,7 @@ export function retainOf(
     throw new EntityError({
       code: 'X_ENTITY_RETAIN_UNINDEXED',
       cause: `entity "${entity}" retains by ${init.on}, and no index starts with it: every sweep would read the whole table`,
-      fix: `x db gen "retain index"   # after adding { on: ['${init.on}'] } to indexes in entity('${entity}')`,
+      fix: `entity(${renderFixLiteral(entity, "'<entity>'")}, { indexes: [{ on: ['${init.on}'] }], … })   // then: x db gen "retain index"`,
     });
   }
   return { after: init.after, afterMs, on: init.on, column: physical };

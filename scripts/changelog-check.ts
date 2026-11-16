@@ -61,6 +61,7 @@ import { guardRefreshFindings } from './lib/guard-refresh-git';
 import type { Finding } from './lib/log';
 import { renderFinding, report } from './lib/log';
 import { repoRoot, run } from './lib/run';
+import { siteAt } from './lib/site-at';
 import { stabilityChangelogFindings, todayUtc } from './lib/stability-findings';
 import { claimGaps, treeClaims } from './lib/unreleased-claims';
 
@@ -301,7 +302,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
     return {
       code: 'X_DOC_CHANGELOG_SECTION_INVALID',
       cause: `${gap.at} ${gap.detail}`,
-      fix: `merge the two sections into one, or delete the generated one, then rerun: ${RERUN}`,
+      fix: `edit ${siteAt(gap.at).path}:${siteAt(gap.at).line} — merge the two sections into one, or delete the generated one, then: ${RERUN}`,
       at: gap.at,
     };
   }
@@ -313,7 +314,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       // same heading, above the auto-generated `### Commits` block `promoteUnreleased` will append
       // next. The "edit this file" fix-line form — a `fix:` the reader can paste into a `code_edit`
       // and act on without first reading another script.
-      fix: `write human-written release notes in the docs/changelog/ file the cause names, above the auto-generated \`### Commits\` block at the bottom, then rerun: ${RERUN}`,
+      fix: `edit ${siteAt(gap.at).path}:${siteAt(gap.at).line} — write human-written release notes in this docs/changelog/ file, above the auto-generated \`### Commits\` block at the bottom, then: ${RERUN}`,
       at: gap.at,
     };
   }
@@ -324,7 +325,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       // `--dry-run` writes NOTHING (release.ts, `if (!dryRun)`), so naming it here handed the
       // reader a command that validates the promotion and does not perform it. Axiom 4 at the one
       // point it is read: state the edit, and say which command performs it and which only checks.
-      fix: 'move those entries into the file of that release under docs/changelog/ — a release performs this promotion (bun run scripts/release.ts --bump major), and --dry-run only validates it',
+      fix: 'bun run scripts/release.ts --bump major   # performs this promotion, moving those entries into the file of that release under docs/changelog/ — --dry-run only validates it',
       at: gap.at,
     };
   }
@@ -334,7 +335,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       cause: `${gap.at} ${gap.detail}`,
       // The row does not exist, so there is no count to set — the edit is to write the row. A
       // literal path, never an interpolation: the fix-line rule reads these statically.
-      fix: 'add a row to the summary table in wiki/Upgrading.md for the version the cause names, whose third cell reads "[the `X.Y.Z` section](#anchor-of-its-heading), in order", then rerun: bun run scripts/changelog-check.ts --json',
+      fix: "grep -n 'section](#' wiki/Upgrading.md   # add a row to that summary table for the version the cause names, whose third cell reads '[the `X.Y.Z` section](#anchor-of-its-heading), in order', then: bun run scripts/changelog-check.ts --json",
       at: UPGRADING_PATH,
     };
   }
@@ -344,7 +345,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       cause: `${gap.at} ${gap.detail}`,
       // A literal path, never an interpolation: the fix-line rule reads these statically.
       // No angle brackets: a fix line is pasted, and the test holds every one of them to that.
-      fix: 'write the walkthrough in wiki/Upgrading.md under a heading of the form "## 1.x → 2.0.0, entry by entry" naming the version the cause names, one subsection per entry of that release in docs/changelog/, then rerun: bun run scripts/changelog-check.ts --json',
+      fix: "grep -n 'entry by entry' wiki/Upgrading.md   # beside those, write the walkthrough under a heading of the form '## 1.x → 2.0.0, entry by entry' naming the version the cause names, one subsection per entry of that release in docs/changelog/, then: bun run scripts/changelog-check.ts --json",
       at: UPGRADING_PATH,
     };
   }
@@ -352,7 +353,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
     return {
       code: 'X_DOC_MIGRATION_COUNT_STALE',
       cause: `${gap.at} ${gap.detail}`,
-      fix: `point that row at a version docs/changelog/ has a file for, or write the docs/changelog/ file it names, then rerun: ${RERUN}`,
+      fix: `ls docs/changelog/   # point the row at ${gap.at} at a version listed here, or write the docs/changelog/ file it names, then: ${RERUN}`,
       at: gap.at,
     };
   }
@@ -361,14 +362,14 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       code: 'X_DOC_MIGRATION_UNSCANNED',
       cause: `${gap.at} ${gap.detail}`,
       // A literal path, never an interpolation: the fix-line rule reads these statically.
-      fix: 'restore the summary table in wiki/Upgrading.md — each row reads "[the `X.Y.Z` section](#anchor-of-its-heading), in order"',
+      fix: "git log -p -- wiki/Upgrading.md   # restore the summary table from history — each row reads '[the `X.Y.Z` section](#anchor-of-its-heading), in order'",
       at: UPGRADING_PATH,
     };
   }
   return {
     code: 'X_DOC_MIGRATION_COUNT_STALE',
     cause: `${gap.at} ${gap.detail}`,
-    fix: `set that count from the section it names, never from the whole file: ${RERUN}`,
+    fix: `edit ${siteAt(gap.at).path}:${siteAt(gap.at).line} — set the count from the section it names, never from the whole file, then: ${RERUN}`,
     at: gap.at,
   };
 }

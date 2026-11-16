@@ -10,7 +10,7 @@ import { IslandInvalidError, IslandNotHydratedError } from './errors';
 import type { IslandDirective } from './hydrate';
 import { DEFAULT_REPLAY_EVENTS } from './hydrate';
 import type { IslandSpec } from './island';
-import { isEmittableSpecifier, islandNeverDrained } from './island';
+import { ISLAND_EXTENSION, isEmittableSpecifier, islandNeverDrained } from './island';
 import type { IslandProps } from './island-props';
 import { checkIslandProps } from './island-props';
 import type { JsxProps } from './jsx';
@@ -71,7 +71,7 @@ export function islandCollector(input: IslandCollectorInput): IslandCollector {
         throw new IslandInvalidError(
           `two islands on ${input.file} both resolve to the id ${spec.moduleId} (${claimed} and ` +
             `${entry}), so their props would be handed to whichever the browser found first`,
-          `rename one of the modules — the id is its filename, so two islands need two names`,
+          `island({ src: './<another name>${ISLAND_EXTENSION}' })   // rename one of the modules — the id is its filename, so two islands need two names`,
         );
       }
       entries.set(spec.moduleId, entry);
@@ -141,7 +141,7 @@ function assertEntry(entry: string, spec: IslandSpec, file: string): void {
   throw new IslandInvalidError(
     `the resolver returned ${renderCauseValue(entry)} for the ${spec.moduleId} island in ${file}, ` +
       'which cannot be emitted as a module URL',
-    'fix the resolve() passed to islandCollector — it must return a plain URL path',
+    "resolve: (src) => '/<a plain URL path>'   // the resolve() passed to islandCollector must return one",
   );
 }
 

@@ -139,9 +139,7 @@ function unexpectedObject(object: ObjectIdentity): DriftDifference {
   );
   return {
     ...base,
-    fix:
-      `${show}   # no migration creates it: copy its definition into a migration as a create ` +
-      `statement, run ${spoken} here, then x db migrate — or only drop it if nothing owns it`,
+    fix: `${show}   # no migration creates it: copy its definition into a migration as a create statement, run ${spoken} here, then x db migrate — or only drop it if nothing owns it`,
   };
 }
 

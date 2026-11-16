@@ -11,6 +11,7 @@
 
 // why: host-separator paths to each file; Bun ships no path API.
 import { join } from 'node:path';
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import { parseScriptArgs } from './lib/args';
 import { CLAUDE_MD_PINS, CLAUDE_MD_PINS_FILE } from './lib/claude-md-size-pins';
 import type { Finding } from './lib/log';
@@ -44,7 +45,7 @@ export async function claudeMdFindings(
     findings.push({
       code: 'X_CLAUDE_MD_OVERSIZE',
       cause: `CLAUDE.md is ${bytes(top.size)}, over its ${bytes(ROOT_CEILING)} ceiling — every session loads it whole`,
-      fix: 'move history and narrative out of CLAUDE.md into docs/history/ and link it; keep rules, the fact table and the command rows',
+      fix: 'wc -c CLAUDE.md   # move history and narrative out into docs/history/ and link it — keep rules, the fact table and the command rows — then: bun run scripts/claude-md-size.ts --json',
       at: 'CLAUDE.md',
     });
   }
@@ -64,7 +65,7 @@ export async function claudeMdFindings(
         pinned === undefined
           ? `${path} is ${bytes(size)}, over the ${bytes(PACKAGE_CEILING)} package ceiling`
           : `${path} is ${bytes(size)} and is pinned at ${bytes(pinned)} — a pinned file may shrink, never grow`,
-      fix: `move narrative out of ${path} into docs/history/ until it is at most ${bytes(ceiling)}; never raise its row in ${CLAUDE_MD_PINS_FILE}`,
+      fix: `wc -c ${quoteArg(path)}   # move narrative out into docs/history/ until it is at most ${bytes(ceiling)} — never raise its row in ${CLAUDE_MD_PINS_FILE} — then: bun run scripts/claude-md-size.ts --json`,
       at: path,
     });
   }

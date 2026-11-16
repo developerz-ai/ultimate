@@ -232,18 +232,28 @@ const isCopy = (set: LiteralSet, vocabulary: Vocabulary): boolean =>
     : overlap(set, vocabulary).length >=
       finiteOption('render-modes', 'threshold', vocabulary.threshold ?? COPY_THRESHOLD);
 
-const copyFinding = (file: SourceFile, set: LiteralSet, vocabulary: Vocabulary): Finding => ({
-  code: 'X_VOCABULARY_REDECLARED',
-  at: `${file.at}:${set.line}`,
-  cause: `${set.name} in ${file.at} redeclares ${vocabulary.name}, which ${vocabulary.at} declares`,
-  fix: `delete ${set.name} from ${file.at} and import ${vocabulary.name} from '${packageOf(vocabulary.at)}' — the set is declared once, in ${vocabulary.at}`,
-});
+/** A SCREAMING name is a value (`RENDER_MODES`); a Pascal one is a type (`AsyncState`). */
+const isValueName = (name: string): boolean => /^[A-Z][A-Z0-9_]*$/.test(name);
+
+const copyFinding = (file: SourceFile, set: LiteralSet, vocabulary: Vocabulary): Finding => {
+  const from = packageOf(vocabulary.at);
+  const why = `in ${file.at}, in place of ${set.name}, which you delete — the set is declared once, in ${vocabulary.at}`;
+  return {
+    code: 'X_VOCABULARY_REDECLARED',
+    at: `${file.at}:${set.line}`,
+    cause: `${set.name} in ${file.at} redeclares ${vocabulary.name}, which ${vocabulary.at} declares`,
+    // `verbatimModuleSyntax` is on: a type comes in through `import type`, or the paste fails.
+    fix: isValueName(vocabulary.name)
+      ? `import { ${vocabulary.name} } from '${from}';   // ${why}`
+      : `import type { ${vocabulary.name} } from '${from}';   // ${why}`,
+  };
+};
 
 const vacuous = (cause: string): Finding => ({
   code: 'X_VOCABULARY_UNSCANNED',
   at: 'scripts/render-modes.ts',
   cause,
-  fix: 'fix the scan in scripts/render-modes.ts, or point VOCABULARY_MODULE at the file that declares the vocabulary',
+  fix: "grep -n 'VOCABULARY_MODULE' scripts/render-modes.ts   # point it at the file that declares the vocabulary, or fix the scan in that file",
 });
 
 /**

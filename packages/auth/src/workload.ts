@@ -77,7 +77,7 @@ const refused = (reason: string): AuthError =>
     cause: `the presented workload token was refused: ${reason}`,
     // A service credential names no human, so a precise cause enumerates nothing — and the
     // reader of this line is an operator holding a misconfigured deployment, not an attacker.
-    fix: "confirm the workload token's issuer, audience and key set match verifyWorkloadToken({ issuers, audience, keys })",
+    fix: "verifyWorkloadToken({ token, issuers, audience, keys, clock })   // the issuer, audience and key set this service passes must match the workload token's",
   });
 
 const readScopes = (payload: Record<string, unknown>): readonly string[] => {

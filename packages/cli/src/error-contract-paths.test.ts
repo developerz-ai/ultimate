@@ -41,7 +41,9 @@ describe('the path rule, over a repo', () => {
     expect(finding?.code).toBe('X_ERROR_FIX_PATH_MISSING');
     expect(finding?.at).toBe('packages/db/src/thing.ts:1');
     expect(finding?.cause).toContain('packages/db/src/gone.ts');
-    expect(finding?.fix).toContain('correct the path in the fix at packages/db/src/thing.ts:1');
+    expect(finding?.fix).toStartWith(
+      'edit packages/db/src/thing.ts:1 — correct the path in the fix',
+    );
   });
 
   test('a fix citing a path this repo does have is clean', async () => {

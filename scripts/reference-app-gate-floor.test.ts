@@ -25,7 +25,7 @@ describe('floorFindings', () => {
     expect(findings[0]?.at).toBe('examples/dummy/x.verify.json');
     // Runnable as written: the fix is the exact file body, derived from what this run proved.
     expect(findings[0]?.fix).toBe(
-      'write examples/dummy/x.verify.json as {"steps":["unit","contract"]}',
+      '{"steps":["unit","contract"]}   // the whole of examples/dummy/x.verify.json',
     );
     // An unreadable or empty floor enforces nothing, so it is the same finding as no file at all.
     expect(floorFindings({ app, steps: ran, floor: [] })).toEqual(findings);
@@ -36,7 +36,7 @@ describe('floorFindings', () => {
     expect(findings.map((finding) => finding.code)).toEqual(['X_REFERENCE_APP_NO_FLOOR']);
     expect(findings[0]?.cause).toContain('contract');
     expect(findings[0]?.fix).toBe(
-      'add "contract" to the "steps" array in examples/dummy/x.verify.json',
+      '{"steps":["unit","contract"]}   // the whole of examples/dummy/x.verify.json: it adds contract',
     );
   });
 

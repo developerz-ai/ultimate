@@ -203,7 +203,7 @@ function defaultFactory<Out>(fallback: Out): () => Out {
     throw new SchemaError({
       code: 'X_SCHEMA_DEFAULT_UNSHAREABLE',
       cause: `default() received ${describeValue(fallback)}, which structuredClone cannot copy`,
-      fix: 'pass a JSON-shaped default (plain object, array, Date, Map, Set), or drop .default() and answer the absent value in the handler',
+      fix: 'schema.default({ … })   // a JSON-shaped value: plain object, array, Date, Map, Set — or drop .default() and answer the absent value in the handler',
     });
   }
   return () => structuredClone(fallback);
@@ -221,7 +221,7 @@ function assertDefaultValid<Out>(check: Check<Out>, fallback: Out): void {
   throw new DefaultInvalidError({
     // The issue text is the RULE (`describeValue` never echoes content), so quoting it is safe.
     cause: `default() received ${describeValue(fallback)}, which this schema refuses — ${formatIssues(result.issues).join('; ')}`,
-    fix: 'edit the .default(…) named in the stack so its value satisfies the rule quoted in cause, or relax that rule on the schema',
+    fix: 'schema.default(<a value the rule quoted in cause accepts>)   // the .default(…) named in the stack — or relax that rule on the schema',
   });
 }
 

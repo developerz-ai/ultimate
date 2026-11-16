@@ -21,7 +21,7 @@ export class IslandStatesFileEmptyError extends UltimateError {
     super({
       code: 'X_SHOT_ISLAND_STATES_EMPTY',
       cause: `${renderCauseValue(input.file)} exports no defineIslandStates() result, so it declares no picture`,
-      fix: `in ${renderFixLiteral(input.file, STATES_PLACEHOLDER)} write: export const states = defineIslandStates({ island: '…', states: [...] })`,
+      fix: `export const states = defineIslandStates({ island: '…', states: [...] })   // in ${renderFixLiteral(input.file, STATES_PLACEHOLDER)}`,
     });
   }
 }
@@ -66,7 +66,7 @@ export class IslandRequestUnstubbedError extends UltimateError {
     super({
       code: 'X_SHOT_ISLAND_UNSTUBBED_REQUEST',
       cause: `${input.island} in state ${renderCauseValue(input.state)} made ${input.requests.length} request(s) no stub answers: ${input.requests.join(', ')}`,
-      fix: `in ${renderFixLiteral(input.statesFile, STATES_PLACEHOLDER)} add to that state: routes: [{ match: '${input.requests[0] ?? 'GET /api/x'}', respond: { kind: 'json', body: {} } }]`,
+      fix: `routes: [{ match: ${renderFixLiteral(input.requests[0], "'GET /api/x'")}, respond: { kind: 'json', body: {} } }]   // on that state, in ${renderFixLiteral(input.statesFile, STATES_PLACEHOLDER)}`,
       meta: { island: input.island, state: input.state, requests: [...input.requests] },
     });
   }

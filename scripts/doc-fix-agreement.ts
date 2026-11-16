@@ -29,7 +29,7 @@ const PAGE = 'the wiki/Error-Codes*.md pages';
  * a few are a row ahead of a stale site (`X_RPC_FAILED`'s site is thrown by nothing since 21.0.0).
  * Agreeing one lowers this by one in the same diff; `X_DOC_FIX_DISAGREES_PIN_STALE` says when.
  */
-export const DISAGREEMENT_PIN = 20;
+export const DISAGREEMENT_PIN = 17;
 
 /** One site's registered fix; `undefined` when the site builds it at run time. */
 export interface RegisteredFix {

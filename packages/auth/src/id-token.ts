@@ -8,7 +8,7 @@
 // what silently makes the second door as trusting as the first.
 
 import type { Clock } from '@ultimat3/core';
-import { renderCauseValue, timingSafeEqual } from '@ultimat3/core';
+import { renderCauseValue, renderFixShellArg, timingSafeEqual } from '@ultimat3/core';
 import { decodeJwtSegment } from './json';
 import { type IdTokenKeys, verifyJwtSignature } from './jwks';
 import type { OAuthProvider, OAuthProviderId } from './oauth';
@@ -175,7 +175,7 @@ export async function verifyIdToken(input: VerifyIdTokenInput): Promise<IdTokenC
     throw oauthTokenInvalid(
       provider.id,
       'aud does not include the client id this handshake was started with',
-      `set ${provider.clientIdEnv} to the same client id beginOAuth() was called with`,
+      `export ${renderFixShellArg(provider.clientIdEnv, '<CLIENT_ID_ENV>')}=<client id>   # the same client id beginOAuth() was called with`,
     );
   }
 
@@ -195,7 +195,7 @@ export async function verifyIdToken(input: VerifyIdTokenInput): Promise<IdTokenC
     throw oauthTokenInvalid(
       provider.id,
       'the token is already expired',
-      `sync this host's clock (\`timedatectl status\`), then ${restartAt(provider.id)}`,
+      `timedatectl status   # sync this host's clock, then ${restartAt(provider.id)}`,
     );
   }
 
@@ -206,7 +206,7 @@ export async function verifyIdToken(input: VerifyIdTokenInput): Promise<IdTokenC
     throw oauthTokenInvalid(
       provider.id,
       'the token is not valid yet',
-      `sync this host's clock (\`timedatectl status\`), then ${restartAt(provider.id)}`,
+      `timedatectl status   # sync this host's clock, then ${restartAt(provider.id)}`,
     );
   }
 

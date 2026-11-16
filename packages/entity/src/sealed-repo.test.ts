@@ -369,7 +369,7 @@ describe('unit · what a sealed column may not be', () => {
   test('a view that names one is X_ENTITY_SEALED_IN_VIEW, naming the key to remove', () => {
     const refused = code(() => connections.$view(['id', 'password']));
     expect(refused).toStartWith('X_ENTITY_SEALED_IN_VIEW');
-    expect(refused).toContain("remove 'password' from the $view([...]) list");
+    expect(refused).toContain("$view([…])   // without 'password'");
     expect(code(() => connections.$view(['id', 'email']))).toStartWith('X_ENTITY_SEALED_IN_VIEW');
     expect(connections.$view(['id', 'label']).$keys).toEqual(['id', 'label']);
   });

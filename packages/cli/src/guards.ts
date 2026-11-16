@@ -119,7 +119,7 @@ function findingOf(value: Record<string, unknown>, at: string): Finding {
 const failed = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_FAILED',
   cause,
-  fix: `return a finding from ${path} instead of throwing, then: x verify`,
+  fix: `{ code: 'X_<YOURS>', cause: '<what is wrong>', fix: '<a command or a file>' }   // what ${path} returns instead of throwing — then: x verify --only boundaries --json`,
   docs: ERROR_DOCS_URL,
   at: path,
 });
@@ -160,7 +160,7 @@ const notADirectory: Finding = {
 const findingInvalid = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_FINDING_INVALID',
   cause: `${path} returned a finding that is not one: ${cause}`,
-  fix: `rewrite what ${path} returns as a code, a cause and a fix naming a command or a file, then: x verify`,
+  fix: `{ code: 'X_<YOURS>', cause: '<what is wrong>', fix: '<a command or a file>' }   // what ${path} returns, then: x verify`,
   docs: ERROR_DOCS_URL,
   at: path,
 });

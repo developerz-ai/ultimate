@@ -143,7 +143,7 @@ export class PwaStrategyExhaustedError extends UltimateError {
     super({
       code: PwaStrategyExhaustedError.code,
       cause: `no cached response and the network failed for "${input.cacheName}"`,
-      fix: 'pass options.fallback to staleWhileRevalidate(request, env, options), or set pwa.offline.fallback in app.config.ts',
+      fix: "staleWhileRevalidate(request, env, { ...options, fallback })   // a () => Promise<Response> served when both fail — or pwa: { offline: { fallback: '/offline' } } in app.config.ts",
     });
   }
 }

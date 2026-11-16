@@ -91,7 +91,7 @@ export function configureLifecycle(options: LifecycleOptions): void {
       throw new UltimateError({
         code: 'X_CONFIG_INVALID',
         cause: issue,
-        fix: 'pass configureLifecycle({ readinessGraceMs: 5_000 }) — or set drain: { readinessGraceMs: 5_000 } in app.config.ts',
+        fix: 'configureLifecycle({ readinessGraceMs: 5_000 })   // or, in app.config.ts: drain: { readinessGraceMs: 5_000 }',
         meta: { key: 'drain.readinessGraceMs' },
       });
     }
@@ -308,7 +308,7 @@ async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<v
       report('warn', 'X_SHUTDOWN_TIMEOUT', {
         code: 'X_SHUTDOWN_TIMEOUT',
         cause: `the "${registration.name}" shutdown hook (phase: ${phase}) was still running at the ${deadlineMs}ms drain deadline and has been ABANDONED — the process exits without it, so anything it had in flight may be incomplete`,
-        fix: `raise the budget past the work this hook does — set drain: { deadlineMs: 600_000 } in app.config.ts for a 10-minute job (configureLifecycle({ deadlineMs: 600_000 }) outside a framework boot) — and give the platform's kill timer at least as many seconds (x deploy --method helm sizes the chart's from it), or make the "${registration.name}" hook return once it has stopped accepting work rather than once it has finished`,
+        fix: `drain: { deadlineMs: 600_000 }   // in app.config.ts: a budget past the work this hook does, here a 10-minute job (configureLifecycle({ deadlineMs: 600_000 }) outside a framework boot) — and give the platform's kill timer at least as many seconds (x deploy --method helm sizes the chart's from it), or make the "${registration.name}" hook return once it has stopped accepting work rather than once it has finished`,
         hook: registration.name,
         phase,
       });
@@ -341,7 +341,7 @@ async function runDrain(signal: string): Promise<void> {
       report('warn', 'X_SHUTDOWN_TIMEOUT', {
         code: 'X_SHUTDOWN_TIMEOUT',
         cause: `${inflight} in-flight operations still running after ${deadlineMs}ms`,
-        fix: 'raise the budget past the slowest handler — set drain: { deadlineMs: 600_000 } in app.config.ts for a 10-minute one (configureLifecycle({ deadlineMs: 600_000 }) outside a framework boot) — and give the platform kill timer at least as many seconds, or shorten the handler',
+        fix: 'drain: { deadlineMs: 600_000 }   // in app.config.ts: a budget past the slowest handler, here a 10-minute one (configureLifecycle({ deadlineMs: 600_000 }) outside a framework boot) — and give the platform kill timer at least as many seconds, or shorten the handler',
       });
     }
 

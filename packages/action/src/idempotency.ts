@@ -464,7 +464,7 @@ function failureOf(error: unknown): IdempotencyFailure {
     return {
       code: 'X_IDEMPOTENCY_REPLAYED_FAILURE',
       cause: 'the first attempt under this key threw a value that is not an UltimateError',
-      fix: 'read the first attempt in the logs, then send a fresh Idempotency-Key once the cause is fixed',
+      fix: 'x logs tail --json   # in dev; elsewhere your log index: find the first attempt, fix its cause, then send a fresh Idempotency-Key',
     };
   }
   return {

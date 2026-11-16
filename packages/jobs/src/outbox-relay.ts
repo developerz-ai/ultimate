@@ -187,7 +187,7 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
       const settled = await settleAllBy(pass === undefined ? [] : [pass], budget);
       if (!settled) {
         logger.warn('jobs.outbox.drain-abandoned', {
-          fix: 'raise the drain budget past one publish — configureLifecycle({ deadlineMs: 60_000 }) — and set terminationGracePeriodSeconds to at least as many seconds',
+          fix: 'configureLifecycle({ deadlineMs: 60_000 })   // raise the drain budget past one publish — and set terminationGracePeriodSeconds to at least as many seconds',
         });
       }
     } finally {

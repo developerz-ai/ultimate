@@ -5,7 +5,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
-import { checkDb, PGLITE_FIX, PGLITE_MISSING, postgresClient } from '@ultimat3/db';
+import { checkDb, dbUnavailable, PGLITE_FIX, PGLITE_MISSING, postgresClient } from '@ultimat3/db';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
@@ -111,9 +111,10 @@ export async function probeDatabase(
     return finding(
       'X_DB_UNAVAILABLE',
       `DATABASE_URL does not answer \`select 1\`: ${report.error ?? 'no reason reported'}`,
-      // `dbUnavailable`'s own two branches, verbatim: a second wording for one condition is two
-      // answers to "what do I do", and this one is reached first, before any command opens a pool.
-      'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
+      // `dbUnavailable`'s own fix, read off it rather than copied: a second wording for one condition
+      // is two answers to "what do I do", and this one is reached first, before any command opens a
+      // pool. A copy drifted once already.
+      dbUnavailable('').fix,
     );
   } finally {
     await client.close();

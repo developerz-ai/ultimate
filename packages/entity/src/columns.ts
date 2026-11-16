@@ -101,7 +101,7 @@ const parseInstant = (value: unknown): Date => {
   return refuseColumn(
     'format',
     `expected a UTC instant — a Date, epoch milliseconds, or an ISO-8601 string with Z or an offset — ${got(value)}`,
-    "'2026-03-14T09:00:00Z' or a Date — timestamp() stores an instant, so a string must name its zone; a calendar date with no clock is date(), and an elapsed span is integer()",
+    "new Date('2026-03-14T09:00:00Z')   // or that ISO string — timestamp() stores an instant, so a string must name its zone; a calendar date is date(), an elapsed span integer()",
   );
 };
 
@@ -143,7 +143,7 @@ export const url = (): Column<string> =>
       return refuseColumn(
         'format',
         `expected an absolute http(s) URL, ${got(value)}`,
-        'prefix the value with https:// — url() stores an absolute http(s) URL; a path, a template or a mailto: address is text()',
+        "new URL('https://' + value).href   // prefix the value with https:// — url() stores an absolute http(s) URL; a path, a template or a mailto: address is text()",
       );
     },
     { check: (name) => `${name} ~ '^https?://'` },
@@ -189,7 +189,7 @@ export const tz = <const Z extends readonly string[]>(zones: Z): Column<Z[number
         : refuseColumn(
             'iana-tz',
             `expected one of ${zones.join(' | ')}, ${got(value)}`,
-            'store one of the zones tz() declares, or add it to that list and run x db gen "extend the time zone check" — the zones are a CHECK constraint',
+            `tz([${zones.map((zone) => JSON.stringify(zone)).join(', ')}, …])   // add the zone to this list, then: x db gen "extend the time zone check" — or store one of these; they are a CHECK constraint`,
           ),
     { values: zones, check: oneOf(zones) },
   );
@@ -223,7 +223,7 @@ export const locale = <const L extends readonly string[]>(locales: L): Column<L[
         : refuseColumn(
             'bcp-47',
             `expected one of ${locales.join(' | ')}, ${got(value)}`,
-            'store one of the tags locale() declares, or add it to that list and run x db gen "extend the locale check" — the tags are a CHECK constraint',
+            `locale([${locales.map((tag) => JSON.stringify(tag)).join(', ')}, …])   // add the tag to this list, then: x db gen "extend the locale check" — or store one of these; they are a CHECK constraint`,
           ),
     { values: locales, check: oneOf(locales) },
   );
@@ -250,7 +250,7 @@ const parseMinor = (value: unknown): number => {
     return refuseColumn(
       'money-minor-units',
       `expected integer minor units, ${got(value)}`,
-      "pass integer minor units — { minor: 1234, currency: 'EUR' } is 12.34 EUR; a formatted amount is text() and an exact decimal is decimal()",
+      "{ minor: 1234, currency: 'EUR' }   // integer minor units: 12.34 EUR; a formatted amount is text() and an exact decimal is decimal()",
     );
   }
   if (!Number.isInteger(minor)) {
@@ -265,7 +265,7 @@ const parseMinor = (value: unknown): number => {
       'money-minor-units',
       `${String(value)} is past ±2^53 and no JS number holds it exactly — money is minor units ` +
         'inside that range',
-      "split the amount across rows, or hold the digits beside it in a bigint() column — money()'s minor is a number so JSON.stringify carries it, and no JS number holds this one exactly",
+      "bigint()   // a column beside it holding the digits — or split the amount across rows: money()'s minor is a number so JSON.stringify carries it, and no JS number holds this one exactly",
     );
   }
   return minor;
@@ -283,7 +283,7 @@ const parseCurrency = (value: unknown): string =>
     : refuseColumn(
         'iso-4217',
         `expected a 3-letter ISO-4217 code, ${got(value)}`,
-        "pass money() a 3-letter uppercase ISO-4217 code — { minor: 1234, currency: 'EUR' }; a symbol or a currency name is not one",
+        "{ minor: 1234, currency: 'EUR' }   // money() takes a 3-letter uppercase ISO-4217 code; a symbol or a currency name is not one",
       );
 
 /**
@@ -299,7 +299,7 @@ const parseScale = (value: unknown): number => {
     : refuseColumn(
         'money-scale',
         `expected a whole number of decimal places between 0 and ${MAX_MONEY_SCALE}, ${got(value)}`,
-        `omit scale for the currency's own minor unit, or pass money() a whole number of decimal places from 0 to ${MAX_MONEY_SCALE} — { minor: 1250000, currency: 'EUR', scale: 6 }`,
+        `{ minor: 1250000, currency: 'EUR', scale: 6 }   // money() takes a whole number of decimal places from 0 to ${MAX_MONEY_SCALE} — or omit scale for the currency's own minor unit`,
       );
 };
 

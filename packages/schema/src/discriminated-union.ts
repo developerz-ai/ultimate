@@ -43,7 +43,7 @@ function declaredValues(node: SchemaNode, discriminant: string): readonly Schema
 function refuseUndeclared(discriminant: string, index: number, kind: string): never {
   throw new DiscriminantInvalidError({
     cause: `member #${index} of discriminatedUnion("${discriminant}") — IR kind "${kind}" — declares no literal at "${discriminant}"`,
-    fix: `give member #${index} a literal discriminant, t.object({ ${discriminant}: t.literal('…'), … }), or use t.union(...) if the members share no key`,
+    fix: `t.object({ ${discriminant}: t.literal('…'), … })   // member #${index}, given a literal discriminant — or t.union(...) if the members share no key`,
     meta: { discriminant, index, kind },
   });
 }
@@ -51,7 +51,7 @@ function refuseUndeclared(discriminant: string, index: number, kind: string): ne
 function refuseDuplicate(discriminant: string, index: number, tag: SchemaTag): never {
   throw new DiscriminantInvalidError({
     cause: `member #${index} of discriminatedUnion("${discriminant}") claims the tag ${String(tag)}, which an earlier member already claims`,
-    fix: `give member #${index} its own value at "${discriminant}", or merge the two members into one`,
+    fix: `t.object({ ${discriminant}: t.literal('<a tag no earlier member claims>'), … })   // member #${index} — or merge the two members into one`,
     meta: { discriminant, index, tag: String(tag) },
   });
 }

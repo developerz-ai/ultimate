@@ -3,7 +3,7 @@
 // matter which door the user came through. `completeOAuthLogin` is the blessed entry point;
 // the three steps under it are exported because a custom flow needs the seams, not a second path.
 
-import { ConfigInvalidError, logger, uuidV7 } from '@ultimat3/core';
+import { ConfigInvalidError, logger, renderFixLiteral, uuidV7 } from '@ultimat3/core';
 import type { AuthAccount, AuthUser } from './adapter';
 import type { Auth, LoginResult } from './auth';
 import { normaliseEmail } from './email';
@@ -37,7 +37,7 @@ export const oauthAccountNotLinked = (provider: string, email: string): AuthErro
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause: `an account holds this ${provider} address but never verified it, so ${provider} may not claim it`,
-    fix: `sign in with that account's password and confirm the email-verify link, then retry ${provider}`,
+    fix: `await login(auth, { email, password })   // sign in with that account's password and confirm the email-verify link, then retry ${provider}`,
     meta: { provider, email },
   });
 
@@ -50,7 +50,7 @@ export const oauthLinkingDisabled = (provider: string, email: string): AuthError
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause: `an account already holds this address and defineAuth({ link: 'never' }) forbids ${provider} from claiming it`,
-    fix: "sign in with that account's own credentials, or set link: 'verified-email' in defineAuth to let a provider-verified address claim a locally-verified account",
+    fix: "defineAuth({ adapter, link: 'verified-email' })   // lets a provider-verified address claim a locally-verified account — or sign in with that account's own credentials",
     meta: { provider, email },
   });
 
@@ -67,7 +67,7 @@ export const emailVerifiedNotStored = (provider: string, userId: string): AuthEr
     // implements `updateUser` and lost a write it accepted.
     code: 'X_AUTH_WRITE_FAILED',
     cause: `the adapter returned no row for new user ${userId}, so the ${provider}-verified address was never stamped verified`,
-    fix: 'return the updated row from AuthAdapter.updateUser — MemoryAuthAdapter.updateUser is the reference implementation',
+    fix: "grep -n -A16 'async updateUser' node_modules/@ultimat3/auth/src/memory-adapter.ts   # the reference implementation: AuthAdapter.updateUser returns the updated row",
     meta: { provider, userId },
   });
 
@@ -172,7 +172,7 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
       provider: input.profile.provider,
       stage: 'userinfo',
       detail: 'the provider returned an identity with no email address',
-      fix: `request the email scope for ${input.profile.provider} in beginOAuth(), then ${restartAt(input.profile.provider)}`,
+      fix: `beginOAuth({ provider: ${renderFixLiteral(input.profile.provider, "'<id>'")}, clientId, redirectUri, scopes: ['email', ...providerFor(${renderFixLiteral(input.profile.provider, "'<id>'")}).scopes] })   // request the email scope, then ${restartAt(input.profile.provider)}`,
     });
   }
   // The provider did not vouch for the address, so this caller has proven nothing about owning
@@ -282,7 +282,7 @@ export async function signInWithOAuth(auth: Auth, input: OAuthSignInInput): Prom
   if (!auth.providers.includes(provider)) {
     throw new ConfigInvalidError({
       cause: `${provider} is not in defineAuth({ providers }), so a ${provider} identity cannot sign in`,
-      fix: `add '${provider}' to defineAuth({ providers: [...] }), or stop offering the ${provider} button`,
+      fix: `defineAuth({ adapter, providers: [${renderFixLiteral(provider, "'<id>'")}] })   // beside the ids already there — or stop offering the ${provider} button`,
       meta: { provider, enabled: [...auth.providers] },
     });
   }

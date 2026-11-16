@@ -396,7 +396,7 @@ const unscannedFinding = (): Finding => ({
   code: 'X_FINITE_BOUND_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree where every bound is checked',
-  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/finite-bounds.ts',
+  fix: "grep -n 'CORPUS_PATTERNS' scripts/lib/corpus.ts   # edit it so it matches this repo layout, then: bun run scripts/finite-bounds.ts",
   at: 'scripts/lib/corpus.ts',
 });
 
@@ -404,7 +404,7 @@ const unscannedFinding = (): Finding => ({
 const unexplainedFinding = (gap: FiniteBoundGap): Finding => ({
   code: 'X_FINITE_BOUND_UNCHECKED',
   cause: `${gap.pkg} is pinned with a blank reason, so its ${String(gap.found)} unchecked numeric option(s) are held by nothing — a count with no sentence is the waiver axiom 3 refuses`,
-  fix: `write what each remaining option in ${gap.pkg} is and why it is not screened, in ${FINITE_BOUNDS_PINS_FILE}`,
+  fix: `grep -n ${renderFixShellArg(gap.pkg, '<pkg>')} ${FINITE_BOUNDS_PINS_FILE}   # write in that row what each remaining option in ${gap.pkg} is and why it is not screened`,
   at: FINITE_BOUNDS_PINS_FILE,
 });
 

@@ -187,7 +187,7 @@ const at = (site: NodeImportSite | undefined): string =>
 const overFinding = (gap: NodeImportGap): Finding => ({
   code: 'X_NODE_IMPORT_UNEXPLAINED',
   cause: `${gap.pkg} imports a node: builtin without saying why in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${siteList(gap, (site) => `${at(site)} (${site.specifier})`, EXPLAIN)} — and no comment says which Bun native was missing, so nobody can tell whether it is still unavoidable`,
-  fix: `add a comment above ${siteTarget(gap, at)} beginning "why:" and naming the Bun API that does not exist — e.g. // why: Bun has no synchronous stdout write, and process.stdout.write drops its queue on exit; or ${pinRaiseFix(pinRaiseOf(NODE_IMPORT_PIN_TARGET, gap))}`,
+  fix: `bun run scripts/node-imports.ts --explain --json   # lists every site: above ${siteTarget(gap, at)} add a comment beginning "why:" and naming the Bun API that does not exist — e.g. // why: Bun has no synchronous stdout write, and process.stdout.write drops its queue on exit; or ${pinRaiseFix(pinRaiseOf(NODE_IMPORT_PIN_TARGET, gap))}`,
   at: at(leadSite(gap)),
 });
 
@@ -202,7 +202,7 @@ const unscannedFinding = (): Finding => ({
   code: 'X_NODE_IMPORT_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree of pure Bun',
-  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/node-imports.ts',
+  fix: "grep -n 'CORPUS_PATTERNS' scripts/lib/corpus.ts   # edit it so it matches this repo layout, then: bun run scripts/node-imports.ts",
   at: 'scripts/lib/corpus.ts',
 });
 

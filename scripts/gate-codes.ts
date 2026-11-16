@@ -19,6 +19,7 @@
 // The LEAF module, never the `@ultimat3/cli` barrel: the barrel links every package in the tree, so
 // one half-written module anywhere crashed this guard with a bare SyntaxError (DX ledger #10).
 import { collectDeclaredCodes } from '../packages/cli/src/error-contract';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { GATE_CODE_NO_ROW, GATE_CODE_UNLISTED } from './gate-codes-backlog';
 import { parseScriptArgs } from './lib/args';
 import { ERROR_CODE_INDEX, ownerPage, readErrorCodePages } from './lib/error-code-pages';
@@ -122,19 +123,19 @@ const FINDINGS: Readonly<Record<GateCodeGapKind, (code: string) => Finding>> = O
     'no-row': (code) => ({
       code: 'X_GATE_CODE_UNDOCUMENTED',
       cause: `${ERROR_REFERENCE} names ${code} in the never-ships list and no error-code page gives it a table row, so an agent handed ${code} finds the name and no cause and no fix`,
-      fix: `add a \`| \`${code}\` | … |\` row to ${SCRIPTS_PAGE} at its place in code order, then: bun run scripts/error-code-pages.ts --write — or drop ${code} from the never-ships list in ${ERROR_REFERENCE}`,
+      fix: `grep -n '^| \`X_' ${SCRIPTS_PAGE}   # add a \`| \`${code}\` | … |\` row there at its place in code order, then: bun run scripts/error-code-pages.ts --write — or drop ${code} from the never-ships list in ${ERROR_REFERENCE}`,
       at: ERROR_REFERENCE,
     }),
     unlisted: (code) => ({
       code: 'X_GATE_CODE_UNDOCUMENTED',
       cause: `${code} is declared under scripts/ and ${ERROR_REFERENCE}'s never-ships list omits it, so that page promises "x errors explain ${code}" answers and it does not`,
-      fix: `add \`${code}\` to the never-ships parenthesis in ${ERROR_REFERENCE}`,
+      fix: `grep -n 'never ship' ${ERROR_REFERENCE}   # add \`${code}\` to that never-ships parenthesis`,
       at: ERROR_REFERENCE,
     }),
     pinned: (code) => ({
       code: 'X_GATE_CODE_BACKLOG_STALE',
       cause: `${code} is pinned in ${BACKLOG_FILE} and ${ERROR_REFERENCE} is no longer wrong about it`,
-      fix: `delete '${code}' from ${BACKLOG_FILE}`,
+      fix: `grep -n ${renderFixShellArg(code, '<CODE>')} ${BACKLOG_FILE}   # delete '${code}' there`,
       at: BACKLOG_FILE,
     }),
   } satisfies Record<GateCodeGapKind, (code: string) => Finding>,

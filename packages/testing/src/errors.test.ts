@@ -90,7 +90,7 @@ describe(testName('unit', 'X_TEST_FIXTURE_UNKNOWN lists what IS registered'), ()
     expect(error.code).toBe('X_TEST_FIXTURE_UNKNOWN');
     expect(error.cause).toBe('test requested fixture "actorr"; registered: actor, seed');
     expect(error.fix).toBe(
-      'register it at test setup: defineFixtures({ actorr: () => buildIt() })',
+      'defineFixtures({ actorr: () => buildIt() })   // register it at test setup',
     );
   });
 
@@ -137,7 +137,7 @@ describe(testName('unit', 'the three matcher/eval failures name the call to edit
     const error = new NetworkRaceError();
     expect(error.code).toBe('X_TEST_NETWORK_RACE');
     expect(error.cause).toBe('sealed network lost its original fetch mid-request');
-    expect(error.fix).toContain('do not call unsealNetwork()');
+    expect(error.fix).toContain('before unsealNetwork()');
   });
 });
 

@@ -3,7 +3,12 @@
 // of 2026-08`, is a build gate: no step of `x verify` calls the asserts that throw them (see
 // `README.md`), so they fail the app that calls one itself and nothing else.
 
-import { NotImplementedError, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import {
+  NotImplementedError,
+  registerErrorCodes,
+  renderFixLiteral,
+  UltimateError,
+} from '@ultimat3/core';
 // errors.ts <-> images.ts: images.ts throws imageQueryInvalid() and this file spells its fix
 // using images.ts's IMAGE_QUERY_KEYS. Safe like core's errors.ts <-> error-codes.ts cycle:
 // nothing at this module's top level reads the import, only the factory body below does, and by
@@ -77,7 +82,7 @@ export function metaMissing(file: string, path: string, field: string): SeoError
   return new SeoError({
     code: SEO_ERROR_CODES.metaMissing,
     cause: `${file} (route "${path}") has no meta.${field}`,
-    fix: `add ${field} to defineRoute({ meta }) in ${file}`,
+    fix: `meta: { ${field}: '…' }   // in defineRoute() in ${file}`,
     meta: { file, path, field },
   });
 }
@@ -91,7 +96,7 @@ export function titleTemplateSlotMissing(file: string, path: string): SeoError {
   return new SeoError({
     code: SEO_ERROR_CODES.metaMissing,
     cause: `${file} (route "${path}") declares a titleTemplate with no %s slot, so the page title is discarded and every route renders the brand alone`,
-    fix: `put the slot in the template — meta.titleTemplate: '%s — Ultimate' in ${file} — or delete titleTemplate and let meta.title stand alone`,
+    fix: `meta: { titleTemplate: '%s — Ultimate' }   // the %s slot, in ${file} — or delete titleTemplate and let meta.title stand alone`,
     meta: { file, path, field: 'titleTemplate' },
   });
 }
@@ -100,7 +105,7 @@ export function duplicateMeta(field: string, value: string, files: readonly stri
   return new SeoError({
     code: SEO_ERROR_CODES.duplicateMeta,
     cause: `${files.length} routes share the same ${field} ${JSON.stringify(value)}: ${files.join(', ')}`,
-    fix: `give each route a unique ${field} in its defineRoute({ meta })`,
+    fix: `meta: { ${field}: '<unique to this route>' }   // in each of those routes' defineRoute()`,
     meta: { field, value, files },
   });
 }
@@ -109,7 +114,7 @@ export function metaTooLong(file: string, field: string, length: number, max: nu
   return new SeoError({
     code: SEO_ERROR_CODES.metaTooLong,
     cause: `${file} has a ${length}-character ${field}; search results truncate past ${max}`,
-    fix: `shorten meta.${field} in ${file} to <= ${max} characters`,
+    fix: `meta: { ${field}: '<at most ${max} characters>' }   // shortened, in ${file}`,
     meta: { file, field, length, max },
   });
 }
@@ -118,7 +123,7 @@ export function canonicalMismatch(file: string, canonical: string, expected: str
   return new SeoError({
     code: SEO_ERROR_CODES.canonicalMismatch,
     cause: `${file} declares canonical ${canonical} but the route resolves to ${expected}`,
-    fix: `set meta.canonical to ${expected} in ${file}, or delete it and let the route supply it`,
+    fix: `meta: { canonical: ${renderFixLiteral(expected, "'<the route URL>'")} }   // in ${file} — or delete it and let the route supply it`,
     meta: { file, canonical, expected },
   });
 }
@@ -133,7 +138,7 @@ export function linkInvalid(link: string, problem: string, file?: string): SeoEr
   return new SeoError({
     code: SEO_ERROR_CODES.linkInvalid,
     cause: `${where} declares meta ${link}, which ${problem}`,
-    fix: `edit links in defineRoute({ meta }) in ${where}: a path or an http(s) href, \`as\` on every preload, crossorigin: 'anonymous' on a font preload`,
+    fix: `meta: { links: [{ rel: 'preload', href: '/assets/…', as: 'font', crossorigin: 'anonymous' }] }   // in defineRoute() in ${where}: a path or an http(s) href, as on every preload, crossorigin on a font preload`,
     meta: { link, problem, ...(file === undefined ? {} : { file }) },
   });
 }
@@ -157,7 +162,7 @@ export function ldInvalid(type: string, field: string, hint: string): SeoError {
   return new SeoError({
     code: SEO_ERROR_CODES.ldInvalid,
     cause: `ld.${type}() received an empty or missing "${field}" (${hint})`,
-    fix: `provide a non-empty ${field} to ld.${type}(); it is required by schema.org`,
+    fix: `{ ${field}: '…' }   // non-empty, in the ld.${type}() call — schema.org requires it`,
     meta: { type, field },
   });
 }
@@ -166,7 +171,7 @@ export function sitemapTooLarge(count: number, max: number): SeoError {
   return new SeoError({
     code: SEO_ERROR_CODES.sitemapTooLarge,
     cause: `sitemap index would hold ${count} sitemaps; the protocol limit is ${max}`,
-    fix: 'exclude non-indexable routes with noindex, or shard the site across hostnames',
+    fix: 'meta: { robots: { index: false } }   // on each non-indexable route — or shard the site across hostnames',
     meta: { count, max },
   });
 }
@@ -225,9 +230,7 @@ export function notImplementedDriver(
 ): NotImplementedError {
   return new NotImplementedError({
     cause: `the ${driver} image driver does not implement ${capability} yet`,
-    fix:
-      `implement ${capability} in ${at}, or swap the driver for builtinImageDriver({ read }) ` +
-      '— png and jpeg, no dependencies — then run: x verify --json',
+    fix: `builtinImageDriver({ read })   // swap the driver for this one (png and jpeg, no dependencies) — or implement ${capability} in ${at}; then x verify --json`,
     meta: { driver, capability, at },
   });
 }

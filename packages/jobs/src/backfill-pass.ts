@@ -13,7 +13,14 @@
 // in step with the work and decides where a resumed pass restarts, while the `x_backfills` row is
 // a report an operator reads and the record that a completed name has already been swept.
 
-import { appVersion, assert, logger, renderThrowable, resolveEnvironment } from '@ultimat3/core';
+import {
+  appVersion,
+  assert,
+  logger,
+  renderFixShellArg,
+  renderThrowable,
+  resolveEnvironment,
+} from '@ultimat3/core';
 import { expectedQueryLoop, expectedSeqScan } from '@ultimat3/db';
 import type { BackfillInput, BackfillReport } from './backfill-definition';
 import { BackfillStalledError } from './backfill-errors';
@@ -194,7 +201,7 @@ export async function backfillPass<Row>(
         backfill: name,
         completedAs: previous?.checksum,
         now: checksum,
-        fix: `enqueue ${name} with { force: true } to sweep again under the new definition`,
+        fix: `x db backfill ${renderFixShellArg(name, '<backfill>')} --write --force --json   # sweeps again under the new definition — or enqueue it with { force: true }`,
       });
     }
     logger.info('jobs.backfill.skipped', { backfill: name, completedBy: previous?.runId });

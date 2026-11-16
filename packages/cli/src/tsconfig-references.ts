@@ -80,7 +80,7 @@ async function referencedPaths(root: string): Promise<ReadonlySet<string> | unde
 export const unreferencedFinding = (dir: string): Finding => ({
   code: 'X_PACKAGE_UNREFERENCED',
   cause: `packages/${dir} is a published workspace and ${ROOT_TSCONFIG} has no reference to it, so tsc -b never builds it`,
-  fix: `add { "path": "./packages/${dir}" } to "references" in ${ROOT_TSCONFIG}, then run bunx tsc -b --pretty false`,
+  fix: `{ "path": "./packages/${dir}" }   // in "references" of ${ROOT_TSCONFIG}, then: bunx tsc -b --pretty false`,
   docs: ERROR_DOCS_URL,
   at: ROOT_TSCONFIG,
 });

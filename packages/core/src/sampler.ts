@@ -2,6 +2,7 @@
 // collector melts". Separate from `telemetry.ts` because the decision is a policy an app replaces,
 // while span construction is not.
 
+import { renderFixShellArg } from './error-render';
 import { logger } from './logger';
 import type { SpanAttributes, SpanContext } from './telemetry';
 
@@ -111,7 +112,7 @@ function readRatio(raw: string | undefined, spelling: string): number {
     // outage. Falling back to 1 keeps the traces — losing them silently is the worse failure.
     logger.warn('X_TELEMETRY_SAMPLER_ARG_INVALID', {
       cause: `${spelling}="${raw}" is not a ratio between 0 and 1; sampling every trace instead`,
-      fix: `set ${spelling} to a value between 0 and 1, e.g. ${spelling}=0.05`,
+      fix: `export ${renderFixShellArg(spelling, OTEL_SAMPLER_ARG_KEY)}=0.05   # a ratio between 0 and 1`,
     });
     return DEFAULT_SAMPLE_RATIO;
   }

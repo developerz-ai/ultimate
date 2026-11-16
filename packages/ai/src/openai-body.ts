@@ -138,13 +138,13 @@ export function reasoningFields(
   if (effort !== undefined && !rules.effort) {
     throw new AiRequestInvalidError({
       detail: `model "${model}" is registered with no effort control, so reasoning_effort cannot be sent to it`,
-      fix: 'drop effort from definePrompt, or re-register the model with reasoning: { effort: true } if its endpoint accepts reasoning_effort',
+      fix: `reasoning: { effort: true }   # on the registerModel({ id: '${model}', … }) row, only if its endpoint accepts reasoning_effort — otherwise drop effort from definePrompt`,
     });
   }
   if (thinking === 'adaptive' && !rules.adaptive) {
     throw new AiRequestInvalidError({
       detail: `model "${model}" has no adaptive thinking; the OpenAI format's only depth control is reasoning_effort`,
-      fix: 'drop thinking from definePrompt and set effort instead, or route the prompt to a model registered with reasoning: { adaptive: true }',
+      fix: "effort: 'high'   # in definePrompt, in place of thinking: 'adaptive' — or route the prompt to a model registered with reasoning: { adaptive: true }",
     });
   }
   // The row says reasoning cannot be switched off, whatever the wire would spell the switch as.
@@ -157,7 +157,7 @@ export function reasoningFields(
   if (thinking === 'disabled' && effort !== undefined) {
     throw new AiRequestInvalidError({
       detail: `model "${model}" writes both thinking and effort onto one reasoning_effort field, and the request asked for both`,
-      fix: "drop one from definePrompt: keep thinking: 'disabled', or keep effort",
+      fix: "thinking: 'disabled'   # in definePrompt, with effort dropped — or keep effort and drop thinking",
     });
   }
   // `none` IS the off switch on this wire, and a model with no effort control has nothing to

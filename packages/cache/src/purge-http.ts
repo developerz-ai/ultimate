@@ -46,7 +46,7 @@ export function chunked<T>(
     throw new CacheDriverUnavailableError({
       driver,
       cause: `batch size ${String(size)} is not a positive integer, so ${values.length} keys cannot be split into requests`,
-      fix: 'pass a positive integer batch size to chunked(), as FASTLY_MAX_KEYS_PER_REQUEST does',
+      fix: 'chunked(driver, keys, FASTLY_MAX_KEYS_PER_REQUEST)   // a positive integer batch size',
     });
   }
   const batches: T[][] = [];
@@ -66,7 +66,7 @@ export function requireCredential(value: string, envKey: string, driver: string)
   throw new CacheDriverUnavailableError({
     driver,
     cause: `${envKey} is unset, so the ${driver} purge driver has no credential`,
-    fix: `set ${envKey} in .env.production, or use noopPurgeDriver() to purge nothing`,
+    fix: `printf '%s=%s\\n' ${renderFixShellArg(envKey, '<the unset key>')} '<its value>' >> .env.production   # or use noopPurgeDriver() to purge nothing`,
   });
 }
 
@@ -97,18 +97,18 @@ const keyProblem = (key: string): KeyProblem | undefined => {
   if (key === '')
     return {
       problem: 'is empty',
-      fix: 'give the tag a name in its declareTags(...) call — an empty surrogate key purges nothing',
+      fix: "declareTags(['post'])   // a named tag in its declareTags(...) call — an empty surrogate key purges nothing",
     };
   if (UNSAFE_KEY.test(key))
     return {
       problem: 'contains whitespace or a comma, which a CDN reads as a separator',
-      fix: 'rename the tag in its declareTags(...) call so the key carries no space or comma',
+      fix: "declareTags(['blog-post'])   // rename the tag in its declareTags(...) call: no space or comma in the key",
     };
   const bytes = keyBytes(key);
   if (bytes > MAX_KEY_BYTES)
     return {
       problem: `is ${bytes} bytes, over the ${MAX_KEY_BYTES}-byte key limit`,
-      fix: `shorten the tag in its declareTags(...) call to at most ${MAX_KEY_BYTES} UTF-8 bytes — the limit is on the header, so it is BYTES, and a non-ASCII character costs two or three of them each`,
+      fix: `declareTags(['post'])   // shorten the tag in its declareTags(...) call to at most ${MAX_KEY_BYTES} UTF-8 bytes — the limit is on the header, so it is BYTES, and a non-ASCII character costs two or three of them each`,
     };
   return undefined;
 };

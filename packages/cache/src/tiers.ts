@@ -115,6 +115,7 @@ export function assertFiniteCapacity(tier: TtlScope, option: string, value: numb
     option,
     value,
     expected: 'a whole number greater than zero',
+    example: '10_000',
   });
 }
 
@@ -129,20 +130,14 @@ export function assertFiniteCapacity(tier: TtlScope, option: string, value: numb
  * reading as unchecked while every one of them was screened. `bun run finite-bounds` now reads
  * `SCREENING_CALLEES` in `scripts/lib/finite-screens.ts` — rename freely, move the rows.
  */
-export function assertFiniteDurationMs(
-  tier: string,
-  option: string,
-  value: number,
-  /** Passed only where the value is a CALL argument rather than an `app.config.ts` key. */
-  source?: string | undefined,
-): number {
+export function assertFiniteDurationMs(tier: string, option: string, value: number): number {
   if (Number.isSafeInteger(value) && value > 0) return value;
   throw new CacheLimitInvalidError({
     tier,
     option,
     value,
     expected: 'a whole number of milliseconds greater than zero',
-    source,
+    example: '60_000',
   });
 }
 
@@ -152,9 +147,22 @@ export function assertFiniteDurationMs(
  * for every record. Cosine similarity is in [-1, 1] and a floor of 0 already admits an orthogonal
  * vector, so anything outside [0, 1] is a number nobody can have meant.
  */
-export function assertFiniteSimilarityFloor(tier: TtlScope, option: string, value: number): number {
+export function assertFiniteSimilarityFloor(
+  tier: TtlScope,
+  option: string,
+  value: number,
+  /** Passed only where the value is a CALL argument rather than a factory option. */
+  source?: string | undefined,
+): number {
   if (Number.isFinite(value) && value >= 0 && value <= 1) return value;
-  throw new CacheLimitInvalidError({ tier, option, value, expected: 'a number from 0 to 1' });
+  throw new CacheLimitInvalidError({
+    tier,
+    option,
+    value,
+    expected: 'a number from 0 to 1',
+    example: '0.92',
+    source,
+  });
 }
 
 export function assertTtl(
@@ -281,9 +289,6 @@ export function cacheStack(
       'ladder',
       'loadDeadlineMs',
       options.loadDeadlineMs ?? DEFAULT_LOAD_DEADLINE_MS,
-      // Caller-owned: it arrives as a `cacheStack({ loadDeadlineMs })` argument, so there is
-      // no `app.config.ts` key to send the reader to.
-      'the loadDeadlineMs argument to cacheStack(...)',
     ),
     schedule: options.schedule,
     // A closed tab's aborted load must not fail every healthy reader that joined it: this is the

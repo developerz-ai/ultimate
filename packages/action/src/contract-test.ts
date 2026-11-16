@@ -76,7 +76,7 @@ export function contractTestsFor(
           () => parseActionInput(target.input, garbage, name),
           'X_INPUT_INVALID',
           `${name} accepted the value this assertion sent as garbage`,
-          `tighten \`input:\` in the ${name} definition`,
+          `input: t.object({ ... })   // tighten it in the ${name} definition until it refuses the garbage`,
           { action: name, garbage },
         );
       },
@@ -222,12 +222,12 @@ async function expectDenied(
     if (error.code !== 'X_INPUT_INVALID') throw error;
     throw new ContractDriftError(
       `${name} failed with ${error.code} before its policy decided, so the denial is unproven`,
-      `pass \`input:\` to contractTestsFor(${name}) — x actions show ${name} --json prints the schema`,
+      `x actions show ${renderFixShellArg(name, '<action>')} --json   # prints the schema: pass a matching \`input:\` to contractTestsFor(${name})`,
     );
   }
   throw new ContractDriftError(
     `${name} ran for an actor of null`,
-    `make the ${name} policy require an authenticated actor`,
+    `policy: can('<resource>:<verb>')   // in ${name}: a policy that requires an authenticated actor`,
   );
 }
 

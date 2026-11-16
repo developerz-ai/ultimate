@@ -435,7 +435,7 @@ if (import.meta.main) {
           {
             code: 'X_GENERATE_CONFLICT',
             cause: `${ROOT_TSCONFIG} does not read as a solution config with a "references" array, so packages/${name} is outside the build graph`,
-            fix: `add { "path": "./packages/${name}" } to the "references" array in ${ROOT_TSCONFIG}`,
+            fix: `{ "path": "./packages/${name}" }   // add to the "references" array in ${ROOT_TSCONFIG}`,
             at: ROOT_TSCONFIG,
           },
         ],

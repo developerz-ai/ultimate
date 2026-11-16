@@ -180,7 +180,7 @@ export function fakeRedis(): FakeRedis {
           throw new CacheDriverUnavailableError({
             driver: 'fake redis',
             cause: 'the fake cannot execute EVAL, and a script reply it made up would be the test',
-            fix: 'move the claim to packages/cache/src/redis.live.test.ts, which runs the script on a real server',
+            fix: 'bun test ./packages/cache/src/redis.live.test.ts   # move the claim into this file: it runs the script on a real server',
           });
         default:
           return Promise.resolve(null);

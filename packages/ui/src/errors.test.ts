@@ -80,7 +80,7 @@ describe('qrCapacityError', () => {
     expect(err).toBeUltimateError(UI_ERROR_CODES.qrCapacity);
     expect(err.cause).toContain('62 bytes');
     expect(err.cause).toContain('42-byte ceiling');
-    expect(err.fix).toContain('shorten the value');
+    expect(err.fix).toStartWith('<QrCode value=');
   });
 });
 
@@ -168,7 +168,7 @@ describe('the form path codes', () => {
     const err = invalidFieldPathError('form field', 'items.0.price');
     expect(err).toBeUltimateError(UI_ERROR_CODES.formPathInvalid);
     expect(err.cause).toContain('form field "items.0.price"');
-    expect(err.fix).toContain('items[0].price');
+    expect(err.fix).toStartWith('<Input name="items[0].price" />');
   });
 
   test('conflictingFieldNameError names both halves of the collision', () => {

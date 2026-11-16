@@ -395,7 +395,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
           safe,
           error,
           // `isSafeKey` admits `$(…)`, a backtick and `;` — legal key bytes, live shell syntax.
-          `grant s3:DeleteObject on this prefix to the app's role, then reproduce with the provider's own words: aws s3api delete-object --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")} --key ${renderFixShellArg(safe, "'<key>'")}`,
+          `aws s3api delete-object --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")} --key ${renderFixShellArg(safe, "'<key>'")}   # reproduces the refusal in the provider's own words; then grant s3:DeleteObject on this prefix to the app's role`,
         );
       }
     },

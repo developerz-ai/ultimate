@@ -48,6 +48,6 @@ export const refuseNul = (value: string): string =>
     ? refuseColumn(
         'format',
         `expected text without a NUL character (U+0000), ${got(value)} that contains one`,
-        "strip it at the call site — value.replaceAll('\\u0000', '') — Postgres text cannot store U+0000; binary content is bytea()",
+        "value.replaceAll('\\u0000', '')   // strip it at the call site — Postgres text cannot store U+0000; binary content is bytea()",
       )
     : value;

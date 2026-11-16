@@ -70,7 +70,7 @@ describe('an app at 96%', () => {
       expect(below?.cause).toContain('apps/web/app/a.ts (1 of 25 lines)');
       expect(below?.at).toBe('apps/web/app/a.ts');
       // No test sits beside it in this fixture, so the fix is the file to write.
-      expect(below?.fix).toStartWith('edit apps/web/app/a.test.ts — ');
+      expect(below?.fix).toStartWith('edit apps/web/app/a.test.ts:1 — ');
       expect(below?.fix).toEndWith('bun test --coverage apps/web/app/a.test.ts');
     });
   });
@@ -203,7 +203,9 @@ describe('no floor stated', () => {
     expect(rest).toEqual([]);
     expect(finding?.code).toBe('X_COVERAGE_FLOOR_UNSTATED');
     expect(finding?.cause).toContain('96.4% of lines and 99.0% of functions');
-    expect(finding?.fix).toBe('edit x.verify.json — add "coverage": { "lines": 95, "funcs": 95 }');
+    expect(finding?.fix).toBe(
+      '{ "coverage": { "lines": 95, "funcs": 95 } }   // in x.verify.json, beside its other keys',
+    );
     expect(finding?.at).toBe('x.verify.json');
   });
 
@@ -220,7 +222,7 @@ describe('the floor only rises', () => {
     const findings = coverageFindings(measured(80, 80), floor(80, 80), none);
     expect(findings.map((finding) => finding.code)).toEqual(['X_COVERAGE_FLOOR_UNSTATED']);
     expect(findings[0]?.cause).toContain('80.0% / 80.0%, under the 95% bar, and no reason');
-    expect(findings[0]?.fix).toContain('add "why"');
+    expect(findings[0]?.fix).toStartWith('{ "coverage": { "why": ');
     expect(coverageFindings(measured(80, 80), floor(80, 80, { why: 'pages' }), none)).toEqual([]);
     // One number under the bar is enough to owe the reason.
     expect(coverageFindings(measured(99, 80), floor(95, 80), none)).toHaveLength(1);
@@ -234,7 +236,7 @@ describe('the floor only rises', () => {
     );
     expect(stale.map((finding) => finding.code)).toEqual(['X_COVERAGE_FLOOR_STALE']);
     expect(stale[0]?.fix).toBe(
-      'edit x.verify.json — set "lines": 81 and "funcs": 80 inside "coverage"',
+      '{ "coverage": { "lines": 81, "funcs": 80 } }   // in x.verify.json, set inside "coverage"',
     );
     // Under the slack on both: one covered line must not turn the gate red.
     expect(coverageFindings(measured(81.4, 81.4), floor(80, 80, { why: 'pages' }), none)).toEqual(
@@ -245,7 +247,7 @@ describe('the floor only rises', () => {
   test('a tree that clears the bar on both retires the reason with the floor', () => {
     const [stale] = coverageFindings(measured(97, 96), floor(80, 90, { why: 'pages' }), none);
     expect(stale?.fix).toBe(
-      'edit x.verify.json — set "lines": 95 and "funcs": 95 inside "coverage", and delete its "why"',
+      '{ "coverage": { "lines": 95, "funcs": 95 } }   // in x.verify.json, set inside "coverage", and delete its "why"',
     );
     // At the bar there is nothing left to rise to: 99% over a floor of 95 is not stale.
     expect(coverageFindings(measured(99, 99), floor(COVERAGE_BAR, COVERAGE_BAR), none)).toEqual([]);
@@ -257,7 +259,7 @@ describe('the floor only rises', () => {
       'X_COVERAGE_BELOW_FLOOR',
       'X_COVERAGE_FLOOR_STALE',
     ]);
-    expect(findings[1]?.fix).toContain('"lines": 90 and "funcs": 75');
+    expect(findings[1]?.fix).toContain('"lines": 90, "funcs": 75');
     // Nothing lost anywhere to name: the fix is the step that says more.
     expect(findings[0]?.fix).toBe('x verify --only unit --json');
   });

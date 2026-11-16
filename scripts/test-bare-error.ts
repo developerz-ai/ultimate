@@ -150,7 +150,7 @@ const shownAt = (site: BareErrorSite | undefined): string => shown(at(site));
 const overFinding = (gap: BareErrorGap): Finding => ({
   code: 'X_TEST_BARE_ERROR',
   cause: `${shown(gap.pkg)} has ${String(gap.found)} test(s) reporting a verdict with a bare Error and is pinned at ${String(gap.pinned)} — ${siteList(gap, shownAt, EXPLAIN)} — and a bare Error carries no code, no cause and no fix, and reports at the throw rather than at the assertion`,
-  fix: `replace the throw at ${siteTarget(gap, shownAt)}: expect.unreachable('<what was expected>') reports at the assertion, and its never return also narrows the variable, so the cast below it goes away`,
+  fix: `expect.unreachable('<what was expected>')   // in place of the throw at ${siteTarget(gap, shownAt)}: it reports at the assertion, and its never return also narrows the variable, so the cast below it goes away`,
   at: at(leadSite(gap)),
 });
 
@@ -165,7 +165,7 @@ const unscannedFinding = (): Finding => ({
   code: 'X_TEST_BARE_ERROR_UNSCANNED',
   cause:
     'no test file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a clean tree',
-  fix: "edit TEST_GLOBS in scripts/test-fix-citations.ts so it matches this repo's test layout",
+  fix: "grep -n 'TEST_GLOBS' scripts/test-fix-citations.ts   # edit it so it matches this repo's test layout",
   at: 'scripts/test-bare-error.ts',
 });
 

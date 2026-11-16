@@ -372,7 +372,7 @@ export function jobWorker(options: WorkerOptions): Worker {
           workerId,
           reason,
           inFlight: inFlight.size,
-          fix: 'raise the drain budget past the slowest job — configureLifecycle({ deadlineMs: 600_000 }) — and set terminationGracePeriodSeconds to at least as many seconds',
+          fix: 'configureLifecycle({ deadlineMs: 600_000 })   // raise the drain budget past the slowest job — and set terminationGracePeriodSeconds to at least as many seconds',
         });
       }
       if (inFlight.size > 0 && budget.deadlineAt !== undefined) await inFlight.handBackAll();

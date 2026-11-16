@@ -39,7 +39,7 @@ describe('validateMeta', () => {
     expect(issue?.file).toBe('apps/web/site/about/page.tsx');
     expect(issue?.cause).toContain('apps/web/site/about/page.tsx');
     expect(issue?.fix).toBe(
-      'add description to defineRoute({ meta }) in apps/web/site/about/page.tsx',
+      "meta: { description: '…' }   // in defineRoute() in apps/web/site/about/page.tsx",
     );
   });
 
@@ -152,7 +152,9 @@ describe('validateMeta', () => {
     const issue = report.issues.find((entry) => entry.code === SEO_ERROR_CODES.metaTooLong);
     expect(issue?.cause).toContain('161-character description');
     expect(issue?.cause).toContain('truncate past 160');
-    expect(issue?.fix).toBe('shorten meta.description in site/long/page.tsx to <= 160 characters');
+    expect(issue?.fix).toBe(
+      "meta: { description: '<at most 160 characters>' }   // shortened, in site/long/page.tsx",
+    );
   });
 
   /**

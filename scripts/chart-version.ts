@@ -88,13 +88,21 @@ export function setChartVersions(raw: string, version: string): string {
   return write(write(raw, 'version', version), 'appVersion', `"${version}"`);
 }
 
+/** What the fix hands over to after the edit — and who does the edit on a release. */
+const RECHECK =
+  'bun run scripts/chart-version.ts --json — a release does this for you (scripts/release.ts)';
+
 const staleFinding = (gap: ChartGap): Finding => ({
   code: 'X_CHART_VERSION_STALE',
   cause:
     gap.found === undefined
       ? `${CHART_FILE} has no ${gap.key}, and appVersion is the default image tag (values.yaml ships image.tag: "") — a chart with no version is one helm cannot install`
       : `${CHART_FILE} says ${gap.key} ${gap.found} and every publishable workspace is stamped at ${gap.expected}; appVersion is the default image tag (values.yaml ships image.tag: ""), so helm install pulls a tag no release pushed`,
-  fix: `set ${gap.key}: ${gap.key === 'appVersion' ? `"${gap.expected}"` : gap.expected} in ${CHART_FILE}, then bun run scripts/chart-version.ts --json — a release does this for you (scripts/release.ts)`,
+  // Each key as Chart.yaml spells it: `appVersion` quoted, `version` bare (`setChartVersions`).
+  fix:
+    gap.key === 'appVersion'
+      ? `appVersion: "${gap.expected}"   # in ${CHART_FILE}, then: ${RECHECK}`
+      : `grep -n '^version:' ${CHART_FILE}   # set it to version: ${gap.expected}, then: ${RECHECK}`,
   at: CHART_FILE,
 });
 

@@ -376,7 +376,7 @@ const overFinding = (gap: CatchRenderGap): Finding => {
   return {
     code: 'X_CATCH_RENDER_UNSAFE',
     cause: `${gap.pkg} renders a caught value into ${String(gap.found)} refusal(s) unsafely and is pinned at ${String(gap.pinned)} — ${siteList(gap, said, EXPLAIN)} — ${kinds.map((kind) => `${kind}: ${why(kind)}`).join('; ')}`,
-    fix: `replace the render at ${siteTarget(gap, at)} with renderThrowable(${leadSite(gap)?.binding ?? 'error'}) from @ultimat3/core`,
+    fix: `renderThrowable(${leadSite(gap)?.binding ?? 'error'})   // from @ultimat3/core, in place of the render at ${siteTarget(gap, at)}`,
     at: at(leadSite(gap)),
   };
 };
@@ -384,7 +384,7 @@ const overFinding = (gap: CatchRenderGap): Finding => {
 const staleFinding = (gap: CatchRenderGap): Finding => ({
   code: 'X_CATCH_RENDER_PIN_STALE',
   cause: `${gap.pkg} is pinned at ${String(gap.pinned)} unsafe catch render(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `edit scripts/catch-render.ts — the rule is zero-pinned and holds no table, so delete the pin for ${gap.pkg}`,
+  fix: `grep -n 'pins: {' scripts/catch-render.ts   # zero-pinned, so it holds no table: delete the pin for ${gap.pkg} there, leaving pins: {}`,
   at: 'scripts/catch-render.ts',
 });
 
@@ -398,7 +398,7 @@ const unscannedFinding = (): Finding => ({
   code: 'X_CATCH_RENDER_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a clean tree',
-  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/catch-render.ts',
+  fix: "grep -n 'CORPUS_PATTERNS' scripts/lib/corpus.ts   # edit it so it matches this repo layout, then: bun run scripts/catch-render.ts",
   at: 'scripts/lib/corpus.ts',
 });
 

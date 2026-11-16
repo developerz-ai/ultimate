@@ -49,7 +49,7 @@ export function checkDocumentStyles(documents: readonly SurfaceDocument[]): read
     .map((document) => ({
       code: 'X_STYLES_GLOBAL_MISSING',
       cause: `a ${document.surface}/ document carries ${document.css.length} characters of CSS and defines no :root custom properties, so every var(--color-*) and var(--space-*) in it resolves to nothing`,
-      fix: `add apps/web/${APP_GLOBAL_STYLESHEET} containing \`@use '@ultimat3/ui/global.scss';\` and apps/web/${APP_GLOBAL_MODULE} containing \`import './global.scss';\``,
+      fix: `import './global.scss';   // as apps/web/${APP_GLOBAL_MODULE}, beside apps/web/${APP_GLOBAL_STYLESHEET} holding @use '@ultimat3/ui/global.scss';`,
       docs: ERROR_DOCS_URL,
       at: `apps/web/${APP_GLOBAL_STYLESHEET}`,
     }));

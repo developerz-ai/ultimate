@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { PGLITE_FIX, PGLITE_MISSING } from '@ultimat3/db';
+import { dbUnavailable, PGLITE_FIX, PGLITE_MISSING } from '@ultimat3/db';
 import { REQUIRED_BUN } from './app-root';
 import { doctorCommand, runDoctor } from './cmd-doctor';
 import { codes, probe } from './cmd-doctor-fixture';
@@ -276,7 +276,7 @@ describe('unit · x doctor probes the whole surface x dev binds', () => {
     const unreachable: Finding = {
       code: 'X_DB_UNAVAILABLE',
       cause: 'DATABASE_URL does not answer `select 1`: connection refused',
-      fix: 'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
+      fix: dbUnavailable('').fix,
     };
     const codesFound = await codes(probe({ database: async () => unreachable }));
     expect(codesFound).toContain('X_DB_UNAVAILABLE');

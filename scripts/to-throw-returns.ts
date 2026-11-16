@@ -166,7 +166,7 @@ export function checkToThrowReturns(input: ThrowGapInput): readonly ThrowGap[] {
 export const throwFindingFor = (gap: ThrowGap): Finding => ({
   code: 'X_TEST_THROW_NOT_THROWN',
   cause: `${gap.at} asserts a throw over \`${gap.body}\`, which ${gap.reason} — bun's synchronous toThrow PASSES on a returned Error, so this assertion cannot fail`,
-  fix: `wrap the value in a throw at ${gap.at}: \`expect(() => { throw ${gap.body}; }).toThrow(…)\`, or assert the value directly with \`expect(${gap.body}).toBeInstanceOf(…)\``,
+  fix: `expect(() => { throw ${gap.body}; }).toThrow(…)   // at ${gap.at}, the value wrapped in a throw — or assert it directly: expect(${gap.body}).toBeInstanceOf(…)`,
   at: gap.at,
 });
 

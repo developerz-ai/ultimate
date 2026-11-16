@@ -62,7 +62,10 @@ const declaresFlag = (text: string, name: string): boolean =>
 const unreadFinding = (declared: DeclaredFlag, at: string): Finding => ({
   code: 'X_CLI_FLAG_UNREAD',
   cause: `x ${declared.command} declares --${declared.flag.name} ("${declared.flag.summary}") and no file in the CLI's source reads it, so the flag parses and changes nothing`,
-  fix: `read it in ${at} with flag${declared.flag.type === 'boolean' ? 'Bool' : 'String'}(ctx.args, '${declared.flag.name}'), or delete it from the spec's flags`,
+  fix:
+    declared.flag.type === 'boolean'
+      ? `flagBool(ctx.args, '${declared.flag.name}')   // read it in ${at} — or delete it from the spec's flags`
+      : `flagString(ctx.args, '${declared.flag.name}')   // read it in ${at} — or delete it from the spec's flags`,
   docs: ERROR_DOCS_URL,
   at,
 });

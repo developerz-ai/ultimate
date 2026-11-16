@@ -60,7 +60,7 @@ export function relatedOf(
     if (target === undefined) {
       return refuse(
         `named in related, and its rows are "${relation.to}", which is not a resource of this admin`,
-        `add the ${relation.to} entity to defineAdmin({ entities }) — its own list is what related draws`,
+        `defineAdmin({ entities: [${relation.to}, …] })   // add the ${relation.to} entity — its own list is what related draws`,
       );
     }
     return { name, resource: target, field: relation.remoteKey, localKey: relation.localKey };

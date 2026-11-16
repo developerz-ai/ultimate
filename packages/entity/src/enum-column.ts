@@ -29,7 +29,7 @@ export const enumerated = <const V extends readonly string[]>(values: V): Enumer
       : refuseColumn(
           'enum',
           `expected one of ${values.join(' | ')}, ${got(value)}`,
-          'store one of the values enumerated() declares, or add the new variant to that list and run x db gen "extend the enum check" — the values are a CHECK constraint, so the table moves with them',
+          `enumerated([${values.map((value) => JSON.stringify(value)).join(', ')}, …])   // add the new variant to this list, then: x db gen "extend the enum check" — or store one of these; they are a CHECK constraint, so the table moves with them`,
         );
   return enumeratedWith<V, false>(
     { ...BARE, kind: 'text', values, check: oneOf(values) },
@@ -63,7 +63,7 @@ const enumeratedWith = <V extends readonly string[], Optional extends boolean>(
         refuseColumn(
           'transitions',
           'a state machine column may not hold null — null is not one of the declared states',
-          'drop .nullable() from this column, or drop .transitions() — a row outside every state has no legal move',
+          "enumerated(['draft', 'published']).transitions({ draft: ['published'], published: [] })   // without .nullable(): a row outside every state has no legal move — or drop .transitions()",
         );
       }
       return enumeratedWith<V, Optional>(
@@ -80,7 +80,7 @@ const enumeratedWith = <V extends readonly string[], Optional extends boolean>(
         refuseColumn(
           'transitions',
           'a state machine column may not hold null — null is not one of the declared states',
-          'drop .nullable() from this column, or drop .transitions() — a row outside every state has no legal move',
+          "enumerated(['draft', 'published']).transitions({ draft: ['published'], published: [] })   // without .nullable(): a row outside every state has no legal move — or drop .transitions()",
         );
       }
       return base.nullable();

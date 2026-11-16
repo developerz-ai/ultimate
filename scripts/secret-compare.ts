@@ -354,7 +354,7 @@ const overFinding = (gap: SecretCompareGap): Finding => {
   return {
     code: 'X_SECRET_COMPARED_UNSAFELY',
     cause: `${gap.pkg} — a value named as a secret compared with a short-circuiting operator in ${String(gap.found)} place(s), pinned at ${String(gap.pinned)} — ${listed} — whose running time depends on how many leading bytes match, so an attacker learns the value one byte at a time`,
-    fix: `replace the comparison at ${at(lead)} with timingSafeEqual(a, b) from @ultimat3/core; if ${named} is not a secret, ${pinRaiseFix(pinRaiseOf(SECRET_COMPARE_PIN_TARGET, gap))}, its reason saying what ${named} is`,
+    fix: `timingSafeEqual(a, b)   // from @ultimat3/core, in place of the comparison at ${at(lead)}; if ${named} is not a secret, ${pinRaiseFix(pinRaiseOf(SECRET_COMPARE_PIN_TARGET, gap))}, its reason saying what ${named} is`,
     at: at(lead),
   };
 };
@@ -369,7 +369,7 @@ const staleFinding = (gap: SecretCompareGap): Finding => ({
 const unexplainedFinding = (gap: SecretCompareGap): Finding => ({
   code: 'X_SECRET_COMPARE_PIN_UNEXPLAINED',
   cause: `the row '${gap.pkg}' is pinned with a blank reason, so nothing records what its ${String(gap.found)} comparison(s) really compare — a count with no sentence is the waiver this table exists to refuse, and the pin holds nothing`,
-  fix: `write what the value at '${gap.pkg}' actually is — a search token, a job state, a route path — in ${SECRET_PINS_FILE}; or replace the comparison with timingSafeEqual(a, b) from @ultimat3/core and run bun run scripts/secret-compare.ts --unpin ${renderFixShellArg(fileOf(gap.pkg), '<the file the row names>')}`,
+  fix: `grep -n ${renderFixShellArg(fileOf(gap.pkg), '<the file the row names>')} ${SECRET_PINS_FILE}   # write in the row '${gap.pkg}' what the value actually is — a search token, a job state, a route path; or replace the comparison with timingSafeEqual(a, b) from @ultimat3/core and run bun run scripts/secret-compare.ts --unpin ${renderFixShellArg(fileOf(gap.pkg), '<the file the row names>')}`,
   at: SECRET_PINS_FILE,
 });
 
@@ -377,7 +377,7 @@ const unscannedFinding = (): Finding => ({
   code: 'X_SECRET_COMPARE_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a tree with no unsafe comparison in it',
-  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/secret-compare.ts',
+  fix: "grep -n 'CORPUS_PATTERNS' scripts/lib/corpus.ts   # edit it so it matches this repo layout, then: bun run scripts/secret-compare.ts",
   at: 'scripts/lib/corpus.ts',
 });
 

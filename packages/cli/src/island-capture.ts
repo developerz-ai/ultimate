@@ -83,7 +83,7 @@ export function photographFault(
     return {
       reason:
         'was served a document that is not the shot harness — the dev server this run reused was booted against a different set of states files',
-      fix: 'restart x dev, then run this command again',
+      fix: 'x stop --json && x dev   # restart it against these states files, then run this command again',
     };
   }
   if (!seen.attached) {

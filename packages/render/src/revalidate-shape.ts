@@ -94,7 +94,7 @@ export function assertPurgeableTags(file: string, tags: readonly CacheTag[] | un
       const wire = renderFixLiteral(serializeTag(owned), '<the tag>');
       throw new RouteModeInvalidError(
         `${file} declares revalidate tag ${wire}, which cannot be a CDN purge key — a key is split on whitespace and commas and capped at 1024 bytes, so every response of the route would carry one no purge can name`,
-        `edit revalidate.tags in ${file}: replace ${wire} with a tag whose entity and id carry no whitespace or comma`,
+        `revalidate: { tags: [tag.post] }   // in ${file}: replace ${wire} with a tag whose entity and id carry no whitespace or comma`,
       );
     }
   }

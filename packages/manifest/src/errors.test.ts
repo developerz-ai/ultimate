@@ -83,14 +83,15 @@ describe('X_MANIFEST_BREAKING says something a reader can act on', () => {
   test('a never-shipped 0.x app is offered the action that fits it', () => {
     const fix = new ManifestBreakingError({ changes, from: '0.1.0', to: '0.1.0' }).fix;
     expect(fix).toContain('x manifest');
-    expect(fix).toContain('bun pm pkg set version=1.0.0');
+    expect(fix).toStartWith('bun pm pkg set version=1.0.0   # ');
     // The half a reader would otherwise discover by trying it: 0.2.0 is not a major bump here.
     expect(fix).toContain('0.2.0 does not');
   });
 
   test('a shipped app is told to raise the leading integer, not to re-commit a baseline', () => {
     const fix = new ManifestBreakingError({ changes, from: '1.4.2', to: '1.5.0' }).fix;
-    expect(fix).toContain('bump the major version in package.json');
+    // The leading integer of the COMMITTED version, plus one: `majorOf` compares nothing else.
+    expect(fix).toStartWith('bun pm pkg set version=2.0.0   # the major bump in package.json');
     expect(fix).not.toContain('x manifest');
   });
 

@@ -23,7 +23,7 @@ export class LlmTruncatedError extends UltimateError {
     super({
       code: 'X_LLM_TRUNCATED',
       cause: `prompt "${input.prompt}" was cut off at its ${input.maxTokens}-token ceiling`,
-      fix: `maxTokens: ${input.maxTokens * 2}   # on the ${input.subject ?? 'llm'}() declaration — or drop fields from its output schema`,
+      fix: `{ maxTokens: ${input.maxTokens * 2} }   // on the ${input.subject ?? 'llm'}() declaration — or drop fields from its output schema`,
       meta: { prompt: input.prompt, maxTokens: input.maxTokens },
     });
   }

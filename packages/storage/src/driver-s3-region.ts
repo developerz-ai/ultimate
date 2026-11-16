@@ -2,7 +2,12 @@
 // signed for the wrong region — and turn it into the disk-misconfigured error it is. Split from
 // driver-s3.ts because every call that sends a signed request asks this before its own verdict.
 
-import { ConfigInvalidError, stringField } from '@ultimat3/core';
+import {
+  ConfigInvalidError,
+  renderFixLiteral,
+  renderFixShellArg,
+  stringField,
+} from '@ultimat3/core';
 
 /** What S3 and every S3-compatible gateway answer a SigV4 scope with the wrong region in it. */
 const REGION_MISMATCH_CODE = 'AuthorizationHeaderMalformed';
@@ -33,7 +38,7 @@ export function regionMismatch(bucket: string, error: unknown): ConfigInvalidErr
   if (sent === undefined || expected === undefined) return undefined;
   return new ConfigInvalidError({
     cause: `the s3 disk for bucket "${bucket}" signed a request for region "${sent}" and its endpoint expects "${expected}"`,
-    fix: `set S3_REGION=${expected} in .env (or pass region: '${expected}' to s3Driver), then re-run`,
+    fix: `S3_REGION=${renderFixShellArg(expected, '<region>')}   # in .env, then re-run — or pass region: ${renderFixLiteral(expected, "'<region>'")} to s3Driver`,
     meta: { bucket, sent, expected },
   });
 }

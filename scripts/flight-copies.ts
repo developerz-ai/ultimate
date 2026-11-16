@@ -123,7 +123,7 @@ const randomCallFindings = (file: SourceFile): readonly Finding[] => {
     findings.push({
       code: 'X_FLIGHT_RANDOM_UNINJECTED',
       cause: `${file.at}:${lineOf(file.text, match.index)} rolls ${match[0].includes('getRandomValues') ? 'crypto.getRandomValues()' : 'Math.random()'} directly, so nothing that depends on it can be pinned by a test`,
-      fix: `take a \`random: () => number\` parameter defaulting to \`Math.random\` and call that instead, the way ${BACKOFF_MODULE} does`,
+      fix: `random: () => number = Math.random   // a parameter, called in place of the direct roll, the way ${BACKOFF_MODULE} does`,
       at: file.at,
     });
   }

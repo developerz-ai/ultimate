@@ -242,21 +242,21 @@ export function checkDocCommands(input: DocCommandInput): readonly DocCommandGap
 const unresolvedFinding = (gap: DocCommandGap): Finding => ({
   code: 'X_DOC_COMMAND_UNKNOWN',
   cause: `${gap.at} hands a reader "${gap.subject}", ${gap.detail}`,
-  fix: `edit ${gap.at} to name an invocation this build ships — x help --json lists every command and its flags — or add { path, cites, kind, why } for it to DOC_COMMAND_ALLOWANCES in ${ALLOW_FILE} if the sentence is about the command NOT existing`,
+  fix: `x help --json   # lists every command and its flags: edit ${gap.at} to name an invocation this build ships — or add { path, cites, kind, why } for it to DOC_COMMAND_ALLOWANCES in ${ALLOW_FILE} if the sentence is about the command NOT existing`,
   at: gap.at,
 });
 
 const allowanceFinding = (gap: DocCommandGap): Finding => ({
   code: 'X_DOC_COMMAND_ALLOWANCE_STALE',
   cause: `${ALLOW_FILE} allows ${gap.detail} to name "${gap.subject}" and that page no longer does — a waiver nobody removes is a waiver nobody reads`,
-  fix: `delete the { path: '${gap.detail}', cites: '${gap.subject}' } entry from DOC_COMMAND_ALLOWANCES in ${ALLOW_FILE}`,
+  fix: `{ path: '${gap.detail}', cites: '${gap.subject}' }   // delete this entry from DOC_COMMAND_ALLOWANCES in ${ALLOW_FILE}`,
   at: ALLOW_FILE,
 });
 
 const vacuousFinding = (gap: DocCommandGap): Finding => ({
   code: 'X_DOC_COMMAND_UNSCANNED',
   cause: `${gap.detail} for ${gap.at}, so this rule reported green over a documentation surface it never read`,
-  fix: `restore the documentation under wiki/, docs/ and llms.txt, or change DOC_GLOBS in scripts/doc-commands.ts to the paths this repo actually publishes`,
+  fix: 'git log --stat -- wiki docs llms.txt   # restore the documentation from history, or change DOC_GLOBS in scripts/doc-commands.ts to the paths this repo actually publishes',
   at: gap.at,
 });
 
@@ -269,7 +269,7 @@ const vacuousFinding = (gap: DocCommandGap): Finding => ({
 const pinFinding = (gap: DocCommandGap): Finding => ({
   code: 'X_DOC_COMMAND_PIN_STALE',
   cause: `${pageOfSite(gap.subject)}: DOC_COMMAND_PINS['${gap.subject}'] — ${gap.detail} line(s) writing that unresolved x citation`,
-  fix: `set DOC_COMMAND_PINS['${gap.subject}'] in ${PINS_FILE} to the first number in "${gap.detail}", or delete the entry when it reaches 0`,
+  fix: `grep -n 'DOC_COMMAND_PINS' ${PINS_FILE}   # set DOC_COMMAND_PINS['${gap.subject}'] to the first number in "${gap.detail}", or delete the entry when it reaches 0`,
   at: gap.at,
 });
 

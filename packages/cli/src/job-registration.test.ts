@@ -20,8 +20,8 @@ describe('unit · a job no defineApi call names is a finding', () => {
   test('the finding names the file and the list to add it to', () => {
     const job = unregisteredJobFinding('anonymous-job-3');
     expect(job.code).toBe('X_JOB_UNREGISTERED');
-    expect(job.fix).toContain('to jobs: [...] in apps/web/api/index.ts');
-    expect(unregisteredJobFinding('anonymous-task-1').fix).toContain('to tasks: [...]');
+    expect(job.fix).toContain('added to jobs: [...] there');
+    expect(unregisteredJobFinding('anonymous-task-1').fix).toContain('added to tasks: [...]');
   });
 
   test('a load that failed reports nothing here — the step that loaded it reports the load', async () => {

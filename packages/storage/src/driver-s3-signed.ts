@@ -12,6 +12,7 @@ import {
   ConfigInvalidError,
   EnvMissingError,
   presignAwsUrl,
+  renderFixShellArg,
   signAwsRequest,
   systemClock,
   trimTrailingSlashes,
@@ -80,7 +81,7 @@ export function requireEnv(
   if (value === undefined || value === '') {
     throw new EnvMissingError({
       cause: `${name} is not set, so the s3 disk cannot authenticate`,
-      fix: `set ${name} and ${partner} in .env (or the container's secret store), then re-run`,
+      fix: `export ${renderFixShellArg(name, '<the variable cause names>')}='<value>' ${renderFixShellArg(partner, '<its partner>')}='<value>'   # or both in .env or the container's secret store, then re-run`,
       meta: { missing: name },
     });
   }

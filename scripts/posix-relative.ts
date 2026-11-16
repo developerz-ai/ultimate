@@ -124,7 +124,7 @@ export function relativeFindings(sites: readonly RelativeSite[]): readonly Findi
     findings.push({
       code: CODE,
       cause: `${path} is pinned at ${String(pinned)} unwrapped relative() call(s) and now has ${String(now)} — the pin is stale`,
-      fix: `bun run posix-relative --json   # after setting BACKLOG['${path}'] to ${String(now)} in scripts/posix-relative.ts, or deleting the row at 0`,
+      fix: `grep -n 'BACKLOG' scripts/posix-relative.ts   # set BACKLOG['${path}'] to ${String(now)} there, or delete the row at 0, then: bun run posix-relative --json`,
       at: path,
     });
   }

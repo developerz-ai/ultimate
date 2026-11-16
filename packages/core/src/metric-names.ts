@@ -3,6 +3,7 @@
 // the 500-line ceiling `x verify`'s `filesize` step enforces, and because the two refusals are one
 // rule asked of two things — the exposition format spells them identically.
 
+import { renderFixShellArg } from './error-render';
 import { type CodedErrorInit, UltimateError } from './errors';
 import type { MetricAttributes } from './metrics-types';
 
@@ -37,7 +38,7 @@ export function assertMetricName(name: string): void {
   if (METRIC_NAME_RE.test(name)) return;
   throw new MetricNameInvalidError({
     cause: `"${name}" is not lowercase snake_case matching ${METRIC_NAME_RE.source}`,
-    fix: `rename the instrument to lowercase snake_case, e.g. ${snake(name)}`,
+    fix: `git grep -n ${renderFixShellArg(name, '<the name the cause quotes>')}   # rename the instrument to lowercase snake_case, e.g. ${snake(name)}`,
     meta: { name },
   });
 }
@@ -61,7 +62,7 @@ export function assertLabelNames(metric: string, attributes: MetricAttributes): 
     if (METRIC_NAME_RE.test(label)) continue;
     throw new MetricNameInvalidError({
       cause: `${metric} was given the label "${label}", which is not lowercase snake_case matching ${METRIC_NAME_RE.source} — the exposition line it renders is one no scraper can parse, and one bad line drops the whole scrape`,
-      fix: `rename the label at the call site to lowercase snake_case, e.g. { ${snake(label)}: … }`,
+      fix: `{ ${snake(label)}: … }   // the label renamed to lowercase snake_case, at the call site`,
       meta: { metric, label },
     });
   }

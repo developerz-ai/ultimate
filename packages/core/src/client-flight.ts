@@ -359,7 +359,7 @@ function deadlineExpired(subject: string, deadlineMs: number): UltimateError {
   return new UltimateError({
     code: 'X_TIMEOUT',
     cause: `${subject} was aborted after its client deadline of ${deadlineMs}ms`,
-    fix: 'raise deadlineMs at the clientFlight({ deadlineMs }) call site, or find what is answering that slowly with x doctor --json',
+    fix: `clientFlight({ deadlineMs: ${deadlineMs * 2} })   // a raised deadline at the call site — or find what answers that slowly: x doctor --json`,
     meta: { subject, deadlineMs },
   });
 }

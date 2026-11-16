@@ -146,7 +146,7 @@ describe('the one cursor codec', () => {
       [
         'X_CURSOR_INVALID: pagination cursor is malformed, tampered with or from another query',
         '  cause: cursor rejected: signature does not match',
-        '  fix:   drop the cursor and request the first page again (after: null)',
+        '  fix:   after: null   // drop the cursor and request the first page again',
       ].join('\n'),
     );
   });

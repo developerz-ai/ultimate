@@ -33,7 +33,7 @@ const SCREENS: Readonly<Record<AdminView, Build>> = {
       throw new AdminPagePathInvalidError({
         path: route.path,
         cause: 'is a page route with no component',
-        fix: 'declare it in `pages:` on defineAdmin() — { path, titleKey, permissions, component }',
+        fix: 'pages: [{ path, titleKey, permissions, component }]   // declare it on defineAdmin()',
       });
     }
     return guardedScreen(app, route, (request) => component(request));
@@ -49,7 +49,7 @@ export function screenFor(app: AdminApp, route: AdminRoute): AdminScreen {
     throw new AdminPagePathInvalidError({
       path: route.path,
       cause: `has the view "${route.view}", which no screen renders`,
-      fix: 'declare the screen in `pages:` on defineAdmin() — { path, titleKey, permissions, component }',
+      fix: 'pages: [{ path, titleKey, permissions, component }]   // declare the screen on defineAdmin()',
     });
   }
   return build(app, route);

@@ -88,7 +88,7 @@ describe('unit · the ratchet may only shrink', () => {
     expect(found[0]?.code).toBe('X_ERROR_STATUS_BACKLOG_STALE');
     expect(found[0]?.cause).toContain('409');
     expect(found[0]?.fix).toBe(
-      `delete 'X_FIXTURE_ACTION' from the action group in ${BACKLOG_FILE}`,
+      `grep -n X_FIXTURE_ACTION ${BACKLOG_FILE}   # delete 'X_FIXTURE_ACTION' from the action group`,
     );
   });
 
@@ -103,10 +103,10 @@ describe('unit · the ratchet may only shrink', () => {
         tree({ declared: [code(one, owner)], status: { [one]: 400 }, backlog: { [owner]: [one] } }),
       )[0]?.fix;
     expect(fixOf(undecided, 'ai')).toBe(
-      `delete '${undecided}' from the ai group of UNDECIDED in ${UNDECIDED_FILE}`,
+      `grep -n ${undecided} ${UNDECIDED_FILE}   # delete '${undecided}' from the ai group of UNDECIDED`,
     );
     expect(fixOf(decided, 'mcp')).toBe(
-      `delete '${decided}' from the mcp group of OFF_SOCKET in ${BACKLOG_FILE}`,
+      `grep -n ${decided} ${BACKLOG_FILE}   # delete '${decided}' from the mcp group of OFF_SOCKET`,
     );
   });
 

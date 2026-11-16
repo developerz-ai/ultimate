@@ -123,7 +123,9 @@ describe('CacheJitterInvalidError', () => {
     expect(err.code).toBe('X_CACHE_JITTER_INVALID');
     expect(err.cause).toContain('redis');
     expect(err.cause).toContain('1.5');
-    expect(err.fix).toContain('cache.redis.jitterFraction');
+    // The option of the factory that read it — `cache.redis.jitterFraction` is no config key.
+    expect(err.fix).toStartWith('{ jitterFraction: 0.05 }');
+    expect(err.fix).toContain("redis tier's lruTier({ ... }) or redisTier({ ... })");
     expect(err.meta).toEqual({ tier: 'redis', jitterFraction: 1.5 });
     expect(EVERY_CODE).toContain(err.code);
   });

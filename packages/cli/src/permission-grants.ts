@@ -112,7 +112,7 @@ export function ungrantedFinding(rule: UngrantedRequirement, rolesAt: string | u
   const finding: Finding = {
     code: 'X_PERMISSION_UNGRANTED',
     cause: `${rule.by} requires ${quoteArg(rule.permission)}, and no role in the app's role map grants it — no actor a role mints can ever pass`,
-    fix: `add '${rule.permission}' to the grants of a role in ${where}, then x verify --only policy`,
+    fix: `grants: [..., '${rule.permission}']   // one role's, in ${where} — then x verify --only policy`,
   };
   return rolesAt === undefined ? finding : { ...finding, at: rolesAt };
 }

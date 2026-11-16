@@ -167,7 +167,7 @@ export function computedColumnsOf<Row extends AdminRow>(
         entity: resource.name,
         field: name,
         cause: 'is declared in `columns:` and is also a column of the entity',
-        fix: `rename the computed column in resources.${resource.name}.columns — e.g. ${name}Label — or drop it and let the admin render the column itself`,
+        fix: `columns: { ${name}Label: … }   // rename the computed column in resources.${resource.name}.columns — or drop it and let the admin render the column itself`,
       });
     }
     if (typeof column.render !== 'function' && !isRenderer(column.render)) {
@@ -175,7 +175,7 @@ export function computedColumnsOf<Row extends AdminRow>(
         entity: resource.name,
         field: name,
         cause: `names a renderer the admin does not have (it has: ${ADMIN_RENDERERS.join(', ')})`,
-        fix: `set resources.${resource.name}.columns.${name}.render to one of those, or pass a component: render: (props) => <YourCell {...props} />`,
+        fix: `render: (props) => <YourCell {...props} />   // on resources.${resource.name}.columns.${name} — or one of those renderer names`,
       });
     }
     const render = column.render;

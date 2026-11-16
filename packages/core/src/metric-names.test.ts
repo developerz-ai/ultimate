@@ -17,9 +17,9 @@ const refusal = (fn: () => void): UltimateError => {
   return expect.unreachable('expected a refusal, nothing was thrown');
 };
 
-/** The identifier after `e.g. `, with or without the label form's surrounding braces. */
+/** The identifier after `e.g. `, or the key of the label form's opening `{ <label>: … }`. */
 const suggested = (fix: string): string => {
-  const found = /e\.g\. \{? ?([^\s:{}]+)/.exec(fix);
+  const found = /(?:e\.g\. |^\{ )([^\s:{}]+)/.exec(fix);
   return found?.[1] ?? expect.unreachable(`no suggestion in the fix line: ${fix}`);
 };
 

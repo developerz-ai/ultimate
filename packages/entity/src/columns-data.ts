@@ -43,7 +43,7 @@ export const json = <T>(schema: StandardSchemaV1<unknown, T>): Column<T> =>
       return refuseColumn(
         'json',
         `does not match the column's schema — ${formatIssues(result.issues).join('; ')}`,
-        'correct the key the cause names, or widen the schema this column was declared with — json(t.object({ seats: t.number })) validates on the way in and on the way back',
+        'json(t.object({ seats: t.number }))   // widen the schema this column was declared with, or correct the key the cause names — it validates on the way in and on the way back',
       );
     },
     { schema },
@@ -77,7 +77,7 @@ const int8 = (digits: string): string => {
     : refuseColumn(
         'bigint',
         'the value is past the int8 range (-2^63 to 2^63 - 1), which Postgres answers 22003 for',
-        'declare the column decimal({ precision: 40, scale: 0 }) — a numeric holds whole numbers past int8 — and run x db gen "widen the bigint to numeric"',
+        'decimal({ precision: 40, scale: 0 })   // declare the column so — a numeric holds whole numbers past int8 — then run x db gen "widen the bigint to numeric"',
       );
 };
 
@@ -116,7 +116,7 @@ export const bigint = (): Column<string> =>
         : refuseColumn(
             'bigint',
             `${String(value)} is past ±2^53, where a JS number is no longer exact`,
-            "quote the digits — bigint() takes and returns a decimal string, so pass '9007199254740993' rather than a number literal",
+            "insert({ amount: '9007199254740993' })   // quote the digits — bigint() takes and returns a decimal string, never a number literal",
           );
     }
     return typeof value === 'string' && DIGITS.test(value)
@@ -178,7 +178,7 @@ export const decimal = (options: DecimalOptions = {}): Column<string> => {
         return refuseColumn(
           'numeric',
           `expected a decimal number, ${got(value)}`,
-          "pass the digits as a string — decimal() holds an exact decimal, so write '1.25'; a float is taken only where String(value) is already exact",
+          "insert({ amount: '1.25' })   // the digits as a string — decimal() holds an exact decimal; a float is taken only where String(value) is already exact",
         );
       }
       const digits = text.replace('-', '').split('.');
@@ -197,7 +197,7 @@ export const decimal = (options: DecimalOptions = {}): Column<string> => {
         return refuseColumn(
           'numeric',
           `${text} does not fit numeric(${precision}, ${scale ?? 0})`,
-          `widen the column — decimal({ precision: ${whole + (scale ?? 0)}, scale: ${scale ?? 0} }) — and run x db gen "widen the numeric": what overflows is the digits BEFORE the point`,
+          `decimal({ precision: ${whole + (scale ?? 0)}, scale: ${scale ?? 0} })   // widen the column, then run x db gen "widen the numeric": what overflows is the digits BEFORE the point`,
         );
       }
       return canonicalDecimal(text, scale);
@@ -232,7 +232,7 @@ export const date = (): Column<PlainDate> =>
         ? refuseColumn(
             'date',
             `expected a calendar date, ${got(value)}`,
-            "pass a Date built from a real value — new Date('2026-08-22'); new Date(undefined) and a failed parse both produce the Invalid Date this refuses",
+            "new Date('2026-08-22')   // a Date built from a real value; new Date(undefined) and a failed parse both produce the Invalid Date this refuses",
           )
         : plainDateUtc(value);
     }
@@ -241,7 +241,7 @@ export const date = (): Column<PlainDate> =>
       : refuseColumn(
           'date',
           `expected a YYYY-MM-DD calendar date, ${got(value)}`,
-          "pass '2026-08-22' or a Date — date() stores a calendar date with no clock and no zone; an instant is timestamp()",
+          "insert({ day: '2026-08-22' })   // a YYYY-MM-DD string or a Date — date() stores a calendar date with no clock and no zone; an instant is timestamp()",
         );
   });
 
@@ -281,7 +281,7 @@ export const arrayOf = <T>(element: Column<T>): Column<readonly T[]> => {
         return refuseColumn(
           'array',
           `expected an array, ${got(value)}`,
-          'wrap it — [value] — or drop arrayOf() and declare the element column on its own when the table holds one scalar',
+          '[value]   // wrap it — or drop arrayOf() and declare the element column on its own when the table holds one scalar',
         );
       }
       return value.map((member) => element.$parse(member));

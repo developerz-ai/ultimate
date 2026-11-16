@@ -151,7 +151,7 @@ export function uuidTimestamp(id: string): Date {
       // problem document, and the strings that arrive here wrong are session tokens and API keys
       // as often as they are typos. The expected shape is the half that helps the reader.
       cause: `expected a UUIDv7 (${UUID_SHAPE}), received ${describeValue(id)}`,
-      fix: 'generate ids with uuidV7() from @ultimat3/core',
+      fix: 'uuidV7()   // from @ultimat3/core: generate ids with it',
       meta: { received: describeValue(id) },
     });
   }
@@ -183,7 +183,7 @@ export function parseId<K extends string>(kind: K, value: unknown): Id<K> {
     throw new UltimateError({
       code: 'X_ID_INVALID',
       cause: `expected a ${kind} UUIDv7 (${UUID_SHAPE}), received ${describeValue(value)}`,
-      fix: `pass an id produced by typedId<'${kind}'>()`,
+      fix: `typedId<'${kind}'>()   // pass an id it produced`,
       // `received`, not `value`: `meta` rides into the problem document and the log line too, and
       // redaction is by key — there is no key here that a redaction list could ever cover.
       meta: { kind, received: describeValue(value) },

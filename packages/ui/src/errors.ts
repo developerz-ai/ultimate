@@ -65,7 +65,7 @@ export function invalidBrandTokenError(
     code: UI_ERROR_CODES.invalidValue,
     // The override is the app's own object, so the value is unparsed app data at this point.
     cause: `defineTheme() override ${scope}.${name} is ${renderCauseValue(value)}, which is not ${expected}`,
-    fix: `pass ${expected} to defineTheme(), e.g. defineTheme({ colors: { light: { accent: '31 110 178' } } })`,
+    fix: `defineTheme({ colors: { light: { accent: '31 110 178' } } })   // the shape — ${scope}.${name} takes ${expected}`,
   });
 }
 
@@ -74,7 +74,7 @@ export function invalidThemeError(value: unknown): UiError {
   return new UiError({
     code: UI_ERROR_CODES.themeInvalid,
     cause: `theme must be "light" or "dark", received ${renderCauseValue(value)}`,
-    fix: "call setTheme('light') or setTheme('dark'), or clearTheme() to follow the OS",
+    fix: "setTheme('light')   // or setTheme('dark'), or clearTheme() to follow the OS",
   });
 }
 
@@ -103,7 +103,7 @@ export function providerNeedsRuntimeError(): UiError {
     code: UI_ERROR_CODES.runtimeMissing,
     cause:
       '<UiProvider> was rendered with no Solid runtime registered, so its locale, time zone, currency and translator would reach no component',
-    fix: "in an island, paste `import { createContext, createEffect, createMemo, createRoot, createSignal, onCleanup, useContext } from 'solid-js';` at the top of the *.island.tsx and `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup, createRoot });` as the first line of its mount(), above the render() that builds <UiProvider> — seven named imports, never `import * as`, which keeps all of solid-js in the chunk; on the server, delete <UiProvider> — useUi() already reads the request locale and time zone",
+    fix: "import { createContext, createEffect, createMemo, createRoot, createSignal, onCleanup, useContext } from 'solid-js';   // in an island, at the top of the *.island.tsx, and `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup, createRoot });` as the first line of its mount(), above the render() that builds <UiProvider> — seven named imports, never `import * as`, which keeps all of solid-js in the chunk; on the server, delete <UiProvider> — useUi() already reads the request locale and time zone",
   });
 }
 
@@ -159,7 +159,7 @@ export function invalidFieldPathError(subject: string, name: string): UiError {
   return new UiError({
     code: UI_ERROR_CODES.formPathInvalid,
     cause: `${subject} "${name}" is not a field path, so no schema issue can address it`,
-    fix: `rename it to ${FIELD_PATH_GRAMMAR}`,
+    fix: `<Input name="items[0].price" />   // rename it to ${FIELD_PATH_GRAMMAR}`,
   });
 }
 
@@ -183,7 +183,7 @@ export function insufficientContrastError(
   return new UiError({
     code: UI_ERROR_CODES.contrastInsufficient,
     cause: `defineTheme() ${theme} palette renders ${what}: "${fg}" on "${bg}" measures ${ratio.toFixed(2)}:1, and WCAG 2.2 AA requires ${String(minimum)}:1`,
-    fix: `darken or lighten the "${fg}" channels in defineTheme({ colors: { ${theme}: { '${fg}': '<R G B>' } } }) until contrastRatio() answers ${String(minimum)} or more against "${bg}" — @ultimat3/ui exports contrastRatio and roleContrast to measure a candidate before you ship it`,
+    fix: `defineTheme({ colors: { ${theme}: { '${fg}': '<R G B>' } } })   // darken or lighten the "${fg}" channels until contrastRatio() answers ${String(minimum)} or more against "${bg}" — @ultimat3/ui exports contrastRatio and roleContrast to measure a candidate before you ship it`,
   });
 }
 
@@ -210,6 +210,6 @@ export function qrCapacityError(byteLength: number, ceiling: number): UiError {
   return new UiError({
     code: UI_ERROR_CODES.qrCapacity,
     cause: `<QrCode> value is ${byteLength} bytes in UTF-8; @ultimat3/ui encodes byte mode up to version 3 at error-correction level M, a ${ceiling}-byte ceiling`,
-    fix: 'shorten the value (a short URL, not a full page URL), or draw it with a full-range QR library outside @ultimat3/ui',
+    fix: '<QrCode value="https://ex.test/p/1" />   // a short URL, not a full page URL — or draw it with a full-range QR library outside @ultimat3/ui',
   });
 }

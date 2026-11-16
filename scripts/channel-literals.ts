@@ -177,7 +177,7 @@ export function channelResult(files: readonly SourceText[]): ScriptResult {
       code: 'X_CHANNEL_LITERAL_UNSCANNED',
       at: 'scripts/channel-literals.ts',
       cause: `${CHANNEL_SEAM} was not among the files scanned, so the exemption names nothing and a clean run proves nothing`,
-      fix: 'edit CHANNEL_SEAM in scripts/channel-literals.ts to name the module that declares channel(), then: bun run channel-literals --json',
+      fix: "grep -n 'CHANNEL_SEAM =' scripts/channel-literals.ts   # name the module that declares channel() there, then: bun run channel-literals --json",
     });
   }
   return {

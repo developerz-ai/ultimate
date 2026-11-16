@@ -75,7 +75,7 @@ export function buildClient(options: S3DriverOptions): S3ClientLike {
   if (options.bucket === '') {
     throw new ConfigInvalidError({
       cause: 's3 disk was defined without a bucket',
-      fix: 'set storage.disks.<name>.bucket in app.config.ts',
+      fix: "s3Driver({ bucket: '<bucket>' })   // the s3 disk's entry in defineStorage({ disks }), app.config.ts",
     });
   }
   const env = options.env ?? process.env;
@@ -85,7 +85,7 @@ export function buildClient(options: S3DriverOptions): S3ClientLike {
   if (Client === undefined) {
     throw new ConfigInvalidError({
       cause: 'Bun.S3Client is unavailable in this runtime',
-      fix: 'upgrade the runtime: bun upgrade   # the s3 disk needs bun >= 1.3',
+      fix: 'bun upgrade   # the s3 disk needs bun >= 1.3',
     });
   }
   return new Client({

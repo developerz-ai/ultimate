@@ -253,7 +253,7 @@ export function floorFindingFor(violation: FloorViolation): Finding {
       // is a source change (`X_DB_DRIFT`, `X_DOC_COMMAND_UNKNOWN`): a gate that rewrote its own
       // tier table would ratchet in both directions, so the edit stays the reader's and the line
       // ends in something runnable that says whether it took.
-      fix: `delete the "${violation.package}" row from FLOOR_ABOVE in ${TIERS_FILE}, then bun run boundaries --json`,
+      fix: `grep -n 'FLOOR_ABOVE' ${TIERS_FILE}   # delete its "${violation.package}" row, then: bun run boundaries --json`,
       at: TIERS_FILE,
     };
   }
@@ -266,11 +266,8 @@ export function floorFindingFor(violation: FloorViolation): Finding {
     cause:
       `${violation.package} sits at tier ${violation.tier} and its own imports allow tier ` +
       `${violation.floor} — ${missing}`,
-    fix:
-      `write the "${violation.package}" row in FLOOR_ABOVE in ${TIERS_FILE}, saying what moving ` +
-      `it to tier ${violation.floor} would LEGALISE, or move it to tier ${violation.floor} in ` +
-      'TIERS and in the two prose tables scripts/tier-table-drift.test.ts pins (CLAUDE.md, ' +
-      'docs/architecture/01-package-map.md); then bun run boundaries --json',
+    // One literal: the fix scan reads each piece of a `+` chain as its own line.
+    fix: `grep -n 'FLOOR_ABOVE' ${TIERS_FILE}   # write the "${violation.package}" row there, saying what moving it to tier ${violation.floor} would LEGALISE, or move it to tier ${violation.floor} in TIERS and in the two prose tables scripts/tier-table-drift.test.ts pins (CLAUDE.md, docs/architecture/01-package-map.md); then: bun run boundaries --json`,
     at: TIERS_FILE,
   };
 }

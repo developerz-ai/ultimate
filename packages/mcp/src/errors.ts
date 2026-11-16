@@ -1,7 +1,7 @@
 // The X_* codes owned by @ultimat3/mcp. Each carries the exact next command, because the
 // caller reading it is usually an agent with no human to ask.
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, renderFixShellArg, UltimateError } from '@ultimat3/core';
 
 export const MCP_ERROR_CODES = [
   'X_MCP_TOOL_UNKNOWN',
@@ -195,8 +195,8 @@ export class McpScopeDeniedError extends UltimateError {
       cause: `${subject} "${input.name}" requires scope "${input.scope}", which this connection's token does not carry`,
       fix:
         subject === 'tool'
-          ? `reconnect with a token whose scopes include "${input.scope}" — the app's resolveToken(token) is what returns them — or drop "${input.scope}" from defineAppMcp({ scopes }); scopes are fixed for the life of a connection`
-          : `reconnect with a token whose scopes include "${input.scope}" — the app's resolveToken(token) is what returns them — or drop scope: '${input.scope}' from the resource declaring "${input.name}"; scopes are fixed for the life of a connection`,
+          ? `{ actor, scopes: new Set(['${input.scope}']) }   // what the app's resolveToken(token) returns, then reconnect: scopes are fixed for the life of a connection — or drop "${input.scope}" from defineAppMcp({ scopes })`
+          : `{ actor, scopes: new Set(['${input.scope}']) }   // what the app's resolveToken(token) returns, then reconnect: scopes are fixed for the life of a connection — or drop scope: '${input.scope}' from the resource declaring "${input.name}"`,
       // The agent's half: it cannot edit `defineAppMcp`, and its token is what it can change.
       callerFix: `this token was not granted scope "${input.scope}": ask the account owner for a token that includes it, then reconnect — scopes are fixed for the life of a connection, so retrying on this one is refused the same way`,
     });
@@ -210,7 +210,7 @@ export class McpArgsInvalidError extends UltimateError {
     super({
       code: 'X_MCP_ARGS_INVALID',
       cause: `arguments for "${input.name}" are invalid: ${input.issues.join('; ')}`,
-      fix: `re-read the tool's inputSchema from tools/list and resend`,
+      fix: `{ jsonrpc: '2.0', id, method: 'tools/list' }   // re-read the inputSchema of "${input.name}", then resend tools/call with arguments it accepts`,
     });
   }
 }
@@ -225,7 +225,7 @@ export class McpToolUnsafeError extends UltimateError {
     super({
       code: 'X_MCP_TOOL_UNSAFE',
       cause: `tool "${input.name}" declares no policy; an unguarded tool is a second door into the data`,
-      fix: `add policy: '<resource>:<verb>' to the tool, reusing the permission its action uses`,
+      fix: `policy: '<resource>:<verb>'   // on the tool, reusing the permission its action uses`,
     });
   }
 }
@@ -249,9 +249,7 @@ export class McpToolUndeclaredError extends UltimateError {
     super({
       code: 'X_MCP_TOOL_UNDECLARED',
       cause: `listed in defineAppMcp but never declared mcp.expose: ${names}`,
-      fix:
-        "add mcp: { expose: true, description: '<what it does>' } beside the policy on each — " +
-        "or drop it from the list and let include: 'exposed' project what opted in",
+      fix: "mcp: { expose: true, description: '<what it does>' }   // beside the policy on each — or drop it from the list and let include: 'exposed' project what opted in",
     });
     this.names = input.names;
   }
@@ -286,8 +284,8 @@ export class McpAppUnmountedError extends UltimateError {
           : `${where} exports mcp with no route — defineAppMcp was given no resolveToken — so ${route} answers 404`,
       fix:
         input.reason === 'missing'
-          ? `write ${input.file}: export const mcp = defineAppMcp({ include: 'exposed', resolveToken: (token) => resolveAgentToken(token) }) — or set ai: { mcp: { expose: false } } in app.config.ts`
-          : `add resolveToken: (token) => resolveAgentToken(token) to the defineAppMcp({ ... }) at ${where} — the route is only built with one`,
+          ? `export const mcp = defineAppMcp({ include: 'exposed', resolveToken: (token) => resolveAgentToken(token) })   // in ${input.file} — or ai: { mcp: { expose: false } } in app.config.ts`
+          : `resolveToken: (token) => resolveAgentToken(token)   // in the defineAppMcp({ ... }) at ${where} — the route is only built with one`,
     });
     this.reason = input.reason;
   }
@@ -333,7 +331,7 @@ export class McpResourceDuplicateError extends UltimateError {
     super({
       code: 'X_MCP_RESOURCE_DUPLICATE',
       cause: `two resources are registered at "${input.uri}"; a URI addresses one document`,
-      fix: `give one of them its own URI — register({ uri: '${input.uri}-<what-it-is>', … }) — or drop the duplicate registration`,
+      fix: `register({ uri: '${input.uri}-<what-it-is>', … })   // one of the two at its own URI — or drop the duplicate registration`,
     });
   }
 }
@@ -353,7 +351,7 @@ export class McpScopeUnknownError extends UltimateError {
     super({
       code: 'X_MCP_SCOPE_UNKNOWN',
       cause: `scopes["${input.scope}"] names "${input.name}", which this server does not project (projected: ${projected})`,
-      fix: `in defineAppMcp, spell it as one of the projected names above — or drop "${input.name}" from scopes["${input.scope}"]`,
+      fix: `scopes: { '${input.scope}': ['<a projected name>'] }   // in defineAppMcp: spell "${input.name}" as one of the projected names above — or drop it`,
     });
     this.projected = input.projected;
   }
@@ -376,7 +374,7 @@ export class McpScopeConflictError extends UltimateError {
     super({
       code: 'X_MCP_SCOPE_CONFLICT',
       cause: `tool "${input.name}" is claimed by two scopes ("${input.scopes[0]}" and "${input.scopes[1]}"); a tool carries one`,
-      fix: `in defineAppMcp, keep "${input.name}" under the single scope a token must hold for it, and remove the other entry`,
+      fix: `scopes: { '${input.scopes[0]}': ['${input.name}'] }   // in defineAppMcp: the single scope a token must hold for "${input.name}" — remove it from '${input.scopes[1]}', or keep it there and remove this entry`,
     });
     this.scopes = input.scopes;
   }
@@ -403,7 +401,7 @@ export class McpProtocolError extends UltimateError {
     super({
       code: 'X_MCP_PROTOCOL',
       cause: input.cause,
-      fix: input.fix ?? `send a JSON-RPC 2.0 body: { jsonrpc: '2.0', id, method, params }`,
+      fix: input.fix ?? `{ jsonrpc: '2.0', id, method, params }   // a JSON-RPC 2.0 body`,
     });
   }
 }
@@ -459,7 +457,7 @@ export class McpIdempotencyKeyShadowedError extends UltimateError {
     super({
       code: 'X_MCP_IDEMPOTENCY_KEY_SHADOWED',
       cause: `${input.name} is idempotent and its input declares "${input.argument}", the MCP argument reserved for the idempotency key`,
-      fix: `rename ${input.name}'s "${input.argument}" input field — MCP clients send the Idempotency-Key as the reserved "${input.argument}" argument, and the action receives the rest`,
+      fix: `x actions show ${renderFixShellArg(input.name, '<action>')} --json   # rename its "${input.argument}" input field — MCP clients send the Idempotency-Key as the reserved "${input.argument}" argument, and the action receives the rest`,
       meta: { action: input.name, argument: input.argument },
     });
   }
@@ -480,7 +478,7 @@ export class McpSurfaceOverBudgetError extends UltimateError {
     super({
       code: 'X_MCP_SURFACE_OVER_BUDGET',
       cause: `over budget: ${input.over.map((o) => `${o.surface} is ${o.size} characters, budget ${o.budget}`).join('; ')}`,
-      fix: "shorten the tool descriptions or instructions it names, group tools behind surface: 'meta', or raise the budget with the measured size and the reason in the same diff",
+      fix: "surface: 'meta'   // in defineAppMcp: group tools behind it — or shorten the tool descriptions or instructions it names, or raise the budget with the measured size and the reason in the same diff",
       meta: { over: input.over },
     });
   }

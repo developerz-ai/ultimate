@@ -118,7 +118,7 @@ function reportObserveFailure(instrument: Instrument, thrown: unknown): void {
     // `renderThrowable`, never `${thrown}`: the value is whatever the app's callback threw, and a
     // `.message` read on it is the one that throws where there is nothing left to answer with.
     cause: `the observe() callback of ${name} did not produce a value: ${renderThrowable(thrown)}; this instrument contributes no point until it does`,
-    fix: `make the observe() callback of ${name} total — return a finite number when the resource it reads is gone, e.g. ${kind}('${name}', { observe: () => pool?.size ?? 0 })`,
+    fix: `observe: () => pool?.size ?? 0   // in ${kind}('${name}', …): a total callback, a finite number even when the resource it reads is gone`,
     meta: { metric: name },
   });
   logger.error(error.format(), { code: error.code, metric: name });
@@ -133,7 +133,7 @@ export function counter(name: string, options?: InstrumentOptions): Counter {
       if (finite(name, value) < 0) {
         throw new MetricValueInvalidError({
           cause: `counter ${name} was decremented by ${value}; counters only go up`,
-          fix: `use gauge('${name}') for a value that can fall, or pass a non-negative delta`,
+          fix: `gauge('${name}')   // for a value that can fall — or pass add() a non-negative delta`,
           meta: { metric: name, received: value },
         });
       }

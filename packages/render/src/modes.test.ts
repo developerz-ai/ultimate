@@ -42,7 +42,7 @@ describe('per-mode registration invariants', () => {
     } catch (error) {
       fix = fixOf(error);
     }
-    expect(fix).toContain("change render to 'isr'");
+    expect(fix).toStartWith("render: 'isr'   // ");
   });
 
   test('isr requires either revalidate.tags or a ttl', () => {
@@ -138,7 +138,7 @@ describe('per-mode registration invariants', () => {
       cause = error instanceof RouteModeInvalidError ? error.cause : '';
     }
     expect(cause).toContain('"spa" is not a render mode');
-    expect(fix).toBe('use one of static | isr | ssr | stream');
+    expect(fix).toBe("render: 'ssr'   // one of static | isr | ssr | stream");
   });
 
   test('the mode table and the surface tables agree on exactly four modes', () => {
@@ -361,7 +361,7 @@ describe('prerender belongs to a prerenderable mode', () => {
     expect(cause).toContain('apps/web/app/feed/page.tsx');
     expect(cause).toContain('not prerenderable');
     expect(fix).toContain('remove prerender');
-    expect(fix).toContain("change render to 'static' | 'isr'");
+    expect(fix).toStartWith("render: 'static'   // or 'isr'");
   });
 
   test('static and isr accept it, so the refusal is the mode and not the field', () => {

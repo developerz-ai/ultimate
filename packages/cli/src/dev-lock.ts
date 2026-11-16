@@ -130,7 +130,7 @@ export class DevAlreadyRunningError extends UltimateError {
       code: 'X_DEV_ALREADY_RUNNING',
       cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}`,
       // `x stop`, not `kill <pid>`: a kill returns before the drain ends and the next boot refuses.
-      fix: `use the one already running at ${input.lock.url}, or stop it: x stop --json`,
+      fix: `x stop --json   # or use the one already running at ${input.lock.url}`,
       meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
     });
   }

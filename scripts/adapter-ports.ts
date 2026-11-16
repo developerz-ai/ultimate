@@ -11,6 +11,7 @@
 //
 //   bun run scripts/adapter-ports.ts [--json] [--write]
 
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import { renderFixShellArg } from '../packages/core/src/error-render';
 import { ADAPTER_PORTS, type AdapterPort } from '../packages/core/src/registrar';
 import {
@@ -155,7 +156,7 @@ function partFindings(
           code: CODE,
           at: PINS,
           cause: `PENDING_PARTS pins ${key}, but that part now exists — the ratchet must tighten, or the next regression of it is excused`,
-          fix: `${PAGE_COMMAND}   # after deleting the '${key}' row of PENDING_PARTS in ${PINS}`,
+          fix: `grep -n ${quoteArg(key)} ${PINS}   # delete that row of PENDING_PARTS, then: ${PAGE_COMMAND}`,
         });
       } else if (status !== true && !pinned) {
         findings.push({
@@ -193,7 +194,7 @@ function barrelFindings(facts: AdapterPortFacts, pins: AdapterPortPins): Finding
       code: CODE,
       at: PINS,
       cause: `BARREL_INSTALLERS names ${key}, which no scanned barrel exports — the row excuses nothing`,
-      fix: `${CHECK}   # after deleting the '${key}' row of BARREL_INSTALLERS in ${PINS}`,
+      fix: `grep -n ${quoteArg(key)} ${PINS}   # delete that row of BARREL_INSTALLERS, then: ${CHECK}`,
     });
   }
   return findings;
@@ -227,7 +228,7 @@ function memberFindings(
       code: CODE,
       at: PINS,
       cause: `PORT_MEMBERS names ${key}, which no ./adapter subpath exports — the row excuses nothing`,
-      fix: `${CHECK}   # after deleting the '${key}' row of PORT_MEMBERS in ${PINS}`,
+      fix: `grep -n ${quoteArg(key)} ${PINS}   # delete that row of PORT_MEMBERS, then: ${CHECK}`,
     });
   }
   return findings;
@@ -246,7 +247,7 @@ function referenceFindings(
         code: CODE,
         at: PINS,
         cause: `PORT_REFERENCES.${row.port} names ${ref === undefined ? 'nothing' : `${ref.symbol} in ${ref.file}`}, which ${ref === undefined ? 'leaves its page section no reference' : 'that file does not export'} — the page would send an author to copy code that is not there`,
-        fix: `${PAGE_COMMAND}   # after pointing PORT_REFERENCES.${row.port} in scripts/lib/adapter-port-references.ts at the file that exports the reference`,
+        fix: `grep -n ${quoteArg(row.port)} scripts/lib/adapter-port-references.ts   # point PORT_REFERENCES.${row.port} at the file that exports the reference, then: ${PAGE_COMMAND}`,
       },
     ];
   });

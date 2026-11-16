@@ -48,7 +48,7 @@ export function assertListenChannel(channel: string): void {
   throw new DbError({
     code: 'X_SQL_UNSAFE',
     cause: 'the LISTEN channel is not a lower-case identifier of at most 63 characters',
-    fix: "pass a channel matching [a-z_][a-z0-9_]*, e.g. client.listen('x_jobs_wake', onNotify)",
+    fix: "client.listen('x_jobs_wake', onNotify)   // a channel matching [a-z_][a-z0-9_]*",
   });
 }
 

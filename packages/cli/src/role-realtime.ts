@@ -32,7 +32,7 @@ export function rolesUnderRealtime(
     throw new ConfigInvalidError({
       cause: `role ${dropped.join(',')} was asked for and realtime.enabled is false in app.config.ts, so this process would serve nothing`,
       fix: dev
-        ? 'set realtime: { enabled: true } in app.config.ts, or run a role that is not realtime: x dev --role web,worker,scheduler'
+        ? 'realtime: { enabled: true }   // in app.config.ts — or run a role that is not realtime: x dev --role web,worker,scheduler'
         : 'ROLE=web bun apps/web/server.ts — a role that is not realtime; or set realtime: { enabled: true } in app.config.ts and rebuild the image, or drop the role from the deploy (the chart: roles.<role>.enabled: false in values.yaml)',
       meta: { key: 'realtime.enabled', roles: dropped },
     });

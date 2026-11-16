@@ -4,7 +4,7 @@
 // tier — and held equal to `mcp/src/idempotency-arg.ts` by `scripts/ai-mcp-tool-parity.test.ts`.
 
 import { MAX_IDEMPOTENCY_KEY_LENGTH } from '@ultimat3/action';
-import { UltimateError } from '@ultimat3/core';
+import { renderFixShellArg, UltimateError } from '@ultimat3/core';
 import type { JsonSchema } from './tools';
 
 /** The reserved argument name on every idempotent action's tool — the one MCP reserves. */
@@ -33,7 +33,7 @@ export class ToolIdempotencyKeyShadowedError extends UltimateError {
     super({
       code: 'X_MCP_IDEMPOTENCY_KEY_SHADOWED',
       cause: `${input.name} is idempotent and its input declares "${input.argument}", the MCP argument reserved for the idempotency key`,
-      fix: `rename ${input.name}'s "${input.argument}" input field — MCP clients send the Idempotency-Key as the reserved "${input.argument}" argument, and the action receives the rest`,
+      fix: `x actions show ${renderFixShellArg(input.name, '<action>')} --json   # rename its "${input.argument}" input field — MCP clients send the Idempotency-Key as the reserved "${input.argument}" argument, and the action receives the rest`,
       meta: { action: input.name, argument: input.argument },
     });
   }

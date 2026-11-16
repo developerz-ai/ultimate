@@ -126,7 +126,7 @@ describe('unit · the restart line and finding', () => {
     const finding = restartFinding('/app', pins);
     expect(finding.code).toBe('X_DEV_RESTART_REQUIRED');
     expect(finding.at).toBe('apps/web/app/greet/queries.ts');
-    expect(finding.fix).toContain('restart x dev');
+    expect(finding.fix).toStartWith('x stop --json && x dev   # restart it');
   });
 });
 

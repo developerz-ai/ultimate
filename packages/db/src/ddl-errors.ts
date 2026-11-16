@@ -54,7 +54,7 @@ export const generatedExpressionUnsafe = (column: string, count: number): DbErro
   new DbError({
     code: 'X_SQL_UNSAFE',
     cause: `the expression of generated column "${column}" holds ${count} commands; a generated column is one expression`,
-    fix: `give "${column}" a single expression — .searchable() or generated: 'lower("title")' — then x db gen`,
+    fix: `generated: 'lower("title")'   // "${column}" gets a single expression, or .searchable() — then x db gen`,
     meta: { column, count },
   });
 
@@ -67,6 +67,6 @@ export const columnDefaultUnsafe = (column: string, count: number): DbError =>
   new DbError({
     code: 'X_SQL_UNSAFE',
     cause: `the default of column "${column}" holds ${count} commands; a default is one expression`,
-    fix: `restore the migration's .snapshot.json from version control (git checkout -- migrations/), or give "${column}" a single .default(), then x db gen`,
+    fix: `git checkout -- "*.snapshot.json"   # restore the migration's snapshot from version control — or give "${column}" a single .default(), then x db gen`,
     meta: { column, count },
   });

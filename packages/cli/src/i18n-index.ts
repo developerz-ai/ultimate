@@ -99,6 +99,6 @@ function withLocales(source: string, locales: readonly string[]): string | undef
 const refusal = (locales: readonly string[]): Finding => ({
   code: 'X_CATALOG_UNREGISTERED',
   cause: `${APP_CATALOGS_PATH} is hand-written in a shape this writer cannot add ${locales.join(', ')} to, so those catalogs are on disk and not selectable`,
-  fix: `edit ${APP_CATALOGS_PATH} — add ${locales.map(localeImport).join(' ')} and ${locales.map(localeEntry).join(', ')} to the locales passed to defineCatalogs`,
+  fix: `defineCatalogs({ default, locales: { …, ${locales.map(localeEntry).join(', ')} } })   // in ${APP_CATALOGS_PATH}, below ${locales.map(localeImport).join(' ')}`,
   at: APP_CATALOGS_PATH,
 });

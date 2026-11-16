@@ -2040,9 +2040,9 @@ The [Error codes](Error-Codes) table, programmatically. Runs outside an app: tri
 $ x errors explain X_CURSOR_INVALID --json
 {"ok":true,"command":"errors","summary":"X_CURSOR_INVALID — pagination cursor is malformed…",
  "data":{"code":"X_CURSOR_INVALID","cause":"pagination cursor is malformed, tampered with or from
- another query","fix":"drop the cursor and request the first page again (after: null)",
+ another query","fix":"after: null   // drop the cursor and request the first page again",
  "docs":"https://github.com/developerz-ai/ultimate/wiki/Error-Codes",
- "site":{"at":"@ultimat3/core/src/cursor.ts","line":26}}}
+ "site":{"at":"@ultimat3/core/src/cursor.ts","line":28}}}
 ```
 
 `site` is the CLI locating a throw site in the tree — it is **not** a field the thrown error

@@ -135,7 +135,7 @@ ${body}export const confirmRefunds = mcpConfirmations({
       at: 'apps/web/app/billing/registry.ts',
       cause:
         'service "billing" is registered by importing apps/web/app/billing/registry.ts, which reaches a component or a stylesheet and which apps/web/api/index.ts does not import — so a worker and a scheduler, which import no document, run without it',
-      fix: "edit apps/web/api/index.ts: add import '../app/billing/registry'; — or move the service out of apps/web/app/billing/registry.ts into a module that imports no .tsx and no stylesheet",
+      fix: "import '../app/billing/registry';   // in apps/web/api/index.ts — or move the service out of apps/web/app/billing/registry.ts into a module that imports no .tsx and no stylesheet",
     });
   });
 

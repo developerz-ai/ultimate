@@ -41,7 +41,7 @@ export function styleRoutes(source: StyleSource): readonly Route[] {
                 cause: `no surface stylesheet is registered at ${request.pathname} — the document that asked for it was rendered against an older build`,
                 // No `x` citation, for `island-routes.ts`' reason: this route is mounted in
                 // exactly two places (`cmd-dev.ts`, `serve.ts`) and neither reads `.x/static`.
-                fix: 'reload the page — this process serves only the stylesheet its own modules registered, and the document holding this URL came from an earlier build',
+                fix: 'location.reload()   // in the browser — this process serves only the stylesheet its own modules registered, and the document holding this URL came from an earlier build',
               },
             },
             { status: 404 },

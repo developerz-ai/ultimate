@@ -127,7 +127,7 @@ export const csrfBlocked = (
     : new HttpError({
         code: 'X_CSRF_BLOCKED',
         cause: `${pathname} refused a write it could not show came from this app: ${reason}`,
-        fix: "call it with an Authorization: Bearer token instead of the session cookie, add the calling origin to configureHttp({ cors: { origins } }), or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
+        fix: "configureHttp({ cors: { origins: ['<the calling origin>'] } })   // or call it with an Authorization: Bearer token instead of the session cookie, or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
       });
 
 /**

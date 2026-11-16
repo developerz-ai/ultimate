@@ -4,6 +4,7 @@
  * collision rule only: nothing here renders, matches or serves.
  */
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { RouteDuplicateError } from './errors';
 import type { RouteConfig } from './route';
 import type { Surface } from './surfaces';
@@ -87,5 +88,5 @@ export const mountCollision = (
 ): RouteDuplicateError =>
   new RouteDuplicateError(
     `${path} is claimed by both ${file} and ${mount.by}() — a route ${mount.file} mounts`,
-    `delete ${file}: ${mount.by}() already serves ${path}, and the route table is keyed by URL`,
+    `rm -- ${renderFixShellArg(file, "'<the route file>'")}   # ${mount.by}() already serves ${path}, and the route table is keyed by URL`,
   );

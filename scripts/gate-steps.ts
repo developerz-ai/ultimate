@@ -375,7 +375,7 @@ export function gateStepFinding(gap: StepGap, steps: readonly string[]): Finding
       code: 'X_DOC_GATE_STEPS_UNSCANNED',
       cause: gap.detail,
       // A literal path, not an interpolation: the fix-line rule reads these statically.
-      fix: 'edit STEP_GLOBS in scripts/gate-steps.ts so it matches the pages that state a step count',
+      fix: "grep -n 'STEP_GLOBS' scripts/gate-steps.ts   # edit it so it matches the pages that state a step count",
       at: 'scripts/gate-steps.ts',
     };
   }
@@ -390,7 +390,7 @@ export function gateStepFinding(gap: StepGap, steps: readonly string[]): Finding
   return {
     code: 'X_DOC_GATE_STEPS_STALE',
     cause: `${gap.at} writes "${gap.quote}" and ${gap.detail}`,
-    fix: `set the count at ${gap.at} to ${steps.length}; run \`bun run scripts/gate-steps.ts --json\` to re-derive it`,
+    fix: `bun run scripts/gate-steps.ts --json   # re-derives it: set the count at ${gap.at} to ${steps.length}`,
     at: gap.at,
   };
 }

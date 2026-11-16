@@ -104,13 +104,17 @@ describe('methodNotAllowed', () => {
     expect(error.cause).toContain('/posts');
     expect(error.cause).toContain('GET, PUT');
     expect(error.cause).toContain('POST');
-    expect(error.fix).toBe('add a POST route for /posts or call it with GET');
+    expect(error.fix).toBe(
+      'x routes --json   # /posts has no POST route: add one, or call it with GET',
+    );
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('an empty allow list falls back to GET in the fix line', () => {
     const error = methodNotAllowed('DELETE', '/posts', []);
-    expect(error.fix).toBe('add a DELETE route for /posts or call it with GET');
+    expect(error.fix).toBe(
+      'x routes --json   # /posts has no DELETE route: add one, or call it with GET',
+    );
   });
 });
 
@@ -135,7 +139,7 @@ describe('unauthenticated', () => {
     expect(error.code).toBe('X_UNAUTHENTICATED');
     expect(error.cause).toContain('/x');
     expect(error.fix).toBe(
-      "send a session cookie or Authorization header, or set meta.auth to 'public'",
+      "meta: { auth: 'public' }   // on the route, if it is public — otherwise send a session cookie or Authorization header",
     );
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
@@ -194,7 +198,7 @@ describe('serverNotStarted', () => {
     expect(error).toBeInstanceOf(HttpError);
     expect(error.code).toBe('X_SERVER_NOT_STARTED');
     expect(error.cause).toContain('url()');
-    expect(error.fix).toBe('call httpServer({ ... }).start() before reading url()');
+    expect(error.fix).toBe('httpServer({ ... }).start()   // before reading url()');
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
@@ -206,7 +210,7 @@ describe('pipelineNoResponse', () => {
     expect(error.code).toBe('X_PIPELINE_NO_RESPONSE');
     expect(error.cause).toContain('handler');
     expect(error.fix).toBe(
-      'return a Response from the route handler, or a Response from the stage that short-circuits',
+      'jsonResponse(data)   // return a Response from the route handler, or from the stage that short-circuits',
     );
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });

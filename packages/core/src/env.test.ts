@@ -38,8 +38,19 @@ describe('defineEnv', () => {
     expect(error.cause).not.toContain('not-a-port');
     expect(error.cause).not.toContain('"qa"');
     expect(error.fix).toBe(
-      'add DATABASE_URL PORT REGION to .env (copy .env.example), then run: x env check',
+      'x env check   # each key to add to .env (copy .env.example): DATABASE_URL PORT REGION',
     );
+  });
+
+  test("each issue's fix is a command that finds the line, the key never spliced raw", () => {
+    const fixes = checkEnv(
+      { REGION: schema.REGION, 'BAD;KEY': { type: 'string' } },
+      { env: { REGION: 'qa', ROLE: 'web' } },
+    ).issues.map((issue) => issue.fix);
+    expect(fixes).toEqual([
+      "grep -n '^REGION=' .env   # the line to set to one of us | eu",
+      "grep '^<KEY>=' .env.example >> .env   # then give it a non-empty string",
+    ]);
   });
 
   test('coerces types, applies defaults and skips role-scoped keys', () => {

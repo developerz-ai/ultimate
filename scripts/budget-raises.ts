@@ -144,7 +144,7 @@ export function raiseFinding(raise: BudgetRaise, base: string): Finding {
     at: `${raise.file}:${raise.line}`,
     cause: `${raise.file}:${raise.line} ${raise.now === UNBUDGETED ? `removes budget.${raise.key} (${raise.was}) — an unlimited raise —` : `raises budget.${raise.key} from ${raise.was} to ${raise.now}`} since ${base} and the comment above it states no new measured number within ${raise.now} and no reason — a comment ${base} already had measured the old budget`,
     fix: raise.keyRemoved
-      ? `bun run budget-raises --json   # after restoring budget: { ${raise.key}: '${raise.was}' } in the defineRoute config of ${raise.file}, or writing budget: {} there under // measured: <N> B (bun run x -- build --json) — why: <the function it buys>`
+      ? `edit ${raise.file}:${raise.line} — restore budget: { ${raise.key}: '${raise.was}' } in this defineRoute config, or write budget: {} under // measured: <N> B (bun run x -- build --json) — why: <the function it buys>, then: bun run budget-raises --json`
       : `edit ${raise.file}:${raise.line} — add // measured: <N> B (bun run x -- build --json) — why: <the function it buys> directly above the budget line, or restore ${raise.key}: '${raise.was}', then bun run budget-raises --json`,
   };
 }

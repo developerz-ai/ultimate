@@ -46,7 +46,7 @@ function superseded(subject: string, issued: number, current: number): UltimateE
   return new UltimateError({
     code: 'X_SUPERSEDED',
     cause: `${subject} was issued at generation ${issued} and the fence is now at ${current}, so this answer describes a world that no longer exists`,
-    fix: 'discard this answer and re-issue the work against fence.generation() — whoever called bump() has already started the replacement',
+    fix: 'fence.generation()   // discard this answer and re-issue the work against it — whoever called bump() has already started the replacement',
     meta: { subject, issued, current },
   });
 }

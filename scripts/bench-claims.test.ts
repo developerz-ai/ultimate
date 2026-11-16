@@ -216,7 +216,7 @@ describe('unit · a figure stated on another page (README.md, wiki/Compared.md)'
   test('off by one is refused, and the finding names that page', () => {
     const found = check(PROSE, 1_666_883);
     expect(found.map((finding) => finding.at)).toEqual(['README.md']);
-    expect(found[0]?.fix).toContain('after editing README.md: write 1,666,883');
+    expect(found[0]?.fix).toContain('README.md   # write 1,666,883');
   });
 
   test('agrees when that page states the measured figure — the claims page is not read for it', () => {

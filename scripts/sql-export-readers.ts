@@ -30,6 +30,7 @@ import { type CorpusFile, corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { siteAt } from './lib/site-at';
 import { lineOf } from './lib/source-scan';
 
 const SCRIPT = 'sql-export-readers';
@@ -124,7 +125,7 @@ export function checkSqlExportReaders(input: {
   return input.unread.map((one) => ({
     code: 'X_SQL_EXPORT_UNREAD',
     cause: `${one.at} exports ${one.name}, and no file outside ${one.pkg}/ reads it${TABLE_NAME.test(one.name) ? '' : ' outside a test'} — a statement's exact text is then public API kept for nobody`,
-    fix: `bun run sql-export-readers --json   # after deleting ${one.name} from the export list at ${one.at}; the module that runs it keeps its own export, and a test that runs it moves into ${one.pkg}/`,
+    fix: `edit ${siteAt(one.at).path}:${siteAt(one.at).line} — delete ${one.name} from this export list — the module that runs it keeps its own export, and a test that runs it moves into ${one.pkg}/ — then: bun run sql-export-readers --json`,
     at: one.at,
   }));
 }

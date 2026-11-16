@@ -150,7 +150,7 @@ export function transportFailed(
   return new UltimateError({
     code: 'X_CLIENT_TRANSPORT_FAILED',
     cause,
-    fix: 'check the network and the gateway in front of the app with x doctor --json, then retry — a write with no idempotencyKey may already have landed',
+    fix: 'x doctor --json   # checks the network and the gateway in front of the app; then retry — a write with no idempotencyKey may already have landed',
     ...(retry === undefined ? {} : { retry }),
     meta: { ...meta, failure },
     ...(sourceError === undefined ? {} : { sourceError }),

@@ -86,7 +86,7 @@ function resolveExecutor(injected: PgExecutor | undefined): PgExecutor {
     // be "not configured". An executor is injected by the boot or the driver has none.
     cause:
       'postgresJobDriver() was called with no executor, and this driver has no ambient fallback',
-    fix: 'set DATABASE_URL in .env so the boot builds one — x db migrate then x dev — or hand this process a queue with no database: export const runtime = { jobs: memoryJobDriver() } in apps/<app>/runtime.ts',
+    fix: 'DATABASE_URL=<postgres url> x db migrate   # then x dev, with DATABASE_URL in .env so the boot builds the executor — or hand this process a queue with no database: export const runtime = { jobs: memoryJobDriver() } in apps/<app>/runtime.ts',
   });
 }
 

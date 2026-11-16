@@ -232,7 +232,7 @@ export function restartFinding(root: string, pins: readonly StalePin[]): Finding
   return {
     code: 'X_DEV_RESTART_REQUIRED',
     cause: `${restartReason(root, pins)} — a module that defines a primitive still holds the code before the save, and re-importing it would register a second definition`,
-    fix: 'restart x dev (a supervised `x dev` restarts itself; an embedded startDev() passes onRestart)',
+    fix: 'x stop --json && x dev   # restart it — a supervised `x dev` restarts itself; an embedded startDev() passes onRestart',
     at: first === undefined ? '' : posixRelative(root, first.pinned),
   };
 }

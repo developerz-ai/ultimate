@@ -276,7 +276,7 @@ export class FixtureUnknownError extends UltimateError {
         input.registered.length === 0
           ? `test requested fixture "${input.name}" but none are registered`
           : `test requested fixture "${input.name}"; registered: ${input.registered.join(', ')}`,
-      fix: `register it at test setup: defineFixtures({ ${input.name}: () => buildIt() })`,
+      fix: `defineFixtures({ ${input.name}: () => buildIt() })   // register it at test setup`,
     });
   }
 }
@@ -296,7 +296,7 @@ export class FixtureUnavailableError extends UltimateError {
     super({
       code: 'X_TEST_FIXTURE_UNAVAILABLE',
       cause: `fixture "${input.name}" is declared but nothing in this process drives it — it needs ${input.needs}`,
-      fix: `install one in the test preload: defineFixtures({ ${input.name}: () => yourDriver() })`,
+      fix: `defineFixtures({ ${input.name}: () => yourDriver() })   // install one in the test preload`,
     });
   }
 }
@@ -380,7 +380,7 @@ export class TestSchemaExpectedError extends UltimateError {
       cause: 'toRejectInput/toAcceptInput expect a Standard Schema (`t`), not the action',
       // Names the call, not the intent: "assert against action.input" left the reader to work out
       // which call to edit, and a fix is only executable if it can be pasted over the failing line.
-      fix: 'call toRejectInput(action.input) — the schema, not toRejectInput(action) or the query',
+      fix: 'toRejectInput(action.input)   // the schema, not toRejectInput(action) or the query',
     });
   }
 }
@@ -408,7 +408,7 @@ export class TestJobExpectedError extends UltimateError {
       code: 'X_TEST_JOB_EXPECTED',
       cause: 'toEmitSteps expects a job declaration built with job(...)',
       // Same rule as X_TEST_SCHEMA_EXPECTED's: the paste-able call, not a description of it.
-      fix: 'call toEmitSteps(myJob) with the job export, not toEmitSteps(myJob.run)',
+      fix: 'toEmitSteps(myJob)   // the job export, not toEmitSteps(myJob.run)',
     });
   }
 }
@@ -426,7 +426,7 @@ export class FactoryTraitUnknownError extends UltimateError {
         input.declared.length === 0
           ? `factory "${input.table}" was asked for trait "${input.trait}" but declares none`
           : `factory "${input.table}" has no trait "${input.trait}"; declared: ${input.declared.join(', ')}`,
-      fix: `declare it: defineFactory(${input.table}, { traits: { ${input.trait}: { /* columns */ } } })`,
+      fix: `defineFactory(${input.table}, { traits: { ${input.trait}: { /* columns */ } } })   // declare the trait`,
     });
   }
 }
@@ -456,7 +456,7 @@ export class NetworkRaceError extends UltimateError {
     super({
       code: 'X_TEST_NETWORK_RACE',
       cause: 'sealed network lost its original fetch mid-request',
-      fix: 'do not call unsealNetwork() while a request from the same test is still in flight',
+      fix: 'await Promise.allSettled(inFlight)   // before unsealNetwork(): no request from the same test may still be in flight',
     });
   }
 }

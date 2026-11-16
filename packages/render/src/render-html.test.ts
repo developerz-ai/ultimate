@@ -124,10 +124,10 @@ describe('renderComponent', () => {
         (error: unknown) => (error as { fix: string }).fix,
       );
     expect(await fixOf('apps/web/site/page.tsx')).toStartWith(
-      'run `bun test apps/web/site/page.test.ts` to reproduce',
+      'bun test apps/web/site/page.test.ts   # reproduces it',
     );
     expect(await fixOf('apps/web/site/$(touch pwned)/page.tsx')).toStartWith(
-      "run `bun test '<the route's test file>'` to reproduce",
+      "bun test '<the route test file>'   # reproduces it",
     );
   });
 

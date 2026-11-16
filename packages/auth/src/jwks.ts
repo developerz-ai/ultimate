@@ -13,6 +13,7 @@ import {
   isFixShellSafe,
   liveClock,
   logger,
+  renderFixLiteral,
   renderFixShellArg,
   renderThrowable,
   singleFlight,
@@ -376,7 +377,7 @@ export function providerJwks(
     throw oauthTokenInvalid(
       provider.id,
       'this provider publishes no jwks_uri, so an id token from it can only be trusted on the token endpoint',
-      `register ${provider.id} with an explicit jwksUri, or read its id token only through exchangeOAuthCode()`,
+      `registerOAuthProvider({ id: ${renderFixLiteral(provider.id, "'<id>'")}, jwksUri: '<the provider jwks_uri>', ... })   // or read its id token only through exchangeOAuthCode()`,
     );
   }
   const bespoke = options !== undefined && Object.keys(options).length > 0;

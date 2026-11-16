@@ -433,7 +433,7 @@ describe('checkPublishShape', () => {
   test('a published package promising a file it does not have is a finding', () => {
     const files = [...pkg({ dir: 'short' }).files, 'CHANGELOG.md'];
     expect(checkPublishShape(dir, [pkg({ dir: 'short', files })])).toEqual([
-      missingPublishedFileFinding('short', 'CHANGELOG.md'),
+      missingPublishedFileFinding('short', 'CHANGELOG.md', files),
     ]);
   });
 

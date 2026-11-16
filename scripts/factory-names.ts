@@ -47,6 +47,7 @@
 
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { quoteArg } from '../packages/cli/src/shell-quote';
 // The leaf module, never the `@ultimat3/core` barrel: a guard must not link the whole tree.
 import { renderFixShellArg } from '../packages/core/src/error-render';
 import type { Declaration } from './factory-names-declarations';
@@ -216,7 +217,7 @@ function starKeyed(entry: EntryModule): readonly Keyed[] {
     finding: {
       code: CODE,
       cause: `${entry.specifier} has \`export * from '${from}'\` (${entry.at}): an export * names nothing this rule can read, so every name it adds would pass unchecked — the module is reported unscanned, never clean`,
-      fix: `bun run scripts/factory-names.ts --json   # after replacing export * from '${from}' in ${entry.at} with export { … } from '${from}', each binding named`,
+      fix: `grep -n 'export \\*' ${quoteArg(entry.at)}   # replace export * from '${from}' with export { … } from '${from}', each binding named, then: bun run scripts/factory-names.ts --json`,
       at: entry.at,
     },
   }));
@@ -369,7 +370,7 @@ function stalePins(pins: FactoryNamePins, keys: ReadonlySet<string>): readonly F
     .map(([table, key]) => ({
       code: CODE,
       cause: `factory-names-pins.ts ${table} row ${JSON.stringify(key)} matches no finding: the rename landed or the exception no longer holds, and a stale row would silence the next export of that name`,
-      fix: `bun run scripts/factory-names.ts --json   # after deleting the ${JSON.stringify(key)} row from ${table} in scripts/factory-names-pins.ts`,
+      fix: `grep -nF ${quoteArg(key)} scripts/factory-names-pins.ts   # delete that row from ${table}, then: bun run scripts/factory-names.ts --json`,
       at: 'scripts/factory-names-pins.ts',
     }));
 }

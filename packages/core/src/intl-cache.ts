@@ -65,7 +65,7 @@ export function localeInvalid(locale: string): UltimateError {
   return new UltimateError({
     code: 'X_LOCALE_INVALID',
     cause: `${localeExcerpt(locale)} is not a well-formed BCP 47 language tag`,
-    fix: "pass a tag like 'en', 'en-GB' or 'de-DE' — screen a header-supplied value with Intl.DateTimeFormat.supportedLocalesOf([tag]) before it reaches a formatter",
+    fix: "Intl.DateTimeFormat.supportedLocalesOf([tag])   // screens a header-supplied value before a formatter — pass a tag like 'en', 'en-GB' or 'de-DE'",
     // The raw tag, under a NAME. A `cause` is copied into the 400 body and into the log line by
     // `@ultimat3/http`'s `toProblem`, and a logger redacts by key — so a caller's value spliced
     // into prose has no key left to redact, which is the whole argument `describeValue` rests on.

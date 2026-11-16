@@ -54,7 +54,7 @@ export function testRunArgs(filter: string | undefined): readonly string[] {
       flag: 'filter',
       command: 'mcp serve',
       reason: `test.run's filter "${filter}" starts with "-", which x test would read as its own flag`,
-      fix: 'call test.run with a path filter such as packages/cli/src, or with no filter',
+      fix: '{ "filter": "packages/cli/src" }   // test.run\'s input: a path filter, or no filter at all',
     });
   }
   return ['test', '--filter', filter];

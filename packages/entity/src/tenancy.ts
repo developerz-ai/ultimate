@@ -2,7 +2,7 @@
 // under the acting actor's tenant — derived from the ambient context, never taken from an argument
 // — and a plan or a row that names a different one is refused rather than carried out.
 
-import { tryUseContext } from '@ultimat3/core';
+import { renderFixShellArg, tryUseContext } from '@ultimat3/core';
 import { assertCrossTenant, crossTenantReason } from './cross-tenant';
 import {
   EntityError,
@@ -45,6 +45,14 @@ export interface QueryPlan {
   readonly select?: readonly string[];
 }
 
+/**
+ * The builder a tenant column of this kind is declared with, for a fix that re-declares it. Only
+ * the kinds an org id is held in are named, because the paste has to compile; `text` otherwise.
+ */
+const TENANT_BUILDERS: ReadonlySet<string> = new Set(['uuid', 'text', 'integer', 'bigint']);
+const builderOf = (kind: string | undefined): string =>
+  kind !== undefined && TENANT_BUILDERS.has(kind) ? kind : 'text';
+
 /** The property key a tenant column takes when it is not marked explicitly. */
 export const ORG_COLUMN = 'orgId';
 
@@ -80,7 +88,7 @@ export const resolveTenantColumn = (
     throw new EntityError({
       code: 'X_INVARIANT_VIOLATED',
       cause: `${entityName}.tenant: tenant: '${declared}' names no column — pick from: ${available}`,
-      fix: `set tenant to one of ${available} in entity('${entityName}'), or remove the tenant key — inference then takes the .tenant() column, else one named ${ORG_COLUMN}`,
+      fix: `tenant: '<column>'   // in entity('${entityName}'), one of: ${available} — or remove the tenant key — inference then takes the .tenant() column, else one named ${ORG_COLUMN}`,
     });
   }
   const property = declared ?? tenantColumnOf(columns);
@@ -97,7 +105,7 @@ export const resolveTenantColumn = (
     throw new EntityError({
       code: 'X_INVARIANT_VIOLATED',
       cause: `${entityName}.${property} is the tenant column and is nullable — a row written with no ${property} is matched by no tenant-scoped query, so it belongs to nobody and no sweep can ever find it`,
-      fix: `drop .nullable() from ${property} in entity('${entityName}'), then x db gen "backfill ${entityName} ${property}" — a row with no tenant needs one before the column can refuse it`,
+      fix: `columns: { ${property}: ${builderOf(columns[property]?.$meta.kind)}() }   // in entity('${entityName}'), without .nullable() — then: x db gen "backfill ${renderFixShellArg(entityName, '<entity>')} ${renderFixShellArg(property, '<column>')}"; a row with no tenant needs one before the column can refuse it`,
     });
   }
   return property;

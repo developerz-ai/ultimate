@@ -62,7 +62,9 @@ export function registerErrorCodes(codes: Readonly<Record<string, ErrorCodeDecla
     throw new UltimateError({
       code: 'X_ERROR_CODE_DUPLICATE',
       cause: `already registered: ${duplicates.join(', ')}`,
-      fix: `rename the colliding code(s) in the registering package's src/errors.ts`,
+      // No code spliced in: this module is in every browser graph, and screening a value for the
+      // shell would pull the render helper in with it. The cause names the codes.
+      fix: 'git grep -n registerErrorCodes   # rename one of the codes the cause names',
       meta: { duplicates },
     });
   }

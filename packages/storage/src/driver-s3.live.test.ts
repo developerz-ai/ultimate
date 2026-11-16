@@ -283,7 +283,7 @@ describe.skipIf(target === undefined)('live · s3 · the driver against a real s
     expect(isUltimateError(refused) ? refused.code : String(refused)).toBe('X_CONFIG_INVALID');
     expect(isUltimateError(refused) ? refused.cause : '').toContain('"eu-central-1"');
     expect(isUltimateError(refused) ? refused.fix : '').toMatch(
-      /^set S3_REGION=[a-z0-9-]+ in \.env/,
+      /^S3_REGION=[a-z0-9-]+ {3}# in \.env/,
     );
     expect(await disk.exists(at('region.txt'))).toBe(false);
   });

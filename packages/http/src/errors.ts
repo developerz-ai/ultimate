@@ -117,7 +117,7 @@ export const methodNotAllowed = (
   new HttpError({
     code: 'X_METHOD_NOT_ALLOWED',
     cause: `${pathname} accepts ${allow.join(', ')} but the request used ${method}`,
-    fix: `add a ${method} route for ${pathname} or call it with ${allow[0] ?? 'GET'}`,
+    fix: `x routes --json   # ${pathname} has no ${method} route: add one, or call it with ${allow[0] ?? 'GET'}`,
   });
 
 /**
@@ -129,7 +129,7 @@ export const pathInvalid = (pathname: string, segment: string): HttpError =>
   new HttpError({
     code: 'X_PATH_INVALID',
     cause: `${pathname} contains "${segment}", which is not valid percent-encoding`,
-    fix: 'send the segment percent-encoded — encodeURIComponent(value); a literal % is %25',
+    fix: 'encodeURIComponent(value)   // send the segment percent-encoded; a literal % is %25',
   });
 
 /**
@@ -160,7 +160,7 @@ export const bearerMountInvalid = (prefix: string, reason: string): HttpError =>
   new HttpError({
     code: 'X_BEARER_MOUNT_INVALID',
     cause: `the bearer mount at ${JSON.stringify(prefix)} cannot be served: ${reason}`,
-    fix: "declare mounts: [{ prefix: '/v1', scopes: { 'cases:read': ['caseList'] }, resolveToken }] in defineApi({ http }) — a prefix of lowercase segments that is not /api or /_x, naming only registered actions and queries (x routes --json lists them)",
+    fix: "mounts: [{ prefix: '/v1', scopes: { 'cases:read': ['caseList'] }, resolveToken }]   // in defineApi({ http }) — a prefix of lowercase segments that is not /api or /_x, naming only registered actions and queries (x routes --json lists them)",
   });
 
 /** No actor on a required route: the routine login wall, logged at `info` (`routineRefusal`). */
@@ -169,7 +169,7 @@ export const unauthenticated = (pathname: string): HttpError =>
     new HttpError({
       code: 'X_UNAUTHENTICATED',
       cause: `${pathname} declares auth: 'required' and no actor was resolved`,
-      fix: "send a session cookie or Authorization header, or set meta.auth to 'public'",
+      fix: "meta: { auth: 'public' }   // on the route, if it is public — otherwise send a session cookie or Authorization header",
     }),
   );
 
@@ -209,21 +209,21 @@ export const buildSkew = (clientBuildId: string, serverBuildId: string): HttpErr
     // id and earns this same refusal. The worker heals itself on this response (it needs the
     // `x-ultimate-build` header the `context` stage stamps beside this throw); a client with
     // no worker only ever sees this once, on the request that carried a stale id by hand.
-    fix: 'the service worker recovers on this response; a stale tab that cannot, clears its registration',
+    fix: 'await navigator.serviceWorker.getRegistration().then((r) => r?.unregister())   // in a stale tab the service worker cannot recover; one that can recovers on this response',
   });
 
 export const serverNotStarted = (member: string): HttpError =>
   new HttpError({
     code: 'X_SERVER_NOT_STARTED',
     cause: `${member} was read before start() bound a socket`,
-    fix: 'call httpServer({ ... }).start() before reading url()',
+    fix: 'httpServer({ ... }).start()   // before reading url()',
   });
 
 export const pipelineNoResponse = (stage: string): HttpError =>
   new HttpError({
     code: 'X_PIPELINE_NO_RESPONSE',
     cause: `the pipeline finished at stage "${stage}" without a response`,
-    fix: 'return a Response from the route handler, or a Response from the stage that short-circuits',
+    fix: 'jsonResponse(data)   // return a Response from the route handler, or from the stage that short-circuits',
   });
 
 /**
@@ -239,7 +239,7 @@ export const finalizeFailed = (stage: string, cause: unknown): HttpError =>
     // runs a `Proxy`'s `getPrototypeOf` trap and `.message` runs a getter, so both reads go
     // through core's total `renderThrowable` — the fast path was the last unguarded one here.
     cause: `the "${stage}" stage threw while finishing the response: ${renderThrowable(cause)}`,
-    fix: 'return a Response built here — jsonResponse(), textResponse(), html() or redirect() from @ultimat3/http; one whose headers cannot be set, like Response.redirect(), cannot take the final headers',
+    fix: 'jsonResponse(data)   // return a Response built here — or textResponse(), html(), redirect() from @ultimat3/http; one whose headers cannot be set, like Response.redirect(), cannot take the final headers',
   });
 
 /**
@@ -251,7 +251,7 @@ export const noRequest = (member: string): HttpError =>
   new HttpError({
     code: 'X_NO_REQUEST',
     cause: `${member} was read outside an HTTP request`,
-    fix: 'move this call inside a route handler, an action or a page — or, for a job, call useRequestCookie(name) at enqueue time and pass the value in the payload',
+    fix: 'useRequestCookie(name)   // read it inside a route handler, an action or a page — for a job, read it at enqueue time and pass the value in the payload',
   });
 
 export const errorStatusInvalid = (code: string, reason: string): HttpError =>
@@ -295,7 +295,7 @@ export const cspDirectiveInvalid = (where: string, value: string): HttpError =>
   new HttpError({
     code: 'X_CSP_DIRECTIVE_INVALID',
     cause: `${where} is not a csp token: ${JSON.stringify(value)}`,
-    fix: 'in the configureHttp({ security: { csp: { extend } } }) call write one entry per directive, each source its own array element — a directive name is [a-z][a-z0-9-]*, and no source may contain a space, a comma or a semicolon',
+    fix: "configureHttp({ security: { csp: { extend: { 'img-src': ['https://cdn.example.com'] } } } })   // one entry per directive, each source its own array element — a directive name is [a-z][a-z0-9-]*, and no source may contain a space, a comma or a semicolon",
   });
 
 export const routeConflict = (path: string, detail: string): HttpError =>
@@ -317,7 +317,7 @@ export const trustProxyUnset = (): HttpError =>
     code: 'X_TRUST_PROXY_UNSET',
     cause:
       'http.trustProxy is true and http.trustedProxyHops is not set, so x-forwarded-for would be read from a position the client controls',
-    fix: 'set TRUSTED_PROXY_HOPS in the deployment environment to the number of proxies that append to x-forwarded-for — 1 for a single ingress or ALB, 2 for a CDN in front of one — and leave it unset for a process that is reached directly; an embedder calling defineHttpConfig itself passes { trustProxy: true, trustedProxyHops: 1 }',
+    fix: 'TRUSTED_PROXY_HOPS=1   # in the deployment environment: the number of proxies that append to x-forwarded-for — 1 for a single ingress or ALB, 2 for a CDN in front of one — and leave it unset for a process that is reached directly; an embedder calling defineHttpConfig itself passes { trustProxy: true, trustedProxyHops: 1 }',
   });
 
 /**
@@ -370,7 +370,7 @@ export const httpCountInvalid = (
   new HttpError({
     code: 'X_CONFIG_INVALID',
     cause: `http.${name} is ${String(value)}; it must be ${expected}, and NaN is what Number(process.env.…) answers for an unset variable — every comparison against it is false, so the limit it names stops being enforced rather than being enforced wrongly`,
-    fix: `set ${name} to ${expected} in configureHttp({ ${example} }), and parse an environment value before you pass it: Number.parseInt(process.env.${name.replace(/[A-Z]/g, (c) => `_${c}`).toUpperCase()} ?? '', 10) is NaN when the variable is unset`,
+    fix: `configureHttp({ ${example} })   // ${name} must be ${expected} — parse an environment value before you pass it: Number.parseInt(process.env.${name.replace(/[A-Z]/g, (c) => `_${c}`).toUpperCase()} ?? '', 10) is NaN when the variable is unset`,
     meta: { option: name, value: String(value) },
   });
 
@@ -392,7 +392,7 @@ export const routeCacheInvalid = (
   new HttpError({
     code: 'X_CONFIG_INVALID',
     cause: `route ${route} (${path}) declares cache.${field} = ${String(value)}, and cache-control delta-seconds is 1*DIGIT — a fraction, a negative and NaN are directives a conforming cache IGNORES, so the response would fall back to heuristic caching instead of the age declared here`,
-    fix: `in the route file declaring ${route}, set meta.cache.${field} to a whole number of seconds, 0 or more — 0 is legal and means "revalidate every time". If it comes from the environment, give it a default before it reaches the route: Number(process.env.X) is NaN when the variable is unset and ?? does not catch that, because NaN is not nullish`,
+    fix: `meta: { cache: { mode: 'public', ${field}: 60 } }   // in the route file declaring ${route}, its mode kept: a whole number of seconds, 0 or more — 0 is legal and means "revalidate every time". If it comes from the environment, give it a default before it reaches the route: Number(process.env.X) is NaN when the variable is unset and ?? does not catch that, because NaN is not nullish`,
     meta: { route, path, option: `cache.${field}`, value: String(value) },
   });
 
@@ -419,7 +419,7 @@ export const overloaded = (inflight: number, ceiling: number): HttpError =>
   new HttpError({
     code: 'X_OVERLOADED',
     cause: `${inflight} requests are already in flight and http.maxInflight is ${ceiling}`,
-    fix: 'retry after the Retry-After header; to serve more at once call configureHttp({ maxInflight: 2000 }) at module scope in a file under apps/*/, and add replicas to match',
+    fix: 'configureHttp({ maxInflight: 2000 })   // to serve more at once: at module scope in a file under apps/*/, with replicas to match — a caller retries after the Retry-After header',
   });
 
 /**
@@ -431,7 +431,7 @@ export const requestTimedOut = (method: string, pathname: string, timeoutMs: num
   new HttpError({
     code: 'X_TIMEOUT',
     cause: `${method} ${pathname} did not finish within ${timeoutMs}ms`,
-    fix: 'make every vendor call with outbound({ url, vendor, dial, deadlineMs }) from @ultimat3/core/outbound, which hears ctx.signal and the deadline, and call throwIfAborted(ctx) before expensive work, or call configureHttp({ requestTimeoutMs: 60_000 }) at module scope in a file under apps/*/. A write past the deadline is refused: wrap work that must land whole, runToCompletion(() => withTransaction(fn)), never a statement inside the transaction, whose COMMIT stays refused',
+    fix: 'outbound({ url, vendor, dial, deadlineMs })   // every vendor call, from @ultimat3/core/outbound, which hears ctx.signal and the deadline, and call throwIfAborted(ctx) before expensive work, or call configureHttp({ requestTimeoutMs: 60_000 }) at module scope in a file under apps/*/. A write past the deadline is refused: wrap work that must land whole, runToCompletion(() => withTransaction(fn)), never a statement inside the transaction, whose COMMIT stays refused',
     meta: { timeoutMs },
   });
 
@@ -456,7 +456,7 @@ export const webhookSignatureInvalid = (
     fix:
       via === 'verifyBodyHmac'
         ? 'verifyBodyHmac({ bytes, secret, given, encoding, prefix }) — compare encoding and prefix with the vendor docs, sign over the exact bytes the vendor names, and re-read the secret from the vendor dashboard'
-        : 'sign the delivery with the secret this endpoint was registered under, or re-read the secret from your sender dashboard and pass it as verifyWebhookSignature(request, { secret })',
+        : 'verifyWebhookSignature(request, { secret })   // the secret this endpoint was registered under — re-read it from your sender dashboard, and sign each delivery with it',
   });
 
 /** The two inbound checks, named so a refusal's `fix:` is the call its caller made. */
@@ -475,7 +475,7 @@ export const webhookSignatureStale = (
   new HttpError({
     code: 'X_WEBHOOK_SIGNATURE_STALE',
     cause: `${pathname} received a valid signature ${skewMs}ms from this clock, and the window is ${toleranceMs}ms`,
-    fix: 'sync the sending host clock with NTP, or widen the window with verifyWebhookSignature(request, { secret, toleranceMs: 600_000 }) if the sender queues deliveries for longer than that',
+    fix: 'verifyWebhookSignature(request, { secret, toleranceMs: 600_000 })   // if the sender queues deliveries for longer than that — otherwise sync the sending host clock with NTP',
     meta: { skewMs, toleranceMs },
   });
 

@@ -5,7 +5,7 @@
 // is that something, and it is keyed on env rather than a config field so the same image deploys to
 // every environment.
 
-import { ConfigInvalidError, isLocal, resolveEnvironment } from '@ultimat3/core';
+import { ConfigInvalidError, isLocal, renderFixShellArg, resolveEnvironment } from '@ultimat3/core';
 import { type MailDriver, memoryMailDriver, unconfiguredMailDriver } from './driver';
 import { resendMailDriver } from './driver-resend';
 import { sesMailDriver } from './driver-ses';
@@ -122,7 +122,7 @@ export function selectMailDriver(
   if (selected.length > 1) {
     throw new ConfigInvalidError({
       cause: `${selected.join(' and ')} are ${selected.length === 2 ? 'both' : 'all'} set — ${selected.length} transports claim the same mail`,
-      fix: 'unset one of them in .env.production: a process delivers through exactly one transport',
+      fix: `sed -i '/^${renderFixShellArg(selected[selected.length - 1], 'SMTP_URL')}=/d' .env.production   # or drop another: keep one of ${selected.join(', ')} — a process delivers through exactly one transport`,
       meta: { selected },
     });
   }

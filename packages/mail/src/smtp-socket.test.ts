@@ -328,6 +328,8 @@ test('an error on the live TLS socket propagates in both handshake windows', asy
   expect(codeOf(refused)).toBe('X_MAIL_SEND_FAILED');
   expect(metaOf(refused)['stage']).toBe('starttls');
   expect(metaOf(refused)['retryable']).toBe(false);
+  // The probe that reproduces it, runnable: `-starttls smtp` only for the window that needs it.
+  expect(fixOf(refused)).toStartWith('openssl s_client -starttls smtp -connect ');
 
   // After the first byte back the window is closed: the same error is a transient data failure.
   const afterByte = new FakeRuntime({ distinctTls: true });
@@ -352,6 +354,7 @@ test('a failure inside the implicit-TLS handshake window is a refused handshake,
   expect(codeOf(refused)).toBe('X_MAIL_SEND_FAILED');
   expect(metaOf(refused)['stage']).toBe('tls');
   expect(metaOf(refused)['retryable']).toBe(false);
+  expect(fixOf(refused)).toStartWith('openssl s_client -connect ');
   expect(causeOf(refused)).toContain('certificate has expired');
 
   const halfClosed = new FakeRuntime();
@@ -460,7 +463,7 @@ test('an upgrade that returns no TLS socket is refused, and the raw socket stays
   expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
   expect(metaOf(error)['stage']).toBe('starttls');
   expect(metaOf(error)['retryable']).toBe(false);
-  expect(fixOf(error)).toContain('upgrade the runtime');
+  expect(fixOf(error)).toStartWith('bun upgrade');
   // Nothing was upgraded, so the raw socket's handlers are still the live ones.
   runtime.pushRaw('250 still in the clear\r\n');
   expect(await stream.read()).toBe('250 still in the clear\r\n');

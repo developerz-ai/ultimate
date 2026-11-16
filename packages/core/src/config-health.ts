@@ -75,7 +75,7 @@ export function assertReadinessMode(value: unknown): ReadinessMode {
   throw new UltimateError({
     code: 'X_CONFIG_INVALID',
     cause: issue,
-    fix: "set health: { readiness: 'process' } (or 'dependencies', the default) in app.config.ts",
+    fix: "health: { readiness: 'process' }   // in app.config.ts — or 'dependencies', the default",
     meta: { key: 'health.readiness' },
   });
 }

@@ -27,7 +27,7 @@ export class CursorInvalidError extends UltimateError {
     super({
       code: 'X_CURSOR_INVALID',
       cause: `cursor rejected: ${reason}`,
-      fix: 'drop the cursor and request the first page again (after: null)',
+      fix: 'after: null   // drop the cursor and request the first page again',
       meta: { reason },
     });
   }

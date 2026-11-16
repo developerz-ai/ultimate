@@ -166,7 +166,7 @@ function buildTier(name: CacheTierName, options: CacheTiersOptions): CacheTier {
           driver: 'redis',
           cause:
             'cache.tiers names it and REDIS_URL (or VALKEY_URL) is unset, so this process would read a per-process ladder while the config declares a shared one',
-          fix: 'set REDIS_URL in .env, or drop the redis tier from cache.tiers in app.config.ts',
+          fix: 'REDIS_URL=redis://localhost:6379   # in .env — or drop the redis tier from cache.tiers in app.config.ts',
         });
       }
       return redisTier({ client: lazyRedis(source.url, options.redisClient ?? redisClient) });
@@ -180,7 +180,7 @@ function buildTier(name: CacheTierName, options: CacheTiersOptions): CacheTier {
           driver: 'cdn',
           cause:
             'cache.tiers names it and no CDN credential is set, so every invalidation report would claim keys an edge that does not exist had accepted',
-          fix: 'set FASTLY_API_TOKEN and FASTLY_SERVICE_ID in .env, or CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID, or drop the cdn tier from cache.tiers in app.config.ts',
+          fix: "FASTLY_API_TOKEN='<token>' FASTLY_SERVICE_ID='<service id>'   # in .env — or CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID, or drop the cdn tier from cache.tiers in app.config.ts",
         });
       }
       return cdnTier({ purge: options.purge });

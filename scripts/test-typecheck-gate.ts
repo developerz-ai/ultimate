@@ -125,7 +125,7 @@ const overFinding = (gap: TestTypecheckGap): Finding => {
   return {
     code: 'X_TEST_TYPECHECK_REGRESSED',
     cause: `${gap.pkg}'s tests carry ${gap.errors} typecheck error(s) and ${gap.pinned} are pinned${where}${said}`,
-    fix: `fix the error at ${at} — bun run scripts/test-typecheck-gate.ts --json prints every diagnostic — or raise '${gap.pkg}' to ${gap.errors} in ${PINS_FILE} on purpose`,
+    fix: `bun run scripts/test-typecheck-gate.ts --json   # prints every diagnostic: fix the error at ${at} — or raise '${gap.pkg}' to ${gap.errors} in ${PINS_FILE} on purpose`,
     at,
   };
 };

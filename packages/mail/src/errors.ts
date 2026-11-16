@@ -122,7 +122,7 @@ export const localeMissing = (mailId: string): MailError =>
   new MailError({
     code: 'X_MAIL_LOCALE_MISSING',
     cause: `send(${mailId}, data, options) got no locale — the recipient's language is unknown`,
-    fix: `pass it: send(${mailId}, data, { to, locale: ctx.locale })`,
+    fix: `send(${mailId}, data, { to, locale: ctx.locale })   // pass the recipient's locale`,
     meta: { mailId },
   });
 
@@ -150,7 +150,7 @@ export const mailDuplicate = (mailId: string): MailError =>
   new MailError({
     code: 'X_MAIL_DUPLICATE',
     cause: `mail id "${mailId}" is already registered by another defineMail() call`,
-    fix: `rename one of the two defineMail({ id: '${mailId}' }) declarations — an id is the key both surfaces address a template by`,
+    fix: `defineMail({ id: '${mailId}-2', ... })   // rename one of the two declarations — an id is the key both surfaces address a template by`,
     meta: { mailId },
   });
 
@@ -166,7 +166,7 @@ export const mailLayoutDuplicate = (name: string): MailError =>
   new MailError({
     code: 'X_MAIL_DUPLICATE',
     cause: `mail layout "${name}" is already registered, so a second registerLayout() would replace it`,
-    fix: `pick a name of your own: registerLayout('${name}-custom', myLayout) — a layout name is the key defineMail({ layout }) addresses a shell by`,
+    fix: `registerLayout('${name}-custom', myLayout)   // a name of your own — a layout name is the key defineMail({ layout }) addresses a shell by`,
     meta: { layout: name },
   });
 
@@ -174,7 +174,7 @@ export const textMissing = (mailId: string): MailError =>
   new MailError({
     code: 'X_MAIL_TEXT_MISSING',
     cause: `mail "${mailId}" rendered an empty text part (HTML-only mail scores as spam)`,
-    fix: `add a text block to the "${mailId}" template: blocks.paragraph('mail.${mailId}.body')`,
+    fix: `blocks.paragraph('mail.${mailId}.body')   // a text block in the "${mailId}" template`,
     meta: { mailId },
   });
 
@@ -231,10 +231,7 @@ export const mailCredentialMissing = (environment: Environment): MailError =>
     cause:
       `none of SMTP_URL, RESEND_API_KEY or SES_REGION is set in ${environment}, so this process ` +
       'has no transport — the message was not delivered and was not queued anywhere',
-    fix:
-      'set SMTP_URL="smtps://user:pass@host:465" (or RESEND_API_KEY=re_..., or SES_REGION with ' +
-      'SES_ACCESS_KEY_ID and SES_SECRET_ACCESS_KEY) and ' +
-      'MAIL_FROM="App <no-reply@yourdomain.test>" in the deployment environment, then restart',
+    fix: 'SMTP_URL="smtps://user:pass@host:465" MAIL_FROM="App <no-reply@yourdomain.test>"   # in the deployment environment, then restart — or RESEND_API_KEY=re_..., or SES_REGION with SES_ACCESS_KEY_ID and SES_SECRET_ACCESS_KEY, in place of SMTP_URL',
     meta: { environment, missing: ['SMTP_URL', 'RESEND_API_KEY', 'SES_REGION'] },
   });
 
@@ -259,7 +256,7 @@ const ADDRESS_OPTION: ReadonlyMap<string, string> = new Map([
 const nonAsciiFix = (name: string): string => {
   const option = ADDRESS_OPTION.get(name);
   return option === undefined
-    ? 'set mail.from in app.config.ts to an ASCII mailbox, e.g. no-reply@example.test'
+    ? 'MAIL_FROM=no-reply@example.test   # an ASCII mailbox, in .env.production'
     : `pass the mailbox's ASCII form, the domain as punycode: send(mail, data, { ${option}: 'jose@xn--exmple-cua.test', locale })`;
 };
 
@@ -281,8 +278,7 @@ export const headerInvalid = (
         : `the "${name}" header of mail "${mailId}" holds a non-ASCII byte in its mailbox, and this package negotiates no SMTPUTF8, so the address cannot be written as a header`,
     fix:
       reason === 'line-break'
-        ? `strip line breaks from the value before it reaches the header: ` +
-          `t('mail.${mailId}.subject', { ...data, x: String(x).replace(/[\\r\\n]+/g, ' ') })`
+        ? `t.string.pattern(/^[^\\r\\n]*$/)   // on the input field that feeds the "${name}" header of mail "${mailId}": reject the value at its own boundary, then re-send — never strip the break, a silently rewritten header hides the injection attempt`
         : nonAsciiFix(name),
     meta: { header: name, mailId, reason },
   });
@@ -296,8 +292,8 @@ export const headerInvalid = (
 export type EnvelopeAddressField = 'sender' | 'recipient';
 
 const ADDRESS_FIXES: Readonly<Record<EnvelopeAddressField, string>> = {
-  sender: 'set mail.from in app.config.ts to a bare address, e.g. no-reply@example.test',
-  recipient: "pass bare addresses: send(mail, data, { to: ['ada@example.test'], locale })",
+  sender: 'MAIL_FROM=no-reply@example.test   # a bare address, in .env.production',
+  recipient: "send(mail, data, { to: ['ada@example.test'], locale })   // bare addresses",
 };
 
 /**
@@ -401,6 +397,6 @@ export const transformFailed = (mailId: string, reason: string): MailError =>
   new MailError({
     code: 'X_MAIL_TRANSFORM_FAILED',
     cause: `the mail transform failed for "${mailId}": ${reason} — the mail was not sent`,
-    fix: `make the setMailTransform() hook return { subject, html, text } strings for "${mailId}" (return the rendered argument unchanged for a mail it does not track), then retry the send`,
+    fix: `setMailTransform((rendered, meta) => (meta.mailName === '${mailId}' ? track(rendered) : rendered))   // the hook returns { subject, html, text } strings — the rendered argument unchanged for a mail it does not track — then retry the send`,
     meta: { mailId },
   });

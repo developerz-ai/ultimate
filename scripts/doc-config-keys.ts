@@ -134,7 +134,7 @@ export const isKnownKey = (cited: string, leaves: readonly string[]): boolean =>
 export const configKeyFindingFor = (citation: ConfigCitation): Finding => ({
   code: 'X_DOC_CONFIG_KEY_UNKNOWN',
   cause: `${citation.path}:${String(citation.line)} tells a reader to set ${citation.cited} in app.config.ts and ${CONFIG_FILE} declares no such key — the instruction type-errors in the app it is pasted into`,
-  fix: `name a key AppConfig declares at ${citation.path}:${String(citation.line)} — read the current set with bun run scripts/config-readers.ts --json — or record a deliberate citation as { path, cites, why } in DOC_CONFIG_KEY_ALLOWANCES in ${DOC_CONFIG_PINS_FILE}`,
+  fix: `edit ${citation.path}:${String(citation.line)} — name a key AppConfig declares (bun run scripts/config-readers.ts --json reads the current set), or record a deliberate citation as { path, cites, why } in DOC_CONFIG_KEY_ALLOWANCES in ${DOC_CONFIG_PINS_FILE}`,
   at: `${citation.path}:${String(citation.line)}`,
 });
 
@@ -142,7 +142,7 @@ export const configKeyFindingFor = (citation: ConfigCitation): Finding => ({
 export const staleAllowanceFindingFor = (allowance: DocConfigKeyAllowance): Finding => ({
   code: 'X_DOC_CONFIG_ALLOWANCE_STALE',
   cause: `${DOC_CONFIG_PINS_FILE} allows ${allowance.path} to cite ${allowance.cites} and that page no longer does — a waiver nobody removes is a waiver nobody reads`,
-  fix: `delete the { path: '${allowance.path}', cites: '${allowance.cites}' } entry from DOC_CONFIG_KEY_ALLOWANCES in ${DOC_CONFIG_PINS_FILE}`,
+  fix: `{ path: '${allowance.path}', cites: '${allowance.cites}' }   // delete this entry from DOC_CONFIG_KEY_ALLOWANCES in ${DOC_CONFIG_PINS_FILE}`,
   at: DOC_CONFIG_PINS_FILE,
 });
 

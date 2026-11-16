@@ -69,7 +69,7 @@ export class ActionPathDerivedEarlyError extends UltimateError {
     super({
       code: 'X_ACTION_PATH_DERIVED_EARLY',
       cause: `pathStyle '${input.style}' was declared after a path was already derived under the previous style: ${shown}${more} — any module that kept that string holds a URL no route serves`,
-      fix: 'derive the path where it is used — inside the component or function, never in a module-level const — or import the module that calls defineApi({ http: { pathStyle } }) before the one that derives it',
+      fix: 'defineApi({ http: { pathStyle } })   // import its module before the one that derives a path — or derive the path where it is used, inside the component or function, never in a module-level const',
       meta: { style: input.style, names: input.stale.map((row) => row.name) },
     });
   }

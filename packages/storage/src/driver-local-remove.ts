@@ -33,7 +33,7 @@ export async function removeIfPresent(root: string, path: string, key: string): 
       key,
       error,
       // Screened: a key may carry `$(…)` and a root is configuration, and a fix: is pasted.
-      `make the disk root writable by this process, then retry: ls -ld ${renderFixShellArg(root, "'<the disk root>'")} && rm -f ${renderFixShellArg(path, "'<the object file>'")}`,
+      `ls -ld ${renderFixShellArg(root, "'<the disk root>'")} && rm -f ${renderFixShellArg(path, "'<the object file>'")}   # make the disk root writable by this process, then retry`,
     );
   }
 }

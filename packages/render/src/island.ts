@@ -172,21 +172,21 @@ function normalizeIsland(declaration: IslandDeclaration): IslandSpec {
   if (typeof src !== 'string' || src.length === 0) {
     throw new IslandInvalidError(
       'island() was given no src, so there is no module for the browser to import',
-      `pass src: './<name>${ISLAND_EXTENSION}' — the client entry, as a specifier, never an import`,
+      `island({ src: './<name>${ISLAND_EXTENSION}' })   // the client entry, as a specifier, never an import`,
     );
   }
   if (src.includes('://')) {
     throw new IslandInvalidError(
       `island src ${JSON.stringify(src)} is a remote URL, so it is outside the bundle graph and ` +
         'outside the route budget that has to count it',
-      `vendor the module into the app and pass src: './<name>${ISLAND_EXTENSION}'`,
+      `island({ src: './<name>${ISLAND_EXTENSION}' })   // the module vendored into the app`,
     );
   }
   if (UNSAFE_SPECIFIER.test(src)) {
     throw new IslandInvalidError(
       `island src ${JSON.stringify(src)} contains a character that cannot appear in the ` +
         'data-x-entry attribute it is emitted into',
-      `rename the module to a plain path and pass src: './<name>${ISLAND_EXTENSION}'`,
+      `island({ src: './<name>${ISLAND_EXTENSION}' })   // the module renamed to a plain path`,
     );
   }
   if (!src.endsWith(ISLAND_EXTENSION)) {
@@ -205,7 +205,7 @@ function normalizeIsland(declaration: IslandDeclaration): IslandSpec {
   if (moduleId.length === 0) {
     throw new IslandInvalidError(
       `island src ${JSON.stringify(src)} has no name left once ${ISLAND_EXTENSION} is removed`,
-      `name the module: src: './<name>${ISLAND_EXTENSION}'`,
+      `island({ src: './<name>${ISLAND_EXTENSION}' })   // name the module`,
     );
   }
 

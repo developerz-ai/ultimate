@@ -3,7 +3,12 @@
 // `registerErrorCodes` call stay in ./errors — one owner, one registration, one place a duplicate
 // can surface.
 
-import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
+import {
+  renderCauseValue,
+  renderFixLiteral,
+  renderFixShellArg,
+  UltimateError,
+} from '@ultimat3/core';
 
 // No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`.
 
@@ -39,7 +44,7 @@ export class IslandStatesEmptyError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATES_EMPTY',
       cause: `defineIslandStates(${renderCauseValue(input.island)}) declares no states, so it can never produce a picture`,
-      fix: `in ${at(input.island)} add: states: [{ id: 'empty', title: 'no rows yet', props: {} }]`,
+      fix: `states: [{ id: 'empty', title: 'no rows yet', props: {} }]   // in ${at(input.island)}`,
     });
   }
 }
@@ -56,8 +61,8 @@ export class IslandStateIdInvalidError extends UltimateError {
       cause: `island state id ${renderCauseValue(input.id)} is not a slug — it becomes the screenshot filename stem`,
       fix:
         input.slug.length === 0
-          ? `in ${at(input.island)} give the state an id of lowercase letters, digits and single dashes: id: 'over-quota'`
-          : `in ${at(input.island)} write: id: '${input.slug}'`,
+          ? `id: 'over-quota'   // in ${at(input.island)}: lowercase letters, digits and single dashes`
+          : `id: '${input.slug}'   // in ${at(input.island)}`,
     });
   }
 }
@@ -71,7 +76,7 @@ export class IslandStateDuplicateError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATE_DUPLICATE',
       cause: `two island states share the id ${renderCauseValue(input.id)}; the second picture would overwrite the first`,
-      fix: `in ${at(input.island)} rename one of them — id: '${input.id}-2', or the state it really is: id: 'over-quota'`,
+      fix: `id: '${input.id}-2'   // in ${at(input.island)}: rename one of them — or to the state it really is, id: 'over-quota'`,
     });
   }
 }
@@ -104,7 +109,7 @@ export class IslandStateZoneInvalidError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATE_CLOCK_INVALID',
       cause: `timeZone ${renderCauseValue(input.value)} is not an IANA zone, so a rendered date would fall back to the host's`,
-      fix: `in ${at(input.island)} write: timeZone: 'UTC' — or one of Intl.supportedValuesOf('timeZone')`,
+      fix: `timeZone: 'UTC'   // in ${at(input.island)} — or one of Intl.supportedValuesOf('timeZone')`,
     });
   }
 }
@@ -115,7 +120,7 @@ export class IslandStateInstantInvalidError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATE_CLOCK_INVALID',
       cause: `now ${renderCauseValue(input.value)} carries no explicit offset, so it means a different moment on every machine`,
-      fix: `in ${at(input.island)} write: now: '2026-01-01T00:00:00.000Z' — an ISO instant ending in Z or an offset`,
+      fix: `now: '2026-01-01T00:00:00.000Z'   // in ${at(input.island)}: an ISO instant ending in Z or an offset`,
     });
   }
 }
@@ -130,7 +135,7 @@ export class IslandStateStubInvalidError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATE_STUB_INVALID',
       cause: `route stub ${renderCauseValue(input.match)} is not "<METHOD> <pathname>", so it would match no request`,
-      fix: `in ${at(input.island)} write: { match: 'GET /api/settings', respond: { kind: 'json', body: {} } }`,
+      fix: `{ match: 'GET /api/settings', respond: { kind: 'json', body: {} } }   // in ${at(input.island)}`,
     });
   }
 }
@@ -162,7 +167,7 @@ export class IslandStatesNotPureError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATES_NOT_PURE',
       cause: `${renderCauseValue(input.file)} imports ${renderCauseValue(input.specifier)} — a states file is pure data and is read without a browser`,
-      fix: `in ${renderFixLiteral(input.file, STATES_PLACEHOLDER)} delete the import of ${renderCauseValue(input.specifier)} and declare the props as JSON instead`,
+      fix: `props: { … }   // in ${renderFixLiteral(input.file, STATES_PLACEHOLDER)}: the props as JSON, and the import of ${renderCauseValue(input.specifier)} deleted`,
     });
   }
 }
@@ -179,7 +184,7 @@ export class IslandStatesSiblingImportError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATES_NOT_PURE',
       cause: `${renderCauseValue(input.file)} imports ${renderCauseValue(input.specifier)} at runtime, and a sibling module can reach the component the states file may not`,
-      fix: `in ${renderFixLiteral(input.file, STATES_PLACEHOLDER)} write: import type { Props } from ${renderFixLiteral(input.specifier, '<the specifier the cause names>')} — a type-only import is erased, and a value one must be inlined as JSON`,
+      fix: `import type { Props } from ${renderFixLiteral(input.specifier, '<the specifier the cause names>')}   // in ${renderFixLiteral(input.file, STATES_PLACEHOLDER)}: a type-only import is erased, and a value one must be inlined as JSON`,
     });
   }
 }
@@ -195,7 +200,7 @@ export class IslandStatesOpaqueImportError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATES_NOT_PURE',
       cause: `${renderCauseValue(input.file)} computes the import ${renderCauseValue(input.expression)}, so no reader can say where it goes without running it`,
-      fix: `in ${renderFixLiteral(input.file, STATES_PLACEHOLDER)} write the specifier as a string literal, or delete the import and inline what it exports as JSON`,
+      fix: `import type { Props } from './props'   // in ${renderFixLiteral(input.file, STATES_PLACEHOLDER)}: the specifier as a string literal — or delete the import and inline what it exports as JSON`,
     });
   }
 }
@@ -210,7 +215,7 @@ export class IslandStatesMissingFileError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATES_MISSING_FILE',
       cause: `no file at ${renderCauseValue(input.island)} under ${renderCauseValue(input.root)}, so its declared states can never be photographed`,
-      fix: `in ${at(input.island)} set island to the path that exists — it is relative to the app root, not to the states file`,
+      fix: `island: 'apps/web/app/settings/settings.island.tsx'   // in ${at(input.island)}: the path that exists, relative to the app root, not to the states file`,
     });
   }
 }
@@ -230,8 +235,8 @@ export class IslandStatesUnknownError extends UltimateError {
           : `no island states answer to ${renderCauseValue(input.name)}; declared: ${input.known.join(', ')}`,
       fix:
         input.known.length === 0
-          ? "declare one beside the island: export const states = defineIslandStates({ island: 'apps/web/app/settings/settings.island.tsx', states: [...] })"
-          : `name one of them instead: ${input.known[0] ?? ''}`,
+          ? "export const states = defineIslandStates({ island: 'apps/web/app/settings/settings.island.tsx', states: [...] })   // beside the island"
+          : `x shot --island ${renderFixShellArg(input.known[0], '<a declared name>')}   # one of the declared names the cause lists`,
     });
   }
 }
@@ -246,7 +251,7 @@ export class IslandStatesAmbiguousError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATES_AMBIGUOUS',
       cause: `${input.islands.length} islands answer to ${renderCauseValue(input.name)}: ${input.islands.join(', ')}`,
-      fix: `rename one island file so the two basenames differ — the basename is the shot directory, so today they would share one`,
+      fix: `git mv ${renderFixShellArg(input.islands[1], '<the second island the cause names>')} <a-distinct-basename>.island.tsx   # the basename is the shot directory, so today the two would share one`,
     });
   }
 }
@@ -265,7 +270,7 @@ export class IslandStateUnknownError extends UltimateError {
     super({
       code: 'X_TEST_ISLAND_STATE_UNKNOWN',
       cause: `${renderCauseValue(input.island)} declares no state ${renderCauseValue(input.id)}; declared: ${input.known.join(', ')}`,
-      fix: `name one of them instead: ${input.known[0] ?? ''} — or declare the state in ${at(input.island)}`,
+      fix: `mountIslandState(states, ${renderFixLiteral(input.known[0], "'<a declared id>'")}, { build: buildIslands, root })   // a declared id — or declare the state in ${at(input.island)}`,
     });
   }
 }

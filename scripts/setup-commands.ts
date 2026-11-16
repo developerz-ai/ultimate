@@ -29,6 +29,7 @@ import type { MarkdownFile } from './lib/doc-citations';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { siteAt } from './lib/site-at';
 
 const SCRIPT = 'setup-commands';
 
@@ -289,7 +290,7 @@ export const setupCommandFindingFor = (gap: SetupGap, steps: readonly SetupStep[
     : {
         code: 'X_DOC_SETUP_COMMAND_STALE',
         cause: `${gap.at} ${gap.detail}`,
-        fix: `make ${gap.at} state bun run setup's own sequence — ${steps.map((step) => step.id).join(', ')} — which is derived from binSetup() in ${SETUP_TEMPLATE}`,
+        fix: `edit ${siteAt(gap.at).path}:${siteAt(gap.at).line} — state bun run setup's own sequence — ${steps.map((step) => step.id).join(', ')} — which is derived from binSetup() in ${SETUP_TEMPLATE}, then: bun run scripts/setup-commands.ts --json`,
         at: gap.at,
       };
 

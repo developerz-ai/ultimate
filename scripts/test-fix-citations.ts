@@ -106,7 +106,7 @@ const said = (site: TestFixSite): string => `${site.at} ("${site.fix}", which ${
 const overFinding = (gap: TestFixGap): Finding => ({
   code: 'X_TEST_FIX_UNRUNNABLE',
   cause: `${gap.pkg} has ${String(gap.found)} test fix line(s) citing a command this build cannot run and is pinned at ${String(gap.pinned)} — ${siteList(gap, said, EXPLAIN)}`,
-  fix: `rewrite the fix at ${siteTarget(gap, (site) => site.at)} as an invocation this build ships; \`x help --json\` lists every command, subcommand and flag`,
+  fix: `x help --json   # lists every command, subcommand and flag: rewrite the fix at ${siteTarget(gap, (site) => site.at)} as an invocation this build ships`,
   at: leadSite(gap)?.at ?? gap.pkg,
 });
 
@@ -122,7 +122,7 @@ const unscannedFinding = (): Finding => ({
   cause: 'no test file matched, so this rule reported green over a file set it never read',
   // Literal path for the same reason release-facts.ts records: an interpolated `${SCRIPT}`
   // renders as `scripts/<value>.ts` to the static fix-line contract, which then names no file.
-  fix: "edit TEST_GLOBS in scripts/test-fix-citations.ts so it matches this repo's test layout",
+  fix: "grep -n 'TEST_GLOBS' scripts/test-fix-citations.ts   # edit it so it matches this repo's test layout",
   at: `scripts/${SCRIPT}.ts`,
 });
 

@@ -51,7 +51,7 @@ class ScramSha256Session implements ScramSession {
       throw new ReplicationProtocolError({
         stage: 'auth',
         detail: 'clientFinal() was already called on this SCRAM session; a session is single-use',
-        fix: 'call scramSession() again to start a fresh exchange for the next connection attempt',
+        fix: 'scramSession({ password, nonce })   # a fresh exchange for the next connection attempt',
       });
     }
     this.#finalized = true;
@@ -91,7 +91,7 @@ class ScramSha256Session implements ScramSession {
       throw new ReplicationProtocolError({
         stage: 'auth',
         detail: 'verify() was called before clientFinal() produced a server signature to check',
-        fix: 'call clientFinal() with the server-first-message before verify()',
+        fix: 'await session.clientFinal(serverFirst)   # with the server-first-message, before verify()',
       });
     }
 
@@ -178,7 +178,7 @@ export function chooseMechanism(offered: readonly string[]): string {
       offered.length === 0
         ? 'the server offered no SASL mechanisms'
         : `the server only offered ${offered.join(', ')} — channel binding ("-PLUS") is not supported here`,
-    fix: 'set password_encryption = scram-sha-256 on the server and recreate the role password',
+    fix: "ALTER ROLE <role> PASSWORD '<password>'   -- after SET password_encryption = 'scram-sha-256' in the same session, so the server stores a SCRAM verifier",
   });
 }
 
