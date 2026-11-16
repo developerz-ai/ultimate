@@ -7,7 +7,7 @@
 // answer for a root that has no `tsconfig.json` at all, so an `existsSync` ahead of it was a second
 // question with one answer.
 import { join } from 'node:path';
-import { ERROR_DOCS_URL, maskLiterals, stripComments } from '@ultimat3/core';
+import { ERROR_DOCS_URL, maskLiterals, stripComments, trimTrailingSlashes } from '@ultimat3/core';
 import type { Finding } from './output';
 
 const ROOT_TSCONFIG = 'tsconfig.json';
@@ -20,7 +20,7 @@ const ROOT_TSCONFIG = 'tsconfig.json';
  * scaffolder appends a duplicate entry the check already considered present.
  */
 export const normalizeReferencePath = (path: string): string =>
-  path.replace(/^\.\//, '').replace(/\/+$/, '');
+  trimTrailingSlashes(path.replace(/^\.\//, ''));
 
 /**
  * A tsconfig is JSONC and `JSON.parse` is not, so the comments and trailing commas `tsc` accepts —

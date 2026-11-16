@@ -5,7 +5,7 @@
  */
 
 import { pkcePair, randomToken } from '@ultimat3/auth';
-import { isJsonObject, timingSafeEqual } from '@ultimat3/core';
+import { isJsonObject, timingSafeEqual, trimTrailingSlashes } from '@ultimat3/core';
 import type { OutboundFetch } from '@ultimat3/core/outbound';
 import { outboundResponse } from '@ultimat3/core/outbound';
 import { McpRemoteRefusedError } from './remote-errors';
@@ -263,14 +263,14 @@ function secureEndpoint(url: URL): boolean {
 
 /** RFC 9728 §3.1: the suffix goes between host and path, then the root as a fallback. */
 function wellKnown(url: URL, suffix: string): readonly string[] {
-  const path = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
+  const path = url.pathname === '/' ? '' : trimTrailingSlashes(url.pathname);
   const root = `${url.origin}/.well-known/${suffix}`;
   return path === '' ? [root] : [`${root}${path}`, root];
 }
 
 /** RFC 8414 first, then OIDC discovery in both placements the MCP spec lists. */
 function authServerCandidates(issuer: URL): readonly string[] {
-  const path = issuer.pathname === '/' ? '' : issuer.pathname.replace(/\/+$/, '');
+  const path = issuer.pathname === '/' ? '' : trimTrailingSlashes(issuer.pathname);
   return [
     `${issuer.origin}/.well-known/oauth-authorization-server${path}`,
     `${issuer.origin}/.well-known/openid-configuration${path}`,

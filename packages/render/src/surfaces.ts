@@ -5,7 +5,12 @@
  * aspirational. Violations are build errors, resolved through the whole chain.
  */
 
-import { type RenderMode, renderFixShellArg, type Surface } from '@ultimat3/core';
+import {
+  type RenderMode,
+  renderFixShellArg,
+  type Surface,
+  trimTrailingSlashes,
+} from '@ultimat3/core';
 import { byCodeUnit } from './code-unit-order';
 import { SurfaceBoundaryError } from './errors';
 
@@ -127,7 +132,7 @@ export function surfaceOf(file: string): Surface | null {
  * which both graphs carry.
  */
 export function surfaceUnder(root: string, file: string): Surface | null {
-  const base = normalize(root).replace(/\/+$/, '');
+  const base = trimTrailingSlashes(normalize(root));
   const path = normalize(file);
   const relative = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : path;
   if (/(?:^|\/)node_modules\//.test(relative)) return null;

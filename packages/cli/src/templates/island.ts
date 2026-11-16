@@ -6,6 +6,7 @@
 // shape the island build compiles. All three are pinned by the emitted test, which builds the chunk
 // and mounts it.
 
+import { trimTrailingSlashes } from '@ultimat3/core';
 import type { GeneratedFile } from './naming';
 import { camel, kebab, pascal } from './naming';
 
@@ -200,7 +201,7 @@ export const ${camel(name)}States = defineIslandStates({
 
 export function islandFiles(rawName: string, options: IslandOptions): readonly GeneratedFile[] {
   const name = kebab(rawName);
-  const dir = options.dir.replace(/\/+$/, '');
+  const dir = trimTrailingSlashes(options.dir);
   return [
     { path: `${dir}/${name}.island.tsx`, contents: islandSource(name) },
     { path: `${dir}/${name}.module.scss`, contents: islandStyle() },

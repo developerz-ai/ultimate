@@ -3,10 +3,11 @@
 // (`resolutionDirs`), and the environment every group shares (`environmentDigest`: the lockfile,
 // the tsconfig chain, the package manifests). Each is a digest, read at most once per build.
 
-// why: Bun ships no directory listing; `readdir` answers the names a resolver chooses between.
 import { readdir } from 'node:fs/promises';
 // why: Bun ships no path API; the bundler names its inputs relative to the building process's cwd.
 import { basename, dirname, join, resolve } from 'node:path';
+// why: Bun ships no directory listing; `readdir` answers the names a resolver chooses between.
+import { trimTrailingSlashes } from '@ultimat3/core';
 import { contentHash } from '@ultimat3/render/server';
 import { hasPathSegment } from './path-segments';
 
@@ -122,7 +123,7 @@ export async function environmentDigest(root: string): Promise<string> {
     const manifest = Bun.file(join(dir, 'package.json'));
     if (!(await manifest.exists())) continue;
     for (const pattern of workspaceGlobs(await manifest.text())) {
-      const glob = new Bun.Glob(`${pattern.replace(/\/+$/, '')}/package.json`);
+      const glob = new Bun.Glob(`${trimTrailingSlashes(pattern)}/package.json`);
       for await (const one of glob.scan({ cwd: dir })) {
         if (!hasPathSegment(one, 'node_modules')) members.add(dirname(join(dir, one)));
       }

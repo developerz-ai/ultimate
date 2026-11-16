@@ -8,6 +8,7 @@ import { renderFixShellArg } from './error-render';
 import { type CodedErrorInit, UltimateError } from './errors';
 import { otlpEndpointLabel } from './otlp-post';
 import type { AttributeValue, SpanResource } from './telemetry';
+import { trimTrailingSlashes } from './trailing-slashes';
 import { frameworkVersion } from './version';
 
 export class OtlpEndpointInvalidError extends UltimateError {
@@ -110,7 +111,7 @@ function parseEndpoint(signal: OtlpSignal, raw: string, perSignal: boolean, env:
   if (perSignal) return url.toString();
   // On the PATH, never on the string: `http://collector:4318?tenant=a` concatenated to
   // `…/?tenant=a/v1/traces`, a request to `/` whose query merely ends in the receiver's path.
-  url.pathname = `${url.pathname.replace(/\/+$/, '')}/v1/${signal}`;
+  url.pathname = `${trimTrailingSlashes(url.pathname)}/v1/${signal}`;
   return url.toString();
 }
 

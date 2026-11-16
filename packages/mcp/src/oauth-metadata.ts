@@ -11,6 +11,7 @@
 // the origin — so it reads none of this. The server itself is `@ultimat3/auth`'s
 // `authorizationServer`, bound to one endpoint by `mcpAuthorizationServer` (`oauth-server.ts`).
 
+import { trimTrailingSlashes } from '@ultimat3/core';
 import { McpOAuthInvalidError } from './errors-transport';
 
 /** The well-known suffix RFC 9728 §3 defines. */
@@ -69,7 +70,7 @@ export function assertMcpOAuth(oauth: McpOAuth): void {
 
 /** The resource this request addresses: the declared one, else `<origin><path>`. */
 export function resourceUrl(oauth: McpOAuth, origin: string, path: string): string {
-  return oauth.resource ?? `${origin.replace(/\/+$/, '')}${path}`;
+  return oauth.resource ?? `${trimTrailingSlashes(origin)}${path}`;
 }
 
 /**
@@ -78,7 +79,7 @@ export function resourceUrl(oauth: McpOAuth, origin: string, path: string): stri
  */
 export function metadataUrlFor(resource: string): string {
   const url = new URL(resource);
-  const path = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
+  const path = url.pathname === '/' ? '' : trimTrailingSlashes(url.pathname);
   return `${url.origin}${PROTECTED_RESOURCE_WELL_KNOWN}${path}`;
 }
 

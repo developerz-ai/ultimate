@@ -4,6 +4,7 @@
 // loader (`app-config-load.ts`).
 
 import type { Environment, SeoRobotsGroup, SeoSitemapConfig, SiteFavicon } from '@ultimat3/core';
+import { trimTrailingSlashes } from '@ultimat3/core';
 import { loadAppConfig } from './app-config-load';
 
 export interface SiteSettings {
@@ -39,7 +40,7 @@ export const NO_SITE_SETTINGS: SiteSettings = {
   llms: true,
 };
 
-const trimSlash = (origin: string): string => origin.replace(/\/+$/, '');
+const trimSlash = (origin: string): string => trimTrailingSlashes(origin);
 
 export async function loadSiteSettings(root: string): Promise<SiteSettings> {
   const config = await loadAppConfig(root);

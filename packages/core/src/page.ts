@@ -91,6 +91,7 @@ export { fillTemplate, templateParams } from './route-path-template';
 export { onSessionLost, sessionIsLost } from './session-lost';
 // The key the theme boot script reads and the toggle island writes.
 export { THEME_STORAGE_KEY } from './theme-storage';
+export { trimTrailingSlashes } from './trailing-slashes';
 // A poll a hidden tab and a lost session stop: here, so an island polling reaches no realtime.
 export type { VisibleIntervalOptions } from './visible-interval';
 export { visibleInterval } from './visible-interval';

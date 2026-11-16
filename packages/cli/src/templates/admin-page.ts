@@ -6,6 +6,7 @@
 // that decides it. A scaffold that wrote a route declaration here would hand back the unguarded
 // second way in that seam exists to close.
 
+import { trimTrailingSlashes } from '@ultimat3/core';
 import { ADMIN_FILE } from '../admin-registration';
 import { catalogJson } from './catalog-json';
 import { sortedImports } from './imports';
@@ -210,7 +211,7 @@ export function adminPageFiles(
 ): readonly GeneratedFile[] {
   const name = kebab(rawName);
   // Trailing slashes trimmed exactly as `islandFiles` does — one `--at`, one normalization.
-  const dir = (options.dir ?? DEFAULT_ADMIN_PAGE_DIR).replace(/\/+$/, '');
+  const dir = trimTrailingSlashes(options.dir ?? DEFAULT_ADMIN_PAGE_DIR);
   return [
     {
       path: `${dir}/${name}.tsx`,

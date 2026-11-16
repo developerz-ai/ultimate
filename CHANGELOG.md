@@ -18,6 +18,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - `changelog-check`'s guard-refresh rule and `template-codemods` no longer ask for an upgrade row or a codemod when a template changed only in its leading comment, the generator's own header, outside the template text an app receives (`scripts/lib/template-header-only.ts`). A header sweep had demanded rows for five guards whose generated text had not moved.
 
+- A base URL, issuer, origin or path is trimmed of its trailing slashes in one linear pass. `@ultimat3/core`'s new `trimTrailingSlashes` (also on `@ultimat3/core/page`) replaces `/\/+$/` at 26 sites across action, ai, auth, cli, core, mcp, query, render, seo, storage and testing: that regex is quadratic on a long run of slashes, and 200,000 of them did not finish in 20 s (CodeQL `js/polynomial-redos`).
+
 ### Changed
 
 - `scripts` coverage rose to 86.5% lines / 91.4% functions: the logic of `release.ts`, `trust-publishers.ts`, `side-effects.ts` and the upgrade-fixtures harness now lives in exported functions their tests call.

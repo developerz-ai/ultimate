@@ -14,6 +14,7 @@ import {
   presignAwsUrl,
   signAwsRequest,
   systemClock,
+  trimTrailingSlashes,
 } from '@ultimat3/core';
 import type { SignedPart } from './signed-url';
 
@@ -208,7 +209,7 @@ export function s3ObjectUrl(options: S3WireOptions, key: string): URL {
   if (options.forcePathStyle === false) {
     return new URL(`${base.protocol}//${options.bucket}.${base.host}/${path}`);
   }
-  const prefix = base.pathname.replace(/\/+$/, '');
+  const prefix = trimTrailingSlashes(base.pathname);
   return new URL(
     `${base.protocol}//${base.host}${prefix}/${encodeURIComponent(options.bucket)}/${path}`,
   );

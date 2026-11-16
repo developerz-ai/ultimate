@@ -322,5 +322,7 @@
  * raised 1529 → 1534, measured 1534 (2026-11-15, plan 101b sweep 6): the three on `MIGRATE_CEILING`,
  * plus `cli/src/serve-boot-probe.ts` (web and sync answer `/healthz` 200 and `/readyz` 503 on their own
  * port while the schema wait runs) and `cli/src/role-pg-stats.ts` (the scheduler's gauge sampler).
+ * raised 1534 → 1535, measured 1535 (2026-11-16, plan 101b sweep 8b-2): the one on `MIGRATE_CEILING`,
+ * `core/src/trailing-slashes.ts`.
  */
-export const SERVING_ROLE_CEILING = 1534;
+export const SERVING_ROLE_CEILING = 1535;
