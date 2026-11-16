@@ -42,8 +42,12 @@ export const releaseNextLine = (version: string, fixes?: string): string =>
     ? `  next      bun install, commit, open the \`chore: release ${version}\` PR; merging it is the release (release-tag.yml)`
     : `  next      bun install, commit, open the \`chore: release ${version}\` PR with \`${fixes}\` in the body; merging it is the release (release-tag.yml) and closes the ask`;
 
-/** The only dependency range a lockstep release rewrites — a caret or a tag is somebody's intent. */
-const EXACT_PIN = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
+/**
+ * The only dependency range a lockstep release rewrites — a caret or a tag is somebody's intent.
+ * Semver's own shape, one optional prerelease then one optional build: `(?:[-+][\w.-]+)*` let `-`
+ * both open a group and continue one, which backtracks exponentially on `0.0.0+----…` (CodeQL).
+ */
+export const EXACT_PIN = /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/;
 
 /**
  * The manifest's own `"version"`, which is the second key in every package.json here and so the
