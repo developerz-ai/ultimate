@@ -20,6 +20,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - A base URL, issuer, origin or path is trimmed of its trailing slashes in one linear pass. `@ultimat3/core`'s new `trimTrailingSlashes` (also on `@ultimat3/core/page`) replaces `/\/+$/` at 26 sites across action, ai, auth, cli, core, mcp, query, render, seo, storage and testing: that regex is quadratic on a long run of slashes, and 200,000 of them did not finish in 20 s (CodeQL `js/polynomial-redos`).
 
+- `@ultimat3/manifest`'s docs scan strips a block comment's close in one pass. `/\s?\*+\/$/` took 3.9 s on a line of 100,000 `*` (CodeQL `js/polynomial-redos`). The sitemap section matcher cuts a path at its first `?` or `#` by index.
+
 ### Changed
 
 - `scripts` coverage rose to 86.5% lines / 91.4% functions: the logic of `release.ts`, `trust-publishers.ts`, `side-effects.ts` and the upgrade-fixtures harness now lives in exported functions their tests call.

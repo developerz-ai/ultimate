@@ -106,9 +106,9 @@ export function headerComment(source: string): string {
     for (const line of lines) {
       const trimmed = line.trim();
       out.push(
-        trimmed
+        withoutClose(trimmed)
           .replace(/^\/\*+\s?/, '')
-          .replace(/\s?\*+\/$/, '')
+
           .replace(/^\*\s?/, ''),
       );
       if (trimmed.endsWith('*/')) break;
@@ -293,4 +293,17 @@ function parseJson(text: string): unknown {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A block comment's closing `*\/`, with the `*` run and one space before it, as `/\s?\*+\/$/`
+ * removed them — in one pass: that pattern retried from every `*` of a long run (CodeQL
+ * polynomial-redos, 3.9 s on 100,000).
+ */
+export function withoutClose(line: string): string {
+  if (!line.endsWith('*/')) return line;
+  let end = line.length - 1;
+  while (end > 0 && line.charCodeAt(end - 1) === 42) end -= 1;
+  if (end > 0 && /\s/.test(line.charAt(end - 1))) end -= 1;
+  return line.slice(0, end);
 }
