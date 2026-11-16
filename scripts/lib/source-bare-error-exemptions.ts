@@ -47,13 +47,13 @@ export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] =
   },
   {
     path: 'packages/render/src/navigation-dom-fixture.ts',
-    line: 452,
+    line: 454,
     reason:
       'the fake DOMParser refuses a document no test registered, rather than answering an empty one the router would read as a page',
   },
   {
     path: 'packages/realtime/src/client-harness-fixture.ts',
-    line: 159,
+    line: 160,
     reason:
       'what a browser throws when it refuses a new WebSocket: the fixture must be the real failure, not a framework error this code path can never produce',
   },

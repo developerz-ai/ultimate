@@ -54,5 +54,4 @@ export const NODE_PINS_FILE = 'scripts/lib/node-import-pins.ts';
  * deletes the most code. A row is bare on purpose — a sentence beside one reads as a
  * justification, and `--unpin` matches the row whole.
  */
-export const NODE_IMPORT_PINS: Readonly<Record<string, number>> = {
-};
+export const NODE_IMPORT_PINS: Readonly<Record<string, number>> = {};

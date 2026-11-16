@@ -1,10 +1,9 @@
 // The client half of the sync protocol: one socket's lifecycle — dial, beat, reconnect — and the
 // live windows and topics riding it.
 //
-// Framework-agnostic and reactive-runtime-free on purpose: ONE client serves the whole page (every
-// island bundle reaches it through the page handle), and a signal belongs to one bundle's solid-js,
-// so everything here is a plain read plus a listener. Read-only: the socket carries no writes
-// (`useMutation` is HTTP).
+// Reactive-runtime-free on purpose: ONE client serves the whole page (every island bundle reaches
+// it through the page handle) and a signal belongs to one bundle's solid-js, so everything here is
+// a plain read plus a listener. Read-only: the socket carries no writes (`useMutation` is HTTP).
 
 import { type Clock, finiteOption, systemClock, uuidV7 } from '@ultimat3/core/page';
 import {
@@ -173,9 +172,8 @@ export class LiveClient {
       this.#heartbeat.start(this.#clock.now().getTime());
     });
     socket.onMessage((data) => {
-      // A frame speaks only for its own socket, the same rule `onClose` follows. A replaced socket
-      // that is still draining bytes would otherwise fold its patches into the live registrations
-      // a second time, over newer state.
+      // A frame speaks only for its own socket, as `onClose` does: a replaced socket still draining
+      // would otherwise fold its patches into the live registrations again, over newer state.
       if (this.#socket !== socket) return;
       // The curve resets on the node's first word, not on the open: a proxy or an overloaded node
       // that accepts the upgrade and drops it at once would otherwise reset it every time, and the

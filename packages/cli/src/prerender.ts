@@ -1,7 +1,6 @@
-// `x build --target static` — the `site/` surface, rendered once and written as files a CDN or an
-// object store can serve with no process behind it. Enumeration, hashing and the output path are
-// `@ultimat3/render`'s `renderStatic`; the document is the one `x dev` serves. This file decides
-// only which routes qualify and where the bytes land.
+// `x build --target static`: the `site/` surface written once as files a CDN serves with no
+// process behind it. Enumeration, hashing and output paths are `@ultimat3/render`'s `renderStatic`
+// and the document is `x dev`'s; this file decides only which routes qualify and where bytes land.
 
 // why: Bun ships no path API; `join` builds the host-separator path of each file the export writes.
 import { join } from 'node:path';
