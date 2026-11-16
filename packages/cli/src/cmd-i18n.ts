@@ -38,6 +38,7 @@ import {
 } from './i18n-registration';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
+import { quoteArg } from './shell-quote';
 import { renderTable } from './table';
 import { catalogPath, resolveLocales } from './templates/locales';
 
@@ -104,7 +105,7 @@ function requireLocalePositional(ctx: CommandContext, sub: string): string {
 function resolveOneLocale(ctx: CommandContext, sub: string): string {
   const raw = requireLocalePositional(ctx, sub);
   const resolved = resolveLocales([raw], {
-    fix: `x i18n ${sub} es`,
+    fix: `x i18n ${quoteArg(sub)} es`,
     command: 'i18n',
     flag: 'locale',
   });
@@ -315,7 +316,7 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
       flag: 'locale',
       command: 'i18n',
       reason: `no catalog for "${locale}" at ${catalogPath(locale)}`,
-      fix: `x i18n add ${locale}`,
+      fix: `x i18n add ${quoteArg(locale)}`,
     });
   }
 

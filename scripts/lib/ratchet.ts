@@ -6,8 +6,9 @@
 // A guard grouped by PACKAGE (the default `groupOf`) admits a swap — one pinned site fixed, a new
 // one added, the count unmoved — which a guard closes by grouping per site, as `secret-compare` does.
 
+import type { ScriptArgs } from './args';
 import { flagBool, flagList, parseScriptArgs } from './args';
-import type { Finding } from './log';
+import type { Finding, ScriptResult } from './log';
 import { report } from './log';
 import type { SiteProbe } from './ratchet-sites';
 import { newSitesFirst } from './ratchet-sites';
@@ -174,17 +175,22 @@ export async function ratchetMain<S extends { readonly path: string }>(
   spec: RatchetSpec<S>,
 ): Promise<never> {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
+  return report(await ratchetResult(spec, args, repoRoot()), args.json);
+}
+
+/** What `ratchetMain` reports for `args` over `root` — the whole command, minus argv and the exit. */
+export async function ratchetResult<S extends { readonly path: string }>(
+  spec: RatchetSpec<S>,
+  args: ScriptArgs,
+  root: string,
+): Promise<ScriptResult> {
   let sites: readonly S[];
   try {
     sites = await spec.sites(root);
   } catch (error) {
     // `X_CORPUS_UNSCANNED`, reported on the same three lines as any finding and never exit 0.
     if (!(error instanceof ScriptError)) throw error;
-    return report(
-      { ok: false, script: spec.script, summary: 'refused', findings: [error.toFinding()] },
-      args.json,
-    );
+    return { ok: false, script: spec.script, summary: 'refused', findings: [error.toFinding()] };
   }
   const counts = siteCounts(sites, spec.groupOf);
   const named = flagList(args, 'unpin');
@@ -194,34 +200,28 @@ export async function ratchetMain<S extends { readonly path: string }>(
       : named.flatMap((name) => spec.unpinRows?.(name, spec.pins) ?? []);
   if (named.length > 0) {
     const lowered = await applyUnpin(root, spec.pinsFile, unpin, counts, spec.pins);
-    return report(
-      {
-        ok: true,
-        script: spec.script,
-        summary:
-          lowered.length === 0
-            ? 'nothing to lower — every named package is already at what this tree measures'
-            : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
-        findings: [],
-      },
-      args.json,
-    );
+    return {
+      ok: true,
+      script: spec.script,
+      summary:
+        lowered.length === 0
+          ? 'nothing to lower — every named package is already at what this tree measures'
+          : `lowered ${String(lowered.length)} pin(s): ${lowered.join(', ')}`,
+      findings: [],
+    };
   }
   const measured = ratchetGaps(sites, spec.pins, true, spec.groupOf);
   const gaps =
     spec.probe === undefined ? measured : await newSitesFirst(root, measured, spec.probe);
-  return report(
-    {
-      ok: gaps.length === 0,
-      script: spec.script,
-      summary:
-        gaps.length === 0
-          ? spec.clean
-          : `${String(gaps.length)} package(s) off the ${spec.script} ratchet`,
-      findings: gaps.map(spec.findingFor),
-      // `--explain` lists every site: the number a maintainer wants before lowering a pin.
-      data: { counts, ...(flagBool(args, 'explain') ? { sites } : {}) },
-    },
-    args.json,
-  );
+  return {
+    ok: gaps.length === 0,
+    script: spec.script,
+    summary:
+      gaps.length === 0
+        ? spec.clean
+        : `${String(gaps.length)} package(s) off the ${spec.script} ratchet`,
+    findings: gaps.map(spec.findingFor),
+    // `--explain` lists every site: the number a maintainer wants before lowering a pin.
+    data: { counts, ...(flagBool(args, 'explain') ? { sites } : {}) },
+  };
 }

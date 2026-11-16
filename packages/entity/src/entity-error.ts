@@ -6,6 +6,7 @@ import {
   isFixShellSafe,
   registerErrorCodes,
   registerErrorRetry,
+  renderFixShellArg,
   UltimateError,
 } from '@ultimat3/core';
 
@@ -184,7 +185,7 @@ export const invariantViolated = (
   new EntityError({
     code: 'X_INVARIANT_VIOLATED',
     cause: `${entityName}.${invariantName}: ${message}`,
-    fix: `x entities show ${entityName} --json   # shows the invariant and its SQL CHECK`,
+    fix: `x entities show ${renderFixShellArg(entityName, '<entity>')} --json   # shows the invariant and its SQL CHECK`,
   });
 
 /**

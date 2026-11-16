@@ -9,6 +9,7 @@
 
 import { join } from 'node:path';
 import { SEMVER } from '@ultimat3/cli';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { CHART_FILE, setChartVersions } from './chart-version';
 import { rewriteMainCells } from './doc-unreleased';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
@@ -294,7 +295,7 @@ if (import.meta.main) {
   const skew: readonly Finding[] = mismatched.map((workspace) => ({
     code: 'X_RELEASE_VERSION_SKEW',
     cause: `${workspace.name} was at ${workspace.version}, not ${current}`,
-    fix: `git diff packages/${workspace.dir}/package.json — this release realigns it to ${version}`,
+    fix: `git diff packages/${renderFixShellArg(workspace.dir, '<dir>')}/package.json — this release realigns it to ${version}`,
     at: `packages/${workspace.dir}/package.json`,
   }));
   // Bounded by the PREVIOUS tag, so a subject that shipped in an earlier release cannot appear

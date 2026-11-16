@@ -5,7 +5,7 @@
  * aspirational. Violations are build errors, resolved through the whole chain.
  */
 
-import type { RenderMode, Surface } from '@ultimat3/core';
+import { type RenderMode, renderFixShellArg, type Surface } from '@ultimat3/core';
 import { byCodeUnit } from './code-unit-order';
 import { SurfaceBoundaryError } from './errors';
 
@@ -276,13 +276,15 @@ function classify(i: ClassifyInput): BoundaryViolation | null {
       ...base,
       rule: 'site-imports-app',
       cause: chainText,
-      fix: `x fix boundary ${i.entry}   (or move ${i.imported} out of the shared graph)`,
+      fix: `x fix boundary ${renderFixShellArg(i.entry, '<entry file>')}   (or move ${i.imported} out of the shared graph)`,
     };
   }
   const from = i.importerSurface;
   const to = i.importedSurface;
   if (from === null || to === null || from === to) return null;
-  const spec = SURFACE_SPECS[from];
+  // Own keys only: a surface that is not one has no rule, and a prototype member is not a rule.
+  const spec = Object.hasOwn(SURFACE_SPECS, from) ? SURFACE_SPECS[from] : undefined;
+  if (spec === undefined) return null;
   if (spec.mayImport.includes(to)) return null;
   if (i.typeOnly && spec.mayImportTypes.includes(to)) return null;
   // Reported above, from the site entry that reaches it — one crossing, one finding.
@@ -324,5 +326,7 @@ export function assertSurfaceBoundary(graph: ImportGraph): void {
 }
 
 export function surfaceAllows(surface: Surface, mode: RenderMode): boolean {
-  return SURFACE_SPECS[surface].allowedModes.includes(mode);
+  return (
+    Object.hasOwn(SURFACE_SPECS, surface) && SURFACE_SPECS[surface].allowedModes.includes(mode)
+  );
 }

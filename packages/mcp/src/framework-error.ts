@@ -63,7 +63,7 @@ export function asFrameworkError(error: unknown): FrameworkError | undefined {
     // A substituted fix is still a fix an agent will act on, so it has to be runnable. `see docs`
     // named no docs and no command; `code` is already narrowed to an `X_` string by the guard
     // above, so the substitute is the one command that explains exactly this code.
-    fix: stringField(error, 'fix') ?? `x errors explain ${code}`,
+    fix: stringField(error, 'fix') ?? `x errors explain ${renderFixShellArg(code, '<code>')}`,
     ...(callerFix === undefined ? {} : { callerFix }),
     // A recipe link nothing serves is dropped (and logged): an agent is never sent nowhere.
     ...(docs === undefined || docs === '' || docs === ERROR_DOCS_URL

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // Enforce, as a ratchet, that a NUMERIC option defaulted with `??` is checked for finiteness. `??`
 // guards nullish and `NaN` is not nullish, so the default never fires and the number arrives at
 // whatever it bounds intact.
@@ -80,6 +81,7 @@
 //   bun run finite-bounds  ·  bun run scripts/finite-bounds.ts [--json] [--explain]
 //   bun run scripts/finite-bounds.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { maskLiterals } from '../packages/core/src/source-mask';
 import type { SourceFile } from './boundaries';
 import { balancedClose } from './lib/balanced-paren';
@@ -386,7 +388,7 @@ const overFinding = (gap: FiniteBoundGap): Finding => ({
 const staleFinding = (gap: FiniteBoundGap): Finding => ({
   code: 'X_FINITE_BOUND_PIN_STALE',
   cause: `${gap.pkg} is pinned at ${String(gap.pinned)} unchecked numeric option(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `bun run scripts/finite-bounds.ts --unpin ${gap.pkg}`,
+  fix: `bun run scripts/finite-bounds.ts --unpin ${renderFixShellArg(gap.pkg, '<pkg>')}`,
   at: FINITE_BOUNDS_PINS_FILE,
 });
 

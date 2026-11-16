@@ -335,7 +335,7 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
     default:
       throw new NotImplementedError({
         cause: `generator "${String(options.kind)}" is not implemented in this build`,
-        fix: `x g ${GENERATORS.join('|')}`,
+        fix: `x help g   # one of: ${GENERATORS.join(', ')}`,
       });
   }
 }

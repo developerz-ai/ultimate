@@ -56,6 +56,19 @@ const PROPS = {
 } as const;
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+/**
+ * Turns the event loop until `done` holds, bounded. One `settle()` assumed the mount, the socket's
+ * open and its subscribe each finish in a single tick; on a loaded runner they did not, the channel
+ * was never joined, and every frame after it was dropped (#1166's reference-app red).
+ */
+const settleUntil = async (done: () => boolean): Promise<void> => {
+  const deadline = Date.now() + 10_000;
+  while (!done() && Date.now() < deadline) await settle();
+};
+const joined = (): boolean =>
+  opened[0]
+    ?.frames()
+    .some((frame) => frame.type === 'subscribe' && frame.target.kind === 'channel') === true;
 
 const row = (likeCount: number) => ({
   id: POST_ID,
@@ -142,9 +155,10 @@ beforeAll(async () => {
     shell: '<div data-role="shell">2 likes</div>',
     globals: { WebSocket: FakeSocket, fetch: fakeFetch },
   });
-  await settle();
+  await settleUntil(() => opened.length > 0 && mounted.find('[data-role="shell"]') === null);
   opened[0]?.onopen?.();
-  await settle();
+  await settleUntil(joined);
+  await settleUntil(() => count() === '2 likes');
 }, 60_000);
 
 afterAll(() => {
@@ -183,7 +197,7 @@ describe('the like island', () => {
     // An answer the test holds back: the write is in flight for as long as it wants.
     likeAnswer = () => pending;
     mounted.fire('button', 'click');
-    await settle();
+    await settleUntil(() => count() === '3 likes');
 
     expect(count()).toBe('3 likes');
     const post = calls.slice(fetchNow).find((call) => call.method === 'POST');
@@ -208,7 +222,7 @@ describe('the like island', () => {
       epoch: 'e1',
       adopt: { posts: { [POST_ID]: row(4) } },
     });
-    await settle();
+    await settleUntil(() => count() === '4 likes');
 
     expect(count()).toBe('4 likes');
     expect(calls.length).toBe(before);
@@ -225,7 +239,7 @@ describe('the like island', () => {
       epoch: 'e1',
       adopt: { posts: { [POST_ID]: row(7) } },
     });
-    await settle();
+    await settleUntil(() => count() === '7 likes');
     expect(count()).toBe('7 likes');
 
     let refuse!: () => void;

@@ -151,11 +151,14 @@ const orphanFinding = (gap: StatusGap): Finding => ({
   at: gap.at,
 });
 
-const FINDINGS: Readonly<Record<StatusGapKind, (gap: StatusGap) => Finding>> = {
-  missing: missingFinding,
-  pinned: pinnedFinding,
-  orphan: orphanFinding,
-};
+const FINDINGS: Readonly<Record<StatusGapKind, (gap: StatusGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    missing: missingFinding,
+    pinned: pinnedFinding,
+    orphan: orphanFinding,
+  } satisfies Record<StatusGapKind, (gap: StatusGap) => Finding>,
+);
 
 export const statusGapFindingFor = (gap: StatusGap): Finding => FINDINGS[gap.kind](gap);
 

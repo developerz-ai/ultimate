@@ -475,7 +475,9 @@ export function explainErrorCode(code: string): ErrorExplanation | undefined {
   return {
     code,
     cause: described.title,
-    fix: cli ? CLI_FIXES[code] : projectedFix(code),
+    // `Object.hasOwn`, not `isCliCode` alone: the code is an MCP caller's, and the guard above is a
+    // list the table could drift from — `constructor` must never answer `Object`'s function here.
+    fix: cli && Object.hasOwn(CLI_FIXES, code) ? CLI_FIXES[code] : projectedFix(code),
     docs: described.docs,
   };
 }

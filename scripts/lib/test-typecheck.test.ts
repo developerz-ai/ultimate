@@ -32,6 +32,21 @@ describe('reading tsc output', () => {
   test('the count is per package, and an e2e file counts for its package too', () => {
     expect(countByPackage(parseDiagnostics(OUTPUT))).toEqual({ entity: 2, core: 1 });
   });
+
+  // The package is read from the path, so its name is data: `counts['constructor'] ?? 0` was the
+  // `Object` function, and `+ 1` made the count a string.
+  test('a package named like an Object.prototype member counts as a number', () => {
+    const at = (pkg: string) => ({
+      file: `packages/${pkg}/src/a.test.ts`,
+      line: 1,
+      code: 2322,
+      text: '',
+    });
+    expect(countByPackage([at('constructor'), at('constructor'), at('toString')])).toEqual({
+      constructor: 2,
+      toString: 1,
+    });
+  });
 });
 
 describe('which package a file belongs to', () => {

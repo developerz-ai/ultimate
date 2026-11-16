@@ -93,7 +93,7 @@ export const timelinePanel: DevPanel<TimelinePanelData> = {
       return null;
     });
 
-    const totalsByKind: Record<string, number> = {};
+    const totalsByKind: Record<string, number> = Object.create(null);
     const sqlCounts = new Map<string, number>();
     for (const span of selected?.spans ?? []) {
       const kind: SpanKind = span.kind;

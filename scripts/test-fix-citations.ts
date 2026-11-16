@@ -23,6 +23,7 @@ import {
   fixCitations,
   loadCommandCatalog,
 } from '@ultimat3/cli';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { CORPUS_PATTERNS, corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
@@ -112,7 +113,7 @@ const overFinding = (gap: TestFixGap): Finding => ({
 const staleFinding = (gap: TestFixGap): Finding => ({
   code: 'X_TEST_FIX_PIN_STALE',
   cause: `${gap.pkg} is pinned at ${String(gap.pinned)} unrunnable test fix line(s) and now has ${String(gap.found)} — the ratchet may only fall, so a pin nobody lowers is one nobody reads`,
-  fix: `bun run scripts/${SCRIPT}.ts --unpin ${gap.pkg}`,
+  fix: `bun run scripts/${renderFixShellArg(SCRIPT, '<script>')}.ts --unpin ${renderFixShellArg(gap.pkg, '<pkg>')}`,
   at: PINS_FILE,
 });
 

@@ -81,6 +81,7 @@ export function mcpAuditor(input: McpAuditorInput = {}): McpAuditor {
         path: facts.path,
         ...(facts.address === null ? {} : { address: addressNetwork(facts.address) }),
       };
+      // info: the auth audit trail records every refusal; no token is its least severe rung, never a warn.
       if (reason === 'missing-token') log.info(`mcp.auth.${reason}`, line);
       else log.warn(`mcp.auth.${reason}`, line);
       if (hook !== undefined) {

@@ -37,6 +37,7 @@
 //   bun run fix-shell-arg  ·  bun run scripts/fix-shell-arg.ts [--json] [--explain]
 //   bun run scripts/fix-shell-arg.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import type { SourceFile } from './boundaries';
 // One tokenizer, never two: `maskToCode` keeps a template's `${…}` bodies as code while blanking
 // every literal's text, and `valueEnd` answers where a `fix:` value ends. A second copy here would
@@ -191,7 +192,7 @@ const overFinding = (gap: FixShellArgGap): Finding => {
 const staleFinding = (gap: FixShellArgGap): Finding => ({
   code: 'X_FIX_SHELL_ARG_PIN_STALE',
   cause: `${gap.pkg} is pinned at ${String(gap.pinned)} unscreened fix: substitution(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `bun run scripts/fix-shell-arg.ts --unpin ${gap.pkg}`,
+  fix: `bun run scripts/fix-shell-arg.ts --unpin ${renderFixShellArg(gap.pkg, '<pkg>')}`,
   at: FIX_SHELL_PINS_FILE,
 });
 

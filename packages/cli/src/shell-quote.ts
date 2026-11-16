@@ -11,5 +11,12 @@ const SHELL_SAFE = /^[\w@%+=:,./-]+$/;
  * `'\''` is the only escape a single-quoted string has. A shell-safe value is left alone, so the
  * common case stays readable.
  */
-export const quoteArg = (value: string): string =>
+const quoteOne = (value: string): string =>
   SHELL_SAFE.test(value) ? value : `'${value.split("'").join("'\\''")}'`;
+
+/**
+ * A word list is an INVOCATION (`['g', 'route', name]`): each word quoted on its own and joined,
+ * because quoting it whole made `x 'g route posts'`, one word no command answers to.
+ */
+export const quoteArg = (value: string | readonly string[]): string =>
+  typeof value === 'string' ? quoteOne(value) : value.map(quoteOne).join(' ');

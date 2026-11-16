@@ -13,6 +13,7 @@ import {
   isRetryableStatus,
   logger,
   nanoid,
+  renderFixShellArg,
   renderThrowable,
 } from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
@@ -192,7 +193,7 @@ export function resendMailDriver(options: ResendDriverOptions): MailDriver {
           stage: 'request',
           detail: `${reason} — nothing left this host for ${baseUrl}/emails (egress, DNS or TLS)`,
           retryable: true,
-          fix: `curl -sS -m 5 -o /dev/null ${baseUrl}/emails`,
+          fix: `curl -sS -m 5 -o /dev/null ${renderFixShellArg(`${baseUrl}/emails`, '<RESEND_BASE_URL>/emails')}`,
         });
       }
 

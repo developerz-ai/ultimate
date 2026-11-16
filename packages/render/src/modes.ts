@@ -210,7 +210,9 @@ export function assertModeInvariants(config: RouteShape, ctx: ModeCheckContext):
     );
   }
 
-  if (config.prerender !== undefined && !MODE_SPECS[config.render].prerenderable) {
+  const prerenderable =
+    Object.hasOwn(MODE_SPECS, config.render) && MODE_SPECS[config.render].prerenderable;
+  if (config.prerender !== undefined && !prerenderable) {
     throw new RouteModeInvalidError(
       `${ctx.file} declares prerender with render: '${config.render}', which is not prerenderable`,
       `remove prerender from ${ctx.file} or change render to 'static' | 'isr'`,

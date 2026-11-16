@@ -148,10 +148,13 @@ const unusedFinding = (gap: CatalogGap): Finding => ({
   at: CATALOG_FILE,
 });
 
-const FINDINGS: Readonly<Record<CatalogGapKind, (gap: CatalogGap) => Finding>> = {
-  missing: missingFinding,
-  unused: unusedFinding,
-};
+const FINDINGS: Readonly<Record<CatalogGapKind, (gap: CatalogGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    missing: missingFinding,
+    unused: unusedFinding,
+  } satisfies Record<CatalogGapKind, (gap: CatalogGap) => Finding>,
+);
 
 export const catalogGapFindingFor = (gap: CatalogGap): Finding => FINDINGS[gap.kind](gap);
 

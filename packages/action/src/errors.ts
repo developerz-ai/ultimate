@@ -81,7 +81,7 @@ export class ActionDeniedError extends UltimateError {
     super({
       code: refused.code,
       cause: `${refused.name} denied: ${refused.reason}`,
-      fix: `x policy explain ${refused.name} --json   # shows which clause decided and why`,
+      fix: `x policy explain ${renderFixShellArg(refused.name, '<permission>')} --json   # shows which clause decided and why`,
       callerFix: deniedCallerFix(),
     });
     this.denial = refused.denial;

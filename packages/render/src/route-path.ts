@@ -99,7 +99,10 @@ function assertRouteFilename(
   surface: RouteSurface,
   basename: string | undefined,
 ): void {
-  const expected = ROUTE_FILENAME[surface];
+  // Own keys only: an `Object.prototype` member is never the filename a surface accepts.
+  const expected = Object.hasOwn(ROUTE_FILENAME, surface)
+    ? ROUTE_FILENAME[surface]
+    : ROUTE_FILENAME.site;
   if (basename === expected) return;
 
   // The directory the author meant is the file's own path minus its extension: `site/pricing.tsx`

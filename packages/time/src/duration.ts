@@ -68,7 +68,7 @@ export function parseDuration(input: string): number {
     const unit = UNIT_NAMES.find((name) => body.slice(at, at + name.length).toLowerCase() === name);
     // A bare number names no unit: `'3'` must not mean 3 of anything.
     if (unit === undefined || !Number.isFinite(amount)) throw durationInvalid(input);
-    total += amount * (UNITS[unit] ?? 0);
+    total += amount * (Object.hasOwn(UNITS, unit) ? (UNITS[unit] ?? 0) : 0);
     at = spaces(body, at + unit.length);
   }
   return safeTotal(Math.round(total), negative, input);

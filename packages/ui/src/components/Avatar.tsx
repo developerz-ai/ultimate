@@ -20,7 +20,13 @@ export interface AvatarProps {
   class?: string | undefined;
 }
 
-const PX: Readonly<Record<string, number>> = { xs: 20, sm: 24, md: 32, lg: 40, xl: 64 };
+const PX: Readonly<Record<string, number>> = Object.assign(Object.create(null), {
+  xs: 20,
+  sm: 24,
+  md: 32,
+  lg: 40,
+  xl: 64,
+} satisfies Readonly<Record<string, number>>);
 
 /**
  * First letters of the first two words — locale-safe, no ASCII assumptions.

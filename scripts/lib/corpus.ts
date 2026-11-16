@@ -17,18 +17,24 @@ export type CorpusScope = 'source' | 'packages' | 'shipped' | 'tests';
 /** What each scope globs. `source` is what `collectSourceFiles` has always returned. */
 export const CORPUS_PATTERNS: Readonly<Record<CorpusScope, readonly string[]>> = Object.freeze<
   Record<CorpusScope, readonly string[]>
->({
-  source: ['packages/*/src/**/*.{ts,tsx}', 'packages/*/e2e/**/*.{ts,tsx}', 'scripts/**/*.{ts,tsx}'],
-  packages: ['packages/*/src/**/*.{ts,tsx}'],
-  shipped: ['packages/*/src/**/*.{ts,tsx}'],
-  // `e2e/` beside `src/`: `source` already read it, and without it here every guard over tests
-  // answered green over fifteen suites it never opened.
-  tests: [
-    'packages/*/src/**/*.test.{ts,tsx}',
-    'packages/*/e2e/**/*.test.{ts,tsx}',
-    'scripts/**/*.test.ts',
-  ],
-});
+>(
+  Object.assign(Object.create(null), {
+    source: [
+      'packages/*/src/**/*.{ts,tsx}',
+      'packages/*/e2e/**/*.{ts,tsx}',
+      'scripts/**/*.{ts,tsx}',
+    ],
+    packages: ['packages/*/src/**/*.{ts,tsx}'],
+    shipped: ['packages/*/src/**/*.{ts,tsx}'],
+    // `e2e/` beside `src/`: `source` already read it, and without it here every guard over tests
+    // answered green over fifteen suites it never opened.
+    tests: [
+      'packages/*/src/**/*.test.{ts,tsx}',
+      'packages/*/e2e/**/*.test.{ts,tsx}',
+      'scripts/**/*.test.ts',
+    ],
+  } satisfies Record<CorpusScope, readonly string[]>),
+);
 
 /**
  * Measured 2026-09-23: `source` 4,928 files, `packages` 4,692, `shipped` 3,234, `tests` 1,557. A floor is a
@@ -38,7 +44,14 @@ export const CORPUS_PATTERNS: Readonly<Record<CorpusScope, readonly string[]>> =
  */
 export const CORPUS_FLOORS: Readonly<Record<CorpusScope, number>> = Object.freeze<
   Record<CorpusScope, number>
->({ source: 1000, packages: 1000, shipped: 1000, tests: 500 });
+>(
+  Object.assign(Object.create(null), {
+    source: 1000,
+    packages: 1000,
+    shipped: 1000,
+    tests: 500,
+  } satisfies Record<CorpusScope, number>),
+);
 
 const NOT_SOURCE = /(?:^|\/)(?:node_modules|dist)\//;
 

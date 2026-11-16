@@ -136,7 +136,10 @@ export const DB_SQLSTATE_CODES: Readonly<Record<string, DbSqlStateCode>> = Objec
  */
 export function sqlStateCode(error: unknown): DbSqlStateCode | undefined {
   const state = sqlState(error);
-  return state === undefined ? undefined : DB_SQLSTATE_CODES[state];
+  // A state the table does not classify — and never a prototype member — is unclassified.
+  return state === undefined || !Object.hasOwn(DB_SQLSTATE_CODES, state)
+    ? undefined
+    : DB_SQLSTATE_CODES[state];
 }
 
 /** Whether re-running the whole transaction is the documented answer. `withTransaction`'s retry. */

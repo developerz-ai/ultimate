@@ -13,7 +13,9 @@ import {
   judge,
   scopeLcov,
   suiteFailure,
+  UNIT_TIMEOUT_MS,
   unimportedSources,
+  unitFailure,
   withUnloadedCounted,
 } from './coverage-gate';
 import { COVERAGE_PINS, COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
@@ -197,6 +199,29 @@ describe('unimportedSources', () => {
 });
 
 describe('a suite that fails alone', () => {
+  // The run had no deadline: a suite that hung held the gate, and its CI job, until the runner died.
+  test('a suite killed at its deadline is X_SPAWN_TIMED_OUT, never a coverage reading', () => {
+    const failure = unitFailure('money', {
+      code: null,
+      output: '(pass) money > adds',
+      timedOut: true,
+    });
+    expect(failure?.code).toBe('X_SPAWN_TIMED_OUT');
+    expect(failure?.cause).toContain(`within ${String(UNIT_TIMEOUT_MS)} ms`);
+    expect(failure?.fix).toContain('bun run scripts/coverage-gate.ts --package money --json');
+  });
+
+  test('a finished run is judged on its exit code and its whole output', () => {
+    expect(unitFailure('money', { code: 0, output: '', timedOut: false })).toBeUndefined();
+    const failure = unitFailure('money', {
+      code: 1,
+      output: '(fail) money > probe',
+      timedOut: false,
+    });
+    expect(failure?.code).toBe('X_TEST_FAILED');
+    expect(failure?.cause).toContain('(fail) money > probe');
+  });
+
   // The defect: the exit code was never read, so a red suite with an lcov on disk passed.
   test('a non-zero exit is X_TEST_FAILED, naming the failing tests', () => {
     const stderr = [

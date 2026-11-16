@@ -305,6 +305,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
         }),
         'interrupted',
       );
+      // info: a rare outcome — a drain cut this attempt short and it re-runs uncounted; nothing else says why.
       logger.info('jobs.attempt.interrupted', {
         job: handle.name,
         jobId: claimed.id,
@@ -338,6 +339,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
         }),
         'retried',
       );
+      // info: a rare outcome — a vendor deferred this attempt uncounted; the row keeps only the last error, this line keeps when.
       logger.info('jobs.attempt.rate_limited', {
         job: handle.name,
         jobId: claimed.id,

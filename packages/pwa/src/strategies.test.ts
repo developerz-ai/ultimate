@@ -428,3 +428,11 @@ describe('emitted parity', () => {
     );
   }
 });
+
+// A route descriptor is data `sw.js` generation reads; a mode named after an `Object.prototype`
+// member answered the `Object` FUNCTION as the strategy. Unknown is the never-cache answer.
+describe('a mode that is not one', () => {
+  test('constructor is network-only, never a prototype member', () => {
+    expect(strategyFor(route({ mode: 'constructor' as RenderMode }))).toBe('network-only');
+  });
+});

@@ -33,6 +33,11 @@ const DEV_ACTOR = 'apps/web/app/auth/dev-actor.ts';
 const MANIFEST = 'x.manifest.json';
 /** How long `x dev` may take to answer its first request. Measured ~2 s; this is the kill-switch. */
 const BOOT_BUDGET_MS = 60_000;
+/**
+ * The dev server's whole life: the boot budget plus a walk measured in seconds. `stop()` ends it on
+ * every path this script reaches; the deadline is for the one it does not — a walk that hangs.
+ */
+const SERVER_DEADLINE_MS = 300_000;
 
 /** The table `x g resource` writes for the name `scaffold-first-run.ts` gives it. */
 export function adminResource(manifest: unknown): string | undefined {
@@ -236,6 +241,7 @@ const realIo: AdminCheckIo = {
       cwd: dir,
       // A whole env: `Bun.spawn` replaces, and the app is not this repo's code.
       env: strangerEnvAt(repoRoot()),
+      timeout: SERVER_DEADLINE_MS,
       stdout: 'pipe',
       stderr: 'pipe',
     });

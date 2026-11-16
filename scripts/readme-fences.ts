@@ -121,11 +121,14 @@ const unscannedFinding = (gap: FenceGap): Finding => ({
   at: BACKLOG_FILE,
 });
 
-const FINDINGS: Readonly<Record<FenceGapKind, (gap: FenceGap) => Finding>> = {
-  over: overFinding,
-  stale: staleFinding,
-  unscanned: unscannedFinding,
-};
+const FINDINGS: Readonly<Record<FenceGapKind, (gap: FenceGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    over: overFinding,
+    stale: staleFinding,
+    unscanned: unscannedFinding,
+  } satisfies Record<FenceGapKind, (gap: FenceGap) => Finding>,
+);
 
 export const fenceGapFindingFor = (gap: FenceGap): Finding => FINDINGS[gap.kind](gap);
 

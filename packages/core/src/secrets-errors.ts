@@ -72,7 +72,7 @@ export class SecretsKeyMissingError extends UltimateError {
         input.source !== undefined
           ? 'export const runtime = { secretSource }   # apps/<app>/runtime.ts — that source must answer a master key (check the KMS key or Vault path it reads); delete it to fall back to ULTIMATE_SECRETS_KEY, then .secrets.key'
           : ENV_VAR_NAME.test(input.envVar)
-            ? `export ${input.envVar}="$(cat ${renderFixShellArg(input.keyPath, '<the key file the cause names>')})"   # in a repo that has no key yet: x secrets init`
+            ? `export ${renderFixShellArg(input.envVar, 'ULTIMATE_SECRETS_KEY')}="$(cat ${renderFixShellArg(input.keyPath, '<the key file the cause names>')})"   # in a repo that has no key yet: x secrets init`
             : "set the variable this error's cause names to the contents of the key file beside it, in whatever way this shell spells an assignment — in a repo that has no key yet: x secrets init",
       meta: {
         keyPath: input.keyPath,

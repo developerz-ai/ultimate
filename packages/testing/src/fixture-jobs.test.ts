@@ -379,3 +379,30 @@ describe(
     });
   },
 );
+
+describe(testName('unit', 'runJobs: a step is tallied whatever it is named'), () => {
+  // A step name is the body's own string. Tallied into a `{}`, `constructor` read
+  // `Object.prototype.constructor` as the previous tally (executions `NaN`), and `__proto__`
+  // ran the prototype SETTER: the step vanished from the trace.
+  test('steps named constructor and __proto__ are counted like any other', async () => {
+    minted += 1;
+    const named = job<Input>({
+      name: `fixture-jobs-proto-${String(minted)}`,
+      input: t.object({ id: t.string, orgId: t.string }),
+      tenant: 'none',
+      idempotencyKey: (input) => `k:${input.id}`,
+      retry: { attempts: 1, jitter: 'none' },
+      run: async ({ step }) => {
+        await step.run('constructor', () => 1);
+        await step.run('__proto__', () => 2);
+      },
+    });
+    const jobs = await worker();
+    const trace = await jobs(named, { id: 'p1', orgId: ORG });
+    expect(Object.hasOwn(trace.steps, 'constructor')).toBe(true);
+    expect(Object.hasOwn(trace.steps, '__proto__')).toBe(true);
+    expect(trace.steps['constructor']?.executions).toBe(1);
+    // Read as an own property: on a null-prototype tally it is one, never the accessor.
+    expect(Object.getOwnPropertyDescriptor(trace.steps, '__proto__')?.value?.executions).toBe(1);
+  });
+});

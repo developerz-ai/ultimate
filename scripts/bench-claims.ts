@@ -149,12 +149,15 @@ const absentFinding = (gap: BenchGap): Finding => ({
   at: CLAIMS_FILE,
 });
 
-const FINDINGS: Readonly<Record<BenchGapKind, (gap: BenchGap) => Finding>> = {
-  mismatch: mismatchFinding,
-  unstated: unstatedFinding,
-  unmeasured: unmeasuredFinding,
-  absent: absentFinding,
-};
+const FINDINGS: Readonly<Record<BenchGapKind, (gap: BenchGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    mismatch: mismatchFinding,
+    unstated: unstatedFinding,
+    unmeasured: unmeasuredFinding,
+    absent: absentFinding,
+  } satisfies Record<BenchGapKind, (gap: BenchGap) => Finding>,
+);
 
 export const benchGapFindingFor = (gap: BenchGap): Finding => FINDINGS[gap.kind](gap);
 

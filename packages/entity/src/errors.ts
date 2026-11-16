@@ -318,7 +318,9 @@ const BULK_WRITE_CALLS: Readonly<Record<string, string>> = {
 
 /** An op with no bulk form of its own — a batch loop, or a name this table has not met — names both. */
 const bulkWriteCall = (entityName: string, op: string | undefined): string => {
-  const call = op === undefined ? undefined : BULK_WRITE_CALLS[op];
+  // The op is observed statement text: `BULK_WRITE_CALLS['constructor']` is the `Object` function.
+  const call =
+    op !== undefined && Object.hasOwn(BULK_WRITE_CALLS, op) ? BULK_WRITE_CALLS[op] : undefined;
   return call !== undefined
     ? `db.${entityName}.${call}`
     : `db.${entityName}.insertAll(rows), or db.${entityName}.updateWhere(filter, patch) for a loop of patches`;

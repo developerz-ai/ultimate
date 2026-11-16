@@ -225,7 +225,11 @@ const manifestOf = (from: string): string | undefined =>
  * app-relative one an agent can open.
  */
 export function duplicateCause(root: string, duplicate: DuplicateInstall): string {
-  const registry = REGISTRY_PACKAGES[duplicate.pkg] ?? 'registry';
+  // The package name is data: `constructor` is a published package, and the bare read answered
+  // `Object`'s own function into the cause.
+  const registry = Object.hasOwn(REGISTRY_PACKAGES, duplicate.pkg)
+    ? REGISTRY_PACKAGES[duplicate.pkg]
+    : 'registry';
   const copies = duplicate.copies.map((copy) => renderCopy(root, copy)).join(' and ');
   return (
     `${duplicate.copies.length} copies of ${duplicate.pkg} are installed: ${copies} — each is ` +

@@ -37,6 +37,21 @@ describe('unit · flake-hunt · failedTests', () => {
     ]);
   });
 
+  // What CI prints (compat run 43826824005): `x test` wraps each file in GitHub's `::group::`
+  // markers, and a header read only bare named no file — every red part said "0 failing tests".
+  test('a header inside a CI ::group:: marker still names the file its failures belong to', () => {
+    const ci = [
+      '::group::scripts/lib/planned-writes.test.ts:',
+      '::error title=error: Test "x" timed out after 5000ms::',
+      '(fail) writePlanned > writes every edit [7653.56ms]',
+      '',
+      '::endgroup::',
+    ].join('\n');
+    expect(failedTests(ci).map(({ file, test }) => ({ file, test }))).toEqual([
+      { file: 'scripts/lib/planned-writes.test.ts', test: 'writePlanned > writes every edit' },
+    ]);
+  });
+
   test('the excerpt is the lines since the file header, so the assertion rides in the issue', () => {
     const [first] = failedTests(OUTPUT);
     expect(first?.excerpt).toContain('Expected: not "c"');

@@ -206,12 +206,15 @@ function readAccessor<R extends object>(
   };
 
   /**
+   * Never named `fetch`: it shadowed the platform's in this scope, so a reader took a page read
+   * for a network call with no signal.
+   *
    * One answer: its rows, and — when the server sent the records envelope — the KEYS of this
    * read's records in answer order: `order[type]` where the server sent one, because an object
    * enumerates integer-like keys ascending; `records[type]`'s own key order where it did not.
    * The browser never derives a key: an answer with no records envelope holds its rows itself.
    */
-  const fetch = (
+  const readAnswer = (
     append: boolean,
   ): Promise<{ rows: readonly Row[]; keys: string[] | null; next?: string | null }> => {
     let keysOf: string[] | null = null;
@@ -240,7 +243,7 @@ function readAccessor<R extends object>(
     const mine = ++generation;
     if (state.status === 'ready') state = { status: 'refreshing', data: rows() };
     bump();
-    return fetch(append).then(
+    return readAnswer(append).then(
       (answer) => {
         if (released || mine !== generation) return;
         if (answer.next !== undefined) after = answer.next;

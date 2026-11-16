@@ -7,6 +7,7 @@ import { NotImplementedError } from '@ultimat3/core';
 import type { CliCommand } from './command';
 import type { CommandResult } from './output';
 import type { CommandSpec } from './parse';
+import { quoteArg } from './shell-quote';
 
 export interface PlannedCommand {
   readonly name: string;
@@ -97,7 +98,7 @@ export function plannedSubcommand(command: string, subcommand: string): NotImple
     cause: `x ${command} ${subcommand} is not implemented in this build`,
     // `x help <command>`, not `x <command> --help`: for a command that declares subcommands and no
     // default, the latter is refused by the parser before help is ever rendered.
-    fix: planned?.fix ?? `x help ${command}`,
+    fix: planned?.fix ?? `x help ${quoteArg(command.split(' '))}`,
   });
 }
 

@@ -256,56 +256,57 @@ const staleByUse = (input: SideEffectInput): readonly SideEffectGap[] =>
       : [{ kind: 'by-use-stale' as const, dir: PINS_FILE, subject: row, reason: problem }];
   });
 
-const FINDINGS: Readonly<Record<SideEffectGapKind, (gap: SideEffectGap) => Finding>> = {
-  undeclared: (gap) => ({
-    code: 'X_SIDE_EFFECTS_UNDECLARED',
-    cause: `${gap.dir}/${gap.subject} runs a statement at import time and ${gap.dir}/package.json's sideEffects excludes it, so a bundler is told the module is droppable and deletes that statement from every app that does not use its exports — if only the module's own bindings need the effect, add a SIDE_EFFECTS_BY_USE row in ${PINS_FILE} saying why; otherwise merge the entry into the existing array in ${gap.dir}/package.json (\`bun run side-effects --explain --json\` prints the array this tree measures)`,
-    fix: `{ "sideEffects": ["./${gap.subject}"] }`,
-    at: `${gap.dir}/${gap.subject}:${String(gap.line ?? 1)}`,
-  }),
-  unanchored: (gap) => ({
-    code: 'X_SIDE_EFFECTS_UNANCHORED',
-    cause: `${gap.dir}/package.json names ${JSON.stringify(gap.subject)} in "sideEffects" and no entry module of ${gap.dir} imports it for effect, so nothing keeps it in a chunk that uses none of its bindings, and something else reads what it registers — Bun before 1.4.1 read any sideEffects ARRAY as false (oven-sh/bun#40650), which deleted 5 of the 8 declared effects in this tree from examples/dummy's feed island. Add the import below to ${gap.dir}/src/index.ts: a bare import is in the module graph unconditionally, on every bundler`,
-    fix: `import './${gap.subject.replace(/^src\//, '').replace(/\.tsx?$/, '')}';`,
-    at: `${gap.dir}/package.json`,
-  }),
-  'stale-entry': (gap) => ({
-    code: 'X_SIDE_EFFECTS_ENTRY_STALE',
-    cause: `${gap.dir}/package.json declares sideEffects entry ${JSON.stringify(gap.subject)} and no file in ${gap.dir} matches it, so the entry protects nothing and reads as a rule that is still in force — delete it from "sideEffects" in ${gap.dir}/package.json, or point it at the file it was written for; the command prints the array this tree measures`,
-    fix: 'bun run side-effects --explain --json',
-    at: `${gap.dir}/package.json`,
-  }),
-  missing: (gap) => ({
-    code: 'X_SIDE_EFFECTS_MISSING',
-    cause: `${gap.dir}/package.json declares no "sideEffects", so every module of it is retained in every bundle that imports one binding — measured 2026-08-21 with buildIslands: an island importing @ultimat3/time weighed 22,214 B and 5,948 B once @ultimat3/core declared one. That number is still the reason to declare one; X_SIDE_EFFECTS_UNANCHORED is what keeps a registrar on every bundler, and SIDE_EFFECTS_BY_USE exempts an effect only its own bindings need. Copy this package's array from the command into ${gap.dir}/package.json, then \`bun run scripts/side-effects.ts --unpin ${gap.dir}\``,
-    fix: 'bun run side-effects --explain --json',
-    at: `${gap.dir}/package.json`,
-  }),
-  'anchor-stale': (gap) => ({
-    code: 'X_SIDE_EFFECTS_ANCHOR_STALE',
-    cause: `SIDE_EFFECTS_ANCHORS names ${gap.subject} and no package declares that module side-effecting, so the row argues for an anchor that protects nothing while reading as a rule still in force — delete that row, or point it at the module it was written for`,
-    fix: 'grep -n SIDE_EFFECTS_ANCHORS scripts/lib/side-effects-scan.ts',
-    at: 'scripts/lib/side-effects-scan.ts',
-  }),
-  'by-use-stale': (gap) => ({
-    code: 'X_SIDE_EFFECTS_BY_USE_STALE',
-    cause: `SIDE_EFFECTS_BY_USE names ${gap.subject}, and ${gap.reason ?? 'the row no longer holds'}`,
-    fix: 'grep -n -A16 "SIDE_EFFECTS_BY_USE" scripts/side-effects.ts',
-    at: PINS_FILE,
-  }),
-  'pin-stale': (gap) => ({
-    code: 'X_SIDE_EFFECTS_PIN_STALE',
-    cause: `${gap.dir} is pinned as declaring no sideEffects and now declares one, so the pin would let the field be deleted again in silence`,
-    fix: `bun run scripts/side-effects.ts --unpin ${renderFixShellArg(gap.dir, '<package dir>')}`,
-    at: PINS_FILE,
-  }),
-  unscanned: (gap) => ({
-    code: 'X_SIDE_EFFECTS_UNSCANNED',
-    cause: `${gap.subject}, so every package reports clean and the rule enforces nothing — a scan that reads nothing looks exactly like a tree with no lies in it — the walk in ${PINS_FILE} is wrong: PACKAGE_GLOB must match this repo's packages and scanTopLevelEffects must still read a registerErrorCodes call`,
-    fix: 'bun run scripts/side-effects.ts --explain --json',
-    at: PINS_FILE,
-  }),
-};
+const FINDINGS: Readonly<Record<SideEffectGapKind, (gap: SideEffectGap) => Finding>> =
+  Object.assign(Object.create(null), {
+    undeclared: (gap) => ({
+      code: 'X_SIDE_EFFECTS_UNDECLARED',
+      cause: `${gap.dir}/${gap.subject} runs a statement at import time and ${gap.dir}/package.json's sideEffects excludes it, so a bundler is told the module is droppable and deletes that statement from every app that does not use its exports — if only the module's own bindings need the effect, add a SIDE_EFFECTS_BY_USE row in ${PINS_FILE} saying why; otherwise merge the entry into the existing array in ${gap.dir}/package.json (\`bun run side-effects --explain --json\` prints the array this tree measures)`,
+      fix: `{ "sideEffects": ["./${gap.subject}"] }`,
+      at: `${gap.dir}/${gap.subject}:${String(gap.line ?? 1)}`,
+    }),
+    unanchored: (gap) => ({
+      code: 'X_SIDE_EFFECTS_UNANCHORED',
+      cause: `${gap.dir}/package.json names ${JSON.stringify(gap.subject)} in "sideEffects" and no entry module of ${gap.dir} imports it for effect, so nothing keeps it in a chunk that uses none of its bindings, and something else reads what it registers — Bun before 1.4.1 read any sideEffects ARRAY as false (oven-sh/bun#40650), which deleted 5 of the 8 declared effects in this tree from examples/dummy's feed island. Add the import below to ${gap.dir}/src/index.ts: a bare import is in the module graph unconditionally, on every bundler`,
+      fix: `import './${gap.subject.replace(/^src\//, '').replace(/\.tsx?$/, '')}';`,
+      at: `${gap.dir}/package.json`,
+    }),
+    'stale-entry': (gap) => ({
+      code: 'X_SIDE_EFFECTS_ENTRY_STALE',
+      cause: `${gap.dir}/package.json declares sideEffects entry ${JSON.stringify(gap.subject)} and no file in ${gap.dir} matches it, so the entry protects nothing and reads as a rule that is still in force — delete it from "sideEffects" in ${gap.dir}/package.json, or point it at the file it was written for; the command prints the array this tree measures`,
+      fix: 'bun run side-effects --explain --json',
+      at: `${gap.dir}/package.json`,
+    }),
+    missing: (gap) => ({
+      code: 'X_SIDE_EFFECTS_MISSING',
+      cause: `${gap.dir}/package.json declares no "sideEffects", so every module of it is retained in every bundle that imports one binding — measured 2026-08-21 with buildIslands: an island importing @ultimat3/time weighed 22,214 B and 5,948 B once @ultimat3/core declared one. That number is still the reason to declare one; X_SIDE_EFFECTS_UNANCHORED is what keeps a registrar on every bundler, and SIDE_EFFECTS_BY_USE exempts an effect only its own bindings need. Copy this package's array from the command into ${gap.dir}/package.json, then \`bun run scripts/side-effects.ts --unpin ${gap.dir}\``,
+      fix: 'bun run side-effects --explain --json',
+      at: `${gap.dir}/package.json`,
+    }),
+    'anchor-stale': (gap) => ({
+      code: 'X_SIDE_EFFECTS_ANCHOR_STALE',
+      cause: `SIDE_EFFECTS_ANCHORS names ${gap.subject} and no package declares that module side-effecting, so the row argues for an anchor that protects nothing while reading as a rule still in force — delete that row, or point it at the module it was written for`,
+      fix: 'grep -n SIDE_EFFECTS_ANCHORS scripts/lib/side-effects-scan.ts',
+      at: 'scripts/lib/side-effects-scan.ts',
+    }),
+    'by-use-stale': (gap) => ({
+      code: 'X_SIDE_EFFECTS_BY_USE_STALE',
+      cause: `SIDE_EFFECTS_BY_USE names ${gap.subject}, and ${gap.reason ?? 'the row no longer holds'}`,
+      fix: 'grep -n -A16 "SIDE_EFFECTS_BY_USE" scripts/side-effects.ts',
+      at: PINS_FILE,
+    }),
+    'pin-stale': (gap) => ({
+      code: 'X_SIDE_EFFECTS_PIN_STALE',
+      cause: `${gap.dir} is pinned as declaring no sideEffects and now declares one, so the pin would let the field be deleted again in silence`,
+      fix: `bun run scripts/side-effects.ts --unpin ${renderFixShellArg(gap.dir, '<package dir>')}`,
+      at: PINS_FILE,
+    }),
+    unscanned: (gap) => ({
+      code: 'X_SIDE_EFFECTS_UNSCANNED',
+      cause: `${gap.subject}, so every package reports clean and the rule enforces nothing — a scan that reads nothing looks exactly like a tree with no lies in it — the walk in ${PINS_FILE} is wrong: PACKAGE_GLOB must match this repo's packages and scanTopLevelEffects must still read a registerErrorCodes call`,
+      fix: 'bun run scripts/side-effects.ts --explain --json',
+      at: PINS_FILE,
+    }),
+  } satisfies Record<SideEffectGapKind, (gap: SideEffectGap) => Finding>);
 
 export const sideEffectFinding = (gap: SideEffectGap): Finding => FINDINGS[gap.kind](gap);
 

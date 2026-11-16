@@ -172,7 +172,10 @@ export const reproCommand: CliCommand = {
         flag: 'include-rows',
         command: 'repro',
         reason: 'it chooses what a bundle carries, and no --bundle was asked for',
-        fix: `x repro ${id === undefined ? '--from <file>' : renderFixShellArg(id, '<id>')} --bundle --include-rows`,
+        fix:
+          id === undefined
+            ? 'x repro --from <file> --bundle --include-rows'
+            : `x repro ${renderFixShellArg(id, '<id>')} --bundle --include-rows`,
       });
     }
     if (bundle && (flagBool(ctx.args, 'write') || flagBool(ctx.args, 'verify'))) {
@@ -180,7 +183,10 @@ export const reproCommand: CliCommand = {
         flag: 'bundle',
         command: 'repro',
         reason: 'a bundle is written for an issue, and --write/--verify run the test in this app',
-        fix: `x repro ${id === undefined ? '--from <file>' : renderFixShellArg(id, '<id>')} --bundle`,
+        fix:
+          id === undefined
+            ? 'x repro --from <file> --bundle'
+            : `x repro ${renderFixShellArg(id, '<id>')} --bundle`,
       });
     }
     // The app's declarations are what mask a job's input and what a written test replays against.

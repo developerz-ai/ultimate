@@ -14,6 +14,7 @@ import { COVERAGE_FIELD, readCoverageFloor } from './coverage-floor';
 import type { ExerciseFloor } from './exercise-floor';
 import { EXERCISE_FIELD, readExerciseFloor } from './exercise-floor';
 import type { Finding } from './output';
+import { quoteArg } from './shell-quote';
 import type { StepTimeouts } from './verify-deadline';
 import { readStepTimeouts, STEP_TIMEOUT_FIELD } from './verify-deadline';
 import type { GuardBaseline } from './verify-guard-baseline';
@@ -320,7 +321,7 @@ export const vanishedSuiteFinding = (step: string, command: string = GATE_COMMAN
 export const skippedSuiteFinding = (step: string, skipped: number): Finding => ({
   code: 'X_VERIFY_SUITE_VANISHED',
   cause: `${VERIFY_FLOOR_FILE} requires the ${step} step and all ${skipped} test(s) it found skipped themselves, so nothing ran`,
-  fix: `x test ${step} --json   # then set what the suite skips without, or drop "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why`,
+  fix: `x test ${quoteArg(step)} --json   # then set what the suite skips without, or drop "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why`,
   docs: ERROR_DOCS_URL,
   at: VERIFY_FLOOR_FILE,
 });

@@ -151,12 +151,13 @@ const unscannedFinding = (gap: TestTypecheckGap): Finding => ({
   at: TESTS_TSCONFIG,
 });
 
-const FINDINGS: Readonly<Record<TestTypecheckGapKind, (gap: TestTypecheckGap) => Finding>> = {
-  over: overFinding,
-  stale: staleFinding,
-  orphan: orphanFinding,
-  unscanned: unscannedFinding,
-};
+const FINDINGS: Readonly<Record<TestTypecheckGapKind, (gap: TestTypecheckGap) => Finding>> =
+  Object.assign(Object.create(null), {
+    over: overFinding,
+    stale: staleFinding,
+    orphan: orphanFinding,
+    unscanned: unscannedFinding,
+  } satisfies Record<TestTypecheckGapKind, (gap: TestTypecheckGap) => Finding>);
 
 export const testTypecheckFindingFor = (gap: TestTypecheckGap): Finding => FINDINGS[gap.kind](gap);
 

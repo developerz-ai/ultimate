@@ -209,7 +209,7 @@ export function planDeploy(
         flag: 'image',
         command: 'deploy',
         reason: `"${image}" pins a digest, and docker/helm renders repository:tag with no digest branch`,
-        fix: `x deploy --method helm --image ${image.slice(0, image.lastIndexOf('@'))}:<tag> --json`,
+        fix: `x deploy --method helm --image ${quoteArg(image.slice(0, image.lastIndexOf('@')))}:<tag> --json`,
       });
     }
     // Helm splits a `--set-string` argument on `,` and reads `=` as key/value: an image built from

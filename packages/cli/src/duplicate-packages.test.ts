@@ -153,6 +153,14 @@ describe('unit · the finding', () => {
     expect(cause).not.toContain('defineCatalogs');
   });
 
+  // `REGISTRY_PACKAGES[pkg]` on a package named `constructor` (one is published) answered
+  // `Object`'s own function, and the cause printed its source as "its own function Object()…".
+  test('a duplicated package named after an Object.prototype member reads the generic registry', () => {
+    const cause = duplicateCause('/app', { ...TWO_VERSIONS, pkg: 'constructor' });
+    expect(cause).toContain('with its own registry, so');
+    expect(cause).not.toContain('function');
+  });
+
   test('a copy outside the app root keeps its absolute path', () => {
     const cause = duplicateCause('/elsewhere', TWO_VERSIONS);
     expect(cause).toContain('/app/node_modules/.bun/@ultimat3+i18n@19.0.0');

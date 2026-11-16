@@ -210,12 +210,15 @@ const echoedFinding = (gap: DocFixGap): Finding => ({
   at: where(gap),
 });
 
-const FINDINGS: Readonly<Record<DocFixGapKind, (gap: DocFixGap) => Finding>> = {
-  unrunnable: unrunnableFinding,
-  advice: adviceFinding,
-  vacuous: vacuousFinding,
-  echoed: echoedFinding,
-};
+const FINDINGS: Readonly<Record<DocFixGapKind, (gap: DocFixGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    unrunnable: unrunnableFinding,
+    advice: adviceFinding,
+    vacuous: vacuousFinding,
+    echoed: echoedFinding,
+  } satisfies Record<DocFixGapKind, (gap: DocFixGap) => Finding>,
+);
 
 export const docFixFindingFor = (gap: DocFixGap): Finding => FINDINGS[gap.kind](gap);
 

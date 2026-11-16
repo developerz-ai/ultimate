@@ -16,8 +16,10 @@ import {
   fixShellArgSites,
   scanFixShellArgs,
 } from './fix-shell-arg';
+import { corpus } from './lib/corpus';
 import { FIX_SHELL_ARG_PINS, FIX_SHELL_PINS_FILE } from './lib/fix-shell-arg-pins';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+import { isTestPath } from './lib/source-scan';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms default.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -389,9 +391,21 @@ describe('the real tree', () => {
   });
 
   test('is on the ratchet, and the scan really read it', async () => {
-    // Non-vacuity: the scan found sites at all. A glob that stopped matching would make this suite
-    // green by making the rule blind, which is how every sibling rule here has failed once.
-    expect((await fixShellArgSites(ROOT)).length).toBeGreaterThan(20);
+    // Non-vacuity: with the two screens renamed away, the scan finds the substitutions they guard.
+    // A glob that stopped matching would make this suite green by making the rule blind, which is
+    // how every sibling rule here has failed once — and a count of what is still UNSCREENED falls
+    // to zero on the day the ratchet is done. 420 on 2026-11-16.
+    const files = (await corpus(ROOT, 'source')).filter((file) => !isTestPath(file.path));
+    const params = fixParamsOf(files.map((file) => file.source));
+    const unscreened = files.flatMap((file) =>
+      scanFixShellArgs(
+        file.path,
+        file.source.replaceAll(/\b(?:renderFixShellArg|quoteArg)\(/g, 'unscreened('),
+        params,
+      ),
+    );
+    expect(unscreened.length).toBeGreaterThan(200);
+    expect((await fixShellArgSites(ROOT)).length).toBeLessThan(unscreened.length);
     expect(await fixShellArgGaps(ROOT)).toEqual([]);
   });
 });

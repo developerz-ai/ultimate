@@ -315,5 +315,10 @@ export function probeImage(bytes: Uint8Array): ImageInfo {
   const { width, height } = probeSize(bytes, format);
   // Before any allocation downstream: a hostile header is refused here, not at malloc.
   assertPixelBudget(width, height, format);
-  return { format, width, height, mimeType: IMAGE_MIME_TYPES[format] };
+  // `format` is the sniff's own closed answer; the guard keeps the exported, mutable table's
+  // prototype from ever answering as a media type.
+  const mimeType = Object.hasOwn(IMAGE_MIME_TYPES, format)
+    ? IMAGE_MIME_TYPES[format]
+    : 'application/octet-stream';
+  return { format, width, height, mimeType };
 }

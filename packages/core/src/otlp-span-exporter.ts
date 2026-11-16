@@ -28,19 +28,25 @@ import type {
 } from './telemetry';
 
 /** OTLP's `SpanKind` enum; `UNSPECIFIED` is 0 and Ultimate never emits it. */
-const SPAN_KIND = Object.freeze<Record<SpanKind, number>>({
-  internal: 1,
-  server: 2,
-  client: 3,
-  producer: 4,
-  consumer: 5,
-});
+// Null-prototype: a key that arrives untyped never answers an `Object.prototype` member.
+const SPAN_KIND = Object.freeze<Record<SpanKind, number>>(
+  Object.assign(Object.create(null), {
+    internal: 1,
+    server: 2,
+    client: 3,
+    producer: 4,
+    consumer: 5,
+  } satisfies Record<SpanKind, number>),
+);
 
-const STATUS_CODE = Object.freeze<Record<SpanStatusCode, number>>({
-  unset: 0,
-  ok: 1,
-  error: 2,
-});
+// Null-prototype: a key that arrives untyped never answers an `Object.prototype` member.
+const STATUS_CODE = Object.freeze<Record<SpanStatusCode, number>>(
+  Object.assign(Object.create(null), {
+    unset: 0,
+    ok: 1,
+    error: 2,
+  } satisfies Record<SpanStatusCode, number>),
+);
 
 interface OtlpSpanJson {
   readonly traceId: string;

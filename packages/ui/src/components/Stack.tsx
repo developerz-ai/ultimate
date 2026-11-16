@@ -19,13 +19,13 @@ export interface StackProps {
   class?: string | undefined;
 }
 
-const ALIGN: Readonly<Record<Align, string>> = {
+const ALIGN: Readonly<Record<Align, string>> = Object.assign(Object.create(null), {
   start: 'flex-start',
   center: 'center',
   end: 'flex-end',
   stretch: 'stretch',
   between: 'space-between',
-};
+} satisfies Readonly<Record<Align, string>>);
 
 export function Stack(props: StackProps): JSX.Element {
   const cls = (): string =>

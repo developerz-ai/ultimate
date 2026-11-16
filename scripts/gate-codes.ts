@@ -108,26 +108,29 @@ export function checkGateCodes(input: GateCodeInput): readonly GateCodeGap[] {
   return gaps.sort((a, b) => a.code.localeCompare(b.code));
 }
 
-const FINDINGS: Readonly<Record<GateCodeGapKind, (code: string) => Finding>> = {
-  'no-row': (code) => ({
-    code: 'X_GATE_CODE_UNDOCUMENTED',
-    cause: `${ERROR_REFERENCE} names ${code} in the never-ships list and gives it no table row, so an agent handed ${code} finds the name and no cause and no fix`,
-    fix: `add a \`| \`${code}\` | … |\` row to ${ERROR_REFERENCE}, or drop ${code} from the never-ships list`,
-    at: ERROR_REFERENCE,
-  }),
-  unlisted: (code) => ({
-    code: 'X_GATE_CODE_UNDOCUMENTED',
-    cause: `${code} is declared under scripts/ and ${ERROR_REFERENCE}'s never-ships list omits it, so that page promises "x errors explain ${code}" answers and it does not`,
-    fix: `add \`${code}\` to the never-ships parenthesis in ${ERROR_REFERENCE}`,
-    at: ERROR_REFERENCE,
-  }),
-  pinned: (code) => ({
-    code: 'X_GATE_CODE_BACKLOG_STALE',
-    cause: `${code} is pinned in ${BACKLOG_FILE} and ${ERROR_REFERENCE} is no longer wrong about it`,
-    fix: `delete '${code}' from ${BACKLOG_FILE}`,
-    at: BACKLOG_FILE,
-  }),
-};
+const FINDINGS: Readonly<Record<GateCodeGapKind, (code: string) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    'no-row': (code) => ({
+      code: 'X_GATE_CODE_UNDOCUMENTED',
+      cause: `${ERROR_REFERENCE} names ${code} in the never-ships list and gives it no table row, so an agent handed ${code} finds the name and no cause and no fix`,
+      fix: `add a \`| \`${code}\` | … |\` row to ${ERROR_REFERENCE}, or drop ${code} from the never-ships list`,
+      at: ERROR_REFERENCE,
+    }),
+    unlisted: (code) => ({
+      code: 'X_GATE_CODE_UNDOCUMENTED',
+      cause: `${code} is declared under scripts/ and ${ERROR_REFERENCE}'s never-ships list omits it, so that page promises "x errors explain ${code}" answers and it does not`,
+      fix: `add \`${code}\` to the never-ships parenthesis in ${ERROR_REFERENCE}`,
+      at: ERROR_REFERENCE,
+    }),
+    pinned: (code) => ({
+      code: 'X_GATE_CODE_BACKLOG_STALE',
+      cause: `${code} is pinned in ${BACKLOG_FILE} and ${ERROR_REFERENCE} is no longer wrong about it`,
+      fix: `delete '${code}' from ${BACKLOG_FILE}`,
+      at: BACKLOG_FILE,
+    }),
+  } satisfies Record<GateCodeGapKind, (code: string) => Finding>,
+);
 
 export const gateCodeFinding = (gap: GateCodeGap): Finding => FINDINGS[gap.kind](gap.code);
 

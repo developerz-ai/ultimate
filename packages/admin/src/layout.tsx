@@ -9,6 +9,7 @@
 // here would be a `.d.ts` in `src/`, which the package-shape gate reads as a build artifact.
 /// <reference path="../../ui/src/scss.d.ts" />
 
+import { finiteOption } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import { Icon, Input, UI_KEYS } from '@ultimat3/ui';
 import { iconMenu } from '@ultimat3/ui/icons/menu';
@@ -80,7 +81,7 @@ export function AdminLayout(props: AdminLayoutProps): JSX.Element {
             <img
               src={props.app.branding.logo.src}
               alt={t(props.app.branding.logo.altKey)}
-              width={props.app.branding.logo.width ?? 24}
+              width={finiteOption('AdminLayout', 'logo.width', props.app.branding.logo.width ?? 24)}
             />
           )}
           <span>{t(props.app.branding.nameKey)}</span>

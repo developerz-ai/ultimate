@@ -14,12 +14,15 @@ import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 import type { FloorViolation } from './tiers';
 import {
   ALL_PACKAGES,
+  allowedImportsFor,
   checkFloors,
+  checkTier,
   FLOOR_ABOVE,
   floorFindingFor,
   floorFor,
   SIDEWAYS_ALLOW,
   TIERS,
+  tierOf,
 } from './tiers';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
@@ -83,6 +86,21 @@ describe('unused sideways edges', () => {
     const edges = packageEdges([{ path: 'packages/cli/src/harness.test.ts', source }]);
     expect([...(edges.get('cli') ?? [])]).toEqual(['testing']);
     expect(unusedEdges(edges, { cli: ['testing'] })).toEqual([]);
+  });
+});
+
+// A package name is data — a directory under `packages/` — and the tables are plain literals:
+// `ABOVE_TABLE['constructor']` answered `Object`, and `SIDEWAYS_ALLOW['toString']?.includes(…)`
+// called a function that is not there.
+describe('a package named like an Object.prototype member', () => {
+  test('is an unknown package, never a crash', () => {
+    for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(checkTier(name, 'core')).toEqual({ allowed: true, reason: 'lower-tier' });
+      expect(checkTier('core', name)).toEqual({ allowed: false, reason: 'unknown-package' });
+      expect(Number.isInteger(tierOf(name))).toBe(true);
+      expect(floorFor(name, ['core'])).toBe(1);
+      expect(allowedImportsFor(name)).toMatch(/^0-\d$/);
+    }
   });
 });
 

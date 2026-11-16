@@ -50,13 +50,17 @@ export interface SourceFile {
   readonly source: string;
 }
 
-const CODE_OF: Readonly<Record<BoundaryRule, BoundaryCode>> = {
-  'site-imports-app': 'X_BOUNDARY_SITE_TO_APP',
-  'shared-is-a-leaf': 'X_BOUNDARY_SHARED_LEAF',
-  'app-imports-api-at-runtime': 'X_BOUNDARY_APP_TO_API',
-  // Every other crossing `SURFACE_SPECS` does not allow: the table is the rule (`@ultimat3/render`).
-  'surface-imports-surface': 'X_BOUNDARY_SURFACE_IMPORT',
-};
+// Null-prototype: a rule that is not one of these reads `undefined`, never an `Object` member.
+const CODE_OF: Readonly<Record<BoundaryRule, BoundaryCode>> = Object.assign(
+  Object.create(null) as object,
+  {
+    'site-imports-app': 'X_BOUNDARY_SITE_TO_APP',
+    'shared-is-a-leaf': 'X_BOUNDARY_SHARED_LEAF',
+    'app-imports-api-at-runtime': 'X_BOUNDARY_APP_TO_API',
+    // Every other crossing `SURFACE_SPECS` does not allow: the table is the rule (`@ultimat3/render`).
+    'surface-imports-surface': 'X_BOUNDARY_SURFACE_IMPORT',
+  } satisfies Record<BoundaryRule, BoundaryCode>,
+);
 
 /**
  * The one rule → diagnostic-code mapping. `x verify` reports a surface violation as a finding and

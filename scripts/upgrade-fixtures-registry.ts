@@ -7,6 +7,7 @@
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { dirname, join } from 'node:path';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import type { Finding } from './lib/log';
 import { LONG_RUN_TIMEOUT_MS, run } from './lib/run';
 import type { PackedPackage } from './upgrade-fixtures-packument';
@@ -88,7 +89,7 @@ export async function packHead(
       findings.push({
         code: 'X_UPGRADE_FIXTURE_UNBUILT',
         cause: `bun pm pack of ${name} exited ${String(result.code)}, so no fixture can install HEAD: ${result.output.slice(-400)}`,
-        fix: `cd packages/${dir} && bun pm pack --destination /tmp/pack`,
+        fix: `cd packages/${renderFixShellArg(dir, '<dir>')} && bun pm pack --destination /tmp/pack`,
         at: `packages/${dir}/package.json`,
       });
       continue;

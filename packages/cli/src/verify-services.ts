@@ -10,6 +10,7 @@ import { renderThrowable } from '@ultimat3/core';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
 import type { Finding } from './output';
+import { quoteArg } from './shell-quote';
 import { TEST_COMPOSE_PATH, TEST_ENV_PATH } from './templates/scaffold-test-services';
 import { parseDotenvValues } from './test-dotenv';
 
@@ -140,7 +141,7 @@ const hostOf = (url: string): string => {
 const foreignFinding = (url: string): Finding => ({
   code: 'X_TEST_SERVICES_UNAVAILABLE',
   cause: `a Postgres answers at ${hostOf(url)} (${TEST_ENV_PATH}'s ${TEST_DATABASE_KEY}) and refuses this app's credentials — another app's test stack holds the port, so the live suites are not run against it`,
-  fix: `docker ps --filter publish=${portOf(url)}   # stop that stack (docker compose -p <project> down), or give this app another port in ${TEST_COMPOSE_PATH} and ${TEST_ENV_PATH}`,
+  fix: `docker ps --filter publish=${quoteArg(portOf(url))}   # stop that stack (docker compose -p <project> down), or give this app another port in ${TEST_COMPOSE_PATH} and ${TEST_ENV_PATH}`,
   at: TEST_ENV_PATH,
 });
 

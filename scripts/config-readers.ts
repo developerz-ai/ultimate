@@ -40,6 +40,7 @@
 //   bun run scripts/config-readers.ts [--json]
 //   bun run scripts/config-readers.ts --unpin <leaf>[,<leaf>]   # shrink either ratchet
 
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { flagList, parseScriptArgs } from './lib/args';
 import type { AppSource } from './lib/config-app-readers';
 import { appClaimGaps, configAppSources } from './lib/config-app-readers';
@@ -221,19 +222,22 @@ const ambiguousFinding = (gap: ConfigReaderGap): Finding => ({
   at: CONFIG_FILE,
 });
 
-const STALE_CAUSE: Readonly<Record<StaleCause, (gap: ConfigReaderGap) => string>> = {
-  'key-deleted': (gap) =>
-    `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and ${CONFIG_FILE} no longer declares it — the pin outlived its key, so it records a debt that cannot come due`,
-  'now-read': (gap) =>
-    `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and now has a reader — the pin would let the next dead key in beside it`,
-  'now-qualified': (gap) =>
-    `${gap.leaf} is pinned as a key whose bare-name readers are not evidence ("${gap.reason ?? ''}") and a file now spells the qualified ${gap.leaf}, or one of its own package's files reads it — the doubt is settled and the row would excuse the next collision for free`,
-};
+const STALE_CAUSE: Readonly<Record<StaleCause, (gap: ConfigReaderGap) => string>> = Object.assign(
+  Object.create(null),
+  {
+    'key-deleted': (gap) =>
+      `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and ${CONFIG_FILE} no longer declares it — the pin outlived its key, so it records a debt that cannot come due`,
+    'now-read': (gap) =>
+      `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and now has a reader — the pin would let the next dead key in beside it`,
+    'now-qualified': (gap) =>
+      `${gap.leaf} is pinned as a key whose bare-name readers are not evidence ("${gap.reason ?? ''}") and a file now spells the qualified ${gap.leaf}, or one of its own package's files reads it — the doubt is settled and the row would excuse the next collision for free`,
+  } satisfies Record<StaleCause, (gap: ConfigReaderGap) => string>,
+);
 
 const staleFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_READER_PIN_STALE',
   cause: STALE_CAUSE[gap.stale ?? 'now-read'](gap),
-  fix: `bun run scripts/config-readers.ts --unpin ${gap.leaf}`,
+  fix: `bun run scripts/config-readers.ts --unpin ${renderFixShellArg(gap.leaf, '<key>')}`,
   at: CONFIG_PINS_FILE,
 });
 
@@ -258,14 +262,15 @@ const unscannedFinding = (gap: ConfigReaderGap): Finding => ({
   at: CONFIG_FILE,
 });
 
-const FINDINGS: Readonly<Record<ConfigReaderGapKind, (gap: ConfigReaderGap) => Finding>> = {
-  unread: unreadFinding,
-  ambiguous: ambiguousFinding,
-  stale: staleFinding,
-  unscanned: unscannedFinding,
-  unexplained: unexplainedFinding,
-  'app-unread': appUnreadFinding,
-};
+const FINDINGS: Readonly<Record<ConfigReaderGapKind, (gap: ConfigReaderGap) => Finding>> =
+  Object.assign(Object.create(null), {
+    unread: unreadFinding,
+    ambiguous: ambiguousFinding,
+    stale: staleFinding,
+    unscanned: unscannedFinding,
+    unexplained: unexplainedFinding,
+    'app-unread': appUnreadFinding,
+  } satisfies Record<ConfigReaderGapKind, (gap: ConfigReaderGap) => Finding>);
 
 export const configReaderFindingFor = (gap: ConfigReaderGap): Finding => FINDINGS[gap.kind](gap);
 

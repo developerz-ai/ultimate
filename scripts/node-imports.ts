@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // Enforce, as a ratchet, that every `node:` import carries a `why:` comment on it or directly above.
 //
 // Root `CLAUDE.md`: "Bun only. No Node-specific APIs unless via `node:` and unavoidable, and then
@@ -29,6 +30,7 @@
 //   bun run node-imports  ·  bun run scripts/node-imports.ts [--json]
 //   bun run scripts/node-imports.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { maskLiterals } from '../packages/core/src/source-mask';
 import type { SourceFile } from './boundaries';
 import { corpus } from './lib/corpus';
@@ -192,7 +194,7 @@ const overFinding = (gap: NodeImportGap): Finding => ({
 const staleFinding = (gap: NodeImportGap): Finding => ({
   code: 'X_NODE_IMPORT_PIN_STALE',
   cause: `${gap.pkg} is pinned at ${String(gap.pinned)} unexplained node: import(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `bun run scripts/node-imports.ts --unpin ${gap.pkg}`,
+  fix: `bun run scripts/node-imports.ts --unpin ${renderFixShellArg(gap.pkg, '<pkg>')}`,
   at: NODE_PINS_FILE,
 });
 

@@ -33,7 +33,7 @@ export function stripSqlNoise(text: string): string {
       index += 1;
       continue;
     }
-    out += BLANK[noise.kind] ?? ' ';
+    out += Object.hasOwn(BLANK, noise.kind) ? (BLANK[noise.kind] ?? ' ') : ' ';
     index = noise.end;
   }
   return out;

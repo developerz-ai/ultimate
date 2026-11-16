@@ -3,6 +3,8 @@
 // installer on `@ultimat3/core/adapter`.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+// why: Bun ships no directory-creation primitive; sync, so the test below never yields to the loop.
+import { mkdirSync } from 'node:fs';
 // why: Bun ships no temp-directory primitive (`mkdtemp`) and no directory removal (`rm`).
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no temp-directory location; `tmpdir()` is the platform's.
@@ -151,8 +153,11 @@ describe('the resolved key is cached per installed source', () => {
   });
 
   test('the built-in default is never cached: a rotated key file is read on the next call', async () => {
+    // Synchronous setup, never `await Bun.write`: that was this file's one REAL I/O wait, so a
+    // shared runner's backlog (a prior file's leftover timers, a loaded disk) was billed to this
+    // test's 5 s budget — 6.6 s on a 4-CPU compat runner, for an assertion that reads two files.
     const dir = join(root, 'rotating');
-    await Bun.write(join(dir, '.keep'), '');
+    mkdirSync(dir, { recursive: true });
     writeMasterKeyFile(dir, KEY);
     expect((await resolveMasterKey(dir, {}))?.hex).toBe(KEY);
     writeMasterKeyFile(dir, OTHER);

@@ -250,6 +250,7 @@ export async function runScrape<I, Row>(
     // (`Ring.dropped`) that exists to say "you are not seeing it all".
     const networkDropped = session.page.networkDropped();
     const used = usage.snapshot(session.browserCost);
+    // info: a scrape is a scheduled, rate-bounded run, and this summary (rows, the refused floor, its cost) is its one record.
     logger.info('scrape.ok', { rows: rows.length, refused, ...usageFields(used) });
     return {
       scrape: definition.name,

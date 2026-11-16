@@ -2,7 +2,7 @@
 // outgrew its ceiling. The codes themselves, their titles and the single `registerErrorCodes` call
 // stay in ./error-codes — one owner, one registration, one place a duplicate can surface.
 
-import { UltimateError } from '@ultimat3/core';
+import { renderFixShellArg, UltimateError } from '@ultimat3/core';
 
 // No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
 // which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every code, never one per code, because
@@ -36,7 +36,7 @@ export class EvalThresholdError extends UltimateError {
       // `x test eval --filter <name>`, never `x test <name>`: `x test`'s positional is a TestType,
       // so the eval's own name there is `X_CLI_BAD_FLAG` ("not a test type") — a fix line that
       // cannot be run is axiom 4 broken at the one moment it is needed.
-      fix: `x test eval --filter ${input.eval} to see per-case scores, then fix the prompt — or ULTIMATE_EVAL_RECORD=1 x test eval to accept the new numbers as a reviewed diff`,
+      fix: `x test eval --filter ${renderFixShellArg(input.eval, '<eval>')} to see per-case scores, then fix the prompt — or ULTIMATE_EVAL_RECORD=1 x test eval to accept the new numbers as a reviewed diff`,
     });
   }
 }

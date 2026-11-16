@@ -16,6 +16,7 @@
 //   bun run scripts/wiki-frames.ts [--json]
 
 import { FRAME_KINDS } from '@ultimat3/realtime';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -93,15 +94,18 @@ const unknownFinding = (gap: FrameDocGap): Finding => ({
 const absentFinding = (): Finding => ({
   code: 'X_FRAME_DOCS_STALE',
   cause: `${PROTOCOL_FILE} ships ${FRAME_KINDS.length} wire frames and ${FRAMES_PAGE} does not exist, so the protocol has no public description at all — and every rule that compares the two passes by having nothing to compare`,
-  fix: `restore ${FRAMES_PAGE} (git checkout -- ${FRAMES_PAGE}), or move the page and update FRAMES_PAGE in scripts/wiki-frames.ts to where it went`,
+  fix: `restore ${FRAMES_PAGE} (git checkout -- ${renderFixShellArg(FRAMES_PAGE, '<page>')}), or move the page and update FRAMES_PAGE in scripts/wiki-frames.ts to where it went`,
   at: FRAMES_PAGE,
 });
 
-const FINDINGS: Readonly<Record<FrameDocGapKind, (gap: FrameDocGap) => Finding>> = {
-  undocumented: undocumentedFinding,
-  unknown: unknownFinding,
-  absent: absentFinding,
-};
+const FINDINGS: Readonly<Record<FrameDocGapKind, (gap: FrameDocGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    undocumented: undocumentedFinding,
+    unknown: unknownFinding,
+    absent: absentFinding,
+  } satisfies Record<FrameDocGapKind, (gap: FrameDocGap) => Finding>,
+);
 
 export const frameDocGapFindingFor = (gap: FrameDocGap): Finding => FINDINGS[gap.kind](gap);
 

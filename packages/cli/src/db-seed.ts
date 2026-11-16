@@ -16,6 +16,7 @@ import { BadFlagError } from './errors';
 import type { Finding, JsonValue } from './output';
 import { findingFrom } from './output';
 import { hasPathSegment } from './path-segments';
+import { quoteArg } from './shell-quote';
 import { isTest } from './source-files';
 import { renderTable } from './table';
 
@@ -74,7 +75,7 @@ export class SeedEnvironmentError extends UltimateError {
     super({
       code: 'X_SEED_ENVIRONMENT',
       cause: `seed "${input.seed}" is tier ${input.tier} and ULTIMATE_ENV resolved ${input.environment}, where x db seed runs ${input.tiers.join(', ')} — ULTIMATE_SEED_TIER=${input.tier} says this deploy takes it anyway`,
-      fix: `x db seed ${input.seed} --tier ${input.tier} --json`,
+      fix: `x db seed ${quoteArg(input.seed)} --tier ${quoteArg(input.tier)} --json`,
     });
   }
 }

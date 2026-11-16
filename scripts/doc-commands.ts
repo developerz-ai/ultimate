@@ -287,13 +287,14 @@ const pinExceededFinding = (gap: DocCommandGap): Finding => ({
   at: pageOfSite(gap.subject),
 });
 
-const FINDINGS: Readonly<Record<DocCommandGapKind, (gap: DocCommandGap) => Finding>> = {
-  unresolved: unresolvedFinding,
-  allowance: allowanceFinding,
-  vacuous: vacuousFinding,
-  pin: pinFinding,
-  'pin-exceeded': pinExceededFinding,
-};
+const FINDINGS: Readonly<Record<DocCommandGapKind, (gap: DocCommandGap) => Finding>> =
+  Object.assign(Object.create(null), {
+    unresolved: unresolvedFinding,
+    allowance: allowanceFinding,
+    vacuous: vacuousFinding,
+    pin: pinFinding,
+    'pin-exceeded': pinExceededFinding,
+  } satisfies Record<DocCommandGapKind, (gap: DocCommandGap) => Finding>);
 
 export const docCommandFindingFor = (gap: DocCommandGap): Finding => FINDINGS[gap.kind](gap);
 

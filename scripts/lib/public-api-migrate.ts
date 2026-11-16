@@ -8,6 +8,7 @@
 import { mkdir, rm, symlink, unlink } from 'node:fs/promises';
 // why: Bun has no tmpdir() of its own; node:os is the only way to find the platform temp root.
 import { tmpdir } from 'node:os';
+import { timingSafeEqual } from '../../packages/core/src/timing-safe-equal';
 import { localBin } from './local-bin';
 import { toPosix } from './posix-path';
 import type { ApiSymbol } from './public-api-compat';
@@ -110,7 +111,11 @@ export async function migrateLock(
       const [specifier = '', name = ''] = key.split('\u0000');
       const tagged = surface[specifier]?.[name];
       const names = entries.get(specifier);
-      if (tagged === undefined || names === undefined || names[name]?.hash !== tagged.hash)
+      if (
+        tagged === undefined ||
+        names === undefined ||
+        !timingSafeEqual(names[name]?.hash ?? '', tagged.hash)
+      )
         continue;
       names[name] = tagged;
       pending.delete(key);

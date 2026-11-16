@@ -8,7 +8,9 @@ const BASE64URL_REPLACEMENTS: Readonly<Record<string, string>> = { '+': '-', '/'
 export function base64Url(bytes: Uint8Array): string {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(BASE64URL_UNSAFE, (char) => BASE64URL_REPLACEMENTS[char] ?? '');
+  return btoa(binary).replace(BASE64URL_UNSAFE, (char) =>
+    Object.hasOwn(BASE64URL_REPLACEMENTS, char) ? (BASE64URL_REPLACEMENTS[char] ?? '') : '',
+  );
 }
 
 /**

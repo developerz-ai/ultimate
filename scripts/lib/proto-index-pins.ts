@@ -26,68 +26,18 @@ export interface ProtoIndexPin {
  * the value stops being typed and starts being parsed.
  */
 export const PROTO_INDEX_PINS: Readonly<Record<string, ProtoIndexPin>> = {
-  admin: {
-    count: 9,
-    reason:
-      '`permissions.ts`, `fields.ts` and `dev/data.ts` index closed tables by an `AdminOperation`, a `FieldType`, a `ColumnKind` and a run/step status. Three of the thirteen shipped instances were in `admin/dev/`, so this is the package to drain first.',
-  },
-  auth: {
+  entity: {
     count: 1,
     reason:
-      '`verify.ts` indexes by a `VerificationPurpose` and `tokens.ts` by a base64url character its own regex produced. Three of the thirteen were here.',
-  },
-  cli: {
-    count: 6,
-    reason:
-      '`cmd-build.ts`, `generate-files.ts`, `verify-tests.ts`, `static-report.ts`, `app-boundaries.ts` and `mcp-errors.ts` index by a target, a surface, a test type, a boundary rule and an `X_*` code — each a union the CLI parsed and narrowed before the read.',
-  },
-  core: {
-    count: 8,
-    reason:
-      "closed tables keyed by a role, a lifecycle phase and an environment. `context.ts:203` was the worst of the thirteen — `useService('constructor')` answered the `Object` function out of the function whose job is throwing `X_SERVICE_MISSING` — and it is repaired; the rest are compiler-checked unions.",
-  },
-  db: {
-    count: 4,
-    reason:
-      '`client.ts`, `errors.ts`, `sqlstate.ts` and `sql-noise.ts` index by a pool role and a SQLSTATE. `sqlstate.ts:100` reads a code that came off the WIRE, and is the one here closest to being a real defect again. The fifth was the column-kind read, which moved out of `generate.ts` into `sql-type.ts` and is now guarded rather than pinned — a bare index answered the `Object` function for the kind `constructor` and spliced its source into the type position of an alter statement.',
-  },
-  entity: {
-    count: 4,
-    reason:
-      '`n-plus-one.ts`, `errors.ts` and `array-element.ts` index fix tables by a bulk-write op and an array element kind, both narrowed from the entity registry.',
+      "why: `array-element.ts`'s `fix: ARRAY_ELEMENT_FIXES[kind]` — `kind` reaches it only through `isRefusedElement`'s closed list of four, and `@ultimat3/cli`'s `fix-scan.ts` reads that exact spelling to gate the table's four fix lines; a guard in the expression would drop them from the errors gate (permanent until fix-scan reads a guarded lookup).",
   },
   mail: {
-    count: 3,
-    reason: 'MIME header and encoding tables keyed by a union this package declares.',
-  },
-  pwa: {
-    count: 1,
-    reason: '`strategies.ts:66` maps a route `RenderMode` to a caching strategy.',
-  },
-  render: {
-    count: 7,
+    count: 2,
     reason:
-      'render-mode, surface and hydration tables, each keyed by a member of a vocabulary `scripts/render-modes.ts` already refuses a second copy of.',
+      "why: `errors.ts` `ADDRESS_FIXES[field]` and `smtp-client.ts` `FIXES[stage]` — keys are the closed unions `EnvelopeAddressField` and `SendStage`, and both are fix tables `@ultimat3/cli`'s `fix-scan.ts` reads only as a bare literal read by `fix: TABLE[key]`; a null-prototype build hides 12 fix lines from the errors and fix-prose gates (measured, sweep 8b). Permanent until fix-scan accepts `Object.assign(Object.create(null), {`.",
   },
   // why: 26 -> 27 because core's source-mask now reads past a regex inside a template ${}, which
   // had hidden scripts/side-effects.ts's FINDINGS[gap.kind] — the same shape this row already pins.
   // why: 26 -> 27 again with scripts/health.ts: `judge()` reads ROW_COMMANDS[row], the RowId union
   // that file declares one line above the table.
-  scripts: {
-    count: 27,
-    reason:
-      'the gate scripts themselves: `FINDINGS[gap.kind]` in every ratchet, a table keyed by a union the same file declares one line above and narrows exhaustively. Not shipped to an app, and the key never crosses a process boundary. It went 36 -> 38 when the two newest ratchets landed, which is the honest cost of keeping one shape across twenty guards rather than one guard shaped differently.',
-  },
-  testing: {
-    count: 3,
-    reason:
-      'fixture tables keyed by a driver name and a bracket character, both from closed lists this package owns.',
-  },
-  time: { count: 1, reason: '`duration.ts:52` scales by a duration unit this package declares.' },
-  ui: {
-    // why: `components/chart-frame-view.ts` SHAPES[shape] and `tokens/colour-vision.ts` MACHADO[vision] index closed literal tables by their own closed unions (`MarkerShape`, `ColourVision`).
-    count: 5,
-    reason:
-      'token and widget tables keyed by a semantic role. `fake-dom-fixture.ts:79` was one of the thirteen — `querySelectorAll("[constructor]")` matched every element — and is repaired.',
-  },
 };

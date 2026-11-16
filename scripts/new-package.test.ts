@@ -12,6 +12,7 @@ import {
   packageTemplates,
   TIER_NUMBERS,
   tierProblem,
+  unknownTemplateFinding,
   withPackageReference,
 } from './new-package';
 import { frontFindingsFor, WIKI_ROOT } from './package-front';
@@ -227,5 +228,19 @@ describe('unit · the scaffolded errors.ts is a shape new-error-code can add to'
     const source = fileNamed('widget-set', 1, 'src/errors.ts');
     expect(source).toContain('registerErrorCodes(');
     expect(source).toContain('WIDGET_SET_ERROR_TITLES');
+  });
+});
+
+describe('unit · an --only naming no template', () => {
+  // The fix joined every template with `|`, so `--only README.md|CLAUDE.md|…` pasted as a PIPELINE:
+  // `CLAUDE.md` and every later path ran as a command.
+  test('its fix names one template to fill, and its cause lists the rest', () => {
+    const all = packageTemplates('widgets', 1, 'one line');
+    const finding = unknownTemplateFinding('widgets', 'READ.md', all);
+    expect(finding.code).toBe('X_CLI_BAD_FLAG');
+    expect(finding.fix).toBe(`bun run scripts/new-package.ts widgets --only ${all[0]?.path}`);
+    expect(finding.fix).not.toMatch(/[|;&]/);
+    for (const file of all) expect(finding.cause).toContain(file.path);
+    expect(finding.cause).toContain('--only READ.md');
   });
 });

@@ -6,9 +6,12 @@ import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { requireBunVersion } from './app-root';
 import {
+  BadFlagError,
   BunVersionError,
   FrameworkScriptBuildFailedError,
   LocalDiskUnsafeError,
+  MissingSubcommandError,
+  UnknownCommandError,
   VerifyFailedError,
 } from './errors';
 import { thrownBy } from './thrown-by-fixture';
@@ -74,5 +77,31 @@ describe('FrameworkScriptBuildFailedError', () => {
       expect(error.code).toBe('X_BUILD_FAILED');
       expect(error.cause).toContain(`the ${what} (src/x.ts)`);
     }
+  });
+});
+
+// A suggestion is a whole invocation, and some carry the reader's own word: `x db branch crate
+// $(id)` was answered `x db branch create $(id)`, which runs `id` on paste. Each word is quoted,
+// so the line stays the invocation it names and nothing in it is live.
+describe('unit · an invocation in a fix is inert word by word', () => {
+  test('a suggestion keeps its words and closes off a hostile one', () => {
+    const error = new UnknownCommandError({
+      path: 'db branch crate',
+      known: ['create'],
+      suggestion: 'db branch create $(id)',
+    });
+    expect(error.fix).toBe("x db branch create '$(id)'");
+    expect(new UnknownCommandError({ path: 'g', known: [], suggestion: 'g route posts' }).fix).toBe(
+      'x g route posts',
+    );
+  });
+
+  test('a command path in the default fixes is quoted word by word', () => {
+    expect(new BadFlagError({ flag: 'x', command: 'g resource', reason: 'r' }).fix).toBe(
+      'x g resource --help',
+    );
+    expect(new MissingSubcommandError({ command: 'db `id`', known: [] }).fix).toBe(
+      "x help db '`id`'",
+    );
   });
 });

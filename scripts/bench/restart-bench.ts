@@ -294,9 +294,12 @@ async function main(): Promise<void> {
   let seq = 0;
   const probe = setInterval(() => {
     seq += 1;
-    void fetch(`http://127.0.0.1:${args.port}/bench/publish?seq=${seq}`, { method: 'POST' }).catch(
-      () => {},
-    );
+    // A probe still unanswered when the next fires is stale: it ends with its interval, so a server
+    // that accepts and never answers cannot pile one socket per tick onto the run.
+    void fetch(`http://127.0.0.1:${args.port}/bench/publish?seq=${seq}`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(args.probeIntervalMs),
+    }).catch(() => {});
   }, args.probeIntervalMs);
 
   lastReported = -1;

@@ -184,7 +184,8 @@ export function smtpMailDriver(options: SmtpDriverOptions): MailDriver {
   const dial: SmtpTarget = { host: target.host, port: target.port, tls: target.tls, timeoutMs };
   // `smtps://` is encrypted from the first byte; a submission port has to be told to upgrade, or
   // the probe named in the fix lines below opens a socket and then waits forever for a handshake.
-  const starttls = target.tls ? '' : ' -starttls smtp';
+  // Screened once: both probe fixes below splice it, and a fix is pasted into a shell.
+  const endpoint = renderFixShellArg(`${target.host}:${String(target.port)}`, '<SMTP host>:<port>');
 
   return {
     name: 'smtp',
@@ -215,7 +216,9 @@ export function smtpMailDriver(options: SmtpDriverOptions): MailDriver {
         stage: 'connect',
         detail: `${target.host}:${target.port}, from SMTP_URL in .env — ${messageOf(error)}`,
         retryable: true,
-        fix: `openssl s_client${starttls} -connect ${target.host}:${target.port}`,
+        fix: target.tls
+          ? `openssl s_client -connect ${endpoint}`
+          : `openssl s_client -starttls smtp -connect ${endpoint}`,
       });
     });
 
@@ -236,7 +239,9 @@ export function smtpMailDriver(options: SmtpDriverOptions): MailDriver {
         stage: 'data',
         detail: `${messageOf(error)} — the mail log on ${target.host} records why it dropped this`,
         retryable: true,
-        fix: `openssl s_client -crlf${starttls} -connect ${target.host}:${target.port}`,
+        fix: target.tls
+          ? `openssl s_client -crlf -connect ${endpoint}`
+          : `openssl s_client -crlf -starttls smtp -connect ${endpoint}`,
       });
     } finally {
       stream.close();

@@ -29,7 +29,7 @@ export class BackfillPendingError extends UltimateError {
     super({
       code: 'X_BACKFILL_PENDING',
       cause: `backfill "${input.backfill}" is declared and x_backfills holds no completed pass for it in ${input.environment}`,
-      fix: `x db backfill ${input.backfill} --write --json`,
+      fix: `x db backfill ${renderFixShellArg(input.backfill, '<backfill>')} --write --json`,
     });
   }
 }
@@ -40,7 +40,7 @@ export class BackfillAppliedError extends UltimateError {
     super({
       code: 'X_BACKFILL_APPLIED',
       cause: `backfill "${input.backfill}" completed as run ${input.runId} at ${input.completedAt}; a forced rerun writes a NEW ledger row and never edits that one`,
-      fix: `x db backfill ${input.backfill} --write --force --json`,
+      fix: `x db backfill ${renderFixShellArg(input.backfill, '<backfill>')} --write --force --json`,
     });
   }
 }
@@ -95,7 +95,7 @@ export class BackfillRunningError extends UltimateError {
     super({
       code: 'X_BACKFILL_RUNNING',
       cause: `backfill "${input.backfill}" already has a live pass queued as ${input.jobId}, and one name holds one live pass; its step trace names the batch it is on, and a pass that is not advancing is a worker that lost its lease`,
-      fix: `x jobs show ${input.jobId} --json`,
+      fix: `x jobs show ${renderFixShellArg(input.jobId, '<job id>')} --json`,
     });
   }
 }

@@ -6,6 +6,7 @@ import {
   checkSurfaceBoundary,
   importGraph,
   locateSurface,
+  surfaceAllows,
   surfaceOf,
   surfaceUnder,
 } from './surfaces';
@@ -209,5 +210,18 @@ describe('a workspace named like a surface', () => {
   test('a path outside apps/ is read as before', () => {
     expect(surfaceOf('site/pricing/page.tsx')).toBe('site');
     expect(surfaceOf('packages/ui/src/card.tsx')).toBeNull();
+  });
+});
+
+// A surface reaches `surfaceAllows` from a route descriptor, which a JS caller can build by hand.
+// Read off a `{}` table, `constructor` answered `Object`, and `.allowedModes.includes` threw a bare
+// TypeError out of the boundary check.
+describe('surfaceAllows, a surface that is not one', () => {
+  test('constructor allows nothing', () => {
+    expect(surfaceAllows('constructor' as Surface, 'static')).toBe(false);
+  });
+
+  test('a real surface still answers', () => {
+    expect(surfaceAllows('site', 'static')).toBe(true);
   });
 });

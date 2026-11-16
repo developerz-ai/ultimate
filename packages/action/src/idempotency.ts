@@ -14,6 +14,7 @@ import {
   logger,
   MAX_TIMER_MS,
   runToCompletion,
+  timingSafeEqual,
   tryUseContext,
 } from '@ultimat3/core';
 import { adapterSlot } from '@ultimat3/core/adapter';
@@ -296,7 +297,9 @@ export async function withIdempotency<T>(
   );
   const requestHash = keyedFingerprint(input, IDEMPOTENCY_FINGERPRINT_PURPOSE);
   const { record, created } = await store.reserve(key, requestHash);
-  if (record.requestHash !== requestHash) assertSamePayload(key, record.requestHash, input);
+  // Keyed fingerprints, and the request side is the caller's to vary: compared in constant time.
+  if (!timingSafeEqual(record.requestHash, requestHash))
+    assertSamePayload(key, record.requestHash, input);
   if (!created) {
     if (record.status === 'in-flight') throw new IdempotencyConflictError(key, 'in-flight');
     if (record.status === 'failed') throw new IdempotencyReplayedFailureError(key, record.failure);

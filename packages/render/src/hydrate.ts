@@ -239,11 +239,14 @@ const RUNTIME_INTERACTION = `
 each('[data-x-hydrate="interaction"]',catchUp)
 `.trim();
 
-const RUNTIME_PARTS: Readonly<Record<Exclude<HydrateStrategy, 'never'>, string>> = {
-  idle: RUNTIME_IDLE,
-  visible: RUNTIME_VISIBLE,
-  interaction: RUNTIME_INTERACTION,
-};
+const RUNTIME_PARTS: Readonly<Record<Exclude<HydrateStrategy, 'never'>, string>> = Object.assign(
+  Object.create(null),
+  {
+    idle: RUNTIME_IDLE,
+    visible: RUNTIME_VISIBLE,
+    interaction: RUNTIME_INTERACTION,
+  } satisfies Readonly<Record<Exclude<HydrateStrategy, 'never'>, string>>,
+);
 
 /**
  * Emission order, and the order the subsets below are enumerated in. Derived from core's one

@@ -48,7 +48,7 @@ export const packageOf = (file: string): string | undefined => {
 export const countByPackage = (
   diagnostics: readonly TestDiagnostic[],
 ): Readonly<Record<string, number>> => {
-  const counts: Record<string, number> = {};
+  const counts: Record<string, number> = Object.create(null);
   for (const diagnostic of diagnostics) {
     const pkg = packageOf(diagnostic.file);
     if (pkg === undefined) continue;

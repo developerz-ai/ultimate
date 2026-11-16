@@ -108,27 +108,33 @@ const RUN_WINDOW = 50;
  * in neither, and filing it under `dead` would put `x jobs retry` in front of a reader as the
  * remedy for a cancellation nobody wants resurrected.
  */
-const RUN_STATUS: Readonly<Record<JobState, JobRunFact['status']>> = {
-  ready: 'running',
-  delayed: 'running',
-  running: 'running',
-  suspended: 'running',
-  done: 'ok',
-  cancelled: 'ok',
-  failed: 'failed',
-  dead: 'dead',
-};
+const RUN_STATUS: Readonly<Record<JobState, JobRunFact['status']>> = Object.assign(
+  Object.create(null),
+  {
+    ready: 'running',
+    delayed: 'running',
+    running: 'running',
+    suspended: 'running',
+    done: 'ok',
+    cancelled: 'ok',
+    failed: 'failed',
+    dead: 'dead',
+  } satisfies Readonly<Record<JobState, JobRunFact['status']>>,
+);
 
-const STEP_STATUS: Readonly<Record<StepStatus, JobStepFact['status']>> = {
-  completed: 'ok',
-  sleeping: 'sleeping',
-  waiting: 'pending',
-  failed: 'failed',
-  // A `once` step whose `fn` began and recorded no outcome: in flight, or unknown until an operator
-  // says so with `x jobs resolve-step`. `cleared` is that operator's "it did not run": it runs again.
-  started: 'running',
-  cleared: 'pending',
-};
+const STEP_STATUS: Readonly<Record<StepStatus, JobStepFact['status']>> = Object.assign(
+  Object.create(null),
+  {
+    completed: 'ok',
+    sleeping: 'sleeping',
+    waiting: 'pending',
+    failed: 'failed',
+    // A `once` step whose `fn` began and recorded no outcome: in flight, or unknown until an operator
+    // says so with `x jobs resolve-step`. `cleared` is that operator's "it did not run": it runs again.
+    started: 'running',
+    cleared: 'pending',
+  } satisfies Readonly<Record<StepStatus, JobStepFact['status']>>,
+);
 
 /**
  * Every registry is read through its OWN descriptor type, not as an untyped bag. The bag was

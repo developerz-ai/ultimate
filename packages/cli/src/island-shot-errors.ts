@@ -3,6 +3,7 @@
 // call stay in `error-codes.ts`: one owner, one registration, one place a duplicate can surface.
 
 import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
+import { quoteArg } from './shell-quote';
 
 // No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`.
 
@@ -87,7 +88,7 @@ export class IslandShotsMissingError extends UltimateError {
     super({
       code: 'X_SHOT_ISLAND_MISSING',
       cause: `${input.missing.length} of ${input.expected} declared picture(s) are not on disk under ${renderCauseValue(input.dir)}: ${input.missing.join(', ')}`,
-      fix: `x shot --island ${input.island} --json   # the run above names why each one was refused`,
+      fix: `x shot --island ${quoteArg(input.island)} --json   # the run above names why each one was refused`,
       meta: { island: input.island, missing: [...input.missing] },
     });
   }

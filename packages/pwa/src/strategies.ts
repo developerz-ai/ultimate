@@ -90,7 +90,8 @@ export function strategyFor(route: PwaRoute): StrategyName {
   if (route.strategy !== undefined) return route.strategy;
   // `network-only` is a declaration that this URL must never be answered from a cache.
   if (route.offline === 'network-only' || route.personal === true) return 'network-only';
-  return MODE_STRATEGY[route.mode];
+  // Own keys only: a mode that is not one is never cached — the safe answer for an unknown page.
+  return Object.hasOwn(MODE_STRATEGY, route.mode) ? MODE_STRATEGY[route.mode] : 'network-only';
 }
 
 export interface StrategyEnv {

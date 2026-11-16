@@ -28,6 +28,7 @@ import { portFree } from './port-probe';
 import type { StartRolesOptions } from './role-start';
 import { startOrWaitForBus } from './role-sync-bus-wait';
 import type { Env } from './runtime-bindings';
+import { quoteArg } from './shell-quote';
 import { syncAuthenticator } from './sync-authenticator';
 import { syncOriginsFrom } from './sync-url';
 // A value edge back into `role-start.ts`, read only inside a call: the one parser of
@@ -55,7 +56,7 @@ class SyncPortInUseError extends UltimateError {
       // web port IS the sync port this refusal is about — the fix said `x dev --port 4000` for a
       // run that had just died on 4000, and a test named "its fix is a command that ends the
       // failure" pinned it.
-      fix: `x dev --port ${portPairAfter(input.webPort)}   # or free port ${input.port}: lsof -nP -iTCP:${input.port} -sTCP:LISTEN`,
+      fix: `x dev --port ${quoteArg(String(portPairAfter(input.webPort)))}   # or free port ${input.port}: lsof -nP -iTCP:${input.port} -sTCP:LISTEN`,
       meta: { port: input.port, webPort: input.webPort },
     });
   }

@@ -3,6 +3,7 @@
 // only grew, a `const` object or a class instance that only gained members — are compatible; a
 // `declaration` is judged by its own text and the shapes of its locals. The rest is a break.
 
+import { timingSafeEqual } from '../../packages/core/src/timing-safe-equal';
 import type { ApiChange, ApiSymbol } from './public-api-compat-rules';
 import { bare, breaks, members, optional, own, params } from './public-api-compat-rules';
 import type { ApiShape, MemberCode } from './public-api-shape';
@@ -134,7 +135,7 @@ function callShapes(was: ApiShape, now: ApiShape | undefined): ApiChange | undef
 
 /** `before` (the lock) against `after` (the tree). */
 export function classify(before: ApiSymbol, after: ApiSymbol): ApiChange {
-  if (before.hash === after.hash) return { kind: 'same' };
+  if (timingSafeEqual(before.hash, after.hash)) return { kind: 'same' };
   const [was, now] = [before.shape, after.shape];
   if (was === undefined || was.kind === 'unrecorded') {
     return breaks('its declaration changed, and the lock holds no shape to judge the change by');
