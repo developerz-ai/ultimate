@@ -4,6 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { git } from './lib/release-due-git';
+import { gitLastTouch } from './lib/roadmap-stale-plans';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
   checkRoadmap,
@@ -11,7 +13,9 @@ import {
   milestoneNumbersIn,
   milestoneRow,
   REQUIRED_ARTIFACTS,
+  ROADMAP_DEPS,
   ROADMAP_FILE,
+  roadmapCheck,
   STATUS_MARK,
 } from './roadmap';
 
@@ -41,8 +45,17 @@ async function inTempRepo(
 }
 
 describe('unit · the roadmap table is the gate', () => {
-  test('this repo passes its own roadmap check', async () => {
-    expect(await checkRoadmap(repoRoot())).toEqual([]);
+  // The clock is HEAD's own commit time, never the wall clock: the tree is judged as of the commit
+  // under test, so this case cannot turn red because a calendar moved past a tracker.
+  test('this repo passes its own roadmap check, as of its HEAD commit', async () => {
+    const head = await git(['log', '-1', '--format=%ct'], repoRoot());
+    expect(head.ok, head.output).toBe(true);
+    const now = (): number => Number(head.output.trim()) * 1000;
+    expect(await roadmapCheck({ now, lastTouch: gitLastTouch })(repoRoot())).toEqual([]);
+  });
+
+  test('the gate step reads git, and its clock is the only wall clock', () => {
+    expect(ROADMAP_DEPS.lastTouch).toBe(gitLastTouch);
   });
 
   test('a deleted roadmap is a finding, not a silent pass', async () => {
@@ -162,6 +175,54 @@ describe('unit · a milestone row the code has never heard of', () => {
       expect(finding?.cause).toContain('milestone 12');
       expect(finding?.fix).toContain('REQUIRED_ARTIFACTS');
       expect(finding?.at).toBe(ROADMAP_FILE);
+    });
+  });
+});
+
+describe('unit · the step refuses a plan tracker nobody works', () => {
+  const STALE = 'docs/plans/2026/09/01/101-x/status.yml';
+  const inProgress = Object.fromEntries(
+    MILESTONE_NUMBERS.map((n) => [n, STATUS_MARK['in-progress']]),
+  );
+
+  /** A git fixture: a clean roadmap, and one tracker committed on 2026-09-01 reading `status`. */
+  async function staleRepo(status: string, fn: (dir: string) => Promise<void>): Promise<void> {
+    await inTempRepo(roadmapWith(inProgress), async (dir) => {
+      const iso = '2026-09-01T00:00:00Z';
+      const env = { GIT_AUTHOR_DATE: iso, GIT_COMMITTER_DATE: iso };
+      const id = [
+        '-c',
+        'user.email=t@example.test',
+        '-c',
+        'user.name=t',
+        '-c',
+        'commit.gpgsign=false',
+      ];
+      await Bun.write(join(dir, STALE), `plan: 101-x\nstatus: ${status}\nslices: []\n`);
+      expect((await git(['init', '--quiet', '--initial-branch=main'], dir)).ok).toBe(true);
+      expect((await git([...id, 'add', '-A'], dir, env)).ok).toBe(true);
+      const made = await git([...id, 'commit', '--quiet', '-m', 'plan'], dir, env);
+      expect(made.ok, made.output).toBe(true);
+      await fn(dir);
+    });
+  }
+
+  const onNov15 = roadmapCheck({
+    now: () => Date.parse('2026-11-15T00:00:00Z'),
+    lastTouch: gitLastTouch,
+  });
+
+  test('in_progress and untouched since 2026-09-01 fails the step on 2026-11-15', async () => {
+    await staleRepo('in_progress', async (dir) => {
+      const findings = await onNov15(dir);
+      expect(findings.map((finding) => finding.code)).toEqual(['X_ROADMAP_TRACKER_STALE']);
+      expect(findings[0]?.at).toBe(STALE);
+    });
+  });
+
+  test('the same tracker marked superseded passes', async () => {
+    await staleRepo('superseded', async (dir) => {
+      expect(await onNov15(dir)).toEqual([]);
     });
   });
 });

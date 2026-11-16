@@ -1,0 +1,23 @@
+# The stale-branches health row's one read (scripts/lib/health-branches.ts): every dz/* branch, its
+# tip's commit date and its newest pull request, with the total so a truncated page is no verdict.
+{
+  repository(owner: "developerz-ai", name: "ultimate") {
+    refs(refPrefix: "refs/heads/dz/", first: 100) {
+      totalCount
+      nodes {
+        name
+        target {
+          ... on Commit {
+            committedDate
+          }
+        }
+        associatedPullRequests(last: 1) {
+          nodes {
+            number
+            state
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,13 +1,28 @@
-// The health checkup's default readers: what each of the eleven rows reads, and the one query row 4
-// asks `gh` for. Moved out of scripts/health.ts, which stood at 499 lines — one under the 500-line
-// ceiling `x verify`'s filesize step enforces — and the runner is a parameter, so a test can drive
-// the real row-4 reader and read the argv it asked for: no subprocess, no second copy. Row 9's
-// read itself is health-release.ts's; this table composes it, so the checkup stays one reader map.
+// The health checkup's default readers: what each row reads, and the one query row 4 asks `gh` for.
+// The runner is a parameter, so a test drives a real reader and reads the argv it asked for: no
+// subprocess, no second copy. Rows 9 onward read in their own health-<row>.ts; this table composes
+// them, so the checkup stays one reader map.
 
+import type { BenchRead } from './health-bench';
+import { benchReader } from './health-bench';
+import type { BotIssuesRead } from './health-bot-issues';
+import { botIssuesReader } from './health-bot-issues';
+import type { BranchesRead } from './health-branches';
+import { branchesReader } from './health-branches';
+import type { CompatRead } from './health-compat';
+import { compatReader } from './health-compat';
+import type { DocsOriginRead } from './health-docs-origin';
+import { docsOriginReader } from './health-docs-origin';
 import type { FlakeHuntRead } from './health-flake-hunt';
 import { flakeHuntReader } from './health-flake-hunt';
+import type { MaintLaneRead } from './health-maint';
+import { maintLaneReader } from './health-maint';
 import type { ReleaseExistsRead } from './health-release';
 import { releaseExistsReader } from './health-release';
+import type { SecretRead } from './health-secret';
+import { secretReader } from './health-secret';
+import type { TrustRead } from './health-trust';
+import { trustReader } from './health-trust';
 import type { TutorialsRunRead } from './health-tutorials';
 import { tutorialsRunReader } from './health-tutorials';
 import { gh } from './release-due-gh';
@@ -51,6 +66,9 @@ export const CI_ARGS = [
   'main',
   '--json',
 ] as const;
+
+/** Row 7's page size: a page this full is truncated, and the brief files nothing off it. */
+export const DEPENDABOT_LIMIT = 5;
 
 const GIT_BROKEN = { ok: false as const, output: '' };
 
@@ -127,6 +145,14 @@ export interface HealthReaders {
   readonly 'release-exists': () => Promise<ReleaseExistsRead>;
   readonly 'tutorials-run': () => Promise<TutorialsRunRead>;
   readonly 'flake-hunt': () => Promise<FlakeHuntRead>;
+  readonly bench: () => Promise<BenchRead>;
+  readonly compat: () => Promise<CompatRead>;
+  readonly 'maint-lane': () => Promise<MaintLaneRead>;
+  readonly 'registry-trust': () => Promise<TrustRead>;
+  readonly 'private-names-secret': () => Promise<SecretRead>;
+  readonly 'docs-site-origin': () => Promise<DocsOriginRead>;
+  readonly 'stale-bot-issues': () => Promise<BotIssuesRead>;
+  readonly 'stale-branches': () => Promise<BranchesRead>;
 }
 
 /** Replaces any single reader, so a test names a world without one subprocess. */
@@ -217,6 +243,8 @@ export const defaultReaders = (root: string, ghRunner: GhRunner = gh): HealthRea
             'list',
             '--app',
             'dependabot',
+            '--limit',
+            String(DEPENDABOT_LIMIT),
             '--state',
             'open',
             '--json',
@@ -249,4 +277,12 @@ export const defaultReaders = (root: string, ghRunner: GhRunner = gh): HealthRea
   'release-exists': () => releaseExistsReader(root, ghRunner),
   'tutorials-run': () => tutorialsRunReader(root, ghRunner),
   'flake-hunt': () => flakeHuntReader(root, ghRunner),
+  bench: () => benchReader(root, ghRunner),
+  compat: () => compatReader(root, ghRunner),
+  'maint-lane': () => maintLaneReader(root, { gh: ghRunner }),
+  'registry-trust': () => trustReader(root),
+  'private-names-secret': () => secretReader(root, ghRunner),
+  'docs-site-origin': () => docsOriginReader(root, ghRunner),
+  'stale-bot-issues': () => botIssuesReader(root, ghRunner),
+  'stale-branches': () => branchesReader(root, ghRunner),
 });

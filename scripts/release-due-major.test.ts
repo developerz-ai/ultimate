@@ -19,9 +19,11 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { git as gitIn } from './lib/release-due-git';
+import type { GhLookup } from './lib/release-due-next-read';
+import { nextLaneAt } from './lib/release-due-next-read';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import type { TagProbe } from './registry-audit';
-import { decideAt, type IssueSubject, openIssueTitlesAt } from './release-due';
+import { decideAt, type IssueSubject, nextLaneLines, openIssueTitlesAt } from './release-due';
 
 // Each test spawns a dozen git processes.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -244,5 +246,75 @@ describe('unit · release-due · the pending-major issue twin', () => {
     expect(read.decision.detail).not.toContain('file one issue');
     expect(read.decision.detail).not.toContain('already open');
     expect(read.decision.detail).toContain('could not answer');
+  });
+});
+
+// The major path itself (plan 101b 11 L1, OD3): the window and `next` decide whether a major is
+// PROPOSED as one merge-and-bump PR, read from a real changelog on disk and a fake `gh`.
+describe('unit · release-due · the next lane proposes a major, never cuts one', () => {
+  const TIP = 'f'.repeat(40);
+  /** A tree whose newest major, 31.0.0, is dated 2026-11-10: the window opens 2027-02-08. */
+  async function stable(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), 'release-due-next-'));
+    madeDirs.push(dir);
+    await Bun.write(join(dir, 'CHANGELOG.md'), CHANGELOG);
+    await Bun.write(join(dir, 'docs/changelog/31.0.0.md'), '## 31.0.0 - 2026-11-10\n\n- stable\n');
+    await Bun.write(join(dir, 'docs/changelog/31.30.0.md'), '## 31.30.0 - 2026-11-15\n\n- minor\n');
+    return dir;
+  }
+  /** GitHub as the lane reads it: `next` at TIP, five files ahead, green, no proposal open. */
+  const github =
+    (asked: string[]): GhLookup =>
+    async (args) => {
+      asked.push(args.slice(0, 2).join(' '));
+      const output =
+        args[0] === 'pr'
+          ? '[]'
+          : args[0] === 'run'
+            ? JSON.stringify([
+                { headSha: TIP, status: 'completed', conclusion: 'success', url: 'u' },
+              ])
+            : String(args[1]).endsWith('/branches/next')
+              ? TIP
+              : '{"behind":2,"files":5}';
+      return {
+        command: ['gh', ...args],
+        code: 0,
+        ok: true,
+        output,
+        durationMs: 1,
+        timedOut: false,
+      };
+    };
+
+  test('window open and next green and ahead: proposes 32.0.0 as one PR', async () => {
+    const dir = await stable();
+    const asked: string[] = [];
+    const lane = await nextLaneAt(dir, '31.30.0', Date.UTC(2027, 1, 9, 3), github(asked));
+    expect(lane.propose).toBe(true);
+    expect(lane.version).toBe('32.0.0');
+    expect(lane.prTitle).toBe('chore: release 32.0.0');
+    expect(lane.windowOpensOn).toBe('2027-02-08');
+    expect(asked.sort()).toEqual([
+      'api repos/{owner}/{repo}/branches/next',
+      'api repos/{owner}/{repo}/compare/main...next',
+      'pr list',
+      'run list',
+    ]);
+    const lines = nextLaneLines(lane);
+    expect(lines[0]).toStartWith('  next lane propose 32.0.0: ');
+    expect(lines).toContain('  step      bun run scripts/release.ts --version 32.0.0');
+  });
+
+  test('window closed: refuses with X_RELEASE_MAJOR_WINDOW and never asks GitHub', async () => {
+    const dir = await stable();
+    const asked: string[] = [];
+    const lane = await nextLaneAt(dir, '31.30.0', NOW + 33 * 24 * HOUR, github(asked));
+    expect(lane.propose).toBe(false);
+    expect(lane.reason).toBe('window_closed');
+    expect(lane.refusal?.code).toBe('X_RELEASE_MAJOR_WINDOW');
+    expect(lane.windowOpensOn).toBe('2027-02-08');
+    expect(asked).toEqual([]);
+    expect(nextLaneLines(lane)).toEqual([`  next lane window_closed (32.0.0): ${lane.detail}`]);
   });
 });

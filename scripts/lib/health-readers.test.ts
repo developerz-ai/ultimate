@@ -3,6 +3,7 @@
 // ended badly is judged over what the reader actually read.
 
 import { describe, expect, test } from 'bun:test';
+import { ROW_COMMANDS } from '../health';
 import { narrowRuns } from './health-narrow';
 import type { GhRunner } from './health-readers';
 import { defaultReaders, TAG_RUN_FIELDS } from './health-readers';
@@ -74,4 +75,27 @@ describe('unit · health-readers · the tag-runs reader', () => {
       expect(verdict.conclusion).toBe(conclusion);
     });
   }
+});
+
+describe('unit · health-readers · every gh row spawns the command its refusal quotes', () => {
+  // The brief's table and the refusals quote ROW_COMMANDS; a reader that spawns anything else
+  // answers a query nobody can re-run. Dependabot's reader once dropped `--limit 5` this way.
+  const ghOnly = [
+    'tag-runs-ended-well',
+    'automation-alarms',
+    'dependabot-not-stuck',
+    'demo-shipped',
+    'tutorials-run',
+    'flake-hunt',
+    'bench',
+    'compat',
+    'private-names-secret',
+    'docs-site-origin',
+    'stale-bot-issues',
+  ] as const;
+  test.each(ghOnly)('%s', async (row) => {
+    const stub = stubRunner('[]');
+    await defaultReaders('.', stub.runner)[row]();
+    expect(stub.asked.map((argv) => `gh ${argv.join(' ')}`).join('; ')).toBe(ROW_COMMANDS[row]);
+  });
 });

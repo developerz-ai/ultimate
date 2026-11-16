@@ -5,12 +5,16 @@
 
 import { describe, expect, test } from 'bun:test';
 import { parseChangelog } from './lib/changelog-sections';
+import { distTagFor } from './lib/dist-tag';
 import { releaseDate } from './lib/release-changelog';
 import {
   askIssueArgs,
   askLookupFailedLine,
   BUMPS,
   bumpWindowFindings,
+  laneFindings,
+  laneOf,
+  maintenanceMajor,
   nextVersion,
   parseAskIssues,
   RELEASE_FLAGS,
@@ -312,5 +316,75 @@ describe('unit · the ask a release closes', () => {
     expect(parseAskIssues('')).toEqual([]);
     expect(parseAskIssues('{"number":813,"title":"Release 27.11.0"}')).toEqual([]);
     expect(parseAskIssues('[{}]')).toEqual([]);
+  });
+});
+
+describe('unit · maint · a release/<major>.x branch ships patches of its major, under maint-<major>', () => {
+  const lane = (branch: string, current: string, bump: 'patch' | 'minor' | 'major') => {
+    const resolved = readReleaseVersion({ explicit: undefined, bump, current });
+    if ('findings' in resolved) return expect.unreachable('a declared bump always resolves');
+    return {
+      version: resolved.version,
+      findings: laneFindings({ branch, current, version: resolved.version }),
+    };
+  };
+
+  test('maint: a patch from release/30.x is the next 30.x patch and tags under maint-30, never latest', () => {
+    const { version, findings } = lane('release/30.x', '30.9.0', 'patch');
+    expect(version).toBe('30.9.1');
+    expect(findings).toEqual([]);
+    // What release.yml's `check` job asks once 31 is npm's latest: the patch earns maint-30.
+    const tag = distTagFor(version, '31.30.0');
+    expect(tag).toEqual({ tag: 'maint-30' });
+    expect(tag).not.toEqual({ tag: 'latest' });
+  });
+
+  test('maint: --bump minor and --bump major on release/30.x are refused before a manifest moves', () => {
+    for (const bump of ['minor', 'major'] as const) {
+      const { findings } = lane('release/30.x', '30.9.0', bump);
+      expect(findings.map((finding) => finding.code)).toEqual(['X_RELEASE_LANE_PATCH_ONLY']);
+      expect(findings[0]?.cause).toContain('release/30.x');
+      expect(findings[0]?.fix.startsWith('bun run scripts/release.ts --bump patch')).toBe(true);
+    }
+  });
+
+  test('maint: --version is held to the same rule — a patch of the line, nothing wider', () => {
+    const at = (version: string) =>
+      laneFindings({ branch: 'release/30.x', current: '30.9.0', version }).map((f) => f.code);
+    expect(at('30.9.3')).toEqual([]);
+    expect(at('30.10.0')).toEqual(['X_RELEASE_LANE_PATCH_ONLY']);
+    expect(at('30.10.1')).toEqual(['X_RELEASE_LANE_PATCH_ONLY']);
+  });
+
+  test('maint: a tree that is not at the branch major is refused, whatever the bump', () => {
+    // release/30.x checked out over a 31 tree: the patch would be 31.30.1, published off the line.
+    const { findings } = lane('release/30.x', '31.30.0', 'patch');
+    expect(findings.map((finding) => finding.code)).toEqual(['X_RELEASE_LANE_PATCH_ONLY']);
+  });
+
+  test('maint: main, a bump branch and a detached HEAD are no lane: every bump stands', () => {
+    for (const branch of [undefined, '', 'main', 'chore/release-31.31.0', 'release/31.31.0']) {
+      expect(laneFindings({ branch, current: '31.30.0', version: '32.0.0' })).toEqual([]);
+    }
+  });
+
+  test('maint: the major is read from release/<major>.x and nothing looser', () => {
+    expect(maintenanceMajor('release/30.x')).toBe(30);
+    expect(maintenanceMajor('release/7.x')).toBe(7);
+    expect(maintenanceMajor('release/30.1.x')).toBeUndefined();
+    expect(maintenanceMajor('release/x')).toBeUndefined();
+    expect(maintenanceMajor('main')).toBeUndefined();
+    expect(maintenanceMajor(undefined)).toBeUndefined();
+  });
+});
+
+describe('unit · maint · the lane a bump branch belongs to', () => {
+  test('maint: the checked-out line, else the line its upstream tracks, else none', () => {
+    expect(laneOf('release/30.x', undefined)).toBe('release/30.x');
+    // `git switch -c chore/release-30.9.1 origin/release/30.x` tracks the line it was cut from.
+    expect(laneOf('chore/release-30.9.1', 'origin/release/30.x')).toBe('release/30.x');
+    expect(laneOf('chore/release-31.31.0', 'origin/main')).toBeUndefined();
+    expect(laneOf('chore/release-31.31.0', undefined)).toBeUndefined();
+    expect(laneOf(undefined, 'origin/release/30.x')).toBe('release/30.x');
   });
 });

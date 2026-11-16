@@ -1,11 +1,11 @@
 plan: 101-absorb-reinvented-patterns
 title: "Make Ultimate the best framework for the world to build on"
-status: in_progress        # not_started | in_progress | blocked | complete | superseded
+status: superseded        # not_started | in_progress | blocked | complete | superseded
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
 percent: 99
-current_focus: "wave 10 (final): UI chart kit, searchable select, commands, navigation, lists, pickers, drag, viewers; page capture; app shapes api/blog/dashboard (saas and agent wait on an invite+billing seam and an env-only model choice); comparison benches; the docs site (live once the owner sets DOCS_SITE_ORIGIN and DNS); ops CI (measured in CI after merge); the module-mock boundary; island disposers enforced. Open after the plan: repro reproduced end to end in the app, entity lifecycle counts where + history(id) + paced recount, x.verify.json isolate:false after measuring cli without isolation, touch-drag proofs (the CDP page needs real pointer/touch/viewport)."
+current_focus: "Superseded 2026-11-15 by docs/plans/2026/11/14/101-finished-and-self-maintained (plan 101b, slice 12 M1): one tracker is live. Every open row moved, each slice row below names where; the rest of this plan shipped. Open-after items: repro end to end -> 101b 08 U6; entity lifecycle counts -> 101b 03 E4; isolate:false -> wiki/Known-Gaps.md (rejected); touch-drag proofs -> 101b 06 U1; the module-mock boundary -> 101b 10; saas and agent shapes -> 101b 13 S1 (invite seam: 101b 04); docs site origin -> 101b 11 L5; ops CI number -> wiki/Known-Gaps.md (deferred)."
 slices:
   - file: 01-ai-tool-gate.md
     tier: 3
@@ -276,9 +276,9 @@ slices:
   - file: 33-ops-ci.md
     tier: 5
     sweep: "15"
-    status: in_progress
+    status: superseded
     percent: 90
-    note: "x ci tested and the four flakes done. Wave 6a: parallel coverage gate (units weighted by measured core-seconds, cli alone on shard 1/2, scripts/lib/coverage-schedule.ts) and contract/job moved to the unit shards (ci.yml). Local packages critical path ~400 s -> 249-286 s (four cores, 2026-11-05); the CI number is due. cli's own slow tests (x upgrade hop, scaffold tsc) are what is left"
+    note: "superseded 2026-11-15: x ci tested and the flakes shipped; what is left (the CI critical-path number, the cli slow tests: x upgrade hop, scaffold tsc) is wiki/Known-Gaps.md, Carried from the 2026-11 plans, deferred (was: x ci tested and the four flakes done. Wave 6a: parallel coverage gate (units weighted by measured core-seconds, cli alone on shard 1/2, scripts/lib/coverage-schedule.ts) and contract/job moved to the unit shards (ci.yml). Local packages critical path ~400 s -> 249-286 s (four cores, 2026-11-05); the CI number is due. cli's own slow tests (x upgrade hop, scaffold tsc) are what is left)"
   - file: 28-assets-deploy-skew.md
     tier: 0
     sweep: "15"
@@ -477,13 +477,15 @@ slices:
   - file: 40-next-repro.md
     tier: 0
     sweep: "25"
-    status: in_progress
+    status: superseded
     percent: 90
+    note: "superseded 2026-11-15: carried to 101b 08 U6 (08-upgrade-without-hands.md:11, carried: 2026/11/02 slice 40)"
   - file: 41-add-entity-lifecycle.md
     tier: 1
     sweep: "25b"           # finished by 2026/11/11/101-full-stack-efficiency-sweeps sweep 5b (E10)
     status: superseded
     percent: 85
+    note: "its three open items (where, history(id), paced recount) carried to 101b 03 E4 (03-db-entity-policy.md:9, carried from 2026/11/02)"
   - file: 41-add-agent-wire.md
     tier: 0
     sweep: "26"
@@ -537,8 +539,9 @@ slices:
   - file: 42-adopt-shapes.md
     tier: 5
     sweep: "28"
-    status: in_progress
+    status: superseded
     percent: 70
+    note: "superseded 2026-11-15: saas and agent shapes carried to 101b 13 S1 (13-shapes-and-declaration.md:6, 2026/11/02 slice 42 at 70%); the invite seam is 101b 04"
   - file: 23-ui-chart-kit.md
     tier: 4
     sweep: "29"
@@ -572,8 +575,9 @@ slices:
   - file: 38-ui-drag-layout.md
     tier: 4
     sweep: "32"
-    status: in_progress
+    status: superseded
     percent: 95
+    note: "superseded 2026-11-15: touch-drag proofs carried to 101b 06 U1 (06-ai-mail-scraping-ui.md:10, 2026/11/02 slice 38)"
   - file: 38-ui-viewers.md
     tier: 4
     sweep: "32"
@@ -582,8 +586,9 @@ slices:
   - file: 42-adopt-docs-site.md
     tier: 5
     sweep: "33"
-    status: in_progress
+    status: superseded
     percent: 90
+    note: "superseded 2026-11-15: the live origin carried to 101b 11 L5 (11-compat-and-longevity.md:10, the docs-site origin health row); the ERROR_DOCS_URL flip to 101b 11 L1 (11-compat-and-longevity.md:14, the next tracking issue)"
   - file: 31-test-file-boundary.md
     tier: 5
     sweep: "35"
@@ -592,8 +597,9 @@ slices:
   - file: 31-test-false-green.md
     tier: 0
     sweep: "35"
-    status: in_progress
+    status: superseded
     percent: 95
+    note: "superseded 2026-11-15: step 4 (framework isolate:false) is wiki/Known-Gaps.md, Carried from the 2026-11 plans, rejected: the slice's own fallback (keep the flag, record why) holds, wiki/Testing.md records it"
   - file: 42-adopt-proof.md
     tier: 5
     sweep: "35"
@@ -601,4 +607,4 @@ slices:
     percent: 100
 evidence: []
 notes: "Slices stay numbered by area; execution order is by sweep. 90-deferred.md is not a slice and has no row."
-last_updated: 2026-11-05
+last_updated: 2026-11-15

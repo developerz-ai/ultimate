@@ -2,12 +2,13 @@
 // `cmd-doctor.test.ts` (the findings) and `cmd-doctor-probe.test.ts` (reading the real machine).
 
 import { REQUIRED_BUN } from './app-root';
+import type { DoctorReportProbe } from './cmd-doctor';
 import { runDoctor } from './cmd-doctor';
 import { NO_APP_ENV_NAMES } from './doctor-env-reserved';
 import { NO_POOLER_FACT } from './doctor-pooler';
 import type { DoctorProbe } from './doctor-probe';
 
-export const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
+export const probe = (over: Partial<DoctorReportProbe> = {}): DoctorReportProbe => ({
   bunVersion: REQUIRED_BUN,
   root: '/app',
   port: 3000,
@@ -45,6 +46,8 @@ export const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   pins: async () => ({ pins: [], installed: new Map() }),
   // Every step that applies is floored.
   unflooredSteps: async () => [],
+  // Nothing to list: this machine's Chrome is never started under a unit test's clock.
+  browser: async () => undefined,
   ...over,
 });
 

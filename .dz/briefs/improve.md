@@ -18,7 +18,7 @@ each thing" bind every change made here exactly as they bind any other PR.
 | Signal | Command | Worth acting on |
 |---|---|---|
 | the gate on fresh `main` | `bun run verify` | anything red or slow: a step near its deadline (`packages/cli/src/verify-deadline.ts`), a test that only passed on retry |
-| Bun | `npm view bun version` against `.bun-version` | a newer series. Dependabot ignores `bun` (`.github/dependabot.yml`), so nothing else ever bumps it; every pin site moves together (`scripts/bun-pin.test.ts`) |
+| Bun | `npm view bun version` against `.bun-version` | a newer patch or series. Dependabot ignores `bun` (`.github/dependabot.yml`), so nothing else ever bumps it; every pin site moves together, the floor included (`scripts/bun-pin.test.ts`), so the move is a break: `docs/ops/08-raise-bun.md`, on `next` |
 | dependency majors | `bun outdated` | a major Dependabot's grouped minor/patch PRs never cover, or a Dependabot major closed red |
 | coverage, per unit | `bun run coverage` | a package close to its bar, or a bar that could be raised with tests that fail on a real regression |
 | open bugs | `gh issue list --state open --label bug --json number,title,labels,updatedAt,url` | a reproduced bug nobody has picked up |
@@ -32,7 +32,9 @@ be read, that is the first improvement.
 
 1. **Anything the gate or the signals found broken or flaky.** Root cause, not a retry or a skip.
 2. **Bun and dependency majors.** One series or one major per PR; the full `bun run verify` is the
-   verdict, and `bun run lockfile` must be clean after.
+   verdict, and `bun run lockfile` must be clean after. A Bun pin, a Postgres major or a Solid
+   major follows its playbook (`docs/ops/08-raise-bun.md`, `docs/ops/09-postgres-major.md`,
+   `docs/ops/10-solid-major.md`); the Bun and Solid ones target `next`, never `main`.
 3. **Correctness.** Open `bug` issues first, then an error path that can still end in a bare
    `Error`, a swallowed rejection or a silent skip: every failure carries a stable `X_*` code, a
    cause and an executable `fix:` (`bun run new-error-code`).
@@ -66,6 +68,8 @@ carries the evidence:
 **Never ship a breaking change from this checkup**: an improvement nobody asked for is not worth a
 migration for every app. Open an issue for the owner instead, titled `Breaking improvement
 proposed: <what>`, with the evidence and the `wiki/Upgrading.md` entry it would need, and move on.
+The one exception is a playbook move above: it opens against `next`, and ships only when a person
+merges the next major.
 Never touch release or publish automation (`.github/workflows/release*.yml`, `scripts/release*`,
 `PUBLISHING.md`) from here; a problem there is an issue, not a drive-by.
 
@@ -77,4 +81,4 @@ no renames, no comment-only diffs to show activity.
 - `first-monday` — Stop unless the UTC day of the month is 1-7.
 - `signals` — Run every signal command on fresh `main`; an unreadable one is the first improvement.
 - `pick` — At most three improvements, in the priority order above.
-- `ship` — One small PR each, with its evidence and a green `bun run verify`; no version bump, no breaking change, no churn.
+- `ship` — One small PR each, with its evidence and a green `bun run verify`; no version bump, no breaking change but a playbook move to `next`, no churn.

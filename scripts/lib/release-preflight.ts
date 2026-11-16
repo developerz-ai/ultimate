@@ -5,6 +5,7 @@
 
 import { renderFixShellArg } from '@ultimat3/core';
 import type { Finding } from './log';
+import { maintenanceMajor } from './release-lane';
 
 /** How many dirty paths a refusal names before it summarises the rest. */
 export const DIRTY_PATHS_SHOWN = 12;
@@ -58,10 +59,10 @@ export function treeDirtyFindings(
 /**
  * GitHub's branch filter for exactly `release/<major>.x` (`+` is one-or-more of the preceding
  * character, `.` is literal). `release-tag.yml` and `ci.yml` carry it verbatim, held there by
- * `scripts/release-tag-workflow-shape.test.ts`; `MAINTENANCE_BRANCH` is the same rule locally.
+ * `scripts/release-tag-workflow-shape.test.ts`; `maintenanceMajor` (`release-lane.ts`) is the same
+ * rule locally.
  */
 export const MAINTENANCE_BRANCH_GLOB = 'release/[0-9]+.x';
-const MAINTENANCE_BRANCH = /^release\/[0-9]+\.x$/;
 
 /**
  * A bump branch named `release/X.Y.Z` is refused. `release/*` reads as a maintenance line to a
@@ -73,7 +74,11 @@ export function branchNameFindings(
   branch: string | undefined,
   version: string,
 ): readonly Finding[] {
-  if (branch === undefined || !branch.startsWith('release/') || MAINTENANCE_BRANCH.test(branch)) {
+  if (
+    branch === undefined ||
+    !branch.startsWith('release/') ||
+    maintenanceMajor(branch) !== undefined
+  ) {
     return [];
   }
   return [

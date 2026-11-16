@@ -61,6 +61,7 @@ what each answer means.
 | a release is due — shipping commits nobody released | `bun run scripts/release-due.ts --json` — `.data.due`, `.data.reason`, `.data.command`, `.data.headSha` |
 | the OIDC trusted publisher is attached, `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 | the `npm-publish` environment's `v*` tag rule and empty reviewer list | `gh api repos/developerz-ai/ultimate/environments/npm-publish --jq '.protection_rules, .deployment_branch_policy'`, then `gh api repos/developerz-ai/ultimate/environments/npm-publish/deployment-branch-policies` — expect `[]`, `custom_branch_policies: true`, and one entry `{"name":"v*","type":"tag"}` — a person with an admin token; the one boundary fact here no automation reads |
+| a superseded major's maintenance lane: `release/<N>.x` on origin, `maint-<N>` on npm, inside its window | `bun run scripts/release-maint.ts --major <N> --dry-run --json` — every step `done` is a lane in place · `git ls-remote --heads origin 'release/*'` · `npm view @ultimat3/core dist-tags` |
 | which majors have shipped, and what each one breaks | `ls docs/changelog/` · [`CHANGELOG.md`](CHANGELOG.md), the index · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major |
 
 ## Lockstep versioning — the rule
@@ -379,12 +380,32 @@ an id with no row, or a row naming another release is `X_DOC_WORKAROUND_UNTABLED
 (`bun run scripts/changelog-check.ts --json`).
 
 **Branches and dist-tags.** `main` ships minors and patches under `latest`; `next` holds the breaks
-and is gated on push; merging `main` into it weekly is a convention, by hand. At each major, cut `release/<major>.x` from the release commit by hand (no script cuts it; `ci.yml` and `release-tag.yml` match exactly `release/[0-9]+.x`, and `scripts/release.ts` refuses any other `release/*` name, `X_RELEASE_BRANCH_NAME`). A bump PR
-merged to `release/<major>.x` is released exactly as on `main` (`release-tag.yml` runs on both), and
-`release.yml` publishes it with `npm publish --tag` from `scripts/dist-tag.ts`: `latest` while that
-major is current, `maint-<major>` once its successor ships, `next` for a prerelease — so a
-maintenance release never moves `latest`. `bun run scripts/registry-audit.ts` audits `latest` and
-every `maint-*` tag.
+and is gated on push; merging `main` into it weekly is a convention, by hand. A superseded major
+from v30 keeps a **maintenance lane** for six calendar months from its successor's opening release
+(SECURITY.md): the branch `release/<major>.x` and the npm dist-tag `maint-<major>`, both derived from
+the dated headings in `docs/changelog/` (`maintWindows`, `scripts/lib/release-maint.ts`) — 30's runs
+2026-11-10 to 2027-05-10. `ci.yml` and `release-tag.yml` match exactly `release/[0-9]+.x`, and
+`scripts/release.ts` refuses any other `release/*` name (`X_RELEASE_BRANCH_NAME`).
+
+| Step | Command | Who |
+|---|---|---|
+| see the lane a major is owed, and what is missing | `bun run scripts/release-maint.ts --major <N> --dry-run --json` — `.data.steps[]`, each `pending` or `done` | anyone |
+| cut it: `release/<N>.x` on origin at the commit of the last `v<N>.*` tag (`gh api …/git/refs`), then `npm dist-tag add <pkg>@<newest N.x on npm> maint-<N>` for every publishable workspace | `NPM_CONFIG_OTP=<code> bun run scripts/release-maint.ts --major <N> --json` — idempotent: a step already true is skipped, so a run stopped by an expired OTP is re-run (`X_MAINT_LANE_WRITE_FAILED`); a major with no open window is refused (`X_MAINT_LANE_REFUSED`) | a maintainer: `gh` with write access, npm with 2FA |
+| ship a security patch on it | on `release/<N>.x`, or a branch tracking it (`git switch -c chore/release-<v> origin/release/<N>.x`): `bun run scripts/release.ts --bump patch`, PR into `release/<N>.x` — on a line cut from a tag that carries `scripts/lib/release-lane.ts` (31 on), a minor, a major, or a tree at another major is refused there (`X_RELEASE_LANE_PATCH_ONLY`) | as any release |
+| close it once the window ends | `git push origin --delete release/<N>.x`; the dist-tag stays on the last N.x | a maintainer |
+
+A bump PR merged to `release/<major>.x` is released exactly as on `main` (`release-tag.yml` runs on
+both), and `release.yml` publishes it with `npm publish --tag` from `scripts/dist-tag.ts`: `latest`
+while that major is current, `maint-<major>` once its successor ships, `next` for a prerelease.
+`release-tag.yml` — main's copy, which every line meets — refuses to tag a version from
+`release/<N>.x` that is not an `N.Y.Z` patch or that `scripts/dist-tag.ts` would not put under
+`maint-<N>`, before the tag exists (`scripts/release-tag-workflow-shape.test.ts`): `release.yml`
+runs from the tag, and a line cut from an old tag carries that tag's scripts, so the guard lives
+where every line meets it. The publish is the same OIDC trusted-publisher run as any release, never
+a token. `bun run scripts/registry-audit.ts` audits `latest` and every `maint-*` tag; the daily
+checkup's maintenance-lane row (`scripts/lib/health-maint.ts`) is red while a window is open and its
+branch or dist-tag is absent (`X_MAINT_LANE_ABSENT`), and once it has closed with the branch still
+up (`X_MAINT_LANE_EXPIRED`).
 
 0. **On a major only:** `wiki/Upgrading.md` already carries a `## <previous major>.x → <new major>`
    section, written when the first breaking change landed — releasing it is deleting `unreleased`

@@ -10,6 +10,7 @@ import type { CliCommand, CommandContext } from './command';
 import { advisoryFloorFindings } from './doctor-advisory-floors';
 import { appUrlFindings } from './doctor-app-url';
 import { authStorageFindings } from './doctor-auth';
+import type { BrowserFact } from './doctor-browser';
 import { browserProbe, browserWarnings, withBrowserReport } from './doctor-browser';
 import { chartAlertsProbe, NOTHING_MISSING, withChartAlertsListing } from './doctor-chart-alerts';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
@@ -144,8 +145,17 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   return findings;
 }
 
+/**
+ * The report's probe: the verdict's, and the browser listed beside it. Its own member, never asked
+ * from inside the report: a `chrome --version` there was every report test's, on its clock.
+ */
+export interface DoctorReportProbe extends DoctorProbe {
+  /** Which Chrome the e2e driver would launch, and whether one is required (`doctor-browser.ts`). */
+  browser(): Promise<BrowserFact | undefined>;
+}
+
 /** The whole report over one probe: the verdict, then the listings and warnings beside it. */
-export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
+export async function reportDoctor(probe: DoctorReportProbe): Promise<CommandResult> {
   // Asked once: `runDoctor` reads the verdict and the report beside it reads the numbers.
   const pooler = probe.root === undefined ? NO_POOLER_FACT : await probe.pooler();
   const findings = await runDoctor({ ...probe, pooler: async () => pooler });
@@ -189,7 +199,7 @@ export async function reportDoctor(probe: DoctorProbe): Promise<CommandResult> {
   );
   // Last, and beside the verdict on `main`: the 31.16.0 checks (`doctor-warnings.ts`).
   // A copy of a shipped guard among them (`X_GUARD_VENDORED`): a warning, so exit stays.
-  const browser = await browserProbe(probe.root);
+  const browser = await probe.browser();
   return withDoctorWarnings(withBrowserReport(reminded, browser), [
     ...(await doctorWarnings(probe)),
     ...vendoredGuardWarnings(guardEntries),
@@ -205,6 +215,7 @@ export const doctorCommand: CliCommand = {
   spec: doctorSpec,
   run(ctx: CommandContext): Promise<CommandResult> {
     const port = doctorPort(ctx.args, ctx.env);
-    return reportDoctor(probeFor(ctx.cwd, ctx.bunVersion, port, ctx.env));
+    const probe = probeFor(ctx.cwd, ctx.bunVersion, port, ctx.env);
+    return reportDoctor({ ...probe, browser: () => browserProbe(probe.root, ctx.env) });
   },
 };

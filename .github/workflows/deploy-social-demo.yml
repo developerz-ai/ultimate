@@ -11,7 +11,7 @@ name: deploy-social-demo
 # Triggered by ci.yml FINISHING, never by the push both workflows used to start from. The publish
 # used to poll for `reference-app-verify`'s verdict for up to 10 minutes while that job's own
 # timeout is 15, so a slow green gate read as "no verdict" and the image was not published; and a
-# separate workflow on the same push is not a dependency (`main` carries no branch protection). A
+# separate workflow on the same push is not a dependency (the `main-protection` ruleset requires only `verify`). A
 # `workflow_run` of ci.yml starts after the verdict exists, for exactly the commit it judged.
 #
 # No `paths:` filter — `workflow_run` has none, so every green ci.yml run on main publishes. That
@@ -52,8 +52,8 @@ jobs:
   # app's. Until then the image published here was the only place the app was exercised at all.
   #
   # Covering the app is not the same as gating the image, and this workflow used to confuse the
-  # two: a separate workflow is not a dependency, and `main` carries no branch protection (checked
-  # 2026-08 — `branches/main/protection` is 404). So the publish now starts from ci.yml's
+  # two: a separate workflow is not a dependency, and `main`'s ruleset requires only `verify`
+  # (`gh api repos/developerz-ai/ultimate/rulesets`, As of 2026-11-15). So the publish now starts from ci.yml's
   # completion and READS the gate's verdict for its own commit before it pushes anything — not a
   # second run of the gate, which is the duplicate path axiom 1 forbids, but the one bit that run
   # produced. Fails closed: no `success` verdict does not publish.

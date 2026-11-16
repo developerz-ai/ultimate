@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "cf285471f00b456cc2c6ef7152ec3c27ca1b58680dc21cf66647e9199b83a520",
+  "buildId": "c7425fe476ba80c6ad02ed5935aad7f93066ee4a1eab7d4b613eca8fa0a05308",
   "tiers": {
     "0": [
       "core",
@@ -1163,6 +1163,31 @@
       "code": "X_CLIENT_TRANSPORT_FAILED",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_COMPAT_CELL_RED",
+      "owner": "scripts",
+      "at": "scripts/compat.ts"
+    },
+    {
+      "code": "X_COMPAT_CELL_UNPREPARED",
+      "owner": "scripts",
+      "at": "scripts/compat-cell.ts"
+    },
+    {
+      "code": "X_COMPAT_FILE_FAILED",
+      "owner": "scripts",
+      "at": "scripts/compat-file.ts"
+    },
+    {
+      "code": "X_COMPAT_TABLE_DRIFT",
+      "owner": "scripts",
+      "at": "scripts/compat-table.ts"
+    },
+    {
+      "code": "X_COMPAT_UNREADABLE",
+      "owner": "scripts",
+      "at": "scripts/compat-cells.ts"
     },
     {
       "code": "X_CONFIG_IMPORT_OUTSIDE_LOADER",
@@ -3300,6 +3325,26 @@
       "at": "packages/mail/src/errors.ts"
     },
     {
+      "code": "X_MAINT_LANE_ABSENT",
+      "owner": "scripts",
+      "at": "scripts/lib/health-maint.ts"
+    },
+    {
+      "code": "X_MAINT_LANE_EXPIRED",
+      "owner": "scripts",
+      "at": "scripts/lib/health-maint.ts"
+    },
+    {
+      "code": "X_MAINT_LANE_REFUSED",
+      "owner": "scripts",
+      "at": "scripts/release-maint.ts"
+    },
+    {
+      "code": "X_MAINT_LANE_WRITE_FAILED",
+      "owner": "scripts",
+      "at": "scripts/release-maint.ts"
+    },
+    {
       "code": "X_MANIFEST_BREAKING",
       "owner": "manifest",
       "at": "packages/manifest/src/errors.ts"
@@ -3818,6 +3863,16 @@
       "code": "X_NEW_SHAPE_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_NEXT_BREAK_SOURCE_MOVED",
+      "owner": "scripts",
+      "at": "scripts/next-breaks.ts"
+    },
+    {
+      "code": "X_NEXT_BREAK_UNLISTED",
+      "owner": "scripts",
+      "at": "scripts/next-breaks.ts"
     },
     {
       "code": "X_NO_CONTEXT",
@@ -4725,6 +4780,11 @@
       "at": "scripts/release-due.ts"
     },
     {
+      "code": "X_RELEASE_LANE_PATCH_ONLY",
+      "owner": "scripts",
+      "at": "scripts/lib/release-lane.ts"
+    },
+    {
       "code": "X_RELEASE_MAJOR_WINDOW",
       "owner": "scripts",
       "at": "scripts/lib/major-window.ts"
@@ -4843,6 +4903,11 @@
       "code": "X_ROADMAP_STATUS_MISSING",
       "owner": "scripts",
       "at": "scripts/roadmap.ts"
+    },
+    {
+      "code": "X_ROADMAP_TRACKER_STALE",
+      "owner": "scripts",
+      "at": "scripts/lib/roadmap-stale-plans.ts"
     },
     {
       "code": "X_ROLE_INVALID",

@@ -4,39 +4,26 @@
 
 import { isFixShellSafe } from '../packages/core/src/error-render';
 import type { RoundDoc } from './flake-hunt-round';
-import { jsonDocument } from './lib/health-narrow';
-import type { Finding } from './lib/log';
+import type { Filed, Gh, IssuePlan, Ledger } from './lib/issue-ledger';
+import { fence, fileIssues as fileLedger, ledgerTitle } from './lib/issue-ledger';
 import { gh as ghRun } from './lib/release-due-gh';
-import type { RunResult } from './lib/run';
+
+export type { Gh, IssuePlan } from './lib/issue-ledger';
 
 /** The one label every flake-hunt issue carries — what `gh issue list --label` finds them by. */
 export const LABEL = 'flake-hunt';
-/** GitHub refuses a title past 256 characters; cut short of it, the same way every night. */
-const TITLE_MAX = 240;
 const EXCERPT_MAX = 4000;
 
-export interface IssuePlan {
-  readonly title: string;
-  readonly body: string;
-}
-
-export type Gh = (args: readonly string[], cwd: string) => Promise<RunResult>;
-
-const titleOf = (name: string): string => {
-  const title = `flake: ${name}`;
-  return title.length <= TITLE_MAX ? title : `${title.slice(0, TITLE_MAX - 1)}…`;
+const LEDGER: Ledger = {
+  label: LABEL,
+  color: 'fbca04',
+  description: 'a test flake-hunt.yml saw fail under a shuffled order',
+  code: 'X_FLAKE_HUNT_FILE_FAILED',
+  fix: 'gh auth status && bun run scripts/flake-hunt.ts file <round.json…>',
+  at: 'scripts/flake-hunt-file.ts',
 };
 
-/**
- * A code fence no line of `text` can close: one backtick longer than the longest run it holds,
- * three at least. A fixed four broke on output carrying four, and the rest of the excerpt was
- * Markdown — where an `@scope/x` in a stack trace notifies a real account.
- */
-const fence = (lang: string, text: string): string => {
-  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((run) => run[0].length));
-  const ticks = '`'.repeat(Math.max(3, longest + 1));
-  return `${ticks}${lang}\n${text}\n${ticks}`;
-};
+const titleOf = (name: string): string => ledgerTitle(`flake: ${name}`);
 
 const bodyOf = (
   hits: readonly { readonly round: RoundDoc; readonly file?: string; readonly excerpt: string }[],
@@ -95,92 +82,9 @@ export function issuesFor(rounds: readonly RoundDoc[], runUrl: string | undefine
   return [...byTitle].map(([title, hits]) => ({ title, body: bodyOf(hits, runUrl) }));
 }
 
-const failed = (what: string, result: RunResult): Finding => ({
-  code: 'X_FLAKE_HUNT_FILE_FAILED',
-  cause: `gh could not ${what}: ${result.output.trim().slice(0, 500) || `exit ${result.code}`}`,
-  fix: 'gh auth status && bun run scripts/flake-hunt.ts file <round.json…>',
-  at: 'scripts/flake-hunt-file.ts',
-});
-
-interface Known {
-  readonly number: number;
-  readonly open: boolean;
-}
-
-/** Every flake-hunt issue by title, the open one preferred; undefined when gh answered no list. */
-const knownIssues = (output: string): Map<string, Known> | undefined => {
-  const doc = jsonDocument(output);
-  if (!Array.isArray(doc)) return undefined;
-  const known = new Map<string, Known>();
-  for (const one of doc as unknown[]) {
-    const row = one !== null && typeof one === 'object' ? (one as Record<string, unknown>) : {};
-    const [title, number] = [row['title'], row['number']];
-    if (typeof title !== 'string' || typeof number !== 'number') continue;
-    const open = row['state'] === 'OPEN';
-    const seen = known.get(title);
-    if (seen === undefined || (open && !seen.open)) known.set(title, { number, open });
-  }
-  return known;
-};
-
-export async function fileIssues(
+/** One issue per plan, found again by title: the shared ledger, under the flake-hunt label. */
+export const fileIssues = (
   plans: readonly IssuePlan[],
   root: string,
   gh: Gh = ghRun,
-): Promise<{ readonly filed: readonly string[]; readonly findings: readonly Finding[] }> {
-  // A green night touches nothing: no label, no list, no API call to fail on.
-  if (plans.length === 0) return { filed: [], findings: [] };
-  const description = 'a test flake-hunt.yml saw fail under a shuffled order';
-  const label = await gh(
-    ['label', 'create', LABEL, '--color', 'fbca04', '--description', description],
-    root,
-  );
-  // Create-first, so the nightly repeat and a race both pass: a refusal is fatal only when the
-  // label's own endpoint cannot confirm it exists.
-  if (!label.ok) {
-    const exists = await gh(['api', `repos/{owner}/{repo}/labels/${LABEL}`], root);
-    if (!exists.ok) return { filed: [], findings: [failed(`create the ${LABEL} label`, label)] };
-  }
-  const listed = await gh(
-    [
-      'issue',
-      'list',
-      '--label',
-      LABEL,
-      '--state',
-      'all',
-      '--limit',
-      '1000',
-      '--json',
-      'number,title,state',
-    ],
-    root,
-  );
-  const known = listed.ok ? knownIssues(listed.output) : undefined;
-  if (known === undefined)
-    return { filed: [], findings: [failed('list the flake-hunt issues', listed)] };
-  const filed: string[] = [];
-  const findings: Finding[] = [];
-  for (const plan of plans) {
-    const issue = known.get(plan.title);
-    const [args, done] =
-      issue === undefined
-        ? [
-            ['issue', 'create', '--label', LABEL, '--title', plan.title, '--body', plan.body],
-            `created: ${plan.title}`,
-          ]
-        : issue.open
-          ? [
-              ['issue', 'comment', String(issue.number), '--body', plan.body],
-              `commented #${issue.number}: ${plan.title}`,
-            ]
-          : [
-              ['issue', 'reopen', String(issue.number), '--comment', plan.body],
-              `reopened #${issue.number}: ${plan.title}`,
-            ];
-    const result = await gh(args, root);
-    if (result.ok) filed.push(done);
-    else findings.push(failed(`file "${plan.title}"`, result));
-  }
-  return { filed, findings };
-}
+): Promise<Filed> => fileLedger(plans, root, LEDGER, gh);

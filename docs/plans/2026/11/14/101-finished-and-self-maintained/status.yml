@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
 percent: 63
-current_focus: "Sweep 7 (10 test determinism + the patterns list: release rehearsal, changelog-check, preflight, pin-edit, x db status) on feat/sweep-7-determinism-and-patterns; sweep 6 shipped as 31.29.0. 08, 09 close on sweep R; 10 closes after seven green flake-hunt nights. Next: sweep 8 (11 + 12)."
+current_focus: "Sweep 8a (11 compat and longevity + 12 M1–M5) on feat/sweep-8a-compat-and-maintainer-loop; sweep 7 shipped as 31.30.0 (#1157, #1158). 08, 09 close on sweep R; 10 closes after seven green flake-hunt nights. Next: sweep 8b (12 M6 pin burn-down), then sweep 9 (13)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -61,7 +61,7 @@ slices:
   - file: 11-compat-and-longevity.md
     tier: 5
     sweep: "8"
-    status: not_started
+    status: in_progress
     percent: 0
   - file: 12-maintainer-loop.md
     tier: 5

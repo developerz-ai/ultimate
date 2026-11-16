@@ -11,10 +11,20 @@ import type { GhRepo } from './gh-target';
 export const RUN_FIELDS =
   'databaseId,status,conclusion,headBranch,displayTitle,workflowName,url,createdAt,headSha';
 
+/**
+ * A run's, a job's or a step's verdict as `gh` prints it: `""` until it has one (captured
+ * 2026-11-16, `ci-runs-fixture.ts`), so the empty string is read here and becomes `null` below.
+ */
+const VERDICT = t.nullable(t.string.min(0));
+
+/** `""` is no verdict yet: the one spelling the rest of `x ci` reads is `null`. */
+const verdictOf = (conclusion: string | null): string | null =>
+  conclusion === '' ? null : conclusion;
+
 const RUN_ROW = t.object({
   databaseId: t.number,
   status: t.string,
-  conclusion: t.nullable(t.string),
+  conclusion: VERDICT,
   headBranch: t.string,
   headSha: t.string,
   displayTitle: t.string,
@@ -23,12 +33,12 @@ const RUN_ROW = t.object({
   createdAt: t.string,
 });
 
-const STEP = t.object({ name: t.string, conclusion: t.nullable(t.string), number: t.number });
+const STEP = t.object({ name: t.string, conclusion: VERDICT, number: t.number });
 
 const JOB = t.object({
   name: t.string,
   status: t.string,
-  conclusion: t.nullable(t.string),
+  conclusion: VERDICT,
   url: t.string,
   steps: t.array(STEP),
 });
@@ -97,7 +107,7 @@ interface RunRow {
 const runOf = (row: RunRow): CiRun => ({
   id: row.databaseId,
   status: row.status,
-  conclusion: row.conclusion,
+  conclusion: verdictOf(row.conclusion),
   branch: row.headBranch,
   headSha: row.headSha,
   title: row.displayTitle,
@@ -170,7 +180,12 @@ export async function viewRun(
     RUN_VIEW,
     { label: `gh run view ${id}`, fix: `x ci --run ${id} --repo ${repo.slug} --json` },
   );
-  return { run: runOf(viewed), jobs: viewed.jobs };
+  const jobs = viewed.jobs.map((job) => ({
+    ...job,
+    conclusion: verdictOf(job.conclusion),
+    steps: job.steps.map((step) => ({ ...step, conclusion: verdictOf(step.conclusion) })),
+  }));
+  return { run: runOf(viewed), jobs };
 }
 
 /**

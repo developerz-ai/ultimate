@@ -3,7 +3,8 @@
 // every other rule; (2) every milestone row carries a status marker — the table this file guards
 // shipped with zero, and a silent regression back to that state is exactly the bug a reader would
 // not notice; (3) a milestone the table marks shipped still has every artifact its own "Ships"
-// column names on disk — a status marker nobody checks is a claim, not a gate.
+// column names on disk — a status marker nobody checks is a claim, not a gate; (4) no plan
+// tracker reads `in_progress` with no commit in its directory for 30 days (`lib/roadmap-stale-plans.ts`).
 //
 //   bun run scripts/roadmap.ts [--json]
 
@@ -15,6 +16,7 @@ import { join } from 'node:path';
 import type { Finding, HostCheck } from '@ultimat3/cli';
 import { parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
+import { gitLastTouch, type StaleDeps, stalePlanFindings } from './lib/roadmap-stale-plans';
 import { repoRoot } from './lib/run';
 
 export const ROADMAP_FILE = 'docs/idea/14-roadmap.md';
@@ -164,7 +166,7 @@ const untrackedFinding = (row: MilestoneRow): Finding => ({
 });
 
 /** Each milestone's "Done when" as a build error rather than a sentence nobody re-reads. */
-export const checkRoadmap: HostCheck = async (root) => {
+const tableFindings = async (root: string): Promise<Finding[]> => {
   const path = join(root, ROADMAP_FILE);
   if (!existsSync(path)) return [missingFileFinding()];
   const markdown = await Bun.file(path).text();
@@ -190,6 +192,16 @@ export const checkRoadmap: HostCheck = async (root) => {
   }
   return findings;
 };
+
+/** The step over its two readers, injectable so a test pins the clock and the history. */
+export const roadmapCheck =
+  (deps: StaleDeps): HostCheck =>
+  async (root) => [...(await tableFindings(root)), ...(await stalePlanFindings(root, deps))];
+
+/** What the gate runs: git for the dates, and the one wall clock read in this step. */
+export const ROADMAP_DEPS: StaleDeps = { now: () => Date.now(), lastTouch: gitLastTouch };
+
+export const checkRoadmap: HostCheck = roadmapCheck(ROADMAP_DEPS);
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));

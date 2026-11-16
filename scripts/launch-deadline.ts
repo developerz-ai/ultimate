@@ -6,7 +6,9 @@
 // `test(…)` / `it(…)` whose body calls `launchChrome(`, `launchReady(`, `launchAttempt(`,
 // `launchFoundChrome(` or `openE2eBrowser…(` takes `LAUNCH_TEST_MS`, `launchTestMs(<launch ms>)`
 // (`@ultimat3/scraping/cdp`) or `E2E_BROWSER_OPEN_MS` (`@ultimat3/testing`) as its timeout — never
-// a literal, and never Bun's 5 s default. A hook that opens a browser is `e2e-browser-hooks.test.ts`'s.
+// a literal, and never Bun's 5 s default. `findChrome(` and `startsChrome(` start one too (`chrome
+// --version`, per candidate): `findChromeTestMs()` / `chromeProbeTestMs()` (`cdp-launch-probe.ts`).
+// A hook that opens a browser is `e2e-browser-hooks.test.ts`'s.
 //
 //   bun run scripts/launch-deadline.ts [--json]
 //   bun run scripts/launch-deadline.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
@@ -26,15 +28,16 @@ import { callArguments } from './test-real-sleep';
 const SCRIPT = 'launch-deadline';
 const EXPLAIN = 'bun run scripts/launch-deadline.ts --explain --json lists every one';
 
-/** A call that starts a browser process. */
+/** A call that starts a browser process: a launch, or a probe running `chrome --version`. */
 const LAUNCH =
-  /(?<![\w$.])(?:launchChrome|launchReady|launchAttempt|launchFoundChrome|openE2eBrowser(?:IfAvailable)?)\s*\(/g;
+  /(?<![\w$.])(?:launchChrome|launchReady|launchAttempt|launchFoundChrome|openE2eBrowser(?:IfAvailable)?|findChrome|startsChrome)\s*\(/g;
 /** A test call's last opening paren: `test(`, `test.skipIf(x)(`, `test.each(rows)(`. */
 const TEST_CALL = /(?<![\w$.])(?:test|it)(?:\.\w+)*(?:\([^()]*\))?\s*\(/g;
-/** A deadline derived from the launch's designed budget. */
-const DERIVED = /^\s*(?:LAUNCH_TEST_MS|E2E_BROWSER_OPEN_MS)\b|^\s*launchTestMs\s*\(/;
+/** A deadline derived from the launch's, or the probe's, designed budget. */
+const DERIVED =
+  /^\s*(?:LAUNCH_TEST_MS|E2E_BROWSER_OPEN_MS)\b|^\s*(?:launchTestMs|findChromeTestMs|chromeProbeTestMs)\s*\(/;
 /** Where a deadline argument can only be reading: a launch's options are not a test's timeout. */
-const MAY_LAUNCH = /launch|openE2eBrowser/;
+const MAY_LAUNCH = /launch|openE2eBrowser|findChrome|startsChrome/;
 
 export interface LaunchDeadlineSite {
   readonly path: string;
@@ -110,7 +113,7 @@ const at = (site: LaunchDeadlineSite | undefined): string =>
 const overFinding = (gap: LaunchDeadlineGap): Finding => ({
   code: 'X_TEST_LAUNCH_DEADLINE',
   cause: `${gap.pkg} has ${String(gap.found)} test(s) awaiting a browser launch under a deadline of their own and is pinned at ${String(gap.pinned)} — ${siteList(gap, at, EXPLAIN)} — Bun kills such a test while a cold browser is still starting, and the launch's own refusal never surfaces`,
-  fix: `test(name, fn, launchTestMs(launchTimeoutMs))   # at ${siteTarget(gap, at)}: LAUNCH_TEST_MS at the default launch deadline, from @ultimat3/scraping/cdp (launchReady() waits for the page target too); a test opening the e2e browser takes E2E_BROWSER_OPEN_MS from @ultimat3/testing`,
+  fix: `test(name, fn, launchTestMs(launchTimeoutMs))   # at ${siteTarget(gap, at)}: LAUNCH_TEST_MS at the default launch deadline, from @ultimat3/scraping/cdp (launchReady() waits for the page target too); a test opening the e2e browser takes E2E_BROWSER_OPEN_MS from @ultimat3/testing; one awaiting findChrome or startsChrome takes findChromeTestMs(platform, env) or chromeProbeTestMs(probes, timeoutMs) from packages/scraping/src/cdp-launch-probe.ts`,
   at: leadSite(gap)?.path ?? PINS_FILE,
 });
 

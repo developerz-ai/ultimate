@@ -1,5 +1,8 @@
 // One responsibility: whether a candidate Chrome is one this machine can START — `--version`, under
-// a deadline of its own. Which candidates are tried, and in what order, is `cdp-launch.ts`.
+// a deadline of its own — and the deadline a test awaiting that must be given. Which candidates are
+// tried, and in what order, is `cdp-launch.ts`.
+
+import { chromeCandidates } from './cdp-launch-candidates';
 
 /**
  * The longest a candidate gets to answer `--version`. A warm Chrome answers in ~40 ms; a cold binary
@@ -7,6 +10,32 @@
  * run can drive. Its own number, never the launch deadline: this is spent BEFORE one.
  */
 export const CHROME_PROBE_TIMEOUT_MS = 15_000;
+
+/**
+ * What a test had before it awaited a probe: Bun's default deadline, for the test's own work
+ * (scratch files, fakes, assertions). A probe's deadline is added on top of it, never taken from it.
+ */
+const PROBE_TEST_WORK_MS = 5_000;
+
+/**
+ * The deadline for a test awaiting `probes` calls of `startsChrome` at `timeoutMs` each: every
+ * probe may run to its full deadline. Less, and Bun kills the test while a cold Chrome is still
+ * answering `--version` — the probe's own `false` never surfaces (run 43802046886: 5 s, and Bun
+ * "killed 1 dangling process"). `scripts/launch-deadline.ts` refuses any other number.
+ */
+export const chromeProbeTestMs = (
+  probes: number,
+  timeoutMs: number = CHROME_PROBE_TIMEOUT_MS,
+): number => PROBE_TEST_WORK_MS + probes * timeoutMs;
+
+/**
+ * The deadline for a test awaiting `findChrome` on `platform`: one probe per candidate, the worst
+ * case being every one installed and every one slow. None on `win32`, where existence is the answer.
+ */
+export const findChromeTestMs = (
+  platform: string = process.platform,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): number => chromeProbeTestMs(platform === 'win32' ? 0 : chromeCandidates(platform, env).length);
 
 /**
  * A browser banner: a product this launcher can drive, then a dotted version.

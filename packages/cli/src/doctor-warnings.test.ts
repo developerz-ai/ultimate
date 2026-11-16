@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reportDoctor, runDoctor } from './cmd-doctor';
 import { probe } from './cmd-doctor-fixture';
+import { browserProbe } from './doctor-browser';
 import { renderJson } from './output';
 import { scaffoldGuardFiles } from './templates';
 
@@ -58,6 +59,17 @@ describe('unit · x doctor · warnings beside the verdict', () => {
     expect(payload.data.warnings[0]?.fix).toContain('"@ultimat3/core": "31.16.0"');
     // A person reads the same warning on its own line.
     expect(result.lines?.some((line) => line.includes('X_FRAMEWORK_PIN_RANGE'))).toBe(true);
+  });
+
+  // The machine's Chrome was asked from inside `reportDoctor`, so the first test of a file paid a
+  // cold `chrome --version` on its clock: CI unit-3 timed this file out at 5 s and Bun "killed 1
+  // dangling process" (run 43802046886). The browser is the probe's answer, like every other fact.
+  test("the browser reported is the probe's answer, never this machine's Chrome", async () => {
+    const root = appRoot();
+    const fact = await browserProbe(root, { CHROME_PATH: '/nonexistent/fake-chrome' }, 'linux');
+    const answered = fact === undefined ? undefined : { ...fact, path: '/opt/fake/chrome' };
+    const result = await reportDoctor(probe({ root, browser: async () => answered }));
+    expect(result.data).toMatchObject({ browser: { path: '/opt/fake/chrome' } });
   });
 
   test('a clean app carries no warnings key at all', async () => {

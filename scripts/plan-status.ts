@@ -17,7 +17,8 @@ import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 
 const SCRIPT = 'plan-status';
-const GLOB = 'docs/plans/**/status.yml';
+/** Every plan tracker; the stale-tracker rule of the `roadmap` step reads the same set. */
+export const PLAN_STATUS_GLOB = 'docs/plans/**/status.yml';
 
 /** The template's enum, verbatim from `.claude/commands/planx.md`, for a plan and for a slice. */
 export const PLAN_STATUSES = [
@@ -92,15 +93,15 @@ export function statusFindings(path: string, text: string): readonly Finding[] {
 
 /** Every `status.yml` under `docs/plans/`, sorted; none at all is unscanned, never a pass. */
 export async function planStatusFindings(root: string): Promise<readonly Finding[]> {
-  const paths = (await Array.fromAsync(new Bun.Glob(GLOB).scan({ cwd: root })))
+  const paths = (await Array.fromAsync(new Bun.Glob(PLAN_STATUS_GLOB).scan({ cwd: root })))
     .map((path) => path.split('\\').join('/'))
     .sort();
   if (paths.length === 0) {
     return [
       {
         code: 'X_PLAN_STATUS_UNSCANNED',
-        cause: `no file matched ${GLOB}, so no plan tracker was checked — a glob that matches nothing reads exactly like a clean tree`,
-        fix: 'bun run scripts/plan-status.ts --json   # run from the repository root; if plans moved, edit GLOB in scripts/plan-status.ts',
+        cause: `no file matched ${PLAN_STATUS_GLOB}, so no plan tracker was checked — a glob that matches nothing reads exactly like a clean tree`,
+        fix: 'bun run scripts/plan-status.ts --json   # run from the repository root; if plans moved, edit PLAN_STATUS_GLOB in scripts/plan-status.ts',
         at: 'docs/plans/',
       },
     ];

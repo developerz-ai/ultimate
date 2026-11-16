@@ -1,5 +1,6 @@
-// Pin the health brief's closed, ordered table to its machine definitions; mutations must fail
-// the same assertions as the real document, without rewriting documentation on disk.
+// Pin the health brief's closed, ordered table to its machine definitions, and the brief under the
+// platform's 10,000-character cap; mutations must fail the same assertions as the real document,
+// without rewriting documentation on disk.
 
 import { beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
@@ -10,19 +11,15 @@ import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-const SIGNAL_IDS = new Map<string, RowId>([
-  ['`main` is green', 'main-green'],
-  ['the last tag published', 'last-tag-published'],
-  ['the stamped version is tagged', 'stamped-version-tagged'],
-  ['tag runs ended well', 'tag-runs-ended-well'],
-  ['npm serves what the tree says', 'npm-serves-tree'],
-  ["automation's own alarms", 'automation-alarms'],
-  ['Dependabot is not stuck', 'dependabot-not-stuck'],
-  ['the deployed demo shipped', 'demo-shipped'],
-  ['the GitHub Release exists', 'release-exists'],
-  ['the tutorials run as written', 'tutorials-run'],
-  ['the nightly flake hunt is green', 'flake-hunt'],
-]);
+/** The platform reads a brief of at most this many characters; past it, the checkup is cut. */
+const BRIEF_CAP = 10_000;
+
+/** A signal cell is the row's own id, backticked: one name for the brief, the script and its data. */
+const SIGNAL = /^`([a-z0-9-]+)`$/;
+const signalId = (cell: string): RowId | undefined => {
+  const id = SIGNAL.exec(cell)?.[1];
+  return ROW_IDS.find((row) => row === id);
+};
 
 /** A command that assigns: the whole inline span is `name=$(...)`. */
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=\$\((.*)\)$/;
@@ -73,7 +70,7 @@ function assertBrief(brief: string): void {
     expect(cells, `malformed health row: ${line}`).not.toBeNull();
     if (cells === null) expect.unreachable('malformed health row');
     const signal = cells[1] ?? '';
-    const id = SIGNAL_IDS.get(signal);
+    const id = signalId(signal);
     expect(id, `unknown health signal: ${signal}`).toBeDefined();
     if (id === undefined) expect.unreachable('unknown health signal');
     expect(ids, `duplicate health signal: ${signal}`).not.toContain(id);
@@ -82,77 +79,6 @@ function assertBrief(brief: string): void {
     expect(normalizedCommand(cells[2] ?? ''), signal).toBe(ROW_COMMANDS[id]);
   }
   expect(ids).toEqual([...ROW_IDS]);
-}
-
-/** A `## Rows` item: a bullet whose leading backticked span is the row id. */
-const ROW_ITEM = /^- `([^`]+)`/;
-
-/** A row id: lowercase letters, digits, hyphens or underscores, at most forty characters. */
-const ROW_ID_SHAPE = /^[a-z0-9_-]{1,40}$/;
-
-interface RowsSection {
-  /** The index of the `## Rows` heading. */
-  readonly start: number;
-  /** The index of the section's last item line. */
-  readonly end: number;
-  /** The section's item lines, in document order. */
-  readonly items: readonly string[];
-}
-
-/**
- * The brief's `## Rows` section: the heading once, then the item lines under it, up to the next
- * level-2 heading. Blank lines and the file's trailing marker are not items.
- */
-function rowsSection(brief: string): RowsSection {
-  const lines = brief.split('\n');
-  const heading = '## Rows';
-  expect(lines.filter((line) => line === heading)).toHaveLength(1);
-  const start = lines.indexOf(heading);
-  expect(start, 'the brief must carry a `## Rows` section').toBeGreaterThanOrEqual(0);
-  const rest = lines.slice(start + 1);
-  const nextHeading = rest.findIndex((line) => line.startsWith('## '));
-  const body = nextHeading === -1 ? rest : rest.slice(0, nextHeading);
-  const items: string[] = [];
-  const indexes: number[] = [];
-  for (const [offset, line] of body.entries()) {
-    if (line.trim() === '' || line.startsWith('<!--')) continue;
-    expect(line, `malformed Rows item: ${line}`).toMatch(ROW_ITEM);
-    items.push(line);
-    indexes.push(start + 1 + offset);
-  }
-  const end = indexes[indexes.length - 1] ?? start;
-  return { start, end, items };
-}
-
-/**
- * The brief's Rows section must name every row the machine reports — once each, in the table's
- * order, each id shaped like a row id. A brief that names a row the machine never reports (or
- * drops one it does) is a second definition of the table, which the brief forbids.
- */
-function assertRowsSection(brief: string): void {
-  const ids = rowsSection(brief).items.map((item) => {
-    const match = ROW_ITEM.exec(item);
-    expect(match, `malformed Rows item: ${item}`).not.toBeNull();
-    if (match === null) expect.unreachable('malformed Rows item');
-    return match[1] ?? '';
-  });
-  for (const id of ids) {
-    expect(id, `row id must be lowercase, digits, hyphens or underscores: ${id}`).toMatch(
-      ROW_ID_SHAPE,
-    );
-  }
-  expect(new Set(ids).size, `duplicate row ids: ${ids.join(', ')}`).toBe(ids.length);
-  expect(ids, 'the Rows section must name every row, once each, in the table order').toEqual([
-    ...ROW_IDS,
-  ]);
-}
-
-/** One of the brief's Rows items by id — the fifth, so dropping it is not the tail's loss. */
-function rowItem(brief: string): string {
-  const item = rowsSection(brief).items.find((line) => line.startsWith('- `npm-serves-tree`'));
-  expect(item, 'the brief must list the npm-serves-tree row').toBeDefined();
-  if (item === undefined) expect.unreachable('the npm-serves-tree row is missing');
-  return item;
 }
 
 let brief: string;
@@ -166,7 +92,7 @@ function replaceOnce(text: string, from: string, to: string): string {
 }
 
 describe('unit · health-doc · the brief matches the ordered machine definitions', () => {
-  test('all eleven signal identities and full commands agree', () => {
+  test('every signal identity and full command agrees, in order', () => {
     assertBrief(brief);
   });
 
@@ -174,11 +100,12 @@ describe('unit · health-doc · the brief matches the ordered machine definition
     ['deleted', (_row: string) => ''],
     ['duplicated', (row: string) => `${row}\n${row}`],
     ['inserted unknown', (row: string) => `${row}\n| new signal | \`new command\` | healthy |`],
-    ['renamed', (row: string) => row.replace('tag runs ended well', 'tag runs went well')],
+    ['renamed', (row: string) => row.replace('`tag-runs-ended-well`', '`tag-runs-went-well`')],
+    ['unquoted', (row: string) => row.replace('`tag-runs-ended-well`', 'tag-runs-ended-well')],
     ['malformed', (row: string) => row.slice(0, -1)],
     ['empty healthy condition', (row: string) => `${row.split('|').slice(0, 3).join('|')}| |`],
   ])('rejects a %s row', (_name, mutate) => {
-    const row = brief.split('\n').find((line) => line.startsWith('| tag runs ended well |'));
+    const row = brief.split('\n').find((line) => line.startsWith('| `tag-runs-ended-well` |'));
     expect(row).toBeDefined();
     if (row === undefined) expect.unreachable('mutation row missing');
     const altered = replaceOnce(brief, row, mutate(row));
@@ -219,39 +146,16 @@ describe('unit · health-doc · the brief matches the ordered machine definition
   });
 
   test('rejects a renamed tag assignment whose reference is left behind', () => {
-    const row = brief.split('\n').find((line) => line.startsWith('| the last tag published |'));
+    const row = brief.split('\n').find((line) => line.startsWith('| `last-tag-published` |'));
     expect(row).toBeDefined();
     if (row === undefined) expect.unreachable('mutation row missing');
     const altered = replaceOnce(brief, row, row.replace('`t=$(', '`sha=$('));
     expect(() => assertBrief(altered)).toThrow(/unassigned variable: \$t/);
   });
 
-  test('the Rows section names every row id, once each, in order', () => {
-    assertRowsSection(brief);
-  });
-
-  test.each([
-    [
-      'a deleted section',
-      (text: string): string => {
-        const section = rowsSection(text);
-        const lines = text.split('\n');
-        return [...lines.slice(0, section.start), ...lines.slice(section.end + 1)].join('\n');
-      },
-    ],
-    ['a dropped item', (text: string): string => replaceOnce(text, rowItem(text), '')],
-    [
-      'a duplicated item',
-      (text: string): string => {
-        const item = rowItem(text);
-        return replaceOnce(text, item, `${item}\n${item}`);
-      },
-    ],
-    ['a retyped id', (text: string): string => replaceOnce(text, '`main-green`', '`main-red`')],
-    ['a malformed id', (text: string): string => replaceOnce(text, '`main-green`', '`Main Green`')],
-  ])('rejects %s', (_name, mutate) => {
-    const altered = mutate(brief);
-    expect(altered, 'the mutation must change the brief').not.toBe(brief);
-    expect(() => assertRowsSection(altered)).toThrow();
+  test('the brief fits the platform cap', () => {
+    expect(brief.length, `.dz/briefs/health.md is ${brief.length} characters`).toBeLessThanOrEqual(
+      BRIEF_CAP,
+    );
   });
 });
