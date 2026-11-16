@@ -50,6 +50,24 @@ Never "stable forever": a covered surface can change, in a scheduled major, with
 
 Ruling 2026-11-09: the clock moved from v30 to v31. v30 shipped 2026-11-07 while only our own apps ran Ultimate in production, so the window protected no one yet; v31 carries the breaks of plan 101-final-hardening-before-v31, and the window protects adopters from there.
 
+## Supported runtimes
+
+**A runtime is supported when something runs the gate on it.** The gate runs one Bun, one Postgres and one Solid — the pins below — on every push and pull request; `compat.yml` runs the gate's `unit` and `live` steps weekly on each other version listed (`gh workflow run compat.yml` runs it now). A red cell files or updates one `compat` issue, closed by that cell's next green run: `gh issue list --label compat --state open`. Generated from the workflow's matrix and the pins; a hand edit fails the gate's `unit` step.
+
+<!-- generated: compat-table — bun run scripts/compat-table.ts --write -->
+| Runtime | Version | Run by | Status |
+|---|---|---|---|
+| Bun | `1.4.4`, the pin (`.bun-version`) | the gate, every push and pull request (`ci.yml`) | supported |
+| Bun | newest stable | `compat.yml` cell `bun-latest`, weekly | supported |
+| Bun | canary | `compat.yml` cell `bun-canary`, weekly | watched: tested, never promised |
+| Postgres | `17`, the pin (`docker/docker-compose.test.yml`) | the gate, every push and pull request (`ci.yml`) | supported |
+| Postgres | newest `16.x` image | `compat.yml` cell `postgres-16`, weekly | supported |
+| Postgres | newest `17.x` image | `compat.yml` cell `postgres-17`, weekly | supported |
+| Postgres | newest `18.x` image | `compat.yml` cell `postgres-18`, weekly | supported |
+| Solid | `1.9.18`, the pin (root `package.json`) | the gate, every push and pull request (`ci.yml`) | supported |
+| Solid | newest `1.x` | `compat.yml` cell `solid-1`, weekly | supported |
+<!-- end generated -->
+
 ## The support window
 
 | Major | Status | Security fixes until |
@@ -58,7 +76,7 @@ Ruling 2026-11-09: the clock moved from v30 to v31. v30 shipped 2026-11-07 while
 | the previous major | security fixes, as patches on `release/<major>.x` | 6 months after the current major's `## X.0.0` date |
 | anything older | none | [Upgrading](Upgrading), one major per `x upgrade` run |
 
-**Convention, not enforced:** `release/<major>.x` is cut by hand at each major and kept at that major's newest minor; no script cuts it. Its name is enforced: `ci.yml` and `release-tag.yml` match exactly `release/[0-9]+.x`, and `scripts/release.ts --bump` refuses any other `release/*` branch (`X_RELEASE_BRANCH_NAME`). A bump PR's own branch is `chore/release-X.Y.Z`, never `release/X.Y.Z` (#1054). Once it exists, a patch is `latest` while its major is current and `maint-<major>` once its successor ships. `scripts/dist-tag.ts` decides the tag from the registry's `latest`, and `npm publish` never runs without it.
+`release/<major>.x` is cut by `bun run scripts/release-maint.ts --major <N>` (idempotent, `--dry-run` first) at the major's last tag, with `maint-<N>` on every package; on it `scripts/release.ts` ships patches only (`X_RELEASE_LANE_PATCH_ONLY`). Its name is enforced: `ci.yml` and `release-tag.yml` match exactly `release/[0-9]+.x`, and `scripts/release.ts --bump` refuses any other `release/*` branch (`X_RELEASE_BRANCH_NAME`). A bump PR's own branch is `chore/release-X.Y.Z`, never `release/X.Y.Z` (#1054). Once it exists, a patch is `latest` while its major is current and `maint-<major>` once its successor ships. `scripts/dist-tag.ts` decides the tag from the registry's `latest`, and `npm publish` never runs without it.
 
 ## Deprecation
 
@@ -69,7 +87,7 @@ A removal or a rename ships its alias, marked `@deprecated`, on `main` for at le
 | Branch | Holds |
 |---|---|
 | `main` | minors and patches only while the window is closed; a `BREAKING —` changelog entry there is refused |
-| `next` | every breaking change waiting for the window. **Convention, not enforced:** it merges `main` weekly, by hand, so it never falls behind a fix; `ci.yml` gates every push to it |
+| `next` | every breaking change waiting for the window. `next-sync.yml` merges `main` into it weekly (a conflict, or a workflow-file change the job token may not push, opens one issue with the exact command, closed by the next clean merge), so it never falls behind a fix; `ci.yml` gates every push to it. `scripts/release-due.ts` proposes it as the `chore: release X.0.0` PR once the window opens; a person merges |
 | `release/<major>.x` | the previous major's security patches |
 
 A change with both kinds of edit splits into two pull requests: the non-breaking half to `main`, the break to `next`.
@@ -97,4 +115,5 @@ The maintainer bot judges whether a release is due and which kind (`.dz/briefs/r
 | a removal was deprecated first | `bun run scripts/deprecation-window.ts` and the gate | `X_RELEASE_UNDEPRECATED_REMOVAL` |
 | every release from 30.0.0 opens with Highlights, the Release body | `bun run changelog-check` and the gate, over `docs/changelog/` | `X_CHANGELOG_HIGHLIGHTS_MISSING` |
 | a bump branch is `chore/release-X.Y.Z`; `release/*` is only `release/<major>.x` | `scripts/release.ts --bump`; `ci.yml` and `release-tag.yml` filter on `release/[0-9]+.x` (`scripts/release-tag-workflow-shape.test.ts`) | `X_RELEASE_BRANCH_NAME` |
+| the supported runtimes are the ones `compat.yml` and the gate run | `scripts/compat-table.test.ts`, in the gate's `unit` step | `X_COMPAT_TABLE_DRIFT` |
 | a maintenance publish never moves `latest` | `scripts/dist-tag.ts` in `release.yml`; `scripts/registry-audit.ts` audits `latest` and each `maint-*` tag | `X_REGISTRY_LATEST_DRIFT` |

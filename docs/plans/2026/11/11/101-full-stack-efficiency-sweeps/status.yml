@@ -1,11 +1,11 @@
 plan: 101-full-stack-efficiency-sweeps
 title: "Full-stack efficiency sweeps: every measured defect, idle cost and hand-rolled mechanism, closed"
-status: in_progress        # not_started | in_progress | blocked | complete | superseded
+status: superseded        # not_started | in_progress | blocked | complete | superseded
 created_by: sebi
 worked_by: "sebi + claude"              # executor fills with their git user.name
 owner: sebi
 percent: 89
-current_focus: "Sweep R done but one: nine of ten adopters on 31.22.0 (A, B, C, D, F, G, H, I, J); adopter E on 31.20.0 with its final round in flight (page-window bug, keyset, three N+1s, one typed-handle slice). Infrastructure: 6 of 7 PRs merged, the idle_in_transaction draft and I6/I8/I12/I7 owner-owed. Owed from R: adopter H drops its audit shim once 31.22.1 ships (#1127) and moves to lockKeys in its own two-release PR; island coverage excludes (A, I) wait on 13 X9; framework gaps surfaced: nullable keyset keys, settle-all mapBounded, global-read tenant proofs, memoPerRequest forget, chart p95-latency and replication-lag rules. Next: 31.22.1, then the framework gaps sweep 18 recorded (A2, A5, A9, A12)"
+current_focus: "Superseded 2026-11-15 by docs/plans/2026/11/14/101-finished-and-self-maintained (plan 101b, slice 12 M1): one tracker is live. 31.22.1 and every release through 31.30.0 shipped since this line was written. Every open row moved, each slice row below names where: framework gaps (A2, A5, A9, A12, X9, J2, J11, R10) to 101b 02/03/05/07; parked breaks (X8, OD3, OD10) to the next lane, 101b 11 L1; the adopters to 101b 40-49; infrastructure to 101b 30; the rest to wiki/Known-Gaps.md, Carried from the 2026-11 plans, each with a decision."
 slices:
   - file: 01-hotfix-patch.md
     tier: 1
@@ -15,8 +15,9 @@ slices:
   - file: 19-agent-tooling-dx.md
     tier: 5
     sweep: "19b"           # FX1–FX11 in 19a (done, 31.6.0); Y1–Y11 in 19b (31.22.0; Y3 keeps .mcp.json ignored, a tracked example; Y5 no per-edit typecheck); step 5's scaffold re-run owed
-    status: in_progress
+    status: superseded
     percent: 95
+    note: "superseded 2026-11-15: step 5 (re-run the 2026-11-11 scaffold session, timing and error-grade tables) is wiki/Known-Gaps.md, Carried from the 2026-11 plans, deferred"
   - file: 02-schema-core.md
     tier: 0
     sweep: "1"
@@ -40,13 +41,15 @@ slices:
   - file: 05-entity.md
     tier: 2
     sweep: "5a"            # E1–E4, E13 in 5a; E5–E12, E14 in 5b (done); E9's doctor report and --drop-redundant in 18
-    status: in_progress
+    status: superseded
     percent: 95
+    note: "superseded 2026-11-15: E9 doctor report and --drop-redundant carried to 101b 03 D1 (03-db-entity-policy.md:11, carried: A2, E9)"
   - file: 07-auth-policy.md
     tier: 2
     sweep: "5b"            # A1 + P1 shape in 5b (done); P1 composition in 8 (done); X_POLICY_SCOPE_MISMATCH in 13
-    status: in_progress
+    status: superseded
     percent: 75
+    note: "superseded 2026-11-15: P1 (scope OR, entity-chain hop, X_POLICY_SCOPE_MISMATCH) carried to 101b 03 P1 (03-db-entity-policy.md:10, carried: A5, slice 07 P1 at 75%)"
   - file: 08-action-query.md
     tier: 3
     sweep: "8"
@@ -55,18 +58,21 @@ slices:
   - file: 09-jobs.md
     tier: 3
     sweep: "9a"            # J1–J10 in 9a (31.13.0; J2 partial, J9 cheap route); J11–J19 in 9b (31.14.0; J11 partial: a completion returning a value and a claim-settled row stay at-most-once, storing the result waits on next; J17 is 17's)
-    status: in_progress
+    status: superseded
     percent: 95
+    note: "superseded 2026-11-15: J2 carried to 101b 05 J2 (05-jobs-realtime.md:7), J11 at-most-once settle to 101b 05 J3 (05-jobs-realtime.md:8)"
   - file: 10-realtime.md
     tier: 3
     sweep: "9b"            # R1–R4, R7, R9 in 9b (done, 31.14.0); R5 out of scope (OD4), R6 in 17, R8 not planned, R10 shipped #651; step 4's production count owed
-    status: in_progress
+    status: superseded
     percent: 95
+    note: "superseded 2026-11-15: R10 step 4 production count carried to 101b 05 R2 (05-jobs-realtime.md:13) and 101b 30 (30-infra.md:34)"
   - file: 11-render-islands.md
     tier: 4
     sweep: "11"            # I1 opt-in (measured), I2 requests column (request budget deferred), I3–I6 shipped (31.15.0), I7 not planned, I8 moved to 17
-    status: in_progress
+    status: superseded
     percent: 90
+    note: "superseded 2026-11-15: I2 per-route request ceiling is wiki/Known-Gaps.md deferred; I7 per-route CSS split rejected (measured); both under Carried from the 2026-11 plans"
   - file: 12-notify-ai-mcp-pwa.md
     tier: 4
     sweep: "11"            # N1, W1, AI1, AI2, M1–M4 shipped (31.15.0); AI3 deferred by OD8
@@ -75,53 +81,63 @@ slices:
   - file: 13-cli-exercise-verify.md
     tier: 5
     sweep: "13b"           # X1, X2, X4, X7 in 13a (31.16.0), X10 closed measured; 13b (31.17.0): X6, X12 shipped, X11 closed (fixed since 30.8.0, fixtures added), X3 shipped as warnings (route-load floor key, per-route entries, self-API loads deferred), X5 partial (crash proof on the frozen clock; template-database clone and --shard deferred), X9 deferred (measured); X8 parked for next (OD10)
-    status: in_progress
+    status: superseded
     percent: 80
+    note: "superseded 2026-11-15: X3 self-API loads and X5 template-database clone + --shard carried to 101b 07 (07-gate-truth.md:13); X9 to 101b 07 G4 (07-gate-truth.md:9); X8 floored-by-default parked for next, 101b 11 L1 (11-compat-and-longevity.md:14) with 07 G1 strict as its 31.x half"
   - file: 14-cli-commands-upgrade.md
     tier: 5
     sweep: "13b"           # U1–U4 in 13a (31.16.0; U1 baseline, U3 e–g and U4's boot refusal deferred); 13b (31.17.0): U5 four shipped (status needs a build-id aggregate; OD3 parked for next), U6 3 of 9 generators, U7, U8, U10 shipped, U9 already wired (+ database.slowStatementMs), U11 x explain (x profile deferred), U12 measured and closed
-    status: in_progress
+    status: superseded
     percent: 83
+    note: "superseded 2026-11-15: U1/U3/U4, the three generators and x profile carried to 101b 07 (07-gate-truth.md:13); U5 x status to 101b 07 G6 (07-gate-truth.md:22, and its Known-Gaps row x status for sync, scheduler and replicator); OD3 parked for next, 101b 11 L1"
   - file: 15-admin-ui-testing.md
     tier: 4
     sweep: "15"            # D2, D3, V1–V3, T1, T2 shipped (31.18.0); D1 partial (search_tsv deferred: no OR/matches op); T3 shipped earlier (#987), its role gaps deferred to next
-    status: in_progress
+    status: superseded
     percent: 90
+    note: "superseded 2026-11-15: D1 search_tsv carried to 101b 06 U2 (06-ai-mail-scraping-ui.md:11); T3 role gaps to 101b 06 U1 (06-ai-mail-scraping-ui.md:10)"
   - file: 20-ops-defaults.md
     tier: 5
     sweep: "15"            # O1–O4, O6 shipped (31.18.0; O1's replication-lag rule dropped, no series; O6 sync/replicator unmeasured); O5 in 13b
-    status: in_progress
+    status: superseded
     percent: 95
+    note: "superseded 2026-11-15: O1 replication-lag rule carried to 101b 09 D4 (09-deploy-contract.md:9); O6 sync and replicator requests is wiki/Known-Gaps.md deferred (unmeasured)"
   - file: 16-gate-ci-docker.md
     tier: 5
     sweep: "16"            # G1–G7, G9–G12 shipped (31.19.0; G6 as a packages-section key, premise false; G10 premises partly false); G8 partial (--filter saves nothing; container time owed); G13 report-only until REFUSE_ON_BRANCHES; G14 verify.ts only; step 5 not measured
-    status: in_progress
+    status: superseded
     percent: 90
+    note: "superseded 2026-11-15: G8, G13, G14 carried to 101b 10 (10-test-determinism.md:16); step 5 (--changed guards, unmeasured) is wiki/Known-Gaps.md deferred"
   - file: 17-test-determinism.md
     tier: 0
     sweep: "17b"           # 17a (31.20.0): 15 packages' pins at zero; 17b: cli 104 + scripts 2 to zero (18 real-clock), every registry rerun-safe, run() one deadline. Owed: the flaky job's clean week, a measurably faster unit step (2–5 %, inside noise), 4 "never happens later" e2e sleeps
-    status: in_progress
+    status: superseded
     percent: 90
+    note: "superseded 2026-11-15: the flaky job clean week, the mock.module(node:*) guard and the e2e sleeps carried to 101b 10 (10-test-determinism.md:14,16); a faster unit step is wiki/Known-Gaps.md rejected (2-5 percent, inside noise)"
   - file: 18-tracked-apps.md
     tier: 5
     sweep: "18"            # A1, A3, A4, A6, A10, A11 done; A7, A8, A12 partial; A2, A5, A9 framework gaps, A13 not converted (31.21.0)
-    status: in_progress
+    status: superseded
     percent: 60
+    note: "superseded 2026-11-15: A2 to 101b 03 D1, A5 to 03 P1, A9 to 02 C5 (02-core.md:11), A12 to 07 (07-gate-truth.md:13); A7 stub IdP, A8 sync-node fixture, A13 cronJob pairs, the shared OnTheWire type and the reference identity model are wiki/Known-Gaps.md, Carried from the 2026-11 plans, each with a decision"
   - file: 30-infra.md
     tier: 5
     sweep: "R"             # 6 of 7 PRs merged: I1–I3, I5, I10, I11 done; I4 partial (chart lacks p95-latency and replication-lag rules), I7 cause open (provider history), I13 replicator-only rolls deferred; owner-owed: I6, I8 drop, I9 draft #2319, I12 two probe issues; 09 after-snapshot owed
-    status: in_progress
+    status: superseded
     percent: 75
+    note: "superseded 2026-11-15: owner-owed I6, I7, I8, I9, I12 carried unchanged to 101b 30 (30-infra.md:3); I4 p95-latency and replication-lag rules to 101b 09 D4; I13 replicator-only rolls is wiki/Known-Gaps.md deferred"
   - file: 40-adopter-a.md
     tier: 5
     sweep: "R"             # 31.22.0, floor 17/21; owed: island coverage exclude, blocked on 13 X9
-    status: in_progress
+    status: superseded
     percent: 85
+    note: "superseded 2026-11-15: carried to 101b 40-adopter-a.md (island coverage exclude: :13, 07 G4)"
   - file: 41-adopter-b.md
     tier: 5
     sweep: "R"             # 31.22.0, steps 2–4 done, step 5 proven; owed: error-declared (78 classes), owner deletes two set-aside data dirs
-    status: in_progress
+    status: superseded
     percent: 90
+    note: "superseded 2026-11-15: carried to 101b 41-adopter-b.md, which re-read the repository on 2026-11-14 and owns what is left there"
   - file: 42-adopter-c.md
     tier: 5
     sweep: "R"             # 31.22.0; scripts gone, 25 guards, coverage floor at the measured 69 (re-measure when 13 X9 ships)
@@ -135,8 +151,9 @@ slices:
   - file: 44-adopter-e.md
     tier: 5
     sweep: "R"             # on 31.20.0; E11 done, E3/E7/E16 partial; final round in flight: page-window bug (E5), keyset (E4), three N+1s, one typed-handle slice (E1); owed E2, E6, E8–E10, E12–E15, row security
-    status: in_progress
+    status: superseded
     percent: 30
+    note: "superseded 2026-11-15: carried to 101b 44-adopter-e.md (:19, E2, E6, E8-E10, E12-E15, row security)"
   - file: 45-adopter-f.md
     tier: 5
     sweep: "R"             # revived despite OD9: 19 → 31.22.0, typed handle, 25 guards
@@ -145,18 +162,21 @@ slices:
   - file: 46-adopter-g.md
     tier: 5
     sweep: "R"             # 31.22.0; steps 1, 3, 6, 7 closed; owed: error-declared (185), framework gaps: nullable keyset keys, settle-all mapBounded, global-read tenant proofs; gate-parity never shipped
-    status: in_progress
+    status: superseded
     percent: 70
+    note: "superseded 2026-11-15: carried to 101b 46-adopter-g.md (:18, nullable keyset keys, settle-all, global-read proofs: 03 E1, E3, 02 C4)"
   - file: 47-adopter-h.md
     tier: 5
     sweep: "R"             # 31.22.0; steps 1, 2, 5 done, 3 and 6 closed in writing; owed: drop the outsideTransactions shim after 31.22.1 (#1127), lockKeys migration PR (two-release deploy), error-declared (218), memoPerRequest gap
-    status: in_progress
+    status: superseded
     percent: 70
+    note: "superseded 2026-11-15: carried to 101b 47-adopter-h.md (:16 error classes, 02 C3; :18 memoPerRequest forget and lockKeys, 03 K1)"
   - file: 48-adopter-i.md
     tier: 5
     sweep: "R"             # 31.22.0, floor 19/21; owed: island coverage exclude, blocked on 13 X9
-    status: in_progress
+    status: superseded
     percent: 85
+    note: "superseded 2026-11-15: carried to 101b 48-adopter-i.md (island coverage exclude: :12, 07 G4)"
   - file: 49-adopter-j.md
     tier: 5
     sweep: "R"             # 28 → 31.22.0, re-read deleted, cronJob, error-declared installed; exclude stays on 13 X9
@@ -169,4 +189,4 @@ slices:
     percent: 100
 evidence: []
 notes: "Written 2026-11-11 from 14 read-only audit passes, a techniques catalogue, a scaffold-and-break DX session, production evidence from two deployed apps and eleven application repositories. Sweeps 0, 19a, 1, 2, 5a, 5b, 8, 9a, 9b, 13a, 13b, 15, 16, 17a, 17b, 18 and 19b implemented (31.5.0–31.22.0; 17b and 19b released in 31.22.0). Sweep R: one PR per adopter repository on 31.22.0 (adopter E on 31.20.0, final round in flight) and seven infrastructure PRs. Sweep ids name their lead slice; several slices span two sweeps (see the comments)."
-last_updated: 2026-11-13
+last_updated: 2026-11-15

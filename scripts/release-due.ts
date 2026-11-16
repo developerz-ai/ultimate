@@ -4,6 +4,8 @@
 // origin/main's tip when this checkout lacks it. Its `due` is a count, not a verdict: the release-due
 // checkup decides (.dz/briefs/release-due.md), and never a major on its own judgement.
 //
+// `data.nextLane` is the major path: `next` proposed as one merge-and-bump PR once the window opens.
+//
 //   bun run scripts/release-due.ts [--settle-hours 24] [--json]
 
 import { flagString, parseScriptArgs } from './lib/args';
@@ -14,6 +16,8 @@ import { report } from './lib/log';
 import { nextMajorWindow } from './lib/major-window';
 import { gh } from './lib/release-due-gh';
 import { git } from './lib/release-due-git';
+import type { NextLaneDecision } from './lib/release-due-next';
+import { nextLaneAt } from './lib/release-due-next-read';
 import type { DueDecision, DueInput, WindowCommit } from './lib/release-due-rule';
 import {
   askPrArgs,
@@ -386,6 +390,15 @@ export function dueLines(
   ];
 }
 
+/** The `next` lane's lines: its answer, then the proposal's steps when there is one. */
+export function nextLaneLines(lane: NextLaneDecision): readonly string[] {
+  const verdict = lane.propose ? `propose ${lane.version}` : `${lane.reason} (${lane.version})`;
+  return [
+    `  next lane ${verdict}: ${lane.detail}`,
+    ...lane.steps.map((step) => `  step      ${step}`),
+  ];
+}
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const settle = settleHoursOf(flagString(args, 'settle-hours'));
@@ -398,6 +411,9 @@ if (import.meta.main) {
   }
   const { tagged, stamped, decision } = read;
   const headSha = decision.headSha;
+  // The major path (wiki/Stability.md): asks GitHub only once the window is open.
+  const root = repoRoot();
+  const nextLane = await nextLaneAt(root, stamped, Date.now(), (ghArgs) => gh(ghArgs, root));
   report(
     {
       ok: true,
@@ -405,8 +421,8 @@ if (import.meta.main) {
       summary: decision.due
         ? `a release is due: ${decision.detail}`
         : `no release due (${decision.reason}): ${decision.detail}`,
-      lines: dueLines(tagged, stamped, decision),
-      data: { headSha, lastTag: `v${tagged}`, stamped, settleHours: settle, ...decision },
+      lines: [...dueLines(tagged, stamped, decision), ...nextLaneLines(nextLane)],
+      data: { headSha, lastTag: `v${tagged}`, stamped, settleHours: settle, ...decision, nextLane },
     },
     args.json,
   );

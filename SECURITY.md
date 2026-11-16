@@ -7,8 +7,10 @@ Framework packages move in lockstep, so "supported version" is one number coveri
 | Version | Supported | npm dist-tag |
 |---|---|---|
 | the current major — `npm view @ultimat3/core version` | ✅ every fix | `latest` |
-| the previous major, until 6 months after the current major's `## X.0.0` date in `CHANGELOG.md` | ✅ security fixes, as patches cut from `release/<major>.x` | `maint-<major>` — `npm view @ultimat3/core dist-tags` |
-| every older major | ❌ upgrade — see [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) | |
+| a superseded major from v30, for 6 calendar months from its successor's first release (the `## X.0.0 - <date>` heading in `docs/changelog/`) — 30.x until 2027-05-10 | ✅ security fixes, as patches cut from `release/<major>.x` | `maint-<major>` — `npm view @ultimat3/core dist-tags` |
+| a superseded major past its window, and every major before v30 | ❌ upgrade — see [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) | |
+
+What exists, read by command, never by this page: whether a major's lane is up is `bun run scripts/release-maint.ts --major <major> --dry-run --json` (every step `done`), `git ls-remote --heads origin 'release/*'` and `npm view @ultimat3/core dist-tags`. A maintainer cuts the lane with that script without `--dry-run` — the branch at the last `v<major>.*` tag, `maint-<major>` on every package at the newest `<major>.x` npm holds — and the daily checkup is red while a promised lane is absent (`X_MAINT_LANE_ABSENT`) or a closed one is still up (`X_MAINT_LANE_EXPIRED`). On `release/<major>.x`, `scripts/release.ts` bumps patches only (`X_RELEASE_LANE_PATCH_ONLY`) from the 31.x line on — 30.x's tree predates that rule — and `release-tag.yml`, which every line meets in main's copy, refuses to tag a version that would not publish under `maint-<major>`; the publish is the same OIDC trusted-publisher run with provenance as every release ([PUBLISHING.md](PUBLISHING.md#ongoing-releases-automated)).
 
 The window applies from v30 ([Stability](https://github.com/developerz-ai/ultimate/wiki/Stability)); before it, only the latest major got fixes. A fix ships as a patch to every package in one release, on the [same lockstep rule as any other release](PUBLISHING.md); there are no per-package security branches. A fix that cannot be non-breaking may ship a major inside the 90-day window under its advisory id: `bun run scripts/release.ts --bump major --security GHSA-xxxx-xxxx-xxxx`. Report against the newest major in the table you run.
 

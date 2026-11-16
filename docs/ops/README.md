@@ -105,6 +105,10 @@ pays for the control plane.
 | [`05-disaster-recovery.md`](./05-disaster-recovery.md) | backups you can restore, and the key without which they are noise |
 | [`06-runbooks.md`](./06-runbooks.md) | rollback, stuck deploys, image-pull failures, a leaked credential, and one entry per chart alert |
 | [`07-deploy-contract.md`](./07-deploy-contract.md) | what a deploy guarantees: migrate before roles, a role over a schema that is behind, drain, the skew window, rollback, each failure's alert and runbook |
+| [`08-raise-bun.md`](./08-raise-bun.md) | the framework's own toolchain: every Bun pin site and the floor, moved together on `next` |
+| [`09-postgres-major.md`](./09-postgres-major.md) | a Postgres major: the test services first, then the demo's compose files, then the demo's database |
+| [`10-solid-major.md`](./10-solid-major.md) | a Solid major on `next`: every pin and peer, the island compiler, the codemods |
+| [`maintainer-runbooks/`](./maintainer-runbooks/README.md) | the repository's own maintenance loop breaking: `main` red, a red release commit, registry lag, a squatted tag, a review bot, the maintainer bot down |
 
 Rehearse a runbook's failure before it is needed: `x drill <name> --json` (`x drill --list --json`
 names each) boots the app's roles on a scratch database with the test services up and plays one

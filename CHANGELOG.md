@@ -10,7 +10,51 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- **The `next` lane runs itself up to the merge.** `next-sync.yml` merges `main` into `next` weekly. `scripts/release-due.ts` reports `data.nextLane`: once the major window is open and `next` is green and ahead, it proposes the `chore: release X.0.0` PR, which a person merges. `scripts/next-breaks.ts` renders the tracking issue of every parked break, cited at the line that parked it.
+- **A superseded major keeps its security lane.** `scripts/release-maint.ts --major <N>` cuts `release/<N>.x` at the major's last tag and points `maint-<N>` at its newest version on every package. A maintenance line ships patches only (`X_RELEASE_LANE_PATCH_ONLY`), and `release-tag.yml` refuses to tag one that would not publish under `maint-<N>`.
+- **`compat.yml`** runs the gate's `unit` and `live` weekly on Bun latest and canary, Postgres 16/17/18 and Solid's newest 1.x. Each red cell files one issue, closed by its next green run. `wiki/Stability.md`'s supported-runtimes table is generated from it.
+- **The maintenance loop, written down:**
+  - three playbooks (a Bun, Postgres or Solid major);
+  - seven maintainer runbooks;
+  - four scheduled briefs (`main-red`, `audit`, `evidence`, `adopter-canary`);
+  - new `scripts/health.ts` rows: credentials, the bench and compat workflows, the maintenance lane, bot issues outliving their condition, stale `dz/*` branches.
+
+### Added
+
+- `scripts/release-due.ts`: `data.nextLane`, the major path. A closed window refuses with `X_RELEASE_MAJOR_WINDOW` and makes no GitHub lookups.
+- `.github/workflows/next-sync.yml`: a weekly `main` â†’ `next` merge that dispatches `ci.yml` there. A conflict, or workflow-file changes the job token may not push, opens one issue with the exact command, found again by its exact title; an optional `NEXT_SYNC_TOKEN` secret pushes those too.
+- `bun run scripts/next-breaks.ts [--json]` (`X_NEXT_BREAK_SOURCE_MOVED`, `X_NEXT_BREAK_UNLISTED`).
+- `bun run scripts/release-maint.ts --major <N> [--dry-run] [--json]`: idempotent (`X_MAINT_LANE_REFUSED`, `X_MAINT_LANE_WRITE_FAILED`).
+- `.github/workflows/compat.yml` and `bun run scripts/compat.ts prepare|run|file`, plus `bun run scripts/compat-table.ts --write|--check` (`X_COMPAT_*`). Issue filing is shared with flake-hunt through `scripts/lib/issue-ledger.ts`, which also closes a resolved issue.
+- `scripts/health.ts` rows:
+  - registry trust (honestly "unknown" without a one-time password);
+  - the private-names secret;
+  - the docs-site origin;
+  - `bench` and `compat`;
+  - the maintenance lane (`X_MAINT_LANE_ABSENT`, `X_MAINT_LANE_EXPIRED`);
+  - bot issues whose condition cleared;
+  - stale `dz/*` branches.
+- `docs/ops/08-raise-bun.md`, `09-postgres-major.md`, `10-solid-major.md`.
+- `docs/ops/maintainer-runbooks/`: `main` red, a red release commit, registry lag, a squatted tag, a review bot disagreeing, a retired model or key, the maintainer down.
+- `.dz/briefs/main-red.md`, `audit.md`, `evidence.md`, `adopter-canary.md`, scheduled in `.dz/maintainer/maintainer.yml`.
+- The `roadmap` step fails a plan tracker left `in_progress` with no commit in its directory for more than 30 days (`X_ROADMAP_TRACKER_STALE`).
+
+### Changed
+
+- `scripts/release.ts` on `release/<N>.x` refuses a minor, a major or another major's tree (`X_RELEASE_LANE_PATCH_ONLY`).
+- The 2026-11-02 and 2026-11-11 plan trackers are `superseded` by plan 101b. Their open rows moved to its slices or to `wiki/Known-Gaps.md` ("Carried from the 2026-11 plans").
+- `maintainer.yml` and the deploy workflow state `main`'s real protection, a ruleset requiring `verify`.
+- Dependabot no longer proposes a Solid major; it is adopted on `next` by its playbook.
+- `doc-paths` and `doc-commands` read `.dz/briefs/*.md` too.
+- `scripts/launch-deadline.ts` counts every call that starts a browser process (`findChrome`, `startsChrome`).
+
+### Fixed
+
+- `scripts/health.ts`: a full page of Dependabot PRs no longer hides a stuck one behind "unverdicted".
+- `x ci --json` no longer fails with `X_GH_RESPONSE_INVALID` while a run is in progress (`gh` reports its conclusion as `""`).
+- `x doctor`'s report no longer asks the machine's own Chrome inside a test's clock. Its browser fact is the probe's, which is why a doctor test timed out on CI.
 
 ## Releases
 

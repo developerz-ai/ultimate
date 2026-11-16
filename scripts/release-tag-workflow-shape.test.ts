@@ -3,7 +3,11 @@
 // hands the publish to release.yml by dispatch. Reads the REAL workflow — each assertion is one a
 // quiet edit to it would otherwise break with nothing red.
 
-import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { chmod, mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp or chmod.
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+import { join } from 'node:path'; // why: Bun ships no path API.
 import { MAINTENANCE_BRANCH_GLOB } from './lib/release-preflight';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
@@ -56,6 +60,8 @@ const runsOf = (name: string): string =>
     .map((step) => step.run ?? '')
     .join('\n');
 const prepare = runsOf('prepare');
+/** Stub `bun` and `jq` for the lane step's run, in a temp dir the maint block removes. */
+const bin = await mkdtemp(join(tmpdir(), 'release-tag-lane-'));
 const cut = runsOf('cut');
 /** Where in `shell` the first occurrence of `needle` is, -1 when absent. */
 const at = (shell: string, needle: string): number => shell.indexOf(needle);
@@ -229,4 +235,135 @@ describe('unit · release-tag.yml cuts the release the one way this repo cuts it
     // Order: dispatch must precede close, so a dispatch failure leaves the ask open.
     expect(at(cut, 'gh workflow run release.yml')).toBeLessThan(at(cut, 'gh issue close'));
   });
+});
+
+// The maintenance lane's own check, RUN, not grepped: main's copy of this file is the one every
+// line meets (workflow_run reads the default branch's), while release.yml runs from the tag and a
+// line cut from an old tag carries that tag's scripts. `bun` and `jq` are stubs on PATH answering
+// the tag scripts/dist-tag.ts would; the step's own shell decides. Two cases run the real script and
+// the real jq, with only the registry's answer stubbed, so the step's jq filter is exercised too.
+describe('unit · maint · release-tag.yml refuses a maintenance release that is not a maint-<major> patch', () => {
+  const lane = stepsOf('prepare').find((step) => step.id === 'lane');
+
+  afterAll(() => rm(bin, { recursive: true, force: true }));
+
+  const runLane = async (branch: string, version: string, tag: string) => {
+    await Bun.write(join(bin, 'bun'), '#!/usr/bin/env bash\necho "{}"\n');
+    await Bun.write(join(bin, 'jq'), '#!/usr/bin/env bash\ncat >/dev/null\necho "$FAKE_TAG"\n');
+    await chmod(join(bin, 'bun'), 0o755);
+    await chmod(join(bin, 'jq'), 0o755);
+    const child = Bun.spawnSync(['bash', '-c', lane?.run ?? 'exit 99'], {
+      env: {
+        PATH: `${bin}:${process.env['PATH'] ?? ''}`,
+        BRANCH: branch,
+        VERSION: version,
+        FAKE_TAG: tag,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+      // A shell with two stubs and no network: seconds would be generous.
+      timeout: 30_000,
+    });
+    return { code: child.exitCode, out: `${child.stdout.toString()}${child.stderr.toString()}` };
+  };
+
+  test('maint: it runs before anything irreversible, for a release/<major>.x branch only', () => {
+    expect(lane?.if).toBe(
+      "steps.release.outputs.cut == 'true' && github.event.workflow_run.head_branch != 'main'",
+    );
+    expect(String(lane?.env?.['BRANCH'])).toContain('workflow_run.head_branch');
+    expect(String(lane?.env?.['VERSION'])).toContain('steps.release.outputs.version');
+    const ids = stepsOf('prepare').map((step) => step.id);
+    expect(ids).toContain('release');
+    expect(ids).toContain('lane');
+    expect(ids).toContain('notes');
+    expect(ids.indexOf('lane')).toBeGreaterThan(ids.indexOf('release'));
+    expect(ids.indexOf('lane')).toBeLessThan(ids.indexOf('notes'));
+  });
+
+  test.skipIf(process.platform === 'win32')(
+    'maint: a 30.x patch from release/30.x that earns maint-30 passes',
+    async () => {
+      const { code, out } = await runLane('release/30.x', '30.9.1', 'maint-30');
+      expect(out).toContain('maint-30');
+      expect(code).toBe(0);
+    },
+  );
+
+  test.skipIf(process.platform === 'win32')(
+    'maint: the same patch earning latest is refused — a maintenance line never moves latest',
+    async () => {
+      const { code, out } = await runLane('release/30.x', '30.9.1', 'latest');
+      expect(code).toBe(1);
+      expect(out).toContain('never moves latest');
+    },
+  );
+
+  /**
+   * The lane step over the REAL `scripts/dist-tag.ts --json` and the REAL `jq`: only `fetch` is
+   * replaced, by a preload answering the registry's `latest`, so the step's own `.data.tag` filter
+   * meets the document the script prints. The stubs above would pass a filter reading nothing.
+   */
+  const runLaneReal = async (version: string, latest: string) => {
+    const real = join(bin, 'real');
+    const preload = join(real, 'registry.ts');
+    // The answer is DATA in a file the preload reads, never text spliced into its code.
+    const answer = join(real, 'registry.json');
+    await Bun.write(answer, JSON.stringify({ 'dist-tags': { latest } }));
+    await Bun.write(
+      preload,
+      "const body = await Bun.file(Bun.env['FAKE_REGISTRY'] ?? '').text();\nglobalThis.fetch = (async () => new Response(body, { status: 200 })) as unknown as typeof fetch;\n",
+    );
+    // `bun run X` becomes `bun run --preload <registry> X`: the flag must follow `run`.
+    await Bun.write(
+      join(real, 'bun'),
+      '#!/usr/bin/env bash\n[ "$1" = run ] && shift\nexec "$REAL_BUN" run --preload "$REAL_PRELOAD" "$@"\n',
+    );
+    await chmod(join(real, 'bun'), 0o755);
+    const child = Bun.spawnSync(['bash', '-c', lane?.run ?? 'exit 99'], {
+      cwd: repoRoot(),
+      env: {
+        PATH: `${real}:${process.env['PATH'] ?? ''}`,
+        BRANCH: 'release/30.x',
+        VERSION: version,
+        REAL_BUN: process.execPath,
+        REAL_PRELOAD: preload,
+        FAKE_REGISTRY: answer,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 60_000,
+    });
+    return { code: child.exitCode, out: `${child.stdout.toString()}${child.stderr.toString()}` };
+  };
+
+  test.skipIf(process.platform === 'win32' || Bun.which('jq') === null)(
+    'maint: the real dist-tag document, through the real jq, earns maint-30 for a 30.x patch',
+    async () => {
+      const { code, out } = await runLaneReal('30.9.1', '31.30.0');
+      expect(out).toContain('ok: 30.9.1 from release/30.x publishes under maint-30');
+      expect(code).toBe(0);
+    },
+  );
+
+  test.skipIf(process.platform === 'win32' || Bun.which('jq') === null)(
+    'maint: the real document naming latest is refused through the real jq',
+    async () => {
+      // 30.x is the newest major on the registry: the patch would move latest.
+      const { code, out } = await runLaneReal('30.9.1', '30.9.0');
+      expect(out).toContain("would publish under 'latest', not maint-30");
+      expect(code).toBe(1);
+    },
+  );
+
+  test.skipIf(process.platform === 'win32')(
+    'maint: a minor, a major, or another major on release/30.x is refused before the tag',
+    async () => {
+      for (const version of ['30.10.0', '31.0.0', '31.0.1']) {
+        const { code, out } = await runLane('release/30.x', version, 'maint-30');
+        expect(code).toBe(1);
+        expect(out).toContain('patches of 30.x only');
+      }
+    },
+  );
 });

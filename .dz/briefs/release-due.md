@@ -60,6 +60,24 @@ non-breaking takes the exception (`--security <advisory-id>`).
 | `false` | `X_RELEASE_HEAD_NOT_MAIN` (in `findings`) | nothing — HEAD is not the tip of `origin/main`; run `git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main && git checkout main`, then re-run |
 | `true` | — | shipping commits have waited: judge them above. When a release is needed, one ask: **Release `<data.next>`**, opening with your reason and listing `data.shipping` — unless `data.detail` names an ask already open |
 
+## The major path: `data.nextLane`
+
+Every break waits on `next` ([`wiki/Stability.md`](../../wiki/Stability.md)); `data.nextLane` says
+whether this is the week to PROPOSE it. A major is proposed, never cut: you open the pull request, a
+person merges it, after seven green days of `compat.yml` and of the canary on `next`. Never merge it,
+approve it, tag or publish. The window is read first, from the changelog; GitHub is asked only once
+it is open.
+
+| `data.nextLane.reason` | What to do |
+|---|---|
+| `window_closed` | nothing — `data.nextLane.refusal` is the `X_RELEASE_MAJOR_WINDOW` the bump would print; the window opens on `data.nextLane.windowOpensOn` |
+| `no_next` | one issue for a maintainer: the lane has no `next` branch — `git push origin origin/main:refs/heads/next` creates it |
+| `not_ahead` | nothing — `next` changes no file `main` lacks |
+| `not_green` | nothing this week; `data.nextLane.detail` names the run at `next`'s tip. A red one is `next-sync.yml`'s and the tracking issue's to fix |
+| `cannot_tell` | nothing — a GitHub lookup could not answer; never read it as green or as no PR open |
+| `proposal_open` | nothing — the proposal PR is already open |
+| absent, with `data.nextLane.propose: true` | run `data.nextLane.steps` in order, on fresh `main`; the last opens the one PR, titled `data.nextLane.prTitle`. A red step stops you: file its output for a maintainer instead |
+
 ## The ask, when a release is needed
 
 Title `Release <next>`. Body, verbatim steps for the box that takes it:
@@ -112,6 +130,7 @@ any refusal above and never read it as "none open". A due run names the one it f
 
 - `release-due` — Run the release-due command and read its envelope: handle refusals and HEAD recovery, file nothing for `nothing_ships`, and failing only when you judge a release is needed now, with your reason.
 - `major-release-pending` — On `major_needs_a_maintainer`, file nothing while `data.windowOpensOn` is set; otherwise check for an open pending-major issue before filing the maintainer issue for `data.next` with `data.breaking`.
+- `next-lane` — Read `data.nextLane`: on `propose`, run its steps and open the one major PR, never merging it; on every reason, do what its row says.
 - `release-tag-run` — On `awaiting_tag`, watch `release-tag.yml` runs and file only on a failed run.
 - `release-ask-open` — When due, check for an open ask titled exactly `Release <next>`; file nothing if one is already open.
 - `bump-pr-open` — For `data.next`, use the callable bump-PR lookup; an open release PR means file nothing and cut nothing, while a lookup refusal requires reading its findings, never treating it as none open.

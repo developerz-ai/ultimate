@@ -24,6 +24,7 @@ import {
   securityLines,
 } from './lib/major-window';
 import { promoteUnreleased, releaseDate } from './lib/release-changelog';
+import { laneFindings, laneOf } from './lib/release-lane';
 import { branchNameFindings, treeDirtyFindings } from './lib/release-preflight';
 import { askIssueArgs, askLookupFailedLine, askTwin, parseAskIssues } from './lib/release-subject';
 import {
@@ -53,6 +54,7 @@ import { plannedApiLockLine, writeApiLock } from './release-api-lock';
 import { unlessRehearsed } from './release-rehearse';
 
 export { bumpWindowFindings } from './lib/major-window';
+export { laneFindings, laneOf, maintenanceMajor } from './lib/release-lane';
 // The ask query lives with the other release subjects (`lib/release-subject.ts`), one definition
 // for one query; re-exported here so this script stays the one module its callers import it from.
 export { askIssueArgs, askLookupFailedLine, parseAskIssues } from './lib/release-subject';
@@ -265,14 +267,22 @@ if (import.meta.main) {
   // Under `--dry-run` too. `release/*` is the maintenance lines' namespace, and both workflows run
   // on `release/<major>.x`: a bump branch named like one is how v31.1.0 got tagged off main (#1054).
   // A detached HEAD prints nothing and names no branch; a git that could not run refuses nothing.
+  // On a `release/<major>.x` line the bump is a patch of that major, or nothing (SECURITY.md).
   const branch = await run(['git', 'branch', '--show-current'], { cwd: root });
-  const misnamed = branchNameFindings(branch.ok ? branch.output.trim() : undefined, version);
+  const branchName = branch.ok ? branch.output.trim() : undefined;
+  const upstream = await run(['git', 'rev-parse', '--abbrev-ref', '@{upstream}'], { cwd: root });
+  const line = laneOf(branchName, upstream.ok ? upstream.output.trim() : undefined);
+  const lane = laneFindings({ branch: line, current, version });
+  const misnamed = [...branchNameFindings(branchName, version), ...lane];
   if (misnamed.length > 0) {
     report(
       {
         ok: false,
         script: 'release',
-        summary: 'refusing to release: the branch is named like a maintenance line',
+        summary:
+          lane.length > 0
+            ? `refusing to release: ${line} ships patches of its own major only`
+            : 'refusing to release: the branch is named like a maintenance line',
         findings: misnamed,
         data: { version, current, dryRun },
       },

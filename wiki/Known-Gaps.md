@@ -116,6 +116,36 @@ downstream app on Ultimate and of systems built without it; no row is a defect i
 The test-kit row of that plan's table shipped in 23.0.0 work (`renderView`, `runJobs({ actor })`,
 `mountIslandState`) and is not repeated here.
 
+## Carried from the 2026-11 plans
+
+`As of 2026-11-15`. The open rows of the
+[2026/11/02](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/11/02/101-absorb-reinvented-patterns/status.yml)
+and [2026/11/11](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/11/11/101-full-stack-efficiency-sweeps/status.yml)
+plans that no slice of the
+[live plan](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/11/14/101-finished-and-self-maintained/overview.md)
+owns. Both trackers read `superseded`; each of their slice rows names where its open work went.
+**Build** is owed work, **deferred** waits on the reason given, **rejected** will not be built. A
+plan tracker left `in_progress` with no commit in its directory for 30 days fails the `roadmap`
+step (`X_ROADMAP_TRACKER_STALE`), so this list, not a stale tracker, is where open work waits.
+
+| Gap | Decision | Why, and the record |
+|---|---|---|
+| CI's critical path: `cli`'s own slow tests (the `x upgrade` hop, the scaffold typecheck) | deferred | speed, not correctness: every job is inside its timeout. Re-measure from the run history (`x ci runs --json`) before acting on a figure. 2026/11/02 slice 33 |
+| The framework's own gate at `"isolate": false` | rejected | its suites exercise process-global registries on purpose; the slice's own fallback (keep the flag, record why) holds, [Testing](Testing) states it. Apps run without isolation by default. 2026/11/02 slice 31, step 4 |
+| `x branch` previews, expand/contract renames, CRDT collaboration, mobile, more chart kinds, N-pane docking | deferred | each needs a plan of its own; none is rejected. [`90-deferred.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/plans/2026/11/02/101-absorb-reinvented-patterns/90-deferred.md), "Too large for this plan" |
+| A per-route request ceiling (`X_ISLAND_REQUESTS_OVER_BUDGET`) | deferred | requests per route are measured into `.x/build-stats.json` already; a ceiling waits for the first app that declares one. 2026/11/11 slice 11, I2 |
+| One stylesheet per route instead of per surface | rejected | measured 23.8 kB gzip, immutable and cached across navigations; a per-route split costs requests for bytes the cache already holds. 2026/11/11 slice 11, I7 |
+| Re-running the 2026-11-11 scaffold-and-break session (timing and error-grade tables) | deferred | evidence, not code: `scaffold-smoke` gates two scaffold shapes on every push; the session re-runs against the next change that claims a DX gain. 2026/11/11 slice 19, step 5 |
+| Chart resource requests for the `sync` and `replicator` roles | deferred | unmeasured, so they keep their previous values; measure idle as `web`, `worker` and `scheduler` were before changing them. 2026/11/11 slice 20, O6 |
+| Guards run on changed files only (`--changed`) | deferred | never measured; the slice's own rule drops it if the local saving is under 5 s. 2026/11/11 slice 16, step 5 |
+| A faster `unit` step from the determinism work | rejected | measured at 2–5 %, inside run-to-run noise; determinism is the goal, not speed. 2026/11/11 slice 17 |
+| Rolling the replicator only when its own image or config changed | deferred | the image updater repins every container naming the image and every build is a new digest, so a digest test rolls it every time; needs a per-role change signal. 2026/11/11 slice 30, I13 |
+| Sign-in e2e against an out-of-process stub identity provider, in the reference app | deferred | the e2e suites sign in with the development viewer, which answers only a cookie-less request under `x dev`; a stub provider is a second process the e2e harness does not start. 2026/11/11 slice 18, A7 |
+| A sync-node subscribe fixture for the deployed demo app (`dummy/social-media-clone`) | deferred | needs the app's API importable without its demo seeding side effect (`apps/web/api/index.ts`). 2026/11/11 slice 18, A8 |
+| The reference app's three hourly task + job pairs, as `cronJob()` | build | the reference app shows every primitive once and idiomatically, and a hand-written pair beside the factory teaches the second way. 2026/11/11 slice 18, A13 |
+| One shared `OnTheWire<T>` type | deferred | named once by the tracked-app pass with no second caller measured. 2026/11/11 slice 18 |
+| The reference app's identity model (`members.userId` against `x_users.id == members.id`) | deferred | a schema change in the reference app with no defect behind it. 2026/11/11 slice 18 |
+
 ## Closed
 
 **Historical:** every row is a defect that shipped; the third column is for readers still pinned below

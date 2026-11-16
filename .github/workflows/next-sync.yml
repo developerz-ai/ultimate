@@ -1,0 +1,180 @@
+name: next-sync
+
+# Does `next` still hold everything `main` has? `next` carries the breaks that wait for the major
+# window (wiki/Stability.md), and a major is cut from it: a `next` that fell behind a fix would ship
+# the major without it. Weekly, this merges `main` into `next`, pushes the merge and dispatches
+# ci.yml there — a push made with the job token starts no workflow, a dispatch is GitHub's exception
+# — so `scripts/release-due.ts`'s next lane (Tuesdays) reads a gated tip. A merge that conflicts is
+# never pushed: it opens ONE issue, found again by its exact title so a blocked week that lasts
+# collects comments, and the next clean run closes it.
+#
+# GitHub refuses a job-token push that creates, updates or deletes a file under `.github/workflows/`
+# (the token has no `workflows` permission). A merge that brings such a change is therefore never
+# pushed with it: it files the same issue with the command a maintainer runs, and the run is red. The
+# optional repository secret `NEXT_SYNC_TOKEN` (a fine-grained token with `contents: write` and
+# `workflows: write` on this repository) lifts that: set, every push carries it, and such a push
+# starts ci.yml on `next` by itself, so no dispatch follows it.
+#
+# Two jobs, so no write token sits beside a second one: `merge` (contents + actions: write) runs git
+# and gh only, no install and no repository code; `report` (issues: write) has no checkout at all.
+
+on:
+  schedule:
+    # Mondays, the day before the release-due checkup (Tuesdays 03:00 UTC).
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: next-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # The merge commit pushed to `next`, and the ci.yml dispatch that gates it.
+      contents: write
+      actions: write
+    outputs:
+      blocked: ${{ steps.merge.outputs.blocked }}
+      files: ${{ steps.merge.outputs.files }}
+    steps:
+      # The whole history: a merge needs the base of `main` and `next`. No credential is persisted;
+      # the one push below carries the token itself.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: merge main into next
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_SYNC_TOKEN: ${{ secrets.NEXT_SYNC_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # What stopped the push, handed to the report job: `conflict` or `workflows`.
+          blocked() {
+            {
+              echo "blocked=$1"
+              echo 'files<<NEXT_SYNC_FILES'
+              echo "$2"
+              echo 'NEXT_SYNC_FILES'
+            } >> "$GITHUB_OUTPUT"
+          }
+          if ! git fetch --no-tags origin +refs/heads/next:refs/remotes/origin/next; then
+            echo "::error::origin has no next branch, so there is nothing to keep in step. Create it from main: git push origin origin/main:refs/heads/next"
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git switch -C next origin/next
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "next already holds main: nothing to merge"
+            echo 'blocked=' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git merge --no-edit origin/main; then
+            workflows="$(git diff --name-only origin/next HEAD -- .github/workflows/)"
+            if [ -z "${NEXT_SYNC_TOKEN:-}" ]; then
+              if [ -n "$workflows" ]; then
+                echo "::error::the merge changes .github/workflows/, which the job token may not push: run git fetch origin && git switch next && git merge origin/main && git push origin next"
+                blocked workflows "$workflows"
+                exit 0
+              fi
+              git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/next
+              gh workflow run ci.yml --ref next
+            else
+              git push "https://x-access-token:${NEXT_SYNC_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/next
+            fi
+            echo 'blocked=' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only --diff-filter=U)"
+          if [ -z "$files" ]; then
+            echo "::error::git merge failed with no conflicted file, so this is no conflict to file: read the log above, then re-run with gh workflow run next-sync.yml"
+            exit 1
+          fi
+          git merge --abort
+          blocked conflict "$files"
+
+  report:
+    needs: merge
+    # On the merge's answer only: a red `merge` job filed nothing to report.
+    if: ${{ !cancelled() && needs.merge.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: open, update or close the one tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BLOCKED: ${{ needs.merge.outputs.blocked }}
+          FILES: ${{ needs.merge.outputs.files }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TITLE='next-sync: main is not merged into next'
+          # The search is fuzzy; the title is compared whole, so a look-alike is never the twin.
+          # Only this workflow's own issue: anyone may open one with the same title.
+          open="$(gh issue list --state open --author 'app/github-actions' --search "$TITLE in:title" \
+            --json number,title | jq -r --arg t "$TITLE" 'map(select(.title == $t)) | .[0].number // empty')"
+          if [ -z "$BLOCKED" ]; then
+            if [ -n "$open" ]; then
+              gh issue close "$open" --comment "main merged cleanly into next: $RUN_URL"
+            fi
+            exit 0
+          fi
+          body="$RUNNER_TEMP/next-sync.md"
+          if [ "$BLOCKED" = 'workflows' ]; then
+            {
+              echo "The weekly merge of \`main\` into \`next\` is clean but changes workflow files, which the job token may not push, so it was not pushed: $RUN_URL"
+              echo
+              echo 'Workflow files the merge changes:'
+              echo
+              echo '```text'
+              printf '%s\n' "$FILES"
+              echo '```'
+              echo
+              echo 'Push it as a maintainer; the next clean run closes this issue:'
+              echo
+              echo '```bash'
+              echo 'git fetch origin && git switch next && git merge origin/main && git push origin next'
+              echo 'gh workflow run next-sync.yml'
+              echo '```'
+              echo
+              echo 'Or set the repository secret NEXT_SYNC_TOKEN (a fine-grained token with contents and workflows write on this repository), then: gh workflow run next-sync.yml'
+            } > "$body"
+          else
+            {
+              echo "The weekly merge of \`main\` into \`next\` conflicted and was not pushed: $RUN_URL"
+              echo
+              echo 'Conflicted files:'
+              echo
+              echo '```text'
+              printf '%s\n' "$FILES"
+              echo '```'
+              echo
+              echo 'Resolve by hand, then push; the next clean run closes this issue:'
+              echo
+              echo '```bash'
+              echo 'git fetch origin && git switch next && git merge origin/main'
+              echo 'git push origin next && gh workflow run next-sync.yml'
+              echo '```'
+            } > "$body"
+          fi
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body-file "$body"
+          else
+            gh issue create --title "$TITLE" --body-file "$body"
+          fi
+          # A blocked week stays red, so the run's conclusion says what the issue says.
+          exit 1

@@ -7,6 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { HealthOverrides } from './health';
 import { CI_ARGS, healthAt, ROW_COMMANDS, TAG_RUN_ARGS, TAG_RUN_FIELDS } from './health';
+import { healthyReaders as healthyWorld } from './lib/health-fixture';
 import { jsonDocument } from './lib/health-narrow';
 import type { RowVerdict } from './lib/health-rule';
 import { ROW_IDS } from './lib/health-rule';
@@ -50,54 +51,9 @@ describe('unit · health · the main-green argv', () => {
   });
 });
 
-const healthyReaders: HealthOverrides = {
-  'main-green': async () => ({
-    ci: {
-      ok: true,
-      data: { runs: [{ conclusion: 'success', status: 'completed', headSha: SHA, id: 11 }] },
-    },
-    expectedSha: SHA,
-  }),
-  'last-tag-published': async () => ({
-    tagCommit: SHA,
-    runs: [{ conclusion: 'success', event: 'workflow_dispatch', headSha: SHA }],
-  }),
-  'stamped-version-tagged': async () => ({
-    releaseDue: { ok: true, data: { lastTag: 'v3.0.0', reason: 'settled' } },
-  }),
-  'tag-runs-ended-well': async () => ({
-    runs: [{ conclusion: 'success', status: 'completed' }],
-  }),
-  'npm-serves-tree': async () => ({
-    audit: {
-      ok: true,
-      data: {
-        states: [
-          { name: '@ultimat3/core', version: '3.0.0', kind: 'ok', latest: '3.0.0', tagged: true },
-        ],
-      },
-    },
-  }),
-  'automation-alarms': async () => ({ issues: [] }),
-  'dependabot-not-stuck': async () => ({ prs: [] }),
-  'demo-shipped': async () => ({
-    runs: [{ conclusion: 'success', event: 'workflow_run', status: 'completed', databaseId: 5 }],
-  }),
-  'release-exists': async () => ({
-    tag: 'v3.0.0',
-    lookup: {
-      kind: 'found',
-      release: { tagName: 'v3.0.0', isDraft: false, publishedAt: '2026-01-01T00:00:00Z' },
-    },
-  }),
-  'tutorials-run': async () => ({ runs: [{ conclusion: 'success', status: 'completed' }] }),
-  // Created now: the row reads the real clock, and a fixture night must never be two nights old.
-  'flake-hunt': async () => ({
-    runs: [{ conclusion: 'success', status: 'completed', createdAt: new Date().toISOString() }],
-  }),
-};
+const healthyReaders: HealthOverrides = healthyWorld();
 describe('unit · health · healthAt over injected readers', () => {
-  test('a readable world answers ok:true with all eleven rows in the brief order', async () => {
+  test('a readable world answers ok:true with every row in the brief order', async () => {
     const result = await healthAt('.', healthyReaders);
     expect(result.ok).toBe(true);
     expect(result.script).toBe('health');

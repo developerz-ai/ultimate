@@ -6,13 +6,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { HealthOverrides } from './health';
 import { healthAt } from './health';
+import { healthyReaders as healthyWorld } from './lib/health-fixture';
 import type { DependabotPr } from './lib/health-narrow';
 import { narrowPrs } from './lib/health-narrow';
 import type { RowVerdict } from './lib/health-rule';
 import { dependabotVerdict } from './lib/health-rule';
 import type { ScriptResult } from './lib/log';
-
-const SHA = 'a'.repeat(40);
 
 const verdictOf = (result: ScriptResult): readonly RowVerdict[] => {
   const data = result.data as { healthy: boolean; rows: readonly RowVerdict[] } | undefined;
@@ -20,54 +19,7 @@ const verdictOf = (result: ScriptResult): readonly RowVerdict[] => {
   return data.rows;
 };
 
-const healthyReaders: HealthOverrides = {
-  'main-green': async () => ({
-    ci: {
-      ok: true,
-      data: { runs: [{ conclusion: 'success', status: 'completed', headSha: SHA, id: 11 }] },
-    },
-    expectedSha: SHA,
-  }),
-  'last-tag-published': async () => ({
-    tagCommit: SHA,
-    runs: [{ conclusion: 'success', event: 'workflow_dispatch', headSha: SHA }],
-  }),
-  'stamped-version-tagged': async () => ({
-    releaseDue: { ok: true, data: { lastTag: 'v3.0.0', reason: 'settled' } },
-  }),
-  'tag-runs-ended-well': async () => ({
-    runs: [{ conclusion: 'success', status: 'completed' }],
-  }),
-  'npm-serves-tree': async () => ({
-    audit: {
-      ok: true,
-      data: {
-        states: [
-          { name: '@ultimat3/core', version: '3.0.0', kind: 'ok', latest: '3.0.0', tagged: true },
-        ],
-      },
-    },
-  }),
-  'automation-alarms': async () => ({ issues: [] }),
-  'dependabot-not-stuck': async () => ({ prs: [] }),
-  'demo-shipped': async () => ({
-    runs: [{ conclusion: 'success', event: 'workflow_run', status: 'completed', databaseId: 5 }],
-  }),
-  // Row 9 joined health.ts with this merge; without it the default reader spawns real git and gh
-  // here, and an environment where gh refuses turns every healthAt case below into a refusal.
-  'release-exists': async () => ({
-    tag: 'v3.0.0',
-    lookup: {
-      kind: 'found',
-      release: { tagName: 'v3.0.0', isDraft: false, publishedAt: '2026-01-01T00:00:00Z' },
-    },
-  }), // Row 10 likewise: the real reader would spawn gh.
-  'tutorials-run': async () => ({ runs: [{ conclusion: 'success', status: 'completed' }] }),
-  // Created now: the row reads the real clock, and a fixture night must never be two nights old.
-  'flake-hunt': async () => ({
-    runs: [{ conclusion: 'success', status: 'completed', createdAt: new Date().toISOString() }],
-  }),
-};
+const healthyReaders: HealthOverrides = healthyWorld();
 
 describe('unit · health · Dependabot activity and checks', () => {
   const nowMs = Date.parse('2026-10-23T12:00:00Z');
@@ -201,6 +153,44 @@ describe('unit · health · Dependabot activity and checks', () => {
       },
     ]);
     expect(dependabotVerdict({ prs: page, nowMs }).verdict).toBe('unverdicted');
+  });
+
+  test('through healthAt, a full page with no stuck PR is truncated: no verdict', async () => {
+    const pr = (number: number) => ({
+      number,
+      createdAt: '2020-01-01T00:00:00Z',
+      updatedAt: new Date().toISOString(),
+      statusCheckRollup: [red],
+    });
+    const full = await healthAt('.', {
+      ...healthyReaders,
+      'dependabot-not-stuck': async () => ({ prs: [1, 2, 3, 4, 5].map(pr) }),
+    });
+    const row = verdictOf(full).find((one) => one.row === 'dependabot-not-stuck');
+    expect(row?.verdict).toBe('unverdicted');
+    expect(row?.reason).toContain('--limit');
+  });
+
+  test('through healthAt, a full page still files the stuck PRs it holds', async () => {
+    // The page is truncated, but a confirmed stuck PR on it is confirmed: unverdicted never mutes it.
+    const pr = (number: number) => ({
+      number,
+      createdAt: '2020-01-01T00:00:00Z',
+      updatedAt: '2020-01-02T00:00:00Z',
+      statusCheckRollup: [red],
+    });
+    for (const numbers of [
+      [1, 2, 3, 4, 5],
+      [1, 2, 3, 4],
+    ]) {
+      const result = await healthAt('.', {
+        ...healthyReaders,
+        'dependabot-not-stuck': async () => ({ prs: numbers.map(pr) }),
+      });
+      const row = verdictOf(result).find((one) => one.row === 'dependabot-not-stuck');
+      expect(row?.verdict).toBe('unhealthy');
+      expect(row?.reason).toContain('#1 inactive');
+    }
   });
 
   test('through healthAt, a mixed page files the stuck ask and turns healthy off', async () => {

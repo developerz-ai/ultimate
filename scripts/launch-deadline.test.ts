@@ -69,6 +69,36 @@ describe('scanLaunchDeadlines', () => {
     ).toEqual([]);
   });
 
+  // `findChrome` runs `startsChrome` — `chrome --version` under its own 15 s — per candidate: a cold
+  // Chrome on a loaded runner outlived Bun's 5 s default (run 43802046886, unit-1 and unit-3).
+  test('a test awaiting a probe for a browser is a test awaiting a browser process', () => {
+    const found = scan(
+      "test('find', async () => {",
+      "  expect(await findChrome({ [CHROME_PATH_ENV]: '' })).toBeDefined();",
+      '});',
+      "test('probe', async () => {",
+      "  expect(await startsChrome(candidate, 'linux')).toBe(true);",
+      '}, 30_000);',
+    );
+    expect(found.map((site) => [site.line, site.deadline])).toEqual([
+      [1, "Bun's 5000 ms default"],
+      [4, '30_000'],
+    ]);
+  });
+
+  test('a deadline derived from the probe budget passes', () => {
+    expect(
+      scan(
+        "test('a', async () => {",
+        '  await findChrome(env);',
+        '}, findChromeTestMs());',
+        "test('b', async () => {",
+        "  await startsChrome(candidate, 'linux', SHORT_MS);",
+        '}, chromeProbeTestMs(1, SHORT_MS));',
+      ),
+    ).toEqual([]);
+  });
+
   test('a source file is out of scope: only a test has a Bun deadline', () => {
     const source = "test('x', async () => {\n  await launchChrome(options);\n});";
     expect(scanLaunchDeadlines('packages/scraping/src/a.ts', source)).toEqual([]);
@@ -85,6 +115,8 @@ describe('checkLaunchDeadlines — the ratchet', () => {
     expect(finding.code).toBe('X_TEST_LAUNCH_DEADLINE');
     expect(finding.cause).toContain(`${PATH}:1`);
     expect(finding.fix.startsWith('test(name, fn, launchTestMs(launchTimeoutMs))')).toBe(true);
+    // A probe's budget is named where to get it, beside the launch's.
+    expect(finding.fix).toContain('findChromeTestMs(platform, env)');
   });
 
   test('a pin above the tree is stale, and an empty corpus is unscanned', () => {

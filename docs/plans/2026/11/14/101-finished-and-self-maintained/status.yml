@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
 percent: 63
-current_focus: "Sweep 7 (10 test determinism + the patterns list: release rehearsal, changelog-check, preflight, pin-edit, x db status) on feat/sweep-7-determinism-and-patterns; sweep 6 shipped as 31.29.0. 08, 09 close on sweep R; 10 closes after seven green flake-hunt nights. Next: sweep 8 (11 + 12)."
+current_focus: "Sweep 8a (11 compat and longevity + 12 M1–M5) on feat/sweep-8a-compat-and-maintainer-loop; sweep 7 shipped as 31.30.0 (#1157, #1158). 08, 09 close on sweep R; 10 closes after seven green flake-hunt nights. Next: sweep 8b (12 M6 pin burn-down), then sweep 9 (13)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -61,13 +61,15 @@ slices:
   - file: 11-compat-and-longevity.md
     tier: 5
     sweep: "8"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 85
+    note: "L1 next lane, L2 maint lane, L3 compat matrix, L4 playbooks, L5 health rows built. Closes when next, release/30.x and maint-30 exist on the remote and compat.yml has one recorded run (coordinator acts after merge)."
   - file: 12-maintainer-loop.md
     tier: 5
     sweep: "8"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 60
+    note: "M1 trackers superseded + stale-tracker guard, M2, M3 briefs, M4 health rows, M5 runbooks done (sweep 8a). M6 pin burn-down is sweep 8b. Each new brief must run once and leave evidence."
   - file: 13-shapes-and-declaration.md
     tier: 5
     sweep: "9"
@@ -143,4 +145,4 @@ evidence:
   - "sweep 0: #1138 merged; 31.23.0 released (#1139) — registry-audit: 31/31 publishable packages are on npm at 31.23.0, every one attested; demo /readyz 200, /llms.txt 200 (2026-11-14)"
   - "sweep 0 corrections: H3 premise false (sweep used the partial index; cost was dead index entries); H7 failures already fixed on main (#1036, #1060); bench release trigger never fired (GITHUB_TOKEN); released as a minor (additive API)" 
 notes: "Written 2026-11-14 at 31.22.3 from four read-only passes: residual work in this tree, ten adopter repositories, 7–14 days of production evidence from two deployed apps, and a trace of the maintenance loop. Carries every open row of the 2026/11/02 and 2026/11/11 plans (12 step 1 marks them superseded). 90-owner-decisions.md is not a slice. Audit rounds (20) record per-round P0/P1/P2 counts and the read ledger here. Adopter letter mapping is off-tree with the owner."
-last_updated: 2026-11-14
+last_updated: 2026-11-16

@@ -111,6 +111,33 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      # A maintenance line (SECURITY.md) ships patches of its own major under `maint-<major>`, and
+      # never moves `latest`. Held HERE because workflow_run always runs main's copy of this file,
+      # while release.yml runs from the tag and a line cut from an old tag carries that tag's
+      # scripts: this is the one check every line meets, whatever its age. `scripts/dist-tag.ts` is
+      # the question release.yml asks before it publishes, asked before the tag exists. Its refusal
+      # prints no tag, which fails this check too. `scripts/lib/release-lane.ts` is the local rule.
+      - name: a maintenance line publishes a patch of its major under maint-<major>, never latest
+        id: lane
+        if: steps.release.outputs.cut == 'true' && github.event.workflow_run.head_branch != 'main'
+        env:
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          major="${BRANCH#release/}"
+          major="${major%.x}"
+          if ! [[ "$major" =~ ^[0-9]+$ && "$VERSION" =~ ^${major}\.[0-9]+\.[1-9][0-9]*$ ]]; then
+            echo "::error::$BRANCH ships patches of ${major}.x only, and $VERSION is not one. A minor or a major is cut on main; on $BRANCH: bun run scripts/release.ts --bump patch --dry-run --json"
+            exit 1
+          fi
+          tag="$(bun run scripts/dist-tag.ts --version "$VERSION" --json | jq -r '.data.tag // empty' || true)"
+          if [ "$tag" != "maint-${major}" ]; then
+            echo "::error::$VERSION from $BRANCH would publish under '${tag}', not maint-${major}, and a maintenance line never moves latest. Read why: bun run scripts/dist-tag.ts --version $VERSION --json"
+            exit 1
+          fi
+          echo "ok: $VERSION from $BRANCH publishes under maint-${major}"
+
       # Every file the version is stamped in, not the manifests alone — the same question
       # release.yml asks before it publishes, asked before anything irreversible exists.
       - name: the tree is stamped at that version

@@ -1,11 +1,10 @@
-// Eight of the eleven per-row health verdicts, pure: typed inputs in, one RowVerdict out — no
-// subprocess, no Bun.* anywhere, so scripts/health.ts reads and this file judges; rows 9 to 11 keep
-// read, judge and command together in health-release.ts, health-tutorials.ts and
-// health-flake-hunt.ts, the document shapes it
-// judges over in health-narrow.ts. `unverdicted` always means "no verdict yet — re-run, never
-// unhealthy": an ask filed over an unread world is the false alarm this rule exists to prevent.
+// Rows 1 to 8's health verdicts, pure: typed inputs in, one RowVerdict out — no subprocess, no
+// Bun.*; rows 9 onward keep read, judge and command together in their own health-<row>.ts. An
+// `unverdicted` row is "no verdict yet — re-run, never unhealthy": an ask filed over an unread
+// world is the false alarm this rule exists to prevent. Document shapes: health-narrow.ts.
 
 import type { AlarmIssue, AuditDoc, CiDoc, DependabotPr, RunRow } from './health-narrow';
+import type { Finding } from './log';
 
 /** The three ways a row can answer. `unverdicted` is a re-run, never a filing. */
 export type Verdict = 'healthy' | 'unhealthy' | 'unverdicted';
@@ -23,6 +22,14 @@ export const ROW_IDS = [
   'release-exists',
   'tutorials-run',
   'flake-hunt',
+  'bench',
+  'compat',
+  'maint-lane',
+  'registry-trust',
+  'private-names-secret',
+  'docs-site-origin',
+  'stale-bot-issues',
+  'stale-branches',
 ] as const;
 
 export type RowId = (typeof ROW_IDS)[number];
@@ -49,6 +56,19 @@ export interface RowVerdict {
   readonly tagName?: string | undefined;
   readonly isDraft?: boolean | undefined;
   readonly publishedAt?: string | undefined;
+  /** The command that repairs an unhealthy row, or reads an unverdicted one a person must run. */
+  readonly fix?: string;
+  /** The stale `dz/*` branches the `stale-branches` row lists; deleting them is an operator's act, never the row's. */
+  readonly branches?: readonly StaleBranch[];
+  /** The maint-lane row's own coded findings, one per window its lane breaks. */
+  readonly findings?: readonly Finding[];
+}
+
+/** One `dz/*` branch with no open pull request: merged, closed, or idle past the bound. */
+export interface StaleBranch {
+  readonly name: string;
+  readonly committedAt?: string | undefined;
+  readonly pr?: { readonly number: number; readonly state: string } | undefined;
 }
 
 // ——— The rules. ———

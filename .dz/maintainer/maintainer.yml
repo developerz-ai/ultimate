@@ -74,16 +74,25 @@ pr:
   # left members' PRs to their authors). `any`: its own, the dependency bots', outside
   # contributors', and org members' and collaborators' alike — reviewed, babysat, merged on green.
   # An OUTSIDE PR that changes CI, release or publish automation is still declined by the
-  # `non_goals` line above (security audit, 2026-10-14): with no branch protection and no publish
-  # reviewer, an auto-merged workflow edit would run beside the job holding `id-token: write`.
+  # `non_goals` line above (security audit, 2026-10-14): `main`'s ruleset requires `verify` and no
+  # review, and `npm-publish` has no reviewer, so an auto-merged workflow edit that passes the gate
+  # would run beside the job holding `id-token: write`. The protection, and the commands that read
+  # it: the comment under `require_review` below.
   # Whether an author is outside is the platform's read of their real repo permission, never
   # `author_association`.
   auto_merge_scope: any
   require_review: true
   # No `human_merge` lane: the owner's ruling is no human in the loop (2026-10-14). The risk is
-  # stated, not hidden (security audit, 2026-10-14): `main` has no branch protection and
-  # `npm-publish` no reviewers, so an auto-merged PR (the bot's own, a member's, or a Dependabot
-  # action bump to a compromised SHA) can change what runs in the job holding `id-token: write`.
+  # stated, not hidden (security audit, 2026-10-14; protection re-read 2026-11-15). `main` carries
+  # the ruleset `main-protection` (active, last changed 2026-11-10; no classic protection,
+  # `branches/main/protection` is 404): no deletion, no force push, the `verify` check required
+  # (not strict), NO required review, and repository role 5 (admin) bypasses it always. No ruleset
+  # covers tags. `npm-publish` has no reviewers; it deploys only from `v*` tags. Read it, never this:
+  #   gh api repos/developerz-ai/ultimate/rulesets --jq '.[] | {id, name, target, enforcement}'
+  #   gh api repos/developerz-ai/ultimate/rulesets/26338054 --jq '[.rules[].type], .bypass_actors'
+  #   gh api repos/developerz-ai/ultimate/environments/npm-publish --jq '.protection_rules'
+  # So an auto-merged PR that passes `verify` (the bot's own, a member's, or a Dependabot action
+  # bump to a compromised SHA) can change what runs in the job holding `id-token: write`.
   # What stands in for a person: Dependabot's 14-day cooldown (most upstream compromises are caught
   # inside it), actions pinned by SHA, the release lane's shape pinned by tests the gate runs
   # (scripts/release-workflow-shape.test.ts, scripts/release-tag-workflow-shape.test.ts), and two
@@ -138,7 +147,8 @@ schedules:
     hours_utc: [7]
     brief_file: .dz/briefs/health.md
   # Leave it measurably better and one step ahead of the next Bun release: at most three small,
-  # evidenced PRs, never a version bump, never a breaking change (narrower than `escalate:` on
+  # evidenced PRs, never a breaking change on `main` — a Bun or Solid playbook move
+  # (docs/ops/08-raise-bun.md, 10-solid-major.md) is the one break it may open, against `next` (narrower than `escalate:` on
   # purpose: an improvement nobody asked for is not worth a migration for every app, so the brief
   # files an issue for the owner instead). Fires EVERY Monday because the schema has weekdays, not
   # days of the month; the brief acts only on the first Monday of the month (UTC day 1-7) and stops
@@ -147,3 +157,23 @@ schedules:
     days: [mon]
     hours_utc: [8]
     brief_file: .dz/briefs/improve.md
+  # A red `main` is repaired, never rerun to green: bisect by the failing step, revert when clean.
+  - name: main-red
+    days: [mon, tue, wed, thu, fri, sat, sun]
+    hours_utc: [9]
+    brief_file: .dz/briefs/main-red.md
+  # Plan 101b slice 20 continuing: one rotating tier band through an auditor, at most three PRs.
+  - name: audit
+    days: [mon]
+    hours_utc: [9]
+    brief_file: .dz/briefs/audit.md
+  # Production evidence through the infrastructure's read paths; a framework finding becomes an issue.
+  - name: evidence
+    days: [wed]
+    hours_utc: [7]
+    brief_file: .dz/briefs/evidence.md
+  # After a release: x upgrade + x verify over the tracked apps and a previous-minor scaffold.
+  - name: adopter-canary
+    days: [mon, tue, wed, thu, fri, sat, sun]
+    hours_utc: [10]
+    brief_file: .dz/briefs/adopter-canary.md

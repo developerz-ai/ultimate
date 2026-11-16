@@ -1,13 +1,23 @@
 #!/usr/bin/env bun
-// Answer whether the project is healthy: eleven rows, one verdict each, read from git, `gh` and the
-// repo's own scripts, and refuse with `cannot tell` and no data when any row's command cannot be
-// read — a checkup that answers over a row it never read is the silent green it exists to refuse.
+// Answer whether the project is healthy: one verdict per row of `.dz/briefs/health.md`, read from
+// git, `gh`, npm and the repo's own scripts, and refuse with `cannot tell` and no data when any
+// row's command cannot be read — answering over a row it never read is the silent green it refuses.
 //
 //   bun run scripts/health.ts [--json]
 
 import { renderThrowable } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
+import { BENCH_COMMAND, judgeBench } from './lib/health-bench';
+import { BOT_ISSUES_COMMAND, judgeBotIssues } from './lib/health-bot-issues';
+import { BRANCHES_COMMAND, judgeBranches } from './lib/health-branches';
+import { COMPAT_COMMAND, judgeCompat } from './lib/health-compat';
+import { DOCS_ORIGIN_COMMAND, judgeDocsOrigin } from './lib/health-docs-origin';
 import { FLAKE_HUNT_COMMAND, judgeFlakeHunt } from './lib/health-flake-hunt';
+import {
+  judgeMaintLane,
+  MAINT_BRANCHES_COMMAND,
+  MAINT_DIST_TAGS_COMMAND,
+} from './lib/health-maint';
 import {
   narrowAudit,
   narrowChildDoc,
@@ -30,7 +40,7 @@ import type {
   StampedTaggedRead,
   TagRunsRead,
 } from './lib/health-readers';
-import { defaultReaders, TAG_RUN_FIELDS } from './lib/health-readers';
+import { DEPENDABOT_LIMIT, defaultReaders, TAG_RUN_FIELDS } from './lib/health-readers';
 import { judgeReleaseExists, RELEASE_EXISTS_COMMAND } from './lib/health-release';
 import type { RowId, RowVerdict, Verdict } from './lib/health-rule';
 import {
@@ -44,6 +54,8 @@ import {
   stampedTaggedVerdict,
   tagRunsVerdict,
 } from './lib/health-rule';
+import { judgeSecret, SECRET_COMMAND } from './lib/health-secret';
+import { judgeTrust, TRUST_COMMAND } from './lib/health-trust';
 import { judgeTutorialsRun, TUTORIALS_RUN_COMMAND } from './lib/health-tutorials';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
@@ -96,6 +108,14 @@ export const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
   'release-exists': RELEASE_EXISTS_COMMAND,
   'tutorials-run': TUTORIALS_RUN_COMMAND,
   'flake-hunt': FLAKE_HUNT_COMMAND,
+  bench: BENCH_COMMAND,
+  compat: COMPAT_COMMAND,
+  'maint-lane': `${MAINT_BRANCHES_COMMAND}; ${MAINT_DIST_TAGS_COMMAND}`,
+  'registry-trust': TRUST_COMMAND,
+  'private-names-secret': SECRET_COMMAND,
+  'docs-site-origin': DOCS_ORIGIN_COMMAND,
+  'stale-bot-issues': BOT_ISSUES_COMMAND,
+  'stale-branches': BRANCHES_COMMAND,
 };
 
 type Judgement = RowVerdict | Finding | readonly Finding[];
@@ -238,7 +258,20 @@ const judgeDependabot = (read: DependabotRead, nowMs: number): Judgement => {
       'gh printed no JSON document',
     );
   }
-  return dependabotVerdict({ prs: narrowPrs(read.prs), nowMs });
+  const prs = narrowPrs(read.prs);
+  const verdict = dependabotVerdict({ prs, nowMs });
+  // A stuck PR on the page is confirmed whatever the page hides: unverdicted never mutes it.
+  if (verdict.verdict === 'unhealthy') return verdict;
+  // A page as long as its limit may be hiding the older PRs the stuck ask is about: no verdict.
+  if (prs.length >= DEPENDABOT_LIMIT) {
+    return {
+      row: 'dependabot-not-stuck',
+      verdict: 'unverdicted',
+      reason: `the page came back full (${DEPENDABOT_LIMIT}): raise --limit and re-run — nothing files off a truncated page`,
+      prs,
+    };
+  }
+  return verdict;
 };
 
 const judgeDemoShipped = (read: DemoShippedRead, mainGreen: Verdict): Judgement => {
@@ -252,7 +285,7 @@ const judgeDemoShipped = (read: DemoShippedRead, mainGreen: Verdict): Judgement 
  * The whole checkup at `root`: every row read in the brief's order, one subprocess at a time, each
  * judge over what its reader answered. A throw — `Bun.spawn` throws on a missing binary — or an
  * unreadable answer refuses the whole result with findings and no `data`; otherwise every verdict
- * rides in `data.rows`, and `data.healthy` is true only when all eleven read `healthy`.
+ * rides in `data.rows`, and `data.healthy` is true only when every row reads `healthy`.
  */
 export const healthAt = async (
   root: string,
@@ -294,6 +327,18 @@ export const healthAt = async (
   await judge('release-exists', readers['release-exists'], judgeReleaseExists);
   await judge('tutorials-run', readers['tutorials-run'], judgeTutorialsRun);
   await judge('flake-hunt', readers['flake-hunt'], (read) => judgeFlakeHunt(read, nowMs));
+  await judge('bench', readers.bench, (read) => judgeBench(read, nowMs));
+  await judge('compat', readers.compat, (read) => judgeCompat(read, nowMs));
+  // The maintenance windows are calendar dates in UTC, as SECURITY.md states them.
+  const today = new Date(nowMs).toISOString().slice(0, 10);
+  await judge('maint-lane', readers['maint-lane'], (read) => judgeMaintLane(read, today));
+  await judge('registry-trust', readers['registry-trust'], judgeTrust);
+  await judge('private-names-secret', readers['private-names-secret'], judgeSecret);
+  await judge('docs-site-origin', readers['docs-site-origin'], (read) =>
+    judgeDocsOrigin(read, nowMs),
+  );
+  await judge('stale-bot-issues', readers['stale-bot-issues'], judgeBotIssues);
+  await judge('stale-branches', readers['stale-branches'], (read) => judgeBranches(read, nowMs));
 
   if (refusals.length > 0) {
     return { ok: false, script: SCRIPT, summary: 'cannot tell', findings: refusals };
