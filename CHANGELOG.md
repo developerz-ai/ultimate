@@ -10,7 +10,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **CI deals its shards on measured time.** The gate parts pass `x verify --shard â€¦ --timings scripts/lib/ci/test-weights.json`, the committed per-file wall times of a CI run. Heaviest file first, each to the lightest shard; a file the weights do not know costs the median. Unit shards go from 3 to 4 and live from 2 to 3 (`PARTS` 9). The slowest unit part is predicted at 232 s, down from 378 s (run 43903381662's timings). `bun run scripts/test-weights.ts <artifacts-dir>` rewrites the weights from a run's part artifacts. Apps that pass no `--timings` keep the round-robin deal.
+- The slowest framework test files are split so test workers run them in parallel:
+  - `generate-sign-in` per shape;
+  - `scaffold-typecheck` per scaffold group;
+  - `fix-truth` with its barrel row apart;
+  - `mcp-host` parity per tool;
+  - PGlite entity-driver conformance in three parts;
+  - `error-catalog-process`.
+
+  Each split keeps every case, and a test proves the parts cover the whole.
+
+### Added
+
+- `bun run test-slow`: a test file whose committed weight is over 20 s states why in a `// slow: <reason>` header line (`X_TEST_SLOW_UNSTATED`). A reason on a file now under 10 s is `X_TEST_SLOW_REASON_STALE`; weights that read nothing are `X_TEST_SLOW_UNSCANNED`. It runs in the gate's `errors` step.
 
 ## Releases
 
