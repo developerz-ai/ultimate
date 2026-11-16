@@ -102,8 +102,9 @@ jobs:
           set -euo pipefail
           TITLE='next-sync: main does not merge cleanly into next'
           # The search is fuzzy; the title is compared whole, so a look-alike is never the twin.
-          open="$(gh issue list --state open --search "$TITLE in:title" --json number,title \
-            | jq -r --arg t "$TITLE" 'map(select(.title == $t)) | .[0].number // empty')"
+          # Only this workflow's own issue: anyone may open one with the same title.
+          open="$(gh issue list --state open --author 'app/github-actions' --search "$TITLE in:title" \
+            --json number,title | jq -r --arg t "$TITLE" 'map(select(.title == $t)) | .[0].number // empty')"
           if [ "$CONFLICT" != 'true' ]; then
             if [ -n "$open" ]; then
               gh issue close "$open" --comment "main merged cleanly into next: $RUN_URL"

@@ -2,7 +2,14 @@
 // service, URLs moved by the same offset, the gate's own words passed through untouched.
 
 import { describe, expect, test } from 'bun:test';
-import { remoteScript, shiftedEnv, shiftedPortsOverride, splitArgs } from './remote-verify';
+import {
+  isSshHost,
+  remoteScript,
+  shellQuote,
+  shiftedEnv,
+  shiftedPortsOverride,
+  splitArgs,
+} from './remote-verify';
 
 const COMPOSE = [
   'services:',
@@ -64,5 +71,16 @@ describe('unit · remote-verify', () => {
     expect(script.indexOf('up -d --wait')).toBeGreaterThan(-1);
     expect(script.indexOf('up -d --wait')).toBeLessThan(script.indexOf('bun run verify'));
     expect(script.endsWith("bun run verify '--only' 'a b'")).toBe(true);
+  });
+
+  test('a host ssh or rsync would read as an option is refused (security review of 8a)', () => {
+    for (const bad of ['-Fevil', '-ebash', '-oProxyCommand=x', '', 'a b', 'a;b']) {
+      expect([bad, isSshHost(bad)]).toEqual([bad, false]);
+    }
+    for (const good of ['workspace', 'me@box.example', 'box-2']) expect(isSshHost(good)).toBe(true);
+  });
+
+  test('a directory name is one quoted word on the host: a checkout named with ; runs nothing', () => {
+    expect(shellQuote('ultimate;touch pwned')).toBe("'ultimate;touch pwned'");
   });
 });

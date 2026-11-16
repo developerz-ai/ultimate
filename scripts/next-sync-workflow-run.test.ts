@@ -138,7 +138,7 @@ describe('unit · next-sync.yml · the report step, run', () => {
     const out = await bash(script('report'), join(dir, 'work'), env);
     const [list, ...calls] = (await Bun.file(env.GH_CALLS).text()).split('\n').filter(Boolean);
     // The lookup comes first, every time: nothing is filed or closed unread.
-    expect(list).toStartWith('issue list --state open --search ');
+    expect(list).toStartWith('issue list --state open --author app/github-actions --search ');
     const bodyFile = Bun.file(join(dir, 'next-sync.md'));
     return { ok: out.ok, calls, body: (await bodyFile.exists()) ? await bodyFile.text() : '' };
   };

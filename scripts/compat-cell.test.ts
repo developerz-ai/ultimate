@@ -129,7 +129,7 @@ describe('unit · compat cell · prepare', () => {
     };
     const answer = await prepareCell({ root, cell: cell('solid', '1'), runner });
     expect(answer.ok).toBe(true);
-    expect(asked).toEqual(['bun pm view solid-js versions --json', 'bun install']);
+    expect(asked).toEqual(['bun pm view solid-js versions --json', 'bun install --ignore-scripts']);
     expect(await Bun.file(join(root, 'package.json')).text()).toContain('"solid-js": "1.9.19"');
   });
 

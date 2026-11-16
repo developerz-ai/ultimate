@@ -60,25 +60,32 @@ export const shiftedEnv = (env: string, offset: number): string =>
     (_all, ip: string, port: string) => `${ip}:${String(Number(port) + offset)}`,
   );
 
+/** One shell word, single-quoted: what reaches the host's shell is data, never syntax. */
+export const shellQuote = (word: string): string => `'${word.replaceAll("'", "'\\''")}'`;
+
+/** A plain ssh alias or user@host: never one that ssh or rsync would read as an option. */
+export const isSshHost = (host: string): boolean => /^[\w.@][\w.@-]*$/.test(host);
+
 /** The shell the host runs: install, services, then the gate with this process's exit code. */
 export function remoteScript(input: {
   readonly dir: string;
   readonly offset: number;
   readonly verifyArgs: readonly string[];
 }): string {
-  const quote = (word: string): string => `'${word.replaceAll("'", "'\\''")}'`;
   const compose = `docker compose -p ${REMOTE_PROJECT} -f ${COMPOSE_FILE} -f ${OVERRIDE_FILE}`;
   return [
     'set -e',
-    `cd ${quote(input.dir)}`,
+    `cd ${shellQuote(input.dir)}`,
     'export PATH="$HOME/.bun/bin:$PATH"',
+    // The mirror carries no `.git/config` (see syncList): the minimum git needs to read the repo.
+    `[ -f .git/config ] || printf '[core]\\n\\trepositoryformatversion = 0\\n\\tbare = false\\n' > .git/config`,
     'bun install --frozen-lockfile >/dev/null',
     `${compose} up -d --wait >/dev/null`,
     'set -a',
     `. ./docker/.remote-gate.env`,
     'set +a',
     'set +e',
-    `bun run verify ${input.verifyArgs.map(quote).join(' ')}`.trimEnd(),
+    `bun run verify ${input.verifyArgs.map(shellQuote).join(' ')}`.trimEnd(),
   ].join('\n');
 }
 
@@ -104,7 +111,12 @@ export function splitArgs(argv: readonly string[]): {
 async function syncList(root: string): Promise<string> {
   const listed = await run(['git', 'ls-files', '-co', '--exclude-standard'], { cwd: root });
   if (!listed.ok) return '';
-  return `${listed.output.trimEnd()}\n.git/\n`;
+  // `.git` without its config (a credential helper or a token in a remote URL) and reflogs: the
+  // host may be shared, and history-reading suites need the objects and refs, not those.
+  const kept = (
+    await Array.fromAsync(new Bun.Glob('.git/**').scan({ cwd: root, dot: true }))
+  ).filter((path) => path !== '.git/config' && !path.startsWith('.git/logs/'));
+  return `${listed.output.trimEnd()}\n${kept.join('\n')}\n`;
 }
 
 async function main(): Promise<void> {
@@ -120,7 +132,7 @@ async function main(): Promise<void> {
       { ok: false, script: SCRIPT, summary: 'the remote gate did not run', findings: [finding] },
       json,
     );
-  if (host === undefined || host === '' || !/^[\w.@-]+$/.test(host)) {
+  if (host === undefined || host === '' || !isSshHost(host)) {
     refuse({
       code: 'X_REMOTE_VERIFY_HOST_MISSING',
       cause: 'no ssh host named, or one that is not a plain ssh alias',
@@ -149,10 +161,20 @@ async function main(): Promise<void> {
   );
   const list = `${root}/node_modules/.cache/remote-verify.list`;
   await Bun.write(list, `${await syncList(root)}${OVERRIDE_FILE}\ndocker/.remote-gate.env\n`);
-  const prepared = await run(['ssh', '-o', 'BatchMode=yes', host, `mkdir -p ${dir}`], {
-    cwd: root,
-    timeoutMs: 30_000,
-  });
+  const prepared = await run(
+    [
+      'ssh',
+      '-o',
+      'BatchMode=yes',
+      '--',
+      host,
+      `mkdir -p ${shellQuote(dir)} && chmod 700 ${shellQuote(dir)}`,
+    ],
+    {
+      cwd: root,
+      timeoutMs: 30_000,
+    },
+  );
   const synced = prepared.ok
     ? await run(['rsync', '-az', '--recursive', `--files-from=${list}`, './', `${host}:${dir}/`], {
         cwd: root,
@@ -168,7 +190,7 @@ async function main(): Promise<void> {
     return;
   }
   const started = performance.now();
-  const gate = Bun.spawn(['ssh', '-o', 'BatchMode=yes', host, 'bash', '-s'], {
+  const gate = Bun.spawn(['ssh', '-o', 'BatchMode=yes', '--', host, 'bash', '-s'], {
     stdin: new TextEncoder().encode(remoteScript({ dir, offset, verifyArgs })),
     stdout: 'inherit',
     stderr: 'inherit',

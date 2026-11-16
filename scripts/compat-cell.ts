@@ -100,7 +100,9 @@ async function prepareSolid(root: string, major: string, runner: Runner): Promis
   }
   const manifest = Bun.file(`${root}/package.json`);
   await Bun.write(manifest, withSolidOverride(await manifest.text(), version));
-  const install = await runner(['bun', 'install'], root);
+  // No lifecycle scripts: the cell resolves an unlocked solid-js, and nothing it tests needs one —
+  // an upstream compromise must not run code in a default-branch job (security review of 8a).
+  const install = await runner(['bun', 'install', '--ignore-scripts'], root);
   const installed = await Bun.file(`${root}/node_modules/solid-js/package.json`)
     .json()
     .then((doc: unknown) => (doc as { version?: unknown } | null)?.version)
