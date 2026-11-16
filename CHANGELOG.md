@@ -26,7 +26,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   - `X_SCRAPE_BODY_TOO_LARGE`'s `page.fetch` â†’ `http.request`.
 - `X_MAIL_HEADER_INVALID` no longer says to strip the line break the source refuses rather than strips.
 - A migration fix said `git checkout -- migrations/`, which discards every uncommitted migration; it now restores only the snapshot sidecars.
-- Fixes that splice a value into a command quote it (`X_MAIL_SMTP_HANDSHAKE`'s host, the tenancy and admin `x db gen` lines, `X_ENTITY_RETAIN_UNINDEXED`'s entity name).
+- Fixes that splice a value into a command quote it (the SMTP handshake fix's host in `@ultimat3/mail`'s `smtp-socket.ts`, the tenancy and admin `x db gen` lines, `X_ENTITY_RETAIN_UNINDEXED`'s entity name).
 - `x doctor`'s database check reads `@ultimat3/db`'s `X_DB_UNAVAILABLE` fix instead of a copy that had drifted.
 
 ### Changed
