@@ -38,7 +38,7 @@ import { atOf, SCRIPTS_UNIT, testFileCount, unitOf, unitsFor } from './lib/cover
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { RunResult } from './lib/run';
-import { RUN_TIMEOUT_CODE, repoRoot, run } from './lib/run';
+import { repoRoot, run } from './lib/run';
 import { ScriptError } from './lib/script-error';
 
 export interface CoverageReading {
@@ -352,7 +352,7 @@ export function unitFailure(
 ): { code: string; cause: string; fix: string } | undefined {
   if (ran.timedOut) {
     return {
-      code: RUN_TIMEOUT_CODE,
+      code: 'X_SPAWN_TIMED_OUT',
       cause: `bun test ${unitOf(name).test} did not finish within ${String(UNIT_TIMEOUT_MS)} ms and was killed`,
       fix: `bun run scripts/coverage-gate.ts --package ${renderFixShellArg(name, '<unit>')} --json   # alone; a test that hangs is named by the last (pass) line before the stall`,
     };

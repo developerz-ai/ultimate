@@ -387,12 +387,11 @@ export function jobWorker(options: WorkerOptions): Worker {
       }
       await options.driver.close?.();
     } finally {
-      // Whatever the close did, this worker is done: a state left at 'draining' is a drain that
-      // is not happening — `start()` refuses it for the rest of the process and `stats()` reports
-      // a worker still finishing work it finished. And the hook goes back. It exists only to call
-      // this, so one left registered drains a stopped worker on the next process-wide shutdown —
-      // through a driver already closed — and keeps this closure, its driver and its in-flight
-      // set alive with it.
+      // Whatever the close did, this worker is done: a state left at 'draining' is a drain that is
+      // not happening — `start()` refuses it for the rest of the process and `stats()` reports a
+      // worker still finishing work it finished. And the hook goes back: it only calls this, so one
+      // left registered drains a stopped worker on the next process-wide shutdown, through a driver
+      // already closed, keeping this closure, its driver and its in-flight set alive.
       state = 'stopped';
       for (const release of releaseShutdownHooks) release();
       releaseShutdownHooks = [];
@@ -444,8 +443,7 @@ export function jobWorker(options: WorkerOptions): Worker {
       assertConcurrencyEnforceable(options.driver);
       state = 'running';
       cap.revive();
-      // info: lifecycle — once per worker boot, naming the queues it claims from.
-      logger.info('jobs.worker.started', { workerId, queues });
+      logger.info('jobs.worker.started', { workerId, queues }); // info: lifecycle, once per boot
       reportUnregisteredQueues(workerId, queues);
       registration = startWorkerRegistry({
         driver: options.driver,

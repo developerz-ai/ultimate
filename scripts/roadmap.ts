@@ -212,7 +212,10 @@ export const roadmapCheck =
   async (root) => [
     ...(await tableFindings(root)),
     ...(await stalePlanFindings(root, deps)),
-    ...undatedFindings((await deps.trackerEdits?.(root)) ?? []),
+    ...undatedFindings(
+      (await deps.trackerEdits?.(root)) ?? [],
+      new Date(deps.now()).toISOString().slice(0, 10),
+    ),
   ];
 
 /** What the gate runs: git for the dates, and the one wall clock read in this step. */

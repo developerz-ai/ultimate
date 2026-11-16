@@ -18,5 +18,4 @@ export interface LogLevelPin {
  * (lifecycle, or a rare outcome) and owes only its inline `// info:` — written by the package's
  * owner, then `--unpin`. The two marked `review:` are per-unit successes a later slice may demote.
  */
-export const LOG_LEVEL_PINS: Readonly<Record<string, LogLevelPin>> = {
-};
+export const LOG_LEVEL_PINS: Readonly<Record<string, LogLevelPin>> = {};

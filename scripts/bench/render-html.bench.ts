@@ -10,7 +10,7 @@ import { escapeHtml } from '../../packages/core/src/html-escape';
 import { h } from '../../packages/render/src/jsx';
 import { renderToHtml } from '../../packages/render/src/render-html';
 import { parseScriptArgs } from '../lib/args';
-import { DEFAULT_RUN_TIMEOUT_MS, RUN_TIMEOUT_CODE } from '../lib/run';
+import { DEFAULT_RUN_TIMEOUT_MS } from '../lib/run';
 import { ScriptError } from '../lib/script-error';
 import { boxFacts } from './http-hello';
 
@@ -159,7 +159,7 @@ export function freshReading(
   const fix = `bun run scripts/bench/render-html.bench.ts --${renderFixShellArg(flag, '<probe>')} --rows=1000`;
   if (run.exitedDueToTimeout === true) {
     throw new ScriptError({
-      code: RUN_TIMEOUT_CODE,
+      code: 'X_SPAWN_TIMED_OUT',
       cause: `the --${flag} probe did not finish within ${String(timeoutMs)} ms and was killed`,
       fix,
     });

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "238034cd27e96c9cec55fc0c4054a80eabb4a5f05843e41977826bf3b202072f",
+  "buildId": "d3cd05d72e6bd0eba2d9d150807d07416c72dda21c505c890478e1385cef4d45",
   "tiers": {
     "0": [
       "core",
@@ -5722,7 +5722,7 @@
     {
       "code": "X_SPAWN_TIMED_OUT",
       "owner": "scripts",
-      "at": "scripts/bump-pr.ts"
+      "at": "scripts/bench/render-html.bench.ts"
     },
     {
       "code": "X_SPAWN_TIMEOUT_PIN_STALE",

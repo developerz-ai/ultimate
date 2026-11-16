@@ -20,11 +20,15 @@ const TRACKER = /^docs\/plans\/.+\/status\.yml$/;
 const lastUpdated = (text: string): string | undefined =>
   /^last_updated:\s*(.+?)\s*$/m.exec(text)?.[1];
 
-/** Each tracker whose content moved while its `last_updated` did not. A new tracker owes nothing. */
-export function undatedFindings(edits: readonly TrackerEdit[]): readonly Finding[] {
+/**
+ * Each tracker whose content moved while its `last_updated` stayed on a day before `today` (UTC
+ * `YYYY-MM-DD`): a second edit on the day already stamped owes nothing. A new tracker owes nothing.
+ */
+export function undatedFindings(edits: readonly TrackerEdit[], today: string): readonly Finding[] {
   return edits
     .filter(({ before, after }) => before !== undefined && before !== after)
     .filter(({ before, after }) => lastUpdated(before ?? '') === lastUpdated(after))
+    .filter(({ after }) => (lastUpdated(after) ?? '') < today)
     .map(({ path, after }) => ({
       code: 'X_PLAN_STATUS_UNDATED',
       cause: `${path} changed on this branch but still says last_updated: ${lastUpdated(after) ?? '(none)'} — a depth-1 CI clone dates the tracker by that line, so the roadmap step reads the edit as untouched work and reds 30 days on`,

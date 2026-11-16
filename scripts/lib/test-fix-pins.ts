@@ -26,5 +26,4 @@
 /** Where the table lives, so a stale-pin finding can name the file to edit. */
 export const PINS_FILE = 'scripts/lib/test-fix-pins.ts';
 
-export const TEST_FIX_PINS: Readonly<Record<string, number>> = {
-};
+export const TEST_FIX_PINS: Readonly<Record<string, number>> = {};
