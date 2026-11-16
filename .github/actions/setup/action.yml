@@ -165,7 +165,7 @@ runs:
         # 42323662996), restored in every job. A dependency change costs that run's jobs one cold
         # install each; the first to finish saves what this lock installs and nothing else. One
         # digest step ran, so the other output is empty.
-        key: bun-${{ runner.os }}-${{ steps.lock_posix.outputs.digest }}${{ steps.lock_windows.outputs.digest }}
+        key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.lock_posix.outputs.digest }}${{ steps.lock_windows.outputs.digest }}
     # One install, two shells, chosen by the runner's OS — a composite's `shell:` takes no
     # expression. The `windows` job in ci.yml runs every step in PowerShell so that a bash
     # dependency coming back fails it; Git Bash is on `windows-latest` and would hide one here.
@@ -176,3 +176,11 @@ runs:
     - if: runner.os == 'Windows'
       run: bun install --frozen-lockfile
       shell: pwsh
+    # MEASUREMENT (sweep 8c): Google ships no Chrome for linux/arm64; Playwright's Chromium build is.
+    - if: runner.os == 'Linux' && runner.arch == 'ARM64'
+      shell: bash
+      run: |
+        bunx playwright@1.57.0 install --with-deps chromium
+        chrome=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -perm -u+x | head -1)
+        test -x "$chrome"
+        echo "CHROME_PATH=$chrome" >> "$GITHUB_ENV"

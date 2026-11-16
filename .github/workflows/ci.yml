@@ -808,8 +808,11 @@ jobs:
       # The browser the e2e step drives, named rather than probed, and refused here when absent.
       - name: Chrome, for the e2e step
         run: |
-          test -x /usr/bin/google-chrome
-          echo "CHROME_PATH=/usr/bin/google-chrome" >> "$GITHUB_ENV"
+          if [ -z "${CHROME_PATH:-}" ]; then
+            test -x /usr/bin/google-chrome
+            echo "CHROME_PATH=/usr/bin/google-chrome" >> "$GITHUB_ENV"
+          fi
+          test -x "${CHROME_PATH:-/usr/bin/google-chrome}"
       - name: x new ${{ matrix.app }} ${{ matrix.flags }}
         env:
           FLAGS: ${{ matrix.flags }}
