@@ -9,6 +9,9 @@ const frame = (
 ): string => `// The chrome every page wears: the site's name home, the page in each language, and the body.
 // Server-rendered links only — a language switch is a link to the other copy, never a script.
 
+// The app's catalogs declare which locales are routed: imported here, by the one module that reads
+// them, so the frame links every language whoever loads it first — a page, or this file's test alone.
+import '@${app.kebab}/i18n';
 import { routedLocales } from '@ultimat3/i18n';
 import { LocaleSwitcher } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
