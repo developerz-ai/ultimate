@@ -56,6 +56,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - Every pin ratchet prints the exact pin edit (file, row, old → new, a `// why:` placeholder). `--write-pin <row>` drafts it; a leftover placeholder is refused, by `pin-raises` too (`X_PIN_RAISE_UNSTATED`).
 - `changelog-check` refuses a pull request that changes shipped `packages/*/src` without a new `[Unreleased]` line (`X_CHANGELOG_UNRELEASED_EMPTY`). The `no-changelog` label opts out; locally it is a notice.
 
+- `.claude/hooks/guard-unbounded-wait.ts`: an agent's `while`/`until … sleep` polling loop with no `timeout`, clock or counter is refused before it runs.
+
 ### Changed
 
 - lefthook pre-push runs Biome on the pushed files and `test-typecheck-gate`, in parallel with typecheck and boundaries.

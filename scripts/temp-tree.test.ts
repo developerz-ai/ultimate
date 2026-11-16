@@ -9,7 +9,12 @@ import { checkTempTrees, scanTempTrees, tempTreeFindingFor, tempTreeGaps } from 
 const TEST = 'packages/x/src/a.test.ts';
 const scan = (lines: readonly string[], path = TEST) => scanTempTrees(path, lines.join('\n'));
 
-const MAKE = "const dir = mkdtempSync(join(tmpdir(), 'x-'));";
+/**
+ * The maker's name, built from parts: spelled whole beside a call parenthesis, these fixture
+ * lines would read to `temp-dir-cleanup.test.ts` as this file making a directory it never removes.
+ */
+const MK = ['mkd', 'temp'].join('');
+const MAKE = `const dir = ${MK}Sync(join(tmpdir(), 'x-'));`;
 
 describe('scanTempTrees', () => {
   test('a bare mkdtemp in a file that spawns git is a site, by the mkdtemp’s line', () => {
@@ -20,7 +25,7 @@ describe('scanTempTrees', () => {
 
   test('every spelling of git, spawned', () => {
     const argv = [
-      'const dir = await mkdtemp(prefix);',
+      `const dir = await ${MK}(prefix);`,
       'Bun.spawn([',
       "  'git',",
       "  'init',",
@@ -35,10 +40,10 @@ describe('scanTempTrees', () => {
 
   test('a tree made off the module’s own directory is in-repo, git or no git', () => {
     const found = scan([
-      "const a = mkdtempSync(join(import.meta.dir, '..', '.mcp-runtime-fixture-'));",
-      "const b = await mkdtemp(join(import.meta.dirname, '.e2e-locale-'));",
-      "const c = mkdtempSync(join(__dirname, 'x-'));",
-      "const d = mkdtempSync(join(tmpdir(), 'x-'));",
+      `const a = ${MK}Sync(join(import.meta.dir, '..', '.mcp-runtime-fixture-'));`,
+      `const b = await ${MK}(join(import.meta.dirname, '.e2e-locale-'));`,
+      `const c = ${MK}Sync(join(__dirname, 'x-'));`,
+      `const d = ${MK}Sync(join(tmpdir(), 'x-'));`,
     ]);
     expect(found.map((site) => [site.line, site.form])).toEqual([
       [1, 'in-repo'],
