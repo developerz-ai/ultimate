@@ -2,13 +2,16 @@
 // bumped, as one pull request — only when the major window is open and `next` exists, carries a
 // change `main` lacks and is green at its tip. Every other answer names why, and none cuts.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
 import { parseChangelog } from './changelog-sections';
 import type { NextFacts } from './release-due-next';
 import { NEXT_LANE_REASONS, nextLane, proposalSteps } from './release-due-next';
-import { repoRoot } from './run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
+
+// The brief pin reads the real tree.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const SHA = 'c'.repeat(40);
 /** 31.0.0 opened the window clock on 2026-11-10: the next major may ship from 2027-02-08. */
