@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.3",
-    "@electric-sql/pglite": "^0.5.11",
+    "@electric-sql/pglite": "^0.5.14",
     "@types/bun": "^1.4.0",
     "@ultimat3/scraping": "31.30.0",
     "@ultimat3/testing": "31.30.0",
