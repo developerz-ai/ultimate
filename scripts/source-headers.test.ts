@@ -1,7 +1,11 @@
 // The enforcement half of `scripts/source-headers.ts`: this file IS the build error. The gate's
 // `unit` step runs every `scripts/**/*.test.ts`, so a new header violation fails `bun run verify`.
 
-import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
+// why: Bun has no mkdtemp and no recursive remove of its own.
+import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun has no tmpdir() of its own.
+import { tmpdir } from 'node:os';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { readSourceHeader, sourceHeaderFindings } from './source-headers';
 
@@ -108,5 +112,34 @@ describe('the repository tree', () => {
       expect(finding.fix.length).toBeGreaterThan(0);
       expect(finding.fix).toContain('bun run');
     }
+  });
+});
+
+describe('a fixture tree', () => {
+  const made: string[] = [];
+  afterAll(async () => {
+    for (const dir of made.splice(0)) await rm(dir, { recursive: true, force: true });
+  });
+
+  test('each violation is its own finding, and a pinned file under its pin is a stale row', async () => {
+    const root = await mkdtemp(`${tmpdir()}/source-headers-`);
+    made.push(root);
+    const five = Array.from({ length: 5 }, (_, i) => `// line ${String(i)} of prose.`).join('\n');
+    await Bun.write(`${root}/packages/demo/src/ok.ts`, '// Owns one thing.\nexport const a = 1;\n');
+    await Bun.write(`${root}/packages/demo/src/bare.ts`, 'export const b = 1;\n');
+    await Bun.write(`${root}/packages/demo/src/empty.ts`, '/* */\nexport const c = 1;\n');
+    await Bun.write(`${root}/packages/demo/src/long.ts`, `${five}\nexport const d = 1;\n`);
+    // A pinned path, present and clean: its pin outlived its violation.
+    await Bun.write(`${root}/packages/i18n/src/subset.ts`, '// Owns one thing.\nexport {};\n');
+
+    const findings = await sourceHeaderFindings(root);
+    const byAt = new Map(findings.map((finding) => [finding.at, finding]));
+    expect(byAt.get('packages/demo/src/bare.ts')?.code).toBe('X_SOURCE_HEADER_MISSING');
+    expect(byAt.get('packages/demo/src/empty.ts')?.cause).toContain('empty header comment');
+    expect(byAt.get('packages/demo/src/long.ts')?.cause).toContain('5-line first paragraph');
+    expect(byAt.has('packages/demo/src/ok.ts')).toBe(false);
+    const stale = findings.find((finding) => finding.code === 'X_SOURCE_HEADER_PIN_STALE');
+    expect(stale?.cause).toContain('packages/i18n/src/subset.ts is pinned at 1');
+    expect(findings).toHaveLength(4);
   });
 });

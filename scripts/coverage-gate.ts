@@ -18,7 +18,7 @@
 
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { finiteOption } from '@ultimat3/core';
+import { finiteOption, renderFixShellArg } from '@ultimat3/core';
 import { parseLcov, percent } from '../packages/cli/src/coverage-lcov';
 import { hasExecutableCode, TEST_FILE, unloadedWeight } from '../packages/cli/src/coverage-source';
 import { BadFlagError } from '../packages/cli/src/errors';
@@ -37,7 +37,8 @@ import type { CoverageUnit } from './lib/coverage-units';
 import { atOf, SCRIPTS_UNIT, testFileCount, unitOf, unitsFor } from './lib/coverage-units';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
-import { repoRoot } from './lib/run';
+import type { RunResult } from './lib/run';
+import { RUN_TIMEOUT_CODE, repoRoot, run } from './lib/run';
 import { ScriptError } from './lib/script-error';
 
 export interface CoverageReading {
@@ -338,31 +339,48 @@ export function testCommand(unit: CoverageUnit, dir: string, workers: number): r
   ];
 }
 
+/**
+ * One unit's whole suite, alone, before it is killed. `cli` is the longest: 1221 core-seconds
+ * (`UNIT_SECONDS`), several minutes on its workers. A deadline, not a budget — what reaches it hung.
+ */
+export const UNIT_TIMEOUT_MS = 1_800_000;
+
+/** A finished run's verdict: the deadline's own coded line, a failing suite, or `undefined`. */
+export function unitFailure(
+  name: string,
+  ran: Pick<RunResult, 'code' | 'output' | 'timedOut'>,
+): { code: string; cause: string; fix: string } | undefined {
+  if (ran.timedOut) {
+    return {
+      code: RUN_TIMEOUT_CODE,
+      cause: `bun test ${unitOf(name).test} did not finish within ${String(UNIT_TIMEOUT_MS)} ms and was killed`,
+      fix: `bun run scripts/coverage-gate.ts --package ${renderFixShellArg(name, '<unit>')} --json   # alone; a test that hangs is named by the last (pass) line before the stall`,
+    };
+  }
+  return suiteFailure(name, ran.code ?? 1, ran.output);
+}
+
 /** Runs one unit's suite with coverage, on `workers` workers, and reads the report back. */
 async function measure(root: string, name: string, workers: number): Promise<CoverageReading> {
   const unit = unitOf(name);
   const dir = join(root, '.x', 'coverage', name);
   rmSync(dir, { recursive: true, force: true });
   const started = performance.now();
-  const proc = Bun.spawn([...testCommand(unit, dir, workers)], {
+  // Both pipes are read: under GitHub Actions Bun reports a failing test as an `::error`
+  // annotation on stdout, so stderr alone named three failures as "3 tests failed:" and nothing
+  // else. `run()` owns the deadline: a suite that hangs is killed and reported, never waited on.
+  const ran = await run(testCommand(unit, dir, workers), {
     cwd: root,
     env: unitEnv(Bun.env, serviceKeys(root)),
-    // Both read: under GitHub Actions Bun reports a failing test as an `::error` annotation on
-    // stdout, so stderr alone named three failures as "3 tests failed:" and nothing else.
-    stdout: 'pipe',
-    stderr: 'pipe',
+    timeoutMs: UNIT_TIMEOUT_MS,
   });
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  const failure = suiteFailure(name, await proc.exited, `${stdout}\n${stderr}`);
+  const failure = unitFailure(name, ran);
   if (failure !== undefined) throw new ScriptError(failure);
   const file = Bun.file(join(dir, 'lcov.info'));
   if (!(await file.exists())) {
     throw new ScriptError({
       code: 'X_COVERAGE_UNMEASURED',
-      cause: `bun test wrote no lcov report for ${unit.test}: ${stderr.trim().split('\n').at(-1) ?? 'no output'}`,
+      cause: `bun test wrote no lcov report for ${unit.test}: ${ran.output.trim().split('\n').at(-1) ?? 'no output'}`,
       fix: `run bun test ${unit.test} and fix the failure it reports; coverage cannot be read from a suite that did not finish`,
     });
   }

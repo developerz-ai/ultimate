@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // Enforce, as a ratchet, that a plain object literal typed `Record<…>` is never READ with a
 // computed key that is not a string literal. `TABLE[name]` where `name` is data answers an
 // `Object.prototype` member instead of `undefined`.
@@ -34,6 +35,7 @@
 //   bun run proto-index  ·  bun run scripts/proto-index.ts [--json]
 //   bun run scripts/proto-index.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { maskLiterals } from '../packages/core/src/source-mask';
 import type { SourceFile } from './boundaries';
 import { corpus } from './lib/corpus';
@@ -282,7 +284,7 @@ const overFinding = (gap: ProtoIndexGap): Finding => {
 const staleFinding = (gap: ProtoIndexGap): Finding => ({
   code: 'X_PROTO_CHAIN_INDEX_PIN_STALE',
   cause: `${gap.pkg} is pinned at ${String(gap.pinned)} prototype-reachable read(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `bun run scripts/proto-index.ts --unpin ${gap.pkg}`,
+  fix: `bun run scripts/proto-index.ts --unpin ${renderFixShellArg(gap.pkg, '<pkg>')}`,
   at: PROTO_PINS_FILE,
 });
 

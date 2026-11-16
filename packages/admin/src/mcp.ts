@@ -64,24 +64,27 @@ export interface AdminMcpOptions {
 }
 
 /** A field type an agent can actually send. Anything richer is a JSON object on the wire. */
-const JSON_TYPE: Readonly<Record<AdminFieldType, NonNullable<JsonSchema['type']>>> = {
-  text: 'string',
-  textarea: 'string',
-  number: 'number',
-  money: 'object',
-  boolean: 'boolean',
-  enum: 'string',
-  date: 'string',
-  timestamptz: 'string',
-  timezone: 'string',
-  locale: 'string',
-  json: 'object',
-  relation: 'string',
-  file: 'string',
-  // A sealed column travels as the text an agent sends. It is in no tool schema today — the
-  // CRUD tools are built from `formFields`, which never holds one.
-  secret: 'string',
-};
+const JSON_TYPE: Readonly<Record<AdminFieldType, NonNullable<JsonSchema['type']>>> = Object.assign(
+  Object.create(null),
+  {
+    text: 'string',
+    textarea: 'string',
+    number: 'number',
+    money: 'object',
+    boolean: 'boolean',
+    enum: 'string',
+    date: 'string',
+    timestamptz: 'string',
+    timezone: 'string',
+    locale: 'string',
+    json: 'object',
+    relation: 'string',
+    file: 'string',
+    // A sealed column travels as the text an agent sends. It is in no tool schema today — the
+    // CRUD tools are built from `formFields`, which never holds one.
+    secret: 'string',
+  } satisfies Readonly<Record<AdminFieldType, NonNullable<JsonSchema['type']>>>,
+);
 
 /**
  * `additionalProperties` is closed for every derived CRUD tool — the admin knows every field an

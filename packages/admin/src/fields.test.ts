@@ -90,6 +90,17 @@ describe('unit · every column kind is answered', () => {
       expect(error?.fix).toContain('hidden: true');
     }
   });
+
+  // A column kind is read off the entity's metadata at run time. Indexed on a `{}` table, the
+  // name of an `Object.prototype` member answered a FUNCTION as the field type, so the refusal
+  // below never fired and a widget lookup read `undefined` three screens later.
+  for (const kind of ['constructor', 'toString', '__proto__']) {
+    test(`a kind named ${kind} is refused, never mapped to a prototype member`, () => {
+      expect(() => typeOf(kind)).toThrow(
+        expect.objectContaining({ code: 'X_ADMIN_FIELD_UNSUPPORTED' }),
+      );
+    });
+  }
 });
 
 describe('unit · the kinds an existing schema brings', () => {

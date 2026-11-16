@@ -47,11 +47,14 @@ const SHAPE_OF_FLAG = Object.freeze<Record<string, BackfillShape>>({
 });
 
 /** One runnable line per shape, so a refusal hands back the invocation the caller meant. */
-const FIX_OF_SHAPE = Object.freeze<Record<BackfillShape, string>>({
-  list: 'x db backfill --list --json',
-  pending: 'x db backfill --pending --json',
-  pass: 'x db backfill --all --write --json',
-});
+// Null-prototype: a shape that is not one of these reads `undefined`, never an `Object` member.
+const FIX_OF_SHAPE: Readonly<Record<BackfillShape, string>> = Object.freeze(
+  Object.assign(Object.create(null) as object, {
+    list: 'x db backfill --list --json',
+    pending: 'x db backfill --pending --json',
+    pass: 'x db backfill --all --write --json',
+  } satisfies Record<BackfillShape, string>),
+);
 
 const refuseShape = (flag: string, reason: string, fix: string): never => {
   throw new BadFlagError({ flag, command: 'db', reason, fix });

@@ -33,6 +33,7 @@ import {
   problemOf,
   remoteTitleOf,
   renderedActionPin,
+  renderFixShellArg,
 } from '@ultimat3/core/page';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action, StreamAction } from './action';
@@ -315,7 +316,7 @@ function toUltimateError(
     meta: metaFromWire(body['meta']),
     requestId: body['requestId'],
     cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${status}`),
-    fix: stringOr(body['fix'], `x actions show ${name} --json`),
+    fix: stringOr(body['fix'], `x actions show ${renderFixShellArg(name, '<action-name>')} --json`),
     // RFC-9457's `type` IS a documentation URI, so a server that sends no `docs` extension has
     // still offered one. Both travel, in preference order: `??` picked `docs` on presence alone,
     // so a `javascript:` one hid a perfectly good `type` behind it. `remoteDocs` takes the first

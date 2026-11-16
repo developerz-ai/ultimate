@@ -5,7 +5,13 @@
 
 import { describe, expect, test } from 'bun:test';
 import { renderToHtml } from '../../packages/render/src/render-html';
-import { benchRender, liveInFreshProcess, tablePage, templateBaseline } from './render-html.bench';
+import {
+  benchRender,
+  freshReading,
+  liveInFreshProcess,
+  tablePage,
+  templateBaseline,
+} from './render-html.bench';
 
 describe('render-html bench', () => {
   test('a 10k-row table costs under 12× writing the strings by hand', async () => {
@@ -44,5 +50,31 @@ describe('render-html bench', () => {
         '<td>c1@example.com</td><td class="status-pending">pending</td><td class="num">7</td></tr>' +
         '</tbody></table></main>',
     );
+  });
+
+  describe('a fresh-process probe', () => {
+    const probe = (stdout: string, success = true, exitedDueToTimeout = false) => ({
+      success,
+      exitedDueToTimeout,
+      stdout: Buffer.from(stdout),
+    });
+
+    test('reads the number it printed', () => {
+      expect(freshReading('live-only', probe('10.6\n'), 1000)).toBe(10.6);
+    });
+
+    test('a probe killed at its deadline is X_SPAWN_TIMED_OUT, never a reading of 0', () => {
+      expect(() => freshReading('heap-only', probe('', false, true), 1000)).toThrow(
+        /X_SPAWN_TIMED_OUT: the --heap-only probe did not finish within 1000 ms/,
+      );
+    });
+
+    test('a probe that crashed before printing is refused, never read as 0 MiB', () => {
+      expect(() => freshReading('live-only', probe('', false), 1000)).toThrow(/X_BENCH_RUN_FAILED/);
+      expect(() => freshReading('live-only', probe('', true), 1000)).toThrow(/X_BENCH_RUN_FAILED/);
+      expect(() => freshReading('live-only', probe('oops', true), 1000)).toThrow(
+        /X_BENCH_RUN_FAILED/,
+      );
+    });
   });
 });

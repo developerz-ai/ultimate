@@ -338,7 +338,7 @@ export const driverError = (statement: string, sourceError: unknown): DbError =>
     fix:
       state === SQLSTATE.idleInTransactionTimeout
         ? IDLE_IN_TRANSACTION_FIX
-        : code === 'X_DB_STATEMENT_FAILED'
+        : code === 'X_DB_STATEMENT_FAILED' || !Object.hasOwn(SQLSTATE_FIXES, code)
           ? `psql "$DATABASE_URL" -c "<the statement in cause>"   # SQLSTATE ${state} is the server's verdict on it: fix the SQL or the data it names, not the connection`
           : SQLSTATE_FIXES[code].replace('{constraint}', () => constraint ?? UNNAMED_CONSTRAINT),
     meta: {

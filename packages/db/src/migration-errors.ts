@@ -76,12 +76,12 @@ export const rollbackStepsInvalid = (received: number): DbError =>
   });
 
 /**
- * `packages/db/migrations/0000_initial.snapshot.json` → `packages/db/migrations/0000_initial.*` —
- * every file that one migration owns, as one `rm` argument. Derived from the path the caller passed
- * rather than rebuilt from a directory this package does not know: `db` is tier 1 and where an app
- * keeps its migrations is `@ultimat3/cli`'s answer, not this one's.
+ * `packages/db/migrations/0000_initial.snapshot.json` → `packages/db/migrations/0000_initial` —
+ * the stem every file that one migration owns shares, so `<stem>.*` is one `rm` argument. Derived
+ * from the path the caller passed rather than rebuilt from a directory this package does not know:
+ * `db` is tier 1 and where an app keeps its migrations is `@ultimat3/cli`'s answer, not this one's.
  */
-const snapshotSiblings = (file: string): string => file.replace(/\.snapshot\.json$/, '.*');
+const snapshotStem = (file: string): string => file.replace(/\.snapshot\.json$/, '');
 
 /**
  * `20260817120000_add_posts` → `add_posts`, the argument `x db gen` takes. The name is free text
@@ -114,7 +114,12 @@ export const migrationSnapshotMissing = (id: string, file: string): DbError => {
   // rather than half of it being escaped — the same screen and the same degradation `unknownSchema`
   // (`drift-findings.ts`) runs on the same condition. A `rm` whose argument was substituted away
   // still reads as a command, and now removes something else.
-  const spellable = shellSpellable(file) && shellSpellable(migrationNameOf(id));
+  // Each value below is screened where it is spliced as well, and `spellable` is what makes the
+  // screen's placeholder unreachable: a line is spelled whole or not at all.
+  const spellable =
+    shellSpellable(file) &&
+    shellSpellable(snapshotStem(file)) &&
+    shellSpellable(migrationNameOf(id));
   return new DbError({
     code: 'X_MIGRATION_SNAPSHOT_MISSING',
     cause: `migration "${id}" records no schema snapshot (${file}), so there is nothing to diff against`,
@@ -124,8 +129,8 @@ export const migrationSnapshotMissing = (id: string, file: string): DbError => {
     // the two errors pointed at each other and an app's first migration had no way out.
     // `x db gen` is named only *after* the files it would trip over are gone.
     fix: spellable
-      ? `git checkout -- ${file}   # or, if it was never written: ` +
-        `rm ${snapshotSiblings(file)} && x db gen "${migrationNameOf(id)}"`
+      ? `git checkout -- ${renderFixShellArg(file, '')}   # or, if it was never written: ` +
+        `rm ${renderFixShellArg(snapshotStem(file), '')}.* && x db gen "${renderFixShellArg(migrationNameOf(id), '')}"`
       : 'restore the .snapshot.json committed beside this migration, or delete every file that ' +
         'migration owns and rerun x db gen with its description — the file named in this ' +
         "error's cause carries a backtick, a dollar sign, a quote, a backslash or whitespace, " +

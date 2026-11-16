@@ -97,11 +97,13 @@ export const undeclaredExternalDepFinding = (
   // package across the app, rather than whatever the registry calls latest today.
   const pinned = range === undefined ? dependency : `${dependency}@${range}`;
   const spec = renderFixShellArg(pinned, '') === '' ? dependency : pinned;
-  const dev = at.endsWith(FIXTURE_SUFFIX) ? ' --dev' : '';
+  const dev = at.endsWith(FIXTURE_SUFFIX);
+  const added = renderFixShellArg(spec, '<the package>');
+  const cwd = renderFixShellArg(owner.dir, '<the workspace directory>');
   return {
     code: 'X_WORKSPACE_EXTERNAL_DEP_UNDECLARED',
     cause: `${at} imports ${dependency}, which neither ${owner.dir}/package.json nor the root package.json declares — it resolves only while another workspace's copy is hoisted`,
-    fix: `bun add ${renderFixShellArg(spec, '<the package>')}${dev} --cwd ${renderFixShellArg(owner.dir, '<the workspace directory>')}`,
+    fix: dev ? `bun add ${added} --dev --cwd ${cwd}` : `bun add ${added} --cwd ${cwd}`,
     docs: ERROR_DOCS_URL,
     at: `${owner.dir}/package.json`,
   };

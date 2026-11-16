@@ -94,7 +94,11 @@ export function fixtureSnapshot(): FixtureMap {
   return Object.fromEntries(registry);
 }
 
-const CLOSERS: Readonly<Record<string, string>> = { '{': '}', '[': ']', '(': ')' };
+const CLOSERS: Readonly<Record<string, string>> = Object.assign(Object.create(null), {
+  '{': '}',
+  '[': ']',
+  '(': ')',
+} satisfies Readonly<Record<string, string>>);
 const QUOTES = new Set(['"', "'", '`']);
 
 /**

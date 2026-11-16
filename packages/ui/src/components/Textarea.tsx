@@ -1,6 +1,7 @@
 // Multi-line text control. `field-sizing: content` grows the box natively where
 // supported, with `rows` as the floor — no resize observer, no JS.
 
+import { finiteOption } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
 import { ariaBool } from '../a11y';
 import { cx } from '../cx';
@@ -41,7 +42,7 @@ export function Textarea(props: TextareaProps): JSX.Element {
       id={props.id}
       name={props.name}
       placeholder={props.placeholder}
-      rows={props.rows ?? 3}
+      rows={finiteOption('Textarea', 'rows', props.rows ?? 3)}
       required={props.required === true}
       disabled={props.disabled === true}
       readonly={props.readonly === true}

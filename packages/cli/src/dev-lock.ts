@@ -200,8 +200,8 @@ export class DevPortInUseError extends UltimateError {
       cause: `:${input.port} is already bound by ${named}, so the web role cannot listen — on a machine running several projects this is usually another one's dev server, not a stale copy of this one`,
       fix:
         holder.pid === undefined
-          ? `x dev --port ${input.suggestion}`
-          : `x dev --port ${input.suggestion}   # or free it, if that pid is yours: kill ${holder.pid}`,
+          ? `x dev --port ${quoteArg(String(input.suggestion))}`
+          : `x dev --port ${quoteArg(String(input.suggestion))}   # or free it, if that pid is yours: kill ${holder.pid}`,
       meta: { port: input.port, ...holder },
     });
   }

@@ -10,6 +10,7 @@
 import { CODEMODS } from '../packages/cli/src/codemods';
 import { quoteArg } from '../packages/cli/src/shell-quote';
 import { compareVersions } from '../packages/cli/src/upgrade-plan';
+import { timingSafeEqual } from '../packages/core/src/timing-safe-equal';
 import { parseScriptArgs } from './lib/args';
 import type { Changelog } from './lib/changelog-sections';
 import { loadChangelog } from './lib/changelog-store';
@@ -64,7 +65,9 @@ export async function scaffoldOwnedTemplates(root: string): Promise<readonly str
       if (!path.startsWith('.')) continue;
       const base = Bun.fileURLToPath(new URL(path, Bun.pathToFileURL(`/${dir}`))).slice(1);
       for (const candidate of [`${base}.ts`, `${base}/index.ts`, base]) {
-        if (!candidate.endsWith('.ts') || !candidate.startsWith(`${TEMPLATE_DIR}/`)) continue;
+        const owned = `${TEMPLATE_DIR}/`;
+        if (!candidate.endsWith('.ts') || !timingSafeEqual(candidate.slice(0, owned.length), owned))
+          continue;
         if (await Bun.file(`${root}/${candidate}`).exists()) {
           stack.push(candidate);
           break;

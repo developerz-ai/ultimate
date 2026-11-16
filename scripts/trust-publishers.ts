@@ -11,6 +11,7 @@
 //   bun run scripts/trust-publishers.ts --check [--json]   # verify, read-only
 //   bun run scripts/trust-publishers.ts [--dry-run] [--json]
 
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
@@ -215,7 +216,7 @@ async function main(): Promise<never> {
             at: 'scripts/trust-publishers.ts',
             cause:
               'an empty --environment attaches a publisher npm will honour from ANY environment, which disables the reviewer and tag rules the npm-publish environment carries',
-            fix: `bun run scripts/trust-publishers.ts --environment ${DEFAULT_ENVIRONMENT}`,
+            fix: `bun run scripts/trust-publishers.ts --environment ${renderFixShellArg(DEFAULT_ENVIRONMENT, '<environment>')}`,
           },
         ],
       },

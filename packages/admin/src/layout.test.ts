@@ -176,6 +176,19 @@ describe('the brand', () => {
     const nodes = render({ app: appWith({ branding, theme: themeAttributes(branding) }) });
     expect(one(byTag(nodes, 'img'), '<img>').props['width']).toBe(24);
   });
+
+  // `??` does not fire on NaN, so a logo width parsed from an unset env var rendered `width="NaN"`
+  // and the shell drew an unsized image with no sign anything was wrong.
+  for (const width of [Number.NaN, Number.POSITIVE_INFINITY]) {
+    test(`a logo width of ${String(width)} is refused, never rendered`, () => {
+      const branding = adminBranding({
+        logo: { src: '/logo.svg', altKey: 'admin.brand.logo', width },
+      });
+      expect(() =>
+        render({ app: appWith({ branding, theme: themeAttributes(branding) }) }),
+      ).toThrow(/X_INVARIANT/);
+    });
+  }
 });
 
 describe('the theme arrives as data attributes and custom properties', () => {

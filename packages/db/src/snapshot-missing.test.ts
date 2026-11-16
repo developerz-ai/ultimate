@@ -6,6 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { checkDrift } from './drift';
+import { unknownSchema } from './drift-findings';
 import { recordingClient } from './fake';
 import { migrationSnapshotMissing } from './migration-errors';
 
@@ -96,5 +97,13 @@ describe('unit · the drift difference points the same way', () => {
     expect(fix).toContain('delete');
     expect(fix).toContain('x db gen');
     expect(fix.indexOf('x db gen')).toBeGreaterThan(fix.indexOf('delete'));
+  });
+
+  test('an id no shell argument can carry degrades the glob to the read-only line', () => {
+    // `!` is a legal identifier character and LIVE inside double quotes in an interactive bash
+    // (history expansion), so the glob carrying it is a command that does something else.
+    const fix = unknownSchema([{ id: '0001_a!b', name: 'ab', up: '', down: '' }]).fix;
+    expect(fix).not.toContain('!');
+    expect(fix).toStartWith('git status --short');
   });
 });

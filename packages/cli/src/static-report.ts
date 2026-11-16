@@ -145,21 +145,24 @@ export function skipReasonFor(route: RouteFacts): SkipReason | null {
  * English rather than `t()`, for the reason every `cause:`/`fix:` in this repo is English: this is
  * a diagnostic an agent pastes into a report, and `wiki/Error-Codes.md` is the same surface.
  */
-const WHY = Object.freeze<Record<SkipReason, (route: RouteFacts) => string>>({
-  'surface-forbids-static': (route) =>
-    `${route.surface}/ surface — server-rendered, not prerendered; ` +
-    `${route.surface}/ allows ${SURFACE_SPECS[route.surface].allowedModes.join(' | ') || 'no render mode'}, ` +
-    'so no route on it can ever reach the artifact',
-  'mode-revalidates': (route) =>
-    `render: '${route.render}' regenerates on a tag or ttl and a published file cannot, ` +
-    "so it is served by the app — change it to render: 'static' to emit it",
-  'mode-per-request': (route) =>
-    `render: '${route.render}' is rendered per request, so it is served by the app — ` +
-    "change it to render: 'static' to emit it",
-  'no-prerender-paths': (route) =>
-    `render: '${route.render}' with dynamic params and no prerender() paths, so the build ` +
-    'enumerated nothing to write — add prerender() to the route',
-});
+// Null-prototype: a reason that is not one of these reads `undefined`, never an `Object` member.
+const WHY: Readonly<Record<SkipReason, (route: RouteFacts) => string>> = Object.freeze(
+  Object.assign(Object.create(null) as object, {
+    'surface-forbids-static': (route) =>
+      `${route.surface}/ surface — server-rendered, not prerendered; ` +
+      `${route.surface}/ allows ${SURFACE_SPECS[route.surface].allowedModes.join(' | ') || 'no render mode'}, ` +
+      'so no route on it can ever reach the artifact',
+    'mode-revalidates': (route) =>
+      `render: '${route.render}' regenerates on a tag or ttl and a published file cannot, ` +
+      "so it is served by the app — change it to render: 'static' to emit it",
+    'mode-per-request': (route) =>
+      `render: '${route.render}' is rendered per request, so it is served by the app — ` +
+      "change it to render: 'static' to emit it",
+    'no-prerender-paths': (route) =>
+      `render: '${route.render}' with dynamic params and no prerender() paths, so the build ` +
+      'enumerated nothing to write — add prerender() to the route',
+  } satisfies Record<SkipReason, (route: RouteFacts) => string>),
+);
 
 /** The reason as a row: the code a machine keys off, and the sentence a human reads. */
 export function skippedRoute(

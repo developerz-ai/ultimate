@@ -130,14 +130,15 @@ describe('unit · schema snapshot drift', () => {
       expect(findings[0]?.code).toBe('X_DB_SCHEMA_UNDECLARED');
       expect(findings[0]?.cause).toContain('comments_gone_check');
       // One runnable command: the re-declare branch rides in the cause, never behind a `#`.
-      expect(findings[0]?.fix).toBe('x db gen "drop comments_gone_check"');
+      expect(findings[0]?.fix).toBe("x db gen 'drop comments_gone_check'");
       expect(findings[0]?.cause).toContain('re-declare it on the entity instead');
     });
   });
 
-  // The recorded name is read off a sidecar on disk and spliced inside double quotes, where `$(…)`
-  // and backticks still run: a shell-active name never reaches the command, only the cause.
-  test('a recorded name the shell would act on is kept out of the drop command', async () => {
+  // The recorded name is read off a sidecar on disk. Inside double quotes `$(…)` and backticks
+  // still run, so the description is SINGLE-quoted (`quoteArg`), where nothing does: the command
+  // stays runnable and names the real check, and the shell reads it as one inert word.
+  test('a recorded name the shell would act on reaches the drop command single-quoted', async () => {
     await withRoot(async (root) => {
       const hostile = 'gone_$(touch pwned)_check';
       await commit(root, '0001_init', {
@@ -145,7 +146,7 @@ describe('unit · schema snapshot drift', () => {
       });
       const [finding] = await checkSnapshotDrift(root, supply(comments()));
       expect(finding?.code).toBe('X_DB_SCHEMA_UNDECLARED');
-      expect(finding?.fix).toBe('x db gen "drop what the entities no longer declare"');
+      expect(finding?.fix).toBe("x db gen 'drop gone_$(touch pwned)_check'");
       expect(finding?.cause).toContain(hostile);
     });
   });
@@ -267,7 +268,7 @@ describe('unit · replica identity a realtime declaration needs', () => {
         'table "comments" needs REPLICA IDENTITY FULL — a channel with params routes deletes by ' +
           'its old row — and no migration recorded it',
       );
-      expect(findings[0]?.fix).toBe('x db gen "record replica identity full"');
+      expect(findings[0]?.fix).toBe("x db gen 'record replica identity full'");
     });
   });
 

@@ -65,7 +65,8 @@ export const preloadsFor = (
   entityName: string,
   op: string | undefined,
 ): readonly PreloadCandidate[] => {
-  const kind = op === undefined ? undefined : PRELOADABLE_BY_OP[op];
+  const kind =
+    op !== undefined && Object.hasOwn(PRELOADABLE_BY_OP, op) ? PRELOADABLE_BY_OP[op] : undefined;
   if (kind === undefined) return [];
   const candidates: PreloadCandidate[] = [];
   for (const relations of Object.values(relationMap())) {

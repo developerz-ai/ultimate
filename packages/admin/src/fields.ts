@@ -84,22 +84,25 @@ export interface AdminField {
 export type AdminFilterKind = 'text' | 'exact' | 'choice' | 'boolean' | 'range' | 'reference';
 
 /** The table. Money always the Money widget; both date kinds always the DateTime widget. */
-export const WIDGET_BY_FIELD_TYPE: Readonly<Record<AdminFieldType, AdminWidget>> = {
-  text: 'text-input',
-  textarea: 'textarea',
-  number: 'number-input',
-  money: 'money',
-  boolean: 'checkbox',
-  enum: 'select',
-  date: 'datetime',
-  timestamptz: 'datetime',
-  timezone: 'timezone-picker',
-  locale: 'locale-picker',
-  json: 'json-editor',
-  relation: 'reference',
-  file: 'upload',
-  secret: 'secret-input',
-};
+export const WIDGET_BY_FIELD_TYPE: Readonly<Record<AdminFieldType, AdminWidget>> = Object.assign(
+  Object.create(null),
+  {
+    text: 'text-input',
+    textarea: 'textarea',
+    number: 'number-input',
+    money: 'money',
+    boolean: 'checkbox',
+    enum: 'select',
+    date: 'datetime',
+    timestamptz: 'datetime',
+    timezone: 'timezone-picker',
+    locale: 'locale-picker',
+    json: 'json-editor',
+    relation: 'reference',
+    file: 'upload',
+    secret: 'secret-input',
+  } satisfies Readonly<Record<AdminFieldType, AdminWidget>>,
+);
 
 export function widgetFor(type: AdminFieldType): AdminWidget {
   return WIDGET_BY_FIELD_TYPE[type];
@@ -126,20 +129,23 @@ export function widgetFor(type: AdminFieldType): AdminWidget {
  * mapping it would move the same refusal from derive time, where the fix names the edit, to every
  * render of every row. There is no `vector` row for the same reason there is no vector column.
  */
-const FIELD_TYPE_BY_COLUMN_KIND: Readonly<Record<string, AdminFieldType>> = {
-  uuid: 'text',
-  text: 'textarea',
-  char: 'text',
-  boolean: 'boolean',
-  integer: 'number',
-  bigint: 'text',
-  numeric: 'text',
-  timestamptz: 'timestamptz',
-  date: 'date',
-  jsonb: 'json',
-  array: 'json',
-  money: 'money',
-};
+const FIELD_TYPE_BY_COLUMN_KIND: Readonly<Record<string, AdminFieldType>> = Object.assign(
+  Object.create(null),
+  {
+    uuid: 'text',
+    text: 'textarea',
+    char: 'text',
+    boolean: 'boolean',
+    integer: 'number',
+    bigint: 'text',
+    numeric: 'text',
+    timestamptz: 'timestamptz',
+    date: 'date',
+    jsonb: 'json',
+    array: 'json',
+    money: 'money',
+  } satisfies Readonly<Record<string, AdminFieldType>>,
+);
 
 /**
  * Derivation order matters: a FK is a relation whatever its kind, and declared `values` mean

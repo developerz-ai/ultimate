@@ -6,6 +6,7 @@
 // whose evaluation registers every code. The code is still declared, titled and registered in
 // `errors.ts`, exactly as `migration-errors.ts` and `invariant-errors.ts` are.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { DbError } from './errors';
 import { shellInertIdentifier } from './sql';
 
@@ -36,6 +37,6 @@ export const dbDrift = (tableName: string, columnName: string): DbError =>
     fix:
       shellInertIdentifier(columnName) === null
         ? `x db gen "add the column named in this error"   # its name carries shell syntax, so it is in the cause and not in this command; ${undeclaredColumnNext('it')}`
-        : `x db gen "add ${columnName}"   # ${undeclaredColumnNext(columnName)}`,
+        : `x db gen "add ${renderFixShellArg(columnName, 'the undeclared column')}"   # ${undeclaredColumnNext(columnName)}`,
     meta: { table: tableName, column: columnName },
   });

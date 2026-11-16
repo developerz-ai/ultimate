@@ -5,10 +5,13 @@
 //   bun run scripts/bench/render-html.bench.ts [--json] [--rows=<n>] [--out=<file.json>]
 
 import { heapSize } from 'bun:jsc';
+import { renderFixShellArg } from '../../packages/core/src/error-render';
 import { escapeHtml } from '../../packages/core/src/html-escape';
 import { h } from '../../packages/render/src/jsx';
 import { renderToHtml } from '../../packages/render/src/render-html';
 import { parseScriptArgs } from '../lib/args';
+import { DEFAULT_RUN_TIMEOUT_MS, RUN_TIMEOUT_CODE } from '../lib/run';
+import { ScriptError } from '../lib/script-error';
 import { boxFacts } from './http-hello';
 
 interface Row {
@@ -143,9 +146,42 @@ export async function liveAtEnd(rows: number): Promise<number> {
 const HEAP_FLAG = 'heap-only';
 const LIVE_FLAG = 'live-only';
 
+/** What a fresh-process probe answered: the one number it printed, or a coded refusal. */
+export function freshReading(
+  flag: string,
+  run: {
+    readonly success: boolean;
+    readonly exitedDueToTimeout?: boolean;
+    readonly stdout: Buffer;
+  },
+  timeoutMs: number,
+): number {
+  const fix = `bun run scripts/bench/render-html.bench.ts --${renderFixShellArg(flag, '<probe>')} --rows=1000`;
+  if (run.exitedDueToTimeout === true) {
+    throw new ScriptError({
+      code: RUN_TIMEOUT_CODE,
+      cause: `the --${flag} probe did not finish within ${String(timeoutMs)} ms and was killed`,
+      fix,
+    });
+  }
+  const printed = run.stdout.toString().trim();
+  const value = Number(printed);
+  // `Number('')` is 0: a probe that crashed before printing would otherwise read as no heap at all.
+  if (!run.success || printed === '' || !Number.isFinite(value)) {
+    throw new ScriptError({
+      code: 'X_BENCH_RUN_FAILED',
+      cause: `the --${flag} probe exited ${run.success ? 'cleanly' : 'non-zero'} and printed no number`,
+      fix,
+    });
+  }
+  return value;
+}
+
 function inFreshProcess(flag: string, rows: number): number {
-  const run = Bun.spawnSync([process.execPath, import.meta.path, `--${flag}`, `--rows=${rows}`]);
-  return Number(run.stdout.toString().trim());
+  const run = Bun.spawnSync([process.execPath, import.meta.path, `--${flag}`, `--rows=${rows}`], {
+    timeout: DEFAULT_RUN_TIMEOUT_MS,
+  });
+  return freshReading(flag, run, DEFAULT_RUN_TIMEOUT_MS);
 }
 
 /** `heapGrowth` is only true as the first render in a process: earlier garbage would count. */

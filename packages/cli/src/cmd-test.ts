@@ -98,7 +98,7 @@ function readOnlyType(positionals: readonly string[]): TestType | undefined {
     flag: 'type',
     command: 'test',
     reason: `takes at most one test type, got ${positionals.length}: ${positionals.join(' ')}`,
-    fix: `x test ${type} --filter ${quoteArg(second)}`,
+    fix: `x test ${quoteArg(type)} --filter ${quoteArg(second)}`,
   });
 }
 
@@ -119,7 +119,10 @@ async function readAffectedScope(ctx: CommandContext): Promise<AffectedScope | u
       flag: idle,
       command: 'test',
       reason: 'only narrows a run together with --affected, and on its own it changes nothing',
-      fix: `x test --affected --${idle}${idle === 'base' ? ` ${DEFAULT_BASE}` : ''}`,
+      fix:
+        idle === 'base'
+          ? `x test --affected --base ${quoteArg(DEFAULT_BASE)}`
+          : 'x test --affected --dirty',
     });
   }
   return undefined;

@@ -3,6 +3,7 @@
 // `unverdicted` row is "no verdict yet — re-run, never unhealthy": an ask filed over an unread
 // world is the false alarm this rule exists to prevent. Document shapes: health-narrow.ts.
 
+import { timingSafeEqual } from '../../packages/core/src/timing-safe-equal';
 import type { AlarmIssue, AuditDoc, CiDoc, DependabotPr, RunRow } from './health-narrow';
 import type { Finding } from './log';
 
@@ -285,7 +286,7 @@ export function npmTreeVerdict(input: NpmTreeInput): RowVerdict {
     if (state.kind !== 'ok') {
       return { ...base, verdict: 'unhealthy', reason: `${state.name} is ${state.kind} on npm` };
     }
-    if (state.latest !== state.version) {
+    if (!timingSafeEqual(state.latest ?? '', state.version ?? '')) {
       return {
         ...base,
         verdict: 'unhealthy',

@@ -13,6 +13,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { dirname, join } from 'node:path';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { flagBool, flagList, flagString, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -40,7 +41,7 @@ const badFlag = (cause: string): ScriptError =>
   new ScriptError({
     code: 'X_CLI_BAD_FLAG',
     cause,
-    fix: `bun run scripts/upgrade-fixtures.ts --versions ${FIXTURE_VERSIONS.join(',')} --json`,
+    fix: `bun run scripts/upgrade-fixtures.ts --versions ${renderFixShellArg(FIXTURE_VERSIONS.join(','), '<versions>')} --json`,
   });
 
 /** `--versions`, each a plain release; the plan's four when absent. */

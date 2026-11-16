@@ -9,6 +9,7 @@ import { GhResponseInvalidError, ghGraphql } from './gh';
 import type { GhRepo } from './gh-target';
 import type { PrActivity } from './pr-activity';
 import { ACTIVITY_FIELDS, ACTIVITY_SCHEMA, activityOf } from './pr-activity';
+import { quoteArg } from './shell-quote';
 
 /**
  * How many threads one page holds. The query is built from it, so the report and the request can
@@ -184,7 +185,7 @@ export async function fetchReviewReport(
     REVIEW_RESPONSE,
     {
       label: `gh api graphql (review threads on ${repo.slug}#${number})`,
-      fix: `gh pr view ${number} --repo ${repo.slug} --json number   # confirm the pull request is visible to this token`,
+      fix: `gh pr view ${quoteArg(String(number))} --repo ${quoteArg(repo.slug)} --json number   # confirm the pull request is visible to this token`,
     },
   );
   const pull = response.data.repository?.pullRequest;

@@ -3,7 +3,7 @@
 // renderer, because email clients drop <style> and templates must never carry a raw hex.
 // Table-based and 600px wide: Outlook still renders with Word's HTML engine.
 
-import { escapeHtml } from '@ultimat3/core';
+import { assert, escapeHtml, renderCauseValue } from '@ultimat3/core';
 import { mailLayoutDuplicate } from './errors';
 import { safeMailHref, styleAttr } from './html';
 
@@ -40,6 +40,12 @@ export const MAIL_TOKENS = Object.freeze<Record<MailToken, Readonly<Record<Color
 
 /** Resolve a token to a hex value. The only function in the package that returns a colour. */
 export function token(name: MailToken, scheme: ColorScheme = 'light'): string {
+  // Own keys only: a name reaching here untyped must never answer an `Object.prototype` member.
+  assert(
+    Object.hasOwn(MAIL_TOKENS, name),
+    `${renderCauseValue(name)} is not a mail token`,
+    "token('accentBg')   # a key of MAIL_TOKENS",
+  );
   return MAIL_TOKENS[name][scheme];
 }
 

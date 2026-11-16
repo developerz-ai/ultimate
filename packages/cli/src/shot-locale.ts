@@ -5,6 +5,7 @@
 
 import type { AppLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import { BadFlagError } from './errors';
+import { quoteArg } from './shell-quote';
 
 /**
  * `@ultimat3/i18n/app-catalogs`'s `appLocaleSet(root)` — the one reader, and its one answer for an
@@ -20,7 +21,7 @@ export function readLocaleFlag(value: string | undefined, app: ShotLocales): str
     flag: 'locale',
     command: 'shot',
     reason: `"${value}" is not one of the app's locales (${app.locales.join(', ')})`,
-    fix: `x shot / --locale ${app.defaultLocale} --json`,
+    fix: `x shot / --locale ${quoteArg(app.defaultLocale)} --json`,
   });
 }
 

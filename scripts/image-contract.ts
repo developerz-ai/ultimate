@@ -158,10 +158,13 @@ const guardFinding = (gap: ImageGap): Finding => ({
   at: where(gap),
 });
 
-const FINDINGS: Readonly<Record<ImageGapKind, (gap: ImageGap) => Finding>> = {
-  libc: libcFinding,
-  guard: guardFinding,
-};
+const FINDINGS: Readonly<Record<ImageGapKind, (gap: ImageGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    libc: libcFinding,
+    guard: guardFinding,
+  } satisfies Record<ImageGapKind, (gap: ImageGap) => Finding>,
+);
 
 export const imageGapFindingFor = (gap: ImageGap): Finding => FINDINGS[gap.kind](gap);
 

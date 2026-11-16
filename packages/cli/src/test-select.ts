@@ -108,7 +108,7 @@ export function readType(raw: string | undefined): TestType | undefined {
     flag: 'type',
     command: 'test',
     reason: `"${raw}" is not a test type (known: ${TEST_TYPES.join(', ')})`,
-    fix: suggestion === undefined ? `x test ${TEST_TYPES[0]}` : `x test ${suggestion}`,
+    fix: `x test ${renderFixShellArg(suggestion ?? TEST_TYPES[0], '<type>')}`,
   });
 }
 

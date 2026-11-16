@@ -206,12 +206,12 @@ describe('UltimateError', () => {
   });
 
   test('notImplemented always carries a fix line', () => {
-    expect(() => notImplemented('s3 driver', 'x storage use local')).toThrow(/X_NOT_IMPLEMENTED/);
+    expect(() => notImplemented('s3 driver', 'x config --json')).toThrow(/X_NOT_IMPLEMENTED/);
     try {
-      notImplemented('s3 driver', 'x storage use local');
+      notImplemented('s3 driver', 'x config --json');
     } catch (thrown) {
       expect(isUltimateError(thrown)).toBe(true);
-      expect((thrown as UltimateError).fix).toBe('x storage use local');
+      expect((thrown as UltimateError).fix).toBe('x config --json');
     }
   });
 });

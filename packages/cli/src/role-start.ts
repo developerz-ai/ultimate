@@ -54,6 +54,7 @@ import { startLiveFeed } from './runtime-live-feed';
 import { type RunningServices, releaseOrThrow } from './runtime-services';
 import { inlineScriptSources } from './script-csp';
 import { bootWarningConcernsAny } from './serve-boot-warnings';
+import { quoteArg } from './shell-quote';
 import { inlineStyleSources } from './style-csp';
 import { syncConnectSources } from './sync-url';
 import { trustedHopsFromEnv } from './trusted-hops';
@@ -93,7 +94,7 @@ export function selectRoles(flag: string | undefined): readonly Role[] {
         flag: 'role',
         command: 'dev',
         reason: `"${name}" is not a role (known: ${ROLES.join(', ')})`,
-        fix: `x dev --role ${DEV_ROLES.join(',')}`,
+        fix: `x dev --role ${quoteArg(DEV_ROLES.join(','))}`,
       });
     }
     if (!SELECTABLE_ROLES.includes(name)) {
@@ -101,7 +102,7 @@ export function selectRoles(flag: string | undefined): readonly Role[] {
         flag: 'role',
         command: 'dev',
         reason: `"${name}" does not run under x dev (it runs once, as \`x db migrate\`)`,
-        fix: `x dev --role ${DEV_ROLES.join(',')}`,
+        fix: `x dev --role ${quoteArg(DEV_ROLES.join(','))}`,
       });
     }
     if (!selected.includes(name)) selected.push(name);

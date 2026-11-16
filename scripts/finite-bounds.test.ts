@@ -12,11 +12,13 @@ import {
   finiteBoundGaps,
   finiteBoundSites,
   numericConstants,
+  numericTables,
   scanFiniteBounds,
 } from './finite-bounds';
 import { FINITE_BOUNDS_PINS } from './lib/finite-bounds-pins';
 import { SCREENING_CALLEES, screeningCallPattern } from './lib/finite-screens';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+import { isTestPath } from './lib/source-scan';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
 // default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
@@ -393,7 +395,8 @@ describe('the real tree', () => {
     // ADDED to this list — taking one out is the regression the test exists to catch — and a
     // package joins it in the same commit that lowers its row in `finite-bounds-pins.ts`, because
     // `X_FINITE_BOUND_PIN_STALE` fires the moment a repair lands and leaves a pin behind.
-    const sites = finiteBoundSites(await collectSourceFiles(repoRoot()));
+    const files = await collectSourceFiles(repoRoot());
+    const sites = finiteBoundSites(files);
     // NON-VACUITY: a scanner that found nothing at all would satisfy every assertion below, and
     // this half used to be `total > 10` — a threshold calibrated at 129 sites, which the sweep
     // then walked straight through. A count is the wrong instrument once the count is meant to
@@ -405,7 +408,14 @@ describe('the real tree', () => {
     for (const [pkg, pin] of Object.entries(FINITE_BOUNDS_PINS)) {
       expect(sites.get(pkg) ?? [], `${pkg} still reports its pinned sites`).toHaveLength(pin.count);
     }
-    expect(Object.keys(FINITE_BOUNDS_PINS).length).toBeGreaterThan(0);
+    // And at zero pins, the REPAIRS: with no call accepted as a screen, the scan finds every bound
+    // the sweep screened — 342 on 2026-11-16 — so a scanner gone blind still cannot read clean.
+    const numeric = numericConstants(files);
+    const tables = numericTables(files);
+    const unscreened = files
+      .filter((file) => !isTestPath(file.path))
+      .flatMap((file) => scanFiniteBounds(file.path, file.source, numeric, tables, /(?!)/g));
+    expect(unscreened.length).toBeGreaterThan(150);
     const swept = [
       // tier 0–1, swept in the first slice
       'core',

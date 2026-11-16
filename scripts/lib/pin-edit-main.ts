@@ -4,7 +4,9 @@
 // ratchet grows its own copy of the flag.
 
 import { renderFixShellArg } from '../../packages/core/src/error-render';
+import type { ScriptArgs } from './args';
 import { flagList, parseScriptArgs } from './args';
+import type { ScriptResult } from './log';
 import { report } from './log';
 import type { PinRaise, PinTarget } from './pin-edit';
 import { applyPinRaise, PIN_WHY_PLACEHOLDER, pinRaiseOf } from './pin-edit';
@@ -47,8 +49,17 @@ export async function ratchetPinMain<S extends { readonly path: string }>(
   spec: PinEditSpec<S>,
 ): Promise<never> {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const names = flagList(args, 'write-pin');
   if (!args.flags.has('write-pin')) return ratchetMain(spec);
+  return report(await writePinResult(spec, args, repoRoot()), args.json);
+}
+
+/** What `--write-pin` reports for `args` over `root`: the drafts written, or why none was. */
+export async function writePinResult<S extends { readonly path: string }>(
+  spec: PinEditSpec<S>,
+  args: ScriptArgs,
+  root: string,
+): Promise<ScriptResult> {
+  const names = flagList(args, 'write-pin');
   let raises: readonly PinRaise[];
   try {
     if (names.length === 0) {
@@ -58,33 +69,27 @@ export async function ratchetPinMain<S extends { readonly path: string }>(
         fix: `bun run ${renderFixShellArg(spec.target.script, '<the ratchet script>')} --json   # then pass --write-pin a row key one of its over findings names`,
       });
     }
-    raises = await writePins(repoRoot(), spec, names);
+    raises = await writePins(root, spec, names);
   } catch (error) {
     if (!(error instanceof ScriptError)) throw error;
-    return report(
-      {
-        ok: false,
-        script: spec.script,
-        summary: 'nothing was written',
-        findings: [error.toFinding()],
-      },
-      args.json,
-    );
+    return {
+      ok: false,
+      script: spec.script,
+      summary: 'nothing was written',
+      findings: [error.toFinding()],
+    };
   }
   const drafted = raises.map(
     (raise) => `${raise.key} ${String(raise.from)} -> ${String(raise.to)}`,
   );
-  return report(
-    {
-      ok: true,
-      script: spec.script,
-      summary:
-        raises.length === 0
-          ? `nothing to raise — no named row is over its pin in ${spec.target.file}`
-          : `drafted ${String(raises.length)} raise(s) in ${spec.target.file}: ${drafted.join(', ')} — rewrite each "${PIN_WHY_PLACEHOLDER}" as the reason; pin-raises and the pin-edit test refuse it as written`,
-      findings: [],
-      data: { file: spec.target.file, raises },
-    },
-    args.json,
-  );
+  return {
+    ok: true,
+    script: spec.script,
+    summary:
+      raises.length === 0
+        ? `nothing to raise — no named row is over its pin in ${spec.target.file}`
+        : `drafted ${String(raises.length)} raise(s) in ${spec.target.file}: ${drafted.join(', ')} — rewrite each "${PIN_WHY_PLACEHOLDER}" as the reason; pin-raises and the pin-edit test refuse it as written`,
+    findings: [],
+    data: { file: spec.target.file, raises },
+  };
 }

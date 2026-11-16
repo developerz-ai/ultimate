@@ -75,7 +75,7 @@ export class CiRunNotFoundError extends UltimateError {
     super({
       code: 'X_CI_RUN_NOT_FOUND',
       cause: `no workflow run on ${input.repo} for branch "${input.branch}"${matching}`,
-      fix: `x ci --branch main --repo ${input.repo} --json`,
+      fix: `x ci --branch main --repo ${quoteArg(input.repo)} --json`,
     });
   }
 }

@@ -3,6 +3,7 @@
 // the same tier, so each owner announces its registrar here at import time and callers ask
 // by kind. Same shape as `defineService` and `registerErrorCodes`.
 
+import { renderFixShellArg } from './error-render';
 import { UltimateError } from './errors';
 
 /**
@@ -410,7 +411,7 @@ export function registerPrimitiveRegistrar(kind: PrimitiveKind, registrar: Modul
       // One command, because a `fix:` is pasted verbatim: collapsing every range on the package
       // to one resolved version is the repair. `bun pm why <package>` names the dependents when
       // a range genuinely disagrees and the update cannot converge on its own.
-      fix: `bun update ${PRIMITIVE_PACKAGES[kind]}`,
+      fix: `bun update ${renderFixShellArg(PRIMITIVE_PACKAGES[kind], '<the @ultimat3 package the cause names>')}`,
       meta: { kind },
     });
   }
@@ -432,7 +433,7 @@ export function primitiveRegistrar(kind: PrimitiveKind): ModuleRegistrar {
     throw new UltimateError({
       code: 'X_REGISTRAR_MISSING',
       cause: `no ${kind} registrar is loaded, so ${kind} primitives cannot be registered`,
-      fix: `bun add ${PRIMITIVE_PACKAGES[kind]}`,
+      fix: `bun add ${renderFixShellArg(PRIMITIVE_PACKAGES[kind], '<the @ultimat3 package the cause names>')}`,
       meta: { kind },
     });
   }

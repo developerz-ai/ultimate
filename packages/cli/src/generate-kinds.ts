@@ -61,7 +61,7 @@ export function assertSurfaceSupported(kind: Generator, surface: Surface, name: 
     reason: 'a resource slice is app-surface — site/ ships 0kb JS and may not import app/',
     // The caller's own name, not `<name>`: a `fix:` is copied and run verbatim, and `x g resource
     // <name>` is a shell redirect (`bash: name: No such file or directory`), not a command.
-    fix: `x g resource ${name} && x g route ${name} --surface site`,
+    fix: `x g resource ${quoteArg(name)} && x g route ${quoteArg(name)} --surface site`,
   });
 }
 
@@ -134,7 +134,7 @@ export function readSurface(raw: string | undefined, kind: Generator, name: stri
     flag: 'surface',
     command: 'g',
     reason: `"${raw}" is not a surface (site, app)`,
-    fix: `x g ${kind} ${name} --surface app`,
+    fix: `x g ${quoteArg(kind)} ${quoteArg(name)} --surface app`,
   });
 }
 

@@ -102,6 +102,7 @@ async function eachDevice(
       }
       if (error.code === 'X_NOTIFY_PUSH_DEVICE_GONE') {
         await devices.remove(device.platform, device.token);
+        // info: a rare outcome — the provider retired this device and its row was deleted; the only record of why.
         logger.info('notify.push.gone', { code: error.code, cause: error.cause });
         continue;
       }
@@ -118,6 +119,7 @@ async function eachDevice(
         (await devices.noteBadToken(device.platform, device.token)) >= PUSH_BAD_TOKEN_LIMIT
       ) {
         await devices.remove(device.platform, device.token);
+        // info: a rare outcome — a token refused PUSH_BAD_TOKEN_LIMIT times was deleted; the only record of why.
         logger.info('notify.push.bad_token_removed', { code: error.code, cause: error.cause });
       }
     }

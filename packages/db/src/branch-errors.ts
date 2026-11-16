@@ -1,13 +1,14 @@
 // Single responsibility: the two refusals `x db branch` raises — a branch that exists, and a name
 // that is not one. Split from `errors.ts` at its line ceiling; `index.ts` re-exports both.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { DbError } from './errors';
 
 export const branchExists = (branch: string): DbError =>
   new DbError({
     code: 'X_BRANCH_EXISTS',
     cause: `database "${branch}" already exists`,
-    fix: `x db branch delete ${branch}   # then re-create, or pick another name`,
+    fix: `x db branch delete ${renderFixShellArg(branch, '<branch>')}   # then re-create, or pick another name`,
     meta: { branch },
   });
 

@@ -2,6 +2,7 @@
 // key (`ULTIMATE_ENV`), one spelling per value — the twin of `roles.ts`: `ROLE` says what the
 // process does, `ULTIMATE_ENV` says which deploy it belongs to.
 
+import { renderFixShellArg } from './error-render';
 import { type CodedErrorInit, UltimateError } from './errors';
 
 export class EnvironmentInvalidError extends UltimateError {
@@ -63,7 +64,9 @@ export function resolveEnvironment(options?: ResolveEnvironmentOptions): Environ
   if (read.ok) return read.environment;
   throw new EnvironmentInvalidError({
     cause: `${ENVIRONMENT_KEY}="${read.declared}" is not one of ${ENVIRONMENTS.join(' | ')}`,
-    fix: `export ${ENVIRONMENT_KEY}=${ENVIRONMENTS.join('|')} — one of those exact values`,
+    // A command that runs, never `KEY=a|b|c`, which a shell reads as two pipes. `production` is
+    // the fail-closed pick: it refuses every published dev secret, so a wrong guess stops a boot.
+    fix: `export ${renderFixShellArg(ENVIRONMENT_KEY, 'ULTIMATE_ENV')}=production   # or whichever of ${ENVIRONMENTS.join(', ')} this deploy is, spelled exactly`,
     meta: { key: ENVIRONMENT_KEY, received: read.declared, allowed: ENVIRONMENTS },
   });
 }

@@ -5,7 +5,7 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { LOG_LEVEL_PINS, LOG_LEVEL_PINS_FILE } from './lib/log-levels-pins';
+import { LOG_LEVEL_PINS_FILE } from './lib/log-levels-pins';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import {
   checkLogLevels,
@@ -128,6 +128,13 @@ describe('the real tree', () => {
     const gaps = await logLevelGaps(repoRoot());
     // fix: demote the line to logger.debug, or state `// info: <why>` above it; a pin only falls.
     expect(gaps.map(logLevelFindingFor)).toEqual([]);
-    expect(Object.keys(LOG_LEVEL_PINS).length).toBeGreaterThan(0);
+    // Non-vacuity that survives zero pins: with each `// info:` reason taken back out, the scan
+    // finds the lines those reasons state — 17 on 2026-11-16. A scanner gone blind finds none.
+    let unstated = 0;
+    for (const path of PER_UNIT_FILES.keys()) {
+      const source = await Bun.file(join(repoRoot(), path)).text();
+      unstated += scanInfoLines(path, source.replace(/\/\/\s*info:\s*\S[^\n]*/g, '//')).length;
+    }
+    expect(unstated).toBeGreaterThanOrEqual(5);
   });
 });

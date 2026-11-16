@@ -18,7 +18,7 @@
 //   bun run scripts/test-bare-error.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
 // The leaf module, never the `@ultimat3/core` barrel: a guard must not link the whole tree.
-import { singleLine } from '../packages/core/src/error-render';
+import { renderFixShellArg, singleLine } from '../packages/core/src/error-render';
 import { maskLiterals } from '../packages/core/src/source-mask';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
@@ -146,7 +146,7 @@ const overFinding = (gap: BareErrorGap): Finding => ({
 const staleFinding = (gap: BareErrorGap): Finding => ({
   code: 'X_TEST_BARE_ERROR_PIN_STALE',
   cause: `${shown(gap.pkg)} is pinned at ${String(gap.pinned)} bare-Error throw(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `bun run scripts/test-bare-error.ts --unpin ${shown(gap.pkg)}`,
+  fix: `bun run scripts/test-bare-error.ts --unpin ${renderFixShellArg(gap.pkg, '<pkg>')}`,
   at: PINS_FILE,
 });
 

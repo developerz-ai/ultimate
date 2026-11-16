@@ -169,11 +169,14 @@ const orphanFinding = (gap: TableGap): Finding => ({
   at: where(gap),
 });
 
-const FINDINGS: Readonly<Record<TableGapKind, (gap: TableGap) => Finding>> = {
-  row: rowFinding,
-  delimiter: delimiterFinding,
-  orphan: orphanFinding,
-};
+const FINDINGS: Readonly<Record<TableGapKind, (gap: TableGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    row: rowFinding,
+    delimiter: delimiterFinding,
+    orphan: orphanFinding,
+  } satisfies Record<TableGapKind, (gap: TableGap) => Finding>,
+);
 
 export const tableGapFindingFor = (gap: TableGap): Finding => FINDINGS[gap.kind](gap);
 

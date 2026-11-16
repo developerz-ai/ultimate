@@ -10,6 +10,7 @@ import {
   registerErrorCodes,
   registerErrorRetry,
   renderCauseValue,
+  renderFixShellArg,
   UltimateError,
 } from '@ultimat3/core';
 
@@ -105,7 +106,7 @@ export const policyForbidden = (label: string, reason: string): PolicyError =>
     // `x policy list --json` is what `X_DECLARATION_UNKNOWN`'s own fix falls back to, so a reader
     // who follows either one lands in the same place.
     fix: BARE_PERMISSION.test(label)
-      ? `x policy explain ${label} --json   # shows which clause decided and why`
+      ? `x policy explain ${renderFixShellArg(label, '<permission>')} --json   # shows which clause decided and why`
       : `x policy list --json   # then: x policy explain <permission> --json for the clause that decided`,
     // The remote caller's half: it holds a credential, not the policy file.
     callerFix: deniedCallerFix(BARE_PERMISSION.test(label) ? label : undefined),

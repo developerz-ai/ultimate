@@ -410,6 +410,7 @@ const buildServer = (options: ServerOptions): ServerHandle => {
         { phase: 'close' },
       );
 
+      // info: lifecycle — once per process start, the line an operator greps for the bound origin.
       logger.info(`ultimate ${role} listening on ${server.url.origin}`);
       return handle;
     },
@@ -450,6 +451,7 @@ const buildServer = (options: ServerOptions): ServerHandle => {
       stopListening?.();
       stopListening = undefined;
       server = undefined;
+      // info: lifecycle — once per process drain, the bracket that closes the listening line.
       logger.info(`ultimate ${role} stopped`);
     },
   };

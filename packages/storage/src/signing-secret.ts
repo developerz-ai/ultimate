@@ -6,6 +6,7 @@ import {
   devSecretsRefused,
   type ResolveEnvironmentOptions,
   resolveEnvironment,
+  timingSafeEqual,
 } from '@ultimat3/core';
 import { signingSecretMissing } from './errors';
 
@@ -37,7 +38,10 @@ export const STORAGE_SIGNING_SECRET_KEY = 'STORAGE_SIGNING_SECRET';
 export function usesDevStorageSecret(options?: Pick<ResolveEnvironmentOptions, 'env'>): boolean {
   const source = options?.env ?? (process.env as Record<string, string | undefined>);
   const configured = source[STORAGE_SIGNING_SECRET_KEY];
-  return configured === undefined || configured === '' || configured === DEV_SIGNING_SECRET;
+  // `timingSafeEqual` though the other side is published: the left side is the live secret.
+  return (
+    configured === undefined || configured === '' || timingSafeEqual(configured, DEV_SIGNING_SECRET)
+  );
 }
 
 /** The two options the rule reads; `LocalDriverOptions` carries both. */
@@ -63,7 +67,7 @@ export function resolveSigningSecret(disk: string, options: SigningSecretOptions
   const env = options.env ?? (process.env as Record<string, string | undefined>);
   const supplied = options.signingSecret ?? env[STORAGE_SIGNING_SECRET_KEY];
   const configured =
-    supplied === undefined || supplied === '' || supplied === DEV_SIGNING_SECRET
+    supplied === undefined || supplied === '' || timingSafeEqual(supplied, DEV_SIGNING_SECRET)
       ? undefined
       : supplied;
   // FAILS CLOSED, through core's one rule (`devSecretsRefused`): a process that names no

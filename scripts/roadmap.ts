@@ -14,6 +14,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Finding, HostCheck } from '@ultimat3/cli';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { gitTrackerEdits, undatedFindings } from './lib/plan-tracker-dated';
@@ -42,45 +43,56 @@ const STATUS_BY_MARK: ReadonlyMap<string, MilestoneStatus> = new Map(
  * roadmap is the one place either is stated (axiom 2). Only these paths live in code, because the
  * "Ships" column is prose naming packages, not a machine-readable path list.
  */
-export const REQUIRED_ARTIFACTS: Readonly<Record<number, readonly string[]>> = {
-  0: [
-    'packages/core/src/index.ts',
-    'packages/schema/src/index.ts',
-    'scripts/boundaries.ts',
-    'packages/cli/src/cmd-verify.ts',
-  ],
-  1: ['packages/http/src/index.ts', 'packages/entity/src/index.ts', 'packages/policy/src/index.ts'],
-  2: [
-    'packages/action/src/index.ts',
-    'packages/query/src/index.ts',
-    'packages/cli/src/app-openapi.ts',
-  ],
-  3: ['packages/render/src/index.ts', 'packages/cli/src/app-boundaries.ts'],
-  4: ['packages/seo/src/index.ts', 'packages/cli/src/budgets.ts'],
-  5: ['packages/jobs/src/index.ts', 'packages/mail/src/index.ts', 'packages/storage/src/index.ts'],
-  6: ['packages/realtime/src/index.ts'],
-  7: ['packages/cache/src/index.ts'],
-  8: [
-    'packages/pwa/src/index.ts',
-    'packages/cli/src/retained-assets.ts',
-    'packages/cli/e2e/six-deploys.e2e.test.ts',
-  ],
-  9: ['packages/ai/src/index.ts', 'packages/mcp/src/index.ts'],
-  10: [
-    'packages/admin/src/index.ts',
-    'packages/create-ultimate/src/index.ts',
-    'packages/cli/src/templates',
-  ],
-  11: [
-    'docker/Dockerfile',
-    'docker/docker-compose.dev.yml',
-    'docker/docker-compose.prod.yml',
-    'docker/helm',
-    'packages/cli/src/cmd-build.ts',
-    'wiki/Error-Codes.md',
-    'CHANGELOG.md',
-  ],
-};
+export const REQUIRED_ARTIFACTS: Readonly<Record<number, readonly string[]>> = Object.assign(
+  Object.create(null),
+  {
+    0: [
+      'packages/core/src/index.ts',
+      'packages/schema/src/index.ts',
+      'scripts/boundaries.ts',
+      'packages/cli/src/cmd-verify.ts',
+    ],
+    1: [
+      'packages/http/src/index.ts',
+      'packages/entity/src/index.ts',
+      'packages/policy/src/index.ts',
+    ],
+    2: [
+      'packages/action/src/index.ts',
+      'packages/query/src/index.ts',
+      'packages/cli/src/app-openapi.ts',
+    ],
+    3: ['packages/render/src/index.ts', 'packages/cli/src/app-boundaries.ts'],
+    4: ['packages/seo/src/index.ts', 'packages/cli/src/budgets.ts'],
+    5: [
+      'packages/jobs/src/index.ts',
+      'packages/mail/src/index.ts',
+      'packages/storage/src/index.ts',
+    ],
+    6: ['packages/realtime/src/index.ts'],
+    7: ['packages/cache/src/index.ts'],
+    8: [
+      'packages/pwa/src/index.ts',
+      'packages/cli/src/retained-assets.ts',
+      'packages/cli/e2e/six-deploys.e2e.test.ts',
+    ],
+    9: ['packages/ai/src/index.ts', 'packages/mcp/src/index.ts'],
+    10: [
+      'packages/admin/src/index.ts',
+      'packages/create-ultimate/src/index.ts',
+      'packages/cli/src/templates',
+    ],
+    11: [
+      'docker/Dockerfile',
+      'docker/docker-compose.dev.yml',
+      'docker/docker-compose.prod.yml',
+      'docker/helm',
+      'packages/cli/src/cmd-build.ts',
+      'wiki/Error-Codes.md',
+      'CHANGELOG.md',
+    ],
+  } satisfies Record<number, readonly string[]>,
+);
 
 export const MILESTONE_NUMBERS: readonly number[] = Object.keys(REQUIRED_ARTIFACTS)
   .map(Number)
@@ -141,7 +153,7 @@ export function milestoneRow(markdown: string, n: number): MilestoneRow | undefi
 const missingFileFinding = (): Finding => ({
   code: 'X_ROADMAP_FILE_MISSING',
   cause: `${ROADMAP_FILE} does not exist, so no milestone status or shipped artifact can be checked`,
-  fix: `git checkout -- ${ROADMAP_FILE}`,
+  fix: `git checkout -- ${renderFixShellArg(ROADMAP_FILE, '<roadmap>')}`,
   at: ROADMAP_FILE,
 });
 

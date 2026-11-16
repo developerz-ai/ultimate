@@ -28,14 +28,17 @@ import {
 } from './telemetry';
 
 /** OTLP's `SeverityNumber`: the first number of each band. */
-const SEVERITY = Object.freeze<Record<LogRecordEvent['level'], number>>({
-  trace: 1,
-  debug: 5,
-  info: 9,
-  warn: 13,
-  error: 17,
-  fatal: 21,
-});
+// Null-prototype: a key that arrives untyped never answers an `Object.prototype` member.
+const SEVERITY = Object.freeze<Record<LogRecordEvent['level'], number>>(
+  Object.assign(Object.create(null), {
+    trace: 1,
+    debug: 5,
+    info: 9,
+    warn: 13,
+    error: 17,
+    fatal: 21,
+  } satisfies Record<LogRecordEvent['level'], number>),
+);
 
 /** One record as the exporter holds it: the event, and the span it was written under. */
 export interface ExportedLogRecord {

@@ -88,14 +88,14 @@ const GATE_CONTEXT =
 const SUBSET_SPANS =
   /\bpinned(?:\s+red)?\s+on\s+\d+\s+steps?\b|\b\d+\s+steps?\s+(?:pinned|skipped)\b/gi;
 
-const WORD_NUMBERS: Readonly<Record<string, number>> = {
+const WORD_NUMBERS: Readonly<Record<string, number>> = Object.assign(Object.create(null), {
   fifteen: 15,
   sixteen: 16,
   seventeen: 17,
   eighteen: 18,
   nineteen: 19,
   twenty: 20,
-};
+} satisfies Record<string, number>);
 
 /** `N of M steps` — the gate's own summary format. `M` is the total; `N` may never exceed it. */
 const OF_TOTAL = /\b(\d+)\s+of\s+(\d+)\s+steps\b/g;

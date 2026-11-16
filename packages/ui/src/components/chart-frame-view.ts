@@ -78,60 +78,63 @@ const ring = (count: number, radius: number, phase = 0): [number, number][] =>
   });
 
 /** Polygons only, so a marker is one path a sheet fills — a 12-gon IS a circle at 4px. */
-const SHAPES: Record<MarkerShape, readonly (readonly [number, number])[]> = {
-  circle: ring(12, 1),
-  square: [
-    [-0.85, -0.85],
-    [0.85, -0.85],
-    [0.85, 0.85],
-    [-0.85, 0.85],
-  ],
-  triangle: [
-    [0, -1],
-    [1, 0.85],
-    [-1, 0.85],
-  ],
-  diamond: [
-    [0, -1],
-    [1, 0],
-    [0, 1],
-    [-1, 0],
-  ],
-  plus: [
-    [-0.33, -1],
-    [0.33, -1],
-    [0.33, -0.33],
-    [1, -0.33],
-    [1, 0.33],
-    [0.33, 0.33],
-    [0.33, 1],
-    [-0.33, 1],
-    [-0.33, 0.33],
-    [-1, 0.33],
-    [-1, -0.33],
-    [-0.33, -0.33],
-  ],
-  'triangle-down': [
-    [-1, -0.85],
-    [1, -0.85],
-    [0, 1],
-  ],
-  cross: [
-    [-1, -0.6],
-    [-0.6, -1],
-    [0, -0.4],
-    [0.6, -1],
-    [1, -0.6],
-    [0.4, 0],
-    [1, 0.6],
-    [0.6, 1],
-    [0, 0.4],
-    [-0.6, 1],
-    [-1, 0.6],
-    [-0.4, 0],
-  ],
-  star: ring(10, 1).map(([dx, dy], i) => (i % 2 === 0 ? [dx, dy] : [dx * 0.45, dy * 0.45])),
-};
+const SHAPES: Record<MarkerShape, readonly (readonly [number, number])[]> = Object.assign(
+  Object.create(null),
+  {
+    circle: ring(12, 1),
+    square: [
+      [-0.85, -0.85],
+      [0.85, -0.85],
+      [0.85, 0.85],
+      [-0.85, 0.85],
+    ],
+    triangle: [
+      [0, -1],
+      [1, 0.85],
+      [-1, 0.85],
+    ],
+    diamond: [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ],
+    plus: [
+      [-0.33, -1],
+      [0.33, -1],
+      [0.33, -0.33],
+      [1, -0.33],
+      [1, 0.33],
+      [0.33, 0.33],
+      [0.33, 1],
+      [-0.33, 1],
+      [-0.33, 0.33],
+      [-1, 0.33],
+      [-1, -0.33],
+      [-0.33, -0.33],
+    ],
+    'triangle-down': [
+      [-1, -0.85],
+      [1, -0.85],
+      [0, 1],
+    ],
+    cross: [
+      [-1, -0.6],
+      [-0.6, -1],
+      [0, -0.4],
+      [0.6, -1],
+      [1, -0.6],
+      [0.4, 0],
+      [1, 0.6],
+      [0.6, 1],
+      [0, 0.4],
+      [-0.6, 1],
+      [-1, 0.6],
+      [-0.4, 0],
+    ],
+    star: ring(10, 1).map(([dx, dy], i) => (i % 2 === 0 ? [dx, dy] : [dx * 0.45, dy * 0.45])),
+  } satisfies Record<MarkerShape, readonly (readonly [number, number])[]>,
+);
 
 /** The `d` of a marker of `shape` centred on `x, y`, inside a box of half-width `r`. */
 export function markerPath(shape: MarkerShape, x: number, y: number, r: number): string {

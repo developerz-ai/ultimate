@@ -404,7 +404,7 @@ export class SocketOriginRefusedError extends RealtimeError {
     super({
       code: 'X_SOCKET_ORIGIN_REFUSED',
       cause: `the websocket upgrade was refused: ${args.reason} — asked from ${asked ?? 'an origin that cannot be rendered'}; this node admits ${list}`,
-      fix: `export APP_URL=${asked ?? 'https://www.example.com'}   # on the sync role, and only when that is the origin your pages are served on (or syncNode({ allowedOrigins }))`,
+      fix: `export APP_URL=${renderFixShellArg(asked, 'https://www.example.com')}   # on the sync role, and only when that is the origin your pages are served on (or syncNode({ allowedOrigins }))`,
     });
   }
 }

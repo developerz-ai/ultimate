@@ -1,7 +1,7 @@
 // The error classes @ultimat3/jobs throws. Every one names the command or code change that fixes
 // it — a job failure an agent cannot act on is a job failure that gets retried forever. The codes,
 // their titles and their registration are `./error-codes`, imported here for that side effect.
-import { UltimateError } from '@ultimat3/core';
+import { renderFixShellArg, UltimateError } from '@ultimat3/core';
 import './error-codes';
 
 // No `docs:` on any class below, here or in `backfill-errors.ts`. `UltimateError` fills it from
@@ -174,7 +174,7 @@ export class JobMaxAttemptsError extends UltimateError {
     super({
       code: 'X_JOB_MAX_ATTEMPTS',
       cause: `job "${input.job}" failed ${input.attempts} times, last error: ${input.lastError}`,
-      fix: `x jobs retry ${input.jobId}`,
+      fix: `x jobs retry ${renderFixShellArg(input.jobId, '<job id>')}`,
     });
   }
 }
@@ -249,7 +249,7 @@ export class LeaseLostError extends UltimateError {
     super({
       code: 'X_JOB_LEASE_LOST',
       cause: `job "${input.job}" (${input.jobId}) is no longer claimed by this worker — it was cancelled, or its visibility lease lapsed and the queue re-delivered it`,
-      fix: `x jobs show ${input.jobId} --json`,
+      fix: `x jobs show ${renderFixShellArg(input.jobId, '<job id>')} --json`,
     });
   }
 }
@@ -266,7 +266,7 @@ export class JobSlotLostError extends UltimateError {
     super({
       code: 'X_JOB_SLOT_LOST',
       cause: `job "${input.job}" (${input.jobId}) no longer holds fleet concurrency slot ${input.slot} — its lease expired and another worker took it`,
-      fix: `x jobs show ${input.jobId} --json`,
+      fix: `x jobs show ${renderFixShellArg(input.jobId, '<job id>')} --json`,
     });
   }
 }

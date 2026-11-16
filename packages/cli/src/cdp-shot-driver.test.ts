@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 // why: joining the script and marker paths.
 import { join } from 'node:path';
 import { LAUNCH_TEST_MS, launchChrome } from '@ultimat3/scraping/cdp';
+import { allowHost } from '@ultimat3/testing';
 import { cdpShotDriver } from './cdp-shot-driver';
 import { attach, evaluating, fakeWire, init, opened } from './cdp-shot-wire-fixture';
 
@@ -161,6 +162,26 @@ describe('unit · a session is one page, configured before it loads anything', (
     const session = await driver.open(init());
     await session.close();
     expect(wire.methods()).toContain('Browser.close');
+  });
+
+  // A sidecar that accepts the socket and never answers `/json/version` held `x shot` forever: the
+  // discovery fetch carried no signal, so the session's own deadline never reached it.
+  test('a sidecar that never answers /json/version is X_CDP_CALL_FAILED within the deadline', async () => {
+    const hung = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: () => new Promise<Response>(() => undefined),
+    });
+    allowHost(`127.0.0.1:${hung.port}`);
+    try {
+      const error = await cdpShotDriver({ cdpUrl: `http://127.0.0.1:${hung.port}` })
+        .open(init({ timeoutMs: 50 }))
+        .catch((e: unknown) => e);
+      expect(error).toBeUltimateError('X_CDP_CALL_FAILED');
+      expect(String((error as Error).message)).toContain('/json/version');
+    } finally {
+      await hung.stop(true);
+    }
   });
 
   test('no binary and no endpoint is X_CDP_BROWSER_MISSING, not a launch of nothing', async () => {

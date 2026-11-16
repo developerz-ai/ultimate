@@ -1,7 +1,12 @@
 // The X_* codes owned by @ultimat3/admin. Every one names the exact edit that fixes it,
 // because the two dashboards fail at boot (bad registry, bad mount) where an agent has no
 // stack trace to reason from — only the message.
-import { NotImplementedError, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import {
+  NotImplementedError,
+  registerErrorCodes,
+  renderFixShellArg,
+  UltimateError,
+} from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const ADMIN_OWNED_ERROR_CODES = [
@@ -91,7 +96,7 @@ export class AdminEntityUnknownError extends UltimateError {
         `entity "${input.entity}" is not registered (registered: ${
           input.known.length > 0 ? input.known.join(', ') : 'none'
         })`,
-      fix: `x g entity ${input.entity}   # then: x manifest`,
+      fix: `x g entity ${renderFixShellArg(input.entity, '<entity>')}   # then: x manifest`,
     });
   }
 }

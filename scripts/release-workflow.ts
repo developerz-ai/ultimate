@@ -19,6 +19,7 @@
 //
 //   bun run scripts/release-workflow.ts [--json]
 
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -218,14 +219,14 @@ const missingFinding = (gap: PublishGap): Finding => ({
 const unreadableFinding = (): Finding => ({
   code: 'X_PUBLISH_LIST_INCOMPLETE',
   cause: `${RELEASE_WORKFLOW} contains no \`npm publish\` command, so this check could not see one package the release publishes`,
-  fix: `restore the publish steps in ${RELEASE_WORKFLOW} (git log -- ${RELEASE_WORKFLOW}), then bun run scripts/release-workflow.ts --json`,
+  fix: `restore the publish steps in ${RELEASE_WORKFLOW} (git log -- ${renderFixShellArg(RELEASE_WORKFLOW, '<workflow>')}), then bun run scripts/release-workflow.ts --json`,
   at: RELEASE_WORKFLOW,
 });
 
 const absentFinding = (): Finding => ({
   code: 'X_PUBLISH_LIST_INCOMPLETE',
   cause: `${RELEASE_WORKFLOW} does not exist and this tree has packages to publish, so nothing publishes them — and every rule about the publish list passes by having no list to disagree with`,
-  fix: `restore ${RELEASE_WORKFLOW} (git checkout -- ${RELEASE_WORKFLOW}), then bun run scripts/release-workflow.ts --json`,
+  fix: `restore ${RELEASE_WORKFLOW} (git checkout -- ${renderFixShellArg(RELEASE_WORKFLOW, '<workflow>')}), then bun run scripts/release-workflow.ts --json`,
   at: RELEASE_WORKFLOW,
 });
 
@@ -239,12 +240,15 @@ const unknownFinding = (gap: PublishGap): Finding => ({
   at: RELEASE_WORKFLOW,
 });
 
-const FINDINGS: Readonly<Record<PublishGapKind, (gap: PublishGap) => Finding>> = {
-  missing: missingFinding,
-  unknown: unknownFinding,
-  unreadable: unreadableFinding,
-  absent: absentFinding,
-};
+const FINDINGS: Readonly<Record<PublishGapKind, (gap: PublishGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    missing: missingFinding,
+    unknown: unknownFinding,
+    unreadable: unreadableFinding,
+    absent: absentFinding,
+  } satisfies Record<PublishGapKind, (gap: PublishGap) => Finding>,
+);
 
 export const publishGapFindingFor = (gap: PublishGap): Finding => FINDINGS[gap.kind](gap);
 

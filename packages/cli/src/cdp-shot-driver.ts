@@ -3,6 +3,7 @@
 // else runs over `--cdp-url`. One `open()` is one browser and one page, so a picture's console and
 // network are its own. The page is `cdp-shot-page.ts`; this file is the session around it.
 
+import { renderThrowable } from '@ultimat3/core';
 import type { CdpConnection, LaunchedBrowser } from '@ultimat3/scraping/cdp';
 import {
   CdpBrowserMissingError,
@@ -31,7 +32,7 @@ export interface CdpShotDriverOptions {
     | ((executable: string, timeoutMs: number) => Promise<LaunchedBrowser>)
     | undefined;
   readonly connect?: ((endpoint: string, timeoutMs: number) => Promise<CdpConnection>) | undefined;
-  readonly fetchJson?: ((url: string) => Promise<unknown>) | undefined;
+  readonly fetchJson?: ((url: string, timeoutMs: number) => Promise<unknown>) | undefined;
 }
 
 const field = (value: unknown, key: string): string | undefined => {
@@ -46,11 +47,12 @@ const field = (value: unknown, key: string): string | undefined => {
  */
 async function socketUrl(
   cdpUrl: string,
-  fetchJson: (url: string) => Promise<unknown>,
+  timeoutMs: number,
+  fetchJson: (url: string, timeoutMs: number) => Promise<unknown>,
 ): Promise<string> {
   if (cdpUrl.startsWith('ws://') || cdpUrl.startsWith('wss://')) return cdpUrl;
   const version = new URL('/json/version', cdpUrl).toString();
-  const socket = field(await fetchJson(version), 'webSocketDebuggerUrl');
+  const socket = field(await fetchJson(version, timeoutMs), 'webSocketDebuggerUrl');
   if (socket === undefined) {
     throw new CdpCallFailedError({
       method: `GET ${version}`,
@@ -60,7 +62,17 @@ async function socketUrl(
   return socket;
 }
 
-const defaultFetchJson = async (url: string): Promise<unknown> => (await fetch(url)).json();
+/**
+ * Under the session's own deadline: a sidecar that accepts the socket and never answers held
+ * `x shot` for as long as it liked, because nothing else bounds this one request.
+ */
+const defaultFetchJson = async (url: string, timeoutMs: number): Promise<unknown> => {
+  try {
+    return await (await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })).json();
+  } catch (error) {
+    throw new CdpCallFailedError({ method: `GET ${url}`, detail: renderThrowable(error) });
+  }
+};
 
 export function cdpShotDriver(options: CdpShotDriverOptions): ShotDriver {
   const viewport = options.viewport ?? DEFAULT_SHOT_VIEWPORT;
@@ -76,7 +88,11 @@ export function cdpShotDriver(options: CdpShotDriverOptions): ShotDriver {
     timeoutMs: number,
   ): Promise<{ connection: CdpConnection; end: () => Promise<void> }> => {
     if (options.cdpUrl !== undefined) {
-      const endpoint = await socketUrl(options.cdpUrl, options.fetchJson ?? defaultFetchJson);
+      const endpoint = await socketUrl(
+        options.cdpUrl,
+        timeoutMs,
+        options.fetchJson ?? defaultFetchJson,
+      );
       const connection = await connect(endpoint, timeoutMs);
       return {
         connection,

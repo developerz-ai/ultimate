@@ -1,7 +1,7 @@
 // The error classes for @ultimat3/ai's core codes. Budget and threshold failures name the exact
 // knob to change, because the caller is often a CI job with no human attached.
 
-import { UltimateError } from '@ultimat3/core';
+import { renderFixShellArg, UltimateError } from '@ultimat3/core';
 // The codes, their titles and the single registration call are `./error-codes`, imported here for
 // that side effect.
 import './error-codes';
@@ -360,7 +360,7 @@ export class AiKeyMissingError extends UltimateError {
     super({
       code: 'X_AI_KEY_MISSING',
       cause: `provider "${input.provider}" has no API key: ${input.envVar} is unset and none was passed to its constructor`,
-      fix: `export ${input.envVar}=<key>, or pass { apiKey } when constructing the provider`,
+      fix: `export ${renderFixShellArg(input.envVar, '<API_KEY_VAR>')}=<key>, or pass { apiKey } when constructing the provider`,
       meta: { provider: input.provider, envVar: input.envVar },
     });
   }

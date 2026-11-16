@@ -16,6 +16,7 @@
 //   bun run scripts/version-stamps.ts [--json]
 
 import { dirname } from 'node:path';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { flagList, parseScriptArgs } from './lib/args';
 import type { MarkdownFile } from './lib/doc-citations';
 import type { Finding } from './lib/log';
@@ -322,7 +323,7 @@ const lockfileFinding = (gap: VersionGap): Finding => ({
 const pinStaleFinding = (gap: VersionGap): Finding => ({
   code: 'X_VERSION_STAMP_PIN_STALE',
   cause: `${gap.at} is pinned as a version this page names for a reason that is not a stamp ("${gap.detail}") and the page no longer says it — the pin outlived its sentence, so it now excuses whatever lands there next`,
-  fix: `bun run scripts/version-stamps.ts --unpin ${gap.at}`,
+  fix: `bun run scripts/version-stamps.ts --unpin ${renderFixShellArg(gap.at, '<page>')}`,
   at: STAMP_PINS_FILE,
 });
 

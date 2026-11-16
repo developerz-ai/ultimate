@@ -194,7 +194,7 @@ export const forbidden = (pathname: string, reason: string, policy?: string): Ht
     cause: `${pathname} denied: ${reason}`,
     fix:
       policy !== undefined && POLICY_SUBJECT.test(policy)
-        ? `x policy explain ${policy} --json   # shows which clause denied`
+        ? `x policy explain ${renderFixShellArg(policy, '<permission>')} --json   # shows which clause denied`
         : `x routes --json   # find ${pathname}, then read the policy it declares`,
     callerFix: deniedCallerFix(
       policy !== undefined && POLICY_SUBJECT.test(policy) ? policy : undefined,

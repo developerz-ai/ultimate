@@ -255,7 +255,7 @@ const softDeleteWipe = (entity: EntityCore): EntityError =>
 /** The row an update may write: everything the caller named, less what a match must not move. */
 const withoutPreserved = <Row>(row: Row, preserve: readonly string[]): Row => {
   const copy: Record<string, unknown> = { ...(row as Record<string, unknown>) };
-  for (const property of preserve) delete copy[property];
+  for (const property of preserve) if (Object.hasOwn(copy, property)) delete copy[property];
   // `Repo` is typed for whole rows, and a partial one is exactly what keeps a column OUT of the
   // update set — `namedProperties` reads what the row owns. Same assertion the bulk live test takes.
   return copy as Row;

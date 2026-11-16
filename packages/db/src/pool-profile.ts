@@ -116,7 +116,10 @@ export const POOL_PROFILES = Object.freeze<Record<Role, PoolProfile>>({
 });
 
 export function poolProfileFor(role: Role = resolveRole()): PoolProfile {
-  return POOL_PROFILES[role];
+  if (Object.hasOwn(POOL_PROFILES, role)) return POOL_PROFILES[role];
+  // Typed, and untyped at a JS caller: `POOL_PROFILES['constructor']` was the `Object` function,
+  // a pool with no `max`. Read as the env would be, a non-role is refused with `X_ROLE_INVALID`.
+  return poolProfileFor(resolveRole({ env: { ROLE: role } }));
 }
 
 /** The one pool knob an operator can turn without a rebuild. Layered over the role default. */

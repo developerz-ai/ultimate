@@ -24,6 +24,7 @@ import {
   mayReachFixture,
 } from './publish-closure';
 import { isReExportManifest } from './reexport-manifest';
+import { quoteArg } from './shell-quote';
 import { eachSourceFile, isGenerated } from './source-files';
 import type { ShippedPackage } from './test-only-shipped';
 import { checkTestOnlyShipped, entryPatternsOf } from './test-only-shipped';
@@ -98,7 +99,7 @@ export const missingFileFinding = (dir: string, file: string, scaffolder: boolea
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir} has no ${file}`,
   fix: scaffolder
-    ? `bun run scripts/new-package.ts ${dir} --only ${file}`
+    ? `bun run scripts/new-package.ts ${quoteArg(dir)} --only ${quoteArg(file)}`
     : `add packages/${dir}/${file}, shaped like the one in a sibling package`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/${file}`,
@@ -153,7 +154,7 @@ export const PUBLISHED_DEP_FIELDS = [
 export const versionSkewFinding = (dir: string, found: string, expected: string): Finding => ({
   code: 'X_RELEASE_VERSION_SKEW',
   cause: `packages/${dir} is at ${found}, not the lockstep version ${expected}`,
-  fix: `bun run scripts/release.ts --version ${expected}`,
+  fix: `bun run scripts/release.ts --version ${quoteArg(expected)}`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });
@@ -166,7 +167,7 @@ export const pinSkewFinding = (
 ): Finding => ({
   code: 'X_RELEASE_VERSION_SKEW',
   cause: `packages/${dir} pins ${dep} at ${range}, not the lockstep version ${expected}`,
-  fix: `bun run scripts/release.ts --version ${expected}`,
+  fix: `bun run scripts/release.ts --version ${quoteArg(expected)}`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/package.json`,
 });

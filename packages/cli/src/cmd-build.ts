@@ -69,13 +69,17 @@ export function readTarget(raw: string | undefined): BuildTarget {
  * has to refuse a missing entry by name before it spawns anything, and the spawned command has to
  * name the same file — a second copy is how `binary` came to compile a path `x new` never wrote.
  */
-export const BUILD_ENTRY: Readonly<Record<BuildTarget, string>> = {
-  docker: 'docker/Dockerfile',
-  binary: 'apps/web/server.ts',
-  static: 'apps/web/prerender.ts',
-  // What boots from the store: an image with no server entry has nothing to prebuild for.
-  prebuilt: 'apps/web/server.ts',
-};
+// Null-prototype: a target that is not one of these reads `undefined`, never an `Object` member.
+export const BUILD_ENTRY: Readonly<Record<BuildTarget, string>> = Object.assign(
+  Object.create(null) as object,
+  {
+    docker: 'docker/Dockerfile',
+    binary: 'apps/web/server.ts',
+    static: 'apps/web/prerender.ts',
+    // What boots from the store: an image with no server entry has nothing to prebuild for.
+    prebuilt: 'apps/web/server.ts',
+  } satisfies Record<BuildTarget, string>,
+);
 
 /** Absolute path of the target's entry, or the error that names the file and what writes it. */
 export function requireEntry(root: string, target: BuildTarget): string {

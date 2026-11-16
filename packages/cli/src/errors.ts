@@ -17,7 +17,7 @@ export class UnknownCommandError extends UltimateError {
     super({
       code: 'X_CLI_UNKNOWN_COMMAND',
       cause: `"x ${input.path}" is not a command (known: ${input.known.join(', ')})${input.why === undefined ? '' : ` — ${input.why}`}`,
-      fix: input.suggestion === undefined ? 'x help' : `x ${input.suggestion}`,
+      fix: input.suggestion === undefined ? 'x help' : `x ${quoteArg(input.suggestion.split(' '))}`,
     });
   }
 }
@@ -32,7 +32,7 @@ export class BadFlagError extends UltimateError {
     super({
       code: 'X_CLI_BAD_FLAG',
       cause: `--${input.flag} on "x ${input.command}": ${input.reason}`,
-      fix: input.fix ?? `x ${input.command} --help`,
+      fix: input.fix ?? `x ${quoteArg(input.command.split(' '))} --help`,
     });
   }
 }
@@ -111,7 +111,7 @@ export class MissingSubcommandError extends UltimateError {
     super({
       code: 'X_CLI_BAD_FLAG',
       cause: `"x ${input.command}" takes a subcommand and got none (one of: ${input.known.join(', ')})`,
-      fix: `x help ${input.command}`,
+      fix: `x help ${quoteArg(input.command.split(' '))}`,
     });
   }
 }
@@ -245,7 +245,7 @@ export class CatalogExistsError extends UltimateError {
     super({
       code: 'X_GENERATE_CONFLICT',
       cause: `${input.path} already exists`,
-      fix: `x i18n sync ${input.locale}`,
+      fix: `x i18n sync ${quoteArg(input.locale)}`,
     });
   }
 }
@@ -277,7 +277,7 @@ export class ErrorCodeUnknownError extends UltimateError {
       fix:
         input.suggestion === undefined
           ? 'x errors list --json'
-          : `x errors explain ${input.suggestion}`,
+          : `x errors explain ${quoteArg(input.suggestion)}`,
     });
   }
 }
@@ -302,8 +302,8 @@ export class DeclarationUnknownError extends UltimateError {
       cause: `no ${input.singular} named "${input.name}" is registered (${input.known.length} known)`,
       fix:
         input.suggestion === undefined
-          ? `x ${input.kind} list --json`
-          : `x ${input.kind} ${input.verb ?? 'show'} ${input.suggestion}`,
+          ? `x ${quoteArg(input.kind)} list --json`
+          : `x ${quoteArg(input.kind)} ${quoteArg(input.verb ?? 'show')} ${quoteArg(input.suggestion)}`,
     });
   }
 }
@@ -332,7 +332,7 @@ export class FixTargetUnknownError extends UltimateError {
       fix:
         input.suggestion === undefined
           ? 'x routes --json   # every registered route file, app-root-relative'
-          : `x fix boundary ${input.suggestion}`,
+          : `x fix boundary ${quoteArg(input.suggestion)}`,
     });
   }
 }
@@ -347,7 +347,7 @@ export class IslandBuildFailedError extends UltimateError {
     super({
       code: 'X_BUILD_FAILED',
       cause: `${input.file} is an island entry point and would not bundle: ${input.logs}`,
-      fix: `bun build --target browser ${input.file}`,
+      fix: `bun build --target browser ${quoteArg(input.file)}`,
     });
   }
 }
@@ -450,10 +450,11 @@ export class PortInvalidError extends UltimateError {
   /** `name` so the scrape port reports itself; the code stays one, because the fault is one. */
   constructor(input: { value: string; name?: string }) {
     const name = input.name ?? 'PORT';
+    const example = quoteArg(`${name}=${name === 'PORT' ? 3000 : 9090}`);
     super({
       code: 'X_PORT_INVALID',
       cause: `${name}="${input.value}" is not a TCP port number between 0 and 65535`,
-      fix: `docker run -e ${name}=${name === 'PORT' ? 3000 : 9090} my-app:latest`,
+      fix: `docker run -e ${example} my-app:latest`,
     });
   }
 }

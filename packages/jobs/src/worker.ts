@@ -333,6 +333,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     if (shutdown === undefined) return;
     budget.bind(shutdown.deadlineAt);
     if (cutoff !== undefined) return;
+    // info: lifecycle — once per shutdown signal, naming the deadline the in-flight jobs now race.
     logger.info('jobs.worker.drain-signalled', {
       workerId,
       signal: shutdown.signal,
@@ -348,6 +349,7 @@ export function jobWorker(options: WorkerOptions): Worker {
   };
 
   const teardown = async (reason: string): Promise<void> => {
+    // info: lifecycle — once per worker stop, with what it still holds.
     logger.info('jobs.worker.draining', { workerId, reason, inFlight: inFlight.size });
     try {
       // Stop claiming, finish what we hold, then close. Anything else re-runs work on deploy.
@@ -442,6 +444,7 @@ export function jobWorker(options: WorkerOptions): Worker {
       assertConcurrencyEnforceable(options.driver);
       state = 'running';
       cap.revive();
+      // info: lifecycle — once per worker boot, naming the queues it claims from.
       logger.info('jobs.worker.started', { workerId, queues });
       reportUnregisteredQueues(workerId, queues);
       registration = startWorkerRegistry({

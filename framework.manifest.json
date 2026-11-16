@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "7159adc5e3ea5019b11b2ae5c275707d6b53bece8075c383189f4bd7381081fd",
+  "buildId": "d39b967cd06dfdb10971958bd593c0ccddcdad0b56b66df2790d2518ce626203",
   "tiers": {
     "0": [
       "core",
@@ -4233,6 +4233,11 @@
       "code": "X_PLAN_STATUS_INVALID",
       "owner": "scripts",
       "at": "scripts/plan-status.ts"
+    },
+    {
+      "code": "X_PLAN_STATUS_UNDATED",
+      "owner": "scripts",
+      "at": "scripts/lib/plan-tracker-dated.ts"
     },
     {
       "code": "X_PLAN_STATUS_UNSCANNED",
