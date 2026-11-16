@@ -118,6 +118,16 @@ describe('bindFreePorts', () => {
     }
   });
 
+  test('a count or attempts that is no whole number is refused before any port is asked', async () => {
+    for (const options of [{ count: Number.NaN }, { attempts: 0 }, { count: 1.5 }]) {
+      const outcome = await bindFreePorts(() => 'bound', {
+        ...options,
+        listen: scripted([]),
+      }).catch((error: unknown) => error);
+      expect(outcome).toBeUltimateError('X_INVARIANT');
+    }
+  });
+
   test('a pair hands out a port whose neighbour binds too', async () => {
     const [web, sync] = await bindFreePorts(
       ([port = 0]) => [

@@ -8,7 +8,7 @@ import { existsSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import type { TrackedChild } from './temp-tree';
-import { TEMP_TREE_GIT_ENV, tempTree } from './temp-tree';
+import { IN_PACKAGE_TEMP_ROOT, TEMP_TREE_GIT_ENV, tempTree } from './temp-tree';
 
 /** The residue test's own cleanup: the tree it made survive is still the file's to remove. */
 const tempTreeRemoved = (path: string): void => {
@@ -68,7 +68,20 @@ describe('tempTree', () => {
       }),
     );
     expect((await new Response(child.stdout).text()).trim()).toBe('false');
-    expect(tree.gitEnv).toBe(TEMP_TREE_GIT_ENV);
+    expect(tree.gitEnv).toEqual(TEMP_TREE_GIT_ENV);
+  });
+
+  test('inPackage makes the tree under the package’s ignored .x/fixtures, and git stops there', async () => {
+    const pkg = join(import.meta.dir, '..');
+    await using tree = tempTree('ultimate-temp-tree-', { inPackage: pkg });
+    expect(tree.path.startsWith(join(pkg, IN_PACKAGE_TEMP_ROOT, 'ultimate-temp-tree-'))).toBe(true);
+    // No repository of its own: the checkout around it must not answer for it.
+    expect((await tree.git(['rev-parse', '--show-toplevel'])).code).not.toBe(0);
+    const ignored = Bun.spawnSync(['git', 'check-ignore', '-q', tree.path], {
+      cwd: pkg,
+      timeout: 30_000,
+    });
+    expect(ignored.exitCode).toBe(0);
   });
 
   test('dispose() removes nothing until every tracked child has exited', async () => {

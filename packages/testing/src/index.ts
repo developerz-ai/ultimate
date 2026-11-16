@@ -448,9 +448,21 @@ export { subjectProof } from './subject-proof';
 export type { SwappableAdapters, SwappablePort } from './swap-adapter';
 export { swapAdapter, UNSWAPPED } from './swap-adapter';
 // A temp tree with one owner: its git runs no background work, and `dispose()` awaits every child
-// before it removes anything (`scripts/temp-tree-git.ts` refuses a bare `mkdtemp` beside git).
-export type { TempTree, TempTreeGitResult, TempTreeOptions, TrackedChild } from './temp-tree';
-export { TEMP_TREE_GIT_ENV, TEMP_TREE_GIT_TIMEOUT_MS, tempTree } from './temp-tree';
+// before it removes anything (`scripts/temp-tree.ts` refuses a bare `mkdtemp` beside git).
+export type {
+  TempTree,
+  TempTreeGitResult,
+  TempTreeOptions,
+  TempTrees,
+  TrackedChild,
+} from './temp-tree';
+export {
+  IN_PACKAGE_TEMP_ROOT,
+  TEMP_TREE_GIT_ENV,
+  TEMP_TREE_GIT_TIMEOUT_MS,
+  tempTree,
+  tempTrees,
+} from './temp-tree';
 export { TempTreeLeftError } from './temp-tree-error';
 export type {
   DisposableWorkerDatabase,

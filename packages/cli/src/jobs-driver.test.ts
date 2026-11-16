@@ -2,8 +2,6 @@
 // breaks either is one that talks to the wrong database or leaves the next command locked out.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
 // why: `node:path` — Bun ships no path joiner, and the boundary assertion below reads this module's
 // own source off disk rather than trusting an import graph a bundler could have rewritten.
 import { join } from 'node:path';
@@ -11,6 +9,7 @@ import { ambientClock, installSecrets, isUltimateError } from '@ultimat3/core';
 import type { JobDriver } from '@ultimat3/jobs';
 import { memoryJobDriver } from '@ultimat3/jobs';
 import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
+import { tempTrees } from '@ultimat3/testing';
 import { REQUIRED_BUN } from './app-root';
 import type { CommandContext } from './command';
 import { withJobDriver } from './jobs-driver';
@@ -72,8 +71,7 @@ describe('unit · withJobDriver', () => {
   // A KMS-keyed app's `x jobs` must ask ITS secret source, on ITS clock: the boot ports are
   // `runtime.ts`'s on every path that reads it, not only `startServices`'.
   test('a booted queue honours runtime.ts: its secret source and clock, released after', async () => {
-    const root = mkdtempSync(join(import.meta.dir, '..', '.boot-fixture-'));
-    dirs.push(root);
+    const root = trees.make('boot-fixture-');
     await Bun.write(
       join(root, 'apps/web/runtime.ts'),
       `import { frozenClock } from '@ultimat3/core';
@@ -102,7 +100,6 @@ export const runtime = {
   }, 60_000);
 });
 
-const dirs: string[] = [];
-afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+// Under this package's ignored `.x/fixtures/`: a child resolves `@ultimat3/*` from the workspace.
+const trees = tempTrees({ inPackage: join(import.meta.dir, '..') });
+afterAll(() => trees.dispose());

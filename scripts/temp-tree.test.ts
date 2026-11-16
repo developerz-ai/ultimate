@@ -1,25 +1,20 @@
-// The unowned tree first — a bare `mkdtemp` in a file that runs git — then what must never be one:
-// a tree with no git, git in prose, the helper's own file, a shipped module. Then the ratchet's
+// The unowned tree first — a bare `mkdtemp` in a file that runs git, or inside the checkout — then
+// what must never be one: a temp-root tree with no git, git in prose, the helper's file, a shipped module. Then the ratchet's
 // answers, and the tree itself: this file is the build error the gate's `unit` step runs.
 
 import { describe, expect, test } from 'bun:test';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
-import {
-  checkTempTreeGit,
-  scanTempTreeGit,
-  tempTreeGitFindingFor,
-  tempTreeGitGaps,
-} from './temp-tree-git';
+import { checkTempTrees, scanTempTrees, tempTreeFindingFor, tempTreeGaps } from './temp-tree';
 
 const TEST = 'packages/x/src/a.test.ts';
-const scan = (lines: readonly string[], path = TEST) => scanTempTreeGit(path, lines.join('\n'));
+const scan = (lines: readonly string[], path = TEST) => scanTempTrees(path, lines.join('\n'));
 
 const MAKE = "const dir = mkdtempSync(join(tmpdir(), 'x-'));";
 
-describe('scanTempTreeGit', () => {
+describe('scanTempTrees', () => {
   test('a bare mkdtemp in a file that spawns git is a site, by the mkdtemp’s line', () => {
     expect(scan([MAKE, "await exec(['git', 'commit', '-qm', 'one'], { cwd: dir });"])).toEqual([
-      { path: TEST, line: 1 },
+      { path: TEST, line: 1, form: 'git' },
     ]);
   });
 
@@ -36,6 +31,20 @@ describe('scanTempTreeGit', () => {
     expect(scan([MAKE, 'await sh(`git init -q && git add -A`);'])).toHaveLength(1);
     expect(scan([MAKE, 'await Bun.$`git status`;'])).toHaveLength(1);
     expect(scan([MAKE, MAKE, "Bun.spawnSync(['git', 'init'], { cwd: dir });"])).toHaveLength(2);
+  });
+
+  test('a tree made off the module’s own directory is in-repo, git or no git', () => {
+    const found = scan([
+      "const a = mkdtempSync(join(import.meta.dir, '..', '.mcp-runtime-fixture-'));",
+      "const b = await mkdtemp(join(import.meta.dirname, '.e2e-locale-'));",
+      "const c = mkdtempSync(join(__dirname, 'x-'));",
+      "const d = mkdtempSync(join(tmpdir(), 'x-'));",
+    ]);
+    expect(found.map((site) => [site.line, site.form])).toEqual([
+      [1, 'in-repo'],
+      [2, 'in-repo'],
+      [3, 'in-repo'],
+    ]);
   });
 
   test('no git, git in prose, or git in a fix string is not a site', () => {
@@ -60,33 +69,33 @@ describe('the ratchet', () => {
   const files = [{ path: TEST, text: [MAKE, "Bun.spawn(['git', 'init']);"].join('\n') }];
 
   test('a site over its package’s pin is X_TEST_TEMP_TREE_UNOWNED, naming the site and the helper', () => {
-    const [gap, ...rest] = checkTempTreeGit({ files, pins: {} });
+    const [gap, ...rest] = checkTempTrees({ files, pins: {} });
     expect(rest).toEqual([]);
     if (gap === undefined) return expect.unreachable('an unowned tree over a zero pin is a gap');
-    const finding = tempTreeGitFindingFor(gap);
+    const finding = tempTreeFindingFor(gap);
     expect(finding.code).toBe('X_TEST_TEMP_TREE_UNOWNED');
-    expect(finding.cause).toContain(`${TEST}:1`);
-    expect(finding.fix.startsWith("tempTree('<prefix>-')")).toBe(true);
+    expect(finding.cause).toContain(`${TEST}:1 (git)`);
+    expect(finding.fix.startsWith("tempTree('<prefix>-', { inPackage:")).toBe(true);
   });
 
   test('a pin above what the tree holds is stale, and the fix lowers it', () => {
-    const [gap] = checkTempTreeGit({ files, pins: { x: 2 } });
+    const [gap] = checkTempTrees({ files, pins: { x: 2 } });
     if (gap === undefined) return expect.unreachable('a pin above the tree is a gap');
-    const finding = tempTreeGitFindingFor(gap);
+    const finding = tempTreeFindingFor(gap);
     expect(finding.code).toBe('X_TEST_TEMP_TREE_PIN_STALE');
-    expect(finding.fix).toBe('bun run scripts/temp-tree-git.ts --unpin x');
+    expect(finding.fix).toBe('bun run scripts/temp-tree.ts --unpin x');
   });
 
   test('a pin the tree meets exactly is no gap; nothing read is never a clean tree', () => {
-    expect(checkTempTreeGit({ files, pins: { x: 1 } })).toEqual([]);
-    expect(checkTempTreeGit({ files: [], pins: {} })[0]?.kind).toBe('unscanned');
+    expect(checkTempTrees({ files, pins: { x: 1 } })).toEqual([]);
+    expect(checkTempTrees({ files: [], pins: {} })[0]?.kind).toBe('unscanned');
   });
 });
 
 test(
   'the tree holds no unowned temp tree beside git above its pins',
   async () => {
-    expect((await tempTreeGitGaps(repoRoot())).map(tempTreeGitFindingFor)).toEqual([]);
+    expect((await tempTreeGaps(repoRoot())).map(tempTreeFindingFor)).toEqual([]);
   },
   REPO_SCAN_TIMEOUT_MS,
 );

@@ -2,6 +2,7 @@
 // and the bind, ask again. A port asked of the OS and released is a promise nothing keeps: the
 // probe-then-bind race lost on CI more than once (`092c7cd38`, `3ea39eebb`). The bind is the proof.
 
+import { finiteCount } from '@ultimat3/core';
 import type { PortProbe } from './free-port';
 import { freePortApartFrom, freePortPair } from './free-port';
 
@@ -79,11 +80,18 @@ export async function bindFreePorts<T>(
   bind: (ports: readonly number[]) => T | Promise<T>,
   options: BindFreePortsOptions = {},
 ): Promise<T> {
-  const attempts = options.attempts ?? PORT_BIND_ATTEMPTS;
+  // A `NaN` attempts is a bind never retried, a `NaN` count is no port at all: both are refused.
+  const attempts = finiteCount(
+    'bindFreePorts',
+    'attempts',
+    options.attempts ?? PORT_BIND_ATTEMPTS,
+    1,
+  );
+  const count = finiteCount('bindFreePorts', 'count', options.count ?? 1, 1);
   const clashed = options.clashed ?? isPortClash;
   const tried: number[] = [...(options.apart ?? [])];
   for (let attempt = 1; ; attempt += 1) {
-    const ports = portsFor(options.count ?? 1, options.pair ?? false, tried, options.listen);
+    const ports = portsFor(count, options.pair ?? false, tried, options.listen);
     try {
       return await bind(ports);
     } catch (failure) {

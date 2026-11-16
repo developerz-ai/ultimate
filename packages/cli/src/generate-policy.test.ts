@@ -4,33 +4,27 @@
 // collision prints a fix that runs and overwrites nothing.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-// why: Bun has no recursive remove.
-import { rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { tempTrees } from '@ultimat3/testing';
 import { REQUIRED_BUN } from './app-root';
 import { generate, generateCommand } from './cmd-generate';
 import type { CommandContext } from './command';
 import { exec } from './exec';
 import { parseArgs } from './parse';
 import { ROLES_FILE } from './permission-grants';
-import { processRoot } from './process-root-fixture';
 import { SPECS } from './registry';
 import { rolesFiles } from './templates/scaffold-roles';
 
 /**
- * Inside this package, so a child process resolves `@ultimat3/*` from its `node_modules` — and
- * under `packages/cli/.policy-append-fixture/`, which `.gitignore` names (a `mkdtemp` suffix it does
- * not, and the trees were swept into a commit), as this process's own `run-<pid>` root.
+ * Inside this package, so a child process resolves `@ultimat3/*` from its `node_modules` — under its
+ * ignored `.x/fixtures/` (a `.policy-append-fixture-XXXXXX/` beside `src/` was swept into a commit).
  */
-const BASE = processRoot(join(import.meta.dir, '..', '.policy-append-fixture'));
-let runs = 0;
+const trees = tempTrees({ inPackage: join(import.meta.dir, '..') });
 let root = '';
 const policyPath = 'apps/web/app/invoice/policy.ts';
 
-afterAll(() => {
-  rmSync(BASE, { recursive: true, force: true });
-});
+afterAll(() => trees.dispose());
 
 const contextFor = (argv: readonly string[]): CommandContext => ({
   args: parseArgs(argv, SPECS),
@@ -44,9 +38,7 @@ const run = (argv: readonly string[]) => generateCommand.run(contextFor(argv));
 
 /** A fresh app per test, under this process's own root. */
 beforeEach(async () => {
-  runs += 1;
-  root = join(BASE, `app-${String(runs)}`);
-  rmSync(root, { recursive: true, force: true });
+  root = trees.make('policy-append-');
   await Bun.write(join(root, 'app.config.ts'), 'export default {};\n');
   // The scaffold's role map, so a run's grants land somewhere and the run can be `ok`.
   for (const file of [...rolesFiles(), ...generate({ kind: 'policy', name: 'invoice' })]) {

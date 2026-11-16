@@ -2,20 +2,18 @@
 // the path printed so it can be trusted — and a second run serving the same cached certificate.
 
 import { afterAll, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { resetLifecycle } from '@ultimat3/core';
+import { tempTrees } from '@ultimat3/testing';
 import { devCommand } from './cmd-dev';
 import { devSpec } from './cmd-dev-spec';
 import type { Runner } from './exec';
 import { parseArgs } from './parse';
 
-const dirs: string[] = [];
-afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+// Under this package's ignored `.x/fixtures/`: a child resolves `@ultimat3/*` from the workspace.
+const trees = tempTrees({ inPackage: join(import.meta.dir, '..') });
+afterAll(() => trees.dispose());
 
 const noRunner: Runner = async (command) => ({
   command,
@@ -43,8 +41,7 @@ const runOnce = async (root: string) => {
 
 test('x dev --tls serves https with a cached local certificate and names where it is', async () => {
   // Inside this package, so the fixture's `@ultimat3/*` imports resolve.
-  const root = mkdtempSync(join(import.meta.dir, '..', '.dev-tls-cmd-fixture-'));
-  dirs.push(root);
+  const root = trees.make('dev-tls-cmd-fixture-');
   await Bun.write(
     join(root, 'package.json'),
     JSON.stringify({ name: 'dev-tls', version: '1.0.0' }),

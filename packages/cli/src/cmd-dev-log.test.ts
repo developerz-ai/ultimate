@@ -2,20 +2,18 @@
 // file, and before this the only way to get one was a shell redirect nobody knew to type.
 
 import { afterAll, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { logger } from '@ultimat3/core';
+import { tempTrees } from '@ultimat3/testing';
 import { devCommand } from './cmd-dev';
 import { devSpec } from './cmd-dev-spec';
 import type { Runner } from './exec';
 import { parseArgs } from './parse';
 
-const dirs: string[] = [];
-afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+// Under this package's ignored `.x/fixtures/`: a child resolves `@ultimat3/*` from the workspace.
+const trees = tempTrees({ inPackage: join(import.meta.dir, '..') });
+afterAll(() => trees.dispose());
 
 const noRunner: Runner = async (command) => ({
   command,
@@ -28,8 +26,7 @@ const noRunner: Runner = async (command) => ({
 
 test('x dev --once tees the process log into .x/dev.log, and stops teeing when it stops', async () => {
   // Inside this package, so the fixture's `@ultimat3/*` imports resolve.
-  const root = mkdtempSync(join(import.meta.dir, '..', '.dev-log-cmd-fixture-'));
-  dirs.push(root);
+  const root = trees.make('dev-log-cmd-fixture-');
   await Bun.write(
     join(root, 'package.json'),
     JSON.stringify({ name: 'dev-log', version: '1.0.0' }),
