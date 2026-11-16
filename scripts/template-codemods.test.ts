@@ -213,7 +213,11 @@ describe('the template-codemod rule, on this repo', () => {
     const outcome = await templateCodemodFindings(root);
     expect(outcome.findings).toEqual([]);
     if (outcome.notice !== undefined) return;
+    // Non-vacuity without assuming a template moved: right after a release none has, and the
+    // rows answer for nothing — then the bare tree must be green too, not red by accident.
     const bare = await templateCodemodFindings(root, { rows: [] });
-    expect(bare.findings.length).toBeGreaterThan(0);
+    const judged = outcome.judged ?? [];
+    expect(bare.findings.map((finding) => finding.at)).toEqual(expect.arrayContaining(judged));
+    expect(bare.findings.length).toBeGreaterThanOrEqual(judged.length);
   });
 });

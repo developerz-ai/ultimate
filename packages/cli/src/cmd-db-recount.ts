@@ -6,14 +6,11 @@
 import { finiteCount } from '@ultimat3/core';
 import type { CounterDescriptionLike, DbClient } from '@ultimat3/db';
 import {
-  baseClient,
   CROSS_TENANT_SETTING,
-  dbClientInstalled,
   recountBatchSql,
   recountDriftBatchSql,
   recountLockSql,
   recountWindowSql,
-  setDbClient,
   setLocal,
   withTransaction,
 } from '@ultimat3/db';
@@ -21,6 +18,7 @@ import { countersOf, describeCounter, getEntity } from '@ultimat3/entity';
 import { loadApp } from './app-load';
 import { loadAppRuntime } from './app-runtime';
 import type { CommandContext } from './command';
+import { withOpenedDb } from './db-client-displace';
 import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
 import { BadFlagError } from './errors';
 import { msg } from './messages';
@@ -156,44 +154,41 @@ async function recount(ctx: CommandContext, root: string): Promise<CommandResult
       });
     }
   }
-  // `startDb` installs its client as the process's `db()`, and this command closes it: what was
-  // there before goes back (`undefined`: lazy construction), as `db-diagnostics.ts` does.
-  const previous = dbClientInstalled() ? baseClient() : undefined;
-  const started = startDb(services, ctx.env);
-  try {
-    const report = await recountInBatches(started.client, parent.$table, counter, { write });
-    const drift = report.rows;
-    return {
-      ok: findings.length === 0 && (write || report.drifted === 0),
-      command: 'db',
-      summary: msg(write ? 'cli.db.recount.repaired' : 'cli.db.recount.drift', {
-        target,
-        count: report.drifted,
-      }),
-      findings: [
-        ...findings,
-        ...(write || report.drifted === 0
-          ? []
-          : [
-              {
-                code: 'X_LIFECYCLE_TRIGGER_MISSING',
-                cause: `${report.drifted} row(s) of ${parent.$table} hold a ${counter.column} that is not the count of ${counter.table} rows pointing at them`,
-                fix: `x db recount ${quoteArg(target)} --write --json`,
-              },
-            ]),
-      ],
-      lines: drift.map((row) => `  ${row.key}  stored ${row.stored}  actual ${row.actual}`),
-      data: {
-        target,
-        write,
-        drifted: report.drifted,
-        batches: report.batches,
-        rows: drift.map((row) => ({ ...row })),
-      },
-    };
-  } finally {
-    setDbClient(previous);
-    await started.client.close();
-    await started.replica?.close();
-  }
+  // `startDb` installs its client as the process's `db()`; `withOpenedDb` puts back what was there
+  // (closing a lazy default it dropped) and closes both pools, as `db-diagnostics.ts` does.
+  return withOpenedDb(
+    () => startDb(services, ctx.env),
+    async (client) => {
+      const report = await recountInBatches(client, parent.$table, counter, { write });
+      const drift = report.rows;
+      return {
+        ok: findings.length === 0 && (write || report.drifted === 0),
+        command: 'db',
+        summary: msg(write ? 'cli.db.recount.repaired' : 'cli.db.recount.drift', {
+          target,
+          count: report.drifted,
+        }),
+        findings: [
+          ...findings,
+          ...(write || report.drifted === 0
+            ? []
+            : [
+                {
+                  code: 'X_LIFECYCLE_TRIGGER_MISSING',
+                  cause: `${report.drifted} row(s) of ${parent.$table} hold a ${counter.column} that is not the count of ${counter.table} rows pointing at them`,
+                  fix: `x db recount ${quoteArg(target)} --write --json`,
+                },
+              ]),
+        ],
+        lines: drift.map((row) => `  ${row.key}  stored ${row.stored}  actual ${row.actual}`),
+        data: {
+          target,
+          write,
+          drifted: report.drifted,
+          batches: report.batches,
+          rows: drift.map((row) => ({ ...row })),
+        },
+      };
+    },
+  );
 }

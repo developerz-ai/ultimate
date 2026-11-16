@@ -79,6 +79,7 @@ export function reportAppMigrationsAhead(unknown: readonly string[]): void {
   logger.warn('ultimate app migrations ahead', {
     migrations: unknown.length,
     cause: `the database holds ${String(unknown.length)} migration(s) this build does not ship — ${named(unknown)}: a newer release migrated and this one is mid-rollout or rolled back`,
-    fix: 'x db migrate --json',
+    // The read that lists them beside the framework stamp, and writes nothing.
+    fix: 'x db status --json',
   });
 }

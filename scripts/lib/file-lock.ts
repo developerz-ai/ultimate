@@ -4,6 +4,7 @@
 
 // why: `'wx'` is the exclusive-create flag; Bun ships no primitive that fails when the file exists.
 import { closeSync, openSync, readFileSync, unlinkSync, writeSync } from 'node:fs';
+import { ScriptError } from './script-error';
 
 export interface LockDeps {
   readonly pid: number;
@@ -59,6 +60,15 @@ function tryCreate(path: string, pid: number): boolean {
  * crashed run never wedges the next one. The release removes the file only while it is still ours.
  */
 export async function acquireLock(path: string, deps: LockDeps): Promise<() => void> {
+  // `??` lets NaN through, and `sleep(NaN)` is a zero wait: the poll would spin on the lock file.
+  const pollMs = deps.pollMs ?? 250;
+  if (!Number.isFinite(pollMs) || pollMs < 0) {
+    throw new ScriptError({
+      code: 'X_CLI_UNEXPECTED',
+      cause: `acquireLock was given pollMs ${String(pollMs)}, so its wait between tries would be no wait at all`,
+      fix: 'acquireLock(path, { ...deps, pollMs: 250 })   # a finite, non-negative number of milliseconds, or omit it',
+    });
+  }
   let told = false;
   for (;;) {
     if (tryCreate(path, deps.pid)) break;
@@ -73,7 +83,7 @@ export async function acquireLock(path: string, deps: LockDeps): Promise<() => v
     }
     if (!told) deps.onWait?.(holder);
     told = true;
-    await deps.sleep(deps.pollMs ?? 250);
+    await deps.sleep(pollMs);
   }
   return () => {
     if (holderOf(path) !== deps.pid) return;

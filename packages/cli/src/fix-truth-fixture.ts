@@ -1,12 +1,11 @@
 // The scaffold `fix-truth.test.ts` breaks, on disk and in git, with `x` on PATH as a real command, so
 // a printed `fix:` runs exactly as a reader pastes it. One app per test file; a row leaves it clean.
 
-// why: Bun has no symlink API, temp-directory API, directory listing or recursive remove.
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
-// why: Bun exposes no tmpdir().
-import { tmpdir } from 'node:os';
+// why: Bun has no symlink API, existence check for a directory, or directory listing.
+import { existsSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs';
 // why: Bun ships no path helpers.
 import { delimiter, dirname, join } from 'node:path';
+import { tempTree } from '@ultimat3/testing';
 import { planNewApp } from './cmd-new';
 import { FIXTURE_APP } from './scaffold-fixture';
 import { DIR_LINK, workspaceRoot, workspaceTsc } from './scaffold-typecheck-fixture';
@@ -28,7 +27,8 @@ export interface FixtureApp {
   typeErrors(): Promise<readonly string[]>;
   /** Back to the commit: what a row broke, and what its fix wrote, are gone. */
   reset(): Promise<void>;
-  remove(): void;
+  /** Once every line `sh` ran has exited: the tree's own `dispose()`, which proves it is gone. */
+  remove(): Promise<void>;
 }
 
 const BIN = join(import.meta.dir, 'bin.ts');
@@ -72,7 +72,10 @@ const SH_TIMEOUT_MS = 170_000;
 
 /** `x new`, committed. No generator on top: the load is the cost here, and each costs one. */
 export async function fixtureApp(): Promise<FixtureApp> {
-  const root = mkdtempSync(join(tmpdir(), 'x-fix-truth-'));
+  // One owner: the tree awaits every line `sh` ran before it removes anything, and its git runs no
+  // background maintenance that would still be writing in `.git` by then.
+  const tree = tempTree('x-fix-truth-');
+  const root = tree.path;
   for (const file of planNewApp({ name: FIXTURE_APP, example: true })) {
     await Bun.write(join(root, file.path), file.contents);
   }
@@ -80,7 +83,7 @@ export async function fixtureApp(): Promise<FixtureApp> {
   const shims = join(root, '.shims');
   await Bun.write(join(shims, 'x'), `#!/bin/sh\nexec bun ${JSON.stringify(BIN)} "$@"\n`);
   const env = {
-    ...Bun.env,
+    ...tree.gitEnv,
     PATH: `${shims}${delimiter}${Bun.env['PATH'] ?? ''}`,
     // Whatever shell ran the suite, the app under test names its own environment or none.
     ULTIMATE_ENV: 'development',
@@ -88,13 +91,8 @@ export async function fixtureApp(): Promise<FixtureApp> {
   const sh = async (line: string): Promise<ShellResult> => {
     // Under the slowest suite's whole budget (`db-fix-truth.job.test.ts`, 300 s): a printed fix
     // that hangs is killed and answers its exit code, rather than holding the worker past it.
-    const child = Bun.spawn(['sh', '-c', line], {
-      cwd: root,
-      env,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: SH_TIMEOUT_MS,
-    });
+    // Its own process group: a fix line's `bun x …` grandchild is ended with it at `remove()`.
+    const child = tree.spawn(['sh', '-c', line], { env, timeout: SH_TIMEOUT_MS });
     const [stdout, stderr] = await Promise.all([
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
@@ -115,6 +113,6 @@ export async function fixtureApp(): Promise<FixtureApp> {
     reset: async () => {
       await sh(`${GIT} checkout -q -- . && git clean -fdq`);
     },
-    remove: () => rmSync(root, { recursive: true, force: true }),
+    remove: () => tree.dispose(),
   };
 }

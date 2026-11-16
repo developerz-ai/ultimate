@@ -5,10 +5,22 @@ pre-commit:
       stage_fixed: true
       skip: [merge, rebase]
 
+# What CI's `gate (static)` and `windows` reds were, asked before the push: lint on the files the
+# push carries (an unused import reached the 31.28.0 release PR), the test programs `tsc -b` never
+# reads (`test-typecheck-gate`, red in CI twice in sweep 6), the build typecheck and the tiers.
+# Parallel: the two `tsc` programs share no output (`tsconfig.tests.json` is noEmit), and the push
+# waits for the slowest one rather than their sum.
 pre-push:
+  parallel: true
   commands:
+    biome:
+      run: bunx @biomejs/biome check --no-errors-on-unmatched --files-ignore-unknown=true {push_files}
+      skip: [merge, rebase]
     typecheck:
       run: bun run typecheck
+      skip: [merge, rebase]
+    test-typecheck:
+      run: bun run scripts/test-typecheck-gate.ts
       skip: [merge, rebase]
     boundaries:
       run: bun run boundaries

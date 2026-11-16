@@ -143,9 +143,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // The path, not `x dev`: the boot has already refused and rerunning it refuses again. The
   // error's own `fix:` carries the resolved `.x/dev.lock`; this table cannot know the state dir.
   X_DEV_LOCK_UNREADABLE: 'rm .x/dev.lock   # then: x dev --json',
-  // Not `x db status`: there is no such subcommand (`x db` is gen, migrate, reset, studio, branch),
-  // so the fix answered a failed step with X_CLI_UNKNOWN_COMMAND. `x doctor` is what reports
-  // reachability and drift, and is already this table's answer for X_DB_STUDIO_FAILED.
+  // `x doctor`, not `x db status`: generation failing is a reachability question, and `x db status`
+  // reads the migration ledger only. `x doctor` is already this table's answer for
+  // X_DB_STUDIO_FAILED.
   X_DB_GEN_FAILED: 'x doctor --json   # cause carries the Postgres error verbatim',
   // Both directions resolve through the same command, and the CAUSE is what differs: one names a
   // declaration the migrations never carried, the other one they carry and nothing declares. The

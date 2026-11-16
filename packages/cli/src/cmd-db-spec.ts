@@ -13,13 +13,14 @@ export const DB_SUBCOMMANDS = [
   'backfill',
   'diagnostics',
   'recount',
+  'status',
 ] as const;
 
 export const dbSpec: CommandSpec = {
   name: 'db',
-  summary: 'gen, migrate, reset, seed, branch, backfill, diagnostics, recount',
+  summary: 'gen, migrate, reset, seed, branch, backfill, diagnostics, recount, status',
   usage:
-    'x db gen "add publish_at" [--drop-redundant] | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | seed --generate [--rows n] [--seed n] [--dry-run] | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n] | recount <entity>.<column> [--write]',
+    'x db gen "add publish_at" [--drop-redundant] | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | seed --generate [--rows n] [--seed n] [--dry-run] | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n] | recount <entity>.<column> [--write] | status',
   requiresApp: true,
   subcommands: DB_SUBCOMMANDS,
   // Declared from the constant `runBranchCommand` validates against, never a second literal: it

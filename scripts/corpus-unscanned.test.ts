@@ -11,6 +11,7 @@ import { chmod, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { busPublishFindings } from './bus-subscribed';
 import { carriedKeySites } from './catalog-keys';
 import { catchRenderFindings } from './catch-render';
 import { configReaderInput } from './config-readers';
@@ -18,15 +19,18 @@ import { deadHostFindings } from './dead-docs-host';
 import { declarationReaderInput } from './declaration-readers';
 import { throwerInput } from './declaration-readers-callers';
 import { errorRendering } from './error-render';
+import { fetchSites } from './fetch-deadline';
 import { finiteBoundFindings } from './finite-bounds';
 import { fixShellArgFindings } from './fix-shell-arg';
 import { flightCopyFindings } from './flight-copies';
 import { frameworkEnvCheck } from './framework-env';
 import { frozenRecordReport } from './frozen-records';
+import { launchDeadlineFindings } from './launch-deadline';
 import { CORPUS_FLOORS, corpus } from './lib/corpus';
 import { scanFrameworkCatalogSources } from './lib/i18n-scan';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { nodeImportFindings } from './node-imports';
+import { portProbeFindings } from './port-probe';
 import { relativeSites } from './posix-relative';
 import { probeDatabaseScan } from './probe-databases';
 import { protoIndexFindings } from './proto-index';
@@ -34,8 +38,10 @@ import { vocabularyFindings } from './render-modes';
 import { secretCompareFindings } from './secret-compare';
 import { sourceHeaderFindings } from './source-headers';
 import { spawnSites } from './spawn-timeout';
+import { tempTreeFindings } from './temp-tree';
 import { bareErrorFindings } from './test-bare-error';
 import { testFixFindings } from './test-fix-citations';
+import { mockBuiltinFindings } from './test-mock-builtin';
 import { realSleepFindings } from './test-real-sleep';
 import { urlPathnameFindings } from './url-pathname';
 import { tierBoundaries } from './verify';
@@ -50,6 +56,7 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['declaration-readers', declarationReaderInput],
   ['declaration-readers-callers', throwerInput],
   ['error-render', errorRendering],
+  ['fetch-deadline', fetchSites],
   ['finite-bounds', finiteBoundFindings],
   ['fix-shell-arg', fixShellArgFindings],
   ['flight-copies', flightCopyFindings],
@@ -64,10 +71,15 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['spawn-timeout', spawnSites],
   ['test-bare-error', bareErrorFindings],
   ['test-real-sleep', realSleepFindings],
+  ['bus-subscribed', busPublishFindings],
+  ['launch-deadline', launchDeadlineFindings],
+  ['test-mock-builtin', mockBuiltinFindings],
   ['test-fix-citations', testFixFindings],
   ['url-pathname', urlPathnameFindings],
   ['posix-relative', relativeSites],
   ['probe-databases', probeDatabaseScan],
+  ['port-probe', portProbeFindings],
+  ['temp-tree', tempTreeFindings],
 ];
 
 const codeOf = async (run: () => Promise<unknown>): Promise<string> => {

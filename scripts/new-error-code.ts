@@ -10,6 +10,10 @@
 //     --cause 'what usually makes it happen' --fix 'x … or an edit naming a file' \
 //     [--status <n> | --off-socket] [--browser | --server-only] [--section '<## heading>']
 //     [--dry-run] [--json]
+//   bun run scripts/new-error-code.ts X_FOO_BAR --script scripts/<file>.ts --title … --cause … --fix …
+//
+// `--script <file>`: a code a repo script owns — the never-ships list entry and the row on the page,
+// nothing else (`new-error-code-script.ts`).
 //
 // `--status`/`--off-socket`: exactly one for a tier <= 4 package, neither above it (below).
 // `--browser`/`--server-only`: exactly one where the package keeps `error-titles-server.ts`
@@ -46,6 +50,8 @@ import { snapshotReader, writePlanned } from './lib/planned-writes';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { tierOf } from './lib/tiers';
+import { newErrorCodeHelp, wantsHelp } from './new-error-code-help';
+import { PACKAGE_ONLY_FLAGS, planScriptCode } from './new-error-code-script';
 
 const SCRIPT = 'new-error-code';
 export const WIKI_PAGE = 'wiki/Error-Codes.md';
@@ -283,6 +289,12 @@ async function planFrom(
 }
 
 /** Every flag this script reads. Anything else is refused: a misspelt `--dry-run` used to write. */
+/** The full command, in the form the caller is using: a package code or a script code. */
+const rerunFor = (script: boolean): string =>
+  script
+    ? "bun run scripts/new-error-code.ts X_SCRIPT_WHAT_FAILED --script scripts/<file>.ts --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>'"
+    : "bun run scripts/new-error-code.ts X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>'";
+
 const KNOWN: KnownFlags = {
   names: [
     'package',
@@ -295,19 +307,21 @@ const KNOWN: KnownFlags = {
     'server-only',
     'section',
     'dry-run',
+    'script',
   ],
-  refuse: (unknown) =>
+  refuse: (unknown, flags) =>
     new ScriptError({
       code: 'X_NEW_ERROR_CODE_INVALID',
       cause: `unknown flag(s): ${unknown.map((name) => `--${name}`).join(', ')} — refused rather than ignored, so nothing was written (known: ${KNOWN.names.map((name) => `--${name}`).join(' ')} --json)`,
-      fix: "bun run scripts/new-error-code.ts X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>' [--dry-run]",
+      fix: `${rerunFor(flags.has('script'))} [--dry-run]`,
     }),
 };
 
 export function inputFrom(argv: readonly string[]): NewErrorCode {
   const args = parseScriptArgs(argv, KNOWN);
   const [code] = args.positionals;
-  const pkg = flagString(args, 'package');
+  // A script code has no package: `scripts` stands in, the name `validateNewCode` speaks of.
+  const pkg = flagString(args, 'script') === undefined ? flagString(args, 'package') : 'scripts';
   const title = flagString(args, 'title');
   const fix = flagString(args, 'fix');
   const cause = flagString(args, 'cause');
@@ -320,9 +334,8 @@ export function inputFrom(argv: readonly string[]): NewErrorCode {
   ) {
     throw new ScriptError({
       code: 'X_NEW_ERROR_CODE_INVALID',
-      cause:
-        'a code, --package, --title, --cause and --fix are all required — the registration needs the title and the wiki row needs the cause and the fix',
-      fix: "bun run scripts/new-error-code.ts X_PKG_WHAT_FAILED --package <pkg> --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>'",
+      cause: `a code, ${pkg === 'scripts' ? '--script' : '--package'}, --title, --cause and --fix are all required — the wiki row needs the title, the cause and the fix`,
+      fix: rerunFor(pkg === 'scripts'),
     });
   }
   return {
@@ -332,6 +345,40 @@ export function inputFrom(argv: readonly string[]): NewErrorCode {
     cause,
     fix,
     section: flagString(args, 'section'),
+  };
+}
+
+/** `--script`: the page alone, planned and written all-or-nothing like every other edit. */
+async function newScriptCode(
+  root: string,
+  argv: readonly string[],
+  input: NewErrorCode,
+  script: string,
+  dryRun: boolean,
+  snapshot: Snapshot,
+) {
+  const flags = parseScriptArgs(argv).flags;
+  const beside = PACKAGE_ONLY_FLAGS.filter((name) => flags.has(name));
+  if (beside.length > 0) {
+    throw new ScriptError({
+      code: 'X_NEW_ERROR_CODE_INVALID',
+      cause: `--script names a code no package owns, so ${beside.map((name) => `--${name}`).join(', ')} beside it has nothing to apply to`,
+      fix: "bun run scripts/new-error-code.ts <CODE> --script scripts/<file>.ts --title '…' --cause '…' --fix '…'   # without --package, --status, --off-socket, --browser and --server-only",
+    });
+  }
+  const edit = await planScriptCode(root, input, script, WIKI_PAGE, snapshot);
+  const plan: PlannedEdit[] = [
+    { path: edit.path, added: addedLines(snapshot.get(edit.path) ?? '', edit.text) },
+  ];
+  if (!dryRun) await writePlanned(root, [edit], snapshot, changedUnderneath);
+  return {
+    input,
+    dryRun,
+    planned: plan,
+    written: dryRun ? [] : [edit.path],
+    errorsPath: script,
+    fixesPath: undefined,
+    statusPath: undefined,
   };
 }
 
@@ -363,6 +410,8 @@ export async function newErrorCode(root: string, argv: readonly string[]) {
   const input = inputFrom(argv);
   const dryRun = flagBool(parseScriptArgs(argv), 'dry-run');
   const snapshot: Snapshot = new Map();
+  const script = flagString(parseScriptArgs(argv), 'script');
+  if (script !== undefined) return newScriptCode(root, argv, input, script, dryRun, snapshot);
   const decision = statusDecision(input.pkg, argv);
   const split = await Bun.file(`${root}/${serverTitlesFile(input.pkg)}`).exists();
   const realm = titlesRealm(input.pkg, argv, split);
@@ -388,7 +437,9 @@ export async function newErrorCode(root: string, argv: readonly string[]) {
   };
 }
 
-if (import.meta.main) {
+if (import.meta.main && wantsHelp(Bun.argv.slice(2))) {
+  report(newErrorCodeHelp(SCRIPT), Bun.argv.includes('--json'));
+} else if (import.meta.main) {
   const argv = Bun.argv.slice(2);
   const json = parseScriptArgs(argv).json;
   try {
@@ -402,9 +453,12 @@ if (import.meta.main) {
       {
         ok: true,
         script: SCRIPT,
-        summary: result.dryRun
-          ? `dry run, nothing written: ${input.code} would be registered in ${result.errorsPath} and documented in ${WIKI_PAGE}${also}`
-          : `${input.code} registered in ${result.errorsPath} and documented in ${WIKI_PAGE}${also} — the throw site is yours`,
+        summary:
+          input.pkg === 'scripts'
+            ? `${result.dryRun ? 'dry run, nothing written: ' : ''}${input.code}, owned by ${result.errorsPath}, ${result.dryRun ? 'would be' : 'is'} in ${WIKI_PAGE}'s never-ships list with its row — the declaration in that script is yours`
+            : result.dryRun
+              ? `dry run, nothing written: ${input.code} would be registered in ${result.errorsPath} and documented in ${WIKI_PAGE}${also}`
+              : `${input.code} registered in ${result.errorsPath} and documented in ${WIKI_PAGE}${also} — the throw site is yours`,
         data: {
           code: input.code,
           dryRun: result.dryRun,

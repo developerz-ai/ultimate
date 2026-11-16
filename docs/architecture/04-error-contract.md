@@ -177,6 +177,14 @@ export class EntityError extends UltimateError {}
 The status is **not** declared here. `ERROR_STATUS` in `@ultimat3/http` is the one place a code
 becomes a status, for the reason the next section gives.
 
+**A code a repo script owns** never ships, so it has no package, no registration and no status:
+`bun run new-error-code X_SCRIPT_WHAT_FAILED --script scripts/<file>.ts --title '<one line>' --cause '<what usually makes it happen>' --fix '<command or edit>'`
+adds it to `wiki/Error-Codes.md`'s never-ships list (unless an `X_FAMILY_*` entry already covers
+it) and writes its row under `## CLI and verify` (`--section` overrides). `--package`, `--status`,
+`--off-socket`, `--browser` and `--server-only` beside it are refused. `scripts/gate-codes.ts`
+holds both halves: a code declared under `scripts/` and missing from the list, or listed with no
+row, is `X_GATE_CODE_UNDOCUMENTED`. `bun run new-error-code --help` prints both forms.
+
 ## Code → HTTP status
 
 `ERROR_STATUS` in [`packages/http/src/error-map.ts`](../../packages/http/src/error-map.ts) is the

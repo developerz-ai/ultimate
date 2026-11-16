@@ -144,6 +144,9 @@ describe('selectBus().start(), for a role that only publishes', () => {
       broker.drop();
       expect(busLabel(running.transport)).toBe('nats(connecting)');
       broker.restore();
+      // The recovery rides `onReconnect`, told once the server holds the re-sent subscriptions — a
+      // flush later, never on the restore's own tick (`nats-subscriptions.ts`).
+      await untilTurn(() => said().length === 2, 'the recovery is logged');
       expect(said()).toEqual([
         { bus: 'nats(up)', use: 'publish' },
         { bus: 'nats(up)', use: 'publish' },

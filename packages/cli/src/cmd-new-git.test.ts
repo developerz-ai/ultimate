@@ -6,12 +6,11 @@
 // the 500-line ceiling and this is a subject of its own, not a case of the ones there.
 
 import { describe, expect, test } from 'bun:test';
-// why: `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
+// why: Bun has no existence check for a directory.
+import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { tempTree } from '@ultimat3/testing';
 import { REQUIRED_BUN } from './app-root';
 import { initRepository, newCommand, repositoryFix, SKIPPED } from './cmd-new';
 import type { CommandContext } from './command';
@@ -88,34 +87,31 @@ describe('unit · x new · the repository it initializes', () => {
   // real path is green on a laptop with a `user.email` and red on a CI runner without one, so this
   // is the only way the two lines can be asserted verbatim anywhere.
   test('a commit that cannot run adds two report lines: the reason, then the commands', async () => {
-    const parent = mkdtempSync(join(tmpdir(), 'x-new-git-'));
-    try {
-      const runner: Runner = async (command) => ({
-        command,
-        code: command.includes('commit') ? 128 : 0,
-        ok: !command.includes('commit'),
-        stdout: '',
-        stderr: 'Author identity unknown',
-        durationMs: 0,
-      });
-      const written = await newCommand.run({
-        args: parseArgs(['new', 'unsigned-app', '--no-example'], SPECS),
-        cwd: parent,
-        runner,
-        env: {},
-        bunVersion: REQUIRED_BUN,
-      });
-      const target = join(parent, 'unsigned-app');
-      expect(written.ok).toBe(true);
-      // `.git` exists by then: "no repository" sent the reader to a `git init` already done, and
-      // the commit it then ran met the same missing identity.
-      expect(written.lines?.slice(1)).toEqual([
-        '  repository initialised, nothing committed — git commit -m x new: Author identity unknown',
-        `  run: cd ${target} && git config user.name '<your name>' && git config user.email '<you@example.com>' && git add -A && git commit -m 'x new'`,
-      ]);
-    } finally {
-      rmSync(parent, { recursive: true, force: true });
-    }
+    await using tree = tempTree('x-new-git-');
+    const parent = tree.path;
+    const runner: Runner = async (command) => ({
+      command,
+      code: command.includes('commit') ? 128 : 0,
+      ok: !command.includes('commit'),
+      stdout: '',
+      stderr: 'Author identity unknown',
+      durationMs: 0,
+    });
+    const written = await newCommand.run({
+      args: parseArgs(['new', 'unsigned-app', '--no-example'], SPECS),
+      cwd: parent,
+      runner,
+      env: {},
+      bunVersion: REQUIRED_BUN,
+    });
+    const target = join(parent, 'unsigned-app');
+    expect(written.ok).toBe(true);
+    // `.git` exists by then: "no repository" sent the reader to a `git init` already done, and
+    // the commit it then ran met the same missing identity.
+    expect(written.lines?.slice(1)).toEqual([
+      '  repository initialised, nothing committed — git commit -m x new: Author identity unknown',
+      `  run: cd ${target} && git config user.name '<your name>' && git config user.email '<you@example.com>' && git add -A && git commit -m 'x new'`,
+    ]);
   }, 30_000);
 
   test('a commit refused for another reason is handed back without the identity lines', () => {
@@ -125,58 +121,56 @@ describe('unit · x new · the repository it initializes', () => {
   });
 
   test('an init that failed still reads "no repository", with the init in the commands', async () => {
-    const parent = mkdtempSync(join(tmpdir(), 'x-new-git-'));
-    try {
-      const runner: Runner = async (command) => ({
-        command,
-        code: 1,
-        ok: false,
-        stdout: '',
-        stderr: 'permission denied',
-        durationMs: 0,
-      });
-      const written = await newCommand.run({
-        args: parseArgs(['new', 'uninit-app', '--no-example'], SPECS),
-        cwd: parent,
-        runner,
-        env: {},
-        bunVersion: REQUIRED_BUN,
-      });
-      const target = join(parent, 'uninit-app');
-      expect(written.lines?.slice(1)).toEqual([
-        '  no repository — git init: permission denied',
-        `  run: cd ${target} && git init && git add -A && git commit -m 'x new'`,
-      ]);
-    } finally {
-      rmSync(parent, { recursive: true, force: true });
-    }
+    await using tree = tempTree('x-new-git-');
+    const parent = tree.path;
+    const runner: Runner = async (command) => ({
+      command,
+      code: 1,
+      ok: false,
+      stdout: '',
+      stderr: 'permission denied',
+      durationMs: 0,
+    });
+    const written = await newCommand.run({
+      args: parseArgs(['new', 'uninit-app', '--no-example'], SPECS),
+      cwd: parent,
+      runner,
+      env: {},
+      bunVersion: REQUIRED_BUN,
+    });
+    const target = join(parent, 'uninit-app');
+    expect(written.lines?.slice(1)).toEqual([
+      '  no repository — git init: permission denied',
+      `  run: cd ${target} && git init && git add -A && git commit -m 'x new'`,
+    ]);
   }, 30_000);
 
   test('x new leaves a real repository behind, and --no-git leaves a bare directory', async () => {
-    const parent = mkdtempSync(join(tmpdir(), 'x-new-git-'));
-    try {
-      const ctx = (argv: readonly string[]): CommandContext => ({
-        args: parseArgs(argv, SPECS),
-        cwd: parent,
-        runner: exec,
-        env: {},
-        bunVersion: REQUIRED_BUN,
-      });
-      const withGit = await newCommand.run(ctx(['new', 'repo-app', '--no-example']));
-      expect(withGit.ok).toBe(true);
-      expect((withGit.data as { git: { initialized: boolean } }).git.initialized).toBe(true);
-      expect(existsSync(join(parent, 'repo-app', '.git'))).toBe(true);
+    await using tree = tempTree('x-new-git-');
+    const parent = tree.path;
+    // The real runner, its git under the tree's environment: the commit `x new` makes starts no
+    // background maintenance that would still be writing in `.git` when the tree is removed.
+    const runner: Runner = (command, options) =>
+      exec(command, { ...options, env: { ...options.env, ...tree.gitEnv } });
+    const ctx = (argv: readonly string[]): CommandContext => ({
+      args: parseArgs(argv, SPECS),
+      cwd: parent,
+      runner,
+      env: {},
+      bunVersion: REQUIRED_BUN,
+    });
+    const withGit = await newCommand.run(ctx(['new', 'repo-app', '--no-example']));
+    expect(withGit.ok).toBe(true);
+    expect((withGit.data as { git: { initialized: boolean } }).git.initialized).toBe(true);
+    expect(existsSync(join(parent, 'repo-app', '.git'))).toBe(true);
 
-      const bare = await newCommand.run(ctx(['new', 'bare-app', '--no-example', '--no-git']));
-      expect(bare.ok).toBe(true);
-      expect((bare.data as { git: unknown }).git).toEqual({
-        initialized: false,
-        committed: false,
-        problem: SKIPPED,
-      });
-      expect(existsSync(join(parent, 'bare-app', '.git'))).toBe(false);
-    } finally {
-      rmSync(parent, { recursive: true, force: true });
-    }
+    const bare = await newCommand.run(ctx(['new', 'bare-app', '--no-example', '--no-git']));
+    expect(bare.ok).toBe(true);
+    expect((bare.data as { git: unknown }).git).toEqual({
+      initialized: false,
+      committed: false,
+      problem: SKIPPED,
+    });
+    expect(existsSync(join(parent, 'bare-app', '.git'))).toBe(false);
   }, 60_000);
 });

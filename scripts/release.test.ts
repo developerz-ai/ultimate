@@ -156,9 +156,9 @@ describe('unit · the version to publish is decided, never guessed', () => {
   // constant against itself would prove nothing anyway. Every invocation PUBLISHING.md prints.
   test('every flag the docs tell a reader to pass is accepted', () => {
     expect(
-      unknownReleaseFlags(['version', 'bump', 'check', 'dry-run', 'json', 'security']),
+      unknownReleaseFlags(['version', 'bump', 'check', 'dry-run', 'json', 'security', 'rehearse']),
     ).toEqual([]);
-    expect(RELEASE_FLAGS.length).toBe(6);
+    expect(RELEASE_FLAGS.length).toBe(7);
   });
 
   test('the fix line is a command a shell can run verbatim', () => {

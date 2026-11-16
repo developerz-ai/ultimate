@@ -46,7 +46,9 @@ export interface NatsClient {
   /**
    * Answers once the server has processed every line sent before it — a `SUB` included. `subscribe`
    * only WRITES that line: a message another connection publishes before the server reads it is
-   * not delivered, so "subscribed" means flushed.
+   * not delivered, so "subscribed" means flushed. An implementation BOUNDS it — settles, answered
+   * or refused, inside its own request timeout (`nats-lib-client.ts`): a silent server never sends
+   * the PONG, and a flush that never settles holds whatever awaits it.
    */
   flush(): Promise<void>;
   request(subject: string, payload: Uint8Array, options?: NatsRequestOptions): Promise<NatsMessage>;

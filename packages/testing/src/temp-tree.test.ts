@@ -1,0 +1,191 @@
+// `tempTree` against real git and real children: its git runs none of the background work that
+// outlives a commit, `dispose()` waits for every child before it removes anything, and a tree that
+// survives its own remove is a coded failure, never a silent leftover.
+
+import { describe, expect, test } from 'bun:test';
+// why: Bun has no existence check for a directory and no recursive remove.
+import { existsSync, rmSync } from 'node:fs';
+// why: Bun exposes no path-join primitive.
+import { join, relative } from 'node:path';
+import type { TrackedChild } from './temp-tree';
+import { IN_PACKAGE_TEMP_ROOT, TEMP_TREE_GIT_ENV, tempTree } from './temp-tree';
+
+/** The residue test's own cleanup: the tree it made survive is still the file's to remove. */
+const tempTreeRemoved = (path: string): void => {
+  rmSync(path, { recursive: true, force: true });
+  expect(existsSync(path)).toBe(false);
+};
+
+/**
+ * A child under the test's hand: it exits when `exit` is called, and records the signals that
+ * reached it — dying of one only when `diesOnKill`, as a real process takes its time otherwise.
+ */
+const heldChild = (diesOnKill = false) => {
+  let exit: (code: number) => void = () => undefined;
+  const signals: unknown[] = [];
+  const exited = new Promise<number>((resolve) => {
+    exit = resolve;
+  });
+  let exitCode: number | null = null;
+  void exited.then((code) => {
+    exitCode = code;
+  });
+  const child: TrackedChild = {
+    exited,
+    get exitCode() {
+      return exitCode;
+    },
+    kill: (signal) => {
+      signals.push(signal);
+      if (diesOnKill) exit(137);
+    },
+  };
+  return { child, signals, exit: (code: number) => exit(code) };
+};
+
+describe('tempTree', () => {
+  test('its git commits with none of the background work that outlives the command', async () => {
+    await using tree = tempTree('ultimate-temp-tree-');
+    expect((await tree.git(['init', '-q'])).code).toBe(0);
+    await Bun.write(join(tree.path, 'a.txt'), 'a\n');
+    expect((await tree.git(['add', '-A'])).code).toBe(0);
+    // No identity on the box is no failure here: the tree's own config carries one.
+    expect((await tree.git(['commit', '-qm', 'one'])).code).toBe(0);
+    const read = async (key: string) => (await tree.git(['config', '--get', key])).stdout.trim();
+    expect(await read('maintenance.auto')).toBe('false');
+    expect(await read('gc.auto')).toBe('0');
+    expect(await read('core.fsmonitor')).toBe('false');
+  });
+
+  test('gitEnv reaches a git the code under test spawns itself', async () => {
+    await using tree = tempTree('ultimate-temp-tree-');
+    const child = tree.track(
+      Bun.spawn(['git', 'config', '--get', 'maintenance.auto'], {
+        cwd: tree.path,
+        env: { ...Bun.env, ...tree.gitEnv },
+        stdout: 'pipe',
+        timeout: 30_000,
+      }),
+    );
+    expect((await new Response(child.stdout).text()).trim()).toBe('false');
+    expect(tree.gitEnv).toEqual(TEMP_TREE_GIT_ENV);
+  });
+
+  test('inPackage makes the tree under the package’s ignored .x/fixtures, and git stops there', async () => {
+    const pkg = join(import.meta.dir, '..');
+    await using tree = tempTree('ultimate-temp-tree-', { inPackage: pkg });
+    expect(tree.path.startsWith(join(pkg, IN_PACKAGE_TEMP_ROOT, 'ultimate-temp-tree-'))).toBe(true);
+    // No repository of its own: the checkout around it must not answer for it.
+    expect((await tree.git(['rev-parse', '--show-toplevel'])).code).not.toBe(0);
+    const ignored = Bun.spawnSync(['git', 'check-ignore', '-q', tree.path], {
+      cwd: pkg,
+      timeout: 30_000,
+    });
+    expect(ignored.exitCode).toBe(0);
+  });
+
+  test('dispose() removes nothing until every tracked child has exited', async () => {
+    const tree = tempTree('ultimate-temp-tree-');
+    const { child, exit } = heldChild();
+    tree.track(child);
+    // A child that still runs is the one that writes under the tree after its remove began.
+    let removed = false;
+    const disposing = tree.dispose().then(() => {
+      removed = true;
+    });
+    // A full event-loop turn: every microtask the dispose could run without the child has run.
+    await Bun.sleep(0);
+    expect(removed).toBe(false);
+    expect(existsSync(tree.path)).toBe(true);
+    exit(0);
+    await disposing;
+    expect(removed).toBe(true);
+    expect(existsSync(tree.path)).toBe(false);
+  });
+
+  test('a child still running is ended, then awaited, then the tree goes', async () => {
+    const tree = tempTree('ultimate-temp-tree-');
+    const { child, signals } = heldChild(true);
+    tree.track(child);
+    await tree.dispose();
+    expect(signals).toEqual(['SIGKILL']);
+    expect(existsSync(tree.path)).toBe(false);
+  });
+
+  test('dispose() twice is one removal', async () => {
+    const tree = tempTree('ultimate-temp-tree-');
+    const first = tree.dispose();
+    expect(tree.dispose()).toBe(first);
+    await first;
+    expect(existsSync(tree.path)).toBe(false);
+  });
+
+  test('a tree that survives its own remove is X_TEST_TEMP_TREE_LEFT, naming what is left', async () => {
+    // Bun's recursive remove meeting an entry that vanished under it: it stops, and says nothing.
+    const tree = tempTree('ultimate-temp-tree-', { remove: () => undefined });
+    await Bun.write(join(tree.path, 'HEAD'), 'ref: refs/heads/main\n');
+    const outcome = await tree.dispose().catch((error: unknown) => error);
+    expect(outcome).toBeUltimateError('X_TEST_TEMP_TREE_LEFT');
+    expect(String((outcome as { cause: string }).cause)).toContain('HEAD');
+    tempTreeRemoved(tree.path);
+  });
+
+  test('a relative inPackage is resolved: git never walks past the tree into the checkout', async () => {
+    // A relative GIT_CEILING_DIRECTORIES entry is ignored by git, so the checkout would answer.
+    const pkg = relative(process.cwd(), join(import.meta.dir, '..'));
+    await using tree = tempTree('ultimate-temp-tree-', { inPackage: pkg });
+    expect(tree.gitEnv['GIT_CEILING_DIRECTORIES']?.startsWith('/')).toBe(true);
+    expect((await tree.git(['rev-parse', '--show-toplevel'])).code).not.toBe(0);
+  });
+
+  test.skipIf(process.platform === 'win32')(
+    'a child the tree spawned is ended with everything it started, grandchildren included',
+    async () => {
+      const tree = tempTree('ultimate-temp-tree-');
+      // `sh` starts a writer that would outlive it, then waits: the fix-truth shape. Its pid is
+      // read off the child's stdout — the event, never a poll of a file.
+      const child = tree.spawn(['sh', '-c', 'sleep 60 & echo $!; wait']);
+      const { value } = await child.stdout.getReader().read();
+      const grandchild = Number(new TextDecoder().decode(value).trim());
+      expect(grandchild).toBeGreaterThan(0);
+      await tree.dispose();
+      expect(child.signalCode ?? child.exitCode).not.toBeNull();
+      expect(() => process.kill(grandchild, 0)).toThrow();
+    },
+  );
+
+  test('a dispose that failed is attempted again, never answered from the first failure', async () => {
+    let removes = 0;
+    const tree = tempTree('ultimate-temp-tree-', {
+      remove: (path) => {
+        removes += 1;
+        if (removes > 1) rmSync(path, { recursive: true, force: true });
+      },
+    });
+    expect(await tree.dispose().catch((error: unknown) => error)).toBeUltimateError(
+      'X_TEST_TEMP_TREE_LEFT',
+    );
+    await tree.dispose();
+    expect(removes).toBe(2);
+    expect(existsSync(tree.path)).toBe(false);
+  });
+
+  test('a child handed over while the remove waits is ended and awaited too', async () => {
+    const tree = tempTree('ultimate-temp-tree-');
+    const first = heldChild(true);
+    const late = heldChild(true);
+    tree.track(first.child);
+    // The first child's exit hands the tree another — a hook that spawns as it tears down.
+    void first.child.exited.then(() => tree.track(late.child));
+    await tree.dispose();
+    expect(late.signals).toEqual(['SIGKILL']);
+    expect(existsSync(tree.path)).toBe(false);
+  });
+
+  test('a spawn timeout that is no whole number of milliseconds is refused before anything runs', async () => {
+    await using tree = tempTree('ultimate-temp-tree-');
+    expect(() => tree.spawn(['true'], { timeout: Number.NaN })).toThrow(
+      expect.objectContaining({ code: 'X_INVARIANT' }),
+    );
+  });
+});

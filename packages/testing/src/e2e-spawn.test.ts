@@ -17,6 +17,13 @@ import { E2E_APP_STOP_MS, inherited, READY_PROBE_MS, spawnE2eApp } from './e2e-s
 /** Answers `/readyz`, and `/env` with what it was spawned with — the facts a test can read. */
 const SERVER = `
 const port = Number(process.env.PORT);
+// Another process took the port between the ask and the bind, the first time only: Bun's own words.
+const clashOnce = process.env.CLASH_ONCE;
+if (clashOnce !== undefined && !(await Bun.file(clashOnce).exists())) {
+  await Bun.write(clashOnce, String(port));
+  console.error('error: Failed to start server. Is port ' + port + ' in use?');
+  process.exit(1);
+}
 if (process.env.CRASH === '1') { console.error('boom: the fixture refused to start'); process.exit(3); }
 if (process.env.IGNORE_TERM === '1') process.on('SIGTERM', () => console.error('SIGTERM ignored'));
 Bun.serve({ port, fetch(req) {
@@ -58,6 +65,24 @@ const readJson = (url: string): Promise<Record<string, unknown>> =>
   });
 
 describe('spawnE2eApp', () => {
+  test('a port taken between the ask and the bind boots the app again on fresh ports', async () => {
+    const marker = join(root, 'clashed-on');
+    const app = await spawnE2eApp({
+      root,
+      mode: 'serve',
+      env: { CLASH_ONCE: marker },
+      readyTimeoutMs: 20_000,
+    });
+    try {
+      const lost = await Bun.file(marker).text();
+      expect(lost).not.toBe('');
+      expect(app.base).not.toBe(`http://localhost:${lost}`);
+      expect((await readJson(`${app.base}/env`))['role']).toBe('web');
+    } finally {
+      await app.stop();
+    }
+  }, 60_000);
+
   test('answers once /readyz does, as a development app reachable at its own APP_URL', async () => {
     const app = await spawnE2eApp({
       root,

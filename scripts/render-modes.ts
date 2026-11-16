@@ -18,6 +18,7 @@ import {
 } from '@ultimat3/core';
 import { JOB_STATES } from '@ultimat3/jobs';
 import { TEST_TYPES } from '@ultimat3/testing';
+import { finiteOption } from '../packages/core/src/finite-option';
 import { maskLiterals, stripComments } from '../packages/core/src/source-mask';
 import { parseScriptArgs } from './lib/args';
 import { shippedSources } from './lib/corpus';
@@ -228,7 +229,8 @@ const overlap = (set: LiteralSet, vocabulary: Vocabulary): readonly string[] =>
 const isCopy = (set: LiteralSet, vocabulary: Vocabulary): boolean =>
   vocabulary.by === 'name'
     ? set.name === vocabulary.name
-    : overlap(set, vocabulary).length >= (vocabulary.threshold ?? COPY_THRESHOLD);
+    : overlap(set, vocabulary).length >=
+      finiteOption('render-modes', 'threshold', vocabulary.threshold ?? COPY_THRESHOLD);
 
 const copyFinding = (file: SourceFile, set: LiteralSet, vocabulary: Vocabulary): Finding => ({
   code: 'X_VOCABULARY_REDECLARED',

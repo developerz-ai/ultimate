@@ -3,10 +3,9 @@
 // `{ minor: 19.99 }` that typechecks and was once found only by `e2e`, inside X_E2E_APP_FAILED.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { tempTrees } from '@ultimat3/testing';
 import type { ExecResult, Runner } from './exec';
 import { exec } from './exec';
 import { SEEDS_PROBE_MARKER, seedFindings } from './verify-seeds';
@@ -14,15 +13,13 @@ import { SEEDS_PROBE_MARKER, seedFindings } from './verify-seeds';
 const SEED_FILE = 'packages/db/seeds/dev.ts';
 const MIGRATION_FILE = 'packages/db/migrations/0001_init.sql';
 
-const dirs: string[] = [];
-afterAll(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+// Under this package's ignored `.x/fixtures/`: a child resolves `@ultimat3/*` from the workspace.
+const trees = tempTrees({ inPackage: join(import.meta.dir, '..') });
+afterAll(() => trees.dispose());
 
 /** Inside this package, so the child resolves `@ultimat3/*` from its own `node_modules`. */
 const appRoot = async (seed?: string, migration?: string): Promise<string> => {
-  const dir = mkdtempSync(join(import.meta.dir, '..', '.seeds-fixture-'));
-  dirs.push(dir);
+  const dir = trees.make('seeds-fixture-');
   if (seed !== undefined) await Bun.write(join(dir, SEED_FILE), seed);
   if (migration !== undefined) await Bun.write(join(dir, MIGRATION_FILE), migration);
   return dir;
@@ -37,8 +34,7 @@ const MARKER = SEEDS_PROBE_MARKER;
 let state: string | undefined;
 const child: Runner = (command, options) => {
   if (state === undefined) {
-    state = mkdtempSync(join(import.meta.dir, '..', '.seeds-state-'));
-    dirs.push(state);
+    state = trees.make('seeds-state-');
   }
   return exec(command, { ...options, env: { ...options.env, ULTIMATE_STATE_DIR: state } });
 };

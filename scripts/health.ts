@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Answer whether the project is healthy: ten rows, one verdict each, read from git, `gh` and the
+// Answer whether the project is healthy: eleven rows, one verdict each, read from git, `gh` and the
 // repo's own scripts, and refuse with `cannot tell` and no data when any row's command cannot be
 // read — a checkup that answers over a row it never read is the silent green it exists to refuse.
 //
@@ -7,6 +7,7 @@
 
 import { renderThrowable } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
+import { FLAKE_HUNT_COMMAND, judgeFlakeHunt } from './lib/health-flake-hunt';
 import {
   narrowAudit,
   narrowChildDoc,
@@ -94,6 +95,7 @@ export const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
     'gh run list --workflow deploy-social-demo.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt',
   'release-exists': RELEASE_EXISTS_COMMAND,
   'tutorials-run': TUTORIALS_RUN_COMMAND,
+  'flake-hunt': FLAKE_HUNT_COMMAND,
 };
 
 type Judgement = RowVerdict | Finding | readonly Finding[];
@@ -250,7 +252,7 @@ const judgeDemoShipped = (read: DemoShippedRead, mainGreen: Verdict): Judgement 
  * The whole checkup at `root`: every row read in the brief's order, one subprocess at a time, each
  * judge over what its reader answered. A throw — `Bun.spawn` throws on a missing binary — or an
  * unreadable answer refuses the whole result with findings and no `data`; otherwise every verdict
- * rides in `data.rows`, and `data.healthy` is true only when all ten read `healthy`.
+ * rides in `data.rows`, and `data.healthy` is true only when all eleven read `healthy`.
  */
 export const healthAt = async (
   root: string,
@@ -291,6 +293,7 @@ export const healthAt = async (
   await judge('demo-shipped', readers['demo-shipped'], (read) => judgeDemoShipped(read, green()));
   await judge('release-exists', readers['release-exists'], judgeReleaseExists);
   await judge('tutorials-run', readers['tutorials-run'], judgeTutorialsRun);
+  await judge('flake-hunt', readers['flake-hunt'], (read) => judgeFlakeHunt(read, nowMs));
 
   if (refusals.length > 0) {
     return { ok: false, script: SCRIPT, summary: 'cannot tell', findings: refusals };

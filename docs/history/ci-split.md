@@ -72,6 +72,7 @@ servers a `services:` block cannot start.
 | `container` | 1 | unchanged |
 | `deploy-proof` | 1 | unchanged, `main` only |
 | `fault-drills` | 1 | `x drill` on `examples/dummy` against one Postgres: `pg-blackhole`, `worker-sigkill`, `web-sigterm` — added 2026-11-06, below |
+| `release-rehearsal` | 1 | pull requests only: on a diff touching `scripts/`, the CLI's templates, codemods or upgrade, or any `package.json`, `release.ts --bump minor --rehearse` stamps the next minor in the runner's checkout (never committed) and the version-sensitive suites run against it — a test that bakes the current version breaks here, not on the release PR (added 2026-11-15) |
 | `windows` | 1 | native Windows in PowerShell: lint, typecheck, a path-heavy unit subset, a scaffold smoke — added 2026-10-05, below |
 | `changes` | 1 | can this diff reach the six jobs that read no prose? — added 2026-11-07, below |
 
@@ -125,6 +126,7 @@ real work measured in tens of seconds, never a five-second suite paying a minute
 | `packages`, `container`, `deploy-proof` | none | ids unchanged |
 | `windows` | none yet; `required` once green | new, 2026-10-05 |
 | `fault-drills` | none | new, 2026-11-06 |
+| `release-rehearsal` | none: not required | new, 2026-11-15 |
 | branch protection | none: `main` is unprotected and has no rulesets (`gh api repos/developerz-ai/ultimate/branches/main/protection` → 404, `As of 2026-10-01`) | — |
 
 If `main` is ever protected, the one required check is `verify`.
@@ -334,3 +336,4 @@ when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `nex
 | `scorecard.yml` | push to `main`, weekly, a change to `main`'s rules → the OpenSSF Scorecard run, published to the Scorecard API the README badge reads (`publish_results: true`); never gates a merge (added 2026-11-10) |
 | `security-channel.yml` | daily → asks whether private vulnerability reporting is on, and opens one `security-channel` issue when it is not (added 2026-11-10) |
 | `upgrade-fixtures.yml` | a PR or `main` push touching templates, codemods or upgrade code, weekly, dispatch → one row per past release: scaffold at that version, `x upgrade` to HEAD served from a loopback registry, its gate; `X_UPGRADE_FIXTURE_*`. Its own workflow: a red baseline must not block merges, and every row needs npm (added 2026-11-15) |
+| `flake-hunt.yml` | nightly (02:23 UTC), dispatch with an optional `seed` → `unit` and `live` three rounds each, file and test order shuffled by `bun test --randomize --seed`; one `flake-hunt` issue per failing test, found again by its title, carrying the seed and the rerun line (`scripts/flake-hunt.ts`). Not a gate, outside the 5-minute budget; `issues: write` on the filing job alone; its conclusion is `scripts/health.ts`'s `flake-hunt` row (added 2026-11-15) |

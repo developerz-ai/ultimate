@@ -278,6 +278,8 @@ async function fleet(name: string) {
     for (let n = from; n <= to; n += 1) {
       const id = `r${n % 7}`;
       const op = table.rows.has(id) ? (n % 3 === 0 ? 'delete' : 'update') : 'insert';
+      // Every node's `start()` awaited its bus subscribe, flushed, before `node()` returned.
+      // bus-order: a test writes only once its pages read `live` on a started node
       await replicator.publish(table.commit(op, id, op === 'delete' ? {} : { n }));
     }
   };
@@ -311,6 +313,8 @@ describe.skipIf(url === undefined)('two sync nodes over a real bus', () => {
     expect(membership.state()).toBe('live');
 
     // Published through node A's hub: A holds no member, so only the bus can carry them to B.
+    // B's hub awaited the room's bridge subscribe, flushed, before it acked the member.
+    // bus-order: `live` above is that ack
     for (let n = 1; n <= 50; n += 1) await a.hub.publishEvent(room, { orgId: 'o1' }, { n });
     await waitFor(() => events.length === 50);
 

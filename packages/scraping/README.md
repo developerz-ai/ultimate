@@ -457,9 +457,11 @@ This is every name's one home: `@ultimat3/testing` no longer re-exports them (31
 | Export | What |
 |---|---|
 | `findChrome(env)` · `launchChrome({ executable, timeoutMs })` · `launchFoundChrome(env, timeoutMs)` | `CHROME_PATH`, then the platform's install paths; a throwaway profile, the pipe wire, one relaunch |
+| `launchReady(options)` · `pageTargetReady(connection, deadlineMs)` · `launchTestMs(launchTimeoutMs)` · `LAUNCH_TEST_MS` | the launch FIXTURE for tests: `launchChrome`, then ready once the page target EXISTS (heard as `Target.targetCreated`, never polled); a test awaiting a launch takes `launchTestMs(…)` as its deadline (`bun run scripts/launch-deadline.ts`, `X_TEST_LAUNCH_DEADLINE`) |
 | `cdpConnect({ endpoint, timeoutMs })` · `cdpConnectOver(transport, timeoutMs)` | a CDP connection over a remote WebSocket or any whole-message transport |
 | `CdpBrowserMissingError` · `CdpLaunchFailedError` · `CdpCallFailedError` · `CdpTimeoutError` | `X_CDP_BROWSER_MISSING` · `X_CDP_LAUNCH_FAILED` · `X_CDP_CALL_FAILED` · `X_CDP_TIMEOUT`, registered by `cdp-error-codes.ts` |
 | `CHROME_CANDIDATES` · `CONTAINER_CHROME_ARGS` · `chromeLaunchFlags` · `LAUNCH_*` · `CLOSE_GRACE_MS` · `LAUNCHED_CLOSE_MS` | the flags and the deadlines, derived, never restated |
+| `killTree(pid, platform?)` | everything a group-leading child started, gone and waited for: its POSIX process group (`SIGKILL`, then until the group is empty, bounded by `CLOSE_GRACE_MS`) or its Windows tree (`taskkill /T /F`). The close's own reap, and `@ultimat3/testing`'s `tempTree` disposal |
 
 ## What it owns
 

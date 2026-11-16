@@ -75,6 +75,10 @@
           {
             "type": "command",
             "command": "bun \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-test-path.ts"
+          },
+          {
+            "type": "command",
+            "command": "bun \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-unbounded-wait.ts"
           }
         ]
       }
@@ -85,7 +89,7 @@
           {
             "type": "command",
             "command": "bun \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-drift.ts",
-            "timeout": 60
+            "timeout": 120
           }
         ]
       }

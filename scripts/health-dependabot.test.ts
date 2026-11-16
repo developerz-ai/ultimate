@@ -63,6 +63,10 @@ const healthyReaders: HealthOverrides = {
     },
   }), // Row 10 likewise: the real reader would spawn gh.
   'tutorials-run': async () => ({ runs: [{ conclusion: 'success', status: 'completed' }] }),
+  // Created now: the row reads the real clock, and a fixture night must never be two nights old.
+  'flake-hunt': async () => ({
+    runs: [{ conclusion: 'success', status: 'completed', createdAt: new Date().toISOString() }],
+  }),
 };
 
 describe('unit · health · Dependabot activity and checks', () => {

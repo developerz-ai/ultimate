@@ -33,32 +33,27 @@ import { maskLiterals } from '../packages/core/src/source-mask';
 import type { SourceFile } from './boundaries';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
+import { isBuiltinSpecifier } from './lib/node-builtins';
 import { NODE_IMPORT_PINS, NODE_PINS_FILE } from './lib/node-import-pins';
+import type { PinTarget } from './lib/pin-edit';
+import { pinRaiseFix, pinRaiseOf } from './lib/pin-edit';
+import { ratchetPinMain } from './lib/pin-edit-main';
 import type { PinTable, RatchetGap } from './lib/ratchet';
-import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import { ratchetGaps } from './lib/ratchet';
 import type { SiteProbe } from './lib/ratchet-sites';
 import { leadSite, newSitesFirst, siteList, siteTarget } from './lib/ratchet-sites';
 import { isCode, lineOf } from './lib/source-scan';
 
 const SCRIPT = 'node-imports';
-const EXPLAIN = 'bun run scripts/node-imports.ts --explain --json lists every one';
 
-/**
- * Node's own builtins, as a BARE specifier reaches them — `'fs'`, `require('child_process')`. Bun
- * resolves the bare name to the same builtin, so a scan for `node:` alone let the unprefixed
- * spelling skip the `why:` this rule asks for (K17). Biome's `useNodejsImportProtocol`, an error
- * in `biome.json`, then demands the prefix; this list is what keeps the sentence owed either way.
- * Written out, not read from `node:module`'s `builtinModules`: Bun's copy also lists `bun`, `ws`
- * and `undici`, which are not Node APIs, and a fact that moves with the runtime moves the ratchet.
- */
-const BARE_BUILTINS = new Set(
-  (
-    'assert async_hooks buffer child_process cluster console constants crypto dgram ' +
-    'diagnostics_channel dns domain events fs http http2 https inspector module net os path ' +
-    'perf_hooks process punycode querystring readline repl stream string_decoder sys timers tls ' +
-    'trace_events tty url util v8 vm wasi worker_threads zlib'
-  ).split(' '),
-);
+/** Where this ratchet's pins live: what its over finding's raise and `--write-pin` edit. */
+export const NODE_IMPORT_PIN_TARGET: PinTarget = {
+  script: 'scripts/node-imports.ts',
+  file: NODE_PINS_FILE,
+  table: 'NODE_IMPORT_PINS',
+};
+
+const EXPLAIN = 'bun run scripts/node-imports.ts --explain --json lists every one';
 
 /**
  * Every spelling that reaches a builtin: a static `from 'node:x'`, a side-effect `import 'node:x'`,
@@ -67,17 +62,14 @@ const BARE_BUILTINS = new Set(
  * Bun implements and which takes no `import` keyword at all (sweep 11). Each with or without the
  * prefix.
  * The dynamic form is here because `scripts/async-context-guard.ts`'s own header names it as the
- * hole a static-only scan leaves. A bare candidate counts only when its root is in BARE_BUILTINS.
+ * hole a static-only scan leaves. A bare candidate counts only when its root is a Node builtin
+ * (`lib/node-builtins.ts`).
  * The keyword must stand alone: after `.`/`?.` it names a method (`loader.require('fs')`,
  * `Buffer.from('fs')`), after an identifier character it is part of one (`myrequire`). Neither
  * reaches a builtin, so a finding there would ask a `why:` of an import that never happens.
  */
 const NODE_IMPORT =
   /(?:(?<![\w$]|\.\s*)(?:from|import|require)|\bgetBuiltinModule)\s*\(?\s*(['"`])((?:node:)?[\w./-]+)\1/g;
-
-/** `node:fs`, `fs`, `fs/promises` — and not `fsevents`, `./fs` or `bun`. */
-const isBuiltinSpecifier = (specifier: string): boolean =>
-  specifier.startsWith('node:') || BARE_BUILTINS.has(specifier.split('/')[0] as string);
 
 /** The token, anywhere in the comment. Case-insensitive so `WHY:` counts. */
 const WHY = /(?:^|\/\/|\*)\s*.*\bwhy:/i;
@@ -193,7 +185,7 @@ const at = (site: NodeImportSite | undefined): string =>
 const overFinding = (gap: NodeImportGap): Finding => ({
   code: 'X_NODE_IMPORT_UNEXPLAINED',
   cause: `${gap.pkg} imports a node: builtin without saying why in ${String(gap.found)} place(s) and is pinned at ${String(gap.pinned)} — ${siteList(gap, (site) => `${at(site)} (${site.specifier})`, EXPLAIN)} — and no comment says which Bun native was missing, so nobody can tell whether it is still unavoidable`,
-  fix: `add a comment above ${siteTarget(gap, at)} beginning "why:" and naming the Bun API that does not exist — e.g. // why: Bun has no synchronous stdout write, and process.stdout.write drops its queue on exit`,
+  fix: `add a comment above ${siteTarget(gap, at)} beginning "why:" and naming the Bun API that does not exist — e.g. // why: Bun has no synchronous stdout write, and process.stdout.write drops its queue on exit; or ${pinRaiseFix(pinRaiseOf(NODE_IMPORT_PIN_TARGET, gap))}`,
   at: at(leadSite(gap)),
 });
 
@@ -238,7 +230,8 @@ export const nodeImportFindings = async (root: string): Promise<readonly Finding
   (await nodeImportGaps(root)).map(nodeImportFindingFor);
 
 if (import.meta.main) {
-  await ratchetMain({
+  await ratchetPinMain({
+    target: NODE_IMPORT_PIN_TARGET,
     script: SCRIPT,
     pinsFile: NODE_PINS_FILE,
     pins: NODE_IMPORT_PINS,

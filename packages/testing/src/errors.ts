@@ -81,6 +81,7 @@ export const TESTING_ERROR_CODES = [
   'X_EXERCISE_EMPTY_REACH',
   'X_TEST_PROPERTY_FAILED',
   'X_TEST_SOAK_HEAP_GROWTH',
+  'X_TEST_TEMP_TREE_LEFT',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -165,6 +166,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
     'an exercised primitive was reached and sent no statement and had no effect',
   X_TEST_PROPERTY_FAILED: 'a property() run found an input its claim refuses',
   X_TEST_SOAK_HEAP_GROWTH: 'a soak() run grew the live heap past its stated bound',
+  X_TEST_TEMP_TREE_LEFT: 'a temp tree survived its own remove',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

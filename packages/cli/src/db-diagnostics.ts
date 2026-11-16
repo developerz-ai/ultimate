@@ -2,13 +2,13 @@
 // `dbDiagnostics()` and renders one table per answered section. Facts, never a verdict: exit 0
 // whatever they say, and the one failure is a connection that never opens (`X_DB_UNAVAILABLE`).
 
-import { baseClient, dbClientInstalled, setDbClient } from '@ultimat3/db';
 import {
   type DbDiagnostics,
   type DiagnosticSection,
   dbDiagnostics,
 } from '@ultimat3/db/diagnostics';
 import type { CommandContext } from './command';
+import { withOpenedDb } from './db-client-displace';
 import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
 import { readIntFlag } from './flag-number';
 import { msg } from './messages';
@@ -89,31 +89,28 @@ export async function runDiagnostics(ctx: CommandContext, root: string): Promise
       });
     }
   }
-  // `startDb` installs its client as the process's `db()`, and this command closes it: what was
-  // there before goes back, or every later `db()` in an embedding process reaches a dead pool.
-  // `undefined` when nothing was installed, which restores lazy construction rather than building it.
-  const previous = dbClientInstalled() ? baseClient() : undefined;
-  const started = startDb(services, ctx.env);
-  try {
-    // Embedded, the probe IS the boot — a WASM compile and an initdb, 12.6 s cold under coverage —
-    // so the 3 s probe wait answered a healthy database X_DB_UNAVAILABLE. A server keeps the default.
-    const deadlineMs =
-      services.db.mode === 'embedded' ? EMBEDDED_DIAGNOSTICS_DEADLINE_MS : undefined;
-    const report = await dbDiagnostics({ client: started.client, limit, deadlineMs });
-    const sections = Object.values(report);
-    return {
-      ok: true,
-      command: 'db',
-      summary: msg('cli.db.diagnostics.done', {
-        available: sections.filter((section) => section.available).length,
-        total: sections.length,
-      }),
-      lines: renderDiagnostics(report),
-      data: diagnosticsJson(report),
-    };
-  } finally {
-    setDbClient(previous);
-    await started.client.close();
-    await started.replica?.close();
-  }
+  // `startDb` installs its client as the process's `db()`; `withOpenedDb` puts back what was there
+  // (closing a lazy default it dropped) and closes both pools, or every later `db()` in an
+  // embedding process reaches a dead pool.
+  return withOpenedDb(
+    () => startDb(services, ctx.env),
+    async (client) => {
+      // Embedded, the probe IS the boot — a WASM compile and an initdb, 12.6 s cold under coverage —
+      // so the 3 s probe wait answered a healthy database X_DB_UNAVAILABLE. A server keeps the default.
+      const deadlineMs =
+        services.db.mode === 'embedded' ? EMBEDDED_DIAGNOSTICS_DEADLINE_MS : undefined;
+      const report = await dbDiagnostics({ client, limit, deadlineMs });
+      const sections = Object.values(report);
+      return {
+        ok: true,
+        command: 'db',
+        summary: msg('cli.db.diagnostics.done', {
+          available: sections.filter((section) => section.available).length,
+          total: sections.length,
+        }),
+        lines: renderDiagnostics(report),
+        data: diagnosticsJson(report),
+      };
+    },
+  );
 }

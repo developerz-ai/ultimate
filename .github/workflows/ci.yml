@@ -248,6 +248,12 @@ jobs:
           fi
       - uses: ./.github/actions/setup
         if: steps.diff.outputs.tests == 'true'
+      # Did a changed test file lose a case its directory's code did not lose? A split of the mail
+      # and render suites dropped 19 tests and only a review bot noticed. HEAD^1 is the base tip
+      # this merge commit was made on (depth 2, above); a loss beside a source change is a warning.
+      - name: test cases this pull request removed
+        if: steps.diff.outputs.tests == 'true'
+        run: bun run scripts/vanished-tests.ts --base HEAD^1
       - name: the changed files the unit parts run
         id: select
         if: steps.diff.outputs.tests == 'true'
@@ -280,6 +286,58 @@ jobs:
         run: |
           mapfile -t paths < "$RUNNER_TEMP/rerun.txt"
           bun test --parallel --rerun-each 5 "${paths[@]}"
+
+  # Would the release PR's own bump red a test this pull request leaves behind? A test that bakes
+  # in the current version passes every feature PR and reds only the release PR: 31.28.0 (#1153)
+  # took three CI rounds over `renderScaffold('31.28.0')`. So the next minor is stamped in this
+  # runner's checkout — `release.ts --rehearse`: every file a bump stamps, never the changelog,
+  # never committed — and the suites that can read a stamp run on it
+  # (`scripts/release-rehearse.ts`: the CLI's templates, codemods and upgrade, and every scripts
+  # test naming a version). Only a pull request reaching `scripts/`, those CLI paths or a
+  # `package.json`; no list is a full run. Beside the gate: nothing waits on this job.
+  release-rehearsal:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      # Depth 2: a pull request checks out its merge commit, whose first parent is the base tip.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: ./.github/actions/setup
+      - name: does this diff reach a version stamp
+        id: due
+        run: |
+          git diff --no-renames --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed.txt" || rm -f "$RUNNER_TEMP/changed.txt"
+          bun run scripts/release-rehearse.ts "$RUNNER_TEMP/changed.txt" --json > "$RUNNER_TEMP/due.json"
+          jq -r '.summary' "$RUNNER_TEMP/due.json"
+          echo "due=$(jq -r '.data.due' "$RUNNER_TEMP/due.json")" >> "$GITHUB_OUTPUT"
+      - name: the next minor, stamped in this checkout and never committed
+        if: steps.due.outputs.due == 'true'
+        run: bun run scripts/release.ts --bump minor --rehearse
+      # What the scripts tests read beside the tree, as `flaky` fetches it — AFTER the bump, whose
+      # clean-tree rule a service's files could never break but whose commit range a fetch would.
+      - name: test Postgres, in RAM, and the refs the scripts tests read
+        if: steps.due.outputs.due == 'true'
+        run: |
+          docker compose -f docker/docker-compose.test.yml up -d --wait postgres
+          grep -E '^TEST_DATABASE_URL=' docker/test-services.env >> "$GITHUB_ENV"
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          refs=""
+          for tag in $(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -2); do
+            refs="$refs +refs/tags/$tag:refs/tags/$tag"
+          done
+          # shellcheck disable=SC2086
+          [ -z "$refs" ] || git fetch --no-tags --depth=1 origin $refs
+      - name: the version-sensitive suites, on the stamped tree
+        if: steps.due.outputs.due == 'true'
+        run: |
+          bun run scripts/release-rehearse.ts --suites --json > "$RUNNER_TEMP/suites.json"
+          jq -r '.summary' "$RUNNER_TEMP/suites.json"
+          mapfile -t paths < <(jq -r '.data.suites[]' "$RUNNER_TEMP/suites.json")
+          bun test --parallel "${paths[@]}"
 
   # The framework gate, one part per runner. Every part is the same command a contributor runs —
   # `bun run verify --only <steps>` — over a slice of the one step list, and none of them is a

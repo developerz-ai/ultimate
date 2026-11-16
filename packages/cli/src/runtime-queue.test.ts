@@ -12,7 +12,16 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
 import { getIdempotencyStore } from '@ultimat3/action';
-import { POOL_MAX_ENV, REPLICA_URL_ENV, raw, setDbClient, withTransaction } from '@ultimat3/db';
+import {
+  type DbClient,
+  dbClientInstalled,
+  dbUnavailable,
+  POOL_MAX_ENV,
+  REPLICA_URL_ENV,
+  raw,
+  setDbClient,
+  withTransaction,
+} from '@ultimat3/db';
 import { configureHttp, resetHttpConfig } from '@ultimat3/http';
 import { eventBus, jobDriver, memoryJobDriver } from '@ultimat3/jobs';
 import { resetJobDriver } from '@ultimat3/jobs/adapter';
@@ -226,6 +235,29 @@ describe('unit · which environment the boot builds its client from', () => {
     });
     expect('profile' in started.client && started.client.profile.max).toBe(4);
     expect(started.replica?.profile.max).toBe(4);
+  });
+
+  // The primary is built before the standby is attached: an attach that throws (a replica URL
+  // refused at construction) used to leave that pool open with nothing holding it to close.
+  test('an attach that throws closes the primary it was handed, installs nothing, and rethrows', async () => {
+    setDbClient(undefined);
+    const services = resolveServices(ROOT, EXTERNAL);
+    const failure = dbUnavailable('replica');
+    let closing: Promise<void> | undefined;
+    const attach = (client: DbClient): never => {
+      // The primary `startDb` built: a pool, so it has a `close` to observe.
+      const primary = client as DbClient & { close(): Promise<void> };
+      const close = primary.close.bind(primary);
+      primary.close = () => {
+        closing = close();
+        return closing;
+      };
+      throw failure;
+    };
+    expect(() => startDb(services, { ...EXTERNAL }, attach)).toThrow(failure);
+    expect(closing).toBeDefined();
+    await closing;
+    expect(dbClientInstalled()).toBe(false);
   });
 
   test('an unset DATABASE_POOL_MAX keeps the role default', () => {

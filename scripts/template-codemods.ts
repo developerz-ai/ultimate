@@ -134,6 +134,8 @@ export interface TemplateCodemodsOutcome {
   readonly findings: readonly Finding[];
   /** Why nothing was judged: the tag or the diff this clone could not answer for. */
   readonly notice?: string;
+  /** The scaffold-owned templates that changed since the tag: what the rows had to answer for. */
+  readonly judged?: readonly string[];
 }
 
 export interface TemplateCodemodsOptions {
@@ -197,10 +199,13 @@ export async function templateCodemodFindings(
     },
     ...(options.rendered === undefined ? {} : { now: options.rendered }),
   });
+  const changed = [...lines(diff.output), ...lines(untracked.output), ...rendered.changed];
+  const owned = [...(await scaffoldOwnedTemplates(root)), ...rendered.paths];
+  const ownedSet = new Set(owned);
   const findings = templateCodemodGaps({
     latest: bounds.latest,
-    changed: [...lines(diff.output), ...lines(untracked.output), ...rendered.changed],
-    owned: [...(await scaffoldOwnedTemplates(root)), ...rendered.paths],
+    changed,
+    owned,
     rows: options.rows ?? TEMPLATE_CODEMOD_ROWS,
     codemods: CODEMODS,
   });
@@ -216,6 +221,7 @@ export async function templateCodemodFindings(
     : [];
   return {
     findings: [...findings, ...stale],
+    judged: [...new Set(changed)].filter((path) => ownedSet.has(path)).sort(),
     ...(rendered.notice === undefined ? {} : { notice: rendered.notice }),
   };
 }

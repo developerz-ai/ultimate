@@ -361,6 +361,15 @@ export function dbClientInstalled(): boolean {
 }
 
 /**
+ * The client `db()` would use now — installed, or the lazy default once something built it — and
+ * `undefined` when neither exists. Never builds: a caller that displaces it with `setDbClient`
+ * reads it here to close or restore it, where `baseClient()` would open a pool to answer.
+ */
+export function ambientClient(): DbClient | undefined {
+  return ambient;
+}
+
+/**
  * The pool, ignoring any open transaction. `withTransaction` must not re-enter `db()`.
  *
  * The role default is layered under `DATABASE_POOL_MAX`, because this is the one place the process

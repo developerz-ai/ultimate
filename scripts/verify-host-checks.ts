@@ -32,6 +32,7 @@ import {
   sharedLeafFindingFor,
 } from './boundaries';
 import { boundaryRuleDocFindings } from './boundary-rule-docs';
+import { busPublishFindings } from './bus-subscribed';
 import { chartVersionFindings } from './chart-version';
 import { cliOutboundFindings } from './cli-outbound';
 import { derivedDocCountFindings } from './derived-doc-counts';
@@ -51,6 +52,7 @@ import { imageContractFindings } from './image-contract';
 import { instrumentSlotFindings } from './instrument-slots';
 import { keyedHasherFindings } from './keyed-hasher';
 import { knownGapLinkFindings } from './known-gaps-links';
+import { launchDeadlineFindings } from './launch-deadline';
 import { checkConfigImports, configImportFindingFor } from './lib/config-import';
 import { allOf, atMost, compilerWidth, oneAtATime } from './lib/host-check-run';
 import { stabilityFindings } from './lib/stability-findings';
@@ -58,6 +60,7 @@ import { llmsTxtFindings } from './llms-txt';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { opsUidFindings } from './ops-uid-docs';
 import { packageFrontFindings } from './package-front';
+import { portProbeFindings } from './port-probe';
 import { privateNameFindings } from './private-names';
 import { productionAppsFindings } from './production-apps';
 import { publicApiFindings } from './public-api';
@@ -69,13 +72,16 @@ import { publishListFindings } from './release-workflow';
 import { checkRoadmap } from './roadmap';
 import { sealCallFindings } from './seal-calls';
 import { setupCommandFindings } from './setup-commands';
+import { tempTreeFindings } from './temp-tree';
 import { bareErrorFindings } from './test-bare-error';
 import { testDiscoveryFindings } from './test-discovery';
 import { testFixFindings } from './test-fix-citations';
+import { mockBuiltinFindings } from './test-mock-builtin';
 import { realSleepFindings } from './test-real-sleep';
 import { testTypecheckFindings } from './test-typecheck-gate';
 import { throwFindings } from './to-throw-returns';
 import { tsconfigPathFindings } from './tsconfig-paths';
+import { RATCHET_CHECKS } from './verify-ratchets';
 import { versionStampFindings } from './version-stamps';
 import { wikiAnchorFindings } from './wiki-anchors';
 import { wikiFenceFindings } from './wiki-fences';
@@ -286,8 +292,15 @@ export const ERROR_CHECKS: readonly HostCheck[] = [
   testFixFindings,
   bareErrorFindings,
   realSleepFindings,
+  busPublishFindings,
+  launchDeadlineFindings,
+  mockBuiltinFindings,
   throwFindings,
   fixProseFindings,
+  portProbeFindings,
+  tempTreeFindings,
+  // Every pin ratchet whose CLI has no other host check: the CLI verdict is the gate's.
+  ...RATCHET_CHECKS,
 ];
 
 export const errorContract: HostCheck = allOf(ERROR_CHECKS);

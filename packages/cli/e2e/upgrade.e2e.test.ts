@@ -8,12 +8,14 @@
 //   bun test packages/cli/e2e/upgrade.e2e.test.ts
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// why: Bun has no mkdtemp and no recursive remove.
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+// why: Bun has no realpath.
+import { realpathSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import type { TempTree } from '@ultimat3/testing';
+import { tempTree } from '@ultimat3/testing';
 import type { ExecResult } from '../src/exec';
 import { exec, execOutput } from '../src/exec';
 import { LOCAL_CLI_BIN } from '../src/local-cli';
@@ -42,6 +44,7 @@ const npmAnswers = (): boolean => {
 };
 const required = process.env['E2E_NPM_REQUIRED'] === '1';
 
+let tree: TempTree | undefined;
 let work = '';
 let app = '';
 let registry: ReturnType<typeof Bun.spawn> | undefined;
@@ -97,24 +100,25 @@ describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
   // ~49k entries. Measured: 0.7–1.3 s on a local NVMe, 5.46 s on the ubuntu runner under
   // `--coverage` (ci run 42392549959, attempt 1), which bun's 5 s hook default failed as a timeout
   // though nothing was wrong. A minute is ten times the slowest measured, not a guess.
-  afterAll(() => {
-    registry?.kill();
-    if (work !== '') rmSync(work, { recursive: true, force: true });
-  }, 60_000);
+  // The tree ends the registry it tracks, waits for it, and only then removes everything.
+  afterAll(() => tree?.dispose(), 60_000);
 
   beforeAll(async () => {
-    work = realpathSync(mkdtempSync(join(tmpdir(), 'ultimate-upgrade-e2e-')));
+    tree = tempTree('ultimate-upgrade-e2e-');
+    work = realpathSync(tree.path);
     app = join(work, 'hopper');
-    registry = Bun.spawn(
-      [
-        process.execPath,
-        join(import.meta.dir, 'upgrade-registry-fixture.ts'),
-        REPO,
-        FROM,
-        TO,
-        work,
-      ],
-      { stdout: 'pipe', stderr: 'inherit', timeout: 1_500_000 },
+    registry = tree.track(
+      Bun.spawn(
+        [
+          process.execPath,
+          join(import.meta.dir, 'upgrade-registry-fixture.ts'),
+          REPO,
+          FROM,
+          TO,
+          work,
+        ],
+        { stdout: 'pipe', stderr: 'inherit', timeout: 1_500_000 },
+      ),
     );
     // One line of JSON — but a pipe read may return a partial line, and a fixture that died
     // mid-pack ends the stream with no line at all: both surfaced as a bare JSON SyntaxError that
@@ -139,7 +143,10 @@ describe.skipIf(!required && !npmAnswers())('x upgrade, one real hop', () => {
     // parse: only the first line is the fixture's one JSON object.
     const { url } = JSON.parse(line.slice(0, line.indexOf('\n'))) as { readonly url: string };
     // A cache of its own: a stamped 30.0.0 from an earlier run must never stand in for this checkout.
+    // The tree's git environment first: every commit the hop makes runs no background maintenance
+    // that would still be writing under `work` when the tree is removed.
     env = {
+      ...tree.gitEnv,
       NPM_CONFIG_REGISTRY: url,
       BUN_INSTALL_CACHE_DIR: join(work, 'bun-cache'),
       TMPDIR: work,

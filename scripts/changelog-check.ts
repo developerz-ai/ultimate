@@ -4,7 +4,8 @@
 // every migration count in wiki/Upgrading.md is read out of that major's OWN section, that each
 // `BREAKING —` line names its Upgrading row one-to-one (`lib/changelog-pairing.ts`), and that each
 // shipped guard template a release changed is named there with `x upgrade` (`lib/guard-refresh-*`),
-// and that a note retiring a workaround names its row (`changelog-check-workarounds.ts`).
+// that a note retiring a workaround names its row (`changelog-check-workarounds.ts`), and that a
+// pull request changing shipped source adds an `[Unreleased]` line (`lib/changelog-unreleased.ts`).
 //
 // The gap this closes is at commit 8fe7c56d — `git show 8fe7c56d:CHANGELOG.md`. That is
 // `release: 6.0.0`, the release script's OWN output: seven `BREAKING —` entries still under
@@ -55,9 +56,10 @@ import {
   UNRELEASED,
 } from './lib/changelog-sections';
 import { assembleChangelog, readChangelogFiles } from './lib/changelog-store';
+import { unreleasedCheck } from './lib/changelog-unreleased-git';
 import { guardRefreshFindings } from './lib/guard-refresh-git';
 import type { Finding } from './lib/log';
-import { report } from './lib/log';
+import { renderFinding, report } from './lib/log';
 import { repoRoot, run } from './lib/run';
 import { stabilityChangelogFindings, todayUtc } from './lib/stability-findings';
 import { claimGaps, treeClaims } from './lib/unreleased-claims';
@@ -414,21 +416,37 @@ export const changelogFindings = async (root: string): Promise<readonly Finding[
     ...workaroundGaps(changelog, SUPERSEDED_WORKAROUNDS).map(workaroundFinding),
     // wiki/Stability.md's changelog rules: the major window, Highlights, no break on main.
     ...stabilityChangelogFindings(changelog, Bun.env, todayUtc()),
+    // Shipped source with no new [Unreleased] line — refused on a pull request in CI only.
+    ...(await blockingUnreleased(root)),
   ];
+};
+
+/** The unreleased-entry finding when it blocks: a pull request in CI (`GITHUB_BASE_REF`). */
+const blockingUnreleased = async (root: string): Promise<readonly Finding[]> => {
+  const check = await unreleasedCheck(root, Bun.env);
+  return check.blocking && check.finding !== undefined ? [check.finding] : [];
 };
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const findings = await changelogFindings(repoRoot());
+  // Locally the unreleased-entry rule reports and never blocks: a branch mid-work owes its line
+  // by the time it is a pull request, which is where the rule above refuses it.
+  const local = await unreleasedCheck(repoRoot(), Bun.env);
+  const notice = local.blocking || local.finding === undefined ? [] : [local.finding];
   report(
     {
       ok: findings.length === 0,
       script: SCRIPT,
+      lines: notice.map(
+        (finding) => `notice (blocks on a pull request):\n${renderFinding(finding)}`,
+      ),
       summary:
         findings.length === 0
           ? `${CHANGELOG_PATH} and docs/changelog/ are well-formed and every ${UPGRADING_PATH} count is read from its own section`
           : `${findings.length} finding(s): the changelog and the upgrade guide disagree`,
       findings,
+      data: { notices: notice },
     },
     args.json,
   );

@@ -10,7 +10,75 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- **Test determinism.** One helper per flake class in `@ultimat3/testing` and one guard per unsafe form, each pin table empty:
+  - ports are bound, never probed (`bindFreePorts`; `X_TEST_PORT_PROBED`);
+  - temp trees have one owner that awaits its children (`tempTree`; `X_TEST_TEMP_TREE_UNOWNED`);
+  - a browser launch is ready on a handshake, not a deadline (`launchReady`; `X_TEST_LAUNCH_DEADLINE`);
+  - a bus publish waits for its subscription (`subscribed()`; `X_TEST_BUS_UNCONFIRMED`);
+  - no test mocks a node builtin (`X_TEST_MOCK_BUILTIN`).
+- **`flake-hunt.yml`**, nightly: `unit` and `live` three times each in a shuffled order. One issue per failing test, with the seed and the rerun line; `scripts/health.ts` reads its conclusion.
+- **`x db status [--json]`**: shipped against applied migrations (`pending`, `ahead`, `edited`) and the framework stamp verdict. One read, no writes.
+- **Release rehearsal.** `scripts/release.ts --rehearse` and the `release-rehearsal` CI job stamp the next minor on a pull request and run the version-sensitive suites. A test that bakes the current version breaks on its own PR, not on the release PR.
+- **Maintainer tooling.**
+  - `bun run preflight [<paths>]`: one verdict before a change is reported.
+  - `changelog-check` refuses shipped source with no `[Unreleased]` line.
+  - `new-error-code --script`: a script-owned code in one command.
+  - Every pin ratchet prints its exact pin edit (`--write-pin`).
+  - lefthook pre-push runs Biome and the test typecheck.
+
+### Added
+
+- `@ultimat3/testing`:
+  - `bindFreePorts(bind, { count?, pair?, apart?, clashed? })`, `isPortClash`, `PORT_BIND_ATTEMPTS`. A test takes a port by binding it. A port another process took in between (`EADDRINUSE`, `X_PORT_IN_USE`, a child's printed refusal) is asked again on fresh ports, at most 5 times.
+  - `tempTree(prefix, { inPackage? })`, `tempTrees()`, `TEMP_TREE_GIT_ENV`, `IN_PACKAGE_TEMP_ROOT`, `TempTreeLeftError` (`X_TEST_TEMP_TREE_LEFT`).
+    - Git in the tree runs with no auto gc or maintenance.
+    - `track(child)` hands a child over.
+    - `dispose()` / `await using` awaits every child, removes the tree and proves it gone.
+    - `inPackage` places the tree under the package's ignored `.x/fixtures/`.
+    - `tree.spawn(argv, options?)` starts a child as its own process group; `dispose()` ends it with everything it started.
+- `@ultimat3/scraping/cdp`: `launchReady()`, `pageTargetReady()`, `launchTestMs()`, `LAUNCH_TEST_MS`. A launch is ready once the page target exists (heard as `Target.targetCreated`, never polled); `LAUNCH_TEST_MS` is the one deadline a test awaiting a launch takes.
+- `@ultimat3/scraping/cdp`: `killTree(pid, platform?)`, the close's own reap (a POSIX process group, `taskkill /T` on Windows), now exported for `tempTree`.
+- `@ultimat3/db`: `ledgerAheadOfBuild`, `ROLLBACK_ALLOW_DESTRUCTIVE_ENV` (with `LedgerAhead`, `LedgerAheadOptions`), so `x db status` judges an ahead ledger exactly as `x db migrate` does; `ambientClient()` reads the process's client without building one.
+- `@ultimat3/realtime`: `subscribed()` (`bus-subscribed-fixture.ts`), a subscription confirmation awaited before a test publishes.
+- `x db status [--json]`: app migrations shipped against the `x_migrations` ledger, and the framework stamp verdict. It exits non-zero with the boot's own findings when behind.
+- Guards on the `errors` step, every pin table empty:
+  - `scripts/port-probe.ts`
+  - `scripts/temp-tree.ts`
+  - `scripts/bus-subscribed.ts`
+  - `scripts/launch-deadline.ts`
+  - `scripts/test-mock-builtin.ts`
+- `.github/workflows/flake-hunt.yml` and `scripts/flake-hunt.ts` (`X_FLAKE_HUNT_*`); `scripts/health.ts` row `flake-hunt`, unhealthy on a failed night or after two nights with no run.
+- `scripts/release.ts --rehearse`: the lockstep bump without the changelog, never committed. The `release-rehearsal` CI job runs it on PRs touching `scripts/`, the CLI's templates, codemods or upgrade, or any `package.json`.
+- `bun run preflight [<paths>…]`: the cheap ratchets, coverage of each touched unit and the serve-graph test; one verdict, `--json`.
+- `bun run new-error-code <CODE> --script <file>`: a script-owned code lands in `wiki/Error-Codes.md`'s never-ships list with its row. `--help` / `-h` prints both forms.
+- Every pin ratchet prints the exact pin edit (file, row, old → new, a `// why:` placeholder). `--write-pin <row>` drafts it; a leftover placeholder is refused, by `pin-raises` too (`X_PIN_RAISE_UNSTATED`).
+- `changelog-check` refuses a pull request that changes shipped `packages/*/src` without a new `[Unreleased]` line (`X_CHANGELOG_UNRELEASED_EMPTY`). The `no-changelog` label opts out; locally it is a notice.
+
+- `.claude/hooks/guard-unbounded-wait.ts`: an agent's `while`/`until … sleep` polling loop with no `timeout`, clock or counter is refused before it runs.
+
+- `scripts/vanished-tests.ts` refuses a test case that vanished from a directory whose code did not change (`X_TEST_VANISHED`); a case leaving with changed source is a warning. It runs in `bun run preflight` and CI's PR-only `flaky` job.
+
+### Changed
+
+- lefthook pre-push runs Biome on the pushed files and `test-typecheck-gate`, in parallel with typecheck and boundaries.
+- The "app migrations ahead" boot warning's fix is `x db status --json`. So is the first step of `X_MIGRATION_CONFLICT`'s "unknown `down`" branch in the wiki.
+- 23 test files near the line ceiling are split by responsibility (G14); no export changed.
+
+### Fixed
+
+- `@ultimat3/realtime`: `NatsTransport` announces a reconnect (`onReconnect`) only once the server holds the subscriptions it re-sent. A change another connection published at the announcement was lost.
+- Test determinism:
+  - The e2e app spawn, the drill fleet, the CLI's serve, schema-wait, sign-in and boot-probe suites, and `x dev` in the scaffold checks bind their ports. Before, they probed them.
+  - Every git-using suite makes its repository in a `tempTree`, so git's background maintenance no longer races the remove.
+  - Eleven suites no longer leave untracked fixture trees inside the checkout.
+  - `audit-postgres-outside-tx.test.ts` no longer boots Postgres inside a 5 s test timeout.
+  - Two NATS live tests confirm the subscription before they publish.
+- Every pin ratchet with its own script (finite-bounds, fetch-deadline, log-levels, claude-md-size, config-readers, node-imports, proto-index, secret-compare, source-headers, spawn-timeout) now runs in `x verify`'s `errors` step, so its CLI verdict is the gate's. `scripts/verify-ratchets.test.ts` fails when a new pins table's ratchet is left out. finite-bounds had been red on `main` over five unscreened `scripts/` sites; they are fixed.
+- `x db diagnostics`, `x db recount` and the runtime's `startDb` close every pool they opened and put the process's `db()` back, even when a close or the replica attach fails.
+- `scripts/upgrade-fixtures.ts` gives each fixture its own fresh database on the `TEST_DATABASE_URL` server (dropped after), so the proof no longer reads another suite's leftovers when the test services are up.
+- The stop-drift hook no longer reports the schema dumps stale when `schema-dumps --check` timed out or its scratch replay failed.
 
 ## Releases
 

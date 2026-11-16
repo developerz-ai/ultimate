@@ -1,20 +1,21 @@
 // Group commit sends every batch outside any ambient transaction: the timer that sends it, and a
 // full batch sent inline, both run in the async context of whichever write ARMED them, so a batch
 // carrying other callers' records would otherwise be written on that write's transaction.
+// The transaction is a RECORDING client's: what is asserted is the async context, not a database,
+// and an embedded one charged its seconds-long boot to the first test (5 s timeout, full gate).
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { ctxOf, userActor } from '@ultimat3/core';
-import { currentTx, pgliteClient, setDbClient, withTransaction } from '@ultimat3/db';
+import { currentTx, recordingClient, setDbClient, withTransaction } from '@ultimat3/db';
 import type { AuditRecord } from './audit';
 import { postgresAuditSink } from './audit-postgres';
 
-const client = pgliteClient();
+const client = recordingClient();
 setDbClient(client);
 
-afterAll(async () => {
+afterAll(() => {
   setDbClient(undefined);
-  await client.close();
 });
 
 const record = (name: string): AuditRecord => ({

@@ -7,6 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { acquireLock, pidAlive } from './file-lock';
+import { ScriptError } from './script-error';
 
 let dir = '';
 let lock = '';
@@ -73,6 +74,22 @@ describe('unit · an exclusive lock file held by a pid', () => {
     writeFileSync(lock, '444'); // taken over after we were presumed dead
     release();
     expect(readFileSync(lock, 'utf8')).toBe('444');
+  });
+
+  // `??` lets NaN through and `sleep(NaN)` is no wait: the poll would spin (`bun run finite-bounds`).
+  test('a pollMs that is not a finite, non-negative number is refused before any wait', async () => {
+    for (const pollMs of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      const refused = await acquireLock(lock, {
+        pid: 111,
+        isAlive: () => true,
+        sleep: () => expect.unreachable('a refused poll never sleeps'),
+        pollMs,
+      }).then(
+        () => 'taken',
+        (error: unknown) => (error instanceof ScriptError ? error.code : 'not a ScriptError'),
+      );
+      expect(refused).toBe('X_CLI_UNEXPECTED');
+    }
   });
 
   test('pidAlive answers this process live and an unused pid dead', () => {

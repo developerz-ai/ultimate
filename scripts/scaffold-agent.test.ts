@@ -6,6 +6,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no mkdtemp/rm and exposes no tmpdir(); each case owns a throwaway app directory.
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { fixedPort } from './scaffold-admin';
 import type { AgentCheckIo } from './scaffold-agent';
 import {
   checkAgent,
@@ -98,7 +99,7 @@ function fakeIo(fake: Fake = {}) {
         result: { isError: fake.callIsError ?? false },
       });
     },
-    port: () => 4321,
+    ports: fixedPort(4321),
     now: () => 0,
     sleep: async () => undefined,
     docs: async (_dir, query) => {
@@ -165,6 +166,23 @@ describe('unit · scaffold-agent reads what a cold agent reads', () => {
       expect(result.findings?.map((finding) => finding.cause).join(' | ')).toContain(cause);
     });
   }
+
+  test('an x dev that died on a held port is booted again on the next one, and asked there', async () => {
+    const fake = fakeIo();
+    const booted: number[] = [];
+    const result = await checkAgent(await app(), {
+      ...fake.io,
+      // The first boot dies at once printing the CLI's own refusal; the second one serves.
+      boot: (dir, port) => {
+        booted.push(port);
+        if (port !== 4321) return fake.io.boot(dir, port);
+        return { exited: () => true, stop: async () => 'X_PORT_IN_USE: the dev port is taken' };
+      },
+      ports: (bind) => bind(4321).catch(() => bind(4323)),
+    });
+    expect(result.findings).toEqual([]);
+    expect(booted).toEqual([4321, 4323]);
+  });
 
   test('a .mcp.json that names no server is a finding, and nothing is spawned', async () => {
     const fake = fakeIo();

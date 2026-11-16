@@ -9,12 +9,20 @@
 
 import { DEV_BINDING, quoteArg } from '@ultimat3/cli';
 import { renderThrowable } from '@ultimat3/core';
+import { isPortClash } from '../packages/testing/src/free-port-bind';
 import { parseScriptArgs } from './lib/args';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { ScriptError } from './lib/script-error';
 import { strangerEnvAt } from './lib/stranger-env';
-import { appDirWord, type DevServer, freeDevPair } from './scaffold-admin';
+import {
+  appDirWord,
+  type DevServer,
+  freeDevPorts,
+  type PortBinder,
+  portTaken,
+} from './scaffold-admin';
 import { appBin } from './scaffold-first-run';
 
 const SCRIPT = 'scaffold-agent';
@@ -73,7 +81,7 @@ export interface AgentCheckIo {
   ) => Promise<readonly unknown[]>;
   readonly boot: (dir: string, port: number) => DevServer;
   readonly fetcher: (url: string, init: RequestInit) => Promise<Response>;
-  readonly port: () => number;
+  readonly ports: PortBinder;
   readonly now: () => number;
   readonly sleep: (ms: number) => Promise<void>;
   /** `x docs <query> --json` in `dir`: its parsed stdout, or `undefined` when it printed none. */
@@ -160,9 +168,8 @@ async function askEndpoint(url: string, io: AgentCheckIo): Promise<readonly stri
   return problems;
 }
 
-/** Boot `x dev`, ask the endpoint, stop it — always — and judge what it printed. */
-async function checkEndpoint(dir: string, io: AgentCheckIo): Promise<readonly Finding[]> {
-  const port = io.port();
+/** One boot on `port`: boot `x dev`, ask the endpoint, stop it — always. */
+async function bootAndAsk(dir: string, io: AgentCheckIo, port: number) {
   const url = `http://${DEV_BINDING.hostname}:${String(port)}/mcp`;
   const fix = `cd ${quoteArg(appDirWord(dir))} && bun run dev --port ${quoteArg(String(port))}`;
   const started = io.now();
@@ -186,6 +193,32 @@ async function checkEndpoint(dir: string, io: AgentCheckIo): Promise<readonly Fi
   } finally {
     output = await server.stop();
   }
+  return { url, fix, up, lastDial, problems, output };
+}
+
+/**
+ * Boot `x dev`, ask the endpoint, stop it — always — and judge what it printed. A boot that died
+ * on a port another process held is booted again on a fresh pair (`io.ports`).
+ */
+async function checkEndpoint(dir: string, io: AgentCheckIo): Promise<readonly Finding[]> {
+  // Read off the boot's WHOLE output: the refusal's cause keeps only its tail.
+  let clashed = false;
+  const run = await io
+    .ports(
+      async (port) => {
+        const booted = await bootAndAsk(dir, io, port);
+        clashed = !booted.up && isPortClash(booted.output);
+        if (clashed) throw portTaken(port, booted.output, booted.fix);
+        return booted;
+      },
+      () => clashed,
+    )
+    .catch((error: unknown) => {
+      if (error instanceof ScriptError) return error;
+      throw error;
+    });
+  if (run instanceof ScriptError) return [finding(dir, run.cause, run.fix)];
+  const { url, fix, up, lastDial, problems, output } = run;
   if (!up) return [finding(dir, `x dev answered nothing at ${url}: ${lastDial}`, fix)];
   const log: string[] = [];
   if (output.includes('X_MCP_APP_UNMOUNTED')) log.push('the boot log carries X_MCP_APP_UNMOUNTED');
@@ -300,8 +333,8 @@ const realIo: AgentCheckIo = {
     };
   },
   fetcher: fetch,
-  // A free port PAIR on the address `x dev` binds — the rule `scaffold-admin.ts` keeps.
-  port: () => freeDevPair(),
+  // A free port PAIR `x dev` binds itself — the rule `scaffold-admin.ts` keeps.
+  ports: freeDevPorts,
   now: () => performance.now(),
   sleep: (ms) => Bun.sleep(ms),
   docs: async (dir, query) => {
