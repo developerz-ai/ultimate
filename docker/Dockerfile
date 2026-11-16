@@ -130,7 +130,7 @@ RUN bun run scripts/compile-x.ts --outfile /out/app \
 # confirmed with `ldd`. The build was green, because the ONE thing that would have caught it ran on
 # the wrong image: `/out/app --version` proved the binary runs on the BUILD stage, and the build
 # stage is not what ships.
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cc66d222f0a7ec996b78a99fe76a969bc80b539a5016ad866c14d1949bc6d0ab AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2 AS runtime
 COPY --from=build /out/app /app/x
 # `ROLE=web` was here, under "ROLE is the only knob", and nothing in this image has ever read it:
 # `roleFromEnv` is reached only through `serveApp`/`runRole`, which no `x` subcommand calls. An
