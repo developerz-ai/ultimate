@@ -40,7 +40,7 @@ describe('row · no merged or abandoned dz/* branch lingers', () => {
     const out = judgeBranches({ refs: doc([merged, closed, idle]) }, NOW);
     expect(out).toMatchObject({
       verdict: 'unhealthy',
-      fix: 'git push origin --delete dz/m dz/c dz/i',
+      fix: 'git push origin --delete dz/m && git push origin --delete dz/c && git push origin --delete dz/i',
     });
     expect('branches' in out && out.branches?.map((one) => one.name)).toEqual([
       'dz/m',

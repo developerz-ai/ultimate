@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c7425fe476ba80c6ad02ed5935aad7f93066ee4a1eab7d4b613eca8fa0a05308",
+  "buildId": "87cdbbd0c3ae2e372e7942abd3f0b13486e314fc4a5cc0f01a7c3ac8112fd191",
   "tiers": {
     "0": [
       "core",
@@ -4828,6 +4828,16 @@
       "code": "X_RELEASE_WINDOW_UNREADABLE",
       "owner": "scripts",
       "at": "scripts/release-due.ts"
+    },
+    {
+      "code": "X_REMOTE_VERIFY_HOST_MISSING",
+      "owner": "scripts",
+      "at": "scripts/remote-verify.ts"
+    },
+    {
+      "code": "X_REMOTE_VERIFY_SYNC_FAILED",
+      "owner": "scripts",
+      "at": "scripts/remote-verify.ts"
     },
     {
       "code": "X_REPLICATION_FAILED",

@@ -110,3 +110,7 @@ undefined/
 
 # Test TLS material `postgres-tls-certs` writes (docker/docker-compose.test.yml), private key included.
 docker/.tls/
+
+# scripts/remote-verify.ts writes these per run: the shifted ports and URLs for a shared host.
+docker/.remote-gate.override.yml
+docker/.remote-gate.env

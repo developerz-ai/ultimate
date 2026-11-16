@@ -3,8 +3,8 @@
 // live trackers once sat beside the real one for weeks, one still saying "Next: 31.22.1"; a
 // tracker nobody works must be closed (`superseded`, pointing at its successor), not left to read as live.
 
-import { join, posix } from 'node:path';
 // why: host-separator paths into the checkout; Bun ships no path API.
+import { join, posix } from 'node:path';
 import { renderFixShellArg } from '../../packages/core/src/error-render';
 import { PLAN_STATUS_GLOB } from '../plan-status';
 import type { Finding } from './log';
