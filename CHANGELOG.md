@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- **CI is faster where it was slowest.** Shards are dealt on measured per-file time, with 4 unit shards and 3 live shards: the slowest unit part went from 415 s to 315 s on CI.
+- **Slow test files run in parallel parts**, and a guard (`bun run test-slow`) makes any file over 20 s state why.
+- **ARM runners were measured and declined.** They gave no consistent gain, and on ARM the gate would test a browser adopters do not run.
+
 ### Changed
 
 - **CI deals its shards on measured time.** The gate parts pass `x verify --shard â€¦ --timings scripts/lib/ci/test-weights.json`, the committed per-file wall times of a CI run. Heaviest file first, each to the lightest shard; a file the weights do not know costs the median. Unit shards go from 3 to 4 and live from 2 to 3 (`PARTS` 9). The slowest unit part is predicted at 232 s, down from 378 s (run 43903381662's timings). `bun run scripts/test-weights.ts <artifacts-dir>` rewrites the weights from a run's part artifacts. Apps that pass no `--timings` keep the round-robin deal.
