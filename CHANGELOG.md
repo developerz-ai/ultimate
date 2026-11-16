@@ -10,7 +10,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- **A fix line opens with what to paste or run.** 917 `fix:` lines across every package and the repository scripts opened with a sentence; 862 now open with a command, a code shape (`policy: '<resource>:<verb>'`, `assertCurrency('USD')`, `` sql`…` ``) or an `edit <file>:<line> — …`, with the old instruction after it as a comment. The 55 that remain carry a reason per package in `scripts/lib/fix-prose-pins.ts`: a remedy that is judgement, or one at a call site the thrower cannot see.
+
+### Fixed
+
+- Fix lines that named things that do not exist now name the real ones:
+  - `ai.budget` / `ai.providers` in `app.config.ts` → `providerGateway({ budget })` and `runtime.ts`;
+  - `mail.from` → `MAIL_FROM`;
+  - `pwa.startUrl` / `pwa.scope` / `pwa.swPath` → the `generateWebManifest` / `generateServiceWorker` calls that throw;
+  - the cache limit and jitter `app.config.ts` keys → the `lruTier()` / `redisTier()` options;
+  - `x doctor transport` (`X_TRANSPORT_PROTOCOL`) → `x doctor --json`;
+  - `X_LLM_REFUSED`'s `definePrompt('<name>')` → the object form;
+  - `X_SCRAPE_BODY_TOO_LARGE`'s `page.fetch` → `http.request`.
+- `X_MAIL_HEADER_INVALID` no longer says to strip the line break the source refuses rather than strips.
+- A migration fix said `git checkout -- migrations/`, which discards every uncommitted migration; it now restores only the snapshot sidecars.
+- Fixes that splice a value into a command quote it (`X_MAIL_SMTP_HANDSHAKE`'s host, the tenancy and admin `x db gen` lines, `X_ENTITY_RETAIN_UNINDEXED`'s entity name).
+- `x doctor`'s database check reads `@ultimat3/db`'s `X_DB_UNAVAILABLE` fix instead of a copy that had drifted.
+
+### Changed
+
+- `scripts/lib/fix-shape.ts` reads more honest openers as runnable or code: `wc`, `file`, `timedatectl`, `find <path> -<flag>`, a `case <x>:` line, a tagged template, and a call whose receiver is a `${…}` substitution.
+- `fix-sequence`: 14 baselined run-first, edit-later fixes (12 in `scripts/`, 2 in `@ultimat3/entity`) now put the edit first; their baseline rows are gone.
+- `X_COVERAGE_PIN_STALE`'s fix also names `bun run scripts/readme-facts.ts --write`, because README's facts table quotes the pin.
 
 ## Releases
 
