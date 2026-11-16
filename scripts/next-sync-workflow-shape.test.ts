@@ -65,8 +65,8 @@ describe('unit · next-sync.yml merges main into next and gates the result', () 
     const script = runOf(merge);
     expect(script).toContain('git diff --name-only origin/next HEAD -- .github/workflows/');
     expect(script).toContain('blocked workflows "$workflows"');
-    expect(merge?.steps?.find((s) => s.run)?.env?.['NEXT_SYNC_TOKEN']).toBe(
-      '${{ secrets.NEXT_SYNC_TOKEN }}',
+    expect(merge?.steps?.find((s) => s.run)?.env?.['NEXT_SYNC_TOKEN']).toMatch(
+      /^\$\{\{ secrets\.NEXT_SYNC_TOKEN \}\}$/,
     );
   });
 });

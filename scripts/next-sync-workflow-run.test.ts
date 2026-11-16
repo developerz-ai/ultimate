@@ -132,7 +132,9 @@ describe('unit · next-sync.yml · the merge step, run', () => {
     expect({ ok: out.ok, output: out.output }).toMatchObject({ ok: true });
     expect(await g(origin, 'rev-parse', 'refs/heads/next')).toBe(before);
     expect(await calls()).toBe('');
-    expect(await output()).toBe('blocked=conflict\nfiles<<NEXT_SYNC_FILES\na.txt\nNEXT_SYNC_FILES\n');
+    expect(await output()).toBe(
+      'blocked=conflict\nfiles<<NEXT_SYNC_FILES\na.txt\nNEXT_SYNC_FILES\n',
+    );
   });
 
   test('a merge touching .github/workflows/ is never pushed with the job token, and is handed on', async () => {
@@ -162,10 +164,7 @@ describe('unit · next-sync.yml · the merge step, run', () => {
 
 describe('unit · next-sync.yml · the report step, run', () => {
   const TITLE = 'next-sync: main is not merged into next';
-  const report = async (
-    blocked: '' | 'conflict' | 'workflows',
-    issues: readonly object[],
-  ) => {
+  const report = async (blocked: '' | 'conflict' | 'workflows', issues: readonly object[]) => {
     const dir = await scratch();
     const bin = await ghStub(dir);
     const env = {

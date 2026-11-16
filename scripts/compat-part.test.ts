@@ -91,6 +91,18 @@ describe('unit · compat part · the replay line', () => {
     expect(line).toEndWith('bun run scripts/verify.ts --only live --shard 1/2');
   });
 
+  test('every part loads the service URLs, a unit part too: compat.yml exports them for both', () => {
+    for (const axis of ['bun', 'solid', 'postgres'] as const) {
+      const line = rerunOf(cell(axis, axis === 'postgres' ? '18' : '1'), PART);
+      expect(line).toContain(
+        'set -a; . docker/test-services.env; set +a; bun run scripts/verify.ts --only unit',
+      );
+      // The URLs point at services that run: a replay starts them before it reads them.
+      expect(line).toContain('-f docker/docker-compose.test.yml');
+      expect(line).toContain('up -d --wait');
+    }
+  });
+
   test('a Bun cell names the channel to install; a Solid cell prepares first', () => {
     expect(rerunOf(cell('bun', 'canary'), PART)).toStartWith('bun upgrade --canary && ');
     expect(rerunOf(cell('solid', '1'), PART)).toStartWith(

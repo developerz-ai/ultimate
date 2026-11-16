@@ -1,6 +1,7 @@
-// Row 11's spec: whether the newest nightly `flake-hunt.yml` run — `unit` and `live` three times
-// each in a shuffled order — ended green, and whether it is still running every night at all. Not
-// a gate, so nothing else announces its red; the shared scheduled-row reader and judge read it.
+// The `flake-hunt` row's spec: whether the newest nightly `flake-hunt.yml` run — `unit` and `live`
+// three times each in a shuffled order — ended green, and whether it is still running every night
+// at all. Not a gate, so nothing else announces its red; the shared scheduled-row reader and judge
+// read it.
 
 import type { ScheduledRead } from './health-scheduled';
 import { scheduledRow } from './health-scheduled';

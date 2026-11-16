@@ -109,12 +109,19 @@ export function readCompatMatrix(text: string): CompatMatrix {
 export const loadCompatMatrix = async (root: string): Promise<CompatMatrix> =>
   readCompatMatrix(await Bun.file(`${root}/${COMPAT_WORKFLOW}`).text());
 
-const badFlag = (what: string, name: string, known: readonly string[]): ScriptError =>
-  new ScriptError({
+/** The flag that was wrong carries a real value; the other stays a placeholder. */
+const badFlag = (what: 'cell' | 'part', name: string, known: readonly string[]): ScriptError => {
+  const first = known[0] ?? '';
+  const choices = `${what}s: ${known.join(', ')}`;
+  return new ScriptError({
     code: 'X_CLI_BAD_FLAG',
     cause: `${COMPAT_WORKFLOW} has no ${what} "${name}"`,
-    fix: `bun run scripts/compat.ts run --cell ${renderFixShellArg(known[0] ?? '', '<cell>')} --part <part> --json   # ${what}s: ${known.join(', ')}`,
+    fix:
+      what === 'cell'
+        ? `bun run scripts/compat.ts run --cell ${renderFixShellArg(first, '<cell>')} --part <part> --json   # ${choices}`
+        : `bun run scripts/compat.ts run --cell <cell> --part ${renderFixShellArg(first, '<part>')} --json   # ${choices}`,
   });
+};
 
 export function cellOf(matrix: CompatMatrix, id: string): CompatCell {
   const cell = matrix.cells.find((one) => one.id === id);

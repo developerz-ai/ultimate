@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "87cdbbd0c3ae2e372e7942abd3f0b13486e314fc4a5cc0f01a7c3ac8112fd191",
+  "buildId": "7159adc5e3ea5019b11b2ae5c275707d6b53bece8075c383189f4bd7381081fd",
   "tiers": {
     "0": [
       "core",
@@ -4831,6 +4831,11 @@
     },
     {
       "code": "X_REMOTE_VERIFY_HOST_MISSING",
+      "owner": "scripts",
+      "at": "scripts/remote-verify.ts"
+    },
+    {
+      "code": "X_REMOTE_VERIFY_OFFSET_INVALID",
       "owner": "scripts",
       "at": "scripts/remote-verify.ts"
     },

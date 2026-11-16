@@ -58,7 +58,7 @@ export interface RowVerdict {
   readonly publishedAt?: string | undefined;
   /** The command that repairs an unhealthy row, or reads an unverdicted one a person must run. */
   readonly fix?: string;
-  /** The stale `dz/*` branches row 19 lists; deleting them is an operator's act, never the row's. */
+  /** The stale `dz/*` branches the `stale-branches` row lists; deleting them is an operator's act, never the row's. */
   readonly branches?: readonly StaleBranch[];
   /** The maint-lane row's own coded findings, one per window its lane breaks. */
   readonly findings?: readonly Finding[];

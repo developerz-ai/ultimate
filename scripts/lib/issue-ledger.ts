@@ -53,7 +53,7 @@ export const fence = (lang: string, text: string): string => {
 
 const failed = (ledger: Ledger, what: string, result: RunResult): Finding => ({
   code: ledger.code,
-  cause: `gh could not ${what}: ${result.output.trim().slice(0, 500) || `exit ${result.code}`}`,
+  cause: `gh could not ${what}: ${result.output.replace(/\s+/g, ' ').trim().slice(0, 500) || `exit ${result.code}`}`,
   fix: ledger.fix,
   at: ledger.at,
 });

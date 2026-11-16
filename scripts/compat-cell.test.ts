@@ -151,6 +151,17 @@ describe('unit · compat cell · prepare', () => {
     expect(await Bun.file(join(root, 'package.json')).text()).not.toContain('solid-js');
   });
 
+  test('a registry refusal reaches the one-line cause with its whitespace collapsed', async () => {
+    const root = await tree('1.9.18');
+    const runner = async (): Promise<RunResult> => ({
+      ...ok('error: 503\n\n  Service   Unavailable\n'),
+      ok: false,
+      code: 1,
+    });
+    const answer = await prepareCell({ root, cell: cell('solid', '1'), runner });
+    expect(answer.findings[0]?.cause).toEndWith(': error: 503 Service Unavailable');
+  });
+
   test('a Bun cell prepares nothing and says which Bun it runs', async () => {
     const root = await tree('1.9.18');
     const answer = await prepareCell({ root, cell: cell('bun', 'canary') });

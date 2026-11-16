@@ -240,7 +240,8 @@ describe('unit · release-tag.yml cuts the release the one way this repo cuts it
 // The maintenance lane's own check, RUN, not grepped: main's copy of this file is the one every
 // line meets (workflow_run reads the default branch's), while release.yml runs from the tag and a
 // line cut from an old tag carries that tag's scripts. `bun` and `jq` are stubs on PATH answering
-// the tag scripts/dist-tag.ts would; the step's own shell decides.
+// the tag scripts/dist-tag.ts would; the step's own shell decides. Two cases run the real script and
+// the real jq, with only the registry's answer stubbed, so the step's jq filter is exercised too.
 describe('unit · maint · release-tag.yml refuses a maintenance release that is not a maint-<major> patch', () => {
   const lane = stepsOf('prepare').find((step) => step.id === 'lane');
 
@@ -295,6 +296,57 @@ describe('unit · maint · release-tag.yml refuses a maintenance release that is
       const { code, out } = await runLane('release/30.x', '30.9.1', 'latest');
       expect(code).toBe(1);
       expect(out).toContain('never moves latest');
+    },
+  );
+
+  /**
+   * The lane step over the REAL `scripts/dist-tag.ts --json` and the REAL `jq`: only `fetch` is
+   * replaced, by a preload answering the registry's `latest`, so the step's own `.data.tag` filter
+   * meets the document the script prints. The stubs above would pass a filter reading nothing.
+   */
+  const runLaneReal = async (version: string, latest: string) => {
+    const real = join(bin, 'real');
+    const preload = join(real, 'registry.ts');
+    await Bun.write(
+      preload,
+      `globalThis.fetch = (async () => new Response(${JSON.stringify(JSON.stringify({ 'dist-tags': { latest } }))}, { status: 200 })) as unknown as typeof fetch;\n`,
+    );
+    // `bun run X` becomes `bun run --preload <registry> X`: the flag must follow `run`.
+    await Bun.write(
+      join(real, 'bun'),
+      `#!/usr/bin/env bash\n[ "$1" = run ] && shift\nexec ${JSON.stringify(process.execPath)} run --preload ${JSON.stringify(preload)} "$@"\n`,
+    );
+    await chmod(join(real, 'bun'), 0o755);
+    const child = Bun.spawnSync(['bash', '-c', lane?.run ?? 'exit 99'], {
+      cwd: repoRoot(),
+      env: {
+        PATH: `${real}:${process.env['PATH'] ?? ''}`,
+        BRANCH: 'release/30.x',
+        VERSION: version,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 60_000,
+    });
+    return { code: child.exitCode, out: `${child.stdout.toString()}${child.stderr.toString()}` };
+  };
+
+  test.skipIf(process.platform === 'win32' || Bun.which('jq') === null)(
+    'maint: the real dist-tag document, through the real jq, earns maint-30 for a 30.x patch',
+    async () => {
+      const { code, out } = await runLaneReal('30.9.1', '31.30.0');
+      expect(out).toContain('ok: 30.9.1 from release/30.x publishes under maint-30');
+      expect(code).toBe(0);
+    },
+  );
+
+  test.skipIf(process.platform === 'win32' || Bun.which('jq') === null)(
+    'maint: the real document naming latest is refused through the real jq',
+    async () => {
+      // 30.x is the newest major on the registry: the patch would move latest.
+      const { code, out } = await runLaneReal('30.9.1', '30.9.0');
+      expect(out).toContain("would publish under 'latest', not maint-30");
+      expect(code).toBe(1);
     },
   );
 

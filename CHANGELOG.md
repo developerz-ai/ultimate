@@ -24,7 +24,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 ### Added
 
 - `scripts/release-due.ts`: `data.nextLane`, the major path. A closed window refuses with `X_RELEASE_MAJOR_WINDOW` and makes no GitHub lookups.
-- `.github/workflows/next-sync.yml`: a weekly `main` â†’ `next` merge that dispatches `ci.yml` there. A conflict opens one issue, found again by its exact title.
+- `.github/workflows/next-sync.yml`: a weekly `main` â†’ `next` merge that dispatches `ci.yml` there. A conflict, or workflow-file changes the job token may not push, opens one issue with the exact command, found again by its exact title; an optional `NEXT_SYNC_TOKEN` secret pushes those too.
 - `bun run scripts/next-breaks.ts [--json]` (`X_NEXT_BREAK_SOURCE_MOVED`, `X_NEXT_BREAK_UNLISTED`).
 - `bun run scripts/release-maint.ts --major <N> [--dry-run] [--json]`: idempotent (`X_MAINT_LANE_REFUSED`, `X_MAINT_LANE_WRITE_FAILED`).
 - `.github/workflows/compat.yml` and `bun run scripts/compat.ts prepare|run|file`, plus `bun run scripts/compat-table.ts --write|--check` (`X_COMPAT_*`). Issue filing is shared with flake-hunt through `scripts/lib/issue-ledger.ts`, which also closes a resolved issue.
@@ -52,6 +52,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Fixed
 
+- `scripts/health.ts`: a full page of Dependabot PRs no longer hides a stuck one behind "unverdicted".
 - `x ci --json` no longer fails with `X_GH_RESPONSE_INVALID` while a run is in progress (`gh` reports its conclusion as `""`).
 - `x doctor`'s report no longer asks the machine's own Chrome inside a test's clock. Its browser fact is the probe's, which is why a doctor test timed out on CI.
 

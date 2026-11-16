@@ -94,7 +94,7 @@ async function prepareSolid(root: string, major: string, runner: Runner): Promis
   const version = Array.isArray(listed) ? newestOf(listed, major) : undefined;
   if (!view.ok || version === undefined) {
     throw unprepared(
-      `the registry named no stable solid-js ${major}.x: ${view.output.trim().slice(0, 300) || `exit ${view.code}`}`,
+      `the registry named no stable solid-js ${major}.x: ${view.output.replace(/\s+/g, ' ').trim().slice(0, 300) || `exit ${view.code}`}`,
       'bun pm view solid-js versions --json',
     );
   }

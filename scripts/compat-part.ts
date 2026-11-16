@@ -34,8 +34,10 @@ export interface PartDoc {
 export function rerunOf(cell: CompatCell, part: CompatPart): string {
   const override = '/tmp/compat-compose.yml';
   const services = part.services.join(' ');
-  const env = part.only === 'live' ? 'set -a; . docker/test-services.env; set +a; ' : '';
-  const verify = `${env}bun run scripts/verify.ts --only ${part.only} --shard ${part.shard}`;
+  // compat.yml starts the part's services and exports their URLs for EVERY part, unit included:
+  // a replay that skipped either would skip (or fail) the suites the cell ran.
+  const verify = `set -a; . docker/test-services.env; set +a; bun run scripts/verify.ts --only ${part.only} --shard ${part.shard}`;
+  const up = `docker compose -f docker/docker-compose.test.yml up -d --wait ${services}`;
   if (cell.axis === 'postgres') {
     return [
       `bun run scripts/compat.ts prepare --cell ${cell.id} --compose-out ${override}`,
@@ -44,9 +46,9 @@ export function rerunOf(cell: CompatCell, part: CompatPart): string {
     ].join(' && ');
   }
   if (cell.axis === 'solid')
-    return `bun run scripts/compat.ts prepare --cell ${cell.id} && ${verify}`;
+    return `bun run scripts/compat.ts prepare --cell ${cell.id} && ${up} && ${verify}`;
   const upgrade = cell.version === 'canary' ? 'bun upgrade --canary' : 'bun upgrade';
-  return `${upgrade} && bun install --frozen-lockfile && ${verify}`;
+  return `${upgrade} && bun install --frozen-lockfile && ${up} && ${verify}`;
 }
 
 const record = (value: unknown): Readonly<Record<string, unknown>> =>

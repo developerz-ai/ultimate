@@ -80,6 +80,15 @@ describe('unit · issue ledger · a subject that went green', () => {
     ]);
     expect(result.findings[0]?.cause).toContain('HTTP 502');
   });
+
+  test('a multi-line gh refusal reaches the one-line cause collapsed', async () => {
+    const gh = async (args: readonly string[]): Promise<RunResult> =>
+      args[1] === 'list' ? { ...ok('HTTP 502:\n\n  Bad   Gateway\n'), ok: false, code: 1 } : ok();
+    const result = await fileIssues([], '.', LEDGER, gh, [{ title: 'compat: x', body: 'g' }]);
+    expect(result.findings[0]?.cause).toBe(
+      'gh could not list the compat issues: HTTP 502: Bad Gateway',
+    );
+  });
 });
 
 describe('unit · issue ledger · titles and fences', () => {

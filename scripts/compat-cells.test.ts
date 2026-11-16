@@ -60,6 +60,24 @@ describe('unit · compat cells · the matrix', () => {
     expect(() => cellOf(matrix, 'bun-nightly')).toThrow('bun-latest');
     expect(() => partOf(matrix, 'unit-9')).toThrow('unit-1');
   });
+
+  test('each bad flag fix names the flag that was wrong, with a real value in it', () => {
+    const matrix = readCompatMatrix(yaml(CELL, PART));
+    const fixOf = (thrown: () => unknown): string => {
+      try {
+        thrown();
+      } catch (error) {
+        return (error as { fix?: string }).fix ?? '';
+      }
+      return expect.unreachable('the lookup did not refuse');
+    };
+    expect(fixOf(() => cellOf(matrix, 'bun-nightly'))).toStartWith(
+      'bun run scripts/compat.ts run --cell bun-latest --part <part> --json',
+    );
+    expect(fixOf(() => partOf(matrix, 'unit-9'))).toStartWith(
+      'bun run scripts/compat.ts run --cell <cell> --part unit-1 --json',
+    );
+  });
 });
 
 describe('unit · compat cells · the real workflow', () => {

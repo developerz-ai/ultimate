@@ -259,6 +259,9 @@ const judgeDependabot = (read: DependabotRead, nowMs: number): Judgement => {
     );
   }
   const prs = narrowPrs(read.prs);
+  const verdict = dependabotVerdict({ prs, nowMs });
+  // A stuck PR on the page is confirmed whatever the page hides: unverdicted never mutes it.
+  if (verdict.verdict === 'unhealthy') return verdict;
   // A page as long as its limit may be hiding the older PRs the stuck ask is about: no verdict.
   if (prs.length >= DEPENDABOT_LIMIT) {
     return {
@@ -268,7 +271,7 @@ const judgeDependabot = (read: DependabotRead, nowMs: number): Judgement => {
       prs,
     };
   }
-  return dependabotVerdict({ prs, nowMs });
+  return verdict;
 };
 
 const judgeDemoShipped = (read: DemoShippedRead, mainGreen: Verdict): Judgement => {

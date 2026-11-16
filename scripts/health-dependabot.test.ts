@@ -155,11 +155,11 @@ describe('unit · health · Dependabot activity and checks', () => {
     expect(dependabotVerdict({ prs: page, nowMs }).verdict).toBe('unverdicted');
   });
 
-  test('through healthAt, a full page is truncated: no verdict, nothing filed off it', async () => {
+  test('through healthAt, a full page with no stuck PR is truncated: no verdict', async () => {
     const pr = (number: number) => ({
       number,
       createdAt: '2020-01-01T00:00:00Z',
-      updatedAt: '2020-01-02T00:00:00Z',
+      updatedAt: new Date().toISOString(),
       statusCheckRollup: [red],
     });
     const full = await healthAt('.', {
@@ -169,12 +169,28 @@ describe('unit · health · Dependabot activity and checks', () => {
     const row = verdictOf(full).find((one) => one.row === 'dependabot-not-stuck');
     expect(row?.verdict).toBe('unverdicted');
     expect(row?.reason).toContain('--limit');
-    const short = await healthAt('.', {
-      ...healthyReaders,
-      'dependabot-not-stuck': async () => ({ prs: [1, 2, 3, 4].map(pr) }),
+  });
+
+  test('through healthAt, a full page still files the stuck PRs it holds', async () => {
+    // The page is truncated, but a confirmed stuck PR on it is confirmed: unverdicted never mutes it.
+    const pr = (number: number) => ({
+      number,
+      createdAt: '2020-01-01T00:00:00Z',
+      updatedAt: '2020-01-02T00:00:00Z',
+      statusCheckRollup: [red],
     });
-    const filed = verdictOf(short).find((one) => one.row === 'dependabot-not-stuck');
-    expect(filed?.verdict).toBe('unhealthy');
+    for (const numbers of [
+      [1, 2, 3, 4, 5],
+      [1, 2, 3, 4],
+    ]) {
+      const result = await healthAt('.', {
+        ...healthyReaders,
+        'dependabot-not-stuck': async () => ({ prs: numbers.map(pr) }),
+      });
+      const row = verdictOf(result).find((one) => one.row === 'dependabot-not-stuck');
+      expect(row?.verdict).toBe('unhealthy');
+      expect(row?.reason).toContain('#1 inactive');
+    }
   });
 
   test('through healthAt, a mixed page files the stuck ask and turns healthy off', async () => {
