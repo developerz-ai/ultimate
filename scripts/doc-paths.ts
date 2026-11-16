@@ -61,6 +61,9 @@ export const DOC_GLOBS: readonly string[] = [
   'wiki/**/*.md',
   'docs/**/*.md',
   'packages/*/*.md',
+  // The maintainer's briefs: the bot runs what they say and opens what they cite, so a brief
+  // naming a moved runbook or a command this build lacks is the same defect as a page's.
+  '.dz/briefs/*.md',
 ];
 
 /** Where else a path may live: the tracked apps, whose layout the wiki describes. */

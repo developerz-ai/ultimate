@@ -34,6 +34,12 @@ updates:
     ignore:
       # Bun is pinned by `engines` and installed by the workflow, not by npm.
       - dependency-name: bun
+      # A Solid major is adopted on `next` by docs/ops/10-solid-major.md (it breaks every island),
+      # never by a bot PR against `main`; compat.yml's `solid-1` cell watches the newest 1.x.
+      - dependency-name: solid-js
+        update-types: ['version-update:semver-major']
+      - dependency-name: babel-preset-solid
+        update-types: ['version-update:semver-major']
 
   # `/` reaches `.github/workflows/` only; the composite in `.github/actions/setup/` pins actions by
   # SHA too, and a pin Dependabot cannot see is a pin that rots.

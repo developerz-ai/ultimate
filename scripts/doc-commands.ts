@@ -49,6 +49,9 @@ export const DOC_GLOBS: readonly string[] = [
   'wiki/**/*.md',
   'docs/**/*.md',
   'packages/*/*.md',
+  // The maintainer's briefs: the bot runs what they say and opens what they cite, so a brief
+  // naming a moved runbook or a command this build lacks is the same defect as a page's.
+  '.dz/briefs/*.md',
   // Both tracked apps: their READMEs, AGENTS.md and per-package pages are what an agent working IN
   // the app reads first, and `gate-steps.ts` already reads them for the same reason.
   'examples/**/*.md',
