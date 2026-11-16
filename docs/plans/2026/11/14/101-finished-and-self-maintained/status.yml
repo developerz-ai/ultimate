@@ -5,7 +5,7 @@ created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
 percent: 63
-current_focus: "Sweep 9 (slice 13: five shapes, finished.ts, recipes, roadmap truth) on feat/sweep-9-shapes; 31.37.0 shipped 8c. finished.ts is red on 9 of 10 rows by design until the plan closes. Next: audit rounds (20), infra (30), platform (31), adopters (40–49)."
+current_focus: "Audit rounds (slice 20): round 1 of ≤6 on feat/audit-rounds — P0 1 (#1188, patch 31.38.1), P1 2, P2 6 confirmed and fixed; round 2 reads the round-1 ledger's unread areas, security axis injection + secrets. Then infra (30, + I13), platform (31), adopters (40–49)."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -78,8 +78,8 @@ slices:
   - file: 20-audit-rounds.md
     tier: 0
     sweep: "A"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 17
   - file: 30-infra.md
     tier: 5
     sweep: "R"
@@ -141,6 +141,9 @@ slices:
     status: not_started
     percent: 0
 evidence:
+  - "audit round 1 (2026-11-16, at 31.38.0): 4 read-only auditors (bug-hunter tiers 0–2, tiers 3–5 + scripts; concurrency; security authz + tenancy) + production evidence (demo pods/logs via ../infrastructure verbs) + open issues. Confirmed: P0 1 — live-query cross-tenant read on a tenant column not named orgId (realtime; #1188, reviewed CLOSED twice); P1 2 — parseAmount refused formatMoney output (de-AT, fr-CH, mr-IN, en-ZA code); release-due brief over the 10,000-char cap (#1170); P2 6 — robots non-ASCII Disallow; outbox staged row 60 s; sub-250 ms worker floor 60 s; repeatable-read stage (found in fix review); demo storage on emptyDir (→ 30 I13); CodeQL 7 real of 85 (78 dismissed with reasons). Not converged (P0+P1 > 0)."
+  - "audit round 1 read ledger — READ: money, flags, time, i18n (part), cache (lru, codec, tags), storage (range, path, list, s3 listUploads), http (byte-range, forwarded, router, cookie, object-response, cache-policy), core (cookie, cursor, ids), schema (json-schema, url), entity (memory match, like, pg-sql predicates, arrays), db (statement-split, sql-scan, url), seo (xml, robots, feeds), auth (cbor, base64url, member-invite); jobs (wake, outbox, worker loop, webhook, cron, scheduler); realtime (tenancy, matcher-bridge, pg-replication row, live-replicator, record-publisher, offline-queue, client channels); action (meters, idempotency memory); query (matcher, download-token, read/cache); admin (gates, jobs resources, screen-system); mcp (exposed, tenant, server head); cli (shapes saas/realtime/api-keys/invite, sign-in, serve-retire/drain, runtime-jobs, schema wait, schema-diff); mail mime; ai cost; scraping robots/cookies; pwa route-rules; notify digest. UNREAD for round 2: policy; db migrate/pool/drift/generate/keyset/replica/row-security; entity pg-driver/write/upsert/history/partition; http pipeline/server/rate-limit/compress/csrf/cors; storage s3 body/upload/image/signed-url; cache tiers/redis-pubsub/invalidate/memo/semantic/cdn; core (rest); schema validators/coerce; auth sessions/OIDC/api keys/passkeys; cli dev/verify/deploy/upgrade/role-*/prerender/islands; testing; ui; manifest; scripts (most); jobs drivers/steps; realtime server/sync node/presence; admin (rest); mcp app-tool/transport-http; shapes content/blog/agent."
+  - "audit round 1 unconfirmed (re-examine in round 2): admin actor without orgId treated as operator; api-keys shape key:issue can mint scopes beyond the issuer's; download-token grant outlives role revocation; admin custom auth.actor vs ambient context; storage list order UTF-16 vs S3 UTF-8; uuidV7 on an invalid clock; pg-array-decode offset with seconds; allFlags localeCompare without locale; sitemap ignores Allow; x db gen index where as string → X_CLI_UNEXPECTED; notify digest-pg events as text; enqueue-signal listener throw; schema wait outside the drain abort; #1167 still unreproduced."
   - "sweep 1: #1141 merged (245 files, 9 workers; security + concurrency + 2 bug-hunter passes, 13 confirmed findings fixed); release 31.24.0 (#1142) (2026-11-14)"
   - "sweep 0: #1138 merged; 31.23.0 released (#1139) — registry-audit: 31/31 publishable packages are on npm at 31.23.0, every one attested; demo /readyz 200, /llms.txt 200 (2026-11-14)"
   - "sweep 0 corrections: H3 premise false (sweep used the partial index; cost was dead index entries); H7 failures already fixed on main (#1036, #1060); bench release trigger never fired (GITHUB_TOKEN); released as a minor (additive API)" 

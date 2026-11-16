@@ -19,6 +19,7 @@ Paths are in that repository; locate by its own README.
 | I10 | a per-agent access handle for the read scripts instead of the owner's key | owner sign-off required by that repository's own rule |
 | I11 | the gateway deploys a pinned release, not a moving tag | image tag is a branch name |
 | I12 | the demo's captcha secret set, or the feature off | ~550 `auth.captcha.unverified` lines a week |
+| I13 | the demo gets object storage (an R2 bucket, `S3_ENDPOINT`/`S3_BUCKET` + keys as a sealed secret), then `assets: { retain: { disk, builds: 3 } }` in its `app.config.ts` | `.x` is a per-pod `emptyDir` and no `S3_ENDPOINT` is set: uploads and retained builds are lost on every deploy; web logs `X_ASSET_RETAIN_UNDECLARED` at boot (2026-11-16, audit round 1) |
 
 ## Steps
 1. One PR per row or per two related rows, each ≤ 100 files, through that repository's own gate.
