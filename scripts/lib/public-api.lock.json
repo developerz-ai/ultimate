@@ -1,6 +1,6 @@
 {
   "format": 2,
-  "version": "31.35.0",
+  "version": "31.36.0",
   "entries": {
     "@ultimat3/action": {
       "ACTION_ANSWER_COOKIE": {"hash":"0e5d26d4d453af41","shape":{"kind":"declaration","keyword":"const","head":"0e5d26d4"}},
@@ -1425,7 +1425,7 @@
       "TtlScope": {"hash":"c39cd6a71dbfd327","shape":{"kind":"declaration","keyword":"type","head":"c39cd6a7"}},
       "assertFiniteCapacity": {"hash":"a5e7712c313c7f81","shape":{"kind":"function","head":"95d9ff21","params":["3c71d4a4","473287f8","12886f9d"],"returns":"12886f9d"}},
       "assertFiniteDurationMs": {"hash":"72ffab753be6e08c","shape":{"kind":"function","head":"65efdd91","params":["473287f8","473287f8","12886f9d","?473287f8|eb045d78"],"returns":"12886f9d"}},
-      "assertFiniteSimilarityFloor": {"hash":"5c87006b12d49eb3","shape":{"kind":"function","head":"1ed96e9e","params":["3c71d4a4","473287f8","12886f9d"],"returns":"12886f9d"}},
+      "assertFiniteSimilarityFloor": {"hash":"4370479da46b6650","shape":{"kind":"function","head":"1ed96e9e","params":["3c71d4a4","473287f8","12886f9d","?473287f8|eb045d78"],"returns":"12886f9d"}},
       "assertKnownTags": {"hash":"affbba9eff057993","shape":{"kind":"function","head":"7ac455f0","params":["b022e537"],"returns":"445be54d"}},
       "assertTtl": {"hash":"15f4dff18693a5c2","shape":{"kind":"function","head":"2fffb4cf","params":["473287f8","12886f9d","3c71d4a4","?e99f2408"],"returns":"12886f9d"}},
       "bestEffort": {"hash":"a6523a5a1a937885","shape":{"kind":"function","head":"fd16de86","params":["238c6525","f096b163","473287f8","ff3d5903"],"returns":"628657bf"}},
