@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "fd1e477928e7e8c1695fd102ed68b25654e7ec3cbf53508fb1142b8e9053b5b1",
+  "buildId": "21904e0904fab7d68b3198d57ed51d70f95697d70428a8d20f0a693e387eb3f0",
   "tiers": {
     "0": [
       "core",
@@ -2363,6 +2363,61 @@
       "code": "X_FILE_TOO_LONG",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-package.ts"
+    },
+    {
+      "code": "X_FINISHED_COMPAT_RED",
+      "owner": "scripts",
+      "at": "scripts/finished-github.ts"
+    },
+    {
+      "code": "X_FINISHED_FLAKY",
+      "owner": "scripts",
+      "at": "scripts/finished-github.ts"
+    },
+    {
+      "code": "X_FINISHED_GATE_PARTIAL",
+      "owner": "scripts",
+      "at": "scripts/finished-gate.ts"
+    },
+    {
+      "code": "X_FINISHED_LANE_ABSENT",
+      "owner": "scripts",
+      "at": "scripts/finished-lanes.ts"
+    },
+    {
+      "code": "X_FINISHED_LEDGER_OPEN",
+      "owner": "scripts",
+      "at": "scripts/finished-ledger.ts"
+    },
+    {
+      "code": "X_FINISHED_LOOP_OPEN",
+      "owner": "scripts",
+      "at": "scripts/finished-loop.ts"
+    },
+    {
+      "code": "X_FINISHED_PIN_UNREASONED",
+      "owner": "scripts",
+      "at": "scripts/finished-pins.ts"
+    },
+    {
+      "code": "X_FINISHED_PLANNED_COMMAND",
+      "owner": "scripts",
+      "at": "scripts/finished-repo.ts"
+    },
+    {
+      "code": "X_FINISHED_SHAPE_UNGATED",
+      "owner": "scripts",
+      "at": "scripts/finished-github.ts"
+    },
+    {
+      "code": "X_FINISHED_STUB",
+      "owner": "scripts",
+      "at": "scripts/finished-repo.ts"
+    },
+    {
+      "code": "X_FINISHED_UNVERDICTED",
+      "owner": "scripts",
+      "at": "scripts/finished-rule.ts"
     },
     {
       "code": "X_FINITE_BOUND_PIN_STALE",

@@ -17,6 +17,7 @@ import { formatWritten } from './generate-format-written';
 import { APP_CONFIG, type SignInEnvKey, signInConfigEdit } from './generate-sign-in-config';
 import { appManifestIfAny, existingArtifacts } from './generate-sign-in-manifest';
 import { readSignInMode, type SignInMode, signInLabel } from './generate-sign-in-mode';
+import { rebaseSignInRuntime } from './generate-sign-in-runtime';
 import { planWrites, writeFiles } from './generate-write';
 import { resolveDbModule } from './handle-registration';
 import { resolveCatalogModule } from './i18n-audit';
@@ -28,6 +29,7 @@ import { names, resolveLocales } from './templates';
 import { authFiles } from './templates/scaffold-auth';
 import { DEV_ACTOR_FILES, signedInAuthenticatorFiles } from './templates/sign-in-authenticator';
 import { oidcEnvPrefix } from './templates/sign-in-oidc';
+import { OIDC_RUNTIME_ROUTES } from './templates/sign-in-runtime';
 import { SIGN_IN_PATH } from './templates/sign-in-shared';
 
 /** The env keys an OIDC sign-in adds to `envSchema`; `SESSION_SECRET` and `APP_URL` exist already. */
@@ -112,7 +114,7 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
   // Every catalog the app keeps, as every other generator seeds them: `en` alone renders ⟦key⟧
   // for a reader of any other locale the app ships.
   const locales = resolveLocales(await namedOrAppLocales(root, flagList(ctx.args, 'locales')));
-  const files = await localiseCatalogs(
+  const generated = await localiseCatalogs(
     root,
     generate({
       kind: 'sign-in',
@@ -124,6 +126,14 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
   );
   const flags = reproducedFlags(generateSpec, ctx.args);
   const invocation = [invocationOf(ctx, 'g'), 'sign-in', ...flags].join(' ');
+  // `runtime.ts` is the file every app edits: the sign-in delta is spliced into the author's copy.
+  const runtime = await rebaseSignInRuntime(
+    appDisk(root),
+    generated,
+    mode.kind === 'oidc' ? OIDC_RUNTIME_ROUTES : undefined,
+    invocation,
+  );
+  const files = runtime.files;
   const force = flagBool(ctx.args, 'force');
   const swap =
     mode.kind === 'oidc'
@@ -140,11 +150,14 @@ export async function runSignIn(ctx: CommandContext, root: string): Promise<Comm
   const configEdited = configSource !== undefined && config.contents !== configSource;
   // The three actions are listed in the API index under their file names, so an app already
   // binding `createSession` there is refused before anything lands — `cmd-generate.ts`'s preflight.
-  const bindings = await indexBindingFindings(
-    root,
-    files.map((file) => file.path),
-    `${invocation}   # after renaming what apps/web/api/index.ts already binds under that name`,
-  );
+  const bindings = [
+    ...runtime.refusals,
+    ...(await indexBindingFindings(
+      root,
+      files.map((file) => file.path),
+      `${invocation}   # after renaming what apps/web/api/index.ts already binds under that name`,
+    )),
+  ];
 
   // The pass's half: what the written actions cannot run as generated, turned off with a reason.
   const exerciseSource = await appDisk(root).read(EXERCISE_FILE);

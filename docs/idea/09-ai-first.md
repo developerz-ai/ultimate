@@ -186,7 +186,7 @@ pgvector in the same Postgres. No second datastore.
 
 ## Branch environments
 
-The database half ships as `x db branch list | create <name> | delete <name>`. `x branch` — the one command that also builds, routes and scopes a socket — is **planned** and exits `X_NOT_IMPLEMENTED`.
+The database half ships as `x db branch list | create <name> | delete <name>`. `x branch` — the one command that would also build, route and scope a socket — is **not planned**, `As of 2026-11-16`, and is `X_CLI_UNKNOWN_COMMAND`: the rest of a preview is a container of the one image with `DATABASE_URL` naming the branch ([Known gaps](../../wiki/Known-Gaps.md#open-by-decision)).
 
 | Property | Detail | `As of 2026-08` |
 |---|---|---|
@@ -194,7 +194,7 @@ The database half ships as `x db branch list | create <name> | delete <name>`. `
 | Migrations | `db.migrate` applies here, never to the shared dev DB | **shipped** |
 | Preview URL | `http://<name>.localhost:<PORT>`, reported on `data.preview` | **computed**, routed by nothing |
 | Teardown | `x db branch delete <name>` — only what `x db branch list` shows | **shipped** |
-| **Build ID scopes the SW** | the branch gets its own SW scope and cache namespace, so a preview can never poison prod cache ([`08-pwa-offline.md`](./08-pwa-offline.md)) | **planned** |
+| **Build ID scopes the SW** | a preview container booted with its own `BUILD_ID` gets its own SW cache namespaces (`cacheNamespace`, `packages/pwa/src/service-worker.ts:201`), so a preview cannot poison prod cache ([`08-pwa-offline.md`](./08-pwa-offline.md)) | **an env var**, no command |
 | Agent use | an agent can migrate, seed, test, and browse a preview without risking anything shared | |
 
 ## `--json` everywhere

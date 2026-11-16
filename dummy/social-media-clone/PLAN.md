@@ -93,8 +93,9 @@ generates from the declarations.
 | Admin | jobs, uploads, users, DB insights — `admin/admin` is **view-only**, enforced by policy |
 | Surfaces | web (site + app), REST + OpenAPI, MCP server |
 
-Build order: **web → mobile → desktop**. Mobile and desktop are roadmap milestones 12–14 and are
-*design-only* today (`docs/idea/16-app-targets.md`) — they are a later phase, not this one.
+Build order: **web**. Mobile and desktop were roadmap milestones 12–14 and are **not planned**,
+`As of 2026-11-16` (`docs/idea/14-roadmap.md`, "Not planned"); the installable PWA is the phone and
+desktop app this build ships.
 
 ## Framework gaps this build must close
 

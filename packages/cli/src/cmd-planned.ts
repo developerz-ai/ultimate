@@ -23,34 +23,11 @@ export interface PlannedCommand {
  * build actually ships — a fix line pointing at another unbuilt command is the failure mode this
  * table exists to close, and `cmd-planned.test.ts` asserts the whole set against the registry.
  */
-export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
-  {
-    name: 'branch',
-    summary: 'copy-on-write branch environments with a preview URL',
-    usage: 'x branch [<name>|delete <name>] [--json]',
-    fix: 'x db branch list --json   # the database half: list, create <name>, delete <name>',
-  },
-  {
-    name: 'ai',
-    summary: 'eval scores, semantic-cache stats, vector reindex',
-    usage: 'x ai [eval <name>|cache|reindex] [--json]',
-    subcommands: ['eval', 'cache', 'reindex'],
-    fix: 'x test eval --json   # every eval, scored against its committed baseline',
-  },
-  // `registerCurrency()` ships `As of 2026-08`, and this row is deliberately NOT deleted with it.
-  // What is planned is a GENERATOR — the one thing a process that exits can contribute, since a
-  // registration has to land in the app's own source to survive the run — and a generator that
-  // emits the one call is not a second path any more than `x g route` is a second way to declare a
-  // route (axiom 1). The whole table is shaped this way: `x branch` beside `x db branch`, `x ai`
-  // beside `x test eval`. What changed is only that the `fix:` is now true.
-  {
-    name: 'money',
-    summary: 'extend the currency table',
-    usage: 'x money add-currency <ISO> --exponent <n> [--json]',
-    subcommands: ['add-currency'],
-    fix: "x errors explain X_CURRENCY_UNKNOWN --json   # extend it in code: registerCurrency({ code: 'GHS', exponent: 2, name: 'Ghana Cedi' }) at boot",
-  },
-];
+// Empty `As of 2026-11-16` (plan 101b slice 13): `x branch`, `x ai` and `x money` left the
+// registry, each with its decision and extension point in wiki/Known-Gaps.md, and the parser now
+// refuses each with `X_CLI_UNKNOWN_COMMAND`. Finished means this list is empty, not that every idea
+// was built; a row returns only with a plan that builds it.
+export const PLANNED_COMMANDS: readonly PlannedCommand[] = [];
 
 /**
  * The planned command a resolved command NAME belongs to, if any. Exported for `dispatch.ts`'s

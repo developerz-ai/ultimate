@@ -31,6 +31,7 @@
     "dependency-allowlist": "bun run scripts/dependency-allowlist.ts",
     "dockerfile-template": "bun run scripts/dockerfile-template.ts",
     "flight-copies": "bun run scripts/flight-copies.ts",
+    "finished": "bun run scripts/finished.ts",
     "finite-bounds": "bun run scripts/finite-bounds.ts",
     "framework-env": "bun run scripts/framework-env.ts",
     "fetch-deadline": "bun run scripts/fetch-deadline.ts",

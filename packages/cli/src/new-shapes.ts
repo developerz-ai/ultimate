@@ -7,7 +7,16 @@ import { flagString } from './parse';
 import { quoteArg } from './shell-quote';
 
 /** Every shape `x new` writes. A name here and no overlay in `templates/shapes/` fails its test. */
-export const NEW_SHAPES = ['api', 'blog', 'dashboard'] as const;
+export const NEW_SHAPES = [
+  'api',
+  'blog',
+  'dashboard',
+  'saas',
+  'agent',
+  'realtime',
+  'content',
+  'offline',
+] as const;
 
 export type NewShape = (typeof NEW_SHAPES)[number];
 

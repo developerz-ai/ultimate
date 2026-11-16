@@ -11,6 +11,7 @@ import {
   firstRunLines,
   firstRunPlan,
   generatorName,
+  INVITE_FILE,
   runFirstRun,
   SOLO_SLICE_FILES,
   stepFinding,
@@ -88,6 +89,15 @@ describe('firstRunPlan', () => {
     const names = (signedIn: boolean) => firstRunPlan({ signedIn }).map((step) => step.name);
     expect(names(true)).not.toContain('g sign-in');
     expect(names(false).filter((name) => name !== 'g sign-in')).toEqual(names(true));
+  });
+
+  // `--shape saas` runs `x g invite` at birth; a second invite is a conflict on `invite.ts`.
+  test('an app that already has its member invite is swept without one, and nothing else is dropped', () => {
+    const names = (invited: boolean) => firstRunPlan({ invited }).map((step) => step.name);
+    expect(names(true)).not.toContain('g invite');
+    expect(names(false)).toContain('g invite');
+    expect(names(false).filter((name) => name !== 'g invite')).toEqual(names(true));
+    expect(INVITE_FILE).toBe('apps/web/app/auth/invite.ts');
   });
 
   // One chart per app, named by its Chart.yaml: a `<name>` is X_CLI_BAD_FLAG, like sign-in's.

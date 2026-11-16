@@ -808,6 +808,16 @@ jobs:
             flags: --shape blog
           - app: dashboardapp
             flags: --shape dashboard
+          - app: saasapp
+            flags: --shape saas
+          - app: agentapp
+            flags: --shape agent
+          - app: realtimeapp
+            flags: --shape realtime
+          - app: contentapp
+            flags: --shape content
+          - app: offlineapp
+            flags: --shape offline
           # The monorepo shape (plan 101 slice 22, M1): web + admin + a third app, domain + ui + a
           # third package — each one command, gated by the same two passes below.
           - app: multiapp

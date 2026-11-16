@@ -836,7 +836,7 @@ pgvector in the same Postgres. No second datastore.
 
 ## Branch environments
 
-The shipped surface is `x db branch`, with three verbs. `x branch` (no `db`) is **planned** and exits `X_NOT_IMPLEMENTED`; the build-id and MCP-socket rows below are what it will add.
+The surface is `x db branch`, with three verbs. A whole branch environment with a preview URL is **not planned**, `As of 2026-11-16` ([Known gaps](Known-Gaps#open-by-decision)): the rest of a preview is one more container of the app's image with `DATABASE_URL` pointed at the branch, which the platform runs (axiom 7).
 
 ```bash
 x db branch create feat-new-billing --json
@@ -850,8 +850,8 @@ x db branch delete feat-new-billing --json
 | Migrations | `db.migrate` applies here, never to the shared dev DB (`X_MCP_NOT_BRANCH_DB`) | **shipped** |
 | Preview URL | `http://<name>.localhost:<PORT>`, reported on `data.preview` | **the URL is computed**; nothing routes that subdomain for you |
 | Teardown | `x db branch delete <name>` — it may only delete what `list` shows | **shipped** |
-| **Build ID scopes the SW** | a per-branch build id giving the branch its own SW scope and cache namespace, so a preview can never poison prod cache → [PWA and offline](PWA-And-Offline) | **planned**, part of `x branch` |
-| Scoped MCP socket | `ws://localhost:9229/<name>` | **planned**, part of `x branch` |
+| **Build ID scopes the SW** | boot the preview container with its own `BUILD_ID`: the service worker's cache namespaces derive from it (`cacheNamespace(buildId, …)`, `packages/pwa/src/service-worker.ts:201`), so a preview cannot poison prod cache → [PWA and offline](PWA-And-Offline) | **not planned** as a command; an env var on what ships |
+| Scoped MCP socket | `x mcp serve --transport http --port <n>` with `DATABASE_URL` naming the branch database: `db.migrate` reads the branch from that database's name | **not planned** as a command; what ships, pointed at the branch |
 | Agent use | an agent can migrate, seed, test, and browse a preview without risking anything shared | |
 
 ## `--json` everywhere

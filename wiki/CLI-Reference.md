@@ -72,10 +72,7 @@ x version              # CLI version
 | `x cache graph\|bust <tag>\|clear` | the tag graph off the manifest (what each write evicts), a bust of one tag or every declared tag through the app's own tiers and bus · `stats` was removed `As of 2026-11-15` ([Known gaps](Known-Gaps#not-built-yet)) | shipped |
 | `x explain <query> [--input <json>] [--org <id>]` | one declared query run once on the dev database, every statement it sent planned by the `exercise` step's oracle | shipped |
 | `x profile <route> [--runs 20] [--top 10]` | a CPU profile of rendering one route in this process: the hottest functions, file and line | shipped |
-| `x branch` | copy-on-write branch environments | planned |
 | `x status [--url <origin>] [--samples n]` | the build each live worker runs (`x_job_workers`), and the build, status and role each sampled origin's `/readyz` answers | shipped |
-| `x ai` | eval, cache stats, reindex | planned |
-| `x money add-currency` | extend the currency table | planned |
 
 ## x new
 
@@ -2207,17 +2204,7 @@ A route answering `>= 400` is profiled and reported red, `X_PROFILE_ROUTE_FAILED
 
 ## Planned commands
 
-Specified in the design docs, not yet implemented. Every one is in the command registry: calling it exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, because "not built yet" and "not a command" are different facts and only one of them is true.
-
-The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-planned.test.ts` asserts every row is reachable through the parser and that no `fix` points at another planned command. `PLANNED_SUBCOMMANDS` in the same file is the one-level-down version — a subcommand of a shipped command that this build does not implement — and is empty `As of 2026-11-15`: `x db`'s `studio`, `x jobs`'s `drain`, `x token`'s `grant` and `x cache`'s `stats` left the registry, each with its reason in [Known gaps](Known-Gaps), and the parser now refuses each with `X_CLI_UNKNOWN_COMMAND` — exit 1, as `X_NOT_IMPLEMENTED` was.
-
-| Command | Purpose | `fix:` today |
-|---|---|---|
-| `x branch [<name>\|delete <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch list --json` — the database half: `list`, `create <name>`, `delete <name>` |
-| `x ai [eval <name>\|cache\|reindex]` | eval scores, cache hit rate and tokens saved, vector reindex | `x test eval --json` |
-| `x money add-currency <ISO> --exponent <n>` | extend the currency table | `x errors explain X_CURRENCY_UNKNOWN --json` — extend it in code: `registerCurrency({ code, exponent, name })` from `@ultimat3/money`, once at boot. Shipped `As of 2026-08`, and it is what this command promised |
-
-**Flags reach the same answer**, `As of 2026-10`: `x money add-currency USD --exponent 2` and `x branch --follow --json` exit `X_NOT_IMPLEMENTED` with the row's `fix:`, as the bare form does.
+None, `As of 2026-11-16`. The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`, and it is empty: a planned command is registered so it can exit `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, and the last three left the registry with plan 101b slice 13. `x branch`, `x ai` and `x money` are each a row in [Known gaps](Known-Gaps) with the decision ("not planned") and the extension point that does the job today, and the parser refuses each with `X_CLI_UNKNOWN_COMMAND`. `PLANNED_SUBCOMMANDS`, the one-level-down version, has been empty since `As of 2026-11-15` (`x db studio`, `x jobs drain`, `x token grant` and `x cache stats` went the same way). `cmd-planned.test.ts` asserts every row that returns is reachable through the parser and that no `fix` points at another planned command.
 
 `x token`, `x config`, `x logs` and `x cache` left this table `As of 2026-11` (plan 101-full-stack-efficiency-sweeps U5), `x status` `As of 2026-11-15`; each has its section above.
 

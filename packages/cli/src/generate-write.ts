@@ -172,6 +172,12 @@ type WritePlan =
  * The author's rules live in a slice's `entity.ts` and `policy.ts`: `--force` as the first thing
  * offered deleted them, when an existing slice almost always means the next primitive belongs in it.
  */
+/** Files the app owns and a generator splices into, never replaces (`sign-in-runtime.ts`). */
+const APP_OWNED_SPLICED: ReadonlySet<string> = new Set([
+  'apps/web/runtime.ts',
+  'apps/web/runtime.test.ts',
+]);
+
 const conflictFix = (
   path: string,
   absolute: string,
@@ -179,6 +185,12 @@ const conflictFix = (
   name: string | undefined,
 ): string => {
   const [slice, module] = path.split('/').slice(-2);
+  // An app-owned file a generator splices into (the port wiring): it already carries this
+  // generator's lines, and `--force` would replace it with the template, dropping every port and
+  // line the app added. The fix inspects it; it never overwrites it.
+  if (APP_OWNED_SPLICED.has(path)) {
+    return `git diff -- ${quoteArg(path)}   # already wired by this generator; forcing it would replace the app's own lines with the template`;
+  }
   // The caller's own name, never `<name>`: a placeholder pasted into a shell is a redirect. With no
   // name to hand back, the one line that needs none.
   if (
