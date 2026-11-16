@@ -420,6 +420,7 @@ export const sqlUnsafe = (received: string, position: number): DbError =>
     cause:
       `interpolation #${position} in a sql\`\` template is ${received}, ` +
       'which cannot be bound as a parameter',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the fix shows the tagged template to paste
     fix: 'sql`… ${scalar} …`   // a scalar binds as $n; a nested sql`` fragment composes; wrap audited SQL in raw()',
     meta: { position, received },
   });

@@ -58,7 +58,7 @@ describe('an app’s unit step', () => {
     expect(unit?.tests).toEqual({ ran: 2, skipped: 0 });
     expect(unit?.findings.map((finding) => finding.code)).toEqual(['X_COVERAGE_FLOOR_UNSTATED']);
     expect(unit?.findings[0]?.fix).toBe(
-      'edit x.verify.json — add "coverage": { "lines": 95, "funcs": 95 }',
+      '{ "coverage": { "lines": 95, "funcs": 95 } }   // in x.verify.json, beside its other keys',
     );
     expect(unit?.output).toContain('100.0% of lines, 100.0% of functions over 2 source file(s)');
   });

@@ -243,7 +243,7 @@ describe('unit · an app whose db package and role map are its own', () => {
       // Each says exactly what to add by hand.
       expect(findings[0]?.fix).toContain("import { blogPost } from '@gen/web/app/blog/entity';");
       expect(findings[1]?.fix).toContain(
-        "admin: 'blog_posts:read', 'blog_posts:write', 'blog_posts:delete'",
+        "{ admin: { grants: [..., 'blog_posts:read', 'blog_posts:write', 'blog_posts:delete'] } }",
       );
     });
   }

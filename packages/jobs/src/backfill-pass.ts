@@ -13,13 +13,7 @@
 // in step with the work and decides where a resumed pass restarts, while the `x_backfills` row is
 // a report an operator reads and the record that a completed name has already been swept.
 
-import {
-  appVersion,
-  assert,
-  logger,
-  renderThrowable,
-  resolveEnvironment,
-} from '@ultimat3/core';
+import { appVersion, assert, logger, renderThrowable, resolveEnvironment } from '@ultimat3/core';
 import { expectedQueryLoop, expectedSeqScan } from '@ultimat3/db';
 import type { BackfillInput, BackfillReport } from './backfill-definition';
 import { BackfillStalledError } from './backfill-errors';

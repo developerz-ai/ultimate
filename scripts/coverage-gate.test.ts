@@ -167,8 +167,7 @@ describe('the ratchet', () => {
     );
   });
 
-  // README.md's facts table quotes every pin: a pin edited without `readme-facts --write` reds
-  // X_README_FACTS_DRIFT, which cost the 31.35.0 release two CI rounds.
+  // README's facts table quotes every pin; an edit without `readme-facts --write` reds its drift.
   test('both stale-pin fixes name the readme-facts rewrite the pin edit owes', () => {
     const pin = { lines: 80, funcs: 80, why: 'being written' };
     for (const measured of [96, 80 + PIN_SLACK]) {
