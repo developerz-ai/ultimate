@@ -271,7 +271,11 @@ export function fixRowIn(table: string, path: string, input: NewErrorCode): stri
 /** A wiki table cell: a `|` would end it early, a newline would end the row. */
 // why: no backslash escape — a fix cell's commands sit in code spans, where GFM keeps `\\` literal
 // (`psql -c '\\c postgres'` would double); only `|` is escaped, which GFM tables honour even there.
-const cell = (value: string): string => value.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+const cell = (value: string): string =>
+  value
+    .split('|')
+    .join('\\|')
+    .replace(/\s*\n\s*/g, ' ');
 
 /**
  * The fix as the page writes one: the command in backticks, the way every neighbouring row has it.
