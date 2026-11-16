@@ -14,8 +14,12 @@ interface EmittedText {
   readonly contents: string;
 }
 
+// Rendered once for the file: every rule below reads the same bytes, and rendering each variant
+// again per variant was quadratic in the shapes (13 of them since sweep 9: 5 s under coverage).
+const variants = scaffoldVariants();
+
 const emitted = (): readonly EmittedText[] =>
-  scaffoldVariants().flatMap((variant) =>
+  variants.flatMap((variant) =>
     variant.files.flatMap((file) =>
       typeof file.contents === 'string'
         ? [{ variant: variant.name, path: file.path, contents: file.contents }]
@@ -54,18 +58,20 @@ describe('unit · a scaffolded app declares every permission it grants and requi
   const references = (
     read: (source: string) => readonly string[],
   ): readonly { at: string; permission: string }[] =>
-    scaffoldVariants().flatMap((variant) => {
+    variants.flatMap((variant) => {
       const declared = new Set(
         variant.files.flatMap((file) =>
           typeof file.contents === 'string' ? declaredIn(file.contents) : [],
         ),
       );
-      return emitted()
-        .filter((file) => file.variant === variant.name && isShipped(file.path))
+      return variant.files
+        .filter((file) => isShipped(file.path))
         .flatMap((file) =>
-          read(file.contents)
-            .filter((permission) => !declared.has(permission))
-            .map((permission) => ({ at: `${file.variant}: ${file.path}`, permission })),
+          typeof file.contents === 'string'
+            ? read(file.contents)
+                .filter((permission) => !declared.has(permission))
+                .map((permission) => ({ at: `${variant.name}: ${file.path}`, permission }))
+            : [],
         );
     });
 
