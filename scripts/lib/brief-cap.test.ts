@@ -1,0 +1,41 @@
+// Every brief `.dz/maintainer/maintainer.yml` schedules fits the platform's cap: a brief over it is
+// refused at every due firing, so its checkup runs nothing (#1170). `health.md` alone was held to
+// it, and `release-due.md` drifted to 10,574 characters unseen.
+
+import { describe, expect, test } from 'bun:test';
+// why: Bun ships no path-join primitive; Bun.file takes one already joined.
+import { join } from 'node:path';
+import { repoRoot } from './run';
+
+/** The scheduled-checkup platform's ceiling, in characters (the refusal counts them, not bytes). */
+const BRIEF_CAP = 10_000;
+
+const MAINTAINER = '.dz/maintainer/maintainer.yml';
+
+const scheduledBriefs = async (): Promise<readonly string[]> =>
+  [
+    ...(await Bun.file(join(repoRoot(), MAINTAINER)).text()).matchAll(
+      /^\s*brief_file:\s*(\S+)\s*$/gm,
+    ),
+  ]
+    .map((match) => match[1] ?? '')
+    .sort();
+
+describe('unit · a scheduled brief fits the platform cap', () => {
+  test('the schedule names its briefs, so the rule has subjects', async () => {
+    const briefs = await scheduledBriefs();
+    expect(briefs).toContain('.dz/briefs/health.md');
+    expect(briefs).toContain('.dz/briefs/release-due.md');
+  });
+
+  test('every one is at most BRIEF_CAP characters', async () => {
+    const over: string[] = [];
+    for (const path of await scheduledBriefs()) {
+      // Characters, as the refusal counts them: a byte length overcounts every non-ASCII dash.
+      const length = [...(await Bun.file(join(repoRoot(), path)).text())].length;
+      if (length > BRIEF_CAP)
+        over.push(`${path}: ${String(length)} characters, cap ${String(BRIEF_CAP)}`);
+    }
+    expect(over).toEqual([]);
+  });
+});
