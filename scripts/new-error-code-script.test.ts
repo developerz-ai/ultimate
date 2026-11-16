@@ -56,7 +56,7 @@ describe('--script', () => {
     expect(neverShipsList(before).has('X_PROBE_GUARD_UNSCANNED')).toBe(false);
     expect(neverShipsList(after).has('X_PROBE_GUARD_UNSCANNED')).toBe(true);
     expect(tableRows(page).has('X_PROBE_GUARD_UNSCANNED')).toBe(true);
-    expect(after).toContain('| X_PROBE_GUARD_UNSCANNED | the probe guard read nothing | [scripts]');
+    expect(after).toContain('| X_PROBE_GUARD_UNSCANNED | [scripts](Error-Codes-scripts) |');
     // The gate's own reader, as `gate-codes` runs it, finds neither gap for the new code.
     const gaps = checkGateCodes({
       declared: ['X_PROBE_GUARD_UNSCANNED'],
