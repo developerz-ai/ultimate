@@ -44,6 +44,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   - coverage-gate kills a hung unit (`X_SPAWN_TIMED_OUT`);
   - a crashed render bench probe is `X_BENCH_RUN_FAILED`, never a 0 MiB reading.
 - `compat.yml` and the nightly flake-hunt name the tests that failed. CI prints each file inside a `::group::` marker, and both reported "0 failing tests".
+- `@ultimat3/time`'s formatter-cache test counts `Intl.DateTimeFormat` constructions over 4,096 casings (0), not the process heap, which flaked when it shared a worker with other suites.
 - The `runtime-bus` live test waits for the reconnect line, which since 31.30.0 is said after the server holds the subscriptions.
 
 ### Changed

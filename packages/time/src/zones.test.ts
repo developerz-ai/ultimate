@@ -2,10 +2,6 @@
 // one string, because the string arrives from `x-timezone` and every formatter cache keys on it.
 
 import { describe, expect, test } from 'bun:test';
-// `node:` because the framework is Bun-only and this is the one Node API with no Bun equivalent:
-// the test measures *JavaScript heap* growth, and `Bun.unsafe.memoryFootprint()` reports the
-// process footprint, which moves with allocator behaviour rather than with retained formatters.
-import { memoryUsage } from 'node:process';
 import { isUltimateError, type UltimateError } from '@ultimat3/core';
 import { fromIso } from './instant';
 import { canonicalTimeZone } from './zone-canonical';
@@ -182,17 +178,27 @@ describe('one zone is one key', () => {
     expect(assertTimeZone('Europe/Berlin')).toBe('Europe/Berlin');
   });
 
-  test('4,096 casings do not grow the heap', () => {
+  test('4,096 casings build no second formatter', () => {
     // Measured against the unbounded raw-keyed cache: 4,096 variants retained 31 MB, ~7.7 KB per
-    // `Intl.DateTimeFormat`. The bound and the canonical key together hold this near zero.
+    // `Intl.DateTimeFormat`. The constructions are counted, never the heap: a process-wide heap
+    // reading is shared with every other suite in the worker and flaked under load (8b gate).
     zonePartsAt('Europe/Berlin', winter);
-    Bun.gc(true);
-    const before = memoryUsage().heapUsed;
-    for (let mask = 0; mask < CASINGS; mask += 1) {
-      expect(zonePartsAt(casing('Europe/Berlin', mask), winter).year).toBe(2026);
+    const real = Intl.DateTimeFormat;
+    let built = 0;
+    Intl.DateTimeFormat = new Proxy(real, {
+      construct: (target, args: ConstructorParameters<typeof Intl.DateTimeFormat>) => {
+        built += 1;
+        return new target(...args);
+      },
+    });
+    try {
+      for (let mask = 0; mask < CASINGS; mask += 1) {
+        expect(zonePartsAt(casing('Europe/Berlin', mask), winter).year).toBe(2026);
+      }
+    } finally {
+      Intl.DateTimeFormat = real;
     }
-    Bun.gc(true);
-    expect((memoryUsage().heapUsed - before) / 1e6).toBeLessThan(8);
+    expect(built).toBe(0);
   });
 });
 
