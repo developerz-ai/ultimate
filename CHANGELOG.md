@@ -18,7 +18,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - Live queries and channel records on an entity whose tenant column isn't named `orgId` (`entity(name, { tenant: 'workspaceId' })`, or `.tenant()` on any column) could deliver another org's rows to subscribers.
   - Every change producer now reads the tenant from the entity's declared tenant column: the write-ahead-log replicator, the in-process replicator under `x dev` and in tests, and `recordPublisher`.
-  - A live window also refuses any change on a tenant-scoped table that carries no tenant.
+  - A live window also refuses an inserted or updated row on a tenant-scoped table that carries no tenant. A delete that names no tenant (Postgres's default replica identity sends only the key) is applied only by a window already holding that row.
   - Found by audit round 1 of plan 101b and reproduced end to end: org A's socket received org B's row.
 
 ### Deprecated

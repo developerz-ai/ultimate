@@ -51,8 +51,11 @@ export interface IncrementalMatcher {
 export function canAffect(shape: SubscriptionShape, change: ChangeEvent): boolean {
   if (!shape.entities.includes(change.table)) return false;
   if (shape.orgId !== null && shape.orgId !== change.orgId) {
-    // Fail closed: a tenanted table's change with no tenant is no evidence it is this org's.
-    if (change.orgId !== null || shape.tenantTables?.includes(change.table)) return false;
+    if (change.orgId !== null) return false;
+    // Fail closed: a tenanted table's row with no tenant is no evidence it is this org's. Except a
+    // DELETE — under REPLICA IDENTITY DEFAULT its old image is the key alone, so it never names a
+    // tenant — which `bridgeChange` turns into a patch only for an id this window already holds.
+    if (change.op !== 'delete' && shape.tenantTables?.includes(change.table)) return false;
   }
   if (shape.columns && change.op === 'update' && change.after !== null) {
     const touched = Object.keys(changedColumns(change.before, change.after));
@@ -70,8 +73,20 @@ export function bridgeChange(
   rows: readonly LiveRow[],
 ): BridgeResult | null {
   if (!canAffect(shape, change)) return null;
-  const result = incremental.match(change, rows);
+  const result = heldDeletesOnly(incremental.match(change, rows), rows);
   return result.patches.length === 0 && !result.refill ? null : result;
+}
+
+/**
+ * A delete names a row by id, and only a window holding that id has anything to remove. Asked here
+ * of EVERY matcher's answer, `patchFromChange`'s included, because a delete's tenant may be unknown
+ * (`canAffect`): a window holds its own tenant's rows alone, so another tenant's ids never leave.
+ */
+function heldDeletesOnly(result: BridgeResult, rows: readonly LiveRow[]): BridgeResult {
+  if (!result.patches.some((patch) => patch.op === 'delete')) return result;
+  const held = new Set(rows.map((row) => row.id));
+  const patches = result.patches.filter((patch) => patch.op !== 'delete' || held.has(patch.id));
+  return patches.length === result.patches.length ? result : { ...result, patches };
 }
 
 /** Default derivation, used by matchers that only answer "affected" without describing the delta. */
