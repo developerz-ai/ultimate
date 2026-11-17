@@ -260,7 +260,7 @@ Solid signal patch — fine-grained, no re-render of the list
 | socket | `sync` (stateless, no sticky sessions) | client re-subscribes anywhere; scales on connection count |
 | authz | `policy` on the `query` | evaluated at subscribe **and** re-checked on row delivery — a row that fails the policy is dropped, never sent |
 
-The matcher is why this is affordable: membership is decided from the changed row plus the query's predicate, order, and limit — never by re-running the query. Which is exactly why `live: true` requires a deterministic, bounded `sql` ([Queries and live queries](Queries-And-Live-Queries)).
+The matcher is why this is affordable: membership is decided from the changed row plus the query's predicate, order, and limit — never by re-running the query. Which is exactly why `live: true` requires a bounded `sql`: no `.limit()` is `X_QUERY_LIVE_UNBOUNDED` when the source is built ([Queries and live queries](Queries-And-Live-Queries)).
 
 ## One record per `type:key`
 
@@ -770,7 +770,7 @@ Verbatim shapes: [`packages/realtime/src/errors.ts`](https://github.com/develope
 - Truth is always the server. A client is never the merge authority.
 - One authz system — the `query`'s `policy`, re-evaluated per delivered row.
 - `sync` is stateless. Any state that must survive a restart lives in Postgres or NATS.
-- A live query must be deterministic and bounded (`orderBy` + `limit`), or `x verify` rejects it.
+- A live query must be bounded: a `live: true` read whose `sql:` declares no `.limit()` is refused `X_QUERY_LIVE_UNBOUNDED` wherever its source is built (`packages/query/src/live-bounds.ts`, called by `read.ts`) — the subscribe, the route, and `x verify`'s `exercise` step, which reads every query once. Its order is deterministic by construction: the declared `orderBy` keys, then `id`.
 - Presence and typing indicators are tier 1 forever — never model ephemeral state as rows.
 - `local` does no I/O, no `Date.now()`, no `Math.random()`. It must be replayable.
 - Offline writes go through the tier-3 mutator queue, never Background Sync guesswork.

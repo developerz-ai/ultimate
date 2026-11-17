@@ -7,7 +7,7 @@
 
 import { type Clock, randomHex, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type { ApiKeyStore, AuthApiKeyRecord, AuthUser, UserStore } from './adapter';
-import { apiKeyEnvInvalid, apiKeyInvalid, apiKeyScopeWildcard } from './errors';
+import { AuthError, apiKeyEnvInvalid, apiKeyInvalid, apiKeyScopeWildcard } from './errors';
 import type { PolicyActor } from './policy-bridge';
 import { actorFromApiKey, isWildcardScope } from './policy-bridge';
 import { randomToken, sha256Hex } from './tokens';
@@ -69,8 +69,24 @@ export interface IssuedApiKey {
 /** What `parseApiKey` can split back out: no `_`, and nothing a log would render two ways. */
 const API_KEY_ENV = /^[a-z0-9-]+$/;
 
+/**
+ * An expiry that is not an instant. `X_CONFIG_INVALID`, borrowed as `createSession`'s
+ * `inheritedInstantInvalid` borrows it: `now >= NaN` is false, so the memory store kept the key
+ * forever, and Postgres answered a raw `invalid input syntax` instead of a coded refusal.
+ */
+const expiresAtInvalid = (): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause:
+      'issueApiKey({ expiresAt }) is an Invalid Date, and stored as an expiry it would never pass, because every comparison against NaN is false',
+    fix: "issueApiKey({ env, scopes, expiresAt: new Date('2027-01-01T00:00:00Z') })   // a parseable instant, or omit expiresAt for a key that lives until revoked",
+    meta: { field: 'expiresAt' },
+  });
+
 export function issueApiKey(input: IssueApiKeyInput): IssuedApiKey {
   if (!API_KEY_ENV.test(input.env)) throw apiKeyEnvInvalid(input.env);
+  const expiresAt = input.expiresAt ?? null;
+  if (expiresAt !== null && !Number.isFinite(expiresAt.getTime())) throw expiresAtInvalid();
   const wildcard = input.scopes.find(isWildcardScope);
   if (wildcard !== undefined) throw apiKeyScopeWildcard(wildcard);
   const clock = input.clock ?? systemClock;
@@ -88,7 +104,7 @@ export function issueApiKey(input: IssueApiKeyInput): IssuedApiKey {
       orgId: input.orgId ?? null,
       scopes: [...input.scopes],
       lastUsedAt: null,
-      expiresAt: input.expiresAt ?? null,
+      expiresAt,
       revokedAt: null,
       createdAt: clock.now(),
     },

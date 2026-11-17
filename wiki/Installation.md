@@ -69,7 +69,7 @@ one.
 | `--shape <shape>` | none | start from `api`, `blog` or `dashboard` instead of the dashboard and example slice — what each writes and leaves out: [Shapes](Shapes) |
 | `--git` / `--no-git` | `--git` | `git init` and commit the scaffold |
 | `--dry-run` | off | print the file list, write nothing |
-| `--force` | off | write into a directory that already exists |
+| `--force` | off | write into a directory that already exists and holds no `app.config.ts`; never over an app |
 | `--json` | off | machine-readable result: the directory, every path written, the git outcome |
 
 There is **no** `--admin`, `--locale`, `--tz`, `--currency`, `--no-install` or `--yes` — this table
@@ -201,6 +201,6 @@ Read tools are unrestricted in dev; write tools are scoped to branch environment
 | Remove dev state (embedded PG, storage, caches) | `rm -rf .x` |
 | Remove the CLI | it ships with the app; deleting the repo is the uninstall |
 
-Framework ranges: an app declares every `@ultimat3/*` package at `^<version>`, as `x new` writes it, and `bun.lock` pins the exact build. Keep them on one version: the packages move in lockstep, and `x upgrade` moves them together. A third-party wrapper declares them as `peerDependencies` at `^<major>` ([Publish it](Building-Your-Own-Base#publish-it)).
+Framework pins: an app declares every `@ultimat3/*` package at the exact `<version>`, as `x new` and `x upgrade` write it; a range is `X_FRAMEWORK_PIN_RANGE` on `x doctor`. Keep them on one version: the packages move in lockstep, and `x upgrade` moves them together. A third-party wrapper declares them as `peerDependencies` at `^<major>` ([Publish it](Building-Your-Own-Base#publish-it)).
 
 Version pinning: `As of 2026-11`, the Bun floor is the one stated at the top of this page and 2.0 the target; SolidJS 2 is in beta and is pinned exactly, and its upgrade is framework work, not app work. There is no ArkType or Drizzle pin to carry — `@ultimat3/schema` ships its own dependency-free validators and `@ultimat3/entity` its own `postgresDriver()`. Details and codemod inventory in [Upgrading](Upgrading). Boot failures and port conflicts in [Troubleshooting](Troubleshooting).

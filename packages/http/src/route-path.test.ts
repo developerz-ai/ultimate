@@ -2,6 +2,7 @@
 // answers with a route and its params has to be answered identically in its canonical form, and
 // two spellings the router tells apart must not collapse into one.
 import { afterEach, describe, expect, test } from 'bun:test';
+import { literalSegmentPattern } from '@ultimat3/core';
 import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import { defineHttpConfig } from './config';
 import { requestAddress } from './locale-prefix';
@@ -132,6 +133,28 @@ describe('unit · the router answers a spelling and its canonical form alike', (
     const apart = ['/blog/a%2Fb', '/blog/a/b', '/blog/a%252Fb', '/blog/ab'].map(pathnameOf);
     expect(new Set(apart.map(canonicalPath)).size).toBe(apart.length);
   });
+});
+
+/**
+ * The spelling this file writes for a literal is one the router routes back to it AND one core's
+ * `literalSegmentPattern` — `@ultimat3/render`'s and `@ultimat3/pwa`'s matcher — owns. `/a|b` is
+ * written `/a%7Cb`, which the service worker's rule missed until 31.40.
+ */
+describe('unit · canonicalSegment agrees with the one literal-segment matcher', () => {
+  test.each(['a|b', '50%', 'precios-españa', 'a b', 'a^b', '[x]', 'café', 'posts'])(
+    '%s',
+    (literal) => {
+      const written = canonicalSegment(literal);
+      const owned = new RegExp(`^${literalSegmentPattern(literal)}$`);
+      // Lower-cased, only its escapes change: every literal here is lower-case.
+      expect([written, owned.test(written), owned.test(written.toLowerCase())]).toEqual([
+        written,
+        true,
+        true,
+      ]);
+      expect(matchRoute(httpRouter([named(`/${literal}`)]), 'GET', `/${written}`).ok).toBe(true);
+    },
+  );
 });
 
 describe('unit · the context stage records where a request was matched', () => {

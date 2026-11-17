@@ -6,7 +6,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { action, resetActions, rpc } from '@ultimat3/action';
 import { registerAction } from '@ultimat3/action/loader';
 import type { Actor } from '@ultimat3/core';
-import { userActor } from '@ultimat3/core';
+import { BUILD_ID_HEADER, userActor } from '@ultimat3/core';
+import { installBuildId } from '@ultimat3/core/adapter';
 import { withRequestAs } from '@ultimat3/http';
 import { can, definePermissions } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -103,5 +104,27 @@ describe('unit · route loads served by the app’s API in process', () => {
       (error: unknown) => (error as { readonly code?: string }).code ?? 'uncoded',
     );
     expect(refused).toBe('X_TEST_NETWORK_SEALED');
+  });
+
+  // The pass answers as the build core holds — never `BUILD_ID` re-read, whose `''` an unstamped
+  // image carries while every other surface names the resolved id.
+  test('the in-process API answers with the build id core holds, not the raw BUILD_ID', async () => {
+    const before = process.env['BUILD_ID'];
+    process.env['BUILD_ID'] = '';
+    const release = installBuildId('exercise-build-1');
+    try {
+      const raw: RouteLoadSubject = {
+        ...subject,
+        load: async () =>
+          (await fetch(`${EXERCISE_APP_URL}/era/none`)).headers.get(BUILD_ID_HEADER),
+      };
+      const [served] = servedInProcess([raw]);
+      if (served === undefined) return expect.unreachable('one route in, one out');
+      expect(await loadAs(served, READER)).toBe('exercise-build-1');
+    } finally {
+      release();
+      if (before === undefined) delete process.env['BUILD_ID'];
+      else process.env['BUILD_ID'] = before;
+    }
   });
 });

@@ -26,6 +26,7 @@ export const SHIPPED_GUARD_NAMES = [
   'semantic-interactive',
   'unbounded-fanout',
   'undeclared-custom-property',
+  'undeclared-env',
   'undefined-style-class',
   'untranslated-string',
   'unzoned-date',

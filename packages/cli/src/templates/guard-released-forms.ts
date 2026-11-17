@@ -28,7 +28,10 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['2eb7ld3hg0tpb', 'error'],
   ],
   'raw-breakpoint': [['wdo3lsqmvsya', 'error']],
-  'raw-colour': [['3onnbx54g9zmd', 'error']],
+  'raw-colour': [
+    ['1e2pkqnmrjt44', 'error'],
+    ['3onnbx54g9zmd', 'error'],
+  ],
   'raw-fetch': [
     ['17xdeprvzx5v2', 'error'],
     ['1hgdwthi7j353', 'error'],
@@ -67,12 +70,14 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['2xnl4zuy9xv6f', 'error'],
     ['3b0u9i8hze00x', 'error'],
   ],
+  'undeclared-env': [['3gsy96z8bgrrl', 'error']],
   'undefined-style-class': [
     ['3food9t4vrzv8', 'error'],
     ['w7as1ib1ido8', 'error'],
   ],
   'untranslated-string': [
     ['2x85ib5eqdxzi', 'error'],
+    ['3j5e8t1k120u3', 'error'],
     ['h57qtdwn7inz', 'error'],
   ],
   'unzoned-date': [
@@ -92,7 +97,7 @@ export const RELEASED_GUARD_TEST_FORMS: Readonly<Record<string, readonly string[
   'island-without-states': ['vls0ujdd16gw'],
   'native-confirm': ['1c7vps5wn37uv', 'qwyn1mzn9ace'],
   'raw-breakpoint': ['w356i8dreh7j'],
-  'raw-colour': ['1tc7cambk8byr'],
+  'raw-colour': ['1tc7cambk8byr', '319l3wictp9lf'],
   'raw-fetch': ['2lips924uo00f'],
   'raw-interval': ['1z55givy4sst0'],
   'raw-length': ['1hpgz9jowk5qu'],
@@ -106,7 +111,8 @@ export const RELEASED_GUARD_TEST_FORMS: Readonly<Record<string, readonly string[
   'semantic-interactive': ['2uh0p6xoh996t', '393msxyy1bz36'],
   'unbounded-fanout': ['key86lol3wnh'],
   'undeclared-custom-property': ['30bi2v92swukf', 'svuf8sm14fm8'],
+  'undeclared-env': ['38run3rew6y0c'],
   'undefined-style-class': ['1uy88gpk5k8p8', '2sy8me3i3bmzw'],
-  'untranslated-string': ['30q3u45cey2eq'],
+  'untranslated-string': ['30q3u45cey2eq', 'cgvfv231gnvg'],
   'unzoned-date': ['1siep3fqscks4', '20x6l238r09jk'],
 };

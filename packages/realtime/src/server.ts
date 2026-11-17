@@ -211,6 +211,7 @@ export {
   DEFAULT_READ_DEADLINE_MS,
   type EntryOptions,
   fillWindow,
+  // Deprecated and unused by the framework; kept for semver, removed at the next major.
   orgIdOf,
   type PendingRead,
   type QueryEntry,

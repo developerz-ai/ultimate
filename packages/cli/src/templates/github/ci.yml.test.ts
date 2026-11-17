@@ -223,6 +223,22 @@ describe('unit · the CI workflow x new writes · the gate in parts', () => {
     );
   });
 
+  // An adopter's P1: `cat docker/test-services.env >> "$GITHUB_ENV"` handed GitHub the file's `#`
+  // header, and GitHub refuses the whole file ("Invalid format") — every services part went red.
+  // The appended lines are computed from the emitted env file, the way the runner would.
+  test("the services part appends only the env file's TEST_ assignments, never its comments", () => {
+    const services = steps().find((step) => step.if === "matrix.needs == 'services'")?.run ?? '';
+    const append = services.split('\n').find((line) => line.includes('"$GITHUB_ENV"')) ?? '';
+    const grep = /^\s*grep -E '([^']+)' (\S+) >> "\$GITHUB_ENV"$/.exec(append);
+    expect(grep?.[2]).toBe('docker/test-services.env');
+    const env = emitted(repoFiles(app, '1.0.0', true), 'docker/test-services.env').split('\n');
+    const appended = env.filter((line) => new RegExp(grep?.[1] ?? '$^').test(line));
+    expect(env.some((line) => line.startsWith('#'))).toBe(true);
+    for (const line of appended) expect(line).toMatch(/^[A-Z][A-Z0-9_]*=\S/);
+    expect(appended).toEqual(env.filter((line) => /^TEST_/.test(line)));
+    expect(appended.length).toBeGreaterThan(1);
+  });
+
   // ubuntu-latest ships Chrome, so the e2e part runs the browser suite rather than skipping it —
   // and a runner without one (a `CI_RUNNER` label) is red with the fix, never a green skip.
   test('the part that runs e2e requires the browser, and only that part', () => {

@@ -31,7 +31,7 @@ describe('unit · x new --shape offline', () => {
     expect(island).not.toContain('clientTransport');
     expect(island).not.toContain('endpoint');
     // The import resolves: an isolated install links only what the app declares.
-    expect(textAt('package.json')).toMatch(/"@ultimat3\/realtime": "\^\d+\.\d+\.\d+"/);
+    expect(textAt('package.json')).toMatch(/"@ultimat3\/realtime": "\d+\.\d+\.\d+"/);
   });
 
   test('the page hands the form its queued label and no endpoint', () => {

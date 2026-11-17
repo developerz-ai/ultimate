@@ -175,8 +175,9 @@ async function exercisePass(
     ...(whole ? entityTenantFindings(describeEntities()) : []),
     ...subjectStatic,
     ...subjectProofs,
-    // The fix pastes into the file the app has, or hands it the file it lacks.
-    ...exerciseFindings(records, overrides === undefined ? 'absent' : 'present'),
+    // The fix pastes into the file the app has, hands it the file it lacks, or — for an entry the
+    // file already holds — edits that entry: a second key is TS1117.
+    ...exerciseFindings(records, overrides),
     ...floor.findings,
   ];
   return {

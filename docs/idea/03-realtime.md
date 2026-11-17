@@ -140,5 +140,5 @@ So: tiers 1–2 shipped first; tier 3 shipped in 21.0.0, opt-in per entity: no r
 - Truth is always the server. A client is never the merge authority.
 - One authz system — the `query`'s `policy`, re-evaluated per delivered row.
 - `sync` is stateless. Any state that must survive a restart lives in Postgres or NATS.
-- A live query must be deterministic and bounded (`orderBy` + `limit`), or `x verify` rejects it.
+- A live query must be bounded: a `live: true` read whose `sql:` declares no `.limit()` is refused `X_QUERY_LIVE_UNBOUNDED` wherever its source is built (`packages/query/src/live-bounds.ts`, called by `read.ts`) — the subscribe, the route, and `x verify`'s `exercise` step, which reads every query once. Its order is deterministic by construction: the declared `orderBy` keys, then `id`.
 - Presence and typing indicators are tier 1 forever — never model ephemeral state as rows.

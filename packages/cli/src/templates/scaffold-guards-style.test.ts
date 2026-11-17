@@ -168,7 +168,7 @@ describe('unit · shipped guards · no tracked app holds an edited copy', () => 
 describe('unit · x g guard · a shipped name is refused: it already runs', () => {
   // One way to get a shipped guard — installing the framework. A copy would run in its place.
   test('every shipped name is refused with X_GUARD_BUILT_IN, and writes nothing', () => {
-    expect(SHIPPED_GUARD_NAMES).toHaveLength(26);
+    expect(SHIPPED_GUARD_NAMES).toHaveLength(27);
     for (const name of SHIPPED_GUARD_NAMES) {
       expect(() => generate({ kind: 'guard', name })).toThrow(
         expect.objectContaining({ code: 'X_GUARD_BUILT_IN' }),

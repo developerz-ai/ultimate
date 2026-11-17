@@ -308,7 +308,7 @@ The two guards measured here, and their repairs, are recorded in
   the declaration drags `@ultimat3/action`, the policy and the Postgres client into the chunk — and
   `local` is by definition the half that runs in the tab, so the file a browser can load is its one
   home. Two copies is two declarations of one intent.
-- A live query must be bounded (`orderBy` + `limit`) or `x verify` rejects it.
+- A live query is bounded: no `.limit()` is `X_QUERY_LIVE_UNBOUNDED` on every read, `exercise`'s too.
 - `publishPost` and `likePost` look alike on purpose: `publishPost` is an `action`
   (server-authoritative, no local twin), `likePost` a `mutator` because likes work offline. The
   primitive encodes the difference; never merge them.

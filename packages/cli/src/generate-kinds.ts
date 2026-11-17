@@ -157,6 +157,7 @@ export function readName(raw: string | undefined, kind: Generator): string {
   if (kind === 'route') return readRoutePath(raw);
   refusePath(raw, 'name', kind);
   refuseNonAscii(raw, kind);
+  refuseUnsafeCharacter(raw, kind);
   refuseBadIdentifier(raw, kind);
   // A plural name is refused on the PLAN (`generate-plural.ts`): which kinds pluralise it into a
   // table is a fact about the files they write, not a list kept here.
@@ -213,6 +214,26 @@ function refusePath(raw: string, flag: string, kind: Generator): void {
     command: `g ${kind}`,
     reason: `"${raw}" is a path, and a generator ${flag} is one directory segment under the surface`,
     fix: exampleFor(kind),
+  });
+}
+
+/**
+ * Letters, digits and the three separators every derived spelling folds away. The identifier check
+ * reads `camel(raw)`, which DROPS a quote, so `posts' + process.exit(7) + '` passed it while
+ * templates still spliced the raw name into a string literal: code in a module the app imports at
+ * boot. Refused here, before any template sees it; the fix is the kebab spelling.
+ */
+const NAME_CHARACTERS = /^[A-Za-z0-9 _-]+$/;
+
+function refuseUnsafeCharacter(raw: string, kind: Generator): void {
+  if (NAME_CHARACTERS.test(raw)) return;
+  const safe = kebab(raw);
+  throw new BadFlagError({
+    flag: 'name',
+    command: `g ${kind}`,
+    // `JSON.stringify`, not `"${raw}"`: the rejected value is the one holding quotes and newlines.
+    reason: `${JSON.stringify(raw)} holds a character outside letters, digits, space, "_" and "-", and the name is written into generated source and file names`,
+    fix: safe === '' ? exampleFor(kind) : ['x g', kind, safe].join(' '),
   });
 }
 
@@ -287,8 +308,8 @@ export function readPermission(raw: string | undefined, kind: Generator): string
 /** One runnable example per generator, so the `fix:` is a command and not a shape. */
 const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
   resource: 'invoice',
-  action: 'publish-post',
-  mutator: 'rename-post',
+  action: 'publish-post --feature post',
+  mutator: 'rename-post --feature post',
   backfill: 'backfill-slugs',
   'cron-job': 'nightly-report',
   purge: 'purge-retained',

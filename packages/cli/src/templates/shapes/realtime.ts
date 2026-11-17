@@ -136,12 +136,12 @@ import * as recentPosts from '../app/post/queries/recent-posts';
   {
     path: 'package.json',
     find: '    "@ultimat3/policy": ',
-    replace: `    "@ultimat3/notify": "^${loadVersion()}",\n    "@ultimat3/policy": `,
+    replace: `    "@ultimat3/notify": "${loadVersion()}",\n    "@ultimat3/policy": `,
   },
   {
     path: 'package.json',
     find: '    "@ultimat3/render": ',
-    replace: `    "@ultimat3/realtime": "^${loadVersion()}",\n    "@ultimat3/render": `,
+    replace: `    "@ultimat3/realtime": "${loadVersion()}",\n    "@ultimat3/render": `,
   },
   ...shapeLines(
     'realtime',

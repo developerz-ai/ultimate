@@ -56,7 +56,7 @@ const listOrders = (inside: ActiveSpans, cached: boolean) =>
     live: true,
     sql: ({ orgId }) => {
       inside.sql = currentSpan()?.name;
-      return from<Order>('orders', orders).where({ orgId });
+      return from<Order>('orders', orders).where({ orgId }).limit(50);
     },
   }).named('listOrders');
 

@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "ecfc1d9e0021a57e",
+  "buildId": "a44fb9255723eca4",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -3080,6 +3080,10 @@
     },
     {
       "code": "X_UNDECLARED_CUSTOM_PROPERTY",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_UNDECLARED_ENV",
       "package": "@ultimat3/cli"
     },
     {

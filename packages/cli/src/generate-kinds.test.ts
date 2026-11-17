@@ -8,6 +8,7 @@ import {
   assertSurfaceSupported,
   GENERATORS,
   readKind,
+  readName,
   readPermission,
   readSurface,
 } from './generate-kinds';
@@ -184,4 +185,30 @@ describe('assertLiveSupported', () => {
       assertLiveSupported('resource', false, 'post');
     }).not.toThrow();
   });
+});
+
+// `x g query "posts' + process.exit(7) + '"` passed every screen — the identifier check reads
+// `camel(raw)`, which drops the quote — and the RAW name was spliced into a string literal in a
+// module the app imports at boot. A name is letters, digits, space, `_` and `-`; nothing else.
+describe('readName refuses a character no derived spelling keeps', () => {
+  test.each([
+    "posts' + process.exit(7) + '",
+    'posts"',
+    'posts`$' + '{x}`',
+    'posts\nimport',
+    'post;drop',
+    'post.title',
+    'post\tx',
+  ])('%p is X_CLI_BAD_FLAG with a name that works in the fix', (raw) => {
+    const thrown = thrownBy(() => readName(raw, 'query'));
+    expect(thrown.code).toBe('X_CLI_BAD_FLAG');
+    expect(thrown.fix).toMatch(/^x g query [a-z0-9-]+$/);
+  });
+
+  test.each(['posts', 'BlogPost', 'blog-post', 'blog_post', 'blog post'])(
+    '%p is still a name — the non-vacuity half',
+    (raw) => {
+      expect(readName(raw, 'query')).toBe(raw);
+    },
+  );
 });

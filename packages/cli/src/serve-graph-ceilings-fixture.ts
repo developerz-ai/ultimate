@@ -329,8 +329,14 @@
  * both reached through their package barrels.
  * raised 979 → 980, measured 980 (2026-11-16, plan 101b sweep 8b-2): `core/src/trailing-slashes.ts`,
  * the linear trim that replaced `/\/+$/` at 26 sites (CodeQL `js/polynomial-redos`), on the core barrel.
+ * raised 980 → 982, measured 982 (2026-11-17, plan 101b audit round 2): `core/src/build-id.ts`, the one
+ * build-id resolver the boot installs, and `core/src/route-literal.ts`, the one literal-segment
+ * compiler render and the service worker share — both on core's barrel.
+ * raised 982 → 983, measured 983 (2026-11-16, plan 101b audit round 2, metafile walk):
+ * `jobs/src/errors-idempotency.ts`, `X_IDEMPOTENCY_REQUIRED` naming the file and line that declared
+ * the job — split out of `jobs/src/errors.ts`, which the jobs barrel already evaluates.
  */
-export const MIGRATE_CEILING = 980;
+export const MIGRATE_CEILING = 983;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

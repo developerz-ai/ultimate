@@ -279,7 +279,7 @@ export const likePost = mutator({
 
 | Code | When | Fix |
 |---|---|---|
-| `X_ACTION_POLICY_MISSING` | an action registered without `policy` | add `policy: can('<name>')` to the declaration |
+| `X_ACTION_POLICY_MISSING` | an action registered without `policy` | add `policy: can('<resource>:<verb>')` (a permission `definePermissions()` declares, never the action's name) or `policy: allow('public')` to the declaration |
 | `X_ACTION_DUPLICATE` | two actions share an export name | rename one — names are globally unique |
 | `X_INPUT_INVALID` | body fails the `input` schema — including a string (or a `t.record` key) carrying U+0000, which every string-backed `t` refuses because Postgres `text`/`jsonb` cannot store it. Tabs, newlines and the other C0 controls are accepted. `As of 2026-09-29` | `x actions show <name> --json` prints the expected schema |
 | `X_FORBIDDEN` | the policy said no — one code for the direct call, the HTTP 403 and the MCP tool error | grant the capability, or call as an actor who has it |

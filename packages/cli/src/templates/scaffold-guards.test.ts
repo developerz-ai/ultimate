@@ -49,8 +49,8 @@ async function findingsWith(files: Readonly<Record<string, string>>): Promise<re
 
 const codes = (findings: readonly Finding[]): readonly string[] => findings.map((f) => f.code);
 
-/** Every guard the framework ships, spelled out: a twenty-seventh arriving unannounced fails here. */
-const TWENTY_SIX: readonly string[] = [
+/** Every guard the framework ships, spelled out: a twenty-eighth arriving unannounced fails here. */
+const TWENTY_SEVEN: readonly string[] = [
   'animated-layout-property',
   'bare-error',
   'error-declared',
@@ -74,6 +74,7 @@ const TWENTY_SIX: readonly string[] = [
   'semantic-interactive',
   'unbounded-fanout',
   'undeclared-custom-property',
+  'undeclared-env',
   'undefined-style-class',
   'untranslated-string',
   'unzoned-date',
@@ -83,7 +84,7 @@ describe('unit · x new · the guards it ships', () => {
   // Built in, never copied: `x new` writes no guard, only the file that opts the app into them —
   // so a fix to a shipped guard reaches the app on its next install, with no hand edit.
   test('guards/ holds no copy of a shipped guard, only guards/shipped.json', () => {
-    expect(SHIPPED_GUARD_NAMES).toEqual([...TWENTY_SIX]);
+    expect(SHIPPED_GUARD_NAMES).toEqual([...TWENTY_SEVEN]);
     expect(scaffoldGuardFiles().map((file) => file.path)).toEqual(['guards/shipped.json']);
   });
 

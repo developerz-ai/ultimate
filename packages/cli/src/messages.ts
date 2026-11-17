@@ -221,6 +221,11 @@ const CATALOG = {
   // The two prose lines of `x new`'s report. The `run: cd … && git init …` line beneath the second
   // one stays inline in `cmd-new.ts`: it is an instruction to paste verbatim, and a translated
   // command is a broken one — the same split `Finding.fix` already makes.
+  // `x new`'s refusal of an existing target: what happened, never the usage line it printed
+  // before (D1). The finding beside it carries the free name to run instead.
+  'cli.new.exists': '{dir} already exists — nothing was written',
+  'cli.new.existsApp':
+    '{dir} already holds an app — x new never scaffolds over one, --force included',
   'cli.new.wrote': '  {count} files in {dir}',
   'cli.new.noRepository': '  no repository — {problem}',
   // `git init` ran and the commit did not: `.git` exists, so "no repository" was false.

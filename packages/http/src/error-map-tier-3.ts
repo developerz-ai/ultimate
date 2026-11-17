@@ -149,4 +149,6 @@ export const TIER_3_ERROR_STATUS = {
   X_JOB_BACKLOG_FULL: 429,
   // @ultimat3/jobs — the jobs driver has no operator surface
   X_JOB_INTROSPECTION_UNSUPPORTED: 501,
+  // @ultimat3/query — a live query declares no limit, so its window is the whole table
+  X_QUERY_LIVE_UNBOUNDED: 500,
 } satisfies Readonly<Record<string, number>>;

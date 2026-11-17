@@ -195,7 +195,11 @@ export const config = defineRoute({
   // console and the page boot +89 B each: the action and query clients trim their base URL with
   // `@ultimat3/core`'s linear `trimTrailingSlashes`, the one trim that replaced the quadratic
   // `/\/+$/` at 26 sites (CodeQL js/polynomial-redos). Raised 242.7kb → 242.8kb.
-  budget: { js: '242.8kb' },
+  // measured: 248,867 B (2026-11-17, plan 101b audit round 2; x build --target static) — why:
+  // the page boot +271 B (84,606 → 84,877 B against origin/main built the same way): `@ultimat3/core`'s
+  // `uuidV7` and `frozenClock` refuse an Invalid Date or out-of-range instant instead of minting a
+  // non-UUID that broke the next id's order (audit round 2, B1). Raised 242.8kb → 243.1kb.
+  budget: { js: '243.1kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),

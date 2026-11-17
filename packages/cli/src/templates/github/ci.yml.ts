@@ -116,7 +116,8 @@ ${SETUP_STEPS}
       - run: bun run setup
       # What the part's \`needs\` asks for and no more: \`--wait\` returns once every healthcheck
       # passes, and only the URLs of what was started reach the suites — a URL to a server that is
-      # not running is a red suite, where an absent one is a suite that skips.
+      # not running is a red suite, where an absent one is a suite that skips. \`grep\`, never \`cat\`:
+      # GitHub refuses a $GITHUB_ENV holding the env file's \`#\` header ("Invalid format").
       - if: matrix.needs == 'database'
         run: |
           docker compose -f ${TEST_COMPOSE_PATH} up -d --wait postgres
@@ -124,7 +125,7 @@ ${SETUP_STEPS}
       - if: matrix.needs == 'services'
         run: |
           docker compose -f ${TEST_COMPOSE_PATH} up -d --wait
-          cat ${TEST_ENV_PATH} >> "$GITHUB_ENV"
+          grep -E '^TEST_[A-Z0-9_]+=' ${TEST_ENV_PATH} >> "$GITHUB_ENV"
       # ubuntu-latest ships Chrome, and the \`e2e\` step finds it. Required here, so a runner that
       # has none (a \`CI_RUNNER\` label) is red with the command that locates one — never a skip.
       - if: contains(matrix.only, 'e2e')

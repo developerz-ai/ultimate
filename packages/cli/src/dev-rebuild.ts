@@ -12,6 +12,7 @@ import type { AppManifest } from './app-manifest';
 import { appManifest } from './app-manifest';
 import type { StalePin } from './app-reload-graph';
 import { takeStalePins } from './app-reload-graph';
+import { clearIsrForRebuild } from './dev-rebuild-isr';
 import { remountFinding, remountLine, remountReason } from './dev-rebuild-remount';
 import { schemaAheadFindings } from './dev-rebuild-schema';
 import type { ReloadTrigger } from './dev-reload';
@@ -122,6 +123,7 @@ export function devRebuilder(
   state: DevState,
   isr: IsrController,
   refreshDevices: () => Promise<readonly string[]>,
+  build: GenerationBuilders = BUILDERS,
 ): ReloadTrigger {
   // What the route table was built from: the boot's generation, for the life of this process. Each
   // save is compared with IT, not with the save before — a route added two saves ago is still a 404.
@@ -131,25 +133,29 @@ export function devRebuilder(
   // (the watcher's second event for one write, a no-op save) is still a restart: it reported
   // "reloaded" over the old read, and an unsupervised `/_x` lost its X_DEV_RESTART_REQUIRED.
   let held: readonly StalePin[] = [];
+  /** This rebuild's pins, taken and added to `held`; a pin already held is not added twice. */
+  const takeHeld = (): readonly StalePin[] => {
+    const reached = takeStalePins();
+    held = [...held, ...reached.filter((pin) => !held.some((was) => was.pinned === pin.pinned))];
+    return reached;
+  };
   // One rebuild at a time, and the last save wins: a tick arriving mid-build coalesces into ONE
   // trailing rebuild instead of racing the one in flight for `state.manifest` and `state.islands`.
   return coalesceReloads(
     async (file) => {
       const started = performance.now();
       beginDeviceSocketGeneration();
-      const { manifest, findings, islands } = await buildGeneration(options.root);
+      const { manifest, findings, islands } = await buildGeneration(options.root, build);
       const remount = remountReason(mounted, { manifest, findings });
       state.manifest = manifest;
       state.appFindings = findings;
       state.islands = islands;
       const unserved = await refreshDevices();
-      // Awaited one by one: a shared store answers over the network, and a dev save is rare.
-      for (const path of await isr.store().paths()) await isr.store().delete(path);
+      await clearIsrForRebuild(isr.store());
       state.reloads += 1;
       // Read on EVERY rebuild, so a pin one save reached is never reported against the next save:
       // this save's own pins name it, and only a save that reached none inherits the held ones.
-      const reached = takeStalePins();
-      held = [...held, ...reached.filter((pin) => !held.some((was) => was.pinned === pin.pinned))];
+      const reached = takeHeld();
       const stale = reached.length > 0 ? reached : held;
       // A generation this process cannot mount is a restart named after the saved file — never
       // "reloaded" over a route table built for the generation before it.
@@ -177,6 +183,9 @@ export function devRebuilder(
     // Same rule as a module that will not import: a save the manifest cannot be rebuilt from is
     // a finding on `/_x`, never an unhandled rejection that takes the dev server down.
     (error: unknown, file: string) => {
+      // Its pins are taken all the same — the rescan ran before the throw, and the process holds
+      // what it pinned. Left in the graph they were read as the NEXT save's own (audit round 2).
+      takeHeld();
       state.reloadFinding = { ...findingFrom(error), at: file };
     },
   );

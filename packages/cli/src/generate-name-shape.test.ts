@@ -100,7 +100,9 @@ describe('unit · a non-ASCII name is refused, never folded in silence', () => {
   });
 
   test('a name with no ASCII spelling gets the generator`s example in the fix', () => {
-    expect(refusal(() => readName('日本', 'action')).fix).toBe('x g action publish-post');
+    expect(refusal(() => readName('日本', 'action')).fix).toBe(
+      'x g action publish-post --feature post',
+    );
   });
 });
 

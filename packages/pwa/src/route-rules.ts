@@ -4,7 +4,7 @@
  * that are no route: content-addressed chunks, cached the first time a page asks for one.
  */
 
-import { routeRank } from '@ultimat3/core';
+import { literalSegmentPattern, routeRank } from '@ultimat3/core';
 import { SwScopeInvalidError } from './errors';
 import type { PersonalPages } from './pages-cache-source';
 import type { PwaRoute, StrategyName } from './strategies';
@@ -79,27 +79,11 @@ function cacheFor(route: PwaRoute, strategy: StrategyName): 'precache' | 'runtim
 const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * A literal segment as the browser's `url.pathname` spells it — the WHATWG serializer itself, so a
- * route path (the DECODED directory name) matches the PERCENT-ENCODED pathname `ruleFor` tests:
- * `/precios-españa` and `/a b` were never handled. Not `encodeURI`, which also escapes `|`, `[`,
- * `^` and `%` where a browser leaves them literal. A `%XX` escape matches either hex case, as a
- * hand-typed link may carry one.
- */
-function literal(segment: string): string {
-  const url = new URL('https://x.invalid/');
-  url.pathname = `/${segment}`;
-  return escapeRegex(url.pathname.slice(1)).replace(
-    /%([0-9A-Fa-f]{2})/g,
-    (_, hex: string) =>
-      `%${[...hex].map((c) => (/[A-Fa-f]/.test(c) ? `[${c.toUpperCase()}${c.toLowerCase()}]` : c)).join('')}`,
-  );
-}
-
-/**
  * A trailing slash is dropped before the pattern is built, because the pattern allows one anyway:
  * a locale's home is spelled `/en/`, and `^/en//?$` matched `/en/` and missed `/en`. A catch-all
  * takes its leading slash with it, `(?:/.*)?`, so `/docs/*path` matches the bare `/docs` that
- * `@ultimat3/render`'s static export writes for an empty `path`.
+ * `@ultimat3/render`'s static export writes for an empty `path`. A literal segment is core's
+ * `literalSegmentPattern` — the request router's spellings, the same regex `compilePattern` builds.
  */
 function toPattern(path: string): string {
   const segments = segmentsOf(path);
@@ -108,7 +92,7 @@ function toPattern(path: string): string {
     .map((segment) => {
       if (segment.startsWith(':')) return '/[^/]+';
       if (segment.startsWith('*')) return '(?:/.*)?';
-      return `/${literal(segment)}`;
+      return `/${literalSegmentPattern(segment)}`;
     })
     .join('');
   return `^${body}/?$`;

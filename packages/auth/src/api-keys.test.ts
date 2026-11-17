@@ -275,3 +275,36 @@ describe('the env segment is part of the credential', () => {
     expect((await store.findApiKeyById(issued.record.id))?.lastUsedAt).toBeNull();
   });
 });
+
+// `now >= NaN` is false, so an Invalid Date `expiresAt` was a key that never expired in memory and
+// a raw `invalid input syntax for type timestamp` from Postgres. Refused at issue, before either.
+describe('an expiry that is not an instant is refused at issue', () => {
+  test('an Invalid Date is X_CONFIG_INVALID naming the field', () => {
+    try {
+      issueApiKey({ env: 'prod', scopes: [], expiresAt: new Date('2026-02-30 bogus') });
+      expect.unreachable('an Invalid Date expiry is refused');
+    } catch (error) {
+      if (!(error instanceof AuthError)) throw error;
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      expect(error.cause).toContain('expiresAt');
+    }
+  });
+
+  test('a real expiry and no expiry still issue — the non-vacuity half', async () => {
+    const clock = frozenClock(START);
+    const store = memoryAuthAdapter(clock);
+    const issued = issueApiKey({
+      env: 'prod',
+      scopes: [],
+      expiresAt: new Date(START + 1_000),
+      clock,
+    });
+    await store.putApiKey(issued.record);
+    await verifyApiKey(store, issued.plaintext, clock);
+    clock.advance(1_000);
+    expect((await caught(() => verifyApiKey(store, issued.plaintext, clock))).code).toBe(
+      'X_API_KEY_INVALID',
+    );
+    expect(issueApiKey({ env: 'prod', scopes: [], expiresAt: null }).record.expiresAt).toBeNull();
+  });
+});

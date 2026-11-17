@@ -1,6 +1,7 @@
 // Single responsibility: identifier generation. UUIDv7 is the framework default because
 // database indexes, cursors and log sorting all want time-ordered keys.
 
+import { assert } from './assert';
 import { type Clock, systemClock } from './clock';
 import { describeValue } from './error-render';
 import { UltimateError } from './errors';
@@ -20,6 +21,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 /** 12-bit counter lives in `rand_a`, seeded low so ~3k ids/ms fit before it overflows. */
 const COUNTER_SEED_MASK = 0x3ff;
 const COUNTER_MAX = 0xfff;
+/** `unix_ts_ms` is 48 bits: past it the hex slice wraps, before 0 it has no encoding at all. */
+const MAX_EPOCH_MS = 0xffff_ffff_ffff;
 
 let lastEpochMs = -1;
 let counter = 0;
@@ -105,6 +108,16 @@ function hexOf(byteLength: number): string {
  */
 export function uuidV7(clock: Clock = systemClock): string {
   let epochMs = clock.now().getTime();
+  // Before the clamp and before `lastEpochMs` is written: an Invalid Date minted `…-0NaN-7…` and
+  // stored `NaN` as the high-water mark, so the next id skipped the clamp and could sort first.
+  // `assert` only on the failing branch: its messages would otherwise be built on every id.
+  if (!(epochMs >= 0 && epochMs <= MAX_EPOCH_MS)) {
+    assert(
+      false,
+      `uuidV7's clock read ${String(epochMs)} ms: a UUIDv7 holds 0 to 2^48-1 unix ms, so an Invalid Date or a pre-1970 instant has no encoding`,
+      "uuidV7(frozenClock('2026-01-01T00:00:00Z'))   // a clock at a valid instant on or after 1970",
+    );
+  }
   if (epochMs < lastEpochMs) epochMs = lastEpochMs;
 
   if (epochMs === lastEpochMs) {

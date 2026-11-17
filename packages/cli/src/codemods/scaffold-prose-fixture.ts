@@ -11,6 +11,7 @@ import { AGENT_TOOLS } from './agents-dev-mcp';
 import { BIOME_EDITS } from './biome-no-default-export';
 import { BUNFIG_EDITS } from './bunfig-island-coverage';
 import { CI_E2E_EDITS } from './ci-e2e-browser';
+import { CI_SERVICES_ENV_EDITS } from './ci-services-env';
 import { DEFINE_ERROR_PROSE } from './define-error-leaf';
 import { DOCS_CI_PARTS_EDITS } from './docs-ci-parts';
 import { DOCS_GATE_EDITS } from './docs-gate-prose';
@@ -38,6 +39,10 @@ export const undo = (text: string, edits: readonly SnippetEdit[]): string => {
   }
   return out;
 };
+
+// "Today" is what these tests' hops end at, 31.28.0: a codemod after it — none of theirs — undone.
+const CI = '.github/workflows/ci.yml';
+today[CI] = undo(Object.hasOwn(today, CI) ? (today[CI] ?? '') : '', CI_SERVICES_ENV_EDITS);
 
 /** Every touched file as the 31.20.0 scaffold wrote it: today's, each later codemod undone in turn. */
 export function before(): Record<string, string> {

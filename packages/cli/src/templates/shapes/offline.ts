@@ -87,7 +87,7 @@ const edits = (): readonly ShapeEdit[] => [
   {
     path: 'package.json',
     find: '    "@ultimat3/render": ',
-    replace: `    "@ultimat3/realtime": "^${loadVersion()}",\n    "@ultimat3/render": `,
+    replace: `    "@ultimat3/realtime": "${loadVersion()}",\n    "@ultimat3/render": `,
   },
   { path: 'README.md', find: README_LAYOUT, replace: `${lan()}${README_LAYOUT}` },
   ...shapeLines(

@@ -1100,9 +1100,11 @@ Allow-lists are default deny: a row missing the key is invisible, and an empty l
 nothing. `scoped()` only ever **tightens** — re-scoping to a different tenant is
 `X_VECTOR_SCOPE_WIDENED`, never a silent widening.
 
-A store opened without a scope binds no tenant, and **reading it inside a request acting for an
-org is `X_VECTOR_UNSCOPED`** — the forgotten `.scoped()` that searched every tenant's rows. Outside a
-request, or for an actor with no org, it reads as before. The backfill path opts in by name:
+A store opened without a scope binds no tenant, and **reading or writing it inside a request acting
+for an org is `X_VECTOR_UNSCOPED`** — `search`, `searchText`, `hybrid`, `upsert`, `prune`,
+`delete`, so `indexDocument()` too. The forgotten `.scoped()` searched every tenant's rows, deleted
+every tenant's row sharing an id, or wrote into the shared no-tenant bucket. Outside a request, or
+for an actor with no org, it reads and writes as before. The backfill path opts in by name:
 `postgresVectorStore({ name, dimension, scope: UNSCOPED })`, or `store.scoped(UNSCOPED)`.
 
 `chunkDocument()` is token-aware with overlap and splits at paragraph, then sentence, then hard wrap
@@ -1176,7 +1178,7 @@ fail-closed `terminal` default.
 | `X_EVAL_THRESHOLD` | an eval scored below its bar |
 | `X_VECTOR_DIM_MISMATCH` | a vector's length disagrees with the store |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave the tenant it was bound to |
-| `X_VECTOR_UNSCOPED` | a store with no tenant bound was read inside a request acting for an org; `scope: UNSCOPED` is the named opt-out |
+| `X_VECTOR_UNSCOPED` | a store with no tenant bound was read or written inside a request acting for an org; `scope: UNSCOPED` is the named opt-out |
 | `X_NOT_IMPLEMENTED` | a remote driver with no key or transport; the fix names the env var |
 
 A failure thrown after a provider call was started carries what the run was billed on `meta.billed` (`billedOf(error)` → `{ usage, cost, calls, unsettled }`); `unsettled` counts the calls whose bill cannot be known. [Agents → Unattended runs](https://github.com/developerz-ai/ultimate/wiki/Agents#unattended-runs).

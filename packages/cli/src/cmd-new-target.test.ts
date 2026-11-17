@@ -16,6 +16,19 @@ import { exec } from './exec';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 
+/** The refused run's one finding, plus its summary: a refusal is a result, never a throw. */
+const refusalOf = async (ctx: CommandContext) => {
+  const result = await newCommand.run(ctx);
+  expect(result.ok).toBe(false);
+  const finding = result.findings?.[0];
+  return {
+    summary: result.summary,
+    code: finding?.code,
+    cause: finding?.cause ?? '',
+    fix: finding?.fix,
+  };
+};
+
 describe('unit · x new · writing into the parent directory', () => {
   const newContext = (argv: readonly string[], cwd: string): CommandContext => ({
     args: parseArgs(argv, SPECS),
@@ -49,20 +62,53 @@ describe('unit · x new · writing into the parent directory', () => {
     }
   }, 30_000);
 
-  test('a directory that already exists is refused with --force as the fix, and writes nothing', async () => {
+  // D1: the fix used to be `x new demo-app --force`, and over an existing app that reset its
+  // registrations and grants to the template. A fix is pasted with no diff in front of it, so it
+  // names a directory that is free, never `--force`.
+  test('a directory that already exists is refused with a free name as the fix, and writes nothing', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'x-new-run-'));
     try {
       const target = join(parent, 'demo-app');
       await Bun.write(join(target, 'KEEP.txt'), 'do not overwrite me');
-      const result = await newCommand.run(newContext(['new', 'demo-app'], parent));
-      expect(result.ok).toBe(false);
-      const finding = result.findings?.[0];
-      expect(finding?.code).toBe('X_GENERATE_CONFLICT');
-      expect(finding?.cause).toBe(`${target} already exists`);
-      expect(finding?.fix).toBe('x new demo-app --force   # or choose another name');
-      expect(finding?.at).toBe(target);
+      // `-2` is taken too: the fix names the first name that is not.
+      await Bun.write(join(parent, 'demo-app-2', 'KEEP.txt'), 'nor me');
+      const refusal = await refusalOf(newContext(['new', 'demo-app'], parent));
+      expect(refusal.code).toBe('X_GENERATE_CONFLICT');
+      expect(refusal.cause).toContain(`${target} already exists`);
+      expect(refusal.cause).toContain('--force');
+      expect(refusal.fix).toBe('x new demo-app-3');
+      // The summary says what happened, never the generic usage line (D1).
+      expect(refusal.summary).toBe(`${target} already exists — nothing was written`);
+      expect(refusal.fix).not.toContain('--force');
       // Refused BEFORE writing: nothing but the file the test put there.
       expect(readdirSync(target)).toEqual(['KEEP.txt']);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  test('a directory holding an app is refused even with --force, and nothing in it changes', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'x-new-run-'));
+    try {
+      const target = join(parent, 'demo-app');
+      await Bun.write(join(target, 'app.config.ts'), '// the app that is already here\n');
+      await Bun.write(join(target, 'apps/web/shared/roles.ts'), '// its grants\n');
+      for (const argv of [
+        ['new', 'demo-app'],
+        ['new', 'demo-app', '--force'],
+      ]) {
+        const refusal = await refusalOf(newContext(argv, parent));
+        expect(refusal.code).toBe('X_GENERATE_CONFLICT');
+        expect(refusal.cause).toContain('holds an app');
+        expect(refusal.fix).toBe('x new demo-app-2');
+        expect(refusal.summary).toBe(
+          `${target} already holds an app — x new never scaffolds over one, --force included`,
+        );
+      }
+      expect(await Bun.file(join(target, 'apps/web/shared/roles.ts')).text()).toBe(
+        '// its grants\n',
+      );
+      expect(readdirSync(target).sort()).toEqual(['app.config.ts', 'apps']);
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }

@@ -72,15 +72,16 @@ const edits = (app: NameSet): readonly ShapeEdit[] => [
     replace:
       "  entities: adminEntitiesOf(db),\n  db,\n  // A plan is the payment webhook's to write (`apps/web/app/billing/`): operators only read it.\n  resources: { subscriptions: { operations: ['list', 'detail', 'search'] } },\n",
   },
-  // A plan's features are flags: the package joins the app's dependencies, at the release's range.
+  // A plan's features are flags: the package joins the app's dependencies, pinned EXACT at the
+  // release like every other @ultimat3/* the scaffold writes (D9) — never a caret range.
   {
     path: 'package.json',
-    find: '    "@ultimat3/http": "^',
-    replace: `    "@ultimat3/flags": "^${loadVersion()}",\n    "@ultimat3/http": "^`,
+    find: `    "@ultimat3/http": "${loadVersion()}",`,
+    replace: `    "@ultimat3/flags": "${loadVersion()}",\n    "@ultimat3/http": "${loadVersion()}",`,
   },
   ...shapeLines(
     'saas',
-    `a multi-tenant app — billing is app code in \`${BILLING_DIR}/plans.ts\`, a signed payment webhook (\`${BILLING_DIR}/jobs/${RECEIVER_NAME}.ts\`) moves an org between plans, and \`x g sign-in --password\` and \`x g invite\` wrote sign-in and the member invite`,
+    `a multi-tenant app — billing is app code in \`${BILLING_DIR}/plans.ts\`, a signed payment webhook (\`${BILLING_DIR}/jobs/${RECEIVER_NAME}.ts\`) moves an org between plans; \`x g sign-in --password\` and \`x g invite\` wrote its auth`,
   ),
 ];
 

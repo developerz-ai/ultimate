@@ -244,13 +244,13 @@ the `DownloadFile` and `await runRecording.url(input, { ctx })` the path.
 
 ## `live: true` requires deterministic, bounded SQL
 
-`x verify` rejects a live query without both an `orderBy` and a `limit`.
+A live query without a `.limit()` is `X_QUERY_LIVE_UNBOUNDED` wherever its source is built (`packages/query/src/live-bounds.ts`), so `x verify`'s `exercise` step rejects it. As of 2026-11.
 
 | Requirement | Why | Failure |
 |---|---|---|
-| `orderBy` on a total order | the matcher decides *enters / leaves / moves within* the result from the changed row alone | `x verify` error naming the query |
-| `limit` | an unbounded result set has no bounded change buffer and no bounded reconnect snapshot | `x verify` error naming the query |
-| No `now()`, `random()`, or non-deterministic function | the same `(input, row)` must always yield the same membership answer | `x verify` error naming the expression |
+| `limit` | an unbounded result set has no bounded change buffer and no bounded reconnect snapshot | `X_QUERY_LIVE_UNBOUNDED` (500) on every read, `exercise` included |
+| `orderBy` | the window's order is what a reader sees; without one it is `id asc` (the order is always made total by the id) | none: the id order is served |
+| No `now()`, `random()`, or non-deterministic function | the same `(input, row)` must always yield the same membership answer | not checked: the author's to keep |
 | No cross-tenant predicate | tenant scoping comes from `ctx`, not from `input` | `X_FORBIDDEN` at subscribe |
 | The source reads as its subscriber's tenant | a sync node shares one read per `(query, input)` **per org**, in a context carrying that org — so `repo.list(limit)` needs no org argument on a live query, exactly as on a request | a source naming another org is `X_TENANCY_ACTOR_MISMATCH`; a subscriber with no org reading a tenant table is `X_TENANCY_ACTOR_ORG_REQUIRED` |
 

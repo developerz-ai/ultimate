@@ -19,6 +19,9 @@ const START = lines(
   '          docker compose -f docker/docker-compose.test.yml up -d --wait',
   '          cat docker/test-services.env >> "$GITHUB_ENV"',
 );
+/** The line the inserted step writes: present, the edit is carried whatever surrounds it. */
+const E2E_REQUIRED = 'E2E_BROWSER_REQUIRED=1';
+
 const NEXT =
   '      # Under $RUNNER_TEMP, never in the checkout, where `lint` would walk the open file.';
 
@@ -30,7 +33,7 @@ export const CI_E2E_EDITS: readonly SnippetEdit[] = [
       '      # ubuntu-latest ships Chrome, and the `e2e` step finds it. Required here, so a runner that',
       '      # has none (a `CI_RUNNER` label) is red with the command that locates one — never a skip.',
       "      - if: contains(matrix.only, 'e2e')",
-      '        run: echo "E2E_BROWSER_REQUIRED=1" >> "$GITHUB_ENV"',
+      `        run: echo "${E2E_REQUIRED}" >> "$GITHUB_ENV"`,
       NEXT,
     ),
   },
@@ -58,6 +61,9 @@ export const codemod: Codemod = {
   async run(app) {
     const held = await readText(app, CI);
     if (held === undefined) return { changed: [], skipped: [] };
+    // Carried already: its anchor's `cat` line is `ci-services-env`'s (31.40) to change, so a newer
+    // workflow no longer holds the text this edit is spelled against — the step it adds says enough.
+    if (held.text.includes(E2E_REQUIRED)) return { changed: [], skipped: [] };
     return (await wholeFile(app, held)) ?? editSnippets(app, CI, CI_E2E_EDITS);
   },
 };

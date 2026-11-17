@@ -144,4 +144,14 @@ describe('x repro --from', () => {
     const written = await Bun.file(join(root, 'repro/repro-req1.contract.test.ts')).text();
     expect(written).toContain('Captured on build b-1, replayed on b-2');
   });
+
+  // An unstamped image carries `BUILD_ID=""` (`ENV BUILD_ID=${BUILD_ID}`): no build, never one named
+  // `""` — which read as a different build and called the bug "maybe already fixed".
+  test('an empty BUILD_ID names no running build', async () => {
+    const { runner } = scripted({ ok: true, stdout: '', stderr: '' });
+    await reproCommand.run(ctxOf(['--from', BUNDLE_FILE, '--verify'], runner, { BUILD_ID: '' }));
+    const written = await Bun.file(join(root, 'repro/repro-req1.contract.test.ts')).text();
+    expect(written).not.toContain('replayed on');
+    expect(written).toContain('Captured on build b-1.');
+  });
 });

@@ -946,6 +946,7 @@ export { retryMemo } from './retry-memo';
 export { isRetryableStatus, RETRYABLE_STATUSES } from './retryable-status';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
 export { isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
+export { literalSegmentPattern } from './route-literal';
 export { HttpPathInputConflictError, mergePathParams } from './route-path-merge';
 export type { FilledTemplate, TemplateKeyNode } from './route-path-template';
 export {

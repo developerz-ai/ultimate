@@ -4,7 +4,7 @@
  * file only reads a pattern string.
  */
 
-import { routeRank } from '@ultimat3/core';
+import { literalSegmentPattern, routeRank } from '@ultimat3/core';
 
 export interface CompiledPattern {
   readonly source: string;
@@ -15,29 +15,6 @@ export interface CompiledPattern {
    * ONE ordering rule: ISR, the sitemap, the admin and `@ultimat3/pwa`'s worker all sort on it.
    */
   readonly specificity: number;
-}
-
-/** A regex metacharacter, matched as itself. */
-const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/**
- * A literal segment as a pathname may spell it: each character raw OR percent-encoded, either hex
- * case. A route file is named in Unicode (`precios-españa`) and `URL.pathname` encodes it
- * (`precios-espa%C3%B1a`), so a literal-only pattern never matched the key it was asked about.
- */
-function literalPattern(segment: string): string {
-  let out = '';
-  for (const char of segment) {
-    const encoded = [...new TextEncoder().encode(char)]
-      .map((byte) => {
-        const hex = byte.toString(16).toUpperCase().padStart(2, '0');
-        const digit = (d: string): string => (/[A-F]/.test(d) ? `[${d}${d.toLowerCase()}]` : d);
-        return `%${digit(hex[0] ?? '0')}${digit(hex[1] ?? '0')}`;
-      })
-      .join('');
-    out += `(?:${escapeRegex(char)}|${encoded})`;
-  }
-  return out;
 }
 
 export function compilePattern(path: string): CompiledPattern {
@@ -55,7 +32,7 @@ export function compilePattern(path: string): CompiledPattern {
       keys.push(segment.slice(1));
       return '/([^/]+)';
     }
-    return `/${literalPattern(segment)}`;
+    return `/${literalSegmentPattern(segment)}`;
   });
 
   return {

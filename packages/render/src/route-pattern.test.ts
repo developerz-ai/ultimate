@@ -3,6 +3,7 @@
 // arrives percent-encoded (`URL.pathname`), in either hex case, or raw.
 import { describe, expect, test } from 'bun:test';
 import { routeRank } from '@ultimat3/core';
+import { canonicalPath, httpRouter, matchRoute } from '@ultimat3/http';
 import { fillPath } from './render-static';
 import { compilePattern } from './route-pattern';
 
@@ -66,6 +67,47 @@ describe('specificity', () => {
     '%s is ranked by routeRank',
     (path) => {
       expect(compilePattern(path).specificity).toBe(routeRank(path));
+    },
+  );
+});
+
+/**
+ * `compilePattern`, the request router and `canonicalPath` answer one question about a literal
+ * segment the same way. Until 31.40 render accepted `/%70osts` and `@ultimat3/pwa`'s worker rule
+ * missed `/a%7Cb` — the spelling `canonicalPath` itself writes for `/a|b`.
+ */
+describe('a literal segment agrees with the request router', () => {
+  const routed = (route: string, pathname: string): boolean =>
+    matchRoute(
+      httpRouter([
+        {
+          method: 'GET',
+          path: route,
+          handler: () => new Response(),
+          meta: { name: route, auth: 'public' },
+        },
+      ]),
+      'GET',
+      pathname,
+    ).ok;
+
+  test.each([
+    ['/a|b', '/a%7Cb'],
+    ['/a|b', '/a%7cb'],
+    ['/a|b', '/a%7Db'],
+    ['/50%', '/50%25'],
+    ['/50%', '/50%'],
+    ['/precios-españa', '/precios-espa%C3%B1a'],
+    ['/precios-españa', '/precios-espa%c3%B1a'],
+    ['/a%20b', '/a%2520b'],
+  ])('%s at %s', (route, pathname) => {
+    expect(compilePattern(route).regex.test(pathname)).toBe(routed(route, pathname));
+  });
+
+  test.each(['/a|b', '/50%', '/precios-españa', '/a b/[x]'])(
+    '%s matches the spelling canonicalPath writes for it',
+    (route) => {
+      expect(compilePattern(route).regex.test(canonicalPath(route))).toBe(true);
     },
   );
 });

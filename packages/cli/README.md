@@ -184,7 +184,7 @@ failure — so a rule ships to every app before the apps are clean of it; a find
 contract fails either way. `repo-await-in-loop` ships that way. `x g guard <name>` scaffolds the
 app's own with its test.
 
-The twenty-six shipped guards (`SHIPPED_GUARD_NAMES`) run **built in**, from the installed CLI,
+The twenty-seven shipped guards (`SHIPPED_GUARD_NAMES`) run **built in**, from the installed CLI,
 never from a copy (`guards-built-in.ts`, `As of 2026-11`): `x new` writes only
 `guards/shipped.json`, `{ "severity": { "<guard>": "error" | "warning" | "off" } }`, and its
 presence is the opt-in. Absent (a legacy app), a shipped guard the app holds a copy of runs that

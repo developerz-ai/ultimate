@@ -146,6 +146,28 @@ describe('unit · x exercise', () => {
     expect(finding?.fix).toStartWith("import { defineExercise } from '@ultimat3/testing';");
   }, 60_000);
 
+  // The entry is already in the file: a paste would be a second `cxToggle:` key (TS1117), and the
+  // next run proposed another one. The fix edits the entry it has.
+  test('an unreached primitive with an entry already declared gets an edit, never a paste', async () => {
+    broken = true;
+    const file = join(ROOT, 'apps', 'web', 'exercise.ts');
+    await Bun.write(
+      file,
+      "import { defineExercise } from '@ultimat3/testing';\n\nexport const exercise = defineExercise({\n  cxToggle: { empty: 'a fixture entry' },\n});\n",
+    );
+    try {
+      const result = await exerciseCommand.run(contextFor());
+      expect(outcomes(result.data)['cxToggle']).toBe('unreached');
+      const finding = (result.findings ?? []).find(
+        (one) => one.code === 'X_CONTRACT_EXERCISE_UNREACHED',
+      );
+      expect(finding?.fix).toStartWith('edit the cxToggle entry already in apps/web/exercise.ts');
+      expect(finding?.fix).not.toContain('paste inside');
+    } finally {
+      await rm(join(ROOT, 'apps'), { recursive: true, force: true });
+    }
+  }, 60_000);
+
   // A boot installs a storage disk; the pass stands one in, so a handler writing to it is reached
   // with nothing declared — it was `storage() was called before defineStorage()`, and an `{ off }`.
   test('a handler that writes to the storage disk is reached with no entry', async () => {

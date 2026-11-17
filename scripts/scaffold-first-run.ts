@@ -22,7 +22,10 @@
 // why: Bun exposes no path-join or path-resolve primitive.
 import { join, resolve } from 'node:path';
 import { GENERATORS, quoteArg } from '@ultimat3/cli';
-import { READS_A_TABLE } from '../packages/cli/src/generate-feature-required';
+import {
+  ENFORCES_A_PERMISSION,
+  READS_A_TABLE,
+} from '../packages/cli/src/generate-feature-required';
 import { renderFixShellArg } from '../packages/core/src/error-render';
 import { nextCommandsIn } from './bench/first-hour-next';
 import { parseScriptArgs } from './lib/args';
@@ -70,6 +73,13 @@ export const generatorName = (kind: string): string => `smoke-${kind.replace(/:/
  * which a test here holds. The CLI's own list, never a copy here: a copy fell behind once.
  */
 const READ_A_SLICE: ReadonlySet<string> = READS_A_TABLE;
+/**
+ * `action`/`mutator` with no `--feature` and no slice of their name are `X_FEATURE_REQUIRED`
+ * (31.40.0), so they have no bare step: `SECOND_SHAPES` runs each, named, into both slices. A third
+ * into the resource's slice would add a handler no generated test reaches (its policy reads as an
+ * author's), and the scaffold's own coverage floor would be the step that went red.
+ */
+const NEEDS_A_SLICE: ReadonlySet<string> = ENFORCES_A_PERMISSION;
 const RESOURCE_SLICE = generatorName('resource');
 const SOLO_SLICE = 'smoke-solo';
 
@@ -167,7 +177,8 @@ export const firstRunPlan = (
   ...GENERATORS.filter(
     (kind) =>
       !(options.signedIn === true && kind === 'sign-in') &&
-      !(options.invited === true && kind === 'invite'),
+      !(options.invited === true && kind === 'invite') &&
+      !NEEDS_A_SLICE.has(kind),
   ).map((kind) => ({
     name: `g ${kind}`,
     // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`, and

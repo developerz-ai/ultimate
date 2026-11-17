@@ -16,7 +16,8 @@ const NAME = 'untranslated-string';
 const CODE = guardCode(NAME);
 
 const source =
-  (): string => `// untranslated-string: every user-facing string on a rendered surface goes through \`t()\`.
+  (): string => `// untranslated-string: every user-facing string on a rendered surface goes through \`t()\` —
+// a text node, and an attribute a user reads or hears (\`aria-label\`, \`title\`, \`alt\`, …).
 // \`x verify\` discovers every file in \`guards/\` and runs its \`guard\` inside the \`boundaries\`
 // step — nothing registers this file, so nothing can forget to.
 
@@ -38,6 +39,13 @@ const CODE = '${CODE}';
 const ELEMENT = /<([A-Za-z][\\w.:-]*)(?:\\s[^<>]*)?>([^<>]*?)<\\/\\1>/g;
 /** Two word characters in a row. One is \`&\`, \`×\`, an initial — never a sentence. */
 const PROSE = /[\\p{L}\\p{N}]{2,}/u;
+/**
+ * An attribute a user reads or hears, holding a typed string: \`aria-label="…"\`, \`{'…'}\`. Biome
+ * writes JSX attributes with no space around \`=\`, so \`const title = '…'\` is never one, and the
+ * look-behind keeps \`data-title\` out. \`{t('…')}\` and \`{props.label}\` are expressions, not text.
+ */
+const ATTRIBUTE =
+  /(?<=\\s)(aria-label|aria-description|aria-placeholder|aria-roledescription|aria-valuetext|title|placeholder|alt|label)=(?:"([^"]*)"|'([^']*)'|\\{\\s*(?:"([^"]*)"|'([^']*)')\\s*\\})/g;
 
 export interface SourceFile {
   /** App-root-relative POSIX path, so the finding names the file an author opens. */
@@ -95,6 +103,17 @@ export function untranslatedStrings(files: readonly SourceFile[]): readonly Find
         code: CODE,
         cause: \`\${file.path}:\${lineOf(text, match.index)} renders the typed string "\${typed}" inside <\${match[1] ?? 'element'}> — it is in no catalog, so every locale but the one it was typed in reads it verbatim\`,
         fix: \`add a key for "\${typed}" to packages/i18n/catalogs/en.json, render it as {t('…')} in \${file.path}, then: x i18n check\`,
+        at: file.path,
+      });
+    }
+    for (const match of text.matchAll(ATTRIBUTE)) {
+      const name = match[1] ?? 'title';
+      const typed = (match[2] ?? match[3] ?? match[4] ?? match[5] ?? '').trim();
+      if (!PROSE.test(typed)) continue;
+      findings.push({
+        code: CODE,
+        cause: \`\${file.path}:\${lineOf(text, match.index)} renders the typed string "\${typed}" as its \${name} — it is in no catalog, so every locale but the one it was typed in reads it verbatim\`,
+        fix: \`add a key for "\${typed}" to packages/i18n/catalogs/en.json, write it as \${name}={t('…')} in \${file.path}, then: x i18n check\`,
         at: file.path,
       });
     }
@@ -173,6 +192,15 @@ unitTest('prose beside an interpolating t() call is still refused', () => {
 unitTest('a generic type argument is not a JSX text node', () => {
   const generic = "const [state, setState] = createSignal<SaveState>('idle');\\nconst n = 1;";
   expect(untranslatedStrings(file(generic))).toEqual([]);
+});
+
+// An attribute a screen reader speaks is a rendered string; an expression in one is not typed.
+unitTest('a typed aria-label is refused, and a t() call in one is not', () => {
+  const findings = untranslatedStrings(file('<button aria-label="Download report" />'));
+  expect(findings).toHaveLength(1);
+  expect(findings[0]?.cause).toContain('aria-label');
+  expect(untranslatedStrings(file("<button aria-label={t('app.report.download')} />"))).toEqual([]);
+  expect(untranslatedStrings(file("const title = 'Not an attribute';"))).toEqual([]);
 });
 
 unitTest('one word character is a symbol, not a sentence', () => {
