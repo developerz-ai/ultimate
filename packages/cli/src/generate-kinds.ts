@@ -308,8 +308,8 @@ export function readPermission(raw: string | undefined, kind: Generator): string
 /** One runnable example per generator, so the `fix:` is a command and not a shape. */
 const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
   resource: 'invoice',
-  action: 'publish-post',
-  mutator: 'rename-post',
+  action: 'publish-post --feature post',
+  mutator: 'rename-post --feature post',
   backfill: 'backfill-slugs',
   'cron-job': 'nightly-report',
   purge: 'purge-retained',

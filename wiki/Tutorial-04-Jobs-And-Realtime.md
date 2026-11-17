@@ -160,8 +160,9 @@ export const todoList = query({
   }),
   policy: canTodoRead,
   live: true,
-  // Opt-in, unlike an action's tool: a read hands rows to an agent, so silence exposes nothing.
-  mcp: { expose: true, description: 'todoList — edit this description' },
+  // No `mcp`, as an action writes none: a tool's description is what an agent reads to decide to
+  // call it, and a placeholder there is worse than no tool. A read hands rows to an agent, so
+  // silence exposes nothing. Write one, then `mcp: { expose: true, description: '…' }`.
   sql: ({ limit, sort, dir }) =>
     // `feature.table`, not the kebab plural: `from()` quotes the identifier into the SQL text,
     // and the entity created the table as snake_case.

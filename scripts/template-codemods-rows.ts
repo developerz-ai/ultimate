@@ -387,6 +387,101 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   {
     template: 'packages/cli/src/templates/query.ts',
     since: '31.40.0',
-    none: 'the generated description is escaped through tsLiteral; for every name readName accepts the bytes are identical, so no app holds anything to migrate',
+    none: "a generated query no longer declares `mcp: { expose: true, description: '<name> — edit this description' }` (D5); an app's existing query is the author's, its tool line theirs to keep or describe, and nothing reads a query differently without it",
+  },
+  {
+    template: 'apps/web/app/post/live/post-list.ts',
+    since: '31.40.0',
+    none: "the scaffold's live read no longer exposes an MCP tool under a placeholder description (D5); an app's copy is the author's, and its tool keeps working until they describe or drop it",
+  },
+  {
+    template: '.github/workflows/ci.yml',
+    since: '31.40.0',
+    codemod: 'ci-services-env',
+  },
+  {
+    template: 'packages/cli/src/templates/github/ci.yml.ts',
+    since: '31.40.0',
+    codemod: 'ci-services-env',
+  },
+  {
+    template: 'apps/web/app/post/live/post-list.live.test.ts',
+    since: '31.40.0',
+    none: "its tool assertion now pins no MCP tool, matching the read that no longer declares one (D5); an app's copy pins the tool its own post-list.ts still declares, so the two stay in agreement untouched",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/saas.ts',
+    since: '31.40.0',
+    none: "only `x new --shape saas` renders it, at scaffold time: `@ultimat3/flags` is now written exact like every @ultimat3/* (D9), and an existing app's range is x upgrade's to move, never this overlay's",
+  },
+  {
+    template: 'packages/cli/src/templates/sign-in-password.ts',
+    since: '31.40.0',
+    none: "createSession and confirmSession now declare `native: { success: ({ next }) => next }` (D10); an app's existing copies already answer a browser's form with a 303 through landAt's setRedirect, and the gate's X_NATIVE_FORM_UNANSWERED is a warning naming the file and the line to paste",
+  },
+  {
+    template: 'packages/cli/src/templates/sign-in-shared.ts',
+    since: '31.40.0',
+    none: "destroySession now declares `native: { success: ({ next }) => next }` (D10); an app's existing copy already answers a browser's form with a 303 through landAt's setRedirect, and the gate's X_NATIVE_FORM_UNANSWERED is a warning naming the file and the line to paste",
+  },
+  {
+    template: 'CLAUDE.md',
+    since: '31.40.0',
+    codemod: 'docs-env-guard',
+  },
+  {
+    template: 'AGENTS.md',
+    since: '31.40.0',
+    codemod: 'docs-env-guard',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-docs.ts',
+    since: '31.40.0',
+    codemod: 'docs-env-guard',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-guards.ts',
+    since: '31.40.0',
+    none: 'a new shipped guard, undeclared-env (D8), runs built in from the installed CLI; scaffoldGuardFiles() still writes only guards/shipped.json, byte-identical, so no app holds anything to migrate',
+  },
+  {
+    template: 'package.json',
+    since: '31.40.0',
+    none: "every @ultimat3/* is written exact (D9), what x upgrade writes and x doctor's X_FRAMEWORK_PIN_RANGE asks for; an existing app's caret is moved exact by its next x upgrade hop, and until then x doctor names the line and the version",
+  },
+  {
+    template: 'packages/i18n/package.json',
+    since: '31.40.0',
+    none: "every @ultimat3/* is written exact (D9), what x upgrade writes and x doctor's X_FRAMEWORK_PIN_RANGE asks for; an existing app's caret is moved exact by its next x upgrade hop, and until then x doctor names the line and the version",
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-repo.ts',
+    since: '31.40.0',
+    none: "every @ultimat3/* is written exact (D9), what x upgrade writes and x doctor's X_FRAMEWORK_PIN_RANGE asks for; an existing app's caret is moved exact by its next x upgrade hop, and until then x doctor names the line and the version",
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-i18n.ts',
+    since: '31.40.0',
+    none: "every @ultimat3/* is written exact (D9), what x upgrade writes and x doctor's X_FRAMEWORK_PIN_RANGE asks for; an existing app's caret is moved exact by its next x upgrade hop, and until then x doctor names the line and the version",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/agent.ts',
+    since: '31.40.0',
+    none: "only `x new --shape agent` renders it, at scaffold time: `@ultimat3/ai` is now written exact like every @ultimat3/* (D9), and an existing app's range is x upgrade's to move, never this overlay's",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/offline.ts',
+    since: '31.40.0',
+    none: "only `x new --shape offline` renders it, at scaffold time: `@ultimat3/realtime` is now written exact like every @ultimat3/* (D9), and an existing app's range is x upgrade's to move, never this overlay's",
+  },
+  {
+    template: 'packages/cli/src/templates/shapes/realtime.ts',
+    since: '31.40.0',
+    none: "only `x new --shape realtime` renders it, at scaffold time: `@ultimat3/notify` and `@ultimat3/realtime` are now written exact like every @ultimat3/* (D9), and an existing app's range is x upgrade's to move, never this overlay's",
+  },
+  {
+    template: 'README.md',
+    since: '31.40.0',
+    none: "only `x new --shape saas` renders the changed sentence (its description, shortened to keep the scaffold's AGENTS.md under its 12,000 B budget once the undeclared-env row landed); an existing app's README is its own prose",
   },
 ];

@@ -54,7 +54,7 @@ describe('unit · x new --shape realtime', () => {
 
   test('the two packages it imports are the app’s own dependencies', () => {
     const manifest = textAt('package.json');
-    expect(manifest).toContain('"@ultimat3/notify": "^');
-    expect(manifest).toContain('"@ultimat3/realtime": "^');
+    expect(manifest).toMatch(/"@ultimat3\/notify": "\d+\.\d+\.\d+"/);
+    expect(manifest).toMatch(/"@ultimat3\/realtime": "\d+\.\d+\.\d+"/);
   });
 });

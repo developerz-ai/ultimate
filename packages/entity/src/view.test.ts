@@ -201,6 +201,18 @@ describe('$view()', () => {
       expect(fix).toContain('title');
     }
   });
+
+  // Applied verbatim, `$view(['id'])` for `['id', 'title', 'nope']` dropped a valid column: the fix
+  // is the list the call wrote, the one bad key out.
+  test("an unknown key's fix is the call's own list minus that key", () => {
+    const dynamic = posts.$view as (keys: readonly string[]) => unknown;
+    try {
+      dynamic(['id', 'title', 'nope']);
+      expect.unreachable('expected a throw');
+    } catch (error) {
+      expect(String((error as { fix?: string }).fix)).toStartWith('$view(["id", "title"])');
+    }
+  });
 });
 
 /**

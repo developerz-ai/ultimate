@@ -87,7 +87,7 @@ x new <name> [--dir path] [--shape api|blog|dashboard] [--no-example] [--no-git]
 | `--shape` | string | none | start from an app shape — `api`, `blog` or `dashboard`, each an overlay over this scaffold ([Shapes](Shapes)). An unknown name is `X_NEW_SHAPE_UNKNOWN`; with `--no-example`, `X_NEW_SHAPE_CONFLICT` (a shape is its own example). Both refuse before a file is written. `dashboard` then runs `x g sign-in --password` in the new app (listed under `data.generate` by `--dry-run`); a refusal there is `X_NEW_SHAPE_GENERATE_FAILED` |
 | `--git` / `--no-git` | boolean | `true` | `git init`, then one commit named `x new`. On by default because three surfaces assume a repository — `x affected`, `x ci` and `x pr`. A git that is absent or fails never fails `x new`: the tree is the verdict, and `data.git` carries `{ initialized, committed, problem }` |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
-| `--force` | boolean | `false` | write into a directory that already exists |
+| `--force` | boolean | `false` | write into a directory that already exists and holds no `app.config.ts`. Over an app it is refused, `--force` included (`X_GENERATE_CONFLICT`), and the fix names a free directory (`<name>-2`), never `--force`. `As of 2026-11` |
 
 **The name must be one `app.config.ts` accepts.** `x new` asks core's own `defineConfig` about the slug before anything is planned (`appNameIssue`, `packages/cli/src/app-name.ts`) — it is written verbatim as `name:`. Refused with `X_CLI_BAD_FLAG` and a corrected name in the `fix:`, the rest of your flags kept:
 

@@ -712,3 +712,7 @@ is what Postgres answers for a `text` column.
 The same change made a declared `.limit()` bound the listing on every page (a limited read's cursor
 carries the rows served), turned `search()`'s three refusals into `X_INPUT_INVALID`, and made a
 `single: true` read answer one row or `X_NOT_FOUND` through the MCP tool.
+
+## Client byte figures (moved from `packages/query/CLAUDE.md`, 2026-11-17)
+
+Browser, minified: barrel `queryClient` 25,237 B (2026-10-02); `./client` 14,494 B (2026-11-05: +1,013 B a pinned read's URL fill, the rest wave 5a's core `./page` additions).

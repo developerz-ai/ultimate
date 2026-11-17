@@ -60,7 +60,9 @@ const SOLID_VERSION = '1.9.18';
 // `github/ci.yml.ts` pins the workflow's Bun to the same constant.
 // `version` is not decoration: the manifest's app version IS the contract's compatibility gate, and
 // the manifest never fabricates one, so an app scaffolded without it failed `x manifest` and every
-// production boot with X_APP_PACKAGE_INVALID.
+// production boot with X_APP_PACKAGE_INVALID. Every `@ultimat3/*` is pinned EXACT — what `x upgrade`
+// writes and `x doctor` holds an app to (`X_FRAMEWORK_PIN_RANGE`): a caret let `bun update` move the
+// framework without the hop's codemods. `doctor-pins.test.ts` holds every shape to it.
 const rootPackage = (app: NameSet, version: string): string => `{
   "name": "${app.kebab}",
   "version": "0.1.0",
@@ -84,32 +86,32 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@biomejs/biome": "${BIOME_VERSION}",
     "@electric-sql/pglite": "^0.5.4",
     "@types/bun": "^1.4.0",
-    "@ultimat3/testing": "^${version}",
+    "@ultimat3/testing": "${version}",
     "typescript": "${TYPESCRIPT_VERSION}"
   },
   "dependencies": {
-    "@ultimat3/action": "^${version}",
-    "@ultimat3/admin": "^${version}",
-    "@ultimat3/auth": "^${version}",
-    "@ultimat3/cache": "^${version}",
-    "@ultimat3/cli": "^${version}",
-    "@ultimat3/core": "^${version}",
-    "@ultimat3/db": "^${version}",
-    "@ultimat3/entity": "^${version}",
-    "@ultimat3/http": "^${version}",
-    "@ultimat3/i18n": "^${version}",
-    "@ultimat3/jobs": "^${version}",
-    "@ultimat3/mail": "^${version}",
-    "@ultimat3/mcp": "^${version}",
-    "@ultimat3/money": "^${version}",
-    "@ultimat3/policy": "^${version}",
-    "@ultimat3/pwa": "^${version}",
-    "@ultimat3/query": "^${version}",
-    "@ultimat3/render": "^${version}",
-    "@ultimat3/schema": "^${version}",
-    "@ultimat3/seo": "^${version}",
-    "@ultimat3/storage": "^${version}",
-    "@ultimat3/ui": "^${version}",
+    "@ultimat3/action": "${version}",
+    "@ultimat3/admin": "${version}",
+    "@ultimat3/auth": "${version}",
+    "@ultimat3/cache": "${version}",
+    "@ultimat3/cli": "${version}",
+    "@ultimat3/core": "${version}",
+    "@ultimat3/db": "${version}",
+    "@ultimat3/entity": "${version}",
+    "@ultimat3/http": "${version}",
+    "@ultimat3/i18n": "${version}",
+    "@ultimat3/jobs": "${version}",
+    "@ultimat3/mail": "${version}",
+    "@ultimat3/mcp": "${version}",
+    "@ultimat3/money": "${version}",
+    "@ultimat3/policy": "${version}",
+    "@ultimat3/pwa": "${version}",
+    "@ultimat3/query": "${version}",
+    "@ultimat3/render": "${version}",
+    "@ultimat3/schema": "${version}",
+    "@ultimat3/seo": "${version}",
+    "@ultimat3/storage": "${version}",
+    "@ultimat3/ui": "${version}",
     "solid-js": "${SOLID_VERSION}"
   },
   "engines": {

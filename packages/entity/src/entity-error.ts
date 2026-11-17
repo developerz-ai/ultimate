@@ -6,6 +6,7 @@ import {
   isFixShellSafe,
   registerErrorCodes,
   registerErrorRetry,
+  renderFixLiteral,
   renderFixShellArg,
   UltimateError,
 } from '@ultimat3/core';
@@ -191,18 +192,26 @@ export const invariantViolated = (
 /**
  * A `$view` key naming no column. Its own fix, never `describeCommand`: `x entities show` loads the
  * app, and this throw is what stops the load, so that line re-failed with this finding. The file
- * is the loader's to name (`Finding.at`): a view is built with no idea where it was called.
+ * is the loader's to name (`Finding.at`): a view is built with no idea where it was called. The fix
+ * removes the ONE bad key — with `keys`, the corrected list itself; a list cut to the first column
+ * deleted every valid key applied verbatim.
  */
 export const viewKeyUnknown = (
   entityName: string,
   key: string,
   columns: readonly string[],
-): EntityError =>
-  new EntityError({
+  keys?: readonly string[],
+): EntityError => {
+  const bad = renderFixLiteral(key, '<key>');
+  const kept = keys?.filter((one) => one !== key).map((one) => renderFixLiteral(one, '<key>'));
+  const list =
+    kept === undefined || kept.length === 0 ? `/* the same keys, minus ${bad} */` : kept.join(', ');
+  return new EntityError({
     code: 'X_INVARIANT_VIOLATED',
     cause: `${entityName}.view: $view(['${key}']) names no column — pick from: ${columns.join(', ')}`,
-    fix: `$view(['${columns[0] ?? ''}'])   # edit the call on ${entityName}, in the file this finding names; pick from: ${columns.join(', ')}`,
+    fix: `$view([${list}])   # edit the call on ${entityName}, in the file this finding names: delete ${bad} and keep every other key, or rename it — pick from: ${columns.join(', ')}`,
   });
+};
 
 export const entityDuplicate = (name: string, existingTable: string): EntityError =>
   new EntityError({

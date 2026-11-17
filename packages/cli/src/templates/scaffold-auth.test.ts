@@ -32,8 +32,8 @@ describe('unit · the scaffold authenticates through @ultimat3/auth', () => {
           ?.contents,
       ),
     ) as { readonly dependencies?: Readonly<Record<string, string>> };
-    expect(manifest.dependencies?.['@ultimat3/auth']).toBe('^9.9.9');
-    expect(manifest.dependencies?.['@ultimat3/http']).toBe('^9.9.9');
+    expect(manifest.dependencies?.['@ultimat3/auth']).toBe('9.9.9');
+    expect(manifest.dependencies?.['@ultimat3/http']).toBe('9.9.9');
   });
 
   test('one module installs the authenticator, and it is the session one', () => {

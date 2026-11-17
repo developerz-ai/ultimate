@@ -8,9 +8,11 @@ import { codemod as biomeNoDefaultExport } from './biome-no-default-export';
 import { codemod as bunfigIslandCoverage } from './bunfig-island-coverage';
 import { codemod as chartDashboard } from './chart-dashboard';
 import { codemod as ciE2eBrowser } from './ci-e2e-browser';
+import { codemod as ciServicesEnv } from './ci-services-env';
 import type { Codemod } from './codemod';
 import { codemod as defineErrorLeaf } from './define-error-leaf';
 import { codemod as docsCiParts } from './docs-ci-parts';
+import { codemod as docsEnvGuard } from './docs-env-guard';
 import { codemod as docsGateProse } from './docs-gate-prose';
 import { codemod as docsIslandRows } from './docs-island-rows';
 import { codemod as docsShippedGuards } from './docs-shipped-guards';
@@ -57,4 +59,6 @@ export const CODEMODS: readonly Codemod[] = [
   verifyFloorSteps,
   helmAlertsDeploy,
   migrateJobOrdered,
+  ciServicesEnv,
+  docsEnvGuard,
 ];

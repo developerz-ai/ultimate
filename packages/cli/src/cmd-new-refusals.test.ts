@@ -85,23 +85,23 @@ describe('unit · x new refuses what it cannot scaffold, and its fix runs', () =
     });
   }
 
-  test('the conflict fix keeps every flag the caller set, and running it scaffolds that app', async () => {
+  test('the conflict fix keeps every flag the caller set, and running it scaffolds beside', async () => {
     await withParent(async (parent) => {
       const argv = ['new', 'demo app', '--dir', 'nested', '--no-example', '--no-git'];
       await Bun.write(join(parent, 'nested', 'demo-app', 'KEEP.txt'), 'kept');
       const refused = await newCommand.run(contextFor(argv, parent));
-      const fix = refused.findings?.[0]?.fix ?? '';
-      expect(fix).toBe(
-        'x new demo-app --dir nested --no-example --no-git --force   # or choose another name',
-      );
+      expect(refused.ok).toBe(false);
+      const refusal = { fix: refused.findings?.[0]?.fix ?? '' };
+      expect(refusal.fix).toBe('x new demo-app-2 --dir nested --no-example --no-git');
 
-      const ran = await newCommand.run(contextFor(argvOf(fix), parent));
+      const ran = await newCommand.run(contextFor(argvOf(refusal.fix), parent));
       expect(ran.ok).toBe(true);
-      const target = join(parent, 'nested', 'demo-app');
+      const target = join(parent, 'nested', 'demo-app-2');
       expect(existsSync(join(target, 'app.config.ts'))).toBe(true);
       // `--no-example` survived the round trip: no example slice was written.
       expect(existsSync(join(target, 'apps/web/app/post'))).toBe(false);
-      expect(existsSync(join(parent, 'demo-app'))).toBe(false);
+      // And the directory that was refused is exactly as it was.
+      expect(readdirSync(join(parent, 'nested', 'demo-app'))).toEqual(['KEEP.txt']);
     });
   }, 30_000);
 

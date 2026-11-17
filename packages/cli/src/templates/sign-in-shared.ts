@@ -113,6 +113,8 @@ export const destroySession = action({
   output: t.object({ ok: t.boolean, next: t.string, revoked: t.boolean }),
   policy: allow('public'),
   mcp: { expose: false },
+  // A browser's own form post lands where the output says; fetch and MCP still get the JSON.
+  native: { success: ({ next }) => next },
   async handle() {
     const auth = appAuth();
     const token = useRequestCookie(auth.sessions.policy.cookieName);

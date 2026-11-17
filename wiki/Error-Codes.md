@@ -54,7 +54,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/notify` | [Error-Codes-notify](Error-Codes-notify) | 12 |
 | `@ultimat3/policy` | [Error-Codes-policy](Error-Codes-policy) | 6 |
 | `@ultimat3/pwa` | [Error-Codes-pwa](Error-Codes-pwa) | 16 |
-| `@ultimat3/query` | [Error-Codes-query](Error-Codes-query) | 26 |
+| `@ultimat3/query` | [Error-Codes-query](Error-Codes-query) | 27 |
 | `@ultimat3/realtime` | [Error-Codes-realtime](Error-Codes-realtime) | 39 |
 | `@ultimat3/render` | [Error-Codes-render](Error-Codes-render) | 20 |
 | `@ultimat3/schema` | [Error-Codes-schema](Error-Codes-schema) | 8 |
@@ -940,6 +940,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_QUERY_FOREIGN | [query](Error-Codes-query) |
 | X_QUERY_HTTP_PATH_INVALID | [query](Error-Codes-query) |
 | X_QUERY_INPUT_UNENCODABLE | [query](Error-Codes-query) |
+| X_QUERY_LIVE_UNBOUNDED | [query](Error-Codes-query) |
 | X_QUERY_MAX_PAGE_INVALID | [query](Error-Codes-query) |
 | X_QUERY_NOT_PAGEABLE | [query](Error-Codes-query) |
 | X_QUERY_NOT_SUBSCRIBABLE | [realtime](Error-Codes-realtime) |

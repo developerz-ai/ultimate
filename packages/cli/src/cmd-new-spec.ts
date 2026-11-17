@@ -35,6 +35,11 @@ export const newSpec: CommandSpec = {
       default: true,
     },
     { name: 'dry-run', type: 'boolean', summary: 'print the file list, write nothing' },
-    { name: 'force', type: 'boolean', summary: 'write into a directory that already exists' },
+    {
+      name: 'force',
+      type: 'boolean',
+      // Never over an app: `cmd-new-target.ts` refuses a directory holding `app.config.ts` (D1).
+      summary: 'write into a directory that already exists and holds no app.config.ts',
+    },
   ],
 };

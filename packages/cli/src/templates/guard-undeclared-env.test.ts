@@ -1,0 +1,122 @@
+// The `undeclared-env` guard as the gate runs it: a raw read of a name `app.config.ts` never
+// declared used to pass typecheck, lint, boundaries and errors, while the typed `env.X` failed tsc.
+
+import { describe, expect, test } from 'bun:test';
+// why: Bun ships no temp-directory, symlink or mkdir API; `node:fs/promises` is the only one.
+import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.write takes one already joined.
+import { join } from 'node:path';
+import { undeclaredEnvGuardFiles } from './guard-undeclared-env';
+import { shippedGuardFindings } from './shipped-guard-fixture';
+
+/** What `x new` writes, abridged: an `envSchema` export handed to `defineEnv`. */
+const SCHEMA = [
+  "import type { EnvSchema } from '@ultimat3/core';",
+  "import { defineEnv } from '@ultimat3/core';",
+  'export const envSchema = {',
+  "  STRIPE_WEBHOOK_SECRET: { type: 'string', required: false, description: 'Compose: a: b' },",
+  "  PLAN: { type: 'enum', values: ['FREE', 'PRO'] },",
+  '} satisfies EnvSchema;',
+  'export const env = defineEnv(envSchema);',
+  '',
+].join('\n');
+
+const at = (findings: readonly { readonly at?: string }[]) => findings.map((finding) => finding.at);
+
+describe('unit · shipped guard · undeclared-env', () => {
+  test('each read form of an undeclared name is refused, in apps/ and packages/', async () => {
+    const findings = await shippedGuardFindings('undeclared-env', {
+      'app.config.ts': SCHEMA,
+      'apps/web/app/billing/service.ts': "export const key = process.env.STRIPE_KEY ?? '';\n",
+      'apps/web/app/billing/b.ts': "export const b = Bun.env['STRIPE_KEY'];\n",
+      'packages/domain/src/c.tsx': 'export const c = import.meta.env.PUBLIC_KEY;\n',
+      'packages/domain/src/d.ts': 'export const d = process.env["LEGACY_TOKEN"];\n',
+    });
+    expect(at(findings).sort()).toEqual([
+      'apps/web/app/billing/b.ts',
+      'apps/web/app/billing/service.ts',
+      'packages/domain/src/c.tsx',
+      'packages/domain/src/d.ts',
+    ]);
+    const first = findings.find((finding) => finding.at === 'apps/web/app/billing/service.ts');
+    expect(first?.code).toBe('X_UNDECLARED_ENV');
+    expect(first?.cause).toContain('apps/web/app/billing/service.ts:1');
+    expect(first?.cause).toContain('process.env.STRIPE_KEY');
+    // The fix IS the declaration to add, and the typed read that replaces the raw one.
+    expect(first?.fix).toContain("STRIPE_KEY: { type: 'string'");
+    expect(first?.fix).toContain('app.config.ts');
+    expect(first?.fix).toContain('env.STRIPE_KEY');
+  });
+
+  // The lookalikes: a declared name, the framework's own (exact and under a prefix), NODE_ENV, a
+  // computed key, the whole env handed on, a test, an e2e fixture and a comment.
+  test('a declared, framework or computed read, a test and a comment are not reported', async () => {
+    const findings = await shippedGuardFindings('undeclared-env', {
+      'app.config.ts': SCHEMA,
+      'apps/web/app/a.ts': [
+        'export const a = process.env.STRIPE_WEBHOOK_SECRET;',
+        "export const b = Bun.env['PLAN'];",
+        'export const c = Bun.env.DATABASE_URL ?? Bun.env.NODE_ENV ?? Bun.env.ULTIMATE_ENV;',
+        'export const d = (name: string) => Bun.env[name];',
+        'export const e = { env: Bun.env };',
+        '// process.env.NOT_READ is a note',
+        '',
+      ].join('\n'),
+      'apps/web/app/a.test.ts': 'export const t = process.env.STRIPE_KEY;\n',
+      'apps/web/e2e/fixtures/app.ts': 'export const f = process.env.E2E_ONLY;\n',
+    });
+    expect(findings).toEqual([]);
+  });
+
+  // A declaration's own keys (`type`, `values`, `description`'s `Compose:`) are not names, and an
+  // inline `defineEnv({ … })` — no `envSchema` export — declares too.
+  test("a declaration's own keys are not declared names; an inline defineEnv declares", async () => {
+    const typeRead = await shippedGuardFindings('undeclared-env', {
+      'app.config.ts': SCHEMA,
+      'apps/web/app/a.ts': 'export const a = [process.env.type, process.env.Compose];\n',
+    });
+    expect(typeRead).toHaveLength(2);
+    const inline = await shippedGuardFindings('undeclared-env', {
+      'app.config.ts':
+        "export const env = defineEnv({\n  // --- billing ---\n  STRIPE_KEY: { type: 'string' },\n});\n",
+      'apps/web/app/a.ts': 'export const a = process.env.STRIPE_KEY;\n',
+    });
+    expect(inline).toEqual([]);
+  });
+
+  // No declaration at all is not "nothing to check": every app-owned read is undeclared.
+  test('an app with no env declaration has every app-owned read reported', async () => {
+    const findings = await shippedGuardFindings('undeclared-env', {
+      'apps/web/app/a.ts': 'export const a = process.env.STRIPE_KEY ?? process.env.PORT;\n',
+    });
+    expect(findings.map((finding) => finding.cause.includes('STRIPE_KEY'))).toEqual([true]);
+  });
+
+  // The rule's own test, as `x g guard` would land it beside a copy: it must pass where it lands.
+  test('the test it ships beside the rule passes in an app', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-guard-undeclared-env-test-'));
+    try {
+      for (const file of undeclaredEnvGuardFiles()) {
+        await Bun.write(join(root, file.path), file.contents);
+      }
+      await mkdir(join(root, 'node_modules/@ultimat3'), { recursive: true });
+      for (const pkg of ['testing', 'cli']) {
+        const target = Bun.fileURLToPath(new URL(`../../../${pkg}`, import.meta.url));
+        await symlink(target, join(root, `node_modules/@ultimat3/${pkg}`));
+      }
+      const run = Bun.spawnSync(['bun', 'test', './guards/undeclared-env.test.ts'], {
+        cwd: root,
+        timeout: 60_000,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const said = run.stderr.toString();
+      expect(said, said).toContain(' 3 pass');
+      expect(run.exitCode, said).toBe(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+});

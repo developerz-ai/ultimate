@@ -138,7 +138,7 @@ describe('unit · a sealed column leaves through no projection of a query', () =
         input: Input,
         policy: allow('public'),
         live: true,
-        sql: () => build(from<Account>('qe_accounts', () => table.all())),
+        sql: () => build(from<Account>('qe_accounts', () => table.all())).limit(50),
       }).named('sealedKeyed');
     const subscribe = async (target: AnyQuery): Promise<string> => {
       try {
@@ -166,7 +166,8 @@ describe('unit · a sealed column leaves through no projection of a query', () =
       input: Input,
       policy: allow('public'),
       live: true,
-      sql: () => from<{ id: string; label: string }>('qe_labels', []).where({ label: 'x' }),
+      sql: () =>
+        from<{ id: string; label: string }>('qe_labels', []).where({ label: 'x' }).limit(50),
     }).named('plainLabels');
     expect(await subscribe(plain)).toBe('subscribed');
   });

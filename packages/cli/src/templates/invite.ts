@@ -149,6 +149,8 @@ export const inviteMember = action({
   policy: canInvite,
   // Mailing a person is a browser operation here; an app that wants it as a tool exposes it.
   mcp: { expose: false },
+  // A browser's own form post lands where the output says; fetch and MCP still get the JSON.
+  native: { success: ({ next }) => next },
   async handle({ input, ctx }) {
     const orgId = ctx.actor.orgId;
     if (typeof orgId !== 'string' || orgId === '') {
@@ -184,6 +186,8 @@ export const acceptInvite = action({
   // the handler refuses an anonymous caller before it reads it.
   policy: allow('invite-link'),
   mcp: { expose: false },
+  // A browser's own form post lands where the output says; fetch and MCP still get the JSON.
+  native: { success: ({ next }) => next },
   async handle({ input, ctx }) {
     if (isAnonymous(ctx.actor)) throw authUnauthenticated('POST acceptInvite');
     const auth = appAuth();
@@ -218,6 +222,8 @@ export const revokeInvite = action({
   output: t.object({ ok: t.boolean, next: t.string, memberRemoved: t.boolean }),
   policy: canInvite,
   mcp: { expose: false },
+  // A browser's own form post lands where the output says; fetch and MCP still get the JSON.
+  native: { success: ({ next }) => next },
   async handle({ input, ctx }) {
     const orgId = ctx.actor.orgId;
     if (typeof orgId !== 'string' || orgId === '') {

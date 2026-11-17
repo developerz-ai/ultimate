@@ -57,6 +57,16 @@ describe('generatorForceProblem', () => {
     expect(generatorForceProblem('bunx x generate route posts --force')).toContain('--force');
   });
 
+  // D1: `x new app --dir … --force   # or choose another name`, run verbatim over an existing app,
+  // reset its registrations and grants to the template. A scaffolder is a generator.
+  test('refuses --force on x new and create-ultimate, the scaffolders', () => {
+    expect(generatorForceProblem('x new shop --dir apps --force')).toContain('--force');
+    expect(generatorForceProblem('bunx create-ultimate shop --force --no-git')).toContain(
+      '--force',
+    );
+    expect(generatorForceProblem('x new shop-2 --dir apps')).toBeUndefined();
+  });
+
   test('leaves other commands, and prose behind the comment, alone', () => {
     expect(generatorForceProblem('x g policy posts --json')).toBeUndefined();
     expect(generatorForceProblem('git push --force-with-lease')).toBeUndefined();
@@ -94,6 +104,28 @@ describe('the ratchet, over a repo', () => {
     const findings = await checkErrorFixes(root);
     expect(findings.map((f) => [f.code, f.at])).toEqual([['X_ERROR_FIX_INVALID', `${path}:1`]]);
     expect(findings[0]?.cause).toContain('--force');
+  });
+
+  // D1: the `x new` conflict fix was ONE interpolation, `${[invocation, name, ...flags, '--force']
+  // .join(' ')}`, which the blanked text reads as `<value>` — so the rule never saw its --force.
+  test('a --force literal inside an interpolated fix is refused too', async () => {
+    const path = 'packages/cli/src/thing.ts';
+    await Bun.write(
+      join(root, path),
+      `const f = { fix: \`\${[invocation, quoteArg(name), ...flags, '--force'].join(' ')}   # or another name\` };\n`,
+    );
+    const findings = await checkErrorFixes(root);
+    expect(findings.map((f) => [f.code, f.at])).toEqual([['X_ERROR_FIX_INVALID', `${path}:1`]]);
+    expect(findings[0]?.cause).toContain('--force');
+  });
+
+  test('a flag merely spelled --force-with-lease inside one is not', async () => {
+    const path = 'packages/cli/src/thing.ts';
+    await Bun.write(
+      join(root, path),
+      `const f = { fix: \`git push \${'--force-with-lease'}\` };\n`,
+    );
+    expect(await checkErrorFixes(root)).toEqual([]);
   });
 
   test('a file within its recorded allowance passes; one past it fails', async () => {

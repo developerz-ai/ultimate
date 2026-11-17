@@ -3,7 +3,6 @@
 // an unbounded live query is a memory leak that only shows up under load.
 
 import { UltimateError } from '@ultimat3/core';
-import { tsLiteral } from '../repro-literal';
 import type { FeatureTarget } from './entity';
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
@@ -51,8 +50,9 @@ export const ${name.camel} = query({
   live: ${String(live)},${cacheLine(feature, live)}
   // The refusals a caller may branch on, closed: add each code this read comes to throw.
   errors: [],
-  // Opt-in, unlike an action's tool: a read hands rows to an agent, so silence exposes nothing.
-  mcp: { expose: true, description: ${tsLiteral(`${name.raw} — edit this description`)} },
+  // No \`mcp\`, as an action writes none: a tool's description is what an agent reads to decide to
+  // call it, and a placeholder there is worse than no tool. A read hands rows to an agent, so
+  // silence exposes nothing. Write one, then \`mcp: { expose: true, description: '…' }\`.
   sql: ({ limit, sort, dir }) =>
     // \`feature.table\`, not the kebab plural: \`from()\` quotes the identifier into the SQL text,
     // and the entity created the table as snake_case.
@@ -158,11 +158,12 @@ ${wrapper}('${name.camel} denies an orgless actor before a read', async () => {
   expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 
-${wrapper}('${name.camel} is offered to agents as a read', () => {
-  // \`@ultimat3/mcp\`'s \`toolFrom\` serves this block as a read (\`mutates: false\`), through
-  // \`.as()\` under this same policy — an agent cannot reach a different authz path.
+${wrapper}('${name.camel} is offered to no agent until its tool is described', () => {
+  // A tool's description is what an agent reads to decide to call it, so the read ships none.
+  // Declare \`mcp: { expose: true, description: '…' }\` and \`@ultimat3/mcp\`'s \`toolFrom\` serves
+  // it as a read (\`mutates: false\`), through \`.as()\` under this same policy; then flip this.
   expect(target.kind).toBe('query');
-  expect(target.mcp?.expose).toBe(true);
+  expect(target.mcp).toBeUndefined();
 });
 ${subscribes ? subscribeTest(name, feature) : ''}`;
 };

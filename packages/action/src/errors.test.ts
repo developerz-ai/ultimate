@@ -26,6 +26,14 @@ describe('unit · X_ACTION_POLICY_MISSING pastes a permission, never the action 
     expect(permission ?? '').toMatch(/^[^:]+:[^:]+$/);
   });
 
+  // `allow()` takes a LABEL (`packages/policy/src/policy.ts`), never a permission: the public choice
+  // is `allow('public')`, the spelling the docs and the generators write.
+  test("the public choice is allow('public'), never allow('<resource>:<verb>')", () => {
+    const { fix } = new ActionPolicyMissingError('createPost');
+    expect(fix).toContain("policy: allow('public')");
+    expect(fix).not.toMatch(/allow\('[^']*:[^']*'\)/);
+  });
+
   test('the cause still names the action, because that is what finds the file', () => {
     const error = new ActionPolicyMissingError('createPost');
     expect(error.cause).toContain('createPost');

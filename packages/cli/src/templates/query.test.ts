@@ -152,22 +152,25 @@ describe('unit · the scaffold dashboard asks within the bound', () => {
   });
 });
 
-// The one template that spliced the RAW name into a string literal. `readName` refuses a quote
-// now; the template quotes it anyway, so a caller that skips `readName` still emits a literal.
-describe('unit · the raw name reaches the description as a literal, never as code', () => {
-  test('a quote in the name stays inside the string', () => {
-    const files = queryFiles("posts' + process.exit(7) + '", target);
-    const query = textAt(files, '/queries/posts-process-exit-7.ts');
-    expect(query).not.toContain("description: 'posts' + process.exit(7)");
-    expect(query).toContain(
-      "description: 'posts\\' + process.exit(7) + \\' — edit this description'",
-    );
+// The one template that spliced the RAW name into a string literal, as a placeholder MCP tool
+// description the gate then passed (D5). Like an action, a generated read declares no tool: a
+// placeholder description is worse than none, so neither the name nor the tool reaches the file.
+describe('unit · a generated query exposes no MCP tool with a placeholder description', () => {
+  test('an ordinary name: no mcp key, and the comment says how to write one', () => {
+    const query = textAt(queryFiles('invoice-search', target), '/queries/invoice-search.ts');
+    expect(query).not.toContain('edit this description');
+    expect(query).not.toMatch(/^\s*mcp:/m);
+    expect(query).toContain("mcp: { expose: true, description: '…' }");
   });
 
-  test('an ordinary name renders the same bytes it always did', () => {
-    const query = textAt(queryFiles('invoice-search', target), '/queries/invoice-search.ts');
-    expect(query).toContain(
-      "mcp: { expose: true, description: 'invoice-search — edit this description' },",
-    );
+  test('a quote in the name never reaches the file as code', () => {
+    const files = queryFiles("posts' + process.exit(7) + '", target);
+    const query = textAt(files, '/queries/posts-process-exit-7.ts');
+    expect(query).not.toContain('process.exit(7)');
+  });
+
+  test('the live read x g resource writes declares no tool either', () => {
+    const query = textAt(queryFiles('post-feed', { ...target, live: true }), '/live/post-feed.ts');
+    expect(query).not.toMatch(/^\s*mcp:/m);
   });
 });

@@ -5,7 +5,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
+import { planNewApp } from './cmd-new';
 import { PIN_RANGE, pinProbe, pinRangeFindings } from './doctor-pins';
+import { SHAPE_OVERLAYS } from './templates/shapes';
+import { readPins } from './upgrade-pins';
 
 const pin = (file: string, name: string, spec: string) => ({ file, name, spec });
 
@@ -33,6 +36,29 @@ describe('unit · x doctor framework pins', () => {
     ]);
     // The installed version where there is one, the range's own floor where there is not.
     expect(findings[0]?.fix).toContain('"@ultimat3/core": "31.14.0", "@ultimat3/cli": "31.4.0"');
+  });
+});
+
+// The framework may not contradict itself: what `x new` writes is what `x doctor` holds an app to.
+// A fresh app warned `X_FRAMEWORK_PIN_RANGE` on its own scaffolded `^<version>` — exact pins are
+// the one rule (`x upgrade` rewrites every pin it moves exact, and a range is a silent upgrade that
+// skips the hop's codemods), so every manifest every shape scaffolds is held to it here.
+describe('unit · x new writes the pins x doctor accepts', () => {
+  test('no manifest of any scaffold shape pins an @ultimat3/* package as a range', () => {
+    const shapes = [undefined, ...Object.keys(SHAPE_OVERLAYS)] as const;
+    for (const shape of shapes) {
+      const files = planNewApp({
+        name: 'pin-demo',
+        example: true,
+        ...(shape === undefined ? {} : { shape: shape as keyof typeof SHAPE_OVERLAYS }),
+      });
+      const manifests = files
+        .filter((file) => file.path.endsWith('package.json') && typeof file.contents === 'string')
+        .map((file) => ({ file: file.path, text: String(file.contents) }));
+      expect(manifests.length).toBeGreaterThan(0);
+      const findings = pinRangeFindings({ pins: readPins(manifests), installed: new Map() });
+      expect(findings.map((finding) => `${shape ?? 'default'}: ${finding.cause}`)).toEqual([]);
+    }
   });
 });
 

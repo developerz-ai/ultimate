@@ -192,33 +192,12 @@ export class DriverUnavailableError extends UltimateError {
   }
 }
 
-/**
- * The type signature already requires `idempotencyKey`; this is the runtime backstop for
- * generated code and JS callers, so the guarantee holds at both ends.
- */
-export class IdempotencyRequiredError extends UltimateError {
-  /**
-   * `positional` is a name `job()` minted from a counter (`anonymous-job-3`). Spliced into the key
-   * template it would be written into persisted idempotency keys — and it MOVES when an import is
-   * added above the declaration, so every key written before the move stops matching. The fix
-   * names the edit instead of the counter.
-   */
-  constructor(input: { job: string; positional?: boolean }) {
-    super({
-      code: 'X_IDEMPOTENCY_REQUIRED',
-      cause: `job "${input.job}" has no idempotencyKey — at-least-once delivery would run it twice`,
-      fix:
-        input.positional === true
-          ? `job({ name: 'syncInvoices', idempotencyKey: (input) => \`syncInvoices:\${input.id}\`, … })   // a stable name first — or register it in apps/web/api/index.ts so its export name is stamped`
-          : `idempotencyKey: (input) => \`${input.job}:\${input.id}\`   // on the job definition`,
-    });
-  }
-}
+export { IdempotencyRequiredError } from './errors-idempotency';
 
 /**
  * A job declared no `tenant`. The type already requires it; this is the runtime backstop for
  * generated code and JS callers, so the guarantee holds at both ends — the shape
- * `IdempotencyRequiredError` above already has.
+ * `IdempotencyRequiredError` (`errors-idempotency.ts`) already has.
  *
  * It is refused rather than defaulted because both defaults are wrong. `'none'` silently reopens
  * the hole this field closes: the body would run with no org, and before this field existed that

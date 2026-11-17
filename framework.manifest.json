@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "16099f5aeb9787c13fec84150b2c098eec3163404127954f28e03422b3d750d6",
+  "buildId": "37d5b7e0f5a5d196363527bad9bc3a2f081195170e4187af71947ccdd8c877d5",
   "tiers": {
     "0": [
       "core",
@@ -4581,6 +4581,11 @@
     },
     {
       "code": "X_QUERY_INPUT_UNENCODABLE",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_LIVE_UNBOUNDED",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
     },

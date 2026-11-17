@@ -4,6 +4,7 @@
 
 import { nearestName, singleLine } from '@ultimat3/core';
 import type { ErrorExplanation } from '@ultimat3/mcp';
+import { explainGuardCode } from './cmd-errors-guards';
 import { withRecent } from './cmd-errors-recent';
 import { errorsSpec } from './cmd-errors-spec';
 import type { CliCommand, CommandContext } from './command';
@@ -42,8 +43,12 @@ const detailLines = (explanation: ErrorExplanation): readonly string[] => [
   `  docs:  ${singleLine(explanation.docs)}`,
 ];
 
-function explainOne(code: string): CommandResult {
-  const explanation = explainErrorCode(code);
+/**
+ * A registered code, else a guard's — a shipped guard's or this app's own (`cmd-errors-guards.ts`):
+ * the gate prints both, and the app's `CLAUDE.md` sends every printed code here.
+ */
+async function explainOne(code: string, cwd: string): Promise<CommandResult> {
+  const explanation = explainErrorCode(code) ?? (await explainGuardCode(code, cwd));
   if (explanation === undefined) {
     const suggestion = nearestName(
       code,
@@ -108,7 +113,9 @@ export const errorsCommand: CliCommand = {
       });
     }
     // `--recent`: what THIS app has seen of the code — groups and the bundles `x repro` replays.
-    if (flagBool(ctx.args, 'recent')) return withRecent(ctx, code, explainOne(code));
-    return explainOne(code);
+    if (flagBool(ctx.args, 'recent')) {
+      return withRecent(ctx, code, await explainOne(code, ctx.cwd));
+    }
+    return explainOne(code, ctx.cwd);
   },
 };
