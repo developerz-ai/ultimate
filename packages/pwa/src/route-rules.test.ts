@@ -35,17 +35,28 @@ describe('a pattern matches the pathname the browser sends', () => {
     expect(ruleFor(rules, href)?.pattern).toBe(rules[0]?.pattern);
   });
 
-  test('a path already spelled encoded is not encoded twice', () => {
-    const rules = routeRules([page('/a%20b')]);
-    expect(ruleFor(rules, '/a%20b')).toBeDefined();
-    expect(ruleFor(rules, '/a%2520b')).toBeUndefined();
+  /**
+   * The request router's spellings, which `canonicalPath` writes: `|` is `%7C` in a link the
+   * framework renders, `%` is `%25` in a browser's. The worker matched neither until 31.40.
+   */
+  test.each([
+    ['/a|b', '/a%7Cb'],
+    ['/a|b', '/a%7cb'],
+    ['/a|b', '/a|b'],
+    ['/50%', '/50%25'],
+    ['/50%', '/50%'],
+    ['/a%20b', '/a%20b'],
+    ['/a%20b', '/a%2520b'],
+  ])('%s is handled at %s, as the request router routes it', (path, href) => {
+    expect(ruleFor(routeRules([page(path)]), href)).toBeDefined();
   });
 
-  test('a character the browser leaves alone stays literal — and regex-escaped', () => {
-    const rules = routeRules([page('/a|b'), page('/v1.0')]);
-    expect(ruleFor(rules, '/a|b')?.pattern).toBe(String.raw`^/a\|b/?$`);
+  test('a character is matched as itself — regex-escaped — never as another', () => {
+    const rules = routeRules([page('/a|b'), page('/v1.0'), page('/a%20b')]);
     expect(ruleFor(rules, '/a')).toBeUndefined();
     expect(ruleFor(rules, '/v1x0')).toBeUndefined();
+    expect(ruleFor(rules, '/a%20c')).toBeUndefined();
+    expect(ruleFor(rules, '/a%7Db')).toBeUndefined();
   });
 
   test('an ASCII path is unchanged', () => {

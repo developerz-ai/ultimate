@@ -76,6 +76,17 @@ describe('frozenClock', () => {
     await expect(clock.sleep(Number.NaN)).rejects.toThrow(/frozenClock.sleep ms is NaN/);
     expect(clock.now().getTime()).toBe(0);
   });
+
+  test('an instant that is not one is refused at construction and at set, never stored', () => {
+    expect(() => frozenClock('2026-13-01')).toThrow(/frozenClock instant is NaN/);
+    expect(() => frozenClock(Number.POSITIVE_INFINITY)).toThrow(/frozenClock instant/);
+    expect(() => frozenClock(new Date('bogus'))).toThrow(/frozenClock instant/);
+    const clock = frozenClock('2026-11-09T00:00:00Z');
+    expect(() => clock.set('not a date')).toThrow(/frozenClock instant is NaN/);
+    expect(clock.now().toISOString()).toBe('2026-11-09T00:00:00.000Z');
+    clock.set(-5);
+    expect(clock.now().getTime()).toBe(-5);
+  });
 });
 
 describe('noWaitClock', () => {

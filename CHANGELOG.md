@@ -10,7 +10,38 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- **Audit round 2 (plan 101b, slice 20):** six read-only auditors (bugs in the unread tiers, concurrency, security on injection and secrets, a DX pass, an architecture review). Every confirmed finding is fixed, each with a test that failed first. Counts: P0 0 · P1 4 · P2 12 fixed, plus 2 P2 parked for the next major or deferred to round 3.
+
+### Security
+
+- `@ultimat3/ai`: vector-store writes (`upsert`, `prune`, `delete`, and so `indexDocument`) on a store with no tenant bound, inside a request acting for an org, are refused with `X_VECTOR_UNSCOPED`, as reads already were. Before, a forgotten `.scoped({ tenant })` deleted or pruned every org's rows sharing the id and wrote into the shared no-tenant bucket.
+- `x g <kind> <name>` refuses a name with characters outside letters, digits, space, `_` and `-`, and `x g query` escapes the name in its generated description. Before, a quote in the name injected code into a module the app imports at boot.
+
+### Fixed
+
+- `/healthz`, `/readyz` and `ctx.buildId` (a worker job's audit `build_id` included) name the same build as `x-ultimate-build`. An unstamped image's `BUILD_ID=""` made them report `""`. The boot installs the id it resolves through `installBuildId` on `@ultimat3/core/adapter`; core no longer reads `BUILD_ID`. `x repro` reads an empty `BUILD_ID` as unstamped too.
+- pwa, render: one literal-segment matcher, `@ultimat3/core`'s `literalSegmentPattern`, serves the service worker's rules and `compilePattern`. The worker's rule for `/a|b` now matches `/a%7Cb`, the spelling `canonicalPath` writes, and `/50%` matches `/50%25`.
+- realtime: the replicator reads a change's tenant from the entity's declared tenant column. A key-only DELETE on a `tenant: 'workspaceId'` table whose key holds an `orgId` column was published as that org's change, so the row's real tenant never saw the delete.
+- realtime: a live window's org is its tenant alone; an untenanted window no longer filters changes by an `orgId` in its input.
+- A SIGTERM during a serving role's schema wait ends the wait even while a schema read is in flight. A read stuck on an unreachable database kept the pod up past its grace period, so it was SIGKILLed (137) instead of exiting with the drain code.
+- `x dev`: a render begun with the old module before a save no longer lands after the rebuild's ISR clear as a fresh page. The clear voids every fill in flight first (`markAllInvalidated`, now exported by `@ultimat3/cache`). A failed rebuild's stale modules are kept as this process's own, never reported against the next save.
+- core: `uuidV7()` refuses a clock reading an Invalid Date, a pre-1970 time or one past 48 bits (`X_INVARIANT`), instead of minting a non-UUID and breaking the next id's order. `frozenClock()`/`.set()` refuse an unparseable instant.
+- http: the memory rate-limit store moves `lastMs` forward only, as Redis and Postgres do. A clock stepping back no longer credits a refill twice or forgets a spent bucket early.
+- auth: `issueApiKey({ expiresAt })` refuses an Invalid Date (`X_CONFIG_INVALID`). Before, the key never expired in memory, and Postgres refused it with a raw timestamp error.
+- testing: `toEmitSteps` runs a real job. Each step body gets an `AbortSignal`, `waitForEvent` is a recorded step on its timeout branch (`X_JOB_TIMEOUT` when `required`), and the body gets the worker's arguments. Before, it crashed with an uncoded TypeError.
+- admin: a list cursor replayed under another `?sort=` field opens page one instead of an empty page.
+- entity: an index `where:` that is not a callback is `X_INVARIANT_VIOLATED` at declaration, with the callback form as the fix, instead of an uncoded TypeError.
+- entity: a cursor's scope renders filter values with core's injective `canonicalJson`, so `eq 1` and `eq '1'` no longer share cursors. A cursor minted before this release under a number, boolean, date, bigint or object filter is refused with `X_CURSOR_INVALID` on its next page; string, string-list and null-test filters keep their scope.
+
+### Changed
+
+- `bun run scripts/next-breaks.ts` refuses a source comment that promises a removal at the next major unless a `PARKED_BREAKS` row removes that file and symbol (`X_NEXT_BREAK_UNPARKED`). The list gains 8 rows, and the issue marks removals still owed a `@deprecated` tag.
+
+### Deprecated
+
+- realtime: `orgIdOf` (`@ultimat3/realtime/server`) is unused by the framework and is removed at the next major.
 
 ## Releases
 

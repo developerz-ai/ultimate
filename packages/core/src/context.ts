@@ -32,6 +32,7 @@
 
 import { type Actor, anonymousActor } from './actor';
 import { asyncContext } from './async-context';
+import { installedBuildId } from './build-id';
 import { type Clock, liveClock } from './clock';
 import { DEFAULT_LOCALE, DEFAULT_TIME_ZONE } from './default-locale';
 import { isUltimateError, UltimateError } from './errors';
@@ -158,10 +159,6 @@ const requestContext = asyncContext<Ctx>('the request context');
 
 const neverAborted = new AbortController().signal;
 
-function buildId(): string {
-  return process.env['BUILD_ID'] ?? 'dev';
-}
-
 export function ctxOf(init: CtxInit = {}): Ctx {
   const clock = init.clock ?? liveClock;
   const requestId = init.requestId ?? uuidV7(clock);
@@ -174,7 +171,7 @@ export function ctxOf(init: CtxInit = {}): Ctx {
     actor: init.actor ?? anonymousActor(),
     locale: init.locale ?? DEFAULT_LOCALE,
     tz: init.tz ?? DEFAULT_TIME_ZONE,
-    buildId: init.buildId ?? buildId(),
+    buildId: init.buildId ?? installedBuildId(),
     role: init.role ?? resolveRole(),
     clock,
     now: () => clock.now(),

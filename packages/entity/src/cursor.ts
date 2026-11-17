@@ -6,7 +6,7 @@
 // to both. The cursor carries the sort VALUES, not just an id: seeking by id alone needs the row
 // to still exist, and a row deleted between two pages would silently restart pagination.
 
-import { CursorInvalidError, decodeCursor, encodeCursor } from '@ultimat3/core';
+import { CursorInvalidError, canonicalJson, decodeCursor, encodeCursor } from '@ultimat3/core';
 import { columnFor, columnName } from './column';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
@@ -252,20 +252,6 @@ export const assertSeekable = <Row>(
 export const isNullableKey = <Row>(entity: EntityCore<Row>, path: string): boolean =>
   !columnAt(entity, path).$meta.notNull;
 
-/** Deterministic, and total over the value shapes a predicate can hold. */
-const renderValue = (value: unknown): string => {
-  if (value === null || value === undefined) return 'null';
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'bigint') return `${value}n`;
-  if (Array.isArray(value)) return `[${value.map(renderValue).join(',')}]`;
-  if (typeof value === 'object') {
-    const record = value as Readonly<Record<string, unknown>>;
-    const keys = Object.keys(record).sort();
-    return `{${keys.map((key) => `${key}:${renderValue(record[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(String(value));
-};
-
 /**
  * What a cursor is bound to: this entity, these filters, this sort order. Not the page size — a
  * client may legitimately ask for a bigger next page — and not the projection, which cannot move
@@ -274,10 +260,15 @@ const renderValue = (value: unknown): string => {
  *
  * Hashed rather than spelled out: a cursor is base64, not encrypted, and the caller's filter
  * values are not the client's to read.
+ *
+ * Each value is core's `canonicalJson` — INJECTIVE, so `1` and `'1'` are two scopes. The local
+ * serializer it replaced quoted every scalar, and a cursor minted under `eq 1` was honoured under
+ * `eq '1'`. A string, a list of strings and a null test render as they did, so a plan holding only
+ * those keeps its scope across the upgrade (`cursor-scope.test.ts`).
  */
 export const planScope = (plan: QueryPlan): string => {
   const where = plan.where
-    .map((predicate) => `${predicate.column} ${predicate.op} ${renderValue(predicate.value)}`)
+    .map((predicate) => `${predicate.column} ${predicate.op} ${canonicalJson(predicate.value)}`)
     .sort()
     .join('&');
   const order = plan.orderBy.map((key) => `${key.column} ${key.direction}`).join(',');

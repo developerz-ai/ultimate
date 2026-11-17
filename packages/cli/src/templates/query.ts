@@ -3,6 +3,7 @@
 // an unbounded live query is a memory leak that only shows up under load.
 
 import { UltimateError } from '@ultimat3/core';
+import { tsLiteral } from '../repro-literal';
 import type { FeatureTarget } from './entity';
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
@@ -51,7 +52,7 @@ export const ${name.camel} = query({
   // The refusals a caller may branch on, closed: add each code this read comes to throw.
   errors: [],
   // Opt-in, unlike an action's tool: a read hands rows to an agent, so silence exposes nothing.
-  mcp: { expose: true, description: '${name.raw} — edit this description' },
+  mcp: { expose: true, description: ${tsLiteral(`${name.raw} — edit this description`)} },
   sql: ({ limit, sort, dir }) =>
     // \`feature.table\`, not the kebab plural: \`from()\` quotes the identifier into the SQL text,
     // and the entity created the table as snake_case.

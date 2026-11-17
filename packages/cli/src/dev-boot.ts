@@ -6,6 +6,7 @@
 import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
 import { subscribe, subscribeSemconvMetrics, systemClock } from '@ultimat3/core';
+import { installBuildId } from '@ultimat3/core/adapter';
 import type { OverlayNotice, RequestContext } from '@ultimat3/http';
 import { asCtx, subscribeRequestTimings } from '@ultimat3/http';
 import { loadSignInPath } from './app-auth';
@@ -240,6 +241,8 @@ async function bootDev(
   const rawStamp = options.env['BUILD_ID'];
   const stamped = rawStamp !== undefined && rawStamp !== '' ? rawStamp : undefined;
   const buildId = stamped ?? state.manifest.buildId;
+  // The pinned id is core's too, so `ctx.buildId` and `/healthz` name what the header names.
+  acquired.push(installBuildId(buildId));
 
   let server: DevServer;
   // Read at request time, never captured at boot: `/_x/services` must report the reload counter

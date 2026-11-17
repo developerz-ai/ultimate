@@ -234,6 +234,33 @@ describe('the memory store is bounded', () => {
   });
 });
 
+/**
+ * A wall clock that steps BACK must not credit a refill twice. Postgres keeps
+ * `greatest(last_ms, now)` and Redis `math.max(last, now)`; memory overwrote `lastMs` with the
+ * earlier instant, so the same seconds were refilled again once the clock came forward.
+ */
+describe('a clock that steps back', () => {
+  const slow: Bucket = { capacity: 1, refillPerSecond: 0.2 };
+
+  test('the refill is credited once, as the shared stores credit it', async () => {
+    const store = memoryRateLimitStore();
+    expect((await store.take('k', slow, 1, 10_000)).allowed).toBe(true);
+    expect((await store.take('k', slow, 1, 5_000)).allowed).toBe(false);
+    expect((await store.take('k', slow, 1, 10_000)).allowed).toBe(false);
+    expect((await store.take('k', slow, 1, 15_000)).allowed).toBe(true);
+  });
+
+  test('a backward take does not make a spent bucket forgettable early', async () => {
+    const store = memoryRateLimitStore({ maxKeys: 1 });
+    await store.take('spent', slow, 1, 10_000);
+    await store.take('spent', slow, 1, 5_000);
+    // A second key past the cap sweeps at 10_000: the spent bucket is due at 15_000, not 10_000,
+    // so the cap evicts the nearly-full one and the spent one is still spent.
+    await store.take('quick', { capacity: 1, refillPerSecond: 1_000 }, 1, 10_000);
+    expect((await store.take('spent', slow, 1, 10_000)).allowed).toBe(false);
+  });
+});
+
 // The declaration is the app's: a framework cannot see `replicas: 3`, and one that inferred it
 // from the environment would be wrong on the first deployment that scaled differently.
 describe('scope is declared, and checked once', () => {

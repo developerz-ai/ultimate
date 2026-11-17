@@ -5,6 +5,7 @@
 
 import type { Actor } from '@ultimat3/core';
 import { asyncContext, isAnonymous, tryUseContext, withInProcessFetch } from '@ultimat3/core';
+import { installedBuildId } from '@ultimat3/core/adapter';
 import { defineHttpConfig, httpPipeline, httpRouter } from '@ultimat3/http';
 import type { RouteLoadSubject } from '@ultimat3/testing';
 import { apiRoutes } from './api-routes';
@@ -18,10 +19,8 @@ const caller = asyncContext<Actor | null>('the exercise in-process caller');
 /** One dispatcher over the app's API table, built on first use: the registries are full by then. */
 function dispatcher(): (url: string, init: RequestInit) => Promise<Response> {
   // No rate limit: every request is the pass's own, as a build's are (`measure-scope.ts`).
-  const config = defineHttpConfig({
-    buildId: process.env['BUILD_ID'] ?? 'dev',
-    rateLimit: { enabled: false },
-  });
+  // The id core holds (`'dev'` outside a boot, as `x exercise` runs), never `BUILD_ID` read again.
+  const config = defineHttpConfig({ buildId: installedBuildId(), rateLimit: { enabled: false } });
   const pipeline = httpPipeline({
     table: httpRouter(apiRoutes()),
     config,

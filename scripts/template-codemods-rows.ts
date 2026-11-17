@@ -384,4 +384,9 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.38.0',
     none: "the runtime templates moved to sign-in-runtime.ts with their output unchanged; an app's sign-in files are byte-identical",
   },
+  {
+    template: 'packages/cli/src/templates/query.ts',
+    since: '31.40.0',
+    none: 'the generated description is escaped through tsLiteral; for every name readName accepts the bytes are identical, so no app holds anything to migrate',
+  },
 ];

@@ -111,8 +111,9 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
   re-lookup (`live-definition-input.test.ts`). A cold window is staled only by a table it reads.
 - **A WINDOW is per TENANT** (`windowId(queryHash, tenant)`, `live-tenant.ts`); the read runs as a
   service actor carrying ONLY that org, never the subscriber. †
-- **A change's tenant is its entity's `$tenantColumn`, on every producer** (`change-tenant.ts`),
-  never a property assumed to be `orgId`; a window lists its tenanted tables (`shape.tenantTables`)
+- **A change's tenant is its entity's `$tenantColumn`, on every producer and in `normalize`** (`change-tenant.ts`, `replicator-tenant.test.ts`),
+  never a property assumed to be `orgId`; a window's org is its TENANT alone, `null` untenanted —
+  never the input's `orgId` (`query-window-tenant.test.ts`; `orgIdOf` is deprecated, unused); a window lists its tenanted tables (`shape.tenantTables`)
   and `canAffect` refuses a tenant-less insert/update on one for an org-scoped window; a
   tenant-less DELETE (key-only image) passes, and `bridgeChange` keeps a delete only for an id
   the window holds (`live-tenant-column.test.ts`, `tenant-less-delete.test.ts`).

@@ -9,6 +9,8 @@ export type { AuditRecord, AuditSink } from './audit';
 export { installAuditSink, resetAuditSink } from './audit';
 /** The boot's context for `bootWarning`: its roles and per-build store. cli's `startRoles` alone. */
 export { installBootWarnings } from './boot-warning';
+/** The build id the boot resolved (`BUILD_ID` stamped, else the manifest hash); `'dev'` unbooted. */
+export { installBuildId, installedBuildId } from './build-id';
 export type { Clock, FrozenClock, SleepClock } from './clock';
 
 export type { ErrorReport, ErrorReporter } from './error-reporter';

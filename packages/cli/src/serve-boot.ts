@@ -9,6 +9,7 @@
 
 import type { DrainConfig, LifecycleOptions, Role } from '@ultimat3/core';
 import { configureLifecycle, logger, UltimateError } from '@ultimat3/core';
+import { installBuildId } from '@ultimat3/core/adapter';
 import { loadAppConfig } from './app-config-load';
 import { armFailureCapture } from './failure-capture-boot';
 import type { MetricsEndpoint } from './metrics-endpoint';
@@ -209,6 +210,9 @@ async function bootRoles(boot: {
   acquired.push(armFailureCapture(appConfig, { store: runtime.failureStore }));
   timeline.phase('app-checks');
   const buildId = await buildIdFor(options, role);
+  // Core's one copy: `ctx.buildId` (a job's audit row), `/healthz` and `/readyz` read this, never
+  // `BUILD_ID` — an unstamped image's `''` would otherwise disagree with `x-ultimate-build`.
+  acquired.push(installBuildId(buildId));
   timeline.phase('build-id');
   // Before the first socket opens: everything above this line fails loudly into the container's
   // own logs, everything below it is a served request, a claimed job or a routed frame.

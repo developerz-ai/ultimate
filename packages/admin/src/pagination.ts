@@ -78,6 +78,21 @@ export type AdminPage<Row extends AdminRow> = Page<Row> & {
   readonly prevCursor: string | null;
 };
 
+/**
+ * The cursor this request may seek by: `null` (page one) when it was issued under another sort
+ * field. Its boundary value is that column's, so seeking the requested column by it lands at an
+ * arbitrary position — an empty page with a Previous link. `listQuery` and `pageFrom` both read
+ * it, so the query and the page agree on whether there is a past.
+ */
+function cursorFor(
+  resource: CursorResource,
+  req: PageRequest,
+  sort: AdminSort,
+): AdminCursor | null {
+  const cursor = decodeAdminCursor(resource, req.cursor);
+  return cursor === null || cursor.field !== sort.field ? null : cursor;
+}
+
 /** The repo query for one page. Asks for `limit + 1` to learn whether a next page exists. */
 export function listQuery<Row extends AdminRow>(
   resource: AdminResource<Row>,
@@ -85,7 +100,7 @@ export function listQuery<Row extends AdminRow>(
 ): AdminListQuery {
   const sort = req.sort ?? resource.defaultSort;
   const limit = Math.max(1, Math.min(req.limit ?? resource.pageSize, 200));
-  const cursor = decodeAdminCursor(resource, req.cursor);
+  const cursor = cursorFor(resource, req, sort);
   const bound =
     cursor === null ? undefined : { field: cursor.field, value: cursor.value, id: cursor.id };
 
@@ -134,7 +149,7 @@ export function pageFrom<Row extends AdminRow>(
 ): AdminPage<Row> {
   const sort = req.sort ?? resource.defaultSort;
   const pageSize = Math.max(1, Math.min(req.limit ?? resource.pageSize, 200));
-  const incoming = decodeAdminCursor(resource, req.cursor);
+  const incoming = cursorFor(resource, req, sort);
   const backwards = incoming?.direction === 'before';
   const overflow = fetched.length > pageSize;
 

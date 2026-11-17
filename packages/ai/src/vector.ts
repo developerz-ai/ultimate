@@ -12,7 +12,7 @@ import { finiteCount, finiteOption } from '@ultimat3/core';
 import { cosine, wordTokens } from './embeddings';
 import { VectorDimMismatchError } from './errors';
 import {
-  assertTenantRead,
+  assertTenantBound,
   NO_VECTOR_TENANT,
   narrowScope,
   scopeAdmits,
@@ -140,6 +140,7 @@ export class MemoryVectorStore implements VectorStore {
   }
 
   async upsert(records: readonly VectorRecord[]): Promise<void> {
+    assertTenantBound(this.name, this.scope);
     const tenant = this.scope.tenant ?? NO_VECTOR_TENANT;
     // Every width checked before any row is written, as `PostgresVectorStore.upsert` does: checked
     // per record, a refused batch had already written the rows ahead of the bad one.
@@ -154,7 +155,7 @@ export class MemoryVectorStore implements VectorStore {
     k: number,
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
-    assertTenantRead(this.name, this.scope);
+    assertTenantBound(this.name, this.scope);
     this.assertDimension(vector.length);
     // `k` carries no default, so `??` never sees it and nothing else does either: `slice(0, NaN)`
     // is `[]`, which is a search that answers "no matches" for every query and reports success.
@@ -169,7 +170,7 @@ export class MemoryVectorStore implements VectorStore {
     k: number,
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
-    assertTenantRead(this.name, this.scope);
+    assertTenantBound(this.name, this.scope);
     return this.lexical(query, finiteCount(SUBJECT, 'k', k), filter).map(({ record, score }) =>
       this.hit(record, score),
     );
@@ -186,7 +187,7 @@ export class MemoryVectorStore implements VectorStore {
    * rankings reach it under the row's storage key and leave under the caller's id again.
    */
   async hybrid(input: HybridSearchInput): Promise<readonly SearchHit[]> {
-    assertTenantRead(this.name, this.scope);
+    assertTenantBound(this.name, this.scope);
     this.assertDimension(input.vector.length);
     // Three bounds, none of which `Math.max` screens — it PROPAGATES a `NaN`. A `NaN` `k` collapses
     // both candidate widths and the final slice to `[]`; a `NaN` `rrfK` makes every fused score
@@ -251,6 +252,7 @@ export class MemoryVectorStore implements VectorStore {
 
   /** Scoped and filtered, exactly like `pruneSql`: everything `filter` matches but `keep`. */
   async prune(filter: MetadataFilter, keep: readonly string[]): Promise<void> {
+    assertTenantBound(this.name, this.scope);
     const kept = new Set(keep);
     for (const record of this.candidates(filter)) {
       if (kept.has(record.id)) continue;
@@ -260,6 +262,7 @@ export class MemoryVectorStore implements VectorStore {
 
   /** Scoped, exactly like the SQL `delete ... where id in (...) and <scope>`. */
   async delete(ids: readonly string[]): Promise<void> {
+    assertTenantBound(this.name, this.scope);
     const wanted = new Set(ids);
     for (const [key, record] of this.records) {
       if (!wanted.has(record.id)) continue;

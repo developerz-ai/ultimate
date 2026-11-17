@@ -56,6 +56,38 @@ describe('unit · next-breaks · each source resolves to exactly one line', () =
   });
 });
 
+describe('unit · next-breaks · a removal is cited at its declaration', () => {
+  const REMOVES: ParkedBreak = {
+    ...ONE,
+    sources: [],
+    removes: [
+      { path: 'packages/z/src/a.ts', symbol: 'foo' },
+      { path: 'packages/z/src/a.ts', symbol: 'bar' },
+    ],
+  };
+  const SOURCE =
+    '/** @deprecated removed at the next major. */\nexport function foo() {}\nexport const bar = 1;\n';
+
+  test('a tagged removal is cited plain, an untagged one owes its tag', async () => {
+    const dir = await tree({ 'packages/z/src/a.ts': SOURCE });
+    const tagged = [{ path: 'packages/z/src/a.ts', line: 1, symbol: 'foo' }];
+    const { located, findings } = await locateBreaks(dir, [REMOVES], tagged);
+    expect(findings).toEqual([]);
+    expect(located[0]?.citations).toEqual([
+      { path: 'packages/z/src/a.ts', line: 2 },
+      { path: 'packages/z/src/a.ts', line: 3, tagOwed: true },
+    ]);
+    expect(renderBody(located)).toContain('a.ts#L3) (`@deprecated` owed)');
+  });
+
+  test('a removal its file no longer declares refuses', async () => {
+    const dir = await tree({ 'packages/z/src/a.ts': 'export function foo() {}\n' });
+    const { findings } = await locateBreaks(dir, [REMOVES]);
+    expect(findings.map((finding) => finding.code)).toEqual(['X_NEXT_BREAK_SOURCE_MOVED']);
+    expect(findings[0]?.cause).toContain('declares no `bar`');
+  });
+});
+
 describe('unit · next-breaks · the ledger cannot park a break the issue omits', () => {
   test('a Known-Gaps row parked on `next` that no break cites refuses', () => {
     const gaps = [
@@ -90,7 +122,7 @@ describe('unit · next-breaks · the body', () => {
 });
 
 describe('unit · next-breaks · the real tree', () => {
-  test('every parked break resolves and the ledger parks nothing unlisted', async () => {
+  test('every parked break resolves, and neither the ledger nor a source tag parks one unlisted', async () => {
     const result = await nextBreaks(repoRoot());
     expect(result.findings).toEqual([]);
     expect(result.title).toBe(NEXT_TRACKING_TITLE);

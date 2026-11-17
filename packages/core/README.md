@@ -71,6 +71,7 @@ JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, a
 | `isSameOriginPath(value)` — a path on THIS origin as a browser resolves it: refuses `//host`, `/\host`, a C0 control or DEL (`/\t/evil.example` parses to `//evil.example`) and a dot segment leaving a `//` pathname. The one predicate for every URL precached as an offline answer, `@ultimat3/pwa`'s build included | `config-pwa.ts` |
 | the closed route vocabulary every renderer names | `route-vocabulary.ts` |
 | which of two route patterns wins a pathname (`routeRank`) | `route-rank.ts` |
+| the regex a route's literal segment matches a pathname with (`literalSegmentPattern`) | `route-literal.ts` |
 | runtime roles + `ROLE` resolution | `roles.ts` |
 | an app's role-scoped boot line — `bootWarning({ code, roles, once?, message, fields })`, said only where a booting role can act on it, `once: 'process'` or `'build'` (the boot installs the per-build store with `installBootWarnings`, on `@ultimat3/core/adapter`) | `boot-warning.ts` |
 | `Clock` — the only source of "now" | `clock.ts` |
@@ -1036,12 +1037,15 @@ Interfaces (`AuditSink`, `SleepClock`, `ErrorReporter`, `FailureStore`, `SecretS
 built-ins to copy or compose (`systemClock`, `noWaitClock`, `envSecretSource`, `fileSecretSource`,
 `defaultSecretSource`), the error a source raises (`SecretsKeyMissingError`), and the INSTALLERS —
 `installAuditSink` (+ `resetAuditSink`), `installClock`, `installErrorReporter`,
-`installFailureStore`, `installSecretSource` — and `adapterSlot(fallback)`, the one
+`installFailureStore`, `installSecretSource`, `installBuildId` (+ `installedBuildId`) — and `adapterSlot(fallback)`, the one
 slot every package's installer is built on. Every installer returns its release (`() => void`), which
 removes ITS install alone: installers may stop in any order, and a second release is a no-op.
 `ctxOf()` and the logger read the installed clock at each call, so `runtime.ts`'s `clock` reaches
 every action, query and job; deadlines racing real timers, AWS signing and a bare `uuidV7()` stay
-on the system clock. Their callers are the boot (reading
+on the system clock. `installBuildId(id)` is the boot's ONE hand-off of the build id it resolved (`BUILD_ID` when
+stamped and non-empty, else the manifest hash): `ctxOf().buildId`, `/healthz` and `/readyz` read
+it, never `BUILD_ID` itself, so they name what `x-ultimate-build` names. Unbooted — a bare script,
+a test — it is `'dev'`. Their callers are the boot (reading
 `apps/<app>/runtime.ts`) and `@ultimat3/testing`; the barrel exports none of them.
 
 ## Supporting exports

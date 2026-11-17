@@ -122,10 +122,14 @@ const decide = (
 ): RateLimitDecision => {
   const elapsedSeconds = Math.max(0, (nowMs - state.lastMs) / 1000);
   const tokens = Math.min(bucket.capacity, state.tokens + elapsedSeconds * bucket.refillPerSecond);
-  state.lastMs = nowMs;
+  // Forward only, as Postgres's `greatest(last_ms, $5)` and Redis's `math.max(last, now)`: a clock
+  // that stepped back and wrote its earlier instant here credited the same seconds twice.
+  state.lastMs = Math.max(state.lastMs, nowMs);
   const allowed = tokens >= cost;
   state.tokens = allowed ? tokens - cost : tokens;
-  state.forgetAtMs = forgetAt(state, bucket, nowMs);
+  // From the refill's own instant, not the backward `nowMs`: earlier would forget a spent bucket
+  // before it refilled, and a forgotten bucket answers full.
+  state.forgetAtMs = forgetAt(state, bucket, state.lastMs);
   return rateLimitDecision(bucket, state.tokens, cost, allowed, nowMs);
 };
 

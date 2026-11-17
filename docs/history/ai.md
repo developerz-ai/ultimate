@@ -863,8 +863,10 @@ page reached its size ceiling).
 - Retrieval is hybrid by default; no vector-only path. **`chunk()` hard-wraps**, the overlap
   carry stops at `buffer.length - 1` and yields to a next unit it does not fit beside (no chunk over
   `size`); `metadata.source` is written AFTER the caller's spread. `VectorStore.prune` is required.
-- **A store with no tenant bound, read inside a request whose actor has an `orgId`, is
-  `X_VECTOR_UNSCOPED`** (`assertTenantRead`, both stores, every read). `scope: UNSCOPED`
+- **A store with no tenant bound, read or written inside a request whose actor has an `orgId`, is
+  `X_VECTOR_UNSCOPED`** (`assertTenantBound`, both stores, every read and every write — `upsert`,
+  `prune`, `delete`; writes since audit round 2, 2026-11-17, when an unbound delete reached every
+  org's rows sharing the id). `scope: UNSCOPED`
   (`crossTenant: true`) is the named opt-in; an omitted scope is `UNBOUND`.
 - `postgresVectorStore()` is the only production vector path (pgvector + FTS in the app's Postgres);
   `memoryVectorStore()` enforces the same envelope. **`pg-vector.live.test.ts` refuses to skip** on a

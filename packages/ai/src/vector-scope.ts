@@ -58,12 +58,14 @@ export function narrowScope(store: string, base: VectorScope, next: VectorScope)
 }
 
 /**
- * Refuse a read that would search every tenant inside a request acting for one. Entities derive
- * the tenant from the ambient actor; a vector store is bound by `.scoped({ tenant })`, and a
- * forgotten call answered with every org's rows. Outside a request, or for an actor with no org,
- * there is no tenant to leak across — a single-tenant app and a job's system actor read as before.
+ * Refuse any statement — read or write — that would reach every tenant inside a request acting for
+ * one. Entities derive the tenant from the ambient actor; a vector store is bound by
+ * `.scoped({ tenant })`, and a forgotten call answered with every org's rows, deleted every org's
+ * rows sharing an id (the key is `(tenant, id)`, so ids collide across tenants by design), or wrote
+ * into the shared no-tenant bucket. Outside a request, or for an actor with no org, there is no
+ * tenant to leak across — a single-tenant app and a job's system actor run as before.
  */
-export function assertTenantRead(store: string, scope: VectorScope): void {
+export function assertTenantBound(store: string, scope: VectorScope): void {
   if (scope.tenant !== undefined || scope.crossTenant === true) return;
   if (tryUseContext()?.actor.orgId === undefined) return;
   throw new VectorUnscopedError({ store });
@@ -75,9 +77,9 @@ export class VectorUnscopedError extends UltimateError {
     super({
       code: 'X_VECTOR_UNSCOPED',
       cause:
-        `vector store "${input.store}" was read with no tenant bound, inside a request acting ` +
-        'for an org — the read would answer with every tenant’s rows. A deliberate cross-tenant ' +
-        'read (a backfill, a migration) opens the store with scope: UNSCOPED',
+        `vector store "${input.store}" was read or written with no tenant bound, inside a request ` +
+        'acting for an org — the statement would reach every tenant’s rows. A deliberate ' +
+        'cross-tenant read or write (a backfill, a migration) opens the store with scope: UNSCOPED',
       fix: 'vectorStore.scoped({ tenant: ctx.actor.orgId })',
     });
   }

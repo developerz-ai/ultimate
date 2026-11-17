@@ -58,7 +58,8 @@ describe('logger', () => {
     const lines: Record<string, unknown>[] = [];
     const logger = structuredLogger({
       level: 'info',
-      clock: frozenClock('not-a-date'),
+      // `frozenClock` refuses an unparseable instant now; a clock that READS one is still possible.
+      clock: { now: () => new Date(Number.NaN), monotonic: () => 0 },
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
     });
     logger.info('post published', { postId: 'p1' });

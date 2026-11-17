@@ -128,9 +128,10 @@ export function queryEntry(
     shape: {
       qid,
       entities,
-      // The window's own tenant first: a change in another org is dropped before any predicate
-      // runs, whether or not the query's `where` happens to name one.
-      orgId: tenant ?? orgIdOf(input),
+      // The window's own tenant, and nothing else: a change in another org is dropped before any
+      // predicate runs. Never an input property spelled `orgId` — the read runs under `tenant`
+      // alone, so filtering by anything else drops changes that read returns (`change-tenant.ts`).
+      orgId: tenant,
       // Resolved once per window, so `canAffect` refuses a tenant-less change on these with a
       // lookup in a short list rather than a registry walk per change.
       tenantTables: entities.filter((table) => tenantColumnOfTable(table) !== null),
@@ -387,6 +388,11 @@ async function readSnapshot(entry: QueryEntry, phase: LiveReadPhase): Promise<Sn
   }
 }
 
+/**
+ * @deprecated Unused by the framework, and removed at the next major. A window's org is its
+ * tenant — pass `tenant` to `queryEntry` — never an input property spelled `orgId`: the read runs
+ * under the tenant alone, and a change's own tenant is its entity's `$tenantColumn`.
+ */
 export function orgIdOf(input: JsonValue): string | null {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return null;
   const value = input['orgId'];
