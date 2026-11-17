@@ -226,6 +226,9 @@ const CATALOG = {
   'cli.new.exists': '{dir} already exists — nothing was written',
   'cli.new.existsApp':
     '{dir} already holds an app — x new never scaffolds over one, --force included',
+  // `--force` over a directory that already holds paths the scaffold writes: refused, not overwritten.
+  'cli.new.existsFiles':
+    '{dir} already holds {count} of the files x new writes — nothing was written, --force included',
   'cli.new.wrote': '  {count} files in {dir}',
   'cli.new.noRepository': '  no repository — {problem}',
   // `git init` ran and the commit did not: `.git` exists, so "no repository" was false.

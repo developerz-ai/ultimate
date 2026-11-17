@@ -288,5 +288,7 @@
  * `SERVING_ROLE_CEILING`, `realtime/src/change-tenant.ts`.
  * raised 1735 → 1739, measured 1739 (2026-11-16, plan 101b audit round 2): the four on
  * `SERVING_ROLE_CEILING`. Nothing web-only.
+ * raised 1739 → 1740, measured 1740 (2026-11-17, plan 101b audit round 3, security):
+ * `realtime/src/channel-tenant.ts`, a channel's tenant param checked before its policy (T1, P0).
  */
-export const WEB_ROLE_CEILING = 1739;
+export const WEB_ROLE_CEILING = 1740;

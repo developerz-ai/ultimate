@@ -38,10 +38,10 @@ export interface IslandStateSuiteOptions extends IslandStateMountOptions, TestOp
 export const ISLAND_MOUNT_TIMEOUT_MS = 60_000;
 
 /**
- * Bundles already built in this process, per builder, by `<root>\0<island>`. A file with three
- * states used to build its island three times; the source cannot change between two mounts of one
- * test run, so the second is a lookup. A build that REJECTS is forgotten, so the next mount
- * reports its own failure rather than a cached one.
+ * Bundles already built in this process, per builder, by `<root>\0<island>\0<covered|shipped>`.
+ * A file with three states used to build its island three times; the source cannot change between
+ * two mounts of one test run, so the second is a lookup. A build that REJECTS is forgotten, so the
+ * next mount reports its own failure rather than a cached one.
  */
 const bundles = new WeakMap<IslandBuilder, Map<string, Promise<IslandBundleLike>>>();
 
@@ -50,7 +50,9 @@ const buildOnce =
   (root, options) => {
     const built = bundles.get(build) ?? new Map<string, Promise<IslandBundleLike>>();
     bundles.set(build, built);
-    const key = `${root}\0${options?.only ?? ''}`;
+    // The coverage build and the shipped one are two bundles of one island (`mountIsland`).
+    const flavour = options?.coverage === true ? 'covered' : 'shipped';
+    const key = `${root}\0${options?.only ?? ''}\0${flavour}`;
     const known = built.get(key);
     if (known !== undefined) return known;
     const pending = build(root, options);

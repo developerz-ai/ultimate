@@ -76,10 +76,21 @@ export const CONTAINER_CHROME_ARGS: readonly string[] = ['--no-sandbox', '--disa
  * throwaway `--user-data-dir` because a run sharing a profile with a real browser inherits its
  * cookies and locks its files.
  */
+/**
+ * Chrome's restricted ports an unprivileged `port: 0` can be handed (net/base/port_util.cc, the
+ * entries at or above 1024): loading one is `net::ERR_UNSAFE_PORT`. A launch that drives pages it
+ * serves itself on an ephemeral port — the e2e browser — allows them; nothing else does.
+ */
+export const CHROME_RESTRICTED_PORTS: readonly number[] = [
+  1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669,
+  6679, 6697, 10080,
+];
+
 export const chromeLaunchFlags = (
   profileDir: string,
   wire: CdpWire = defaultWire(process.platform),
   sandbox = false,
+  allowedPorts: readonly number[] = [],
 ): readonly string[] => [
   '--headless=new',
   wireFlag(wire),
@@ -106,6 +117,7 @@ export const chromeLaunchFlags = (
   // starts, and `x shot`'s browser-wide interception paused it and logged it as an off-list request
   // of the page under test (CI, 2026-10-09). A test browser runs no page it was not handed.
   '--disable-component-extensions-with-background-pages',
+  ...(allowedPorts.length === 0 ? [] : [`--explicitly-allowed-ports=${allowedPorts.join(',')}`]),
   'about:blank',
 ];
 
@@ -158,6 +170,8 @@ export interface LaunchOptions {
    * (`pdfLaunchOptions`, `pdf-render.ts`, says why).
    */
   readonly sandbox?: boolean | undefined;
+  /** Ports Chrome otherwise refuses to load (`CHROME_RESTRICTED_PORTS`): the e2e browser's own servers. */
+  readonly allowedPorts?: readonly number[] | undefined;
 }
 
 /** What `launchFoundChrome` passes through to `launchChrome`, beside the deadline. */
@@ -187,7 +201,8 @@ export async function launchChrome(options: LaunchOptions): Promise<LaunchedBrow
   while (failures.length < LAUNCH_ATTEMPTS) {
     const started = await launchAttempt({
       executable: options.executable,
-      flags: (profileDir) => chromeLaunchFlags(profileDir, wire, options.sandbox === true),
+      flags: (profileDir) =>
+        chromeLaunchFlags(profileDir, wire, options.sandbox === true, options.allowedPorts ?? []),
       wire,
       timeoutMs: options.timeoutMs,
       launchTimeoutMs,

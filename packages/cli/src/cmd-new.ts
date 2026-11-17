@@ -315,6 +315,7 @@ export const newCommand: CliCommand = {
       force: flagBool(ctx.args, 'force'),
       invocation: invocationOf(ctx, 'new'),
       flags: callerFlags(ctx),
+      planned: planNewApp(options).map((file) => file.path),
     });
     if (conflict !== undefined) return conflict;
     // Read BEFORE writing: `--force` into a directory that already held files must never

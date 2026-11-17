@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import {
   BROWSER_LIFETIME_MS,
   CHROME_PATH_ENV,
+  CHROME_RESTRICTED_PORTS,
   CLOSE_GRACE_MS,
   chromeCandidates,
   chromeLaunchFlags,
@@ -52,6 +53,19 @@ describe('launchFoundChrome', () => {
 });
 
 describe('chromeLaunchFlags', () => {
+  // Round 3: an e2e server on `port: 0` drew 3659, which Chrome refuses to load (ERR_UNSAFE_PORT),
+  // and a ui e2e suite went red on the remote gate. A launch that serves its own pages allows them;
+  // the default launch, and `pdf()`'s in production, keeps Chrome's refusal.
+  test('a launch handed allowed ports passes them; the default keeps the restriction', () => {
+    expect(chromeLaunchFlags('/tmp/profile').some((flag) => flag.includes('allowed-ports'))).toBe(
+      false,
+    );
+    const flags = chromeLaunchFlags('/tmp/profile', 'pipe', false, CHROME_RESTRICTED_PORTS);
+    const allowed = flags.find((flag) => flag.startsWith('--explicitly-allowed-ports='));
+    expect(allowed?.split('=')[1]?.split(',')).toContain('3659');
+    expect(CHROME_RESTRICTED_PORTS.every((port) => port >= 1024)).toBe(true);
+  });
+
   test('the profile never asks the OS keyring for its cookie key', () => {
     // Measured on this repo's Linux box, a throwaway profile, a plain `Page.navigate` to a local
     // server: without `--password-store=basic` the FIRST navigation of every launch stalled 7-25 s

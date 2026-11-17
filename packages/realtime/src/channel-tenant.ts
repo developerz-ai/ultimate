@@ -1,0 +1,55 @@
+// The tenant half of a channel subscribe: a param that names a records entity's tenant column must
+// be the subscriber's own org. Decided by `@ultimat3/entity`'s own guard (`assertScoped`), so a
+// socket is held to the rule an HTTP read is — never a second copy of it, and never left to a policy.
+
+import { type Actor, type Ctx, isUltimateError, runWithContext } from '@ultimat3/core';
+import { assertScoped, type QueryPlan } from '@ultimat3/entity';
+import { tenantColumnOfTable } from './change-tenant';
+import type { Channel } from './channel-decl';
+import { isTenancyDenial, TopicForbiddenError } from './errors';
+
+/**
+ * A row is routed to the topic its own params name (`channel-records.ts`), so a topic keyed by the
+ * tenant column IS one tenant's stream — of records, and of the events and presence that ride the
+ * same seat. Granting it on the policy alone handed org B's rows to any org-A member whose rule
+ * forgot to compare the org (`can('post:read')` does not).
+ *
+ * The verdict is `assertScoped`'s over the plan the subscribe amounts to — `<column> = <param>`
+ * under the subscriber's context: the actor's org or `X_TENANCY_ACTOR_MISMATCH`, no org at all
+ * `X_TENANCY_ACTOR_ORG_REQUIRED`, a proven `crossTenant()` scope passes. A refusal reaches the
+ * socket as `X_TOPIC_FORBIDDEN` naming that code, a denial the hub latches. Anything else the
+ * guard raised is not a decision and leaves as it came.
+ */
+export function assertChannelTenant(
+  channel: Channel,
+  actor: Actor | null,
+  topic: string,
+  params: Readonly<Record<string, string>>,
+  contextFor: (actor: Actor) => Ctx,
+): void {
+  let ctx: Ctx | undefined;
+  for (const projection of channel.records) {
+    const column = tenantColumnOfTable(projection.table);
+    if (column === null || !channel.params.includes(column)) continue;
+    const refusal = (code: string): TopicForbiddenError =>
+      new TopicForbiddenError({
+        topic,
+        actorId: actor === null ? null : actor.id,
+        reason: `channel "${channel.name}" carries "${projection.type}" rows by its tenant column "${column}", and this actor's tenant is not the one the param names (${code})`,
+      });
+    if (actor === null) throw refusal('X_TENANCY_ACTOR_ORG_REQUIRED');
+    const plan: QueryPlan = {
+      entity: projection.type,
+      where: [{ column, op: 'eq', value: params[column] }],
+      orderBy: [],
+      limit: 1,
+    };
+    ctx ??= contextFor(actor);
+    try {
+      runWithContext(ctx, () => assertScoped(projection.type, column, 'subscribe', plan));
+    } catch (error) {
+      if (!isTenancyDenial(error) || !isUltimateError(error)) throw error;
+      throw refusal(error.code);
+    }
+  }
+}

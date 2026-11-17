@@ -250,7 +250,7 @@ Order inside one bust: read tiers (farthest first) → this origin's ISR pages �
 
 ## Why `stream` is the app default
 
-An authed page needs fresh data and fast first paint. `ssr` gives freshness and a slow TTFB — the whole page waits for the slowest query. `stream` gives both halves: shell now, data as it resolves. A page whose body belongs in the browser declares an `island({ src })`, budgeted in real bytes; there is no client-side-only mode and no client router.
+An authed page needs fresh data and fast first paint. `ssr` gives freshness and a slow TTFB — the whole page waits for the slowest query. `stream` gives both halves: shell now, data as it resolves. A page whose body belongs in the browser declares an `island({ src })`, budgeted in real bytes; there is no client-side-only mode. Moving between pages without a full reload is the client router's ([Client Navigation](Client-Navigation)), opted into per surface with `navigation.client`; it swaps server-rendered documents, never renders one in the browser.
 
 `x g route`, `x g resource` and `x new`'s dashboard write `render: 'stream'` on `app/`. A `stream` page with no hole registers and pays nothing: it is one flush.
 
@@ -311,6 +311,7 @@ In a VDOM framework a streaming shell still pays for hydrating the whole tree, w
 | A hole's island | hydrates from its chunk: the chunk carries the hydration runtime after its reveal, and the realtime boot if this is the first island that needs it |
 | A shell island while a hole is open | live: the runtime is `<script type="module" async>`, so it does not wait for parsing to end. With a realtime boot in the document it stays deferred ([Known gaps](Known-Gaps)) |
 | Client router | a soft visit reads the whole answer before it swaps ([Known gaps](Known-Gaps)); every reveal still runs |
+| A hand-rolled swap | the reveal is an inline `<script>`, and a document parsed by `DOMParser` or set through `innerHTML` runs none, so its holes keep their fallback. Re-run the scripts, or call `refresh()` / `scheduleRefresh()` from `@ultimat3/render/client`, which the router swaps through (`navigation-swap.ts`'s `runScripts`) |
 | CSP | every chunk's inline script is a body `inlineScriptSources()` already hashes |
 
 Solid's own boundary component is not this: it throws outside a Solid renderer, and the server JSX factory is inert by design.

@@ -35,6 +35,16 @@ describe('unit · x doctor reserved env names', () => {
     expect(finding?.cause).toContain('@ultimat3/core also reads OTEL_TRACES_EXPORTER');
   });
 
+  // Round 3 (adopter G): the general endpoint was contract and its per-signal twin a "switch", so
+  // declaring the traces endpoint was reported and the general one was not — both are exporter config.
+  test('every OTLP exporter endpoint and header, general or per signal, is contract', () => {
+    const exporter = ['TRACES', 'METRICS', 'LOGS'].flatMap((signal) => [
+      `OTEL_EXPORTER_OTLP_${signal}_ENDPOINT`,
+      `OTEL_EXPORTER_OTLP_${signal}_HEADERS`,
+    ]);
+    expect(codes(['OTEL_EXPORTER_OTLP_ENDPOINT', ...exporter])).toEqual([]);
+  });
+
   test('a declared framework-internal name, and a name under ULTIMATE_, are reported', () => {
     expect(codes(['TEST_DATABASE_URL', 'ULTIMATE_MY_FLAG'])).toHaveLength(2);
   });

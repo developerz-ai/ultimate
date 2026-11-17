@@ -211,7 +211,9 @@ export function installRegistryLeakGuard(): void {
     // them. The framework repository's own suites keep the exact restore: many of them lean on an
     // EMPTY permission set (no validation), and a test body's declaration must not switch it on for
     // every later file. Tasks go back EXACTLY everywhere: one a test body registered must not fire
-    // in the next file's scheduler round.
+    // in the next file's scheduler round. Jobs go back exactly in the framework repository only: in
+    // an app, a job a lazily imported module declared is every later file's (it never declares
+    // again), and an exact restore left its queue holding a job "nothing registered" (31.25–31.40).
     const live = captureProcessRegistries();
     const merged = inApp ? mergeSnapshots(live, current.snapshot) : current.snapshot;
     // Locales likewise, in one case: the file's baseline still held the framework's pristine
@@ -228,7 +230,7 @@ export function installRegistryLeakGuard(): void {
       ...merged,
       locales: declaredLazily ? live.locales : current.snapshot.locales,
       tasks: current.snapshot.tasks,
-      jobs: current.snapshot.jobs,
+      jobs: inApp ? merged.jobs : current.snapshot.jobs,
     };
     restoreProcessRegistries(restored);
     // To the PRELOAD's notes, never the body's start: a store is noted as its driver is built,

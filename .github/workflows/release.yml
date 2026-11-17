@@ -381,7 +381,9 @@ jobs:
           set -euo pipefail
           bunx "create-ultimate@${VERSION}" npmapp
           cd npmapp
-          grep -q "\"@ultimat3/cli\": \"^${VERSION}\"" package.json
+          # Exact since 31.40.0, as `x upgrade` writes and `x doctor` holds an app to: the caret this
+          # line grepped for was gone, and 31.40.0's run went red here after a clean publish.
+          grep -q "\"@ultimat3/cli\": \"${VERSION}\"" package.json
           bun install
           bun run setup
           bun run verify

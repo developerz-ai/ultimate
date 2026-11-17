@@ -90,7 +90,12 @@ export interface MountIslandOptions {
  * one — `return render(…)`), then hands the process its globals back. Both, in that order.
  */
 export interface MountedIsland extends Disposable {
-  /** The chunk's source, for asserting on what did or did not reach the browser. */
+  /**
+   * The SHIPPED chunk's source — what did or did not reach the browser, and its minified size.
+   * Under the gate's coverage run (`ISLAND_COVERAGE_ENV`) the chunk that RUNS is a second,
+   * unminified build for the source map; `code` is still the shipped one, so a byte ceiling reads
+   * the same under `bun test` and `x verify`.
+   */
   readonly code: string;
   /** The host element `mount` was given. */
   readonly el: FakeElement;
@@ -231,6 +236,15 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
     );
   }
 
+  // What `code` answers is what ships: a coverage build keeps whitespace for its map, and an app's
+  // size ceiling read it as the chunk (31.27–31.40: green under `bun test`, red in `x verify`).
+  const shipped =
+    coverage === undefined
+      ? chunk.code
+      : ((await options.build(options.root, { only: options.file })).chunks.find(
+          (each) => each.file === options.file,
+        )?.code ?? chunk.code);
+
   const { documentElement, globals, resizeObservers } = createIslandDocument();
   const restore = installGlobals({ ...globals, ...options.globals });
   let dir: string | undefined;
@@ -298,7 +312,7 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
     const resolve = (target: string | FakeElement | null | undefined): FakeElement | null =>
       typeof target === 'string' ? el.querySelector(target) : (target ?? null);
     return {
-      code: chunk.code,
+      code: shipped,
       el,
       documentElement,
       find: (selector) => el.querySelector(selector),

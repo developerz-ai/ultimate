@@ -329,5 +329,7 @@
  * raised 1536 → 1540, measured 1540 (2026-11-16, plan 101b audit round 2, metafile walk): the three
  * on `MIGRATE_CEILING` (`core/src/{build-id,route-literal}.ts`, `jobs/src/errors-idempotency.ts`),
  * plus `query/src/live-bounds.ts` — `X_QUERY_LIVE_UNBOUNDED`, refused after `sql()` in `read.ts`.
+ * raised 1540 → 1541, measured 1541 (2026-11-17, plan 101b audit round 3, security):
+ * `realtime/src/channel-tenant.ts`, a channel's tenant param checked before its policy (T1, P0).
  */
-export const SERVING_ROLE_CEILING = 1540;
+export const SERVING_ROLE_CEILING = 1541;

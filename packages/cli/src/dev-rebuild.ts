@@ -151,7 +151,7 @@ export function devRebuilder(
       state.appFindings = findings;
       state.islands = islands;
       const unserved = await refreshDevices();
-      await clearIsrForRebuild(isr.store());
+      await clearIsrForRebuild(isr);
       state.reloads += 1;
       // Read on EVERY rebuild, so a pin one save reached is never reported against the next save:
       // this save's own pins name it, and only a save that reached none inherits the held ones.

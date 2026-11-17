@@ -56,6 +56,21 @@ describe('unit · a drain during an in-flight schema read', () => {
     expect(isDraining()).toBe(true);
   });
 
+  // Round 3, P2-C: a SIGTERM landing while the boot still loads modules runs the drain's `accept`
+  // phase before this wait registers its hook, so the abort was never heard and the first read
+  // hung on an unreachable database past the pod's grace.
+  test('a drain begun BEFORE the wait registers ends it at once, never reading', async () => {
+    let reads = 0;
+    const read = (): Promise<never> => {
+      reads += 1;
+      return new Promise<never>(() => undefined);
+    };
+    await drain('SIGTERM');
+    const error = await refusalOf(waitForSchema(read, { deadlineMs: 300_000 }));
+    expect(error.code).toBe('X_DRAINING');
+    expect(reads).toBe(0);
+  });
+
   test('a hung LATER read ends with the last verdict refused, as the sleep does', async () => {
     const { read, parked } = hungRead();
     let reads = 0;

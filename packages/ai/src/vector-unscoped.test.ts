@@ -1,9 +1,10 @@
-// Single responsibility: a vector store read with no tenant bound, inside a request acting for an
-// org, is refused — on both stores, on every read. A store is unscoped until `.scoped({ tenant })`,
-// and a forgotten call searched every tenant's rows. The backfill path opts in by name: `UNSCOPED`.
+// Single responsibility: a vector store read with no tenant bound, inside ANY request, is refused —
+// on both stores, on every read, for every actor (an org's, an org-less user's, anonymous). A store
+// is unscoped until `.scoped({ tenant })`, and a forgotten call searched every tenant's rows. The
+// backfill path and a single-tenant app opt in by name: `UNSCOPED`.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
+import { type Actor, anonymousActor, ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { recordingClient } from '@ultimat3/db';
 import { normalizeVector } from './embeddings';
 import { postgresVectorStore } from './pg-vector';
@@ -15,8 +16,13 @@ const vec = (...values: number[]): Float32Array => normalizeVector(Float32Array.
 
 const inOrg = <T>(fn: () => Promise<T>): Promise<T> =>
   runWithContext(ctxOf({ actor: userActor({ id: 'u-1', orgId: 'acme' }) }), fn);
-const inNoOrg = <T>(fn: () => Promise<T>): Promise<T> =>
-  runWithContext(ctxOf({ actor: userActor({ id: 'u-1' }) }), fn);
+const as = <T>(actor: Actor, fn: () => Promise<T>): Promise<T> =>
+  runWithContext(ctxOf({ actor }), fn);
+/** The actors with no tenant to bind: the auditor's repro ran both and read every org's rows. */
+const orgless = (): readonly (readonly [string, Actor])[] => [
+  ['anonymous', anonymousActor()],
+  ['an org-less user', userActor({ id: 'u-1' })],
+];
 
 const stores = (): readonly (readonly [string, (scope?: typeof UNSCOPED) => VectorStore])[] => [
   [
@@ -41,7 +47,7 @@ const reads = (store: VectorStore): readonly (() => Promise<unknown>)[] => [
   () => store.hybrid({ query: 'alpha', vector: vec(1, 0, 0, 0), k: 3 }),
 ];
 
-describe('an unscoped read inside an org request', () => {
+describe('an unscoped read inside a request', () => {
   for (const [label, open] of stores()) {
     test(`${label}: every read is X_VECTOR_UNSCOPED`, async () => {
       for (const read of reads(open())) {
@@ -66,11 +72,39 @@ describe('an unscoped read inside an org request', () => {
       for (const read of reads(open().scoped(UNSCOPED))) await inOrg(read);
     });
 
-    test(`${label}: outside a request, or for an actor with no org, nothing changes`, async () => {
-      for (const read of reads(open())) {
-        await read();
-        await inNoOrg(read);
-      }
+    for (const [who, actor] of orgless()) {
+      test(`${label}: every read by ${who} is X_VECTOR_UNSCOPED`, async () => {
+        for (const read of reads(open())) {
+          await expect(as(actor, read)).rejects.toMatchObject({ code: 'X_VECTOR_UNSCOPED' });
+        }
+      });
+
+      test(`${label}: UNSCOPED still reads for ${who}`, async () => {
+        for (const read of reads(open(UNSCOPED))) await as(actor, read);
+      });
+    }
+
+    test(`${label}: outside any request (a script, a boot task) an unbound read runs`, async () => {
+      for (const read of reads(open())) await read();
+    });
+  }
+});
+
+describe('the auditor’s repro: two orgs’ rows, an unbound searchText', () => {
+  for (const [who, actor] of orgless()) {
+    test(`${who} is refused, where it used to read both orgs`, async () => {
+      const base = memoryVectorStore({ name: 'docs', dimension: 4 });
+      await base
+        .scoped({ tenant: 'org-a' })
+        .upsert([{ id: 'a', vector: vec(1, 0, 0, 0), text: 'payroll A' }]);
+      await base
+        .scoped({ tenant: 'org-b' })
+        .upsert([{ id: 'b', vector: vec(1, 0, 0, 0), text: 'payroll B' }]);
+      await expect(as(actor, () => base.searchText('payroll', 5))).rejects.toMatchObject({
+        code: 'X_VECTOR_UNSCOPED',
+      });
+      const own = await as(actor, () => base.scoped({ tenant: 'org-a' }).searchText('payroll', 5));
+      expect(own.map((hit) => hit.text)).toEqual(['payroll A']);
     });
   }
 });

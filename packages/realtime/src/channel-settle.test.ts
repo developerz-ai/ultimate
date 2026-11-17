@@ -77,6 +77,14 @@ const everyone = channel('settle-all', {
   records: [notes],
 });
 
+// Keyed by a param that names no tenant column, so the latch and the param ceiling are measured
+// apart from the tenant check (`channel-tenant.ts`), which refuses another org's `orgId` first.
+const rooms = channel('settle-rooms', {
+  params: ['room'],
+  catchUp: { name: 'settleRooms' },
+  policy,
+});
+
 const alice = userActor({ id: 'alice', orgId: 'o1' });
 const demoted = userActor({ id: 'alice-demoted', orgId: 'o1' });
 
@@ -93,7 +101,9 @@ function rig(options: { maxTopicsPerSocket?: number } = {}) {
       params: { orgId },
       ...(since === undefined ? {} : { since }),
     });
-  return { hub, socket, ws, join };
+  const joinRoom = (room: string): Promise<Topic> =>
+    hub.subscribeChannel(socket, { kind: 'channel', channel: 'settle-rooms', params: { room } });
+  return { hub, socket, ws, join, joinRoom };
 }
 
 const suspend = async (hub: ChannelHub, socket: SyncSocket): Promise<void> => {
@@ -180,31 +190,31 @@ describe('a guard still awaiting when the actor changes', () => {
 
 describe('the latch of denials is bounded', () => {
   test('past maxTopicsPerSocket the next ask is refused before any policy runs', async () => {
-    const { hub, socket, join } = rig({ maxTopicsPerSocket: 3 });
+    const { hub, socket, joinRoom } = rig({ maxTopicsPerSocket: 3 });
     let asked = 0;
     decide = () => {
       asked += 1;
       return false;
     };
-    for (const org of ['a', 'b', 'c']) {
-      await expect(join(org)).rejects.toBeUltimateError('X_TOPIC_FORBIDDEN');
+    for (const room of ['a', 'b', 'c']) {
+      await expect(joinRoom(room)).rejects.toBeUltimateError('X_TOPIC_FORBIDDEN');
     }
     expect(asked).toBe(3);
 
-    await expect(join('d')).rejects.toBeUltimateError('X_SUBSCRIPTION_LIMIT');
+    await expect(joinRoom('d')).rejects.toBeUltimateError('X_SUBSCRIPTION_LIMIT');
     expect(asked).toBe(3);
     // A new session re-decides everything.
     decide = () => true;
     await hub.onActorChange(socket, alice);
-    await expect(join('d')).resolves.toBe(feed.topic({ orgId: 'd' }));
+    await expect(joinRoom('d')).resolves.toBe(rooms.topic({ room: 'd' }));
   });
 
   test('a param value past its ceiling is refused; one at it is a topic', async () => {
-    const { join } = rig();
-    await expect(join('x'.repeat(MAX_CHANNEL_PARAM_LENGTH + 1))).rejects.toBeUltimateError(
+    const { joinRoom } = rig();
+    await expect(joinRoom('x'.repeat(MAX_CHANNEL_PARAM_LENGTH + 1))).rejects.toBeUltimateError(
       'X_TOPIC_FORBIDDEN',
     );
-    await expect(join('x'.repeat(MAX_CHANNEL_PARAM_LENGTH))).resolves.toBeDefined();
+    await expect(joinRoom('x'.repeat(MAX_CHANNEL_PARAM_LENGTH))).resolves.toBeDefined();
   });
 });
 
