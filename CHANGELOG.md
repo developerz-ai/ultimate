@@ -10,31 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- **Audit round 1 (plan 101b, slice 20):** four read-only auditors, production evidence and the open issues. Every confirmed finding is fixed, each with a test that failed first. The security fix ships separately in 31.38.1.
-
-### Fixed
-
-- `parseAmount` reads every amount `formatMoney` writes in that locale, in all displays and with accounting parentheses: `de-AT`'s `€ 1.234,56`, `fr-CH`'s `1'234.56 CHF`, `mr-IN`'s Western-grouped rupees, `en-ZA`'s `ZAR 1 234,56`. Plain-number typing still parses.
-- jobs: a row staged inside a request transaction no longer waits up to 60 s when it commits after the relay has gone to rest. At read committed, a silenced stage holds an advisory lock until it commits, and an idle relay that sees it keeps polling. A stage under repeatable read or serializable always notifies.
-- jobs: a worker with `pollIntervalMs` below 250 ms no longer rests 60 s straight after a wake. It settles only once its empty passes span the 250 ms wake slot, so the row that slot left silent is still found.
-- scraping: a robots.txt rule with a non-ASCII path (`Disallow: /café`) is obeyed. Rule and URL path are compared percent-encoded, per RFC 9309 §2.2.2; before, `scrape()` fetched pages the site disallowed.
-- `llms.txt` escapes a `\` in a page title, so a title ending in one keeps its link.
-- Every scheduled maintainer brief fits the platform's 10,000-character cap, and `scripts/lib/brief-cap.test.ts` holds them all. `release-due.md` was 10,574 characters, so its weekly checkup was refused at every firing (#1170).
-
-### Changed
-
-- `parseAmount`: where a locale's price and plain-number separators conflict (about a dozen `en-XX` locales such as `en-DE`, whose prices show `€1,234.56`), the currency form wins, and German-style `1.234,56` is refused there rather than read as a different amount. `display: 'name'` text (`1,234.56 US dollars`) is out of contract and refused ([Money](wiki/Money.md)).
-
-### Security
-
-- `x verify`'s `errors` and `package-shape` steps, `x new` and the test-budget parser no longer backtrack on hostile input. `SEMVER` was exponential on a prerelease of `--` pairs; `staticFix`, `parseBytes` and the app-name path trim were quadratic. CodeQL #11, #13, #18, #51–53. The other 78 open CodeQL alerts are dismissed, each with its reason.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.39.0](docs/changelog/31.39.0.md) | 2026-11-17 | **Audit round 1 (plan 101b, slice 20):** four read-only auditors, production evidence and the open issues. Every confirmed finding is fixed, each with a test that failed first. The security fix ships separately in 31.38.1. |
 | [31.38.1](docs/changelog/31.38.1.md) | 2026-11-16 | **Security: live queries no longer cross tenants on a tenant column not named `orgId`.** Upgrade; no code change needed. |
 | [31.38.0](docs/changelog/31.38.0.md) | 2026-11-16 | **Eight app shapes, each gated twice in CI.** `x new <name> --shape saas \| agent \| realtime \| content \| offline` join `api`, `dashboard` and `blog`: |
 | [31.37.0](docs/changelog/31.37.0.md) | 2026-11-16 | **CI is faster where it was slowest.** Shards are dealt on measured per-file time, with 4 unit shards and 3 live shards: the slowest unit part went from 415 s to 315 s on CI. |
