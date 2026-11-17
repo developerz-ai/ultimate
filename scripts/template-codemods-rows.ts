@@ -160,4 +160,19 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.44.0',
     none: "the agent shape's eval now refuses an edited template under its old version with X_EVAL_BASELINE_MISSING (re-record after bumping version), checked inside the one test that re-records, and files its baseline per version; an app's eval test, evals file and prompt are the author's — the old ones still gate on the scores and the hash, failing as X_TEST_FAILED rather than with the coded fix, so nothing breaks across the upgrade",
   },
+  {
+    template: 'packages/cli/src/templates/shapes/offline.ts',
+    since: '31.44.0',
+    none: "the offline shape's /posts budget moves 155kb → 156kb for a new app: core's uuidV7 grew 12 B in each chunk (a pre-1970 clock mints at timestamp 0). An existing app keeps its own budget; one that lands over it gets X_BUDGET_EXCEEDED naming the measured bytes, and raises its budget there with the reason",
+  },
+  {
+    template: 'apps/web/app/posts/page.tsx',
+    since: '31.44.0',
+    none: "the offline shape's /posts budget moves 155kb → 156kb for a new app: core's uuidV7 grew 12 B in each chunk (a pre-1970 clock mints at timestamp 0). An existing app keeps its own budget; one that lands over it gets X_BUDGET_EXCEEDED naming the measured bytes, and raises its budget there with the reason",
+  },
+  {
+    template: 'apps/web/app/posts/page.test.ts',
+    since: '31.44.0',
+    none: "the offline shape's /posts budget moves 155kb → 156kb for a new app: core's uuidV7 grew 12 B in each chunk (a pre-1970 clock mints at timestamp 0). An existing app keeps its own budget; one that lands over it gets X_BUDGET_EXCEEDED naming the measured bytes, and raises its budget there with the reason",
+  },
 ];

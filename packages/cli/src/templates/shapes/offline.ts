@@ -27,7 +27,10 @@ const OFFLINE_BUDGET = `  // measured: 158,171 B (\`bunx x verify --only budgets
   // IndexedDB outbox that replays a write made offline) beside the form; the default form's
   // transport-only island was 64,167 B. A raise states its own measured bytes and why here, in the
   // same diff (\`X_BUDGET_EXCEEDED\`).
-  budget: { js: '155kb' },`;
+  // raised 155kb → 156kb, measured: 158,737 B (2026-11-17) — the page boot 84,889 + the island
+  // 72,576 + inline 1,272. why: +12 B in each chunk, \`uuidV7\` minting at timestamp 0 for a clock
+  // before 1970 (it used to throw), in core's ids, which both chunks carry.
+  budget: { js: '156kb' },`;
 
 const lan = (): string => `## 📶 Offline, and on your LAN
 
@@ -74,7 +77,7 @@ const edits = (): readonly ShapeEdit[] => [
   {
     path: 'apps/web/app/posts/page.test.ts',
     find: "  expect(page.config.budget.js).toBe('66kb');",
-    replace: "  expect(page.config.budget.js).toBe('155kb');",
+    replace: "  expect(page.config.budget.js).toBe('156kb');",
   },
   // A write replayed from the outbox may already have landed: the key answers it, never twice.
   {

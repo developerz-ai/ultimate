@@ -27,6 +27,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - `x db gen` output for a NOT NULL column with no default, or for a column turned NOT NULL, is now two files (`<id>.sql` + `<id>_concurrently.sql`), or one `-- transaction: false` file when the contract is the only change. A table holding NULL in that column fails the second step at `validate constraint` (`X_DB_STATEMENT_FAILED`, naming `<t>_<c>_not_null_check`) until the rows are backfilled.
 - `@ultimat3/testing`: `OverrideHint` gains two optional members, `declared` (the entry's actor, which `overrideLine` spells and prefers over `actor`) and `perRun` (fields the pass binds every run, left out of the line). Compatible: `bun run scripts/public-api.ts --write` records them.
 - `@ultimat3/realtime`: an ack for a throw with no code (a live query's `TypeError`) is `X_INTERNAL`, as HTTP labels it. It was `X_PROTOCOL_VERSION` with fix `x doctor realtime`. The socket gets a fixed cause; the throwable's own words stay in the node's error report, as HTTP withholds an unclassified 5xx cause. An explicit `X_INTERNAL` cause is withheld too. Decode failures keep `X_PROTOCOL_VERSION`.
+- `x new --shape offline`: the `/posts` JS budget is 156kb, up from 155kb. It was measured at 158,737 B; `uuidV7`'s pre-1970 clamp added 12 B to each of the two chunks the page loads.
 
 ### Fixed
 

@@ -40,8 +40,8 @@ describe('unit · x new --shape offline', () => {
     expect(page).toContain("queued: t('app.post.queued'),");
     expect(page).not.toContain('derivePath');
     // The raise is measured and stated in the page, and the page's own test holds the new figure.
-    expect(page).toContain("budget: { js: '155kb' },");
-    expect(textAt('apps/web/app/posts/page.test.ts')).toContain("toBe('155kb');");
+    expect(page).toContain("budget: { js: '156kb' },");
+    expect(textAt('apps/web/app/posts/page.test.ts')).toContain("toBe('156kb');");
     expect(textAt('packages/i18n/catalogs/en.json')).toContain('"queued": ');
   });
 
