@@ -209,18 +209,19 @@ export function disposeLiveIslands(): number {
 onFileBoundary(disposeLiveIslands);
 
 /**
- * The shipped chunk's source, asked of the builder a second time under a coverage run. The SAME
- * bundle back is a memo that ignored `options` (`X_TEST_ISLAND_BUILD_REUSED`); a builder that
- * ignores `coverage` altogether answers a fresh bundle and its chunk is what it is.
+ * The shipped chunk's source, from the second build a coverage run asks for. The SAME bundle back
+ * is a memo that ignored `options` (`X_TEST_ISLAND_BUILD_REUSED`); a builder that ignores
+ * `coverage` altogether answers a fresh bundle and its chunk is what it is.
  */
 async function shippedCode(
-  options: MountIslandOptions,
+  file: string,
+  shipped: Promise<IslandBundleLike>,
   covered: IslandBundleLike,
   chunk: IslandChunkLike,
 ): Promise<string> {
-  const bundle = await options.build(options.root, { only: options.file });
-  if (bundle === covered) throw new IslandBuildReusedError({ file: options.file });
-  return bundle.chunks.find((each) => each.file === options.file)?.code ?? chunk.code;
+  const bundle = await shipped;
+  if (bundle === covered) throw new IslandBuildReusedError({ file });
+  return bundle.chunks.find((each) => each.file === file)?.code ?? chunk.code;
 }
 
 export async function mountIsland(options: MountIslandOptions): Promise<MountedIsland> {
@@ -238,10 +239,17 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
   // being the faster and more honest call regardless. A builder that ignores the argument still
   // works: the `find` below is unchanged.
   const coverage = islandCoverageDir();
-  const bundle = await options.build(options.root, {
+  const covered = options.build(options.root, {
     only: options.file,
     ...(coverage === undefined ? {} : { coverage: true }),
   });
+  // Under coverage the shipped build is asked at the same time, not after: two builds in sequence
+  // doubled a mount's time and sent a 5 s test over its budget on a loaded runner.
+  const shippedBuild =
+    coverage === undefined ? undefined : options.build(options.root, { only: options.file });
+  // A covered build that rejects is what the caller sees; the shipped one is not left unawaited.
+  shippedBuild?.catch(() => undefined);
+  const bundle = await covered;
   const chunk = bundle.chunks.find((each) => each.file === options.file);
   if (chunk === undefined) {
     throw islandNotBuilt(
@@ -253,7 +261,10 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
 
   // What `code` answers is what ships: a coverage build keeps whitespace for its map, and an app's
   // size ceiling read it as the chunk (31.27–31.40: green under `bun test`, red in `x verify`).
-  const shipped = coverage === undefined ? chunk.code : await shippedCode(options, bundle, chunk);
+  const shipped =
+    shippedBuild === undefined
+      ? chunk.code
+      : await shippedCode(options.file, shippedBuild, bundle, chunk);
 
   const { documentElement, globals, resizeObservers } = createIslandDocument();
   const restore = installGlobals({ ...globals, ...options.globals });

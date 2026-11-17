@@ -37,7 +37,9 @@ const TEST = [
   `  const mounted = await mountIsland({ build: buildIslands, root: process.cwd(), file: ${JSON.stringify(ISLAND)}, props: { n: 2 } });`,
   "  expect(mounted.text('b')).toBe('n=2');",
   '  mounted[Symbol.dispose]();',
-  '});',
+  // A mount's budget, not bun's 5 s: under coverage it runs two builds (covered and shipped), and
+  // a loaded runner took longer than 5 s for them (the packages shard, 2026-11-17).
+  '}, 60_000);',
   '',
 ].join('\n');
 
