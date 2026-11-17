@@ -31,6 +31,7 @@ describe('unit · a scheduled brief fits the platform cap', () => {
     expect(briefs).toContain('.dz/briefs/release-due.md');
   });
 
+  // was: "the brief fits the platform cap"
   test('every one is at most BRIEF_CAP characters', async () => {
     const over: string[] = [];
     for (const path of await scheduledBriefs()) {

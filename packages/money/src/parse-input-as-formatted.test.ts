@@ -102,3 +102,36 @@ describe('both separator sets, never two amounts', () => {
     expect(refusal('(1.00', 'en-US', 'USD')).toContain('"("');
   });
 });
+
+describe('unit · a four-digit amount typed grouped, where the locale prints it ungrouped', () => {
+  // CLDR's minimum grouping digits is 2 for `es` (and `pl`, `pt-PT`, …): `formatMoney` writes
+  // `1234,56 €`, but a person types `1.234,56`. Both are the same amount; the grouped one was
+  // refused once the parser grouped as each currency form prints (`examples/dummy`'s budget test).
+  test('es: 1.234,56 and 1234,56 are both 1,234.56 EUR', () => {
+    expect(parseAmount('1.234,56', { currency: 'EUR', locale: 'es' })).toEqual({
+      minor: 123456,
+      currency: 'EUR',
+    });
+    expect(parseAmount('1234,56', { currency: 'EUR', locale: 'es' })).toEqual({
+      minor: 123456,
+      currency: 'EUR',
+    });
+  });
+
+  test('pl: 1 234,56 and 1234,56 are both 1,234.56 PLN', () => {
+    expect(parseAmount('1\u00a0234,56', { currency: 'PLN', locale: 'pl' })).toEqual({
+      minor: 123456,
+      currency: 'PLN',
+    });
+    expect(parseAmount('1234,56', { currency: 'PLN', locale: 'pl' })).toEqual({
+      minor: 123456,
+      currency: 'PLN',
+    });
+  });
+
+  test('a group in the wrong place is still refused', () => {
+    expect(() => parseAmount('12.34,56', { currency: 'EUR', locale: 'es' })).toThrow(
+      'X_MONEY_INPUT_INVALID',
+    );
+  });
+});

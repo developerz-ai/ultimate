@@ -92,12 +92,19 @@ function buildNotation(tag: string, code: string): AmountNotation {
     const whole = formatterOf(
       tag,
       `whole|${key}`,
-      currencyOptions(code, { ...form, minimumFractionDigits: 0, maximumFractionDigits: 0 }),
+      // `useGrouping: true` is ALWAYS group: `es`/`pl` print `1234,56` (CLDR minimum grouping 2) but
+      // a person types `1.234,56`, and the ungrouped spelling is accepted anyway.
+      currencyOptions(code, {
+        ...form,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+        useGrouping: true,
+      }),
     );
     candidates.push({ parts, set: setOf(parts, whole, toAscii) });
   }
   const plainParts = formatterOf(tag, 'parts', {}).formatToParts(sample);
-  const grouping = formatterOf(tag, 'grouped', { maximumFractionDigits: 0 });
+  const grouping = formatterOf(tag, 'grouped', { maximumFractionDigits: 0, useGrouping: true });
   candidates.push({ parts: plainParts, set: setOf(plainParts, grouping, toAscii) });
 
   // Where one set's group mark is another's decimal mark (`en-DE`: `1.234,56` plain, `€1,234.56`
