@@ -172,3 +172,19 @@ export function unitEnv(
   }
   return out;
 }
+
+/**
+ * One unit's whole suite, alone, before it is killed. `cli` is the longest: 1221 core-seconds
+ * (`UNIT_SECONDS`), several minutes on its workers. A deadline, not a budget — what reaches it hung.
+ */
+export const UNIT_TIMEOUT_MS = 1_800_000;
+
+/**
+ * `--unit-timeout <seconds>`: a CI shard's deadline, set below its job's own timeout — a job
+ * GitHub cancels keeps no log, so a hang past it was never named. Whole seconds, or `undefined`.
+ */
+export function unitTimeoutOf(raw: string | undefined): number | undefined {
+  if (raw === undefined) return UNIT_TIMEOUT_MS;
+  if (!/^[1-9][0-9]*$/.test(raw)) return undefined;
+  return Number(raw) * 1000;
+}

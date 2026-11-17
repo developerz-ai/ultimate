@@ -59,7 +59,14 @@ export function unitsToGate(root: string): readonly string[] {
 const SELF = 'bun run scripts/coverage-gate.ts';
 
 /** Every flag this script reads. Anything else is refused before a suite starts. */
-export const COVERAGE_GATE_FLAGS = ['json', 'package', 'all', 'jobs', 'shard'] as const;
+export const COVERAGE_GATE_FLAGS = [
+  'json',
+  'package',
+  'all',
+  'jobs',
+  'shard',
+  'unit-timeout',
+] as const;
 
 const refuse = (flag: string, reason: string, fix: string): BadFlagError =>
   new BadFlagError({ flag, command: 'coverage-gate', reason, fix });

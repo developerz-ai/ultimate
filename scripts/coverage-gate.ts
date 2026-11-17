@@ -35,7 +35,18 @@ import {
   PIN_SLACK,
   PINS_FILE,
 } from './lib/coverage-pins';
-import { concurrency, leasePool, serviceKeys, unitEnv, workersFor } from './lib/coverage-schedule';
+import {
+  concurrency,
+  leasePool,
+  serviceKeys,
+  UNIT_TIMEOUT_MS,
+  unitEnv,
+  unitTimeoutOf,
+  workersFor,
+} from './lib/coverage-schedule';
+
+export { UNIT_TIMEOUT_MS, unitTimeoutOf };
+
 import type { CoverageUnit } from './lib/coverage-units';
 import { atOf, SCRIPTS_UNIT, testFileCount, unitOf, unitsFor } from './lib/coverage-units';
 import type { Finding } from './lib/log';
@@ -343,22 +354,6 @@ export function testCommand(unit: CoverageUnit, dir: string, workers: number): r
   ];
 }
 
-/**
- * One unit's whole suite, alone, before it is killed. `cli` is the longest: 1221 core-seconds
- * (`UNIT_SECONDS`), several minutes on its workers. A deadline, not a budget — what reaches it hung.
- */
-export const UNIT_TIMEOUT_MS = 1_800_000;
-
-/**
- * `--unit-timeout <seconds>`: a CI shard's deadline, set below its job's own timeout — a job
- * GitHub cancels keeps no log, so a hang past it was never named. Whole seconds, or `undefined`.
- */
-export function unitTimeoutOf(raw: string | undefined): number | undefined {
-  if (raw === undefined) return UNIT_TIMEOUT_MS;
-  if (!/^[1-9][0-9]*$/.test(raw)) return undefined;
-  return Number(raw) * 1000;
-}
-
 /** A finished run's verdict: the deadline's own coded line, a failing suite, or `undefined`. */
 export function unitFailure(
   name: string,
@@ -431,24 +426,16 @@ if (import.meta.main) {
     );
   }
   const unitTimeout = unitTimeoutOf(flagString(args, 'unit-timeout'));
-  if (unitTimeout === undefined) {
-    report(
-      {
-        ok: false,
-        script: 'coverage-gate',
-        summary: "--unit-timeout takes whole seconds — one unit's deadline, below the CI job's own",
-        findings: [],
-      },
-      json,
-    );
-  }
   const jobs = concurrency(flagString(args, 'jobs'));
-  if (jobs === undefined) {
+  if (jobs === undefined || unitTimeout === undefined) {
     report(
       {
         ok: false,
         script: 'coverage-gate',
-        summary: '--jobs takes a positive integer — the number of unit suites run at once',
+        summary:
+          jobs === undefined
+            ? '--jobs takes a positive integer — the number of unit suites run at once'
+            : "--unit-timeout takes whole seconds — one unit's deadline, below the CI job's own",
         findings: [],
       },
       json,
