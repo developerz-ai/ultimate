@@ -23,12 +23,17 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
-async function fixtureApp(floor: readonly string[]): Promise<string> {
+async function fixtureApp(
+  floor: readonly string[],
+  { stack = true }: { readonly stack?: boolean } = {},
+): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'x-verify-live-'));
   roots.push(root);
   await Bun.write(join(root, 'x.verify.json'), JSON.stringify({ steps: floor }));
-  await Bun.write(join(root, 'docker/docker-compose.test.yml'), 'services: {}\n');
-  await Bun.write(join(root, 'docker/test-services.env'), `TEST_DATABASE_URL=${DB}\n`);
+  if (stack) {
+    await Bun.write(join(root, 'docker/docker-compose.test.yml'), 'services: {}\n');
+    await Bun.write(join(root, 'docker/test-services.env'), `TEST_DATABASE_URL=${DB}\n`);
+  }
   await Bun.write(join(root, 'packages/db/src/orders.live.test.ts'), '');
   return root;
 }
@@ -71,6 +76,8 @@ describe('the live step starts the test database it needs', () => {
     expect(run[0]?.command).toEqual(SERVICES_UP);
     expect(run[0]?.options.cwd).toBe(root);
     expect(run[1]?.options.env?.['TEST_DATABASE_URL']).toBe(DB);
+    // The database answered: a skip from here on is judged as one with it in reach.
+    expect(outcome.services).toBe('reached');
     expect(outcome.warnings?.join('\n')).toContain(
       'docker compose -f docker/docker-compose.test.yml down',
     );
@@ -86,7 +93,8 @@ describe('the live step starts the test database it needs', () => {
   test('neither floor nor --only: nothing is started and the suite runs as it did', async () => {
     const root = await fixtureApp(['unit']);
     const { calls, runner } = recording();
-    await liveStep().run(ctxOf(root, runner));
+    const outcome = await liveStep().run(ctxOf(root, runner));
+    expect(outcome.services).toBeUndefined();
     expect(calls.map((call) => call.command[0])).toEqual(['bun']);
     expect(calls[0]?.options.env?.['TEST_DATABASE_URL']).toBeUndefined();
   });
@@ -101,6 +109,16 @@ describe('the live step starts the test database it needs', () => {
     const warning = outcome.warnings?.join('\n') ?? '';
     expect(warning).toContain('X_TEST_SERVICES_UNAVAILABLE');
     expect(warning).toContain(`fix: ${SERVICES_UP.join(' ')}`);
+    expect(outcome.services).toBe('unavailable');
+  });
+
+  test('no test stack: the caller URL is a database in reach, its absence is none', async () => {
+    const root = await fixtureApp(['live'], { stack: false });
+    const { runner } = recording();
+    const bare = await liveStep().run(ctxOf(root, runner));
+    expect(bare.services).toBeUndefined();
+    const own = await liveStep().run({ ...ctxOf(root, runner), env: { TEST_DATABASE_URL: DB } });
+    expect(own.services).toBe('reached');
   });
 });
 

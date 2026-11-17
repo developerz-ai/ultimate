@@ -7,7 +7,7 @@ import type { AppTestScope } from './affected-tests';
 import type { CoverageMap } from './coverage-lcov';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
-import type { Finding, ShardFacts, SlowFile, StepResult } from './output';
+import type { Finding, ShardFacts, SlowFile, StepResult, TestServicesState } from './output';
 import type { TestCounts } from './test-counts';
 import type { StepTimeouts } from './verify-deadline';
 import type { MachinePace } from './verify-pace';
@@ -198,6 +198,8 @@ export interface StepOutcome {
    * a green step's `output`, so the numbers ride in `data.coverage` where a reader can find them.
    */
   readonly measured?: CoverageNumbers;
+  /** Set by `withTestServices` (`verify-live.ts`): whether the step's database answered. */
+  readonly services?: TestServicesState;
 }
 
 /** The two percentages a judged run measured, and the source files they are over. */

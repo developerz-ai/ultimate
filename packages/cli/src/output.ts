@@ -56,6 +56,9 @@ export interface SlowFile {
 /** How many of a step's slowest files the human line names; `--json` carries all it has. */
 export const SLOWEST_SHOWN = 3;
 
+/** Whether a `live` step's test services answered (`StepResult.services`). */
+export type TestServicesState = 'reached' | 'unavailable';
+
 export interface StepResult {
   readonly name: string;
   readonly ok: boolean;
@@ -93,6 +96,12 @@ export interface StepResult {
    * looking at (#434).
    */
   readonly tests?: TestCounts;
+  /**
+   * The test services a `live` step needed, as the gate found them: `reached` (already up, found or
+   * started) or `unavailable` (the suites skipped). Absent for every other step. Carried into a
+   * part so `x verify merge` judges a skip as the run that made it saw its database.
+   */
+  readonly services?: TestServicesState;
 }
 
 // `@ultimat3/schema`'s one declaration, re-exported for this package's callers — never restated.
