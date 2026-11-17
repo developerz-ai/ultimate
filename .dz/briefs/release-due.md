@@ -36,13 +36,10 @@ unless a person cuts it. `.dz/briefs/security-release.md` asks this on the other
 git fetch --tags origin && bun run scripts/release-due.ts --json
 ```
 
-Fetch tags first — a shallow or tagless clone (CI's is both) holds no reachable `v*` tag, and the
-run refuses rather than guess. A refusal (`ok:false`) still prints the complete JSON envelope,
-then exits 1: `report()` renders the envelope and ends `process.exit(result.ok ? 0 : 1)`
-(`scripts/lib/log.ts:153-155`). So this step must never sit under `set -e` — a refusal would end
-the checkup on the exit code before the envelope is read. Branch on `data.due`; on `ok:false`,
-read the envelope instead — every finding carries its own `fix`, and the second git refusal,
-`X_RELEASE_WINDOW_UNREADABLE` (tag found, window unreadable), names
+Fetch tags first: a shallow or tagless clone holds no reachable `v*` tag, and the run refuses
+rather than guess. A refusal (`ok:false`) prints the whole JSON envelope, then exits 1, so never
+run this under `set -e`. Branch on `data.due`; on `ok:false`, read the envelope: each finding
+carries its `fix`, and `X_RELEASE_WINDOW_UNREADABLE` (tag found, window unreadable) names
 `git fetch --unshallow --tags origin; bun run scripts/release-due.ts --json`.
 
 The envelope is input, and `data.due` is the script's count, not the verdict. Some reasons do settle
@@ -89,8 +86,7 @@ Title `Release <next>`. Body, verbatim steps for the box that takes it:
      ask was anchored to. That SHA must still be `origin/main`'s tip
      (`git rev-parse origin/main`) and the SHA of a green `ci.yml` run on `main`
      (`gh run list --workflow ci.yml --branch main --event push --json conclusion,headSha`).
-     A different answer means the run is anchored to a box that is no longer current:
-     stop, the run was stale the moment it was re-read.
+     A different answer means the run is stale: stop.
 2. An empty `## [Unreleased]` is written before the bump, never after — `scripts/release.ts`
    promotes that section verbatim, and `data.notes` is non-empty exactly when it is empty:
    - A Dependabot-only window: add a `### Changed` line naming each bumped runtime dependency and
@@ -108,23 +104,18 @@ Title `Release <next>`. Body, verbatim steps for the box that takes it:
    `Release <next>`. The PR body carrying `Fixes #<ask>` is a backstop, not the path:
    `scripts/release.ts` prints the ask link when one is open.
 
-Never file a second ask while one titled exactly `Release <next>` is open — byte-for-byte:
-`release <v> did not publish`, `Release <v> (#N)`, `Release <other>` are not twins (the version
-is the whole title, no trailing prose). The box fetches candidates with
-`gh issue list --state open --search "Release <next> in:title"`, where `<next>` is `data.next` from
-the run above — substitute the version before running it — then post-filters them by exact title
-match. A due run names the open ask it found in `data.detail`, as
-`; an ask already open: <title>`, and the `data.due` row files nothing when one is named.
+Never file a second ask while one titled exactly `Release <next>` is open, byte for byte:
+`release <v> did not publish`, `Release <v> (#N)` and `Release <other>` are not twins. Fetch
+candidates with `gh issue list --state open --search "Release <next> in:title"`, `<next>` being
+`data.next`, then keep exact title matches. A due run names an ask it found in `data.detail`
+(`; an ask already open: <title>`), and the `data.due` row then files nothing.
 
-The same rule on the pull-request side: an open `chore: release <next>` PR is that release already
-in flight — merging it is the release (step 5) — so file nothing, cut nothing, and let that PR
-land. The box asks the callable surface, `bun run scripts/bump-pr.ts --version <next> --json`,
-where `<next>` is `data.next` from the run above — substitute the version before running it —
-then branches on `data.open`: `chore: release <next>` and `release: <next>` are the twins,
-`Release <next>` (the ask) and `chore: release <next>-beta` are not. On `ok:false` the lookup
-could not answer — `gh` failed, timed out or is missing — so read the envelope's `findings` like
-any refusal above and never read it as "none open". A due run names the one it found in
-`data.detail`, as `; a bump PR already open: <title>`.
+Likewise an open `chore: release <next>` PR is that release in flight (merging it is the release,
+step 5): file nothing, cut nothing. Ask `bun run scripts/bump-pr.ts --version <next> --json`
+(`<next>` being `data.next`) and branch on `data.open`: `chore: release <next>` and
+`release: <next>` are twins; `Release <next>` (the ask) and `chore: release <next>-beta` are not.
+On `ok:false` the lookup could not answer: read its `findings`, never read it as none open. A due
+run names one it found in `data.detail` (`; a bump PR already open: <title>`).
 
 ## Rows
 

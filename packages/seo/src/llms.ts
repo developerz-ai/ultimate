@@ -32,7 +32,8 @@ const listed = (route: RouteRecord): boolean =>
 
 /** One line, so a newline in a title cannot open a second Markdown entry. */
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
-const linkText = (text: string): string => oneLine(text).replace(/[[\]]/g, '\\$&');
+/** `\` with the brackets: left alone, a title ending `\` escaped the text's own closing `]`. */
+const linkText = (text: string): string => oneLine(text).replace(/[\\[\]]/g, '\\$&');
 /** A Markdown destination ends at a space or an unbalanced `)`; these three never arrive encoded. */
 const linkTarget = (url: string): string =>
   url.replace(

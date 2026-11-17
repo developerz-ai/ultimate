@@ -45,14 +45,13 @@ Never re-run a publish, delete a tag, a Release or a branch, or `npm publish` fr
 
 `scripts/health.ts` is this table's machine reading, never a second definition. Run
 `bun run scripts/health.ts --json` first. `ok: false` = a row its command could not read: the
-findings name row and command (`X_HEALTH_ROW_UNREADABLE`, or a child's codes verbatim) — file that,
-never a verdict over an unread row. `ok: true` carries `data.rows[]`, one `RowVerdict` per row in
+findings name row and command (`X_HEALTH_ROW_UNREADABLE`, or a child's codes): file that, never a
+verdict over an unread row. `ok: true` carries `data.rows[]`, one `RowVerdict` per row in
 table order:
 
-- `unhealthy` — one ask, as the table says. A row whose command reads a run carries the fields
-  that command asks for (`id` is gh's `databaseId`, `title` its `displayTitle`), and
-  `expectedSha` on the first two; `issues[]`, `prs[]`, `branches[]` are lists to file from; `fix` is
-  the repair command — paste it in the ask.
+- `unhealthy` — one ask, as the table says. A run row carries the fields its command asks for
+  (`id` = gh's `databaseId`, `title` = its `displayTitle`; `expectedSha` on the first two);
+  `issues[]`, `prs[]`, `branches[]` are lists to file from; paste `fix`, the repair, in the ask.
 - `unverdicted` — re-run before filing, never unhealthy; a `fix` here is the command a person runs:
   an OTP, or an admin token where a secret or variable read got `HTTP 403`.
 - `healthy` — nothing to file. `data.healthy` is true only when every row is.
@@ -62,4 +61,4 @@ table order:
 Then `bun run finished --check --json` (`docs/history/finished.md`): one ask per `red` row, its
 `fix` the repair; `unverdicted` is re-run, never filed.
 
-<!-- characters counted by scripts/lib/health-doc.test.ts; checkup cap 10000 -->
+<!-- cap 10000 characters: scripts/lib/brief-cap.test.ts -->

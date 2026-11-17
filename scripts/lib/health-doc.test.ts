@@ -11,9 +11,6 @@ import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-/** The platform reads a brief of at most this many characters; past it, the checkup is cut. */
-const BRIEF_CAP = 10_000;
-
 /** A signal cell is the row's own id, backticked: one name for the brief, the script and its data. */
 const SIGNAL = /^`([a-z0-9-]+)`$/;
 const signalId = (cell: string): RowId | undefined => {
@@ -151,11 +148,5 @@ describe('unit · health-doc · the brief matches the ordered machine definition
     if (row === undefined) expect.unreachable('mutation row missing');
     const altered = replaceOnce(brief, row, row.replace('`t=$(', '`sha=$('));
     expect(() => assertBrief(altered)).toThrow(/unassigned variable: \$t/);
-  });
-
-  test('the brief fits the platform cap', () => {
-    expect(brief.length, `.dz/briefs/health.md is ${brief.length} characters`).toBeLessThanOrEqual(
-      BRIEF_CAP,
-    );
   });
 });

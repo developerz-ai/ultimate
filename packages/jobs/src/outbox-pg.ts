@@ -49,6 +49,8 @@ interface OutboxRow {
 type ClaimRow = Omit<OutboxRow, 'id'> & {
   readonly id: string | null;
   readonly due_in_ms?: number | string | null;
+  /** A silenced stage is in flight (`NOTIFY_STAGED`): its row commits unannounced. */
+  readonly staging?: boolean | null;
 };
 
 const claimedRow = (row: ClaimRow): row is ClaimRow & OutboxRow => row.id !== null;
@@ -119,6 +121,11 @@ export function postgresOutboxStore(options: PostgresOutboxStoreOptions): Outbox
   // Resolved once, at construction, so a lease this store could never honour fails where it was
   // written instead of inside a relay tick whose only trace is a log line nobody reads.
   const claimLeaseMs = resolveClaimLeaseMs(options.claimLeaseMs);
+  /**
+   * The last claim was idle, empty and read no silenced stage in flight. A claim that took rows
+   * clears it: the stage that row silenced may be committing as the next idle claim reads.
+   */
+  let quiet = true;
 
   return {
     async stage(tx, record) {
@@ -202,10 +209,20 @@ export function postgresOutboxStore(options: PostgresOutboxStoreOptions): Outbox
         [limit, claimLeaseMs, relayId],
       );
       const claimed = rows.filter(claimedRow);
-      if (claimed.length === 0) {
-        const due = rows[0]?.due_in_ms;
-        onEmpty?.(due === null || due === undefined ? null : Number(due));
+      if (claimed.length > 0 || onEmpty === undefined) {
+        quiet = false;
+        return claimed.map(toRecord);
       }
+      // A silenced stage in flight commits unannounced, so the answer is `0`, "keep polling" —
+      // never a rest (`restAfter`). A clear read counts only behind a clear read: the lock is
+      // read after the claim's snapshot, and a stage that committed in between read clear here
+      // yet was not seen. The pass behind sees it.
+      const clear = rows[0]?.staging !== true;
+      const rest = clear && quiet;
+      quiet = clear;
+      const due = rows[0]?.due_in_ms;
+      const horizon = due === null || due === undefined ? null : Number(due);
+      onEmpty(rest ? horizon : 0);
       return claimed.map(toRecord);
     },
 

@@ -89,8 +89,10 @@ export interface OutboxStore {
    * idempotency key only collapses that while the first job is still live.
    *
    * `onEmpty`: told, when the claim took NOTHING, how long until a held row's lease lapses (ms on
-   * the store's clock), `null` when no row is held — what an idle relay rests on. Optional for a
-   * store, which then leaves the relay polling at its ceiling.
+   * the store's clock), `null` when no row is held — what an idle relay rests on. `0` also means
+   * "a silenced stage is still in flight: keep polling" (the Postgres store's staging lock,
+   * `driver-pg-wake-sql.ts`). Optional for a store, which then leaves the relay polling at its
+   * ceiling.
    */
   claim(
     limit: number,

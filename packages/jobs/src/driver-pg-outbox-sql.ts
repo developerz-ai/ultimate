@@ -1,7 +1,7 @@
 // Every statement the `x_outbox` store runs. Split off `driver-pg-sql.ts` at its size ceiling and
 // re-exported from it, the way the settle and whole-row statements are.
 
-import { NOTIFY_STAGED } from './driver-pg-wake-sql';
+import { NOTIFY_STAGED, OUTBOX_STAGING_LOCK } from './driver-pg-wake-sql';
 
 /**
  * The stage, and its wake. One statement on the CALLER's connection, so the notification is in
@@ -99,13 +99,19 @@ select id, run_id, job, queue, input, idempotency_key, max_attempts, tenant_id,
 `.trim();
 
 const HORIZON_COLUMN = `,
-       null::bigint as due_in_ms`;
+       null::bigint as due_in_ms, null::boolean as staging`;
 
 /**
  * With nothing claimed, ONE row of nulls carrying `due_in_ms`: when the first row a relay holds
  * has its lease lapse — the only outbox row no `NOTIFY_STAGED` announces, because its relay died
  * holding it. Unclaimed rows are absent by construction: one the claim skipped is locked by a
  * peer's claim in flight. Read over `x_outbox_unpublished_idx`, which an idle outbox keeps empty.
+ *
+ * And `staging`: a stage `NOTIFY_STAGED` silenced is still in flight — its `OUTBOX_STAGING_LOCK`
+ * is held, so this TRY fails. A try never waits; when it succeeds its exclusive lock ends with this
+ * statement, so a stage arriving in that instant waits the rest of an empty claim and no longer.
+ * Read AFTER the statement's snapshot, so a stage committing in between reads clear yet unseen:
+ * `postgresOutboxStore` trusts a clear read only behind another clear one (`quiet`).
  */
 const OUTBOX_HORIZON_ARM = `
 union all
@@ -113,7 +119,8 @@ select null, null, null, null, null, null, null, null, null, null, null, null, n
        null,
        (select (extract(epoch from (min(o.claimed_at) - now())) * 1000)::bigint + $2::bigint
           from x_outbox o
-         where o.published_at is null and o.claimed_at is not null)
+         where o.published_at is null and o.claimed_at is not null),
+       not pg_try_advisory_xact_lock(${OUTBOX_STAGING_LOCK})
  where not exists (select 1 from claimed)`;
 
 export const SQL_OUTBOX_CLAIM = outboxClaimSql(false);

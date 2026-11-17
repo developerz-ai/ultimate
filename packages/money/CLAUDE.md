@@ -40,6 +40,8 @@ the wide shape and answer with the row type.
 | `rounding.ts` | explicit modes, no implicit default, over a float (`roundToInteger`) or a ratio (`roundRatio`, and `roundToDigits` through it) |
 | `format.ts` | `Intl.NumberFormat` only, digits from the exponent |
 | `convert.ts` | explicit rate + `RateProvider`, records provenance |
+| `parse-input.ts` | `parseAmount`: an amount a person typed, in their locale, into `Money` or `X_MONEY_INPUT_INVALID` |
+| `parse-numerals.ts` | what a locale writes around an amount, off `Intl`: every currency form's separator set, then the plain number's, minus any set that would read one text as two amounts (`en-DE`) |
 | `index.ts` | the app API only (v31): no code list, no internal assert, and no error factory except five — `currencyUnknown`, `decimalNotNumeric`, `decimalTooPrecise`, `moneyNotInteger`, `rateUnusable` — the refusals an app's own `RateProvider` or amount parser raises, so it throws money's cause rather than a copy (README, Conversion). Match an error on `MoneyError` + its `code` |
 
 ## Rules
@@ -169,6 +171,10 @@ the wide shape and answer with the row type.
   0…`MAX_FRACTION_DIGITS` is `X_MONEY_SCALE_INVALID` (`Intl` raised a bare `RangeError`), and
   `allocate(m, parts)` past `MAX_ALLOCATION_PARTS` is `X_ALLOCATION_INVALID` (`new Array(1e10)`
   did). Defaults are taken on `=== undefined`, never `??`, so a blanked `null` is refused.
+- **`parseAmount` reads what `formatMoney` writes, every display and sign.** Separators and
+  grouping come off each CURRENCY form, never the plain number alone (`de-AT` groups a price with
+  `.`, a number with a space), and a later set that would read a text two ways is dropped.
+  `property-money.test.ts` holds the round trip; a locale it found broken joins its `LOCALES`.
 - Adding a currency to the *shipped* rows: one row in `currency.ts` with its correct exponent, plus
   a format test. An app never needs this — that is what `registerCurrency` is for.
 
