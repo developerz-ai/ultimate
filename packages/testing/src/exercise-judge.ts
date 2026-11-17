@@ -50,9 +50,12 @@ export function judged(
   observed: Observed,
   sampler: Sampler,
 ) {
+  // A field the pass binds every run (`hint.perRun`, the tenant) is no field to paste a value into.
   const idFields = (input: unknown): readonly string[] =>
     typeof input === 'object' && input !== null
-      ? Object.keys(input).filter((key) => idStem(key) !== undefined)
+      ? Object.keys(input).filter(
+          (key) => idStem(key) !== undefined && run.hint?.perRun?.includes(key) !== true,
+        )
       : [];
   const unreached = (code: string | undefined, reason: string) => ({
     outcome: 'unreached' as const,

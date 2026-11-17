@@ -12,6 +12,7 @@ import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shap
 import type { Plan } from './foreign-key-plan';
 import { appendOnlyBackfillRefused } from './generate-append-only';
 import type { ColumnDescription } from './introspect';
+import { contractNotNull, type NotNullContracts } from './not-null-contract';
 import { identifier } from './sql';
 import { sqlType } from './sql-type';
 import { statementsOf } from './statement-split';
@@ -89,10 +90,10 @@ export function retypeOverDefault(
 
 /**
  * `set default` / `drop default` and `drop not null`, each with its reverse in `down` — the shape
- * `redefineIndex` (`index-ddl.ts`) gives a moved index. Becoming NOT NULL is deliberately NOT a
- * bare `set not null`: rows already holding `NULL` make it fail inside `ROLE=migrate`, so it gets
- * the expand/contract note `diffTable` writes for a NOT NULL column added to a populated table —
- * refused on an append-only table, whose backfill the trigger would refuse.
+ * `redefineIndex` (`index-ddl.ts`) gives a moved index. Becoming NOT NULL is the CONTRACT
+ * (`not-null-contract.ts`), in the non-transactional step, never a bare `set not null` that holds
+ * the table for a full scan — refused on an append-only table, whose backfill the trigger would
+ * refuse. A column the primary key covers owes none: `add primary key` makes it NOT NULL.
  *
  * A default this generator cannot render (`hasUnrenderedDefault`) moves nothing: dropping the one
  * the database holds would lose a rule the entity still states, and `unrenderedOf` already reports
@@ -103,6 +104,7 @@ export function alterColumnInPlace(
   column: ColumnDescriptionLike,
   recorded: ColumnDescription,
   plan: Plan,
+  contracts: NotNullContracts,
 ): void {
   const { table } = entity;
   const alter = `alter table ${identifier(table).text} alter column ${identifier(column.column).text}`;
@@ -132,8 +134,6 @@ export function alterColumnInPlace(
   // That backfill is an UPDATE, and an append-only table's trigger refuses every one. Refused even
   // with a default now declared: `set default` fills no row that already holds NULL.
   if (entity.appendOnly === true) throw appendOnlyBackfillRefused(entity, column, 'made-not-null');
-  // `drop not null` in `down` is a no-op on a column that never became NOT NULL, so the reverse is
-  // right whether or not the backfill and its `set not null` were ever run.
-  plan.up.push(`-- backfill ${identifier(column.column).text}, then: ${alter} set not null;`);
-  plan.down.push(`${alter} drop not null;`);
+  if (entity.primaryKey.includes(column.column)) return;
+  contractNotNull(table, column.column, contracts);
 }

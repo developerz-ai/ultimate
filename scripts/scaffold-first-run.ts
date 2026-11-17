@@ -125,12 +125,20 @@ export const smokeSoloCount = (): number => 0;
  * disk by then and reads as an author's, so the contract test must hold no constant it leaves
  * unread. Into the single-tenant slice: no org anywhere.
  */
-const SECOND_SHAPES: readonly FirstRunStep[] = (['action', 'mutator'] as const).flatMap((kind) =>
-  [RESOURCE_SLICE, SOLO_SLICE].map((slice) => ({
-    name: `g ${kind} --feature ${slice}`,
-    args: ['g', kind, `${generatorName(kind)}-${slice}`, '--feature', slice, '--json'],
-  })),
-);
+const SECOND_SHAPES: readonly FirstRunStep[] = [
+  ...(['action', 'mutator'] as const).flatMap((kind) =>
+    [RESOURCE_SLICE, SOLO_SLICE].map((slice) => ({
+      name: `g ${kind} --feature ${slice}`,
+      args: ['g', kind, `${generatorName(kind)}-${slice}`, '--feature', slice, '--json'],
+    })),
+  ),
+  // A verb name that does not contain the slice: the exercise must still reach its handler, which
+  // it did not while a bare `id` was bound through the primitive's name alone.
+  {
+    name: `g action nudge-later --feature ${RESOURCE_SLICE}`,
+    args: ['g', 'action', 'nudge-later', '--feature', RESOURCE_SLICE, '--json'],
+  },
+];
 
 /** The hand-written half of `SECOND_SHAPES`, on disk before the first step runs. */
 export const plantHandWrittenSlices = async (dir: string): Promise<void> => {

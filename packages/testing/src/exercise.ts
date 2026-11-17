@@ -26,7 +26,7 @@ import { judged, labelFor, withEmptyWhy } from './exercise-judge';
 import { mergeObserved } from './exercise-observed';
 import type { OverrideInput } from './exercise-override-input';
 import { inputThrew, overrideInput } from './exercise-override-input';
-import { actorHintOf, type OverrideHint, seededIn } from './exercise-override-line';
+import { actorHintOf, type HintActor, hintFor } from './exercise-override-line';
 import { enqueued, queuedIds, queuedPayloads } from './exercise-queued';
 import type { ExercisePhaseMs, ExerciseRecord, ExerciseRoom, Observed } from './exercise-report';
 import { openExerciseRoom } from './exercise-report';
@@ -105,7 +105,7 @@ interface Prepared {
   readonly lookups: readonly [IdLookup, IdLookup];
   readonly bindInput: OverrideInput | undefined;
   /** The actor the pass picked, as the paste line spells it (`exercise-override-line.ts`). */
-  readonly actorHint: OverrideHint['actor'];
+  readonly actorHint: HintActor;
   /** The entry's `statements: { max, why }`: the ceiling each call is held to. */
   readonly ceiling: ExerciseStatementCeiling | undefined;
 }
@@ -192,7 +192,7 @@ async function control(run: Prepared, room: ExerciseRoom, sampler: Sampler): Pro
   const ms = Math.round(performance.now() - started);
   const observed = mergeObserved(segments);
   const effects = [...observed.effects, ...(await enqueued(subject, mine))];
-  const hint = { actor: run.actorHint, ids: seededIn(lastInput, lookups) };
+  const hint = hintFor(run.actorHint, lastInput, lookups);
   const outcome = { verdict, answered, lastError, lastInput, hint };
   const verdictOf = judged(subject, key, outcome, observed, sampler);
   // A 5xx's cause, statement and fields: the code alone sent the author to reproduce it by hand.
@@ -277,7 +277,13 @@ async function exerciseOne(
   // Both are users, as a request's actor always is: their `x_users` rows, before any call.
   await seatActorUsers([actor, intruder]);
 
-  const scope = { tenant, actorId: actor?.id, subject: name, actorEntity: rows?.entity.$name };
+  const scope = {
+    tenant,
+    actorId: actor?.id,
+    subject: name,
+    permissions: subject.permissions,
+    actorEntity: rows?.entity.$name,
+  };
   const bindInput = overrideInput(name, override);
   // `off` returned above: any other entry's `runs` is declared, with or without an `actor`.
   const declaredRuns = override === undefined || 'off' in override ? undefined : override.runs;

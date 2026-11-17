@@ -29,6 +29,7 @@ export type {
   ActorOrigin,
 } from './actor';
 export {
+  ACTOR_KINDS,
   actorFact,
   actorLabel,
   actorOf,

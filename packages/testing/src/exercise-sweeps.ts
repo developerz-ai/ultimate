@@ -64,6 +64,7 @@ export async function sizedCall(
     tenant,
     actorId: actor?.id,
     subject: subject.name,
+    permissions: subject.permissions,
     actorEntity: rows?.entity.$name,
   };
   const lookup = seededIds(graph, options.entities, { ...scope, self });

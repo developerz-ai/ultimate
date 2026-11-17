@@ -2,7 +2,7 @@
 // past its declared threshold through the same per-row gate an inline batch uses. A job and not a
 // ninth kind of thing — `enqueue` and a declaration are all it uses of `@ultimat3/jobs`.
 
-import { type ActorKind, type ActorOrigin, withChildContext } from '@ultimat3/core';
+import { ACTOR_KINDS, type ActorKind, type ActorOrigin, withChildContext } from '@ultimat3/core';
 import { type AnyJobHandle, getJob, job, t } from '@ultimat3/jobs';
 import { coreActorOf } from './actor';
 import type { AdminActor } from './authz';
@@ -28,8 +28,6 @@ export const ADMIN_BATCH_JOB = 'admin.batch';
 
 /** Who can queue a chunk: anonymous never reaches the batch gate. */
 const QUEUED_KINDS = ['user', 'service', 'agent'] as const satisfies readonly ActorKind[];
-/** Core's `ACTOR_KINDS`, which its barrel does not export; `satisfies` holds it to `ActorKind`. */
-const ORIGIN_KINDS = [...QUEUED_KINDS, 'anonymous'] as const satisfies readonly ActorKind[];
 
 const chunkInput = t.object({
   basePath: t.string,
@@ -50,7 +48,7 @@ const chunkInput = t.object({
     kind: t.optional(t.enum(QUEUED_KINDS)),
     roles: t.array(t.string),
     scopes: t.optional(t.array(t.string)),
-    onBehalfOf: t.optional(t.object({ actorId: t.string, actorKind: t.enum(ORIGIN_KINDS) })),
+    onBehalfOf: t.optional(t.object({ actorId: t.string, actorKind: t.enum(ACTOR_KINDS) })),
     permissions: t.optional(t.array(t.string)),
     orgId: t.optional(t.string),
     locale: t.optional(t.string),

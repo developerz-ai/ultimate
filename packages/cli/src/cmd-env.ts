@@ -97,9 +97,16 @@ async function checkProcessEnv(ctx: CommandContext): Promise<CommandResult> {
     ...framework,
   ];
   const ok = findings.length === 0;
-  const verdict = ok
-    ? msg('cli.env.checked', { count: total })
-    : msg('cli.env.invalid', { count: findings.length, total });
+  // The count is of DECLARED variables: a framework secret is no key of `envSchema`, so it is
+  // named by its code beside the count rather than counted into it ("3 of 2 declared").
+  const declared =
+    report.issues.length === 0
+      ? msg('cli.env.checked', { count: total })
+      : msg('cli.env.invalid', { count: report.issues.length, total });
+  const verdict =
+    framework.length === 0
+      ? declared
+      : `${declared} — ${framework.map((finding) => finding.code).join(', ')}`;
   return {
     ok,
     command: 'env',

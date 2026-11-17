@@ -220,7 +220,7 @@ describe('generateMigration', () => {
     expect(migration.down).toBe('alter table "posts" drop column "publish_at";');
   });
 
-  test('a NOT NULL add with no default is emitted nullable plus the exact follow-up', () => {
+  test('a NOT NULL add with no default is emitted nullable, its contract in the follow-up', () => {
     const before = snapshotOf([posts([column('id', { kind: 'uuid', primaryKey: true })])]);
     const migration = generateMigration({
       entities: [
@@ -237,7 +237,7 @@ describe('generateMigration', () => {
     });
 
     expect(migration.up).toContain('add column "title" text;');
-    expect(migration.up).toContain('alter column "title" set not null;');
+    expect(migration.followUp?.up).toContain('alter column "title" set not null;');
   });
 
   test('a drop that loses data throws X_MIGRATION_IRREVERSIBLE with a fix', () => {

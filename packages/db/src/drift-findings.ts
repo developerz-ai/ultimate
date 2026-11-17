@@ -142,17 +142,16 @@ export function unexpectedColumn(table: string, column: string): DriftDifference
 /**
  * The column exists on both sides and one of them lets it be `NULL`.
  *
- * This is the finding the expand/contract flow needs and never had. `generate.ts` emits a `NOT
- * NULL` add as nullable plus a `-- backfill "c", then: … set not null;` comment, because the
- * strict version cannot succeed on a populated table — and phase 2 is a comment, so it is a thing
- * a human has to remember. Nobody did, and `compareTable` compared columns by name and by type
- * while `snapshotOf` had recorded `nullable` all along, so the column stayed nullable forever
- * against an entity schema that said otherwise, with `ok: true` on every check. The first
- * `undefined` write then lands as `NULL` and crashes three services away from the migration.
+ * Nullability compared at all because a column left nullable against an entity that says NOT NULL
+ * once read `ok: true` on every check, and the first `undefined` write landed as `NULL` three
+ * services away from the migration.
  *
- * `x db gen` is deliberately not the fix: it diffs types and indexes and has never emitted a
- * `set not null`, so naming it would send a reader to a command that generates an empty migration.
- * The fix is the statement, run against this database (`repair`).
+ * Never the expand/contract flow's own state: `x db gen` records an expanded column nullable until
+ * the step that contracts it has run (`not-null-contract.ts`), so a database the migrations left
+ * is never this finding. What remains is a database that LEFT them — a `drop not null` by hand, or
+ * an expand file an older generator wrote with a `-- backfill` note and a NOT NULL snapshot
+ * (wiki/Upgrading.md has that one's two `x db gen` runs). A migration is not the fix for the first:
+ * every database that is already right would replay it. So the fix is the statement (`repair`).
  */
 export function changedColumn(
   schema: string,

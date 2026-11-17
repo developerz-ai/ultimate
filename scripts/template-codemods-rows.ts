@@ -140,4 +140,24 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.43.0',
     codemod: 'ci-pinned-actions',
   },
+  {
+    template: 'packages/cli/src/templates/shapes/agent-prompt.ts',
+    since: '31.43.0',
+    none: "the agent shape's eval now refuses an edited template under its old version with X_EVAL_BASELINE_MISSING (re-record after bumping version), checked inside the one test that re-records, and files its baseline per version; an app's eval test, evals file and prompt are the author's — the old ones still gate on the scores and the hash, failing as X_TEST_FAILED rather than with the coded fix, so nothing breaks across the upgrade",
+  },
+  {
+    template: 'apps/web/app/assistant/prompts/suggest-title.ts',
+    since: '31.43.0',
+    none: "the agent shape's eval now refuses an edited template under its old version with X_EVAL_BASELINE_MISSING (re-record after bumping version), checked inside the one test that re-records, and files its baseline per version; an app's eval test, evals file and prompt are the author's — the old ones still gate on the scores and the hash, failing as X_TEST_FAILED rather than with the coded fix, so nothing breaks across the upgrade",
+  },
+  {
+    template: 'apps/web/app/assistant/prompts/suggest-title.evals.ts',
+    since: '31.43.0',
+    none: "the agent shape's eval now refuses an edited template under its old version with X_EVAL_BASELINE_MISSING (re-record after bumping version), checked inside the one test that re-records, and files its baseline per version; an app's eval test, evals file and prompt are the author's — the old ones still gate on the scores and the hash, failing as X_TEST_FAILED rather than with the coded fix, so nothing breaks across the upgrade",
+  },
+  {
+    template: 'apps/web/app/assistant/prompts/suggest-title.eval.test.ts',
+    since: '31.43.0',
+    none: "the agent shape's eval now refuses an edited template under its old version with X_EVAL_BASELINE_MISSING (re-record after bumping version), checked inside the one test that re-records, and files its baseline per version; an app's eval test, evals file and prompt are the author's — the old ones still gate on the scores and the hash, failing as X_TEST_FAILED rather than with the coded fix, so nothing breaks across the upgrade",
+  },
 ];

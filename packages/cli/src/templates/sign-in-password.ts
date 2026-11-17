@@ -86,6 +86,8 @@ export const createSession = action({
   // Public by declaration: signing in is the one operation nobody holds a permission for yet.
   policy: allow('public'),
   mcp: { expose: false },
+  // A browser's own form lands on \`next\`, declared where the gate reads it.
+  native: { success: (output) => output.next },
   async handle({ input }) {
     const request = useRequestContext('createSession');
     try {
@@ -131,6 +133,8 @@ export const confirmSession = action({
   output: t.object({ ok: t.boolean, next: t.string }),
   policy: allow('public'),
   mcp: { expose: false },
+  // A browser's own form lands on \`next\`, declared where the gate reads it.
+  native: { success: (output) => output.next },
   async handle({ input }) {
     const request = useRequestContext('confirmSession');
     const challenge = heldChallenge();

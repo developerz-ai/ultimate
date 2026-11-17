@@ -35,3 +35,15 @@ describe('unit · password sign-in keeps ?next= across the second factor', () =>
     );
   });
 });
+
+// A form action that lands on `next` declares it as its native answer, so the gate's native-form
+// check reads the fact off the action instead of warning on a fresh scaffold.
+describe('unit · every sign-in action a form posts declares its native answer', () => {
+  test.each([
+    'actions/create-session.ts',
+    'actions/confirm-session.ts',
+    'actions/destroy-session.ts',
+  ])('%s', (path) => {
+    expect(source(path)).toContain('native: { success: (output) => output.next }');
+  });
+});

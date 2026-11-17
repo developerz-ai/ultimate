@@ -7,7 +7,7 @@ import { systemClock } from '@ultimat3/core';
 import { checkClauses, checkPlan } from './check-ddl';
 import { alterColumnInPlace, retypeOverDefault, typeClause, wantedDefault } from './column-alter';
 import { defaultExpression } from './column-default';
-import { type ConcurrentPlan, emptyConcurrentPlan } from './concurrent-plan';
+import { emptyConcurrentPlan } from './concurrent-plan';
 import { dropOrder } from './drop-order';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { type ConstraintPlans, foreignKeyPlan, type Plan } from './foreign-key-plan';
@@ -31,6 +31,7 @@ import {
 } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
 import { migrationIrreversible } from './migration-errors';
+import { beforeContract, contractNotNull, type NotNullContracts } from './not-null-contract';
 import { addChangedKey, dropChangedKey, migrationNameArg } from './primary-key';
 import type { ReplicaIdentityInput } from './replica-identity';
 import { replicaIdentityFullAfter, replicaIdentityPlan } from './replica-identity';
@@ -131,8 +132,9 @@ function diffTable(
   live: TableDescription,
   plan: Plan,
   retyped: ReadonlySet<string>,
-  concurrent: ConcurrentPlan,
+  contracts: NotNullContracts,
 ): void {
+  const { concurrent } = contracts;
   const existing = new Map(live.columns.map((column) => [column.name, column]));
   const added = new Set<string>();
   // A column `regenerate` had to replace outright: `add column` implies no index, so every index
@@ -161,29 +163,30 @@ function diffTable(
               }
             : recorded,
           plan,
+          contracts,
         );
       }
       continue;
     }
     added.add(column.column);
-    // A NOT NULL add with no default cannot succeed on a populated table; emit it nullable and
-    // leave the agent the exact follow-up rather than a migration that fails at 3am.
+    // A NOT NULL add with no default cannot succeed on a populated table: it is EXPANDED here —
+    // added nullable, which is what this file's snapshot records (`beforeContract`) — and
+    // CONTRACTED in the non-transactional step (`not-null-contract.ts`). A NULL row stops that step
+    // alone; backfilled, the next `x db migrate` finishes it. A key column owes no contract: `add
+    // primary key` makes it NOT NULL.
     //
     // A GENERATED column is the exception and not a special case of it: the database computes it
     // for every existing row inside the same `add column`, so it lands NOT NULL and populated in
-    // one statement — measured. Emitting it nullable would leave a `-- backfill` comment naming a
-    // step nobody can perform, since a generated column cannot be written to.
+    // one statement — measured. Emitting it nullable would leave a contract step whose backfill
+    // nobody can perform, since a generated column cannot be written to.
     const nullable = column.notNull && !isGenerated(column) && defaultExpression(column) === null;
     // That follow-up is an UPDATE, and an append-only table's trigger refuses every one.
     if (nullable && entity.appendOnly === true)
       throw appendOnlyBackfillRefused(entity, column, 'added');
     const clause = nullable ? columnClause({ ...column, notNull: false }) : columnClause(column);
     plan.up.push(`alter table ${identifier(entity.table).text} add column ${clause};`);
-    if (nullable) {
-      plan.up.push(
-        `-- backfill ${identifier(column.column).text}, then: alter table ` +
-          `${identifier(entity.table).text} alter column ${identifier(column.column).text} set not null;`,
-      );
+    if (nullable && !entity.primaryKey.includes(column.column)) {
+      contractNotNull(entity.table, column.column, contracts);
     }
     plan.down.push(
       `alter table ${identifier(entity.table).text} drop column ${identifier(column.column).text};`,
@@ -297,6 +300,8 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
   const plan: Plan = { up: [], down: [] };
   // Applied AFTER `plan`, outside its transaction, in a step of its own (`concurrent-plan.ts`).
   const concurrent = emptyConcurrentPlan();
+  // Every column that step makes NOT NULL: the files ahead of it record each one nullable.
+  const contracts: NotNullContracts = { concurrent, columns: [] };
   // Merged into `plan` once every table statement is in, never interleaved with them.
   const constraints: Plan = { up: [], down: [] };
   // Merged in BEFORE them, for the mirror-image reason: a key still pointing at a table this
@@ -333,7 +338,7 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
     // snapshot below records `entity.primaryKey`, and until this arm existed nothing produced it.
     retirePlan(entity, live, plan, options.entities);
     dropChangedKey(entity, live, current, plan, options.name);
-    diffTable(entity, live, plan, retypedIn(retyped, entity.table), concurrent);
+    diffTable(entity, live, plan, retypedIn(retyped, entity.table), contracts);
     const kept = new Set([
       ...entity.columns.map((column) => column.column),
       ...(entity.retired ?? []),
@@ -440,7 +445,7 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
   // Dropped ahead of every table statement and created after the last one: a view compiled against
   // a column this migration retypes or drops is `0A000`/`2BP01` otherwise.
   const viewed = viewPlan(views, current, [...preAlters.up, ...plan.up]);
-  return assembleSteps({
+  const steps = assembleSteps({
     id,
     name: options.name,
     // An index's extension first (`index-extension.ts`): `gin_trgm_ops` does not exist before it.
@@ -471,4 +476,8 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
     unrendered,
     ...(droppedUnretired ? { rollingUnsafe: true } : {}),
   });
+  // A contract always lands in the non-transactional step, so with a transactional file ahead of
+  // it that file's snapshot is what the database holds until the step runs: the columns nullable.
+  if (steps.followUp === undefined) return steps;
+  return { ...steps, snapshot: beforeContract(steps.snapshot, contracts.columns) };
 }

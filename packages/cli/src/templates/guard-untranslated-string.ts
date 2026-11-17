@@ -102,7 +102,7 @@ export function untranslatedStrings(files: readonly SourceFile[]): readonly Find
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${lineOf(text, match.index)} renders the typed string "\${typed}" inside <\${match[1] ?? 'element'}> — it is in no catalog, so every locale but the one it was typed in reads it verbatim\`,
-        fix: \`add a key for "\${typed}" to packages/i18n/catalogs/en.json, render it as {t('…')} in \${file.path}, then: x i18n check\`,
+        fix: \`add a key for "\${typed}" to packages/i18n/catalogs/en.json, render it as {t('…')} in \${file.path}, then: x verify --only boundaries\`,
         at: file.path,
       });
     }
@@ -113,7 +113,7 @@ export function untranslatedStrings(files: readonly SourceFile[]): readonly Find
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${lineOf(text, match.index)} renders the typed string "\${typed}" as its \${name} — it is in no catalog, so every locale but the one it was typed in reads it verbatim\`,
-        fix: \`add a key for "\${typed}" to packages/i18n/catalogs/en.json, write it as \${name}={t('…')} in \${file.path}, then: x i18n check\`,
+        fix: \`add a key for "\${typed}" to packages/i18n/catalogs/en.json, write it as \${name}={t('…')} in \${file.path}, then: x verify --only boundaries\`,
         at: file.path,
       });
     }

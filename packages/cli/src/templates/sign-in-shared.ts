@@ -113,6 +113,8 @@ export const destroySession = action({
   output: t.object({ ok: t.boolean, next: t.string, revoked: t.boolean }),
   policy: allow('public'),
   mcp: { expose: false },
+  // A browser's own form lands on \`next\`, declared where the gate reads it.
+  native: { success: (output) => output.next },
   async handle() {
     const auth = appAuth();
     const token = useRequestCookie(auth.sessions.policy.cookieName);

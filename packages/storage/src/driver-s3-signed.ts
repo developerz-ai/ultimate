@@ -199,6 +199,17 @@ export function s3Credentials(options: S3WireOptions): AwsCredentials {
 }
 
 /**
+ * The bucket's virtual-hosted origin: the bucket goes in front of the endpoint's host, unless the
+ * endpoint already names it (`https://media.acct.r2…` stays). ONE builder — `clientTarget` hands
+ * it to Bun, `s3ObjectUrl` signs for it — so the two transports cannot address two hosts.
+ */
+export function bucketHost(endpoint: string, bucket: string): string {
+  const base = new URL(endpoint);
+  if (base.host.startsWith(`${bucket}.`)) return endpoint;
+  return `${base.protocol}//${bucket}.${base.host}`;
+}
+
+/**
  * Bun's addressing, restated: path style unless `forcePathStyle` is EXPLICITLY false (Bun's own
  * `virtualHostedStyle` defaults to false), and AWS's regional endpoint when none is configured.
  */
@@ -208,7 +219,8 @@ export function s3ObjectUrl(options: S3WireOptions, key: string): URL {
   const base = new URL(endpoint);
   const path = key.split('/').map(encodeURIComponent).join('/');
   if (options.forcePathStyle === false) {
-    return new URL(`${base.protocol}//${options.bucket}.${base.host}/${path}`);
+    const host = new URL(bucketHost(endpoint, options.bucket));
+    return new URL(`${host.protocol}//${host.host}/${path}`);
   }
   const prefix = trimTrailingSlashes(base.pathname);
   return new URL(
