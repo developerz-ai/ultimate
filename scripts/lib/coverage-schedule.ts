@@ -188,3 +188,18 @@ export function unitTimeoutOf(raw: string | undefined): number | undefined {
   if (!/^[1-9][0-9]*$/.test(raw)) return undefined;
   return Number(raw) * 1000;
 }
+
+/** A test result or a file header in `bun test`'s output. */
+const TEST_LINE = /^\s*(?:\((?:pass|fail|skip|todo)\) |\S+\.(?:test|spec)\.tsx?:$)/;
+
+/**
+ * The last `count` test lines a suite printed, newest last: what a unit killed at its deadline
+ * reached. Under `--parallel` the files interleave, so it is the frontier, not one file's tail.
+ */
+export function lastTestLines(output: string, count: number): readonly string[] {
+  return output
+    .split('\n')
+    .filter((line) => TEST_LINE.test(line))
+    .slice(-count)
+    .map((line) => line.trim());
+}

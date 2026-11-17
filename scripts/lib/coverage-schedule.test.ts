@@ -6,6 +6,7 @@ import { unitFailure } from '../coverage-gate';
 import {
   concurrency,
   FILES_PER_WORKER,
+  lastTestLines,
   leasePool,
   serviceKeys,
   UNIT_SECONDS,
@@ -232,4 +233,26 @@ describe('unit · a unit deadline under the CI job', () => {
     expect(unitTimeoutOf('540')).toBe(540_000);
     for (const bad of ['0', '-5', '1.5', 'ten', '']) expect(unitTimeoutOf(bad)).toBeUndefined();
   });
+});
+
+// A unit killed at its deadline printed only "did not finish": the stalled test, the last line
+// before the stall, was in the output and dropped (cli on #1217, 2026-11-17).
+test('unit · a timed-out unit names the last tests it reached, newest last', () => {
+  const output = [
+    'packages/cli/src/a.test.ts:',
+    '(pass) a > one [1.00ms]',
+    'noise',
+    'packages/cli/src/b.test.ts:',
+    '(pass) b > two [2.00ms]',
+    '(skip) b > three',
+    '',
+  ].join('\n');
+  expect(lastTestLines(output, 3)).toEqual([
+    'packages/cli/src/b.test.ts:',
+    '(pass) b > two [2.00ms]',
+    '(skip) b > three',
+  ]);
+  expect(lastTestLines('', 3)).toEqual([]);
+  const failure = unitFailure('cli', { code: null, output, timedOut: true }, 450_000);
+  expect(failure?.cause).toContain('(skip) b > three');
 });
