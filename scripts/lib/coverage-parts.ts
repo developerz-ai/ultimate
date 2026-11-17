@@ -211,8 +211,10 @@ export function foldParts(
   let workers = 0;
   for (const part of plan) {
     const doc = docs.find((one) => one.unit === part.unit && one.index === part.index);
+    // The plan's identity, not a secret: a part cut from another tree's file list is refused.
+    const plannedDeal = corpusHash(part.files);
     const fresh = doc !== undefined && doc.total === part.total;
-    if (!fresh || doc.deal !== corpusHash(part.files)) {
+    if (!fresh || doc.deal !== plannedDeal) {
       return {
         code: 'X_COVERAGE_UNMEASURED',
         cause: !fresh
