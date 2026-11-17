@@ -396,14 +396,18 @@ request-scoped and never logged — `actorLabel()` stays id-only.
 ## Env fails once, completely
 
 ```ts
-export const env = defineEnv({
+export const envSchema = {
   DATABASE_URL: { type: 'url', secret: true },
   PORT:         { type: 'port', default: 3000 },
   REGION:       { type: 'enum', values: ['us', 'eu'] },
   SENTRY_DSN:   { type: 'url', required: false },
   NATS_URL:     { type: 'url', role: 'sync' },   // only required for ROLE=sync
-});
+} satisfies EnvSchema;
+export const env = defineEnv(envSchema);
 ```
+
+The `envSchema` export is the one declaration form: `x env`, `x secrets` and `x deploy` read it,
+and an app's `undeclared-env` guard refuses a `defineEnv` handed anything else.
 
 Every missing or malformed key is listed in one `X_ENV_MISSING`. `secret: true` keys are
 redacted in logs and masked in `checkEnv()` output; the env summary (`describeEnv()`, internal) emits declarations only,

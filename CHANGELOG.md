@@ -10,7 +10,28 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+
+- auth: every OAuth client-metadata-document fetch is now rate-limited. `readRequest(url)`, `approve` and `deny` without a `callerKey` were unmetered, so each consent-page load naming a fresh `https://<host>/<path>` `client_id` caused one outbound GET (200 in 200 loads). Without a key they now share one bucket (`oauth-client-metadata:unkeyed`, 10 a minute, then `X_ACCOUNT_LOCKED`). Pass `readRequest(url, { callerKey: <request address> })` so each caller gets its own bucket.
+- The CI files `x new` writes pin every `actions/*` step by commit SHA (`# vN` comment), and every checkout sets `persist-credentials: false`, so `bun install` no longer runs with the job token in `.git/config`. `x upgrade` carries existing apps across (codemod `ci-pinned-actions`); a hand-edited workflow is reported with the diff.
+
+### Changed
+
+- One env declaration form: `export const envSchema = { … } satisfies EnvSchema;` then `export const env = defineEnv(envSchema);` in `app.config.ts`. An app's `undeclared-env` guard (refreshed by `x upgrade`) now refuses a `defineEnv` handed an inline `{ … }`. `defineEnv` returns values, so `x env check`, `x env example`, `x secrets` and `x deploy` could not read that declaration back. The finding's fix is the two-line conversion. The reference and demo apps moved; `.env.example` is now their projection (`x env example`), not a hand-written twin.
+- realtime: PresenceRegistry maxMembers is clamped to FRAME_LIMITS.members (4,096); a larger value shipped a full-set frame no client could read.
+
+### Fixed
+
+- cli: `isEnvSchema([])` no longer accepts an array as a schema, whose entries would otherwise pass as declarations keyed `0`, `1`, ….
+- realtime: a presence sweep that expires more than 4,096 members announces them in several leave frames; one oversized frame was refused by every client, leaving its roster stale.
+- `assets.retain`: a sweep no longer deletes a file that a build published on another pod reuses, or a manifest that a rollback re-dated, when that publish lands between the sweep's last manifest read and its deletes. Deletes are now fenced: the manifests are read again after deleting, and every file they name is put back.
+- `x upgrade`: a lock left by a hop killed with `-9` whose pid the kernel has since reused no longer refuses every later upgrade with `X_UPGRADE_LOCKED`. The lock now records its holder's OS start time, as `.x/dev.lock` does.
+- `scripts/release.ts` refuses a bump while an `X_PUBLIC_API_BREAK_UNDECLARED` finding is pending, before any write and under `--dry-run`. The public API lock written at release no longer carries an undeclared break forward, which used to leave findings that no changelog line could clear. A break's fix now diffs the whole package (`git diff v<lock> -- packages/<pkg>`) rather than an index that only re-exports.
+- `scripts/lib/public-api.lock.json` is re-baselined at 31.42.1. That clears 14 report-only findings: 4 for `@ultimat3/db` exports that never shipped, and 10 for shape changes that shipped undeclared in 31.30–31.42.
+- ui: `sliderNumbers` never snaps past `max` when `max` is off the step grid (the native control keeps the last step at or below it), rounds by the places of `min` and `step` (`min: 0.25, step: 0.5` holds `0.75`, not `0.8`), and counts places correctly for exponent-form steps such as `1e-7`.
+- ui: `deltaOf` reads a difference that formats as zero (`2 → 2.001` gives `"0"`) as flat, so the arrow no longer contradicts the text.
+- admin: the audit history cursor parses its instant with the same strict reader as `since` and `until`. A hand-edited `hello 1~<uuid>` used to pass `Date.parse` and reach Postgres as a cast error (500); it now falls back to page one.
+- testing: under the determinism preload, calling `Date()` without `new` returns the frozen instant's string, as the real `Date()` returns the current one; it used to throw a TypeError.
 
 ## Releases
 
