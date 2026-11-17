@@ -164,7 +164,7 @@ const literal = (value: unknown): ColumnDefault => {
   return refuseColumn(
     'default',
     `a default must be a literal; got ${typeof value}`,
-    ".default('draft'), .default(0) or .default(false) — a literal the DDL can carry; for an instant use timestamp().defaultNow(), and a computed default belongs in the insert",
+    "text().default('draft')   // or .default(0), .default(false): a literal the DDL can carry; for an instant use timestamp().defaultNow(), and a computed default belongs in the insert",
   );
 };
 
@@ -317,7 +317,7 @@ export const assertColumnName = (name: string): string => {
     refuseColumn(
       'column-name',
       `"${name}" is not a physical column name: lower-case letters, digits and underscores, at most 63 of them`,
-      ".column('created_at') — lower-case letters, digits and underscores, at most 63 of them",
+      "text().column('created_at')   // lower-case letters, digits and underscores, at most 63 of them",
     );
   }
   return name;

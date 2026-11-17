@@ -197,7 +197,7 @@ export function checkReleaseFacts(input: FactInput): readonly FactGap[] {
 const staleFinding = (gap: FactGap): Finding => ({
   code: 'X_DOC_RELEASE_FACT_STALE',
   cause: `${gap.at} writes "${gap.quote}" and this tree has ${gap.expected.join(' or ')} ${gap.label}`,
-  fix: `set the count at ${gap.at} to ${gap.expected.join(' or ')}; \`bun run scripts/list-workspaces.ts\` is where the number comes from`,
+  fix: `bun run scripts/list-workspaces.ts   # where the number comes from: set the count at ${gap.at} to ${gap.expected.join(' or ')}`,
   at: gap.at,
 });
 
@@ -207,7 +207,7 @@ const vacuousFinding = (): Finding => ({
     'no page states a package count, so this rule read nothing and reported green over ten pages that restate one',
   // The path is a literal, not `scripts/${SCRIPT}.ts`: the fix-line contract reads these
   // statically and an interpolation renders as `scripts/<value>.ts`, which names no file.
-  fix: 'edit FACT_GLOBS in scripts/release-facts.ts so it matches how the pages state a count',
+  fix: "grep -n 'FACT_GLOBS' scripts/release-facts.ts   # edit it so it matches how the pages state a count",
   at: `scripts/${SCRIPT}.ts`,
 });
 

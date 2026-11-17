@@ -50,12 +50,20 @@ describeIslandState(states, 'idle', island, (mounted) => {
   });
 });
 
-describeIslandState(states, 'long-label', island, (mounted) => {
-  test('the next block starts from its own state, on a fresh mount', () => {
-    seen.push('long-label');
-    expect(mounted().text('[data-role="count"]')).toBe('Zähler 0');
-  });
-});
+/** What `teardown` saw when it ran: whether the island's fake `document` was still installed. */
+const tornDown: boolean[] = [];
+
+describeIslandState(
+  states,
+  'long-label',
+  { ...island, teardown: () => tornDown.push(documentInstalled()) },
+  (mounted) => {
+    test('the next block starts from its own state, on a fresh mount', () => {
+      seen.push('long-label');
+      expect(mounted().text('[data-role="count"]')).toBe('Zähler 0');
+    });
+  },
+);
 
 describe(testName('unit', 'mountIslandState'), () => {
   test('a state the manifest does not declare is refused by name, listing the declared ones', async () => {
@@ -113,6 +121,8 @@ afterAll(() => {
   expect(seen).toEqual(['idle', 'long-label']);
   expect(builds).toBe(1);
   expect(documentInstalled()).toBe(false);
+  // `teardown` ran once, for its block only, and AFTER the dispose: the document was gone.
+  expect(tornDown).toEqual([false]);
 });
 
 const HELPER = join(import.meta.dir, 'island-state-mount.ts');

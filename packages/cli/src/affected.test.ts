@@ -265,7 +265,7 @@ describe('unit · affected reads its diff from a ref, not from the working tree'
       }),
     ).rejects.toMatchObject({
       code: 'X_CLI_UNEXPECTED',
-      fix: `run it yourself to see why: ${BASE_DIFF}`,
+      fix: `git -C /repo ${BASE_DIFF.slice('git '.length)}   # run it yourself to see why`,
     });
   });
 });

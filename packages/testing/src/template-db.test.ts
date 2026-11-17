@@ -233,7 +233,7 @@ describe('unit · template-db', () => {
     });
     try {
       await acquireWorkerDatabase({ adminUrl: ADMIN }, { connect, env: {} });
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       expect(error).toBeUltimateError('X_TEST_DB_UNAVAILABLE');
       expect((error as { fix: string }).fix).toContain('TEST_DATABASE_URL');
@@ -257,7 +257,7 @@ describe('unit · template-db', () => {
         { adminUrl: ADMIN },
         { connect, env: { BUN_TEST_WORKER_ID: '0' } },
       );
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       expect(error).toBeUltimateError('X_TEST_DB_UNAVAILABLE');
     }

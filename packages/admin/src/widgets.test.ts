@@ -3,8 +3,8 @@
 // the fix are indistinguishable — so this asks a subprocess in `America/Los_Angeles`.
 
 import { describe, expect, test } from 'bun:test';
-// `node:path` — Bun has no path joiner; the subprocess needs the repo root as its cwd, and its
-// imports have to be RELATIVE paths: a bare `@ultimat3/ui` from `bun -e` resolves against
+// why: `node:path` — Bun has no path joiner; the subprocess needs the repo root as its cwd, and
+// its imports have to be RELATIVE paths: a bare `@ultimat3/ui` from `bun -e` resolves against
 // `[eval]`, which is not a file and walks no node_modules.
 import { join } from 'node:path';
 
@@ -53,7 +53,7 @@ async function renderIn(timeZone: string): Promise<{ control: number; text: stri
   ]);
   await child.exited;
   const line = out.trim().split('\n').at(-1) ?? '';
-  if (line === '') throw new Error(`the probe printed nothing; stderr: ${err}`);
+  if (line === '') return expect.unreachable(`the probe printed nothing; stderr: ${err}`);
   return JSON.parse(line) as { control: number; text: string };
 }
 

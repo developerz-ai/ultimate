@@ -86,9 +86,9 @@ export class MigrationUngeneratableError extends UltimateError {
         `${input.file} holds ${found} statement${found === 1 ? '' : 's'} x db gen could not have ` +
         `written and declares ${input.declared}${first}`,
       fix:
-        `add the header line "${ungeneratableMarker(found)}" to ${input.file}, so a squash carries ` +
-        'these statements by hand — or re-declare what an entity can express (an enum is a text ' +
-        'column plus a check invariant) and regenerate: x db gen "<name>"',
+        // Line 1 is real: the header is whatever precedes the first statement, so it may open there.
+        // One literal: the scan reads each piece of a `+` chain as its own fix line.
+        `edit ${input.file}:1 — add the header line "${ungeneratableMarker(found)}", so a squash carries these statements by hand — or re-declare what an entity can express (an enum is a text column plus a check invariant) and regenerate: x db gen "<name>"`,
     });
   }
 }

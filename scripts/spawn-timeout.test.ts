@@ -3,6 +3,7 @@
 // here. Fixtures prove each shape; the last block holds the real tree, non-vacuously.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { corpus } from './lib/corpus';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { SPAWN_TIMEOUT_PINS, SPAWN_TIMEOUT_PINS_FILE } from './lib/spawn-timeout-pins';
 import { checkSpawns, scanSpawns, spawnFindingFor, spawnGaps, spawnSites } from './spawn-timeout';
@@ -113,6 +114,14 @@ describe('the ratchet', () => {
   });
 });
 
+/**
+ * The real tree with its REPAIR taken back out: every `signal`/`timeout` key renamed in the mask.
+ * Non-vacuity that grows as the tree gets better — a count of what is still broken falls to zero
+ * on the day the ratchet is done, and then proves nothing.
+ */
+const unrepaired = (masked: string): string =>
+  masked.replace(/(?<![\w$.])(?:signal|timeout)(?=\s*[:,}])/g, 'unbound');
+
 describe('the real tree', () => {
   test('every pin carries a why: and a count above zero', () => {
     for (const pin of Object.values(SPAWN_TIMEOUT_PINS)) {
@@ -122,9 +131,14 @@ describe('the real tree', () => {
   });
 
   test('is on the ratchet, and the scan really read it', async () => {
-    // Non-vacuity: the long-lived children the pins name ARE found — a scan that matched nothing
-    // would agree with every pin being stale, and say so, but never with this floor.
-    expect((await spawnSites(repoRoot())).length).toBeGreaterThanOrEqual(5);
+    // Non-vacuity: with each deadline taken back out, the scan finds the children that carry one
+    // — a scan that matched nothing would agree with every pin. 77 on 2026-11-16.
+    const files = await corpus(repoRoot(), 'source');
+    const bare = files.flatMap((file) =>
+      scanSpawns(file.path, file.source, unrepaired(file.masked)),
+    );
+    expect(bare.length).toBeGreaterThanOrEqual(40);
+    expect((await spawnSites(repoRoot())).length).toBeLessThan(bare.length);
     expect(await spawnGaps(repoRoot())).toEqual([]);
   });
 });

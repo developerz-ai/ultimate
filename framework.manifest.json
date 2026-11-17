@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "9915516e63639284c366aa782ef54b83099e2d58352a308730b0166bc661467a",
+  "buildId": "602f064c6dadeb0035bf3d205c891191accce72d78cfc36148dcafe8bd15413f",
   "tiers": {
     "0": [
       "core",
@@ -48,187 +48,187 @@
   "packages": [
     {
       "name": "@ultimat3/core",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/schema",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/cache",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/db",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/flags",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/i18n",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/money",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/seo",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/storage",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/time",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/auth",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/entity",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/http",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/policy",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/action",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/jobs",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/query",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/realtime",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/ai",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mail",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/manifest",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mcp",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/notify",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/pwa",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/render",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/scraping",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/ui",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/admin",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/cli",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/testing",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "create-ultimate",
-      "version": "31.31.0",
+      "version": "31.39.0",
       "tier": 6,
       "private": false
     }
@@ -2145,6 +2145,16 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_ERROR_CODE_INDEX_STALE",
+      "owner": "scripts",
+      "at": "scripts/error-code-pages.ts"
+    },
+    {
+      "code": "X_ERROR_CODE_ROW_MISPLACED",
+      "owner": "scripts",
+      "at": "scripts/error-code-pages.ts"
+    },
+    {
       "code": "X_ERROR_CODE_UNDOCUMENTED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2353,6 +2363,61 @@
       "code": "X_FILE_TOO_LONG",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-package.ts"
+    },
+    {
+      "code": "X_FINISHED_COMPAT_RED",
+      "owner": "scripts",
+      "at": "scripts/finished-github.ts"
+    },
+    {
+      "code": "X_FINISHED_FLAKY",
+      "owner": "scripts",
+      "at": "scripts/finished-github.ts"
+    },
+    {
+      "code": "X_FINISHED_GATE_PARTIAL",
+      "owner": "scripts",
+      "at": "scripts/finished-gate.ts"
+    },
+    {
+      "code": "X_FINISHED_LANE_ABSENT",
+      "owner": "scripts",
+      "at": "scripts/finished-lanes.ts"
+    },
+    {
+      "code": "X_FINISHED_LEDGER_OPEN",
+      "owner": "scripts",
+      "at": "scripts/finished-ledger.ts"
+    },
+    {
+      "code": "X_FINISHED_LOOP_OPEN",
+      "owner": "scripts",
+      "at": "scripts/finished-loop.ts"
+    },
+    {
+      "code": "X_FINISHED_PIN_UNREASONED",
+      "owner": "scripts",
+      "at": "scripts/finished-pins.ts"
+    },
+    {
+      "code": "X_FINISHED_PLANNED_COMMAND",
+      "owner": "scripts",
+      "at": "scripts/finished-repo.ts"
+    },
+    {
+      "code": "X_FINISHED_SHAPE_UNGATED",
+      "owner": "scripts",
+      "at": "scripts/finished-github.ts"
+    },
+    {
+      "code": "X_FINISHED_STUB",
+      "owner": "scripts",
+      "at": "scripts/finished-repo.ts"
+    },
+    {
+      "code": "X_FINISHED_UNVERDICTED",
+      "owner": "scripts",
+      "at": "scripts/finished-rule.ts"
     },
     {
       "code": "X_FINITE_BOUND_PIN_STALE",
@@ -4235,6 +4300,11 @@
       "at": "scripts/plan-status.ts"
     },
     {
+      "code": "X_PLAN_STATUS_UNDATED",
+      "owner": "scripts",
+      "at": "scripts/lib/plan-tracker-dated.ts"
+    },
+    {
       "code": "X_PLAN_STATUS_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/plan-status.ts"
@@ -5717,7 +5787,7 @@
     {
       "code": "X_SPAWN_TIMED_OUT",
       "owner": "scripts",
-      "at": "scripts/bump-pr.ts"
+      "at": "scripts/bench/render-html.bench.ts"
     },
     {
       "code": "X_SPAWN_TIMEOUT_PIN_STALE",
@@ -6430,6 +6500,21 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_TEST_SLOW_REASON_STALE",
+      "owner": "scripts",
+      "at": "scripts/test-slow.ts"
+    },
+    {
+      "code": "X_TEST_SLOW_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/test-slow.ts"
+    },
+    {
+      "code": "X_TEST_SLOW_UNSTATED",
+      "owner": "scripts",
+      "at": "scripts/test-slow.ts"
+    },
+    {
       "code": "X_TEST_SOAK_HEAP_GROWTH",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -6518,6 +6603,11 @@
       "code": "X_TOPIC_FORBIDDEN",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_TRAILING_SLASH_REGEX",
+      "owner": "scripts",
+      "at": "scripts/trailing-slash-regex.ts"
     },
     {
       "code": "X_TRANSPORT_PROTOCOL",

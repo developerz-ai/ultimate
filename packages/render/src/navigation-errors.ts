@@ -1,9 +1,11 @@
 /**
  * The one refusal a BROWSER can reach in this package — `openModal`'s — apart from `errors.ts` for
  * bytes: that module registers render's whole code table at import, and an island that calls
- * `openModal` must not carry it. `errors.ts` re-exports this class, so it is ONE class wherever it is
- * imported from and `instanceof` agrees across both entries. Without the table loaded, core titles
- * the code from its name; the code, cause and fix are the same either way. Runs nothing at import.
+ * `openModal` must not carry it.
+ *
+ * `errors.ts` re-exports this class, so it is ONE class wherever it is imported from and
+ * `instanceof` agrees across both entries. Without the table loaded, core titles the code from its
+ * name; the code, cause and fix are the same either way. Runs nothing at import.
  */
 
 import { UltimateError } from '@ultimat3/core/page';

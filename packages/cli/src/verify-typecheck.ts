@@ -1,8 +1,10 @@
-// Which `tsc` invocation the `typecheck` step runs. `tsc -b` decides "up to date" by mtime, and Bun
-// installs a package as HARDLINKS out of its cache, carrying the cache's old mtimes — so upgrading
-// a dependency to a version already in the cache left every input older than the buildinfo, `-b`
-// skipped the program and reported green while a cold CI went red (#450). `-p` with `incremental`
-// re-reads every input and compares content hashes, so it cannot be fooled by a date.
+// Which `tsc` invocation the `typecheck` step runs: `-p` with `incremental`, never `-b`.
+//
+// `tsc -b` decides "up to date" by mtime, and Bun installs a package as HARDLINKS out of its cache,
+// carrying the cache's old mtimes — so upgrading a dependency to a version already in the cache
+// left every input older than the buildinfo, `-b` skipped the program and reported green while a
+// cold CI went red (#450). `-p` with `incremental` re-reads every input and compares content
+// hashes, so it cannot be fooled by a date.
 
 import { checkRootReferences } from './tsconfig-references';
 

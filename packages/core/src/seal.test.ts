@@ -164,7 +164,7 @@ describe('unit · seal refusals', () => {
     const sealed = await seal(new Uint8Array([0xff, 0xfe]), { purpose: PURPOSE, ...keys });
     const refused = await refusal(() => openText(sealed, { purpose: PURPOSE, ...keys }));
     expect(refused.code).toBe('X_INVARIANT');
-    expect(refused.fix).toContain('open()');
+    expect(refused.fix).toStartWith('await open(sealed, { purpose })');
   });
 
   test('an empty purpose is refused before any key is read', async () => {

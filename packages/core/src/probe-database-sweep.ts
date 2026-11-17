@@ -1,8 +1,10 @@
 // Test support: drop the probe databases a KILLED run of the same suite left behind. A per-run name
 // (`probe-database.ts`) is never reused, so nothing else would ever drop it — the fixed name it
-// replaced was dropped by the next run. Only a database whose run is provably over goes: its pid
-// dead on this host, no backend connected, AND older than `PROBE_DATABASE_MIN_AGE_MS` — a run on
-// another host that has created its database and not yet connected reads dead and idle here.
+// replaced was dropped by the next run.
+//
+// Only a database whose run is provably over goes: its pid dead on this host, no backend connected,
+// AND older than `PROBE_DATABASE_MIN_AGE_MS` — a run on another host that has created its database
+// and not yet connected reads dead and idle here.
 
 import { stringField } from './error-render';
 import type { PgExecutor } from './pg-executor';

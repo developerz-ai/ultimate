@@ -9,6 +9,7 @@
 
 // why: no Bun native joins or resolves a path; `--out` is resolved against the app root.
 import { join, resolve } from 'node:path';
+import { renderFixShellArg } from '@ultimat3/core';
 import type { IslandStatesManifest, IslandViewport } from '@ultimat3/testing';
 import { findIslandStates } from '@ultimat3/testing';
 import { appBrowser } from './browser-launcher';
@@ -26,6 +27,7 @@ import {
   islandVerdictJson,
 } from './island-verdict';
 import type { CommandResult } from './output';
+import { quoteArg } from './shell-quote';
 import type { ShotCookiePair } from './shot-cookie';
 import type { ShotServer } from './shot-server';
 import { SHOT_DIR } from './shot-server';
@@ -71,7 +73,7 @@ export function readStateFlag(
     flag: 'state',
     command: 'shot',
     reason: `${manifest.island} declares no state "${wanted}" — it declares ${known.join(', ')}`,
-    fix: `x shot --island ${manifest.name} --state ${known[0] ?? '<id>'} --json`,
+    fix: `x shot --island ${quoteArg(manifest.name)} --state ${renderFixShellArg(known[0], '<id>')} --json`,
   });
 }
 
@@ -85,7 +87,7 @@ export function refuseRouteWithIsland(route: string | undefined, island: string)
     flag: 'island',
     command: 'shot',
     reason: `--island ${island} photographs a component and "${route ?? ''}" is a route; x shot takes one subject`,
-    fix: `x shot --island ${island} --json`,
+    fix: `x shot --island ${quoteArg(island)} --json`,
   });
 }
 

@@ -1,8 +1,9 @@
-// Compile-time pins for the two type positions this package has already regressed in. Source, not
-// a `.test.ts`, on purpose: `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads a
-// test file and a type-level assertion written there can never fail. Everything below is erased —
-// the module emits nothing — and a regression is a build error, which is the only kind of
-// enforcement this repo counts (axiom 3).
+// Compile-time pins for the two type positions this package has already regressed in. Source, not a
+// `.test.ts`, on purpose: `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads a
+// test file and a type-level assertion written there can never fail.
+//
+// Everything below is erased — the module emits nothing — and a regression is a build error, which
+// is the only kind of enforcement this repo counts (axiom 3).
 
 import type { Id } from '@ultimat3/core';
 import type { Schema, MoneyValue as SchemaMoneyValue } from '@ultimat3/schema';

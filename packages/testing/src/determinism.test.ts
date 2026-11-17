@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-// `node:vm` is the only way to get a second realm in-process; Bun has no native equivalent, and a
-// second realm is the whole point of the cross-realm test below.
+// why: `node:vm` is the only way to get a second realm in-process; Bun has no native equivalent,
+// and a second realm is the whole point of the cross-realm test below.
 import { runInNewContext } from 'node:vm';
 import {
   advanceClock,
@@ -143,7 +143,7 @@ describe('unit · determinism', () => {
         counter += 1;
         return counter;
       });
-      throw new Error('expected a throw');
+      expect.unreachable('expected a throw');
     } catch (error) {
       expect(error).toBeUltimateError('X_TEST_NONDETERMINISTIC');
       expect((error as { fix: string }).fix).toBe(

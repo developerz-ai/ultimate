@@ -38,7 +38,7 @@ describe('a rejected value never appears in the refusal', () => {
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
     }
-    throw new Error('the column accepted a value the test needs it to refuse');
+    return expect.unreachable('the column accepted a value the test needs it to refuse');
   };
 
   const REFUSALS: readonly (readonly [string, (value: unknown) => unknown])[] = [

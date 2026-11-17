@@ -4,8 +4,13 @@
  * on every machine and the output diffs across deploys the way the HTML does.
  */
 
+// why: Sass's `FileImporter` is synchronous and `Bun.file().exists()` is async (and files-only);
+// Bun ships no path API.
 import { existsSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
+// why: `node:url` and not `Bun.fileURLToPath` ON PURPOSE — its browser polyfill exports neither
+// name, so `bun build --target=browser` cannot link this file: `scripts/browser-barrel.test.ts`
+// relies on that to prove the client barrel never reaches the build-time half.
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renderThrowable } from '@ultimat3/core';
 import type * as Sass from 'sass';
@@ -214,8 +219,8 @@ function unescapeName(name: string): string {
 
 /** The fix line for a stylesheet that names tokens `@ultimat3/ui/tokens` does not export. */
 const TOKEN_FIX =
-  "@ultimat3/ui/tokens exports functions and mixins — space(4), radius(md), role('surface-raised'), " +
-  'text(sm) — and no $variables';
+  "space(4), radius(md), role('surface-raised'), text(sm) — @ultimat3/ui/tokens exports functions " +
+  'and mixins and no $variables';
 
 /**
  * A leading byte-order mark or `@charset` rule: the encoding claim Sass writes at the head of any
@@ -352,7 +357,7 @@ export function compileStylesheet(file: string, source: string): CompiledStylesh
     const first = renderThrowable(error).split('\n')[0];
     throw new PrerenderFailedError(
       `${file} did not compile: ${first}`,
-      `edit ${file}: ${TOKEN_FIX}`,
+      `space(4)   // in ${file}: ${TOKEN_FIX}`,
     );
   }
   if (!isCssModule(file)) return { css, classes: {}, dependencies };

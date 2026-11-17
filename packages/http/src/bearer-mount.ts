@@ -1,12 +1,14 @@
 // A second door onto routes the app already projects: `Authorization: Bearer` on a prefix
-// (`/v1/*`), exposing a declared cut of them, per token. Built OVER existing `Route`s — the
-// handler, the policy, the idempotency and the input schema are the ones the `/api` route runs,
-// so there is no second projection of an action to drift from the first. What the mount adds is
-// the credential (only the bearer token authenticates here; a session cookie reaches nothing), the
-// cut (a primitive outside the caller's scopes answers 404, the way MCP answers an unknown tool),
-// and a per-token allowance with `RateLimit-*` and `Retry-After`, which replaces `default`. A route
-// path may be a `:param` template (an action's `http: { path: '/orders/:id/refund' }`): only the
-// PREFIX is parameter-free, and `/v1/orders/:id/refund` is matched by the router as any route is.
+// (`/v1/*`), exposing a declared cut of them, per token.
+//
+// Built OVER existing `Route`s — the handler, the policy, the idempotency and the input schema are
+// the ones the `/api` route runs, so there is no second projection of an action to drift from the
+// first. What the mount adds is the credential (only the bearer token authenticates here; a session
+// cookie reaches nothing), the cut (a primitive outside the caller's scopes answers 404, the way
+// MCP answers an unknown tool), and a per-token allowance with `RateLimit-*` and `Retry-After`,
+// which replaces `default`. A route path may be a `:param` template (an action's
+// `http: { path: '/orders/:id/refund' }`): only the PREFIX is parameter-free, and
+// `/v1/orders/:id/refund` is matched by the router as any route is.
 
 import type { Actor, Clock } from '@ultimat3/core';
 import {

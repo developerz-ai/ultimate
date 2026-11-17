@@ -38,7 +38,7 @@ describe('one status.yml', () => {
     expect(rest).toEqual([]);
     expect(finding?.code).toBe('X_PLAN_STATUS_INVALID');
     expect(finding?.cause).toContain('"done"');
-    expect(finding?.fix).toContain(`in ${PATH}`);
+    expect(finding?.fix).toContain(PATH);
     expect(finding?.fix).toContain('not_started | in_progress | blocked | complete | superseded');
   });
 
@@ -65,7 +65,7 @@ describe('one status.yml', () => {
       expect(findings.map((f) => f.code)).toEqual(['X_PLAN_STATUS_INVALID']);
       expect(findings[0]?.cause).toContain('slices');
       expect(findings[0]?.cause).toContain('not a list');
-      expect(findings[0]?.fix).toContain(`in ${PATH}`);
+      expect(findings[0]?.fix).toContain(PATH);
     }
   });
 

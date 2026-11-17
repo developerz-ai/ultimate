@@ -23,15 +23,18 @@ export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', '
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
-const LEVEL_WEIGHT = Object.freeze<Record<LogLevel, number>>({
-  trace: 10,
-  debug: 20,
-  info: 30,
-  warn: 40,
-  error: 50,
-  fatal: 60,
-  silent: 100,
-});
+// Null-prototype: a key that arrives untyped never answers an `Object.prototype` member.
+const LEVEL_WEIGHT = Object.freeze<Record<LogLevel, number>>(
+  Object.assign(Object.create(null), {
+    trace: 10,
+    debug: 20,
+    info: 30,
+    warn: 40,
+    error: 50,
+    fatal: 60,
+    silent: 100,
+  } satisfies Record<LogLevel, number>),
+);
 
 export interface Logger {
   readonly level: LogLevel;

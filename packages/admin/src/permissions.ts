@@ -3,6 +3,8 @@
 // data here (not a code path in a view) so the UI, the HTTP call, and the MCP tool read the
 // same table instead of each remembering the rule.
 
+import { assert, renderCauseValue } from '@ultimat3/core';
+
 export const ADMIN_READ = 'admin:read';
 export const ADMIN_WRITE = 'admin:write';
 export const ADMIN_DESTROY = 'admin:destroy';
@@ -52,13 +54,22 @@ export const ADMIN_OPERATION_RULES: Readonly<Record<AdminOperation, AdminPermiss
   delete: rule(ADMIN_DESTROY, true, 'delete'),
 };
 
+/** An operation arrives as data (a posted form, an MCP argument): a prototype member is refused. */
+const refuseOperation = (op: unknown): never => {
+  assert(
+    false,
+    `${renderCauseValue(op)} is not an admin operation (${ADMIN_OPERATIONS.join(', ')})`,
+    "ruleFor('list')   # or any of ADMIN_OPERATIONS from @ultimat3/admin",
+  );
+};
+
 export function ruleFor(op: AdminOperation): AdminPermissionRule {
-  return ADMIN_OPERATION_RULES[op];
+  return Object.hasOwn(ADMIN_OPERATION_RULES, op) ? ADMIN_OPERATION_RULES[op] : refuseOperation(op);
 }
 
 /** The admin-level permission an operation needs, before the per-entity one. */
 export function adminPermissionFor(op: AdminOperation): AdminPermission {
-  return ADMIN_OPERATION_RULES[op].permission;
+  return ruleFor(op).permission;
 }
 
 /** The per-entity permission, so `post:delete` and `admin:destroy` must BOTH hold. */
@@ -68,7 +79,7 @@ export function entityPermissionFor(entity: string, op: AdminOperation): string 
 }
 
 export function isDestructive(op: AdminOperation): boolean {
-  return ADMIN_OPERATION_RULES[op].destructive;
+  return ruleFor(op).destructive;
 }
 
 /**

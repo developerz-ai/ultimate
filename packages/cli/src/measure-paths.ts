@@ -1,8 +1,10 @@
-// Which URLs a route rendered only to WEIGH is rendered at. A route with no params is its own
-// path. A route with params is rendered at the paths its own `prerender()` lists — the same list a
-// static route writes files for — and one that lists none is not rendered at all: rendering
-// `/blog/:slug` with an empty `slug` failed the page's own input schema (`X_INPUT_INVALID`), and
-// that was filed as "could not be weighed", a failure of the app dressed as a gap in the build.
+// Which URLs a route rendered only to WEIGH is rendered at.
+//
+// A route with no params is its own path. A route with params is rendered at the paths its own
+// `prerender()` lists — the same list a static route writes files for — and one that lists none is
+// not rendered at all: rendering `/blog/:slug` with an empty `slug` failed the page's own input
+// schema (`X_INPUT_INVALID`), and that was filed as "could not be weighed", a failure of the app
+// dressed as a gap in the build.
 
 import type { PrerenderEntry, RouteEntry } from '@ultimat3/render';
 import { enumeratePrerenderEntries } from '@ultimat3/render/server';
@@ -42,7 +44,7 @@ export function paramsUndeclared(entry: RouteEntry, listed: boolean): Unmeasured
     reason: cause,
     code: 'X_BUDGET_PARAMS_UNDECLARED',
     cause,
-    fix: `add prerender: () => [{ ${example} }] to defineRoute in ${quoteArg(entry.file)}, then x build --target static`,
+    fix: `prerender: () => [{ ${example} }]   // on defineRoute in ${quoteArg(entry.file)}, then x build --target static`,
   };
 }
 

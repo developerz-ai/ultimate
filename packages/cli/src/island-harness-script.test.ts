@@ -175,7 +175,7 @@ describe('unit · the printed fix for an unstubbed request must be satisfiable',
       requests: ['GET /api/quota'],
       statesFile: 'apps/web/app/settings/settings.island.states.ts',
     });
-    const match = /match: '([^']+)'/.exec(error.fix)?.[1];
+    const match = /match: (['"])([^'"]+)\1/.exec(error.fix)?.[2];
     expect(match).toBeDefined();
     expect(isStubMatch(match as string)).toBe(true);
   });
@@ -192,7 +192,7 @@ describe('unit · the printed fix for an unstubbed request must be satisfiable',
       requests: ['WS ws://127.0.0.1:8788/_x/sync'],
       statesFile: 'apps/web/app/settings/settings.island.states.ts',
     });
-    const match = /match: '([^']+)'/.exec(error.fix)?.[1];
+    const match = /match: (['"])([^'"]+)\1/.exec(error.fix)?.[2];
     expect(match).toBeDefined();
     expect(isStubMatch(match as string)).toBe(false);
   });

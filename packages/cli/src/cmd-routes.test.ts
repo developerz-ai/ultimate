@@ -73,9 +73,7 @@ const contextFor = (argv: readonly string[]): CommandContext => ({
   args: parseArgs(argv, SPECS),
   cwd: root,
   // `x routes` reads registries; a subprocess from it is the bug, not a fixture.
-  runner: (command) => {
-    throw new Error(`x routes spawned ${command.join(' ')}`);
-  },
+  runner: (command) => expect.unreachable(`x routes spawned ${command.join(' ')}`),
   env: {},
   bunVersion: REQUIRED_BUN,
 });

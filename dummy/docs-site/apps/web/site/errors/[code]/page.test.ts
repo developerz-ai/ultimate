@@ -14,11 +14,12 @@ unitTest('every code is prerendered; a page carries its row cells and its sectio
   expect(view.meta.description?.startsWith('X_DB_DRIFT: ')).toBe(true);
   expect(view.text).toContain('Typical cause');
   expect(view.text).toContain('schema differs from migrations');
-  expect(view.html).toContain('href="/error-codes#entity-and-database"');
+  // The row's own page of the split reference: db's codes live on `/error-codes-db`.
+  expect(view.html).toContain('href="/error-codes-db"');
   expect(view.islands).toEqual([]);
 });
 
-unitTest('a code two sections describe shows both rows', async () => {
+unitTest('a code with two rows shows both', async () => {
   const both = await codePage('X_NOT_IMPLEMENTED');
   expect(both?.rows.length).toBeGreaterThan(1);
   const view = await renderRoute(page, {

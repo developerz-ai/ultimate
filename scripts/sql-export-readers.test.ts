@@ -127,10 +127,9 @@ describe('what counts as a reader', () => {
       unread: [{ pkg: 'packages/a', name: 'SQL_A_GET', at: 'packages/a/src/index.ts:1' }],
     });
     expect(finding?.code).toBe('X_SQL_EXPORT_UNREAD');
-    expect(finding?.fix?.startsWith('bun run sql-export-readers --json')).toBe(true);
-    expect(finding?.fix).toContain(
-      'deleting SQL_A_GET from the export list at packages/a/src/index.ts:1',
-    );
+    expect(finding?.fix).toStartWith('edit packages/a/src/index.ts:1 — delete SQL_A_GET');
+    expect(finding?.fix).toEndWith('then: bun run sql-export-readers --json');
+    expect(finding?.fix).toContain('delete SQL_A_GET from this export list');
   });
 
   test('no entry read is a refusal, never a clean answer', () => {

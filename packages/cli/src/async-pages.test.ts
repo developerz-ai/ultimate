@@ -29,7 +29,9 @@ describe('unit · an async Page with no load is X_ROUTE_ASYNC_PAGE', () => {
       'apps/web/app/inbox/page.tsx',
     ]);
     expect(findings[0]?.code).toBe('X_ROUTE_ASYNC_PAGE');
-    expect(findings[0]?.fix).toStartWith('in apps/web/app/feed/page.tsx: move each await in Page');
+    expect(findings[0]?.fix).toStartWith(
+      'export const load = (ctx) => …   // in apps/web/app/feed/page.tsx: move each await in Page',
+    );
   });
 
   test('a sync Page, a route with load, and a route with no component are not', () => {

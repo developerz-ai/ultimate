@@ -362,6 +362,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
 
   const teardown = async (reason: string, budget: DrainBudget): Promise<void> => {
     stopDispatching();
+    // info: lifecycle — once per scheduler stop, the line an operator reads a deploy's drain by.
     logger.info('jobs.scheduler.draining', { reason, dispatching: round !== undefined });
     try {
       // The round this stop races runs to the end first. Releasing the lease under a
@@ -382,7 +383,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
       if (!dispatched) {
         logger.warn('jobs.scheduler.drain-abandoned', {
           reason,
-          fix: 'raise the drain budget past a dispatch round — configureLifecycle({ deadlineMs: 60_000 }) — and set terminationGracePeriodSeconds to at least as many seconds',
+          fix: 'configureLifecycle({ deadlineMs: 60_000 })   // raise the drain budget past a dispatch round — and set terminationGracePeriodSeconds to at least as many seconds',
         });
       } else if (isLeader) {
         await leader.release();
@@ -449,6 +450,7 @@ export function jobScheduler(options: SchedulerOptions): Scheduler {
         ];
       }
       schedule();
+      // info: lifecycle — once per scheduler boot, with the task count it will fire.
       logger.info('jobs.scheduler.started', { tasks: (options.tasks ?? registeredTasks()).length });
     },
     stop,

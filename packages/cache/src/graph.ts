@@ -1,8 +1,9 @@
-// ONE invalidation graph, not three. Memoized values, LRU keys, Redis keys, ISR routes and
-// CDN paths all register their tag dependencies here — so `invalidates: [tag.post]` reaches
-// every one of them in a single hop. There is deliberately no exported constructor: a
-// second graph would be a second source of truth, which is how "the page is still stale"
-// bugs are born. Register into this one or you are not in the framework.
+// ONE invalidation graph, not three. Memoized values, LRU keys, Redis keys, ISR routes and CDN
+// paths all register their tag dependencies here — so `invalidates: [tag.post]` reaches every one
+// of them in a single hop. There is deliberately no exported constructor: a second graph would be a
+// second source of truth, which is how "the page is still stale" bugs are born.
+//
+// Register into this one or you are not in the framework.
 
 import type { CacheTag } from './tags';
 import { parseTag, serializeTag, serializeTags } from './tags';

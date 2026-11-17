@@ -1,12 +1,14 @@
 // Single responsibility: turning a provider's id token into claims this handshake is allowed to
-// believe. Every caller must say where its trust comes from: `keys: 'token-endpoint-tls'` is the
-// one channel OIDC Core 3.1.3.7 exempts from a signature check, and anything else — IdP-initiated
-// login, `response_mode=form_post`, back-channel logout, token exchange — passes a `JwksKeySource`
-// and gets the signature verified. The argument is required rather than defaulted because a
-// default is what silently makes the second door as trusting as the first.
+// believe.
+//
+// Every caller must say where its trust comes from: `keys: 'token-endpoint-tls'` is the one channel
+// OIDC Core 3.1.3.7 exempts from a signature check, and anything else — IdP-initiated login,
+// `response_mode=form_post`, back-channel logout, token exchange — passes a `JwksKeySource` and
+// gets the signature verified. The argument is required rather than defaulted because a default is
+// what silently makes the second door as trusting as the first.
 
 import type { Clock } from '@ultimat3/core';
-import { renderCauseValue, timingSafeEqual } from '@ultimat3/core';
+import { renderCauseValue, renderFixShellArg, timingSafeEqual } from '@ultimat3/core';
 import { decodeJwtSegment } from './json';
 import { type IdTokenKeys, verifyJwtSignature } from './jwks';
 import type { OAuthProvider, OAuthProviderId } from './oauth';
@@ -173,7 +175,7 @@ export async function verifyIdToken(input: VerifyIdTokenInput): Promise<IdTokenC
     throw oauthTokenInvalid(
       provider.id,
       'aud does not include the client id this handshake was started with',
-      `set ${provider.clientIdEnv} to the same client id beginOAuth() was called with`,
+      `export ${renderFixShellArg(provider.clientIdEnv, '<CLIENT_ID_ENV>')}=<client id>   # the same client id beginOAuth() was called with`,
     );
   }
 
@@ -193,7 +195,7 @@ export async function verifyIdToken(input: VerifyIdTokenInput): Promise<IdTokenC
     throw oauthTokenInvalid(
       provider.id,
       'the token is already expired',
-      `sync this host's clock (\`timedatectl status\`), then ${restartAt(provider.id)}`,
+      `timedatectl status   # sync this host's clock, then ${restartAt(provider.id)}`,
     );
   }
 
@@ -204,7 +206,7 @@ export async function verifyIdToken(input: VerifyIdTokenInput): Promise<IdTokenC
     throw oauthTokenInvalid(
       provider.id,
       'the token is not valid yet',
-      `sync this host's clock (\`timedatectl status\`), then ${restartAt(provider.id)}`,
+      `timedatectl status   # sync this host's clock, then ${restartAt(provider.id)}`,
     );
   }
 

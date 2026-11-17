@@ -313,7 +313,7 @@ export class PgReplicationStream {
           throw new ReplicationProtocolError({
             stage: 'stream',
             detail: `the walsender sent CopyData "${tag}", which is neither XLogData nor a keepalive`,
-            fix: 'upgrade this package — the server speaks a replication message it does not know',
+            fix: 'bun update @ultimat3/realtime   # the server speaks a replication message this version does not know',
           });
         }
       }
@@ -378,7 +378,7 @@ export class PgReplicationStream {
       throw new ReplicationProtocolError({
         stage: 'stream',
         detail: `a ${op} arrived outside a transaction`,
-        fix: 'upgrade this package — the pgoutput stream is framed differently than expected',
+        fix: 'bun update @ultimat3/realtime   # the pgoutput stream is framed differently than this version expects',
       });
     }
     // Counted for every row, selected or not, so the lsn depends on the WAL alone: narrowing the
@@ -409,7 +409,7 @@ export class PgReplicationStream {
       after,
       lsn,
       txid: transaction.xid.toString(10),
-      orgId: tenantOf(after ?? before),
+      orgId: tenantOf(relation.name, after ?? before),
       at: transaction.commitAt,
       write: transaction.write ?? null,
       ...(omitted.length === 0 ? {} : { omitted }),

@@ -12,6 +12,7 @@ import {
   uuidV7,
 } from '@ultimat3/core';
 import { type RecordProjection, recordProjection } from '@ultimat3/entity/record';
+import { tenantColumnOfTable, tenantIn } from './change-tenant';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { ChannelEntity } from './channel-decl';
 import type { Transport } from './fanout';
@@ -27,7 +28,11 @@ export interface RecordPublisherOptions {
    * the one delivery, exactly as it is in production with no replicator.
    */
   readonly entities: readonly ChannelEntity[];
-  /** Tenant column, hoisted into the subject as the replicator hoists it. Default `orgId`. */
+  /**
+   * @deprecated Ignored since the tenant-column security fix: a change's tenant is read off the
+   * column its entity declares (`$tenantColumn`), as every replicator reads it. Delete the
+   * option; it is removed in the next major.
+   */
   readonly tenantColumn?: string;
   readonly clock?: Clock;
 }
@@ -73,7 +78,6 @@ export function isPublishedTable(table: string): boolean {
 
 export function recordPublisher(options: RecordPublisherOptions): RecordPublisher {
   const clock = options.clock ?? systemClock;
-  const tenant = options.tenantColumn ?? 'orgId';
   const projections = new Map<string, RecordProjection>();
   for (const declared of options.entities) {
     const projection = recordProjection(declared);
@@ -112,7 +116,9 @@ export function recordPublisher(options: RecordPublisherOptions): RecordPublishe
     ) as LiveRow;
     // Refused here, before any row of the call is sequenced: a keyless row matches no record.
     projection.key(image);
-    const orgId = image[tenant];
+    // The entity's declared tenant column, as every producer reads it: a table declared
+    // `tenant: 'workspaceId'` published `orgId: null` and reached every org's channel subject.
+    const orgId = tenantIn(tenantColumnOfTable(projection.table), image);
     return {
       table: projection.table,
       op: op === 'delete' ? 'delete' : 'update',
@@ -122,7 +128,7 @@ export function recordPublisher(options: RecordPublisherOptions): RecordPublishe
       // live window is fed one.
       lsn: '',
       txid: producer,
-      orgId: typeof orgId === 'string' ? orgId : null,
+      orgId,
       at: clock.now().getTime(),
       write,
     };

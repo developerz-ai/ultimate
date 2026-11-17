@@ -27,7 +27,7 @@ export class CursorInvalidError extends UltimateError {
     super({
       code: 'X_CURSOR_INVALID',
       cause: `cursor rejected: ${reason}`,
-      fix: 'drop the cursor and request the first page again (after: null)',
+      fix: 'after: null   // drop the cursor and request the first page again',
       meta: { reason },
     });
   }
@@ -101,8 +101,10 @@ export function resetCursorSigning(): void {
 export function usesDevCursorSecret(options?: {
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
 }): boolean {
-  if (options?.env === undefined) return currentSecret() === DEV_CURSOR_SECRET;
-  return (configured || options.env[CURSOR_SECRET_KEY] || DEV_CURSOR_SECRET) === DEV_CURSOR_SECRET;
+  // `timingSafeEqual` though the other side is published: the left side is the live secret.
+  if (options?.env === undefined) return timingSafeEqual(currentSecret(), DEV_CURSOR_SECRET);
+  const secret = configured || options.env[CURSOR_SECRET_KEY] || DEV_CURSOR_SECRET;
+  return timingSafeEqual(secret, DEV_CURSOR_SECRET);
 }
 
 /** `base64url(payload).signature`. Opaque by contract: callers must never parse it. */

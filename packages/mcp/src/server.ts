@@ -192,7 +192,7 @@ export class McpServer {
         'a JSON-RPC batch (an array of requests) is not supported: send one request per message',
         new McpProtocolError({
           cause: 'the body is a JSON-RPC batch, and this server answers one request per message',
-          fix: `send one request per ${messageUnitOf(wire)} — a batch is never walked, so its calls did not run`,
+          fix: `{ jsonrpc: '2.0', id, method, params }   // one request per ${messageUnitOf(wire)} — a batch is never walked, so its calls did not run`,
         }),
       );
     }

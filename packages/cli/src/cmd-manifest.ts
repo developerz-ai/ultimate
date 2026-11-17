@@ -2,6 +2,7 @@
 // conventions are hand-written: nothing in this file writes prose, and nothing else in the app is
 // allowed to hand-edit these two files.
 
+// why: Bun ships no path API; `join` builds the host-separator path to the manifest file.
 import { join } from 'node:path';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';

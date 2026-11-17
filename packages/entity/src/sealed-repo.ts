@@ -1,7 +1,9 @@
 // Single responsibility: the ONE seam a sealed column crosses. A repository wrapped here seals the
 // sealed properties of every row and patch on the way in, opens them on the way out, and rewrites
 // or refuses every predicate that names one — so both drivers store ciphertext and neither knows
-// it. Both driver factories return through this, which is why the typed handle and a hand-held
+// it.
+//
+// Both driver factories return through this, which is why the typed handle and a hand-held
 // `postgresRepo()` cannot disagree. An entity with no sealed column gets its repository back as is.
 
 import { pageOf } from '@ultimat3/core';

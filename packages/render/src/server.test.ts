@@ -4,7 +4,7 @@
 // resolved before the plugin exists and caches a broken fragment transform for the whole process.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// `node:` and not `Bun.write`: Bun ships neither a temp-directory maker nor a recursive remove, and
+// why: `node:` and not `Bun.write`: Bun ships neither a temp-directory maker nor a recursive remove, and
 // this fixture needs both — a unique directory per run, deleted whole. `join` for the same reason.
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

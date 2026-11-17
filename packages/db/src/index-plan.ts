@@ -1,8 +1,10 @@
-// Single responsibility: which indexes an existing table gains, has rebuilt, or LOSES. Split out
-// of `generate.ts` along the seam `check-ddl.ts` and `index-ddl.ts` already drew — `generate.ts`
+// Single responsibility: which indexes an existing table gains, has rebuilt, or LOSES. Split out of
+// `generate.ts` along the seam `check-ddl.ts` and `index-ddl.ts` already drew — `generate.ts`
 // assembles a plan, `index-ddl.ts` writes the statements, and this file decides which of them go
-// in. `checkPlan` is its shape, deliberately: "what does the record hold that the declaration does
-// not" is one question, and a fourth spelling of it is the split axiom 1 refuses.
+// in.
+//
+// `checkPlan` is its shape, deliberately: "what does the record hold that the declaration does not"
+// is one question, and a fourth spelling of it is the split axiom 1 refuses.
 //
 // The removal arm is why this file exists. `diffTable` walked `declaredIndexes(entity)` and matched
 // by name, with no reverse pass, so an index the entities stopped declaring stayed on the database

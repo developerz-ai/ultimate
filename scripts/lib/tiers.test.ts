@@ -14,12 +14,15 @@ import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 import type { FloorViolation } from './tiers';
 import {
   ALL_PACKAGES,
+  allowedImportsFor,
   checkFloors,
+  checkTier,
   FLOOR_ABOVE,
   floorFindingFor,
   floorFor,
   SIDEWAYS_ALLOW,
   TIERS,
+  tierOf,
 } from './tiers';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
@@ -86,6 +89,21 @@ describe('unused sideways edges', () => {
   });
 });
 
+// A package name is data — a directory under `packages/` — and the tables are plain literals:
+// `ABOVE_TABLE['constructor']` answered `Object`, and `SIDEWAYS_ALLOW['toString']?.includes(…)`
+// called a function that is not there.
+describe('a package named like an Object.prototype member', () => {
+  test('is an unknown package, never a crash', () => {
+    for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(checkTier(name, 'core')).toEqual({ allowed: true, reason: 'lower-tier' });
+      expect(checkTier('core', name)).toEqual({ allowed: false, reason: 'unknown-package' });
+      expect(Number.isInteger(tierOf(name))).toBe(true);
+      expect(floorFor(name, ['core'])).toBe(1);
+      expect(allowedImportsFor(name)).toMatch(/^0-\d$/);
+    }
+  });
+});
+
 describe('floorFor', () => {
   test('is one above the highest tier the package reaches', () => {
     expect(floorFor('mail', ['core', 'jobs'])).toBe(4);
@@ -147,7 +165,7 @@ describe('floorFindingFor', () => {
     const finding = floorFindingFor({ package: 'pwa', tier: 4, floor: 2, fault: 'undeclared' });
     expect(finding.code).toBe('X_TIER_FLOOR_UNDECLARED');
     expect(finding.at).toBe('scripts/lib/tiers.ts');
-    expect(finding.fix).toContain('FLOOR_ABOVE in scripts/lib/tiers.ts');
+    expect(finding.fix).toStartWith("grep -n 'FLOOR_ABOVE' scripts/lib/tiers.ts   #");
     expect(finding.fix).toContain('move it to tier 2');
   });
 
@@ -157,7 +175,7 @@ describe('floorFindingFor', () => {
     // The edit AND the command that confirms it took: a fix line whose repair is a source change
     // still ends in something an agent can run and read (`X_DB_DRIFT`'s shape).
     expect(finding.fix).toBe(
-      'delete the "mail" row from FLOOR_ABOVE in scripts/lib/tiers.ts, then bun run boundaries --json',
+      `grep -n 'FLOOR_ABOVE' scripts/lib/tiers.ts   # delete its "mail" row, then: bun run boundaries --json`,
     );
   });
 });

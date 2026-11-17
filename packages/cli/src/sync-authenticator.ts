@@ -1,8 +1,9 @@
-// The app's HTTP authenticator, seen as the `sync` node's. Until this file `sync-node.ts` was
-// handed no `authenticate` by any host, so every socket the framework ever opened carried
-// `actorId: null` — and the channel guard, the live-query gate, the presence entry and the
-// per-tenant subscription cap all decided against an anonymous actor. Realtime was single-tenant
-// by wiring, not by design.
+// The app's HTTP authenticator, seen as the `sync` node's.
+//
+// Until this file `sync-node.ts` was handed no `authenticate` by any host, so every socket the
+// framework ever opened carried `actorId: null` — and the channel guard, the live-query gate, the
+// presence entry and the per-tenant subscription cap all decided against an anonymous actor.
+// Realtime was single-tenant by wiring, not by design.
 
 import type { Actor, Clock } from '@ultimat3/core';
 import { finiteCount, systemClock } from '@ultimat3/core';

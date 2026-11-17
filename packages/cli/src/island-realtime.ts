@@ -1,14 +1,17 @@
-// Realtime installed for the author, on exactly the islands that use it: an island whose own import
-// graph reaches `@ultimat3/realtime` is built from a virtual entry that first awaits the page
-// runtime (`island-runtime.ts`), then calls `installRealtime({ signal, cleanup })` with THIS
-// bundle's solid-js, then re-exports the island whole. Every other island pays nothing. An island
-// that reads the record store or the outbox also waits for the page's restore before it mounts
-// (#506); one that only follows the socket does not (`island-realtime-state.ts`).
+// Realtime installed for the author, on exactly the islands that use it: each is built from a
+// virtual entry that awaits the page runtime, installs realtime, then re-exports the island.
+//
+// An island qualifies when its own import graph reaches `@ultimat3/realtime`; its entry first
+// awaits the page runtime (`island-runtime.ts`), then calls `installRealtime({ signal, cleanup })`
+// with THIS bundle's solid-js, then re-exports the island whole. Every other island pays nothing.
+// An island that reads the record store or the outbox also waits for the page's restore before it
+// mounts (#506); one that only follows the socket does not (`island-realtime-state.ts`).
 
 // why: Bun ships no path API; the entry is joined to the root, the runtime named by its basename,
 // core's transport found beside the core module importing it.
 import { basename, dirname, join } from 'node:path';
 import type { BunPlugin } from 'bun';
+import { fileResult, serveRefusedPaths } from './island-plugin-path';
 import { followsOnly, type IslandRealtime } from './island-realtime-state';
 import { RUNTIME_CHUNK_SPECIFIER, type RuntimeChunk } from './island-runtime';
 import { firstInGraph } from './live-routes';
@@ -185,9 +188,9 @@ export function islandRealtimePlugin(
               }
             : undefined,
         );
-        build.onResolve({ filter: /^ultimate:island-core-transport$/ }, (args) => ({
-          path: args.importer.slice(TRANSPORT_MODULE.length),
-        }));
+        build.onResolve({ filter: /^ultimate:island-core-transport$/ }, (args) =>
+          fileResult(args.importer.slice(TRANSPORT_MODULE.length)),
+        );
       }
       build.onResolve({ filter: /^ultimate:island-entry:/ }, (args) => ({
         path: `entry:${args.path.slice(REALTIME_ISLAND_ENTRY.length)}`,
@@ -201,12 +204,12 @@ export function islandRealtimePlugin(
         path: 'restore',
         namespace: NAMESPACE,
       }));
-      build.onResolve({ filter: /^ultimate:island-module:/ }, (args) => ({
-        path: join(root, args.path.slice(MODULE.length)),
-      }));
+      build.onResolve({ filter: /^ultimate:island-module:/ }, (args) =>
+        fileResult(join(root, args.path.slice(MODULE.length))),
+      );
       // The wait is realtime's, from the copy the hooks are bundled from; the runtime chunk is
       // another file of this build's output, fetched by the browser and never bundled in.
-      build.onResolve({ filter: /^ultimate:island-page-wait$/ }, () => ({ path: runtime.wait }));
+      build.onResolve({ filter: /^ultimate:island-page-wait$/ }, () => fileResult(runtime.wait));
       build.onResolve({ filter: RUNTIME_CHUNK_SPECIFIER }, (args) => ({
         path: args.path,
         external: true,
@@ -214,7 +217,7 @@ export function islandRealtimePlugin(
       // Every bare `@ultimat3/realtime` in this build, the virtual install's included — a virtual
       // module has no directory to resolve from. The island's directory for all of them, which is
       // what the island itself would get.
-      build.onResolve({ filter: /^@ultimat3\/realtime$/ }, () => ({ path: runtime.realtime }));
+      build.onResolve({ filter: /^@ultimat3\/realtime$/ }, () => fileResult(runtime.realtime));
       build.onLoad({ filter: /.*/, namespace: NAMESPACE }, (args) => ({
         contents: args.path.startsWith('entry:')
           ? entrySource(
@@ -228,6 +231,8 @@ export function islandRealtimePlugin(
               : installSource(runtime.url),
         loader: 'js',
       }));
+      // A path `Bun.build` refuses is served through a re-export (`island-plugin-path.ts`).
+      serveRefusedPaths(build);
     },
   };
 }

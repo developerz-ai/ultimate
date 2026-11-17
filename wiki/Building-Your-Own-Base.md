@@ -198,6 +198,345 @@ The action is the app's (`apps/web/app/operators/actions/switch-operator.ts`), s
 any other — route, typed client, MCP tool, contract test. Nothing in the framework learns that a PIN
 exists, which is the point: the next app's PIN rules (length, rotation, which devices) are its own.
 
+The check itself, one file the action calls with the operator row it loaded:
+
+```ts
+// apps/web/shared/base/operator-pin.ts
+import {
+  type Auth,
+  type AuthSession,
+  createSession,
+  hashPassword,
+  type IssuedSession,
+  loginFailed,
+  sessionCookie,
+  verifyPassword,
+} from '@ultimat3/auth';
+
+/** The app's `operators` row: whose PIN, and its hash. Never `x_users.password_hash`. */
+export interface OperatorRow {
+  readonly userId: string;
+  readonly pinHash: string;
+}
+
+export interface OperatorSwitch {
+  readonly operatorId: string;
+  readonly pin: string;
+  /** `null` when no operator has that id — checked at the same cost as a wrong PIN. */
+  readonly operator: OperatorRow | null;
+  /** The device account's session, as `authenticate` resolved it. */
+  readonly device: Pick<AuthSession, 'userId' | 'absoluteExpiresAt'>;
+}
+
+/** Enrolment: the same KDF a password gets, so a leaked table is not 10 000 cheap guesses. */
+export const enrolPin = (pin: string): Promise<string> => hashPassword(pin);
+
+/**
+ * The PIN proves the operator; the answer is their session, capped at the device's, and the
+ * cookie line the response sets. The attempt is RESERVED before the KDF, per operator and per
+ * device: a fifth wrong PIN locks that pair (`X_ACCOUNT_LOCKED`), and every refusal before it is
+ * `loginFailed()` — one code whether the PIN was wrong or the operator does not exist.
+ */
+export async function switchOperator(
+  auth: Auth,
+  input: OperatorSwitch,
+): Promise<{ readonly issued: IssuedSession; readonly cookie: string }> {
+  const key = `pin:${input.operatorId}:${input.device.userId}`;
+  await auth.limiter.reserve(key);
+  const hash = input.operator?.pinHash ?? null;
+  const verdict = await verifyPassword({ hash, password: input.pin });
+  if (!verdict.ok || input.operator === null) throw loginFailed();
+  await auth.limiter.recordSuccess(key);
+  const issued = await createSession(auth.sessions, {
+    userId: input.operator.userId,
+    absoluteExpiresAt: input.device.absoluteExpiresAt,
+  });
+  return { issued, cookie: sessionCookie(issued.token, auth.sessions.policy) };
+}
+```
+
+The comparison is the KDF's, constant-time inside `Bun.password.verify`; a PIN is never hashed
+with a fast digest and compared with `timingSafeEqual`, because four digits under SHA-256 are
+reversed from a leaked table in milliseconds. The lockout is `Auth.limiter`, so a deployment that
+declared `rateLimit.scope: 'shared'` counts PIN guesses fleet-wide with no change here.
+
+## Recipe: billing
+
+Billing is **not** a package (axiom 8): a price list, a refund rule and a dunning schedule are a
+business's, and a framework that shipped one would ship the wrong one. It is one app file over
+three shipped primitives — `defineFlag` for entitlements, `webhookReceiver` for the payment
+provider's events, `Money` for prices.
+
+| Piece | Where it lives | What it calls |
+|---|---|---|
+| plans and prices | `PLANS`, a constant: `Money` is `{ minor, currency }`, never a float | `equals` from `@ultimat3/money` |
+| an entitlement | a **permanent** flag whose subject is the org's plan: `{ subjects: { plan: [...] } }` | `defineFlag`, `isEnabled(key, actor, { plan })` |
+| a comp, a trial, a grandfathered org | the same flag, its targeting moved by an operator — `orgs: ['org_…']` | `applyFlagSnapshot` |
+| the provider's event | a signed POST, verified over the exact bytes, enqueued, acknowledged | `webhookReceiver`, `verifyBodyHmac` |
+| the plan change | the receiver's job: the paid amount must equal the plan's price, then the app's table moves | `PlanStore.setPlan`, one `step.run` |
+
+```ts
+// apps/web/shared/base/billing.ts
+import type { Actor } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
+import { defineFlag, isEnabled } from '@ultimat3/flags';
+import { verifyBodyHmac } from '@ultimat3/http';
+import { webhookReceiver } from '@ultimat3/jobs';
+import { equals, type Money } from '@ultimat3/money';
+import { type JsonValue, parse, t } from '@ultimat3/schema';
+
+/** The price list is the app's. A price is integer minor units and a currency, never a float. */
+export const PLANS = {
+  free: { price: { minor: 0, currency: 'USD' } },
+  team: { price: { minor: 4_900, currency: 'USD' } },
+  scale: { price: { minor: 19_900, currency: 'USD' } },
+} as const satisfies Record<string, { readonly price: Money }>;
+
+const PLAN_IDS = ['free', 'team', 'scale'] as const satisfies readonly (keyof typeof PLANS)[];
+export type PlanId = (typeof PLAN_IDS)[number];
+
+/** An entitlement is a permanent flag, and the org's plan is the subject it targets. */
+export const entitlement = (name: string, description: string, plans: readonly PlanId[]) =>
+  defineFlag({
+    kind: 'permanent',
+    key: `entitlement.${name}`,
+    description,
+    targeting: { default: false, subjects: { plan: plans } },
+  });
+
+/** Synchronous, so a policy predicate asks it: `entitled('exports', actor, row.plan)`. */
+export const entitled = (name: string, actor: Actor | null, plan: PlanId): boolean =>
+  isEnabled(`entitlement.${name}`, actor, { plan });
+
+export const BillingEventMalformed = defineError({
+  code: 'X_BILLING_EVENT_MALFORMED',
+  title: 'a signed billing event is not JSON',
+  status: 422,
+  cause: 'the payment provider signed a body that does not parse as JSON',
+  fix: "x jobs list --name billing.events --json   # then compare the provider's event log",
+});
+
+export const BillingAmountMismatch = defineError<{ readonly plan: PlanId }>({
+  code: 'X_BILLING_AMOUNT_MISMATCH',
+  title: 'a paid amount is not the plan price',
+  offSocket: true,
+  retry: 'terminal',
+  cause: (p) => `the provider charged an amount for plan ${p.plan} that is not PLANS.${p.plan}.price`,
+  fix: (p) => `edit apps/web/shared/base/billing.ts: set PLANS.${p.plan}.price to what the provider charges`,
+});
+
+/** The event, as the provider signs it. Vendor-neutral here; an app maps its provider's shape. */
+const PlanChanged = t.object({
+  id: t.string,
+  type: t.literal('plan.changed'),
+  orgId: t.string,
+  plan: t.enumerated(...PLAN_IDS),
+  amount: t.money,
+});
+
+/** The app's own table. Idempotent on `eventId`: a redelivered event writes nothing twice. */
+export interface PlanStore {
+  setPlan(orgId: string, plan: PlanId, eventId: string): Promise<void>;
+}
+
+export interface BillingReceiverInit {
+  /** Read per delivery, never captured: a rotation is a list, and any of it verifies. */
+  readonly secret: () => string | readonly string[];
+  readonly plans: () => PlanStore;
+}
+
+/** POST `/hooks/billing`: verify the signature over the exact bytes, then queue the change. */
+export const billingReceiver = (init: BillingReceiverInit) =>
+  webhookReceiver({
+    name: 'billing.events',
+    path: '/hooks/billing',
+    tenant: (event) => event.orgId,
+    verify: (inbound) => {
+      const { text } = verifyBodyHmac({
+        bytes: inbound.bytes,
+        secret: init.secret(),
+        given: inbound.headers.get('x-billing-signature'),
+        encoding: 'hex',
+      });
+      let body: JsonValue;
+      try {
+        body = JSON.parse(text ?? '');
+      } catch {
+        throw new BillingEventMalformed();
+      }
+      // Refused here, before anything queues: a body that is not this event is a 422 to the sender.
+      const event = parse(PlanChanged, body);
+      return { eventId: event.id, orgId: event.orgId, topic: event.type, payload: body };
+    },
+    handle: async ({ eventId, payload, step }) => {
+      const change = parse(PlanChanged, payload);
+      if (!equals(change.amount, PLANS[change.plan].price)) {
+        throw new BillingAmountMismatch({ plan: change.plan });
+      }
+      await step.run('set-plan', () => init.plans().setPlan(change.orgId, change.plan, eventId));
+    },
+  });
+```
+
+Declare it once, beside the entitlements the app sells:
+
+| Call | Where |
+|---|---|
+| `export const exports = entitlement('exports', 'CSV and PDF exports', ['team', 'scale']);` | `apps/web/shared/base/entitlements.ts` |
+| `export const billingEvents = billingReceiver({ secret: () => (Bun.env['BILLING_WEBHOOK_SECRET'] ?? '').split(','), plans: () => planRepo });` | `apps/web/app/billing/jobs/billing-events.ts`, listed in `apps/web/api/index.ts`'s `jobs:` — where `x g webhook-receiver` puts one; the boot mounts its route |
+| `can('export:run', ({ actor, row }) => row !== null && entitled('exports', actor, row.plan))` | the policy on the export action — the org's plan is a row the action loads |
+
+The signature check is `verifyBodyHmac`: HMAC-SHA256 over the exact bytes, compared with core's
+`timingSafeEqual` under every secret of a rotation. A bad one is `X_WEBHOOK_SIGNATURE_INVALID`
+(401) and queues nothing; a redelivery while the job is live is deduped by `eventId`; after it
+settles the handler runs at least once, which is why `setPlan` is keyed on `eventId`. What a
+provider calls an event, a proration, a failed card: the app maps them in `verify` and `handle`.
+
+## Recipe: PDF assembly
+
+The framework prints; the app assembles. `pdf()` (`@ultimat3/scraping`) is a factory over
+`action`: it renders one of the app's **own routes** in Chrome and writes the bytes to a disk,
+gated by the action's policy. A document of many parts — a cover, line items, an appendix — is
+one route the app composes in HTML, page breaks in CSS (`break-before: page`), printed once.
+**No PDF merge ships**: two printed files are never concatenated; a pack is one route that renders
+every part. What the app's convention adds is one layout, one disk and one key scheme.
+
+```ts
+// apps/web/shared/base/document-pdf.ts
+import type { ActionPolicy } from '@ultimat3/action';
+import type { Actor } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core/page';
+import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import { type PdfLayout, type PdfRenderer, pdf } from '@ultimat3/scraping';
+import { disk } from '@ultimat3/storage';
+
+/** Every document this app prints: A4, one margin, page numbers in the footer — Chrome fills them. */
+export const HOUSE_LAYOUT: PdfLayout = {
+  format: 'a4',
+  marginMm: { top: 18, right: 16, bottom: 18, left: 16 },
+  printBackground: true,
+  footerHtml: '<span class="pageNumber"></span> / <span class="totalPages"></span>',
+};
+
+export const DocumentOrgRequired = defineError({
+  code: 'X_DOCUMENT_ORG_REQUIRED',
+  title: 'a document is printed for an organisation',
+  status: 403,
+  cause: 'the caller has no organisation, so the document has no tenant folder to land in',
+  fix: "can('<document>:print', ({ actor }) => actor?.orgId !== undefined)   # on the document's policy",
+});
+
+const orgOf = (actor: Actor): string => {
+  if (actor.orgId === undefined) throw new DocumentOrgRequired();
+  return actor.orgId;
+};
+
+interface DocumentDef<TInput extends StandardSchemaV1<unknown, { readonly id: string }>> {
+  /** The folder on the `documents` disk: `invoice`, `statement`. */
+  readonly kind: string;
+  readonly input: TInput;
+  readonly policy: ActionPolicy;
+  /** The app route that ASSEMBLES the document — its parts, in order, as HTML the app owns. */
+  route(input: InferOutput<TInput>): string;
+  /** Tests hand in a renderer; production prints through the shared Chrome. */
+  readonly renderer?: PdfRenderer | undefined;
+}
+
+/** A document is an action: HTTP, OpenAPI, MCP, `.job()` for a batch — and the same policy. */
+export const documentPdf = <TInput extends StandardSchemaV1<unknown, { readonly id: string }>>(
+  def: DocumentDef<TInput>,
+) =>
+  pdf({
+    input: def.input,
+    policy: def.policy,
+    route: ({ input }) => def.route(input),
+    key: ({ input, ctx }) => `${orgOf(ctx.actor)}/${def.kind}/${input.id}.pdf`,
+    storage: () => disk('documents'),
+    layout: HOUSE_LAYOUT,
+    renderer: def.renderer,
+  });
+```
+
+| Call | Answers |
+|---|---|
+| ``export const statementPdf = documentPdf({ kind: 'statement', input: t.object({ id: t.string }), policy: statementRead, route: ({ id }) => `/statements/${id}/print` })`` | `{ key: '<org>/statement/<id>.pdf', bytes, contentType }`, never the bytes |
+| `await statementPdf.job().enqueue(…)` per org at month end | the batch, on the worker, with the action's policy |
+
+The route is private, so `pdf()`'s `headers` option carries a short-lived token the app signs, and
+the browser sends it only to the route's own origin. Chrome is a runtime dependency of the image
+that prints (`CHROME_PATH`), and `chromePdfRenderer({ maxConcurrent })` bounds how many run.
+
+## Recipe: a named proxy pool
+
+`scrape({ egress })` (`@ultimat3/scraping`) names the exit **one run** leaves through, resolved in
+the worker. A pool — several exits under one name, a session kept on one of them — is the app's,
+because which provider, how many exits and what "sticky" means are business decisions.
+
+```ts
+// apps/web/shared/base/proxy-pool.ts
+import { defineError } from '@ultimat3/core/page';
+
+export const ProxyPoolEmpty = defineError<{ readonly variable: string }>({
+  code: 'X_PROXY_POOL_EMPTY',
+  title: 'a named proxy pool has no exit',
+  offSocket: true,
+  retry: 'terminal',
+  cause: (p) => `${p.variable} is unset or empty in the worker, so the pool has no exit to hand out`,
+  fix: (p) => `printf '%s' 'http://user:pass@exit-1.example:8080,http://user:pass@exit-2.example:8080' | x secrets set ${p.variable}`,
+});
+
+export interface ProxyPool<I> {
+  readonly name: string;
+  /** The secret holding the exits, comma-separated: `PROXY_POOL_<NAME>`. */
+  readonly variable: string;
+  /** For `scrape({ egress })`: the same subject always leaves through the same exit. */
+  egress(input: I): string;
+}
+
+/**
+ * `stickyBy` names the subject a site must see on one address — a connection, an account. Its
+ * hash picks the exit, so every worker agrees with no table. The exits are read per run, in the
+ * worker, so neither a URL nor its password ever rides the queue row.
+ */
+export function proxyPool<I>(name: string, stickyBy: (input: I) => string): ProxyPool<I> {
+  const variable = `PROXY_POOL_${name.toUpperCase().replaceAll('-', '_')}`;
+  return {
+    name,
+    variable,
+    egress(input) {
+      const exits = (Bun.env[variable] ?? '')
+        .split(',')
+        .map((exit) => exit.trim())
+        .filter((exit) => exit !== '');
+      const exit = exits[Number(Bun.hash.wyhash(stickyBy(input)) % BigInt(exits.length || 1))];
+      if (exit === undefined) throw new ProxyPoolEmpty({ variable });
+      return exit;
+    },
+  };
+}
+```
+
+| Call | Where |
+|---|---|
+| `export const residential = proxyPool<{ connectionId: string }>('residential', (input) => input.connectionId);` | `apps/web/shared/base/pools.ts` |
+| `scrape({ …, egress: residential.egress, concurrency: { key: (input) => input.connectionId, limit: 1 } })` | the scrape; the input carries the connection id, never an exit |
+| `printf '%s' '<exit>,<exit>' \| x secrets set PROXY_POOL_RESIDENTIAL` | once per environment |
+
+The exit's password is concealed in every artifact and log line the run writes, and an exit whose
+credential is also in the input is refused before the browser opens
+(`X_SCRAPE_EGRESS_IN_PAYLOAD`). Adding an exit moves some subjects to new addresses — the hash
+spreads over the list as it stands; a pool that must never move a subject keeps the assignment in
+the connection's own row, and `egress` reads that row instead.
+
+## Every recipe here runs
+
+`As of 2026-11-16`, each `ts` fence under a `Recipe:` heading is compiled by the gate
+(`scripts/wiki-fences.ts`) and **run**: `bun test ./scripts/base-recipes/` writes the fence to the
+path its first line names, in a scratch app, imports it and drives it — a signed event moving an
+entitlement, a document landing on its disk, a fifth wrong PIN locking, a subject keeping its exit.
+The gate's `unit` step runs them on every change, and `.github/workflows/tutorial-run.yml` on every
+push to `main` that touches this page.
+
 ## The honest limit
 
 **The registry cannot tell that an entity came from your factory, and that erasure is the feature.**

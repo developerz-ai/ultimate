@@ -162,10 +162,10 @@ x build --target docker
 ROLE=migrate <image>           # pre-deploy, must exit 0
 <roll web + sync>              # drain-aware; clients reconnect with backoff
 x build --target static        # independently, whenever copy changes
-x status --json                # build-ID distribution of connected clients — PLANNED
+x status --json                # the fleet: worker rows and each replica's /readyz
 ```
 
-`x status` is a **planned** command `As of 2026-08`: it is in the registry and exits `X_NOT_IMPLEMENTED` naming the closest shipped command, rather than a typo error. The rest of the checklist runs today.
+`x status` shipped `As of 2026-11-15` (`packages/cli/src/cmd-status.ts`): it reads the fleet — worker rows and each replica's `/readyz` — not connected clients. Every line of the checklist runs today.
 
 Rollback: redeploy the previous image tag.
 

@@ -1,8 +1,9 @@
-// The write in flight on the server: the digest of the idempotency key the request that is
-// running arrived with. `@ultimat3/action`'s HTTP projection opens the scope; the layers that turn
-// a committed row into a `records` frame read it — entity's row observer in-process, and the
-// Postgres driver, which writes it into the WAL for the replicator to find. Server-only: it rides
-// core's one `AsyncLocalStorage` seam, which a browser bundle does not have.
+// The write in flight on the server: the digest of the idempotency key the request that is running
+// arrived with. `@ultimat3/action`'s HTTP projection opens the scope; the layers that turn a
+// committed row into a `records` frame read it — entity's row observer in-process, and the Postgres
+// driver, which writes it into the WAL for the replicator to find.
+//
+// Server-only: it rides core's one `AsyncLocalStorage` seam, which a browser bundle does not have.
 
 import { asyncContext } from './async-context';
 import { isWriteDigest } from './write-digest';

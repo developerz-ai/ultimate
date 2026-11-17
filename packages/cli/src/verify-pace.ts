@@ -1,4 +1,6 @@
-// How much slower this machine runs the gate than the one its declared numbers were measured on.
+// How much slower this machine runs the gate than the one its declared numbers were measured
+// on, measured once per gate and applied to every declared deadline.
+//
 // Every deadline the gate declares — a step's (`verify-deadline.ts`), Bun's 5 s per test, a test's
 // own — was set against a 4-core CI runner, and on a 2-core 1.8 GHz box the same honest work runs
 // five to seven times longer: the gate failed there on the deadlines, never on the code. Measured

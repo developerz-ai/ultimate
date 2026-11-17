@@ -26,8 +26,14 @@ export interface RelayOptions extends OutboxDeps {
   /**
    * The longest gap once passes come back empty — the relay doubles its wait from `intervalMs` up
    * to this. Default `IDLE_POLL_CEILING_MS` (2 s), or `WOKEN_IDLE_POLL_CEILING_MS` (5 s) while
-   * `startQueueWake` has a proven `LISTEN`. It is the most a row another process committed waits
-   * for an idle relay when no notification reaches it.
+   * `startQueueWake` has a proven `LISTEN`. What a row another process committed waits for an
+   * idle relay, when no notification of its own reaches it:
+   *
+   * - declared: at most this — a rest is capped by it too (`restAfter`);
+   * - undeclared, a stage `NOTIFY_STAGED` silenced: at most the ceiling, because the relay never
+   *   rests while such a stage is in flight (its lock, `OUTBOX_STAGING_LOCK`);
+   * - undeclared, a notification LOST with a session that stayed up: up to `IDLE_REST_MAX_MS`
+   *   (60 s), the rest's own backstop. A lost session is caught within `REST_SLICE_MS`.
    */
   readonly idlePollMaxMs?: number;
   /**
@@ -187,7 +193,7 @@ export function outboxRelay(options: RelayOptions): OutboxRelay {
       const settled = await settleAllBy(pass === undefined ? [] : [pass], budget);
       if (!settled) {
         logger.warn('jobs.outbox.drain-abandoned', {
-          fix: 'raise the drain budget past one publish — configureLifecycle({ deadlineMs: 60_000 }) — and set terminationGracePeriodSeconds to at least as many seconds',
+          fix: 'configureLifecycle({ deadlineMs: 60_000 })   // raise the drain budget past one publish — and set terminationGracePeriodSeconds to at least as many seconds',
         });
       }
     } finally {

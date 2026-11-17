@@ -24,7 +24,7 @@ export function finite(name: string, value: number): number {
   if (!Number.isFinite(value)) {
     throw new MetricValueInvalidError({
       cause: `${name} was given ${String(value)}, which is not a finite number`,
-      fix: `guard the value at the call site: Number.isFinite(v) before recording into ${name}`,
+      fix: `Number.isFinite(v)   // guard the value at the call site before recording into ${name}`,
       meta: { metric: name, received: String(value) },
     });
   }

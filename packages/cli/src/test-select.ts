@@ -2,9 +2,9 @@
 // validation behind the type positional and `--sample`. Selection only — nothing here splits a
 // shard or spawns a process, so a wrong file list is always this file's bug and never a race.
 
-import { join } from 'node:path';
-// Bun ships no equivalent: `join` builds the host-separator path from the scan root to a hit.
+// why: Bun ships no path API: `join` builds the host-separator path from the scan root to a hit.
 // Sizing is Bun's own (`Bun.file().size`), so nothing here reaches for `node:fs`.
+import { join } from 'node:path';
 import { nearestName, renderFixShellArg } from '@ultimat3/core';
 import { TEST_TYPES } from '@ultimat3/testing';
 import { BadFlagError } from './errors';
@@ -108,7 +108,7 @@ export function readType(raw: string | undefined): TestType | undefined {
     flag: 'type',
     command: 'test',
     reason: `"${raw}" is not a test type (known: ${TEST_TYPES.join(', ')})`,
-    fix: suggestion === undefined ? `x test ${TEST_TYPES[0]}` : `x test ${suggestion}`,
+    fix: `x test ${renderFixShellArg(suggestion ?? TEST_TYPES[0], '<type>')}`,
   });
 }
 

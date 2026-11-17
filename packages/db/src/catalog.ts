@@ -1,8 +1,9 @@
 // Single responsibility: the SHAPE of a whole schema as the catalog holds it — every object kind
 // the schema dump renders, in Postgres' own spelling. Distinct from `SchemaDescription`
 // (`introspect.ts`) on purpose: that one is the entity vocabulary a snapshot is diffed in, and a
-// catalog spelling can never compare equal to a generated one. This one is only ever compared to
-// itself, which is why it may carry `pg_get_*def` text verbatim.
+// catalog spelling can never compare equal to a generated one.
+//
+// This one is only ever compared to itself, which is why it may carry `pg_get_*def` text verbatim.
 
 export interface CatalogExtension {
   readonly name: string;

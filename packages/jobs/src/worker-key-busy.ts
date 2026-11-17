@@ -61,6 +61,7 @@ export async function refuseKeyBusy(
     });
     return undefined;
   }
+  // info: a rare outcome — the declaration refused a second run of a busy key and the job failed by design.
   logger.info('jobs.attempt.refused', {
     workerId: options.workerId,
     job: claimed.name,

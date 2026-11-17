@@ -20,6 +20,7 @@ import {
 import type { Finding } from './log';
 import { git } from './release-due-git';
 import { MAX_UNTAGGED_SECTIONS, releasedVersions } from './release-tag-walk';
+import { headerOnly } from './template-header-only';
 
 export interface GuardRefreshOptions {
   readonly runner?: GitRunner;
@@ -134,7 +135,12 @@ async function changedPaths(
     ['git', 'diff', '--no-renames', '--name-only', ...refs, '--', `${GUARD_TEMPLATE_DIR}/`],
     { cwd: root },
   );
-  return diff.ok ? diff.output.split('\n').filter((line) => line.trim() !== '') : undefined;
+  if (!diff.ok) return undefined;
+  const changed: string[] = [];
+  for (const path of diff.output.split('\n').filter((line) => line.trim() !== '')) {
+    if (!(await headerOnly(root, refs, path, runner))) changed.push(path);
+  }
+  return changed;
 }
 
 /** The range as a reader names it: `31.4.0 → 31.4.1`, or `31.4.1 → [Unreleased]`. */

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+// why: mkdtemp/tmpdir/rm — Bun has no temp-directory or recursive-remove API, nor a path join.
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -37,7 +38,7 @@ const failure = async (run: () => Promise<unknown>): Promise<{ code: string; fix
   } catch (error) {
     return error as { code: string; fix: string };
   }
-  throw new Error('expected the branch to be refused');
+  return expect.unreachable('expected the branch to be refused');
 };
 
 describe('pgliteBranchDir', () => {

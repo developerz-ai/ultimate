@@ -185,7 +185,7 @@ describe('a declared live query is subscribable, per subscriber', () => {
     const second = await registry.subscribe({ socket: bob.socket, name: 'liveFeed', input: INPUT });
 
     if (first.frame.type !== 'snapshot' || second.frame.type !== 'snapshot') {
-      throw new Error('expected two snapshots');
+      expect.unreachable('expected two snapshots');
     }
     expect(first.frame.rows.map((row) => row.id)).toEqual(['p1']);
     expect(second.frame.rows.map((row) => row.id)).toEqual(['p2']);
@@ -238,7 +238,7 @@ describe('a declared live query is subscribable, per subscriber', () => {
     // Alice is not entitled to p2 and does not hold it, so there is nothing to say to her.
     expect(alice.ws.frames).toHaveLength(0);
     const frame = bob.ws.frames[0];
-    if (frame?.type !== 'patch') throw new Error('expected a patch frame for bob');
+    if (frame?.type !== 'patch') expect.unreachable('expected a patch frame for bob');
     // The content is the assertion that matters: a gate deciding from anything other than *this*
     // subscriber would deny bob his own row and turn the update into a delete he never earned.
     expect(frame.patches[0]).toMatchObject({ op: 'update', id: 'p2', row: { likes: 1 } });
@@ -261,7 +261,7 @@ describe('a declared live query is subscribable, per subscriber', () => {
     await registry.deliver(change({ ...owned, ownerId: 'carol' }, owned));
 
     const frame = alice.ws.frames[0];
-    if (frame?.type !== 'patch') throw new Error('expected a patch frame for alice');
+    if (frame?.type !== 'patch') expect.unreachable('expected a patch frame for alice');
     expect(frame.patches[0]).toMatchObject({ op: 'delete', id: 'p1' });
     // Bob never held it, so for him it is a drop rather than a delete — and neither of them is
     // told anything about the other's entitlement.
@@ -305,7 +305,7 @@ describe('a declared live query is subscribable, per subscriber', () => {
     // while the matcher patching them belongs to the first, so the rows say `p2` and every patch
     // is computed against a window that never held them.
     expect(builds).toBe(1);
-    if (first.frame.type !== 'snapshot') throw new Error('expected a snapshot');
+    if (first.frame.type !== 'snapshot') expect.unreachable('expected a snapshot');
     expect(first.frame.rows.map((row) => row.id)).toEqual(['p1']);
   });
 
@@ -325,7 +325,7 @@ describe('a declared live query is subscribable, per subscriber', () => {
     // The window is shared and re-read; the compile is not repeated. One build, two reads.
     expect(builds).toBe(1);
     expect(reads).toBe(2);
-    if (second.frame.type !== 'snapshot') throw new Error('expected a snapshot');
+    if (second.frame.type !== 'snapshot') expect.unreachable('expected a snapshot');
     expect(second.frame.rows.map((row) => row.id)).toEqual(['p1']);
     // A different input is a different query id, and that one does compile — the dedup is per
     // `(query, input)`, never a single source stretched over every argument a client sends.
@@ -401,7 +401,7 @@ describe('a declared live query is subscribable, per subscriber', () => {
       input: INPUT,
     });
 
-    if (result.frame.type !== 'snapshot') throw new Error('expected a snapshot');
+    if (result.frame.type !== 'snapshot') expect.unreachable('expected a snapshot');
     expect(result.frame.rows.map((row) => row.id)).toEqual(['p1']);
     expect(registry.rowsDenied).toBe(1);
     expect(events).toEqual([
@@ -424,7 +424,7 @@ describe('a declared live query is subscribable, per subscriber', () => {
       input: INPUT,
     });
 
-    if (result.frame.type !== 'snapshot') throw new Error('expected a snapshot');
+    if (result.frame.type !== 'snapshot') expect.unreachable('expected a snapshot');
     expect(result.frame.entity).toBe('posts');
     expect(result.frame.entity).toBe(change(ROWS[0] as FeedRow, null).table);
   });
@@ -442,7 +442,7 @@ describe('a declared live query is subscribable, per subscriber', () => {
       input: INPUT,
     });
 
-    if (result.frame.type !== 'snapshot') throw new Error('expected a snapshot');
+    if (result.frame.type !== 'snapshot') expect.unreachable('expected a snapshot');
     expect(result.frame.entity).toBeUndefined();
   });
 });

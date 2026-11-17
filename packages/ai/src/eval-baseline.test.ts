@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp and no recursive remove; each test needs a throwaway directory.
 import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive; Bun.write takes a path already joined.
 import { join } from 'node:path';
 import { resetActions } from '@ultimat3/action';
 import { resetAgents } from './agent-facts';
@@ -47,14 +50,15 @@ describe('unit · where a baseline lives', () => {
 
     // A cwd-relative path resolves differently depending on where the suite started, which is
     // how a gate silently stops gating — so it is refused with the one form that always works.
+    let thrown: { code?: unknown; fix?: unknown } | undefined;
     try {
       baselinePath('./x.baseline.json', 'summarize');
-      throw new Error('expected a refusal');
     } catch (error) {
-      const thrown = error as { code?: unknown; fix?: unknown };
-      expect(thrown.code).toBe('X_EVAL_BASELINE_MISSING');
-      expect(String(thrown.fix)).toContain("import.meta.resolve('./x.baseline.json')");
+      thrown = error as { code?: unknown; fix?: unknown };
     }
+    if (thrown === undefined) return expect.unreachable('expected a refusal');
+    expect(thrown.code).toBe('X_EVAL_BASELINE_MISSING');
+    expect(String(thrown.fix)).toContain("import.meta.resolve('./x.baseline.json')");
   });
 });
 

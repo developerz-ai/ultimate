@@ -58,9 +58,13 @@ export function renderedChanges(
   base: Readonly<Record<string, string>>,
   now: Readonly<Record<string, string>>,
 ): readonly string[] {
+  // Only variants the tag already rendered: a shape added since has no app on it to move, so its
+  // files owe no codemod (sweep 9 added five shapes, and every one of their files read as changed).
+  const variantOf = (key: string): string => key.slice(0, key.indexOf(':'));
+  const known = new Set(Object.keys(base).map(variantOf));
   const keys = new Set([...Object.keys(base), ...Object.keys(now)]);
   const paths = [...keys]
-    .filter((key) => base[key] !== now[key])
+    .filter((key) => known.has(variantOf(key)) && base[key] !== now[key])
     .map((key) => key.slice(key.indexOf(':') + 1));
   return [...new Set(paths)].sort();
 }

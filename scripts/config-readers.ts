@@ -40,6 +40,8 @@
 //   bun run scripts/config-readers.ts [--json]
 //   bun run scripts/config-readers.ts --unpin <leaf>[,<leaf>]   # shrink either ratchet
 
+import { quoteArg } from '../packages/cli/src/shell-quote';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { flagList, parseScriptArgs } from './lib/args';
 import type { AppSource } from './lib/config-app-readers';
 import { appClaimGaps, configAppSources } from './lib/config-app-readers';
@@ -204,7 +206,7 @@ export function checkConfigReaders(input: ConfigReaderInput): readonly ConfigRea
 const unreadFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_KEY_UNREAD',
   cause: `${CONFIG_FILE} declares ${gap.leaf} and no file in packages/*/src reads it — an app that sets it is setting a switch with no wire, exactly as jobs.driver, realtime.heartbeatMs and database.urlEnv were`,
-  fix: `delete ${gap.leaf} from ${CONFIG_FILE} and from defaults(), or wire it and prove the read; to keep it deliberately, add it to CONFIG_READER_PINS in ${CONFIG_PINS_FILE} with the sentence saying who reads it`,
+  fix: `grep -n ${quoteArg(gap.leaf.split('.').at(-1) ?? gap.leaf)} ${CONFIG_FILE}   # delete ${gap.leaf} there and from defaults(), or wire it and prove the read, then: bun run scripts/config-readers.ts --json; to keep it deliberately, add it to CONFIG_READER_PINS in ${CONFIG_PINS_FILE} with the sentence saying who reads it`,
   at: CONFIG_FILE,
 });
 
@@ -217,30 +219,33 @@ const unreadFinding = (gap: ConfigReaderGap): Finding => ({
 const ambiguousFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_KEY_READER_AMBIGUOUS',
   cause: `${String(gap.readers ?? 0)} files in packages/*/src match the bare name "${gap.leaf.split('.').at(-1) ?? ''}" and none of them is in packages/${owningPackage(gap.leaf) ?? '?'}/, and no file spells the qualified ${gap.leaf} — ${(gap.colliding ?? []).join(', ')} match on unrelated properties, so this key has no evidence of a reader at all`,
-  fix: `read ${gap.leaf} through its section in packages/${owningPackage(gap.leaf) ?? '?'}/src so the qualified path appears in source, or delete it from ${CONFIG_FILE} and from defaults(); to keep it deliberately, add it to CONFIG_AMBIGUOUS_PINS in ${CONFIG_PINS_FILE} with the sentence naming the reader`,
+  fix: `grep -n ${quoteArg(gap.leaf.split('.').at(-1) ?? gap.leaf)} ${CONFIG_FILE}   # read ${gap.leaf} through its section in packages/${owningPackage(gap.leaf) ?? '?'}/src so the qualified path appears in source, or delete it there and from defaults(), then: bun run scripts/config-readers.ts --json; to keep it deliberately, add it to CONFIG_AMBIGUOUS_PINS in ${CONFIG_PINS_FILE} with the sentence naming the reader`,
   at: CONFIG_FILE,
 });
 
-const STALE_CAUSE: Readonly<Record<StaleCause, (gap: ConfigReaderGap) => string>> = {
-  'key-deleted': (gap) =>
-    `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and ${CONFIG_FILE} no longer declares it — the pin outlived its key, so it records a debt that cannot come due`,
-  'now-read': (gap) =>
-    `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and now has a reader — the pin would let the next dead key in beside it`,
-  'now-qualified': (gap) =>
-    `${gap.leaf} is pinned as a key whose bare-name readers are not evidence ("${gap.reason ?? ''}") and a file now spells the qualified ${gap.leaf}, or one of its own package's files reads it — the doubt is settled and the row would excuse the next collision for free`,
-};
+const STALE_CAUSE: Readonly<Record<StaleCause, (gap: ConfigReaderGap) => string>> = Object.assign(
+  Object.create(null),
+  {
+    'key-deleted': (gap) =>
+      `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and ${CONFIG_FILE} no longer declares it — the pin outlived its key, so it records a debt that cannot come due`,
+    'now-read': (gap) =>
+      `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and now has a reader — the pin would let the next dead key in beside it`,
+    'now-qualified': (gap) =>
+      `${gap.leaf} is pinned as a key whose bare-name readers are not evidence ("${gap.reason ?? ''}") and a file now spells the qualified ${gap.leaf}, or one of its own package's files reads it — the doubt is settled and the row would excuse the next collision for free`,
+  } satisfies Record<StaleCause, (gap: ConfigReaderGap) => string>,
+);
 
 const staleFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_READER_PIN_STALE',
   cause: STALE_CAUSE[gap.stale ?? 'now-read'](gap),
-  fix: `bun run scripts/config-readers.ts --unpin ${gap.leaf}`,
+  fix: `bun run scripts/config-readers.ts --unpin ${renderFixShellArg(gap.leaf, '<key>')}`,
   at: CONFIG_PINS_FILE,
 });
 
 const unexplainedFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_READER_PIN_UNEXPLAINED',
   cause: `${gap.leaf} is pinned in ${gap.reason ?? CONFIG_PINS_FILE} with a blank reason, so nothing records who reads it — and the pin holds nothing, which is what a row with no sentence has always been worth`,
-  fix: `write who reads ${gap.leaf} — a file under packages/, or a surface outside this repo — in ${CONFIG_PINS_FILE}; or delete ${gap.leaf} from ${CONFIG_FILE} and from defaults()`,
+  fix: `grep -n ${renderFixShellArg(gap.leaf, '<key>')} ${CONFIG_PINS_FILE}   # write who reads it in that row — a file under packages/, or a surface outside this repo; or delete ${gap.leaf} from ${CONFIG_FILE} and from defaults()`,
   at: CONFIG_PINS_FILE,
 });
 
@@ -254,18 +259,19 @@ const appUnreadFinding = (gap: ConfigReaderGap): Finding => ({
 const unscannedFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_READERS_UNSCANNED',
   cause: `nothing was read for ${gap.leaf}, so every key reports a reader and the ratchet enforces nothing — a glob or an interface name that matches nothing reads exactly like a wired config`,
-  fix: `check that ${CONFIG_FILE} still declares ${ROOT_INTERFACE}, then bun run scripts/config-readers.ts --json`,
+  fix: `grep -n 'interface ${ROOT_INTERFACE}' ${CONFIG_FILE}   # it must still declare it; then: bun run scripts/config-readers.ts --json`,
   at: CONFIG_FILE,
 });
 
-const FINDINGS: Readonly<Record<ConfigReaderGapKind, (gap: ConfigReaderGap) => Finding>> = {
-  unread: unreadFinding,
-  ambiguous: ambiguousFinding,
-  stale: staleFinding,
-  unscanned: unscannedFinding,
-  unexplained: unexplainedFinding,
-  'app-unread': appUnreadFinding,
-};
+const FINDINGS: Readonly<Record<ConfigReaderGapKind, (gap: ConfigReaderGap) => Finding>> =
+  Object.assign(Object.create(null), {
+    unread: unreadFinding,
+    ambiguous: ambiguousFinding,
+    stale: staleFinding,
+    unscanned: unscannedFinding,
+    unexplained: unexplainedFinding,
+    'app-unread': appUnreadFinding,
+  } satisfies Record<ConfigReaderGapKind, (gap: ConfigReaderGap) => Finding>);
 
 export const configReaderFindingFor = (gap: ConfigReaderGap): Finding => FINDINGS[gap.kind](gap);
 

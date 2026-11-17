@@ -4,7 +4,7 @@
 // this is that something, keyed on env rather than a config field so one image deploys everywhere.
 
 import type { Clock } from '@ultimat3/core';
-import { ConfigInvalidError } from '@ultimat3/core';
+import { ConfigInvalidError, renderFixShellArg } from '@ultimat3/core';
 import type { AdvisoryLock } from './advisory-lock';
 import { memoryAdvisoryLock } from './advisory-lock';
 import type { ChangeFeed } from './changefeed';
@@ -84,7 +84,9 @@ function assertSameDatabase(replicationUrl: string, databaseUrl: string): void {
       `REPLICATION_URL names ${replication.host}:${replication.port}/${replication.database} but ` +
       `DATABASE_URL names ${application.host}:${application.port}/${application.database} — the ` +
       'feed would decode a WAL the app never writes to',
-    fix: 'point REPLICATION_URL at the same host, port and database as DATABASE_URL, changing only the role',
+    // DATABASE_URL's own host, port and database: the one place the replication URL may differ is
+    // the role, so the paste carries every part but the credentials.
+    fix: `export REPLICATION_URL=postgres://<replication-role>:<password>@${renderFixShellArg(application.host, '<host>')}:${renderFixShellArg(String(application.port), '<port>')}/${renderFixShellArg(application.database, '<db>')}   # DATABASE_URL's host, port and database, only the role changed`,
     meta: { REPLICATION_URL: replication.database, DATABASE_URL: application.database },
   });
 }

@@ -21,7 +21,7 @@ export class McpGroupUnknownError extends UltimateError {
     super({
       code: 'X_MCP_GROUP_UNKNOWN',
       cause: `groups["${input.group}"] names "${input.name}", which this server does not project (projected: ${projected})`,
-      fix: `in defineAppMcp, spell it as one of the projected names above — or drop "${input.name}" from groups["${input.group}"].tools`,
+      fix: `groups: { '${input.group}': { description, tools: ['<a projected name>'] } }   // in defineAppMcp: spell "${input.name}" as one of the projected names above — or drop it`,
     });
     this.projected = input.projected;
   }
@@ -39,7 +39,7 @@ export class McpGroupConflictError extends UltimateError {
     super({
       code: 'X_MCP_GROUP_CONFLICT',
       cause: `tool "${input.name}" is listed in two groups ("${input.groups[0]}" and "${input.groups[1]}"); a tool belongs to one resource`,
-      fix: `in defineAppMcp, keep "${input.name}" in the one group an agent should find it under, and remove the other entry`,
+      fix: `groups: { '${input.groups[0]}': { description, tools: ['${input.name}'] } }   // in defineAppMcp: the one group an agent should find "${input.name}" under — remove it from '${input.groups[1]}', or keep it there and remove this entry`,
     });
     this.groups = input.groups;
   }
@@ -62,7 +62,7 @@ export class McpSurfaceInvalidError extends UltimateError {
     super({
       code: 'X_MCP_SURFACE_INVALID',
       cause: input.cause,
-      fix: "in defineAppMcp, declare groups: { <resource>: { description, tools: [...] } } together with surface: 'meta' (or surface: (caller) => 'meta' | 'flat'), or drop both",
+      fix: "surface: 'meta', groups: { posts: { description, tools: [...] } }   // together in defineAppMcp (or surface: (caller) => 'meta' | 'flat') — or drop both",
     });
   }
 }

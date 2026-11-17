@@ -1,7 +1,8 @@
-// The `'meta-split'` surface's dispatchers: `read_resource`, `write_resource`, `delete_resource`
-// in place of the one `manage_resource`, each picked from the action's declared effect. A client
-// decides whether to ask its user from a TOOL's annotations alone, and a directory refuses a tool
-// that both reads and writes — so the split is by tool, never by a flag inside the envelope.
+// The `'meta-split'` surface's dispatchers: `read_resource`, `write_resource`, `delete_resource` in
+// place of the one `manage_resource`, each picked from the action's declared effect.
+//
+// A client decides whether to ask its user from a TOOL's annotations alone, and a directory refuses
+// a tool that both reads and writes — so the split is by tool, never by a flag inside the envelope.
 // Catalog and boot check here; the dispatch is `meta-split-call.ts`, on the shared path.
 
 import type { McpEffect } from '@ultimat3/core';

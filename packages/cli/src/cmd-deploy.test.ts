@@ -116,9 +116,7 @@ const contextFor = (argv: readonly string[], cwd: string): CommandContext => ({
   cwd,
   // A refused `--method` must never reach a subprocess, and a `--dry-run` never does either: a
   // call here is the failure, not a fixture.
-  runner: (command) => {
-    throw new Error(`x deploy spawned ${command.join(' ')}`);
-  },
+  runner: (command) => expect.unreachable(`x deploy spawned ${command.join(' ')}`),
   env: {},
   bunVersion: REQUIRED_BUN,
 });

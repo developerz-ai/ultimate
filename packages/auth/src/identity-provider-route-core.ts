@@ -8,6 +8,7 @@ import {
   isUltimateError,
   logger,
   renderFixShellArg,
+  trimTrailingSlashes,
   type UltimateError,
 } from '@ultimat3/core';
 import type { Auth } from './auth';
@@ -134,7 +135,7 @@ function origin(options: SignInRouteOptions): string {
       meta: { key: 'APP_URL' },
     });
   }
-  return declared.replace(/\/+$/, '');
+  return trimTrailingSlashes(declared);
 }
 
 /**

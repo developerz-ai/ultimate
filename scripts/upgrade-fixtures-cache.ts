@@ -6,6 +6,7 @@
 import { readdirSync, renameSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import { ScriptError } from './lib/script-error';
 import { SCOPE } from './upgrade-fixtures-packument';
 
@@ -25,7 +26,7 @@ export function adoptInto(from: string, to: string): string {
       throw new ScriptError({
         code: 'X_UPGRADE_FIXTURE_UNBUILT',
         cause: `the scaffold could not be moved into the cache at ${to} (${code})`,
-        fix: `ls -ld ${join(to, '..')}`,
+        fix: `ls -ld ${quoteArg(join(to, '..'))}`,
       });
     }
     rmSync(from, { recursive: true, force: true });

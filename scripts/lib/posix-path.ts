@@ -5,6 +5,7 @@
 // The LEAF, never the `@ultimat3/cli` barrel: these scripts must run while a package is mid-edit,
 // and one implementation of the `/` spelling serves the CLI and the gate scripts alike.
 import { posixRelative, toPosix } from '../../packages/cli/src/posix-path';
+import { trimTrailingSlashes } from '../../packages/core/src/trailing-slashes';
 
 export { posixRelative, toPosix };
 
@@ -14,7 +15,7 @@ export { posixRelative, toPosix };
  * side was spelt with.
  */
 export const insideRoot = (root: string, path: string): string | undefined => {
-  const base = toPosix(root).replace(/\/+$/, '');
+  const base = trimTrailingSlashes(toPosix(root));
   const full = toPosix(path);
   return full.startsWith(`${base}/`) ? full.slice(base.length + 1) : undefined;
 };

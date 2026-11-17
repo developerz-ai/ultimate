@@ -136,6 +136,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
       logLost(undefined, 'not-ours');
       return;
     }
+    // info: a rare outcome — an operator cancelled a running job, and this is the worker letting it go.
     logger.info('jobs.lease.cancelled', {
       workerId,
       job: claimed.name,

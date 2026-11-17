@@ -3,7 +3,7 @@
 // the envelope comes from `@ultimat3/core`; this file owns the terminal, the temporary plaintext
 // buffer, and the `.gitignore` rule that keeps the master key out of the repository.
 
-// Bun ships no temp-directory primitive and no path join. `rmSync` is the synchronous half: a
+// why: Bun ships no temp-directory primitive and no path join. `rmSync` is the synchronous half: a
 // signal handler that awaited would be racing the default action it is trying to beat.
 import { rmSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';

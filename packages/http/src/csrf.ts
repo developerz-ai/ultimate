@@ -1,9 +1,11 @@
-// Whether an unsafe request a BROWSER sent — with the session cookie, or to obtain one — came
-// from somewhere allowed to make it. CORS does not answer this: `application/x-www-form-urlencoded` is a CORS-simple content
-// type, so `<form method="post">` on evil.test is SENT and EXECUTED with the session cookie
-// attached — `cors.origins: []` only stops the attacker reading the reply, long after the refund
-// went through. `setRedirect` exists so those form posts work without JS, which makes them a
-// first-class surface here rather than a legacy one.
+// Whether an unsafe request a BROWSER sent — with the session cookie, or to obtain one — came from
+// somewhere allowed to make it.
+//
+// CORS does not answer this: `application/x-www-form-urlencoded` is a CORS-simple content type, so
+// `<form method="post">` on evil.test is SENT and EXECUTED with the session cookie attached —
+// `cors.origins: []` only stops the attacker reading the reply, long after the refund went through.
+// `setRedirect` exists so those form posts work without JS, which makes them a first-class surface
+// here rather than a legacy one.
 
 import { peerAddressClass, proveSameOrigin, renderFixShellArg } from '@ultimat3/core';
 import type { CorsConfig } from './cors';
@@ -125,7 +127,7 @@ export const csrfBlocked = (
     : new HttpError({
         code: 'X_CSRF_BLOCKED',
         cause: `${pathname} refused a write it could not show came from this app: ${reason}`,
-        fix: "call it with an Authorization: Bearer token instead of the session cookie, add the calling origin to configureHttp({ cors: { origins } }), or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
+        fix: "configureHttp({ cors: { origins: ['<the calling origin>'] } })   // or call it with an Authorization: Bearer token instead of the session cookie, or configureHttp({ csrf: { mode: 'off' } }) if this app has no cookie session at all",
       });
 
 /**

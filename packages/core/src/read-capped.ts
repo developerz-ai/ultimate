@@ -1,8 +1,10 @@
 // Single responsibility: reading a request body through a COUNTING reader, so a payload past the
-// cap is never held in full. It lives in core because two transports need the identical guarantee
-// and cannot share it any other way: `@ultimat3/http` (tier 2) owns `bodyLimitBytes`, and
-// `@ultimat3/mcp` (tier 4) serves a bare `Request` that never passes through http's pipeline —
-// `await request.json()` there was governed only by Bun's 128 MiB default.
+// cap is never held in full.
+//
+// It lives in core because two transports need the identical guarantee and cannot share it any
+// other way: `@ultimat3/http` (tier 2) owns `bodyLimitBytes`, and `@ultimat3/mcp` (tier 4) serves a
+// bare `Request` that never passes through http's pipeline — `await request.json()` there was
+// governed only by Bun's 128 MiB default.
 
 import { assert } from './assert';
 

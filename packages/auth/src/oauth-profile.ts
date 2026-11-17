@@ -3,7 +3,7 @@
 // when there is not. `emailVerified` is carried honestly rather than assumed — it is what
 // decides whether this login may attach itself to an existing account by address.
 
-import { logger, renderFixShellArg, renderThrowable } from '@ultimat3/core';
+import { logger, renderFixLiteral, renderFixShellArg, renderThrowable } from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
 import { idTokenEmailVerified, isVerifiedFlag } from './id-token';
 import { isRecord } from './json';
@@ -161,7 +161,7 @@ export async function userinfoBody(
       provider,
       stage: 'userinfo',
       detail: `${provider} publishes no userinfo endpoint and its id token carried no identity`,
-      fix: `request the "email" scope for ${provider} in beginOAuth(), then ${restartAt(provider)}`,
+      fix: `beginOAuth({ provider: ${renderFixLiteral(provider, "'<id>'")}, clientId, redirectUri, scopes: ['email', ...providerFor(${renderFixLiteral(provider, "'<id>'")}).scopes] })   // request the email scope, then ${restartAt(provider)}`,
     });
   }
 
@@ -172,7 +172,7 @@ export async function userinfoBody(
       stage: 'userinfo',
       detail: result.detail,
       status: result.status,
-      fix: `confirm the ${provider} app still grants ${config.scopes.join(' ')}, then ${restartAt(provider)}`,
+      fix: `providerFor(${renderFixLiteral(provider, "'<id>'")}).scopes   // confirm the ${provider} app still grants each one, then ${restartAt(provider)}`,
     });
   }
   if (!isRecord(result.body)) {
@@ -180,7 +180,7 @@ export async function userinfoBody(
       provider,
       stage: 'userinfo',
       detail: 'the userinfo endpoint answered 200 with a body that is not a JSON object',
-      fix: `confirm ${url} is the provider's real userinfo endpoint and not a proxy`,
+      fix: `curl -sS -m 5 -H 'authorization: Bearer <access token>' ${renderFixShellArg(url, '<the provider userinfo endpoint>')}   # the real userinfo endpoint answers a JSON object; HTML means a proxy or a login page`,
     });
   }
   return result.body;
@@ -212,7 +212,7 @@ async function fromUserInfo(
       provider,
       stage: 'userinfo',
       detail: 'the profile carried no stable account id',
-      fix: `confirm the ${provider} app requests ${config.scopes.join(' ')}, then ${restartAt(provider)}`,
+      fix: `providerFor(${renderFixLiteral(provider, "'<id>'")}).scopes   // confirm the ${provider} app requests each one, then ${restartAt(provider)}`,
     });
   }
 
@@ -274,7 +274,7 @@ export async function readOAuthProfile(
         provider,
         stage: 'userinfo',
         detail: 'the userinfo subject is not the subject of the verified id token',
-        fix: `confirm ${userInfoUrl} is ${provider}'s own userinfo endpoint and not a proxy that rewrites sub`,
+        fix: `curl -sS -m 5 -H 'authorization: Bearer <access token>' ${renderFixShellArg(userInfoUrl, '<the provider userinfo endpoint>')} | jq .sub   # must equal the id token's sub — a different one means a proxy rewrites it`,
       });
     }
     return read;

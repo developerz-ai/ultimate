@@ -132,7 +132,9 @@ describe('preflight', () => {
       expect((thrown as DevAlreadyRunningError).cause).toContain(String(process.pid));
       // `x stop`, never `kill <pid>`: a bare kill returns before the drain ends, so the next boot
       // refused again; `x stop` returns only once the lock is clear (plan 101, 21).
-      expect((thrown as DevAlreadyRunningError).fix).toEndWith('or stop it: x stop --json');
+      expect((thrown as DevAlreadyRunningError).fix).toStartWith(
+        'x stop --json   # or use the one',
+      );
       first.release();
     } finally {
       rmSync(dir, { recursive: true, force: true });

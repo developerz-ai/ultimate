@@ -248,15 +248,16 @@ describe('adminResource overrides and failures', () => {
     // `x g migration` has never been a generator: `x g` refuses it with X_CLI_UNKNOWN_COMMAND, so
     // an operator whose admin list names a dropped column got a second failure on top of the one
     // they already had. The migration writer is `x db gen "<description>"`.
+    let thrown: { code?: string; fix?: string } | undefined;
     try {
       adminResource(post, { listFields: ['title', 'nope'] });
-      throw new Error('expected the unsupported-field refusal');
     } catch (error) {
-      const thrown = error as { code?: string; fix?: string };
-      expect(thrown.code).toBe('X_ADMIN_FIELD_UNSUPPORTED');
-      expect(thrown.fix).toContain('x db gen');
-      expect(thrown.fix).not.toContain('x g migration');
+      thrown = error as { code?: string; fix?: string };
     }
+    if (thrown === undefined) return expect.unreachable('expected the unsupported-field refusal');
+    expect(thrown.code).toBe('X_ADMIN_FIELD_UNSUPPORTED');
+    expect(thrown.fix).toContain('x db gen');
+    expect(thrown.fix).not.toContain('x g migration');
   });
 
   test('the label field can be declared, and a hidden one is refused', () => {

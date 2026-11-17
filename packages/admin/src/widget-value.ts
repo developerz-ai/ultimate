@@ -3,6 +3,7 @@
 // loudly, instead of rendering a number that is wrong for somebody. Views render the props
 // this returns and make no decisions of their own.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { isCurrencyCode } from '@ultimat3/schema';
 import { AdminFieldUnsupportedError } from './errors';
@@ -113,14 +114,14 @@ export function assertMoney(field: GuardedField, value: unknown): Money | null {
       field,
       `money value arrived as the number ${value}; money is integer minor units + an ISO currency`,
       // `x db gen` writes migrations; `x g migration` is not a generator and never was.
-      `store ${field.name} as { minor, currency } — x db gen "change ${field.entity}.${field.name} to money"`,
+      `x db gen "change ${renderFixShellArg(`${field.entity}.${field.name}`, '<entity>.<field>')} to money"   # stores ${field.name} as { minor, currency }`,
     );
   }
   if (typeof value !== 'object') {
     return fail(
       field,
       `money value is a ${typeof value}`,
-      'return { minor, currency } from the repo',
+      "{ minor: 1234, currency: 'EUR' }   // return this shape from the repo",
     );
   }
   const bag = value as { minor?: unknown; currency?: unknown };
@@ -129,7 +130,7 @@ export function assertMoney(field: GuardedField, value: unknown): Money | null {
     return fail(
       field,
       `money.minor is ${String(bag.minor)}; minor units are integers`,
-      'multiply by the currency exponent before storing, never round at render time',
+      "fromDecimal('12.34', 'EUR').minor   // integer minor units, before storing — never round at render time",
     );
   }
   const currency = typeof bag.currency === 'string' ? bag.currency : field.currency;
@@ -142,7 +143,7 @@ export function assertMoney(field: GuardedField, value: unknown): Money | null {
     return fail(
       field,
       `money has no ISO-4217 currency (got ${String(bag.currency)})`,
-      `declare the currency with fields: { ${field.name}: { currency: 'EUR' } }`,
+      `fields: { ${field.name}: { currency: 'EUR' } }   // declare the currency`,
     );
   }
   return { minor, currency };
@@ -154,7 +155,7 @@ export function assertZone(field: AdminField, timeZone: string | undefined): str
     return fail(
       field,
       'timestamp has no IANA time zone; the admin never formats a date in an implicit zone',
-      "pass ctx.timeZone (actor.timeZone ?? 'UTC') into the admin view",
+      "{ timeZone: actor.timeZone ?? 'UTC', locale }   // the WidgetContext passed into the admin view",
     );
   }
   return timeZone;
@@ -165,7 +166,11 @@ function isoOf(field: AdminField, value: unknown): string | null {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'string') return value;
   if (typeof value === 'number') return new Date(value).toISOString();
-  return fail(field, `timestamp value is a ${typeof value}`, 'return an ISO string or a Date');
+  return fail(
+    field,
+    `timestamp value is a ${typeof value}`,
+    "new Date('2026-03-14T09:00:00Z')   // return a Date or an ISO string from the repo",
+  );
 }
 
 const optionsFor = (field: AdminField): readonly SelectOption[] =>
@@ -256,7 +261,11 @@ function uploadValue(
   if (typeof value === 'string') return { url: value, name: value.split('/').pop() ?? field.name };
   const bag = value as { url?: unknown; name?: unknown };
   if (typeof bag.url !== 'string') {
-    return fail(field, 'file value has no url', 'return { url, name } from the repo');
+    return fail(
+      field,
+      'file value has no url',
+      "{ url: '/files/report.pdf', name: 'report.pdf' }   // return this shape from the repo",
+    );
   }
   return { url: bag.url, name: typeof bag.name === 'string' ? bag.name : field.name };
 }

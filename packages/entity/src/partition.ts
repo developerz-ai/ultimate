@@ -3,7 +3,7 @@
 // column is a timestamp or a date — so `x db gen` never writes a migration the server refuses.
 // The SQL (the `partition by` clause, creating ahead, retention) is `@ultimat3/db`'s.
 
-import { renderFixShellArg } from '@ultimat3/core';
+import { renderFixLiteral } from '@ultimat3/core';
 import { PARTITION_INTERVALS, type PartitionInterval } from '@ultimat3/db';
 import { parseDuration } from '@ultimat3/time';
 import { columnName } from './column';
@@ -49,11 +49,12 @@ export interface PartitionContext {
   readonly view: boolean;
 }
 
+/** `edit` is one member of the entity's declaration, as source: the fix pastes it, then migrates. */
 export const partitionInvalid = (entity: string, reason: string, edit: string): EntityError =>
   new EntityError({
     code: 'X_ENTITY_PARTITION_INVALID',
     cause: `entity "${entity}" declares partitionBy, and ${reason}`,
-    fix: `x db gen "partition"   # after ${edit} in entity('${renderFixShellArg(entity, '<entity>')}')`,
+    fix: `entity(${renderFixLiteral(entity, "'<entity>'")}, { ${edit}, … })   // then: x db gen "partition"`,
   });
 
 const retainOf = (entity: string, after: unknown): PartitionDescription['retain'] => {
@@ -67,7 +68,7 @@ const retainOf = (entity: string, after: unknown): PartitionDescription['retain'
     throw partitionInvalid(
       entity,
       'partitionBy.retain.after is no window longer than zero',
-      "partitionBy.retain: { after: '400d' }",
+      "partitionBy: { …, retain: { after: '400d' } }",
     );
   }
   return { after: String(after), afterMs };
@@ -83,22 +84,23 @@ export function partitionOf(
   const refuse = (reason: string, edit: string): never => {
     throw partitionInvalid(entity, reason, edit);
   };
-  if (context.view) refuse('is a view: a view has no partitions', 'removing partitionBy');
+  if (context.view)
+    refuse('is a view: a view has no partitions', '/* no partitionBy: a view has none */');
   if (context.retain) {
     refuse(
       'retain sits beside it: a partitioned table drops whole partitions, never rows',
-      'moving the window to partitionBy.retain: { after }',
+      "partitionBy: { …, retain: { after: '400d' } } /* in place of the top-level retain */",
     );
   }
   if (!INTERVALS.includes(init.interval)) {
     refuse(
       `interval "${String(init.interval)}" is none of ${INTERVALS.join(', ')}`,
-      "interval: 'month'",
+      "partitionBy: { …, interval: 'month' }",
     );
   }
   const ahead = init.ahead ?? DEFAULT_PARTITIONS_AHEAD;
   if (!Number.isInteger(ahead) || ahead < 0 || ahead > 1000) {
-    refuse('partitionBy.ahead is no whole number from 0 to 1000', 'ahead: 3');
+    refuse('partitionBy.ahead is no whole number from 0 to 1000', 'partitionBy: { …, ahead: 3 }');
   }
   if (new TextEncoder().encode(context.table).length > MAX_PARENT_BYTES) {
     refuse(
@@ -111,7 +113,7 @@ export function partitionOf(
     throw partitionInvalid(
       entity,
       `partitionBy.column "${String(init.column)}" is no timestamp() or date() column of it`,
-      "column: 'at'",
+      "partitionBy: { …, column: 'at' }",
     );
   }
   if (!context.primaryKey.includes(init.column)) {
@@ -128,7 +130,7 @@ export function partitionOf(
   if (unique !== undefined) {
     refuse(
       `a unique index on (${unique.join(', ')}) does not hold "${physical}": Postgres requires it`,
-      `adding ${init.column} to that unique index or invariant`,
+      `/* ${init.column} added to the unique index or invariant on (${unique.join(', ')}) */`,
     );
   }
   return {

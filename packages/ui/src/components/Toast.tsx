@@ -1,8 +1,9 @@
-// Transient notification. ToastRegion is the single live region for the app; individual Toasts
-// are its children, so announcements are not duplicated and the region exists before the first
-// message. That ordering is the whole point: a live region created with its content already in it
-// is not announced by most screen readers, which is why `aria-live` sits on the persistent <ol>
-// here and NOT on the <li> each Toast renders.
+// Transient notification. ToastRegion is the single live region for the app; individual Toasts are
+// its children, so announcements are not duplicated and the region exists before the first message.
+//
+// That ordering is the whole point: a live region created with its content already in it is not
+// announced by most screen readers, which is why `aria-live` sits on the persistent <ol> here and
+// NOT on the <li> each Toast renders.
 
 import type { JSX } from 'solid-js';
 import type { Politeness } from '../a11y';

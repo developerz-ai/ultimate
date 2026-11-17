@@ -250,7 +250,7 @@ export const gateFindings = (input: GateInput): readonly Finding[] => {
     findings.push({
       code: 'X_REFERENCE_APP_UNREFERENCED',
       cause: `${app.dir} typechecks but is not a project the root ${ROOT_TSCONFIG} references`,
-      fix: `add { "path": "${app.reference}" } to the "references" array in ${ROOT_TSCONFIG}`,
+      fix: `{ "path": "${app.reference}" }   // add to the "references" array in ${ROOT_TSCONFIG}`,
       at: ROOT_TSCONFIG,
     });
   }
@@ -291,7 +291,7 @@ export const floorFindings = (input: FloorInput): readonly Finding[] => {
         cause:
           `${app.dir} commits no usable ${VERIFY_FLOOR_FILE}, so a deleted suite turns its step ` +
           'from red into skipped and neither this gate nor the app’s own reports it',
-        fix: `write ${floorPath} as {"steps":${JSON.stringify(applied)}}`,
+        fix: `{"steps":${JSON.stringify(applied)}}   // the whole of ${floorPath}`,
         at: floorPath,
       },
     ];
@@ -302,7 +302,7 @@ export const floorFindings = (input: FloorInput): readonly Finding[] => {
     findings.push({
       code: 'X_REFERENCE_APP_NO_FLOOR',
       cause: `${app.dir} ran ${missing.join(', ')} and its ${VERIFY_FLOOR_FILE} does not name ${missing.length === 1 ? 'it' : 'them'}, so deleting ${missing.length === 1 ? 'that suite' : 'those suites'} would read as a skip`,
-      fix: `add ${missing.map((name) => `"${name}"`).join(', ')} to the "steps" array in ${floorPath}`,
+      fix: `{"steps":${JSON.stringify([...floor, ...missing])}}   // the whole of ${floorPath}: it adds ${missing.join(', ')}`,
       at: floorPath,
     });
   }

@@ -14,12 +14,16 @@ import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 // The last case scans every package's throw sites.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-const page = (fix: string): string =>
-  [
-    '| Code | Means | Typical cause | Fix |',
-    '|---|---|---|---|',
-    `| \`X_FIXTURE_CODE\` | a fixture | a fixture cause | ${fix} |`,
-  ].join('\n');
+const page = (fix: string): readonly { path: string; text: string }[] => [
+  {
+    path: 'wiki/Error-Codes-x.md',
+    text: [
+      '| Code | Means | Typical cause | Fix |',
+      '|---|---|---|---|',
+      `| \`X_FIXTURE_CODE\` | a fixture | a fixture cause | ${fix} |`,
+    ].join('\n'),
+  },
+];
 
 const sites = new Map([
   [
@@ -55,6 +59,7 @@ describe('checkFixAgreement', () => {
     );
     expect(gap?.code).toBe('X_FIXTURE_CODE');
     expect(gap?.line).toBe(3);
+    expect(gap?.path).toBe('wiki/Error-Codes-x.md');
     expect(gap?.doc).toEqual(['registerAction()']);
   });
 
@@ -65,13 +70,20 @@ describe('checkFixAgreement', () => {
 });
 
 describe('agreementFindings', () => {
-  const gap = { code: 'X_FIXTURE_CODE', line: 3, doc: ['a()'], source: ['b()'] };
+  const gap = {
+    code: 'X_FIXTURE_CODE',
+    path: 'wiki/Error-Codes-x.md',
+    line: 3,
+    doc: ['a()'],
+    source: ['b()'],
+  };
 
   test('above the pin, every disagreement is listed', () => {
     const over = Array.from({ length: DISAGREEMENT_PIN + 1 }, () => gap);
     const findings = agreementFindings(over);
     expect(findings).toHaveLength(DISAGREEMENT_PIN + 1);
     expect(findings[0]?.code).toBe('X_DOC_FIX_DISAGREES');
+    expect(findings[0]?.at).toBe('wiki/Error-Codes-x.md:3');
   });
 
   test('below the pin, the pin itself is stale', () => {

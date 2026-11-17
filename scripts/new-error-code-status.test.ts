@@ -5,6 +5,7 @@ import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun has no mkdir of its own.
 import { mkdir } from 'node:fs/promises';
 import { HTTP_STATUS_MAX_TIER } from './error-map';
+import { ownerPage } from './lib/error-code-pages';
 import { backlogPinIn, statusRowIn } from './lib/error-code-plan';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import { ScriptError } from './lib/script-error';
@@ -52,6 +53,7 @@ describe('the HTTP status is decided in the same edit', () => {
     const result = await newErrorCode(dir, money('X_MONEY_PROBE_ONLY', '--status', '422'));
     expect(result.written).toEqual([
       'packages/money/src/errors.ts',
+      ownerPage('money'),
       WIKI_PAGE,
       statusTableFor('money'),
     ]);
@@ -66,7 +68,12 @@ describe('the HTTP status is decided in the same edit', () => {
   test('--off-socket pins it in the backlog, in its package`s group', async () => {
     const dir = await fixtureRoot();
     const result = await newErrorCode(dir, money('X_MONEY_PROBE_ONLY', '--off-socket'));
-    expect(result.written).toEqual(['packages/money/src/errors.ts', WIKI_PAGE, STATUS_BACKLOG]);
+    expect(result.written).toEqual([
+      'packages/money/src/errors.ts',
+      ownerPage('money'),
+      WIKI_PAGE,
+      STATUS_BACKLOG,
+    ]);
     const backlog = await read(dir, STATUS_BACKLOG);
     // In money's own group: between its opening line and the first `],` after it.
     const [, after = ''] = backlog.split('\n  money: [');
@@ -150,6 +157,7 @@ describe('the HTTP status is decided in the same edit', () => {
     const dir = await fixtureRoot();
     const before = [
       await read(dir, 'packages/money/src/errors.ts'),
+      await read(dir, ownerPage('money')),
       await read(dir, WIKI_PAGE),
       await read(dir, statusTableFor('money')),
       await read(dir, STATUS_BACKLOG),
@@ -172,6 +180,7 @@ describe('the HTTP status is decided in the same edit', () => {
     );
     expect([
       await read(dir, 'packages/money/src/errors.ts'),
+      await read(dir, ownerPage('money')),
       await read(dir, WIKI_PAGE),
       await read(dir, statusTableFor('money')),
       await read(dir, STATUS_BACKLOG),
@@ -210,7 +219,12 @@ describe('the HTTP status is decided in the same edit', () => {
       'X_NEW_ERROR_CODE_INVALID',
     );
     const result = await newErrorCode(dir, argv);
-    expect(result.written).toEqual(['packages/cli/src/error-codes.ts', WIKI_PAGE, fixes]);
+    expect(result.written).toEqual([
+      'packages/cli/src/error-codes.ts',
+      ownerPage('cli'),
+      WIKI_PAGE,
+      fixes,
+    ]);
   });
 
   test('a code the table or the backlog already names, and a file with no literal, are refused', () => {

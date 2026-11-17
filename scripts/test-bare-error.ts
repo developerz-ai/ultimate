@@ -18,7 +18,7 @@
 //   bun run scripts/test-bare-error.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
 // The leaf module, never the `@ultimat3/core` barrel: a guard must not link the whole tree.
-import { singleLine } from '../packages/core/src/error-render';
+import { renderFixShellArg, singleLine } from '../packages/core/src/error-render';
 import { maskLiterals } from '../packages/core/src/source-mask';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
@@ -70,7 +70,18 @@ const THROWN =
 export interface BareErrorSite {
   readonly path: string;
   readonly line: number;
+  /**
+   * The throw's own text, `throw` to the end of its line, trimmed: what a source exemption names.
+   * The line moves with every edit above it; this moves only when the throw itself does.
+   */
+  readonly throws: string;
 }
+
+/** From `at` to the end of its line, trailing space dropped — the site as its exemption spells it. */
+const throwText = (source: string, at: number): string => {
+  const end = source.indexOf('\n', at);
+  return source.slice(at, end === -1 ? source.length : end).trimEnd();
+};
 
 export function scanBareErrorThrows(
   path: string,
@@ -96,7 +107,7 @@ export function scanBareErrorThrows(
   const out: BareErrorSite[] = [];
   for (const match of code.matchAll(THROWN)) {
     const at = match.index ?? 0;
-    out.push({ path, line: source.slice(0, at).split('\n').length });
+    out.push({ path, line: source.slice(0, at).split('\n').length, throws: throwText(source, at) });
   }
   return out;
 }
@@ -139,14 +150,14 @@ const shownAt = (site: BareErrorSite | undefined): string => shown(at(site));
 const overFinding = (gap: BareErrorGap): Finding => ({
   code: 'X_TEST_BARE_ERROR',
   cause: `${shown(gap.pkg)} has ${String(gap.found)} test(s) reporting a verdict with a bare Error and is pinned at ${String(gap.pinned)} — ${siteList(gap, shownAt, EXPLAIN)} — and a bare Error carries no code, no cause and no fix, and reports at the throw rather than at the assertion`,
-  fix: `replace the throw at ${siteTarget(gap, shownAt)}: expect.unreachable('<what was expected>') reports at the assertion, and its never return also narrows the variable, so the cast below it goes away`,
+  fix: `expect.unreachable('<what was expected>')   // in place of the throw at ${siteTarget(gap, shownAt)}: it reports at the assertion, and its never return also narrows the variable, so the cast below it goes away`,
   at: at(leadSite(gap)),
 });
 
 const staleFinding = (gap: BareErrorGap): Finding => ({
   code: 'X_TEST_BARE_ERROR_PIN_STALE',
   cause: `${shown(gap.pkg)} is pinned at ${String(gap.pinned)} bare-Error throw(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `bun run scripts/test-bare-error.ts --unpin ${shown(gap.pkg)}`,
+  fix: `bun run scripts/test-bare-error.ts --unpin ${renderFixShellArg(gap.pkg, '<pkg>')}`,
   at: PINS_FILE,
 });
 
@@ -154,7 +165,7 @@ const unscannedFinding = (): Finding => ({
   code: 'X_TEST_BARE_ERROR_UNSCANNED',
   cause:
     'no test file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a clean tree',
-  fix: "edit TEST_GLOBS in scripts/test-fix-citations.ts so it matches this repo's test layout",
+  fix: "grep -n 'TEST_GLOBS' scripts/test-fix-citations.ts   # edit it so it matches this repo's test layout",
   at: 'scripts/test-bare-error.ts',
 });
 
@@ -167,24 +178,32 @@ const testBareErrorFindingFor = (gap: BareErrorGap): Finding =>
       : unscannedFinding();
 
 /**
- * The row a source site answers to: the site itself, `path:line`.
+ * The row a source site answers to: `path: <the throw's text>`.
  *
  * PER SITE, never per package: a per-package count let one exempt site be deleted and a real bare
  * throw added in the same file with no number moving — the swap `scripts/secret-compare.ts`
- * closed by grouping per site.
+ * closed by grouping per site. The TEXT, never the line: a row keyed by `path:line` broke the gate
+ * every time a header sweep moved a throw (sweep 8b-2). Two identical throws in one file share a
+ * row and are counted against the number of exemptions that name it — one exemption per site.
  */
-const sourceRow = (path: string, line: number): string => `${path}:${String(line)}`;
+const sourceRow = (path: string, throws: string): string => `${path}: ${throws}`;
 
 /** A package for a test, the site itself for shipped source — the two scopes never share a row. */
 const groupOf = (site: BareErrorSite): string =>
-  isTestPath(site.path) ? packageOf(site.path) : sourceRow(site.path, site.line);
+  isTestPath(site.path) ? packageOf(site.path) : sourceRow(site.path, site.throws);
 
-/** A source row is `path:line`; a package is a bare directory name, and never holds a `/`. */
+/** A source row opens on a path; a package is a bare directory name, and never holds a `/`. */
 const isSourceRow = (row: string): boolean => row.includes('/');
 
-/** The exemption inventory as the ratchet's rows: one row per exempt site, holding one site. */
-const exemptionRows = (exemptions: readonly SourceBareErrorExemption[]): PinTable =>
-  Object.fromEntries(exemptions.map((one) => [sourceRow(one.path, one.line), 1]));
+/** The exemption inventory as the ratchet's rows: each exempt site adds one to its text's row. */
+const exemptionRows = (exemptions: readonly SourceBareErrorExemption[]): PinTable => {
+  const rows = new Map<string, number>();
+  for (const one of exemptions) {
+    const row = sourceRow(one.path, one.throws);
+    rows.set(row, (rows.get(row) ?? 0) + 1);
+  }
+  return Object.fromEntries(rows);
+};
 
 /** Both scopes' rows in one table: a package's test count, and the sites shipped source exempts. */
 const PINS: PinTable = { ...BARE_ERROR_PINS, ...exemptionRows(SOURCE_BARE_ERROR_EXEMPTIONS) };
@@ -206,12 +225,12 @@ export const checkSourceBareErrors = (
     files.flatMap((file) => scanBareErrorThrows(file.path, file.text)),
     exemptionRows(exemptions),
     true,
-    (site) => sourceRow(site.path, site.line),
+    groupOf,
   );
 
-/** The exemption a row names, and the reason it was there. */
+/** The first exemption a row names, and the reason it was there. */
 const exemptionOf = (row: string): SourceBareErrorExemption | undefined =>
-  SOURCE_BARE_ERROR_EXEMPTIONS.find((one) => sourceRow(one.path, one.line) === row);
+  SOURCE_BARE_ERROR_EXEMPTIONS.find((one) => sourceRow(one.path, one.throws) === row);
 
 /** A bare throw in shipped source that no exemption covers. */
 const sourceOverFinding = (gap: BareErrorGap): Finding => {
@@ -227,15 +246,19 @@ const sourceOverFinding = (gap: BareErrorGap): Finding => {
   };
 };
 
-/** An exemption that matches no site: the throw it named was repaired, or the file is gone. */
+/**
+ * An exemption that matches no site: the throw it named was repaired, its text was edited, or the
+ * file is gone. Identical throws share a row, so the count says how many of its rows are spare.
+ */
 const sourceStaleFinding = (gap: BareErrorGap): Finding => {
   const exemption = exemptionOf(gap.pkg);
   const reason =
     exemption === undefined ? '' : ` — the row was allowed because ${shown(exemption.reason)}`;
+  const spare = gap.pinned - gap.found;
   return {
     code: 'X_SOURCE_BARE_ERROR_EXEMPT_STALE',
-    cause: `the exemption for ${shown(gap.pkg)} matches no bare throw in shipped source${reason} — an exemption nobody reads is a licence the next throw inherits`,
-    fix: `bun run scripts/test-bare-error.ts --json   # then delete the stale row from ${SOURCE_BARE_ERROR_EXEMPTIONS_FILE}`,
+    cause: `${String(gap.pinned)} exemption(s) for ${shown(gap.pkg)} and ${String(gap.found)} matching bare throw(s) in shipped source, so ${String(spare)} row(s) match no site${reason} — an exemption nobody reads is a licence the next throw inherits`,
+    fix: `bun run scripts/test-bare-error.ts --json   # then delete ${String(spare)} row(s) naming that path and throw from ${SOURCE_BARE_ERROR_EXEMPTIONS_FILE}, or copy the throw's current text into its row if only the text changed`,
     at: SOURCE_BARE_ERROR_EXEMPTIONS_FILE,
   };
 };

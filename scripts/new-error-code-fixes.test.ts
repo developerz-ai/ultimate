@@ -5,6 +5,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun has no recursive mkdir of its own; the fixture root needs the package directory.
 import { mkdir } from 'node:fs/promises';
+import { ownerPage } from './lib/error-code-pages';
 import { FIX_TABLES, fixRowIn } from './lib/error-code-plan';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import { newErrorCode, WIKI_PAGE } from './new-error-code';
@@ -50,7 +51,7 @@ describe('a package with a typed fix table', () => {
   test('cli: the registration, the wiki row AND the CLI_FIXES row land together', async () => {
     const dir = await cliRoot();
     const result = await newErrorCode(dir, [...ARGV, 'x doctor --json']);
-    expect(result.written).toEqual([CODES, WIKI_PAGE, FIXES]);
+    expect(result.written).toEqual([CODES, ownerPage('cli'), WIKI_PAGE, FIXES]);
     expect(result.fixesPath).toBe(FIXES);
     expect(result.statusPath).toBeUndefined();
 
@@ -76,12 +77,12 @@ describe('a package with a typed fix table', () => {
     const before = await read(dir, FIXES);
     await Bun.write(`${dir}/${FIXES}`, before.replace('const CLI_FIXES', 'const CLI_ANSWERS'));
     const codes = await read(dir, CODES);
-    const wiki = await read(dir, WIKI_PAGE);
+    const wiki = await read(dir, ownerPage('cli'));
     expect(await refusal(newErrorCode(dir, [...ARGV, 'x doctor --json']))).toBe(
       'X_NEW_ERROR_CODE_INVALID',
     );
     expect(await read(dir, CODES)).toBe(codes);
-    expect(await read(dir, WIKI_PAGE)).toBe(wiki);
+    expect(await read(dir, ownerPage('cli'))).toBe(wiki);
 
     expect(() =>
       fixRowIn(before, FIXES, {
@@ -109,7 +110,7 @@ describe('a package with a typed fix table', () => {
       '--off-socket',
     ]);
     expect(result.fixesPath).toBeUndefined();
-    expect(result.written).toHaveLength(3);
+    expect(result.written).toHaveLength(4);
   });
 
   test('every FIX_TABLES path is a real file holding a literal the planner can add to', async () => {

@@ -1,9 +1,10 @@
 /**
  * Projection: a query's route as an OpenAPI 3.1 path item, so `openapi.json` — the file `x verify`
- * diffs and the typed client is generated from — documents the READ half of the API. It documented
- * only the write half until 2026-09: `buildOpenApi` in `@ultimat3/action` walks the action
- * registry, and every `GET /_x/query/<name>` was served by `api-routes.ts` and published nowhere,
- * which is why the page controls this route now reads had no document to be written into.
+ * diffs and the typed client is generated from — documents the READ half of the API.
+ *
+ * It documented only the write half until 2026-09: `buildOpenApi` in `@ultimat3/action` walks the
+ * action registry, and every `GET /_x/query/<name>` was served by `api-routes.ts` and published
+ * nowhere, which is why the page controls this route now reads had no document to be written into.
  *
  * Ported beside `@ultimat3/action`'s rather than composed with it: both packages are tier 3 and
  * tiers never go sideways, so the CLI — the one caller that writes the file — merges the two

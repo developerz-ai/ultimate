@@ -107,7 +107,7 @@ export function llmsDrift(
   const findings: Finding[] = missing.map((name) => ({
     code: 'X_LLMS_TXT_DRIFT',
     cause: `${LLMS_TXT} has no "${open(name)}" … "${CLOSE}" block, so the ${name} list is not generated`,
-    fix: `add the two marker lines around the ${name} list in ${LLMS_TXT}, then ${FIX}`,
+    fix: `grep -n '^## ' ${LLMS_TXT}   # put the two marker lines "${open(name)}" and "${CLOSE}" around the ${name} list, then: ${FIX}`,
     at: LLMS_TXT,
   }));
   const had = new Set(current.split('\n'));

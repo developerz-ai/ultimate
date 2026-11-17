@@ -150,7 +150,7 @@ x db branch create feat-new-billing --json
 | Production | `DatabaseTarget.production` is hardcoded `false`: this host is whatever `x dev` resolved, and production migrates through `ROLE=migrate` in a deploy hook, never through MCP | **not a check** |
 | Destructive statements | `db.migrate` applies whatever the files hold; the rail is upstream — `x db gen` needs `--allow-destructive` to emit a drop, and `x verify`'s `drift` step refuses a committed `up` that destroys without a `-- destructive: true` line (`X_MIGRATION_DESTRUCTIVE`). The tool's own `destructive: true` is an MCP annotation, not a gate | **enforced upstream** |
 | Teardown | `x db branch delete <name>` — it may only delete what `list` shows | **shipped** |
-| Build id scopes the SW | a per-branch build id, so a preview can never poison prod caches | **planned**, part of `x branch` |
+| Build id scopes the SW | a preview container booted with its own `BUILD_ID`: the SW's cache namespaces derive from it (`cacheNamespace`, `packages/pwa/src/service-worker.ts:201`). A command that builds and routes a whole branch environment is not planned, `As of 2026-11-16` ([Known gaps](../../wiki/Known-Gaps.md#open-by-decision)) | **an env var**, no command |
 
 An agent can migrate, seed, test, and browse a preview without risking anything shared. That is what makes "let the agent try it" a safe instruction.
 

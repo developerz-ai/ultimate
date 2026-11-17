@@ -3,7 +3,14 @@
 // unknown key answered `false` is a branch that silently never runs.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { allFlags, applyFlagSnapshot, defineFlag, hasFlag, resetFlags } from './registry';
+import {
+  allFlags,
+  applyFlagSnapshot,
+  defineFlag,
+  hasFlag,
+  resetFlags,
+  restoreFlags,
+} from './registry';
 
 const caught = (run: () => unknown): unknown => {
   try {
@@ -44,6 +51,19 @@ describe('unit · defineFlag', () => {
     expect(flag.key).toBe('checkout.new-tax-engine');
     expect(flag.kind).toBe('temporary');
     expect(hasFlag('checkout.new-tax-engine')).toBe(true);
+  });
+});
+
+describe('unit · restoreFlags', () => {
+  test('the declared set becomes exactly the entries: a rerun declares again, refused nothing', () => {
+    permanent('restore.kept');
+    permanent('restore.gone');
+    restoreFlags(allFlags().filter((flag) => flag.key === 'restore.kept'));
+    expect(allFlags().map((flag) => flag.key)).toEqual(['restore.kept']);
+    // What the rerun boundary needs: the forgotten key declares again without X_FLAG_DUPLICATE.
+    permanent('restore.gone');
+    expect(hasFlag('restore.gone')).toBe(true);
+    expect(caught(() => permanent('restore.kept'))).toBeUltimateError('X_FLAG_DUPLICATE');
   });
 });
 

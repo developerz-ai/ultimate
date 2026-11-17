@@ -121,7 +121,7 @@ describe('renderOverlay notices', () => {
   const nPlusOne: OverlayNotice = {
     code: 'X_N_PLUS_ONE_QUERY',
     cause: '31 identical selects on post.author in one request',
-    fix: 'x db preload post.author',
+    fix: 'x entities show post --json',
   };
 
   test('a request with no findings renders the overlay that shipped before notices existed', () => {
@@ -141,14 +141,14 @@ describe('renderOverlay notices', () => {
     expect(card).toContain('<h2>notices</h2>');
     expect(card).toContain('<dt>X_N_PLUS_ONE_QUERY</dt>');
     expect(card).toContain('31 identical selects on post.author in one request');
-    expect(card).toContain('<code>x db preload post.author</code>');
+    expect(card).toContain('<code>x entities show post --json</code>');
   });
 
   test('two notices both render, in the order the host reported them', () => {
     const write: OverlayNotice = {
       code: 'X_N_PLUS_ONE_WRITE',
       cause: '31 identical inserts into comments',
-      fix: 'x db batch comments',
+      fix: 'x entities show comments --json',
     };
     const card = noticesCardOf(renderOverlay(error, { notices: [nPlusOne, write] }));
 
@@ -237,13 +237,15 @@ describe('overlayResponse', () => {
   test('notices reach the body through the same meta object, unwrapped', async () => {
     const meta = {
       path: '/x',
-      notices: [{ code: 'X_N_PLUS_ONE_QUERY', cause: '31 selects', fix: 'x db preload' }],
+      notices: [
+        { code: 'X_N_PLUS_ONE_QUERY', cause: '31 selects', fix: 'x db diagnostics --json' },
+      ],
     };
     const body = await overlayResponse(bodyInvalid('/x', ['title: required']), meta).text();
 
     expect(body).toContain('<h2>notices</h2>');
     expect(body).toContain('X_N_PLUS_ONE_QUERY');
-    expect(body).toContain('<code>x db preload</code>');
+    expect(body).toContain('<code>x db diagnostics --json</code>');
   });
 });
 

@@ -1,9 +1,11 @@
-// The database a measurement render reads, when the build has none. A page's `load` reads rows,
-// and a build runs with no `DATABASE_URL`, so every data-reading route was `X_DB_UNAVAILABLE` and
-// never weighed. The answer is `x dev`'s own embedded PGlite on a THROWAWAY state directory, with
-// the app's migrations applied and its `dev`-tier seeds run: `defineSeed` rows are keyed by
-// `seedId(label)`, so the database is the same on every machine — and a dynamic route whose
-// `prerender()` lists paths from its own rows has paths to be weighed at (plan 101 slice 11 m).
+// The database a measurement render reads, when the build has none.
+//
+// A page's `load` reads rows, and a build runs with no `DATABASE_URL`, so every data-reading route
+// was `X_DB_UNAVAILABLE` and never weighed. The answer is `x dev`'s own embedded PGlite on a
+// THROWAWAY state directory, with the app's migrations applied and its `dev`-tier seeds run:
+// `defineSeed` rows are keyed by `seedId(label)`, so the database is the same on every machine —
+// and a dynamic route whose `prerender()` lists paths from its own rows has paths to be weighed at
+// (plan 101 slice 11 m).
 
 // why: Bun has no mkdtemp and no recursive remove; the state directory must not outlive the build.
 import { mkdtemp, rm } from 'node:fs/promises';

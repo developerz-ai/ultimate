@@ -6,6 +6,7 @@ import { t } from '@ultimat3/schema';
 import type { GhHost } from './gh';
 import { ghJson, runGh } from './gh';
 import type { GhRepo } from './gh-target';
+import { quoteArg } from './shell-quote';
 
 /** The fields both `gh run list` and `gh run view` accept, named once so the two agree. */
 export const RUN_FIELDS =
@@ -162,7 +163,7 @@ export async function listRuns(
     RUN_LIST,
     {
       label: `gh run list --branch ${branch}`,
-      fix: `x ci --branch ${branch} --repo ${repo.slug} --json`,
+      fix: `x ci --branch ${quoteArg(branch)} --repo ${quoteArg(repo.slug)} --json`,
     },
   );
   return rows.map(runOf);
@@ -178,7 +179,10 @@ export async function viewRun(
     host,
     ['run', 'view', String(id), '--repo', repo.slug, '--json', `${RUN_FIELDS},jobs`],
     RUN_VIEW,
-    { label: `gh run view ${id}`, fix: `x ci --run ${id} --repo ${repo.slug} --json` },
+    {
+      label: `gh run view ${id}`,
+      fix: `x ci --run ${quoteArg(String(id))} --repo ${quoteArg(repo.slug)} --json`,
+    },
   );
   const jobs = viewed.jobs.map((job) => ({
     ...job,
@@ -199,7 +203,7 @@ export async function failedLog(host: GhHost, repo: GhRepo, id: number): Promise
     ['run', 'view', String(id), '--repo', repo.slug, '--log-failed'],
     {
       label: `gh run view ${id} --log-failed`,
-      fix: `gh run view ${id} --repo ${repo.slug} --log   # the whole log, when the failed steps carry none`,
+      fix: `gh run view ${quoteArg(String(id))} --repo ${quoteArg(repo.slug)} --log   # the whole log, when the failed steps carry none`,
     },
   );
   return result.stdout;

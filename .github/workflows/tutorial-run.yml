@@ -6,6 +6,8 @@ name: tutorial-run
 # push count must not pay for that. On a push to `main` only, filtered to the files that can move a
 # tutorial's output — a push touching none of them starts nothing. Not on a PR: a tutorial left
 # wrong breaks `main` for one push at most, and the red run is read by the daily health brief.
+# The same job RUNS `wiki/Building-Your-Own-Base.md`'s recipes: each `## Recipe:` fence written to
+# the path it names in a scratch app and driven by `scripts/base-recipes/` — seconds, no scaffold.
 
 on:
   push:
@@ -17,6 +19,9 @@ on:
       - 'packages/cli/src/verify-*'
       - 'scripts/tutorial-run.ts'
       - 'scripts/lib/tutorial-steps.ts'
+      - 'wiki/Building-Your-Own-Base.md'
+      - 'scripts/base-recipes/**'
+      - 'scripts/lib/base-recipes.ts'
       - '.github/workflows/tutorial-run.yml'
   workflow_dispatch:
 
@@ -36,5 +41,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+      - name: the Building-Your-Own-Base recipes, run
+        run: bun test ./scripts/base-recipes/
       - name: tutorials 1–4, fence by fence
         run: bun run scripts/tutorial-run.ts

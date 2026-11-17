@@ -17,7 +17,7 @@ export const searchUndeclared = (entityName: string): EntityError =>
     code: 'X_SEARCH_UNDECLARED',
     cause: `${entityName} has no searchable column, so there is no tsvector to match against`,
     // Screened where it enters the command: the line is pasted, and `$(…)` runs inside "…".
-    fix: `add .searchable() to a text() column of ${entityName}, then: x db gen "search ${renderFixShellArg(entityName, '<entity>')}"`,
+    fix: `text().searchable()   // on a text() column of ${entityName}, then: x db gen "search ${renderFixShellArg(entityName, '<entity>')}"`,
   });
 
 /**
@@ -31,7 +31,7 @@ export const searchInMemory = (entityName: string): EntityError =>
   new EntityError({
     code: 'X_SEARCH_IN_MEMORY',
     cause: `memoryDriver() cannot stem, weight or rank a tsvector, so a search of ${entityName} has no answer it could give that Postgres would agree with`,
-    fix: `move this read into a <name>.live.test.ts and run it with TEST_DATABASE_URL set — bun test packages/entity/src/pg-search.live.test.ts is the model`,
+    fix: `bun test ./<name>.live.test.ts   # with TEST_DATABASE_URL set, after moving this read into it — packages/entity/src/pg-search.live.test.ts is the model`,
   });
 
 /**
@@ -50,7 +50,7 @@ export const stateUndeclared = (
     cause: `${entityName}.${column} declares no state machine, so there is no transition to check`,
     fix:
       machines.length === 0
-        ? `add .transitions(…) to ${entityName}.${column} — it must be an enumerated() column, and every value that set declares needs an entry`
+        ? `enumerated(['draft', 'published']).transitions({ draft: ['published'], published: [] })   // on ${entityName}.${column}: every value the set declares needs an entry`
         : `${entityName} declares a machine on: ${machines.join(', ')}`,
   });
 
@@ -91,7 +91,7 @@ export const stateTransitionIllegal = (
     return new EntityError({
       code: 'X_STATE_TRANSITION_ILLEGAL',
       cause: `${subject} is terminal in "${from}": the machine declares no move out of it, so "${to}" is not one`,
-      fix: `move the row before it reaches "${from}", or add "${to}" to the "${from}" entry of the transitions() table`,
+      fix: `transitions({ '${from}': ['${to}'], … })   // add the move to the table — or move the row before it reaches "${from}"`,
     });
   }
   return new EntityError({
@@ -119,7 +119,7 @@ export const stateConflict = (
   new EntityError({
     code: 'X_STATE_CONFLICT',
     cause: `${entityName}.${column} named "${expected}" for row ${id}, which is in "${actual}" — something moved it first`,
-    fix: `re-read the row and decide again against "${actual}": ${entityName}.findById(id) — a transition names the state it expects, so a stale read is refused rather than overwritten`,
+    fix: `${entityName}.findById(id)   # re-read the row and decide again against "${actual}" — a transition names the state it expects, so a stale read is refused rather than overwritten`,
   });
 
 /**

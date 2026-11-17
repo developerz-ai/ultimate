@@ -62,7 +62,7 @@ describe('unit · s3 driver · a region mismatch names the region to set', () =>
     expect(refused.code).toBe('X_CONFIG_INVALID');
     expect(refused.cause).toContain('"auto"');
     expect(refused.cause).toContain('"us-east-1"');
-    expect(refused.fix).toStartWith('set S3_REGION=us-east-1 in .env');
+    expect(refused.fix).toStartWith('S3_REGION=us-east-1   # in .env');
   });
 
   test('copy, list and delete answer the same way — never a fix about IAM grants', async () => {
@@ -73,7 +73,7 @@ describe('unit · s3 driver · a region mismatch names the region to set', () =>
     ]) {
       const refused = shapeOf(await catchError(call));
       expect(refused.code).toBe('X_CONFIG_INVALID');
-      expect(refused.fix).toStartWith('set S3_REGION=us-east-1 in .env');
+      expect(refused.fix).toStartWith('S3_REGION=us-east-1   # in .env');
       expect(refused.fix).not.toContain('grant');
     }
   });
@@ -87,7 +87,7 @@ describe('unit · s3 driver · a region mismatch names the region to set', () =>
     const refused = shapeOf(await catchError(() => aws.put('a.txt', bytesOf('x'))));
 
     expect(refused.code).toBe('X_CONFIG_INVALID');
-    expect(refused.fix).toStartWith('set S3_REGION=eu-west-1 in .env');
+    expect(refused.fix).toStartWith('S3_REGION=eu-west-1   # in .env');
   });
 
   test('a region the sentence does not spell as a region name is never pasted into a fix', async () => {

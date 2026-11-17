@@ -1,8 +1,9 @@
 // `onAudit`: the gate's decisions, as data, handed on AFTER `audit.ts` has written the log line —
-// one audit path with a second destination, never a second path. Core's `AuditSink` records what
-// an action or query DID (`surface: 'mcp'`); this records what the MCP gate decided, mostly before
-// any primitive ran: hidden, scope-denied, invalid-args, a refused token. No `AuditRecord` can
-// carry those — there is no `ctx`, often no primitive, and nothing ran.
+// one audit path with a second destination, never a second path.
+//
+// Core's `AuditSink` records what an action or query DID (`surface: 'mcp'`); this records what the
+// MCP gate decided, mostly before any primitive ran: hidden, scope-denied, invalid-args, a refused
+// token. No `AuditRecord` can carry those — there is no `ctx`, often no primitive, and nothing ran.
 
 import type { Clock, Logger } from '@ultimat3/core';
 import { addressNetwork, logger, stringField, systemClock } from '@ultimat3/core';
@@ -81,6 +82,7 @@ export function mcpAuditor(input: McpAuditorInput = {}): McpAuditor {
         path: facts.path,
         ...(facts.address === null ? {} : { address: addressNetwork(facts.address) }),
       };
+      // info: the auth audit trail records every refusal; no token is its least severe rung, never a warn.
       if (reason === 'missing-token') log.info(`mcp.auth.${reason}`, line);
       else log.warn(`mcp.auth.${reason}`, line);
       if (hook !== undefined) {

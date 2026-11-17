@@ -9,6 +9,7 @@ import {
   type Page,
   type ResolveEnvironmentOptions,
   systemClock,
+  trimTrailingSlashes,
 } from '@ultimat3/core';
 import {
   assertListOptions,
@@ -139,7 +140,7 @@ export interface LocalDriverOptions {
 }
 
 export function localDriver(options: LocalDriverOptions): StorageDriver {
-  const root = options.root.replace(/\/+$/, '');
+  const root = trimTrailingSlashes(options.root);
   // `=== undefined`, never `??`: `??` coalesces on `null` too, so an explicitly blanked key in a
   // decoded JSON config took the default instead of the refusal `finiteCount` is here to raise.
   const maxPutBytes = finiteCount(

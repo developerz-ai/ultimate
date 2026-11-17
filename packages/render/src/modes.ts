@@ -80,14 +80,14 @@ export function assertModeShape(config: RouteShape): void {
   if (spec === undefined) {
     throw new RouteModeInvalidError(
       `render: ${renderCauseValue(config.render)} is not a render mode`,
-      `use one of ${RENDER_MODES.join(' | ')}`,
+      `render: 'ssr'   // one of ${RENDER_MODES.join(' | ')}`,
     );
   }
 
   if (!HYDRATE_STRATEGIES.includes(config.hydrate)) {
     throw new RouteModeInvalidError(
       `hydrate: ${renderCauseValue(config.hydrate)} is not a hydration strategy`,
-      `use one of ${HYDRATE_STRATEGIES.join(' | ')}`,
+      `hydrate: 'never'   // one of ${HYDRATE_STRATEGIES.join(' | ')}`,
     );
   }
 
@@ -97,13 +97,13 @@ export function assertModeShape(config: RouteShape): void {
     throw new RouteModeInvalidError(
       "render: 'static' cannot read per-request state, but a `policy` was declared " +
         `(${config.policy.permission} needs an actor)`,
-      "change render to 'ssr' — per-request and gated — or drop the policy",
+      "render: 'ssr'   // per-request and gated — or drop the policy",
     );
   }
   if (config.render === 'static' && config.revalidate !== undefined) {
     throw new RouteModeInvalidError(
       "render: 'static' is built once and never regenerates, but `revalidate` was declared",
-      "change render to 'isr' to keep the revalidate trigger",
+      "render: 'isr'   // keeps the revalidate trigger",
     );
   }
 
@@ -116,7 +116,7 @@ export function assertModeShape(config: RouteShape): void {
     throw new RouteModeInvalidError(
       "render: 'isr' caches one document per URL and cannot be gated, but a `policy` was " +
         `declared (${config.policy.permission} varies the answer per actor)`,
-      "change render to 'ssr' — per-request and gated — or drop the policy",
+      "render: 'ssr'   // per-request and gated — or drop the policy",
     );
   }
 
@@ -124,7 +124,7 @@ export function assertModeShape(config: RouteShape): void {
   if (config.render === 'isr' && !hasRevalidateTrigger(config)) {
     throw new RouteModeInvalidError(
       "render: 'isr' requires a regeneration trigger, but revalidate has neither tags nor ttl",
-      "add revalidate: { tags: [tag.post] } or revalidate: { ttl: '5m' }",
+      "revalidate: { tags: [tag.post] }   // or revalidate: { ttl: '5m' }",
     );
   }
   if (config.render === 'isr' && config.revalidate !== undefined) {
@@ -137,7 +137,7 @@ export function assertModeShape(config: RouteShape): void {
   if (config.cache !== undefined && config.render !== 'ssr') {
     throw new RouteModeInvalidError(
       `render: '${config.render}' decides its own cache headers, but \`cache\` was declared`,
-      "change render to 'ssr' to declare the cache, or remove cache",
+      "render: 'ssr'   // to declare the cache — or remove cache",
     );
   }
   // A gated page is one actor's document. A shared-cache offer on it is the tenant-leak class
@@ -148,7 +148,7 @@ export function assertModeShape(config: RouteShape): void {
     throw new RouteModeInvalidError(
       `a route gated by ${config.policy.permission} declares cache mode '${mode}', which offers ` +
         "one actor's document to a shared cache",
-      "declare cache: 'no-store' or { mode: 'private', … }, or drop the policy",
+      "cache: 'no-store'   // or { mode: 'private', … } — or drop the policy",
     );
   }
 
@@ -156,7 +156,7 @@ export function assertModeShape(config: RouteShape): void {
   if (config.render === 'ssr' && config.prerender !== undefined) {
     throw new RouteModeInvalidError(
       "render: 'ssr' renders per request and cannot be prerendered, but `prerender` was declared",
-      "change render to 'isr' to prerender and regenerate, or remove prerender",
+      "render: 'isr'   // to prerender and regenerate — or remove prerender",
     );
   }
 }
@@ -185,7 +185,7 @@ export function assertModeInvariants(config: RouteShape, ctx: ModeCheckContext):
     throw new RouteModeInvalidError(
       `${ctx.file} is in ${ctx.surface}/ and declares render: '${config.render}', ` +
         `which ${ctx.surface}/ does not allow`,
-      `use one of ${allowed} in ${ctx.file}`,
+      `render: '${SURFACE_SPECS[ctx.surface].allowedModes[0] ?? 'static'}'   // in ${ctx.file}: one of ${allowed}`,
     );
   }
 
@@ -206,14 +206,16 @@ export function assertModeInvariants(config: RouteShape, ctx: ModeCheckContext):
     throw new RouteModeInvalidError(
       `${ctx.file} is in site/ (0kb JS baseline) and opts into hydrate: '${config.hydrate}' ` +
         'without a JS budget',
-      `add budget: { js: '10kb' } to ${ctx.file} — hydration on site/ is explicit and budgeted`,
+      `budget: { js: '10kb' }   // in ${ctx.file} — hydration on site/ is explicit and budgeted`,
     );
   }
 
-  if (config.prerender !== undefined && !MODE_SPECS[config.render].prerenderable) {
+  const prerenderable =
+    Object.hasOwn(MODE_SPECS, config.render) && MODE_SPECS[config.render].prerenderable;
+  if (config.prerender !== undefined && !prerenderable) {
     throw new RouteModeInvalidError(
       `${ctx.file} declares prerender with render: '${config.render}', which is not prerenderable`,
-      `remove prerender from ${ctx.file} or change render to 'static' | 'isr'`,
+      `render: 'static'   // or 'isr', in ${ctx.file} — or remove prerender`,
     );
   }
 }

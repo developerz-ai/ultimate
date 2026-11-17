@@ -151,29 +151,32 @@ const where = (gap: TableGap): string => `${gap.path}:${gap.line}`;
 const rowFinding = (gap: TableGap): Finding => ({
   code: 'X_WIKI_TABLE_MALFORMED',
   cause: `${where(gap)} has ${gap.cells} cells and its header has ${gap.expected}, so it renders with content dropped or blanks appended`,
-  fix: `give the row at ${where(gap)} exactly ${gap.expected} cells, escaping any literal pipe as \\| — then bun run scripts/wiki-tables.ts --json`,
+  fix: `edit ${gap.path}:${gap.line} — give the row exactly ${gap.expected} cells, escaping any literal pipe as \\|, then: bun run scripts/wiki-tables.ts --json`,
   at: where(gap),
 });
 
 const delimiterFinding = (gap: TableGap): Finding => ({
   code: 'X_WIKI_TABLE_MALFORMED',
   cause: `${where(gap)} is a delimiter row with ${gap.cells} cells under a header with ${gap.expected}, and GFM renders neither as a table`,
-  fix: `give the delimiter row at ${where(gap)} exactly ${gap.expected} cells: ${'|---'.repeat(gap.expected)}|`,
+  fix: `edit ${gap.path}:${gap.line} — give the delimiter row exactly ${gap.expected} cells: ${'|---'.repeat(gap.expected)}|`,
   at: where(gap),
 });
 
 const orphanFinding = (gap: TableGap): Finding => ({
   code: 'X_WIKI_TABLE_MALFORMED',
   cause: `${where(gap)} begins with | and no |---| delimiter row follows it, so it renders as a paragraph of literal pipes`,
-  fix: `add a delimiter row under ${where(gap)} — ${'|---'.repeat(gap.expected)}| — or stop starting that line with |`,
+  fix: `edit ${gap.path}:${gap.line} — add the delimiter row ${'|---'.repeat(gap.expected)}| under it, or stop starting that line with |`,
   at: where(gap),
 });
 
-const FINDINGS: Readonly<Record<TableGapKind, (gap: TableGap) => Finding>> = {
-  row: rowFinding,
-  delimiter: delimiterFinding,
-  orphan: orphanFinding,
-};
+const FINDINGS: Readonly<Record<TableGapKind, (gap: TableGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    row: rowFinding,
+    delimiter: delimiterFinding,
+    orphan: orphanFinding,
+  } satisfies Record<TableGapKind, (gap: TableGap) => Finding>,
+);
 
 export const tableGapFindingFor = (gap: TableGap): Finding => FINDINGS[gap.kind](gap);
 

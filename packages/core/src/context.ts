@@ -238,7 +238,7 @@ export function useContext(): Ctx {
     throw new UltimateError({
       code: 'X_NO_CONTEXT',
       cause: 'useContext() was called outside of runWithContext()',
-      fix: 'wrap the entry point in runWithContext(ctxOf({ ... }), fn)',
+      fix: 'runWithContext(ctxOf({ ... }), fn)   // wrap the entry point in it',
     });
   }
   return ctx;
@@ -424,7 +424,7 @@ export function useService<T>(name: string): T {
     throw new UltimateError({
       code: 'X_SERVICE_MISSING',
       cause: `"${name}" is not on ctx.services (have: ${Object.keys(ctx.services).join(', ')})`,
-      fix: `pass it in ctxOf({ services: { ${name} } })`,
+      fix: `ctxOf({ services: { ${name} } })   // pass the service in`,
       meta: { name },
     });
   }
@@ -437,7 +437,7 @@ export function throwIfAborted(ctx: Ctx = useContext()): void {
   throw new UltimateError({
     code: 'X_ABORTED',
     cause: `request ${ctx.requestId} was aborted by the caller`,
-    fix: 'add throwIfAborted(ctx) before expensive work, and make each vendor call with outbound({ url, vendor, dial, deadlineMs }) from @ultimat3/core/outbound, which hears ctx.signal — the caller is gone, so unwind instead of finishing',
+    fix: 'throwIfAborted(ctx)   // before expensive work — and make each vendor call with outbound({ url, vendor, dial, deadlineMs }) from @ultimat3/core/outbound, which hears ctx.signal: the caller is gone, so unwind instead of finishing',
     meta: { requestId: ctx.requestId },
   });
 }

@@ -1,9 +1,10 @@
 // Single responsibility: the refusals a MIGRATION earns — the lock it could not take, a ledger that
 // disagrees with this build, a plan that cannot be reversed, a plan that destroys rows without
-// saying so, a snapshot never written, a view in a retype's way, a concurrent build. Split out of
-// `errors.ts` only because that file reached the 500-line ceiling, exactly as `invariant-errors.ts`
-// was: every code below is still declared, titled and registered there, and `DbError` is still the
-// one class. One direction only — nothing here is imported back.
+// saying so, a snapshot never written, a view in a retype's way, a concurrent build.
+//
+// Split out of `errors.ts` only because that file reached the 500-line ceiling, exactly as
+// `invariant-errors.ts` was: every code below is still declared, titled and registered there, and
+// `DbError` is still the one class. One direction only — nothing here is imported back.
 
 import { renderFixShellArg } from '@ultimat3/core';
 import { DESTRUCTIVE_CAUSE, DESTRUCTIVE_MARKER, type DestructiveStatement } from './destructive';
@@ -23,10 +24,7 @@ export const migrateConcurrent = (lockKey: number, waitedMs: number): DbError =>
     cause:
       `another session still holds pg_advisory_lock(${lockKey}) after waiting ${waitedMs}ms, ` +
       'so this migrator refused rather than block a deploy forever',
-    fix:
-      'psql "$DATABASE_URL" -c "select pid, application_name, state from pg_stat_activity ' +
-      "join pg_locks using (pid) where locktype = 'advisory'\"" +
-      '   # pg_terminate_backend(pid) the wedged migrator, then: x db migrate',
+    fix: `psql "$DATABASE_URL" -c "select pid, application_name, state from pg_stat_activity join pg_locks using (pid) where locktype = 'advisory'"   # pg_terminate_backend(pid) the wedged migrator, then: x db migrate`,
     meta: { lockKey, waitedMs },
   });
 
@@ -76,12 +74,12 @@ export const rollbackStepsInvalid = (received: number): DbError =>
   });
 
 /**
- * `packages/db/migrations/0000_initial.snapshot.json` → `packages/db/migrations/0000_initial.*` —
- * every file that one migration owns, as one `rm` argument. Derived from the path the caller passed
- * rather than rebuilt from a directory this package does not know: `db` is tier 1 and where an app
- * keeps its migrations is `@ultimat3/cli`'s answer, not this one's.
+ * `packages/db/migrations/0000_initial.snapshot.json` → `packages/db/migrations/0000_initial` —
+ * the stem every file that one migration owns shares, so `<stem>.*` is one `rm` argument. Derived
+ * from the path the caller passed rather than rebuilt from a directory this package does not know:
+ * `db` is tier 1 and where an app keeps its migrations is `@ultimat3/cli`'s answer, not this one's.
  */
-const snapshotSiblings = (file: string): string => file.replace(/\.snapshot\.json$/, '.*');
+const snapshotStem = (file: string): string => file.replace(/\.snapshot\.json$/, '');
 
 /**
  * `20260817120000_add_posts` → `add_posts`, the argument `x db gen` takes. The name is free text
@@ -114,7 +112,12 @@ export const migrationSnapshotMissing = (id: string, file: string): DbError => {
   // rather than half of it being escaped — the same screen and the same degradation `unknownSchema`
   // (`drift-findings.ts`) runs on the same condition. A `rm` whose argument was substituted away
   // still reads as a command, and now removes something else.
-  const spellable = shellSpellable(file) && shellSpellable(migrationNameOf(id));
+  // Each value below is screened where it is spliced as well, and `spellable` is what makes the
+  // screen's placeholder unreachable: a line is spelled whole or not at all.
+  const spellable =
+    shellSpellable(file) &&
+    shellSpellable(snapshotStem(file)) &&
+    shellSpellable(migrationNameOf(id));
   return new DbError({
     code: 'X_MIGRATION_SNAPSHOT_MISSING',
     cause: `migration "${id}" records no schema snapshot (${file}), so there is nothing to diff against`,
@@ -124,12 +127,9 @@ export const migrationSnapshotMissing = (id: string, file: string): DbError => {
     // the two errors pointed at each other and an app's first migration had no way out.
     // `x db gen` is named only *after* the files it would trip over are gone.
     fix: spellable
-      ? `git checkout -- ${file}   # or, if it was never written: ` +
-        `rm ${snapshotSiblings(file)} && x db gen "${migrationNameOf(id)}"`
-      : 'restore the .snapshot.json committed beside this migration, or delete every file that ' +
-        'migration owns and rerun x db gen with its description — the file named in this ' +
-        "error's cause carries a backtick, a dollar sign, a quote, a backslash or whitespace, " +
-        'so no command here can spell it',
+      ? `git checkout -- ${renderFixShellArg(file, '')}   # or, if it was never written: ` +
+        `rm ${renderFixShellArg(snapshotStem(file), '')}.* && x db gen "${renderFixShellArg(migrationNameOf(id), '')}"`
+      : `git status --short -- "*.snapshot.json"   # shows the sidecar that is gone: restore the .snapshot.json committed beside this migration, or delete every file that migration owns and rerun x db gen with its description — the file named in this error's cause carries a backtick, a dollar sign, a quote, a backslash or whitespace, so no command here can spell it`,
     meta: { id, file },
   });
 };
@@ -153,7 +153,7 @@ export const migrationDestructive = (
     cause:
       `${file} ${DESTRUCTIVE_CAUSE[first.kind]} and does not declare it` +
       `${more === 0 ? '' : ` (and ${more} more destructive)`}: ${first.statement}`,
-    fix: `add the line "${DESTRUCTIVE_MARKER}" to ${file}, or regenerate it: x db gen "<name>" --allow-destructive`,
+    fix: `x db gen "<name>" --allow-destructive   # regenerate it — or add the line "${DESTRUCTIVE_MARKER}" to ${file}`,
     meta: { file, kind: first.kind, statements: more + 1 },
   });
 

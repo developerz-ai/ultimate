@@ -43,7 +43,7 @@ export function islandRoutes(source: IslandSource): readonly Route[] {
                 // were built at boot. `x build --target static` — which is what this said — writes
                 // an export directory neither process serves from, so running it changed nothing
                 // for the only two readers this line has ever had.
-                fix: 'reload the page — this process serves only the chunks it built, and the document holding this URL came from an earlier build',
+                fix: 'location.reload()   // in the browser — this process serves only the chunks it built, and the document holding this URL came from an earlier build',
               },
             },
             { status: 404 },

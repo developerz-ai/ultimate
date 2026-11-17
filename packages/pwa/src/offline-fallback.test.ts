@@ -16,7 +16,7 @@ describe('requireOfflineFallback', () => {
       fix = fixOf(error);
     }
     expect(fix).toBe(
-      "set pwa: { offline: { fallback: '/offline' } } in app.config.ts, then create the route it names: x g route offline --surface site",
+      "pwa: { offline: { fallback: '/offline' } }   // in app.config.ts, then create the route it names: x g route offline --surface site",
     );
     // The half a string comparison alone would not explain: `<name>.tsx` is not a route file.
     // `registerRoute` refuses it with `X_ROUTE_FILE_INVALID` — the directory is the URL — so the
@@ -68,10 +68,9 @@ describe('requireOfflineFallback', () => {
     } catch (error) {
       fix = fixOf(error);
     }
-    expect(fix).toContain("'/offline'");
     // The key's full path, because that is what an author edits: `offline.fallback` names no key
-    // `app.config.ts` has, and `pwa.offline.fallback` does.
-    expect(fix).toContain('pwa.offline.fallback');
+    // `app.config.ts` has, and `pwa.offline.fallback` does — written as the block to paste.
+    expect(fix).toStartWith("pwa: { offline: { fallback: '/offline' } }");
   });
 
   /**

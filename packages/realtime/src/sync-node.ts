@@ -282,7 +282,7 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
       // is that every policy on this node is about to be asked about `null`.
       logger.warn('sync node has no authenticator: every socket is anonymous', {
         buildId: options.buildId,
-        fix: 'pass authenticate to syncNode({ authenticate })',
+        fix: "syncNode({ authenticate })   # nothing else can name a socket's actor",
       });
     }
     ready = true;

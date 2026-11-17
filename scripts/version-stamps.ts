@@ -15,13 +15,17 @@
 //
 //   bun run scripts/version-stamps.ts [--json]
 
+// why: Bun ships no path API; `dirname` names the workspace directory of a manifest path.
 import { dirname } from 'node:path';
+import { quoteArg } from '../packages/cli/src/shell-quote';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { flagList, parseScriptArgs } from './lib/args';
 import type { MarkdownFile } from './lib/doc-citations';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { posixRelative } from './lib/posix-path';
 import { repoRoot } from './lib/run';
+import { siteAt } from './lib/site-at';
 import {
   applyStampUnpin,
   STAMP_PINS_FILE,
@@ -279,7 +283,7 @@ export function checkVersionStamps(input: VersionInput): readonly VersionGap[] {
 const staleFinding = (gap: VersionGap, shipped: string): Finding => ({
   code: 'X_VERSION_STAMP_STALE',
   cause: `${gap.at} stamps ${gap.detail} and every package in this tree declares ${shipped}`,
-  fix: `write v${shipped} where ${gap.at} says ${gap.detail}, then bun run scripts/version-stamps.ts --json`,
+  fix: `edit ${siteAt(gap.at).path}:${siteAt(gap.at).line} — write v${shipped} where it says ${gap.detail}, then: bun run scripts/version-stamps.ts --json`,
   at: gap.at,
 });
 
@@ -294,15 +298,15 @@ const duplicateFinding = (gap: VersionGap): Finding => ({
   code: 'X_VERSION_STAMP_DUPLICATE',
   cause: `${gap.at} stamps ${gap.detail}, and ${STAMP_PAGE} is the only page that may — a second stamp is one fact hand-copied, one more line to bump per release, and the line that is wrong two majors later`,
   fix: gap.at.startsWith('wiki/')
-    ? `delete the ${gap.detail} stamp from ${gap.at}; the version reaches that page through ${STAMP_PAGE}`
-    : `delete the version from the stamped sentence in ${gap.at} and leave the date, or replace it with \`bun run scripts/list-workspaces.ts\`; if that sentence is about a PAST or third-party version instead, add '${gap.at.split(':')[0] ?? gap.at}@${gap.detail.replace(/^v/, '')}' to VERSION_STAMP_PINS in ${STAMP_PINS_FILE} with the sentence saying so`,
+    ? `edit ${siteAt(gap.at).path}:${siteAt(gap.at).line} — delete the ${gap.detail} stamp — the version reaches that page through ${STAMP_PAGE} — then: bun run scripts/version-stamps.ts --json`
+    : `bun run scripts/list-workspaces.ts   # name this command in place of the version in the stamped sentence at ${gap.at}, or delete the version and leave the date; if that sentence is about a PAST or third-party version instead, add '${gap.at.split(':')[0] ?? gap.at}@${gap.detail.replace(/^v/, '')}' to VERSION_STAMP_PINS in ${STAMP_PINS_FILE} with the sentence saying so`,
   at: gap.at,
 });
 
 const dependencyFinding = (gap: VersionGap, shipped: string): Finding => ({
   code: 'X_VERSION_LOCKSTEP_BROKEN',
   cause: `${gap.at} breaks lockstep — ${gap.detail}`,
-  fix: `set that "@ultimat3/*" range to ${shipped} in ${gap.at}, then bun install`,
+  fix: `grep -n '@ultimat3/' ${quoteArg(gap.at)}   # set each of those ranges to ${shipped}, then: bun install`,
   at: gap.at,
 });
 
@@ -322,14 +326,14 @@ const lockfileFinding = (gap: VersionGap): Finding => ({
 const pinStaleFinding = (gap: VersionGap): Finding => ({
   code: 'X_VERSION_STAMP_PIN_STALE',
   cause: `${gap.at} is pinned as a version this page names for a reason that is not a stamp ("${gap.detail}") and the page no longer says it — the pin outlived its sentence, so it now excuses whatever lands there next`,
-  fix: `bun run scripts/version-stamps.ts --unpin ${gap.at}`,
+  fix: `bun run scripts/version-stamps.ts --unpin ${renderFixShellArg(gap.at, '<page>')}`,
   at: STAMP_PINS_FILE,
 });
 
 const lockstepFinding = (gap: VersionGap): Finding => ({
   code: 'X_VERSION_LOCKSTEP_BROKEN',
   cause: `the workspaces declare more than one version — ${gap.detail} — and a release is one version, one commit, one tag`,
-  fix: `set every packages/*/package.json "version" to the same value, then bun run scripts/version-stamps.ts --json`,
+  fix: 'bun run scripts/list-workspaces.ts --json   # .data[].version: set every packages/*/package.json "version" to the same value, then: bun run scripts/version-stamps.ts --json',
   at: gap.at,
 });
 
@@ -353,7 +357,7 @@ const vacuousFinding = (gap: VersionGap): Finding =>
     : {
         code: 'X_VERSION_STAMP_UNSCANNED',
         cause: `${gap.at} ${gap.detail}, so this rule compared the shipped version against nothing`,
-        fix: `restore the version stamp on ${STAMP_PAGE} in the form v<version> \`As of <YYYY-MM>\`, or point STAMP_PAGE in scripts/version-stamps.ts at the page that carries it`,
+        fix: `git log -p -- ${renderFixShellArg(STAMP_PAGE, '<stamp page>')}   # restore the version stamp there in the form v<version> \`As of <YYYY-MM>\`, or point STAMP_PAGE in scripts/version-stamps.ts at the page that carries it`,
         at: gap.at,
       };
 

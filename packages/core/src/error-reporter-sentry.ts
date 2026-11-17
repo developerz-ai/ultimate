@@ -78,11 +78,14 @@ export function parseSentryDsn(dsn: string): SentryDsn {
 }
 
 /** The protocol's own level names. `warning`/`error`/`fatal` happen to be the same three words. */
-const LEVELS = Object.freeze<Record<ErrorSeverity, string>>({
-  warning: 'warning',
-  error: 'error',
-  fatal: 'fatal',
-});
+// Null-prototype: a key that arrives untyped never answers an `Object.prototype` member.
+const LEVELS = Object.freeze<Record<ErrorSeverity, string>>(
+  Object.assign(Object.create(null), {
+    warning: 'warning',
+    error: 'error',
+    fatal: 'fatal',
+  } satisfies Record<ErrorSeverity, string>),
+);
 
 export interface SentryEnvelopeOptions {
   readonly dsn: string;

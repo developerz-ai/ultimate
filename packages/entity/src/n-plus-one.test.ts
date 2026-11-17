@@ -199,6 +199,15 @@ describe('a write loop, fixed by the bulk form of the same call', () => {
     expect(write('n1_posts', undefined).fix).toBe(fix);
   });
 
+  test('an op named like an Object.prototype member is an op with no bulk form, not a call', () => {
+    // The op is the statement observer's text: `BULK_WRITE_CALLS['constructor']` answered the
+    // `Object` function, and the fix line pasted its source as the call to make.
+    const fix = write('n1_posts', 'insertAll').fix;
+    for (const op of ['constructor', 'toString', '__proto__']) {
+      expect(write('n1_posts', op).fix).toBe(fix);
+    }
+  });
+
   // A job enqueue is a write the queue's own statement sends, so the loop is `x_outbox` or
   // `x_jobs` text — and `insertAll` is a call no enqueuer can make. The batch is the HANDLE's.
   test('an enqueue in a loop names handle.enqueueMany, for the outbox and the queue alike', () => {
@@ -211,7 +220,7 @@ describe('a write loop, fixed by the bulk form of the same call', () => {
       // The cause is the SQL form's, word for word: the subject repeated, one write per row.
       expect(error.cause).toBe(nPlusOneWrite(subject, 9, { form: 'sql' }).cause);
       expect(error.fix).toStartWith('handle.enqueueMany(inputs)');
-      expect(error.fix).not.toContain('insert … values');
+      expect(error.fix).not.toContain('INSERT … VALUES');
     }
   });
 
@@ -221,12 +230,12 @@ describe('a write loop, fixed by the bulk form of the same call', () => {
       subject: 'insert into x_jobs_archive (id) values ($1)',
       count: 9,
     }).fix;
-    expect(fix).toContain('insert … values');
+    expect(fix).toStartWith('INSERT … VALUES');
   });
 
   test('hand-written SQL names the statement and the suppression, never a chain', () => {
     const fix = write(undefined, undefined).fix;
-    expect(fix).toContain('insert … values');
+    expect(fix).toStartWith('INSERT … VALUES');
     expect(fix).toContain("expectedQueryLoop('<why one per row is optimal>', fn)");
     expect(fix).not.toContain('db.undefined');
   });

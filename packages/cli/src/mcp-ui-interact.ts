@@ -1,9 +1,12 @@
-// `ui.interact` — the dev MCP server's hand. The three `ui.*` eyes photograph a route as it loads;
-// this one drives it first — opens the ⌘K palette, raises a dialog, types into a field — and
-// then takes the same picture, the same verdict and (on request) `ui.inspect`'s facts, in ONE
-// navigation. It is `runShot` with an `act` hook whose body is the step list: after EVERY step the
-// island poll re-runs (a click that mounts something changes the count the verdict reports) and
-// one poll interval passes for the CSS transition the click started.
+// `ui.interact` — the dev MCP server's hand: drive a route through a step list, then take the
+// same picture and verdict as the eyes, in ONE navigation.
+//
+// The three `ui.*` eyes photograph a route as it loads; this one drives it first — opens the ⌘K
+// palette, raises a dialog, types into a field — and then takes the same picture, the same verdict
+// and (on request) `ui.inspect`'s facts, in ONE navigation. It is `runShot` with an `act` hook
+// whose body is the step list: after EVERY step the island poll re-runs (a click that mounts
+// something changes the count the verdict reports) and one poll interval passes for the CSS
+// transition the click started.
 //
 // Four refusals, and every one refuses WHOLE rather than trims, skips or follows: a dropped step,
 // a swallowed keystroke or a navigation quietly followed changes what the picture is of, and an

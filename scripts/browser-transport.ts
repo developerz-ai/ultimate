@@ -113,7 +113,7 @@ export function seamFindings(tree: TransportTree): readonly Finding[] {
       code: 'X_BROWSER_TRANSPORT_UNSCANNED',
       at: 'scripts/browser-transport.ts',
       cause: `${seam} does not call fetch, so the exemption names a module that is no longer the seam and every bypass test is vacuous`,
-      fix: 'edit TRANSPORT_SEAMS in scripts/browser-transport.ts to name the module that calls globalThis.fetch, then: bun run browser-transport --json',
+      fix: "grep -n 'TRANSPORT_SEAMS' scripts/browser-transport.ts   # name the module that calls globalThis.fetch there, then: bun run browser-transport --json",
     },
   ];
 }

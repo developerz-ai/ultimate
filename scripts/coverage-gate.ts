@@ -16,12 +16,15 @@
 // (`UNIT_SECONDS`), so shard 1/2 is the same units on every runner. The lcov reader is the CLI's (`coverage-lcov.ts`),
 // the one an app's `x verify` reads its own floor through.
 
+// why: rmSync — Bun has no recursive directory removal; readFileSync — the unimported-source scan
+// is synchronous (`Bun.file().text()` is async only); `join` — Bun ships no path joiner.
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { finiteOption } from '@ultimat3/core';
+import { finiteOption, renderFixShellArg } from '@ultimat3/core';
 import { parseLcov, percent } from '../packages/cli/src/coverage-lcov';
 import { hasExecutableCode, TEST_FILE, unloadedWeight } from '../packages/cli/src/coverage-source';
 import { BadFlagError } from '../packages/cli/src/errors';
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import { E2E_PATH_GLOBS } from '../packages/cli/src/verify-tests';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { CoveragePin } from './lib/coverage-pins';
@@ -37,8 +40,10 @@ import type { CoverageUnit } from './lib/coverage-units';
 import { atOf, SCRIPTS_UNIT, testFileCount, unitOf, unitsFor } from './lib/coverage-units';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
-import { repoRoot } from './lib/run';
+import type { RunResult } from './lib/run';
+import { repoRoot, run } from './lib/run';
 import { ScriptError } from './lib/script-error';
+import { README_FACTS_FIX, README_FILE } from './readme-facts';
 
 export interface CoverageReading {
   /** The unit's name — a package, or `scripts`. */
@@ -160,7 +165,7 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
       code: 'X_COVERAGE_UNMEASURED',
       at,
       cause: `no lcov record names a file under ${unit.source}, so its coverage is a percentage of nothing`,
-      fix: `run bun test --coverage ${unit.test} and confirm the suite runs; a unit whose tests do not run cannot pass this gate`,
+      fix: `bun test --coverage ${quoteArg(unit.test)}   # confirm the suite runs; a unit whose tests do not run cannot pass this gate`,
     });
     return { reading, required: pin, findings };
   }
@@ -190,8 +195,8 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
         `under the ${pin === undefined ? `${COVERAGE_TARGET}% target` : `pin of ${floorLines}% / ${floorFuncs}%`}`,
       fix:
         pin === undefined
-          ? `cover the gap with tests beside the source, then re-run bun run scripts/coverage-gate.ts --package ${reading.pkg}`
-          : `restore the coverage this commit removed — a pinned unit may not fall further; the pin in ${PINS_FILE} records what it was`,
+          ? `bun test --coverage ${quoteArg(unit.test)}   # prints the uncovered lines: cover them with tests beside the source, then: bun run scripts/coverage-gate.ts --package ${quoteArg(reading.pkg)}`
+          : `bun test --coverage ${quoteArg(unit.test)}   # prints the uncovered lines: restore the coverage this commit removed — a pinned unit may not fall further, and the pin in ${PINS_FILE} records what it was — then: bun run scripts/coverage-gate.ts --package ${quoteArg(reading.pkg)}`,
     });
   }
 
@@ -200,7 +205,7 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
       code: 'X_COVERAGE_PIN_STALE',
       at,
       cause: `${at} now clears the ${COVERAGE_TARGET}% target at ${reading.lines}% / ${reading.funcs}%, and ${PINS_FILE} still pins it lower`,
-      fix: `delete the "${reading.pkg}" entry from COVERAGE_PINS in ${PINS_FILE}`,
+      fix: `grep -nE "^  '?${renderFixShellArg(reading.pkg, '<pkg>')}'?:" ${PINS_FILE}   # delete that entry from COVERAGE_PINS, then: ${README_FACTS_FIX} — ${README_FILE}'s facts table quotes every pin (X_README_FACTS_DRIFT)`,
     });
   } else if (
     pin !== undefined &&
@@ -211,7 +216,7 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
       code: 'X_COVERAGE_PIN_STALE',
       at,
       cause: `${at} is at ${reading.lines}% / ${reading.funcs}%, more than ${PIN_SLACK} points above its pin of ${pin.lines}% / ${pin.funcs}%`,
-      fix: `raise the "${reading.pkg}" pin in ${PINS_FILE} to the measured numbers, so the next regression is caught against today rather than against last quarter`,
+      fix: `grep -nE "^  '?${renderFixShellArg(reading.pkg, '<pkg>')}'?:" ${PINS_FILE}   # raise that entry of COVERAGE_PINS to lines: ${String(Math.floor(reading.lines))}, funcs: ${String(Math.floor(reading.funcs))}, so the next regression is caught against today rather than against last quarter; then: ${README_FACTS_FIX} — ${README_FILE}'s facts table quotes every pin (X_README_FACTS_DRIFT)`,
     });
   }
 
@@ -250,7 +255,7 @@ export function suiteFailure(
   return {
     code: 'X_TEST_FAILED',
     cause: `bun test ${unit.test} failed when run alone${failed.length > 0 ? `: ${failed.join('; ')}` : ''}${diff.length > 0 ? ` — the assertion's diff: ${diff.join(' | ')}` : ''}${tail.length > 0 ? ` — exit ${String(exitCode)}, and the run ended: ${tail.join(' | ')}` : ''}`,
-    fix: `run bun test ${unit.test} and fix what it reports — a suite green only beside other packages depends on something another package registered first`,
+    fix: `bun test ${quoteArg(unit.test)}   # fix what it reports — a suite green only beside other packages depends on something another package registered first`,
   };
 }
 
@@ -338,32 +343,49 @@ export function testCommand(unit: CoverageUnit, dir: string, workers: number): r
   ];
 }
 
+/**
+ * One unit's whole suite, alone, before it is killed. `cli` is the longest: 1221 core-seconds
+ * (`UNIT_SECONDS`), several minutes on its workers. A deadline, not a budget — what reaches it hung.
+ */
+export const UNIT_TIMEOUT_MS = 1_800_000;
+
+/** A finished run's verdict: the deadline's own coded line, a failing suite, or `undefined`. */
+export function unitFailure(
+  name: string,
+  ran: Pick<RunResult, 'code' | 'output' | 'timedOut'>,
+): { code: string; cause: string; fix: string } | undefined {
+  if (ran.timedOut) {
+    return {
+      code: 'X_SPAWN_TIMED_OUT',
+      cause: `bun test ${unitOf(name).test} did not finish within ${String(UNIT_TIMEOUT_MS)} ms and was killed`,
+      fix: `bun run scripts/coverage-gate.ts --package ${renderFixShellArg(name, '<unit>')} --json   # alone; a test that hangs is named by the last (pass) line before the stall`,
+    };
+  }
+  return suiteFailure(name, ran.code ?? 1, ran.output);
+}
+
 /** Runs one unit's suite with coverage, on `workers` workers, and reads the report back. */
 async function measure(root: string, name: string, workers: number): Promise<CoverageReading> {
   const unit = unitOf(name);
   const dir = join(root, '.x', 'coverage', name);
   rmSync(dir, { recursive: true, force: true });
   const started = performance.now();
-  const proc = Bun.spawn([...testCommand(unit, dir, workers)], {
+  // Both pipes are read: under GitHub Actions Bun reports a failing test as an `::error`
+  // annotation on stdout, so stderr alone named three failures as "3 tests failed:" and nothing
+  // else. `run()` owns the deadline: a suite that hangs is killed and reported, never waited on.
+  const ran = await run(testCommand(unit, dir, workers), {
     cwd: root,
     env: unitEnv(Bun.env, serviceKeys(root)),
-    // Both read: under GitHub Actions Bun reports a failing test as an `::error` annotation on
-    // stdout, so stderr alone named three failures as "3 tests failed:" and nothing else.
-    stdout: 'pipe',
-    stderr: 'pipe',
+    timeoutMs: UNIT_TIMEOUT_MS,
   });
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  const failure = suiteFailure(name, await proc.exited, `${stdout}\n${stderr}`);
+  const failure = unitFailure(name, ran);
   if (failure !== undefined) throw new ScriptError(failure);
   const file = Bun.file(join(dir, 'lcov.info'));
   if (!(await file.exists())) {
     throw new ScriptError({
       code: 'X_COVERAGE_UNMEASURED',
-      cause: `bun test wrote no lcov report for ${unit.test}: ${stderr.trim().split('\n').at(-1) ?? 'no output'}`,
-      fix: `run bun test ${unit.test} and fix the failure it reports; coverage cannot be read from a suite that did not finish`,
+      cause: `bun test wrote no lcov report for ${unit.test}: ${ran.output.trim().split('\n').at(-1) ?? 'no output'}`,
+      fix: `bun test ${quoteArg(unit.test)}   # fix the failure it reports; coverage cannot be read from a suite that did not finish`,
     });
   }
   const lcov = await file.text();

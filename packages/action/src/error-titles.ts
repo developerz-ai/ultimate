@@ -1,8 +1,9 @@
 // @ultimat3/action's error TITLES, registered at import — the one module `sideEffects` names, so
-// `errors.ts` (the classes) is unlisted and a chunk carries it only where it constructs a class:
+// `errors.ts` (the classes) is unlisted and a chunk carries it only where it constructs a class.
+//
 // Bun >= 1.4.1 honours the array and keeps a listed module wherever the barrel reaches it.
-// `index.ts` imports this bare, because `problemError` rebuilds a server's refusal by code and reads
-// its title from the registry; `errors.ts` and its two siblings import it bare as well.
+// `index.ts` imports this bare, because `problemError` rebuilds a server's refusal by code and
+// reads its title from the registry; `errors.ts` and its two siblings import it bare as well.
 
 import { registerErrorCodes, registerErrorRetry } from '@ultimat3/core/page';
 

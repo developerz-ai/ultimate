@@ -45,9 +45,7 @@ const schemeUnsupported = (raw: string): DbError =>
     cause:
       'DATABASE_URL does not name a postgres:// or postgresql:// url: ' +
       `received ${describeValue(raw)}`,
-    fix:
-      'set DATABASE_URL to postgres://user@host:5432/database — a value with no scheme parses ' +
-      'as a url whose scheme is its own first token — or run `x dev` to use the embedded PGlite',
+    fix: 'DATABASE_URL=postgres://user@host:5432/database   # a value with no scheme parses as a url whose scheme is its own first token — or run `x dev` to use the embedded PGlite',
   });
 
 export function connectionUrl(options: ConnectionUrlOptions, profile: PoolProfile): string {

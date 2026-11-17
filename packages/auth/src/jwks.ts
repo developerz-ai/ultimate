@@ -1,10 +1,11 @@
 // Single responsibility: verifying a JWT's signature against a provider's published JWKS.
-// `crypto.subtle` covers RS256 and ES256, so this costs no dependency. It exists because the OIDC
-// Core 3.1.3.7 exemption — "a token fetched over TLS straight from the token endpoint needs no
-// signature check" — holds for exactly one channel, and IdP-initiated login, `response_mode=
-// form_post`, back-channel logout and token exchange are all not it. On any of those, an
-// unverified JWT with the right `iss`, `aud` and a victim's `sub` is a full account takeover with
-// no credential, so a signature check has to exist before those doors are opened.
+// `crypto.subtle` covers RS256 and ES256, so this costs no dependency.
+//
+// It exists because the OIDC Core 3.1.3.7 exemption — "a token fetched over TLS straight from the
+// token endpoint needs no signature check" — holds for exactly one channel, and IdP-initiated
+// login, `response_mode=form_post`, back-channel logout and token exchange are all not it. On any
+// of those, an unverified JWT with the right `iss`, `aud` and a victim's `sub` is a full account
+// takeover with no credential, so a signature check has to exist before those doors are opened.
 
 import type { Clock, Scheduler } from '@ultimat3/core';
 import {
@@ -12,6 +13,7 @@ import {
   isFixShellSafe,
   liveClock,
   logger,
+  renderFixLiteral,
   renderFixShellArg,
   renderThrowable,
   singleFlight,
@@ -375,7 +377,7 @@ export function providerJwks(
     throw oauthTokenInvalid(
       provider.id,
       'this provider publishes no jwks_uri, so an id token from it can only be trusted on the token endpoint',
-      `register ${provider.id} with an explicit jwksUri, or read its id token only through exchangeOAuthCode()`,
+      `registerOAuthProvider({ id: ${renderFixLiteral(provider.id, "'<id>'")}, jwksUri: '<the provider jwks_uri>', ... })   // or read its id token only through exchangeOAuthCode()`,
     );
   }
   const bespoke = options !== undefined && Object.keys(options).length > 0;

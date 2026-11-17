@@ -8,12 +8,15 @@ import { renderMeta } from '@ultimat3/seo';
 import type { HeadRenderers, HeadTag } from './head';
 
 /** Attributes that identify a tag for dedupe, read in this order. */
-const IDENTITY: Readonly<Record<SeoHeadTag['tag'], readonly string[]>> = {
-  title: [],
-  meta: ['name', 'property', 'http-equiv', 'charset', 'media'],
-  link: ['rel', 'hreflang', 'sizes'],
-  script: ['type'],
-};
+const IDENTITY: Readonly<Record<SeoHeadTag['tag'], readonly string[]>> = Object.assign(
+  Object.create(null),
+  {
+    title: [],
+    meta: ['name', 'property', 'http-equiv', 'charset', 'media'],
+    link: ['rel', 'hreflang', 'sizes'],
+    script: ['type'],
+  } satisfies Readonly<Record<SeoHeadTag['tag'], readonly string[]>>,
+);
 
 /**
  * Open Graph properties a document carries once PER VALUE. Keyed by property alone, the dedupe

@@ -7,6 +7,7 @@ import { UltimateError } from '@ultimat3/core';
 import { BadFlagError } from './errors';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
+import { quoteArg } from './shell-quote';
 
 export interface IntFlag {
   readonly name: string;
@@ -93,7 +94,7 @@ class SyncPortUnavailableError extends UltimateError {
     super({
       code: 'X_PORT_INVALID',
       cause: `the sync role binds PORT + 1, and PORT=${input.port} is the top of the range — it would ask for ${input.port + 1}, which is not a TCP port`,
-      fix: `x dev --port ${neighbouringPort(input.port)}   # leaves ${PORT_RANGE.max} free for the sync node`,
+      fix: `x dev --port ${quoteArg(String(neighbouringPort(input.port)))}   # leaves ${PORT_RANGE.max} free for the sync node`,
       meta: { port: input.port },
     });
   }

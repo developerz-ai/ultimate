@@ -105,7 +105,7 @@ describe('planIcons', () => {
     } catch (error) {
       fix = fixOf(error);
     }
-    expect(fix).toContain('assets/icon.png');
+    expect(fix).toStartWith("planIcons({ sourceIcon: 'apps/web/site/icon.png' })");
     expect(() => planIcons({})).toThrow(PwaIconMissingError);
   });
 

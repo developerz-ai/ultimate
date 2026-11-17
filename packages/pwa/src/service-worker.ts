@@ -92,7 +92,7 @@ export function assertScope(swPath: string, scope: string): void {
     throw new SwScopeInvalidError(
       `sw.js is served from ${swPath}, which is relative, so the directory it can control is ` +
         `unknown at build time; the configured scope is ${scope}`,
-      `set pwa.swPath to an absolute path — '${scope}sw.js' serves scope ${scope}`,
+      `generateServiceWorker(routes, { ...config, swPath: '${scope}sw.js' }, buildId)   // an absolute path — this one serves scope ${scope}`,
     );
   }
   const directory = swPath.slice(0, swPath.lastIndexOf('/') + 1);
@@ -100,7 +100,7 @@ export function assertScope(swPath: string, scope: string): void {
     throw new SwScopeInvalidError(
       `sw.js is served from ${swPath}, which can only control ${directory}, but the ` +
         `configured scope is ${scope}`,
-      `serve the service worker from ${scope}sw.js, or set pwa.scope to '${directory}'`,
+      `generateServiceWorker(routes, { ...config, swPath: '${scope}sw.js' }, buildId)   // serve it from inside the scope — or scope: '${directory}'`,
     );
   }
 }

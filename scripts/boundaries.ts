@@ -19,6 +19,7 @@
 //
 //   bun run scripts/boundaries.ts [--json] [--package cli]
 
+// why: Bun ships no path API — `join` builds disk paths, the posix trio resolves import specifiers.
 import { join } from 'node:path';
 import { dirname, join as joinPosix, normalize } from 'node:path/posix';
 import { scanAllImports, scanRuntimeImports } from '../packages/cli/src/import-scan';
@@ -306,7 +307,7 @@ export function sharedLeafFindingFor(violation: SharedLeafViolation): Finding {
       `${violation.file} has a runtime import of "${violation.specifier}" from ` +
       `${violation.surface}/ — shared/ is a leaf, so that drags the ${violation.surface}/ ` +
       `module graph into every bundle that touches it`,
-    fix: `make it \`import type\`, or pass the ${violation.surface}/ value in as an argument`,
+    fix: `import type { … } from '${violation.specifier}';   // in ${violation.file} — or pass the ${violation.surface}/ value in as an argument`,
     at: violation.file,
   };
 }
@@ -368,7 +369,7 @@ export function adminFlattenerFindingFor(violation: AdminFlattenerViolation): Fi
     cause:
       `${violation.file} reads $meta or calls $describe() directly — ${ADMIN_FLATTENER_FILE} is ` +
       'the one file @ultimat3/admin lets flatten an entity onto AdminColumnFacts',
-    fix: `take AdminColumnFacts from entity-columns.ts instead of reading $meta/$describe() in ${violation.file}`,
+    fix: `adminColumnsOf(entity)   // from ${ADMIN_FLATTENER_FILE}, in ${violation.file} instead of reading $meta/$describe(): it returns AdminColumnFacts`,
     at: violation.file,
   };
 }

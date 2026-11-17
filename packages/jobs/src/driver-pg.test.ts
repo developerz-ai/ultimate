@@ -90,7 +90,8 @@ describe('pg driver', () => {
 describe('the pg backfill ledger', () => {
   const ledgerOf = (executor: PgExecutor) => {
     const ledger = postgresJobDriver({ executor }).backfills;
-    if (ledger === undefined) throw new Error('the pg driver must ship a backfill ledger');
+    if (ledger === undefined)
+      return expect.unreachable('the pg driver must ship a backfill ledger');
     return ledger;
   };
 

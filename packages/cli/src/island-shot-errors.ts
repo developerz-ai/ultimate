@@ -3,6 +3,7 @@
 // call stay in `error-codes.ts`: one owner, one registration, one place a duplicate can surface.
 
 import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
+import { quoteArg } from './shell-quote';
 
 // No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`.
 
@@ -20,7 +21,7 @@ export class IslandStatesFileEmptyError extends UltimateError {
     super({
       code: 'X_SHOT_ISLAND_STATES_EMPTY',
       cause: `${renderCauseValue(input.file)} exports no defineIslandStates() result, so it declares no picture`,
-      fix: `in ${renderFixLiteral(input.file, STATES_PLACEHOLDER)} write: export const states = defineIslandStates({ island: '…', states: [...] })`,
+      fix: `export const states = defineIslandStates({ island: '…', states: [...] })   // in ${renderFixLiteral(input.file, STATES_PLACEHOLDER)}`,
     });
   }
 }
@@ -65,7 +66,7 @@ export class IslandRequestUnstubbedError extends UltimateError {
     super({
       code: 'X_SHOT_ISLAND_UNSTUBBED_REQUEST',
       cause: `${input.island} in state ${renderCauseValue(input.state)} made ${input.requests.length} request(s) no stub answers: ${input.requests.join(', ')}`,
-      fix: `in ${renderFixLiteral(input.statesFile, STATES_PLACEHOLDER)} add to that state: routes: [{ match: '${input.requests[0] ?? 'GET /api/x'}', respond: { kind: 'json', body: {} } }]`,
+      fix: `routes: [{ match: ${renderFixLiteral(input.requests[0], "'GET /api/x'")}, respond: { kind: 'json', body: {} } }]   // on that state, in ${renderFixLiteral(input.statesFile, STATES_PLACEHOLDER)}`,
       meta: { island: input.island, state: input.state, requests: [...input.requests] },
     });
   }
@@ -87,7 +88,7 @@ export class IslandShotsMissingError extends UltimateError {
     super({
       code: 'X_SHOT_ISLAND_MISSING',
       cause: `${input.missing.length} of ${input.expected} declared picture(s) are not on disk under ${renderCauseValue(input.dir)}: ${input.missing.join(', ')}`,
-      fix: `x shot --island ${input.island} --json   # the run above names why each one was refused`,
+      fix: `x shot --island ${quoteArg(input.island)} --json   # the run above names why each one was refused`,
       meta: { island: input.island, missing: [...input.missing] },
     });
   }

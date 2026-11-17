@@ -115,14 +115,19 @@ describe('unit · what a planned command tells the caller', () => {
     }
   });
 
-  test('x branch points at the database half that is shipped', () => {
-    const planned = PLANNED_COMMANDS.find((entry) => entry.name === 'branch');
-    // `x db branch <name>` pasted into a shell is a redirect; `list` is the verb that runs. A line
-    // like this one, against a command whose argument was the branch NAME, once made an agent that
-    // followed it verbatim create a branch called `ls` and get no listing.
-    expect(planned?.fix).toBe(
-      'x db branch list --json   # the database half: list, create <name>, delete <name>',
-    );
+  // Plan 101b slice 13: finished means this list is empty. Each left with a decision row in
+  // wiki/Known-Gaps.md naming its extension point; a row that returns needs a plan that builds it.
+  test('branch, ai and money left the registry, each with its Known-Gaps decision', async () => {
+    const gaps = await Bun.file(`${import.meta.dir}/../../../wiki/Known-Gaps.md`).text();
+    for (const [name, row] of [
+      ['branch', '| `x branch`,'],
+      ['ai', '| `x ai`:'],
+      ['money', '| `x money add-currency`,'],
+    ] as const) {
+      expect([name, PLANNED_COMMANDS.some((entry) => entry.name === name)]).toEqual([name, false]);
+      expect([name, commandFor(name)]).toEqual([name, undefined]);
+      expect([name, gaps.includes(row) && gaps.includes('not planned')]).toEqual([name, true]);
+    }
   });
 
   test('every planned fix resolves as an invocation, three words deep', async () => {

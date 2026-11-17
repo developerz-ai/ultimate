@@ -213,7 +213,7 @@ export function themeScript(options: ThemeScriptOptions = {}): HeadTag {
     throw new BudgetExceededError(
       `the inlined theme script is ${bytes}b, over its ${cap}b cap — the only script a ` +
         '0kb site/ route is allowed to ship',
-      'shrink the theme script, or raise maxBytes deliberately in the head config',
+      'themeScript({ maxBytes: 2048 })   // raise the cap deliberately — or shrink the theme script',
     );
   }
 

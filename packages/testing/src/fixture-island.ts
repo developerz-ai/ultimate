@@ -3,6 +3,7 @@
 // packages are tier 5, so importing it here would be the reverse of the one declared `cli → testing`
 // edge. A structural seam keeps the direction honest and survives the bundler changing underneath.
 
+// why: Bun exposes no path API; a chunk's scratch path is joined and named by its basename.
 import { basename, join } from 'node:path';
 import { onFileBoundary } from './file-boundary';
 import { islandCoverageDir, recordChunkMap } from './fixture-island-coverage';

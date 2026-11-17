@@ -65,3 +65,14 @@ describe('a link destination stays one link', () => {
     expect(buildLlmsTxt(routes, SITE)).toContain('- [Odd](https://postly.example/a%20b%28c%29)');
   });
 });
+
+describe('a link text stays one link', () => {
+  // `[` and `]` were escaped and `\` was not, so a title ending in `\` escaped the text's own `]`
+  // and the entry was no link at all.
+  test('a backslash in a title is escaped with the brackets', () => {
+    const routes = [route('/', { title: 'Home' }), route('/paths', { title: 'C:\\ and [x]\\' })];
+    expect(buildLlmsTxt(routes, SITE)).toContain(
+      '- [C:\\\\ and \\[x\\]\\\\](https://postly.example/paths)',
+    );
+  });
+});

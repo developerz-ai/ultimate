@@ -3,7 +3,7 @@
 // on env, never an `app.config.ts` field the boot's one loader would read: the edge is a credential
 // and a deployment's, and one image is purged against a different edge per environment.
 
-import { ConfigInvalidError } from '@ultimat3/core';
+import { ConfigInvalidError, renderFixShellArg } from '@ultimat3/core';
 import type { PurgeDriver } from './cdn';
 import { noopPurgeDriver } from './cdn';
 import { cloudflarePurgeDriver } from './purge-cloudflare';
@@ -51,7 +51,7 @@ function requirePair(env: PurgeEnvironment, selectedBy: string, missingKey: stri
   if (value === undefined) {
     throw new ConfigInvalidError({
       cause: `${selectedBy} selects a CDN purge driver, but ${missingKey} is unset — the pair is incomplete`,
-      fix: `set ${missingKey} in .env.production, or unset ${selectedBy} to purge nothing`,
+      fix: `printf '%s=%s\\n' ${renderFixShellArg(missingKey, '<the unset key>')} '<its value>' >> .env.production   # or unset ${selectedBy} to purge nothing`,
       meta: { selectedBy, missing: missingKey },
     });
   }
@@ -73,7 +73,7 @@ export function selectPurgeDriver(env: PurgeEnvironment): PurgeSelection {
     const configured = configuredKeys(env);
     throw new ConfigInvalidError({
       cause: `two CDNs claim the same purge: ${configured.join(', ')} are set`,
-      fix: 'unset one pair in .env.production: a process purges exactly one edge',
+      fix: "sed -i.bak -E '/^CLOUDFLARE_(API_TOKEN|ZONE_ID)=/d' .env.production   # or '/^FASTLY_(API_TOKEN|SERVICE_ID)=/d' — keep one pair: a process purges exactly one edge",
       meta: { configured },
     });
   }

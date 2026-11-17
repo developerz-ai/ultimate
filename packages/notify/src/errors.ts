@@ -100,7 +100,7 @@ export class NotifyChannelsEmptyError extends UltimateError {
     super({
       code: 'X_NOTIFY_CHANNELS_EMPTY',
       cause: `notifier "${input.notifier}" declares no channels, so every run resolves recipients and delivers nothing`,
-      fix: `add at least one entry to deliver: [] on notifier("${input.notifier}") — inAppChannel() is the one with no external driver`,
+      fix: `deliver: [{ channel: inAppChannel() }]   // at least one entry, on notifier("${input.notifier}") — inAppChannel() is the one with no external driver`,
       meta: { notifier: input.notifier },
     });
   }
@@ -122,7 +122,7 @@ export class NotifyChannelDuplicateError extends UltimateError {
     super({
       code: 'X_NOTIFY_CHANNEL_DUPLICATE',
       cause: `notifier "${input.notifier}" declares the channel "${input.channel}" twice, and the delivery ledger keys on it — the second would be deduped away`,
-      fix: `give the second channel its own name on notifier("${input.notifier}") — deliveryChannel('${input.channel}-digest', …) — or merge the two deliver entries`,
+      fix: `deliveryChannel('${input.channel}-digest', …)   // the second channel's own name on notifier("${input.notifier}") — or merge the two deliver entries`,
       meta: { notifier: input.notifier, channel: input.channel },
     });
   }
@@ -138,7 +138,7 @@ export class NotifyFanoutTooWideError extends UltimateError {
     super({
       code: 'X_NOTIFY_FANOUT_TOO_WIDE',
       cause: `notifier "${input.notifier}" resolved ${String(input.recipients)} recipients and the per-run ceiling is ${String(input.max)} — each one is a durable step row`,
-      fix: `deliver through a bulkChannel() on notifier("${input.notifier}"), which sends one payload for every recipient, or page the audience with backfill() from @ultimat3/jobs`,
+      fix: `bulkChannel(…)   // deliver through one on notifier("${input.notifier}"): one payload for every recipient — or page the audience with backfill() from @ultimat3/jobs`,
       meta: { notifier: input.notifier, recipients: input.recipients, max: input.max },
     });
   }
@@ -191,7 +191,7 @@ export class NotifyDigestUnsupportedError extends UltimateError {
     super({
       code: 'X_NOTIFY_DIGEST_UNSUPPORTED',
       cause: `notifier "${input.notifier}" declares a digest window on the bulk channel "${input.channel}", and a window coalesces per recipient where a bulk send has none`,
-      fix: `drop digest from the "${input.channel}" entry on notifier("${input.notifier}") and give it a wait instead, or deliver it through deliveryChannel('${input.channel}', …) one recipient at a time`,
+      fix: `{ channel, wait: '1h' }   // the "${input.channel}" entry on notifier("${input.notifier}"), digest dropped — or deliver it through deliveryChannel('${input.channel}', …) one recipient at a time`,
       meta: { notifier: input.notifier, channel: input.channel },
     });
   }

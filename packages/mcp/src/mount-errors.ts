@@ -29,7 +29,7 @@ export class McpPathDuplicateError extends UltimateError {
       cause: across
         ? `${input.firstFile} (mcp endpoint #${first}) and ${input.file} (mcp endpoint #${second}) both claim ${input.method} ${input.path}`
         : `${input.file} exports mcp endpoints #${first} and #${second}, and both claim ${input.method} ${input.path}`,
-      fix: `give endpoint #${second} in ${input.file} its own path — defineAppMcp({ path: '/mcp/<population>', ... }); every endpoint mounts at its own defineAppMcp path (default /mcp)`,
+      fix: `defineAppMcp({ path: '/mcp/<population>', ... })   // endpoint #${second} in ${input.file}: every endpoint mounts at its own defineAppMcp path (default /mcp)`,
     });
     this.path = input.path;
     this.endpoints = input.endpoints;

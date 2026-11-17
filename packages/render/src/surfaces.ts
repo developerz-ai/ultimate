@@ -5,7 +5,12 @@
  * aspirational. Violations are build errors, resolved through the whole chain.
  */
 
-import type { RenderMode, Surface } from '@ultimat3/core';
+import {
+  type RenderMode,
+  renderFixShellArg,
+  type Surface,
+  trimTrailingSlashes,
+} from '@ultimat3/core';
 import { byCodeUnit } from './code-unit-order';
 import { SurfaceBoundaryError } from './errors';
 
@@ -127,7 +132,7 @@ export function surfaceOf(file: string): Surface | null {
  * which both graphs carry.
  */
 export function surfaceUnder(root: string, file: string): Surface | null {
-  const base = normalize(root).replace(/\/+$/, '');
+  const base = trimTrailingSlashes(normalize(root));
   const path = normalize(file);
   const relative = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : path;
   if (/(?:^|\/)node_modules\//.test(relative)) return null;
@@ -276,13 +281,15 @@ function classify(i: ClassifyInput): BoundaryViolation | null {
       ...base,
       rule: 'site-imports-app',
       cause: chainText,
-      fix: `x fix boundary ${i.entry}   (or move ${i.imported} out of the shared graph)`,
+      fix: `x fix boundary ${renderFixShellArg(i.entry, '<entry file>')}   (or move ${i.imported} out of the shared graph)`,
     };
   }
   const from = i.importerSurface;
   const to = i.importedSurface;
   if (from === null || to === null || from === to) return null;
-  const spec = SURFACE_SPECS[from];
+  // Own keys only: a surface that is not one has no rule, and a prototype member is not a rule.
+  const spec = Object.hasOwn(SURFACE_SPECS, from) ? SURFACE_SPECS[from] : undefined;
+  if (spec === undefined) return null;
   if (spec.mayImport.includes(to)) return null;
   if (i.typeOnly && spec.mayImportTypes.includes(to)) return null;
   // Reported above, from the site entry that reaches it — one crossing, one finding.
@@ -293,7 +300,7 @@ function classify(i: ClassifyInput): BoundaryViolation | null {
       ...base,
       rule: 'shared-is-a-leaf',
       cause: `${chainText}  (shared/ is a leaf — it may not import a surface)`,
-      fix: `move the shared part of ${i.imported} into shared/ and import it from ${i.importer}`,
+      fix: `x fix boundary ${renderFixShellArg(i.importer, "'<the importing file>'")}   # or move the shared part of ${i.imported} into shared/ and import it from ${i.importer}`,
     };
   }
   if (from === 'app' && to === 'api' && !i.typeOnly) {
@@ -301,7 +308,7 @@ function classify(i: ClassifyInput): BoundaryViolation | null {
       ...base,
       rule: 'app-imports-api-at-runtime',
       cause: `${chainText}  (app/ → api/ is types-only)`,
-      fix: `change to \`import type\` in ${i.importer} and call the typed client instead`,
+      fix: `import type { … } from '<the api module>'   // in ${i.importer} — and call the typed client instead`,
     };
   }
   const field = i.typeOnly ? 'mayImportTypes' : 'mayImport';
@@ -309,7 +316,7 @@ function classify(i: ClassifyInput): BoundaryViolation | null {
     ...base,
     rule: 'surface-imports-surface',
     cause: `${chainText}  (${from}/ may not import ${to}/${i.typeOnly ? ', even as a type' : ''}: SURFACE_SPECS.${from}.${field} is [${spec[field].join(', ')}])`,
-    fix: `move what ${i.importer} needs from ${i.imported} into shared/ and import it from there`,
+    fix: `x fix boundary ${renderFixShellArg(i.importer, "'<the importing file>'")}   # or move what ${i.importer} needs from ${i.imported} into shared/ and import it from there`,
   };
 }
 
@@ -324,5 +331,7 @@ export function assertSurfaceBoundary(graph: ImportGraph): void {
 }
 
 export function surfaceAllows(surface: Surface, mode: RenderMode): boolean {
-  return SURFACE_SPECS[surface].allowedModes.includes(mode);
+  return (
+    Object.hasOwn(SURFACE_SPECS, surface) && SURFACE_SPECS[surface].allowedModes.includes(mode)
+  );
 }

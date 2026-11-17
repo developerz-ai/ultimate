@@ -7,6 +7,7 @@
 // same reason `bigint()` and `decimal()` hand back strings: a `number` loses digits past 2^53 and
 // a binary float loses cents.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { columnFor } from './column';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
@@ -64,7 +65,7 @@ export const notAggregatable = (
       fn === 'avg' && kind === 'money'
         ? `${entityName}.sum('${property}') and ${entityName}.count() — divide at the call site, where the rounding is a decision somebody made`
         : candidates.length === 0
-          ? `x entities show ${entityName} --json   # this entity declares no column ${fn} can be applied to`
+          ? `x entities show ${renderFixShellArg(entityName, '<entity>')} --json   # this entity declares no column ${fn} can be applied to`
           : `${entityName}.${fn}('${candidates[0]}')   # ${fn} takes one of: ${candidates.join(', ')}`,
   });
 

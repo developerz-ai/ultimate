@@ -76,7 +76,7 @@ Run everything from the repo root.
 | before reporting | `bun run preflight [<paths>]` — cheap ratchets, touched units' coverage, serve-graph on a moved src file: one verdict |
 | coverage, per unit | `bun run coverage` — 30 packages, `create-ultimate` and `scripts/` · `bun run coverage:package <pkg>` |
 | **the app gate** | `bun run scripts/reference-app-gate.ts` — builds the three apps (`x build --target static`), then verifies. As of 2026-11 every `expectedRed` table (`scripts/lib/gated-apps.ts`) is empty: all steps pass. `--app <dir>` gates one |
-| a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket) [--browser \| --server-only]` — registration + `wiki/Error-Codes.md` row + HTTP status in one. Tier ≤ 4: one of pair 1, tier 5 none; realtime: one of pair 2. A script's code: `--script scripts/<f>.ts`, no `--package` (never-ships list + row) |
+| a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket) [--browser \| --server-only]` — registration + `wiki/Error-Codes-<pkg>.md` row + HTTP status. Tier ≤ 4: one of pair 1, tier 5 none; realtime: one of pair 2. A script's code: `--script scripts/<f>.ts`, no `--package` (never-ships list + row) |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | regenerate manifest | `bun run manifest` |
 | both tracked apps' schema dumps | `bun run schema-dumps` regenerates `packages/db/schema/` in each · `--check` only reports |

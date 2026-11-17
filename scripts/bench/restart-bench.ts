@@ -32,7 +32,6 @@
 // (restart-bench-seq.ts): every client counts holes in the probe sequence it received on each
 // connection, and `seq.missing` is what a lost channel frame looks like.
 
-import { cpus } from 'node:os';
 import { ScriptError } from '../lib/script-error';
 import type { ClientStats } from './restart-bench-client';
 import { type BenchReport, type PhaseSummary, summarizeDurations } from './restart-bench-report';
@@ -51,7 +50,7 @@ interface Args {
 }
 
 function defaultWorkers(): number {
-  return Math.max(2, cpus().length - 2);
+  return Math.max(2, navigator.hardwareConcurrency - 2);
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -294,9 +293,12 @@ async function main(): Promise<void> {
   let seq = 0;
   const probe = setInterval(() => {
     seq += 1;
-    void fetch(`http://127.0.0.1:${args.port}/bench/publish?seq=${seq}`, { method: 'POST' }).catch(
-      () => {},
-    );
+    // A probe still unanswered when the next fires is stale: it ends with its interval, so a server
+    // that accepts and never answers cannot pile one socket per tick onto the run.
+    void fetch(`http://127.0.0.1:${args.port}/bench/publish?seq=${seq}`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(args.probeIntervalMs),
+    }).catch(() => {});
   }, args.probeIntervalMs);
 
   lastReported = -1;

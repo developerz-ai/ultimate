@@ -1,8 +1,10 @@
 // Single responsibility: what one statement is to the rest of the process — a `db.<verb>` client
 // span carrying OTel's stable database attributes, opened for EVERY statement (production has DB
 // spans, not only `x dev`), and one `db.statement` event on the instrumentation bus once it has
-// settled. Both drivers' funnels (`statement-funnel.ts`, `pglite.ts`) call `traceStatement` and
-// nothing else, so the two cannot answer differently for the same statement.
+// settled.
+//
+// Both drivers' funnels (`statement-funnel.ts`, `pglite.ts`) call `traceStatement` and nothing
+// else, so the two cannot answer differently for the same statement.
 
 import { instrument, SEMCONV, SEMCONV_VALUES, subscribed, withSpan } from '@ultimat3/core';
 import { statementAttribution } from './attribution';

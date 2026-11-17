@@ -45,9 +45,8 @@ export class QuerySubscribesUnknownError extends UltimateError {
         `the query "${input.query}" declares subscribes: ["${input.table}"] and no entity ` +
         'declares a table with that name',
       fix:
-        `edit subscribes: on the query "${input.query}" to name a table this app declares ` +
-        `(${offer(input.tables)}), or drop the name, then x db gen "fix subscribes" --json — a ` +
-        'name no table has can never match what the read selects from (X_QUERY_SUBSCRIBES_DRIFT)',
+        // One literal: the scan reads each piece of a `+` chain as its own fix line.
+        `subscribes: ['<table>']   // on the query "${input.query}", a table this app declares (${offer(input.tables)}) — or drop the name, then x db gen "fix subscribes" --json; a name no table has can never match what the read selects from (X_QUERY_SUBSCRIBES_DRIFT)`,
       meta: { query: input.query, table: input.table },
     });
   }

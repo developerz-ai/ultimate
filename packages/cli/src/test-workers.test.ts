@@ -54,7 +54,15 @@ describe('unit · the budget refuses what it cannot read', () => {
     expect(parseBytes('1.5G')).toBe(1.5 * GiB);
     expect(parseBytes('1073741824')).toBe(GiB);
     expect(parseBytes('3 tb')).toBeUndefined();
+    expect(parseBytes(' \t2 k \n')).toBe(2 * 1024);
   });
+
+  // The value is an env var or a flag: a long run of spaces before junk must not stall the read.
+  test('a size is read in linear time, whatever spaces surround it', () => {
+    const started = performance.now();
+    expect(parseBytes(`0${' '.repeat(50_000)}!`)).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(50);
+  }, 30_000);
 });
 
 describe('unit · the default width', () => {

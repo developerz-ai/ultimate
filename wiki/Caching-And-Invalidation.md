@@ -221,7 +221,7 @@ export const summarize = llm({
 | Scope | optional — the calling **actor** by default, so one org never reads another's completion. Widening is written down: `scope: () => 'global'` |
 | Bypass | `temperature > 0` results are cached but flagged; `cache: false` for anything user-visible-and-unique |
 | Invalidation | participates in the same tag graph; bumping the prompt version invalidates wholesale |
-| Metrics | hit rate, tokens saved, cost saved — in `/_x` and `x ai cache --json` |
+| Metrics | every `llm()` call emits `ai.llm` on the instrumentation bus with `cacheHit`, `inputTokens` and `outputTokens`; hit rate and tokens saved are a subscriber's sum, and `gen_ai_client_token_usage` is on `/metrics` → [Observability](Observability) |
 
 **The locale is part of the key, and not part of the scope** — `As of 2026-08-24`. A prompt that takes `locale` as a var differs by one token between languages while carrying a whole document, so the two rendered prompts are near-identical to an embedder: measured over the reference app's summarize template, **0.9986**, against the `threshold: 0.97` in the snippet above. Before this, whichever language asked first was served to everyone — an English reader got the Spanish summary, and the model had done nothing wrong.
 

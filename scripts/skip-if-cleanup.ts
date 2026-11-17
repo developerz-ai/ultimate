@@ -278,7 +278,7 @@ export function checkCleanup(input: CleanupInput): readonly Finding[] {
       {
         code: 'X_SKIP_CLEANUP_UNSCANNED',
         cause: 'no test file was scanned, so no skipped suite was checked',
-        fix: 'run `bun run skip-if-cleanup` from the repo root; a Bun.Glob pattern it cannot expand matches zero files',
+        fix: 'bun run skip-if-cleanup   # from the repo root; a Bun.Glob pattern it cannot expand matches zero files',
         at: 'scripts/skip-if-cleanup.ts',
       },
     ];
@@ -288,7 +288,7 @@ export function checkCleanup(input: CleanupInput): readonly Finding[] {
     .map((one) => ({
       code: 'X_SKIP_CLEANUP_UNREACHED',
       cause: `${one.file} skips a suite and resets a process-global registry, and no file-scope hook reaches ${one.unreached.length === 0 ? 'that reset' : one.unreached.join(', ')} — Bun evaluates a skipped file's module body, so whatever it registers at import leaks into every later file in the process`,
-      fix: `move the reset into a hook at column 0 in ${one.file}, e.g. \`afterAll(() => {\\n  clearRegistry();\\n});\`, and guard nothing on the skip condition — a file-scope hook that returns early on the same condition leaks identically. Verify with the suite SKIPPED: run it with the live env var unset alongside another file that registers`,
+      fix: `afterAll(() => { clearRegistry(); });   // the reset, moved into a hook at column 0 in ${one.file}; guard nothing on the skip condition — a file-scope hook that returns early on the same condition leaks identically. Verify with the suite SKIPPED: run it with the live env var unset alongside another file that registers`,
       at: one.file,
     }));
 }

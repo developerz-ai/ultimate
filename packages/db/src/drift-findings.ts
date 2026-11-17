@@ -3,6 +3,7 @@
 // compares anything (`drift.ts` decides whether two schemas disagree). A `fix:` is ONE command a shell runs, and a difference names the declared
 // side's spelling, never the catalog's — which is Postgres' rewriting.
 
+import { isFixShellSafe, renderFixShellArg } from '@ultimat3/core';
 import { psqlCommand } from './dependent-view';
 import { undeclaredColumnNext } from './drift-errors';
 import { addForeignKey, dropForeignKey, onDeleteRule, validateConstraint } from './foreign-key';
@@ -134,7 +135,7 @@ export function unexpectedColumn(table: string, column: string): DriftDifference
     fix:
       shellInertIdentifier(column) === null
         ? `x db gen "add the undeclared column"   # the live column name carries shell syntax, so it is in the cause and not in this command; ${undeclaredColumnNext('it')}`
-        : `x db gen "add ${column}"   # ${undeclaredColumnNext(column)}`,
+        : `x db gen "add ${renderFixShellArg(column, 'the undeclared column')}"   # ${undeclaredColumnNext(column)}`,
   };
 }
 
@@ -217,9 +218,7 @@ export function unexpectedTable(schema: string, table: string): DriftDifference 
             `inspect the table this difference names with \\d, then claim it in a migration ` +
               'with create table if not exists or drop it',
           )
-        : `${psqlCommand(`\\d ${name}`)}   # nothing declares it: put create table if not exists ` +
-          `${spoken} (…) in a migration, then x db migrate — or, if nothing owns it, run ` +
-          `drop table ${spoken}; here`,
+        : `${psqlCommand(`\\d ${name}`)}   # nothing declares it: put create table if not exists ${spoken} (…) in a migration, then x db migrate — or, if nothing owns it, run drop table ${spoken}; here`,
   };
 }
 
@@ -240,8 +239,11 @@ export function unknownSchema(migrations: readonly Migration[]): DriftDifference
   // identifier and a migration description is not one either, so neither has a quoted form that
   // makes a hostile name safe. An EMPTY id is inert by construction and keeps its glob — that is
   // "no migrations at all", not a name this function refused to spell.
+  // `isFixShellSafe` too, for the id: it is screened where it is spliced into the glob, and a
+  // screen answering its placeholder there would widen the glob to every snapshot in the tree.
   const spellable =
-    (id === '' || shellInertIdentifier(id) !== null) && shellInertIdentifier(name) !== null;
+    (id === '' || (shellInertIdentifier(id) !== null && isFixShellSafe(id))) &&
+    shellInertIdentifier(name) !== null;
   return {
     kind: 'unknown-schema',
     table: '',
@@ -254,12 +256,8 @@ export function unknownSchema(migrations: readonly Migration[]): DriftDifference
     // fix pointed back here — a cycle a scaffolded app hit on its first `x db migrate`. The
     // pathspec is a glob because this package is tier 1: only `@ultimat3/cli` knows the directory.
     fix: spellable
-      ? `git checkout -- "*${id}.snapshot.json"   # or, if it was never written: ` +
-        `delete migration "${id}" and rerun x db gen "${name}"`
-      : 'git status --short -- "*.snapshot.json"   # shows the sidecar that is gone: git ' +
-        'checkout it, or delete that migration and rerun x db gen with its description — the ' +
-        "migration named in this difference's cause carries a backtick, a dollar sign, a " +
-        'quote, a backslash or whitespace in its file name, so no command here can spell it',
+      ? `git checkout -- "*${renderFixShellArg(id, '')}.snapshot.json"   # or, if it was never written: delete migration "${id}" and rerun x db gen "${name}"`
+      : `git status --short -- "*.snapshot.json"   # shows the sidecar that is gone: git checkout it, or delete that migration and rerun x db gen with its description — the migration named in this difference's cause carries a backtick, a dollar sign, a quote, a backslash or whitespace in its file name, so no command here can spell it`,
   };
 }
 

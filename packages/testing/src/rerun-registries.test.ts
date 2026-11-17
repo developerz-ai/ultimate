@@ -26,6 +26,7 @@ import { allow } from '@ultimat3/policy';
 import { from, listQueries, query } from '@ultimat3/query';
 import { registerQueries } from '@ultimat3/query/loader';
 import { t } from '@ultimat3/schema';
+import { loaded } from './per-test-reset';
 import type { DeclarationRegistry } from './rerun-declarations';
 import { frameworkDeclarationRegistries } from './rerun-registries';
 
@@ -94,6 +95,9 @@ describe('frameworkDeclarationRegistries', () => {
       'query',
       'mail',
       'mail-layout',
+      // Flags join once `@ultimat3/flags` is loaded — by another file sharing this worker, or not.
+      // Its round trip is `scripts/base-recipes/billing.test.ts` under `bun test --rerun-each`.
+      ...(loaded('@ultimat3/flags', 'registry.ts') === undefined ? [] : ['flag']),
       'oauth-provider',
     ]);
   });

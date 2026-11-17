@@ -77,7 +77,7 @@ A convention that isn't a build error doesn't exist. What actually fails, and wh
 |---|---|---|
 | `tsc` | any error; `any` is banned outright | [`05`](./05-type-chain.md) |
 | Biome | `any`, default exports, non-null assertions, a value-import of a type, an unused import or variable, a floating promise — the eight rules `biome.json` declares on top of the `recommended` preset, plus the formatter. **Not** bare `Error`, raw hex, hardcoded strings or a zoneless date: this row claimed all four until 2026-08-23 and `biome.json` declares no rule for any of them | [`00`](./00-conventions.md), [`04`](./04-error-contract.md), [`10`](./10-cross-cutting.md) |
-| errors | an empty or unrunnable `fix:`, a code with no `wiki/Error-Codes.md` row, a test reporting its verdict with a bare `Error` | [`04`](./04-error-contract.md) |
+| errors | an empty or unrunnable `fix:`, a code with no `wiki/Error-Codes-<owner>.md` row, a test reporting its verdict with a bare `Error` | [`04`](./04-error-contract.md) |
 | boundaries | tier violations, `site/` → `app/`, routes → DB, services → HTTP | [`02`](./02-boundaries.md) |
 | six test types | any failure; a flake **is** a failure | [`14`](./14-testing-internals.md) |
 | migration drift | schema ≠ migrations ≠ catalog | [`06`](./06-data-layer.md) |

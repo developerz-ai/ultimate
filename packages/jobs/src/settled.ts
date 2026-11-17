@@ -1,8 +1,9 @@
-// `onSettled`: the ONE hook a job declares to learn how a run ended — completed (with what the
-// body returned), dead-lettered, dropped, or refused by a busy concurrency key. Run AFTER the row
-// is settled, by the worker whose settle landed, in the body's own tenant scope, on its own tries,
-// and never able to change what the queue recorded: a hook that keeps throwing is logged and
-// reported under `X_JOB_ON_SETTLED_FAILED`, and the row stays where it was put.
+// `onSettled`: the ONE hook a job declares to learn how a run ended — completed (with what the body
+// returned), dead-lettered, dropped, or refused by a busy concurrency key.
+//
+// Run AFTER the row is settled, by the worker whose settle landed, in the body's own tenant scope,
+// on its own tries, and never able to change what the queue recorded: a hook that keeps throwing
+// is logged and reported under `X_JOB_ON_SETTLED_FAILED`, and the row stays where it was put.
 //
 // AT LEAST ONCE per settlement across a crash (J11): the settle — or the claim's burial — records
 // the debt in its own write (`SettleBy.owesSettle`, `ClaimOptions.settleOwed`), the hook's return

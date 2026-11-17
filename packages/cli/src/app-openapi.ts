@@ -1,9 +1,11 @@
 // `openapi.json`, projected from the two registries: the actions by `@ultimat3/action`'s
-// `buildOpenApi`, the queries by `@ultimat3/query`'s `queryOpenApiPaths`. The CLI merges the two
-// `paths` maps — those packages are one tier and cannot compose each other — writes the file and
-// compares the bytes; it does not know how an operation is shaped, which is why there is no third
-// OpenAPI builder to drift from the ones the packages serve. Until 2026-09 only the actions were
-// here, and every `GET /_x/query/<name>` the server mounted was a route the spec had never heard of.
+// `buildOpenApi`, the queries by `@ultimat3/query`'s `queryOpenApiPaths`, merged and written.
+//
+// The CLI merges the two `paths` maps — those packages are one tier and cannot compose each other —
+// writes the file and compares the bytes; it does not know how an operation is shaped, which is why
+// there is no third OpenAPI builder to drift from the ones the packages serve. Until 2026-09 only
+// the actions were here, and every `GET /_x/query/<name>` the server mounted was a route the spec
+// had never heard of.
 
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';

@@ -197,7 +197,7 @@ describe('unit · errors.explain projects the throw site', () => {
       // `@ultimat3/mcp` raises this in exactly one place, so the answer is that line verbatim —
       // no note, no gate command, nothing this table wrote down a second time.
       expect(explainErrorCode('X_MCP_TOOL_UNSAFE')?.fix).toBe(
-        "add policy: '<resource>:<verb>' to the tool, reusing the permission its action uses",
+        "policy: '<resource>:<verb>'   // on the tool, reusing the permission its action uses",
       );
       expect(codeFixes().get('X_MCP_TOOL_UNSAFE')?.[0]?.at).toBe('@ultimat3/mcp/src/errors.ts');
     },

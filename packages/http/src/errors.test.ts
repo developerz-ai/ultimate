@@ -104,13 +104,17 @@ describe('methodNotAllowed', () => {
     expect(error.cause).toContain('/posts');
     expect(error.cause).toContain('GET, PUT');
     expect(error.cause).toContain('POST');
-    expect(error.fix).toBe('add a POST route for /posts or call it with GET');
+    expect(error.fix).toBe(
+      'x routes --json   # /posts has no POST route: add one, or call it with GET',
+    );
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 
   test('an empty allow list falls back to GET in the fix line', () => {
     const error = methodNotAllowed('DELETE', '/posts', []);
-    expect(error.fix).toBe('add a DELETE route for /posts or call it with GET');
+    expect(error.fix).toBe(
+      'x routes --json   # /posts has no DELETE route: add one, or call it with GET',
+    );
   });
 });
 
@@ -135,7 +139,7 @@ describe('unauthenticated', () => {
     expect(error.code).toBe('X_UNAUTHENTICATED');
     expect(error.cause).toContain('/x');
     expect(error.fix).toBe(
-      "send a session cookie or Authorization header, or set meta.auth to 'public'",
+      "meta: { auth: 'public' }   // on the route, if it is public — otherwise send a session cookie or Authorization header",
     );
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
@@ -194,7 +198,7 @@ describe('serverNotStarted', () => {
     expect(error).toBeInstanceOf(HttpError);
     expect(error.code).toBe('X_SERVER_NOT_STARTED');
     expect(error.cause).toContain('url()');
-    expect(error.fix).toBe('call httpServer({ ... }).start() before reading url()');
+    expect(error.fix).toBe('httpServer({ ... }).start()   // before reading url()');
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });
@@ -206,7 +210,7 @@ describe('pipelineNoResponse', () => {
     expect(error.code).toBe('X_PIPELINE_NO_RESPONSE');
     expect(error.cause).toContain('handler');
     expect(error.fix).toBe(
-      'return a Response from the route handler, or a Response from the stage that short-circuits',
+      'jsonResponse(data)   // return a Response from the route handler, or from the stage that short-circuits',
     );
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
@@ -291,7 +295,8 @@ describe('HTTP_ERROR_CODES', () => {
     // Derived, not counted: `bun run new-error-code` adds a code to the owned array, its title and
     // the wiki row in one edit, and a `toBe(33)` plus a literal copy went red after every one.
     // The partition test below holds owned + borrowed equal to the whole list.
-    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes.md`).text();
+    // The row lives on http's OWN page of the split reference, the page the manifest files it under.
+    const page = await Bun.file(`${import.meta.dir}/../../../wiki/Error-Codes-http.md`).text();
     expect(new Set(EVERY_CODE).size).toBe(EVERY_CODE.length);
     for (const code of OWNED_CODES) {
       expect(code).toMatch(/^X_[A-Z0-9_]+$/);

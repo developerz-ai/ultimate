@@ -137,12 +137,10 @@ describe.skipIf(!hasPostgres)('live · postgres · history(id)', () => {
       await t2;
       const db = database({ docs, docsHistory }, { driver: postgresDriver() });
       const versions = await runWithContext(as(ORG_A), () => history(db.docsHistory, ROW));
-      const atOf = (title: string): number =>
-        versions
-          .find((v) => (v.after as { title?: string } | null)?.title === title)
-          ?.at.getTime() ?? Number.NaN;
-      // The interleaving happened: b→c carries an EARLIER `at` than a→b.
-      expect(atOf('c') < atOf('b')).toBe(true);
+      // The interleaving happened: b→c carries an EARLIER `at` than a→b — read at the server's
+      // microseconds, since both can start inside one millisecond of a `Date`.
+      const stamps = await startedAt(client, ROW);
+      expect(stamps.title('c') < stamps.title('b')).toBe(true);
       expect(
         versions.map((v) => [v.version, (v.after as { title?: string } | null)?.title ?? null]),
       ).toEqual([
@@ -189,9 +187,8 @@ describe.skipIf(!hasPostgres)('live · postgres · history(id)', () => {
       await t2;
       const db = database({ docs, docsHistory }, { driver: postgresDriver() });
       const versions = await runWithContext(as(ORG_A), () => history(db.docsHistory, ROW));
-      const atOf = (op: string): number =>
-        versions.find((v) => v.op === op)?.at.getTime() ?? Number.NaN;
-      expect(atOf('delete') < atOf('insert')).toBe(true);
+      const stamps = await startedAt(client, ROW);
+      expect(stamps.op('delete') < stamps.op('insert')).toBe(true);
       expect(versions.map((v) => [v.version, v.op])).toEqual([
         [1, 'insert'],
         [2, 'delete'],
@@ -201,3 +198,20 @@ describe.skipIf(!hasPostgres)('live · postgres · history(id)', () => {
     }
   });
 });
+
+/**
+ * Each version's `at` in MICROSECONDS, as Postgres stored it. Two transactions on a fast runner can
+ * begin inside one millisecond, where a `Date` ties and a strict `<` reads false (#1166's live-2).
+ */
+async function startedAt(client: PostgresClient, row: string) {
+  const rows = await client.query<{ op: string; title: string | null; us: string }>(
+    sql`select op, "after"->>'title' as title, (extract(epoch from at) * 1000000)::bigint::text as us
+        from "hist_live_docs_history" where row_id = ${row}`,
+  );
+  const at = (pick: (r: (typeof rows)[number]) => boolean): bigint =>
+    BigInt(rows.find(pick)?.us ?? '-1');
+  return {
+    op: (op: string) => at((r) => r.op === op),
+    title: (title: string) => at((r) => r.title === title),
+  };
+}

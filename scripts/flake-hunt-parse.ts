@@ -9,8 +9,8 @@ export interface FailedTest {
   readonly excerpt: string;
 }
 
-/** A file header: the path Bun prints, alone on its line, before that file's results. */
-const HEADER = /^(\S.*\.test\.[cm]?[jt]sx?):$/;
+/** A file header: the path Bun prints before that file's results — bare, or in CI's ::group:: line. */
+const HEADER = /^(?:::group::)?(\S.*\.test\.[cm]?[jt]sx?):$/;
 /** A failure line, its trailing `[1.20ms]` timing dropped so a rerun names the same test. */
 const FAIL = /^\s*\(fail\)\s+(.*?)(?:\s+\[[\d.]+m?s\])?\s*$/;
 /** Bun's end-of-run repeat of every failure, under no file header: never a second failure. */

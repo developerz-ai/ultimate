@@ -3,7 +3,7 @@
  * Every throw carries a stable code, a cause, and a command that fixes it.
  */
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, renderFixShellArg, UltimateError } from '@ultimat3/core';
 
 export const I18N_ERROR_CODES = [
   'X_LOCALE_UNSUPPORTED',
@@ -44,7 +44,7 @@ export function localeUnsupported(tag: string, supported: readonly string[]): I1
   return new I18nError({
     code: 'X_LOCALE_UNSUPPORTED',
     cause: `locale "${tag}" is not in the supported set [${supported.join(', ')}]`,
-    fix: `x i18n add ${normalizeForFix(tag)}`,
+    fix: `x i18n add ${renderFixShellArg(normalizeForFix(tag), '<locale>')}`,
   });
 }
 
@@ -58,7 +58,7 @@ export function catalogMissingKeys(locale: string, keys: readonly string[]): I18
   return new I18nError({
     code: 'X_CATALOG_MISSING_KEYS',
     cause: `packages/i18n/catalogs/${locale}.json is missing ${keys.length} key(s) source names or the reference locale defines: ${shown.join(', ')}${suffix}`,
-    fix: `x i18n sync ${locale}   # writes each key above as ⟦key⟧ — replace every one with the real string`,
+    fix: `x i18n sync ${renderFixShellArg(locale, '<locale>')}   # writes each key above as ⟦key⟧ — replace every one with the real string`,
   });
 }
 
@@ -116,7 +116,7 @@ export function catalogsNeverRegistered(locale: string, unresolved: readonly str
   return new I18nError({
     code: 'X_CATALOG_UNREGISTERED',
     cause: `no catalog is registered for "${locale}" and ${unresolved.length} key(s) used in source resolve to nothing: ${shownKeys(unresolved)} — each renders \u27e6key\u27e7`,
-    fix: `x i18n add ${locale}   # then ${REGISTRATION_FIX}`.trim(),
+    fix: `x i18n add ${renderFixShellArg(locale, '<locale>')}   # then ${REGISTRATION_FIX}`.trim(),
   });
 }
 

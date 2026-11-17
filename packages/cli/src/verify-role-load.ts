@@ -1,8 +1,11 @@
-// The gate's half of per-role loading (`manifest` step): a worker and a scheduler import the API
-// index and every module that reaches no component or stylesheet (`role-load.ts`). A registration
-// made in a module that DOES reach one, and that the index does not import, exists in the web role
-// and in every tool — and not in a worker. At boot only jobs and tasks are checked, against the
-// manifest; this is the build error for everything else a job reads by name.
+// The gate's half of per-role loading (`manifest` step): a registration a worker's import set
+// never reaches is a build error.
+//
+// A worker and a scheduler import the API index and every module that reaches no component or
+// stylesheet (`role-load.ts`). A registration made in a module that DOES reach one, and that the
+// index does not import, exists in the web role and in every tool — and not in a worker. At boot
+// only jobs and tasks are checked, against the manifest; this is the build error for everything
+// else a job reads by name.
 
 // why: Bun ships no path API; the fix names the import relative to the API index.
 import { dirname, join } from 'node:path';
@@ -96,7 +99,7 @@ export function roleLoadFinding(missing: MissingRegistration): Finding {
   return {
     code: 'X_ROLE_LOAD_INCOMPLETE',
     cause: `${missing.kind} ${JSON.stringify(missing.name)} is registered by importing ${missing.module}, which reaches a component or a stylesheet and which ${API_INDEX} does not import — so a worker and a scheduler, which import no document, run without it`,
-    fix: `edit ${API_INDEX}: add import '${specifierFor(missing.module)}'; — or move the ${missing.kind} out of ${missing.module} into a module that imports no .tsx and no stylesheet`,
+    fix: `import '${specifierFor(missing.module)}';   // in ${API_INDEX} — or move the ${missing.kind} out of ${missing.module} into a module that imports no .tsx and no stylesheet`,
     docs: ERROR_DOCS_URL,
     at: missing.module,
   };

@@ -6,6 +6,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { dbUnavailable } from '@ultimat3/db';
 import { externalUrl, installedAbove, probeDatabase } from './doctor-database';
 
 const scratch = mkdtempSync(join(tmpdir(), 'x-doctor-db-'));
@@ -54,8 +55,7 @@ describe('unit · x doctor · the external database probe', () => {
     const found = await probeDatabase('postgres://u:p@127.0.0.1:1/db', {});
     expect(found?.code).toBe('X_DB_UNAVAILABLE');
     expect(found?.cause).toStartWith('DATABASE_URL does not answer `select 1`: ');
-    expect(found?.fix).toBe(
-      'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
-    );
+    expect(found?.fix).toBe(dbUnavailable('').fix);
+    expect(found?.fix).toStartWith('DATABASE_URL=');
   });
 });

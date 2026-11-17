@@ -1,8 +1,10 @@
 // Single responsibility: a `timestamptz` value at the precision the COLUMN stores it, rather than
 // the precision a JS `Date` holds. The column keeps microseconds and a `Date` keeps milliseconds,
 // so a page position minted from a decoded row ranks rows differently from the `order by` that
-// produced them. Microseconds since the epoch is the one form both sides can be exact in, and this
-// file is the only place the two representations meet.
+// produced them.
+//
+// Microseconds since the epoch is the one form both sides can be exact in, and this file is the
+// only place the two representations meet.
 
 /** A `Date` is exactly this much coarser than the column it came out of. */
 const MICROS_PER_MILLI = 1000n;

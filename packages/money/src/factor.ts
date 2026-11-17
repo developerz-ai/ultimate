@@ -1,9 +1,10 @@
 /**
- * The exact fraction a scaling factor's decimal spelling names.
- * A rate, a quantity or a percentage arrives as an IEEE-754 double, and `1.005` is held as
- * 1.00499999999999989…; scaling first and rounding after therefore shows the rounding mode a
- * value nobody wrote. The shortest round-trip decimal IS what was written, so its expansion is
- * the exact value every scale in this package is taken against.
+ * The exact fraction a scaling factor's decimal spelling names. A rate, a quantity or a percentage
+ * arrives as an IEEE-754 double, and `1.005` is held as 1.00499999999999989…; scaling first and
+ * rounding after therefore shows the rounding mode a value nobody wrote.
+ *
+ * The shortest round-trip decimal IS what was written, so its expansion is the exact value every
+ * scale in this package is taken against.
  */
 
 import { notRoundable } from './errors';

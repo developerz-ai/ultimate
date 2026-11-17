@@ -17,6 +17,7 @@
 // tree, and this audit is an operator command a daily workflow runs. `quoteArg` screens the values
 // a fix line pastes, which is what `fix-shell-arg` asks for.
 import { quoteArg } from '../packages/cli/src/shell-quote';
+import { timingSafeEqual } from '../packages/core/src/timing-safe-equal';
 import { parseScriptArgs } from './lib/args';
 import { servingTag } from './lib/dist-tag';
 import type { Finding, ScriptResult } from './lib/log';
@@ -233,7 +234,8 @@ const isAttested = (record: VersionRecord | undefined): boolean =>
   record?.dist?.attestations !== undefined && record.dist.attestations !== null;
 
 /** The one real fetch every registry reader defaults to; tests inject their own. */
-export const defaultFetch: RegistryFetch = (url, init) => fetch(url, init);
+export const defaultFetch: RegistryFetch = (url, { signal, method }) =>
+  fetch(url, method === undefined ? { signal } : { signal, method });
 
 /** Sequential on purpose: 30 small GETs, and a burst is what npm rate-limits. */
 export async function auditRegistry(
@@ -253,7 +255,7 @@ const absentFinding = (state: PublishState): Finding => ({
   code: 'X_REGISTRY_BOOTSTRAP_OWED',
   at: state.name,
   cause: `${state.name} is publishable and the registry has no such package — it is ${ordinalLabel(state.ordinal)} of ${state.total} in the publish order, so a release run publishes ${state.ordinal - 1} packages irreversibly and then dies on this one`,
-  fix: `npm publish -w ${state.name} --access public --provenance=false   # PUBLISHING.md step 1, the one-time bootstrap; then bun run scripts/trust-publishers.ts`,
+  fix: `npm publish -w ${quoteArg(state.name)} --access public --provenance=false   # PUBLISHING.md step 1, the one-time bootstrap; then bun run scripts/trust-publishers.ts`,
 });
 
 const dispatch = (version: string): string =>
@@ -290,7 +292,7 @@ const unreachableFinding = (state: PublishState): Finding => ({
   code: 'X_REGISTRY_UNREACHABLE',
   at: state.name,
   cause: `the registry did not answer for ${state.name}: ${state.detail ?? 'no detail'} — this is not evidence that ${state.name} is unpublished`,
-  fix: `curl -sS -o /dev/null -w '%{http_code}\\n' ${packumentUrl(state.name)}   # then re-run: bun run scripts/registry-audit.ts --json`,
+  fix: `curl -sS -o /dev/null -w '%{http_code}\\n' ${quoteArg(packumentUrl(state.name))}   # then re-run: bun run scripts/registry-audit.ts --json`,
 });
 
 /**
@@ -305,7 +307,7 @@ const unreachableFinding = (state: PublishState): Finding => ({
 const latestSplitFinding = (state: PublishState): Finding | undefined =>
   state.tag !== undefined
     ? servingTagFinding(state, state.tag)
-    : state.latest === state.version
+    : timingSafeEqual(state.latest ?? '', state.version)
       ? undefined
       : {
           code: 'X_REGISTRY_LATEST_DRIFT',
@@ -359,13 +361,16 @@ const maintFindings = (state: PublishState): readonly Finding[] =>
 /** One builder per kind; its `undefined` IS the verdict that the shape is clean, not a hole. */
 type FindingBuilder = (state: PublishState) => Finding | undefined;
 
-const FINDINGS: Readonly<Record<PublishStateKind, FindingBuilder | undefined>> = {
-  ok: latestSplitFinding,
-  absent: absentFinding,
-  behind: behindFinding,
-  unattested: unattestedFinding,
-  unreachable: unreachableFinding,
-};
+const FINDINGS: Readonly<Record<PublishStateKind, FindingBuilder | undefined>> = Object.assign(
+  Object.create(null),
+  {
+    ok: latestSplitFinding,
+    absent: absentFinding,
+    behind: behindFinding,
+    unattested: unattestedFinding,
+    unreachable: unreachableFinding,
+  } satisfies Record<PublishStateKind, FindingBuilder | undefined>,
+);
 
 export const findingFor = (state: PublishState): Finding | undefined =>
   FINDINGS[state.kind]?.(state);

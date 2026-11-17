@@ -111,7 +111,7 @@ export function browserThemeEnv(): ThemeEnv {
   if (typeof document === 'undefined' || typeof window === 'undefined') {
     throw runtimeMissingError(
       'document/window for theme control',
-      'pass an explicit ThemeEnv: initTheme(myServerThemeEnv)',
+      'initTheme(myServerThemeEnv)   // pass an explicit ThemeEnv',
     );
   }
   const media = window.matchMedia(THEME_MEDIA_QUERY);

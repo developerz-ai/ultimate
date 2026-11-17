@@ -1,14 +1,17 @@
-// OAuth 2.0 Protected Resource Metadata (RFC 9728) for the MCP endpoint — the framework half of
-// the MCP authorization spec's discovery, which the revisions this transport serves (`wire.ts`)
-// do not define alike. The revisions served are 2026-07-28 (`MCP_MODERN_VERSIONS`) and 2025-11-25 /
-// 2025-06-18 / 2025-03-26 (`MCP_LEGACY_VERSIONS`). All but 2025-03-26 require RFC 9728: a 401 names
-// where the metadata lives (`WWW-Authenticate: Bearer resource_metadata="…"`), the metadata names
-// the authorization server(s) a client goes to for a token. 2025-11-25 made that header optional
-// with a `.well-known` fallback (SEP-985); 2025-06-18 required it. 2025-03-26 defines no
+// OAuth 2.0 Protected Resource Metadata (RFC 9728) for the MCP endpoint — the framework half of the
+// MCP authorization spec's discovery, which the revisions this transport serves (`wire.ts`) do not
+// define alike.
+//
+// The revisions served are 2026-07-28 (`MCP_MODERN_VERSIONS`) and 2025-11-25 / 2025-06-18 /
+// 2025-03-26 (`MCP_LEGACY_VERSIONS`). All but 2025-03-26 require RFC 9728: a 401 names where the
+// metadata lives (`WWW-Authenticate: Bearer resource_metadata="…"`), the metadata names the
+// authorization server(s) a client goes to for a token. 2025-11-25 made that header optional with a
+// `.well-known` fallback (SEP-985); 2025-06-18 required it. 2025-03-26 defines no
 // protected-resource metadata at all — its discovery is RFC 8414 authorization-server metadata at
 // the origin — so it reads none of this. The server itself is `@ultimat3/auth`'s
 // `authorizationServer`, bound to one endpoint by `mcpAuthorizationServer` (`oauth-server.ts`).
 
+import { trimTrailingSlashes } from '@ultimat3/core';
 import { McpOAuthInvalidError } from './errors-transport';
 
 /** The well-known suffix RFC 9728 §3 defines. */
@@ -67,7 +70,7 @@ export function assertMcpOAuth(oauth: McpOAuth): void {
 
 /** The resource this request addresses: the declared one, else `<origin><path>`. */
 export function resourceUrl(oauth: McpOAuth, origin: string, path: string): string {
-  return oauth.resource ?? `${origin.replace(/\/+$/, '')}${path}`;
+  return oauth.resource ?? `${trimTrailingSlashes(origin)}${path}`;
 }
 
 /**
@@ -76,7 +79,7 @@ export function resourceUrl(oauth: McpOAuth, origin: string, path: string): stri
  */
 export function metadataUrlFor(resource: string): string {
   const url = new URL(resource);
-  const path = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
+  const path = url.pathname === '/' ? '' : trimTrailingSlashes(url.pathname);
   return `${url.origin}${PROTECTED_RESOURCE_WELL_KNOWN}${path}`;
 }
 

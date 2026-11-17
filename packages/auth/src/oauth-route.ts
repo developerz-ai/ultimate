@@ -123,7 +123,7 @@ function uncoded(error: unknown): UltimateError {
     detail:
       'an adapter or fetch this package does not own threw a value with no error code; the ' +
       'detail is in this process log under auth.oauth.uncoded_failure',
-    fix: 'throw an UltimateError from the AuthAdapter or OAuthFetch that failed — the factories are in packages/auth/src/errors.ts, and the OAuth ones in packages/auth/src/oauth-errors.ts',
+    fix: "authWriteFailed('updateUser', 'x_users')   // throw an UltimateError like this one from the AuthAdapter or OAuthFetch that failed — the factories are in packages/auth/src/errors.ts, and the OAuth ones in packages/auth/src/oauth-errors.ts",
   });
 }
 

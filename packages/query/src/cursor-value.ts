@@ -1,8 +1,10 @@
 // Single responsibility: what a sort value becomes inside a cursor, and what it becomes again on
-// the way out. The codec is `@ultimat3/core`'s and it is JSON, so a `Date` went in and an ISO
-// STRING came back: `isAfterKey` then compared `"1769904000000"` against `"2026-02-01T…"` as
-// text and page two came back empty. A `bigint` was worse — a bare
-// `TypeError` out of `JSON.stringify`, with no code and no fix.
+// the way out.
+//
+// The codec is `@ultimat3/core`'s and it is JSON, so a `Date` went in and an ISO STRING came back:
+// `isAfterKey` then compared `"1769904000000"` against `"2026-02-01T…"` as text and page two came
+// back empty. A `bigint` was worse — a bare `TypeError` out of `JSON.stringify`, with no code and
+// no fix.
 //
 // `@ultimat3/entity`'s `cursor.ts` solves the same problem by reading the column's declared kind.
 // A read over a relation NO entity declares has no kinds to read (`column-kinds.ts`), so the value

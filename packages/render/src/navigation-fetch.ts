@@ -1,9 +1,11 @@
 /**
- * The client router's one request: the headers the server's navigation gate reads (purpose, the
- * document's `<app>:<surface>`, its principal, its build on a GET), `redirect: 'manual'` so no
- * redirect is followed behind the router's back, `cache: 'no-cache'` so the browser's HTTP cache
- * never answers, and the answer read ONCE into an `Answer` — the page's text, or a non-page's
- * bytes to hand over (a prefetch's are dropped unread).
+ * The client router's one request: the headers the server's navigation gate reads, a redirect never
+ * followed, the HTTP cache never asked, and the answer read ONCE into an `Answer`.
+ *
+ * The headers: purpose, the document's `<app>:<surface>`, its principal, its build on a GET.
+ * `redirect: 'manual'` so no redirect is followed behind the router's back; `cache: 'no-cache'` so
+ * the browser's HTTP cache never answers. The `Answer` is the page's text, or a non-page's bytes to
+ * hand over (a prefetch's are dropped unread).
  */
 
 import {

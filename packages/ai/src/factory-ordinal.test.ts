@@ -4,6 +4,7 @@
 // derived list; prose points at it and never counts.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun has no directory listing (`Bun.Glob` matches patterns) and no path-join primitive.
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PRIMITIVE_FACTORIES } from '@ultimat3/core';

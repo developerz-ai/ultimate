@@ -1,4 +1,5 @@
 // A drop surface that is a real `<label>` around a real, visually-hidden `<input type="file">`.
+//
 // That shape is what makes it usable without a mouse: click, Enter and Space already open the
 // picker, focus already lands somewhere, and the accessible name is the instruction the label
 // renders. A `<div onClick>` with `tabindex` would reimplement all four and get one of them wrong.

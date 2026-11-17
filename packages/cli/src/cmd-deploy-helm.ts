@@ -78,7 +78,7 @@ export async function readReleaseName(root: string, flag: string | undefined): P
         : config === undefined
           ? `${root} has no app.config.ts, and x deploy --method helm names the release after its config.name`
           : 'app.config.ts exports no config.name, and x deploy --method helm names the release after it',
-    fix: 'name the release explicitly: x deploy --method helm --release my-app --json',
+    fix: 'x deploy --method helm --release my-app --json   # names the release explicitly',
   });
 }
 

@@ -162,6 +162,13 @@ describe('unit · x new · x db gen is the only writer of packages/db/migrations
     expect(appNamePath('demo-app')).toBeUndefined();
   });
 
+  test('a path of many separators splits in linear time', () => {
+    const started = performance.now();
+    expect(appNamePath(`${'/'.repeat(50_000)}a`)).toEqual({ parent: '/', base: 'a' });
+    expect(appNamePath(`a${'/\\'.repeat(25_000)}b//`)).toEqual({ parent: 'a', base: 'b' });
+    expect(performance.now() - started).toBeLessThan(50);
+  }, 30_000);
+
   test('its next-steps summary is the ONE first run the scaffold documents', async () => {
     const ctx: CommandContext = {
       args: parseArgs(['new', 'demo-app', '--dry-run'], SPECS),

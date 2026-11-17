@@ -51,7 +51,7 @@ describe('unit · @ultimat3/notify errors', () => {
     expect(error).toBeUltimateError('X_NOTIFY_FANOUT_TOO_WIDE');
     expect(error.cause).toContain('900');
     expect(error.cause).toContain('500');
-    expect(error.fix).toContain('bulkChannel()');
+    expect(error.fix).toStartWith('bulkChannel(');
   });
 
   test('the store refusal names the install call for the store that is actually missing', () => {

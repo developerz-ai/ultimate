@@ -1,10 +1,12 @@
 // `x test`'s command surface: the flags and the one positional it accepts, and the refusals that
-// happen before a single process starts. Which files run is test-select.ts, how they are split and
-// spawned is test-shards.ts — this file only turns argv into their inputs, so a parsing bug can
-// never be read as a sharding one. `--affected` is the one narrowing decided here rather than
-// there, because it is a fact about a git diff and not about a path: what the diff touches is
-// `affected.ts` (workspaces) and, in an app root, `affected-tests.ts` (import closure); this file
-// only maps that answer onto the paths discovery yields.
+// happen before a single process starts.
+//
+// Which files run is test-select.ts, how they are split and spawned is test-shards.ts — this file
+// only turns argv into their inputs, so a parsing bug can never be read as a sharding one.
+// `--affected` is the one narrowing decided here rather than there, because it is a fact about a
+// git diff and not about a path: what the diff touches is `affected.ts` (workspaces) and, in an app
+// root, `affected-tests.ts` (import closure); this file only maps that answer onto the paths
+// discovery yields.
 
 import { JOB_SIM_SEED_ENV, TEST_TYPES } from '@ultimat3/testing';
 import type { AffectedScope } from './affected';
@@ -98,7 +100,7 @@ function readOnlyType(positionals: readonly string[]): TestType | undefined {
     flag: 'type',
     command: 'test',
     reason: `takes at most one test type, got ${positionals.length}: ${positionals.join(' ')}`,
-    fix: `x test ${type} --filter ${quoteArg(second)}`,
+    fix: `x test ${quoteArg(type)} --filter ${quoteArg(second)}`,
   });
 }
 
@@ -119,7 +121,10 @@ async function readAffectedScope(ctx: CommandContext): Promise<AffectedScope | u
       flag: idle,
       command: 'test',
       reason: 'only narrows a run together with --affected, and on its own it changes nothing',
-      fix: `x test --affected --${idle}${idle === 'base' ? ` ${DEFAULT_BASE}` : ''}`,
+      fix:
+        idle === 'base'
+          ? `x test --affected --base ${quoteArg(DEFAULT_BASE)}`
+          : 'x test --affected --dirty',
     });
   }
   return undefined;

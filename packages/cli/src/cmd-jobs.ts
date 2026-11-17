@@ -1,6 +1,7 @@
 // `x jobs list|show|retry|cancel|delete|promote|resolve-step|pause|resume` — introspect and
-// recover the job queue, bound to `@ultimat3/jobs`'s own introspection so the CLI, `/_x` and MCP
-// report identically.
+// recover the job queue, bound to `@ultimat3/jobs`'s own introspection so the CLI, `/_x` and
+// MCP report identically.
+//
 // CLI wiring only: the driver-injected logic is `jobs-report.ts`, the `--json` shapes
 // `jobs-json.ts`, the table `jobs-table.ts`, the queue `jobs-driver.ts` — shared with `x db`.
 

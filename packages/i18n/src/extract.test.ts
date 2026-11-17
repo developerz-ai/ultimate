@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// Bun ships no temp-directory primitive; `mkdtemp` is what gives this file a root of its own,
+// why: Bun ships no temp-directory primitive; `mkdtemp` is what gives this file a root of its own,
 // so nothing here depends on another test having run or on a fixed path being free.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

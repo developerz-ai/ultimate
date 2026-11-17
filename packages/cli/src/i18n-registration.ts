@@ -1,8 +1,10 @@
 // Every finding about an app's strings, and the one composition `x i18n check` and `x verify`'s
 // `i18n` step both report — two callers, one answer, so the command and the gate can never
-// disagree. The runtime half is here because nothing else could ask it: `i18n-audit.ts` compares
-// source against files on disk and was green for every string of a shipped app whose catalog
-// module nothing imported (issue #249).
+// disagree.
+//
+// The runtime half is here because nothing else could ask it: `i18n-audit.ts` compares source
+// against files on disk and was green for every string of a shipped app whose catalog module
+// nothing imported (issue #249).
 
 // why: Bun ships no path API, so `join` is the only way to reach the app's own i18n module on
 // the host's separator.
@@ -30,6 +32,7 @@ import { localeParityFindings } from './i18n-locale-parity';
 import { mailPreviewFindings } from './mail-preview-findings';
 import type { Finding } from './output';
 import { findingFrom } from './output';
+import { quoteArg } from './shell-quote';
 import { CATALOG_ROOT, catalogPath } from './templates/locales';
 
 /** The one package this check probes for a duplicate: its registry is the one it reads. */
@@ -212,7 +215,7 @@ export function unregisteredFix(
   // report a registered locale as unregistered, which is the direction that costs trust.
   if (index.includes(`${CATALOG_ROOT.split('/').pop() ?? 'catalogs'}/${locale}.json`)) return {};
   return {
-    fix: `x i18n sync ${locale}   # re-derives ${APP_CATALOGS_PATH} from the catalogs on disk`,
+    fix: `x i18n sync ${quoteArg(locale)}   # re-derives ${APP_CATALOGS_PATH} from the catalogs on disk`,
   };
 }
 

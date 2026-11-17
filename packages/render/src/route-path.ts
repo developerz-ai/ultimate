@@ -2,6 +2,7 @@
 // refused with the exact move that makes the file a route. Split out of `registry.ts`, which keeps
 // the table itself.
 
+import { trimTrailingSlashes } from '@ultimat3/core/page';
 import { RouteFileInvalidError, SurfaceBoundaryError } from './errors';
 import type { RouteSurface, Surface } from './surfaces';
 import { locateSurface } from './surfaces';
@@ -44,7 +45,7 @@ export function routePathFromFile(file: string): { surface: RouteSurface; path: 
   if (located === null) {
     throw new SurfaceBoundaryError(
       `${file} is not inside a surface directory, so it has no URL and no bundle graph`,
-      `move ${file} under site/ or app/, named page.tsx`,
+      `git mv -- ${shellQuote(file)} '<site or app>/<path>/page.tsx'   # under site/ or app/, named page.tsx`,
     );
   }
   const surface = routeSurfaceOf(normalized, located.surface);
@@ -57,7 +58,7 @@ export function routePathFromFile(file: string): { surface: RouteSurface; path: 
     .filter((s) => !(s.startsWith('(') && s.endsWith(')')))
     .map(toUrlSegment);
 
-  const path = `/${urlSegments.join('/')}`.replace(/\/+$/, '') || '/';
+  const path = trimTrailingSlashes(`/${urlSegments.join('/')}`) || '/';
   return { surface, path };
 }
 
@@ -77,13 +78,13 @@ function routeSurfaceOf(file: string, surface: Surface): RouteSurface {
   if (surface === 'shared') {
     throw new RouteFileInvalidError(
       `${file} is under shared/, which is a leaf of helpers with no URL — a route cannot live there`,
-      `move ${file} under site/ or app/, named page.tsx`,
+      `git mv -- ${shellQuote(file)} '<site or app>/<path>/page.tsx'   # under site/ or app/, named page.tsx`,
     );
   }
   if (surface === 'api') {
     throw new RouteFileInvalidError(
       `${file} is under api/, which holds no route file: api/ is the actions and queries defineApi() collects`,
-      `JSON in and out: replace ${file} with an action (x g action <name>) collected by defineApi() in api/index.ts. Another wire format (a webhook, an OAuth endpoint): delete ${file} and add a plain HTTP route to the routes array exported as runtime from apps/<app>/runtime.ts`,
+      `x g action '<name>'   # JSON in and out: replace ${file} with an action collected by defineApi() in api/index.ts. Another wire format (a webhook, an OAuth endpoint): delete ${file} and add a plain HTTP route to the routes array exported as runtime from apps/<app>/runtime.ts`,
     );
   }
   return surface;
@@ -99,7 +100,10 @@ function assertRouteFilename(
   surface: RouteSurface,
   basename: string | undefined,
 ): void {
-  const expected = ROUTE_FILENAME[surface];
+  // Own keys only: an `Object.prototype` member is never the filename a surface accepts.
+  const expected = Object.hasOwn(ROUTE_FILENAME, surface)
+    ? ROUTE_FILENAME[surface]
+    : ROUTE_FILENAME.site;
   if (basename === expected) return;
 
   // The directory the author meant is the file's own path minus its extension: `site/pricing.tsx`

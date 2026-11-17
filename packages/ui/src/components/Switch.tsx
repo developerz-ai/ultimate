@@ -1,4 +1,5 @@
 // Boolean toggle with immediate effect (as opposed to Checkbox, which is part of a form submit).
+//
 // `role="switch"` on a native checkbox keeps keyboard behaviour — and its checked state, which is
 // why nothing here writes `aria-checked`: `role="switch"` maps the host `checked` state on its own,
 // and an attribute mirroring it never updates on the no-JS path, where ARIA would then outrank the

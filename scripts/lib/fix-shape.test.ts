@@ -21,6 +21,11 @@ describe('a runnable command', () => {
     'curl -sS http://localhost:3000/_x',
     'ps -o user= -p 4242   # then, as that user: x stop --json',
     "printf '%s\\n' '**/*.test.ts' >> Dockerfile.dockerignore && bun run scripts/image-contract.ts",
+    'wc -c .secrets.key   # 65 is a whole key and its newline',
+    'file public/hero.png   # reports what these bytes actually are',
+    'timedatectl status   # System clock synchronized: yes',
+    "find packages -name '*.tsbuildinfo' -delete",
+    `find packages/\${dir}/src \${SWEEP_PREDICATE} -delete`,
   ])('%s', (fix) => {
     expect(fixShape(fix)).toBe('command');
   });
@@ -39,6 +44,11 @@ describe('a code shape to paste', () => {
     'expect.unreachable(`no refusal`)',
     'ALTER TABLE posts ADD COLUMN slug text',
     '<AsyncRegion state={state} />',
+    "case 'refunded':   // the variant the cause names, in the switch that threw",
+    'case Status.Refunded: return refund(order);',
+    'case 3:',
+    'sql`select * from orders where id = $1`   // a parameter, never a splice',
+    'sql\\`select 1\\`   // as the scan reads it out of a template literal',
   ])('%s', (fix) => {
     expect(fixShape(fix)).toBe('code');
   });
@@ -70,6 +80,11 @@ describe('prose', () => {
     'rewrite (the fix) as a command',
     'run x verify — it names the step',
     'Note: the bucket is private',
+    'case by case: decide which variant applies',
+    'case closed — nothing to do',
+    'find the row the cause names and delete it',
+    'use `x dev` and watch the log',
+    'sql is the tag — sql`select 1`',
     '',
   ])('%s', (fix) => {
     expect(fixShape(fix)).toBe('prose');
@@ -80,5 +95,22 @@ describe('a fix the scan cannot judge', () => {
   test('one that OPENS with a substitution is computed at run time — never counted either way', () => {
     expect(fixShape(`\${command} --json`)).toBe('unknown');
     expect(fixShape(`  \${fix}`)).toBe('unknown');
+  });
+
+  // A substituted SEGMENT of a call's receiver is still a call: the receiver is the value, the
+  // shape is the paste. Read before the opening-substitution rule, or the second one never counts.
+  test.each([
+    `db.\${batch.entity}.andWhere('id', 'in', ids).all()`,
+    `\${entityName}.findById(id)`,
+    `\${name}(input)`,
+  ])('a call through a substituted receiver is code: %s', (fix) => {
+    expect(fixShape(fix)).toBe('code');
+  });
+
+  test('a substitution with no call after it stays unknown, and prose after one never reads as code', () => {
+    expect(fixShape(`\${x} --json`)).toBe('unknown');
+    expect(fixShape(`\${x} is wrong`)).toBe('unknown');
+    expect(fixShape(`\${x}.field is wrong`)).toBe('unknown');
+    expect(fixShape(`the \${x}.find(id) call`)).toBe('prose');
   });
 });

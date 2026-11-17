@@ -251,9 +251,11 @@ describe('the catalog is the registry, never a copy of it', () => {
   test('it loads, and it knows the shipped commands from the planned ones', async () => {
     const real = await loadCommandCatalog();
     expect(real.specs.some((spec) => spec.name === 'jobs')).toBe(true);
-    // If this ever goes false the command shipped, and the check stops reporting it — which is
-    // exactly what should happen.
-    expect(real.planned.size).toBeGreaterThan(0);
+    // The planned table is empty `As of 2026-11-16` (plan 101b slice 13): `x branch`, `x ai` and
+    // `x money` left the registry for Known gaps, so the catalog lists none — and a citation of one
+    // is the unknown command now, not the planned one.
+    expect(real.planned.size).toBe(0);
+    expect(real.specs.some((spec) => spec.name === 'branch')).toBe(false);
     // `x db studio` left the registry `As of 2026-11-15`: no longer a planned subcommand either.
     expect(real.plannedSubcommands.has('db studio')).toBe(false);
   });

@@ -1,8 +1,10 @@
-// Single responsibility: where an entity's files live, and how one that was never attached is
-// found again. The upload happens BEFORE the row it belongs to exists, so it lands under a
-// `pending/` segment inside the org and is promoted once there is an id — which makes an orphan
-// a fact about the key rather than a join nobody runs. Every key here goes through `scopedKey`,
-// so the tenant prefix is a construction, not a check somebody remembered to write.
+// Single responsibility: where an entity's files live, and how one that was never attached is found
+// again. The upload happens BEFORE the row it belongs to exists, so it lands under a `pending/`
+// segment inside the org and is promoted once there is an id — which makes an orphan a fact about
+// the key rather than a join nobody runs.
+//
+// Every key here goes through `scopedKey`, so the tenant prefix is a construction, not a check
+// somebody remembered to write.
 
 import type { Clock } from '@ultimat3/core';
 import { assert, finiteCount, nanoid, renderThrowable, systemClock } from '@ultimat3/core';

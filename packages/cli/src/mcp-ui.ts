@@ -1,12 +1,14 @@
-// The dev MCP server's eyes and hand: `ui.shot` (a route), `ui.island` (a component's states),
-// `ui.inspect` (DOM facts for a set of selectors, in `mcp-ui-inspect.ts`), `ui.interact` (steps
-// first, then the picture, in `mcp-ui-interact.ts`) and `ui.diff` (two captures compared, in
-// `mcp-ui-diff.ts`), as the `DevCapabilities` half `packages/mcp` declares and cannot satisfy — a
-// browser is the CLI's to launch, and the files are the CLI's to read. The four that look
-// are `x shot` under another name: the same server lookup (a running `x dev` is
-// reused through its lock, otherwise a scratch one boots), the same driver, the same verdict.
-// Nothing here is a new capability; it is the existing one made reachable from inside the loop
-// an agent already works in, so "does it look right" stops needing a hand-written script.
+// The dev MCP server's eyes and hand — `ui.shot`, `ui.island`, `ui.inspect`, `ui.interact`,
+// `ui.diff` — as the `DevCapabilities` half `packages/mcp` declares and cannot satisfy.
+//
+// `ui.shot` captures a route, `ui.island` a component's states, `ui.inspect` reads DOM facts for a
+// set of selectors (`mcp-ui-inspect.ts`), `ui.interact` takes steps first, then the picture
+// (`mcp-ui-interact.ts`), and `ui.diff` compares two captures (`mcp-ui-diff.ts`). They live here
+// because a browser is the CLI's to launch, and the files are the CLI's to read. The four that look
+// are `x shot` under another name: the same server lookup (a running `x dev` is reused through its
+// lock, otherwise a scratch one boots), the same driver, the same verdict. Nothing here is a new
+// capability; it is the existing one made reachable from inside the loop an agent already works in,
+// so "does it look right" stops needing a hand-written script.
 
 // why: Bun exposes no path-join primitive, and the picture's directory is a path an agent opens.
 import { join } from 'node:path';
@@ -71,7 +73,7 @@ export function assertBudgetedRoute(raw: string, declared: readonly DeclaredRout
     throw new UltimateError({
       code: 'X_UI_SHOT_ROUTE_UNBUDGETED',
       cause: `${hit.file} declares no budget.js, so x verify would refuse it as X_BUDGET_UNMEASURED — a picture of it would be a picture of a draft`,
-      fix: `declare budget: { js: '<n>kb' } in ${hit.file}, then: x build --target static --json && x verify --only budgets --json`,
+      fix: `budget: { js: '<n>kb' }   // in ${hit.file}, then: x build --target static --json && x verify --only budgets --json`,
     });
   }
   return route;

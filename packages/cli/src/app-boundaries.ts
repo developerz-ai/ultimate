@@ -14,7 +14,7 @@
 // hands the files read here to `app-transport.ts`, so a raw `fetch(` in an island is a finding of
 // this step with no second walk of the app.
 
-// Bun ships no `Bun.*` path API: `joinPath` reaches a file on disk with the host's separator.
+// why: Bun ships no `Bun.*` path API: `joinPath` reaches a file on disk with the host's separator.
 import { join as joinPath } from 'node:path';
 // The POSIX variants resolve specifiers against import-graph keys, which are POSIX on every host.
 import { dirname, join, normalize, relative } from 'node:path/posix';
@@ -50,13 +50,17 @@ export interface SourceFile {
   readonly source: string;
 }
 
-const CODE_OF: Readonly<Record<BoundaryRule, BoundaryCode>> = {
-  'site-imports-app': 'X_BOUNDARY_SITE_TO_APP',
-  'shared-is-a-leaf': 'X_BOUNDARY_SHARED_LEAF',
-  'app-imports-api-at-runtime': 'X_BOUNDARY_APP_TO_API',
-  // Every other crossing `SURFACE_SPECS` does not allow: the table is the rule (`@ultimat3/render`).
-  'surface-imports-surface': 'X_BOUNDARY_SURFACE_IMPORT',
-};
+// Null-prototype: a rule that is not one of these reads `undefined`, never an `Object` member.
+const CODE_OF: Readonly<Record<BoundaryRule, BoundaryCode>> = Object.assign(
+  Object.create(null) as object,
+  {
+    'site-imports-app': 'X_BOUNDARY_SITE_TO_APP',
+    'shared-is-a-leaf': 'X_BOUNDARY_SHARED_LEAF',
+    'app-imports-api-at-runtime': 'X_BOUNDARY_APP_TO_API',
+    // Every other crossing `SURFACE_SPECS` does not allow: the table is the rule (`@ultimat3/render`).
+    'surface-imports-surface': 'X_BOUNDARY_SURFACE_IMPORT',
+  } satisfies Record<BoundaryRule, BoundaryCode>,
+);
 
 /**
  * The one rule → diagnostic-code mapping. `x verify` reports a surface violation as a finding and

@@ -18,7 +18,13 @@
 
 import type { ClientFlight, ClientRetry } from '@ultimat3/core';
 import type { FetchLike, RecordEnvelope } from '@ultimat3/core/page';
-import { clientTransport, fillWire, queryPath, renderedQueryPin } from '@ultimat3/core/page';
+import {
+  clientTransport,
+  fillWire,
+  queryPath,
+  renderedQueryPin,
+  trimTrailingSlashes,
+} from '@ultimat3/core/page';
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { DownloadClientMethod, DownloadQuery } from './download';
 import { QueryHttpPathInvalidError } from './http-pin-error';
@@ -190,7 +196,7 @@ function methodsOf<TInput extends StandardSchemaV1, TRow extends object>(
   options: QueryClientOptions,
   pinnedPath?: string,
 ) {
-  const base = options.baseUrl.replace(/\/+$/, '');
+  const base = trimTrailingSlashes(options.baseUrl);
   // A browser caller naming the read only by name — `queryClient`, `useQuery`, a channel's
   // catch-up — goes where the server's document says it pinned it, never to a derived 404.
   const path = pinnedPath ?? renderedQueryPin(name) ?? queryPath(name);

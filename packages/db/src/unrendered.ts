@@ -1,8 +1,10 @@
 // Single responsibility: what a generated migration declares it could NOT write, and how that
-// reaches the file. A generator that silently emits less than the declaration is the defect this
-// module exists against — ten invariants and nine defaults went missing between an entity and its
-// own regenerated migration, and the `drift` gate step compares a source hash to a sidecar and
-// never reads the SQL, so the loss was GREEN. A comment in the emitted `up` cannot be green.
+// reaches the file.
+//
+// A generator that silently emits less than the declaration is the defect this module exists
+// against — ten invariants and nine defaults went missing between an entity and its own regenerated
+// migration, and the `drift` gate step compares a source hash to a sidecar and never reads the SQL,
+// so the loss was GREEN. A comment in the emitted `up` cannot be green.
 
 import { assert } from '@ultimat3/core';
 import { columnNamesConstraint } from './check-ddl';
@@ -92,9 +94,7 @@ function unrenderedInvariant(
     cause:
       `the entity declares "${invariant.name}" as an assert — a rule only the app can judge — ` +
       'and this migration drops the CHECK a migration recorded for it',
-    fix:
-      `invariant('${invariant.name}', …)   # express it in SQL to keep the CHECK — ` +
-      'an assert has none, so the next x db gen drops it',
+    fix: `invariant('${invariant.name}', …)   # express it in SQL to keep the CHECK — an assert has none, so the next x db gen drops it`,
   };
 }
 
@@ -154,9 +154,7 @@ export function unrenderedOf(
         table: entity.table,
         name: column.column,
         cause: 'the entity description carries hasDefault with no expression beside it',
-        fix:
-          'project ColumnMeta.default onto ColumnDescription in ' +
-          'packages/entity/src/describe.ts, then re-run x db gen',
+        fix: 'project ColumnMeta.default onto ColumnDescription in packages/entity/src/describe.ts, then re-run x db gen',
       });
     }
     entries.push(

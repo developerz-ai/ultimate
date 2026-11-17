@@ -1,8 +1,9 @@
-// `x_backfills` — what has already been swept, and whether this pass runs at all. The twin of
-// `@ultimat3/db`'s `x_migrations`, one level up: a migration ledger is keyed by migration id
-// because a migration applies once and only once, and this one is keyed by RUN because a backfill
-// may legitimately be run again. `force` therefore writes a NEW row rather than overwriting the
-// one that says what the last pass did — reruns are history, not an edit of it.
+// `x_backfills` — what has already been swept, and whether this pass runs at all.
+//
+// The twin of `@ultimat3/db`'s `x_migrations`, one level up: a migration ledger is keyed by
+// migration id because a migration applies once and only once, and this one is keyed by RUN because
+// a backfill may legitimately be run again. `force` therefore writes a NEW row rather than
+// overwriting the one that says what the last pass did — reruns are history, not an edit of it.
 //
 // The row is a REPORT, never a resume source. Where a resumed pass restarts is decided by the step
 // checkpoints in `backfill-pass.ts` and by nothing else; `cursor` here is what an operator reads

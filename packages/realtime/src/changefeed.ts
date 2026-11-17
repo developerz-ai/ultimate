@@ -281,7 +281,7 @@ export class PostgresChangeFeed implements ChangeFeed {
       throw new ReplicationFailedError({
         stage: 'preflight',
         detail: 'the feed was given an empty entity list, so no change could ever match',
-        fix: 'pass the entities the publication covers: postgresChangeFeed({ entities: [...] })',
+        fix: 'postgresChangeFeed({ entities: [...] })   # the entities the publication covers',
       });
     }
     this.#stream = new PgReplicationStream(options);

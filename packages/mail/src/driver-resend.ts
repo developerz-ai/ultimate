@@ -13,6 +13,7 @@ import {
   isRetryableStatus,
   logger,
   nanoid,
+  renderFixShellArg,
   renderThrowable,
 } from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
@@ -45,7 +46,7 @@ function requireApiKey(apiKey: string): string {
   if (apiKey.trim() !== '') return apiKey;
   throw new EnvMissingError({
     cause: 'RESEND_API_KEY is not set, so the resend driver cannot authenticate',
-    fix: "set RESEND_API_KEY in .env (or the container's secret store), then re-run",
+    fix: "RESEND_API_KEY=re_...   # in .env (or the container's secret store), then re-run",
     meta: { missing: 'RESEND_API_KEY' },
   });
 }
@@ -54,7 +55,7 @@ function requireFrom(from: string): string {
   if (from.trim() !== '') return from;
   throw new ConfigInvalidError({
     cause: 'the resend driver was configured without a from address',
-    fix: 'set mail.from in app.config.ts to a domain verified with Resend',
+    fix: "resendMailDriver({ apiKey, from: 'App <no-reply@yourdomain.test>' })   // a domain verified with Resend; selectMailDriver(env) reads MAIL_FROM",
   });
 }
 
@@ -192,7 +193,7 @@ export function resendMailDriver(options: ResendDriverOptions): MailDriver {
           stage: 'request',
           detail: `${reason} — nothing left this host for ${baseUrl}/emails (egress, DNS or TLS)`,
           retryable: true,
-          fix: `curl -sS -m 5 -o /dev/null ${baseUrl}/emails`,
+          fix: `curl -sS -m 5 -o /dev/null ${renderFixShellArg(`${baseUrl}/emails`, '<RESEND_BASE_URL>/emails')}`,
         });
       }
 

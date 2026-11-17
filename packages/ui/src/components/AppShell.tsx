@@ -1,4 +1,5 @@
 // The page frame every app screen sits in: skip link, banner, navigation, main, contentinfo.
+//
 // Stateless, and scriptless: below `md` the sidebar `<nav>` is a native `popover` panel at the
 // inline-start edge, opened by a `popovertarget` menu button — the browser holds the open state,
 // Esc and light dismiss, so the frame on every page costs no island. Not `Drawer`: that is a modal

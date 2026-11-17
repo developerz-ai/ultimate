@@ -135,7 +135,7 @@ export const summarize = llm({
 | Scope | required — tenant-scoped by default so one org never reads another's completion |
 | Bypass | `temperature > 0` results are cached but flagged; `cache: false` for anything user-visible-and-unique |
 | Invalidation | participates in the same tag graph; bumping the prompt version invalidates wholesale |
-| Metrics | hit rate, tokens saved, cost saved — in `/_x` and `x ai cache --json` |
+| Metrics | every `llm()` call emits `ai.llm` on the instrumentation bus with `cacheHit`, `inputTokens` and `outputTokens`; hit rate and tokens saved are a subscriber's sum, and `gen_ai_client_token_usage` is on `/metrics` ([Observability](../../wiki/Observability.md)). A CLI report of them is not planned, `As of 2026-11-16` |
 
 Also cached exactly (tier 3, not semantic): embeddings themselves, keyed by content hash + model. Re-embedding unchanged text is pure waste.
 

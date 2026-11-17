@@ -1,10 +1,12 @@
-// Single responsibility: named disks (Laravel's model) and the one module-level accessor.
-// Call sites name a disk, never a driver — swapping `local` for `s3` in app.config.ts must
-// not touch a single `storage.disk('uploads').put(...)` call. This file is also where a driver
-// LEARNS its disk name (`registerAs`), because the registry is the only holder of that fact and
-// a signed URL's `:disk` segment has to be the name the mounted route resolves.
+// Single responsibility: named disks (Laravel's model) and the one module-level accessor. Call
+// sites name a disk, never a driver — swapping `local` for `s3` in app.config.ts must not touch a
+// single `storage.disk('uploads').put(...)` call.
+//
+// This file is also where a driver LEARNS its disk name (`registerAs`), because the registry is the
+// only holder of that fact and a signed URL's `:disk` segment has to be the name the mounted route
+// resolves.
 
-import { ConfigInvalidError } from '@ultimat3/core';
+import { ConfigInvalidError, renderFixLiteral } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { diskUnknown } from './errors';
 import { isSafeKey, isTenantScoped } from './path';
@@ -81,7 +83,7 @@ export function defineStorage(config: StorageConfig): Storage {
   if (names.length === 0) {
     throw new ConfigInvalidError({
       cause: 'defineStorage() was called with no disks',
-      fix: "add a disk: defineStorage({ disks: { local: localDriver({ root: '.storage' }) } })",
+      fix: "defineStorage({ disks: { local: localDriver({ root: '.storage' }) } })   // at least one disk",
     });
   }
   const first = names[0] ?? '';
@@ -89,7 +91,7 @@ export function defineStorage(config: StorageConfig): Storage {
   if (!names.includes(defaultDisk)) {
     throw new ConfigInvalidError({
       cause: `storage.default is "${defaultDisk}" but the configured disks are: ${names.join(', ')}`,
-      fix: `set storage.default to one of: ${names.join(', ')} in app.config.ts`,
+      fix: `defineStorage({ disks, default: ${renderFixLiteral(first, "'local'")} })   // in app.config.ts — default names one of: ${names.join(', ')}`,
     });
   }
   // A Map, and the SAME own-keys read `names` above is built from. `config.disks[wanted]` walked
@@ -107,7 +109,7 @@ export function defineStorage(config: StorageConfig): Storage {
     if (already !== undefined) {
       throw new ConfigInvalidError({
         cause: `storage disks "${already}" and "${diskName}" are the same driver instance, and a driver can only mint URLs under one name`,
-        fix: `give "${diskName}" its own driver in app.config.ts: disks: { ${already}: localDriver({ root: '.storage/${already}' }), ${diskName}: localDriver({ root: '.storage/${diskName}' }) }`,
+        fix: `disks: { ${already}: localDriver({ root: '.storage/${already}' }), ${diskName}: localDriver({ root: '.storage/${diskName}' }) }   // in app.config.ts: "${diskName}" gets its own driver`,
       });
     }
     registered.set(driver, diskName);
@@ -142,7 +144,7 @@ export function storage(): Storage {
   if (current === undefined) {
     throw new ConfigInvalidError({
       cause: 'storage() was called before defineStorage()',
-      fix: "call defineStorage({ disks: { local: localDriver({ root: '.storage' }) } }) in app.config.ts",
+      fix: "defineStorage({ disks: { local: localDriver({ root: '.storage' }) } })   // in app.config.ts, before the first storage()",
     });
   }
   return current;

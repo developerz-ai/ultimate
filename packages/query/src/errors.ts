@@ -1,5 +1,10 @@
 /** Every failure @ultimat3/query can produce, one subclass per stable code. */
-import { deniedCallerFix, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import {
+  deniedCallerFix,
+  registerErrorCodes,
+  renderFixShellArg,
+  UltimateError,
+} from '@ultimat3/core';
 import type { PrimitiveDenial, SurfaceDenial } from '@ultimat3/policy';
 import type { ValidationIssue } from '@ultimat3/schema';
 
@@ -85,7 +90,7 @@ export class QueryDeniedError extends UltimateError {
     super({
       code: refused.code,
       cause: `${refused.name} denied: ${refused.reason}`,
-      fix: `x policy explain ${refused.name} --json   # shows which clause decided and why`,
+      fix: `x policy explain ${renderFixShellArg(refused.name, '<permission>')} --json   # shows which clause decided and why`,
       callerFix: deniedCallerFix(),
     });
     this.denial = refused.denial;
@@ -98,7 +103,7 @@ export class QueryUnregisteredError extends UltimateError {
     super({
       code: 'X_QUERY_UNREGISTERED',
       cause: 'a query was used before it was registered, so it has no name',
-      fix: "list the query's module in defineApi({ queries }) in apps/<app>/api/index.ts — the boot names it before serving reads",
+      fix: "defineApi({ queries })   // in apps/<app>/api/index.ts, listing the query's module — the boot names it before serving reads",
     });
   }
 }
@@ -114,7 +119,7 @@ export class QueryForeignError extends UltimateError {
     super({
       code: 'X_QUERY_FOREIGN',
       cause: `"${name === '' ? 'anonymous' : name}" is not a query built by query()`,
-      fix: "declare it as `export const name = query({ input, policy, sql })` from '@ultimat3/query'",
+      fix: "export const name = query({ input, policy, sql })   // with query imported from '@ultimat3/query'",
     });
   }
 }
@@ -132,7 +137,7 @@ export class QueryInputUnencodableError extends UltimateError {
     super({
       code: 'X_QUERY_INPUT_UNENCODABLE',
       cause: `${offender}, and a read is served as GET /_x/query/<name> — a query string carries characters, not structures or nulls`,
-      fix: 'flatten the key into scalar arguments (status: t.string, limit: t.number), spell an absent value as `.optional()` rather than `t.nullable(...)`, or declare it as an action() if it really needs a JSON body',
+      fix: '{ status: t.string, limit: t.number }   // flatten the key into scalar arguments, spell an absent value `.optional()` not `t.nullable(...)`, or declare an action() if it needs a JSON body',
     });
   }
 }
@@ -154,7 +159,7 @@ export class QueryCacheTtlInvalidError extends UltimateError {
     super({
       code: 'X_QUERY_CACHE_TTL_INVALID',
       cause: `a query declares cache.${field} as ${ttlMs}, and every cache tier refuses a lease that is not positive and finite`,
-      fix: `set \`cache: { ${field}: ${field === 'ttlMs' ? '60_000' : '1_000'} }\` to a positive whole number of milliseconds, or drop ${field} to take the default`,
+      fix: `cache: { ${field}: ${field === 'ttlMs' ? '60_000' : '1_000'} }   // a positive whole number of milliseconds — or drop ${field} to take the default`,
       meta: { ttlMs, field },
     });
   }
@@ -165,7 +170,7 @@ export class QueryDuplicateError extends UltimateError {
     super({
       code: 'X_QUERY_DUPLICATE',
       cause: `two queries are registered under the name "${name}"`,
-      fix: 'rename one export — query names are globally unique: x queries list --json',
+      fix: 'x queries list --json   # query names are globally unique: rename one of the two exports',
     });
   }
 }
@@ -183,7 +188,7 @@ export class QueryPolicyMissingError extends UltimateError {
     super({
       code: 'X_QUERY_POLICY_MISSING',
       cause: `query "${name}" was registered without a policy`,
-      fix: `add \`policy: can('<resource>:<verb>')\` to the query() that exports "${name}" — a permission your definePermissions() call declares, never the query's own name — or \`allow('<resource>:<verb>')\` to state that the read is public`,
+      fix: `policy: can('<resource>:<verb>')   // on the query() that exports "${name}" — a permission your definePermissions() call declares, never the query's own name — or allow('<resource>:<verb>') to state that the read is public`,
     });
   }
 }
@@ -199,7 +204,7 @@ export class QueryDeprecationInvalidError extends UltimateError {
     super({
       code: 'X_QUERY_DEPRECATION_INVALID',
       cause: `query "${name}" declares deprecated.${field} as "${value}", which is not a date`,
-      fix: `edit \`deprecated: { ${field}: … }\` on ${name} to an ISO-8601 instant — e.g. '2026-12-31T23:59:59Z'`,
+      fix: `deprecated: { ${field}: '2026-12-31T23:59:59Z' }   // on ${name}: an ISO-8601 instant`,
       meta: { query: name, field, value },
     });
   }
@@ -216,7 +221,7 @@ export class QueryNotPageableError extends UltimateError {
     super({
       code: 'X_QUERY_NOT_PAGEABLE',
       cause: `a row from ${subject} has no "id", so a cursor cannot name its position`,
-      fix: `return the primary key from the query's sql: db.${entity ?? 'rows'}.select({ id: true, … })`,
+      fix: `select({ id: true, … })   // return the primary key from the query's sql: db.${entity ?? 'rows'}.select(…)`,
     });
   }
 }
@@ -238,7 +243,7 @@ export class CursorValueUnsupportedError extends UltimateError {
     super({
       code: 'X_CURSOR_VALUE_UNSUPPORTED',
       cause: `a sort key holds ${description}, which no cursor can carry`,
-      fix: 'order by a scalar column — .orderBy("createdAt") or .orderBy("id") — and project the composite value into the row instead',
+      fix: "orderBy('createdAt')   // or orderBy('id'): a scalar column — and project the composite value into the row instead",
     });
   }
 }
@@ -254,7 +259,7 @@ export class QueryColumnUnselectedError extends UltimateError {
     super({
       code: 'X_QUERY_COLUMN_UNSELECTED',
       cause: `the rows of "${entity}" carry no "${column}" column, so filtering or sorting on it matches nothing`,
-      fix: 'select it in the loader: db.posts.select({ slug: true, status: true, publishedAt: true }) — or drop the filter the loader already applied',
+      fix: 'db.posts.select({ slug: true, status: true, publishedAt: true })   // select it in the loader — or drop the filter the loader already applied',
       meta: { entity, column },
     });
   }
@@ -266,7 +271,7 @@ export class MatcherUnsupportedError extends UltimateError {
     super({
       code: 'X_MATCHER_UNSUPPORTED',
       cause: `live query "${name}" uses ${feature}, which the incremental matcher cannot patch`,
-      fix: `set \`live: false\` and poll, or reshape the query to equality filters + orderBy + limit`,
+      fix: 'live: false   // and poll — or reshape the query to equality filters + orderBy + limit',
     });
   }
 }
@@ -288,8 +293,8 @@ export class QuerySubscribesInvalidError extends UltimateError {
           : 'subscribes: names relations on a read that is not live, and only a live read subscribes',
       fix:
         problem === 'empty'
-          ? "name the relation the read selects from — subscribes: ['posts'] — or drop the field"
-          : 'add `live: true` beside it, or delete `subscribes:` — nothing reads it on a plain read',
+          ? "subscribes: ['posts']   // the relation the read selects from — or drop the field"
+          : 'live: true   // beside subscribes: — or delete `subscribes:`, nothing reads it on a plain read',
     });
   }
 }
@@ -310,9 +315,7 @@ export class QuerySubscribesDriftError extends UltimateError {
       cause:
         `live query "${name}" declares subscribes: [${declared.join(', ')}], ` +
         `and its sql reads "${entity}", which is not among them`,
-      fix:
-        `add "${entity}" to that query's subscribes:, then run \`x db gen\` — ` +
-        'the migration granting REPLICA IDENTITY FULL is keyed on the declared names',
+      fix: `subscribes: [${[...declared, entity].map((relation) => `'${relation}'`).join(', ')}]   // then run x db gen — the migration granting REPLICA IDENTITY FULL is keyed on the declared names`,
     });
   }
 }
@@ -333,7 +336,7 @@ export class QueryInputInvalidError extends UltimateError {
     super({
       code: 'X_INPUT_INVALID',
       cause: `input for query "${name}" failed validation: ${detail}`,
-      fix: `x queries show ${name} --json  # prints the expected input schema`,
+      fix: `x queries show ${renderFixShellArg(name, '<query-name>')} --json  # prints the expected input schema`,
       // Action's shape (`InputInvalidError`): http lifts `meta.issues` to the problem's `issues`.
       ...(issues === undefined
         ? {}
@@ -354,7 +357,7 @@ export class QueryRowNotFoundError extends UltimateError {
     super({
       code: 'X_NOT_FOUND',
       cause: `query "${name}" is declared single: true and its sql matched no row for this input`,
-      fix: `x queries show ${name} --json  # prints the SQL — a stale id, another tenant's row or a soft-deleted one matches nothing`,
+      fix: `x queries show ${renderFixShellArg(name, '<query-name>')} --json  # prints the SQL — a stale id, another tenant's row or a soft-deleted one matches nothing`,
     });
   }
 }
@@ -364,7 +367,7 @@ export class QuerySingleInvalidError extends UltimateError {
     super({
       code: 'X_QUERY_SINGLE_INVALID',
       cause: `a query declares single: as ${typeof value}, and only a boolean says whether it reads one object`,
-      fix: 'write single: true for a read of one object, or drop the key for a list read',
+      fix: 'single: true   // for a read of one object — or drop the key for a list read',
     });
   }
 }

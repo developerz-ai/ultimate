@@ -10,18 +10,51 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   checkErrorCodeDocs,
+  checkErrorCodeDocsIn,
   checkErrorCodeRegistry,
+  checkErrorCodeRegistryIn,
   checkErrorCodeResolution,
   collectDeclaredCodes,
   documentedCodes,
+  documentedCodesIn,
+  type ErrorCodePage,
   liveCodes,
+  liveCodesIn,
   RESERVED_HEADING,
 } from './error-contract';
 
-describe('documentedCodes', () => {
-  test('reads every code the page names, including a shared row', () => {
-    const page = '| `X_A` | means | cause | fix |\n| `X_B` / `X_C` | means | cause | fix |\n';
-    expect([...documentedCodes(page)].sort()).toEqual(['X_A', 'X_B', 'X_C']);
+// The reference is a page SET: an index (`## Reserved codes` lives there) and one page per owner.
+const INDEX = 'wiki/Error-Codes.md';
+const DB_PAGE = 'wiki/Error-Codes-db.md';
+const HTTP_PAGE = 'wiki/Error-Codes-http.md';
+const pagesOf = (index: string, db: string, http: string): readonly ErrorCodePage[] => [
+  { path: INDEX, text: index },
+  { path: DB_PAGE, text: db },
+  { path: HTTP_PAGE, text: http },
+];
+
+describe('documentedCodesIn', () => {
+  test('reads every code the page set names, including a shared row', () => {
+    const pages = pagesOf(
+      '# Error codes\n',
+      '| `X_A` | means | cause | fix |\n| `X_B` / `X_C` | means | cause | fix |\n',
+      '| `X_D` | means | cause | fix |\n',
+    );
+    expect([...documentedCodesIn(pages).keys()].sort()).toEqual(['X_A', 'X_B', 'X_C', 'X_D']);
+  });
+
+  test('maps each code to the page that names it, the first by path when two do', () => {
+    const pages = pagesOf('`X_R`\n', '| `X_SHARED` | db |\n', '| `X_SHARED` | http |\n');
+    const documented = documentedCodesIn([...pages].reverse());
+    expect(documented.get('X_SHARED')).toBe(DB_PAGE);
+    expect(documented.get('X_R')).toBe(INDEX);
+  });
+
+  // The index's generated "every code" table names each code PLAIN, so the index alone documents
+  // nothing — a code is documented by its row on an owner page, or by the reserved block.
+  test('a plain code in the index table documents nothing', () => {
+    const pages = pagesOf('| Code | Means | Page |\n|---|---|---|\n| X_A | means | db |\n', '', '');
+    expect(documentedCodesIn(pages).has('X_A')).toBe(false);
   });
 });
 
@@ -139,52 +172,71 @@ describe('the code checks, over a repo', () => {
     ]);
   });
 
-  test('checkErrorCodeDocs demands a row for a const-declared code too', async () => {
+  test('checkErrorCodeDocsIn demands a row for a const-declared code too', async () => {
     await write(
       'scripts/graph.ts',
       "const STALE = 'X_DOC_STALE';\nthrow new E({ code: STALE, fix: 'bun run manifest' });\n",
     );
-    await write('wiki/Error-Codes.md', 'no codes here\n');
-    const [finding, ...rest] = await checkErrorCodeDocs(root, 'wiki/Error-Codes.md');
+    const [finding, ...rest] = await checkErrorCodeDocsIn(root, pagesOf('no codes here\n', '', ''));
     expect(rest).toEqual([]);
     expect(finding?.cause).toContain('X_DOC_STALE is declared at scripts/graph.ts:2');
+    expect(finding?.fix).toContain('wiki/Error-Codes-scripts.md');
   });
 
-  test('checkErrorCodeDocs reports a declared code the page does not name', async () => {
+  // The row is owed on the code's OWNER page — the page `framework.manifest.json` files it under —
+  // so the fix names that file, not the index an agent would otherwise append to.
+  test('checkErrorCodeDocsIn reports a declared code no page names, at its owner page', async () => {
     await write(
       'packages/db/src/errors.ts',
       "export const DB_ERROR_CODES = ['X_A', 'X_B'] as const;\n",
     );
-    await write('wiki/Error-Codes.md', '| `X_A` | means | cause | fix |\n');
-    const [finding, ...rest] = await checkErrorCodeDocs(root, 'wiki/Error-Codes.md');
+    const pages = pagesOf('# Error codes\n', '| `X_A` | means | cause | fix |\n', '');
+    const [finding, ...rest] = await checkErrorCodeDocsIn(root, pages);
     expect(rest).toEqual([]);
     expect(finding?.code).toBe('X_ERROR_CODE_UNDOCUMENTED');
     expect(finding?.cause).toContain('X_B is declared at packages/db/src/errors.ts:1');
     expect(finding?.fix).toBe(
-      'add a row for X_B to wiki/Error-Codes.md, with its cause and the command that fixes it',
+      'x errors explain X_B --json   # its title and fix: add a row for X_B to wiki/Error-Codes-db.md, with its cause and the command that fixes it',
     );
+    expect(finding?.at).toBe(DB_PAGE);
   });
 
-  test('checkErrorCodeDocs passes when every declared code is on the page', async () => {
+  // The union is the point: a code is documented by ANY page in the set — db's code on db's page,
+  // http's on http's, a reserved one on the index — and none of them alone covers the repo.
+  test('checkErrorCodeDocsIn passes when every declared code is on some page of the set', async () => {
     await write('packages/db/src/errors.ts', "export const DB_ERROR_CODES = ['X_A'] as const;\n");
-    await write('wiki/Error-Codes.md', '| `X_A` | means | cause | fix |\n');
-    expect(await checkErrorCodeDocs(root, 'wiki/Error-Codes.md')).toEqual([]);
+    await write(
+      'packages/http/src/errors.ts',
+      "export const HTTP_ERROR_CODES = ['X_H'] as const;\n",
+    );
+    await write(
+      'packages/core/src/errors.ts',
+      "export const CORE_ERROR_CODES = ['X_R'] as const;\n",
+    );
+    const pages = pagesOf(
+      `${RESERVED_HEADING}\n\n| \`X_R\` | reserved |\n`,
+      '| `X_A` | means | cause | fix |\n',
+      '| `X_H` | means | cause | fix |\n',
+    );
+    expect(await checkErrorCodeDocsIn(root, pages)).toEqual([]);
+    expect(await checkErrorCodeDocsIn(root, pages.slice(0, 2))).toHaveLength(1);
   });
 
-  // A missing reference page must fail loudly: silently passing would make an empty repo the
+  // A missing reference must fail loudly: silently passing would make an empty repo the
   // best-scoring one, which is the shape of every gate that reads green over nothing.
-  test('checkErrorCodeDocs fails when the reference page is absent', async () => {
+  test('checkErrorCodeDocsIn fails when the reference has no page at all', async () => {
     await write('packages/db/src/errors.ts', "export const DB_ERROR_CODES = ['X_A'] as const;\n");
-    const [finding] = await checkErrorCodeDocs(root, 'wiki/Error-Codes.md');
+    const [finding, ...rest] = await checkErrorCodeDocsIn(root, []);
+    expect(rest).toEqual([]);
     expect(finding?.code).toBe('X_ERROR_CODE_UNDOCUMENTED');
-    expect(finding?.cause).toContain('does not exist');
+    expect(finding?.cause).toContain('no page');
+    expect(finding?.fix).toContain('wiki/Error-Codes.md');
   });
 
   test('one finding per code, however many files declare it', async () => {
     await write('packages/db/src/errors.ts', "export const DB_ERROR_CODES = ['X_A'] as const;\n");
     await write('packages/db/src/thing.ts', "throw new E({ code: 'X_A', fix: 'x help' });\n");
-    await write('wiki/Error-Codes.md', 'no codes here\n');
-    expect(await checkErrorCodeDocs(root, 'wiki/Error-Codes.md')).toHaveLength(1);
+    expect(await checkErrorCodeDocsIn(root, pagesOf('no codes here\n', '', ''))).toHaveLength(1);
   });
 
   // The other half of #277, and the reason resolution alone is not enough: a scanner that cannot
@@ -218,58 +270,68 @@ describe('the code checks, over a repo', () => {
     await write('packages/db/src/pool.d.ts', 'export declare const e: { code: STALE };\n');
     expect(await checkErrorCodeResolution(root)).toEqual([]);
   });
-
-  const page = (body: string): Promise<void> => write('wiki/Error-Codes.md', body);
-
-  test('checkErrorCodeRegistry reports a live row no package registers', async () => {
-    await page('| `X_A` | means | cause | fix |\n| `X_GHOST` | means | cause | fix |\n');
-    const [finding, ...rest] = await checkErrorCodeRegistry(
-      root,
-      'wiki/Error-Codes.md',
-      new Set(['X_A']),
+  test('checkErrorCodeRegistryIn reports a live row no package registers, at its page', () => {
+    const pages = pagesOf(
+      '# Error codes\n',
+      '| `X_A` | means | cause | fix |\n',
+      '| `X_GHOST` | means | cause | fix |\n',
     );
+    const [finding, ...rest] = checkErrorCodeRegistryIn(pages, new Set(['X_A']));
     expect(rest).toEqual([]);
     expect(finding?.code).toBe('X_ERROR_CODE_UNREGISTERED');
     expect(finding?.cause).toContain('X_GHOST');
+    expect(finding?.cause).toContain(HTTP_PAGE);
     expect(finding?.fix).toContain('src/errors.ts');
     expect(finding?.fix).toContain(RESERVED_HEADING);
-    expect(finding?.at).toBe('wiki/Error-Codes.md');
+    expect(finding?.fix).toContain(INDEX);
+    expect(finding?.at).toBe(HTTP_PAGE);
   });
 
   // The whole point of the partition: a reserved name is documented on purpose, and a rule that
   // demanded a registration for it would delete the row instead of the ambiguity.
-  test('checkErrorCodeRegistry exempts everything below the reserved heading', async () => {
-    await page(`| \`X_A\` | means | cause | fix |\n\n${RESERVED_HEADING}\n\n| \`X_GHOST\` | x |\n`);
-    expect(await checkErrorCodeRegistry(root, 'wiki/Error-Codes.md', new Set(['X_A']))).toEqual([]);
+  test('checkErrorCodeRegistryIn exempts everything below the index reserved heading', () => {
+    const pages = pagesOf(
+      `intro \`X_A\`\n\n${RESERVED_HEADING}\n\n| \`X_GHOST\` | x |\n`,
+      '| `X_A` | means | cause | fix |\n',
+      '',
+    );
+    expect(checkErrorCodeRegistryIn(pages, new Set(['X_A']))).toEqual([]);
   });
 
-  // `checkErrorCodeDocs` already reports the missing page, with the fix for creating it. A second
-  // finding for the same file would double every count and name no new work.
-  test('checkErrorCodeRegistry leaves the missing-page finding to the docs half', async () => {
-    expect(await checkErrorCodeRegistry(root, 'wiki/Error-Codes.md', new Set())).toEqual([]);
+  // `checkErrorCodeDocsIn` already reports the empty reference, with the fix for creating it. A
+  // second finding for the same absence would double every count and name no new work.
+  test('checkErrorCodeRegistryIn leaves the missing-reference finding to the docs half', () => {
+    expect(checkErrorCodeRegistryIn([], new Set())).toEqual([]);
   });
 
-  test('checkErrorCodeRegistry reports each ghost once, sorted', async () => {
-    await page('`X_Z` `X_A` `X_Z`\n');
-    expect(
-      (await checkErrorCodeRegistry(root, 'wiki/Error-Codes.md', new Set())).map((f) => f.cause),
-    ).toEqual([
+  test('checkErrorCodeRegistryIn reports each ghost once, sorted, across pages', () => {
+    const pages = pagesOf('', '`X_Z` `X_A` `X_Z`\n', '`X_Z`\n');
+    expect(checkErrorCodeRegistryIn(pages, new Set()).map((f) => f.cause)).toEqual([
       expect.stringContaining('X_A') as unknown as string,
       expect.stringContaining('X_Z') as unknown as string,
     ]);
   });
 });
 
-describe('liveCodes', () => {
+const one = (text: string): readonly ErrorCodePage[] => [{ path: INDEX, text }];
+
+describe('liveCodesIn', () => {
   test('reads every code above the reserved heading and none below it', () => {
     const markdown = `\`X_LIVE\`\n\n${RESERVED_HEADING}\n\n\`X_RESERVED\`\n`;
-    expect([...liveCodes(markdown)]).toEqual(['X_LIVE']);
-    expect([...documentedCodes(markdown)]).toEqual(['X_LIVE', 'X_RESERVED']);
+    expect([...liveCodesIn(one(markdown)).keys()]).toEqual(['X_LIVE']);
+    expect([...documentedCodesIn(one(markdown)).keys()]).toEqual(['X_LIVE', 'X_RESERVED']);
+  });
+
+  // The reserved block is the index's; an owner page has none, so it is live from top to bottom —
+  // and the index's cut must not leak onto the pages after it.
+  test('every owner page is live whole, beside an index with a reserved block', () => {
+    const pages = pagesOf(`${RESERVED_HEADING}\n\`X_RESERVED\`\n`, '`X_DB`\n', '`X_HTTP`\n');
+    expect([...liveCodesIn(pages).keys()].sort()).toEqual(['X_DB', 'X_HTTP']);
   });
 
   // A page with no reserved section is all live — the absent heading must not silently exempt it.
   test('treats a page without the heading as entirely live', () => {
-    expect([...liveCodes('`X_ONE` `X_TWO`')]).toEqual(['X_ONE', 'X_TWO']);
+    expect([...liveCodesIn(one('`X_ONE` `X_TWO`')).keys()]).toEqual(['X_ONE', 'X_TWO']);
   });
 
   // The section that fails on a page is the one nothing reads. A substring match cuts the document
@@ -286,14 +348,54 @@ describe('liveCodes', () => {
       '',
       '| `X_RESERVED` | means | cause | fix |',
     ].join('\n');
-    expect([...liveCodes(markdown)]).toEqual(['X_LIVE']);
+    expect([...liveCodesIn(one(markdown)).keys()]).toEqual(['X_LIVE']);
   });
 
   // Markdown allows the trailing space an editor leaves behind; the heading is still the heading.
   test('matches the heading line whatever whitespace surrounds it', () => {
-    expect([...liveCodes(`\`X_LIVE\`\n  ${RESERVED_HEADING}  \n\`X_RESERVED\``)]).toEqual([
-      'X_LIVE',
-    ]);
+    const markdown = `\`X_LIVE\`\n  ${RESERVED_HEADING}  \n\`X_RESERVED\``;
+    expect([...liveCodesIn(one(markdown)).keys()]).toEqual(['X_LIVE']);
+  });
+});
+
+// The deprecated single-page names, kept for a minor: each still answers the way it did, one page.
+describe('the deprecated single-page names', () => {
+  test('documentedCodes and liveCodes read one markdown string into a Set', () => {
+    const markdown = `\`X_LIVE\`\n${RESERVED_HEADING}\n\`X_RESERVED\`\n`;
+    expect(documentedCodes(markdown)).toEqual(new Set(['X_LIVE', 'X_RESERVED']));
+    expect(liveCodes(markdown)).toEqual(new Set(['X_LIVE']));
+  });
+
+  describe('over a repo', () => {
+    let root = '';
+    beforeEach(async () => {
+      root = await mkdtemp(join(tmpdir(), 'error-codes-legacy-'));
+    });
+    afterEach(async () => {
+      await rm(root, { recursive: true, force: true });
+    });
+
+    test('checkErrorCodeDocs reads its one page and owes the row to that page', async () => {
+      const db = "export const DB_ERROR_CODES = ['X_A', 'X_B'] as const;\n";
+      await Bun.write(join(root, 'packages/db/src/errors.ts'), db);
+      expect((await checkErrorCodeDocs(root, INDEX))[0]?.cause).toContain('does not exist');
+      await Bun.write(join(root, INDEX), '| `X_A` | means | cause | fix |\n');
+      const [finding, ...rest] = await checkErrorCodeDocs(root, INDEX);
+      expect(rest).toEqual([]);
+      expect(finding?.fix).toBe(
+        'x errors explain X_B --json   # its title and fix: add a row for X_B to wiki/Error-Codes.md, with its cause and the command that fixes it',
+      );
+    });
+
+    test('checkErrorCodeRegistry stays async over its one page, silent when it is absent', async () => {
+      // Any page name the host chose, as before: that one page is its own index.
+      const own = 'docs/errors.md';
+      expect(await checkErrorCodeRegistry(root, own, new Set())).toEqual([]);
+      await Bun.write(join(root, own), '| `X_GHOST` | means | cause | fix |\n');
+      const [finding] = await checkErrorCodeRegistry(root, own, new Set());
+      expect(finding?.at).toBe(own);
+      expect(finding?.fix).toContain(`"${RESERVED_HEADING}" in ${own}`);
+    });
   });
 });
 

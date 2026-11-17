@@ -1,6 +1,7 @@
 // The whole D2 sequence, for real: a scaffold, a generated migration, an edit to its `up`, and the
 // `x db gen` the old fix named. That wrote the edit into the schema dump with `drift` green, since
 // the dump is what the migrations produce. Now it ends red at `drift`, and the printed line ends it.
+// slow: one dependent sequence — scaffold, migrate, edit, regenerate, drift — each step reads the last's state, so it cannot split, and every child boots its own PGlite.
 
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 // why: Bun ships no path joiner.

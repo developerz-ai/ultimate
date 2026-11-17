@@ -1,8 +1,10 @@
 /**
  * What the server says to a caller that derived an action's URL under the WRONG path style: a
  * script or another service passing `rpc({ pathStyle })` by hand, where matching build ids prove
- * nothing. Handed to `@ultimat3/http` as `hooks.explainMiss`, so it runs only when the router
- * matched nothing — and answers `X_CONTRACT_DRIFT` naming the style served, in place of a
+ * nothing.
+ *
+ * Handed to `@ultimat3/http` as `hooks.explainMiss`, so it runs only when the router matched
+ * nothing — and answers `X_CONTRACT_DRIFT` naming the style served, in place of a
  * `X_ROUTE_NOT_FOUND` that sends the caller looking for a route that exists.
  */
 

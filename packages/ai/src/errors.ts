@@ -1,10 +1,11 @@
 // The error classes for @ultimat3/ai's core codes. Budget and threshold failures name the exact
 // knob to change, because the caller is often a CI job with no human attached.
 
-import { UltimateError } from '@ultimat3/core';
+import { renderFixShellArg, UltimateError } from '@ultimat3/core';
 // The codes, their titles and the single registration call are `./error-codes`, imported here for
 // that side effect.
 import './error-codes';
+import { budgetCeiling } from './budget-fix';
 import type { ModelFallback, ModelFallbackClass } from './model-fallback';
 
 // No `docs:` on the subclasses below. `UltimateError` fills it from `describeErrorCode(code).docs`,
@@ -41,7 +42,12 @@ export class AiProviderUnavailableError extends UltimateError {
     super({
       code: 'X_AI_PROVIDER_UNAVAILABLE',
       cause: `no provider could serve model "${input.model}" (${input.attempts.join(' | ')})`,
-      fix: 'check ai.providers in app.config.ts and the provider API key env var',
+      // Unserved is a gateway built without a provider for this model: the fix is the wiring.
+      // Otherwise every provider listing it was asked and failed, each failure named in cause.
+      fix:
+        input.unserved === true
+          ? `providerGateway({ providers: [provider] })   // apps/<app>/runtime.ts — a provider whose { models } lists '${input.model}'`
+          : "x doctor --json   # egress from this process; each provider's failure is in cause — a 401 is its API key env var, a 5xx or an open breaker the provider's own outage",
       retry: input.unserved === true ? 'terminal' : undefined,
     });
     this.fallback = input.fallback;
@@ -63,12 +69,13 @@ export class AiBudgetExceededError extends UltimateError {
     /** What the numbers count. Money scopes pass minor units so nothing reads as a float. */
     unit?: string;
   }) {
+    const ceiling = budgetCeiling(input);
     super({
       code: 'X_AI_BUDGET_EXCEEDED',
       cause:
         `request needs ${input.requested} ${input.unit ?? 'tokens'} but scope ` +
         `"${input.scope}" has ${input.remaining} of ${input.limit} left`,
-      fix: `raise ai.budget for "${input.scope}" in app.config.ts, or shorten the prompt`,
+      fix: `budget: { ${ceiling.key}: ${ceiling.value} }   // on ${ceiling.where} — or shorten the prompt`,
     });
   }
 }
@@ -139,7 +146,7 @@ export class LlmStreamInvalidError extends UltimateError {
     super({
       code: 'X_LLM_STREAM_INVALID',
       cause: `streamed answer to prompt "${input.prompt}" failed its output schema: ${input.issues}`,
-      fix: 'call the action instead of .stream() when the answer must satisfy a structured schema — a stream has already delivered its tokens and cannot take a repair turn',
+      fix: `await action(input, { ctx })   // call "${input.prompt}" itself, not .stream(), when the answer must satisfy a structured schema — a stream has already delivered its tokens and cannot take a repair turn`,
     });
   }
 }
@@ -167,7 +174,7 @@ export class LlmOutputInvalidError extends UltimateError {
       cause:
         `prompt "${input.prompt}" returned output failing its schema on all ` +
         `${input.attempts} attempts: ${input.issues}`,
-      fix: 'describe the output shape in the prompt template and bump its version, or widen `output` in the llm() declaration',
+      fix: 'definePrompt({ id, version, template })   // describe the output shape in the template and bump its version — or widen `output` in the llm() declaration',
     });
   }
 }
@@ -189,7 +196,7 @@ export class AgentMaxTurnsError extends UltimateError {
       cause:
         `agent "${input.agent}" used all ${input.turns} turns and ${input.calls} tool calls ` +
         `without calling the respond tool`,
-      fix: 'tell the template when to stop and answer through the respond tool, then bump its version — raise maxTurns only once the run demonstrably converges',
+      fix: 'definePrompt({ id, version, template })   // tell the template when to stop and answer through the respond tool, then bump its version — raise maxTurns only once the run demonstrably converges',
       meta: { agent: input.agent, turns: input.turns },
     });
   }
@@ -243,8 +250,8 @@ export class LlmRefusedError extends UltimateError {
         `${input.explanation === undefined ? '' : `: ${input.explanation}`}`,
       fix:
         input.alternative === undefined
-          ? `edit the template in definePrompt('${input.prompt}') and bump its version — no model your app registered in its family is more capable than '${input.model}'`
-          : `set model: '${input.alternative}' on the llm() declaration, or edit the template in definePrompt('${input.prompt}') and bump its version`,
+          ? `definePrompt({ id, version, template })   // edit the template of "${input.prompt}" and bump its version — no model your app registered in its family is more capable than '${input.model}'`
+          : `model: '${input.alternative}'   // on the "${input.prompt}" declaration — or edit its prompt's template and bump the version`,
       meta: { model: input.model, category: input.category },
     });
   }
@@ -257,7 +264,7 @@ export class AiPromptVersionError extends UltimateError {
       cause: `prompt "${input.id}" has no version "${input.requested}" (have: ${
         input.available.length > 0 ? input.available.join(', ') : 'none'
       })`,
-      fix: 'bump the version in definePrompt after editing the template, then x manifest',
+      fix: `definePrompt({ id: '${input.id}', version, template })   // a new version after editing the template, then x manifest — getPrompt() asks for one cause lists`,
     });
   }
 }
@@ -272,7 +279,7 @@ export class AiPromptRenderError extends UltimateError {
     super({
       code: 'X_AI_PROMPT_VERSION',
       cause: `prompt "${input.ref}" was rendered without: ${input.missing.join(', ')}`,
-      fix: 'pass every {{variable}} the template declares, or remove it from the template',
+      fix: `{ ${input.missing.join(', ')} }   // returned from vars(): every {{variable}} the template declares — or remove it from the template`,
     });
   }
 }
@@ -285,7 +292,7 @@ export class VectorDimMismatchError extends UltimateError {
       cause: `store "${input.store}" expects ${input.expected} dimensions, got ${input.received}`,
       // Not `x ai reindex`: that command is PLANNED and throws, so a fix line naming it sends an
       // operator to a wall. A fix has to be performable today, which here means app code.
-      fix: 'use the same embedder that created the store, or re-embed every record at the new width and upsert it',
+      fix: `{ dimension: ${input.expected} }   // the embedder that created "${input.store}" — or re-embed every record at the new width and upsert it`,
     });
   }
 }
@@ -302,7 +309,7 @@ export class VectorScopeWidenedError extends UltimateError {
       cause:
         `store "${input.store}" is bound to tenant "${input.held}" and cannot be re-scoped ` +
         `to "${input.requested}"`,
-      fix: `derive from the unscoped store instead: vectorStore.scoped({ tenant: '${input.requested}' })`,
+      fix: `vectorStore.scoped({ tenant: '${input.requested}' })   // derived from the unscoped store, never from the one bound to '${input.held}'`,
     });
   }
 }
@@ -319,7 +326,7 @@ export class EmbedderDimMismatchError extends UltimateError {
       cause:
         `embedder "${input.embedder}" is declared with ${input.expected} dimensions but the ` +
         `provider returned ${input.received}`,
-      fix: `set dimension: ${input.received} on the embedder, then re-embed every record at that width and upsert it`,
+      fix: `{ dimension: ${input.received} }   // on the embedder "${input.embedder}", then re-embed every record at that width and upsert it`,
     });
   }
 }
@@ -344,7 +351,7 @@ export class AiEmbedderInvalidError extends UltimateError {
       // The `${…}` the fix used to carry is unreadable to the `errors` gate, which blanks every
       // interpolation — so the literal half alone has to name the call. Which embedder broke the
       // invariant is a fact of the failure, and the cause and `meta` are where facts live.
-      fix: 'return one vector per input text from embed(), in the order the texts arrived',
+      fix: 'embed: (texts) => Promise.all(texts.map(vectorFor))   // one vector per input text, in the order the texts arrived',
       meta: {
         embedder: input.embedder,
         ...(input.expected === undefined ? {} : { expected: input.expected }),
@@ -360,7 +367,7 @@ export class AiKeyMissingError extends UltimateError {
     super({
       code: 'X_AI_KEY_MISSING',
       cause: `provider "${input.provider}" has no API key: ${input.envVar} is unset and none was passed to its constructor`,
-      fix: `export ${input.envVar}=<key>, or pass { apiKey } when constructing the provider`,
+      fix: `export ${renderFixShellArg(input.envVar, '<API_KEY_VAR>')}=<key>, or pass { apiKey } when constructing the provider`,
       meta: { provider: input.provider, envVar: input.envVar },
     });
   }

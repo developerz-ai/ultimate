@@ -1,5 +1,6 @@
-// The app's own HTTP declaration, and the layering that keeps a boot fact above it. One
-// registration site, read once by whatever process starts the web role — the same seam
+// The app's own HTTP declaration, and the layering that keeps a boot fact above it.
+//
+// One registration site, read once by whatever process starts the web role — the same seam
 // `configureAuthenticator()` is, and for the same reason: `@ultimat3/core` is tier 0 and cannot
 // hold this package's types, so an `http` block on `AppConfig` would be a second declaration of
 // `HttpConfigInput` in a package that can never check it against this one.

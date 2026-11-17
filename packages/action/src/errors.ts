@@ -44,7 +44,7 @@ export class ActionUnregisteredError extends UltimateError {
     super({
       code: 'X_ACTION_UNREGISTERED',
       cause: 'an action was projected before it was registered, so it has no name',
-      fix: "list the action's module in defineApi({ actions }) in apps/<app>/api/index.ts — the boot names it before mounting routes",
+      fix: "defineApi({ actions })   // list the action's module in it, in apps/<app>/api/index.ts — the boot names it before mounting routes",
     });
   }
 }
@@ -60,7 +60,7 @@ export class ActionForeignError extends UltimateError {
     super({
       code: 'X_ACTION_FOREIGN',
       cause: `"${name === '' ? 'anonymous' : name}" is not an action built by action()`,
-      fix: "declare it as `export const name = action({ input, output, policy, handle })` from '@ultimat3/action'",
+      fix: "export const name = action({ input, output, policy, handle })   // action() from '@ultimat3/action'",
     });
   }
 }
@@ -81,7 +81,7 @@ export class ActionDeniedError extends UltimateError {
     super({
       code: refused.code,
       cause: `${refused.name} denied: ${refused.reason}`,
-      fix: `x policy explain ${refused.name} --json   # shows which clause decided and why`,
+      fix: `x policy explain ${renderFixShellArg(refused.name, '<permission>')} --json   # shows which clause decided and why`,
       callerFix: deniedCallerFix(),
     });
     this.denial = refused.denial;
@@ -93,7 +93,7 @@ export class ActionDuplicateError extends UltimateError {
     super({
       code: 'X_ACTION_DUPLICATE',
       cause: `two actions are registered under the name "${name}"`,
-      fix: `rename one export — action names are globally unique: x actions list --json`,
+      fix: 'x actions list --json   # action names are globally unique: rename one of the two exports',
     });
   }
 }
@@ -109,7 +109,7 @@ export class ActionPathDuplicateError extends UltimateError {
     super({
       code: 'X_ACTION_PATH_DUPLICATE',
       cause: `actions "${input.name}" and "${input.existing}" both derive ${input.path}`,
-      fix: `rename one export so the two derive different paths — x actions list --json prints every derived route`,
+      fix: 'x actions list --json   # prints every derived route: rename one export so the two differ',
     });
   }
 }
@@ -126,7 +126,7 @@ export class ActionPolicyMissingError extends UltimateError {
     super({
       code: 'X_ACTION_POLICY_MISSING',
       cause: `action "${name}" was registered without a policy`,
-      fix: `add \`policy: can('<resource>:<verb>')\` to the action() that exports "${name}" — a permission your definePermissions() call declares, never the action's own name — or \`allow('<resource>:<verb>')\` if the operation is genuinely public`,
+      fix: `policy: can('<resource>:<verb>')   // in the action() that exports "${name}": a permission your definePermissions() call declares, never the action's own name — or allow('<resource>:<verb>') if the operation is genuinely public`,
     });
   }
 }
@@ -215,7 +215,7 @@ export class ActionDeprecationInvalidError extends UltimateError {
     super({
       code: 'X_ACTION_DEPRECATION_INVALID',
       cause: `action "${action}" declares deprecated.${field} as "${value}", which is not a date`,
-      fix: `edit \`deprecated: { ${field}: … }\` on ${action} to an ISO-8601 instant — e.g. '2026-12-31T23:59:59Z'`,
+      fix: `deprecated: { ${field}: '2026-12-31T23:59:59Z' }   // on ${action}: an ISO-8601 instant`,
       meta: { action, field, value },
     });
   }
@@ -352,7 +352,7 @@ export class RpcFailedError extends UltimateError {
     super({
       code: 'X_RPC_FAILED',
       cause: `${name} returned HTTP ${status} without a problem+json body`,
-      fix: "match X_CLIENT_TRANSPORT_FAILED instead: isUltimateError(e) && e.code === 'X_CLIENT_TRANSPORT_FAILED', with isUltimateError from @ultimat3/core",
+      fix: "isUltimateError(e) && e.code === 'X_CLIENT_TRANSPORT_FAILED'   // match this instead; isUltimateError from @ultimat3/core",
       retry: retryForStatus('X_RPC_FAILED', status),
     });
   }
@@ -401,8 +401,8 @@ export class AuditSinkFailedError extends UltimateError {
       code: 'X_AUDIT_SINK_FAILED',
       cause: `"${action}" ran and its audit sink refused the record, so the change is unrecorded — the handler had already committed`,
       fix: replayable
-        ? `fix the sink runtime.ts installs as auditSink (apps/<app>/runtime.ts), then retry with the same Idempotency-Key — the replay re-records without re-running the handler`
-        : `fix the sink runtime.ts installs as auditSink (apps/<app>/runtime.ts), then reconcile this one change by hand — do NOT retry: ${action} ran with no Idempotency-Key, so a second call runs the committed handler again. Add \`idempotent: true\` and send the header to make retries safe`,
+        ? `export const runtime = { auditSink }   // apps/<app>/runtime.ts: fix the sink it installs, then retry with the same Idempotency-Key — the replay re-records without re-running the handler`
+        : `export const runtime = { auditSink }   // apps/<app>/runtime.ts: fix the sink it installs, then reconcile this one change by hand — do NOT retry: ${action} ran with no Idempotency-Key, so a second call runs the committed handler again. Add \`idempotent: true\` and send the header to make retries safe`,
       // Read by `--json` and the error reporter: whether a retry is safe is the one decision an
       // operator makes here, so it is a field and not only a sentence.
       meta: { action, replayable },
@@ -422,13 +422,13 @@ export class MutatorClockMissingError extends UltimateError {
         ? {
             code: 'X_MUTATOR_CLOCK_MISSING',
             cause: `a mutator declares conflict: 'last-write-wins' and its output carries no entity row, so there is no ${clock} to compare`,
-            fix: "return the entity row from the mutator's output, or declare conflict: 'server-wins'",
+            fix: "conflict: 'server-wins'   // or return the entity row from the mutator's output",
             meta: { clock },
           }
         : {
             code: 'X_MUTATOR_CLOCK_MISSING',
             cause: `a mutator declares conflict: 'last-write-wins' and entity ${entity} has no number ${clock} column the server writes, so the server row would win every time`,
-            fix: `add ${clock} (a number, epoch ms, written by the server) to ${renderFixShellArg(entity, '<entity>')}, or declare conflict: 'server-wins'`,
+            fix: `conflict: 'server-wins'   // or add ${clock} (a number, epoch ms, written by the server) to ${renderFixShellArg(entity, '<entity>')}`,
             meta: { entity, clock },
           },
     );

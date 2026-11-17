@@ -13,7 +13,7 @@ const danglingEscape = (entityName: string): EntityError =>
   new EntityError({
     code: 'X_INVARIANT_VIOLATED',
     cause: `${entityName}: a like pattern ends with a backslash, which is the escape character — Postgres answers that pattern with 22025 (LIKE pattern must not end with escape character)`,
-    fix: "double it — 'a\\\\' is the pattern that matches one literal backslash, and 'a\\%b' matches a literal %",
+    fix: "andWhere('<column>', 'like', 'a\\\\\\\\')   // double it: that pattern matches one literal backslash, and 'a\\\\%b' a literal %",
   });
 
 const ONE = Symbol('_');

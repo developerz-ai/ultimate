@@ -6,7 +6,7 @@
 // routes are declared in. The one thing that lives here is the comparison against MEASURED bytes:
 // render checks a bundle graph, this checks what the build actually emitted.
 
-import { existsSync } from 'node:fs';
+// why: Bun ships no path API; `join` builds the host-separator path to the build-stats file.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, formatBytes } from '@ultimat3/core';
 import type { Manifest, RouteFact } from '@ultimat3/manifest';
@@ -236,8 +236,9 @@ export function checkBudgets(
 
 export async function readBuildStats(root: string): Promise<BuildStats | undefined> {
   const path = join(root, BUILD_STATS_FILE);
-  if (!existsSync(path)) return undefined;
-  const read = (await Bun.file(path).json()) as BuildStats;
+  const file = Bun.file(path);
+  if (!(await file.exists())) return undefined;
+  const read = (await file.json()) as BuildStats;
   // A file the current rules did not write carries no numbers this gate may read.
   return read.measuredBy === BUILD_STATS_RULES ? read : { routes: [], stale: true };
 }

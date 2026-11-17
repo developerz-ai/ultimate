@@ -6,9 +6,10 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir().
 import { tmpdir } from 'node:os';
+import { parseScriptArgs } from './args';
 import { PIN_WHY_PLACEHOLDER } from './pin-edit';
 import type { PinEditSpec } from './pin-edit-main';
-import { writePins } from './pin-edit-main';
+import { writePinResult, writePins } from './pin-edit-main';
 
 const made: string[] = [];
 afterAll(async () => {
@@ -79,5 +80,39 @@ describe('writePins', () => {
     );
     expect(raises.map((raise) => raise.name)).toEqual(['scripts/a.ts']);
     expect(await Bun.file(`${dir}/${FILE}`).text()).toContain("'scripts/a.ts: x === y': 2,");
+  });
+});
+
+describe('writePinResult — what --write-pin reports', () => {
+  test('a bare --write-pin names no row: refused, nothing written', async () => {
+    const dir = await root();
+    const result = await writePinResult(spec(at('cli', 3)), parseScriptArgs(['--write-pin']), dir);
+    expect(result.ok).toBe(false);
+    expect(result.summary).toBe('nothing was written');
+    expect(result.findings?.[0]?.code).toBe('X_CLI_BAD_FLAG');
+    expect(result.findings?.[0]?.fix).toStartWith('bun run scripts/probe.ts --json');
+    expect(await Bun.file(`${dir}/${FILE}`).text()).toBe(TABLE);
+  });
+
+  test('a drafted raise is named with its placeholder; no over row is nothing to raise', async () => {
+    const dir = await root();
+    const drafted = await writePinResult(
+      spec(at('cli', 3)),
+      parseScriptArgs(['--write-pin', 'cli']),
+      dir,
+    );
+    expect(drafted.ok).toBe(true);
+    expect(drafted.summary).toContain(
+      'drafted 1 raise(s) in scripts/lib/probe-pins.ts: cli 1 -> 3',
+    );
+    expect(drafted.summary).toContain(PIN_WHY_PLACEHOLDER);
+    const none = await writePinResult(
+      spec(at('cli', 1)),
+      parseScriptArgs(['--write-pin', 'cli']),
+      dir,
+    );
+    expect(none.summary).toBe(
+      'nothing to raise — no named row is over its pin in scripts/lib/probe-pins.ts',
+    );
   });
 });

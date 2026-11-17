@@ -8,6 +8,7 @@ import { join, posix } from 'node:path';
 import { renderFixShellArg } from '../../packages/core/src/error-render';
 import { PLAN_STATUS_GLOB } from '../plan-status';
 import type { Finding } from './log';
+import type { TrackerEdit } from './plan-tracker-dated';
 import { git } from './release-due-git';
 
 /** Days a tracker may sit `in_progress` with no commit in its directory. Plan 101b slice 12, M1. */
@@ -29,6 +30,8 @@ export interface StaleDeps {
   readonly now: () => number;
   /** `undefined` when git cannot answer: not a repository, or a directory never committed. */
   readonly lastTouch: (root: string, dir: string) => Promise<LastTouch | undefined>;
+  /** The trackers this branch changed, base text vs now (`plan-tracker-dated.ts`). */
+  readonly trackerEdits?: (root: string) => Promise<readonly TrackerEdit[]>;
 }
 
 /** `git log -1` over `dir`: committer time, and whether that commit is a shallow boundary. */

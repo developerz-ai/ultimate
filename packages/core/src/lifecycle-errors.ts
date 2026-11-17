@@ -27,7 +27,7 @@ export function lifecycleDrained(state: 'draining' | 'stopped'): UltimateError {
   return new UltimateError({
     code: 'X_LIFECYCLE_DRAINED',
     cause: `this process is ${state} — its lifecycle has already drained, and a drain is terminal: one process, one lifecycle. A role marked ready now would bind a socket that answers 503 to every request, and drain() memoizes, so nothing would ever close it`,
-    fix: 'start every role BEFORE the first drain — a drained process is on its way out and is replaced, never reused. In a test, call resetLifecycle() from @ultimat3/core between the drain and the next start()',
+    fix: 'resetLifecycle()   // from @ultimat3/core, in a test: between the drain and the next start(). In a process, start every role BEFORE the first drain — a drained process is on its way out and is replaced, never reused',
     meta: { state },
   });
 }

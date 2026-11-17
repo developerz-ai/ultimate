@@ -224,7 +224,11 @@ export const config = defineRoute({
   // before) — why: solid-js 1.9.17 → 1.9.18 (+27 B in every island chunk that bundles Solid), the
   // release that requires seroval ~1.6.11 and so closes the seroval advisories for every app.
   // Raised 209.9kb → 210kb.
-  budget: { js: '210kb' },
+  // measured: 215,056 B (2026-11-16, plan 101b sweep 8b-2; x build --target static) — why: the feed
+  // island and the page boot +89 B each: the action and query clients trim their base URL with
+  // `@ultimat3/core`'s linear `trimTrailingSlashes`, the one trim that replaced the quadratic
+  // `/\/+$/` at 26 sites (CodeQL js/polynomial-redos). Raised 210kb → 210.1kb.
+  budget: { js: '210.1kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

@@ -2,6 +2,8 @@
 // embedded default, and the resolved set is printed at boot so there is never a question about
 // which database a running process is talking to.
 
+// why: Bun has no mkdir — `Bun.write` creates parents only on the way to a file, and `.x/` must
+// exist as a directory before a driver opens it. Bun ships no path API either.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderThrowable } from '@ultimat3/core';

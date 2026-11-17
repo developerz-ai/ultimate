@@ -41,7 +41,7 @@ const caught = async (fn: () => Promise<unknown>): Promise<AuthError> => {
     if (error instanceof AuthError) return error;
     throw error;
   }
-  throw new Error('expected the call to throw');
+  return expect.unreachable('expected the call to throw');
 };
 
 describe('session', () => {

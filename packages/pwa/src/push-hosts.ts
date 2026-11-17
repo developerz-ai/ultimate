@@ -1,8 +1,10 @@
-// Single responsibility: which hosts the push sender may dial. An endpoint is a URL from a REQUEST
-// BODY, and a hostname resolves wherever its owner points it — a private address, the cloud
-// metadata service — so checking the name's shape (`https:`, not an IP literal) is not a screen.
-// The one that holds is a list of the push services browsers actually hand out, checked when a
-// subscription is stored AND before every send; an app adds its own with `pwa.vapid.pushHosts`.
+// Single responsibility: which hosts the push sender may dial.
+//
+// An endpoint is a URL from a REQUEST BODY, and a hostname resolves wherever its owner points it —
+// a private address, the cloud metadata service — so checking the name's shape (`https:`, not an IP
+// literal) is not a screen. The one that holds is a list of the push services browsers actually
+// hand out, checked when a subscription is stored AND before every send; an app adds its own with
+// `pwa.vapid.pushHosts`.
 
 /**
  * Every push service a current browser subscribes with, `As of 2026-10`. Each matches itself and

@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { ROW_COMMANDS } from '../health';
 import { narrowRuns } from './health-narrow';
 import type { GhRunner } from './health-readers';
-import { defaultReaders, TAG_RUN_FIELDS } from './health-readers';
+import { defaultReaders, jsonDocument, TAG_RUN_FIELDS } from './health-readers';
 import { tagRunsVerdict } from './health-rule';
 import type { RunResult } from './run';
 
@@ -97,5 +97,23 @@ describe('unit · health-readers · every gh row spawns the command its refusal 
     const stub = stubRunner('[]');
     await defaultReaders('.', stub.runner)[row]();
     expect(stub.asked.map((argv) => `gh ${argv.join(' ')}`).join('; ')).toBe(ROW_COMMANDS[row]);
+  });
+});
+
+describe('unit · health-readers · the --json document in a child output', () => {
+  // `run()` joins stderr into the output, and gh writes progress there: the document is then one
+  // line among noise, and a parse over the whole join would call a present answer missing.
+  test('the whole output, when it is one document', () => {
+    expect(jsonDocument(' {"ok":true} \n')).toEqual({ ok: true });
+  });
+
+  test('else the LAST line that parses to an object or an array', () => {
+    const output = ['{"ok":false}', 'Fetching runs…', '[1, 2]', '{broken', 'done'].join('\n');
+    expect(jsonDocument(output)).toEqual([1, 2]);
+  });
+
+  test('a scalar line and noise alone are no document', () => {
+    expect(jsonDocument('[ not json\nnull\nwarning: slow')).toBeUndefined();
+    expect(jsonDocument('')).toBeUndefined();
   });
 });

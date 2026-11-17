@@ -1,8 +1,10 @@
-// Everything `cdpTarget()` arms on the page BEFORE its first navigation, plus the readers that
-// turn the library's `unknown` event payloads into ring entries. Split out of `cdp-target.ts` on
-// 2026-09-19 for one reason: that file stood at 478 lines against the 500-line ceiling, and the
-// three verbs `press`/`focus`/`accessibility` did not fit under it. Since 31.0.0 an allowed request
-// is released only after `browser-dial.ts` screens a wildcard-admitted name's addresses.
+// Everything `cdpTarget()` arms on the page BEFORE its first navigation, plus the readers that turn
+// the library's `unknown` event payloads into ring entries.
+//
+// Split out of `cdp-target.ts` on 2026-09-19 for one reason: that file stood at 478 lines against
+// the 500-line ceiling, and the three verbs `press`/`focus`/`accessibility` did not fit under it.
+// Since 31.0.0 an allowed request is released only after `browser-dial.ts` screens a
+// wildcard-admitted name's addresses.
 
 import type { SleepClock } from '@ultimat3/core';
 import { resolveDialHost } from '@ultimat3/core/outbound';

@@ -19,6 +19,7 @@
 //
 //   bun run scripts/release-workflow.ts [--json]
 
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -211,21 +212,21 @@ export function checkPublishList(input: PublishListInput): readonly PublishGap[]
 const missingFinding = (gap: PublishGap): Finding => ({
   code: 'X_PUBLISH_LIST_INCOMPLETE',
   cause: `${gap.name} is a publishable workspace and no npm publish step in ${RELEASE_WORKFLOW} names it, so every release skips it and the registry answers 404`,
-  fix: `add \`-w ${gap.name}\` to the tier ${gap.tier ?? 0} publish step in ${RELEASE_WORKFLOW} — or stop keeping the list by hand and derive it from ${WORKSPACE_ENUMERATOR} — then bun run scripts/release-workflow.ts --json`,
+  fix: `grep -n 'npm publish' ${RELEASE_WORKFLOW}   # add \`-w ${gap.name}\` to the tier ${gap.tier ?? 0} publish step — or stop keeping the list by hand and derive it from ${WORKSPACE_ENUMERATOR} — then: bun run scripts/release-workflow.ts --json`,
   at: RELEASE_WORKFLOW,
 });
 
 const unreadableFinding = (): Finding => ({
   code: 'X_PUBLISH_LIST_INCOMPLETE',
   cause: `${RELEASE_WORKFLOW} contains no \`npm publish\` command, so this check could not see one package the release publishes`,
-  fix: `restore the publish steps in ${RELEASE_WORKFLOW} (git log -- ${RELEASE_WORKFLOW}), then bun run scripts/release-workflow.ts --json`,
+  fix: `git log -p -- ${renderFixShellArg(RELEASE_WORKFLOW, '<workflow>')}   # restore the publish steps from history, then: bun run scripts/release-workflow.ts --json`,
   at: RELEASE_WORKFLOW,
 });
 
 const absentFinding = (): Finding => ({
   code: 'X_PUBLISH_LIST_INCOMPLETE',
   cause: `${RELEASE_WORKFLOW} does not exist and this tree has packages to publish, so nothing publishes them — and every rule about the publish list passes by having no list to disagree with`,
-  fix: `restore ${RELEASE_WORKFLOW} (git checkout -- ${RELEASE_WORKFLOW}), then bun run scripts/release-workflow.ts --json`,
+  fix: `git checkout -- ${renderFixShellArg(RELEASE_WORKFLOW, '<workflow>')}   # restores the deleted workflow, then: bun run scripts/release-workflow.ts --json`,
   at: RELEASE_WORKFLOW,
 });
 
@@ -235,16 +236,19 @@ const unknownFinding = (gap: PublishGap): Finding => ({
     gap.workspacePrivate === true
       ? `${RELEASE_WORKFLOW} publishes ${gap.name}, which is a private workspace — npm refuses it, and the packages already published in earlier steps cannot be unpublished`
       : `${RELEASE_WORKFLOW} publishes ${gap.name}, which no workspace under packages/ provides — npm exits non-zero, and the packages already published in earlier steps cannot be unpublished`,
-  fix: `delete \`-w ${gap.name}\` from the publish step in ${RELEASE_WORKFLOW}, then bun run scripts/release-workflow.ts --json`,
+  fix: `grep -n -- '-w ${renderFixShellArg(gap.name, '<package>')}' ${RELEASE_WORKFLOW}   # delete \`-w ${gap.name}\` from that publish step, then: bun run scripts/release-workflow.ts --json`,
   at: RELEASE_WORKFLOW,
 });
 
-const FINDINGS: Readonly<Record<PublishGapKind, (gap: PublishGap) => Finding>> = {
-  missing: missingFinding,
-  unknown: unknownFinding,
-  unreadable: unreadableFinding,
-  absent: absentFinding,
-};
+const FINDINGS: Readonly<Record<PublishGapKind, (gap: PublishGap) => Finding>> = Object.assign(
+  Object.create(null),
+  {
+    missing: missingFinding,
+    unknown: unknownFinding,
+    unreadable: unreadableFinding,
+    absent: absentFinding,
+  } satisfies Record<PublishGapKind, (gap: PublishGap) => Finding>,
+);
 
 export const publishGapFindingFor = (gap: PublishGap): Finding => FINDINGS[gap.kind](gap);
 

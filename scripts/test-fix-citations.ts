@@ -23,6 +23,7 @@ import {
   fixCitations,
   loadCommandCatalog,
 } from '@ultimat3/cli';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { CORPUS_PATTERNS, corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
@@ -105,14 +106,14 @@ const said = (site: TestFixSite): string => `${site.at} ("${site.fix}", which ${
 const overFinding = (gap: TestFixGap): Finding => ({
   code: 'X_TEST_FIX_UNRUNNABLE',
   cause: `${gap.pkg} has ${String(gap.found)} test fix line(s) citing a command this build cannot run and is pinned at ${String(gap.pinned)} — ${siteList(gap, said, EXPLAIN)}`,
-  fix: `rewrite the fix at ${siteTarget(gap, (site) => site.at)} as an invocation this build ships; \`x help --json\` lists every command, subcommand and flag`,
+  fix: `x help --json   # lists every command, subcommand and flag: rewrite the fix at ${siteTarget(gap, (site) => site.at)} as an invocation this build ships`,
   at: leadSite(gap)?.at ?? gap.pkg,
 });
 
 const staleFinding = (gap: TestFixGap): Finding => ({
   code: 'X_TEST_FIX_PIN_STALE',
   cause: `${gap.pkg} is pinned at ${String(gap.pinned)} unrunnable test fix line(s) and now has ${String(gap.found)} — the ratchet may only fall, so a pin nobody lowers is one nobody reads`,
-  fix: `bun run scripts/${SCRIPT}.ts --unpin ${gap.pkg}`,
+  fix: `bun run scripts/${renderFixShellArg(SCRIPT, '<script>')}.ts --unpin ${renderFixShellArg(gap.pkg, '<pkg>')}`,
   at: PINS_FILE,
 });
 
@@ -121,7 +122,7 @@ const unscannedFinding = (): Finding => ({
   cause: 'no test file matched, so this rule reported green over a file set it never read',
   // Literal path for the same reason release-facts.ts records: an interpolated `${SCRIPT}`
   // renders as `scripts/<value>.ts` to the static fix-line contract, which then names no file.
-  fix: "edit TEST_GLOBS in scripts/test-fix-citations.ts so it matches this repo's test layout",
+  fix: "grep -n 'TEST_GLOBS' scripts/test-fix-citations.ts   # edit it so it matches this repo's test layout",
   at: `scripts/${SCRIPT}.ts`,
 });
 

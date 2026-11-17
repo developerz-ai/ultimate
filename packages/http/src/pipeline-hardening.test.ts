@@ -116,7 +116,7 @@ describe('the root span', () => {
 
   const spanOf = (): ReadableSpan => {
     const span = exporter.spans[0];
-    if (span === undefined) throw new Error('no span was exported');
+    if (span === undefined) expect.unreachable('no span was exported');
     return span;
   };
 

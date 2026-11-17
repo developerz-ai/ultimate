@@ -8,12 +8,11 @@ import { authModule } from './scaffold-auth';
 import {
   baseRuntimeSource,
   baseRuntimeTest,
-  RUNTIME_HEADER,
   RUNTIME_MODULE,
   RUNTIME_TEST,
-  runtimePortLines,
 } from './scaffold-runtime-ports';
 import { destroySessionTest } from './sign-in-action-tests';
+import { type RuntimeRoutes, signInRuntimeSource, signInRuntimeTest } from './sign-in-runtime';
 
 /** Every generated file lives under the scaffold's own auth slice, beside `auth.ts`. */
 export const AUTH_DIR = 'apps/web/app/auth';
@@ -223,53 +222,23 @@ const styleSource =
 `;
 
 /** The files both shapes write, with the guard over this shape's settings. */
-
-/** The plain routes a shape mounts: an import line, and the expression `routes:` takes. */
-export interface RuntimeRoutes {
-  readonly importLine: string;
-  readonly expression: string;
-}
-
-const runtimeSource = (routes: RuntimeRoutes | undefined): string => `${RUNTIME_HEADER}
-// The sign-in guard runs HERE: a throw in this module stops the role, where the same throw in a
-// module the app scan imports is logged and the boot goes on.
-import type { RuntimeOverrides } from '@ultimat3/cli/serve';
-import { assertSignInConfigured } from './app/auth/sign-in-guard';${routes === undefined ? '' : `\n${routes.importLine}`}
-
-assertSignInConfigured(process.env);
-
-export const runtime = {
-${routes === undefined ? '' : `  routes: ${routes.expression},\n`}${runtimePortLines()}
-} satisfies RuntimeOverrides;
-`;
-
-const runtimeTest = (
-  routes: RuntimeRoutes | undefined,
-): string => `// The runtime loads under test (the guard judges no local environment)${routes === undefined ? '' : ', and mounts the sign-in routes'}.
-import { expect, unitTest } from '@ultimat3/testing';
-${routes === undefined ? '' : `${routes.importLine}\n`}import { runtime } from './runtime';
-
-unitTest('the runtime loads${routes === undefined ? '' : ' and mounts the sign-in routes'}', () => {
-  ${routes === undefined ? 'expect(runtime).toEqual({});' : `expect(runtime.routes).toBe(${routes.expression});`}
-});
-`;
-
 export function sharedSignInFiles(
   keys: readonly string[],
   why: string,
   routes?: RuntimeRoutes,
 ): readonly GeneratedFile[] {
   return [
-    // Over `x new`'s own pair while it is untouched; an author's edited copy is a conflict.
+    // Over `x new`'s own pair while it is untouched. An author's edited copy is spliced instead,
+    // by `generate-sign-in-runtime.ts`, which reads the disk this list never does.
     {
       path: RUNTIME_MODULE,
-      contents: runtimeSource(routes),
+      contents: signInRuntimeSource(routes),
       merge: 'replaces-pristine',
       pristine: baseRuntimeSource(),
     },
     {
       path: RUNTIME_TEST,
-      contents: runtimeTest(routes),
+      contents: signInRuntimeTest(routes),
       merge: 'replaces-pristine',
       pristine: baseRuntimeTest(),
     },

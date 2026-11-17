@@ -3,9 +3,7 @@
 // reads as a skip and keeps the gate green. The floor turns that skip back into a failure. Read
 // here and written by nothing: a gate that edits its own floor ratchets both ways, which is none.
 
-// Bun ships no equivalent for either: `existsSync` answers whether this root committed a floor at
-// all, and `join` builds the host-separator path to it.
-import { existsSync } from 'node:fs';
+// why: Bun ships no path API; `join` builds the host-separator path to the floor file.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
 import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
@@ -14,6 +12,7 @@ import { COVERAGE_FIELD, readCoverageFloor } from './coverage-floor';
 import type { ExerciseFloor } from './exercise-floor';
 import { EXERCISE_FIELD, readExerciseFloor } from './exercise-floor';
 import type { Finding } from './output';
+import { quoteArg } from './shell-quote';
 import type { StepTimeouts } from './verify-deadline';
 import { readStepTimeouts, STEP_TIMEOUT_FIELD } from './verify-deadline';
 import type { GuardBaseline } from './verify-guard-baseline';
@@ -276,10 +275,11 @@ export function parseVerifyFloor(
 /** No file is no floor: a repo that never committed one is not ratcheted, and reports nothing. */
 export async function readVerifyFloor(root: string): Promise<VerifyFloor | undefined> {
   const path = join(root, VERIFY_FLOOR_FILE);
-  if (!existsSync(path)) return undefined;
-  const text = await Bun.file(path)
-    .text()
-    .catch(() => undefined);
+  const file = Bun.file(path);
+  // `stat`, never `exists()`: that answers false for a directory, which would read as no floor and
+  // skip the ratchet silently. Only a path that is not there at all is no floor.
+  if ((await file.stat().catch(() => undefined)) === undefined) return undefined;
+  const text = await file.text().catch(() => undefined);
   if (text === undefined) return { steps: [], problems: ['it could not be read as a file'] };
   return parseVerifyFloor(text);
 }
@@ -320,7 +320,7 @@ export const vanishedSuiteFinding = (step: string, command: string = GATE_COMMAN
 export const skippedSuiteFinding = (step: string, skipped: number): Finding => ({
   code: 'X_VERIFY_SUITE_VANISHED',
   cause: `${VERIFY_FLOOR_FILE} requires the ${step} step and all ${skipped} test(s) it found skipped themselves, so nothing ran`,
-  fix: `x test ${step} --json   # then set what the suite skips without, or drop "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why`,
+  fix: `x test ${quoteArg(step)} --json   # then set what the suite skips without, or drop "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why`,
   docs: ERROR_DOCS_URL,
   at: VERIFY_FLOOR_FILE,
 });

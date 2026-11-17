@@ -123,13 +123,13 @@ export const browserUnreachable = (driver: string, thrown: unknown): ScrapeError
     ? new ScrapeError({
         code: 'X_SCRAPE_BROWSER_MISSING',
         cause: `the ${driver} driver has no browser to launch: ${renderThrowable(thrown)}`,
-        fix: 'install a Chrome or Chromium and name it — localBrowser({ launcher, executablePath: env.CHROME_PATH }) — or attach to one somebody else is running with remoteBrowser({ cdpUrl: env.SCRAPE_CDP_URL })',
+        fix: 'localBrowser({ launcher, executablePath: env.CHROME_PATH })   // after installing a Chrome or Chromium — or attach to one somebody else is running: remoteBrowser({ cdpUrl: env.SCRAPE_CDP_URL })',
         meta: { driver },
       })
     : new ScrapeError({
         code: 'X_SCRAPE_BROWSER_UNREACHABLE',
         cause: `the ${driver} browser stopped answering: ${renderThrowable(thrown)}`,
-        fix: 'raise watchdog: { idleMs } on the scrape() definition if the site is genuinely slow, otherwise re-run once the browser host is back',
+        fix: 'watchdog: { idleMs: 300_000 }   // on the scrape() definition if the site is genuinely slow — otherwise re-run once the browser host is back',
         meta: { driver },
       });
 
@@ -148,7 +148,7 @@ export const profileLocked = (profileDir: string): ScrapeError =>
     // the explanation behind a `#` and the unsafe one drops the command entirely.
     fix: isFixShellSafe(profileDir)
       ? `rm -f ${renderFixShellArg(profileDir, '')}/SingletonLock   # only once no browser is using it, or give this run its own localBrowser({ profileDir })`
-      : 'delete the SingletonLock file inside the profile directory the cause names, once no browser is using it — or give this run its own localBrowser({ profileDir })',
+      : "localBrowser({ profileDir: '<a directory of its own>' })   // or, once no browser is using it, delete the SingletonLock file inside the profile directory the cause names",
     meta: { profileDir },
   });
 
@@ -156,7 +156,7 @@ export const hostBlocked = (url: string, allowed: readonly string[]): ScrapeErro
   new ScrapeError({
     code: 'X_SCRAPE_HOST_BLOCKED',
     cause: `the page requested ${url}, and allowHosts lists ${allowed.join(', ') || 'nothing'}`,
-    fix: `add the host to allowHosts on the scrape() definition — allowHosts: [${allowed.map((host) => `'${host}'`).join(', ')}, '<the host above>']`,
+    fix: `allowHosts: [${allowed.map((host) => `'${host}'`).join(', ')}, '<the host above>']   // on the scrape() definition`,
     meta: { url, allowed },
   });
 
@@ -164,7 +164,7 @@ export const selectorMissing = (selector: string, url: string, waitedMs: number)
   new ScrapeError({
     code: 'X_SCRAPE_SELECTOR_MISSING',
     cause: `"${selector}" never appeared on ${url} within ${String(waitedMs)}ms`,
-    fix: "open the run's page.html artifact and re-derive the selector, or raise the timeout on this waitFor({ timeout })",
+    fix: `page.waitFor(selector, { timeout: ${String(waitedMs * 2)} })   // raise the timeout — or open the run's page.html artifact and re-derive the selector`,
     meta: { selector, url, waitedMs },
   });
 
@@ -172,7 +172,7 @@ export const notActionable = (selector: string, reason: string, waitedMs: number
   new ScrapeError({
     code: 'X_SCRAPE_NOT_ACTIONABLE',
     cause: `"${selector}" is present and ${reason} after ${String(waitedMs)}ms`,
-    fix: 'wait for the state that unblocks it — page.waitFor(selector, { state: "enabled" }) — or dismiss whatever overlays it before the click',
+    fix: 'page.waitFor(selector, { state: "enabled" })   // wait for the state that unblocks it — or dismiss whatever overlays it before the click',
     meta: { selector, reason, waitedMs },
   });
 
@@ -187,7 +187,7 @@ export const yieldHistoryMissing = (scrapeName: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_YIELD_HISTORY_MISSING',
     cause: `scrape "${scrapeName}" declares expect.maxDrop with no history: store, so there is no baseline to measure a drop against and the alarm can never fire`,
-    fix: `add history: memoryYieldHistory() to scrape("${scrapeName}") for a test, or your own YieldHistory in production — or drop expect.maxDrop and keep expect.minRows, which needs no baseline`,
+    fix: `history: memoryYieldHistory()   // on scrape("${scrapeName}") for a test, or your own YieldHistory in production — or drop expect.maxDrop and keep expect.minRows, which needs no baseline`,
     meta: { scrape: scrapeName },
   });
 
@@ -195,7 +195,7 @@ export const scrapeTimeout = (what: string, ms: number): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_TIMEOUT',
     cause: `${what} exceeded its ${String(ms)}ms budget`,
-    fix: 'raise timeout: on the scrape() definition, or split the pass so each step.run stays inside one budget',
+    fix: "timeout: '15m'   // raise it on the scrape() definition — or split the pass so each step.run stays inside one budget",
     meta: { what, ms },
   });
 
@@ -203,7 +203,7 @@ export const wedged = (what: string, idleMs: number): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_WEDGED',
     cause: `${what} produced no browser activity for ${String(idleMs)}ms, so the process was killed`,
-    fix: 'raise watchdog: { idleMs } on the scrape() definition if the site is genuinely this slow, or call page.activity() from the channel the framework cannot see (your own CDP session, a warm-up), otherwise re-run — the browser was closed and its session is gone',
+    fix: 'watchdog: { idleMs: 300_000 }   // on the scrape() definition if the site is genuinely this slow — or call page.activity() from the channel the framework cannot see (your own CDP session, a warm-up); otherwise re-run — the browser was closed and its session is gone',
     meta: { what, idleMs },
   });
 
@@ -225,7 +225,7 @@ export const watchdogStopped = (what: string, thrown: unknown): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_WATCHDOG_STOPPED',
     cause: `the wedge watchdog for ${what} stopped measuring browser activity: ${renderThrowable(thrown)}`,
-    fix: "drop the custom clock: from the scrape() definition and any clock: line in apps/<app>/runtime.ts — @ultimat3/core's systemClock is the only SleepClock whose sleep() cannot reject — then re-run",
+    fix: "import { systemClock } from '@ultimat3/core';   // then clock: systemClock, or drop the custom clock: from the scrape() definition and any clock: line in apps/<app>/runtime.ts — systemClock is the only SleepClock whose sleep() cannot reject — then re-run",
     meta: { what },
   });
 
@@ -233,7 +233,7 @@ export const pageCrashed = (url: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_PAGE_CRASHED',
     cause: `the renderer for ${url} died mid-run, so this attempt's page state is gone`,
-    fix: 'lower concurrency: on the scrape() definition or raise the container memory limit in docker-compose.prod.yml — a crashed renderer is out of memory far more often than it is a bug',
+    fix: 'concurrency: 1   // lower it on the scrape() definition, or raise the container memory limit in docker-compose.prod.yml — a crashed renderer is out of memory far more often than it is a bug',
     meta: { url },
   });
 
@@ -249,7 +249,7 @@ export const downloadTimeout = (ms: number, url: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_DOWNLOAD_TIMEOUT',
     cause: `no download landed within ${String(ms)}ms of the trigger on ${url}`,
-    fix: 'raise the timeout on page.download({ timeout }), or confirm the trigger is the element that starts the download',
+    fix: `page.download({ timeout: ${String(ms * 2)} })   // raise the timeout — or confirm the trigger is the element that starts the download`,
     meta: { ms, url },
   });
 
@@ -287,7 +287,7 @@ export const robotsDisallowed = (url: string, agent: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_ROBOTS_DISALLOWED',
     cause: `robots.txt disallows ${url} for user-agent "${agent}"`,
-    fix: "declare robots: { ignore: '<the written reason this run is permitted>' } on the scrape() definition, or scrape a path robots.txt allows",
+    fix: "robots: { ignore: '<the written reason this run is permitted>' }   // on the scrape() definition — or scrape a path robots.txt allows",
     meta: { url, agent },
   });
 
@@ -295,7 +295,7 @@ export const fixtureMissing = (url: string, dir: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_FIXTURE_MISSING',
     cause: `the fixture driver has no recording of ${url} under ${dir}, and an offline driver never reaches the network`,
-    fix: `add ${dir}/<the recording file> with { "url": "${url}", "html": "…" }, or point fixtureBrowser() at the directory that already holds it`,
+    fix: `{ "url": ${JSON.stringify(url)}, "html": "…" }   // a recording file under ${dir} — or point fixtureBrowser() at the directory that already holds it`,
     meta: { url, dir },
   });
 
@@ -307,7 +307,7 @@ export const fixtureStale = (url: string, ageMs: number, maxAgeMs: number): Scra
         ? `is ${String(Math.round(ageMs / 86_400_000))} days old`
         : 'has a recordedAt that is not a date'
     } and fixtureBrowser declares maxAge ${String(Math.round(maxAgeMs / 86_400_000))} days`,
-    fix: 're-record the fixture directory, or raise maxAge on fixtureBrowser({ maxAge }) with the reason an old recording still proves something',
+    fix: `fixtureBrowser(dir, { maxAge: ${String(maxAgeMs * 2)} })   // with the reason an old recording still proves something — or re-record the fixture directory`,
     meta: { url, ageMs, maxAgeMs },
   });
 
@@ -315,7 +315,7 @@ export const remoteRequired = (driver: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_REMOTE_REQUIRED',
     cause: `the ${driver} driver attaches to a browser somebody else started and was given no cdpUrl`,
-    fix: 'pass remoteBrowser({ cdpUrl: env.SCRAPE_CDP_URL }), or use localBrowser({ launcher }) to start one in this container',
+    fix: 'remoteBrowser({ cdpUrl: env.SCRAPE_CDP_URL })   // or localBrowser({ launcher }) to start one in this container',
     meta: { driver },
   });
 
@@ -331,7 +331,7 @@ export const secretExposed = (artifact: string, url: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_SECRET_EXPOSED',
     cause: `a ${artifact} of ${url} was requested after a secret was typed into this page, and pixels cannot be redacted afterwards`,
-    fix: 'call artifact.html() instead — page HTML is redacted by value and password fields are blanked — or take the capture before the secret is typed',
+    fix: 'artifact.html()   // instead — page HTML is redacted by value and password fields are blanked — or take the capture before the secret is typed',
     meta: { artifact, url },
   });
 
@@ -355,7 +355,7 @@ export const httpFailed = (url: string, status: number, body: string): ScrapeErr
   new ScrapeError({
     code: 'X_SCRAPE_HTTP_FAILED',
     cause: `${url} answered ${String(status)}: ${body}`,
-    fix: 'confirm the endpoint the browser leg calls is the one this request names — page.network() lists every URL the page actually fetched',
+    fix: 'page.network()   // lists every URL the page actually fetched: confirm the endpoint the browser leg calls is the one this request names',
     meta: { url, status },
     retry: status >= 400 && status < 500 && !isRetryableStatus(status) ? 'terminal' : 'retryable',
   });
@@ -369,7 +369,7 @@ export const bodyTooLarge = (url: string, readBytes: number, maxBytes: number): 
   new ScrapeError({
     code: 'X_SCRAPE_BODY_TOO_LARGE',
     cause: `${url} sent more than ${String(maxBytes)} bytes (${String(readBytes)} read before the read was cancelled)`,
-    fix: `raise the cap on this one call — http.request(url, { maxBytes: ${String(maxBytes * 2)} }) — or ask the endpoint for a page instead of the whole collection`,
+    fix: `http.request(url, { maxBytes: ${String(maxBytes * 2)} })   // raise the cap on this one call — or ask the endpoint for a page instead of the whole collection`,
     meta: { url, readBytes, maxBytes },
   });
 
@@ -384,7 +384,7 @@ export const redirectLoop = (url: string, lastUrl: string, hops: number): Scrape
   new ScrapeError({
     code: 'X_SCRAPE_REDIRECT_LOOP',
     cause: `${url} redirected ${String(hops)} times without answering; the last hop pointed at ${lastUrl}`,
-    fix: 'request the URL the chain settles on — page.network() lists every hop this leg took — or repair the session: a chain that never ends is a login redirecting to a page that redirects back to the login',
+    fix: 'page.network()   // lists every hop this leg took: request the URL the chain settles on — or repair the session: a chain that never ends is a login redirecting to a page that redirects back to the login',
     meta: { url, lastUrl, hops },
   });
 
@@ -405,7 +405,7 @@ export const scrapeSessionExpired = (scrape: string, key: string): ScrapeError =
   new ScrapeError({
     code: 'X_SCRAPE_SESSION_EXPIRED',
     cause: `the stored session ${key} for scrape "${scrape}" failed its validate() probe and the definition declares no auth.login`,
-    fix: `add auth: { login } to scrape("${scrape}") so an expired session can be replaced, or drop auth.validate and let the body handle the logged-out page`,
+    fix: `auth: { login }   // on scrape("${scrape}") so an expired session can be replaced — or drop auth.validate and let the body handle the logged-out page`,
     meta: { scrape, key },
   });
 
@@ -413,7 +413,7 @@ export const promptUnanswered = (scrape: string, label: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_PROMPT_UNANSWERED',
     cause: `scrape "${scrape}" asked for "${label}" and no prompt handler was declared`,
-    fix: `add prompt: async ({ label }) => await otpFor(label) to scrape("${scrape}") — a code that arrives out of band needs somewhere to come from`,
+    fix: `{ prompt: async ({ label }) => await otpFor(label) }   // on scrape("${scrape}") — a code that arrives out of band needs somewhere to come from`,
     meta: { scrape, label },
   });
 
@@ -425,7 +425,7 @@ export const blocked = (scrape: string, url: string, detail: string): ScrapeErro
   new ScrapeError({
     code: 'X_SCRAPE_BLOCKED',
     cause: `scrape "${scrape}" was refused by ${url}: ${detail}`,
-    fix: 'the session is burned and the next attempt starts a new identity — lower rate: on the scrape() definition if this repeats',
+    fix: 'rate: 0.5   // lower it on the scrape() definition if this repeats — the session is burned and the next attempt starts a new identity',
     meta: { scrape, url },
   });
 
@@ -441,7 +441,7 @@ export const captureFramingConflict = (clip: CaptureClip): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_CAPTURE_INVALID',
     cause: `this capture names both fullPage: true and clip ${clipText(clip)}, and a browser silently honours one of them without saying which`,
-    fix: 'drop fullPage — a clip is already the whole request — or drop clip to photograph the whole page',
+    fix: 'page.screenshot({ clip })   // drop fullPage: a clip is already the whole request — or page.screenshot({ fullPage: true }) for the whole page',
     meta: { clip: { ...clip }, fullPage: true },
   });
 
@@ -449,7 +449,7 @@ export const captureClipEmpty = (clip: CaptureClip, reason: string): ScrapeError
   new ScrapeError({
     code: 'X_SCRAPE_CAPTURE_INVALID',
     cause: `the clip ${clipText(clip)} ${reason}, so the capture would answer a blank picture that reads as a success`,
-    fix: "measure the element first — page.query('<selector>') answers a box with a positive width and height — and pass that rectangle as clip",
+    fix: "await page.query('<selector>')   // measure the element first: it answers a box with a positive width and height — pass that rectangle as clip",
     meta: { clip: { ...clip } },
   });
 
@@ -457,7 +457,7 @@ export const captureClipOnPdf = (clip: CaptureClip): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_CAPTURE_INVALID',
     cause: `page.pdf() was given the clip ${clipText(clip)} and a PDF has no crop rectangle — the print engine paginates the whole document`,
-    fix: 'call page.screenshot({ clip }) for one component, or page.pdf() with no clip for the document',
+    fix: 'page.screenshot({ clip })   // for one component — or page.pdf() with no clip for the document',
     meta: { clip: { ...clip } },
   });
 
@@ -471,6 +471,6 @@ export const keyInvalid = (chord: string, reason: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_KEY_INVALID',
     cause: `the key chord ${JSON.stringify(chord)} ${reason}`,
-    fix: "spell the chord as zero or more of Meta, Control, Alt, Shift joined by '+' and then the key — 'Meta+K', 'Escape', 'Shift+Tab' — using the browser's own key names",
+    fix: "page.press('Meta+K')   // a chord is zero or more of Meta, Control, Alt, Shift joined by '+' and then the key — 'Escape', 'Shift+Tab' — in the browser's own key names",
     meta: { chord },
   });

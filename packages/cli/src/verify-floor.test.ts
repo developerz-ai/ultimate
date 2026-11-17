@@ -140,6 +140,17 @@ describe('unit · the suite floor', () => {
       });
     });
 
+    // `Bun.file().exists()` answers false for a directory (#1169's review): a floor path that is a
+    // directory must stay a visible problem, never read as "no floor" and skip the ratchet.
+    test('a directory where the floor file belongs is a problem, not an absent floor', async () => {
+      await withRoot({ [`${VERIFY_FLOOR_FILE}/keep`]: '' }, async (root) => {
+        expect(await readVerifyFloor(root)).toEqual({
+          steps: [],
+          problems: ['it could not be read as a file'],
+        });
+      });
+    });
+
     test('a committed file is parsed against the real step names', async () => {
       await withRoot({ [VERIFY_FLOOR_FILE]: '{"steps":["unit","budgets"]}' }, async (root) => {
         expect(await readVerifyFloor(root)).toEqual({

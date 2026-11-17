@@ -5,6 +5,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun has no recursive readdir of its own.
 import { readdir } from 'node:fs/promises';
+import { ownerPage } from './lib/error-code-pages';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { newErrorCode, WIKI_PAGE } from './new-error-code';
@@ -59,13 +60,17 @@ describe('--dry-run', () => {
 
     expect(result.planned.map((edit) => edit.path)).toEqual([
       'packages/money/src/errors.ts',
+      ownerPage('money'),
       WIKI_PAGE,
       expect.stringContaining('error-map'),
     ]);
-    const wiki = result.planned.find((edit) => edit.path === WIKI_PAGE);
-    expect(wiki?.added).toEqual([
+    const page = result.planned.find((edit) => edit.path === ownerPage('money'));
+    expect(page?.added).toEqual([
       '| `X_MONEY_DRY_PROBE` | a title | what usually makes it happen | `x doctor --json` |',
     ]);
+    // The index gains the code's line and money's new count — and only lines it lacked.
+    const index = result.planned.find((edit) => edit.path === WIKI_PAGE);
+    expect(index?.added).toContain('| X_MONEY_DRY_PROBE | [money](Error-Codes-money) |');
   });
 
   test('without it the same run writes, and reports what it wrote', async () => {
@@ -101,7 +106,7 @@ describe('two runs at once', () => {
       lost?.status === 'rejected' && lost.reason instanceof ScriptError && lost.reason.code,
     ).toBe('X_NEW_ERROR_CODE_INVALID');
     const won = a?.status === 'fulfilled' ? 'X_MONEY_RACE_A' : 'X_MONEY_RACE_B';
-    const page = await read(dir, WIKI_PAGE);
+    const page = await read(dir, ownerPage('money'));
     // Every file the winner planned holds its code: the loser overwrote none of them.
     expect(page).toContain(`| \`${won}\` |`);
     expect(await read(dir, 'packages/money/src/errors.ts')).toContain(won);

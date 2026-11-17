@@ -2,8 +2,10 @@
  * `search()` — a QUERY FACTORY over an entity's `.searchable()` columns, the shape `llm()` and
  * `backfill()` already have. It returns a `query`, so a search inherits the policy, the cache tags,
  * the MCP tool, the typed client, the route and its manifest row rather than becoming a ninth
- * primitive. What it adds is the one thing a hand-written read gets wrong: the term never becomes
- * syntax, and the tenant predicate is never optional.
+ * primitive.
+ *
+ * What it adds is the one thing a hand-written read gets wrong: the term never becomes syntax, and
+ * the tenant predicate is never optional.
  */
 
 import { type Ctx, finiteOption, type McpExposureDeclaration } from '@ultimat3/core';

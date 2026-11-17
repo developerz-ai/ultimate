@@ -15,13 +15,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { EntityDescriptionLike, UnrenderedDeclaration } from '@ultimat3/db';
-import {
-  declaredSchema,
-  recordRetired,
-  shellInertIdentifier,
-  snapshotOf,
-  unrenderedOf,
-} from '@ultimat3/db';
+import { declaredSchema, recordRetired, snapshotOf, unrenderedOf } from '@ultimat3/db';
 import { registeredEntities } from '@ultimat3/entity';
 import { loadApp } from './app-load';
 import { checkSourceDrift, DB_PACKAGE } from './drift';
@@ -35,6 +29,7 @@ import type { Finding } from './output';
 import { settledDescriptions } from './redundant-indexes';
 import { appRowSecurity, type RowSecurityWanted, rowSecurityFindings } from './row-security-wanted';
 import { diffDeclaredSchema, type SchemaDifference } from './schema-diff';
+import { quoteArg } from './shell-quote';
 
 /**
  * What the app declares, or `undefined` when the app would not load. Injected so this module's
@@ -104,14 +99,16 @@ function repairFix(
   // the DROP, and the other branch — the declaration may have been LOST rather than removed, which
   // is the whole reason this direction is its own finding — rides in the cause: a `fix:` is one
   // command, and a `# or …` after it was a shell comment nobody's paste would run.
-  if (difference.direction === 'unmigrated') return { fix: `x db gen "record ${difference.name}"` };
-  // The name was read off a sidecar on disk and lands inside double quotes, where `$(…)` and a
-  // backtick still run: one the shell would act on is named in the cause only, never the command.
-  const inert = shellInertIdentifier(difference.name) !== null;
+  // The name can be read off a sidecar on disk, so the description is SINGLE-quoted: inside
+  // double quotes `$(…)` and a backtick still run, inside single quotes nothing does, and the line
+  // stays the one runnable command naming the real object.
+  if (difference.direction === 'unmigrated') {
+    const recorded = quoteArg(`record ${difference.name}`);
+    return { fix: `x db gen ${recorded}` };
+  }
+  const dropped = quoteArg(`drop ${difference.name}`);
   return {
-    fix: inert
-      ? `x db gen "drop ${difference.name}"`
-      : 'x db gen "drop what the entities no longer declare"',
+    fix: `x db gen ${dropped}`,
     why: `if ${difference.name} was lost rather than removed, re-declare it on the entity instead — this command drops it`,
   };
 }

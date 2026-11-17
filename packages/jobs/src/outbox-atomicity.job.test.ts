@@ -133,7 +133,7 @@ describe('a committed stage reaches a real worker exactly once', () => {
     const tx = fakeTx('crash-relay');
     await enqueueInTx({ store, driver }, tx, handle, { orgId: 'org-3' });
     const [record] = await store.commit(tx);
-    if (record === undefined) throw new Error('expected one staged record');
+    if (record === undefined) return expect.unreachable('expected one staged record');
 
     // Simulate the crash the relay's own comment names: publish landed, `markPublished` did not,
     // so the next tick (or, here, a second manual publish) republishes the same row.

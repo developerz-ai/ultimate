@@ -90,7 +90,7 @@ export function offlineFallbackFinding(fact: OfflineFallbackFact): Finding | und
   if (fallback === null) {
     return finding(
       'no pwa.offline.fallback is declared, so no service worker is emitted and an offline navigation falls back to the browser error page',
-      `set pwa: { offline: { fallback: '/offline' } } in ${APP_CONFIG_FILE}`,
+      `pwa: { offline: { fallback: '/offline' } }   // in ${APP_CONFIG_FILE}`,
     );
   }
   if (fact.routes.some((route) => route.path === fallback && NAVIGABLE.has(route.surface))) {
@@ -99,7 +99,10 @@ export function offlineFallbackFinding(fact: OfflineFallbackFact): Finding | und
   const cause = `pwa.offline.fallback is "${fallback}" and no site/ route serves it, so an offline navigation falls back to the browser error page`;
   const name = GENERATABLE.exec(fallback)?.[1];
   return name === undefined
-    ? finding(cause, `set pwa.offline.fallback in ${APP_CONFIG_FILE} to a path a route serves`)
+    ? finding(
+        cause,
+        `pwa: { offline: { fallback: '<a path a site/ route serves>' } }   // in ${APP_CONFIG_FILE}`,
+      )
     : finding(cause, `x g route ${quoteArg(name)} --surface site`);
 }
 

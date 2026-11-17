@@ -1,8 +1,10 @@
-// The generated app's frame — `apps/web/shared/shell.tsx` over the catalog's `AppShell` — and the
-// one island the scaffold ships, the theme toggle. Split out of `scaffold-app.ts` because that file
-// is the three surfaces and this is the chrome every `app/` page sits inside. Before this the
-// dashboard was an `<h1>` in a panel and the scaffold imported nothing from `@ultimat3/ui`; an app
-// that starts from it now starts from a designed product, and deletes what it does not want.
+// The generated app's frame — `apps/web/shared/shell.tsx` over the catalog's `AppShell` — and
+// the one island the scaffold ships, the theme toggle.
+//
+// Split out of `scaffold-app.ts` because that file is the three surfaces and this is the chrome
+// every `app/` page sits inside. Before this the dashboard was an `<h1>` in a panel and the
+// scaffold imported nothing from `@ultimat3/ui`; an app that starts from it now starts from a
+// designed product, and deletes what it does not want.
 
 import { sortedImports } from './imports';
 import { upToAppRoot } from './island';

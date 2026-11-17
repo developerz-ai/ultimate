@@ -270,9 +270,11 @@ import { formatMoney } from '@ultimat3/money';
 
 ## An amount a person typed — `parseAmount`
 
-`As of 2026-11-06`. `parseAmount(text, { currency, locale })` reads the separators and digits of
+`As of 2026-11-16`. `parseAmount(text, { currency, locale })` reads the separators and digits of
 the person's locale off `Intl.NumberFormat`, then hands the digits to `fromDecimal` as a string:
-no float, ever.
+no float, ever. **Whatever `formatMoney` shows in that locale reads back to the same amount**:
+every display (`symbol`, `code`, `narrowSymbol`) and `accounting`, held by
+`packages/testing/src/property-money.test.ts`.
 
 | Text | Locale | Currency | Answer |
 |---|---|---|---|
@@ -283,9 +285,22 @@ no float, ever.
 | `1,234` | `en-US` | USD | 123400 |
 | `1,234` | `de-DE` | EUR | refused: three fraction digits, EUR has two |
 | `1.5` | `de-DE` | EUR | refused: `.` does not group as `de-DE` groups |
+| `€ 1.234,56` or `1 234,56` | `de-AT` | EUR | 123456 — the price form and the plain-number form |
+| `1'234.56 CHF` or `1'234,56` | `fr-CH` | CHF | 123456 |
+| `ZAR 1 234,56` | `en-ZA` | ZAR | 123456 — the code is stripped before the symbol `R` inside it |
+| `(USD 0.01)` | `en-US` | USD | -1 — the locale's accounting parentheses |
+| `(1,00)` | `de-AT` | EUR | refused: `de-AT` writes no accounting parentheses |
+| `1.234,56` | `en-DE` | EUR | refused: the currency form is `€1,234.56`, see below |
 
-The locale's currency symbol and the currency code are ignored, a sign is `-` or the locale's
-minus. Every refusal is `X_MONEY_INPUT_INVALID` (422), whose cause names the character: re-prompt
+| Rule | Detail |
+|---|---|
+| Separator sets | every currency form's (decimal, group, grouping) first, the plain number's last. CLDR gives them apart: `de-AT` groups a price with `.` and a number with a no-break space; `mr-IN` and `en-IN`'s accounting form group a price the Western way |
+| Never two amounts | a set whose group mark is an earlier set's decimal mark, or the reverse, is dropped. `en-DE` writes `€1,234.56` and the plain number `1.234,56`, so only the currency form reads there. Sets that agree on both marks cannot read one text two ways |
+| Marks | the code, the symbol and the narrow symbol are ignored, longest first |
+| Sign | `-`, the locale's minus, or the whole amount in parentheses where the locale's accounting form uses them; both at once is refused |
+| Out of contract | `display: 'name'` (`1,234.56 US dollars`): the name is a plural phrase, not a mark. Ask for the amount and render the name beside the field |
+
+Every refusal is `X_MONEY_INPUT_INVALID` (422), whose cause names the character: re-prompt
 the person, never round or guess.
 
 ## Where money appears in the framework
@@ -293,7 +308,7 @@ the person, never round or guess.
 | Site | Shape |
 |---|---|
 | LLM budgets | `budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } }` — exceeding it throws before spending |
-| LLM cost accounting | per call, per tenant, per prompt version. No MCP tool reports it yet — `budgets.report` is designed and not built. `x ai cache --json` is **planned** and exits `X_NOT_IMPLEMENTED`; `x test eval --json` is the shipped command it points at |
+| LLM cost accounting | per call, per tenant, per prompt version. No MCP tool reports it yet — `budgets.report` is designed and not built. Each call's tokens are on the bus as `ai.llm` (`inputTokens`, `outputTokens`, `cacheHit`) and on `/metrics` as `gen_ai_client_token_usage` → [Observability](Observability) |
 | Job cost accounting | per job run and per step, so an expensive retry loop is visible in the queue view |
 | Admin columns | a money column renders as a right-aligned formatted amount with the currency code; the raw minor value is shown on hover |
 | OTel span attributes | `cost.minor` + `cost.currency` as separate attributes, never a formatted string |

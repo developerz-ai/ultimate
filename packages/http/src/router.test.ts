@@ -20,7 +20,7 @@ const table = httpRouter([
 
 const matched = (method: string, path: string) => {
   const result = matchRoute(table, method, path);
-  if (!result.ok) throw new Error(`expected a match for ${method} ${path}: ${result.reason}`);
+  if (!result.ok) expect.unreachable(`expected a match for ${method} ${path}: ${result.reason}`);
   return result;
 };
 
@@ -66,7 +66,7 @@ describe('invalid percent-encoding', () => {
   test('a param segment that will not decode is path-invalid, not a throw', () => {
     const result = matchRoute(table, 'GET', '/posts/%ZZ');
     expect(result.ok).toBe(false);
-    if (result.ok || result.reason !== 'path-invalid') throw new Error('expected path-invalid');
+    if (result.ok || result.reason !== 'path-invalid') expect.unreachable('expected path-invalid');
     expect(result.segment).toBe('%ZZ');
   });
 
@@ -80,7 +80,7 @@ describe('invalid percent-encoding', () => {
   test('a wildcard reports the first bad segment of the tail', () => {
     const result = matchRoute(table, 'GET', '/files/ok/%E0%A4%A/tail');
     expect(result.ok).toBe(false);
-    if (result.ok || result.reason !== 'path-invalid') throw new Error('expected path-invalid');
+    if (result.ok || result.reason !== 'path-invalid') expect.unreachable('expected path-invalid');
     expect(result.segment).toBe('%E0%A4%A');
   });
 
@@ -109,7 +109,7 @@ describe('methods', () => {
     expect(matchRoute(table, 'GET', '/nope')).toEqual({ ok: false, reason: 'not-found' });
     const result = matchRoute(table, 'DELETE', '/posts');
     expect(result.ok).toBe(false);
-    if (result.ok || result.reason !== 'method-not-allowed') throw new Error('expected 405');
+    if (result.ok || result.reason !== 'method-not-allowed') expect.unreachable('expected 405');
     expect([...result.allow].sort()).toEqual(['GET', 'HEAD', 'POST']);
   });
 

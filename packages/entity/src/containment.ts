@@ -1,8 +1,10 @@
 // Single responsibility: what `@>`, `<@`, `&&` and a JSON key test MEAN, written once so the
-// in-memory driver answers what Postgres answers. A `jsonb` or an `arrayOf()` column was declared
-// and then unfilterable — the ten-operator vocabulary had nothing that could look inside one — so
-// an app with either had to leave the query language for hand-written SQL, which is the one path
-// in this framework with no tenancy guard on it.
+// in-memory driver answers what Postgres answers.
+//
+// A `jsonb` or an `arrayOf()` column was declared and then unfilterable — the ten-operator
+// vocabulary had nothing that could look inside one — so an app with either had to leave the query
+// language for hand-written SQL, which is the one path in this framework with no tenancy guard on
+// it.
 //
 // Every rule here is Postgres', reproduced rather than approximated. Where the two could not be
 // made to agree the operator is refused instead (`memory-match.ts`), never guessed at.

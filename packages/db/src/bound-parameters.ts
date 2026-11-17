@@ -1,8 +1,9 @@
 // Single responsibility: every value of one statement, encoded into what `Bun.SQL` sends correctly.
+//
 // Two kinds need it, both measured against Postgres 17: a JS array (`array-parameter.ts`, #384),
 // and a `Date` once the pool runs unnamed statements (`prepare: false`, `bun-sql.ts`) — with no
-// described type to go by the driver sent `Date.prototype.toString()`, a local-zone string
-// Postgres refuses (`22007`), so every entity write carrying a timestamp failed.
+// described type to go by the driver sent `Date.prototype.toString()`, a local-zone string Postgres
+// refuses (`22007`), so every entity write carrying a timestamp failed.
 
 import { instantText, pgArrayLiteral } from './array-parameter';
 

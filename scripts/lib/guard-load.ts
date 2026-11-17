@@ -62,7 +62,7 @@ export function loadFinding(script: string, failure: LoadFailure, root: string):
     code: 'X_GUARD_LOAD_FAILED',
     at: module,
     cause: `${script} could not load its imports — ${withoutRoot(failure.message, root)} — so it checked nothing; a package in its import graph is mid-edit or broken`,
-    fix: `edit ${module} until bun run typecheck is clean, then rerun: ${rerun}`,
+    fix: `bun run typecheck   # until it is clean — ${module} is mid-edit or broken — then rerun: ${rerun}`,
   };
 }
 

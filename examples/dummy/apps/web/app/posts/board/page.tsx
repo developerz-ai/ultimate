@@ -86,7 +86,11 @@ export const config = defineRoute({
   // island +144 B (79,025 B): the drag takes back the pointer capture the browser drops when a card
   // moves columns (a cross-column drag cancelled half way) and cancels when it cannot. Raised
   // 110.1kb → 110.3kb.
-  budget: { js: '110.3kb' },
+  // measured: 112,991 B (2026-11-16, plan 101b sweep 8b-2; x build --target static) — why: the
+  // board island +89 B: the action and query clients trim their base URL with `@ultimat3/core`'s
+  // linear `trimTrailingSlashes`, the one trim that replaced the quadratic `/\/+$/` at 26 sites
+  // (CodeQL js/polynomial-redos). Raised 110.3kb → 110.4kb.
+  budget: { js: '110.4kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

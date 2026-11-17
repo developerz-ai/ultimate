@@ -14,7 +14,11 @@
  * reached, through `registerRoute`, and it is what puts a number on a route that declares none.
  */
 
-const UNITS: Readonly<Record<string, number>> = { b: 1, kb: 1024, mb: 1024 * 1024 };
+const UNITS: Readonly<Record<string, number>> = Object.assign(Object.create(null), {
+  b: 1,
+  kb: 1024,
+  mb: 1024 * 1024,
+} satisfies Readonly<Record<string, number>>);
 
 /** `'40kb'` → 40960. Throws nothing: an unparseable budget is `null` and skipped. */
 export function parseByteBudget(budget: string | undefined): number | null {

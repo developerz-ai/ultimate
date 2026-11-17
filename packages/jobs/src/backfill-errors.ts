@@ -1,9 +1,11 @@
-// The eight `X_BACKFILL_*` codes, apart from `errors.ts` for the reason `driver-pg-rows.ts` is
-// apart from `driver-pg.ts`: one file, one job, and `errors.ts` was over the 500-line ceiling
-// `x verify`'s `filesize` step enforces. The registry is `error-codes.ts` — `JOB_OWNED_ERROR_CODES`,
-// `JOB_ERROR_TITLES` and the single `registerErrorCodes()` call — because a package's codes are
-// declared in ONE place; only the classes that throw them live here, beside `backfill-ledger.ts`,
-// `backfill-pending.ts` and `backfill-registry.ts`.
+// The eight `X_BACKFILL_*` error classes, thrown by the backfill files beside this one.
+//
+// Apart from `errors.ts` for the reason `driver-pg-rows.ts` is apart from `driver-pg.ts`: one
+// file, one job, and `errors.ts` was over the 500-line ceiling `x verify`'s `filesize` step
+// enforces. The registry is `error-codes.ts` — `JOB_OWNED_ERROR_CODES`, `JOB_ERROR_TITLES` and the
+// single `registerErrorCodes()` call — because a package's codes are declared in ONE place; only
+// the classes that throw them live here, beside `backfill-ledger.ts`, `backfill-pending.ts` and
+// `backfill-registry.ts`.
 
 import { renderFixShellArg, UltimateError } from '@ultimat3/core';
 
@@ -29,7 +31,7 @@ export class BackfillPendingError extends UltimateError {
     super({
       code: 'X_BACKFILL_PENDING',
       cause: `backfill "${input.backfill}" is declared and x_backfills holds no completed pass for it in ${input.environment}`,
-      fix: `x db backfill ${input.backfill} --write --json`,
+      fix: `x db backfill ${renderFixShellArg(input.backfill, '<backfill>')} --write --json`,
     });
   }
 }
@@ -40,7 +42,7 @@ export class BackfillAppliedError extends UltimateError {
     super({
       code: 'X_BACKFILL_APPLIED',
       cause: `backfill "${input.backfill}" completed as run ${input.runId} at ${input.completedAt}; a forced rerun writes a NEW ledger row and never edits that one`,
-      fix: `x db backfill ${input.backfill} --write --force --json`,
+      fix: `x db backfill ${renderFixShellArg(input.backfill, '<backfill>')} --write --force --json`,
     });
   }
 }
@@ -95,7 +97,7 @@ export class BackfillRunningError extends UltimateError {
     super({
       code: 'X_BACKFILL_RUNNING',
       cause: `backfill "${input.backfill}" already has a live pass queued as ${input.jobId}, and one name holds one live pass; its step trace names the batch it is on, and a pass that is not advancing is a worker that lost its lease`,
-      fix: `x jobs show ${input.jobId} --json`,
+      fix: `x jobs show ${renderFixShellArg(input.jobId, '<job id>')} --json`,
     });
   }
 }
@@ -110,7 +112,7 @@ export class BackfillStalledError extends UltimateError {
     super({
       code: 'X_BACKFILL_STALLED',
       cause: `backfill "${input.backfill}" swept ${input.swept} rows, exhausted its source, and count() still matches ${input.remaining} — a WHERE the sweep narrows and the count does not is what leaves rows behind`,
-      fix: `make count() select on exactly what source() selects on in backfill("${input.backfill}")`,
+      fix: `backfill({ name: "${input.backfill}", source, count, … })   // count() selects on exactly what source() selects on`,
     });
   }
 }

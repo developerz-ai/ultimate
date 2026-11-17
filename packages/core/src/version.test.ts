@@ -5,7 +5,9 @@
 // build-define fallback that a binary has instead of one, and pin the failure loud.
 
 import { describe, expect, spyOn, test } from 'bun:test';
+// why: the namespace object is what `spyOn` patches — `readFileSync` is `version.ts`'s own read.
 import * as fs from 'node:fs';
+// why: Bun has no path-join primitive.
 import { join } from 'node:path';
 import { UltimateError } from './errors';
 import {
@@ -16,7 +18,7 @@ import {
   VERSION_MANIFEST,
 } from './version';
 
-const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
+const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+(?:\+[\w.-]+)*)?$/;
 
 const missing = join(import.meta.dir, '.no-such-manifest-here', 'package.json');
 
@@ -119,5 +121,37 @@ describe('readPackageVersion', () => {
     const path = await write({ version: 'latest' });
     expect(() => readPackageVersion(path)).toThrow(UltimateError);
     await Bun.file(path).delete();
+  });
+});
+
+// CodeQL js/polynomial-redos (sweep 8b-3): `(?:[-+][\w.-]+)*` let a `-` open a group or sit inside
+// one, so `1.0.0` and 40 dashes and a `!` tried every split — exponential until JSC's backtrack
+// limit gave up at ~670 ms. The file's own `SEMVER` above is that old spelling, kept as the oracle.
+describe('resolveVersion reads a semver in linear time, with the old answers', () => {
+  const accepts = (version: string): boolean => {
+    try {
+      return resolveVersion(missing, version) === version;
+    } catch (error) {
+      if (error instanceof UltimateError) return false;
+      throw error;
+    }
+  };
+
+  test('every suffix of up to 5 characters after 1.0.0 answers as the old pattern did', () => {
+    let level = [''];
+    for (let length = 0; length <= 5; length += 1) {
+      for (const suffix of level) {
+        const version = `1.0.0${suffix}`;
+        expect([version, accepts(version)]).toEqual([version, SEMVER.test(version)]);
+      }
+      level = level.flatMap((head) => ['-', '+', '.', 'a', '_', '!'].map((one) => head + one));
+    }
+  });
+
+  test('a run of dashes that is no semver is refused in well under the old ~670 ms', () => {
+    const started = performance.now();
+    expect(accepts(`1.0.0${'-'.repeat(40)}!`)).toBe(false);
+    expect(accepts(`1.0.0${'-'.repeat(100_000)}!`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(100);
   });
 });

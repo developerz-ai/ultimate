@@ -129,7 +129,7 @@ export function sealCallResult(files: readonly SealSource[]): ScriptResult {
       code: 'X_SEAL_CALL_UNSCANNED',
       at: 'scripts/seal-calls.ts',
       cause: `${missing.join(', ')} was not among the files scanned, so the exemption names nothing and a clean run proves nothing`,
-      fix: 'edit SEAL_SEAM or STANDARD_CIPHERS in scripts/seal-calls.ts to name the modules that call the cipher, then: bun run seal-calls --json',
+      fix: "grep -nE 'SEAL_SEAM|STANDARD_CIPHERS' scripts/seal-calls.ts   # name the modules that call the cipher there, then: bun run seal-calls --json",
     });
   }
   return {

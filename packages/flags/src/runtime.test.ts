@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 const build = (): UltimateError =>
-  new CoreError({ code: 'X_FLAG_EXPIRED', cause: 'overdue', fix: 'x flags --json' });
+  new CoreError({ code: 'X_FLAG_EXPIRED', cause: 'overdue', fix: 'x config --json' });
 
 let sink: MemoryErrorReporter;
 

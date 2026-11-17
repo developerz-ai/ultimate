@@ -210,7 +210,7 @@ describe('a named rung this deployment cannot build is a refusal, not a shorter 
     );
     expect(error.code).toBe('X_CACHE_DRIVER_UNAVAILABLE');
     expect(error.fix).toBe(
-      'set REDIS_URL in .env, or drop the redis tier from cache.tiers in app.config.ts',
+      'REDIS_URL=redis://localhost:6379   # in .env — or drop the redis tier from cache.tiers in app.config.ts',
     );
   });
 

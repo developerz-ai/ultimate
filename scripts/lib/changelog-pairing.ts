@@ -6,6 +6,7 @@
 import { BREAKING_ENTRY, UPGRADING_PATH } from './changelog-format';
 import type { Changelog } from './changelog-sections';
 import type { Finding } from './log';
+import { siteAt } from './site-at';
 
 /**
  * THE KEY: `(#N)` straight after the dash — `- **BREAKING — (#57) …` — N the row in that major's
@@ -293,21 +294,19 @@ export function checkPairing(changelog: Changelog, upgrading: string): readonly 
   return gaps;
 }
 
-const RERUN = 'bun run scripts/changelog-check.ts --json';
-
 export function pairingFinding(gap: PairingGap): Finding {
   if (gap.kind === 'range') {
     return {
       code: 'X_DOC_MIGRATION_RANGE_STALE',
       cause: `${gap.at} ${gap.detail}`,
-      fix: `edit ${gap.at} so it names rows the walkthrough has, then rerun: ${RERUN}`,
+      fix: `edit ${siteAt(gap.at).path}:${siteAt(gap.at).line} — name rows the walkthrough has, then: bun run scripts/changelog-check.ts --json`,
       at: gap.at,
     };
   }
   return {
     code: 'X_DOC_MIGRATION_UNPAIRED',
     cause: `${gap.at} ${gap.detail}`,
-    fix: `write "(#N)" after the dash of each BREAKING line in the file the cause names, N its row in that major's Entry by entry table in ${UPGRADING_PATH}, then rerun: ${RERUN}`,
+    fix: `edit ${siteAt(gap.at).path}:${siteAt(gap.at).line} — write "(#N)" after the dash of each BREAKING line, N its row in that major's Entry by entry table in ${UPGRADING_PATH}, then: bun run scripts/changelog-check.ts --json`,
     at: gap.at,
   };
 }

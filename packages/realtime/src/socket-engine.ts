@@ -1,8 +1,10 @@
 // The socket engine (plan 101, slice 11): ONE sync socket shared by every tab of an origin and
-// principal, talking to each tab only over a `MessagePort`. Host-agnostic — the SharedWorker entry
-// and the in-page fallback run this same code. Each tab keeps its own `LiveClient` and store; to
-// it, its port IS a socket. This file is the socket's lifecycle — dial, beat, redial, reap; the
-// multiplexing (one membership per topic, frames routed per port) is `socket-routes.ts`.
+// principal, talking to each tab only over a `MessagePort`.
+//
+// Host-agnostic — the SharedWorker entry and the in-page fallback run this same code. Each tab
+// keeps its own `LiveClient` and store; to it, its port IS a socket. This file is the socket's
+// lifecycle — dial, beat, redial, reap; the multiplexing (one membership per topic, frames routed
+// per port) is `socket-routes.ts`.
 
 import { type Clock, finiteOption, systemClock } from '@ultimat3/core/page';
 import type { ClientSocket } from './client-contract';

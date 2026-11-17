@@ -2,6 +2,7 @@
 // signed request needs. A fixture, so it ships in no package (`!src/**/*-fixture.ts`).
 
 import type { Clock } from '@ultimat3/core';
+import { trimTrailingSlashes } from '@ultimat3/core';
 
 /** The preload freezes `Date`; a request signed at the frozen instant is `RequestTimeTooSkewed`. */
 const wallClock: Clock = {
@@ -18,7 +19,7 @@ const wallClock: Clock = {
 export function liveS3Target(raw: string | undefined) {
   if (raw === undefined || raw === '' || !URL.canParse(raw)) return undefined;
   const url = new URL(raw);
-  const bucket = url.pathname.replace(/^\/+|\/+$/g, '');
+  const bucket = trimTrailingSlashes(url.pathname.replace(/^\/+/, ''));
   if (bucket === '' || url.username === '' || url.password === '') return undefined;
   const options = {
     bucket,

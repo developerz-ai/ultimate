@@ -65,6 +65,7 @@ npm-debug.log*
 Thumbs.db
 
 # Claude local
+.claude/settings.json
 .claude/settings.local.json
 .claude/.local/
 .claude/worktrees/

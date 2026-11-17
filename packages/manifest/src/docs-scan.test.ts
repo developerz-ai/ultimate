@@ -2,10 +2,12 @@
 // here is a way a scan could hand an agent a doc entry that does not correspond to shipped code.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp, no mkdir, no recursive remove and no synchronous write; the fixtures
+// are built synchronously at module scope, before the scan under test runs.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanInstalledDocs, scanPackageDocs } from './docs-scan';
+import { scanInstalledDocs, scanPackageDocs, withoutClose } from './docs-scan';
 
 /** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
 const madeDirs: string[] = [];
@@ -273,5 +275,21 @@ describe('live · the installed framework', () => {
     expect(retry?.source).toBe('src/retry.ts');
     expect(retry?.symbols).toContain('nextRetry');
     expect(retry?.symbols).toContain('RetryPolicy');
+  });
+});
+
+describe('withoutClose', () => {
+  test('removes what /\\s?\\*+\\/$/ removed, and nothing else', () => {
+    const lines = [
+      ...['', 'a', '*/', ' */', 'a */', 'a **/', 'a**/', 'a\t*/', 'a  */', '/** x */', 'x*', 'x/'],
+    ];
+    for (const line of lines) expect(withoutClose(line)).toBe(line.replace(/\s?\*+\/$/, ''));
+  });
+
+  test('a long run of * is one pass (the regex took 3.9 s on 100,000)', () => {
+    const started = performance.now();
+    expect(withoutClose(`${'*'.repeat(100_000)}x`)).toBe(`${'*'.repeat(100_000)}x`);
+    expect(withoutClose(`${'*'.repeat(100_000)}/`)).toBe('');
+    expect(performance.now() - started).toBeLessThan(50);
   });
 });

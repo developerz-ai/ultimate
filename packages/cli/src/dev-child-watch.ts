@@ -1,9 +1,10 @@
-// A supervised `x dev` child that outlives what it serves stops itself. Two facts nothing else in
-// the child watched: its SUPERVISOR is gone (SIGKILLed, so it forwarded nothing — the child was
-// reparented to init and served forever), and its APP ROOT is gone (the jobs worker, the outbox
-// relay and the scheduler then poll an embedded database whose directory no longer exists, at
-// 100% CPU, measured at ~50 MB/s of heap growth). Found on a laptop, 2026-09-29: two children of
-// `cmd-dev-restart.live.test.ts`, six hours old, ppid 1, cwd deleted, one at 7 GB.
+// A supervised `x dev` child that outlives what it serves stops itself.
+//
+// Two facts nothing else in the child watched: its SUPERVISOR is gone (SIGKILLed, so it forwarded
+// nothing — the child was reparented to init and served forever), and its APP ROOT is gone (the
+// jobs worker, the outbox relay and the scheduler then poll an embedded database whose directory no
+// longer exists, at 100% CPU, measured at ~50 MB/s of heap growth). Found on a laptop, 2026-09-29:
+// two children of `cmd-dev-restart.live.test.ts`, six hours old, ppid 1, cwd deleted, one at 7 GB.
 //
 // Both facts and the stop itself hold on Windows: the supervisor is asked for by pid
 // (`process.kill(pid, 0)`), since a Windows child's ppid never changes, and a stop arrives as a

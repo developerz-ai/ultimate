@@ -3,15 +3,22 @@
 // manifest is `private` and carries no `version`, and after `npm install` a walk above the package
 // lands in `node_modules/` where there is no manifest at all. Both mistakes fail silently.
 
+// why: `frameworkVersion()` is synchronous and `Bun.file` reads only asynchronously.
 import { existsSync, readFileSync } from 'node:fs';
-// Bun has no path-join primitive; `import.meta.dir` is the module's own directory in both the
+// why: Bun has no path-join primitive; `import.meta.dir` is the module's own directory in both the
 // checked-out `src/` layout and the published `dist/` one, each exactly one level below the
 // package root.
 import { resolve } from 'node:path';
 import { renderCauseValue } from './error-render';
 import { UltimateError } from './errors';
 
-const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
+/**
+ * `X.Y.Z`, one optional `-` part, any number of `+` parts. The same strings as
+ * `(?:[-+][\w.-]+)*`, which let a `-` open a part or sit inside one and tried every split: 40
+ * dashes and a `!` ran into JSC's backtrack limit (CodeQL polynomial-redos). A `+` is in no part's
+ * class, so each part ends where the next begins.
+ */
+const SEMVER = /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)*$/;
 
 /** `@ultimat3/core`'s own manifest — the only file that can answer what version shipped. */
 export const VERSION_MANIFEST = resolve(import.meta.dir, '..', 'package.json');

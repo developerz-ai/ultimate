@@ -1,12 +1,20 @@
-// A registered code nothing constructs. The registry and the reference keep a shipped code alive
-// forever — which is right — and that is exactly why a code can outlive its last thrower with no
-// gate noticing: `X_RPC_FAILED` sat registered and documented as live after the transport change
-// took its only throw site away. It has to be LISTED as unthrown (`UNTHROWN_CODES`), or this
-// reports it.
+// A registered code nothing constructs, reported unless listed in `UNTHROWN_CODES`.
+//
+// The registry and the reference keep a shipped code alive forever — which is right — and that is
+// exactly why a code can outlive its last thrower with no gate noticing: `X_RPC_FAILED` sat
+// registered and documented as live after the transport change took its only throw site away. It
+// has to be LISTED as unthrown (`UNTHROWN_CODES`), or this reports it.
 
+// why: Bun ships no path API; `join` builds the absolute path of each scanned file.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, maskLiterals, stripComments } from '@ultimat3/core';
-import { RESERVED_HEADING } from './error-contract';
+import type { ErrorCodePage } from './error-contract';
+import {
+  documentedCodesIn,
+  errorCodeIndex,
+  RESERVED_HEADING,
+  readLegacyPage,
+} from './error-contract';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
 import { isCodeRegistry } from './ts-scan';
@@ -89,16 +97,26 @@ export async function collectCodeUse(root: string): Promise<CodeUse> {
   return { registered, used };
 }
 
-/** Codes that sit under the reserved heading — declared unthrown by WHERE they are, not by words. */
-export function declaredUnthrown(markdown: string): ReadonlySet<string> {
+/**
+ * Codes that sit under a reserved heading — declared unthrown by WHERE they are, not by words. The
+ * heading lives on the index; each page is read on its own, so its cut never leaks onto the next.
+ */
+export function declaredUnthrownIn(pages: readonly ErrorCodePage[]): ReadonlySet<string> {
   const out = new Set<string>();
-  let reserved = false;
-  for (const line of markdown.split('\n')) {
-    if (line.trim() === RESERVED_HEADING) reserved = true;
-    const row = /^\|\s*`(X_[A-Z0-9_]+)`\s*\|/.exec(line);
-    if (row !== null && reserved) out.add(row[1] ?? '');
+  for (const page of pages) {
+    let reserved = false;
+    for (const line of page.text.split('\n')) {
+      if (line.trim() === RESERVED_HEADING) reserved = true;
+      const row = /^\|\s*`(X_[A-Z0-9_]+)`\s*\|/.exec(line);
+      if (row !== null && reserved) out.add(row[1] ?? '');
+    }
   }
   return out;
+}
+
+/** @deprecated Use declaredUnthrownIn(pages) — the error reference is a page set since 31.35.0; removed at the next major. */
+export function declaredUnthrown(markdown: string): ReadonlySet<string> {
+  return declaredUnthrownIn([{ path: 'wiki/Error-Codes.md', text: markdown }]);
 }
 
 const unthrownFinding = (code: string, page: string): Finding => ({
@@ -121,22 +139,25 @@ const staleFinding = (code: string): Finding => ({
 
 /**
  * Registered, used by nothing, and not declared unthrown on the reference. A host check — the page
- * is the host repo's to name, and only a monorepo's walk sees every package's source; in a
- * generated app every framework code would read as unthrown.
+ * set is the host repo's to name, and only a monorepo's walk sees every package's source; in a
+ * generated app every framework code would read as unthrown. Reported at the page whose row
+ * presents the code as live, or the index when no page names it. An empty set reports nothing:
+ * `checkErrorCodeDocsIn` owns that finding.
  */
-export async function checkErrorCodesThrown(
+export async function checkErrorCodesThrownIn(
   root: string,
-  page: string,
+  pages: readonly ErrorCodePage[],
   listed: ReadonlySet<string> = UNTHROWN_CODES,
 ): Promise<readonly Finding[]> {
-  const reference = Bun.file(join(root, page));
-  if (!(await reference.exists())) return [];
-  const reserved = declaredUnthrown(await reference.text());
+  if (pages.length === 0) return [];
+  const reserved = declaredUnthrownIn(pages);
+  const documented = documentedCodesIn(pages);
+  const index = errorCodeIndex(pages);
   const { registered, used } = await collectCodeUse(root);
   const unthrown = [...registered]
     .filter((code) => !used.has(code) && !listed.has(code) && !reserved.has(code))
     .sort()
-    .map((code) => unthrownFinding(code, page));
+    .map((code) => unthrownFinding(code, documented.get(code) ?? index));
   // Only the THROWN-again direction: a listed name no registry holds waives nothing (the code it
   // was meant to name is still reported), and a host repo's fixture registering none of this
   // repo's codes would otherwise read every listing as stale.
@@ -145,4 +166,13 @@ export async function checkErrorCodesThrown(
     .sort()
     .map((code) => staleFinding(code));
   return [...unthrown, ...stale];
+}
+
+/** @deprecated Use checkErrorCodesThrownIn(root, pages, listed) — the error reference is a page set since 31.35.0; removed at the next major. */
+export async function checkErrorCodesThrown(
+  root: string,
+  page: string,
+  listed: ReadonlySet<string> = UNTHROWN_CODES,
+): Promise<readonly Finding[]> {
+  return checkErrorCodesThrownIn(root, (await readLegacyPage(root, page)) ?? [], listed);
 }

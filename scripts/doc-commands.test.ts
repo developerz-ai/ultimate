@@ -119,6 +119,8 @@ describe('what is not read, and why', () => {
   test('the error reference has one owner, and it is scripts/doc-fixes.ts', () => {
     // Its Fix column is held to a STRICTER rule there — a fix may not cite a planned command.
     expect(skipDocPath('wiki/Error-Codes.md')).toBe(true);
+    expect(skipDocPath('wiki/Error-Codes-cli.md')).toBe(true);
+    expect(skipDocPath('wiki/CLI-Reference.md')).toBe(false);
   });
 
   test('one line naming one invocation twice is one finding', () => {
@@ -209,7 +211,8 @@ describe('the pin is a ratchet, so it may only shrink', () => {
     expect(found[0]?.detail).toBe('1 now, pinned at 2');
     // The direction that DOES ask for the number, so the two fixes are provably not one string.
     const finding = docCommandFindingFor(found[0] as never);
-    expect(finding.fix).toContain(`set DOC_COMMAND_PINS['${QUERY}'] in scripts/doc-commands.ts`);
+    expect(finding.fix).toStartWith("grep -n 'DOC_COMMAND_PINS' scripts/doc-commands.ts   #");
+    expect(finding.fix).toContain(`set DOC_COMMAND_PINS['${QUERY}'] to`);
     // `at` is the file the fix EDITS, and the two directions edit different files: this one lowers
     // a number in the pin table, `pin-exceeded` above corrects citations in the page itself.
     expect(finding.at).toBe(PINS_FILE);

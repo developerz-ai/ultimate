@@ -74,7 +74,7 @@ describe('providerJwks', () => {
       caught = error instanceof AuthError ? error : null;
     }
     expect(caught?.code).toBe('X_OAUTH_TOKEN_INVALID');
-    expect(caught?.fix).toContain('register jwks-no-keys-op with an explicit jwksUri');
+    expect(caught?.fix).toStartWith('registerOAuthProvider({ id: "jwks-no-keys-op", jwksUri: ');
     expect(caught?.fix).toContain('exchangeOAuthCode()');
   });
 

@@ -7,6 +7,7 @@ import { t } from '@ultimat3/schema';
 import { BadFlagError } from './errors';
 import type { GhHost } from './gh';
 import { GhFailedError, ghJson } from './gh';
+import { quoteArg } from './shell-quote';
 
 /** `owner/name`, split once so a caller never re-splits it and never re-joins it wrong. */
 export interface GhRepo {
@@ -53,14 +54,14 @@ export async function resolveRepo(
         flag: 'repo',
         command,
         reason: `"${flag}" is not an owner/name repository reference`,
-        fix: `x ${command} --repo developerz-ai/ultimate --json`,
+        fix: `x ${quoteArg(command.split(' '))} --repo developerz-ai/ultimate --json`,
       });
     }
     return repoOf(flag);
   }
   const viewed = await ghJson(host, ['repo', 'view', '--json', 'nameWithOwner'], REPO_VIEW, {
     label: 'gh repo view',
-    fix: `x ${command} --repo developerz-ai/ultimate --json`,
+    fix: `x ${quoteArg(command.split(' '))} --repo developerz-ai/ultimate --json`,
   });
   return repoOf(viewed.nameWithOwner);
 }

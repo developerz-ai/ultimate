@@ -1,9 +1,11 @@
 // Single responsibility: the one screen a `RenderResult.status` passes before it reaches
 // `new Response(body, { status })`, which answers a bare `RangeError` — no code, no fix, no
-// `--json` — for anything outside the range it accepts. Its own module because two render modes
-// take a status from their caller and a second copy of the rule is how the two drift apart.
-// Named for `finiteOption`, and the name is load-bearing: `bun run finite-bounds` recognises a
-// repair by the shape of the CALL, so a screen spelled `renderStatus` reads as no screen at all.
+// `--json` — for anything outside the range it accepts.
+//
+// Its own module because two render modes take a status from their caller and a second copy of the
+// rule is how the two drift apart. Named for `finiteOption`, and the name is load-bearing:
+// `bun run finite-bounds` recognises a repair by the shape of the CALL, so a screen spelled `renderStatus`
+// reads as no screen at all.
 
 import { assert, finiteCount } from '@ultimat3/core';
 

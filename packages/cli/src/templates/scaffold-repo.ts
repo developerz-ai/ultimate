@@ -1,8 +1,9 @@
 // The REPO ROOT half of what `x new` writes: `app.config.ts`, the tooling configs, the committed
-// env files — and the one list that names every other scaffold module in write order. Committed
-// defaults only, so a fresh clone boots with `x dev` and no env scavenger hunt. Each workspace
-// package owns its own files (`scaffold-<name>-package.ts`); docs and shims are scaffold-docs.ts,
-// container files scaffold-container.ts.
+// env files — and the one list that names every other scaffold module in write order.
+//
+// Committed defaults only, so a fresh clone boots with `x dev` and no env scavenger hunt. Each
+// workspace package owns its own files (`scaffold-<name>-package.ts`); docs and shims are
+// scaffold-docs.ts, container files scaffold-container.ts.
 
 import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
 import { REQUIRED_BUN } from '../app-root';

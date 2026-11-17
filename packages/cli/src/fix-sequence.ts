@@ -54,6 +54,7 @@ export function generatorForceProblem(fix: string): string | undefined {
  * `packages/docs-source/src/errors.ts` is the one app entry). A file at or under its count passes;
  * one past it, or any file not listed — every app's — is a finding at each of its refused lines.
  * Held EQUAL to the step's counts by `fix-sequence.test.ts`: rewrite a line, lower its entry.
+ * 2026-11-16 (sweep 8b-4): 30 lines in 23 files — `scripts/` rewritten edit-first, none left.
  */
 export const FIX_SEQUENCE_BASELINE: ReadonlyMap<string, number> = new Map([
   ['packages/cli/src/cmd-client-customer.ts', 1],
@@ -71,8 +72,6 @@ export const FIX_SEQUENCE_BASELINE: ReadonlyMap<string, number> = new Map([
   ['packages/db/src/lifecycle-errors.ts', 1],
   ['packages/db/src/primary-key.ts', 1],
   ['packages/docs-source/src/errors.ts', 4],
-  ['packages/entity/src/partition.ts', 1],
-  ['packages/entity/src/retain.ts', 1],
   ['packages/jobs/src/subject-errors.ts', 1],
   ['packages/mail/src/preview-check.ts', 1],
   ['packages/mcp/src/meta-errors.ts', 1],
@@ -81,16 +80,4 @@ export const FIX_SEQUENCE_BASELINE: ReadonlyMap<string, number> = new Map([
   ['packages/seo/src/errors.ts', 1],
   ['packages/testing/src/exercise-override-input.ts', 1],
   ['packages/testing/src/plan-sweep-report.ts', 4],
-  ['scripts/adapter-ports.ts', 4],
-  ['scripts/bench-claims.ts', 1],
-  ['scripts/budget-raises.ts', 1],
-  ['scripts/declaration-readers-callers.ts', 2],
-  ['scripts/factory-names.ts', 2],
-  ['scripts/instrument-slots.ts', 1],
-  ['scripts/lib/export-all.ts', 1],
-  ['scripts/new-error-code.ts', 1],
-  ['scripts/plan-status.ts', 3],
-  ['scripts/posix-relative.ts', 1],
-  ['scripts/set-cookie-literals.ts', 2],
-  ['scripts/sql-export-readers.ts', 1],
 ]);

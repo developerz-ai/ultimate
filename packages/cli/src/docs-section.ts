@@ -4,7 +4,7 @@
 
 // why: Bun ships no path module; the page is joined onto the wiki directory the CLI resolved.
 import { join } from 'node:path';
-import { wikiSection } from '@ultimat3/manifest';
+import { isErrorCodesPage, wikiSection } from '@ultimat3/manifest';
 import type { WikiSource } from './docs-sources';
 import { msg } from './messages';
 import type { CommandResult } from './output';
@@ -35,7 +35,7 @@ export async function sectionResult(
   topic: WikiTopic,
   query: string,
 ): Promise<CommandResult | undefined> {
-  if (topic.page === 'Error-Codes') return undefined;
+  if (isErrorCodesPage(topic.page)) return undefined;
   const file = Bun.file(join(wiki.dir, `${topic.page}.md`));
   if (!(await file.exists())) return undefined;
   const text = wikiSection(await file.text(), topic.anchor);

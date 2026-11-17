@@ -1,8 +1,10 @@
 // Single responsibility: minting ONE presigned PUT for ONE file, with the tenant prefix and the
-// policy already inside the signature. The client never names the key — it asks for a grant and
-// is told one — so a caller cannot aim an upload at another org's prefix, at an attached row it
-// does not own, or at a size the policy never allowed. Everything this returns is derived; the
-// only client input that survives is the filename's extension, and only if it survives a regex.
+// policy already inside the signature. The client never names the key — it asks for a grant and is
+// told one — so a caller cannot aim an upload at another org's prefix, at an attached row it does
+// not own, or at a size the policy never allowed.
+//
+// Everything this returns is derived; the only client input that survives is the filename's
+// extension, and only if it survives a regex.
 
 import type { Clock } from '@ultimat3/core';
 import { finiteCount, systemClock } from '@ultimat3/core';

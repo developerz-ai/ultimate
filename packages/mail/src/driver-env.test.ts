@@ -77,7 +77,7 @@ describe('selectMailDriver', () => {
     );
     expect(error.code).toBe('X_CONFIG_INVALID');
     expect(error.cause).toContain('SMTP_URL and RESEND_API_KEY are both set');
-    expect(error.fix).toContain('unset one');
+    expect(error.fix).toStartWith("sed -i.bak '/^RESEND_API_KEY=/d' .env.production");
   });
 
   test('a transport without MAIL_FROM names the missing key, not the driver internals', () => {

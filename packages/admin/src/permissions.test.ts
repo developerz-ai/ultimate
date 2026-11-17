@@ -76,3 +76,15 @@ describe('confirmationToken', () => {
     expect(confirmationToken('admin', '')).toBe('admin:');
   });
 });
+
+// An operation can arrive as data (a posted form, an MCP argument). Read off a `{}` table, the
+// name of an `Object.prototype` member answered a function as the rule — `permission` undefined.
+describe('an operation that is not one', () => {
+  for (const op of ['constructor', 'toString']) {
+    test(`${op} is refused, never read off the prototype`, () => {
+      expect(() => ruleFor(op as AdminOperation)).toThrow(/X_INVARIANT/);
+      expect(() => adminPermissionFor(op as AdminOperation)).toThrow(/X_INVARIANT/);
+      expect(() => isDestructive(op as AdminOperation)).toThrow(/X_INVARIANT/);
+    });
+  }
+});

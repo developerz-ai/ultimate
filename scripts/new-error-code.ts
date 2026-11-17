@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-// Add an error code in ONE edit: its registration in the owning package's `errors.ts`, its row in
-// `wiki/Error-Codes.md` and — for a package that types one fix per code (`FIX_TABLES`: the CLI's
+// Add an error code in ONE edit: its registration in the owning package's `errors.ts`, its row on
+// `wiki/Error-Codes-<package>.md` with the index regenerated, and — for a package that types one fix per code (`FIX_TABLES`: the CLI's
 // `CLI_FIXES`) — that row too, written together or not at all. Codes kept landing in a package a wave
 // before their row, and the `errors` step went red at the end of the wave (DX ledger #11) — three
 // realtime codes in one round. Both edits are planned before either is written, so a refusal
@@ -8,12 +8,11 @@
 //
 //   bun run scripts/new-error-code.ts X_FOO_BAR --package realtime --title 'one line' \
 //     --cause 'what usually makes it happen' --fix 'x … or an edit naming a file' \
-//     [--status <n> | --off-socket] [--browser | --server-only] [--section '<## heading>']
-//     [--dry-run] [--json]
+//     [--status <n> | --off-socket] [--browser | --server-only] [--dry-run] [--json]
 //   bun run scripts/new-error-code.ts X_FOO_BAR --script scripts/<file>.ts --title … --cause … --fix …
 //
-// `--script <file>`: a code a repo script owns — the never-ships list entry and the row on the page,
-// nothing else (`new-error-code-script.ts`).
+// `--script <file>`: a code a repo script owns — the never-ships list entry on the index and the row
+// on `wiki/Error-Codes-scripts.md`, nothing else (`new-error-code-script.ts`).
 //
 // `--status`/`--off-socket`: exactly one for a tier <= 4 package, neither above it (below).
 // `--browser`/`--server-only`: exactly one where the package keeps `error-titles-server.ts`
@@ -29,8 +28,11 @@
 // The throw site is still the author's: this registers the code and documents it, and the class or
 // factory that raises it is the edit only the author can make.
 
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import type { KnownFlags } from './lib/args';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
+import { planPageEdits } from './lib/error-code-page-edit';
+import { ERROR_CODE_INDEX, ownerPage } from './lib/error-code-pages';
 import type { NewErrorCode } from './lib/error-code-plan';
 import {
   backlogPinIn,
@@ -38,14 +40,13 @@ import {
   FIX_TABLES,
   fixRowIn,
   registerIn,
-  rowIn,
   statusRowIn,
   validateNewCode,
 } from './lib/error-code-plan';
 import type { TitlesRealm } from './lib/error-code-realm';
 import { serverTitlesFile, titlesRealm } from './lib/error-code-realm';
 import { report } from './lib/log';
-import type { Snapshot } from './lib/planned-writes';
+import type { FileEdit, Snapshot } from './lib/planned-writes';
 import { snapshotReader, writePlanned } from './lib/planned-writes';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
@@ -54,7 +55,8 @@ import { newErrorCodeHelp, wantsHelp } from './new-error-code-help';
 import { PACKAGE_ONLY_FLAGS, planScriptCode } from './new-error-code-script';
 
 const SCRIPT = 'new-error-code';
-export const WIKI_PAGE = 'wiki/Error-Codes.md';
+/** The index: every code's row is on its owner's page, and this page's index is regenerated. */
+export const WIKI_PAGE = ERROR_CODE_INDEX;
 /** The composed table — what the gate's `errors` step reads. Rows are written to its SLICES. */
 export const STATUS_TABLE = 'packages/http/src/error-map.ts';
 export const STATUS_BACKLOG = 'scripts/error-map-backlog.ts';
@@ -101,7 +103,7 @@ export function statusDecision(pkg: string, argv: readonly string[]): StatusDeci
     throw new ScriptError({
       code: 'X_NEW_ERROR_CODE_INVALID',
       cause: `@ultimat3/${pkg} is tier ${tierOf(pkg)}, and ${STATUS_TABLE} covers tiers <= ${STATUS_TABLE_MAX_TIER} — its codes take neither --status nor --off-socket`,
-      fix: "rerun without --status and --off-socket: bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'",
+      fix: "bun run scripts/new-error-code.ts <CODE> --package <pkg> --title '…' --cause '…' --fix '…'   # rerun without --status and --off-socket",
     });
   }
   if ((status === undefined) === !offSocket) {
@@ -150,7 +152,7 @@ export function offSocketPinIn(backlog: string, path: string, input: NewErrorCod
     throw new ScriptError({
       code: 'X_NEW_ERROR_CODE_INVALID',
       cause: `${path} has no \`${OFF_SOCKET_LITERAL}\` literal to pin ${input.code} in, so it is not the two-list backlog this generator writes`,
-      fix: `bun run scripts/error-map.ts --json   # after pinning ${input.code} under ${input.pkg} in OFF_SOCKET in ${path} by hand`,
+      fix: `grep -n 'OFF_SOCKET' ${quoteArg(path)}   # pin ${input.code} under ${input.pkg} there by hand, then: bun run scripts/error-map.ts --json`,
     });
   }
   const end = close + '\n};'.length;
@@ -161,7 +163,8 @@ export function offSocketPinIn(backlog: string, path: string, input: NewErrorCod
 export interface Planned {
   readonly errorsPath: string;
   readonly errorsTs: string;
-  readonly wiki: string;
+  /** The row on the owner's page, then the regenerated index (`planPageEdits`). */
+  readonly pages: readonly FileEdit[];
   /**
    * The package's code NAME table (`SEO_ERROR_CODES`), when it keeps one apart from the titles:
    * written in `errorsPath` itself when it lives there, else in the package's `errors.ts` (`ui`).
@@ -257,7 +260,7 @@ async function planFrom(
       if (text !== undefined) names = { path: companion, text };
     }
   }
-  const wiki = rowIn((await read(WIKI_PAGE)) ?? '', input);
+  const pages = await planPageEdits({ root, read, input, owner: input.pkg });
   const fixesPath = FIX_TABLES.get(input.pkg);
   let fixes: Planned['fixes'];
   if (fixesPath !== undefined) {
@@ -265,14 +268,14 @@ async function planFrom(
     const current = (await read(fixesPath)) ?? '';
     fixes = { path: fixesPath, text: fixRowIn(current, fixesPath, input) };
   }
-  if (decision.kind === 'none') return { errorsPath, errorsTs, wiki, names, fixes };
+  if (decision.kind === 'none') return { errorsPath, errorsTs, pages, names, fixes };
   const path = decision.kind === 'row' ? statusTableFor(input.pkg) : STATUS_BACKLOG;
   const current = (await read(path)) ?? '';
   if (decision.kind === 'pin') {
     return {
       errorsPath,
       errorsTs,
-      wiki,
+      pages,
       names,
       fixes,
       status: { path, text: offSocketPinIn(current, path, input) },
@@ -285,7 +288,7 @@ async function planFrom(
     if (slice !== undefined) statusRowIn(slice, other, input, decision.status);
   }
   const text = statusRowIn(current, path, input, decision.status);
-  return { errorsPath, errorsTs, wiki, names, fixes, status: { path, text } };
+  return { errorsPath, errorsTs, pages, names, fixes, status: { path, text } };
 }
 
 /** Every flag this script reads. Anything else is refused: a misspelt `--dry-run` used to write. */
@@ -338,14 +341,14 @@ export function inputFrom(argv: readonly string[]): NewErrorCode {
       fix: rerunFor(pkg === 'scripts'),
     });
   }
-  return {
-    code,
-    pkg,
-    title,
-    cause,
-    fix,
-    section: flagString(args, 'section'),
-  };
+  if (args.flags.has('section')) {
+    throw new ScriptError({
+      code: 'X_NEW_ERROR_CODE_INVALID',
+      cause: `--section is retired: a code's row goes to its owner's page, ${ownerPage(pkg)}, at its place in code order, and the index of ${WIKI_PAGE} is regenerated — there is no section to pick`,
+      fix: `${rerunFor(pkg === 'scripts')}   # the same command without --section`,
+    });
+  }
+  return { code, pkg, title, cause, fix };
 }
 
 /** `--script`: the page alone, planned and written all-or-nothing like every other edit. */
@@ -366,16 +369,17 @@ async function newScriptCode(
       fix: "bun run scripts/new-error-code.ts <CODE> --script scripts/<file>.ts --title '…' --cause '…' --fix '…'   # without --package, --status, --off-socket, --browser and --server-only",
     });
   }
-  const edit = await planScriptCode(root, input, script, WIKI_PAGE, snapshot);
-  const plan: PlannedEdit[] = [
-    { path: edit.path, added: addedLines(snapshot.get(edit.path) ?? '', edit.text) },
-  ];
-  if (!dryRun) await writePlanned(root, [edit], snapshot, changedUnderneath);
+  const edits = await planScriptCode(root, input, script, snapshot);
+  const plan: PlannedEdit[] = edits.map((edit) => ({
+    path: edit.path,
+    added: addedLines(snapshot.get(edit.path) ?? '', edit.text),
+  }));
+  if (!dryRun) await writePlanned(root, edits, snapshot, changedUnderneath);
   return {
     input,
     dryRun,
     planned: plan,
-    written: dryRun ? [] : [edit.path],
+    written: dryRun ? [] : plan.map((edit) => edit.path),
     errorsPath: script,
     fixesPath: undefined,
     statusPath: undefined,
@@ -418,7 +422,7 @@ export async function newErrorCode(root: string, argv: readonly string[]) {
   const planned = await planFiles(root, input, decision, snapshot, realm);
   const edits = [
     { path: planned.errorsPath, text: planned.errorsTs },
-    { path: WIKI_PAGE, text: planned.wiki },
+    ...planned.pages,
     ...[planned.names, planned.fixes, planned.status].filter((edit) => edit !== undefined),
   ];
   const plan: PlannedEdit[] = [];
@@ -455,10 +459,10 @@ if (import.meta.main && wantsHelp(Bun.argv.slice(2))) {
         script: SCRIPT,
         summary:
           input.pkg === 'scripts'
-            ? `${result.dryRun ? 'dry run, nothing written: ' : ''}${input.code}, owned by ${result.errorsPath}, ${result.dryRun ? 'would be' : 'is'} in ${WIKI_PAGE}'s never-ships list with its row — the declaration in that script is yours`
+            ? `${result.dryRun ? 'dry run, nothing written: ' : ''}${input.code}, owned by ${result.errorsPath}, ${result.dryRun ? 'would be' : 'is'} in ${WIKI_PAGE}'s never-ships list with its row on ${ownerPage(input.pkg)} — the declaration in that script is yours`
             : result.dryRun
-              ? `dry run, nothing written: ${input.code} would be registered in ${result.errorsPath} and documented in ${WIKI_PAGE}${also}`
-              : `${input.code} registered in ${result.errorsPath} and documented in ${WIKI_PAGE}${also} — the throw site is yours`,
+              ? `dry run, nothing written: ${input.code} would be registered in ${result.errorsPath} and documented on ${ownerPage(input.pkg)}${also}`
+              : `${input.code} registered in ${result.errorsPath} and documented on ${ownerPage(input.pkg)}${also} — the throw site is yours`,
         data: {
           code: input.code,
           dryRun: result.dryRun,

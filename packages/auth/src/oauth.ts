@@ -1,8 +1,9 @@
 // Single responsibility: the OAuth2/OIDC handshake. PKCE is mandatory rather than
 // provider-dependent — an authorization code with no proof-of-possession is stealable from a
-// redirect, and "this provider does not need it" is how that becomes a real incident. Provider
-// configs are pure data and live in `oauth-registry.ts`: importing this file performs no network
-// I/O and reads no env.
+// redirect, and "this provider does not need it" is how that becomes a real incident.
+//
+// Provider configs are pure data and live in `oauth-registry.ts`: importing this file performs no
+// network I/O and reads no env.
 
 import { timingSafeEqual } from '@ultimat3/core';
 import { oauthStateInvalid } from './oauth-errors';

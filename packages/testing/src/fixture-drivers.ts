@@ -81,12 +81,15 @@ export const DRIVER_FIXTURE_NAMES = ['budget', 'deploy', 'page', 'signIn'] as co
 export type DriverFixtureName = (typeof DRIVER_FIXTURE_NAMES)[number];
 
 /** What each one is waiting on. `Record` over the name union, so the two lists cannot drift. */
-export const DRIVER_FIXTURE_NEEDS: Readonly<Record<DriverFixtureName, string>> = {
-  budget: 'the byte counts a browser run measures off the built output',
-  deploy: 'a second build to switch the running app to',
-  page: 'a browser driving the built app',
-  signIn: 'a browser session against the app’s own sign-in route',
-};
+export const DRIVER_FIXTURE_NEEDS: Readonly<Record<DriverFixtureName, string>> = Object.assign(
+  Object.create(null),
+  {
+    budget: 'the byte counts a browser run measures off the built output',
+    deploy: 'a second build to switch the running app to',
+    page: 'a browser driving the built app',
+    signIn: 'a browser session against the app’s own sign-in route',
+  } satisfies Readonly<Record<DriverFixtureName, string>>,
+);
 
 /**
  * Declared rather than left out, because the name is the contract. An app that registered its own

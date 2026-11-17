@@ -1,7 +1,8 @@
 /**
- * "A write just went through this tab's client": the one signal a page-side cache of server
- * answers (the client router's prefetched documents) needs to stop trusting them. Emitted by
+ * "A write just went through this tab's client": the one signal a page-side cache of server answers
+ * (the client router's prefetched documents) needs to stop trusting them. Emitted by
  * `clientTransport` for every non-GET, landed or failed — a failed write may still have committed.
+ *
  * On `globalThis` under one `Symbol.for` key, like the page client: every bundle's copy of core
  * shares one listener set.
  */

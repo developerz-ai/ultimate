@@ -1,8 +1,10 @@
-// The policy layer's stable error codes. `X_POLICY_MISSING` is enforced by the TYPE system,
-// not by a throw: `ActionDef.policy` is a required field (`@ultimat3/action`'s `action.ts`), so
-// an action with no policy never compiles. The code and its factory stay published for a
-// declaration site that cannot express the requirement in a type — a config-driven route table,
-// a policy resolved by name — and `policyMissing()` is how such a site says it.
+// The policy layer's stable error codes. `X_POLICY_MISSING` is enforced by the TYPE system, not by
+// a throw: `ActionDef.policy` is a required field (`@ultimat3/action`'s `action.ts`), so an action
+// with no policy never compiles.
+//
+// The code and its factory stay published for a declaration site that cannot express the
+// requirement in a type — a config-driven route table, a policy resolved by name — and
+// `policyMissing()` is how such a site says it.
 import {
   deniedCallerFix,
   type ErrorRetry,
@@ -10,6 +12,7 @@ import {
   registerErrorCodes,
   registerErrorRetry,
   renderCauseValue,
+  renderFixShellArg,
   UltimateError,
 } from '@ultimat3/core';
 
@@ -105,7 +108,7 @@ export const policyForbidden = (label: string, reason: string): PolicyError =>
     // `x policy list --json` is what `X_DECLARATION_UNKNOWN`'s own fix falls back to, so a reader
     // who follows either one lands in the same place.
     fix: BARE_PERMISSION.test(label)
-      ? `x policy explain ${label} --json   # shows which clause decided and why`
+      ? `x policy explain ${renderFixShellArg(label, '<permission>')} --json   # shows which clause decided and why`
       : `x policy list --json   # then: x policy explain <permission> --json for the clause that decided`,
     // The remote caller's half: it holds a credential, not the policy file.
     callerFix: deniedCallerFix(BARE_PERMISSION.test(label) ? label : undefined),
@@ -156,7 +159,7 @@ export const policyMissing = (subject: string): PolicyError =>
   new PolicyError({
     code: 'X_POLICY_MISSING',
     cause: `${subject} has no policy; an action without a policy is a build error, not a public endpoint`,
-    fix: `add policy: can('<resource>:<verb>') to ${subject}, or allow('public') to say so explicitly`,
+    fix: `policy: can('<resource>:<verb>')   // on ${subject} — or policy: allow('public') to say so explicitly`,
   });
 
 /**
@@ -179,6 +182,10 @@ export const roleRedefined = (role: string, first: string, second: string): Poli
  * failure moves from this throw to a page that renders empty. Only the generated `policy.test.ts`
  * caught it. A typo is by far the likelier of the two readings, so it leads.
  */
+/** A permission as a JS string literal to paste: single-quoted, unless the name holds one. */
+const jsString = (value: string): string =>
+  value.includes("'") ? JSON.stringify(value) : `'${value}'`;
+
 export const permissionUnknown = (permission: string, known: readonly string[]): PolicyError => {
   const nearest = nearestName(permission, known);
   return new PolicyError({
@@ -188,8 +195,8 @@ export const permissionUnknown = (permission: string, known: readonly string[]):
     cause: `"${permission}" is not in the permission set (${known.length} known)`,
     fix:
       nearest === undefined
-        ? `add '${permission}' to definePermissions([...]) if it is genuinely new — otherwise x policy list --json shows the ${known.length} already declared`
-        : `use '${nearest}', the nearest declared permission — or add '${permission}' to definePermissions([...]) if it is genuinely new`,
+        ? `definePermissions([${jsString(permission)}])   // if it is genuinely new: a second call merges — otherwise x policy list --json shows the ${known.length} already declared`
+        : `can(${jsString(nearest)})   // the nearest declared permission, wherever ${jsString(permission)} is written — or, if it is genuinely new: definePermissions([${jsString(permission)}])`,
   });
 };
 
@@ -221,8 +228,8 @@ export const emptyClauseList = (combinator: 'and' | 'or'): PolicyError =>
         : 'or() was built with no clauses, so it denies every actor and names no clause that could have allowed one',
     fix:
       combinator === 'and'
-        ? "write allow('public') if every caller may act — otherwise pass the clauses the list was meant to hold: and(can('<resource>:<verb>'), …)"
-        : "write deny('<why nobody may act>') if nobody may act — otherwise pass the clauses the list was meant to hold: or(can('<resource>:<verb>'), …)",
+        ? "allow('public')   // if every caller may act — otherwise pass the clauses the list was meant to hold: and(can('<resource>:<verb>'), …)"
+        : "deny('<why nobody may act>')   // if nobody may act — otherwise pass the clauses the list was meant to hold: or(can('<resource>:<verb>'), …)",
   });
 
 /**
@@ -241,7 +248,7 @@ export const surfaceUnknown = (surface: unknown, known: readonly string[]): Poli
   new PolicyError({
     code: 'X_POLICY_SURFACE_UNKNOWN',
     cause: `enforce() was handed surface ${renderCauseValue(surface)}, which no policy adapter answers to`,
-    fix: `pass one of ${known.join(', ')} — e.g. enforce('${known[0] ?? 'http'}', policy, args)`,
+    fix: `enforce('${known[0] ?? 'http'}', policy, args)   // the surface is one of ${known.join(', ')}`,
   });
 
 /**

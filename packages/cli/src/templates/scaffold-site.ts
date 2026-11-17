@@ -1,8 +1,10 @@
-// The generated landing page — `apps/web/site/page.tsx` and its stylesheet and test. Split out of
-// `scaffold-app.ts` when it grew from an `<h1>` and a link into a hero: a dot-grid ground, an
-// eyebrow, a balanced headline, a lede, two calls to action and three feature cards, every string
-// a catalog key and every colour a token. Still 0kb: `render: 'static'`, `hydrate: 'never'`, no
-// island, and it does not wear the app shell — see the page's own header comment.
+// The generated landing page — `apps/web/site/page.tsx` and its stylesheet and test.
+//
+// Split out of `scaffold-app.ts` when it grew from an `<h1>` and a link into a hero: a dot-grid
+// ground, an eyebrow, a balanced headline, a lede, two calls to action and three feature cards,
+// every string a catalog key and every colour a token. Still 0kb: `render: 'static'`,
+// `hydrate: 'never'`, no island, and it does not wear the app shell — see the page's own header
+// comment.
 
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';

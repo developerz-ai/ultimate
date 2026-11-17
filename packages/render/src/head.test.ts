@@ -218,7 +218,7 @@ describe('JSON-LD content', () => {
 
   const ldBody = (html: string): string => {
     const match = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html);
-    if (match?.[1] === undefined) throw new Error(`no ld+json script in ${html}`);
+    if (match?.[1] === undefined) return expect.unreachable(`no ld+json script in ${html}`);
     return match[1];
   };
 

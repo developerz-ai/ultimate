@@ -137,9 +137,7 @@ export const diskUnknown = (name: string, configured: readonly string[]): Storag
     cause: `no disk named "${name}" (configured: ${
       configured.length > 0 ? configured.join(', ') : 'none'
     })`,
-    fix: `add "${name}" to storage.disks in app.config.ts, or call disk('${
-      configured[0] ?? 'local'
-    }')`,
+    fix: `disk('${configured[0] ?? 'local'}')   // a configured disk — or declare "${name}" in defineStorage({ disks }) in app.config.ts`,
     meta: { name, configured },
   });
 
@@ -160,7 +158,7 @@ export const pathUnsafe = (key: string, reason: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_PATH_UNSAFE',
     cause: `key ${JSON.stringify(key)} ${reason}`,
-    fix: 'build the key with scopedKey(orgId, ...parts) — relative, forward slashes, no ".."',
+    fix: 'scopedKey(orgId, ...parts)   // builds the key relative, with forward slashes and no ".."',
     meta: { key, reason },
   });
 
@@ -168,7 +166,7 @@ export const tooLarge = (key: string, bytes: number, maxBytes: number): StorageE
   new StorageError({
     code: 'X_STORAGE_TOO_LARGE',
     cause: `"${key}" is ${bytes}B, over the policy limit of ${maxBytes}B`,
-    fix: `raise maxBytes in the upload policy (uploadPolicy({ maxBytes: ${bytes} })), or compress the file first`,
+    fix: `uploadPolicy({ maxBytes: ${bytes} })   // a higher limit in the upload policy — or compress the file first`,
     meta: { key, bytes, maxBytes },
   });
 
@@ -192,7 +190,7 @@ export const putTooLarge = (
     code: 'X_STORAGE_TOO_LARGE',
     cause: `"${key}" measured ${bytes}B against the ${disk} disk's put ceiling of ${maxBytes}B, and put() buffers the whole body`,
     fix:
-      `send it direct with grantUpload({ disk, orgId, request }) instead of put(), or raise the ceiling: ` +
+      `grantUpload({ disk, orgId, request })   // send it direct instead of put() — or raise the ceiling: ` +
       (disk === 's3'
         ? `s3Driver({ bucket, maxPutBytes: ${bytes} })`
         : disk === 'memory'
@@ -254,7 +252,7 @@ export const contentTypeNotAllowed = (
   new StorageError({
     code: 'X_STORAGE_TYPE_REJECTED',
     cause: `"${key}" declares ${declared}, which is not in the policy allowlist (${allowed.join(', ')})`,
-    fix: `add '${declared}' to allowedContentTypes in the upload policy, or upload one of: ${allowed.join(', ')}`,
+    fix: `uploadPolicy({ allowedContentTypes: [...allowed, ${renderFixLiteral(declared, "'<type>'")}] })   // or upload one of: ${allowed.join(', ')}`,
     meta: { key, declared, allowed },
   });
 
@@ -263,7 +261,7 @@ export const contentTypeMismatch = (key: string, declared: string, sniffed: stri
   new StorageError({
     code: 'X_STORAGE_TYPE_REJECTED',
     cause: `"${key}" declares ${declared} but its magic bytes are ${sniffed}`,
-    fix: `re-upload with Content-Type: ${sniffed}, or upload a genuine ${declared} file`,
+    fix: `validateUpload({ key, declaredContentType: ${renderFixLiteral(sniffed, "'<sniffed type>'")}, bytes }, policy)   // re-upload declaring what the bytes are — or upload a genuine ${declared} file`,
     meta: { key, declared, sniffed },
   });
 
@@ -284,7 +282,7 @@ export const contentTypeUnrecognised = (key: string, declared: string): StorageE
   new StorageError({
     code: 'X_STORAGE_TYPE_REJECTED',
     cause: `"${key}" declares ${declared}, and its first bytes match no known signature — every ${declared} carries one`,
-    fix: `re-send "${key}" through validateUpload(candidate, policy) with the bytes of a real ${declared}: the ones sent open with no ${declared} signature, so they are another format or truncated`,
+    fix: `validateUpload({ key: ${renderFixLiteral(key, "'<key>'")}, declaredContentType: ${renderFixLiteral(declared, "'<type>'")}, bytes }, policy)   // re-sent with the bytes of a real ${declared}: the ones sent open with no ${declared} signature, so they are another format or truncated`,
     meta: { key, declared },
   });
 
@@ -306,7 +304,7 @@ export const checksumMismatch = (key: string, declared: string, actual: string):
   new StorageError({
     code: 'X_STORAGE_CHECKSUM_MISMATCH',
     cause: `"${key}" declared sha256 ${declared} but the bytes hash to ${actual}`,
-    fix: 'recompute the checksum over the exact bytes you send, or omit it and let the driver hash',
+    fix: 'checksum: sha256Base64(bytes)   // over the exact bytes you send — or omit checksum and let the driver hash',
     meta: { key, declared, actual },
   });
 
@@ -320,7 +318,7 @@ export const signedUrlRejected = (reason: string, detail: string): StorageError 
   new StorageError({
     code: 'X_STORAGE_URL_INVALID',
     cause: `the signed request was rejected as ${reason}: ${detail}`,
-    fix: 'mint a fresh one with grantUpload({ disk, orgId, request }) and send it unedited — every constraint is inside the signature',
+    fix: 'grantUpload({ disk, orgId, request })   // mint a fresh one and send it unedited — every constraint is inside the signature',
     meta: { reason, detail },
   });
 
@@ -328,7 +326,7 @@ export const signedUrlExpired = (key: string, detail: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_URL_EXPIRED',
     cause: `the signed request for "${key}" ${detail}`,
-    fix: 'call grantUpload({ disk, orgId, request, expiresInMs }) again — a longer expiresInMs widens the window the signature grants',
+    fix: 'grantUpload({ disk, orgId, request, expiresInMs })   // again — a longer expiresInMs widens the window the signature grants',
     meta: { key, detail },
   });
 
@@ -426,7 +424,7 @@ export const orgMismatch = (key: string, orgId: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_ORG_MISMATCH',
     cause: `key "${key}" is not inside org "${orgId}"`,
-    fix: `build it with scopedKey('${orgId}', ...parts), and pass the ACTOR's org as orgId — never one read off the request`,
+    fix: `scopedKey(${renderFixLiteral(orgId, 'orgId')}, ...parts)   // and pass the ACTOR's org as orgId — never one read off the request`,
     meta: { key, orgId },
   });
 
@@ -450,7 +448,7 @@ export const uploadFailed = (path: string, status: number, detail: string): Stor
   new StorageError({
     code: 'X_STORAGE_UPLOAD_FAILED',
     cause: `PUT ${path} answered ${status}: ${detail === '' ? 'no body' : detail}`,
-    fix: 'call uploadFile({ file, grant }) again for a fresh grant; a 4xx here is the constraint named in the body, not a transport fault',
+    fix: 'await uploadFile({ file, grant })   // again, for a fresh grant; a 4xx here is the constraint named in the body, not a transport fault',
     meta: { path, status, detail },
   });
 
@@ -474,7 +472,7 @@ export const signedUrlUnverifiable = (diskName: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_URL_UNVERIFIABLE',
     cause: `the "${diskName}" disk was asked to verify a signed URL with no secret in the call, and its driver implements no verifySigned()`,
-    fix: 'pass secret: to the call, or use a driver that signs its own URLs (localDriver) — a provider-signed disk (s3) verifies at the provider and never reaches this path',
+    fix: 'await acceptSignedUpload({ ...input, secret })   // or a driver that signs its own URLs (localDriver) — a provider-signed disk (s3) verifies at the provider and never reaches this path',
     meta: { disk: diskName },
   });
 

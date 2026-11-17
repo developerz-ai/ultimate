@@ -1,16 +1,18 @@
 // `new-error-code --script <file>`: a code a repo script owns. `scripts/` never ships, so there is
 // no package to register it in and no HTTP status to decide — only wiki/Error-Codes.md's
-// never-ships list and its table row, which `gate-codes.ts` holds complete. Both were hand edits
+// never-ships list and its row on wiki/Error-Codes-scripts.md, which `gate-codes.ts` holds
+// complete. Both were hand edits
 // (X_UPGRADE_FIXTURE_*, X_GUARD_FORMS_ARCHIVE_FAILED), and one of the two was forgotten each time.
 
+import { planPageEdits } from './lib/error-code-page-edit';
 import type { NewErrorCode } from './lib/error-code-plan';
-import { rowIn, validateNewCode } from './lib/error-code-plan';
+import { validateNewCode } from './lib/error-code-plan';
 import type { FileEdit, Snapshot } from './lib/planned-writes';
 import { snapshotReader } from './lib/planned-writes';
 import { ScriptError } from './lib/script-error';
 
-/** The page section every script code's row lives in today. */
-export const SCRIPT_SECTION = 'CLI and verify';
+/** The owner every script code's row is filed under: `wiki/Error-Codes-scripts.md`. */
+export const SCRIPT_OWNER = 'scripts';
 
 /**
  * `gate-codes.ts`' lead, restated: that module loads the `@ultimat3/core` barrel through the CLI's
@@ -65,17 +67,23 @@ async function ownerScript(root: string, script: string): Promise<string> {
   return path;
 }
 
-/** The one edit a script code is: wiki/Error-Codes.md, its list entry and its row, planned together. */
+/**
+ * The edits a script code is, planned together: its row on wiki/Error-Codes-scripts.md, and the
+ * index — its never-ships list entry, and the generated index regenerated over the new row.
+ */
 export async function planScriptCode(
   root: string,
   input: NewErrorCode,
   script: string,
-  wikiPath: string,
   snapshot: Snapshot,
-): Promise<FileEdit> {
+): Promise<readonly FileEdit[]> {
   validateNewCode(input);
   await ownerScript(root, script);
-  const wiki = (await snapshotReader(root, snapshot)(wikiPath)) ?? '';
-  const row = rowIn(wiki, { ...input, section: input.section ?? SCRIPT_SECTION });
-  return { path: wikiPath, text: neverShipsIn(row, input.code) };
+  return planPageEdits({
+    root,
+    read: snapshotReader(root, snapshot),
+    input,
+    owner: SCRIPT_OWNER,
+    editIndex: (index) => neverShipsIn(index, input.code),
+  });
 }

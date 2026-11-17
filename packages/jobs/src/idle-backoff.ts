@@ -29,6 +29,14 @@ export const WOKEN_IDLE_POLL_CEILING_MS = 5_000;
  */
 export const IDLE_REST_MAX_MS = 60_000;
 
+/**
+ * How long one cross-process wake speaks for (`driver-pg-wake-sql.ts`'s `notifyJobReady`): one
+ * notification per queue per slot, so a row committed in a slot that already spoke sends none.
+ * A loop a wake reached therefore keeps passing until a whole slot has gone by since it
+ * (`IdleBackoff.settled`) — it is the pass behind the slot's end that finds the silent row.
+ */
+export const WAKE_SLOT_MS = 250;
+
 /** The first step when the floor is 0 (a loop that re-arms at once while there is work). */
 const MIN_STEP_MS = 25;
 
@@ -40,9 +48,14 @@ export interface IdleBackoff {
   /** True once a pass has come back empty — the loop is idling. */
   idle(): boolean;
   /**
-   * True from the SECOND empty pass since work or a wake (`reset`): the first one keeps the floor,
-   * because a wake is throttled (`WAKE_SLOT_MS`) and the row its slot left silent is found by the
-   * pass one floor behind it. Only a settled loop may rest (`restAfter`).
+   * True from the SECOND empty pass since work or a wake (`reset`), and only once the empty
+   * passes span `WAKE_SLOT_MS`. A wake is throttled to one per slot, and the row the slot left
+   * silent is found by a pass behind the slot's end — the second empty pass when the floor is a
+   * slot or more, a later one below that. Two passes 25 ms apart used to count as settled, and a
+   * row committed 60 ms after the wake waited out the whole rest. The span is the waits this
+   * handed out, not a clock: deterministic, and never longer than the time that really passed
+   * unless a wait was cut short — a due row or a kick, whose pass finds work and starts over.
+   * Only a settled loop may rest (`restAfter`).
    */
   settled(): boolean;
 }
@@ -62,30 +75,40 @@ export function createIdleBackoff(options: {
     Math.max(floor, declared ?? (wakeIsLive() ? WOKEN_IDLE_POLL_CEILING_MS : IDLE_POLL_CEILING_MS));
   /** Empty passes in a row. */
   let empty = 0;
+  /** How far the current empty pass is behind the first: the waits handed out in between. */
+  let spanMs = 0;
+  /** The wait the last empty pass was handed: the gap in front of the next one. */
+  let lastMs = 0;
   return {
     next(foundWork) {
       if (foundWork) {
         empty = 0;
+        spanMs = 0;
         return floor;
       }
+      if (empty > 0) spanMs += lastMs;
       empty += 1;
       // floor, 2x, 4x, … — the FIRST empty pass waits the floor, so one quiet poll costs nothing.
       // The doubling is core's curve, never a second one: no jitter, because every loop here polls
       // its own queue and a herd of idle workers is the cheap case.
-      if (empty === 1) return floor;
-      return backoffDelay({
-        attempt: empty,
-        base: Math.max(floor, MIN_STEP_MS),
-        max: ceiling(),
-        curve: 'exponential',
-        jitter: 'none',
-      });
+      lastMs =
+        empty === 1
+          ? floor
+          : backoffDelay({
+              attempt: empty,
+              base: Math.max(floor, MIN_STEP_MS),
+              max: ceiling(),
+              curve: 'exponential',
+              jitter: 'none',
+            });
+      return lastMs;
     },
     reset() {
       empty = 0;
+      spanMs = 0;
     },
     idle: () => empty > 0,
-    settled: () => empty >= 2,
+    settled: () => empty >= 2 && spanMs >= WAKE_SLOT_MS,
   };
 }
 

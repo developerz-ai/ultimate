@@ -1,8 +1,10 @@
 // The island fixture's scratch directories: one per mount, created when the mount needs it and
-// removed when the mount ends. A per-PROCESS directory left one behind per `bun test` run, because
-// `process.on('exit')` never fires under `bun test` (Bun 1.4.0, measured) — 5,000+ in `/tmp`. A
-// KILLED process reaches no cleanup at all, so each directory carries its owner's pid and the next
-// process sweeps a dead owner's.
+// removed when the mount ends.
+//
+// A per-PROCESS directory left one behind per `bun test` run, because `process.on('exit')` never
+// fires under `bun test` (Bun 1.4.0, measured) — 5,000+ in `/tmp`. A KILLED process reaches no
+// cleanup at all, so each directory carries its owner's pid and the next process sweeps a dead
+// owner's.
 
 // why: Bun has no directory API — a scratch DIRECTORY is made, listed, aged and removed, synchronously
 import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';

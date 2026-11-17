@@ -5,7 +5,17 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { applyUnpin, packageOf, pinnedFor, ratchetGaps, siteCounts } from './ratchet';
+import { parseScriptArgs } from './args';
+import type { RatchetGap, RatchetSpec } from './ratchet';
+import {
+  applyUnpin,
+  packageOf,
+  pinnedFor,
+  ratchetGaps,
+  ratchetResult,
+  siteCounts,
+} from './ratchet';
+import { ScriptError } from './script-error';
 
 const FILE = 'pins.ts';
 const site = (path: string) => ({ path, line: 1 });
@@ -160,6 +170,71 @@ describe('unit · --unpin edits the pins file', () => {
         'jobs -> 0',
       ]);
       expect(await Bun.file(join(dir, FILE)).text()).toBe('export const P = {\n};\n');
+    });
+  });
+});
+
+describe('unit · the command every ratchet runs', () => {
+  type Site = { readonly path: string; readonly line: number };
+  const specOf = (sites: () => Promise<readonly Site[]>): RatchetSpec<Site> => ({
+    script: 'demo',
+    pinsFile: FILE,
+    pins: { ui: 1 },
+    sites,
+    findingFor: (gap: RatchetGap<Site>) => ({ code: 'X_DEMO', cause: gap.kind, fix: gap.pkg }),
+    clean: 'every package at its pin',
+  });
+  const twoUi = async () => [site('packages/ui/src/a.ts'), site('packages/ui/src/b.ts')];
+
+  test('a tree over its pin is not ok, one finding per package, sites only under --explain', async () => {
+    const plain = await ratchetResult(specOf(twoUi), parseScriptArgs([]), '/nowhere');
+    expect(plain.ok).toBe(false);
+    expect(plain.summary).toBe('1 package(s) off the demo ratchet');
+    expect(plain.findings).toEqual([{ code: 'X_DEMO', cause: 'over', fix: 'ui' }]);
+    expect(plain.data).toEqual({ counts: { ui: 2 } });
+    const explained = await ratchetResult(
+      specOf(twoUi),
+      parseScriptArgs(['--explain']),
+      '/nowhere',
+    );
+    expect(explained.data).toEqual({ counts: { ui: 2 }, sites: await twoUi() });
+  });
+
+  test('a tree at its pins answers the clean sentence', async () => {
+    const one = async () => [site('packages/ui/src/a.ts')];
+    const result = await ratchetResult(specOf(one), parseScriptArgs([]), '/nowhere');
+    expect(result).toMatchObject({ ok: true, summary: 'every package at its pin', findings: [] });
+  });
+
+  test("a scan's coded refusal is reported, never thrown and never ok", async () => {
+    const refused = new ScriptError({ code: 'X_CORPUS_UNSCANNED', cause: 'read 0', fix: 'bun i' });
+    const result = await ratchetResult(
+      specOf(async () => {
+        throw refused;
+      }),
+      parseScriptArgs([]),
+      '/nowhere',
+    );
+    expect(result).toEqual({
+      ok: false,
+      script: 'demo',
+      summary: 'refused',
+      findings: [refused.toFinding()],
+    });
+  });
+
+  test('--unpin lowers the named rows in the pins file and says so', async () => {
+    await withPins('export const P = {\n  ui: 1,\n};\n', async (dir) => {
+      const none = async () => [];
+      const result = await ratchetResult(specOf(none), parseScriptArgs(['--unpin', 'ui']), dir);
+      expect(result.summary).toBe('lowered 1 pin(s): ui -> 0');
+      expect(await Bun.file(join(dir, FILE)).text()).toBe('export const P = {\n};\n');
+      const again = await ratchetResult(
+        { ...specOf(none), pins: {} },
+        parseScriptArgs(['--unpin', 'ui']),
+        dir,
+      );
+      expect(again.summary).toContain('nothing to lower');
     });
   });
 });

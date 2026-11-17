@@ -1,8 +1,10 @@
 // Single responsibility: reading accounts back out, safely. A quarterly access review — "who in
 // this org holds `admin`, and is any of them gone?" — was unanswerable: `UserStore` could find one
 // user by address or by id and nothing else, so there was no way to enumerate an org's members at
-// all. The projection is `describeApiKey`'s shape and its rule: never the password hash, never the
-// TOTP secret, never a recovery code hash.
+// all.
+//
+// The projection is `describeApiKey`'s shape and its rule: never the password hash, never the TOTP
+// secret, never a recovery code hash.
 
 import type { AuthUser, UserQuery } from './adapter';
 import type { Auth } from './auth';

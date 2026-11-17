@@ -1,8 +1,10 @@
 // Single responsibility: where a webhook delivery is allowed to connect, decided BEFORE the first
-// byte leaves. A tenant-supplied URL was opened as-is: loopback, RFC 1918, link-local — the cloud
-// metadata service at 169.254.169.254 — so anyone who could register an endpoint could make the
-// worker POST into the cluster. The screen is core's `screenDial` — resolve, classify every address,
-// pin — and this file keeps only what is a webhook's: the `http:` rule and its own refusal code.
+// byte leaves.
+//
+// A tenant-supplied URL was opened as-is: loopback, RFC 1918, link-local — the cloud metadata
+// service at 169.254.169.254 — so anyone who could register an endpoint could make the worker POST
+// into the cluster. The screen is core's `screenDial` — resolve, classify every address, pin — and
+// this file keeps only what is a webhook's: the `http:` rule and its own refusal code.
 
 import { isLocal } from '@ultimat3/core';
 import type { DialResolve } from '@ultimat3/core/outbound';
@@ -54,7 +56,7 @@ export async function webhookTarget(
     refuse(
       input,
       'has an http: url outside a local environment, so the signed body would cross the network in clear',
-      `give the endpoint an https:// url before webhook("${input.webhook}").endpoint returns it`,
+      `url: 'https://…'   // on the row webhook("${input.webhook}").endpoint returns`,
     );
   }
   const verdict = await screenDial(input.url, {
@@ -66,7 +68,7 @@ export async function webhookTarget(
     return refuse(
       input,
       `resolves to a ${verdict.refused} address, and a delivery only opens a public one`,
-      `point the endpoint at a public https:// receiver — or, for a receiver inside your own network, pass allowPrivate: true to webhook("${input.webhook}")`,
+      `url: 'https://…'   // a public receiver on the endpoint row — or, for a receiver inside your own network, allowPrivate: true on webhook("${input.webhook}")`,
     );
   }
   // Pinned by the screen: connecting by name would resolve again, and a name that answered public

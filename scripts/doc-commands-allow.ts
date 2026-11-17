@@ -168,13 +168,13 @@ export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
     path: 'docs/idea/14-roadmap.md',
     cites: 'x ota',
     kind: 'proposed',
-    why: 'milestone 14, in a table whose last column reads "design only"',
+    why: 'milestone 14, in the "Not planned" table: the design proposed it, and the State column reads not planned',
   },
   {
     path: 'docs/idea/16-app-targets.md',
     cites: 'x ota',
     kind: 'proposed',
-    why: 'the app-targets design: the OTA command set milestones 12–14 propose',
+    why: 'the app-targets design: the OTA command set milestones 12–14 proposed, not planned since 2026-11-16',
   },
   {
     path: 'docs/idea/16-app-targets.md',
@@ -236,5 +236,117 @@ export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
     cites: 'x db studio',
     kind: 'absent',
     why: 'the record says `x db studio` was the planned table first entry; it left the registry on 2026-11-15',
+  },
+  // Plan 101b slice 13 emptied `PLANNED_COMMANDS`: `x branch`, `x ai` and `x money` left the
+  // registry 2026-11-16, each for a "not planned" row in wiki/Known-Gaps.md. The pages below name
+  // them as non-commands — the decision rows, the reference's own "Planned commands" paragraph,
+  // dated records and design history — so a reader who meets the old word finds where it went.
+  {
+    path: 'wiki/Known-Gaps.md',
+    cites: 'x branch',
+    kind: 'absent',
+    why: 'the "Open by decision" row records that x branch is not planned and names x db branch create plus a container instead',
+  },
+  {
+    path: 'wiki/Known-Gaps.md',
+    cites: 'x ai',
+    kind: 'absent',
+    why: 'the "Open by decision" row records that x ai is not planned and names x test eval, a backfill() reindex and the bus instead',
+  },
+  {
+    path: 'wiki/Known-Gaps.md',
+    cites: 'x money',
+    kind: 'absent',
+    why: 'the "Open by decision" row records that x money is not planned and names registerCurrency() at boot instead',
+  },
+  {
+    path: 'wiki/CLI-Reference.md',
+    cites: 'x branch',
+    kind: 'absent',
+    why: 'the "Planned commands" paragraph says the table is empty and x branch now answers X_CLI_UNKNOWN_COMMAND',
+  },
+  {
+    path: 'wiki/CLI-Reference.md',
+    cites: 'x ai',
+    kind: 'absent',
+    why: 'the "Planned commands" paragraph says the table is empty and x ai now answers X_CLI_UNKNOWN_COMMAND',
+  },
+  {
+    path: 'wiki/CLI-Reference.md',
+    cites: 'x money',
+    kind: 'absent',
+    why: 'the "Planned commands" paragraph says the table is empty and x money now answers X_CLI_UNKNOWN_COMMAND',
+  },
+  {
+    path: 'wiki/CLI-Reference.md',
+    cites: 'x db studio',
+    kind: 'absent',
+    why: 'the "Planned commands" paragraph lists the subcommands that left PLANNED_SUBCOMMANDS on 2026-11-15',
+  },
+  {
+    path: 'wiki/CLI-Reference.md',
+    cites: 'x jobs drain',
+    kind: 'absent',
+    why: 'the "Planned commands" paragraph lists the subcommands that left PLANNED_SUBCOMMANDS on 2026-11-15',
+  },
+  {
+    path: 'wiki/CLI-Reference.md',
+    cites: 'x token grant',
+    kind: 'absent',
+    why: 'the "Planned commands" paragraph lists the subcommands that left PLANNED_SUBCOMMANDS on 2026-11-15',
+  },
+  {
+    path: 'wiki/CLI-Reference.md',
+    cites: 'x cache stats',
+    kind: 'absent',
+    why: 'the "Planned commands" paragraph lists the subcommands that left PLANNED_SUBCOMMANDS on 2026-11-15',
+  },
+  {
+    path: 'docs/idea/13-dx.md',
+    cites: 'x branch',
+    kind: 'absent',
+    why: 'the planned-commands paragraph records that the list is empty and x branch answers X_CLI_UNKNOWN_COMMAND',
+  },
+  {
+    path: 'docs/idea/13-dx.md',
+    cites: 'x ai',
+    kind: 'absent',
+    why: 'the planned-commands paragraph records that the list is empty and x ai answers X_CLI_UNKNOWN_COMMAND',
+  },
+  {
+    path: 'docs/idea/13-dx.md',
+    cites: 'x money',
+    kind: 'absent',
+    why: 'the planned-commands paragraph records that the list is empty and x money answers X_CLI_UNKNOWN_COMMAND',
+  },
+  {
+    path: 'docs/idea/09-ai-first.md',
+    cites: 'x branch',
+    kind: 'absent',
+    why: 'the branch-environments design says x branch is not planned and answers X_CLI_UNKNOWN_COMMAND',
+  },
+  {
+    path: 'docs/idea/14-roadmap.md',
+    cites: 'x branch',
+    kind: 'absent',
+    why: 'milestone 9 and the "Not planned" section both say x branch, a whole branch environment, is not planned',
+  },
+  {
+    path: 'docs/history/ai.md',
+    cites: 'x ai',
+    kind: 'absent',
+    why: 'the record of why no fix line may name x ai: the command was planned and threw, and is unknown since 2026-11-16',
+  },
+  {
+    path: 'docs/history/cli.md',
+    cites: 'x ai',
+    kind: 'absent',
+    why: 'the record quotes the six shipped fix lines that named unregistered commands, x ai prompts among them',
+  },
+  {
+    path: 'docs/history/cli.md',
+    cites: 'x branch',
+    kind: 'absent',
+    why: 'the record quotes the fix line the then-planned x branch handed out, which cloned a database called ls',
   },
 ];

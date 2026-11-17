@@ -1,9 +1,11 @@
-// Single responsibility: what a column's DEFAULT is, as SQL. Split out of `generate.ts` because
-// the question has two halves that must be answered together — what a declared default renders as,
-// and what it MEANS when a column claims one this generator cannot write down. That second half
-// had no answer at all until 2026-08-25: `hasDefault` reached the generator with no expression
-// beside it, so nine scalar defaults in the reference app's own schema were dropped in silence and
-// only `now()` and `gen_random_uuid()` survived, because those two are inferable from the kind.
+// Single responsibility: what a column's DEFAULT is, as SQL. Split out of `generate.ts` because the
+// question has two halves that must be answered together — what a declared default renders as, and
+// what it MEANS when a column claims one this generator cannot write down.
+//
+// That second half had no answer at all until 2026-08-25: `hasDefault` reached the generator with
+// no expression beside it, so nine scalar defaults in the reference app's own schema were dropped
+// in silence and only `now()` and `gen_random_uuid()` survived, because those two are inferable
+// from the kind.
 
 import { assert } from '@ultimat3/core';
 import { literal } from './sql';

@@ -1,9 +1,11 @@
-// What the gate's `e2e` step does around the suite in an APP: when this machine has a browser, it
-// runs the suite with the e2e preload and names the app root, and the PRELOAD spawns the app — so
-// the app lives in the test process, where `deploy.newBuild()` can restart it. No browser, or not an
-// app: the suite runs as before and its browser-backed cases skip — or refuse under
-// `E2E_BROWSER_REQUIRED=1`. An app whose `x.verify.json` requires `e2e` and ran nothing for want of
-// a browser is red by `judgeE2eBrowser`, with the command that installs one.
+// What the gate's `e2e` step does around the suite in an APP: with a browser, it runs the suite
+// under the e2e preload, which spawns the app in the test process.
+//
+// The step names the app root to the preload, so the app lives in the test process, where
+// `deploy.newBuild()` can restart it. No browser, or not an app: the suite runs as before and its
+// browser-backed cases skip — or refuse under `E2E_BROWSER_REQUIRED=1`. An app whose
+// `x.verify.json` requires `e2e` and ran nothing for want of a browser is red by `judgeE2eBrowser`,
+// with the command that installs one.
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { CHROME_PATH_ENV, chromeCandidates, findChrome } from '@ultimat3/scraping/cdp';

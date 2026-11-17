@@ -1,11 +1,12 @@
-// Single responsibility: the constraint policy for direct-to-storage uploads — size,
-// allowlist, checksum — and the content-type sniff that enforces it.
-// WHY sniff: `Content-Type` is attacker-controlled. A `.png` that is really an HTML document
-// is a stored-XSS delivery vehicle the moment any surface serves it back with the declared
-// type, so the magic bytes decide and a contradiction is rejected outright — including the
-// contradiction of NO answer at all, where the declared type is one a signature could have
-// confirmed. A type no rule can ever confirm (`text/csv`, `application/json`) is still accepted
-// on the client's word: there is nothing to compare it against.
+// Single responsibility: the constraint policy for direct-to-storage uploads — size, allowlist,
+// checksum — and the content-type sniff that enforces it. WHY sniff: `Content-Type` is
+// attacker-controlled.
+//
+// A `.png` that is really an HTML document is a stored-XSS delivery vehicle the moment any surface
+// serves it back with the declared type, so the magic bytes decide and a contradiction is rejected
+// outright — including the contradiction of NO answer at all, where the declared type is one a
+// signature could have confirmed. A type no rule can ever confirm (`text/csv`, `application/json`)
+// is still accepted on the client's word: there is nothing to compare it against.
 
 import { assert, finiteCount } from '@ultimat3/core';
 import { sha256Base64 } from './driver';

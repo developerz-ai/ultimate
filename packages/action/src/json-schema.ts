@@ -42,7 +42,7 @@ export function normalizeJsonSchema(convert: () => unknown): JsonSchemaObject {
   if (isJsonObject(raw)) return raw;
   throw new SchemaUnsupportedError({
     cause: `the schema converted to ${raw === null ? 'null' : typeof raw}, not a JSON Schema object`,
-    fix: 'declare the schema with `t` from @ultimat3/action, or add an introspect() returning a SchemaNode to the object passed to configureSchemaProvider()',
+    fix: 'configureSchemaProvider({ vendor, t, introspect })   // introspect() returning a SchemaNode — or declare the schema with `t` from @ultimat3/action',
   });
 }
 

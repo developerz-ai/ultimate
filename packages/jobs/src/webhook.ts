@@ -1,9 +1,11 @@
 // `webhook()` — one outbound delivery to one endpoint, declared as a `job` and NOT as a ninth
-// primitive. A delivery is durable background work with an input schema, a retry policy, an
-// idempotency key and a queue, which is the definition of a `job` — so this file is a FACTORY over
-// `job()`, exactly as `backfill()` and `purge()` are and as `llm()` is over `action()`. That gives
-// it `.enqueue()`, the retry backoff, the worker's cancellation, the dead-letter path,
-// `x jobs show` and a manifest row without a line here.
+// primitive.
+//
+// A delivery is durable background work with an input schema, a retry policy, an idempotency key
+// and a queue, which is the definition of a `job` — so this file is a FACTORY over `job()`, exactly
+// as `backfill()` and `purge()` are and as `llm()` is over `action()`. That gives it `.enqueue()`,
+// the retry backoff, the worker's cancellation, the dead-letter path, `x jobs show` and a manifest
+// row without a line here.
 //
 // ONE ENDPOINT PER JOB, deliberately. Retry, backoff and disable-after-N are all per-endpoint
 // facts, and a job that fanned out inside one body would retry every endpoint because one of them

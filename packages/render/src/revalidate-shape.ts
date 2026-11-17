@@ -1,9 +1,10 @@
 /**
  * The invariants of `revalidate`'s keys beyond "it has a trigger": `onInvalidate`, `maxStale` and
- * `query`, checked where `modes.ts` checks the trigger, and `tags` as purge keys, checked where
- * the registry knows the file. Each is a declaration the ISR controller acts on per request, so
- * one it cannot act on is refused up front, with the edit, rather than read as its permissive
- * default for the life of the process.
+ * `query`, checked where `modes.ts` checks the trigger, and `tags` as purge keys, checked where the
+ * registry knows the file.
+ *
+ * Each is a declaration the ISR controller acts on per request, so one it cannot act on is refused
+ * up front, with the edit, rather than read as its permissive default for the life of the process.
  */
 
 import type { CacheTag } from '@ultimat3/cache';
@@ -93,7 +94,7 @@ export function assertPurgeableTags(file: string, tags: readonly CacheTag[] | un
       const wire = renderFixLiteral(serializeTag(owned), '<the tag>');
       throw new RouteModeInvalidError(
         `${file} declares revalidate tag ${wire}, which cannot be a CDN purge key — a key is split on whitespace and commas and capped at 1024 bytes, so every response of the route would carry one no purge can name`,
-        `edit revalidate.tags in ${file}: replace ${wire} with a tag whose entity and id carry no whitespace or comma`,
+        `revalidate: { tags: [tag.post] }   // in ${file}: replace ${wire} with a tag whose entity and id carry no whitespace or comma`,
       );
     }
   }

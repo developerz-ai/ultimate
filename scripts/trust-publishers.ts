@@ -11,10 +11,11 @@
 //   bun run scripts/trust-publishers.ts --check [--json]   # verify, read-only
 //   bun run scripts/trust-publishers.ts [--dry-run] [--json]
 
-import { flagBool, flagString, parseScriptArgs } from './lib/args';
+import { renderFixShellArg } from '../packages/core/src/error-render';
+import { flagBool, flagString, parseScriptArgs, type ScriptArgs } from './lib/args';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
-import { repoRoot, run } from './lib/run';
+import { type RunOptions, type RunResult, repoRoot, run } from './lib/run';
 import {
   listWorkspaces,
   publishFloorFindings,
@@ -192,9 +193,15 @@ export function trustResult(input: {
   };
 }
 
-async function main(): Promise<never> {
-  const args = parseScriptArgs(process.argv.slice(2));
-  const json = args.json;
+/** The repository and the subprocesses one run reads; a test hands in a scripted npm. */
+export interface TrustDeps {
+  readonly root: string;
+  readonly run: (command: readonly string[], options: RunOptions) => Promise<RunResult>;
+}
+
+/** One run over parsed `args`: every package listed, attached unless `--check`, then the verdict. */
+export async function trustRun(args: ScriptArgs, deps: TrustDeps): Promise<ScriptResult> {
+  const { root } = deps;
   const check = flagBool(args, 'check');
   const dryRun = flagBool(args, 'dry-run');
   const repo = flagString(args, 'repo') ?? DEFAULT_REPO;
@@ -204,27 +211,22 @@ async function main(): Promise<never> {
   // environment — so the one argument that turns the gate off was also the one that hid it.
   const environmentFlag = flagString(args, 'environment');
   if (environmentFlag !== undefined && environmentFlag.trim() === '') {
-    report(
-      {
-        ok: false,
-        script: 'trust-publishers',
-        summary: 'refused an empty --environment',
-        findings: [
-          {
-            code: 'X_TRUST_ENVIRONMENT_EMPTY',
-            at: 'scripts/trust-publishers.ts',
-            cause:
-              'an empty --environment attaches a publisher npm will honour from ANY environment, which disables the reviewer and tag rules the npm-publish environment carries',
-            fix: `bun run scripts/trust-publishers.ts --environment ${DEFAULT_ENVIRONMENT}`,
-          },
-        ],
-      },
-      json,
-    );
-    process.exit(1);
+    return {
+      ok: false,
+      script: 'trust-publishers',
+      summary: 'refused an empty --environment',
+      findings: [
+        {
+          code: 'X_TRUST_ENVIRONMENT_EMPTY',
+          at: 'scripts/trust-publishers.ts',
+          cause:
+            'an empty --environment attaches a publisher npm will honour from ANY environment, which disables the reviewer and tag rules the npm-publish environment carries',
+          fix: `bun run scripts/trust-publishers.ts --environment ${renderFixShellArg(DEFAULT_ENVIRONMENT, '<environment>')}`,
+        },
+      ],
+    };
   }
   const environment = environmentFlag ?? DEFAULT_ENVIRONMENT;
-  const root = repoRoot();
 
   const workspaces = await listWorkspaces(root);
   const targets = publishOrder(workspaces);
@@ -235,23 +237,20 @@ async function main(): Promise<never> {
       outcomes.push({ name: target.name, ok: true, state: 'skipped', detail: 'dry run' });
       continue;
     }
-    const listed = await run(listArgs(target.name), { cwd: root });
+    const listed = await deps.run(listArgs(target.name), { cwd: root });
     if (isUnknownCommand(listed.output)) {
-      report(
-        {
-          ok: false,
-          script: 'trust-publishers',
-          summary: 'npm is too old for `npm trust`',
-          findings: [
-            {
-              code: 'X_TRUST_NPM_TOO_OLD',
-              cause: 'the npm on PATH has no `trust` subcommand; it shipped in npm 12',
-              fix: 'npm install -g npm@12',
-            },
-          ],
-        },
-        json,
-      );
+      return {
+        ok: false,
+        script: 'trust-publishers',
+        summary: 'npm is too old for `npm trust`',
+        findings: [
+          {
+            code: 'X_TRUST_NPM_TOO_OLD',
+            cause: 'the npm on PATH has no `trust` subcommand; it shipped in npm 12',
+            fix: 'npm install -g npm@12',
+          },
+        ],
+      };
     }
     if (listed.ok && hasPublisher(listed.output, repo, workflow, environment)) {
       outcomes.push({ name: target.name, ok: true, state: 'already', detail: 'publisher present' });
@@ -261,7 +260,9 @@ async function main(): Promise<never> {
       outcomes.push({ name: target.name, ok: false, state: 'missing', detail: 'no publisher' });
       continue;
     }
-    const attached = await run(trustArgs(target.name, repo, workflow, environment), { cwd: root });
+    const attached = await deps.run(trustArgs(target.name, repo, workflow, environment), {
+      cwd: root,
+    });
     if (attached.ok) {
       outcomes.push({
         name: target.name,
@@ -280,7 +281,10 @@ async function main(): Promise<never> {
     });
   }
 
-  report(trustResult({ workspaces, outcomes, repo, workflow }), json);
+  return trustResult({ workspaces, outcomes, repo, workflow });
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) {
+  const args = parseScriptArgs(process.argv.slice(2));
+  report(await trustRun(args, { root: repoRoot(), run }), args.json);
+}

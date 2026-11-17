@@ -31,6 +31,7 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { RunResult } from './lib/run';
 import { repoRoot, run } from './lib/run';
+import { readCatalogs, translatedLine, translateSweep } from './lib/scaffold-translate';
 import { strangerEnvAt } from './lib/stranger-env';
 
 const SCRIPT = 'scaffold-first-run';
@@ -152,34 +153,40 @@ export const plantHandWrittenSlices = async (dir: string): Promise<void> => {
 /** Where `x g sign-in` writes its page: an app holding it was signed in at birth (`--shape dashboard`). */
 export const SIGN_IN_PAGE = 'apps/web/app/auth/sign-in/page.tsx';
 
+/** Where `x g invite` writes its actions: an app holding it was born inviting (`--shape saas`). */
+export const INVITE_FILE = 'apps/web/app/auth/invite.ts';
+
 /**
- * `signedIn`: the app already has its one sign-in, so `g sign-in` is left out — a second run is
- * X_GENERATE_CONFLICT on every file, a refusal of the sweep's own making, never the generator's.
+ * `signedIn` / `invited`: the app already has its one sign-in or member invite, so that generator
+ * is left out — a second run is X_GENERATE_CONFLICT, a refusal of the sweep's own making, never
+ * the generator's: it never clobbers, and a shape that already ran it owes no second run.
  */
 export const firstRunPlan = (
-  options: { readonly signedIn?: boolean } = {},
+  options: { readonly signedIn?: boolean; readonly invited?: boolean } = {},
 ): readonly FirstRunStep[] => [
-  ...GENERATORS.filter((kind) => !(options.signedIn === true && kind === 'sign-in')).map(
-    (kind) => ({
-      name: `g ${kind}`,
-      // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`, and
-      // one chart, named by its `Chart.yaml` — which `x new` wrote holding both monitoring templates
-      // and the dashboard, so each chart step is the backfill's no-op over a current chart. One
-      // member invite, which takes no name either.
-      args:
-        kind === 'sign-in'
-          ? ['g', kind, '--password', '--json']
-          : kind === 'chart-alerts' || kind === 'chart-dashboard' || kind === 'invite'
-            ? ['g', kind, '--json']
-            : [
-                'g',
-                kind,
-                generatorName(kind),
-                ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
-                '--json',
-              ],
-    }),
-  ),
+  ...GENERATORS.filter(
+    (kind) =>
+      !(options.signedIn === true && kind === 'sign-in') &&
+      !(options.invited === true && kind === 'invite'),
+  ).map((kind) => ({
+    name: `g ${kind}`,
+    // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`, and
+    // one chart, named by its `Chart.yaml` — which `x new` wrote holding both monitoring templates
+    // and the dashboard, so each chart step is the backfill's no-op over a current chart. One
+    // member invite, which takes no name either.
+    args:
+      kind === 'sign-in'
+        ? ['g', kind, '--password', '--json']
+        : kind === 'chart-alerts' || kind === 'chart-dashboard' || kind === 'invite'
+          ? ['g', kind, '--json']
+          : [
+              'g',
+              kind,
+              generatorName(kind),
+              ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
+              '--json',
+            ],
+  })),
   ...SECOND_SHAPES,
 ];
 
@@ -356,12 +363,19 @@ if (import.meta.main) {
       args.json,
     );
   }
-  const steps = firstRunPlan({ signedIn: await Bun.file(join(dir, SIGN_IN_PAGE)).exists() });
+  const steps = firstRunPlan({
+    signedIn: await Bun.file(join(dir, SIGN_IN_PAGE)).exists(),
+    invited: await Bun.file(join(dir, INVITE_FILE)).exists(),
+  });
   await plantHandWrittenSlices(dir);
   // The app is code a generator wrote, and this process holds whatever Bun loaded from the
   // repo's `.env` (`NPM_TOKEN`): every child gets the allowlist and the test-service URLs only.
   const env = strangerEnvAt(repoRoot());
+  // Taken AFTER the hand-written slices land and BEFORE the first generator: a placeholder already
+  // here is the shape's own, and only what the sweep writes stands in (`lib/scaffold-translate.ts`).
+  const catalogsBefore = await readCatalogs(dir);
   const outcomes = await runFirstRun(dir, steps, run, env);
+  const translated = await translateSweep(dir, catalogsBefore);
   const findings = firstRunFindings(dir, outcomes);
   report(
     {
@@ -372,9 +386,10 @@ if (import.meta.main) {
           ? `${dir}: ${outcomes.length} of ${outcomes.length} first-run commands pass`
           : `${findings.length} of ${outcomes.length} first-run commands failed in ${dir}`,
       findings,
-      lines: firstRunLines(outcomes),
+      lines: [...firstRunLines(outcomes), translatedLine(translated)],
       data: {
         dir,
+        translated,
         steps: outcomes.map((outcome) => ({
           name: outcome.step.name,
           ok: outcome.result.ok,

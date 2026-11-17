@@ -91,7 +91,7 @@ const unreadable = (row: string, command: string, detail: string): Finding => ({
 // Exported for the test that pins row 4's command against the awaiting_tag watch command the
 // release-due rule emits: the two rows answer from ONE query, and a row's own command string is
 // what its refusal quotes, so a reader can always re-run exactly what the row ran.
-export const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
+export const ROW_COMMANDS: Readonly<Record<RowId, string>> = Object.assign(Object.create(null), {
   'main-green':
     'bun run x -- ci --workflow ci.yml --event push --branch main --json; git rev-parse origin/main',
   'last-tag-published':
@@ -116,7 +116,7 @@ export const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
   'docs-site-origin': DOCS_ORIGIN_COMMAND,
   'stale-bot-issues': BOT_ISSUES_COMMAND,
   'stale-branches': BRANCHES_COMMAND,
-};
+} satisfies Record<RowId, string>);
 
 type Judgement = RowVerdict | Finding | readonly Finding[];
 

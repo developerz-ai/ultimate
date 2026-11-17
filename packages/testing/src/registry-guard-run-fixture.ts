@@ -2,8 +2,8 @@
 // cross-file half of the registry guard is only observable in a child process. Shared by
 // `registry-leak-guard.test.ts` (what is reported) and `registry-boundary.test.ts` (what is restored).
 
-// `node:` by necessity, all four: Bun writes files but exposes no primitive that MAKES a uniquely
-// named directory, no recursive REMOVE, no temp-dir location and no path join. The fixtures must
+// why: `node:` by necessity, all four: Bun writes files but exposes no primitive that MAKES a
+// uniquely named directory, no recursive REMOVE, no temp-dir location and no path join. Fixtures
 // live outside the checkout — a `.test.ts` inside it would be collected by the repo's own run.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

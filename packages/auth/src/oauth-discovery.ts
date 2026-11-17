@@ -8,6 +8,7 @@ import {
   renderFixLiteral,
   renderFixShellArg,
   renderThrowable,
+  trimTrailingSlashes,
 } from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
 import { isRecord } from './json';
@@ -23,7 +24,7 @@ const TIMEOUT_CONSEQUENCE =
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 /** An issuer as it is compared and built on: its trailing slashes are not part of its identity. */
-const bareIssuer = (issuer: string): string => issuer.replace(/\/+$/, '');
+const bareIssuer = (issuer: string): string => trimTrailingSlashes(issuer);
 
 /** The document lives at a fixed suffix off the issuer; the issuer keeps its own path. */
 export const discoveryUrl = (issuer: string): string =>
@@ -127,7 +128,7 @@ export async function discoverOAuthProvider(
       provider: input.id,
       stage: 'discovery',
       detail: 'the discovery document is not a JSON object',
-      fix: `confirm ${target} is the OP's own discovery document and not a login page`,
+      fix: `curl -sS -m 5 -i ${target}   # the OP's own discovery document is JSON; a login page means the issuer is wrong — pass the real one to discoverOAuthProvider({ issuer })`,
     });
   }
 
@@ -168,7 +169,7 @@ export async function discoverOAuthProvider(
       // `renderFixLiteral` and not the shell renderer: this fix is a JS call, where quoting IS
       // the escape. A bare interpolation inside the single quotes it used to carry meant an id
       // holding an apostrophe closed the literal and printed a fix that does not parse.
-      fix: `register this provider by hand with an explicit jwksUri: registerOAuthProvider({ id: ${renderFixLiteral(input.id, "'<id>'")}, ... })`,
+      fix: `registerOAuthProvider({ id: ${renderFixLiteral(input.id, "'<id>'")}, jwksUri: '<the provider jwks_uri>', ... })   // register this provider by hand, with an explicit jwksUri`,
     });
   }
 

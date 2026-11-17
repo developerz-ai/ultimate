@@ -1,12 +1,14 @@
-// The app's own MCP endpoint, mounted by the web role. `defineAppMcp` built `mcp.route` — a
-// `POST` handler with token auth and per-class rate limits — and `app.config.ts` declared
-// `ai: { mcp: { expose: true } }` by DEFAULT, and nothing between the two served it:
-// neither `x dev` nor `runRole` mounted the route, so `POST /mcp` answered `X_ROUTE_NOT_FOUND` in
-// every app ever scaffolded (measured 2026-09-05). The contract is one file: `apps/<app>/mcp.ts`
-// exports `mcp` — one `AppMcp`, or an array of them, one per population (customers, staff,
-// affiliates) — this module finds it, and both boots mount what it carries: EVERY endpoint at its
-// own `defineAppMcp({ path })`, the one path its RFC 9728 metadata and its 401 also name — and
-// every app directory's file mounts, so an admin surface's `apps/admin/mcp.ts` stands beside the web one.
+// The app's own MCP endpoint, mounted by the web role.
+//
+// `defineAppMcp` built `mcp.route` — a `POST` handler with token auth and per-class rate limits —
+// and `app.config.ts` declared `ai: { mcp: { expose: true } }` by DEFAULT, and nothing between the
+// two served it: neither `x dev` nor `runRole` mounted the route, so `POST /mcp` answered
+// `X_ROUTE_NOT_FOUND` in every app ever scaffolded (measured 2026-09-05). The contract is one file:
+// `apps/<app>/mcp.ts` exports `mcp` — one `AppMcp`, or an array of them, one per population
+// (customers, staff, affiliates) — this module finds it, and both boots mount what it carries:
+// EVERY endpoint at its own `defineAppMcp({ path })`, the one path its RFC 9728 metadata and its
+// 401 also name — and every app directory's file mounts, so an admin surface's `apps/admin/mcp.ts`
+// stands beside the web one.
 
 // why: a directory's existence — `Bun.file().exists()` answers for files, and `apps/` is a directory.
 import { existsSync } from 'node:fs';

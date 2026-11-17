@@ -28,7 +28,90 @@ export interface WikiHeading {
   readonly line: number;
 }
 
-const HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
+// Linear by construction, every reader below (CodeQL js/polynomial-redos, sweep 8b-3): the regexes
+// they replace answered the same strings and retried a run from each of its characters —
+// `/^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/` took over 15 s on a CRLF heading of 10k
+// spaces, the link pattern over 15 s on 100k `![`, the tag pattern 4.3 s on 100k `<`.
+
+const isBlank = (char: string | undefined): boolean => char === ' ' || char === '\t';
+/** What `.` refuses to match without the `s` flag: a heading line holding one is no heading. */
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
+/**
+ * An ATX heading, `#` to `######`: up to three spaces, the marks, a blank, then the text without
+ * its closing `#` run (only when a blank precedes it) and without trailing blanks.
+ */
+function atxHeading(
+  text: string,
+): { readonly level: number; readonly heading: string } | undefined {
+  let at = 0;
+  while (at < 3 && text[at] === ' ') at += 1;
+  let marks = at;
+  while (text[marks] === '#') marks += 1;
+  const level = marks - at;
+  if (level < 1 || level > 6) return undefined;
+  let start = marks;
+  while (isBlank(text[start])) start += 1;
+  if (start === marks) return undefined;
+  const rest = text.slice(start);
+  if (LINE_TERMINATOR.test(rest)) return undefined;
+  let end = rest.length;
+  while (end > 0 && isBlank(rest[end - 1])) end -= 1;
+  let closing = end;
+  while (closing > 0 && rest[closing - 1] === '#') closing -= 1;
+  if (closing === end || closing === 0 || !isBlank(rest[closing - 1])) {
+    return { level, heading: rest.slice(0, end) };
+  }
+  while (isBlank(rest[closing - 1])) closing -= 1;
+  return { level, heading: rest.slice(0, closing) };
+}
+
+/**
+ * `text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')`, as one forward walk: a `[` is closed by the
+ * first `]` after it, which must be followed by `(` and then a `)`. Every `[` before that `]` shares
+ * it, so a failed one skips past it; with no `]` or no `)` left, no later link can close either.
+ * An image's `!` stays behind, and the slug's character filter drops it like any other `!`.
+ */
+function linksAsText(text: string): string {
+  let out = '';
+  let kept = 0;
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf('[', from);
+    const close = open === -1 ? -1 : text.indexOf(']', open + 1);
+    if (close === -1) break;
+    if (text[close + 1] !== '(') {
+      from = close + 1;
+      continue;
+    }
+    const end = text.indexOf(')', close + 2);
+    if (end === -1) break;
+    out += text.slice(kept, open) + text.slice(open + 1, close);
+    kept = end + 1;
+    from = kept;
+  }
+  return out + text.slice(kept);
+}
+
+/** `text.replace(/<[^>]+>/g, '')`, as one forward walk: `<` to the next `>`, never `<>` itself. */
+function withoutTags(text: string): string {
+  let out = '';
+  let kept = 0;
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf('<', from);
+    const close = open === -1 ? -1 : text.indexOf('>', open + 1);
+    if (close === -1) break;
+    if (close === open + 1) {
+      from = close;
+      continue;
+    }
+    out += text.slice(kept, open);
+    kept = close + 1;
+    from = kept;
+  }
+  return out + text.slice(kept);
+}
 
 /**
  * GitHub's heading slug: links become their text, tags and backticks drop, then every character
@@ -36,9 +119,7 @@ const HEADING = /^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
  * rule `scripts/wiki-anchors.ts` holds every wiki link to — the one copy, which it imports.
  */
 export const githubSlug = (heading: string): string =>
-  heading
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/<[^>]+>/g, '')
+  withoutTags(linksAsText(heading))
     .replaceAll('`', '')
     .toLowerCase()
     .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '')
@@ -55,14 +136,14 @@ export function wikiHeadings(markdown: string): readonly WikiHeading[] {
       return;
     }
     if (fenced) return;
-    const match = HEADING.exec(text);
-    if (match === null) return;
-    const heading = match[2] ?? '';
+    const match = atxHeading(text);
+    if (match === undefined) return;
+    const { heading, level } = match;
     const base = githubSlug(heading);
     const count = seen.get(base) ?? 0;
     seen.set(base, count + 1);
     out.push({
-      level: (match[1] ?? '#').length,
+      level,
       heading,
       anchor: count === 0 ? base : `${base}-${count}`,
       line,
@@ -135,9 +216,17 @@ export function wikiSection(markdown: string, anchor: string): string | undefine
 }
 
 /**
- * Every page in a shipped `wiki/` directory. `Error-Codes.md` is never read: `x errors explain` is
- * the one way to a code, and indexing 400 rows of it would bury every other answer. A directory that
- * is not there is no pages, not a throw — the caller decides whether that is a broken install.
+ * The error reference's page set: the index `Error-Codes` and one `Error-Codes-<owner>` per owner.
+ * The one predicate `x docs` and its section reader both exclude by — `x errors explain` is the one
+ * way to a code, and indexing a thousand rows would bury every other answer.
+ */
+export const isErrorCodesPage = (page: string): boolean =>
+  page === 'Error-Codes' || page.startsWith('Error-Codes-');
+
+/**
+ * Every page in a shipped `wiki/` directory but the error reference (`isErrorCodesPage`). A
+ * directory that is not there is no pages, not a throw — the caller decides whether that is a
+ * broken install.
  */
 export async function scanWikiDocs(dir: string, origin: WikiOrigin): Promise<readonly DocEntry[]> {
   let files: readonly string[];
@@ -149,7 +238,7 @@ export async function scanWikiDocs(dir: string, origin: WikiOrigin): Promise<rea
   const pages = [...files]
     .sort()
     .map(wikiPageOf)
-    .filter((page): page is string => page !== undefined && page !== 'Error-Codes');
+    .filter((page): page is string => page !== undefined && !isErrorCodesPage(page));
   const perPage = await Promise.all(
     pages.map(async (page) => {
       // A listed page can vanish or turn unreadable before it is read — `bun update` rewrites the

@@ -126,7 +126,7 @@ export function assetRules(prefixes: readonly string[], scope: string): readonly
       throw new SwScopeInvalidError(
         `runtime asset prefix ${JSON.stringify(prefix)} is not an absolute path under the ` +
           `worker's scope ${scope}, so no request pathname would ever match it`,
-        `name the prefix as the browser requests it, e.g. '${scope}islands/'`,
+        `assetRules(['${scope}islands/'], '${scope}')   // each prefix as the browser requests it, under the worker's scope`,
       );
     }
     return {

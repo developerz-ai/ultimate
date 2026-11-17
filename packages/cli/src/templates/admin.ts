@@ -1,8 +1,9 @@
-// `x g resource <name> --admin` — the per-entity admin override. `defineAdmin()` already serves
-// list/detail/create/edit for the entity with nothing written; this file is only what an app
-// author would otherwise hand-write on top — the list columns, a page size, and from there scopes,
-// a row scope and computed columns. `admin-registration.ts` lists it under `resources:` in the
-// app's `defineAdmin()` call in the same run, so nothing is left to wire.
+// `x g resource <name> --admin` — the per-entity admin override.
+//
+// `defineAdmin()` already serves list/detail/create/edit for the entity with nothing written; this
+// file is only what an app author would otherwise hand-write on top — the list columns, a page
+// size, and from there scopes, a row scope and computed columns. `admin-registration.ts` lists it
+// under `resources:` in the app's `defineAdmin()` call in the same run, so nothing is left to wire.
 
 import type { FeatureTarget } from './entity';
 import { entityFiles } from './entity';

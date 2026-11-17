@@ -176,7 +176,7 @@ export function parseArgs(argv: readonly string[], specs: readonly CommandSpec[]
       flag: '',
       command: spec.name,
       reason: `hands nothing to another tool, so ${passthrough.join(' ')} would be dropped in silence`,
-      fix: `x ${spec.name} --help`,
+      fix: `x ${quoteArg(spec.name)} --help`,
     });
   }
   const flags = defaults(spec);
@@ -288,12 +288,12 @@ function assertFlagsApply(
     const only = flag.subcommands;
     if (only === undefined || only.includes(subcommand) || !given.has(flag.name)) continue;
     const value = flags.get(flag.name);
-    const argument = typeof value === 'string' ? ` ${quoteArg(value)}` : '';
+    const invocation = `x ${quoteArg(spec.name)} ${quoteArg(only[0] ?? subcommand)} --${quoteArg(flag.name)}`;
     throw new BadFlagError({
       flag: flag.name,
       command: `${spec.name} ${subcommand}`,
       reason: `read by ${only.map((word) => `x ${spec.name} ${word}`).join(' / ')} only — "${subcommand}" would ignore it`,
-      fix: `x ${spec.name} ${only[0]} --${flag.name}${argument}`,
+      fix: typeof value === 'string' ? `${invocation} ${quoteArg(value)}` : invocation,
     });
   }
 }

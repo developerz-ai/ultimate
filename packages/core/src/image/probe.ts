@@ -1,8 +1,10 @@
-// Single responsibility: identify an image and read its intrinsic pixel size from the header
-// bytes alone — never a decode, never a guess from a file extension. WebP, AVIF, GIF and SVG
-// have no built-in codec here, yet every `<img>` still needs `width`/`height` inlined, and
-// that is the only thing that keeps CLS at 0 for them. SVG declares its box in markup rather
-// than in header bytes, so that reading lives in `probe-svg.ts`.
+// Single responsibility: identify an image and read its intrinsic pixel size from the header bytes
+// alone — never a decode, never a guess from a file extension. WebP, AVIF, GIF and SVG have no
+// built-in codec here, yet every `<img>` still needs `width`/`height` inlined, and that is the only
+// thing that keeps CLS at 0 for them.
+//
+// SVG declares its box in markup rather than in header bytes, so that reading lives in
+// `probe-svg.ts`.
 
 import { imageDecodeFailed, imageUnsupported } from './errors';
 import { exifOrientation, swapsAxes } from './exif-orientation';
@@ -315,5 +317,10 @@ export function probeImage(bytes: Uint8Array): ImageInfo {
   const { width, height } = probeSize(bytes, format);
   // Before any allocation downstream: a hostile header is refused here, not at malloc.
   assertPixelBudget(width, height, format);
-  return { format, width, height, mimeType: IMAGE_MIME_TYPES[format] };
+  // `format` is the sniff's own closed answer; the guard keeps the exported, mutable table's
+  // prototype from ever answering as a media type.
+  const mimeType = Object.hasOwn(IMAGE_MIME_TYPES, format)
+    ? IMAGE_MIME_TYPES[format]
+    : 'application/octet-stream';
+  return { format, width, height, mimeType };
 }

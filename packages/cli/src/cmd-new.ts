@@ -2,6 +2,8 @@
 // streaming dashboard, an admin app with MCP on, and an example feature slice with passing tests.
 // Interactive-free: every choice is a flag with a default, because an agent cannot answer prompts.
 
+// why: the target is a DIRECTORY, which `Bun.file().exists()` answers false for; Bun ships no
+// path API, and `isAbsolute`/`join`/`relative`/`resolve` place the new app.
 import { existsSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
@@ -202,6 +204,13 @@ function parentDir(cwd: string, dirFlag: string | undefined): string {
   return isAbsolute(dirFlag) ? dirFlag : join(cwd, dirFlag);
 }
 
+/** A walk from the end, never `/[\\/]+$/`: that retried from every separator, quadratic on a run. */
+function withoutTrailingSeparators(path: string): string {
+  let end = path.length;
+  while (end > 0 && (path[end - 1] === '/' || path[end - 1] === '\\')) end -= 1;
+  return path.slice(0, end);
+}
+
 /**
  * The `--dir`/name split of a positional that is really a path, or `undefined` when it is a name.
  *
@@ -210,10 +219,10 @@ function parentDir(cwd: string, dirFlag: string | undefined): string {
  */
 export function appNamePath(raw: string): { parent: string; base: string } | undefined {
   if (!/[\\/]/.test(raw)) return undefined;
-  const trimmed = raw.replace(/[\\/]+$/, '');
+  const trimmed = withoutTrailingSeparators(raw);
   const segments = trimmed.split(/[\\/]+/).filter((segment) => segment.length > 0);
   const base = segments.at(-1) ?? 'myapp';
-  const parent = trimmed.slice(0, trimmed.lastIndexOf(base)).replace(/[\\/]+$/, '');
+  const parent = withoutTrailingSeparators(trimmed.slice(0, trimmed.lastIndexOf(base)));
   // `x new ./shop` and `x new shop/` both name the directory the caller is already in; `/shop`
   // names the root, which is a directory and not "here".
   if (parent !== '' && parent !== '.') return { parent, base };

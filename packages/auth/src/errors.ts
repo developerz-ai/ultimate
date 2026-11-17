@@ -155,7 +155,7 @@ export const authUnauthenticated = (surface: string): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause: `${surface} needs an actor but ctx.actor is anonymous`,
-    fix: 'send the __Host-x_session cookie with this request, and resolve it once at the boundary: authenticate(auth, readSessionCookie(request, auth.sessions.policy))',
+    fix: 'authenticate(auth, readSessionCookie(request, auth.sessions.policy))   // once, at the boundary — and send the __Host-x_session cookie with this request',
   });
 
 export const authForbidden = (surface: string, reason: string): AuthError =>
@@ -171,7 +171,7 @@ export const sessionExpired = (kind: 'absolute' | 'idle', sessionId: string): Au
   new AuthError({
     code: 'X_SESSION_EXPIRED',
     cause: `session ${sessionId} passed its ${kind} expiry`,
-    fix: `sign in again, or raise session.${kind}TtlMs in defineAuth({ session })`,
+    fix: `defineAuth({ session: { ${kind}TtlMs: <ms> } })   // a longer ${kind} window — or sign in again`,
   });
 
 export const sessionUnknown = (): AuthError =>
@@ -181,7 +181,7 @@ export const sessionUnknown = (): AuthError =>
     // No lookup by cookie is offered, and that is deliberate: a forged id and a deleted session
     // are indistinguishable here by design. The reader signs in again; a developer holding a
     // user id can see what is still live without the cookie telling them anything.
-    fix: 'sign in again to mint a fresh session — listDevices(auth.sessions, userId) lists the sessions still live for a user',
+    fix: 'listDevices(auth.sessions, userId)   // the sessions still live for a user — sign in again to mint a fresh one',
   });
 
 /**
@@ -193,7 +193,7 @@ export const kdfOverloaded = (active: number, queued: number): AuthError =>
   new AuthError({
     code: 'X_OVERLOADED',
     cause: `${active} password hashes are already running and ${queued} more are queued`,
-    fix: 'retry after the Retry-After header; widen the ceiling with installKdfGate({ maxConcurrent, maxQueued }) from @ultimat3/auth/adapter, in apps/web/runtime.ts, only if the box has the memory — every argon2id hash holds ~19 MiB while it runs',
+    fix: 'installKdfGate({ maxConcurrent, maxQueued })   // from @ultimat3/auth/adapter, in apps/web/runtime.ts, only if the box has the memory — every argon2id hash holds ~19 MiB while it runs; otherwise retry after the Retry-After header',
     meta: { active, queued, retryAfterSeconds: 1 },
   });
 
@@ -211,7 +211,7 @@ export const mfaRequired = (challenge: string): AuthError =>
   new AuthError({
     code: 'X_MFA_REQUIRED',
     cause: 'this account has TOTP enrolled and the second factor has not been satisfied',
-    fix: 'catch X_MFA_REQUIRED in your sign-in handler, hand error.meta.challenge to the caller, and finish with: await completeMfa(auth, challenge, code)',
+    fix: 'await completeMfa(auth, challenge, code)   // catch X_MFA_REQUIRED in your sign-in handler, hand error.meta.challenge to the caller, and finish with this',
     meta: { challenge },
   });
 
@@ -224,7 +224,7 @@ export const mfaChallengeInvalid = (): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause: 'the second-factor challenge is not one this app issued, or it is no longer usable',
-    fix: 'sign in again for a fresh challenge: await login(auth, { email, password })',
+    fix: 'await login(auth, { email, password })   // sign in again for a fresh challenge',
   });
 
 /** A wrong or already-spent code. The attempt it cost stays counted against the account. */
@@ -232,7 +232,7 @@ export const mfaCodeRejected = (): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause: 'the second-factor code did not match, or it was already used',
-    fix: 'read the current code from the authenticator app and retry: await completeMfa(auth, challenge, code)',
+    fix: 'await completeMfa(auth, challenge, code)   // retry with the current code from the authenticator app',
   });
 
 /**
@@ -252,7 +252,7 @@ export const mfaSecretInvalid = (surface: string): AuthError =>
   new AuthError({
     code: 'X_MFA_SECRET_INVALID',
     cause: `${surface} was given a totp secret that is not RFC 4648 base32, so it decodes to zero bytes`,
-    fix: 'issue a fresh one and store it: const { secret } = enrolTotp(auth, { account: user.email }) — an imported secret must be base32 (A-Z and 2-7, padding, spaces and dashes ignored) and decode to at least one byte',
+    fix: 'const { secret } = enrolTotp(auth, { account: user.email })   // issue a fresh one and store it — an imported secret must be base32 (A-Z and 2-7, padding, spaces and dashes ignored) and decode to at least one byte',
   });
 
 /**
@@ -300,7 +300,7 @@ export const mfaRequiredUnenforceable = (): AuthError =>
     code: 'X_CONFIG_INVALID',
     cause:
       'defineAuth({ mfa: { required: true } }) declares a second factor this package does not enforce: login() mints a full session for any user whose mfaSecret is null',
-    fix: 'drop required from defineAuth({ mfa }) and gate it in your own sign-in handler, which is where the enrolment route lives: if (user.mfaSecret === null) send them to enrolTotp(auth, { account: user.email }) instead of createSession(auth.sessions, ...)',
+    fix: 'defineAuth({ mfa: { issuer } })   // drop required, and gate it in your own sign-in handler, where the enrolment route lives: if (user.mfaSecret === null) send them to enrolTotp(auth, { account: user.email }) instead of createSession(auth.sessions, ...)',
   });
 
 /**
@@ -349,7 +349,7 @@ export const authPolicyNumberInvalid = (
   new AuthError({
     code: 'X_CONFIG_INVALID',
     cause: `defineAuth({ ${key}: ${String(value)} }) is not ${expected}; ${consequence}, so the rule is not enforced at all rather than enforced wrongly — and NaN is what Number(process.env.…) answers for an unset variable`,
-    fix: `pass ${expected} for ${key} in defineAuth, and parse an environment value before you pass it — Number.parseInt(process.env.AUTH_TTL_MS ?? '', 10) is NaN when the variable is unset, so give it a default: Number.parseInt(process.env.AUTH_TTL_MS ?? '2592000000', 10)`,
+    fix: `Number.parseInt(process.env.AUTH_TTL_MS ?? '2592000000', 10)   // pass ${expected} for ${key} in defineAuth, and parse an environment value with a default — Number.parseInt(process.env.AUTH_TTL_MS ?? '', 10) is NaN when the variable is unset`,
     meta: { option: key, value: String(value) },
   });
 
@@ -364,7 +364,7 @@ export const apiKeyEnvInvalid = (env: string): AuthError =>
     cause: env.includes('_')
       ? `api key env ${renderCauseValue(env)} contains "_", which parseApiKey splits on`
       : `api key env ${renderCauseValue(env)} is not lowercase letters, digits and "-", the only spelling that survives parseApiKey and reads the same in every log`,
-    fix: "pass env matching ^[a-z0-9-]+$ to issueApiKey (e.g. 'live-eu')",
+    fix: "issueApiKey({ env: 'live-eu', scopes })   // env matches ^[a-z0-9-]+$",
     meta: { option: 'env' },
   });
 
@@ -377,7 +377,7 @@ export const apiKeyScopeWildcard = (scope: string): AuthError =>
   new AuthError({
     code: 'X_CONFIG_INVALID',
     cause: `api key scope ${renderCauseValue(scope)} is a wildcard, and a key carries exactly the permissions it names`,
-    fix: "pass each permission by name to issueApiKey({ scopes }) — e.g. scopes: ['post:read', 'post:publish']",
+    fix: "issueApiKey({ env, scopes: ['post:read', 'post:publish'] })   // each permission by name, never a wildcard",
     meta: { option: 'scopes' },
   });
 
@@ -385,7 +385,7 @@ export const passwordWeak = (reasons: readonly string[]): AuthError =>
   new AuthError({
     code: 'X_PASSWORD_WEAK',
     cause: `password rejected: ${reasons.join('; ')}`,
-    fix: 'choose a longer, uncommon password — or relax defineAuth({ password: { minLength } })',
+    fix: 'defineAuth({ password: { minLength } })   // relax the policy — or choose a longer, uncommon password',
   });
 
 /** The tenant bucket's key prefix. Declared here because the refusal below must recognise it. */
@@ -410,8 +410,8 @@ export const accountLocked = (key: string, retryAfterSeconds: number): AuthError
       ? `sign-in is locked out for another ${retryAfterSeconds}s after repeated failures`
       : `${renderCauseValue(key)} is locked out for another ${retryAfterSeconds}s after repeated failures`,
     fix: tenant
-      ? `wait ${retryAfterSeconds}s — or clear the one bucket that is holding: await auth.orgLimiter.recordSuccess(orgKey(user.orgId)) — or raise defineAuth({ rateLimit })`
-      : `wait ${retryAfterSeconds}s — or clear this one bucket: await auth.limiter.recordSuccess(${renderFixLiteral(key, '<key>')}) — or raise defineAuth({ rateLimit })`,
+      ? `await auth.orgLimiter.recordSuccess(orgKey(user.orgId))   // clears the one bucket that is holding — or wait ${retryAfterSeconds}s, or raise defineAuth({ rateLimit })`
+      : `await auth.limiter.recordSuccess(${renderFixLiteral(key, '<key>')})   // clears this one bucket — or wait ${retryAfterSeconds}s, or raise defineAuth({ rateLimit })`,
     // `kdfOverloaded`'s shape: `@ultimat3/http`'s `retryAfterOf` reads exactly this field. `key`
     // stays out — `cause`/`fix` escape it on purpose and `meta` is read by surfaces that do not.
     meta: { retryAfterSeconds },
@@ -425,7 +425,7 @@ export const apiKeyInvalid = (): AuthError =>
     cause: 'the presented api key is unknown, revoked, expired or does not match its hash',
     // Which of the four it was is not named here and never will be — see the factory's contract
     // above — so the fix is the one action that resolves all four: issue a replacement.
-    fix: 'issue a replacement: const { plaintext, record } = issueApiKey({ env, scopes }); await auth.adapter.putApiKey(record) — auth.adapter.listApiKeys(ownerId) through describeApiKey() shows which keys are still live',
+    fix: 'const { plaintext, record } = issueApiKey({ env, scopes }); await auth.adapter.putApiKey(record)   // issue a replacement — auth.adapter.listApiKeys(ownerId) through describeApiKey() shows which keys are still live',
   });
 
 /**
@@ -456,7 +456,7 @@ export const authUniqueViolation = (operation: string, table: string, column: st
   new AuthError({
     code: 'X_AUTH_WRITE_FAILED',
     cause: `${operation} would add a second ${table} row with the same ${column}, which that column's unique constraint refuses`,
-    fix: `look the row up first and update it — findUserByEmail(normaliseEmail(email)) — or write a different ${column}`,
+    fix: `await auth.adapter.findUserByEmail(normaliseEmail(email))   // look the row up first and update it — or write a different ${column}`,
     meta: { operation, table, column },
   });
 
@@ -469,7 +469,7 @@ export const authLimiterNotShared = (found: string): AuthError =>
   new AuthError({
     code: 'X_AUTH_LIMITER_NOT_SHARED',
     cause: `rateLimit.scope is 'shared' but the limiter in use is ${found}, so every replica would grant the full maxAttempts on its own`,
-    fix: "pass a limiter whose scope is 'shared' — defineAuth({ adapter, limiter }) — or set rateLimit.scope: 'process' in defineAuth to accept per-replica lockouts",
+    fix: "defineAuth({ adapter, limiter })   // a limiter whose scope is 'shared' — or set rateLimit.scope: 'process' in defineAuth to accept per-replica lockouts",
     meta: { scope: found },
   });
 
@@ -487,6 +487,6 @@ export const authLimiterPolicyMismatch = (
   new AuthError({
     code: 'X_AUTH_LIMITER_POLICY_MISMATCH',
     cause: `defineAuth declares rateLimit.${field} = ${declared} but the limiter passed to it enforces ${enforced}; if ${enforced} is the number this deployment means to enforce, then the declaration is the half that is wrong`,
-    fix: `construct the limiter with ${field}: ${declared} — defineAuth({ rateLimit, limiter }) compares the two, and the declaration is what Auth.rateLimit reports`,
+    fix: `{ ${field}: ${declared} }   // in the policy the limiter is constructed with — defineAuth({ rateLimit, limiter }) compares the two, and the declaration is what Auth.rateLimit reports`,
     meta: { field, declared, enforced },
   });

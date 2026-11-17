@@ -7,6 +7,7 @@ import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { ClosureHost } from './import-closure';
 import { importClosure } from './import-closure';
 import type { Finding } from './output';
+import { quoteArg } from './shell-quote';
 
 /** The suffix `FIXTURE_EXCLUSION` removes from a tarball. */
 export const FIXTURE_SUFFIX = '-fixture.ts';
@@ -95,7 +96,7 @@ export const fixtureReachFinding = (
 ): Finding => ({
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/${fixture} is loaded from the package's entry points (${entries.join(', ')}), and "files" leaves every *${FIXTURE_SUFFIX} out of the tarball — the published package would fail on import`,
-  fix: `rename packages/${dir}/${fixture} so it does not end in ${FIXTURE_SUFFIX} — it is shipped source, not test code — and update the imports that name it`,
+  fix: `git mv ${quoteArg(`packages/${dir}/${fixture}`)} ${quoteArg(`packages/${dir}/${fixture.slice(0, -FIXTURE_SUFFIX.length)}-support.ts`)}   # any name not ending in ${FIXTURE_SUFFIX}: it is shipped source, not test code — then update the imports that name it`,
   docs: ERROR_DOCS_URL,
   at: `packages/${dir}/${fixture}`,
 });

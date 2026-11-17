@@ -88,14 +88,15 @@ describe('money never renders as a float', () => {
   test('the float refusal cites a command that exists', () => {
     // Same class as the `listFields` fix: `x g migration` is not a generator, and an operator
     // reading this line pastes it and gets X_CLI_UNKNOWN_COMMAND on top of the money bug.
+    let thrown: { fix?: string } | undefined;
     try {
       widgetProps(field({ currency: 'EUR' }), 19.99, ctx);
-      throw new Error('expected the money refusal');
     } catch (error) {
-      const thrown = error as { fix?: string };
-      expect(thrown.fix).toContain('x db gen');
-      expect(thrown.fix).not.toContain('x g migration');
+      thrown = error as { fix?: string };
     }
+    if (thrown === undefined) return expect.unreachable('expected the money refusal');
+    expect(thrown.fix).toContain('x db gen');
+    expect(thrown.fix).not.toContain('x g migration');
   });
 
   test('non-integer minor units are refused', () => {
@@ -190,7 +191,7 @@ describe('the value guards refuse rather than render something wrong', () => {
     }
     expect(thrown.code).toBe('X_ADMIN_FIELD_UNSUPPORTED');
     expect(thrown.cause).toContain('money value is a string');
-    expect(thrown.fix).toContain('{ minor, currency }');
+    expect(thrown.fix).toStartWith("{ minor: 1234, currency: 'EUR' }");
   });
 
   test('a boolean money value is refused the same way', () => {

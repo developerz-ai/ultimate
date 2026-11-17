@@ -1,9 +1,11 @@
 // The N+1 ledger: one count per statement shape per request, and a verdict once a shape crosses
-// the threshold. Counting state hangs off the request's own `Ctx` in a `WeakMap`, so it is
-// collected with the request and never swept. Installed by `x dev` and by nothing else — a
-// production process pays the one `undefined` branch `@ultimat3/db`'s seam already costs (axiom 6).
-// It counts and it warns once; what a verdict *means* — which code, which `fix:` — is
-// `statement-loop.ts`'s, so all four surfaces read one answer.
+// the threshold. Installed by `x dev` and by nothing else.
+//
+// Counting state hangs off the request's own `Ctx` in a `WeakMap`, so it is collected with the
+// request and never swept. Installed by `x dev` and by nothing else — a production process pays the
+// one `undefined` branch `@ultimat3/db`'s seam already costs (axiom 6). It counts and it warns
+// once; what a verdict *means* — which code, which `fix:` — is `statement-loop.ts`'s, so all four
+// surfaces read one answer.
 
 import type { Ctx, StatementAttribution, DbStatementEvent as StatementEvent } from '@ultimat3/core';
 import { assert, tryUseContext } from '@ultimat3/core';

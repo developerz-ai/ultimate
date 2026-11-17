@@ -1,8 +1,10 @@
-// A HELD island (#506): server markup that must not paint before the island mounts, because what
-// it shows can be older than what the page will show — an offline reload's cached count, under a
-// queued write the mount rebuilds. Hidden from its first byte, booted at once, revealed when the
-// mount settles or at the cap. Who is held is the renderer's caller's call (`hold` on the collector):
-// only an island with page state to restore — server markup nothing will contradict is never hidden.
+// A HELD island (#506): server markup that must not paint before the island mounts, because what it
+// shows can be older than what the page will show — an offline reload's cached count, under a
+// queued write the mount rebuilds.
+//
+// Hidden from its first byte, booted at once, revealed when the mount settles or at the cap. Who is
+// held is the renderer's caller's call (`hold` on the collector): only an island with page state to
+// restore — server markup nothing will contradict is never hidden.
 
 /** On a held island's wrapper until the runtime reveals it; what the runtime finds it by. */
 export const ISLAND_HOLD_ATTRIBUTE = 'data-x-hold';

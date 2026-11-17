@@ -13,6 +13,7 @@ import { inputFiles } from './island-cache-inputs';
 import { realSpelling } from './island-duplicates';
 import { describeBuildError, stableChunk, stripDebugId } from './island-identity';
 import { frameworkDedupePlugins } from './island-package-dedupe';
+import { fileResult, serveRefusedPaths } from './island-plugin-path';
 import type { SourcePaths } from './island-sources';
 import { sourcesOnDisk } from './island-sources';
 
@@ -192,11 +193,13 @@ function runtimeEntryPlugin(file: string): BunPlugin {
         path: 'entry',
         namespace: NAMESPACE,
       }));
-      build.onResolve({ filter: /^ultimate:realtime-runtime-module$/ }, () => ({ path: file }));
+      build.onResolve({ filter: /^ultimate:realtime-runtime-module$/ }, () => fileResult(file));
       build.onLoad({ filter: /.*/, namespace: NAMESPACE }, () => ({
         contents: `import { installPageRuntime } from '${MODULE}';\ninstallPageRuntime();\n`,
         loader: 'js',
       }));
+      // A path `Bun.build` refuses is served through a re-export (`island-plugin-path.ts`).
+      serveRefusedPaths(build);
     },
   };
 }

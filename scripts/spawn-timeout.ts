@@ -123,7 +123,7 @@ const at = (site: SpawnSite | undefined): string =>
 const overFinding = (gap: SpawnGap): Finding => ({
   code: 'X_SPAWN_UNTIMED',
   cause: `${gap.pkg} spawns ${String(gap.found)} child process(es) with no timeout and is pinned at ${String(gap.pinned)} — ${siteList(gap, (site) => `${at(site)} (${site.call})`, EXPLAIN)} — and a child that hangs hangs whatever waits on it, the gate included`,
-  fix: `add a timeout, in milliseconds, to the options of the call at ${siteTarget(gap, at)}; for a child its caller kills itself, ${pinRaiseFix(pinRaiseOf(SPAWN_TIMEOUT_PIN_TARGET, gap))}, the reason naming who ends it`,
+  fix: `{ timeout: 60_000 }   // a deadline in milliseconds, in the options of the call at ${siteTarget(gap, at)}; for a child its caller kills itself, ${pinRaiseFix(pinRaiseOf(SPAWN_TIMEOUT_PIN_TARGET, gap))}, the reason naming who ends it`,
   at: at(leadSite(gap)),
 });
 
@@ -137,7 +137,7 @@ const staleFinding = (gap: SpawnGap): Finding => ({
 const unexplainedFinding = (gap: SpawnGap): Finding => ({
   code: 'X_SPAWN_TIMEOUT_PIN_UNEXPLAINED',
   cause: `${gap.pkg} is pinned with a blank reason, so nothing says who ends its ${String(gap.found)} untimed child process(es)`,
-  fix: `write, in ${SPAWN_TIMEOUT_PINS_FILE}, what ends each untimed child in ${gap.pkg} — or add timeout: to each and run bun run scripts/spawn-timeout.ts --unpin ${gap.pkg}`,
+  fix: `grep -n ${renderFixShellArg(gap.pkg, '<package>')} ${SPAWN_TIMEOUT_PINS_FILE}   # write in that row what ends each untimed child in ${gap.pkg} — or add timeout: to each and run bun run scripts/spawn-timeout.ts --unpin ${gap.pkg}`,
   at: SPAWN_TIMEOUT_PINS_FILE,
 });
 
@@ -146,7 +146,7 @@ const unscannedFinding = (): Finding => ({
   code: 'X_CORPUS_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero untimed spawns and the ratchet enforces nothing',
-  fix: 'edit PATTERNS in scripts/lib/corpus.ts so it matches this repo layout, then bun run scripts/spawn-timeout.ts',
+  fix: "grep -n 'CORPUS_PATTERNS' scripts/lib/corpus.ts   # edit it so it matches this repo layout, then: bun run scripts/spawn-timeout.ts",
   at: 'scripts/lib/corpus.ts',
 });
 

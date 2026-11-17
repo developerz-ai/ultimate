@@ -96,7 +96,7 @@ export class CacheValueUnencodableError extends UltimateError {
 /**
  * A LIMIT this package runs on that is not one — a tier's byte budget, its entry ceiling, the
  * similarity floor the semantic tier decides "same question" with, or a purge driver's request
- * timeout. Sibling of the TTL refusal below, over the knobs an `app.config.ts` carries and
+ * timeout. Sibling of the TTL refusal below, over the constructor options a tier carries and
  * `CacheTooLargeError`'s `fix:` line already tells an operator to raise.
  *
  * `Number(process.env.CACHE_MAX_BYTES)` on an unset variable is `NaN`, `NaN` is not nullish so
@@ -120,24 +120,40 @@ const limitEffect = (value: number): string =>
     ? ', and every comparison against NaN is false, so the limit stops being enforced rather than being enforced wrongly — NaN is what Number(process.env.…) answers for an unset variable, and it is not nullish, so `??` does not catch it'
     : ', and it is applied as given, so the tier is bounded at a value nobody chose';
 
+/**
+ * The factory each scope's limits are constructor options of — the fix names where the corrected
+ * option goes. None is an `app.config.ts` key: the runtime builds every tier with defaults.
+ */
+const LIMIT_OWNER: Readonly<Record<string, string>> = {
+  lru: 'lruTier',
+  redis: 'redisTier',
+  semantic: 'memorySemanticCache',
+  fastly: 'fastlyPurgeDriver',
+  cloudflare: 'cloudflarePurgeDriver',
+  ladder: 'cacheStack',
+};
+
 export class CacheLimitInvalidError extends UltimateError {
   constructor(input: {
     option: string;
     value: number;
     tier: string;
     expected: string;
+    /** A value in the `expected` domain, pasted as the corrected option: `10_000`, `0.92`. */
+    example: string;
     /**
-     * Where the value came FROM, when that is not an `app.config.ts` key. `loadDeadlineMs` and the
-     * similarity override arrive as call arguments (`cacheStack`, `lookup`), so telling their
-     * caller to edit `app.config.ts` names a key that does not exist.
+     * Where the value came FROM, when that is not the options object of `LIMIT_OWNER`'s factory
+     * for the tier: the similarity override arrives as a `lookup(embedding, override)` argument.
      */
     source?: string | undefined;
   }) {
-    const where = input.source ?? `${input.tier}.${input.option} in app.config.ts`;
+    const where =
+      input.source ??
+      `${LIMIT_OWNER[input.tier] ?? input.tier}(...) — a constructor option, never an app.config.ts key`;
     super({
       code: 'X_CACHE_LIMIT_INVALID',
       cause: `the ${input.tier} tier was given ${input.option}=${String(input.value)}; it must be ${input.expected}${limitEffect(input.value)}`,
-      fix: `set ${where} to ${input.expected} — and if it comes from the environment, parse it first: Number(process.env.CACHE_LIMIT) is NaN when the variable is unset`,
+      fix: `{ ${input.option}: ${input.example} }   // ${input.expected}, in ${where}; parse an environment value first: Number(process.env.CACHE_LIMIT) is NaN when the variable is unset`,
       meta: { option: input.option, value: String(input.value), tier: input.tier },
     });
   }
@@ -181,7 +197,9 @@ export class CacheJitterInvalidError extends UltimateError {
       cause: `the ${input.tier} tier was configured with jitterFraction=${String(
         input.jitterFraction,
       )}; a jitter fraction is a finite number in [0, 1)`,
-      fix: `set cache.${input.tier}.jitterFraction in app.config.ts to a value in [0, 1) — 0.05 is the default, 0 disables jitter`,
+      // A constructor option of the tier, never an `app.config.ts` key: the runtime builds both
+      // tiers with none (`runtime-cache.ts`), so the config path this used to name did not exist.
+      fix: `{ jitterFraction: 0.05 }   // in the ${input.tier} tier's lruTier({ ... }) or redisTier({ ... }): a value in [0, 1) — 0.05 is the default, 0 disables jitter`,
       meta: { tier: input.tier, jitterFraction: input.jitterFraction },
     });
   }

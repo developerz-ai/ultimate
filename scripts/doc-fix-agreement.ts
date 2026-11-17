@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// Enforce, on `x verify`'s `errors` step, that `wiki/Error-Codes.md`'s Fix cell and the `fix:` its
-// code's throw sites register name the same remedy. The page drifted from the source with nothing
+// Enforce, on `x verify`'s `errors` step, that an error-code page's Fix cell
+// (`wiki/Error-Codes-<owner>.md`) and the `fix:` its code's throw sites register name the same
+// remedy. The page drifted from the source with nothing
 // red: `X_ACTION_UNREGISTERED` / `X_QUERY_UNREGISTERED` named a call the source no longer did.
 //
 //   bun run scripts/doc-fix-agreement.ts [--json]
@@ -11,12 +12,15 @@ import { renderFixShellArg } from '@ultimat3/core';
 import { scanScopeFixes } from '../packages/cli/src/error-fixes';
 import { readFixCells } from './doc-fixes';
 import { parseScriptArgs } from './lib/args';
+import type { ErrorCodePage } from './lib/error-code-pages';
+import { readErrorCodePages } from './lib/error-code-pages';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 
 const SCRIPT = 'doc-fix-agreement';
-const PAGE = 'wiki/Error-Codes.md';
+/** How the findings name the page set; each one cites its own `path:line`. */
+const PAGE = 'the wiki/Error-Codes*.md pages';
 
 /**
  * Disagreements the page carries today, a ratchet that may only fall. `As of 2026-11-10`, 22 rows:
@@ -25,7 +29,7 @@ const PAGE = 'wiki/Error-Codes.md';
  * a few are a row ahead of a stale site (`X_RPC_FAILED`'s site is thrown by nothing since 21.0.0).
  * Agreeing one lowers this by one in the same diff; `X_DOC_FIX_DISAGREES_PIN_STALE` says when.
  */
-export const DISAGREEMENT_PIN = 21;
+export const DISAGREEMENT_PIN = 17;
 
 /** One site's registered fix; `undefined` when the site builds it at run time. */
 export interface RegisteredFix {
@@ -59,6 +63,8 @@ export function fixAnchors(text: string): ReadonlySet<string> {
 
 export interface FixDisagreement {
   readonly code: string;
+  /** The page the row is on: the cited place is `path:line`. */
+  readonly path: string;
   readonly line: number;
   readonly doc: readonly string[];
   readonly source: readonly string[];
@@ -69,11 +75,14 @@ export interface FixDisagreement {
  * ("fix the failure named in the cause") has nothing to compare and is no verdict either way.
  */
 export function checkFixAgreement(
-  markdown: string,
+  pages: readonly ErrorCodePage[],
   sites: ReadonlyMap<string, readonly RegisteredFix[]>,
 ): readonly FixDisagreement[] {
   const gaps: FixDisagreement[] = [];
-  for (const cell of readFixCells(markdown)) {
+  const cells = pages.flatMap((page) =>
+    readFixCells(page.text).map((cell) => ({ ...cell, path: page.path })),
+  );
+  for (const cell of cells) {
     const registered = new Set(
       (sites.get(cell.code) ?? []).flatMap((site) =>
         site.fix === undefined ? [] : [...fixAnchors(site.fix)],
@@ -84,6 +93,7 @@ export function checkFixAgreement(
     if ([...documented].some((anchor) => registered.has(anchor))) continue;
     gaps.push({
       code: cell.code,
+      path: cell.path,
       line: cell.line,
       doc: [...documented],
       source: [...registered],
@@ -97,16 +107,16 @@ export function agreementFindings(gaps: readonly FixDisagreement[]): readonly Fi
   if (gaps.length > DISAGREEMENT_PIN) {
     return gaps.map((gap) => ({
       code: 'X_DOC_FIX_DISAGREES',
-      cause: `${PAGE}:${gap.line} tells ${gap.code}'s reader to touch ${gap.doc.join(', ')}; its throw sites register ${gap.source.join(', ')} — no remedy in common. ${gaps.length} rows disagree, pinned at ${DISAGREEMENT_PIN}`,
-      fix: `bun run x -- errors explain ${renderFixShellArg(gap.code, '<CODE>')} --json   # the registered fix; rewrite the Fix cell at ${PAGE}:${gap.line} to name it, or correct the throw site's fix: if the page is the right one`,
-      at: `${PAGE}:${gap.line}`,
+      cause: `${gap.path}:${gap.line} tells ${gap.code}'s reader to touch ${gap.doc.join(', ')}; its throw sites register ${gap.source.join(', ')} — no remedy in common. ${gaps.length} rows disagree, pinned at ${DISAGREEMENT_PIN}`,
+      fix: `bun run x -- errors explain ${renderFixShellArg(gap.code, '<CODE>')} --json   # the registered fix; rewrite the Fix cell at ${gap.path}:${gap.line} to name it, or correct the throw site's fix: if the page is the right one`,
+      at: `${gap.path}:${gap.line}`,
     }));
   }
   if (gaps.length < DISAGREEMENT_PIN) {
     return [
       {
         code: 'X_DOC_FIX_DISAGREES_PIN_STALE',
-        cause: `${gaps.length} ${PAGE} rows disagree with their registered fix and DISAGREEMENT_PIN in scripts/doc-fix-agreement.ts still allows ${DISAGREEMENT_PIN}, so a new disagreement could land unseen`,
+        cause: `${gaps.length} rows on ${PAGE} disagree with their registered fix and DISAGREEMENT_PIN in scripts/doc-fix-agreement.ts still allows ${DISAGREEMENT_PIN}, so a new disagreement could land unseen`,
         fix: `grep -n 'DISAGREEMENT_PIN =' scripts/doc-fix-agreement.ts   # set it to ${gaps.length}`,
         at: 'scripts/doc-fix-agreement.ts',
       },
@@ -116,9 +126,9 @@ export function agreementFindings(gaps: readonly FixDisagreement[]): readonly Fi
 }
 
 export async function docFixAgreementGaps(root: string): Promise<readonly FixDisagreement[]> {
-  const page = Bun.file(join(root, PAGE));
-  if (!(await page.exists())) return [];
-  return checkFixAgreement(await page.text(), await scanScopeFixes(join(root, 'packages')));
+  const pages = await readErrorCodePages(root);
+  if (pages.length === 0) return [];
+  return checkFixAgreement(pages, await scanScopeFixes(join(root, 'packages')));
 }
 
 /** A root with no page makes no claim: a fixture tree, never this repository's. */
@@ -133,7 +143,7 @@ if (import.meta.main) {
     {
       ok: findings.length === 0,
       script: SCRIPT,
-      summary: `${gaps.length} ${PAGE} Fix cell(s) name no remedy their throw sites register (pin ${DISAGREEMENT_PIN})`,
+      summary: `${gaps.length} Fix cell(s) on ${PAGE} name no remedy their throw sites register (pin ${DISAGREEMENT_PIN})`,
       findings,
       data: { disagreements: gaps },
     },

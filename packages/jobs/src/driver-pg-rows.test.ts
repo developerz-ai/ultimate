@@ -272,7 +272,7 @@ describe('a status column is validated, never cast', () => {
   test('the refusal names the column, the value and the table it came from', () => {
     try {
       toStepRecord(stepRowFor({ status: 'compensated' }));
-      throw new Error('expected a refusal');
+      expect.unreachable('expected a refusal');
     } catch (error) {
       if (!isUltimateError(error)) throw error;
       expect(error.cause).toContain('compensated');

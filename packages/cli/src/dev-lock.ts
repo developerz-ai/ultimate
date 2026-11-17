@@ -14,6 +14,9 @@
 // The lock file is what makes the second one nameable at all: nothing else in the process can tell
 // "another dev server owns this directory" from "the database is broken".
 
+// why: Bun has no hard link, rename, mkdir or unlink — and `linkSync` is the one-syscall atomic
+// create-if-absent the claim rests on. Sync because `clearLock` runs from `() => void` shutdown
+// callbacks. Bun ships no path API either.
 import { linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';
@@ -127,7 +130,7 @@ export class DevAlreadyRunningError extends UltimateError {
       code: 'X_DEV_ALREADY_RUNNING',
       cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}`,
       // `x stop`, not `kill <pid>`: a kill returns before the drain ends and the next boot refuses.
-      fix: `use the one already running at ${input.lock.url}, or stop it: x stop --json`,
+      fix: `x stop --json   # or use the one already running at ${input.lock.url}`,
       meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
     });
   }
@@ -200,8 +203,8 @@ export class DevPortInUseError extends UltimateError {
       cause: `:${input.port} is already bound by ${named}, so the web role cannot listen — on a machine running several projects this is usually another one's dev server, not a stale copy of this one`,
       fix:
         holder.pid === undefined
-          ? `x dev --port ${input.suggestion}`
-          : `x dev --port ${input.suggestion}   # or free it, if that pid is yours: kill ${holder.pid}`,
+          ? `x dev --port ${quoteArg(String(input.suggestion))}`
+          : `x dev --port ${quoteArg(String(input.suggestion))}   # or free it, if that pid is yours: kill ${holder.pid}`,
       meta: { port: input.port, ...holder },
     });
   }

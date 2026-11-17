@@ -38,24 +38,6 @@ export interface SecretComparePin {
  * every row in `data.counts`; no number below is a claim the command cannot check.
  */
 export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
-  'scripts/lib/public-api-compat.ts: before.hash === after.hash': {
-    // why: new with the API lock telling additive from breaking — a public digest, not a secret.
-    count: 1,
-    reason:
-      'The public-API lock: a sha-256 digest of a PUBLIC exported declaration as committed in `scripts/lib/public-api.lock.json` against the same digest of the tree. Both are in the repository; the answer is whether a type changed, never an authentication decision.',
-  },
-  'scripts/lib/public-api-migrate.ts: names[name]?.hash !== tagged.hash': {
-    // why: new with the API lock telling additive from breaking — a public digest, not a secret.
-    count: 1,
-    reason:
-      'The public-API lock re-baselined from a release tag: a committed digest of a PUBLIC exported declaration against the same digest computed from the tag. Both are in the repository; the answer picks which declaration a format-1 lock recorded.',
-  },
-  'packages/action/src/idempotency.ts: record.requestHash !== requestHash': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `action` package row.
-    count: 1,
-    reason:
-      'A stored `requestHash` against a recomputed one, deciding REPLAY vs conflict. Both sides are hashes this process computed from a body it already holds; the answer is not an authentication decision.',
-  },
   'packages/admin/src/dev/jobs-state-chart.tsx: run.status === state': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `admin` package row.
     count: 1,
@@ -186,20 +168,8 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A cached island transform’s content `hash` against the source’s, deciding whether the cached compile is still valid — a digest of source this process read.',
   },
-  'packages/core/src/cursor.ts: currentSecret() === DEV_CURSOR_SECRET': {
-    // why: re-keyed in plan 101 sweep 12c — the constant is now `DEV_CURSOR_SECRET`; same site.
-    count: 1,
-    reason:
-      'Compares the configured cursor secret against the SHIPPED DEV CONSTANT so `x doctor` can report you are still on it — `DEV_CURSOR_SECRET` is a literal in that file, nothing an attacker does not already have.',
-  },
   // why: new in plan 101 sweep 12c (#679) — the same question asked of an env TABLE, so `x env
   // check` and `x doctor` refuse the published key as the boot does; the other side is public.
-  'packages/core/src/cursor.ts: (configured || options.env[CURSOR_SECRET_KEY] || DEV_CURSOR_SECRET) === DEV_CURSOR_SECRET':
-    {
-      count: 1,
-      reason:
-        'The table form of the check above: does this env leave the process on the SHIPPED DEV CONSTANT? `DEV_CURSOR_SECRET` is a published literal, so the comparison leaks nothing an attacker lacks.',
-    },
   'packages/core/src/image/png-pixels.ts: bytes[i] !== PNG_SIGNATURE[i]': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `core` package row.
     count: 1,
@@ -353,18 +323,6 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A `candidate` VALUE against the one literal a `literalSchema` was declared with — the value being validated, named for its role in the parse.',
   },
-  'packages/storage/src/signing-secret.ts: configured === DEV_SIGNING_SECRET': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `storage` package row.
-    count: 1,
-    reason:
-      'The configured signing secret against `DEV_SIGNING_SECRET`, the SHIPPED DEV CONSTANT, so `x doctor` can refuse to sign with it outside development — a published literal, no byte an attacker does not already hold.',
-  },
-  'packages/storage/src/signing-secret.ts: supplied === DEV_SIGNING_SECRET': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `storage` package row.
-    count: 1,
-    reason:
-      'A supplied signing secret against `DEV_SIGNING_SECRET`, the SHIPPED DEV CONSTANT, so `localDriver()` can refuse it outside development — a published literal, no byte an attacker does not already hold.',
-  },
   'packages/testing/src/factory-associations.ts: reference.property === foreignKey': {
     // why: new in plan 101 wave D with the factories rewrite (d-fac); the word this rule holds as a
     // secret is the `foreignKey` column name a `belongsTo`/`hasMany` link carries.
@@ -427,18 +385,6 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
   },
   // why: new with scripts/health.ts — row 5 re-reads the audit's rows to judge `npm-serves-tree`;
   // the word this rule holds as an OAuth state is this AuditState record.
-  'scripts/lib/health-rule.ts: state.latest !== state.version': {
-    count: 1,
-    reason:
-      'Two npm semver strings off one AuditState row: the tag npm serves by default, against the version this tree stamps. Neither is a credential, and both are public in the packument.',
-  },
-  'scripts/registry-audit.ts: state.latest === state.version': {
-    // why: new 2026-10-21 with X_REGISTRY_LATEST_DRIFT, the finding that first reads
-    // dist-tags.latest: the word this rule holds as an OAuth state is this PublishState record.
-    count: 1,
-    reason:
-      'Two npm semver strings off one PublishState row: the version this tree stamps, against the tag npm serves by default. Neither is a credential, and both are public in the packument.',
-  },
   'packages/cli/src/codemods/runtime-pin-lines.ts: digest === image.digest': {
     // why: new 2026-11-15 (31.28.0) with the runtime-pin codemod.
     count: 1,
@@ -456,11 +402,5 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     count: 1,
     reason:
       "A content hash of an app's guard copy against a released template's hash: public text from this repository's tags, never a credential.",
-  },
-  'scripts/template-codemods.ts: !candidate.startsWith(` TEMPLATE_DIR `)': {
-    // why: new 2026-11-15 (31.28.0) with the template import-closure walk.
-    count: 1,
-    reason:
-      'A repository-relative import path tested for the templates directory prefix: a path in this tree, never a credential.',
   },
 };

@@ -2,6 +2,7 @@
 // not know the name of a cloud, a KV store or an edge runtime (axiom 7). What it emits is a plan
 // anything that runs containers can execute.
 
+// why: Bun ships no path API; `join` builds the host-separator paths to the app's deploy files.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { loadEnvSchema } from './app-env';
@@ -209,7 +210,7 @@ export function planDeploy(
         flag: 'image',
         command: 'deploy',
         reason: `"${image}" pins a digest, and docker/helm renders repository:tag with no digest branch`,
-        fix: `x deploy --method helm --image ${image.slice(0, image.lastIndexOf('@'))}:<tag> --json`,
+        fix: `x deploy --method helm --image ${quoteArg(image.slice(0, image.lastIndexOf('@')))}:<tag> --json`,
       });
     }
     // Helm splits a `--set-string` argument on `,` and reads `=` as key/value: an image built from

@@ -3,8 +3,8 @@
 // every guard the framework ships (`guards-built-in.ts`). The framework decides what a guard IS —
 // a function returning findings, held to the error contract — and nothing about what it checks.
 
-// Bun ships no equivalent for either: `join` builds the host-separator path, and `pathToFileURL` is
-// the only spelling of an absolute path `import()` accepts on every host.
+// why: Bun ships no equivalent for either: `join` builds the host-separator path, and
+// `pathToFileURL` is the only spelling of an absolute path `import()` accepts on every host.
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ERROR_DOCS_URL, renderCauseValue, renderThrowable } from '@ultimat3/core';
@@ -25,6 +25,7 @@ export { GUARD_DIR, guardPaths } from './guards-paths';
 
 import { vendoredCopy, vendoredFinding } from './guards-vendored';
 import type { Finding } from './output';
+import { quoteArg } from './shell-quote';
 import { readVerifyFloor } from './verify-floor';
 import type { GuardBaseline } from './verify-guard-baseline';
 import { guardNameOf, judgeGuardBaseline, orphanedBaselineFindings } from './verify-guard-baseline';
@@ -118,7 +119,7 @@ function findingOf(value: Record<string, unknown>, at: string): Finding {
 const failed = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_FAILED',
   cause,
-  fix: `return a finding from ${path} instead of throwing, then: x verify`,
+  fix: `{ code: 'X_<YOURS>', cause: '<what is wrong>', fix: '<a command or a file>' }   // what ${path} returns instead of throwing — then: x verify --only boundaries --json`,
   docs: ERROR_DOCS_URL,
   at: path,
 });
@@ -151,7 +152,7 @@ const notAGuard = (path: string, exported: unknown): Finding => {
 const notADirectory: Finding = {
   code: 'X_GUARD_INVALID',
   cause: `${GUARD_DIR} is not a directory, so none of this app's own guards can run beside the shipped ones`,
-  fix: `mv ${GUARD_DIR} ${GUARD_DIR}.txt && mkdir ${GUARD_DIR} && x verify --only boundaries --json   # ${GUARD_DIR}/ is the directory the gate discovers; a rule of yours goes in it as ${GUARD_DIR}/<name>.ts`,
+  fix: `mv ${quoteArg(GUARD_DIR)} ${quoteArg(GUARD_DIR)}.txt && mkdir ${quoteArg(GUARD_DIR)} && x verify --only boundaries --json   # ${GUARD_DIR}/ is the directory the gate discovers; a rule of yours goes in it as ${GUARD_DIR}/<name>.ts`,
   docs: ERROR_DOCS_URL,
   at: GUARD_DIR,
 };
@@ -159,7 +160,7 @@ const notADirectory: Finding = {
 const findingInvalid = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_FINDING_INVALID',
   cause: `${path} returned a finding that is not one: ${cause}`,
-  fix: `rewrite what ${path} returns as a code, a cause and a fix naming a command or a file, then: x verify`,
+  fix: `{ code: 'X_<YOURS>', cause: '<what is wrong>', fix: '<a command or a file>' }   // what ${path} returns, then: x verify`,
   docs: ERROR_DOCS_URL,
   at: path,
 });

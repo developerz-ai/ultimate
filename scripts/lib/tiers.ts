@@ -40,12 +40,15 @@ export const TIERS: Readonly<Record<number, readonly string[]>> = {
  * | `core -> schema` | five declarations were duplicated on the core side and held equal by 394 lines of pin test in a TIER-5 package — including `describeValue`, which prints INSTEAD of a rejected password, so the safety property of the framework's most security-sensitive renderer rested on a 63-line behavioural pin in `@ultimat3/cli` that no rule required to exist. The lower-tier extraction is what `@ultimat3/schema` ALREADY IS: it imports nothing, it is where `CURRENCY_CODE_PATTERN` reaches the generated Postgres CHECK and the published OpenAPI `pattern`, and there is nowhere below tier 0 for a sixth package to go. The reverse stays forbidden on its own merits and is not weakened by this: `schema -> core` would give `t` a dependency, and `t` is in every bundle graph an app has. Measured before declaring it (2026-08-27, `bun build --target=browser --minify`): a chunk importing only `UltimateError` from core is 6,362 B and one importing `moneyText` from `@ultimat3/ui` is 27,203 B, both of which ALREADY carry schema — `@ultimat3/money` puts it in the graph, which `scripts/ui-barrel-bytes.test.ts` had already measured and written down |
  * | `cli -> testing` | `@ultimat3/testing` IS the framework's harness, and `serve.live.test.ts` spawns the scaffolded `server.ts` as a child and has to let one real port through the seal. It was already live as `../../testing/src/sealed-network` — a relative specifier the checker could not see — and the alternatives are worse: core's `markListening()` would announce a socket a CHILD opened, and a second unseal in the CLI is a second sealed-network |
  */
-export const SIDEWAYS_ALLOW: Readonly<Record<string, readonly string[]>> = {
-  core: ['schema'],
-  realtime: ['query'],
-  cli: ['admin', 'testing'],
-  'create-ultimate': ['cli'],
-};
+export const SIDEWAYS_ALLOW: Readonly<Record<string, readonly string[]>> = Object.assign(
+  Object.create(null),
+  {
+    core: ['schema'],
+    realtime: ['query'],
+    cli: ['admin', 'testing'],
+    'create-ultimate': ['cli'],
+  } satisfies Record<string, readonly string[]>,
+);
 
 /**
  * Packages that sit ABOVE the lowest tier their shipped imports allow, each with the sentence that
@@ -101,7 +104,9 @@ export const UNLISTED_TIER = 6;
  * because that map is the prose table's executable copy (`tier-table-drift.test.ts` asserts them
  * row for row) and this package is not a row of it.
  */
-export const ABOVE_TABLE: Readonly<Record<string, number>> = { 'create-ultimate': 6 };
+export const ABOVE_TABLE: Readonly<Record<string, number>> = Object.assign(Object.create(null), {
+  'create-ultimate': 6,
+} satisfies Record<string, number>);
 
 /**
  * Packages whose ONLY permitted imports are their declared `SIDEWAYS_ALLOW` edges — no tier range
@@ -248,7 +253,7 @@ export function floorFindingFor(violation: FloorViolation): Finding {
       // is a source change (`X_DB_DRIFT`, `X_DOC_COMMAND_UNKNOWN`): a gate that rewrote its own
       // tier table would ratchet in both directions, so the edit stays the reader's and the line
       // ends in something runnable that says whether it took.
-      fix: `delete the "${violation.package}" row from FLOOR_ABOVE in ${TIERS_FILE}, then bun run boundaries --json`,
+      fix: `grep -n 'FLOOR_ABOVE' ${TIERS_FILE}   # delete its "${violation.package}" row, then: bun run boundaries --json`,
       at: TIERS_FILE,
     };
   }
@@ -261,11 +266,8 @@ export function floorFindingFor(violation: FloorViolation): Finding {
     cause:
       `${violation.package} sits at tier ${violation.tier} and its own imports allow tier ` +
       `${violation.floor} — ${missing}`,
-    fix:
-      `write the "${violation.package}" row in FLOOR_ABOVE in ${TIERS_FILE}, saying what moving ` +
-      `it to tier ${violation.floor} would LEGALISE, or move it to tier ${violation.floor} in ` +
-      'TIERS and in the two prose tables scripts/tier-table-drift.test.ts pins (CLAUDE.md, ' +
-      'docs/architecture/01-package-map.md); then bun run boundaries --json',
+    // One literal: the fix scan reads each piece of a `+` chain as its own line.
+    fix: `grep -n 'FLOOR_ABOVE' ${TIERS_FILE}   # write the "${violation.package}" row there, saying what moving it to tier ${violation.floor} would LEGALISE, or move it to tier ${violation.floor} in TIERS and in the two prose tables scripts/tier-table-drift.test.ts pins (CLAUDE.md, docs/architecture/01-package-map.md); then: bun run boundaries --json`,
     at: TIERS_FILE,
   };
 }

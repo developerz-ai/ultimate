@@ -1,10 +1,12 @@
-// The error contract, enforced (axiom 3: a convention that is not a build error does not exist).
+// The error contract, enforced (axiom 3): every `fix:` executable and every code documented,
+// decided before the code runs.
+//
 // Axiom 4 says an error is an instruction, so a `fix:` an agent cannot act on is a defect in the
 // error, not a matter of taste — and a code no reference page documents strands whoever hits it.
 // Both halves are decidable before the code runs, which is why they are a gate step and not a
 // runtime assertion nobody sees until the failure they describe has already happened.
 
-// `join` is `node:`-only by necessity: Bun exposes no path-join primitive.
+// why: `join` is `node:`-only by necessity: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { citedCommandProblem, loadCommandCatalog } from './fix-command';
@@ -12,6 +14,7 @@ import { createHelperResolver } from './fix-imports';
 import { citedPathProblem, FILE_TOKEN_PATTERN } from './fix-path';
 import { scanFixSites } from './fix-scan';
 import type { Finding } from './output';
+import { quoteArg } from './shell-quote';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
 import type { CodeSite, FixSite, UnresolvedCodeSite } from './ts-scan';
 import { isCodeRegistry, scanBorrowedCodes, scanCodeDeclarations, scanCodes } from './ts-scan';
@@ -54,8 +57,21 @@ export const COMMAND_TOKENS: readonly RegExp[] = [
  * `${…}` holds a value only the throw site knows, so it is blanked before the rule runs. Without
  * this, `check egress to ${new URL(url).host}` reads as a call expression and passes as a command
  * — the interpolation would launder pure advice into an instruction.
+ *
+ * Two `indexOf` scans, never `/\$\{[^}]*\}/g`: that pattern re-scanned to the end from every
+ * unclosed `${`, quadratic on a line of them. No `}` after one `${` means none after any later one.
  */
-export const staticFix = (raw: string): string => raw.replaceAll(/\$\{[^}]*\}/g, '<value>');
+export const staticFix = (raw: string): string => {
+  let out = '';
+  let from = 0;
+  for (let open = raw.indexOf('${'); open >= 0; open = raw.indexOf('${', from)) {
+    const close = raw.indexOf('}', open + 2);
+    if (close < 0) break;
+    out += `${raw.slice(from, open)}<value>`;
+    from = close + 1;
+  }
+  return out + raw.slice(from);
+};
 
 /** The rule, on one fix line. `undefined` means it holds. */
 export function fixProblem(raw: string): string | undefined {
@@ -70,7 +86,7 @@ export function fixProblem(raw: string): string | undefined {
 const fixFinding = (site: FixSite, problem: string): Finding => ({
   code: 'X_ERROR_FIX_INVALID',
   cause: problem,
-  fix: `rewrite the fix at ${site.at}:${site.line} as a command to run, a call to paste, or an edit naming a file`,
+  fix: `edit ${site.at}:${site.line} — rewrite the fix as a command to run, a call to paste, or an edit naming a file`,
   docs: ERROR_DOCS_URL,
   at: `${site.at}:${site.line}`,
 });
@@ -83,7 +99,7 @@ const fixFinding = (site: FixSite, problem: string): Finding => ({
 const pathFinding = (site: FixSite, problem: string): Finding => ({
   code: 'X_ERROR_FIX_PATH_MISSING',
   cause: `the fix at ${site.at}:${site.line} ${problem}`,
-  fix: `correct the path in the fix at ${site.at}:${site.line} to one this repo holds, or create the file it names`,
+  fix: `edit ${site.at}:${site.line} — correct the path in the fix to one this repo holds, or create the file it names`,
   docs: ERROR_DOCS_URL,
   at: `${site.at}:${site.line}`,
 });
@@ -176,17 +192,87 @@ export const checkErrorFixes = async (root: string): Promise<readonly Finding[]>
   (await checkErrorFixReport(root)).findings;
 
 /**
- * A code is documented when the reference page names it. Deliberately not "owns a table row": the
- * page legitimately groups near-identical codes onto one row, and a rule that forbade that would
- * be a rule about formatting rather than about coverage.
+ * One page of the error reference as the host read it, `path` relative to the repo root. The
+ * reference is a SET — an index (`wiki/Error-Codes.md`, which holds the reserved block) and one
+ * `Error-Codes-<owner>.md` per owner — and every rule here reads the whole set: a check handed one
+ * page would read every other owner's code as undocumented, or every ghost on them as absent.
  */
+export interface ErrorCodePage {
+  readonly path: string;
+  readonly text: string;
+}
+
+/** Where the index lives when the host read no page at all: the framework's own reference. */
+const DEFAULT_INDEX = 'wiki/Error-Codes.md';
+const INDEX_NAME = 'Error-Codes.md';
+
+/**
+ * The index of the set — the page the reserved block lives on. A set with no `Error-Codes.md` is
+ * one page a deprecated single-page caller named, and that page is its own index.
+ */
+export const errorCodeIndex = (pages: readonly ErrorCodePage[]): string =>
+  pages.find((page) => page.path === INDEX_NAME || page.path.endsWith(`/${INDEX_NAME}`))?.path ??
+  pages[0]?.path ??
+  DEFAULT_INDEX;
+
+/**
+ * Who owns a declaration, read off its path: a package by its directory name, anything else by its
+ * top directory (`scripts`). The same rule `scripts/manifest.ts`' `ownerOf` files a code under in
+ * `framework.manifest.json`, so the page this names is the page the manifest says it lives on.
+ */
+function errorCodeOwner(at: string): string {
+  const segments = at.split('/');
+  return (segments[0] === 'packages' ? segments[1] : segments[0]) ?? '';
+}
+
+/** The owner page a code's row belongs on: `Error-Codes-<owner>.md`, beside the index. */
+function errorCodeOwnerPage(pages: readonly ErrorCodePage[], at: string): string {
+  const index = errorCodeIndex(pages);
+  const dir = index.slice(0, index.lastIndexOf('/') + 1);
+  return `${dir}Error-Codes-${errorCodeOwner(at)}.md`;
+}
+
+const CODE_MENTION = /`(X_[A-Z0-9_]+)`/g;
+
+/** Pages in path order, so "the first page naming a code" is the same answer on every machine. */
+const byPath = (pages: readonly ErrorCodePage[]): readonly ErrorCodePage[] =>
+  [...pages].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+
+const mentionsOf = (
+  pages: readonly ErrorCodePage[],
+  textOf: (page: ErrorCodePage) => string,
+): ReadonlyMap<string, string> => {
+  const out = new Map<string, string>();
+  for (const page of byPath(pages)) {
+    for (const match of textOf(page).matchAll(CODE_MENTION)) {
+      const code = match[1] as string;
+      if (!out.has(code)) out.set(code, page.path);
+    }
+  }
+  return out;
+};
+
+/**
+ * A code is documented when a page of the set names it — code → the first page (by path) that
+ * does. Deliberately not "owns a table row": a page legitimately groups near-identical codes onto
+ * one row, and a rule that forbade that would be a rule about formatting rather than coverage. The
+ * index's generated "every code" table names each code plain, never in backticks, so it documents
+ * nothing on its own: the row on the owner page (or the reserved block) does.
+ */
+export const documentedCodesIn = (pages: readonly ErrorCodePage[]): ReadonlyMap<string, string> =>
+  mentionsOf(pages, (page) => page.text);
+
+/** The one-page set a deprecated single-page caller's markdown stands for. */
+const legacyPage = (text: string): readonly ErrorCodePage[] => [{ path: DEFAULT_INDEX, text }];
+
+/** @deprecated Use documentedCodesIn(pages) — the error reference is a page set since 31.35.0; removed at the next major. */
 export const documentedCodes = (markdown: string): ReadonlySet<string> =>
-  new Set([...markdown.matchAll(/`(X_[A-Z0-9_]+)`/g)].map((match) => match[1] as string));
+  new Set(documentedCodesIn(legacyPage(markdown)).keys());
 
 const undocumentedFinding = (code: string, at: string, line: number, page: string): Finding => ({
   code: 'X_ERROR_CODE_UNDOCUMENTED',
-  cause: `${code} is declared at ${at}:${line} and ${page} has no entry for it`,
-  fix: `add a row for ${code} to ${page}, with its cause and the command that fixes it`,
+  cause: `${code} is declared at ${at}:${line} and no error reference page has an entry for it`,
+  fix: `x errors explain ${quoteArg(code)} --json   # its title and fix: add a row for ${code} to ${page}, with its cause and the command that fixes it`,
   docs: ERROR_DOCS_URL,
   at: page,
 });
@@ -195,12 +281,12 @@ const undocumentedFinding = (code: string, at: string, line: number, page: strin
  * The heading below which the reference stops making live claims. What follows is a code that is
  * reserved (documented, nothing throws it yet) or a superseded name kept so an old log line still
  * resolves. Both earn their rows; neither is a code an agent can be handed today, which is the
- * only thing the registry rule below is about.
+ * only thing the registry rule below is about. It lives on the index; an owner page has none.
  */
 export const RESERVED_HEADING = '## Reserved codes';
 
 /**
- * The codes the reference presents as live: every one named above the reserved section.
+ * One page's live text: everything above its reserved heading, or all of it.
  *
  * The heading is matched as a whole line, never as a substring. The same text is quoted in prose,
  * in a fenced sample and in this file's own `unregisteredFinding` fix — and `indexOf` would cut the
@@ -208,16 +294,34 @@ export const RESERVED_HEADING = '## Reserved codes';
  * registry rule. A gate that stops reading halfway through the page reads green over the half it
  * never saw.
  */
-export function liveCodes(markdown: string): ReadonlySet<string> {
+const liveText = (markdown: string): string => {
   const lines = markdown.split('\n');
   const cut = lines.findIndex((line) => line.trim() === RESERVED_HEADING);
-  return documentedCodes(cut === -1 ? markdown : lines.slice(0, cut).join('\n'));
+  return cut === -1 ? markdown : lines.slice(0, cut).join('\n');
+};
+
+/** The codes the reference presents as live — code → the first page naming it above any cut. */
+export const liveCodesIn = (pages: readonly ErrorCodePage[]): ReadonlyMap<string, string> =>
+  mentionsOf(pages, (page) => liveText(page.text));
+
+/** @deprecated Use liveCodesIn(pages) — the error reference is a page set since 31.35.0; removed at the next major. */
+export function liveCodes(markdown: string): ReadonlySet<string> {
+  return new Set(liveCodesIn(legacyPage(markdown)).keys());
 }
 
-const unregisteredFinding = (code: string, page: string): Finding => ({
+/** A deprecated caller's one page, read off disk: `undefined` when it is not there. */
+export async function readLegacyPage(
+  root: string,
+  page: string,
+): Promise<readonly ErrorCodePage[] | undefined> {
+  const file = Bun.file(join(root, page));
+  return (await file.exists()) ? [{ path: page, text: await file.text() }] : undefined;
+}
+
+const unregisteredFinding = (code: string, page: string, index: string): Finding => ({
   code: 'X_ERROR_CODE_UNREGISTERED',
   cause: `${page} documents ${code} as a live code and nothing registers it, so "x errors explain ${code}" refuses a code this page promises`,
-  fix: `register ${code} through registerErrorCodes() in its package's src/errors.ts, or move its row under "${RESERVED_HEADING}" in ${page}`,
+  fix: `registerErrorCodes({ ${code}: { title: '<what it means>' } })   // in its package's src/errors.ts — or move its row under "${RESERVED_HEADING}" in ${index}`,
   docs: ERROR_DOCS_URL,
   at: page,
 });
@@ -230,19 +334,27 @@ const unregisteredFinding = (code: string, page: string): Finding => ({
  *
  * `known` is what the host can answer for: the process-wide registry, plus whatever codes the host
  * repo's own gate scripts declare (`X_ROADMAP_*` and friends never ship, so no package may own
- * them). A missing page is `checkErrorCodeDocs`'s finding to report, not a second copy here.
+ * them). An empty reference is `checkErrorCodeDocsIn`'s finding to report, not a second copy here.
  */
+export function checkErrorCodeRegistryIn(
+  pages: readonly ErrorCodePage[],
+  known: ReadonlySet<string>,
+): readonly Finding[] {
+  const index = errorCodeIndex(pages);
+  return [...liveCodesIn(pages)]
+    .filter(([code]) => !known.has(code))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([code, page]) => unregisteredFinding(code, page, index));
+}
+
+/** @deprecated Use checkErrorCodeRegistryIn(pages, known) — the error reference is a page set since 31.35.0; removed at the next major. */
 export async function checkErrorCodeRegistry(
   root: string,
   page: string,
   known: ReadonlySet<string>,
 ): Promise<readonly Finding[]> {
-  const reference = Bun.file(join(root, page));
-  if (!(await reference.exists())) return [];
-  return [...liveCodes(await reference.text())]
-    .filter((code) => !known.has(code))
-    .sort()
-    .map((code) => unregisteredFinding(code, page));
+  const pages = await readLegacyPage(root, page);
+  return pages === undefined ? [] : checkErrorCodeRegistryIn(pages, known);
 }
 
 /**
@@ -302,7 +414,7 @@ export async function collectDeclaredCodes(root: string): Promise<readonly CodeS
 const unresolvedCodeFinding = (site: UnresolvedCodeSite): Finding => ({
   code: 'X_ERROR_CODE_UNRESOLVED',
   cause: `the code at ${site.at}:${site.line} is the name ${site.name}, and no module-scope const in that file gives it a value — so the manifest, the reference page and "x errors explain" are all blind to whatever code it holds`,
-  fix: `write the X_* code as a string literal at ${site.at}:${site.line}, or declare it as a module-scope const in that same file`,
+  fix: `edit ${site.at}:${site.line} — write the X_* code as a string literal, or declare it as a module-scope const in that same file`,
   docs: ERROR_DOCS_URL,
   at: `${site.at}:${site.line}`,
 });
@@ -325,26 +437,57 @@ export async function checkErrorCodeResolution(root: string): Promise<readonly F
   return findings;
 }
 
+/** A declared code no page names, reported where `rowPage` says its row belongs. */
+async function undocumentedIn(
+  root: string,
+  pages: readonly ErrorCodePage[],
+  rowPage: (at: string) => string,
+): Promise<readonly Finding[]> {
+  const documented = documentedCodesIn(pages);
+  return (await collectDeclaredCodes(root))
+    .filter((site) => !documented.has(site.code))
+    .map((site) => undocumentedFinding(site.code, site.at, site.line, rowPage(site.at)));
+}
+
 /**
- * Every `X_*` code shipped source declares must appear on the repo's error reference. The page is
- * the host repo's to name — a framework monorepo publishes one, a generated app does not — which
- * is why this arrives through the same host-check seam the tier table uses on `boundaries`.
+ * Every `X_*` code shipped source declares must appear on the repo's error reference — on some page
+ * of the set, and a missing one is owed on its owner's page. The set is the host repo's to name — a
+ * framework monorepo publishes one, a generated app does not — which is why this arrives through
+ * the same host-check seam the tier table uses on `boundaries`.
  */
+export async function checkErrorCodeDocsIn(
+  root: string,
+  pages: readonly ErrorCodePage[],
+): Promise<readonly Finding[]> {
+  if (pages.length === 0) {
+    return [
+      {
+        code: 'X_ERROR_CODE_UNDOCUMENTED',
+        cause: 'the error reference has no page, so no code can be documented',
+        fix: `git restore --source=HEAD -- wiki/Error-Codes.md 'wiki/Error-Codes-*.md'   # the pages were deleted; a new repo creates them with bun run new-error-code`,
+        docs: ERROR_DOCS_URL,
+        at: DEFAULT_INDEX,
+      },
+    ];
+  }
+  return undocumentedIn(root, pages, (at) => errorCodeOwnerPage(pages, at));
+}
+
+/** @deprecated Use checkErrorCodeDocsIn(root, pages) — the error reference is a page set since 31.35.0; removed at the next major. */
 export async function checkErrorCodeDocs(root: string, page: string): Promise<readonly Finding[]> {
-  const reference = Bun.file(join(root, page));
-  if (!(await reference.exists())) {
+  const pages = await readLegacyPage(root, page);
+  if (pages === undefined) {
     return [
       {
         code: 'X_ERROR_CODE_UNDOCUMENTED',
         cause: `the error reference ${page} does not exist, so no code can be documented`,
-        fix: `create ${page} with a row per X_* code, or stop naming it as the error reference`,
+        // Line 1 is real: the page does not exist, so the edit starts it.
+        fix: `edit ${page}:1 — create it with a row per X_* code, or stop naming it as the error reference`,
         docs: ERROR_DOCS_URL,
         at: page,
       },
     ];
   }
-  const documented = documentedCodes(await reference.text());
-  return (await collectDeclaredCodes(root))
-    .filter((site) => !documented.has(site.code))
-    .map((site) => undocumentedFinding(site.code, site.at, site.line, page));
+  // The one page is where every row goes: a single-page reference has no owner pages.
+  return undocumentedIn(root, pages, () => page);
 }

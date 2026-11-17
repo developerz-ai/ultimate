@@ -2,6 +2,7 @@
 // direct reads that answer "what is under this prefix" in one round trip. Every subject here is
 // built from a validated bucket name, because a stream name goes straight into a request subject.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { TransportProtocolError, TransportUnavailableError } from './errors';
 import type { NatsClient, NatsHeaders, NatsMessage } from './nats-client';
 
@@ -39,7 +40,7 @@ export function assertBucket(bucket: string): void {
       transport: 'nats',
       stage: 'bucket',
       detail: `"${bucket}" is not a bucket name: letters, digits, "-" and "_" only`,
-      fix: 'set NATS_KV_BUCKET to a name matching [a-zA-Z0-9_-]+, then restart',
+      fix: `export NATS_KV_BUCKET=${renderFixShellArg(bucket.replace(/[^a-zA-Z0-9_-]/g, '_'), 'x_presence')}   # a name matching [a-zA-Z0-9_-]+, then restart`,
     });
   }
 }
@@ -52,7 +53,7 @@ export function assertServerVersion(version: string): void {
     transport: 'nats',
     stage: 'jetstream',
     detail: `nats-server ${version || '<unknown>'} is older than ${MIN_SERVER.major}.${MIN_SERVER.minor}, which is where batch direct get and per-message TTL landed`,
-    fix: `run nats:${MIN_SERVER.major}.${MIN_SERVER.minor}-alpine or newer with JetStream enabled (\`nats-server -js\`)`,
+    fix: `docker run -d -p 4222:4222 ${renderFixShellArg(`nats:${MIN_SERVER.major}.${MIN_SERVER.minor}-alpine`, 'nats:<version>-alpine')} -js   # or newer, with JetStream enabled (nats-server -js)`,
   });
 }
 

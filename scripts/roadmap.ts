@@ -8,14 +8,16 @@
 //
 //   bun run scripts/roadmap.ts [--json]
 
-// `existsSync` and `join` have no Bun equivalent for this job: `Bun.file().exists()` is async and
+// why: `existsSync` and `join` have no Bun equivalent for this job: `Bun.file().exists()` is async and
 // answers `false` for a directory, and one required artifact (`packages/cli/src/templates`) is a
 // directory.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Finding, HostCheck } from '@ultimat3/cli';
+import { renderFixShellArg } from '../packages/core/src/error-render';
 import { parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
+import { gitTrackerEdits, undatedFindings } from './lib/plan-tracker-dated';
 import { gitLastTouch, type StaleDeps, stalePlanFindings } from './lib/roadmap-stale-plans';
 import { repoRoot } from './lib/run';
 
@@ -41,45 +43,56 @@ const STATUS_BY_MARK: ReadonlyMap<string, MilestoneStatus> = new Map(
  * roadmap is the one place either is stated (axiom 2). Only these paths live in code, because the
  * "Ships" column is prose naming packages, not a machine-readable path list.
  */
-export const REQUIRED_ARTIFACTS: Readonly<Record<number, readonly string[]>> = {
-  0: [
-    'packages/core/src/index.ts',
-    'packages/schema/src/index.ts',
-    'scripts/boundaries.ts',
-    'packages/cli/src/cmd-verify.ts',
-  ],
-  1: ['packages/http/src/index.ts', 'packages/entity/src/index.ts', 'packages/policy/src/index.ts'],
-  2: [
-    'packages/action/src/index.ts',
-    'packages/query/src/index.ts',
-    'packages/cli/src/app-openapi.ts',
-  ],
-  3: ['packages/render/src/index.ts', 'packages/cli/src/app-boundaries.ts'],
-  4: ['packages/seo/src/index.ts', 'packages/cli/src/budgets.ts'],
-  5: ['packages/jobs/src/index.ts', 'packages/mail/src/index.ts', 'packages/storage/src/index.ts'],
-  6: ['packages/realtime/src/index.ts'],
-  7: ['packages/cache/src/index.ts'],
-  8: [
-    'packages/pwa/src/index.ts',
-    'packages/cli/src/retained-assets.ts',
-    'packages/cli/e2e/six-deploys.e2e.test.ts',
-  ],
-  9: ['packages/ai/src/index.ts', 'packages/mcp/src/index.ts'],
-  10: [
-    'packages/admin/src/index.ts',
-    'packages/create-ultimate/src/index.ts',
-    'packages/cli/src/templates',
-  ],
-  11: [
-    'docker/Dockerfile',
-    'docker/docker-compose.dev.yml',
-    'docker/docker-compose.prod.yml',
-    'docker/helm',
-    'packages/cli/src/cmd-build.ts',
-    'wiki/Error-Codes.md',
-    'CHANGELOG.md',
-  ],
-};
+export const REQUIRED_ARTIFACTS: Readonly<Record<number, readonly string[]>> = Object.assign(
+  Object.create(null),
+  {
+    0: [
+      'packages/core/src/index.ts',
+      'packages/schema/src/index.ts',
+      'scripts/boundaries.ts',
+      'packages/cli/src/cmd-verify.ts',
+    ],
+    1: [
+      'packages/http/src/index.ts',
+      'packages/entity/src/index.ts',
+      'packages/policy/src/index.ts',
+    ],
+    2: [
+      'packages/action/src/index.ts',
+      'packages/query/src/index.ts',
+      'packages/cli/src/app-openapi.ts',
+    ],
+    3: ['packages/render/src/index.ts', 'packages/cli/src/app-boundaries.ts'],
+    4: ['packages/seo/src/index.ts', 'packages/cli/src/budgets.ts'],
+    5: [
+      'packages/jobs/src/index.ts',
+      'packages/mail/src/index.ts',
+      'packages/storage/src/index.ts',
+    ],
+    6: ['packages/realtime/src/index.ts'],
+    7: ['packages/cache/src/index.ts'],
+    8: [
+      'packages/pwa/src/index.ts',
+      'packages/cli/src/retained-assets.ts',
+      'packages/cli/e2e/six-deploys.e2e.test.ts',
+    ],
+    9: ['packages/ai/src/index.ts', 'packages/mcp/src/index.ts'],
+    10: [
+      'packages/admin/src/index.ts',
+      'packages/create-ultimate/src/index.ts',
+      'packages/cli/src/templates',
+    ],
+    11: [
+      'docker/Dockerfile',
+      'docker/docker-compose.dev.yml',
+      'docker/docker-compose.prod.yml',
+      'docker/helm',
+      'packages/cli/src/cmd-build.ts',
+      'wiki/Error-Codes.md',
+      'CHANGELOG.md',
+    ],
+  } satisfies Record<number, readonly string[]>,
+);
 
 export const MILESTONE_NUMBERS: readonly number[] = Object.keys(REQUIRED_ARTIFACTS)
   .map(Number)
@@ -140,14 +153,14 @@ export function milestoneRow(markdown: string, n: number): MilestoneRow | undefi
 const missingFileFinding = (): Finding => ({
   code: 'X_ROADMAP_FILE_MISSING',
   cause: `${ROADMAP_FILE} does not exist, so no milestone status or shipped artifact can be checked`,
-  fix: `git checkout -- ${ROADMAP_FILE}`,
+  fix: `git checkout -- ${renderFixShellArg(ROADMAP_FILE, '<roadmap>')}`,
   at: ROADMAP_FILE,
 });
 
 const missingStatusFinding = (n: number): Finding => ({
   code: 'X_ROADMAP_STATUS_MISSING',
   cause: `milestone ${n} has no row in the milestone table, or its row's status cell holds neither ${STATUS_MARK.shipped} nor ${STATUS_MARK['in-progress']}`,
-  fix: `edit ${ROADMAP_FILE}: put "${STATUS_MARK.shipped}" or "${STATUS_MARK['in-progress']}" in the second cell of the row starting "| ${n} |", then: bun run scripts/roadmap.ts --json`,
+  fix: `grep -n '^| ${renderFixShellArg(String(n), '<n>')} |' ${ROADMAP_FILE}   # put "${STATUS_MARK.shipped}" or "${STATUS_MARK['in-progress']}" in that row's second cell, then: bun run scripts/roadmap.ts --json`,
   at: ROADMAP_FILE,
 });
 
@@ -161,7 +174,7 @@ const unverifiedFinding = (row: MilestoneRow, missing: readonly string[]): Findi
 const untrackedFinding = (row: MilestoneRow): Finding => ({
   code: 'X_ROADMAP_MILESTONE_UNTRACKED',
   cause: `milestone ${row.n} ("${row.title}") has a row in ${ROADMAP_FILE} but scripts/roadmap.ts declares no artifacts for it, so its status marker verifies nothing`,
-  fix: `add a "${row.n}: [...]" entry to REQUIRED_ARTIFACTS in scripts/roadmap.ts naming the paths that row's "Ships" column promises — an empty list is the deliberate answer for a milestone that ships nothing yet — then: bun run scripts/roadmap.ts --json`,
+  fix: `grep -n 'REQUIRED_ARTIFACTS' scripts/roadmap.ts   # add a "${row.n}: [...]" entry there naming the paths that row's "Ships" column promises — an empty list is the deliberate answer for a milestone that ships nothing yet — then: bun run scripts/roadmap.ts --json`,
   at: ROADMAP_FILE,
 });
 
@@ -196,10 +209,21 @@ const tableFindings = async (root: string): Promise<Finding[]> => {
 /** The step over its two readers, injectable so a test pins the clock and the history. */
 export const roadmapCheck =
   (deps: StaleDeps): HostCheck =>
-  async (root) => [...(await tableFindings(root)), ...(await stalePlanFindings(root, deps))];
+  async (root) => [
+    ...(await tableFindings(root)),
+    ...(await stalePlanFindings(root, deps)),
+    ...undatedFindings(
+      (await deps.trackerEdits?.(root)) ?? [],
+      new Date(deps.now()).toISOString().slice(0, 10),
+    ),
+  ];
 
 /** What the gate runs: git for the dates, and the one wall clock read in this step. */
-export const ROADMAP_DEPS: StaleDeps = { now: () => Date.now(), lastTouch: gitLastTouch };
+export const ROADMAP_DEPS: StaleDeps = {
+  now: () => Date.now(),
+  lastTouch: gitLastTouch,
+  trackerEdits: gitTrackerEdits,
+};
 
 export const checkRoadmap: HostCheck = roadmapCheck(ROADMAP_DEPS);
 

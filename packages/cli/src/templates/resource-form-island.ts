@@ -3,8 +3,9 @@
 // is not a smaller version of this — the island glob never discovers it, and a server render drops
 // every `on*` prop (`packages/render/src/html.ts`) and reads each signal exactly once.
 
-// Bun ships no path API, and the one arithmetic this file does is a specifier: the island's path
-// seen from the page's directory, which `island-bundle.ts` resolves the same way at build time.
+// why: Bun ships no path API, and the one arithmetic this file does is a specifier: the island's
+// path seen from the page's directory, which `island-bundle.ts` resolves the same way at build
+// time.
 import { posix } from 'node:path';
 import { upToAppRoot } from './island';
 import type { GeneratedFile, NameSet } from './naming';

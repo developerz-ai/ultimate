@@ -4,7 +4,7 @@
 // `sideEffects` value repairs it (measured: `false`, `[]`, and an array naming only `errors.ts`).
 
 import { describe, expect, test } from 'bun:test';
-// `node:` and not `Bun.file`: this walks the import graph SYNCHRONOUSLY, one module at a time
+// why: `node:` and not `Bun.file`: this walks the import graph SYNCHRONOUSLY, one module at a time
 // against a seen-set, and Bun's file API is async-only — an await per edge would make the walk a
 // promise tree rather than a loop. `join` for the same reason: Bun ships no path join.
 import { readFileSync } from 'node:fs';

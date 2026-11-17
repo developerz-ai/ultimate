@@ -2,7 +2,7 @@
 // which variables exist, the answer to "does this process have them?", and (`init`,
 // `cmd-env-init.ts`) the deploy's `.env.production`. All read the one `defineEnv` declaration.
 
-// Bun ships no path-join primitive, and `.env.example` is written app-root-relative.
+// why: Bun ships no path-join primitive, and `.env.example` is written app-root-relative.
 import { join } from 'node:path';
 import {
   checkEnv,
@@ -33,7 +33,7 @@ export class EnvSchemaMissingError extends UltimateError {
     super({
       code: 'X_CONFIG_INVALID',
       cause: `x env ${input.subcommand} needs the env declaration, and app.config.ts exports no "envSchema"`,
-      fix: "add to app.config.ts: export const envSchema = { DATABASE_URL: { type: 'url', description: 'Postgres connection URL' } } satisfies EnvSchema; export const env = defineEnv(envSchema);",
+      fix: "export const envSchema = { DATABASE_URL: { type: 'url', description: 'Postgres connection URL' } } satisfies EnvSchema; export const env = defineEnv(envSchema);   // in app.config.ts",
     });
   }
 }

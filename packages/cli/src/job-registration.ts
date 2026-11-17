@@ -29,7 +29,7 @@ export function unregisteredJobFinding(name: string): Finding {
   return {
     code: 'X_JOB_UNREGISTERED',
     cause: `${name} is a ${kind === 'tasks' ? 'task' : 'job'} no defineApi() call names, so it carries the positional name ${kind === 'tasks' ? 'task()' : 'job()'} minted — on the queue row, in the manifest and in every dead-letter trace, and it moves when the import order does`,
-    fix: `add import * as <module> from its file and <module> to ${kind}: [...] in apps/web/api/index.ts, then x manifest`,
+    fix: `import * as <module> from '<its file>';   // in apps/web/api/index.ts, and <module> added to ${kind}: [...] there — then x manifest`,
     at: 'apps/web/api/index.ts',
   };
 }

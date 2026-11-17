@@ -3609,7 +3609,7 @@ A process that registers no tier reads **uncached** rather than filling a store 
 
 ### Entries 1 and 2 — the CLI
 
-`x db branch` takes a verb. The argument *was* the branch name and the dispatcher fell through to it, so `x db branch` with the argument `ls` (the verb is `list` since 26.0.0) — the `fix:` line the planned `x branch` command hands out — cloned the database into one called `ls`. A stray database is not a typo an agent can see: it is a copy of production-shaped data with a name nobody will recognise a week later.
+`x db branch` takes a verb. The argument *was* the branch name and the dispatcher fell through to it, so `x db branch` with the argument `ls` (the verb is `list` since 26.0.0) — the `fix:` line the top-level `branch` command handed out while it was planned (it left the registry `As of 2026-11-16`, [Known gaps](Known-Gaps#open-by-decision)) — cloned the database into one called `ls`. A stray database is not a typo an agent can see: it is a copy of production-shaped data with a name nobody will recognise a week later.
 
 ```diff
 - x db branch feat-new-billing

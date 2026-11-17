@@ -73,17 +73,18 @@ describe('permissionUnknown()', () => {
     const fix = permissionUnknown('billing:wirte', KNOWN).fix;
     expect(fix).toContain("'billing:write'");
     expect(fix.indexOf("'billing:write'")).toBeLessThan(fix.indexOf('definePermissions'));
+    expect(fix).toStartWith("can('billing:write')");
   });
 
   test('a name nothing resembles keeps the declare-it path, plus the list to pick from', () => {
     const fix = permissionUnknown('warehouse:dispatch', KNOWN).fix;
-    expect(fix).toContain("add 'warehouse:dispatch' to definePermissions");
+    expect(fix).toStartWith("definePermissions(['warehouse:dispatch'])");
     expect(fix).toContain('x policy list --json');
   });
 
   test('an empty permission set cannot suggest anything and says so with the declare-it path', () => {
-    expect(permissionUnknown('billing:write', []).fix).toContain(
-      "add 'billing:write' to definePermissions",
+    expect(permissionUnknown('billing:write', []).fix).toStartWith(
+      "definePermissions(['billing:write'])",
     );
   });
 

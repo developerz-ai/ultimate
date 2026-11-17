@@ -148,7 +148,9 @@ describe('an error constructor never loses its refusal to a hostile value', () =
       const error = flagExpiryInvalid('beta.feature', given);
       expect(error.code, label).toBe('X_FLAG_EXPIRY_INVALID');
       expect(error.cause, label).toContain('beta.feature');
-      expect(error.fix, label).toContain("defineFlag({ key: 'beta.feature' })");
+      expect(error.fix, label).toContain(
+        "defineFlag({ key: 'beta.feature', expiresAt: '2026-12-01' })",
+      );
     });
   }
 

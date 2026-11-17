@@ -221,7 +221,7 @@ export function postgresIdempotencyStore(
   };
   const now = options.now ?? ((): number => liveClock.now().getTime());
 
-  const fetch = async (key: string): Promise<IdempotencyRecord | undefined> => {
+  const readRecord = async (key: string): Promise<IdempotencyRecord | undefined> => {
     const rows = await exec.query<IdempotencyRow>(SQL_IDEMPOTENCY_GET, [key, windowSecs]);
     const row = rows[0];
     return row === undefined ? undefined : toRecord(row);
@@ -250,7 +250,7 @@ export function postgresIdempotencyStore(
         ]);
         const row = claimed[0];
         if (row !== undefined) return { record: toRecord(row), created: true };
-        const existing = await fetch(key);
+        const existing = await readRecord(key);
         if (existing !== undefined) return { record: existing, created: false };
       }
       // Reported as a fresh reservation rather than a throw would be wrong in the one direction
@@ -302,7 +302,7 @@ export function postgresIdempotencyStore(
       await exec.query(SQL_IDEMPOTENCY_RELEASE, [key, reservationId]);
     },
 
-    get: fetch,
+    get: readRecord,
 
     async purgeExpired(): Promise<number> {
       const rows = await exec.query<{ readonly key: string }>(

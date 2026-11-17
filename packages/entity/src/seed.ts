@@ -3,7 +3,6 @@
 // `insert` where the seed owns the id (`id('post:tenancy')` is a v5 uuid of the label, the same on
 // every machine), `upsert` where the table owns it and a natural key is all there is.
 
-import { createHash } from 'node:crypto';
 import { type Environment, resolveEnvironment } from '@ultimat3/core';
 import { overwrittenBy } from './bulk-write';
 import { entityNow } from './clock';
@@ -35,7 +34,7 @@ export const seedId = (label: string): string => {
   const input = new Uint8Array(16 + name.length);
   input.set(bytesOf(NAMESPACE));
   input.set(name, 16);
-  const digest = new Uint8Array(createHash('sha1').update(input).digest());
+  const digest = new Uint8Array(new Bun.CryptoHasher('sha1').update(input).digest());
   const bytes = digest.slice(0, 16);
   bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x50;
   bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
@@ -255,7 +254,7 @@ const softDeleteWipe = (entity: EntityCore): EntityError =>
 /** The row an update may write: everything the caller named, less what a match must not move. */
 const withoutPreserved = <Row>(row: Row, preserve: readonly string[]): Row => {
   const copy: Record<string, unknown> = { ...(row as Record<string, unknown>) };
-  for (const property of preserve) delete copy[property];
+  for (const property of preserve) if (Object.hasOwn(copy, property)) delete copy[property];
   // `Repo` is typed for whole rows, and a partial one is exactly what keeps a column OUT of the
   // update set — `namedProperties` reads what the row owns. Same assertion the bulk live test takes.
   return copy as Row;

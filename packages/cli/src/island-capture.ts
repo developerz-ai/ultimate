@@ -14,6 +14,7 @@ import { readinessProbe } from './island-harness-script';
 import { IslandRequestUnstubbedError, IslandUnphotographableError } from './island-shot-errors';
 import type { IslandReadiness, IslandStateShot } from './island-verdict';
 import { parseReadiness } from './island-verdict';
+import { quoteArg } from './shell-quote';
 import { type ShotCookiePair, shotCookies } from './shot-cookie';
 import type { ShotServer } from './shot-server';
 import { allowHostsFrom } from './shot-server';
@@ -71,18 +72,18 @@ export function photographFault(
   target: IslandShotTarget,
   seen: IslandReadiness | null,
 ): Refusal | undefined {
-  const settle = `x shot --island ${target.name} --settle 8000 --json`;
+  const settle = `x shot --island ${quoteArg(target.name)} --settle 8000 --json`;
   if (seen === null) {
     return {
       reason: 'answered no readiness probe at all, so nothing about the page can be asserted',
-      fix: `x shot --island ${target.name} --state ${target.state} --timeout 60000 --json`,
+      fix: `x shot --island ${quoteArg(target.name)} --state ${quoteArg(target.state)} --timeout 60000 --json`,
     };
   }
   if (!seen.harness) {
     return {
       reason:
         'was served a document that is not the shot harness — the dev server this run reused was booted against a different set of states files',
-      fix: 'restart x dev, then run this command again',
+      fix: 'x stop --json && x dev   # restart it against these states files, then run this command again',
     };
   }
   if (!seen.attached) {
@@ -91,7 +92,7 @@ export function photographFault(
   if (seen.failed !== null) {
     return {
       reason: `mounted and its mount() REJECTED: ${seen.failed}`,
-      fix: `x shot --island ${target.name} --state ${target.state} --json   # the verdict carries the throw and its frame`,
+      fix: `x shot --island ${quoteArg(target.name)} --state ${quoteArg(target.state)} --json   # the verdict carries the throw and its frame`,
     };
   }
   if (!seen.mounted) {
@@ -265,7 +266,7 @@ export async function captureIslandState(
         state: target.state,
         theme: target.theme,
         reason: `produced ${bytes.byteLength} bytes, under the ${floor}-byte floor — that is not an image`,
-        fix: `x shot --island ${target.name} --browser /usr/bin/chromium --json   # macOS: --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; Windows: --browser "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"`,
+        fix: `x shot --island ${quoteArg(target.name)} --browser /usr/bin/chromium --json   # macOS: --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; Windows: --browser "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"`,
       });
     }
     await Bun.write(join(options.outDir, target.file), bytes);

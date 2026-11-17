@@ -1,8 +1,10 @@
 // Single responsibility: what a `Predicate` MEANS in the in-memory driver — equality, ordering and
-// LIKE. Every rule here exists so the answer matches the one Postgres gives for the same predicate
-// on the same column, which is why each is decided by the column's DECLARED KIND and never by the
-// JS type of whichever value is in hand: the database decides by the column's type, so a driver
-// deciding by `typeof` is answering a different question.
+// LIKE.
+//
+// Every rule here exists so the answer matches the one Postgres gives for the same predicate on the
+// same column, which is why each is decided by the column's DECLARED KIND and never by the JS type
+// of whichever value is in hand: the database decides by the column's type, so a driver deciding by
+// `typeof` is answering a different question.
 
 import { keyOf } from './batch-read';
 import { columnFor } from './column';

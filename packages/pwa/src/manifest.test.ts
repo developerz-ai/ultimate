@@ -188,7 +188,7 @@ describe('assertValid', () => {
     expect(thrown).toBeInstanceOf(PwaManifestInvalidError);
     expect(thrown).toMatchObject({
       code: 'X_PWA_MANIFEST_INVALID',
-      fix: 'set pwa.name in app.config.ts',
+      fix: "pwa: { name: 'My App' }   // in app.config.ts",
     });
   });
 

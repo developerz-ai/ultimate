@@ -33,6 +33,8 @@ import {
   problemOf,
   remoteTitleOf,
   renderedActionPin,
+  renderFixShellArg,
+  trimTrailingSlashes,
 } from '@ultimat3/core/page';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action, StreamAction } from './action';
@@ -165,7 +167,7 @@ export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends
   const pin = pinned?.path === undefined ? renderedActionPin(name) : pinned;
   const path = pin?.path ?? actionPath(name, options.pathStyle);
   const method = pin?.method ?? pinned?.method ?? 'POST';
-  const base = options.baseUrl.replace(/\/+$/, '');
+  const base = trimTrailingSlashes(options.baseUrl);
   const onResponse = (response: Response): void =>
     assertSameBuild(options.buildId, response.headers.get(BUILD_ID_HEADER), name);
   const decodeError = (
@@ -275,7 +277,7 @@ function assertSameBuild(
   if (clientBuild === serverBuild) return;
   throw new ContractDriftError(
     `client build ${clientBuild} called ${name} on server build ${serverBuild}`,
-    'reload the page to pick up the new client bundle',
+    'location.reload()   // picks up the new client bundle',
   );
 }
 
@@ -315,7 +317,7 @@ function toUltimateError(
     meta: metaFromWire(body['meta']),
     requestId: body['requestId'],
     cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${status}`),
-    fix: stringOr(body['fix'], `x actions show ${name} --json`),
+    fix: stringOr(body['fix'], `x actions show ${renderFixShellArg(name, '<action-name>')} --json`),
     // RFC-9457's `type` IS a documentation URI, so a server that sends no `docs` extension has
     // still offered one. Both travel, in preference order: `??` picked `docs` on presence alone,
     // so a `javascript:` one hid a perfectly good `type` behind it. `remoteDocs` takes the first

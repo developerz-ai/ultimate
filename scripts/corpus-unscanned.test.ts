@@ -43,6 +43,8 @@ import { bareErrorFindings } from './test-bare-error';
 import { testFixFindings } from './test-fix-citations';
 import { mockBuiltinFindings } from './test-mock-builtin';
 import { realSleepFindings } from './test-real-sleep';
+import { slowTestFindings } from './test-slow';
+import { trailingSlashRegexFindings } from './trailing-slash-regex';
 import { urlPathnameFindings } from './url-pathname';
 import { tierBoundaries } from './verify';
 
@@ -71,6 +73,7 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['spawn-timeout', spawnSites],
   ['test-bare-error', bareErrorFindings],
   ['test-real-sleep', realSleepFindings],
+  ['test-slow', slowTestFindings],
   ['bus-subscribed', busPublishFindings],
   ['launch-deadline', launchDeadlineFindings],
   ['test-mock-builtin', mockBuiltinFindings],
@@ -80,6 +83,7 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['probe-databases', probeDatabaseScan],
   ['port-probe', portProbeFindings],
   ['temp-tree', tempTreeFindings],
+  ['trailing-slash-regex', trailingSlashRegexFindings],
 ];
 
 const codeOf = async (run: () => Promise<unknown>): Promise<string> => {

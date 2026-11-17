@@ -127,7 +127,7 @@ const MAX_ROUNDS = 100;
 const LIVE_STATES: ReadonlySet<string> = new Set(['ready', 'delayed', 'running', 'suspended']);
 
 const tallyOf = (executions: readonly JobExecution[]): Record<string, StepTally> => {
-  const steps: Record<string, StepTally> = {};
+  const steps: Record<string, StepTally> = Object.create(null);
   for (const execution of executions) {
     const replayed = new Set(execution.replayed);
     for (const step of execution.steps) {

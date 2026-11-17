@@ -18,8 +18,12 @@ export interface NativeTransportDeps {
   readonly deadlineMs: number;
 }
 
-/** The platform's `fetch`, read per call so a test's sealed network sees it. */
-export const platformFetch: OutboundFetch = (url, init) => fetch(url, init);
+/**
+ * The platform's `fetch`, read per call so a test's sealed network sees it. `outbound()` hands every
+ * hop its deadline signal in `init`; it is forwarded by name so the hop cannot outlive the call.
+ */
+export const platformFetch: OutboundFetch = (url, init) =>
+  fetch(url, { ...init, signal: init.signal ?? null });
 
 /**
  * APNs speaks HTTP/2 only; an HTTP/1.1 request is a malformed response. Bun's `fetch` negotiates it

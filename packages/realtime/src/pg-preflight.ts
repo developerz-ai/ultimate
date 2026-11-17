@@ -41,7 +41,7 @@ export async function preflight(
       detail: `wal_level is "${walLevel?.[0] ?? 'unknown'}", so the server writes no logical WAL`,
       // Not `ALTER SYSTEM`: managed and operator-run Postgres refuse it, and the setting lives in
       // the provider's configuration. The setting, where it goes, and that it needs a restart.
-      fix: "set wal_level=logical in the server configuration — postgresql.conf, your managed provider's database flags, or `postgres -c wal_level=logical` on a container — then restart postgres",
+      fix: "docker run -d -e POSTGRES_PASSWORD=<password> postgres:17 -c wal_level=logical   # a container — elsewhere set wal_level=logical in postgresql.conf or your managed provider's database flags, then restart postgres",
     });
   }
   await ensurePublication(connection, publication, entities);

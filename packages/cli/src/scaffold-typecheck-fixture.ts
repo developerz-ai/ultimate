@@ -2,11 +2,12 @@
 // the real workspace packages, the real compiler. A template that merely parses has not been
 // checked — it has moved its failure from this gate to the first command the user runs.
 
-// `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`), for a
-// symlink (`symlinkSync`, how the sandbox borrows the workspace's node_modules), or for a
-// recursive delete (`rmSync`). `node:path` comes with them — `Bun.write` takes the joined path,
-// but only `resolve`/`sep` can prove that path stayed inside the sandbox.
-import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+// why: `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`),
+// for a symlink (`symlinkSync`, how the sandbox borrows the workspace's node_modules), or for a
+// recursive delete (`rmSync`), nor a SYNC directory listing or file read (`readdirSync`,
+// `readFileSync`: the tsconfig overlay is built synchronously). `node:path` comes with them — `Bun.write` takes the joined path, but
+// only `resolve`/`sep` can prove that path stayed inside the sandbox.
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { ScaffoldPathEscapeError } from './errors';
@@ -155,6 +156,33 @@ const OVERLAY = 'tsconfig.scaffold-check.json';
  * `@ultimat3/*` points at workspace source instead of a published tarball, and the app's own
  * workspace packages resolve without a `bun install` that a sealed test could never run.
  */
+/**
+ * Every `@ultimat3/<pkg>/<sub>` the packages' own `exports` maps declare, pointed at its source
+ * file — read from the manifests, never restated, so a subpath a new template imports
+ * (`@ultimat3/realtime/server`, sweep 9) resolves the day its package declares it.
+ */
+export const subpathPaths = (root: string): Record<string, string[]> => {
+  const out: Record<string, string[]> = {};
+  const packages = join(root, 'packages');
+  for (const dir of readdirSync(packages).sort()) {
+    const path = join(packages, dir, 'package.json');
+    // A directory with no manifest is no package; a manifest that does not parse is the
+    // framework's bug and throws here, named by the path.
+    if (!existsSync(path)) continue;
+    const { name, exports } = JSON.parse(readFileSync(path, 'utf8')) as {
+      readonly name?: unknown;
+      readonly exports?: unknown;
+    };
+    if (typeof name !== 'string' || typeof exports !== 'object' || exports === null) continue;
+    for (const [key, target] of Object.entries(exports)) {
+      if (key === '.' || key.includes('*') || typeof target !== 'string') continue;
+      if (!/^\.\/src\/.+\.tsx?$/.test(target)) continue;
+      out[`${name}${key.slice(1)}`] = [join(packages, dir, target.replace(/\.tsx?$/, ''))];
+    }
+  }
+  return out;
+};
+
 const overlay = (root: string, app: string): string =>
   `${JSON.stringify(
     {
@@ -168,11 +196,8 @@ const overlay = (root: string, app: string): string =>
           // consulted first. `@ultimat3/cli/serve` is what `x new`'s `apps/web/server.ts` imports;
           // `@ultimat3/core/page` is where every generated errors module takes `defineError`.
           '@ultimat3/ui/icons/*': [`${root}/packages/ui/src/icons/glyphs/*`],
-          '@ultimat3/core/page': [`${root}/packages/core/src/page`],
-          '@ultimat3/query/client': [`${root}/packages/query/src/client`],
-          '@ultimat3/render/server': [`${root}/packages/render/src/server`],
-          '@ultimat3/render/client': [`${root}/packages/render/src/client`],
-          '@ultimat3/cli/serve': [`${root}/packages/cli/src/serve-entry`],
+          ...subpathPaths(root),
+          // Not an export of the package, but a path a generated test types against.
           '@ultimat3/testing/test-types': [`${root}/packages/testing/src/test-types`],
           '@ultimat3/*': [`${root}/packages/*/src`],
           [`@${app}/web/*`]: ['./apps/web/*'],

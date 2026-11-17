@@ -10,6 +10,7 @@ import {
   fetchSites,
   scanFetches,
 } from './fetch-deadline';
+import { corpus } from './lib/corpus';
 import { FETCH_DEADLINE_PINS, FETCH_DEADLINE_PINS_FILE } from './lib/fetch-deadline-pins';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
@@ -75,6 +76,14 @@ describe('the ratchet', () => {
   });
 });
 
+/**
+ * The real tree with its REPAIR taken back out: every `signal`/`timeout` key renamed in the mask.
+ * Non-vacuity that grows as the tree gets better — a count of what is still broken falls to zero
+ * on the day the ratchet is done, and then proves nothing.
+ */
+const unrepaired = (masked: string): string =>
+  masked.replace(/(?<![\w$.])(?:signal|timeout)(?=\s*[:,}])/g, 'unbound');
+
 describe('the real tree', () => {
   test('every pin carries a why: and a count above zero', () => {
     for (const pin of Object.values(FETCH_DEADLINE_PINS)) {
@@ -84,8 +93,14 @@ describe('the real tree', () => {
   });
 
   test('is on the ratchet, and the scan really read it', async () => {
-    // Non-vacuity: the pinned sites ARE found — a scan matching nothing agrees with no pin.
-    expect((await fetchSites(repoRoot())).length).toBeGreaterThanOrEqual(6);
+    // Non-vacuity: with each signal taken back out, the scan finds the calls that carry one — a
+    // scan matching nothing agrees with every pin. 25 on 2026-11-16.
+    const files = await corpus(repoRoot(), 'source');
+    const bare = files.flatMap((file) =>
+      scanFetches(file.path, file.source, unrepaired(file.masked)),
+    );
+    expect(bare.length).toBeGreaterThanOrEqual(15);
+    expect((await fetchSites(repoRoot())).length).toBeLessThan(bare.length);
     expect(await fetchGaps(repoRoot())).toEqual([]);
   });
 });

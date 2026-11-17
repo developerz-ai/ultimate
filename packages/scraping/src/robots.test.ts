@@ -170,3 +170,28 @@ describe('unit · a hostile robots.txt cannot stall the worker', () => {
     expect(performance.now() - started).toBeLessThan(250);
   });
 });
+
+describe('unit · robots rules compare percent-encoded paths (RFC 9309 §2.2.2)', () => {
+  // A URL's pathname arrives percent-encoded (`/caf%C3%A9`); a rule is written as the site's
+  // author typed it (`/café`). Compared raw, a non-ASCII Disallow never matched and was fetched.
+  test('a UTF-8 Disallow path refuses the encoded URL path', () => {
+    const rules = parseRobots('User-agent: *\nDisallow: /café\n', 'x');
+    expect(robotsAllows(rules, '/caf%C3%A9/menu')).toBe(false);
+    expect(robotsAllows(rules, '/cafe/menu')).toBe(true);
+  });
+
+  test('a percent-escape matches whatever hex case either side spells it in', () => {
+    expect(robotsAllows(parseRobots('User-agent: *\nDisallow: /a%2fb\n', 'x'), '/a%2Fb')).toBe(
+      false,
+    );
+    expect(robotsAllows(parseRobots('User-agent: *\nDisallow: /a%2Fb\n', 'x'), '/a%2fb')).toBe(
+      false,
+    );
+  });
+
+  test('a query in a rule stays a query: `?` is not encoded away', () => {
+    const rules = parseRobots('User-agent: *\nDisallow: /search?q=\n', 'x');
+    expect(robotsAllows(rules, '/search?q=books')).toBe(false);
+    expect(robotsAllows(rules, '/search')).toBe(true);
+  });
+});

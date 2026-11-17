@@ -2,6 +2,7 @@
 // process that imports `@ultimat3/core` — not just the CLI. `@ultimat3/schema` is tier 0 alongside
 // this package and cannot call `registerErrorCodes()` itself: that would be `schema -> core`, an
 // import this package's own dependency-free promise forbids in that direction and always will.
+//
 // The other direction is DECLARED (`core -> schema`, `scripts/lib/tiers.ts`), so the titles are
 // READ from schema rather than restated here.
 //

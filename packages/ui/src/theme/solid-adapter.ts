@@ -78,7 +78,7 @@ export function solid(): SolidRuntime {
       // ONE literal, never a concatenation: `fix-scan.ts` reads a single literal in this position
       // and counts anything else `unreadable`, so a fix split across `+` is a fix the gate stops
       // checking.
-      "paste `import { createContext, createEffect, createMemo, createRoot, createSignal, onCleanup, useContext } from 'solid-js';` at the top of your *.island.tsx and `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup, createRoot });` as the first line of its mount(), above render() — seven named imports, never `import * as`, which keeps all of solid-js in the chunk; a server render needs none",
+      "import { createContext, createEffect, createMemo, createRoot, createSignal, onCleanup, useContext } from 'solid-js';   // at the top of your *.island.tsx, and `setSolidRuntime({ createContext, useContext, createSignal, createMemo, createEffect, onCleanup, createRoot });` as the first line of its mount(), above render() — seven named imports, never `import * as`, which keeps all of solid-js in the chunk; a server render needs none",
     );
   }
   return INERT_SOLID_RUNTIME;

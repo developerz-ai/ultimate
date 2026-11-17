@@ -20,4 +20,11 @@ describe('unit · quoteArg', () => {
   test('a single quote is escaped the one way a single-quoted string allows', () => {
     expect(quoteArg("it's slow")).toBe("'it'\\''s slow'");
   });
+
+  // An invocation is several words; quoting it whole made `x 'g route posts'`, one word no
+  // command answers to. Each word on its own keeps the line runnable and every value inert.
+  test('a word list is quoted word by word and joined', () => {
+    expect(quoteArg(['g', 'route', 'posts'])).toBe('g route posts');
+    expect(quoteArg(['db', 'branch', 'create', '$(id)'])).toBe("db branch create '$(id)'");
+  });
 });

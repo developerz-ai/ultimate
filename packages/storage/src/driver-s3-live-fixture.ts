@@ -2,6 +2,7 @@
 // request needs. A fixture, so it ships in no package.
 
 import type { Clock } from '@ultimat3/core';
+import { trimTrailingSlashes } from '@ultimat3/core';
 
 export interface Target {
   readonly endpoint: string;
@@ -19,7 +20,7 @@ export const targetOf = (raw: string | undefined): Target | undefined => {
   } catch {
     return undefined;
   }
-  const bucket = url.pathname.replace(/^\/+|\/+$/g, '');
+  const bucket = trimTrailingSlashes(url.pathname.replace(/^\/+/, ''));
   if (bucket === '' || url.username === '' || url.password === '') return undefined;
   return {
     endpoint: url.origin,

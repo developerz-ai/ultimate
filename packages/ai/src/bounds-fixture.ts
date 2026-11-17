@@ -1,8 +1,10 @@
 // The one helper every numeric-bound test in this package asserts through: run it, and hand back
-// the coded refusal or say what arrived instead. Shared rather than copied into a dozen suites,
-// the same call `llm-fixture.ts` makes — and the reason is `expect.unreachable`: a test that
-// reports its own verdict by throwing a bare `Error` is what `scripts/test-bare-error.ts` refuses,
-// so getting that one line right in one place beats getting it right twelve times.
+// the coded refusal or say what arrived instead.
+//
+// Shared rather than copied into a dozen suites, the same call `llm-fixture.ts` makes — and the
+// reason is `expect.unreachable`: a test that reports its own verdict by throwing a bare `Error` is
+// what `scripts/test-bare-error.ts` refuses, so getting that one line right in one place beats
+// getting it right twelve times.
 //
 // Not shipped — `package.json` excludes `!src/**/*-fixture.ts`.
 

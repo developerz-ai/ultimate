@@ -5,7 +5,7 @@
 // The decisions a seed itself owns are `@ultimat3/entity`'s: `seedTiersFor` is the one table saying
 // which tiers an environment runs, and two copies of "may this seed run" would be two answers.
 
-// `node:path` for the joiner and the app-root-relative spelling every finding is keyed by; Bun
+// why: `node:path` for the joiner and the app-root-relative spelling every finding is keyed by; Bun
 // exposes neither.
 import { relative, sep } from 'node:path';
 import type { Environment } from '@ultimat3/core';
@@ -16,6 +16,7 @@ import { BadFlagError } from './errors';
 import type { Finding, JsonValue } from './output';
 import { findingFrom } from './output';
 import { hasPathSegment } from './path-segments';
+import { quoteArg } from './shell-quote';
 import { isTest } from './source-files';
 import { renderTable } from './table';
 
@@ -74,7 +75,7 @@ export class SeedEnvironmentError extends UltimateError {
     super({
       code: 'X_SEED_ENVIRONMENT',
       cause: `seed "${input.seed}" is tier ${input.tier} and ULTIMATE_ENV resolved ${input.environment}, where x db seed runs ${input.tiers.join(', ')} — ULTIMATE_SEED_TIER=${input.tier} says this deploy takes it anyway`,
-      fix: `x db seed ${input.seed} --tier ${input.tier} --json`,
+      fix: `x db seed ${quoteArg(input.seed)} --tier ${quoteArg(input.tier)} --json`,
     });
   }
 }

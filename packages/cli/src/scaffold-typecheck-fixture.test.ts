@@ -12,6 +12,7 @@ import type { ExecResult, Runner } from './exec';
 import {
   DIR_LINK,
   sandboxPath,
+  subpathPaths,
   typecheckScaffold,
   workspaceRoot,
   workspaceTsc,
@@ -125,5 +126,21 @@ describe('typecheckScaffold, the compiler injected', () => {
     expect(thrown).toBeInstanceOf(ScaffoldPathEscapeError);
     expect(seen).toEqual([]);
     expect(sandboxPath('/sandbox', 'apps/web/a.ts')).toBe(join('/sandbox', 'apps/web/a.ts'));
+  });
+});
+
+describe('subpathPaths', () => {
+  const root = join(import.meta.dir, '..', '..', '..');
+  test('every subpath a package exports resolves to its source file on disk', () => {
+    const paths = subpathPaths(root);
+    // The one a sweep-9 template imports and a hand-kept list once missed.
+    expect(Object.keys(paths)).toContain('@ultimat3/realtime/server');
+    expect(Object.keys(paths)).toContain('@ultimat3/cli/serve');
+    for (const [name, [target]] of Object.entries(paths)) {
+      expect([name, existsSync(`${target}.ts`) || existsSync(`${target}.tsx`)]).toEqual([
+        name,
+        true,
+      ]);
+    }
   });
 });

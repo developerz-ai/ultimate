@@ -1,8 +1,11 @@
-// `x ci` — one command instead of three. `gh run view` prints a tree of ticks and one cross, and
-// the error is inside a per-job log that is mostly setup noise; for a `verify` job that log tail IS
-// the findings block, with its `X_*` codes and executable `fix:` lines already in it. So this
-// command fetches the runs, opens only the failed steps' log, and hands back the findings the gate
-// already wrote — in the same three-line shape every other Ultimate error is printed in.
+// `x ci` — one command instead of three: the failed runs' findings, read off their logs, in
+// the three-line shape every Ultimate error is printed in.
+//
+// `gh run view` prints a tree of ticks and one cross, and the error is inside a per-job log that is
+// mostly setup noise; for a `verify` job that log tail IS the findings block, with its `X_*` codes
+// and executable `fix:` lines already in it. So this command fetches the runs, opens only the
+// failed steps' log, and hands back the findings the gate already wrote — in the same three-line
+// shape every other Ultimate error is printed in.
 
 import { renderThrowable, UltimateError } from '@ultimat3/core';
 import { parseDuration } from '@ultimat3/time';
@@ -75,7 +78,7 @@ export class CiRunNotFoundError extends UltimateError {
     super({
       code: 'X_CI_RUN_NOT_FOUND',
       cause: `no workflow run on ${input.repo} for branch "${input.branch}"${matching}`,
-      fix: `x ci --branch main --repo ${input.repo} --json`,
+      fix: `x ci --branch main --repo ${quoteArg(input.repo)} --json`,
     });
   }
 }

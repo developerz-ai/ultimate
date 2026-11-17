@@ -1,8 +1,10 @@
-// Fleet-wide slot counting: the seam that makes `job.concurrency` true. `limits.ts` counts slots
-// in ONE process's heap, so `perTenant: 2` on twenty pods is forty concurrent runs — the number a
-// downstream API rate-limits you for. A lease is a row somewhere every replica can see, held for
-// a TTL and renewed by the same heartbeat that renews the visibility lease, so a killed worker
-// gives its slot back by expiry rather than by cleanup nobody runs.
+// Fleet-wide slot counting: the seam that makes `job.concurrency` true.
+//
+// `limits.ts` counts slots in ONE process's heap, so `perTenant: 2` on twenty pods is forty
+// concurrent runs — the number a downstream API rate-limits you for. A lease is a row somewhere
+// every replica can see, held for a TTL and renewed by the same heartbeat that renews the
+// visibility lease, so a killed worker gives its slot back by expiry rather than by cleanup nobody
+// runs.
 
 import type { Clock } from '@ultimat3/core';
 import { liveClock } from '@ultimat3/core';

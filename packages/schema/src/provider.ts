@@ -56,7 +56,7 @@ export function introspect(schema: unknown): SchemaNode {
   if (node === undefined) {
     throw new SchemaUnsupportedError({
       cause: `provider "${active.vendor}" cannot describe this schema as a SchemaNode`,
-      fix: 'add introspect() to the object passed to configureSchemaProvider()',
+      fix: 'configureSchemaProvider({ ...provider, introspect: (schema) => node })   // return a SchemaNode for every schema the provider builds',
       meta: { vendor: active.vendor },
     });
   }

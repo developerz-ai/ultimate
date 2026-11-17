@@ -39,7 +39,7 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
   beforeAll(async () => {
     worker = await acquireWorkerDatabase({ adminUrl });
     if (worker.kind !== 'postgres') {
-      throw new Error(`expected a live postgres worker database, got "${worker.kind}"`);
+      return expect.unreachable(`expected a live postgres worker database, got "${worker.kind}"`);
     }
     client = postgresClient({ url: worker.url });
     adminClient = postgresClient({ url: adminUrl });

@@ -1,8 +1,10 @@
-// The security envelope a vector store carries: the tenant it is bound to, and the metadata
-// values a policy leaves visible. Kept separate from the stores because both the in-memory dev
-// store and the Postgres one must enforce the SAME envelope — a leak that only reproduces in
-// production is a leak nobody finds. Deriving a scope may only ever TIGHTEN it: a scope that
-// could be widened from a call site is not a scope, it is a hint.
+// The security envelope a vector store carries: the tenant it is bound to, and the metadata values
+// a policy leaves visible.
+//
+// Kept separate from the stores because both the in-memory dev store and the Postgres one must
+// enforce the SAME envelope — a leak that only reproduces in production is a leak nobody finds.
+// Deriving a scope may only ever TIGHTEN it: a scope that could be widened from a call site is not
+// a scope, it is a hint.
 
 import { tryUseContext, UltimateError } from '@ultimat3/core';
 import { VectorScopeWidenedError } from './errors';

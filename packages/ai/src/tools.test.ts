@@ -244,7 +244,7 @@ describe('runLlmToolCall survives a result the framework did not build', () => {
     const flattened = Object.assign(Object.create(null), {
       code: 'X_ORDER_LOCKED',
       cause: 'order o-1 is closed',
-      fix: 'x db query "select * from orders"',
+      fix: 'x doctor --json',
     });
     const boom = projectable('publishPost', { expose: true }, () => Promise.reject(flattened));
     const result = await runLlmToolCall(
@@ -254,7 +254,7 @@ describe('runLlmToolCall survives a result the framework did not build', () => {
     );
     expect(result).toEqual({
       toolUseId: 'call-8',
-      content: 'X_ORDER_LOCKED: order o-1 is closed (fix: x db query "select * from orders")',
+      content: 'X_ORDER_LOCKED: order o-1 is closed (fix: x doctor --json)',
       isError: true,
     });
   });

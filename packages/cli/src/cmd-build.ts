@@ -2,6 +2,8 @@
 // "anywhere that runs a container or a binary"; nothing here knows the name of a cloud. `prebuilt`
 // is the docker target's other half: the line the Dockerfile runs INSIDE the image build.
 
+// why: `requireEntry` is synchronous and Bun's `Bun.file().exists()` is async; Bun ships no
+// path API, and `join`/`resolve` build the entry and `--out` paths.
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ERROR_DOCS_URL, frameworkVersion, UltimateError, VERSION_DEFINE } from '@ultimat3/core';
@@ -69,13 +71,17 @@ export function readTarget(raw: string | undefined): BuildTarget {
  * has to refuse a missing entry by name before it spawns anything, and the spawned command has to
  * name the same file — a second copy is how `binary` came to compile a path `x new` never wrote.
  */
-export const BUILD_ENTRY: Readonly<Record<BuildTarget, string>> = {
-  docker: 'docker/Dockerfile',
-  binary: 'apps/web/server.ts',
-  static: 'apps/web/prerender.ts',
-  // What boots from the store: an image with no server entry has nothing to prebuild for.
-  prebuilt: 'apps/web/server.ts',
-};
+// Null-prototype: a target that is not one of these reads `undefined`, never an `Object` member.
+export const BUILD_ENTRY: Readonly<Record<BuildTarget, string>> = Object.assign(
+  Object.create(null) as object,
+  {
+    docker: 'docker/Dockerfile',
+    binary: 'apps/web/server.ts',
+    static: 'apps/web/prerender.ts',
+    // What boots from the store: an image with no server entry has nothing to prebuild for.
+    prebuilt: 'apps/web/server.ts',
+  } satisfies Record<BuildTarget, string>,
+);
 
 /** Absolute path of the target's entry, or the error that names the file and what writes it. */
 export function requireEntry(root: string, target: BuildTarget): string {

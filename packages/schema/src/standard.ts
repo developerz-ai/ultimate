@@ -140,7 +140,7 @@ function assertSync<Output>(
   if (isThenable(result)) {
     throw new SchemaUnsupportedError({
       cause: `${vendor} validated asynchronously in a synchronous call site`,
-      fix: 'call validateAsync()/parseAsync() instead of validate()/parse()',
+      fix: 'await validateAsync(schema, value)   // or await parseAsync(schema, value), in place of validate()/parse()',
       meta: { vendor },
     });
   }

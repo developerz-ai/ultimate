@@ -1,6 +1,6 @@
 // Every code the framework registers has a page. The `errors` gate already holds every code to a
-// row in `wiki/Error-Codes.md`; this holds every row to a URL, so a split rule that stops matching
-// a row shape is a red build, never a code whose `docs:` link 404s.
+// row on a `wiki/Error-Codes*.md` page; this holds every row to a URL, so a split rule that stops
+// matching a row shape is a red build, never a code whose `docs:` link 404s.
 
 import { DocsCodePageMissingError } from './errors';
 import type { DocsCorpus } from './types';

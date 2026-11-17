@@ -46,7 +46,7 @@ export class JobConcurrencyKeyInvalidError extends UltimateError {
     super({
       code: 'X_JOB_DECLARATION_INVALID',
       cause: `job "${input.job}" concurrency.key ${KEY_DEFECT_CAUSE[input.defect]}`,
-      fix: `return a non-empty string of at most ${input.maxLength} characters from concurrency.key on job('${input.job}') — key: (input) => input.accountId — or declare concurrency: 1 for one cap across every run`,
+      fix: `concurrency: { key: (input) => input.accountId, limit: 1 }   // on job('${input.job}'): key returns a non-empty string of at most ${input.maxLength} characters — or declare concurrency: 1 for one cap across every run`,
       meta: { job: input.job, defect: input.defect },
     });
   }
@@ -85,7 +85,7 @@ export class ConcurrencyUnenforceableError extends UltimateError {
     super({
       code: 'X_JOB_CONCURRENCY_UNENFORCEABLE',
       cause: `${input.jobs.join(', ')} declare concurrency and the "${input.driver}" jobs driver has no lease store, so the cap would hold per process and the fleet would run concurrency x replicas`,
-      fix: `remove concurrency from job("${input.jobs[0] ?? 'the job'}"), or drop the jobs: field from apps/<app>/runtime.ts so the boot installs postgresJobDriver() over DATABASE_URL — the pg driver is the one with a lease store`,
+      fix: `grep -n 'jobs:' apps/*/runtime.ts   # drop that field so the boot installs postgresJobDriver() over DATABASE_URL, the driver with a lease store — or remove concurrency from job("${input.jobs[0] ?? 'the job'}")`,
     });
   }
 }

@@ -11,6 +11,7 @@ import {
   hasPublicCause,
   isUltimateError,
   renderCauseValue,
+  renderFixShellArg,
   singleLine,
   stringField,
 } from '@ultimat3/core';
@@ -103,7 +104,7 @@ export const factsOf = (error: unknown): ErrorFacts => {
     fix:
       (isUltimateError(error) ? str(error, 'fix') : undefined) ??
       (FRAMEWORK_CODE.test(code)
-        ? `x errors explain ${code} --json   # then fix the throwing call site`
+        ? `x errors explain ${renderFixShellArg(code, '<the code above>')} --json   # then fix the throwing call site`
         : 'x errors list --json   # then fix the throwing call site'),
     callerFix: isUltimateError(error) ? str(error, 'callerFix') : undefined,
     // Core's one constant, never a per-code URL: `wiki/` is the only public documentation surface

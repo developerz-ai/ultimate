@@ -1,8 +1,10 @@
 // Single responsibility: which statements in a migration's `up` half `x db gen` could never have
-// written — the SQL a squash discards in silence. `REPLICA IDENTITY FULL`, `CREATE EXTENSION`, a
-// `GRANT`, a data backfill: none of them is a declaration, none reaches a `.snapshot.json`, and no
-// declaration-based drift check can see them, because a regenerated sidecar equals the declaration
-// by construction. The rail is the same shape `destructive.ts` is — statements in, statements out.
+// written — the SQL a squash discards in silence.
+//
+// `REPLICA IDENTITY FULL`, `CREATE EXTENSION`, a `GRANT`, a data backfill: none of them is a
+// declaration, none reaches a `.snapshot.json`, and no declaration-based drift check can see them,
+// because a regenerated sidecar equals the declaration by construction. The rail is the same shape
+// `destructive.ts` is — statements in, statements out.
 
 import { PARTITION_FUNCTION } from './generate-partition';
 import { ROW_SECURITY_POLICY } from './row-security';

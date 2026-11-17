@@ -70,7 +70,10 @@ describe('partitionOf', () => {
     const refused = refusal(MONTHLY, { primaryKey: ['id'] });
     expect(refused.code).toBe('X_ENTITY_PARTITION_INVALID');
     expect(refused.cause).toContain('does not hold "at"');
-    expect(refused.fix).toContain("primaryKey: ['id', 'at']");
+    // Edit first, migration after: the line pasted first is the declaration, never the re-run.
+    expect(refused.fix).toBe(
+      `entity("Event", { primaryKey: ['id', 'at'], … })   // then: x db gen "partition"`,
+    );
   });
 
   test('a unique index or unique invariant without the partition column is refused', () => {

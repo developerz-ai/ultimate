@@ -2,6 +2,7 @@
 // handlers while the conversation pulls replies, so a queue sits between them; `startTls` swaps in
 // the upgraded socket for STARTTLS. Nothing here knows an SMTP verb — that is `smtp-client.ts`.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { type MailError, sendFailed } from './errors';
 import type { SmtpStream, SmtpTarget } from './smtp-client';
 
@@ -120,6 +121,8 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
   // `smtps://` hands the socket to TLS before a single SMTP byte is exchanged, so the window is
   // already open when the connection is made; a plaintext one opens it at `startTls()` or never.
   let handshake: Handshake = target.tls ? 'tls' : undefined;
+  // Screened once: both handshake fixes splice it, and a fix is pasted into a shell.
+  const endpoint = renderFixShellArg(`${target.host}:${String(target.port)}`, '<SMTP host>:<port>');
 
   /**
    * A failed handshake is a refused certificate or a protocol mismatch, and the same attempt fails
@@ -133,8 +136,9 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
       detail: `the TLS handshake with ${target.host} failed: ${detail}`,
       retryable: false,
       fix:
-        `check the certificate and protocol the host offers: openssl s_client ` +
-        `${kind === 'starttls' ? '-starttls smtp ' : ''}-connect ${target.host}:${target.port}`,
+        kind === 'starttls'
+          ? `openssl s_client -starttls smtp -connect ${endpoint}   # the certificate and protocol the host offers`
+          : `openssl s_client -connect ${endpoint}   # the certificate and protocol the host offers`,
     });
 
   /** Outside a handshake, a dead socket really is transient — a reset, a rate limit, a restart. */
@@ -229,7 +233,7 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
               stage: 'data',
               detail: `the socket stopped accepting bytes for ${target.timeoutMs}ms`,
               retryable: true,
-              fix: 'pass timeoutMs: 60_000 to smtpMailDriver() in app.config.ts',
+              fix: 'smtpMailDriver({ url, from, timeoutMs: 60_000 })   // where the driver is built',
             }),
           );
         }, target.timeoutMs);
@@ -281,7 +285,7 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
               stage: 'starttls',
               detail: 'the runtime returned no TLS socket for the STARTTLS upgrade',
               retryable: false,
-              fix: 'upgrade the runtime: bun upgrade   # STARTTLS needs bun >= 1.3',
+              fix: 'bun upgrade   # STARTTLS needs bun >= 1.3',
             }),
           );
         }

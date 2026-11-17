@@ -1,8 +1,10 @@
-// The DEFAULT driver: a Postgres queue. Zero infra to start — the database you already have
-// is the queue. `SELECT ... FOR UPDATE SKIP LOCKED` lets N workers claim disjoint batches
-// without a coordinator, and the visibility timeout (`visible_at`) makes a worker crash cost
-// one lease instead of one job. Settles' counts are batched (`counter-batch.ts`) and written every
-// ten seconds and on `close()`. Statements: `driver-pg-sql.ts`; schema: `driver-pg-ddl.ts`.
+// The DEFAULT driver: a Postgres queue. Zero infra to start — the database you already have is the
+// queue.
+//
+// `SELECT ... FOR UPDATE SKIP LOCKED` lets N workers claim disjoint batches without a coordinator,
+// and the visibility timeout (`visible_at`) makes a worker crash cost one lease instead of one job.
+// Settles' counts are batched (`counter-batch.ts`) and written every ten seconds and on `close()`.
+// Statements: `driver-pg-sql.ts`; schema: `driver-pg-ddl.ts`.
 
 import type { Clock, PgExecutor } from '@ultimat3/core';
 import { finiteCount, liveClock, renderCauseValue, uuidV7 } from '@ultimat3/core';
@@ -84,7 +86,7 @@ function resolveExecutor(injected: PgExecutor | undefined): PgExecutor {
     // be "not configured". An executor is injected by the boot or the driver has none.
     cause:
       'postgresJobDriver() was called with no executor, and this driver has no ambient fallback',
-    fix: 'set DATABASE_URL in .env so the boot builds one — x db migrate then x dev — or hand this process a queue with no database: export const runtime = { jobs: memoryJobDriver() } in apps/<app>/runtime.ts',
+    fix: 'DATABASE_URL=<postgres url> x db migrate   # then x dev, with DATABASE_URL in .env so the boot builds the executor — or hand this process a queue with no database: export const runtime = { jobs: memoryJobDriver() } in apps/<app>/runtime.ts',
   });
 }
 

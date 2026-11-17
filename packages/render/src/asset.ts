@@ -1,9 +1,11 @@
 /**
  * `asset('assets/hero.avif')` — the one way a page names a public file of its own: the path under
- * `apps/web/site/assets/` in, its content-hashed URL out. Typed so a path outside that tree or with
- * an extension nothing serves is a compile error, and resolved while the page RENDERS so a file
- * that is not there fails `x build --target static` with `X_ASSET_MISSING`, exactly as a bad
- * `island({ src })` does. The table is the CLI's (`site-assets.ts`); this file holds only the seam.
+ * `apps/web/site/assets/` in, its content-hashed URL out.
+ *
+ * Typed so a path outside that tree or with an extension nothing serves is a compile error, and
+ * resolved while the page RENDERS so a file that is not there fails `x build --target static` with
+ * `X_ASSET_MISSING`, exactly as a bad `island({ src })` does. The table is the CLI's
+ * (`site-assets.ts`); this file holds only the seam.
  */
 
 import { renderCauseValue } from '@ultimat3/core';
@@ -98,14 +100,14 @@ export function asset(path: AssetPath): string {
   if (problem !== undefined) {
     throw new AssetMissingError(
       `asset(${renderCauseValue(path)}): ${problem}`,
-      `name a file under apps/web/site/${ASSET_DIR}/ with one of: ${ASSET_EXTENSIONS.join(', ')}`,
+      `asset('logo.svg')   // a file under apps/web/site/${ASSET_DIR}/ with one of: ${ASSET_EXTENSIONS.join(', ')}`,
     );
   }
   const resolver = holder[RESOLVER_SLOT];
   if (resolver === undefined) {
     throw new AssetMissingError(
       `asset(${renderCauseValue(path)}) ran with no site asset table installed — in a browser (an island), or in a test that never loaded the app`,
-      'call asset() in the page and pass the URL to the island as a prop; a unit test installs a table with setAssetResolver((path) => "/" + path)',
+      'asset(path)   // in the page, the URL passed to the island as a prop; a unit test installs a table with setAssetResolver((path) => "/" + path)',
     );
   }
   return resolver(path);

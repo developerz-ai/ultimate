@@ -1,9 +1,11 @@
 /**
- * The one reader of a TTL string. It sits below both `modes.ts` (which asks "is this a TTL at
- * all?" when it refuses an `isr` route with no regeneration trigger) and `render-isr.ts` (which
- * asks "how many ms?"), because a second answer is what let `revalidate: { ttl: '5 minutes' }`
- * pass registration and then parse to `null` — a page generated once and served for the life of
- * the process while the CDN was told `s-maxage=60`.
+ * The one reader of a TTL string.
+ *
+ * It sits below both `modes.ts` (which asks "is this a TTL at all?" when it refuses an `isr` route
+ * with no regeneration trigger) and `render-isr.ts` (which asks "how many ms?"), because a second
+ * answer is what let `revalidate: { ttl: '5 minutes' }` pass registration and then parse to `null`
+ * — a page generated once and served for the life of the process while the CDN was told
+ * `s-maxage=60`.
  */
 
 /** A `Map`, never an object literal: a unit is read by a string key, and a `Map` has no prototype chain to answer for it. */

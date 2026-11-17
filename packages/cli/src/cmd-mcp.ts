@@ -27,6 +27,7 @@ import { msg } from './messages';
 import { isAddressInUse } from './metrics-endpoint';
 import type { CommandResult } from './output';
 import { flagString } from './parse';
+import { quoteArg } from './shell-quote';
 
 const TRANSPORTS = ['stdio', 'http'] as const;
 type Transport = (typeof TRANSPORTS)[number];
@@ -61,12 +62,13 @@ async function catalog(host: CliMcpServer): Promise<CommandResult> {
   };
 }
 
-const notFound = (path: string): Response =>
+/** `endpoint` is where this server IS reached, as `mcpHostRefused` is handed it. */
+const notFound = (endpoint: string): Response =>
   new Response(
     JSON.stringify({
       code: 'X_MCP_PROTOCOL',
       cause: 'the MCP server answers exactly one route',
-      fix: `POST ${path} with an Authorization: Bearer header`,
+      fix: `curl -sS -X POST ${quoteArg(endpoint)} -H 'authorization: Bearer <the token x mcp serve printed>' -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`,
     }),
     { status: 404, headers: { 'content-type': 'application/json' } },
   );
@@ -128,7 +130,7 @@ export async function startMcpHttp(host: CliMcpServer, port: number): Promise<Mc
         // Before anything else, as `/_x` does: this server serves this machine, and a rebound name
         // reaches it with a Host and an Origin that agree, which no Origin rule can tell apart.
         if (!isLoopbackHostname(url.hostname)) return mcpHostRefused(endpoint);
-        if (url.pathname !== route.path) return notFound(route.path);
+        if (url.pathname !== route.path) return notFound(endpoint);
         // `@ultimat3/http`'s own 405, the one the pipeline answers on an app's mounted `/mcp`.
         if (request.method !== route.method) {
           return jsonResponse(toProblem(methodNotAllowed(request.method, route.path, ['POST'])), {

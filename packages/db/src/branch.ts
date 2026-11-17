@@ -136,7 +136,9 @@ export async function dropBranch(
     throw new DbError({
       code: 'X_BRANCH_EXISTS',
       cause: `"${branch}" is the database this session is connected to, so it cannot be dropped`,
-      fix: 'connect to another database (DATABASE_URL=.../postgres) and drop it from there',
+      // Read-only first: `x db branch delete` takes the SHORT name, which the list shows, and it
+      // must run from a session on the base database — a raw `drop database` skips both checks.
+      fix: 'x db branch list --json   # its short name; then, with DATABASE_URL on the base database: x db branch delete <that name>',
       meta: { branch },
     });
   }

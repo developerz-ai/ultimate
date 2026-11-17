@@ -60,7 +60,7 @@ function capture(fn: () => unknown): { code?: unknown; cause?: unknown } {
   } catch (error) {
     return error as { code?: unknown; cause?: unknown };
   }
-  throw new Error('expected the call to throw');
+  return expect.unreachable('expected the call to throw');
 }
 
 // `output` is DECLARATIVE. It is hashed into `ref` and published by `describePrompts()`, and it is

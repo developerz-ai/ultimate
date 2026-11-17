@@ -1,9 +1,11 @@
 // Single responsibility: what a grouped count is made of — which columns a count may be keyed by,
 // how many groups one statement is allowed to answer with, and the order the map comes back in.
-// Both drivers read those three rules from here, so a `countBy` against memory means exactly what
-// a `countBy` against Postgres means; a rule added to one driver alone is the drift this file
-// exists to prevent.
+//
+// Both drivers read those three rules from here, so a `countBy` against memory means exactly what a
+// `countBy` against Postgres means; a rule added to one driver alone is the drift this file exists
+// to prevent.
 
+import { renderFixShellArg } from '@ultimat3/core';
 import { columnFor } from './column';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
@@ -57,7 +59,7 @@ const notGroupable = <Row>(
     cause: `${entity.$name}.${operation}('${property}'): ${reason}`,
     fix:
       first === undefined
-        ? `x entities show ${entity.$name} --json   # this entity declares no column a count can be keyed by`
+        ? `x entities show ${renderFixShellArg(entity.$name, '<entity>')} --json   # this entity declares no column a count can be keyed by`
         : `${entity.$name}.${operation}('${first}')   # group by one of: ${groupableColumns(entity).join(', ')}`,
   });
 };

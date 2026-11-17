@@ -2,7 +2,7 @@
 // `lucide-static` data: `bun run --filter @ultimat3/ui icons`. We wrap Lucide, we do not draw
 // icons, so an upstream fix is a version bump plus a re-run and never a hand edit.
 
-import { rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import { renderCauseValue } from '@ultimat3/core';
 import type { IconGlyph } from '../components/icon-glyph';
 import { iconElements } from '../components/icon-glyph';
@@ -19,6 +19,9 @@ export const LUCIDE_ICON_NODES_URL = iconNodesUrl(LUCIDE_VERSION);
 
 /** The registry's answer for the newest published `lucide-static` — what `--bump` pins to. */
 export const LUCIDE_LATEST_URL = 'https://registry.npmjs.org/lucide-static/latest';
+
+/** One registry read's whole budget: a stalled CDN ends the run instead of holding it forever. */
+const REGISTRY_TIMEOUT_MS = 30_000;
 
 /** The tail of every cause about data the PIN published: why re-running alone cannot help. */
 const PIN_REPEATS = `lucide-static@${LUCIDE_VERSION} is the pin that published it, so a re-run against the same pin repeats this; \`--bump\` raises LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts to the latest release and regenerates`;
@@ -194,7 +197,9 @@ async function format(): Promise<void> {
 }
 
 export async function buildIcons(version: string = LUCIDE_VERSION): Promise<number> {
-  const response = await fetch(iconNodesUrl(version));
+  const response = await fetch(iconNodesUrl(version), {
+    signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw runtimeMissingError(
       `lucide-static@${version} icon data (HTTP ${response.status} from ${iconNodesUrl(version)})`,
@@ -234,7 +239,9 @@ export function withPin(source: string, version: string): string {
 
 /** Moves the pin to the registry's latest release, in this very file, and answers the version. */
 async function bumpPin(): Promise<string> {
-  const response = await fetch(LUCIDE_LATEST_URL);
+  const response = await fetch(LUCIDE_LATEST_URL, {
+    signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw runtimeMissingError(
       `the latest lucide-static version (HTTP ${response.status} from ${LUCIDE_LATEST_URL})`,

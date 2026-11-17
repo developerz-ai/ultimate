@@ -1,9 +1,12 @@
-// `x clean` — every test leftover the framework knows of, cleared on demand (#738): the migrated
-// test-database templates under `.x/test-db`, the whole `.x/cache`, the `.x` folders a process
-// started in a source folder once wrote beside the code, and — with `TEST_DATABASE_URL` set — the
-// probe databases whose run is over. The test runner sweeps the same set before every run, keeping
-// the newest two of each cache (`test-housekeeping.ts`); this is the same sweep, keeping none.
-// Never touched: `.x/pgdata` (the dev database), `.x/storage`, the build output.
+// `x clean` — every test leftover the framework knows of, cleared on demand (#738): the same
+// sweep the test runner makes before every run, keeping none.
+//
+// The set: the migrated test-database templates under `.x/test-db`, the whole `.x/cache`, the `.x`
+// folders a process started in a source folder once wrote beside the code, and — with
+// `TEST_DATABASE_URL` set — the probe databases whose run is over. The test runner sweeps the same
+// set before every run, keeping the newest two of each cache (`test-housekeeping.ts`); this is the
+// same sweep, keeping none. Never touched: `.x/pgdata` (the dev database), `.x/storage`, the build
+// output.
 
 import { requireAppRoot } from './app-root';
 import { cleanSpec } from './cmd-clean-spec';

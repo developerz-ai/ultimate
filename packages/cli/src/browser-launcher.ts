@@ -1,9 +1,13 @@
-// Which browser `x shot` drives, and the raw-CDP driver over it (`cdp-shot-driver.ts`). No browser
-// library, in the app or here: Chrome is launched on its debugging pipe by `@ultimat3/testing`'s
-// launcher — the one `x verify`'s e2e step already runs on — or ATTACHED to over `--cdp-url`,
-// which is what every stealth provider sells. Until 22.0.0 this resolved the APP's `puppeteer-core`,
-// so `x shot` needed an install the framework could not make, and two launchers drifted.
+// Which browser `x shot` drives, and the raw-CDP driver over it (`cdp-shot-driver.ts`).
+//
+// No browser library, in the app or here: Chrome is launched on its debugging pipe by
+// `@ultimat3/testing`'s launcher — the one `x verify`'s e2e step already runs on — or ATTACHED to
+// over `--cdp-url`, which is what every stealth provider sells. Until 22.0.0 this resolved the
+// APP's `puppeteer-core`, so `x shot` needed an install the framework could not make, and two
+// launchers drifted.
 
+// why: `browserBinaryExists` is a synchronous predicate, and Bun's only existence check,
+// `Bun.file().exists()`, is async.
 import { existsSync } from 'node:fs';
 import { UltimateError } from '@ultimat3/core';
 import { CHROME_CANDIDATES } from '@ultimat3/scraping/cdp';

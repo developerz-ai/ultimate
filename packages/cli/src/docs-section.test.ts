@@ -56,10 +56,16 @@ describe('unit · sectionResult', () => {
     expect(data.matches[0]?.version).toBe('30.0.0');
   });
 
-  test('a missing page, a missing anchor and Error-Codes are each no answer', async () => {
-    const wiki = wikiWith({ 'Upgrading.md': page, 'Error-Codes.md': '## X_A\n' });
+  test('a missing page, a missing anchor and an Error-Codes page are each no answer', async () => {
+    const wiki = wikiWith({
+      'Upgrading.md': page,
+      'Error-Codes.md': '## X_A\n',
+      'Error-Codes-db.md': '## X_DB_A\n',
+    });
     expect(await sectionResult(wiki, { page: 'Nope', anchor: 'a' }, 'q')).toBeUndefined();
     expect(await sectionResult(wiki, { page: 'Upgrading', anchor: 'nope' }, 'q')).toBeUndefined();
     expect(await sectionResult(wiki, { page: 'Error-Codes', anchor: 'x_a' }, 'q')).toBeUndefined();
+    const owner = { page: 'Error-Codes-db', anchor: 'x_db_a' };
+    expect(await sectionResult(wiki, owner, 'q')).toBeUndefined();
   });
 });

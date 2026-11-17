@@ -43,7 +43,10 @@ describe('unit · the CLI subprocess boundary', () => {
     const name = 'definitely not a real binary xyz';
     const thrown = await thrownBy(() => exec([name, '--help'], { cwd: import.meta.dir }));
     expect(thrown['code']).toBe('X_CLI_UNEXPECTED');
-    expect(String(thrown['fix'])).toContain(`command -v '${name}'`);
+    expect(String(thrown['fix'])).toStartWith(`bun --print 'Bun.which("${name}")'`);
+    // Runnable as written: the lookup answers that the program is not on PATH.
+    const shell = Bun.spawnSync(['sh', '-c', String(thrown['fix'])], { timeout: 10_000 });
+    expect(shell.stdout.toString().trim()).toBe('null');
     expect(String(thrown['fix'])).toContain(`install '${name}'`);
   });
 

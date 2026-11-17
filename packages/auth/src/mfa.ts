@@ -1,8 +1,10 @@
 // Single responsibility: TOTP (RFC 6238) and recovery codes. The drift window is explicit and
 // small, and every accepted step is remembered: without replay rejection a code shouted over a
-// phishing page stays valid for the rest of its 30 seconds. Recovery codes are hashed at rest
-// and single-use, so a database dump is not a permanent MFA bypass; consuming one is the
-// adapter's (`consumeRecoveryCode`), because single-use has to be one atomic step.
+// phishing page stays valid for the rest of its 30 seconds.
+//
+// Recovery codes are hashed at rest and single-use, so a database dump is not a permanent MFA
+// bypass; consuming one is the adapter's (`consumeRecoveryCode`), because single-use has to be one
+// atomic step.
 
 import { finiteCount, hmac, timingSafeEqual } from '@ultimat3/core';
 import type { Auth } from './auth';

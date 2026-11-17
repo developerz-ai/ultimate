@@ -32,10 +32,17 @@ const executorFor = (client: PostgresClient): PgExecutor => ({
     client.query<R>({ text, values }),
 });
 
-async function until(condition: () => boolean | Promise<boolean>, budgetMs = 8_000): Promise<void> {
+/** `explain` is read only on a miss: what state the wait gave up in, so a flake is evidence. */
+async function until(
+  condition: () => boolean | Promise<boolean>,
+  budgetMs = 8_000,
+  explain: () => Promise<string> = () => Promise.resolve(''),
+): Promise<void> {
   const deadline = performance.now() + budgetMs;
   while (!(await condition())) {
-    if (performance.now() > deadline) expect.unreachable('the condition never became true');
+    if (performance.now() > deadline) {
+      expect.unreachable(`the condition never became true ${await explain()}`);
+    }
     // real-clock: paces reads of a real server's state — a NOTIFY crossing a socket, a re-dial.
     await Bun.sleep(5);
   }
@@ -118,7 +125,26 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
         // The test preload freezes this process's `Date`; the server's clock is real.
         runAt: 1,
       });
-      await until(() => started.some((entry) => entry.item === item), 3_000);
+      await until(
+        () => started.some((entry) => entry.item === item),
+        3_000,
+        // Issue #1167: this wait missed once in CI and never locally. What a miss needs to tell —
+        // did the row commit, is it still waiting, was the wake live, is a LISTEN session held.
+        async () =>
+          JSON.stringify({
+            rows: await webPod.query(
+              sql`select state, attempt, run_at, created_at from x_jobs
+                   where idempotency_key = ${`live:${item}`}`,
+            ),
+            wakeIsLive: wakeIsLive(),
+            wakeLive: wake.live(),
+            pollDelayMs: (await worker.stats()).pollDelayMs,
+            listeners: await admin.query(
+              sql`select pid, state, query from pg_stat_activity
+                   where application_name = ${LISTENER_APP} and query ilike 'listen%'`,
+            ),
+          }),
+      );
       return (started.find((entry) => entry.item === item)?.at ?? 0) - before;
     };
 

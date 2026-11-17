@@ -1,8 +1,10 @@
-// What one shot page saw: its console, its uncaught exceptions and its requests, each in a BOUNDED
-// tail with a count of what the bound threw away. And the allow list, enforced in the browser:
-// every request is paused (`Fetch.requestPaused`) and refused unless its host is allowed, so an
-// injected `<img src="http://169.254.169.254/…">` never leaves — it is recorded as `refused`.
-// Paused at the BROWSER too, so a popup the page opens is decided by the same `hostDecision`.
+// What one shot page saw — its console, uncaught exceptions and requests, each in a BOUNDED
+// tail — and the host allow list, enforced in the browser on every paused request.
+//
+// Each tail carries a count of what the bound threw away. Every request is paused
+// (`Fetch.requestPaused`) and refused unless its host is allowed, so an injected
+// `<img src="http://169.254.169.254/…">` never leaves — it is recorded as `refused`. Paused at the
+// BROWSER too, so a popup the page opens is decided by the same `hostDecision`.
 
 import type { SleepClock } from '@ultimat3/core';
 import { hostDecision } from '@ultimat3/core';

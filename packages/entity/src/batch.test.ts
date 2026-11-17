@@ -7,7 +7,7 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type RecordingClient, recordingClient } from '@ultimat3/db';
 import type { BatchIterator } from './batch';
 import { text, timestamp, uuid } from './columns';
-import { database } from './database';
+import { database, memoryDriver } from './database';
 import { entity } from './entity';
 import { EntityError } from './errors';
 import { memoryRepo } from './memory-repo';
@@ -115,7 +115,7 @@ const caught = (run: () => unknown): EntityError => {
     if (error instanceof EntityError) return error;
     throw error;
   }
-  throw new Error('expected a refusal, got a builder');
+  return expect.unreachable('expected a refusal, got a builder');
 };
 
 describe('the batches a chain yields', () => {
@@ -161,7 +161,7 @@ describe('the batches a chain yields', () => {
   });
 
   test('a preloaded relation is attached to every batch, not only the first', async () => {
-    const db = database({ orgs, posts });
+    const db = database({ orgs, posts }, { driver: memoryDriver() });
     await db.orgs.insert({ id: ORG, name: 'Acme' });
     for (const row of seed.filter((candidate) => candidate.orgId === ORG)) {
       await db.posts.insert(row);

@@ -10,6 +10,7 @@
 import { CODEMODS } from '../packages/cli/src/codemods';
 import { quoteArg } from '../packages/cli/src/shell-quote';
 import { compareVersions } from '../packages/cli/src/upgrade-plan';
+import { timingSafeEqual } from '../packages/core/src/timing-safe-equal';
 import { parseScriptArgs } from './lib/args';
 import type { Changelog } from './lib/changelog-sections';
 import { loadChangelog } from './lib/changelog-store';
@@ -19,6 +20,7 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { git } from './lib/release-due-git';
 import { repoRoot } from './lib/run';
+import { headerOnly } from './lib/template-header-only';
 import { remoteTagProbe, type TagProbe } from './registry-audit';
 import {
   RENDER_LOCK_FILE,
@@ -64,7 +66,9 @@ export async function scaffoldOwnedTemplates(root: string): Promise<readonly str
       if (!path.startsWith('.')) continue;
       const base = Bun.fileURLToPath(new URL(path, Bun.pathToFileURL(`/${dir}`))).slice(1);
       for (const candidate of [`${base}.ts`, `${base}/index.ts`, base]) {
-        if (!candidate.endsWith('.ts') || !candidate.startsWith(`${TEMPLATE_DIR}/`)) continue;
+        const owned = `${TEMPLATE_DIR}/`;
+        if (!candidate.endsWith('.ts') || !timingSafeEqual(candidate.slice(0, owned.length), owned))
+          continue;
         if (await Bun.file(`${root}/${candidate}`).exists()) {
           stack.push(candidate);
           break;
@@ -105,7 +109,7 @@ export function templateCodemodGaps(input: {
       findings.push({
         code: CODE,
         cause: `${ROWS_FILE} answers for ${row.template}, which is no scaffold-owned template: a row for nothing excuses nothing`,
-        fix: `edit ${ROWS_FILE} — remove the ${row.template} row, or name the template as it is; then bun run scripts/template-codemods.ts --json`,
+        fix: `grep -n ${quoteArg(row.template)} ${ROWS_FILE}   # remove that row, or name the template as it is; then: bun run scripts/template-codemods.ts --json`,
         at: ROWS_FILE,
       });
     } else if ('codemod' in row) {
@@ -114,7 +118,7 @@ export function templateCodemodGaps(input: {
         findings.push({
           code: CODE,
           cause: `${ROWS_FILE} carries ${row.template} by codemod ${row.codemod} since ${row.since}, and packages/cli/src/codemods/index.ts lists ${listed === undefined ? 'no codemod of that id' : `it since ${listed.since}`}`,
-          fix: `edit packages/cli/src/codemods/index.ts — list ${row.codemod} there with since ${row.since}, or correct its row in ${ROWS_FILE}; then bun test ./packages/cli/src/codemods/index.test.ts`,
+          fix: `grep -n ${quoteArg(row.codemod)} packages/cli/src/codemods/index.ts   # list it there with since ${row.since}, or correct its row in ${ROWS_FILE}, then: bun test ./packages/cli/src/codemods/index.test.ts`,
           at: ROWS_FILE,
         });
       }
@@ -122,7 +126,7 @@ export function templateCodemodGaps(input: {
       findings.push({
         code: CODE,
         cause: `${ROWS_FILE} excuses ${row.template} with "${row.none}", which says no reason an app needs no codemod`,
-        fix: `edit ${ROWS_FILE} — write in the ${row.template} row's none why an app that keeps the old file is not broken by it; then bun run scripts/template-codemods.ts --json`,
+        fix: `grep -n ${quoteArg(row.template)} ${ROWS_FILE}   # write in that row's none why an app that keeps the old file is not broken by it; then: bun run scripts/template-codemods.ts --json`,
         at: ROWS_FILE,
       });
     }
@@ -199,7 +203,12 @@ export async function templateCodemodFindings(
     },
     ...(options.rendered === undefined ? {} : { now: options.rendered }),
   });
-  const changed = [...lines(diff.output), ...lines(untracked.output), ...rendered.changed];
+  // A tracked template whose change is its header alone ships nothing (`template-header-only.ts`).
+  const edited: string[] = [];
+  for (const path of lines(diff.output)) {
+    if (!(await headerOnly(root, [tag], path, runner))) edited.push(path);
+  }
+  const changed = [...edited, ...lines(untracked.output), ...rendered.changed];
   const owned = [...(await scaffoldOwnedTemplates(root)), ...rendered.paths];
   const ownedSet = new Set(owned);
   const findings = templateCodemodGaps({

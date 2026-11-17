@@ -1,8 +1,9 @@
 // Text direction of a locale — a fact about the locale's script, and nothing about catalogs or
-// requests, which is why it is tier 0 rather than `@ultimat3/i18n`'s: `@ultimat3/ui`'s provider
-// reflects `dir` onto `<html>` from the locale it was handed, and reaching the i18n barrel for
-// that one function put the whole framework catalog into every browser chunk with a `UiProvider`
-// in it (issue #490). Import them from `@ultimat3/core`: i18n's re-export was deleted in 25.0.0.
+// requests. Import it from `@ultimat3/core`: i18n's re-export was deleted in 25.0.0.
+//
+// Tier 0 rather than `@ultimat3/i18n`'s because `@ultimat3/ui`'s provider reflects `dir` onto
+// `<html>` from the locale it was handed, and reaching the i18n barrel for that one function put
+// the whole framework catalog into every browser chunk with a `UiProvider` in it (issue #490).
 
 export type Direction = 'ltr' | 'rtl';
 

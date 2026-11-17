@@ -1,8 +1,10 @@
 // Single responsibility: taking a credential away, at the three blast radii an incident actually
-// has — one person, one tenant, everything issued before an instant. `deleteOtherSessions` was the
-// only one of the three the seam could express, so "kill every session in this org, now" was a
-// per-user loop over an enumeration the adapter could not do, or a `TRUNCATE` that killed every
-// other tenant with it. Doing nothing meant thirty days, which is the absolute TTL.
+// has — one person, one tenant, everything issued before an instant.
+//
+// `deleteOtherSessions` was the only one of the three the seam could express, so "kill every
+// session in this org, now" was a per-user loop over an enumeration the adapter could not do, or a
+// `TRUNCATE` that killed every other tenant with it. Doing nothing meant thirty days, which is the
+// absolute TTL.
 
 import { logger } from '@ultimat3/core';
 import type { AuthUser } from './adapter';

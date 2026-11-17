@@ -6,14 +6,17 @@
 //   bun run scripts/new-package.ts seo --tier 1 --description "Metadata, sitemaps, robots"
 //   bun run scripts/new-package.ts seo --only CLAUDE.md      # fill in one missing contract file
 
+// why: existsSync — the target is a DIRECTORY, and `Bun.file().exists()` answers false for one;
+// readFileSync — the LICENSE text feeds a synchronous template list; `join` — Bun has no joiner.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeReferencePath } from '@ultimat3/cli';
-import { frameworkVersion } from '@ultimat3/core';
+import { frameworkVersion, renderFixShellArg } from '@ultimat3/core';
 // The leaf, not the CLI barrel: the floor the shipped `x` enforces, and what `x new` writes as an
 // app's `engines.bun` (`scaffold-repo.ts`) — the source `scripts/bun-pin.test.ts` reads it from.
 import { REQUIRED_BUN } from '../packages/cli/src/app-root';
 import { flagString, parseScriptArgs } from './lib/args';
+import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { ABOVE_TABLE, allowedTiersFor, TIER_OF, TIERS, tierOf } from './lib/tiers';
@@ -308,7 +311,7 @@ function readTier(raw: string | undefined, name: string, json: boolean): number 
           {
             code: 'X_CLI_BAD_FLAG',
             cause: problem,
-            fix: `bun run scripts/new-package.ts ${name} --tier 1`,
+            fix: `bun run scripts/new-package.ts ${renderFixShellArg(name, '<name>')} --tier 1`,
           },
         ],
       },
@@ -316,6 +319,22 @@ function readTier(raw: string | undefined, name: string, json: boolean): number 
     );
   }
   return raw === undefined ? tierOf(name) : Number.parseInt(raw, 10);
+}
+
+/**
+ * `--only` naming no template. ONE template in the command and the whole list in the cause: the
+ * list joined with `|` pasted as a pipeline, every path after the first run as a command.
+ */
+export function unknownTemplateFinding(
+  name: string,
+  only: string,
+  all: readonly { readonly path: string }[],
+): Finding {
+  return {
+    code: 'X_CLI_BAD_FLAG',
+    cause: `--only ${only} is not one of the package templates: ${all.map((file) => file.path).join(', ')}`,
+    fix: `bun run scripts/new-package.ts ${renderFixShellArg(name, '<name>')} --only ${renderFixShellArg(all[0]?.path, '<template>')}`,
+  };
 }
 
 if (import.meta.main) {
@@ -374,7 +393,7 @@ if (import.meta.main) {
           {
             code: 'X_GENERATE_CONFLICT',
             cause: `packages/${name} is already a directory`,
-            fix: `bun run scripts/new-package.ts ${name} --only README.md, or pick another name`,
+            fix: `bun run scripts/new-package.ts ${renderFixShellArg(name, '<name>')} --only README.md   # or pick another name`,
             at: `packages/${name}`,
           },
         ],
@@ -391,13 +410,7 @@ if (import.meta.main) {
         ok: false,
         script: 'new-package',
         summary: `no template named ${only ?? ''}`,
-        findings: [
-          {
-            code: 'X_CLI_BAD_FLAG',
-            cause: `--only ${only ?? ''} is not one of the package templates`,
-            fix: `bun run scripts/new-package.ts ${name} --only ${all.map((file) => file.path).join('|')}`,
-          },
-        ],
+        findings: [unknownTemplateFinding(name, only ?? '', all)],
       },
       args.json,
     );
@@ -422,7 +435,7 @@ if (import.meta.main) {
           {
             code: 'X_GENERATE_CONFLICT',
             cause: `${ROOT_TSCONFIG} does not read as a solution config with a "references" array, so packages/${name} is outside the build graph`,
-            fix: `add { "path": "./packages/${name}" } to the "references" array in ${ROOT_TSCONFIG}`,
+            fix: `{ "path": "./packages/${name}" }   // add to the "references" array in ${ROOT_TSCONFIG}`,
             at: ROOT_TSCONFIG,
           },
         ],

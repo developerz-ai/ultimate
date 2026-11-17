@@ -128,6 +128,25 @@ describe('unit · detail sections', () => {
       }),
     ).toThrow(/named in two sections groups/);
   });
+
+  test("the refusal's fix opens with the group's list minus the refused name, ready to paste", () => {
+    const fixOf = (run: () => unknown): string => {
+      try {
+        run();
+      } catch (error) {
+        return String((error as { fix?: unknown }).fix);
+      }
+      return expect.unreachable('the layout was accepted');
+    };
+    const fix = fixOf(() =>
+      admin({
+        admin_layout_notes: {
+          sections: [{ titleKey: 'x', fields: ['title', 'nope', 'slug'] }],
+        },
+      }),
+    );
+    expect(fix).toStartWith('fields: ["title", "slug"]   //');
+  });
 });
 
 describe('unit · form groups, hints and one-sided fields', () => {

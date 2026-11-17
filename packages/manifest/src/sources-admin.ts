@@ -1,8 +1,10 @@
 // The admins this process declared, as manifest facts. `@ultimat3/admin` is a tier above this
 // package and may not be imported, so its mount registry is read off the global symbol registry —
 // the same seam `@ultimat3/cli` mounts the screens through — and each admin is asked to describe
-// ITSELF. What comes back is `unknown` and is read field by field: a description this build does
-// not understand is skipped whole, never half-published.
+// ITSELF.
+//
+// What comes back is `unknown` and is read field by field: a description this build does not
+// understand is skipped whole, never half-published.
 
 import type {
   AdminActionFact,

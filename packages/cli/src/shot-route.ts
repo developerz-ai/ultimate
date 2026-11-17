@@ -3,6 +3,7 @@
 // `allowHosts` exists to refuse is refused here, at the argument, where the reader can see why.
 
 import { BadFlagError, MissingPositionalError } from './errors';
+import { quoteArg } from './shell-quote';
 
 /** A directory name a route can never escape: everything that is not a letter or digit is a dash. */
 export function shotSlug(route: string): string {
@@ -75,7 +76,7 @@ export function readRoute(raw: string | undefined): string {
       reason: `"${route}" is an absolute URL; x shot photographs a route of the app under test`,
       // The path out of the URL when it parses — the refusal's own fix line has to be runnable,
       // and `new URL('http://')` throws, so the fallback is the route every app has.
-      fix: `x shot ${pathOf(route)} --json`,
+      fix: `x shot ${quoteArg(pathOf(route))} --json`,
     });
   }
   const path = route.startsWith('/') ? route : `/${route}`;

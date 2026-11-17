@@ -64,7 +64,7 @@ const needPassword = (method: string): ReplicationFailedError =>
   new ReplicationFailedError({
     stage: 'auth',
     detail: `the server asked for ${method} but the replication URL carries no password`,
-    fix: 'put the credentials in the URL: postgres://user:password@host:5432/db',
+    fix: 'export REPLICATION_URL=postgres://<user>:<password>@<host>:5432/<db>   # the credentials in the URL',
   });
 
 /**
@@ -386,7 +386,7 @@ export class PgConnection {
           throw new ReplicationProtocolError({
             stage: 'auth',
             detail: `the server asked for authentication method ${method}, which this client does not speak`,
-            fix: 'set password_encryption = scram-sha-256 and give the replication role a password',
+            fix: "ALTER ROLE <role> PASSWORD '<password>'   -- after SET password_encryption = 'scram-sha-256' in the same session: the replication role needs a SCRAM password",
           });
       }
     }

@@ -1,9 +1,10 @@
 // Single responsibility: the two refusals an entity INVARIANT earns before its DDL exists — a name
 // that cannot be an identifier, and a predicate holding a second command. Split out of `errors.ts`
 // only because that file reached the 500-line ceiling; both carry `X_SQL_UNSAFE`, which
-// `DB_OWNED_ERROR_CODES` there still declares and registers. No new code, and none is needed: an
-// invariant name reaching a statement text is the same hazard a branch name or an isolation level
-// is, and axiom 1 says one situation gets one code.
+// `DB_OWNED_ERROR_CODES` there still declares and registers.
+//
+// No new code, and none is needed: an invariant name reaching a statement text is the same hazard a
+// branch name or an isolation level is, and axiom 1 says one situation gets one code.
 
 import { describeValue } from '@ultimat3/core';
 import { DbError } from './errors';

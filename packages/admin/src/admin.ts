@@ -202,7 +202,7 @@ function assertUniqueResourcePaths(basePath: string, resources: readonly AdminRe
           subject: 'resource',
           path: route.path,
           cause: `is already claimed by the resource "${owner}", so "${resource.name}" would be unreachable there`,
-          fix: `give one of them its own path: resources: { ${resource.name}: { path: '${resource.path}-2' } }`,
+          fix: `resources: { ${resource.name}: { path: '${resource.path}-2' } }   // give one of them its own path`,
         });
       }
       claimed.set(route.path, resource.name);
@@ -277,7 +277,7 @@ function assertBatchActions(
         field: `actions["${action.name}"].batch`,
         cause:
           "declares batch with no entity: the batch bar is a resource list's, and a global action belongs to none",
-        fix: `name the resource the batch runs over — { name: '${action.name}', entity: '<entity>', batch: true } — or drop batch`,
+        fix: `{ name: '${action.name}', entity: '<entity>', batch: true }   // name the resource the batch runs over — or drop batch`,
       });
     }
   }
@@ -288,7 +288,7 @@ function assertBatchActions(
         field: `actions["${action.name}"].matching`,
         cause:
           'declares matching without batch: "all matching" is an option of the batch bar, and this action is not in it',
-        fix: `add batch: true to { name: '${action.name}', … }, or drop matching`,
+        fix: `{ name: '${action.name}', batch: true, … }   // add batch beside matching — or drop matching`,
       });
     }
   }

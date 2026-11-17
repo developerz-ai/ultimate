@@ -131,7 +131,7 @@ export function requireSourceIcon(config: IconSourceConfig): string {
     throw new PwaIconMissingError(
       'no source icon: pwa.sourceIcon is unset, so no manifest icon can be generated and ' +
         'the app is not installable',
-      "add a 1024x1024 square PNG at assets/icon.png and set pwa.sourceIcon: 'assets/icon.png'",
+      "planIcons({ sourceIcon: 'apps/web/site/icon.png' })   // a 1024x1024 square PNG — under x build, that file is the source",
     );
   }
   return source;

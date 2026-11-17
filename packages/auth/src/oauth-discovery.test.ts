@@ -167,7 +167,9 @@ describe('every way the document can fail to describe an OP', () => {
     const error = thrown instanceof AuthError ? thrown : null;
     expect(error?.code).toBe('X_OAUTH_EXCHANGE_FAILED');
     expect(error?.cause).toContain('not a JSON object');
-    expect(error?.fix).toContain('not a login page');
+    expect(error?.fix).toStartWith(
+      'curl -sS -m 5 -i https://sso.bigco.test/.well-known/openid-configuration ',
+    );
   });
 
   test.each(['issuer', 'authorization_endpoint', 'token_endpoint'])(

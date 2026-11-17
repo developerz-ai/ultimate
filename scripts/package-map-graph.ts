@@ -16,8 +16,9 @@
 //
 //   bun run scripts/package-map-graph.ts [--json]
 
-// `node:` — Bun has no path-join primitive of its own.
+// why: Bun has no path-join primitive of its own.
 import { join } from 'node:path';
+import { renderFixShellArg } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -248,7 +249,7 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
     return [
       unscanned(
         `${PACKAGE_MAP} could not be read, so no arrow was checked`,
-        `restore ${PACKAGE_MAP}, or point PACKAGE_MAP in scripts/package-map-graph.ts at the page that draws the graph`,
+        `git log -p -- ${renderFixShellArg(PACKAGE_MAP, '<package map>')}   # restore it from history, or point PACKAGE_MAP in scripts/package-map-graph.ts at the page that draws the graph`,
       ),
     ];
   }
@@ -257,7 +258,7 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
     return input.unreadable.map((at) =>
       unscanned(
         `${at} could not be read as a JSON manifest, so the dependencies behind every arrow out of that package are unknown and no arrow was checked`,
-        `repair the manifest at ${at} — \`bun -e 'await Bun.file("<path>").json()'\` prints the parse error and its offset for one file, and \`bun run scripts/list-workspaces.ts --json\` names every manifest this rule reads`,
+        `bun -e 'await Bun.file("${renderFixShellArg(at, '<path>')}").json()'   # prints the parse error and its offset: repair the manifest there — bun run scripts/list-workspaces.ts --json names every manifest this rule reads`,
         at,
       ),
     );
@@ -266,7 +267,7 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
     return [
       unscanned(
         'no packages/*/package.json was read, so every arrow would have been unbacked',
-        'run `bun run scripts/package-map-graph.ts` from the repo root',
+        'bun run scripts/package-map-graph.ts   # from the repo root',
         'scripts/package-map-graph.ts',
       ),
     ];
@@ -276,14 +277,14 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
     return [
       unscanned(
         `${PACKAGE_MAP} holds ${String(graph.blocks)} \`\`\`mermaid block(s) and ${String(graph.edges.length)} \`a --> b\` edge(s), so this rule read nothing`,
-        `draw the dependency graph in a \`\`\`mermaid fence in ${PACKAGE_MAP}, one \`a --> b\` per line`,
+        `git log -p -- ${renderFixShellArg(PACKAGE_MAP, '<package map>')}   # restore, or draw, the dependency graph in a \`\`\`mermaid fence there, one \`a --> b\` per line`,
       ),
     ];
   }
   const findings: Finding[] = graph.unreadable.map((entry) =>
     unscanned(
       `${PACKAGE_MAP}:${String(entry.line)} holds a mermaid link this rule cannot read: ${entry.text.trim()}`,
-      `rewrite ${PACKAGE_MAP}:${String(entry.line)} as \`a --> b\`, one edge per line — that is the only form scripts/package-map-graph.ts reads`,
+      `edit ${PACKAGE_MAP}:${String(entry.line)} — rewrite it as \`a --> b\`, one edge per line: that is the only form scripts/package-map-graph.ts reads`,
       `${PACKAGE_MAP}:${String(entry.line)}`,
     ),
   );
@@ -297,7 +298,7 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
       findings.push({
         code: 'X_DOC_PACKAGE_GRAPH_STALE',
         cause: `${at} draws ${edge.from} --> ${edge.to}, and packages/${unknown} is not a workspace`,
-        fix: `delete the \`${edge.from} --> ${edge.to}\` line at ${at}, or rename ${unknown} to a directory that exists under packages/ — \`bun run scripts/list-workspaces.ts --json\` lists them`,
+        fix: `edit ${PACKAGE_MAP}:${String(edge.line)} — delete the \`${edge.from} --> ${edge.to}\` line, or rename ${unknown} to a directory that exists under packages/: \`bun run scripts/list-workspaces.ts --json\` lists them`,
         at,
       });
       continue;
@@ -306,7 +307,7 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
     findings.push({
       code: 'X_DOC_PACKAGE_GRAPH_STALE',
       cause: `${at} draws ${edge.from} --> ${edge.to}, and packages/${edge.from}/package.json declares no dependency on ${to.name}`,
-      fix: `delete the \`${edge.from} --> ${edge.to}\` line at ${at}; if the dependency is the missing half instead, add "${to.name}": "${to.version}" to dependencies in packages/${edge.from}/package.json and re-run \`bun install\``,
+      fix: `edit ${PACKAGE_MAP}:${String(edge.line)} — delete the \`${edge.from} --> ${edge.to}\` line; if the dependency is the missing half instead, add "${to.name}": "${to.version}" to dependencies in packages/${edge.from}/package.json and re-run \`bun install\``,
       at,
     });
   }
@@ -315,7 +316,7 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
     findings.push({
       code: 'X_DOC_PACKAGE_GRAPH_STALE',
       cause: `${workspace.name} publishes and ${PACKAGE_MAP} draws no node for it`,
-      fix: `add \`${workspace.dir}\` to the tier-${String(workspace.tier)} subgraph in ${PACKAGE_MAP}, with an arrow per dependency in packages/${workspace.dir}/package.json`,
+      fix: `grep -n 'subgraph' ${PACKAGE_MAP}   # add \`${workspace.dir}\` to the tier-${String(workspace.tier)} subgraph, with an arrow per dependency in packages/${workspace.dir}/package.json`,
       at: PACKAGE_MAP,
     });
   }
@@ -326,7 +327,7 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
     findings.push(
       unscanned(
         `${PACKAGE_MAP} holds no \`${PACKAGE_TABLE_HEADING}\` table row, so no package's row was checked`,
-        `restore the \`${PACKAGE_TABLE_HEADING}\` heading in ${PACKAGE_MAP} with one \`| \`name\` | tier | … |\` row per package, or point PACKAGE_TABLE_HEADING in scripts/package-map-graph.ts at the heading that carries them`,
+        `git log -p -- ${renderFixShellArg(PACKAGE_MAP, '<package map>')}   # restore the \`${PACKAGE_TABLE_HEADING}\` heading with one \`| \`name\` | tier | … |\` row per package, or point PACKAGE_TABLE_HEADING in scripts/package-map-graph.ts at the heading that carries them`,
       ),
     );
     return findings;
@@ -339,7 +340,7 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
       findings.push({
         code: 'X_DOC_PACKAGE_GRAPH_STALE',
         cause: `${workspace.name} publishes and ${PACKAGE_MAP}'s \`${PACKAGE_TABLE_HEADING}\` table carries no row for it`,
-        fix: `add a \`| \`${workspace.dir}\` | ${String(workspace.tier)} | … |\` row to the \`${PACKAGE_TABLE_HEADING}\` table in ${PACKAGE_MAP}`,
+        fix: `grep -n '${PACKAGE_TABLE_HEADING}' ${PACKAGE_MAP}   # add a \`| \`${workspace.dir}\` | ${String(workspace.tier)} | … |\` row to that table`,
         at: PACKAGE_MAP,
       });
       continue;
@@ -350,7 +351,7 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
     findings.push({
       code: 'X_DOC_PACKAGE_GRAPH_STALE',
       cause: `${PACKAGE_MAP}:${String(row.line)} puts ${workspace.dir} at tier ${row.tier === undefined ? 'no stated tier' : String(row.tier)}, and scripts/lib/tiers.ts puts it at ${String(workspace.tier)}`,
-      fix: `set the tier cell at ${PACKAGE_MAP}:${String(row.line)} to ${String(workspace.tier)}, or move ${workspace.dir} in scripts/lib/tiers.ts — the executable table is the one \`bun run boundaries\` enforces`,
+      fix: `edit ${PACKAGE_MAP}:${String(row.line)} — set the tier cell to ${String(workspace.tier)}, or move ${workspace.dir} in scripts/lib/tiers.ts — the executable table is the one \`bun run boundaries\` enforces`,
       at: `${PACKAGE_MAP}:${String(row.line)}`,
     });
   }
@@ -360,7 +361,7 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
     findings.push({
       code: 'X_DOC_PACKAGE_GRAPH_STALE',
       cause: `${PACKAGE_MAP}:${String(row.line)} carries a row for ${row.dir}, and packages/${row.dir} is not a workspace`,
-      fix: `delete the row at ${PACKAGE_MAP}:${String(row.line)}, or rename ${row.dir} to a directory that exists under packages/ — \`bun run scripts/list-workspaces.ts --json\` lists them`,
+      fix: `edit ${PACKAGE_MAP}:${String(row.line)} — delete the row, or rename ${row.dir} to a directory that exists under packages/: \`bun run scripts/list-workspaces.ts --json\` lists them`,
       at: `${PACKAGE_MAP}:${String(row.line)}`,
     });
   }

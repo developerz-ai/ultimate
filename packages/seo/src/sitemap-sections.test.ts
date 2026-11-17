@@ -309,6 +309,8 @@ describe('sectionOf', () => {
     expect(sectionOf('/precios', sections)).toBe('precios');
     expect(sectionOf('/precios/', sections)).toBe('precios');
     expect(sectionOf('/precios?plan=a', sections)).toBe('precios');
+    expect(sectionOf('/precios#faq', sections)).toBe('precios');
+    expect(sectionOf('/precios/?a=1#b?c', sections)).toBe('precios');
     expect(sectionOf('/', sections)).toBe('pages');
   });
 });

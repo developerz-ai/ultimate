@@ -32,7 +32,7 @@ async function scss(file: string): Promise<string> {
 /** Extract a flat `$name: ( key: value, ... );` map from SCSS source text. */
 function parseScssMap(source: string, name: string): Record<string, string> {
   const block = new RegExp(`\\$${name}:\\s*\\(([\\s\\S]*?)\\n\\);`).exec(source);
-  if (!block?.[1]) throw new Error(`map $${name} not found in SCSS source`);
+  if (!block?.[1]) return expect.unreachable(`map $${name} not found in SCSS source`);
   const out: Record<string, string> = {};
   for (const raw of block[1].split('\n')) {
     const line = raw

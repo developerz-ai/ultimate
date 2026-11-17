@@ -1,9 +1,10 @@
 /**
  * A locale in the URL, against the APP's configured locales: how a leading `/<locale>/` segment is
- * split off a pathname, and how a path is spelled in a locale. The arithmetic is core's
- * (`locale-path.ts`, tier 0 so a browser chunk can spell a link without this barrel); this file
- * supplies the routed locales and the default, so `@ultimat3/http` routes, `@ultimat3/render` hands
- * `meta` and the prerender writes files from one answer.
+ * split off a pathname, and how a path is spelled in a locale.
+ *
+ * The arithmetic is core's (`locale-path.ts`, tier 0 so a browser chunk can spell a link without
+ * this barrel); this file supplies the routed locales and the default, so `@ultimat3/http` routes,
+ * `@ultimat3/render` hands `meta` and the prerender writes files from one answer.
  */
 
 import { type LocalePathSplit, localizePath, splitLocalePath } from '@ultimat3/core';

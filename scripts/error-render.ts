@@ -444,11 +444,13 @@ const CAUSE: Readonly<Record<UnsafeKind, string>> = {
 };
 
 export function unsafeRenderFindingFor(unsafe: UnsafeRender): Finding {
-  const render = unsafe.field === 'cause' ? 'renderCauseValue' : 'renderFixLiteral';
   return {
     code: 'X_ERROR_RENDER_UNSAFE',
     cause: `${unsafe.file}:${unsafe.line} builds its ${unsafe.field}: from "${unsafe.binding}", typed unknown, ${CAUSE[unsafe.kind]} — the constructor would throw instead of the error`,
-    fix: `wrap it: ${render}(${unsafe.binding}${unsafe.field === 'fix' ? ", '<placeholder>'" : ''}) from @ultimat3/core, at ${unsafe.file}:${unsafe.line}`,
+    fix:
+      unsafe.field === 'cause'
+        ? `renderCauseValue(${unsafe.binding})   // from @ultimat3/core, wrapping the value at ${unsafe.file}:${unsafe.line}`
+        : `renderFixLiteral(${unsafe.binding}, '<placeholder>')   // from @ultimat3/core, wrapping the value at ${unsafe.file}:${unsafe.line}`,
     at: `${unsafe.file}:${unsafe.line}`,
   };
 }

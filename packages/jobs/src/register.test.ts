@@ -379,7 +379,7 @@ describe('an action projection is refused by name, never skipped in silence', ()
   test('the refusal names the export and the bridge that fixes it', () => {
     try {
       registerJobs({ publishPost: actionProjection });
-      throw new Error('expected a refusal');
+      expect.unreachable('expected a refusal');
     } catch (error) {
       if (!(error instanceof UltimateError)) throw error;
       expect(error.cause).toContain('publishPost');

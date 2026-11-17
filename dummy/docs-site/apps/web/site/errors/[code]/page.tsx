@@ -1,6 +1,6 @@
-// One page per `X_*` code: `/errors/X_DB_DRIFT` is its row in `wiki/Error-Codes.md` — what it
-// means, the typical cause, the fix — under the column headers the wiki table itself carries. A
-// code two sections describe shows both rows. The URL an error's `docs:` can point at, one day.
+// One page per `X_*` code: `/errors/X_DB_DRIFT` is its row on its owner's page,
+// `wiki/Error-Codes-db.md` — what it means, the typical cause, the fix — under the column headers
+// the wiki table itself carries. A code with two rows shows both. The URL an error's `docs:` can point at, one day.
 
 import { clipText, plainText, siblingPath } from '@docs-site/docs-source';
 import { useT } from '@docs-site/i18n';
@@ -29,7 +29,7 @@ export const config = defineRoute({
       piece !== undefined,
       'X_NOT_FOUND',
       `no page is built for ${code}`,
-      'bunx x errors explain X_DB_DRIFT --json   # a code has a page once wiki/Error-Codes.md has its row',
+      'bunx x errors explain X_DB_DRIFT --json   # a code has a page once its wiki/Error-Codes-<owner>.md has its row',
     );
     return piece;
   },

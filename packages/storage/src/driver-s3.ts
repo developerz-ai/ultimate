@@ -1,6 +1,7 @@
 // Single responsibility: the production disk over Bun's native S3 client. One driver covers AWS,
 // Cloudflare R2 and any S3-compatible gateway — the difference is `endpoint`, `region` and
 // `forcePathStyle`, nothing else.
+//
 // The client is built lazily on first use so importing this module never opens a socket, and
 // credentials arrive as env var NAMES: a literal key in app.config.ts is a key in git.
 
@@ -394,7 +395,9 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
           safe,
           error,
           // `isSafeKey` admits `$(…)`, a backtick and `;` — legal key bytes, live shell syntax.
-          `grant s3:DeleteObject on this prefix to the app's role, then reproduce with the provider's own words: aws s3api delete-object --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")} --key ${renderFixShellArg(safe, "'<key>'")}`,
+          // Never a delete-object to "reproduce" it: run with a credential that CAN delete, it
+          // deletes a real object. The grant is the fix, and it changes no data.
+          `{ "Effect": "Allow", "Action": "s3:DeleteObject", "Resource": "arn:aws:s3:::${options.bucket}/*" }   // add to the app's role: the provider refused the delete the cause names`,
         );
       }
     },

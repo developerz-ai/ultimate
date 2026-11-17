@@ -1,8 +1,10 @@
-// `x tasks [list|show <name>]` — introspect scheduled cron tasks: cadence, timezone, the jobs
-// each enqueues, the occurrence the scheduler LAST dispatched (off the queue's own record) and
-// real next-occurrence instants from `@ultimat3/time`'s cron math instead of an agent reading
-// `0 3 * * *` and guessing. CLI wiring only; the pure computation lives in `tasks-facts.ts` — the
-// same split `cmd-jobs.ts` makes against `jobs-report.ts`.
+// `x tasks [list|show <name>]` — introspect scheduled cron tasks: cadence, timezone, enqueued
+// jobs, last dispatch and real next occurrences. CLI wiring only (`tasks-facts.ts`).
+//
+// The last dispatch is read off the queue's own record, and the next occurrences are real instants
+// from `@ultimat3/time`'s cron math instead of an agent reading `0 3 * * *` and guessing. The
+// pure computation lives in `tasks-facts.ts` — the same split `cmd-jobs.ts` makes against
+// `jobs-report.ts`.
 
 import { nearestName, systemClock } from '@ultimat3/core';
 import type { JobDriver, TaskFire, TaskHandle } from '@ultimat3/jobs';

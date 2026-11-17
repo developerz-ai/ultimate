@@ -2,10 +2,11 @@
 // X_CATALOG_MISSING_KEYS and X_CATALOG_INVALID fix line already names. CLI wiring only: the
 // facts come from `i18n-audit.ts`, the audit itself from `@ultimat3/i18n`'s own `auditCatalogs`.
 
-// `node:` and not Bun: Bun has no exclusive-create write, and `open(path, 'wx')` is the only one
-// there is — `Bun.write` overwrites, so an existence check before it is a race a second `x i18n
-// add` wins. `mkdir` comes with it because `open` does not create the parent directory `Bun.write`
-// would, and `node:path` because Bun exposes no path API to build what either of them takes.
+// why: `node:` and not Bun: Bun has no exclusive-create write, and `open(path, 'wx')` is the only
+// one there is — `Bun.write` overwrites, so an existence check before it is a race a second
+// `x i18n add` wins. `mkdir` comes with it because `open` does not create the parent directory
+// `Bun.write` would, and `node:path` because Bun exposes no path API to build what either of them
+// takes.
 import { type FileHandle, mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { DEFAULT_LOCALE, stringField } from '@ultimat3/core';
@@ -38,6 +39,7 @@ import {
 } from './i18n-registration';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
+import { quoteArg } from './shell-quote';
 import { renderTable } from './table';
 import { catalogPath, resolveLocales } from './templates/locales';
 
@@ -104,7 +106,7 @@ function requireLocalePositional(ctx: CommandContext, sub: string): string {
 function resolveOneLocale(ctx: CommandContext, sub: string): string {
   const raw = requireLocalePositional(ctx, sub);
   const resolved = resolveLocales([raw], {
-    fix: `x i18n ${sub} es`,
+    fix: `x i18n ${quoteArg(sub)} es`,
     command: 'i18n',
     flag: 'locale',
   });
@@ -315,7 +317,7 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
       flag: 'locale',
       command: 'i18n',
       reason: `no catalog for "${locale}" at ${catalogPath(locale)}`,
-      fix: `x i18n add ${locale}`,
+      fix: `x i18n add ${quoteArg(locale)}`,
     });
   }
 

@@ -248,6 +248,9 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
       const serving = runtime;
       await until(() => busLabel(serving.transport) === 'nats(up)', 90);
       expect(busLabel(serving.transport)).toBe('nats(up)');
+      // The line is said once the server HOLDS the re-sent subscriptions (31.30.0): a flush after
+      // the label moves, so it is awaited — never read on the label's tick.
+      await until(() => announced.length === 1, 10);
       expect(announced).toEqual([{ bus: 'nats(up)', use: 'publish' }]);
       expect(await publish()).toBeUndefined();
       await until(() => heard.length === 1, 10);
@@ -274,6 +277,7 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
       await until(() => busLabel(serving.transport) === 'nats(up)', 90);
       expect(busLabel(serving.transport)).toBe('nats(up)');
       // Said again: one line per recovery, so a log shows when each outage ended.
+      await until(() => announced.length === 2, 10);
       expect(announced).toEqual([
         { bus: 'nats(up)', use: 'publish' },
         { bus: 'nats(up)', use: 'publish' },

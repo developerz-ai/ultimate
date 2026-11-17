@@ -1,5 +1,6 @@
 // Every package that touches the AsyncLocalStorage seam, bundled for the browser and evaluated —
 // the end property, not the mechanism, one place for the whole repo.
+// slow: a real Bun.build per package entry, then an evaluation of each bundle — the property is the built output, so no stub stands in.
 //
 // The guard in `scripts/async-context-guard.ts` reads source for `new AsyncLocalStorage()` at
 // module scope and documents two blind spots it cannot see: `await import('node:async_hooks')`,
@@ -408,7 +409,7 @@ describe.each([...CLIENT_BARRELS])('the client barrel @ultimat3/%s', (name) => {
  * The other half of the split, and the reason the line above is a CONTRACT rather than a bundler's
  * discretion: `@ultimat3/render/server` still cannot be bundled for the browser, and for exactly
  * the reason the whole `"."` barrel could not until 2026-08-22 —
- * `packages/render/src/css-modules.ts:9` imports `fileURLToPath` and `pathToFileURL` from
+ * `packages/render/src/css-modules.ts` imports `fileURLToPath` and `pathToFileURL` from
  * `node:url`, which Bun's browser polyfill exports neither of.
  *
  * Non-vacuity for `'render'`'s entry in `CLIENT_BARRELS`: without this, a client barrel that

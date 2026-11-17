@@ -1,8 +1,9 @@
-// A route whose `Page` is an `async` function and which declares no `load`. It renders — the
-// renderer awaits whatever the component returns — so no suite fails on it, and its data read
-// silently skips everything `load` is for: the route's cache, `meta` computed from the data, the
-// streaming boundary and the measurement render `x build` weighs. The social demo shipped eleven
-// (plan 101 slice 11 l); nothing asked.
+// A route whose `Page` is an `async` function and which declares no `load`, refused.
+//
+// It renders — the renderer awaits whatever the component returns — so no suite fails on it, and
+// its data read silently skips everything `load` is for: the route's cache, `meta` computed from
+// the data, the streaming boundary and the measurement render `x build` weighs. The social demo
+// shipped eleven (plan 101 slice 11 l); nothing asked.
 
 import type { RouteEntry } from '@ultimat3/render';
 import { routeEntries } from '@ultimat3/render';
@@ -16,7 +17,7 @@ export function asyncPageFinding(file: string): Finding {
   return {
     code: 'X_ROUTE_ASYNC_PAGE',
     cause: `${file} exports an async Page, so its data read bypasses load's caching and meta`,
-    fix: `in ${file}: move each await in Page into export const load = (ctx) => …, and read it with the page's data prop`,
+    fix: `export const load = (ctx) => …   // in ${file}: move each await in Page here, and read it with the page's data prop`,
     at: file,
   };
 }

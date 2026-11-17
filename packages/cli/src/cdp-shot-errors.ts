@@ -1,9 +1,11 @@
-// The four ways `x shot`'s raw-CDP page refuses a verb. A browser that is
-// missing, dies or never answers is `@ultimat3/testing`'s `X_CDP_*` — the wire is the same one the
-// e2e driver runs on. These four are what only a shot can be wrong about: which host it may open,
-// which element it was pointed at, and which key it was asked to press. Their codes and titles are
-// registered with every other CLI code, in `error-codes.ts` — never a second registration here.
-import { renderCauseValue, UltimateError } from '@ultimat3/core';
+// The four ways `x shot`'s raw-CDP page refuses a verb.
+//
+// A browser that is missing, dies or never answers is `@ultimat3/testing`'s `X_CDP_*` — the wire is
+// the same one the e2e driver runs on. These four are what only a shot can be wrong about: which
+// host it may open, which element it was pointed at, and which key it was asked to press. Their
+// codes and titles are registered with every other CLI code, in `error-codes.ts` — never a second
+// registration here.
+import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
 
 /** A navigation to a host the run did not allow. Refused before a byte leaves. */
 export class ShotHostRefusedError extends UltimateError {
@@ -27,7 +29,7 @@ export class ShotElementMissingError extends UltimateError {
     super({
       code: 'X_SHOT_ELEMENT_MISSING',
       cause: `nothing on ${renderCauseValue(input.url)} matched ${renderCauseValue(input.selector)} within ${String(input.timeoutMs)}ms`,
-      fix: 'run ui.inspect on the route first and copy a selector it reports with count >= 1',
+      fix: '{ "route": "<the route>", "selectors": ["main", "button"] }   // ui.inspect\'s input: copy a selector it reports with count >= 1',
       meta: { selector: input.selector },
     });
   }
@@ -43,7 +45,7 @@ export class ShotElementUnreadyError extends UltimateError {
     super({
       code: 'X_SHOT_ELEMENT_UNREADY',
       cause: `${renderCauseValue(input.selector)} was still ${renderCauseValue(input.problem)} after ${String(input.timeoutMs)}ms`,
-      fix: 'run ui.inspect with the selector and "a11y": true to see what covers or disables it, then act on that element first',
+      fix: `{ "route": "<the route>", "selectors": [${renderFixLiteral(input.selector, '"<selector>"')}], "a11y": true }   // ui.inspect's input: see what covers or disables it, then act on that element first`,
       meta: { selector: input.selector, problem: input.problem },
     });
   }
@@ -55,7 +57,7 @@ export class ShotKeyInvalidError extends UltimateError {
     super({
       code: 'X_SHOT_KEY_INVALID',
       cause: `the key chord ${renderCauseValue(input.chord)} ${input.reason}`,
-      fix: "spell it as modifiers then one key, in the browser's names: 'Meta+K', 'Control+Enter', 'Shift+Tab', 'Escape'",
+      fix: "{ press: 'Meta+K' }   // modifiers then one key, in the browser's names — or 'Control+Enter', 'Shift+Tab', 'Escape'",
       meta: { chord: input.chord },
     });
   }

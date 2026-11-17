@@ -1,8 +1,10 @@
 // `job.concurrency` as DECLARED, resolved once: a plain number is one cap for the whole job, and
 // `{ key, limit, whenBusy }` is that cap per key — "at most N runs of this job for this account,
-// fleet-wide". Apart from `job.ts` because that file is the primitive and its registry; this one
-// is the single reader of the two spellings, so the worker and the projections never branch on
-// which one an author wrote.
+// fleet-wide".
+//
+// Apart from `job.ts` because that file is the primitive and its registry; this one is the single
+// reader of the two spellings, so the worker and the projections never branch on which one an
+// author wrote.
 
 import type { ConcurrencyKeyDefect } from './errors-concurrency';
 import { JobConcurrencyInvalidError, JobConcurrencyKeyInvalidError } from './errors-concurrency';

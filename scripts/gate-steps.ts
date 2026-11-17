@@ -88,14 +88,14 @@ const GATE_CONTEXT =
 const SUBSET_SPANS =
   /\bpinned(?:\s+red)?\s+on\s+\d+\s+steps?\b|\b\d+\s+steps?\s+(?:pinned|skipped)\b/gi;
 
-const WORD_NUMBERS: Readonly<Record<string, number>> = {
+const WORD_NUMBERS: Readonly<Record<string, number>> = Object.assign(Object.create(null), {
   fifteen: 15,
   sixteen: 16,
   seventeen: 17,
   eighteen: 18,
   nineteen: 19,
   twenty: 20,
-};
+} satisfies Record<string, number>);
 
 /** `N of M steps` — the gate's own summary format. `M` is the total; `N` may never exceed it. */
 const OF_TOTAL = /\b(\d+)\s+of\s+(\d+)\s+steps\b/g;
@@ -170,7 +170,8 @@ export interface StepInput {
 function stepPattern(steps: readonly string[]): RegExp {
   const alternation = [...steps]
     .sort((a, b) => b.length - a.length)
-    .map((name) => name.replace(/[-]/g, '\\-'))
+    // Every regex metacharacter, the backslash first: a step name is data, never a pattern.
+    .map((name) => name.replace(/[\\^$.*+?()[\]{}|-]/g, '\\$&'))
     .join('|');
   return new RegExp(`\\b(?:${alternation})\\b`, 'g');
 }
@@ -375,7 +376,7 @@ export function gateStepFinding(gap: StepGap, steps: readonly string[]): Finding
       code: 'X_DOC_GATE_STEPS_UNSCANNED',
       cause: gap.detail,
       // A literal path, not an interpolation: the fix-line rule reads these statically.
-      fix: 'edit STEP_GLOBS in scripts/gate-steps.ts so it matches the pages that state a step count',
+      fix: "grep -n 'STEP_GLOBS' scripts/gate-steps.ts   # edit it so it matches the pages that state a step count",
       at: 'scripts/gate-steps.ts',
     };
   }
@@ -390,7 +391,7 @@ export function gateStepFinding(gap: StepGap, steps: readonly string[]): Finding
   return {
     code: 'X_DOC_GATE_STEPS_STALE',
     cause: `${gap.at} writes "${gap.quote}" and ${gap.detail}`,
-    fix: `set the count at ${gap.at} to ${steps.length}; run \`bun run scripts/gate-steps.ts --json\` to re-derive it`,
+    fix: `bun run scripts/gate-steps.ts --json   # re-derives it: set the count at ${gap.at} to ${steps.length}`,
     at: gap.at,
   };
 }

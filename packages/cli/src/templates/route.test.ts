@@ -10,7 +10,7 @@ const pathsFor = (path: string, surface: 'site' | 'app' = 'app'): readonly strin
 
 const contentsOf = (path: string, suffix: string): string => {
   const file = routeFiles(path, { surface: 'app' }).find((entry) => entry.path.endsWith(suffix));
-  if (file === undefined) throw new Error(`no ${suffix} generated for ${path}`);
+  if (file === undefined) return expect.unreachable(`no ${suffix} generated for ${path}`);
   return String(file.contents);
 };
 
