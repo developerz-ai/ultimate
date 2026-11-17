@@ -74,8 +74,10 @@ export const generatorName = (kind: string): string => `smoke-${kind.replace(/:/
  */
 const READ_A_SLICE: ReadonlySet<string> = READS_A_TABLE;
 /**
- * `action`/`mutator` with no `--feature` and no slice of their name are `X_FEATURE_REQUIRED` too
- * (31.40.0): their bare step runs into the resource's slice, beside `SECOND_SHAPES`' named ones.
+ * `action`/`mutator` with no `--feature` and no slice of their name are `X_FEATURE_REQUIRED`
+ * (31.40.0), so they have no bare step: `SECOND_SHAPES` runs each, named, into both slices. A third
+ * into the resource's slice would add a handler no generated test reaches (its policy reads as an
+ * author's), and the scaffold's own coverage floor would be the step that went red.
  */
 const NEEDS_A_SLICE: ReadonlySet<string> = ENFORCES_A_PERMISSION;
 const RESOURCE_SLICE = generatorName('resource');
@@ -175,7 +177,8 @@ export const firstRunPlan = (
   ...GENERATORS.filter(
     (kind) =>
       !(options.signedIn === true && kind === 'sign-in') &&
-      !(options.invited === true && kind === 'invite'),
+      !(options.invited === true && kind === 'invite') &&
+      !NEEDS_A_SLICE.has(kind),
   ).map((kind) => ({
     name: `g ${kind}`,
     // An app has one sign-in, named by the flag that picks its shape and never by a `<name>`, and
@@ -191,9 +194,7 @@ export const firstRunPlan = (
               'g',
               kind,
               generatorName(kind),
-              ...(READ_A_SLICE.has(kind) || NEEDS_A_SLICE.has(kind)
-                ? ['--feature', RESOURCE_SLICE]
-                : []),
+              ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
               '--json',
             ],
   })),

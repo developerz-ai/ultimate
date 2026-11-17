@@ -70,11 +70,19 @@ const stepsAmong = (wanted: readonly string[]): readonly string[] =>
 describe('firstRunPlan', () => {
   // The defect was four of THIRTEEN generators, so a sample would likely have missed it. This is
   // what makes a new generator covered the day it lands.
-  test('invokes every generator the CLI registry declares, exactly once', () => {
-    const invoked = firstRunPlan()
+  // was: "invokes every generator the CLI registry declares, exactly once"
+  // `action`/`mutator` need a `--feature` since 31.40.0, so they run only as named steps: every kind
+  // is still reached, and every bare step is still one per kind.
+  test('invokes every generator the CLI registry declares, each bare step once', () => {
+    const plan = firstRunPlan();
+    const reached = new Set(
+      plan.filter((step) => step.args[0] === 'g').map((step) => step.args[1]),
+    );
+    expect([...reached].sort()).toEqual([...GENERATORS].sort());
+    const bare = plan
       .filter((step) => step.name === `g ${step.args[1]}`)
       .map((step) => step.args[1]);
-    expect([...invoked].sort()).toEqual([...GENERATORS].sort());
+    expect(new Set(bare).size).toBe(bare.length);
   });
 
   // An app has one sign-in and names it by a flag, never a `<name>`: `g sign-in smoke-sign-in` is
