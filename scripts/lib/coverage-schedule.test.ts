@@ -6,6 +6,7 @@ import { unitFailure } from '../coverage-gate';
 import {
   concurrency,
   FILES_PER_WORKER,
+  lastTestLines,
   leasePool,
   serviceKeys,
   UNIT_SECONDS,
@@ -13,6 +14,7 @@ import {
   unitEnv,
   unitTimeoutOf,
   unitWeight,
+  unreportedFiles,
   workersFor,
 } from './coverage-schedule';
 import { unitsToGate } from './coverage-units';
@@ -232,4 +234,41 @@ describe('unit · a unit deadline under the CI job', () => {
     expect(unitTimeoutOf('540')).toBe(540_000);
     for (const bad of ['0', '-5', '1.5', 'ten', '']) expect(unitTimeoutOf(bad)).toBeUndefined();
   });
+});
+
+// A unit killed at its deadline printed only "did not finish": the stalled test, the last line
+// before the stall, was in the output and dropped (cli on #1217, 2026-11-17).
+test('unit · a timed-out unit names the last tests it reached, newest last', () => {
+  const output = [
+    'packages/cli/src/a.test.ts:',
+    '(pass) a > one [1.00ms]',
+    'noise',
+    'packages/cli/src/b.test.ts:',
+    '(pass) b > two [2.00ms]',
+    '(skip) b > three',
+    '',
+  ].join('\n');
+  expect(lastTestLines(output, 3)).toEqual([
+    'packages/cli/src/b.test.ts:',
+    '(pass) b > two [2.00ms]',
+    '(skip) b > three',
+  ]);
+  expect(lastTestLines('', 3)).toEqual([]);
+  const failure = unitFailure('cli', { code: null, output, timedOut: true }, 450_000);
+  expect(failure?.cause).toContain('(skip) b > three');
+});
+
+// Under --parallel bun prints a file's block as it reports, so at the deadline the files that
+// never printed are the ones still loading or running — the hung one among them. A module whose
+// top-level await never settles is past every per-test timeout (cli, 2026-11-17).
+test('unit · a timed-out unit lists the files that never reported', () => {
+  const output = '::group::packages/cli/src/a.test.ts:\n(pass) a\npackages/cli/src/b.test.ts:\n';
+  const files = [
+    'packages/cli/src/a.test.ts',
+    'packages/cli/src/b.test.ts',
+    'packages/cli/src/c.test.ts',
+  ];
+  expect(unreportedFiles(output, files)).toEqual(['packages/cli/src/c.test.ts']);
+  const failure = unitFailure('cli', { code: null, output, timedOut: true }, 450_000, files);
+  expect(failure?.cause).toContain('never reported: packages/cli/src/c.test.ts');
 });

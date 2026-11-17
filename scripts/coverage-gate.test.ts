@@ -13,13 +13,12 @@ import {
   judge,
   scopeLcov,
   suiteFailure,
-  UNIT_TIMEOUT_MS,
   unimportedSources,
   unitFailure,
   withUnloadedCounted,
 } from './coverage-gate';
 import { COVERAGE_PINS, COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
-import { unitWeight } from './lib/coverage-schedule';
+import { UNIT_TIMEOUT_MS, unitWeight } from './lib/coverage-schedule';
 import {
   COVERAGE_GATE_FLAGS,
   SCRIPTS_UNIT,
