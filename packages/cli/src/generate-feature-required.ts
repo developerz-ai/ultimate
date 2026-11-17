@@ -1,8 +1,7 @@
-// `x g query`, `backfill`, `export-rows` and `import-rows` read a table, so a slice with no
-// `entity.ts` is refused rather than handed one: `x g query order` wrote 14 files and `next: x db
-// gen "create orders"`. Only `x g entity` and `x g resource` create a feature's data. And `x g
-// action` / `mutator` enforce a permission, so with no slice to write into they are refused rather
-// than handed a new subject: only `x g policy` and `x g resource` create one (D13).
+// `X_FEATURE_REQUIRED`: a generator refused when its slice lacks what its body needs — a table for
+// `query`/`backfill`/`export-rows`/`import-rows` (`x g query order` once wrote 14 files over none),
+// a permission subject for `action`/`mutator` (D13). Only `x g entity`/`resource` create a table,
+// only `x g policy`/`resource` a subject; nothing else invents either.
 
 import { existsSync } from 'node:fs'; // why: a synchronous file probe, as the slice's own guard.
 // why: Bun ships no path helpers; the slice's own directory name is matched against its siblings.

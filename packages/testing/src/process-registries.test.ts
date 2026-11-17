@@ -80,7 +80,8 @@ async function declarationTables(): Promise<readonly string[]> {
   const found: string[] = [];
   for (const path of new Bun.Glob('packages/*/src/**/*.ts').scanSync({ cwd: ROOT })) {
     const file = path.replaceAll('\\', '/');
-    if (/\.(?:test|d)\.ts$|fixture/.test(file)) continue;
+    // A template's tables are TEXT it emits into an app (`x new`'s guards), never this process's.
+    if (/\.(?:test|d)\.ts$|fixture|^packages\/cli\/src\/templates\//.test(file)) continue;
     const text = await Bun.file(join(ROOT, file)).text();
     if (TABLE.test(text) && DECLARER.test(text)) found.push(file);
   }

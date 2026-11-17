@@ -4,10 +4,10 @@
 // for `X_RAW_COLOUR` sent it nowhere.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { tempTrees } from '@ultimat3/testing';
 import { REQUIRED_BUN } from './app-root';
 import { errorsCommand } from './cmd-errors';
 import { explainGuardCode } from './cmd-errors-guards';
@@ -18,10 +18,8 @@ import type { JsonValue } from './output';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 
-const dirs: string[] = [];
-afterAll(async () => {
-  for (const dir of dirs) await rm(dir, { recursive: true, force: true });
-});
+const trees = tempTrees();
+afterAll(() => trees.dispose());
 
 const ctxFor = (argv: readonly string[], cwd = '/tmp'): CommandContext => ({
   args: parseArgs(argv, SPECS),
@@ -57,8 +55,7 @@ describe('unit · x errors explain, guard codes', () => {
   });
 
   test("an app guard's code is explained from guards/<file>.ts", async () => {
-    const root = await mkdtemp(join(tmpdir(), 'x-errors-guard-'));
-    dirs.push(root);
+    const root = trees.make('x-errors-guard-');
     await Bun.write(
       join(root, 'guards', 'no-lodash.ts'),
       "const CODE = 'X_NO_LODASH';\nexport const guard = {\n  summary: 'no lodash import',\n  check: () => [],\n};\n",

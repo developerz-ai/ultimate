@@ -68,7 +68,7 @@ export const unreachedFinding =
       label !== undefined
         ? predicateFix(record, label, rerun)
         : hasEntry(facts, record)
-          ? `edit the ${name} entry already in ${EXERCISE_FILE} (its input or actor; a second ${name}: key is TS1117), or give it { off: '<why>' }; ${rerun}`
+          ? `edit the ${name} entry already in ${EXERCISE_FILE} (its input or actor; a second ${name}: key is TS1117), or give it { off: '<why>' }; then: x exercise ${name} --json`
           : pasteFix(record, facts, rerun);
     return {
       code: 'X_CONTRACT_EXERCISE_UNREACHED',

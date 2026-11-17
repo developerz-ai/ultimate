@@ -326,5 +326,8 @@
  * `core/src/trailing-slashes.ts`.
  * raised 1535 → 1536, measured 1536 (2026-11-16, plan 101b audit round 1, security):
  * `realtime/src/change-tenant.ts`, the one answer to a change's tenant column every producer reads.
+ * raised 1536 → 1540, measured 1540 (2026-11-16, plan 101b audit round 2, metafile walk): the three
+ * on `MIGRATE_CEILING` (`core/src/{build-id,route-literal}.ts`, `jobs/src/errors-idempotency.ts`),
+ * plus `query/src/live-bounds.ts` — `X_QUERY_LIVE_UNBOUNDED`, refused after `sql()` in `read.ts`.
  */
-export const SERVING_ROLE_CEILING = 1536;
+export const SERVING_ROLE_CEILING = 1540;

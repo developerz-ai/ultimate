@@ -42,7 +42,7 @@ export const undo = (text: string, edits: readonly SnippetEdit[]): string => {
 
 // "Today" is what these tests' hops end at, 31.28.0: a codemod after it — none of theirs — undone.
 const CI = '.github/workflows/ci.yml';
-today[CI] = undo(today[CI] ?? '', CI_SERVICES_ENV_EDITS);
+today[CI] = undo(Object.hasOwn(today, CI) ? (today[CI] ?? '') : '', CI_SERVICES_ENV_EDITS);
 
 /** Every touched file as the 31.20.0 scaffold wrote it: today's, each later codemod undone in turn. */
 export function before(): Record<string, string> {

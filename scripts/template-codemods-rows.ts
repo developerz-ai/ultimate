@@ -387,7 +387,7 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   {
     template: 'packages/cli/src/templates/query.ts',
     since: '31.40.0',
-    none: "a generated query no longer declares `mcp: { expose: true, description: '<name> — edit this description' }` (D5); an app's existing query is the author's, its tool line theirs to keep or describe, and nothing reads a query differently without it",
+    none: "a generated query no longer declares `mcp: { expose: true, description: '<name> — edit this description' }` (D5); an app's existing query is the author's, its tool line theirs to keep or describe, and nothing reads a query differently without it; its emitted test's no-agent title names no query, so it fits Biome's width at any name — a test title an existing app keeps or renames",
   },
   {
     template: 'apps/web/app/post/live/post-list.ts',

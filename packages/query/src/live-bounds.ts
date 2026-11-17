@@ -15,8 +15,8 @@ export class QueryLiveUnboundedError extends UltimateError {
   constructor(name: string, entity: string) {
     super({
       code: 'X_QUERY_LIVE_UNBOUNDED',
-      cause: `live query "${name}" reads "${entity}" with no .limit(), so every subscriber would hold every matching row`,
-      fix: `.orderBy('<column>', 'desc').limit(50)   // at the end of ${name}'s sql: chain — or drop live: true and read it with ${name}.page()`,
+      cause: `live query "${name}" reads "${entity}" with no .limit(), so every subscriber would hold every matching row — end its sql: chain with a limit, or drop live: true and read it with ${name}.page()`,
+      fix: `sql: (input) => <${name}'s chain>.orderBy('<column>', 'desc').limit(50)   // a live window is the rows it declares`,
     });
   }
 }

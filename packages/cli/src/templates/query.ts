@@ -158,7 +158,7 @@ ${wrapper}('${name.camel} denies an orgless actor before a read', async () => {
   expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 
-${wrapper}('${name.camel} is offered to no agent until its tool is described', () => {
+${wrapper}('the read is offered to no agent until its tool is described', () => {
   // A tool's description is what an agent reads to decide to call it, so the read ships none.
   // Declare \`mcp: { expose: true, description: '…' }\` and \`@ultimat3/mcp\`'s \`toolFrom\` serves
   // it as a read (\`mutates: false\`), through \`.as()\` under this same policy; then flip this.
