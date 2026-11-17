@@ -58,9 +58,15 @@ export function judgeSkips(
   step: string,
   tests: TestCounts | undefined,
   ceiling: SkipCeiling | undefined,
+  floor: { readonly strictWithDatabase?: boolean } = {},
 ): { readonly findings: readonly Finding[]; readonly warnings: readonly string[] } {
   if (tests === undefined || tests.ran === 0) return { findings: [], warnings: [] };
-  const allowed = ceilingOf(ceiling, step);
+  // A `live` test that skipped with the database IN REACH is a test that proved nothing, and under
+  // a strict floor that requires the step an unwritten ceiling means 0. A run with no database is
+  // already `X_TEST_SERVICES_UNAVAILABLE`'s warning — a runner without one skips by design.
+  const allowed =
+    ceilingOf(ceiling, step) ??
+    (step === 'live' && floor.strictWithDatabase === true ? 0 : undefined);
   if (allowed === undefined) {
     return tests.skipped === 0
       ? { findings: [], warnings: [] }
