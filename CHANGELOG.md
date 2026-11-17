@@ -12,6 +12,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Fixed
 
+- storage: an s3 disk in its default addressing (virtual-hosted, `S3_FORCE_PATH_STYLE` unset) now reaches its bucket. The Bun client was handed the account endpoint with `virtualHostedStyle: true`, which Bun reads as the bucket's own host, so every Bun-side request (read, stat, list, delete) went to the account root: on R2 a read failed with an opaque `S3Error` and a list as `ListBuckets`, and `assets.retain` logged `X_ASSET_RETAIN_FAILED`. The bucket now goes into the host, as the signed path already did. Measured on R2 before and after.
 - testing: under the gate's coverage run, `mountIsland` starts the covered and the shipped build together instead of one after the other. Since 31.41.0 the second build ran after the first, doubling a mount's time; a 5 s test over a Solid island went past its budget on a loaded runner.
 
 ## Releases

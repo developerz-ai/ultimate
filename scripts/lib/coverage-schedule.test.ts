@@ -2,13 +2,16 @@
 // the pool that never holds more cores than the runner has, whatever each unit leased.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { unitFailure } from '../coverage-gate';
 import {
   concurrency,
   FILES_PER_WORKER,
   leasePool,
   serviceKeys,
   UNIT_SECONDS,
+  UNIT_TIMEOUT_MS,
   unitEnv,
+  unitTimeoutOf,
   unitWeight,
   workersFor,
 } from './coverage-schedule';
@@ -215,5 +218,18 @@ describe('the env a unit runs in', () => {
     // `acquireWorkerDatabase` falls back to it, so a laptop's app URL is a service too.
     expect(keys).toContain('DATABASE_URL');
     expect(keys.every((key) => /^[A-Z][A-Z0-9_]*$/.test(key))).toBe(true);
+  });
+});
+
+describe('unit · a unit deadline under the CI job', () => {
+  // CI kills the job at 15 minutes and keeps no log of a cancelled one; at the 30-minute default
+  // a hung unit was never named (the packages shard on the 31.42.0 release, twice). The shard
+  // passes `--unit-timeout`, so the deadline fires first and the finding names the unit.
+  test('the deadline is the one it was given, and the flag is whole seconds or a refusal', () => {
+    const failure = unitFailure('cli', { code: null, output: '', timedOut: true }, 540_000);
+    expect(failure?.cause).toContain('within 540000 ms');
+    expect(unitTimeoutOf(undefined)).toBe(UNIT_TIMEOUT_MS);
+    expect(unitTimeoutOf('540')).toBe(540_000);
+    for (const bad of ['0', '-5', '1.5', 'ten', '']) expect(unitTimeoutOf(bad)).toBeUndefined();
   });
 });

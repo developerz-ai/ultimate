@@ -54,6 +54,18 @@ interface S3ClientConstructor {
 }
 
 /**
+ * Bun's virtual-hosted mode takes the endpoint AS the bucket's host, so the bucket goes into it
+ * here — the host `s3ObjectUrl` signs for. The bare account endpoint sent every request to the
+ * account root (on R2: an opaque `S3Error` for a read, `ListBuckets` for a list). An endpoint
+ * that already names the bucket is kept.
+ */
+function bucketHost(endpoint: string, bucket: string): string {
+  const base = new URL(endpoint);
+  if (base.host.startsWith(`${bucket}.`)) return endpoint;
+  return `${base.protocol}//${bucket}.${base.host}`;
+}
+
+/**
  * Everything but the key pair `Bun.S3Client` is built with — the SAME `resolveS3Target` the signed
  * path reads, handed over explicitly so Bun never consults a second table.
  */
@@ -61,10 +73,14 @@ export function clientTarget(options: S3DriverOptions): Record<string, unknown> 
   const target = resolveS3Target(options);
   // Bun's flag is the inverse: path style means "not virtual hosted".
   const pathStyle = options.forcePathStyle;
+  const endpoint =
+    target.endpoint === undefined || pathStyle !== false
+      ? target.endpoint
+      : bucketHost(target.endpoint, options.bucket);
   return {
     bucket: options.bucket,
     ...(target.region === undefined ? {} : { region: target.region }),
-    ...(target.endpoint === undefined ? {} : { endpoint: target.endpoint }),
+    ...(endpoint === undefined ? {} : { endpoint }),
     ...(pathStyle === undefined ? {} : { virtualHostedStyle: !pathStyle }),
     ...(target.sessionToken === undefined ? {} : { sessionToken: target.sessionToken }),
   };
