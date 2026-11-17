@@ -70,7 +70,7 @@ export function parseRobots(text: string, agent: string): RobotsRules {
 const encodedPath = (text: string): string =>
   text
     .replace(/[^\x21-\x7E]/gu, (char) => encodeURIComponent(char))
-    .replace(/%[0-9a-f]{2}/gi, (escape) => escape.toUpperCase());
+    .replace(/%[0-9a-f]{2}/gi, (octet) => octet.toUpperCase());
 
 /**
  * `/private/*.pdf$` — the two wildcards robots.txt defines, and no others, matched by WALKING the

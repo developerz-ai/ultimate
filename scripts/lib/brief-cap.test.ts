@@ -2,10 +2,13 @@
 // refused at every due firing, so its checkup runs nothing (#1170). `health.md` alone was held to
 // it, and `release-due.md` drifted to 10,574 characters unseen.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun ships no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
-import { repoRoot } from './run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
+
+// Reads the maintainer schedule and every brief it names from the tree.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 /** The scheduled-checkup platform's ceiling, in characters (the refusal counts them, not bytes). */
 const BRIEF_CAP = 10_000;
