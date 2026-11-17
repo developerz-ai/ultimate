@@ -79,12 +79,17 @@ const COVERAGE_KNOWN: KnownFlags = {
 
 /** How many test files `bun test <unit.test>` finds — what a unit is widened by (`workersFor`). */
 export function testFileCount(root: string, unit: CoverageUnit): number {
+  return testFilesOf(root, unit).length;
+}
+
+/** Every test file `bun test <unit.test>` finds, root-relative — what a timed-out unit is read against. */
+export function testFilesOf(root: string, unit: CoverageUnit): readonly string[] {
   const base = unit.test.replace(/^\.\//, '');
-  let count = 0;
+  const files: string[] = [];
   for (const rel of new Bun.Glob(`${base}/**/*.{test,spec}.{ts,tsx}`).scanSync({ cwd: root })) {
-    if (!rel.includes('/node_modules/')) count += 1;
+    if (!rel.includes('/node_modules/')) files.push(rel);
   }
-  return count;
+  return files;
 }
 
 /**
