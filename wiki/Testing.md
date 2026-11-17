@@ -676,6 +676,11 @@ describeIslandState(counterStates, 'idle', island, (mounted) => {
 The props are the manifest's, so the picture `x shot --island` takes and the test are of one
 component. `mountIsland` stays the call for props no state declares. `As of 2026-10`.
 
+A builder you wrap keys its memo by `options.coverage`. Under `x verify`'s coverage run a mount
+builds twice — covered to run, shipped for `code` — so `bundle ??= buildIslands(root, options)`
+hands the covered chunk to every `code.length` ceiling: green under `bun test`, red in the gate.
+`describeIslandState` already builds once per file; pass `buildIslands` itself. `As of 2026-11`.
+
 A realtime island's page outlives its mount: the socket, the record store and the outbox sit on
 `globalThis`, shared by every bundle. Between files (or cases that need a fresh page) call
 `resetPageRealtime()` from `@ultimat3/realtime` in `afterAll` — it closes the socket the CHUNK's copy
