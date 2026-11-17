@@ -10,29 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- **Audit round 3 (plan 101b, slice 20), its P2s:** the gate's `live` step, `x dev`'s rebuild, the schema wait under an early SIGTERM, and the docs the auditors falsified. Each fix has a test that failed first.
-
-### Fixed
-
-- A SIGTERM during a serving role's module load no longer leaves its schema wait unbounded: the drain's `accept` phase ran before the wait registered its hook, so the first read hung on an unreachable database past the pod's grace (SIGKILL, 137). The wait now refuses before its first read when a drain has begun.
-- `x dev`: a request arriving after a save no longer joins a render begun before it and gets the pre-save HTML. The rebuild's clear goes through the new `IsrController.forgetAll()`, which evicts every render in flight, marks every fence and empties the store.
-- `x doctor` no longer reports `X_ENV_NAME_RESERVED` for an exporter's own OTLP variables (`OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_{ENDPOINT,HEADERS,PROTOCOL}`): core reads them before the general endpoint, which was already contract, so declaring the per-signal one was flagged and the general one was not.
-- testing: the e2e browser allows the ports Chrome otherwise refuses (`CHROME_RESTRICTED_PORTS`, through the launcher's new `allowedPorts`), so a test server on `port: 0` that is handed one (3659, 6000, …) is loaded instead of failing with `net::ERR_UNSAFE_PORT`. Every other launch, `pdf()`'s in production included, keeps Chrome's refusal.
-- testing, in an app: a job declared by a module a test imported lazily (`await import(…)`) stays registered for every later file on the worker. Since 31.25.0 the file boundary restored jobs exactly, so the next file that reached the cached module ran a queue holding a job "nothing registered" (`X_INVARIANT`), and the result depended on how files were sharded. Jobs are now restored as a union in an app, like permissions; the framework's own suites keep the exact restore.
-- testing: `mountIsland(...).code` is the shipped, minified chunk again under the gate's coverage run. Since 31.27.0 it was the unminified coverage build, so an island size ceiling (`code.length`) passed under `bun test` and failed in `x verify`. The coverage build still runs and maps. `describeIslandState` and `mountIslandState` included: their per-file build cache now keeps the two builds apart.
-- The shipped `undeclared-env` guard no longer reports a name quoted inside a string (a generated docs file holding `process.env.X` as text) or a read of the OS's own `PATH`, `HOME`, `TMPDIR`, `USER`, `SHELL`, `PWD`, `LANG`, `HOSTNAME`. A read inside a template's `${…}` is still reported.
-- wiki: Routes and Render Modes said there is no client router; there is (`navigation.client`). It now also says a hand-rolled document swap runs no `<Hole>` reveal script, and names `refresh()` as the way.
-
-### Changed
-
-- New codemod `test-services` (31.41.0): `x upgrade` writes `docker/docker-compose.test.yml` and `docker/test-services.env`, under the app's own ports, for an app scaffolded before 31.27.0 that has a database and neither file. `test-suites` already handed such an app a `live` suite the floor requires; six adopter upgrades wrote the two files by hand.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.41.0](docs/changelog/31.41.0.md) | 2026-11-17 | **Audit round 3 (plan 101b, slice 20), its P2s:** the gate's `live` step, `x dev`'s rebuild, the schema wait under an early SIGTERM, and the docs the auditors falsified. Each fix has a test that failed first. |
 | [31.40.1](docs/changelog/31.40.1.md) | 2026-11-17 | **Audit round 3 (plan 101b, slice 20), its security half:** the realtime channel tenant leak (P0) and two P1s, each with a test that failed first. The round's P2s follow in the next release. |
 | [31.40.0](docs/changelog/31.40.0.md) | 2026-11-17 | **Audit round 2 (plan 101b, slice 20):** six read-only auditors (bugs in the unread tiers, concurrency, security on injection and secrets, a DX pass, an architecture review). Every confirmed finding is fixed, each with a test that failed first. Counts: P0 0 · P1 6 · P2 22 fixed (the DX pass by real use: 2 P1, 10 P2), plus 2 P2 parked for the next major or deferred to round 3. |
 | [31.39.0](docs/changelog/31.39.0.md) | 2026-11-17 | **Audit round 1 (plan 101b, slice 20):** four read-only auditors, production evidence and the open issues. Every confirmed finding is fixed, each with a test that failed first. The security fix ships separately in 31.38.1. |
