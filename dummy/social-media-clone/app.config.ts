@@ -84,6 +84,9 @@ export const config = defineConfig({
   // The deployment decides the bus (31.0.0: no config key): a NATS_URL set means every realtime
   // role shares it, none means one node's in-process bus.
   realtime: { enabled: true },
+  // Hashed assets outlive their build: a rolling deploy's open tabs still load their CSS and
+  // island chunks. `object` is the boot's disk once S3_ENDPOINT is set (production: R2).
+  assets: { retain: { disk: 'object', builds: 3 } },
   pwa: {
     enabled: true,
     // The document an offline navigation gets when the cache has no answer. Required once
