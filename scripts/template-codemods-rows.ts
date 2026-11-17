@@ -403,17 +403,17 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   },
   {
     template: 'biome.json',
-    since: '31.41.0',
+    since: '31.42.0',
     none: 'the merge updates only the `$schema` editor hint; an existing app keeps its installed Biome and its own config remains valid, so no codemod moves an app file',
   },
   {
     template: 'package.json',
-    since: '31.41.0',
+    since: '31.42.0',
     none: "the root `@biomejs/biome` pin moves to 2.6.4 and every @ultimat3/* is written exact (D9), what x upgrade writes and x doctor's X_FRAMEWORK_PIN_RANGE asks for; an existing app retains its Biome, and its caret is moved exact by its next x upgrade hop, while x doctor names the line and the version",
   },
   {
     template: 'packages/cli/src/templates/scaffold-repo.ts',
-    since: '31.41.0',
+    since: '31.42.0',
     none: 'x new now writes the 2.6.4 Biome pin and schema URL and every @ultimat3/* exact (D9); an existing app retains its valid Biome config, while its caret is moved exact by its next x upgrade hop and x doctor names the line and the version until then',
   },
   ...TEMPLATE_CODEMOD_ROWS_31_40,
