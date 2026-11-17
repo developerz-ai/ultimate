@@ -254,4 +254,19 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.29.0',
     codemod: 'migrate-job-ordered',
   },
+  {
+    template: 'biome.json',
+    since: '31.32.0',
+    none: 'the formatter pin only: `$schema` is an editor hint and the app keeps the `@biomejs/biome` it installed, so an app left on 2.6.3 is not broken by this repository moving to 2.6.4',
+  },
+  {
+    template: 'package.json',
+    since: '31.32.0',
+    none: 'the same formatter pin in `devDependencies`: the app keeps the Biome version it installed, which still lints its tree, so the hop changes nothing an app runs',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-repo.ts',
+    since: '31.32.0',
+    none: 'it renders the pin the two rows above carry: a new app gets 2.6.4 and an existing one keeps its own Biome, so no separate codemod moves an app file',
+  },
 ];
