@@ -3,10 +3,10 @@
 // the pool that never leases more cores than the runner has. Scheduling only — what a unit
 // measures, and the verdict on it, are the gate's.
 
+// why: Bun ships no synchronous file read; the env file is read once, before any unit starts.
 import { readFileSync } from 'node:fs';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-// why: Bun ships no synchronous file read; the env file is read once, before any unit starts.
 import { renderFixShellArg } from '@ultimat3/core';
 
 /**
