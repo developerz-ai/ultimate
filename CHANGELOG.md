@@ -37,6 +37,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - A `live: true` query with no `.limit()` is refused with `X_QUERY_LIVE_UNBOUNDED` wherever its source is built, so `x verify`'s `exercise` step rejects it, as the docs promised. An unbounded live query that used to serve rows now answers 500.
 - `x new` over an existing directory says what happened, and its fix names a free directory, never `--force`; `--force` over a directory holding an app is refused. The `errors` step also refuses a `--force` built inside an interpolated `fix:`.
 - The scaffolded CI's services part appends only `TEST_*` lines to `$GITHUB_ENV`: GitHub refused the env file's comment header, so every scaffolded app's services part was red. Codemod `ci-services-env` carries existing apps.
+- `x g action` / `x g mutator` into a slice `x g policy` or `x g resource` wrote asserts its handler as a writer in the org: `grantOf` reads the generator's own org write rule. Before, the generated handler was untested and an app's own 95% coverage floor went red on it.
 - The saas shape's generated forms answer natively: no `X_NATIVE_FORM_UNANSWERED` on a fresh scaffold.
 - `X_CONTRACT_EXERCISE_UNREACHED`: a policy predicate that returned false points at that predicate, and an existing `apps/web/exercise.ts` entry is edited in place, never pasted twice (TS1117). Neither fix carries per-run ids.
 - The `$view` unknown-key fix is the call's own key list minus the bad key, never `$view(['id'])`.

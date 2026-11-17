@@ -8,6 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ExerciseEntry } from '../exercise-entry-edit';
 import { INVOICE_ENTITY } from '../scaffold-fixture';
 import { actionFiles } from './action';
+import { policyFiles } from './policy';
 
 const slice = { surfaceDir: 'apps/web/app', feature: 'blog' } as const;
 const BOTH = "import { tag } from '@ultimat3/cache';\nexport const blogTag = tag('blog');\n";
@@ -46,6 +47,23 @@ describe('unit · a handwritten single-permission policy: the test grants exactl
       expect(entry.value).not.toContain('off:');
     });
   }
+});
+
+// The policy `x g policy` / `x g resource` write is the generator's own, and its write rule (the
+// grant, then the input's org equals the actor's) is one a writer in the org passes: an action
+// generated into that slice asserts its handler, or the scaffold's coverage floor goes red on it.
+describe("unit · the generator's own policy: the action asserts its handler", () => {
+  test('a slice x g policy wrote', () => {
+    const written = policyFiles('blog', slice).find((file) => file.path.endsWith('/policy.ts'));
+    if (written === undefined || typeof written.contents !== 'string')
+      return expect.unreachable('x g policy wrote no policy.ts');
+    const files = actionFiles('write-article', { ...slice, slicePolicy: written.contents });
+    const unit = sourceOf(files, 'write-article.test.ts');
+    expect(unit).toContain("const grant = ['blog:write'];");
+    expect(unit).toContain('the handler answers a writer in the org');
+    expect(unit).not.toMatch(/\/\/ No handler assertion/);
+    expect(exerciseOf(files).value).toContain("permissions: ['blog:write']");
+  });
 });
 
 describe('unit · a policy whose grant cannot be read: no assertion depends on it', () => {

@@ -9,7 +9,7 @@ import type { FeatureTarget } from './entity';
 import { entityFiles } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
-import { policyFiles } from './policy';
+import { ORG_WRITE_RULE, policyFiles } from './policy';
 
 /**
  * Which slice modules a generator's own source imports. Named per generator rather than emitted as
@@ -271,14 +271,22 @@ export function sliceTakesScaffoldRow(
 }
 
 /**
- * The ONE permission `name` grants, when `source` declares it as a single literal call:
- * `export const canBlogWrite = can('blog:publish');`. Anything else — a predicate argument,
- * `and`/`or`, a function, a re-export — is `undefined`: the grant cannot be read, and a generated
- * test must not assume one.
+ * The ONE permission `name` grants, when `source` declares it as a single literal call —
+ * `export const canBlogWrite = can('blog:publish');` — or as the write rule `x g policy` /
+ * `x g resource` write themselves (`ORG_WRITE_RULE`: the grant, then the input's org equals the
+ * actor's), which a writer in the org passes. Anything else — another predicate, `and`/`or`, a
+ * function, a re-export — is `undefined`: the grant cannot be read, and a generated test must not
+ * assume one.
  */
 export function grantOf(source: string, name: string): string | undefined {
-  const declared = new RegExp(
-    `\\bexport\\s+const\\s+${name}\\s*=\\s*can\\(\\s*(['"\`])([A-Za-z0-9_.*:-]+)\\1\\s*\\)\\s*;`,
-  );
-  return declared.exec(stripComments(source))?.[2];
+  const code = stripComments(source);
+  const head = `\\bexport\\s+const\\s+${name}\\s*=\\s*can(?:<[A-Za-z0-9_]+>)?\\(\\s*(['"\`])([A-Za-z0-9_.*:-]+)\\1`;
+  const literal = new RegExp(`${head}\\s*\\)\\s*;`);
+  const orgWrite = new RegExp(`${head}\\s*,\\s*${ORG_WRITE_RULE_PATTERN}\\s*,?\\s*\\)\\s*;`);
+  return literal.exec(code)?.[2] ?? orgWrite.exec(code)?.[2];
 }
+
+/** `ORG_WRITE_RULE` with every run of whitespace free, so a formatter's line breaks still match. */
+const ORG_WRITE_RULE_PATTERN = ORG_WRITE_RULE.split(/\s+/)
+  .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  .join('\\s*');

@@ -484,4 +484,14 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.40.0',
     none: "only `x new --shape saas` renders the changed sentence (its description, shortened to keep the scaffold's AGENTS.md under its 12,000 B budget once the undeclared-env row landed); an existing app's README is its own prose",
   },
+  {
+    template: 'packages/cli/src/templates/policy.ts',
+    since: '31.40.0',
+    none: 'the emitted policy.ts is byte-identical: its write rule moved into the exported ORG_WRITE_RULE constant, which grantOf reads back',
+  },
+  {
+    template: 'packages/cli/src/templates/slice-foundation.ts',
+    since: '31.40.0',
+    none: "grantOf now reads x g policy's own org write rule, so a later x g action into that slice writes its handler test; no file an app already holds changes",
+  },
 ];
