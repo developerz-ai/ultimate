@@ -280,10 +280,22 @@ export function sliceTakesScaffoldRow(
  */
 export function grantOf(source: string, name: string): string | undefined {
   const code = stripComments(source);
+  return grantPattern(name, 'literal').exec(code)?.[2] ?? grantPattern(name, 'org').exec(code)?.[2];
+}
+
+/**
+ * Whether `name` is the generator's own org write rule (`ORG_WRITE_RULE`): then the contract's
+ * exercise pins the input's org to the actor's, exactly as for a slice this run's policy writes.
+ */
+export function writesOrgRule(source: string, name: string): boolean {
+  return grantPattern(name, 'org').test(stripComments(source));
+}
+
+function grantPattern(name: string, form: 'literal' | 'org'): RegExp {
   const head = `\\bexport\\s+const\\s+${name}\\s*=\\s*can(?:<[A-Za-z0-9_]+>)?\\(\\s*(['"\`])([A-Za-z0-9_.*:-]+)\\1`;
-  const literal = new RegExp(`${head}\\s*\\)\\s*;`);
-  const orgWrite = new RegExp(`${head}\\s*,\\s*${ORG_WRITE_RULE_PATTERN}\\s*,?\\s*\\)\\s*;`);
-  return literal.exec(code)?.[2] ?? orgWrite.exec(code)?.[2];
+  return form === 'literal'
+    ? new RegExp(`${head}\\s*\\)\\s*;`)
+    : new RegExp(`${head}\\s*,\\s*${ORG_WRITE_RULE_PATTERN}\\s*,?\\s*\\)\\s*;`);
 }
 
 /** `ORG_WRITE_RULE` with every run of whitespace free, so a formatter's line breaks still match. */

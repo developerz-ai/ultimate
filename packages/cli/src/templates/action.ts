@@ -19,6 +19,7 @@ import {
   sliceFoundation,
   sliceHasNoTenant,
   sliceTakesScaffoldRow,
+  writesOrgRule,
 } from './slice-foundation';
 import { wrapImport } from './wrap';
 
@@ -195,8 +196,12 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
       : grantOf(target.slicePolicy, `can${feature.pascal}Write`);
   const org =
     !singleTenant || (target.slicePolicy !== undefined && policyReadsOrg(target.slicePolicy));
-  // The org rule the contract can rely on: the one this generator's own policy writes.
-  const orgRule = target.slicePolicy === undefined && !singleTenant;
+  // The org rule the contract can rely on: the one this generator's own policy writes — this run's,
+  // or an earlier `x g policy` / `x g resource` run's, read back unchanged.
+  const orgRule =
+    !singleTenant &&
+    (target.slicePolicy === undefined ||
+      writesOrgRule(target.slicePolicy, `can${feature.pascal}Write`));
   // Before a file is planned: a generated action that does not compile is refused, never written.
   assertPolicyExports(target, feature, isMutator);
   const lookup =

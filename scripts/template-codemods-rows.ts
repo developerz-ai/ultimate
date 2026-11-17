@@ -494,4 +494,9 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.40.0',
     none: "grantOf now reads x g policy's own org write rule, so a later x g action into that slice writes its handler test; no file an app already holds changes",
   },
+  {
+    template: 'packages/cli/src/templates/action.ts',
+    since: '31.40.0',
+    none: "only x g action/mutator renders it, into a slice whose write rule is x g policy's own: the generated test now asserts the handler and its exercise binds the org; files an app already holds are unchanged",
+  },
 ];

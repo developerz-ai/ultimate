@@ -62,7 +62,11 @@ describe("unit · the generator's own policy: the action asserts its handler", (
     expect(unit).toContain("const grant = ['blog:write'];");
     expect(unit).toContain('the handler answers a writer in the org');
     expect(unit).not.toMatch(/\/\/ No handler assertion/);
-    expect(exerciseOf(files).value).toContain("permissions: ['blog:write']");
+    const entry = exerciseOf(files).value;
+    expect(entry).toContain("permissions: ['blog:write']");
+    // The write rule compares the input's org with the actor's, so the exercise binds both to one.
+    expect(entry).toMatch(/orgId: '[^']+'/);
+    expect(entry).toContain('input: (drawn) => ({ ...drawn, orgId:');
   });
 });
 
