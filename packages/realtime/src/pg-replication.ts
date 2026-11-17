@@ -409,7 +409,7 @@ export class PgReplicationStream {
       after,
       lsn,
       txid: transaction.xid.toString(10),
-      orgId: tenantOf(after ?? before),
+      orgId: tenantOf(relation.name, after ?? before),
       at: transaction.commitAt,
       write: transaction.write ?? null,
       ...(omitted.length === 0 ? {} : { omitted }),

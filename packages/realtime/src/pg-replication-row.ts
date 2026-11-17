@@ -2,6 +2,7 @@
 // becomes the `before`/`after` the matcher's predicates are written against, plus the properties
 // `after` could not carry. Split out of `pg-replication.ts`, which decides ordering and nothing else.
 
+import { tenantColumnOfTable, tenantIn } from './change-tenant';
 import { ReplicationProtocolError } from './errors';
 import { isRow, type LiveRow } from './json';
 import { entityRow, omittedProperties } from './pg-entity-row';
@@ -75,8 +76,10 @@ function toRow(
   });
 }
 
-/** The tenant, hoisted out of the row so fanout filters without parsing it. */
-export const tenantOf = (row: LiveRow | null): string | null => {
-  const orgId = row?.['orgId'];
-  return typeof orgId === 'string' ? orgId : null;
-};
+/**
+ * The tenant, hoisted out of the row so fanout filters without parsing it — from the column the
+ * table's entity declares (`$tenantColumn`). It read `row.orgId`, so a table declared
+ * `tenant: 'workspaceId'` replicated every change with no tenant, into every org's window.
+ */
+export const tenantOf = (table: string, row: LiveRow | null): string | null =>
+  tenantIn(tenantColumnOfTable(table), row);
