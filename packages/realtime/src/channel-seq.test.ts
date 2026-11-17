@@ -105,6 +105,15 @@ beforeEach(() => {
   hub = new ChannelHub({ transport, sockets, channels: [feed, ownFeed, typing], ringSize: 4 });
 });
 
+const codeOf = async (run: () => Promise<unknown>): Promise<string> => {
+  try {
+    await run();
+  } catch (error) {
+    return isUltimateError(error) ? error.code : 'not an UltimateError';
+  }
+  return 'did not throw';
+};
+
 function connect(who: string): { socket: SyncSocket; ws: FakeWs } {
   const ws = new FakeWs();
   // A subscriber of ORG's topics is a member of ORG: the hub refuses a tenant param that is not the
@@ -210,13 +219,8 @@ describe('records on a declared channel', () => {
   test('a member of another org’s topic receives nothing', async () => {
     const a = connect('alice');
     // The subscribe itself is refused now — o2 is not alice's org — and nothing reaches her.
-    const refused = await hub
-      .subscribeChannel(a.socket, { kind: 'channel', channel: 'org-feed', params: { orgId: 'o2' } })
-      .then(
-        () => null,
-        (error: unknown) => error,
-      );
-    expect(isUltimateError(refused) && refused.code).toBe('X_TOPIC_FORBIDDEN');
+    const other = { kind: 'channel', channel: 'org-feed', params: { orgId: 'o2' } } as const;
+    expect(await codeOf(() => hub.subscribeChannel(a.socket, other))).toBe('X_TOPIC_FORBIDDEN');
     hub.deliverChange(insert(post('p1', 'one')));
     expect(records(a.ws)).toEqual([]);
   });
@@ -406,15 +410,6 @@ describe('resume since', () => {
 });
 
 describe('authorization', () => {
-  const codeOf = async (run: () => Promise<unknown>): Promise<string> => {
-    try {
-      await run();
-    } catch (error) {
-      return isUltimateError(error) ? error.code : 'not an UltimateError';
-    }
-    return 'did not throw';
-  };
-
   test('a policy denial is X_TOPIC_FORBIDDEN, latched, and leaves the socket’s other channels flowing', async () => {
     const m = connect('mallory');
     const own = { kind: 'channel', channel: 'own-feed', params: { orgId: ORG } } as const;
