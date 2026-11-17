@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- **Audit round 4 (plan 101b, slice 20):** OAuth client-metadata fetches are metered for every caller; presence leave frames fit the client's frame limit; the `assets.retain` sweep no longer deletes a file another pod's publish reused; `x upgrade` survives a reused pid; scaffold CI pins every action by SHA; one env declaration form, `envSchema`. Each fix has a test that failed first.
+
 ### Security
 
 - auth: every OAuth client-metadata-document fetch is now rate-limited. `readRequest(url)`, `approve` and `deny` without a `callerKey` were unmetered, so each consent-page load naming a fresh `https://<host>/<path>` `client_id` caused one outbound GET (200 in 200 loads). Without a key they now share one bucket (`oauth-client-metadata:unkeyed`, 10 a minute, then `X_ACCOUNT_LOCKED`). Pass `readRequest(url, { callerKey: <request address> })` so each caller gets its own bucket.
