@@ -10,7 +10,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- **Audit round 3 (plan 101b, slice 20), its P2s:** the gate's `live` step, `x dev`'s rebuild, the schema wait under an early SIGTERM, and the docs the auditors falsified. Each fix has a test that failed first.
+
+### Fixed
+
+- A SIGTERM during a serving role's module load no longer leaves its schema wait unbounded: the drain's `accept` phase ran before the wait registered its hook, so the first read hung on an unreachable database past the pod's grace (SIGKILL, 137). The wait now refuses before its first read when a drain has begun.
+- `x dev`: a request arriving after a save no longer joins a render begun before it and gets the pre-save HTML. The rebuild's clear goes through the new `IsrController.forgetAll()`, which evicts every render in flight, marks every fence and empties the store.
+- wiki: Routes and Render Modes said there is no client router; there is (`navigation.client`). It now also says a hand-rolled document swap runs no `<Hole>` reveal script, and names `refresh()` as the way.
+
+### Changed
+
+- `live` under a strict floor holds its skips at 0 in CI when `x.verify.json` writes no `skipCeiling.live` (`X_VERIFY_SKIPS_OVER_CEILING`): a skipped `live` test means the run had no database, and the step used to pass having proved nothing. See wiki/Upgrading.md.
 
 ## Releases
 

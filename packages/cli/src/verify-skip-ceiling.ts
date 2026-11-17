@@ -58,9 +58,13 @@ export function judgeSkips(
   step: string,
   tests: TestCounts | undefined,
   ceiling: SkipCeiling | undefined,
+  floor: { readonly strictRequired?: boolean } = {},
 ): { readonly findings: readonly Finding[]; readonly warnings: readonly string[] } {
   if (tests === undefined || tests.ran === 0) return { findings: [], warnings: [] };
-  const allowed = ceilingOf(ceiling, step);
+  // A skipped `live` test is a database the run did not have: under a strict floor that requires
+  // the step, unwritten means 0, or `live` passes having proved nothing about the driver.
+  const allowed =
+    ceilingOf(ceiling, step) ?? (step === 'live' && floor.strictRequired === true ? 0 : undefined);
   if (allowed === undefined) {
     return tests.skipped === 0
       ? { findings: [], warnings: [] }
