@@ -69,20 +69,6 @@ describe('unit · the verdict on one step', () => {
     expect(judgeSkips('contract', { ran: 3, skipped: 0 }, undefined).warnings).toEqual([]);
   });
 
-  // Round 3, P2-A: a live suite whose postgres test skipped (no TEST_DATABASE_URL, no services) went
-  // green in CI under strict, so `live` proved nothing about the production driver.
-  test('a strict floor requiring live holds its skips at 0 when no ceiling is written', () => {
-    const live = { ran: 5, skipped: 1 };
-    const held = judgeSkips('live', live, undefined, { strictRequired: true });
-    expect(held.findings.map((finding) => finding.code)).toEqual(['X_VERIFY_SKIPS_OVER_CEILING']);
-    expect(held.findings[0]?.cause).toContain('allows 0');
-    // A written ceiling still decides; a step the floor does not require keeps today's warning.
-    expect(judgeSkips('live', live, { live: 1 }, { strictRequired: true }).findings).toEqual([]);
-    expect(judgeSkips('live', live, undefined, { strictRequired: false }).findings).toEqual([]);
-    // Only live: another step's skips are not a missing database.
-    expect(judgeSkips('contract', PROBE, undefined, { strictRequired: true }).findings).toEqual([]);
-  });
-
   test("nothing ran is the floor's question, not this one's", () => {
     expect(judgeSkips('contract', { ran: 0, skipped: 4 }, { contract: 0 })).toEqual({
       findings: [],

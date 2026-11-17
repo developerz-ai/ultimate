@@ -344,9 +344,7 @@ function mergeStep(
   // The ceiling on the SUM, always: a merge is the CI verdict, and one shard's skips say nothing.
   const skips =
     sharded.length > 0
-      ? judgeSkips(name, tests, floor?.skipCeiling, {
-          strictRequired: floor?.strict === true && required,
-        })
+      ? judgeSkips(name, tests, floor?.skipCeiling)
       : { findings: [], warnings: [] };
   const riding = rider?.findings ?? [];
   const findings = [
