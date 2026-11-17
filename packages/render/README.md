@@ -684,7 +684,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
   `@ultimat3/storage`'s `StorageDriver` as it is), so every replica reads one copy. A write is
   checked, written and checked again (a disk has no compare-and-put); eviction is oldest write
   first. Every `IsrStore` method may answer a promise (`IsrAnswer<T>`); the controller awaits each,
-  and `revalidateByTags` / `markStale` are async. One regeneration holds its page for at most
+  and `revalidateByTags` / `markStale` / `forgetAll` are async (`forgetAll`: every stored page and
+  every render in flight forgotten, so the next request renders anew — `x dev`'s rebuild). One regeneration holds its page for at most
   `DEFAULT_ISR_REGENERATE_DEADLINE_MS` (30 s; `isrController({ regenerateDeadlineMs })`),
   so a render that never settles no longer pins the page for the life of the process. A stored
   path takes its TTL and tags from the most specific matching route (static > `:param` >

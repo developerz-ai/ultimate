@@ -94,6 +94,10 @@ export async function waitForSchema<T>(
   let refuse: ((waitedMs?: number) => UltimateError) | undefined;
   const drained = (): UltimateError => (refuse ?? waitDrained)(clock.monotonic() - startedAt);
   try {
+    // A SIGTERM while the boot still loaded modules ran the `accept` phase before this hook existed,
+    // so its abort was never heard: refuse before the first read, which an unreachable database
+    // would hold past the pod's grace.
+    if (isDraining()) throw drained();
     for (let attempt = 1; ; attempt += 1) {
       // Raced against the drain like the sleep below: a read on an unreachable database hangs
       // until the pool gives up — ~125 s on a worker, past the pod's grace, so SIGKILL (137).

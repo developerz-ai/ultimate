@@ -383,6 +383,21 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
     regenerate,
     markStale,
 
+    // `invalidate`'s purge, for every page: flights first, before the first await.
+    async forgetAll() {
+      for (const path of flight.keys()) {
+        failed.clear(path);
+        flight.evict(path);
+        fences.mark({ key: path });
+        forgetPath(path);
+      }
+      for (const path of await store.paths()) {
+        fences.mark({ key: path });
+        forgetPath(path);
+        await store.delete(path);
+      }
+    },
+
     async serve(path, render) {
       const descriptor = descriptorFor(path);
       const policy = isrPolicyOf(descriptor);
