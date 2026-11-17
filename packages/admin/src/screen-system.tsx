@@ -11,6 +11,7 @@ import { type AuditEntry, type AuditQuery, auditCursorOf, auditEntryMatches } fr
 import { AUDIT_OUTCOMES, type AuditRequest, auditHref, auditRequestOf } from './audit-request';
 import { canOperate } from './crud';
 import { AuditDiff, maskedFieldsOf, operationLabel } from './detail';
+import { rowPath } from './row-path';
 import { type AdminScreen, guardedScreen } from './screen-frame';
 import { adminSearch } from './search';
 
@@ -126,7 +127,7 @@ export function auditScreen(app: AdminApp, route: AdminRoute): AdminScreen {
         entry.entityId === null ||
         !canOperate(resource, 'detail', request.ctx)
         ? null
-        : `${app.basePath}${resource.path}/${encodeURIComponent(entry.entityId)}`;
+        : rowPath(`${app.basePath}${resource.path}`, entry.entityId);
     };
     const { before: _page, ...filters } = asked;
     return (

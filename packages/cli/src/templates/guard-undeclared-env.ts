@@ -48,6 +48,8 @@ const source =
 // (\`apps/**\`, \`packages/**\`; never a test). Declared: a key of the \`envSchema\` export of
 // \`app.config.ts\` — the one declaration \`x env check\` reads. A \`defineEnv(\` handed anything
 // else (an inline \`{ … }\`) is refused: its record is unreachable once \`defineEnv\` returns values.
+// Elsewhere, a record handed to \`defineEnv(\` — inline or a same-file \`const\` — names only keys
+// \`envSchema\` declares: one built from \`envSchema.X\` reads it twice, never a second declaration.
 // Allowed: every name the framework reads itself, \`NODE_ENV\` among them, and the OS's own.
 
 import type { Finding, Guard } from '@ultimat3/cli';
@@ -72,6 +74,8 @@ const READ =
 const OPENS = /\\bexport\\s+const\\s+envSchema\\b[^=]*=\\s*\\{/g;
 /** A \`defineEnv(\` handed anything but \`envSchema\`: a declaration no command can read back. */
 const OTHER_FORM = /\\bdefineEnv\\(\\s*(?!envSchema\\s*[,)])/g;
+/** A \`defineEnv(\` call in app source: its record inline (\`{\`) or a name to resolve in the file. */
+const CALL = /\\bdefineEnv\\(\\s*(?:(\\{)|([A-Za-z_$][\\w$]*))/g;
 /** A key at the declaration's top level, once every nested group is emptied. */
 const KEY = /(?:^|[{,\\s])['"]?([A-Za-z_$][\\w$]*)['"]?\\s*:/g;
 
@@ -100,18 +104,23 @@ const groupAt = (text: string, open: number): string => {
   return text.slice(open + 1);
 };
 
+/** The top-level keys of the record opening at \`open\`, every nested group emptied first. */
+const topLevelKeys = (text: string, open: number): readonly string[] => {
+  let body = groupAt(text, open);
+  // Innermost first, until none is left: a declaration's own \`{ type: … }\` keys are not names.
+  for (let before = ''; before !== body; ) {
+    before = body;
+    body = body.replaceAll(/\\{[^{}]*\\}|\\[[^[\\]]*\\]/g, ' ');
+  }
+  return [...body.matchAll(KEY)].map((key) => key[1] ?? '');
+};
+
 /** Every name \`app.config.ts\` declares: the top-level keys of each declaration it opens. */
 export function declaredNames(config: string): ReadonlySet<string> {
   const names = new Set<string>();
   const text = blank(config);
   for (const open of text.matchAll(OPENS)) {
-    let body = groupAt(text, open.index + open[0].length - 1);
-    // Innermost first, until none is left: a declaration's own \`{ type: … }\` keys are not names.
-    for (let before = ''; before !== body; ) {
-      before = body;
-      body = body.replaceAll(/\\{[^{}]*\\}|\\[[^[\\]]*\\]/g, ' ');
-    }
-    for (const key of body.matchAll(KEY)) names.add(key[1] ?? '');
+    for (const key of topLevelKeys(text, open.index + open[0].length - 1)) names.add(key);
   }
   return names;
 }
@@ -173,11 +182,40 @@ const formFindings = (config: string): readonly Finding[] => {
 const isFramework = (name: string): boolean =>
   FRAMEWORK.has(name) || FRAMEWORK_PREFIXES.some((head) => name.startsWith(head));
 
+/** Where the record a \`defineEnv(\` call is handed opens: inline, or a same-file \`const\`. */
+const recordOpen = (text: string, call: RegExpMatchArray): number | undefined => {
+  if (call[1] !== undefined) return (call.index ?? 0) + call[0].length - 1;
+  const named = new RegExp(\`\\\\bconst\\\\s+\${call[2] ?? ''}\\\\b[^=]*=\\\\s*\\\\{\`).exec(text);
+  return named === null ? undefined : named.index + named[0].length - 1;
+};
+
+/** A \`defineEnv(\` record in app source naming a key \`envSchema\` does not: invisible to \`x env\`. */
+const recordFindings = (file: SourceFile, declared: ReadonlySet<string>): readonly Finding[] => {
+  const text = blank(file.source);
+  const code = codeOnly(text);
+  const findings: Finding[] = [];
+  for (const call of text.matchAll(CALL)) {
+    const open = code.charAt(call.index) === ' ' ? undefined : recordOpen(code, call);
+    if (open === undefined) continue;
+    for (const name of topLevelKeys(code, open)) {
+      if (declared.has(name) || isFramework(name) || AMBIENT.has(name)) continue;
+      findings.push({
+        code: CODE,
+        cause: \`\${file.path}:\${lineOf(text, call.index)} hands defineEnv a record declaring \${name}, which envSchema in app.config.ts does not — x env check, x env example, x secrets and x deploy never ask for it\`,
+        fix: \`add \${name}: { type: 'string', description: '…' } to envSchema in app.config.ts, read it as envSchema.\${name} in \${file.path}, then: x env example\`,
+        at: file.path,
+      });
+    }
+  }
+  return findings;
+};
+
 /** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
 export function undeclaredEnv(files: readonly SourceFile[], config: string): readonly Finding[] {
   const declared = declaredNames(config);
   const findings: Finding[] = [...formFindings(config)];
   for (const file of files) {
+    findings.push(...recordFindings(file, declared));
     const text = blank(file.source);
     const code = codeOnly(text);
     for (const match of text.matchAll(READ)) {

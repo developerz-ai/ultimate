@@ -71,6 +71,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['3b0u9i8hze00x', 'error'],
   ],
   'undeclared-env': [
+    ['1xkusngzbabza', 'error'],
     ['2jbihvbp83mb4', 'error'],
     ['3gsy96z8bgrrl', 'error'],
     ['81vvl6xx5bb8', 'error'],
@@ -82,6 +83,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
   'untranslated-string': [
     ['2x85ib5eqdxzi', 'error'],
     ['3j5e8t1k120u3', 'error'],
+    ['d6gyn0l6szj8', 'error'],
     ['h57qtdwn7inz', 'error'],
   ],
   'unzoned-date': [

@@ -63,22 +63,21 @@ export function entityForStem(
  * that references the actor when there is one (`authorId` = the actor), since ownership is the
  * rule a handler most often checks; else one that is not the actor's own row.
  */
-export type IdLookup = (
-  key: string,
-) => { readonly found: true; readonly value: unknown } | undefined;
+export type IdLookup = (key: string) =>
+  | {
+      readonly found: true;
+      readonly value: unknown;
+      /** A tenant column's field: the run's own tenant, a fresh one every pass. */
+      readonly tenant?: true;
+    }
+  | undefined;
 
 const singularOf = (name: string): string =>
   name.endsWith('ies') ? `${name.slice(0, -3)}y` : name.endsWith('s') ? name.slice(0, -1) : name;
 
-/**
- * A bare `id` names the entity the PRIMITIVE is named after (`movePostStatus` -> `posts`): the
- * longest singular entity name inside the primitive's own name. A tie is no binding.
- */
-export function entityForSubject(
-  subject: string,
-  entities: readonly SeedEntity[],
-): SeedEntity | undefined {
-  const name = folded(subject);
+/** The longest singular entity name inside `text`; a tie is none. */
+function entityInside(text: string, entities: readonly SeedEntity[]): SeedEntity | undefined {
+  const name = folded(text);
   const named = entities
     .map((entity) => [entity, singularOf(folded(entity.$name))] as const)
     .filter(([, singular]) => singular.length > 0 && name.includes(singular))
@@ -87,12 +86,34 @@ export function entityForSubject(
   return first === undefined || second?.[1].length === first[1].length ? undefined : first[0];
 }
 
+/**
+ * A bare `id` names the entity the PRIMITIVE is named after (`movePostStatus` -> `posts`), else
+ * the one entity its policy's grants name (`sendReminder` holding `invoice:write` -> `invoices`):
+ * `x g action <verb> --feature <slice>` takes any verb, and only the grant spells the slice. Two
+ * grants naming two entities name none — a guess between two tables is not a binding.
+ */
+export function entityForSubject(
+  subject: string,
+  entities: readonly SeedEntity[],
+  permissions: readonly string[] = [],
+): SeedEntity | undefined {
+  const byName = entityInside(subject, entities);
+  if (byName !== undefined) return byName;
+  const granted = new Set(
+    permissions.map((permission) => entityInside(permission.split(':')[0] ?? '', entities)),
+  );
+  granted.delete(undefined);
+  return granted.size === 1 ? [...granted][0] : undefined;
+}
+
 export interface IdScope {
   readonly tenant: string;
   /** The acting row's id: a row referencing it is preferred. */
   readonly actorId?: string | undefined;
   /** The primitive's name, for a bare `id`. */
   readonly subject: string;
+  /** Every permission its policy references: a bare `id`'s entity when the name names none. */
+  readonly permissions?: readonly string[] | undefined;
   /** The entity whose rows are the actors (`defineExercise(…, { actor })`). */
   readonly actorEntity?: string | undefined;
   /**
@@ -106,9 +127,9 @@ export interface IdScope {
 const entityForField = (
   key: string,
   entities: readonly SeedEntity[],
-  subject: string,
+  scope: Pick<IdScope, 'subject' | 'permissions'>,
 ): SeedEntity | undefined => {
-  if (key === 'id') return entityForSubject(subject, entities);
+  if (key === 'id') return entityForSubject(scope.subject, entities, scope.permissions);
   const stem = idStem(key);
   return stem === undefined ? undefined : entityForStem(stem, entities);
 };
@@ -117,12 +138,12 @@ const entityForField = (
 export function namesActorEntity(
   drawn: unknown,
   entities: readonly SeedEntity[],
-  scope: Pick<IdScope, 'subject' | 'actorEntity'>,
+  scope: Pick<IdScope, 'subject' | 'permissions' | 'actorEntity'>,
 ): boolean {
   if (scope.actorEntity === undefined || !isPlainObject(drawn)) return false;
   return Object.keys(drawn).some((key) =>
     typeof drawn[key] === 'string'
-      ? entityForField(key, entities, scope.subject)?.$name === scope.actorEntity
+      ? entityForField(key, entities, scope)?.$name === scope.actorEntity
       : namesActorEntity(drawn[key], entities, scope),
   );
 }
@@ -137,8 +158,8 @@ export function seededIds(
   // happens to name: a policy comparing it with `actor.orgId` refuses any other id.
   const tenantKeys = new Set(entities.map((entity) => entity.$tenantColumn));
   return (key) => {
-    if (tenantKeys.has(key)) return { found: true, value: tenant };
-    const entity = entityForField(key, entities, scope.subject);
+    if (tenantKeys.has(key)) return { found: true, value: tenant, tenant: true };
+    const entity = entityForField(key, entities, scope);
     if (entity === undefined || entity.$primaryKey.length !== 1) return undefined;
     const property = entity.$primaryKey[0] as string;
     const seen = graph.inserts.filter(

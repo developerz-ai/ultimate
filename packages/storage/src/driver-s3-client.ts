@@ -4,7 +4,7 @@
 
 import { ConfigInvalidError } from '@ultimat3/core';
 import type { S3DriverOptions } from './driver-s3';
-import { requireEnv, resolveS3Target } from './driver-s3-signed';
+import { bucketHost, requireEnv, resolveS3Target } from './driver-s3-signed';
 
 /** Structural view of `Bun.S3Client` — typing it here keeps `bun-types` out of the contract. */
 export interface S3FileLike {
@@ -54,18 +54,6 @@ interface S3ClientConstructor {
 }
 
 /**
- * Bun's virtual-hosted mode takes the endpoint AS the bucket's host, so the bucket goes into it
- * here — the host `s3ObjectUrl` signs for. The bare account endpoint sent every request to the
- * account root (on R2: an opaque `S3Error` for a read, `ListBuckets` for a list). An endpoint
- * that already names the bucket is kept.
- */
-function bucketHost(endpoint: string, bucket: string): string {
-  const base = new URL(endpoint);
-  if (base.host.startsWith(`${bucket}.`)) return endpoint;
-  return `${base.protocol}//${bucket}.${base.host}`;
-}
-
-/**
  * Everything but the key pair `Bun.S3Client` is built with — the SAME `resolveS3Target` the signed
  * path reads, handed over explicitly so Bun never consults a second table.
  */
@@ -76,7 +64,10 @@ export function clientTarget(options: S3DriverOptions): Record<string, unknown> 
   const endpoint =
     target.endpoint === undefined || pathStyle !== false
       ? target.endpoint
-      : bucketHost(target.endpoint, options.bucket);
+      : // Bun's virtual-hosted mode takes the endpoint AS the bucket's host: the bare account
+        // endpoint sent every request to the account root (on R2: an opaque `S3Error` for a read,
+        // `ListBuckets` for a list).
+        bucketHost(target.endpoint, options.bucket);
   return {
     bucket: options.bucket,
     ...(target.region === undefined ? {} : { region: target.region }),

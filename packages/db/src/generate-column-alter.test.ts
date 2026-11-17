@@ -102,12 +102,15 @@ describe('nullability that moves on an existing column', () => {
     expect(lines(down)).toEqual(['alter table "posts" alter column "status" set not null;']);
   });
 
-  test('becoming NOT NULL is the backfill note, never a bare set not null that fails on NULL rows', () => {
-    const { up } = diff(posts({ notNull: true }), posts({}));
-    expect(lines(up)).toEqual([
-      '-- backfill "status", then: alter table "posts" alter column "status" set not null;',
-    ]);
-    expect(up.trim().length).toBeGreaterThan(0);
+  test('becoming NOT NULL is the contract, never a bare set not null that holds the table', () => {
+    // The whole form is pinned in `not-null-contract.test.ts`; here, that the arm writes it.
+    const { up, down, transactional } = diff(posts({ notNull: true }), posts({}));
+    expect(transactional).toBe(false);
+    expect(lines(up)).toContain('alter table "posts" alter column "status" set not null;');
+    expect(lines(up)).toContain(
+      'alter table "posts" add constraint "posts_status_not_null_check" check ("status" is not null) not valid;',
+    );
+    expect(lines(down)).toContain('alter table "posts" alter column "status" drop not null;');
   });
 
   test('an unchanged column still generates nothing at all', () => {

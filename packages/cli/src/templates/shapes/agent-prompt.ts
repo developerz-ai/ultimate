@@ -8,6 +8,7 @@ import { ASSISTANT_DIR } from './agent-model';
 
 const DIR = `${ASSISTANT_DIR}/prompts`;
 const EVAL = 'assistant.suggest-title';
+const PROMPT_FILE = `${DIR}/suggest-title.ts`;
 
 const TEMPLATE = `You title posts for a team. Someone wants a new post about the topic below.
 
@@ -64,7 +65,8 @@ const templateLiteral = (text: string): string =>
 const prompt = (): string => `/**
  * The prompt behind \`suggestTitle\` (\`../actions/suggest-title.ts\`). No \`model\`: the environment
  * names it (\`../model.ts\`), so the gateway's \`defaultModel\` answers. Editing the template requires
- * bumping \`version\` and re-recording the baseline — the hash keys the traces and the eval.
+ * bumping \`version\` and re-recording the baseline — the hash keys the traces and the eval, and
+ * the eval test refuses a baseline re-recorded under the old version (\`X_EVAL_BASELINE_MISSING\`).
  */
 
 import { definePrompt } from '@ultimat3/ai';
@@ -89,8 +91,14 @@ import type { Scorer } from '@ultimat3/ai';
 import { calledTool, defineEval, jsonSchemaValid } from '@ultimat3/ai';
 import { userActor } from '@ultimat3/core';
 import { suggestTitle } from '../actions/suggest-title';
+import { suggestTitlePrompt } from './suggest-title';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';
+
+/** One baseline per prompt version: an edited template is a new version, recorded afresh. */
+export const BASELINE = import.meta.resolve(
+  \`./suggest-title.v\${suggestTitlePrompt.version}.baseline.json\`,
+);
 
 /** What \`postTitles\` answers in every case: the titles the team already has. */
 export const EXISTING = ['Money is minor units and a currency', 'Every date names its time zone'];
@@ -136,7 +144,7 @@ export const suggestTitleEval = defineEval({
   name: '${EVAL}',
   agent: suggestTitle,
   actor: writer,
-  baseline: import.meta.resolve('./suggest-title.v1.baseline.json'),
+  baseline: BASELINE,
   tolerance: 0.05,
   tools: { postTitles: () => ({ titles: EXISTING }) },
   scorers: [jsonSchemaValid(['title']), notExisting, titleShaped, calledTool('postTitles')],
@@ -150,13 +158,18 @@ const evalTest =
 // one regression that is caught.
 
 import type { ScriptedTurn } from '@ultimat3/ai';
-import { baselinePath, readBaseline } from '@ultimat3/ai';
+import {
+  baselinePath,
+  EvalBaselineMissingError,
+  readBaseline,
+  recordingBaselines,
+} from '@ultimat3/ai';
 import { expect, test } from '@ultimat3/testing';
 // The registration: the agent's tool is offered under the name \`defineApi\` gives it.
 import '../../../api/index';
 import { scriptedGateway } from '../scripted-model';
 import { suggestTitlePrompt } from './suggest-title';
-import { EXISTING, suggestTitleCases, suggestTitleEval } from './suggest-title.evals';
+import { BASELINE, EXISTING, suggestTitleCases, suggestTitleEval } from './suggest-title.evals';
 
 /** What the model answered when the baseline was recorded, keyed by case name. */
 const RECORDED: Readonly<Record<string, string>> = {
@@ -171,7 +184,29 @@ const turns = (title: (name: string) => string, look: boolean): readonly Scripte
     { answer: { title: title(testCase.name) } },
   ]);
 
+/**
+ * This version's baseline was recorded against THIS template. Called before \`assert\`, which
+ * re-records under ULTIMATE_EVAL_RECORD=1: an edit that kept \`version\` is refused there too.
+ */
+async function refuseAnEditUnderItsVersion(): Promise<void> {
+  const path = baselinePath(BASELINE, '${EVAL}');
+  const recorded = await readBaseline(path);
+  // A bumped version has no baseline yet: the record run writes it, the gate refuses its absence.
+  if (recorded === undefined && recordingBaselines()) return;
+  if (recorded?.promptHash === suggestTitlePrompt.hash) return;
+  throw new EvalBaselineMissingError({
+    eval: '${EVAL}',
+    path,
+    reason:
+      recorded === undefined
+        ? 'has never been recorded'
+        : \`was recorded against another template of version \${suggestTitlePrompt.version}\`,
+    fix: 'ULTIMATE_EVAL_RECORD=1 x test eval   # after bumping version in ${PROMPT_FILE}: an edited template is a new version',
+  });
+}
+
 test('suggest-title holds its recorded scores, reading the titles first', async () => {
+  await refuseAnEditUnderItsVersion();
   const { gateway } = scriptedGateway(turns((name) => RECORDED[name] ?? '', true));
   const run = await suggestTitleEval.assert(gateway);
   expect(run.passed).toBe(true);
@@ -179,14 +214,6 @@ test('suggest-title holds its recorded scores, reading the titles first', async 
   expect(run.cases.map((one) => one.run)).toEqual(
     suggestTitleCases.map(() => ({ turns: 2, toolCalls: ['postTitles'] })),
   );
-});
-
-test('the baseline was recorded against this template: an edit re-records it', async () => {
-  const path = baselinePath(
-    import.meta.resolve('./suggest-title.v1.baseline.json'),
-    '${EVAL}',
-  );
-  expect((await readBaseline(path))?.promptHash).toBe(suggestTitlePrompt.hash);
 });
 
 // Through \`run\`, never \`assert\`: \`assert\` re-records under ULTIMATE_EVAL_RECORD=1.
@@ -245,10 +272,13 @@ const baseline = (): string =>
 
 export function promptFiles(): readonly GeneratedFile[] {
   return [
-    { path: `${DIR}/suggest-title.ts`, contents: prompt() },
+    { path: PROMPT_FILE, contents: prompt() },
     { path: `${DIR}/suggest-title.evals.ts`, contents: evals() },
     { path: `${DIR}/suggest-title.eval.test.ts`, contents: evalTest() },
     { path: `${DIR}/suggest-title.evals.test.ts`, contents: scorerTest() },
-    { path: `${DIR}/suggest-title.v1.baseline.json`, contents: baseline() },
+    {
+      path: `${DIR}/suggest-title.v${SUGGEST_TITLE_PROMPT.version}.baseline.json`,
+      contents: baseline(),
+    },
   ];
 }

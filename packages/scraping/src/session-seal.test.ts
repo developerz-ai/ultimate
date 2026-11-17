@@ -3,7 +3,7 @@
 // found there that is not this store's own sealed record is burned and the run logs in again.
 
 import { describe, expect, test } from 'bun:test';
-import { isSealed, seal } from '@ultimat3/core';
+import { isSealed, SECRETS_RETIRED_KEYS_ENV, seal } from '@ultimat3/core';
 import type { StorageDriver, StorageObject } from '@ultimat3/storage';
 import type { SessionState } from './session-state';
 import {
@@ -177,9 +177,42 @@ describe('unit · what is found in the bucket and is not this store`s sealed rec
     expect(storage.deletes).toEqual([PATH]);
   });
 
-  test('a record sealed under a key this process does not declare is burned', async () => {
+  test('a record sealed under a key this process does not declare is skipped, never burned', async () => {
+    // X_SEAL_KEY_UNKNOWN is a key this pod does not hold YET — a rotation rolling out — not a
+    // forged record: another pod opens it, and deleting it would log that pod out.
     const storage = fakeStorage();
     await storageSessionStore(() => storage, { keySource: OTHER_KEYS }).save(STATE);
+    expect(
+      await storageSessionStore(() => storage, { keySource: KEYS }).load(STATE.key),
+    ).toBeUndefined();
+    expect(storage.deletes).toEqual([]);
+    expect(storage.objects.has(PATH)).toBe(true);
+  });
+
+  test('mid-rotation, an old pod leaves the session a new pod saved for the new pod', async () => {
+    const OLD = 'a1'.repeat(32);
+    const newPod = {
+      env: { ULTIMATE_SECRETS_KEY: 'b2'.repeat(32), [SECRETS_RETIRED_KEYS_ENV]: OLD },
+      root: '/nonexistent-app-root',
+    };
+    const storage = fakeStorage();
+    await storageSessionStore(() => storage, { keySource: newPod }).save(STATE);
+    expect(
+      await storageSessionStore(() => storage, { keySource: KEYS }).load(STATE.key),
+    ).toBeUndefined();
+    expect(await storageSessionStore(() => storage, { keySource: newPod }).load(STATE.key)).toEqual(
+      STATE,
+    );
+  });
+
+  test('a record whose tag does not authenticate under a key this process holds is burned', async () => {
+    const storage = fakeStorage();
+    await storageSessionStore(() => storage, { keySource: KEYS }).save(STATE);
+    const { sealed } = JSON.parse(storage.objects.get(PATH) ?? '') as { sealed: string };
+    // One character of the ciphertext flipped: the key id still names a key this pod declares.
+    const at = sealed.length - 5;
+    const flipped = `${sealed.slice(0, at)}${sealed[at] === 'A' ? 'B' : 'A'}${sealed.slice(at + 1)}`;
+    storage.objects.set(PATH, JSON.stringify({ sealed: flipped }));
     expect(
       await storageSessionStore(() => storage, { keySource: KEYS }).load(STATE.key),
     ).toBeUndefined();

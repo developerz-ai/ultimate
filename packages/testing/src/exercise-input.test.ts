@@ -88,6 +88,23 @@ describe(testName('unit', 'exercise input'), () => {
     expect(seededIds(graph, [posts], { tenant: 't1', subject: 'x' })('orgId')).toBeUndefined();
   });
 
+  // `x g action send-reminder --feature invoice`: a name that does not spell its slice. Its policy's
+  // grant (`invoice:write`) does, so a bare `id` binds an invoice and the handler is reached.
+  test('a bare id names the entity its grants name when the primitive name names none', () => {
+    const invoices = named('invoices');
+    const graph = graphOf([row('invoices', { id: 'i1' })]);
+    const scope = { tenant: 't1', subject: 'sendReminder' };
+    expect(seededIds(graph, [invoices], scope)('id')).toBeUndefined();
+    const granted = { ...scope, permissions: ['invoice:write', 'invoice:read'] };
+    expect(seededIds(graph, [invoices], granted)('id')?.value).toBe('i1');
+    // The name still wins, and grants naming two entities name none.
+    const both = [invoices, posts];
+    const named2 = { ...granted, subject: 'archivePost' };
+    expect(entityForSubject('archivePost', both, ['invoice:write'])).toBe(posts);
+    expect(seededIds(graph, both, named2)('id')).toBeUndefined();
+    expect(entityForSubject('x', both, ['invoice:write', 'post:write'])).toBeUndefined();
+  });
+
   test('every string id field is bound, nested ones too; anything else is left as drawn', () => {
     const lookup = (key: string) =>
       key === 'postId' ? { found: true as const, value: 'p1' } : undefined;

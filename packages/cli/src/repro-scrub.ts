@@ -3,7 +3,7 @@
 // config hostnames, any URL's userinfo and query values, emails and IPs become tokens; a frame's
 // absolute path is made relative. A value it was never told about is NOT found: say so to the user.
 
-import { isRedactedKey } from '@ultimat3/core';
+import { isRedactedKey, replaceUrlUserinfo } from '@ultimat3/core';
 
 export interface ScrubEnv {
   readonly name: string;
@@ -153,12 +153,12 @@ const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\
 
 /** A URL in prose: its scheme, then everything up to a space, a quote or a bracket. */
 const URL_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s'"`<>()]+/gi;
-/** Any URL's userinfo and query VALUES: credentials and tokens ride in both. */
+/** Any URL's userinfo (to its LAST `@`) and query VALUES: credentials and tokens ride in both. */
 function withoutUrlSecrets(text: string): string {
   return text.replace(URL_TEXT, (url) =>
-    url
-      .replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i, '$1[cred]@')
-      .replace(/\?[^#]*/, (query) => query.replace(/=[^&]*/g, '=[redacted]')),
+    replaceUrlUserinfo(url, () => '[cred]').replace(/\?[^#]*/, (query) =>
+      query.replace(/=[^&]*/g, '=[redacted]'),
+    ),
   );
 }
 

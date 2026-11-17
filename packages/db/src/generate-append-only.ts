@@ -119,9 +119,9 @@ export type AppendOnlyBackfillArm = 'added' | 'made-not-null';
 
 /**
  * A column an append-only table must hold NOT NULL with no default to fill it. Both arms of the
- * diff would emit `-- backfill …, then: set not null` — `diffTable` for a new column,
- * `alterColumnInPlace` for an existing one — and on this table that backfill is an UPDATE the
- * trigger refuses: an instruction nobody can carry out, leaving the column nullable forever.
+ * diff would add it nullable and contract it to NOT NULL (`not-null-contract.ts`) — `diffTable` for
+ * a new column, `alterColumnInPlace` for an existing one — and on this table the backfill between
+ * the two is an UPDATE the trigger refuses: a contract no existing row can ever satisfy.
  * Refused at generation instead; a default is the one way every row gets a value with no UPDATE.
  */
 export const appendOnlyBackfillRefused = (

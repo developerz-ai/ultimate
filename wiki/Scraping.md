@@ -212,7 +212,8 @@ The `/robots.txt` read is deadlined (10s), capped (500 KiB) and dialled through 
 | The read | Means | The gate |
 |---|---|---|
 | `2xx` | the file | its rules, cached for the run |
-| `4xx` (not `429`), a body past the cap, a redirect off the list or past the hop cap | **unavailable** | no restrictions, cached for the run |
+| `2xx` with a body past the cap (500 KiB) | the file's head | the whole lines inside the cap are parsed (RFC 9309 §2.5), cached for the run; a head with no line end is **unreachable** |
+| `4xx` (not `429`), a redirect off the list or past the hop cap | **unavailable** | no restrictions, cached for the run |
 | `5xx`, `429`, a refused connection, the deadline, the run cancelled, a `fetchText` that rejects | **unreachable** | complete disallow — every path on the origin is `X_SCRAPE_ROBOTS_DISALLOWED` — and **not** cached: the next navigation asks again, so the run recovers when the file answers |
 
 `429` is the one row that is **our policy, not the RFC's**: RFC 9309 calls every `4xx` unavailable, `429` included. Ultimate refuses on it because a server rate-limiting the crawler has not said "no rules" — stricter than the RFC requires, never looser.
@@ -270,7 +271,8 @@ Reuse is both the fast path and the safe path — logging in on every run is slo
 |---|---|
 | this store's sealed record, saved under this key | the session |
 | nothing | `undefined` — the run logs in |
-| an unsealed object, a corrupt one, one sealed under a key this process does not declare, one copied from another key's path | **burned**, then `undefined` — a session is a cache, so nothing is migrated |
+| an unsealed object, a corrupt one, one whose tag fails under a key this process holds, one copied from another key's path | **burned**, then `undefined` — a session is a cache, so nothing is migrated |
+| one sealed under a key this process does not hold yet (`X_SEAL_KEY_UNKNOWN`, mid-rotation) | `undefined`, the object **kept**: a pod that already holds the new key still restores it |
 | no master key at all | `X_SEAL_KEY_MISSING`, before the browser opens — run `x secrets init` |
 
 **Upgrading into sealed sessions discards what was stored before**, refusal markers included. A

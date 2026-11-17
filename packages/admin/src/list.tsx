@@ -24,6 +24,7 @@ import type { AdminRow } from './registry';
 import { rowId } from './registry';
 import type { AdminResource } from './resource';
 import type { AdminScope } from './resource-list';
+import { rowPath } from './row-path';
 import type { WidgetContext } from './widget-value';
 
 export interface AdminListProps<Row extends AdminRow> {
@@ -45,7 +46,7 @@ export interface AdminListProps<Row extends AdminRow> {
 }
 
 export function AdminList<Row extends AdminRow>(props: AdminListProps<Row>): JSX.Element {
-  const href = (id: string): string => `${props.basePath}${props.resource.path}/${id}`;
+  const href = (id: string): string => rowPath(`${props.basePath}${props.resource.path}`, id);
   const idOf = (row: Row): string => rowId(row, props.resource.idField);
 
   if (props.error !== null) {

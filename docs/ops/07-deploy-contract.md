@@ -51,6 +51,7 @@ exits with the code that names what is missing.** One boot read, two facts
 | both current | serves |
 | either behind | waits, reading again on core's backoff curve (1 s, capped at 15 s), logging `ultimate schema waiting` once and `ultimate schema applied` when it ends (`packages/cli/src/framework-schema-wait.ts`). `web` and `sync` answer `/healthz` 200 and `/readyz` 503 on their own port meanwhile (`packages/cli/src/serve-boot-probe.ts`), so the probes see a live pod that is not ready. `framework_schema_applied` reads 0 every round |
 | still behind after `ULTIMATE_SCHEMA_WAIT_MS` (default 300000; `0` refuses at once) | exits with `X_FRAMEWORK_SCHEMA_UNAPPLIED` or `X_APP_MIGRATIONS_UNAPPLIED`, `meta.waitedMs` saying how long. A SIGTERM mid-wait ends it too: a drain, not a wait to the deadline |
+| a schema read that never answers (database unreachable, pool still dialling) | ends at the remaining deadline, at least 1 s per read: the last verdict's refusal, or `X_DB_UNAVAILABLE` before any read answered |
 | a framework stamp whose newest build is a newer major than its own | exits with `X_FRAMEWORK_SCHEMA_UNAPPLIED` at once: no migrate of this build is coming |
 | its hash in the stamp, newest applied build another major | serves, logs `ultimate framework major skew` once (`reportSkew`); `framework_schema_major_skew` reads 1 |
 | the ledger holding migrations this build does not ship | serves, logs `ultimate app migrations ahead` once: a rollback, or an old pod of a rollout whose migrate already ran |

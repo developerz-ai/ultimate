@@ -99,7 +99,7 @@
     },
     "dummy/social-media-clone": {
       "name": "social-media-clone",
-      "version": "0.1.0",
+      "version": "1.0.0",
       "dependencies": {
         "@ultimat3/action": "31.43.0",
         "@ultimat3/admin": "31.43.0",

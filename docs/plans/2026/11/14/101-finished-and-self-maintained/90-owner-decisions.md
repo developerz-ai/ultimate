@@ -37,3 +37,19 @@ The owner set the whole plan as one goal with full access ("do full work, full a
 | OD0 | 8 agents per sweep, PRs up to ~200 files, with the replacement review |
 | OD1 | authorised for the whole plan: releases, demo rollouts, production evidence, PRs in other repositories (S1–S5) |
 | OD2–OD10 | the recommendation column, as written |
+
+## Audit rounds at the cap (2026-11-17)
+Slice 20 step 7: six rounds ran without two consecutive clean ones, so the rounds stop here. From now on the monthly `audit` brief does this job.
+
+| Round | P0 | P1 | P2 | What each round was |
+|---|---|---|---|---|
+| 1 | 1 | 2 | 6 | first pass, tiers 0–5 |
+| 2 | 0 | 6 | 22 | unread tiers, DX by real use |
+| 3 | 1 | 2 | ~10 | upgrade path, tenancy |
+| 4 | 0 | 1 | 11 | resource exhaustion, architecture |
+| 5 | 0 | 4 | 9 | the read ledger's unread files |
+| 6 | 2 | 4 | 6 | authz in `@ultimat3/admin`, DX by real use |
+
+**Trend:** fewer findings overall (37 → 12), but each new axis or newly read file still finds defects. Round 6's two P0s were in the admin, which no round had read for authz. Every confirmed finding is fixed with a test that failed first. The read ledger in `status.yml` lists the code still unread.
+
+**Recommendation:** the monthly `audit` brief rotates one unread area a month: db generate/drift/pool, entity partition and pg-driver, http stages and compress, storage multipart and the local write path, `time`, the remaining shapes, and `create-ultimate`. It also runs the DX pass each month: the DX auditor found 2 P1 in round 6 alone.

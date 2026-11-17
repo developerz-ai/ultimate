@@ -46,6 +46,20 @@ describe('unit · shipped guard · untranslated-string', () => {
     expect(label?.fix).toContain("aria-label={t('");
   });
 
+  // `x i18n check` audits catalogs, never pages: it passes with the string still typed, so a fix
+  // ending there declares done what this guard still refuses. The guard runs on `boundaries`.
+  test('both fixes end with the check that refuses the typed string, never x i18n check', async () => {
+    const findings = await shippedGuardFindings('untranslated-string', {
+      'apps/web/app/a.tsx': PROSE,
+      'apps/web/app/b.tsx': 'export const B = () => <button aria-label="Download report" />;\n',
+    });
+    expect(findings).toHaveLength(2);
+    for (const finding of findings) {
+      expect(finding.fix).toEndWith('then: x verify --only boundaries');
+      expect(finding.fix).not.toContain('x i18n check');
+    }
+  });
+
   // The lookalikes: a t() call, an expression, an empty decorative alt, a token-sized value, an
   // attribute that only ends in a listed name, a variable assignment, and a test file.
   test('a t() call, an expression, a non-text value and a test file are not reported', async () => {

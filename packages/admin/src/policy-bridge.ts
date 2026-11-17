@@ -2,7 +2,6 @@
 // on the `AdminAuthz` interface, so there is exactly one adaptation point between the app's
 // policies and the dashboard — and no second authz implementation can grow next to it.
 
-import { type Actor, userActor } from '@ultimat3/core';
 import {
   can,
   definePermissions,
@@ -12,6 +11,7 @@ import {
   type Permission,
   type Policy,
 } from '@ultimat3/policy';
+import { coreActorOf } from './actor';
 import {
   type AdminActor,
   type AdminAuthz,
@@ -23,23 +23,6 @@ import {
   impliersOf,
 } from './authz';
 import { ADMIN_PERMISSIONS } from './permissions';
-
-/**
- * The admin carries its own actor shape; @ultimat3/policy evaluates core's `Actor`. The
- * mapping lives here because this file is the only one allowed to speak to the policy layer.
- */
-const policyActor = (actor: AdminActor): Actor =>
-  // `orgId` rides along, and its absence used to be silent: every admin decision was evaluated
-  // with `actor.orgId === undefined`, so an org-scoped rule could not fire and a role-only rule
-  // allowed a row from another tenant.
-  // And the direct grants: `can()` reads roles and `permissions` as one set, exactly as the request
-  // pipeline does, so a permission held with no role opens the screen it opens the route for.
-  userActor({
-    id: actor.id,
-    roles: actor.roles ?? [],
-    permissions: actor.permissions ?? [],
-    orgId: actor.orgId,
-  });
 
 /**
  * One evaluated clause as the line `/_x` prints: `  can(job:read): allow`, indented by depth, its
@@ -114,7 +97,10 @@ const evaluated = (
   const row = subject === undefined || !('row' in subject) ? undefined : { row: subject.row };
   return readDecision(
     permission,
-    evaluate(policy, { actor: policyActor(actor), input: payload, ...row }),
+    // The actor of its REAL kind (`coreActorOf`): rebuilt as a user, a rule refusing agents never
+    // fired on admin MCP, and scopes and `onBehalfOf` reached no rule at all. Tenant and direct
+    // grants ride the same mapping — `can()` reads roles and `permissions` as one set.
+    evaluate(policy, { actor: coreActorOf(actor), input: payload, ...row }),
   );
 };
 

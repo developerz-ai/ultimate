@@ -37,6 +37,7 @@ import type { AdminRow } from './registry';
 import { relatedLists, relatedOf } from './related';
 import { type RelationNeed, relationDataFor, relationNeeds } from './relations';
 import type { AdminResource } from './resource';
+import { rowPath } from './row-path';
 import { ROW_CHANGED_REASON, rowVersion, VERSION_FIELD } from './row-version';
 import { batchWrite, rowActionFormScreen, rowActionWrite } from './screen-action';
 import {
@@ -53,7 +54,7 @@ import type { ValidationIssue } from './validate';
 import type { WidgetContext } from './widget-value';
 
 const rowHref = (app: AdminApp, resource: AdminResource, id: string): string =>
-  `${app.basePath}${resource.path}/${id}`;
+  rowPath(`${app.basePath}${resource.path}`, id);
 
 const idOf = (request: AdminRouteRequest): string => request.params['id'] ?? '';
 

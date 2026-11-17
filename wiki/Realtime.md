@@ -670,7 +670,7 @@ No channel kind carries an ordered, two-way byte stream to a browser — a termi
 
 ## Wire protocol version
 
-`PROTOCOL_VERSION` is **3** `As of 2026-09-22` (21.0.0; it was 2 from 2026-08-24) ([`packages/realtime/src/sync-protocol.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/sync-protocol.ts)). A mismatch is `X_PROTOCOL_VERSION` on the frame, with one instruction, rather than a per-field decode error nobody can act on.
+`PROTOCOL_VERSION` is **3** `As of 2026-09-22` (21.0.0; it was 2 from 2026-08-24) ([`packages/realtime/src/sync-protocol.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/sync-protocol.ts)). A mismatch is `X_PROTOCOL_VERSION` on the frame, with one instruction, rather than a per-field decode error nobody can act on. A throw with no code (a live query's `TypeError`) is `X_INTERNAL` on the ack, its cause withheld as HTTP withholds an unclassified 5xx's — never `X_PROTOCOL_VERSION`, whose rebuild cannot repair a server bug. `As of 2026-11`.
 
 **Clients and `sync` nodes must be redeployed together across this bump.** A cursor rides in BOTH directions — the client's `subscribe` and the node's `snapshot` — so a skew breaks resume from either side.
 
