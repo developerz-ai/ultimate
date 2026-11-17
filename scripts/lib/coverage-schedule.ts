@@ -3,10 +3,11 @@
 // the pool that never leases more cores than the runner has. Scheduling only — what a unit
 // measures, and the verdict on it, are the gate's.
 
-// why: Bun ships no synchronous file read; the env file is read once, before any unit starts.
 import { readFileSync } from 'node:fs';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
+// why: Bun ships no synchronous file read; the env file is read once, before any unit starts.
+import { renderFixShellArg } from '@ultimat3/core';
 
 /**
  * Test files one `bun test` worker is handed before a unit is widened by another. A unit at or
@@ -202,4 +203,29 @@ export function lastTestLines(output: string, count: number): readonly string[] 
     .filter((line) => TEST_LINE.test(line))
     .slice(-count)
     .map((line) => line.trim());
+}
+
+/**
+ * The unit's test files the output never named: under `--parallel` a file prints as it reports, so
+ * at a deadline these are the ones still loading or running. An e2e path is never run here.
+ */
+export function unreportedFiles(output: string, files: readonly string[]): readonly string[] {
+  return files.filter((file) => !/(?:^|\/)e2e\//.test(file) && !output.includes(`${file}:`));
+}
+
+/** `X_SPAWN_TIMED_OUT` for a unit killed at its deadline: the frontier, and who never reported. */
+export function timedOutFinding(
+  name: string,
+  test: string,
+  output: string,
+  timeoutMs: number,
+  files: readonly string[],
+): { code: string; cause: string; fix: string } {
+  const last = lastTestLines(output, 6).join(' | ') || '(nothing)';
+  const silent = unreportedFiles(output, files).slice(0, 12).join(', ') || '(none)';
+  return {
+    code: 'X_SPAWN_TIMED_OUT',
+    cause: `bun test ${test} did not finish within ${String(timeoutMs)} ms and was killed; the last it printed: ${last}; never reported: ${silent}`,
+    fix: `bun run scripts/coverage-gate.ts --package ${renderFixShellArg(name, '<unit>')} --json   # alone; a test that hangs is named by the last (pass) line before the stall`,
+  };
 }

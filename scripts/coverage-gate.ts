@@ -37,19 +37,24 @@ import {
 } from './lib/coverage-pins';
 import {
   concurrency,
-  lastTestLines,
   leasePool,
   serviceKeys,
+  timedOutFinding,
   UNIT_TIMEOUT_MS,
   unitEnv,
   unitTimeoutOf,
   workersFor,
 } from './lib/coverage-schedule';
 
-export { UNIT_TIMEOUT_MS, unitTimeoutOf };
-
 import type { CoverageUnit } from './lib/coverage-units';
-import { atOf, SCRIPTS_UNIT, testFileCount, unitOf, unitsFor } from './lib/coverage-units';
+import {
+  atOf,
+  SCRIPTS_UNIT,
+  testFileCount,
+  testFilesOf,
+  unitOf,
+  unitsFor,
+} from './lib/coverage-units';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { RunResult } from './lib/run';
@@ -360,14 +365,9 @@ export function unitFailure(
   name: string,
   ran: Pick<RunResult, 'code' | 'output' | 'timedOut'>,
   timeoutMs: number = UNIT_TIMEOUT_MS,
+  files: readonly string[] = [],
 ): { code: string; cause: string; fix: string } | undefined {
-  if (ran.timedOut) {
-    return {
-      code: 'X_SPAWN_TIMED_OUT',
-      cause: `bun test ${unitOf(name).test} did not finish within ${String(timeoutMs)} ms and was killed; the last it printed: ${lastTestLines(ran.output, 6).join(' | ') || '(nothing)'}`,
-      fix: `bun run scripts/coverage-gate.ts --package ${renderFixShellArg(name, '<unit>')} --json   # alone; a test that hangs is named by the last (pass) line before the stall`,
-    };
-  }
+  if (ran.timedOut) return timedOutFinding(name, unitOf(name).test, ran.output, timeoutMs, files);
   return suiteFailure(name, ran.code ?? 1, ran.output);
 }
 
@@ -390,7 +390,7 @@ async function measure(
     env: unitEnv(Bun.env, serviceKeys(root)),
     timeoutMs,
   });
-  const failure = unitFailure(name, ran, timeoutMs);
+  const failure = unitFailure(name, ran, timeoutMs, testFilesOf(root, unit));
   if (failure !== undefined) throw new ScriptError(failure);
   const file = Bun.file(join(dir, 'lcov.info'));
   if (!(await file.exists())) {
