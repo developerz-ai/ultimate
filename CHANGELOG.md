@@ -10,7 +10,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- testing: under the gate's coverage run, `mountIsland` starts the covered and the shipped build together instead of one after the other. Since 31.41.0 the second build ran after the first, doubling a mount's time; a 5 s test over a Solid island went past its budget on a loaded runner.
 
 ## Releases
 
