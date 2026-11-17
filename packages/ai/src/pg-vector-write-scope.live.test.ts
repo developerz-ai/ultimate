@@ -1,14 +1,16 @@
-// `PostgresVectorStore` writes against a real pgvector, under an org request: an unbound store's
-// `delete`/`prune`/`upsert` is refused before any statement reaches Postgres, and a tenant-bound
-// one touches only its own rows. Without the refusal `deleteSql` compiled to `and true` and an
-// org-A request deleted org-B's row sharing the id. Gated on `TEST_DATABASE_URL`.
+// `PostgresVectorStore` against a real pgvector, inside a request: an unbound store's writes and
+// reads are refused before any statement reaches Postgres, for an org's actor and an org-less or
+// anonymous one alike, and a tenant-bound one touches only its own rows. Without the refusal
+// `deleteSql` compiled to `and true` and an org-A request deleted org-B's row sharing the id, and
+// an anonymous `searchText` read both orgs' rows. Gated on `TEST_DATABASE_URL`.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
+import { type Actor, anonymousActor, ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { type PostgresClient, postgresClient, raw, statementsOf } from '@ultimat3/db';
 import { hashEmbedder, normalizeVector } from './embeddings';
 import { type PostgresVectorStore, postgresVectorStore } from './pg-vector';
 import { indexDocument } from './rag';
+import { UNSCOPED } from './vector-scope';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
@@ -18,6 +20,8 @@ const DROP = `drop table if exists "${TABLE}" cascade`;
 const vec = (...values: number[]): Float32Array => normalizeVector(Float32Array.from(values));
 const asOrgA = <T>(fn: () => Promise<T>): Promise<T> =>
   runWithContext(ctxOf({ actor: userActor({ id: 'u-a', orgId: 'org-a' }) }), fn);
+const as = <T>(actor: Actor, fn: () => Promise<T>): Promise<T> =>
+  runWithContext(ctxOf({ actor }), fn);
 
 describe.skipIf(!hasPostgres)('live · pgvector · an unbound write in an org request', () => {
   let client: PostgresClient;
@@ -86,5 +90,21 @@ describe.skipIf(!hasPostgres)('live · pgvector · an unbound write in an org re
       expect(await orgA.search(vec(1, 0, 0, 0), 10)).toEqual([]);
     });
     expect(await orgBRows()).toEqual(['doc-1']);
+  });
+
+  test('an org-less or anonymous unbound searchText is refused; UNSCOPED reads both', async () => {
+    await store
+      .scoped({ tenant: 'org-a' })
+      .upsert([{ id: 'pay-a', vector: vec(0, 0, 1, 0), text: 'payroll A' }]);
+    await store
+      .scoped({ tenant: 'org-b' })
+      .upsert([{ id: 'pay-b', vector: vec(0, 0, 1, 0), text: 'payroll B' }]);
+    for (const actor of [anonymousActor(), userActor({ id: 'u-1' })]) {
+      await expect(as(actor, () => store.searchText('payroll', 10))).rejects.toMatchObject({
+        code: 'X_VECTOR_UNSCOPED',
+      });
+      const all = await as(actor, () => store.scoped(UNSCOPED).searchText('payroll', 10));
+      expect(all.map((hit) => hit.text).sort()).toEqual(['payroll A', 'payroll B']);
+    }
   });
 });

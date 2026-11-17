@@ -69,7 +69,7 @@ one.
 | `--shape <shape>` | none | start from `api`, `blog` or `dashboard` instead of the dashboard and example slice — what each writes and leaves out: [Shapes](Shapes) |
 | `--git` / `--no-git` | `--git` | `git init` and commit the scaffold |
 | `--dry-run` | off | print the file list, write nothing |
-| `--force` | off | write into a directory that already exists and holds no `app.config.ts`; never over an app |
+| `--force` | off | write into a directory that already exists, holds no `app.config.ts` and none of the paths the scaffold writes (a fresh clone: `.git`, a `LICENSE`); one taken path (`README.md`, `package.json`, …) refuses the run with `X_GENERATE_CONFLICT` naming them, nothing written — never an overwrite |
 | `--json` | off | machine-readable result: the directory, every path written, the git outcome |
 
 There is **no** `--admin`, `--locale`, `--tz`, `--currency`, `--no-install` or `--yes` — this table
