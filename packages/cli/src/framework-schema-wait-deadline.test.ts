@@ -29,6 +29,8 @@ async function outcomeWithin(work: Promise<unknown>, ms: number): Promise<Ultima
       () => 'served',
       (error: unknown) => (error instanceof UltimateError ? error : 'an uncoded rejection'),
     ),
+    // The subject's read bound is a real timer: a database hangs in real time.
+    // real-clock: the watchdog over a real-time bound
     Bun.sleep(ms).then(() => 'still waiting'),
   ]);
 }
@@ -62,6 +64,7 @@ describe('unit · a schema read that never answers', () => {
 
   test('a deadline of 0 still lets a slow but live read answer, inside the floor', async () => {
     const slow = async (): Promise<SchemaCheck<string>> => {
+      // real-clock: the database's own latency, another process's time.
       await Bun.sleep(30);
       return { ready: true, value: 'served' };
     };

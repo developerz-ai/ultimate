@@ -28,7 +28,12 @@ test('a new column and a concurrent index are two migrations, applied in that or
 
     clearRegistry();
     entity('db_gen_conc_runs', {
-      columns: { id: uuid().primaryKey(), status: text({ max: 20 }), note: text({ max: 20 }) },
+      columns: {
+        id: uuid().primaryKey(),
+        status: text({ max: 20 }),
+        // Nullable: a required column's NOT NULL contract would join the concurrent step too.
+        note: text({ max: 20 }).nullable(),
+      },
       indexes: [{ on: ['status'], concurrently: true }],
     });
     // The test clock is frozen, so both ids share one stamp and sort by name: `create` < `runs`.

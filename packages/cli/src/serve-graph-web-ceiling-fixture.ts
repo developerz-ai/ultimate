@@ -293,5 +293,7 @@
  * raised 1740 → 1741, measured 1741 (2026-11-17, plan 101b audit round 4):
  * `cli/src/retained-assets-sweep-fence.ts`, the `assets.retain` sweep's delete fence that puts back
  * a file a concurrent publish on another pod reused.
+ * raised 1741 → 1745, measured 1745 (2026-11-17, plan 101b audit rounds 5–6): the four on
+ * `SERVING_ROLE_CEILING`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1741;
+export const WEB_ROLE_CEILING = 1745;
