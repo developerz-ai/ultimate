@@ -10,6 +10,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- **The gate's `live` step holds a strict floor to its word:** a `live` test that skipped with the database in reach is red, and a runner with no database stays a warning. The signal travels through `--json` to `x verify merge`.
+- **An island size ceiling can no longer read the coverage build by accident:** a test builder that hands both builds one bundle is refused, `X_TEST_ISLAND_BUILD_REUSED`.
+
 ### Fixed
 
 - testing: under the gate's coverage run, `mountIsland` refuses a builder that hands the shipped build the same bundle it handed the coverage build (`X_TEST_ISLAND_BUILD_REUSED`) â€” a memo round `buildIslands` that ignores `options`. Measured instead, every island size ceiling read the unminified chunk: green under `bun test`, red in `x verify` (one adopter, 14 files). The fix names the call: `mountIsland({ build: buildIslands, root, file })`, or a memo keyed by `options.coverage`.
