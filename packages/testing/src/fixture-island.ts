@@ -90,7 +90,12 @@ export interface MountIslandOptions {
  * one — `return render(…)`), then hands the process its globals back. Both, in that order.
  */
 export interface MountedIsland extends Disposable {
-  /** The chunk's source, for asserting on what did or did not reach the browser. */
+  /**
+   * The chunk's source, for asserting on what did or did not reach the browser — a name, an import.
+   * Never its SIZE: under the gate's coverage run (`ISLAND_COVERAGE_ENV`) it is built unminified for
+   * the source map, so a byte count passes under `bun test` and fails in `x verify`. Weigh a chunk
+   * with a route budget (`budget: { js }`, the `budgets` step), which measures the shipped build.
+   */
   readonly code: string;
   /** The host element `mount` was given. */
   readonly el: FakeElement;
