@@ -22,6 +22,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Changed
 
+- New codemod `test-services` (31.41.0): `x upgrade` writes `docker/docker-compose.test.yml` and `docker/test-services.env`, under the app's own ports, for an app scaffolded before 31.27.0 that has a database and neither file. `test-suites` already handed such an app a `live` suite the floor requires; six adopter upgrades wrote the two files by hand.
 - `live` under a strict floor holds its skips at 0 in CI when `x.verify.json` writes no `skipCeiling.live` (`X_VERIFY_SKIPS_OVER_CEILING`): a skipped `live` test means the run had no database, and the step used to pass having proved nothing. See wiki/Upgrading.md.
 
 ## Releases
