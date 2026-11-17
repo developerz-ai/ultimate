@@ -49,6 +49,30 @@ describe('parseSteps', () => {
     expect(redSteps(steps ?? [])).toEqual(['drift']);
   });
 
+  // A `live` step whose database never came up is red as a vanished suite, and the WHY — the
+  // gate's X_TEST_SERVICES_UNAVAILABLE — rides as a warning. Printing findings alone left a CI log
+  // reading "all 1 test(s) skipped" with nothing saying docker had failed.
+  test('a red step prints its warnings; a green one stays quiet', () => {
+    const payloadWithWarning = JSON.stringify({
+      ok: false,
+      steps: [
+        {
+          name: 'live',
+          ok: false,
+          durationMs: 3,
+          skipped: false,
+          findings: [{ code: 'X_VERIFY_SUITE_VANISHED', cause: 'c', fix: 'f' }],
+          warnings: ['X_TEST_SERVICES_UNAVAILABLE: docker compose up exited 1'],
+        },
+        { name: 'lint', ok: true, durationMs: 1, skipped: false, findings: [], warnings: ['w'] },
+      ],
+    });
+    const steps = parseSteps(`${payloadWithWarning}\n`) ?? [];
+    const lines = stepLines(steps, {});
+    expect(lines).toContain('      ! X_TEST_SERVICES_UNAVAILABLE: docker compose up exited 1');
+    expect(lines).not.toContain('      ! w');
+  });
+
   test('a stray line before the payload does not make the gate unreadable', () => {
     expect(parseSteps(`warming up\n${payload}\n`)?.length).toBe(2);
   });
