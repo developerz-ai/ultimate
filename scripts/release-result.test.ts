@@ -82,6 +82,13 @@ function scripted(script: Script): { deps: Omit<ReleaseDeps, 'root'>; ran: strin
         const output = command[0] === 'gh' ? script.gh : rows[line];
         return answer(command, output !== undefined, output ?? 'fatal');
       },
+      // No compiler over a fixture: a surface with nothing pending, as a tree with no break reads.
+      readApi: async () => ({
+        findings: [],
+        diff: { breaks: [], compatible: [], added: [] },
+        symbols: 0,
+        migratedFrom: [],
+      }),
     },
   };
 }

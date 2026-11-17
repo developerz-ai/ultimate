@@ -45,8 +45,9 @@ const source =
 // step — nothing registers this file, so nothing can forget to.
 //
 // Read: \`process.env.X\`, \`Bun.env.X\`, \`import.meta.env.X\` and the \`['X']\` forms, in app source
-// (\`apps/**\`, \`packages/**\`; never a test). Declared: a key of \`envSchema\` or of the object
-// \`defineEnv({ … })\` is handed, in \`app.config.ts\` — the declaration \`x env check\` reads.
+// (\`apps/**\`, \`packages/**\`; never a test). Declared: a key of the \`envSchema\` export of
+// \`app.config.ts\` — the one declaration \`x env check\` reads. A \`defineEnv(\` handed anything
+// else (an inline \`{ … }\`) is refused: its record is unreachable once \`defineEnv\` returns values.
 // Allowed: every name the framework reads itself, \`NODE_ENV\` among them, and the OS's own.
 
 import type { Finding, Guard } from '@ultimat3/cli';
@@ -67,8 +68,10 @@ const FRAMEWORK_PREFIXES = [${frameworkPrefixes()}];
 /** A literal read: \`process.env.X\` / \`Bun.env['X']\`. A computed key names nothing to check. */
 const READ =
   /\\b(?:process\\.env|Bun\\.env|import\\.meta\\.env)(?:\\.([A-Za-z_$][\\w$]*)|\\[\\s*(['"\`])([A-Za-z_$][\\w$]*)\\2\\s*\\])/g;
-/** Where the declaration opens: the \`envSchema\` export, or an object handed to \`defineEnv(\`. */
-const OPENS = /\\bexport\\s+const\\s+envSchema\\b[^=]*=\\s*\\{|\\bdefineEnv\\(\\s*\\{/g;
+/** Where the declaration opens: the \`envSchema\` export, the one form every \`x\` command reads. */
+const OPENS = /\\bexport\\s+const\\s+envSchema\\b[^=]*=\\s*\\{/g;
+/** A \`defineEnv(\` handed anything but \`envSchema\`: a declaration no command can read back. */
+const OTHER_FORM = /\\bdefineEnv\\(\\s*(?!envSchema\\s*[,)])/g;
 /** A key at the declaration's top level, once every nested group is emptied. */
 const KEY = /(?:^|[{,\\s])['"]?([A-Za-z_$][\\w$]*)['"]?\\s*:/g;
 
@@ -153,13 +156,27 @@ const codeOnly = (text: string): string => {
   return out.join('');
 };
 
+/** \`app.config.ts\` declaring its env any other way than the \`envSchema\` export. */
+const formFindings = (config: string): readonly Finding[] => {
+  const text = blank(config);
+  const code = codeOnly(text);
+  return [...text.matchAll(OTHER_FORM)]
+    .filter((match) => code.charAt(match.index) !== ' ')
+    .map((match) => ({
+      code: CODE,
+      cause: \`app.config.ts:\${lineOf(text, match.index)} hands defineEnv a record that is not the envSchema export — defineEnv returns values, so x env check, x env example, x secrets and x deploy read no declaration\`,
+      fix: 'export const envSchema = { … } satisfies EnvSchema; export const env = defineEnv(envSchema);   // in app.config.ts: move the record defineEnv was handed into envSchema, then: x env example',
+      at: 'app.config.ts',
+    }));
+};
+
 const isFramework = (name: string): boolean =>
   FRAMEWORK.has(name) || FRAMEWORK_PREFIXES.some((head) => name.startsWith(head));
 
 /** Pure — the caller does the I/O — so the rule is testable without a filesystem. */
 export function undeclaredEnv(files: readonly SourceFile[], config: string): readonly Finding[] {
   const declared = declaredNames(config);
-  const findings: Finding[] = [];
+  const findings: Finding[] = [...formFindings(config)];
   for (const file of files) {
     const text = blank(file.source);
     const code = codeOnly(text);
@@ -218,12 +235,15 @@ unitTest('a declared name, a framework name and a computed key are not reported'
   expect(undeclaredEnv(file('Bun.env[name];'), CONFIG)).toEqual([]);
 });
 
-// A declaration's own keys (\\\`type\\\`, \\\`values\\\`) are not names it declares.
-unitTest('only the top-level keys of the declaration are declared', () => {
+// A declaration's own keys (\\\`type\\\`, \\\`values\\\`) are not names it declares, and an inline
+// \\\`defineEnv({ … })\\\` declares nothing: it is refused, with the conversion as its fix.
+unitTest('only the top-level keys of the envSchema export are declared', () => {
   expect([...declaredNames(CONFIG)]).toEqual(['STRIPE_KEY']);
-  expect([...declaredNames("export const env = defineEnv({ PORT: { type: 'port' } });")]).toEqual([
-    'PORT',
-  ]);
+  const inline = "export const env = defineEnv({ PORT: { type: 'port' } });";
+  expect([...declaredNames(inline)]).toEqual([]);
+  const [refused] = undeclaredEnv([], inline);
+  expect(refused?.at).toBe('app.config.ts');
+  expect(refused?.fix).toContain('defineEnv(envSchema)');
 });
 `;
 

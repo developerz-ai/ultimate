@@ -53,7 +53,7 @@ export function seededUuid(seed: number): () => string {
   return () => `${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(12)}`;
 }
 
-class FrozenDate extends RealDate {
+class FrozenClassDate extends RealDate {
   constructor(...args: readonly unknown[]) {
     if (args.length === 0) {
       super(frozenAt);
@@ -94,6 +94,17 @@ class FrozenDate extends RealDate {
     }
   }
 }
+
+/**
+ * What `globalThis.Date` is while installed. A `class` cannot be called without `new`, so
+ * `Date()` — the real one answers the current time's string — threw a TypeError under every test
+ * preload. The `apply` trap answers the frozen instant's string, ignoring arguments as the real
+ * call does; `new`, the statics, `instanceof` and `extends Date` all fall through to the class.
+ * One Proxy for the process, so a snapshot's `date` compares by identity.
+ */
+const FrozenDate = new Proxy(FrozenClassDate, {
+  apply: (): string => new RealDate(frozenAt).toString(),
+});
 
 export interface DeterminismOptions {
   readonly seed?: number;

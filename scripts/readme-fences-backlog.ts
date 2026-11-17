@@ -82,7 +82,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   "core: const published = counter('posts_published_total', { description: 'posts published' });": 1,
   "core: declare module '@ultimat3/core' {": 1,
   "core: encodeCursor({ scope, key: ['2026-01-01T00:00:00.000Z'], id: 'p_9' }); // base64url(body).hmac": 1,
-  'core: export const env = defineEnv({': 1,
   'core: probeImage(bytes);                                     // { format, width, height, mimeType }': 1,
   "core: registerErrorRetry({ X_OAUTH_EXCHANGE_FAILED: 'retryable', X_RATE_LIMITED: 'retry-after' });": 1,
   "core: resolveEnvironment();      // 'development' | 'test' | 'staging' | 'production'": 1,

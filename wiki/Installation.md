@@ -95,17 +95,21 @@ What `x new` writes, and who owns it afterwards:
 
 Declared at module scope in `app.config.ts`, next to `defineConfig`. There is no `env.ts` — `app.config.ts` is the one file the CLI and the runtime both load, so it is the one place the env gate can run before anything binds.
 
+One form: the `envSchema` export, handed to `defineEnv`. `defineEnv` returns the parsed VALUES, so a record written inline in the call is unreachable afterwards — `x env check`, `x env example`, `x secrets` and `x deploy` read `envSchema` and nothing else. The shipped `undeclared-env` guard refuses a `defineEnv(` handed anything else (`X_UNDECLARED_ENV` at `app.config.ts`), its fix the conversion.
+
 ```ts
 // app.config.ts
+import type { EnvSchema } from '@ultimat3/core';
 import { defineConfig, defineEnv } from '@ultimat3/core';
 
-export const env = defineEnv({
+export const envSchema = {
   DATABASE_URL: { type: 'url' },
   NATS_URL:     { type: 'url', required: false },
   S3_BUCKET:    { type: 'string' },
   VAPID:        { type: 'string', required: false },
   STRIPE_KEY:   { type: 'string', pattern: /^sk_/, secret: true },
-});
+} satisfies EnvSchema;
+export const env = defineEnv(envSchema);
 
 export const config = defineConfig({ name: 'myapp' /* … */ });
 ```
@@ -118,7 +122,7 @@ X_ENV_MISSING: required environment variables are missing or invalid
   fix:   add STRIPE_KEY, NATS_URL to .env (copy .env.example), then run: x env check
 ```
 
-The `fix:` is per-key and built from your own declarations ([`packages/core/src/env.ts:237`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/env.ts)); `defineEnv({ KEY: { fix } })` overrides it for one key.
+The `fix:` is per-key and built from your own declarations ([`packages/core/src/env.ts:237`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/env.ts)); a `fix` on one `envSchema` entry overrides it for that key.
 
 | Property | Behavior |
 |---|---|

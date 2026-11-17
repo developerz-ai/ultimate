@@ -172,6 +172,16 @@ describe('public API lock · what is a break', () => {
     expect(result.findings[0]?.fix).toContain('bun run scripts/public-api.ts --write --json');
   });
 
+  // The entry file only re-exports: a diff of it alone is empty while the declaration moved.
+  test('a break declared outside the entry file has a fix whose diff names the whole package', async () => {
+    const dir = await locked();
+    await edit(dir, 'shape.ts', 'area(shape: Shape): number', 'area(shape: Shape): string');
+    const result = await scan(dir);
+    expect(result.findings.map((one) => one.code)).toEqual([BREAK_CODE]);
+    expect(result.findings[0]?.at).toBe('packages/alpha/src/index.ts');
+    expect(result.findings[0]?.fix).toStartWith('git diff v1.0.0 -- packages/alpha   # ');
+  });
+
   test('a change to a non-exported type the declaration names is a change to it', async () => {
     const dir = await locked();
     await edit(dir, 'sub.ts', 'readonly label: string', 'readonly label: number');

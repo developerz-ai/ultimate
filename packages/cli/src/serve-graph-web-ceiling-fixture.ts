@@ -290,5 +290,8 @@
  * `SERVING_ROLE_CEILING`. Nothing web-only.
  * raised 1739 → 1740, measured 1740 (2026-11-17, plan 101b audit round 3, security):
  * `realtime/src/channel-tenant.ts`, a channel's tenant param checked before its policy (T1, P0).
+ * raised 1740 → 1741, measured 1741 (2026-11-17, plan 101b audit round 4):
+ * `cli/src/retained-assets-sweep-fence.ts`, the `assets.retain` sweep's delete fence that puts back
+ * a file a concurrent publish on another pod reused.
  */
-export const WEB_ROLE_CEILING = 1740;
+export const WEB_ROLE_CEILING = 1741;

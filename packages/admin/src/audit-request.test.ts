@@ -65,6 +65,8 @@ describe('unit · the audit trail’s URL', () => {
     ['?since=2026-11-01T12:00:00', '"since=2026-11-01T12:00:00"'],
     ['?changes=yes', '"changes=yes"'],
     ['?before=page-2', '"before=page-2"'],
+    // `Date.parse` read this one, and the durable log's `::timestamptz` cast was a raw 500.
+    [`?before=hello%201~${ID}`, `"before=hello 1~${ID}"`],
   ])('%s is refused, naming itself and what the trail answers', (search, named) => {
     try {
       auditRequestOf(at(search));
@@ -89,5 +91,13 @@ describe('unit · the audit trail’s URL', () => {
     expect(historyCursorOf('nope')).toBeUndefined();
     expect(historyCursorOf(`not-a-date~${ID}`)).toBeUndefined();
     expect(historyCursorOf('2026-11-01T00:00:00.000Z~not-a-uuid')).toBeUndefined();
+    // `Date.parse` reads these, and Postgres's `::timestamptz` cast threw a raw 500 on the first.
+    expect(historyCursorOf(`hello 1~${ID}`)).toBeUndefined();
+    expect(historyCursorOf(`2026-11-01T12:00:00~${ID}`)).toBeUndefined();
+    expect(historyCursorOf(`2026-02-30T00:00:00.000Z~${ID}`)).toBeUndefined();
+    expect(historyCursorOf(`2026-11-01T00:00:00.000Z~${ID}`)).toEqual({
+      at: '2026-11-01T00:00:00.000Z',
+      id: ID,
+    });
   });
 });

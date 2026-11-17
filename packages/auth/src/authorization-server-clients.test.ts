@@ -3,7 +3,7 @@
 // `registration: 'dynamic'`, never for `client_credentials`, and counted per address.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
+import { frozenClock, stringField } from '@ultimat3/core';
 import type { OutboundFetch } from '@ultimat3/core/outbound';
 import {
   authorizeUrl,
@@ -90,6 +90,26 @@ describe('metadata-document clients', () => {
     expect(keys).toEqual(['oauth-client-metadata:203.0.113.9']);
   });
 
+  test('a consent read naming no caller is metered too, on one shared key', async () => {
+    const calls: string[] = [];
+    const answering: OutboundFetch = async (url) => {
+      calls.push(url);
+      return Response.json({ client_id: url, redirect_uris: [REDIRECT] });
+    };
+    const { server } = await serverFixture({ fetch: answering, resolveHost: publicDns });
+    const codes: string[] = [];
+    for (let n = 0; n < 200; n += 1) {
+      // A fresh path each load: no cache hit, so only the limiter stands between page and fetch.
+      const clientId = `https://victim.example/c/${n}`;
+      await server.readRequest(authorizeUrl(clientId, pkce().challenge)).catch((error: unknown) => {
+        codes.push(stringField(error, 'code') ?? 'uncoded');
+      });
+    }
+    expect(calls.length).toBeLessThanOrEqual(10);
+    expect(codes).toHaveLength(200 - calls.length);
+    expect(new Set(codes)).toEqual(new Set(['X_ACCOUNT_LOCKED']));
+  });
+
   test('a failing metadata document is asked for once — no vendor retry', async () => {
     const calls: string[] = [];
     const failing: OutboundFetch = async (url) => {
@@ -174,8 +194,11 @@ describe('metadata-document clients', () => {
   test('a full cache evicts its oldest entry, not every entry', async () => {
     const calls: string[] = [];
     const { server } = await serverFixture({ fetch: serving({}, calls), resolveHost: publicDns });
+    // One caller per read: this is the cache's bound, not the limiter's — every fetch is metered.
     const read = (n: number) =>
-      server.readRequest(authorizeUrl(`https://c.example/d${n}`, pkce().challenge));
+      server.readRequest(authorizeUrl(`https://c.example/d${n}`, pkce().challenge), {
+        callerKey: `caller-${n}`,
+      });
     for (let i = 0; i <= 1_000; i += 1) await read(i);
     expect(calls).toHaveLength(1_001);
     await read(1);

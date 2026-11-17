@@ -1,6 +1,6 @@
 // The `assets.retain` sweep: keep the newest `builds` manifests of one app-and-environment scope
-// and delete the files none of them names — without ever deleting what another pod is publishing
-// at the same moment. Run at the end of a publish.
+// and delete the files none of them names, fenced against a publish on another pod at the same
+// moment. Run at the end of a publish.
 
 import type { RetainedScope, StoredManifest } from './retained-assets-layout';
 import {
@@ -10,6 +10,7 @@ import {
   readManifests,
   retainedFileKey,
 } from './retained-assets-layout';
+import { deleteFenced, deleteManifestIfUnchanged } from './retained-assets-sweep-fence';
 
 /**
  * A file put this recently is spared whatever the manifests say: it may belong to a publish still
@@ -22,10 +23,13 @@ const urlsOf = (manifests: readonly StoredManifest[]): readonly string[] =>
   manifests.flatMap(({ manifest }) => manifest.urls);
 
 /**
- * Manifests, then files, then the dropped manifests: a pod killed anywhere leaves extra objects,
- * never a missing one. Three guards against a concurrent publish: a file younger than the grace
- * stays; the manifests are read AGAIN just before deleting, and any that appeared keeps what it
- * names; a manifest that does not parse stops the sweep. Returns the files deleted.
+ * Manifests, then files, then the dropped manifests. Guards against a concurrent publish: a file
+ * younger than the grace stays; the manifests are read again before deleting, and any that
+ * appeared keeps what it names; the deletes are fenced (`deleteFenced`), so a manifest written
+ * after that read still gets back every file it names; a dropped manifest is re-read just before
+ * its delete (`deleteManifestIfUnchanged`); a manifest that does not parse stops the sweep. A pod
+ * killed mid-fence can lose a file a racing build reuses; that build's next pod puts it back.
+ * Returns the files deleted.
  */
 export async function sweepRetained(
   scope: RetainedScope,
@@ -63,8 +67,10 @@ export async function sweepRetained(
     // Unknown age is spared, as `sweepOrphans` spares it: never epoch 0, never "old enough".
     .filter((entry) => entry.lastModified !== undefined && entry.lastModified.getTime() < cutoff)
     .map((entry) => entry.key);
-  await inBatches(doomed, (key) => scope.disk.delete(key));
+  const deleted = await deleteFenced(scope, doomed, (one) => !stillDropped(one));
   const drop = dropped.filter(({ key }) => !redated.has(key));
-  await inBatches(drop, ({ key }) => scope.disk.delete(key));
-  return doomed.length;
+  await inBatches(drop, ({ key, manifest }) =>
+    deleteManifestIfUnchanged(scope, key, manifest.publishedAt),
+  );
+  return deleted;
 }

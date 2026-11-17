@@ -39,7 +39,8 @@ import {
   type Workspace,
   workspaceManifests,
 } from './lib/workspaces';
-import { writeApiLock } from './release-api-lock';
+import type { PublicApiReport } from './public-api';
+import { pendingBreaks, readApiAt, writeApiLock } from './release-api-lock';
 import { type ReleaseDone, releaseDoneResult } from './release-done';
 import { unlessRehearsed } from './release-rehearse';
 
@@ -71,6 +72,8 @@ export interface ReleaseDeps {
   readonly now: Date;
   readonly performWrites?: typeof performReleaseWrites;
   readonly writeLock?: typeof writeApiLock;
+  /** The public surface judged as the version being cut; default `readApiAt`. */
+  readonly readApi?: (root: string, version: string) => Promise<PublicApiReport>;
 }
 
 const refusal = (summary: string, findings: readonly Finding[], data?: unknown): ScriptResult => ({
@@ -252,6 +255,19 @@ export async function releaseResult(args: ScriptArgs, deps: ReleaseDeps): Promis
     });
   }
 
+  // Last of the refusals, under `--dry-run` too: an undeclared break that ships can never be
+  // declared after (main refuses the `BREAKING —` line), so the lock would carry it forever. The
+  // same report writes the lock below: the surface is compiled once per run.
+  const api = await (deps.readApi ?? readApiAt)(root, version);
+  const breaks = pendingBreaks(api);
+  if (breaks.length > 0) {
+    return refusal(
+      `refusing to release: ${breaks.length} undeclared public API break(s) pending`,
+      breaks,
+      { version, current, dryRun },
+    );
+  }
+
   if (!dryRun) {
     // Own version for the published manifests, pins for all; then the Helm chart, which is not a
     // workspace — `appVersion` is the default `image.tag`, so a chart left behind names an image tag
@@ -314,9 +330,11 @@ export async function releaseResult(args: ScriptArgs, deps: ReleaseDeps): Promis
   const performed = dryRun
     ? { writes: [], findings: [] }
     : await (deps.performWrites ?? performReleaseWrites)(root, version);
-  // Last of the derived files: the public API lock reads the stamped version and the promoted
-  // changelog, so the next release's breaks are judged against this one.
-  const apiLock = dryRun ? undefined : await (deps.writeLock ?? writeApiLock)(root);
+  // Last of the derived files: the public API lock, the surface read above at this version, so the
+  // next release's breaks are judged against this one.
+  const apiLock = dryRun
+    ? undefined
+    : await (deps.writeLock ?? writeApiLock)(root, async () => api);
 
   // The ask this release would close — best effort, and last: by here the manifests are written,
   // so no answer from `gh` (absent binary, failed auth, timeout, garbage) may throw or touch
