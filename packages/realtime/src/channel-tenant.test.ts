@@ -148,10 +148,7 @@ describe('a records channel keyed by the tenant column', () => {
   test('a re-auth into another org drops the seat', async () => {
     const carol = connect(userActor({ id: 'carol', orgId: ORG_B }));
     const name = await joinFeed(carol.socket, ORG_B);
-    const dropped = await hub.onActorChange(
-      carol.socket,
-      userActor({ id: 'carol', orgId: ORG_A }),
-    );
+    const dropped = await hub.onActorChange(carol.socket, userActor({ id: 'carol', orgId: ORG_A }));
     expect(dropped).toEqual([name]);
   });
 });

@@ -40,7 +40,8 @@ export const newSpec: CommandSpec = {
       type: 'boolean',
       // Never over an app, never over a file: `cmd-new-target.ts` refuses a directory holding
       // `app.config.ts` (D1) or any path the scaffold writes (round 3).
-      summary: 'write into an existing directory that holds no app.config.ts and none of the files x new writes',
+      summary:
+        'write into an existing directory that holds no app.config.ts and none of the files x new writes',
     },
   ],
 };
