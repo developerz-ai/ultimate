@@ -27,8 +27,8 @@ const scheduledBriefs = async (): Promise<readonly string[]> =>
 describe('unit · a scheduled brief fits the platform cap', () => {
   test('the schedule names its briefs, so the rule has subjects', async () => {
     const briefs = await scheduledBriefs();
-    expect(briefs).toContain('.dz/briefs/health.md');
-    expect(briefs).toContain('.dz/briefs/release-due.md');
+    expect(briefs).toContain('.dz/schedules/health.md');
+    expect(briefs).toContain('.dz/schedules/release-due.md');
   });
 
   // was: "the brief fits the platform cap"
