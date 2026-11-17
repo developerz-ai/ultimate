@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "ac7809ebcbeb4bf81f4b01ee65861a2fa16f1edb7b4a4c5bbafc22877d5d5fef",
+  "buildId": "0f409f2dc5b292c92593d62b1346df1f34be0f476390299ebbdeb0d302df9bd3",
   "tiers": {
     "0": [
       "core",
@@ -6271,6 +6271,11 @@
     },
     {
       "code": "X_TEST_FIXTURE_UNKNOWN",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_BUILD_REUSED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },

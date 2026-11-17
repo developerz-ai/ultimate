@@ -62,7 +62,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | repository scripts | [Error-Codes-scripts](Error-Codes-scripts) | 352 |
 | `@ultimat3/seo` | [Error-Codes-seo](Error-Codes-seo) | 11 |
 | `@ultimat3/storage` | [Error-Codes-storage](Error-Codes-storage) | 31 |
-| `@ultimat3/testing` | [Error-Codes-testing](Error-Codes-testing) | 80 |
+| `@ultimat3/testing` | [Error-Codes-testing](Error-Codes-testing) | 81 |
 | `@ultimat3/time` | [Error-Codes-time](Error-Codes-time) | 8 |
 | `@ultimat3/ui` | [Error-Codes-ui](Error-Codes-ui) | 7 |
 
@@ -1278,6 +1278,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_TEST_FIX_PIN_STALE | [scripts](Error-Codes-scripts) |
 | X_TEST_FIX_UNRUNNABLE | [scripts](Error-Codes-scripts) |
 | X_TEST_FIX_UNSCANNED | [scripts](Error-Codes-scripts) |
+| X_TEST_ISLAND_BUILD_REUSED | [testing](Error-Codes-testing) |
 | X_TEST_ISLAND_NOT_BUILT | [testing](Error-Codes-testing) |
 | X_TEST_ISLAND_NO_MOUNT | [testing](Error-Codes-testing) |
 | X_TEST_ISLAND_SELECTOR_UNSUPPORTED | [testing](Error-Codes-testing) |

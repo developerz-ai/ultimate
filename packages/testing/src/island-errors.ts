@@ -80,3 +80,19 @@ export class IslandMountMissingError extends UltimateError {
 
 export const islandMountMissing = (file: string, exported: readonly string[]): UltimateError =>
   new IslandMountMissingError({ file, exported });
+
+/**
+ * Under the gate's coverage run a mount asks its builder twice — covered to run, shipped for `code`
+ * — and got the SAME bundle back: a memo round `buildIslands` that ignores `options`. Measured
+ * instead, every size ceiling would read the unminified chunk, green under `bun test` and red in
+ * `x verify`.
+ */
+export class IslandBuildReusedError extends UltimateError {
+  constructor(input: { file: string }) {
+    super({
+      code: 'X_TEST_ISLAND_BUILD_REUSED',
+      cause: `the builder handed ${renderCauseValue(input.file)}'s mount the same bundle for the coverage build and the shipped one, so code would be the unminified chunk`,
+      fix: 'mountIsland({ build: buildIslands, root, file })   # the builder itself (describeIslandState already builds once per file), or key your memo by options.coverage',
+    });
+  }
+}
