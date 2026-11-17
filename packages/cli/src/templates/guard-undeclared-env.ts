@@ -47,7 +47,7 @@ const source =
 // Read: \`process.env.X\`, \`Bun.env.X\`, \`import.meta.env.X\` and the \`['X']\` forms, in app source
 // (\`apps/**\`, \`packages/**\`; never a test). Declared: a key of \`envSchema\` or of the object
 // \`defineEnv({ … })\` is handed, in \`app.config.ts\` — the declaration \`x env check\` reads.
-// Allowed: every name the framework reads itself, \`NODE_ENV\` among them.
+// Allowed: every name the framework reads itself, \`NODE_ENV\` among them, and the OS's own.
 
 import type { Finding, Guard } from '@ultimat3/cli';
 
@@ -113,6 +113,46 @@ export function declaredNames(config: string): ReadonlySet<string> {
   return names;
 }
 
+/** The OS's own, set by the machine and never by a deploy: \`env: { PATH }\` for a child process. */
+const AMBIENT = new Set(['HOME', 'HOSTNAME', 'LANG', 'PATH', 'PWD', 'SHELL', 'TMPDIR', 'USER']);
+
+/**
+ * Every string's CONTENTS blanked in place, so a name quoted in prose or data (a generated docs
+ * file) is no read. A template's \`\${…}\` stays code. A regex literal holding a quote reads as a
+ * string opening: the rest of that file then reports less, never something false.
+ */
+const codeOnly = (text: string): string => {
+  const out = text.split('');
+  const braces: number[] = [];
+  let quote = '';
+  for (let index = 0; index < out.length; index += 1) {
+    const character = text.charAt(index);
+    if (quote === '') {
+      const top = braces.length - 1;
+      if (character === "'" || character === '"' || character === '\`') quote = character;
+      else if (character === '{' && top >= 0) braces[top] = (braces[top] ?? 0) + 1;
+      else if (character === '}' && top >= 0) {
+        if ((braces[top] ?? 0) === 0) {
+          braces.pop();
+          quote = '\`';
+        } else braces[top] = (braces[top] ?? 0) - 1;
+      }
+      continue;
+    }
+    if (character === '\\\\') {
+      out[index] = ' ';
+      if (text.charAt(index + 1) !== '\\n') out[index + 1] = ' ';
+      index += 1;
+    } else if (character === quote) quote = '';
+    else if (quote === '\`' && character === '$' && text.charAt(index + 1) === '{') {
+      braces.push(0);
+      quote = '';
+      index += 1;
+    } else if (character !== '\\n') out[index] = ' ';
+  }
+  return out.join('');
+};
+
 const isFramework = (name: string): boolean =>
   FRAMEWORK.has(name) || FRAMEWORK_PREFIXES.some((head) => name.startsWith(head));
 
@@ -122,9 +162,11 @@ export function undeclaredEnv(files: readonly SourceFile[], config: string): rea
   const findings: Finding[] = [];
   for (const file of files) {
     const text = blank(file.source);
+    const code = codeOnly(text);
     for (const match of text.matchAll(READ)) {
       const name = match[1] ?? match[3] ?? '';
-      if (declared.has(name) || isFramework(name)) continue;
+      if (code.charAt(match.index) === ' ') continue;
+      if (declared.has(name) || isFramework(name) || AMBIENT.has(name)) continue;
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${lineOf(text, match.index)} reads \${match[0]}, which app.config.ts does not declare — x env check never asks for it, so a deploy without it boots and fails at the first read\`,
