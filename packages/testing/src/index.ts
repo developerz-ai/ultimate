@@ -458,7 +458,6 @@ export type {
   TempTree,
   TempTreeGitResult,
   TempTreeOptions,
-  TempTreeSpawnOptions,
   TempTrees,
   TrackedChild,
 } from './temp-tree';

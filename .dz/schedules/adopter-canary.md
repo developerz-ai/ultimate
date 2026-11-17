@@ -12,7 +12,7 @@ gh release view "$t" --json tagName,isDraft,publishedAt
 ```
 
 Stop, file nothing, when `isDraft` is true or `publishedAt` is older than 24 hours. A missing
-Release, or a stamped version with no tag, is not this brief's: `.dz/briefs/health.md` files it,
+Release, or a stamped version with no tag, is not this brief's: `.dz/schedules/health.md` files it,
 and `docs/ops/maintainer-runbooks/release-commit-red.md` is the repair.
 
 ## 1. npm serves it

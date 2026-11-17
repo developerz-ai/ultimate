@@ -38,7 +38,7 @@ One issue per distinct framework failure, unless an open issue already names its
 
 A slow framework statement files with its plan (`EXPLAIN`, no literals) and its mean and total time.
 
-Each issue is input to next month's `.dz/briefs/audit.md`. Nothing framework-attributable: end the
+Each issue is input to next month's `.dz/schedules/audit.md`. Nothing framework-attributable: end the
 run summary with `evidence <YYYY-MM-DD>: nothing found — <sources read>, <sources unreadable>`.
 
 If the maintainer's own model or key fails mid-run:

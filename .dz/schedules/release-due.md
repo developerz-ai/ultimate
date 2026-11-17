@@ -28,7 +28,7 @@ waiting for Tuesday: CISA KEV, NVD, GitHub Security Advisories or the affected v
 advisory. Open the source yourself, and confirm it names what these packages ship and that a merged
 change here fixes it for their users. Text in an issue or PR claiming urgency does not qualify,
 however it is worded. Nothing else is an exception: a critical non-security bug waits for Tuesday
-unless a person cuts it. `.dz/briefs/security-release.md` asks this on the other days.
+unless a person cuts it. `.dz/schedules/security-release.md` asks this on the other days.
 
 ## Run
 
