@@ -1,6 +1,6 @@
 {
   "format": 2,
-  "version": "31.38.0",
+  "version": "31.38.1",
   "entries": {
     "@ultimat3/action": {
       "ACTION_ANSWER_COOKIE": {"hash":"0e5d26d4d453af41","shape":{"kind":"declaration","keyword":"const","head":"0e5d26d4"}},
@@ -6141,7 +6141,7 @@
       "SslMode": {"hash":"fb5b94993963c90f","shape":{"kind":"literals","head":"d3d59936","values":["0bfa14e9","3a118e0a","4eb7618d","58d46b62","c33216a8","ce9d08a2"]}},
       "Subscriber": {"hash":"1649152d8c906465","shape":{"kind":"members","head":"8d4f5a21","members":{"actor":"84254bdd","sid":"1fb0a448"}}},
       "SubscriberGateOptions": {"hash":"4218e48fdd8f0d9d","shape":{"kind":"members","head":"7e02d90f","members":{"onGateFailed":"?21160a9d","onRowDenied":"?a0f6b048"}}},
-      "SubscriptionShape": {"hash":"1ceb968d033052fa","shape":{"kind":"members","head":"7689656f","members":{"columns":"?f8639a23","entities":"f8639a23","orgId":"c380b02d","qid":"1fb0a448"}}},
+      "SubscriptionShape": {"hash":"a40f3605f6356663","shape":{"kind":"members","head":"7689656f","members":{"columns":"?f8639a23","entities":"f8639a23","orgId":"c380b02d","qid":"1fb0a448","tenantTables":"?f8639a23"}}},
       "SyncAuthenticator": {"hash":"393eb89084be923d","shape":{"kind":"function","head":"906517b0","params":["59f03d64"],"returns":"8191bbe3"}},
       "SyncGrant": {"hash":"79b5c01cb5d10457","shape":{"kind":"members","head":"20a63c82","members":{"actor":"43af3a0c","expiresAt":"?4e57c805","refresh":"?c5eec9bd"}}},
       "SyncListener": {"hash":"16d69313d6342f56","shape":{"kind":"members","head":"9dcabf75","members":{"stop":"1563397b","url":"1fb0a448"}}},
