@@ -1526,7 +1526,9 @@ jobs:
       - name: tests + coverage per package, each in its own process, all cores
         env:
           SHARD: ${{ matrix.shard }}
-        run: bun run scripts/coverage-gate.ts --all --shard "$SHARD"
+        # --unit-timeout under the job's own 10 minutes: GitHub keeps no log of a job it cancels, so
+        # a unit that hung past the job's limit was never named (31.42.0's release, twice).
+        run: bun run scripts/coverage-gate.ts --all --shard "$SHARD" --unit-timeout 450
 
   # Does the framework work on NATIVE Windows — PowerShell, no WSL — for a contributor and for an
   # app developer? Plan 101 sweep 8 (docs/plans/2026/10/04/101-squeaky-clean-sweep/08-windows.md,

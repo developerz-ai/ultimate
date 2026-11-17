@@ -95,6 +95,13 @@ describe('scrubberFor', () => {
     );
   });
 
+  test('a password holding a raw `@` is cut whole: the userinfo ends at the LAST `@`', () => {
+    const scrub = scrubberFor(SOURCES);
+    const out = String(scrub.value('see https://u:hunter@2secret@localhost:8080/v1'));
+    expect(out).not.toContain('2secret');
+    expect(out).toContain('https://[cred]@localhost:8080/v1');
+  });
+
   test('an email and an IPv4 or IPv6 address are replaced; times and versions are not', () => {
     const scrub = scrubberFor(SOURCES);
     expect(

@@ -77,9 +77,13 @@ export function deriveField(
     readOnly: override?.readOnly ?? (generated || tenant || version),
     sensitive,
     inList: override?.inList ?? (listable(type) && !sensitive && !tenant),
-    filterable: filterKind !== undefined && (override?.filterable ?? filterable(type, column)),
+    // A sensitive field is neither a filter nor a sort key by default: which rows match `contains`
+    // and how they order read the hidden value back, a few characters at a time.
+    filterable:
+      filterKind !== undefined &&
+      (override?.filterable ?? (filterable(type, column) && !sensitive)),
     ...(filterKind === undefined ? {} : { filterKind }),
-    sortable: override?.sortable ?? sortable(type, column),
+    sortable: override?.sortable ?? (sortable(type, column) && !sensitive),
     // Generated columns are excluded from search: an id is found by exact lookup, and a
     // `contains` over a uuid column is a scan that returns nothing useful.
     searchable: override?.searchable ?? (searchable(type, column) && !sensitive && !generated),

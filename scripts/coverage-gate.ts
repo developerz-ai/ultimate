@@ -10,7 +10,7 @@
 //
 //   bun run scripts/coverage-gate.ts --package core [--json]
 //   bun run scripts/coverage-gate.ts --package scripts [--json]
-//   bun run scripts/coverage-gate.ts --all [--jobs <n>] [--shard i/n] [--json]
+//   bun run scripts/coverage-gate.ts --all [--jobs <n>] [--shard i/n] [--unit-timeout <seconds>] [--json]
 //
 // `--shard i/n` is one CI runner's share of `--all`, dealt by each unit's measured core-seconds
 // (`UNIT_SECONDS`), so shard 1/2 is the same units on every runner. The lcov reader is the CLI's (`coverage-lcov.ts`),
@@ -35,9 +35,26 @@ import {
   PIN_SLACK,
   PINS_FILE,
 } from './lib/coverage-pins';
-import { concurrency, leasePool, serviceKeys, unitEnv, workersFor } from './lib/coverage-schedule';
+import {
+  concurrency,
+  leasePool,
+  serviceKeys,
+  timedOutFinding,
+  UNIT_TIMEOUT_MS,
+  unitEnv,
+  unitTimeoutOf,
+  workersFor,
+} from './lib/coverage-schedule';
+
 import type { CoverageUnit } from './lib/coverage-units';
-import { atOf, SCRIPTS_UNIT, testFileCount, unitOf, unitsFor } from './lib/coverage-units';
+import {
+  atOf,
+  SCRIPTS_UNIT,
+  testFileCount,
+  testFilesOf,
+  unitOf,
+  unitsFor,
+} from './lib/coverage-units';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { RunResult } from './lib/run';
@@ -343,29 +360,24 @@ export function testCommand(unit: CoverageUnit, dir: string, workers: number): r
   ];
 }
 
-/**
- * One unit's whole suite, alone, before it is killed. `cli` is the longest: 1221 core-seconds
- * (`UNIT_SECONDS`), several minutes on its workers. A deadline, not a budget — what reaches it hung.
- */
-export const UNIT_TIMEOUT_MS = 1_800_000;
-
 /** A finished run's verdict: the deadline's own coded line, a failing suite, or `undefined`. */
 export function unitFailure(
   name: string,
   ran: Pick<RunResult, 'code' | 'output' | 'timedOut'>,
+  timeoutMs: number = UNIT_TIMEOUT_MS,
+  files: readonly string[] = [],
 ): { code: string; cause: string; fix: string } | undefined {
-  if (ran.timedOut) {
-    return {
-      code: 'X_SPAWN_TIMED_OUT',
-      cause: `bun test ${unitOf(name).test} did not finish within ${String(UNIT_TIMEOUT_MS)} ms and was killed`,
-      fix: `bun run scripts/coverage-gate.ts --package ${renderFixShellArg(name, '<unit>')} --json   # alone; a test that hangs is named by the last (pass) line before the stall`,
-    };
-  }
+  if (ran.timedOut) return timedOutFinding(name, unitOf(name).test, ran.output, timeoutMs, files);
   return suiteFailure(name, ran.code ?? 1, ran.output);
 }
 
 /** Runs one unit's suite with coverage, on `workers` workers, and reads the report back. */
-async function measure(root: string, name: string, workers: number): Promise<CoverageReading> {
+async function measure(
+  root: string,
+  name: string,
+  workers: number,
+  timeoutMs: number,
+): Promise<CoverageReading> {
   const unit = unitOf(name);
   const dir = join(root, '.x', 'coverage', name);
   rmSync(dir, { recursive: true, force: true });
@@ -376,9 +388,9 @@ async function measure(root: string, name: string, workers: number): Promise<Cov
   const ran = await run(testCommand(unit, dir, workers), {
     cwd: root,
     env: unitEnv(Bun.env, serviceKeys(root)),
-    timeoutMs: UNIT_TIMEOUT_MS,
+    timeoutMs,
   });
-  const failure = unitFailure(name, ran);
+  const failure = unitFailure(name, ran, timeoutMs, testFilesOf(root, unit));
   if (failure !== undefined) throw new ScriptError(failure);
   const file = Bun.file(join(dir, 'lcov.info'));
   if (!(await file.exists())) {
@@ -414,13 +426,17 @@ if (import.meta.main) {
       json,
     );
   }
+  const unitTimeout = unitTimeoutOf(flagString(args, 'unit-timeout'));
   const jobs = concurrency(flagString(args, 'jobs'));
-  if (jobs === undefined) {
+  if (jobs === undefined || unitTimeout === undefined) {
     report(
       {
         ok: false,
         script: 'coverage-gate',
-        summary: '--jobs takes a positive integer — the number of unit suites run at once',
+        summary:
+          jobs === undefined
+            ? '--jobs takes a positive integer — the number of unit suites run at once'
+            : "--unit-timeout takes whole seconds — one unit's deadline, below the CI job's own",
         findings: [],
       },
       json,
@@ -437,7 +453,11 @@ if (import.meta.main) {
     (name) => width.get(name) ?? 1,
     async (name): Promise<CoverageVerdict | Finding> => {
       try {
-        return judge(await measure(root, name, width.get(name) ?? 1), COVERAGE_PINS[name]);
+        const workers = width.get(name) ?? 1;
+        return judge(
+          await measure(root, name, workers, unitTimeout ?? UNIT_TIMEOUT_MS),
+          COVERAGE_PINS[name],
+        );
       } catch (error) {
         if (!(error instanceof ScriptError)) throw error;
         return { ...error.toFinding(), at: atOf(unitOf(name)) };

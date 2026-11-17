@@ -5,15 +5,18 @@ One file: `app.config.ts` at the repo root. There is no per-environment config d
 `As of 2026-08-22`. Stable API — semver from here ([Upgrading](Upgrading)). Field names are covered by semver: renaming or removing one needs a major, and the entry in [Upgrading](Upgrading) names the edit. **There is no codemod** — `x upgrade` is a `PLANNED_COMMANDS` entry ([`packages/cli/src/cmd-planned.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/cmd-planned.ts)), so every migration below is a hand edit.
 
 ```ts
+import type { EnvSchema } from '@ultimat3/core';
 import { defineConfig, defineEnv } from '@ultimat3/core';
 
 // Module scope, in `app.config.ts` itself: the file is imported at boot, so the env gate runs
-// before any listener binds. There is no separate `env.ts` — one config file means one.
-export const env = defineEnv({
+// before any listener binds. There is no separate `env.ts` — one config file means one. The
+// declaration is the `envSchema` export, the one form `x env`, `x secrets` and `x deploy` read.
+export const envSchema = {
   APP_URL: { type: 'url' },
   DATABASE_URL: { type: 'url' },
   SESSION_SECRET: { type: 'string', secret: true },
-});
+} satisfies EnvSchema;
+export const env = defineEnv(envSchema);
 
 export const config = defineConfig({
   name: 'postly',

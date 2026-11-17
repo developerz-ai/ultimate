@@ -11,7 +11,14 @@
 // counts and an origin, never a value.
 
 import type { SealKeySource } from '@ultimat3/core';
-import { isJsonObject, isSealed, openText, resolveSealKeys, seal } from '@ultimat3/core';
+import {
+  isJsonObject,
+  isSealed,
+  isUltimateError,
+  openText,
+  resolveSealKeys,
+  seal,
+} from '@ultimat3/core';
 import type { StorageDriver } from '@ultimat3/storage';
 import { assertSafeKey } from '@ultimat3/storage';
 import type { ScrapeCookie } from './target';
@@ -259,7 +266,11 @@ export function storageSessionStore(
         // copied onto another tenant's path opens, and is still not that tenant's session.
         if (!isJsonObject(opened) || opened['key'] !== key) return discard(path);
         return parseSessionState(opened, key) ?? discard(path);
-      } catch {
+      } catch (error) {
+        // A key this process does not hold YET — a rotation rolling out, new pods sealing under a
+        // key old pods lack — is not a forged record: those pods open it, so it is skipped and
+        // kept. A tag that fails under a key this process DOES hold is still burned.
+        if (isUltimateError(error) && error.code === 'X_SEAL_KEY_UNKNOWN') return undefined;
         return discard(path);
       }
     },

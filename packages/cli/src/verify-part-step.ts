@@ -2,7 +2,7 @@
 // cast past `name` and `ok`: `findings: [null]` merged green, and a step with no `durationMs`
 // reached `Math.max` as `undefined` — a part a CI job hand-edited, or truncated, was believed.
 
-import type { Finding } from './output';
+import type { Finding, TestServicesState } from './output';
 import type { TestCounts } from './test-counts';
 
 export interface PartStep {
@@ -15,6 +15,7 @@ export interface PartStep {
   readonly tests?: TestCounts;
   readonly output?: string;
   readonly warnings?: readonly string[];
+  readonly services?: TestServicesState;
   readonly shard?: {
     readonly index: number;
     readonly total: number;
@@ -67,7 +68,7 @@ export function readPartStep(raw: unknown): PartStep | string {
   if (!Array.isArray(findings) || !findings.every(isFinding)) {
     return `holds step "${name}" whose findings are not each a code, a cause and a fix`;
   }
-  const { tests, shard, output, workers, skipped, warnings } = raw;
+  const { tests, shard, output, workers, skipped, warnings, services } = raw;
   if (tests !== undefined && !isTests(tests)) {
     return `holds step "${name}" whose tests are not counts`;
   }
@@ -83,6 +84,9 @@ export function readPartStep(raw: unknown): PartStep | string {
   if (workers !== undefined && !isCount(workers)) {
     return `holds step "${name}" whose workers is not a count`;
   }
+  if (services !== undefined && services !== 'reached' && services !== 'unavailable') {
+    return `holds step "${name}" whose services is neither reached nor unavailable`;
+  }
   return {
     name,
     ok: raw['ok'],
@@ -94,5 +98,6 @@ export function readPartStep(raw: unknown): PartStep | string {
     ...(output === undefined ? {} : { output }),
     ...(warnings === undefined ? {} : { warnings }),
     ...(shard === undefined ? {} : { shard }),
+    ...(services === undefined ? {} : { services }),
   };
 }

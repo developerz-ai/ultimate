@@ -13,7 +13,7 @@
 
 import type { AuditCursor, AuditOutcome, AuditQuery } from './audit';
 import { AdminFilterInvalidError } from './errors';
-import { utcFormInstantOf } from './list-filters';
+import { instantOf, utcFormInstantOf } from './list-filters';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -28,11 +28,14 @@ export function historyCursorOf(raw: string | null): AuditCursor | undefined {
   if (raw === null) return undefined;
   const at = raw.indexOf('~');
   if (at <= 0) return undefined;
-  const instant = raw.slice(0, at);
+  // The strict reader `since`/`until` use, not `Date.parse`: that one reads `hello 1` as a date,
+  // and Postgres's `::timestamptz` cast then threw a raw 500 where the memory log answered `[]`.
+  // The trail writes `toISOString()`, which this hands back unchanged.
+  const instant = instantOf(raw.slice(0, at));
   const id = raw.slice(at + 1);
   // A uuid, because the durable log compares it as one: anything else would be a cast error from
   // the database where a hand-edited URL deserves page one.
-  return Number.isNaN(Date.parse(instant)) || !UUID.test(id) ? undefined : { at: instant, id };
+  return instant === undefined || !UUID.test(id) ? undefined : { at: instant, id };
 }
 
 export const AUDIT_OUTCOMES: readonly AuditOutcome[] = ['allowed', 'denied', 'failed'];

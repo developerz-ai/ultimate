@@ -396,18 +396,26 @@ request-scoped and never logged — `actorLabel()` stays id-only.
 ## Env fails once, completely
 
 ```ts
-export const env = defineEnv({
+import { defineEnv, type EnvSchema } from '@ultimat3/core';
+
+export const envSchema = {
   DATABASE_URL: { type: 'url', secret: true },
   PORT:         { type: 'port', default: 3000 },
   REGION:       { type: 'enum', values: ['us', 'eu'] },
   SENTRY_DSN:   { type: 'url', required: false },
   NATS_URL:     { type: 'url', role: 'sync' },   // only required for ROLE=sync
-});
+} satisfies EnvSchema;
+export const env = defineEnv(envSchema);
 ```
 
+The `envSchema` export is the one declaration form: `x env`, `x secrets` and `x deploy` read it,
+and an app's `undeclared-env` guard refuses a `defineEnv` handed anything else.
+
 Every missing or malformed key is listed in one `X_ENV_MISSING`. `secret: true` keys are
-redacted in logs and masked in `checkEnv()` output; the env summary (`describeEnv()`, internal) emits declarations only,
-safe for `x.manifest.json`. Omit `required` for required — `required: false` is the only
+redacted in logs. `maskedEnvValues(schema, values)` — what `x env check --json` prints — masks every
+`secret: true` key **and** every key `isRedactedKey` names (`DATABASE_URL`, `STRIPE_KEY`), and cuts
+the password from any other value's URL userinfo; the env summary (`describeEnv()`, internal) emits
+declarations only, safe for `x.manifest.json`. Omit `required` for required — `required: false` is the only
 loosening. Never declare an env var for *which deploy this is* — that is `ULTIMATE_ENV`, below.
 
 `.env.example` is a **projection** of that schema, never a second list:
@@ -477,6 +485,12 @@ such as `cardPin` or `pinCode`) and a stored hash of any of them (`passwordHash`
 `keyHash`). `@ultimat3/action` also asks it before storing an idempotent answer. It deliberately
 leaves `idempotencyToken`, a paging token, `maxTokens`, an error `code`, `spinner`, `isPinned`,
 `sessionStart` and `cookieName` readable — a redacted field is one an operator cannot correlate on.
+
+A URL's userinfo has one cut too: `replaceUrlUserinfo(text, render)` ends it at the **last** `@`
+before the authority's `/`, `?` or `#` — where a URL parser ends it — so `u:hunter@2secret@host`
+loses the whole password, never just `hunter`. `redactUrlPassword(text)` keeps the user and prints
+`user:[redacted]@host`; `x config`, `x repro`, `maskedEnvValues` and an `X_OUTBOUND_*` cause all
+cut through it.
 
 `LOG_LEVEL` is refused when it is not one of `LOG_LEVELS` (lowercase), exactly as
 `structuredLogger({ level })` refuses it; unset or empty is `info`.
@@ -588,7 +602,7 @@ match with `sealAll()`; uniqueness cannot be held across keys.
   barrel's and `./page`'s `systemClock` is a plain `Clock` — browser code reads it and nothing there
   waits; the sleeping one is `./adapter`'s `systemClock` (`sleep-clock.ts`, server-only).
 - `uuidV7()` is UUIDv7: time-prefixed, monotonic within a millisecond, never backwards on clock
-  skew. `typedId<'post'>()` brands it so a post id cannot be passed where a user id is wanted.
+  skew. A clock before 1970 (a `frozenClock` may read one) mints at timestamp 0, still monotonic. `typedId<'post'>()` brands it so a post id cannot be passed where a user id is wanted.
 - `withSpan('action.publishPost', fn)` builds no record until something subscribes to `span.end`.
   Traces cross process boundaries via `traceparent()` / `parseTraceparent()`, whose ids come from
   `traceId()` / `spanId()` — **never `uuidV7()`**, whose dashed 36 characters every collector

@@ -11,7 +11,7 @@ One engine per concern. A **migration** changes the shape of a table — schema,
 | Add, rename, retype, drop a column or table; add an index or constraint | a **migration** — `x db gen "<name>"` |
 | Add an index to a big, hot table, or drop one from it | a **migration** too — `indexes: [{ on }]`: on an existing table the build is concurrent by default, and every drop is concurrent already. [Indexes built concurrently](#indexes-built-concurrently--expand--contract) |
 | Rewrite, normalize, re-derive or backfill values in rows that already exist | a **backfill** — `backfill({ … })` |
-| Add a nullable column, then populate every existing row before making it required | both: the migration adds the column, the backfill sweeps the rows, a second migration adds the `not null` once the sweep is done (expand → migrate → contract) |
+| Add a nullable column, then populate every existing row before making it required | both: the migration adds the column, the backfill sweeps the rows, a second migration adds the `not null` once the sweep is done (expand → migrate → contract). Declaring it required at once writes both halves in one `x db gen` — [Foreign keys and CHECKs on a live table](#foreign-keys-and-checks-on-a-live-table) |
 
 ## Migrations: one engine, one ledger
 
@@ -271,9 +271,14 @@ An embedded scratch boot restores a post-`initdb` snapshot instead of running `i
 | A key on a table this migration creates | the plain `add constraint` in the transaction, byte-identical to before — unless the unique index it needs is built by the deferred step, which would otherwise be `42830`. Then it defers too |
 | A key re-added after a retype | the transaction: the rewrite holds ACCESS EXCLUSIVE already |
 | A CHECK on a live table | `add constraint … not valid` in the transaction (it needs no index), `validate constraint` in the deferred step. New writes are held to it at once. A new table's stays in `create table` |
-| `down` | restore the old key, drop the new key, drop the index |
+| A column becoming NOT NULL (`As of 2026-11-17`) | a new NOT NULL column with no default: `add column` NULLABLE in the transaction, whose snapshot records it nullable. Then — for it, or for an existing column turned NOT NULL — the `_concurrently` step: `add constraint "<t>_<c>_not_null_check" check ("c" is not null) not valid`, `validate constraint`, `set not null` (Postgres proves it from the validated check, no scan), the check dropped. A key column owes none: `add primary key` makes it NOT NULL |
+| `down` | restore the old key, drop the new key, drop the index; a contracted column `drop not null` |
 
 `x db migrate` re-runs a failed step from the top. `validate` finding a bad row is `X_DB_FOREIGN_KEY_VIOLATION` (or the CHECK's own failure) with the constraint in place holding new writes and the old release still serving: repair the row, re-run. A declared constraint left `NOT VALID` in a database whose ledger says the step ran is `X_DB_DRIFT`, kind `not-valid-constraint`, and its fix is the validate statement.
+
+A NOT NULL contract is the same story. On an empty table — a fresh or `x db reset` database — both steps apply and drift is clean: one `x db gen`, one `x db migrate`. On a table holding NULL there, the validate fails (`X_DB_STATEMENT_FAILED`, the cause naming `<t>_<c>_not_null_check`), the expand step stays applied and recorded nullable, and the database is not drift: backfill the rows, then `x db migrate` finishes the step. On a populated production table that means two releases — declare the column `.nullable()` and ship it with its `backfill()`, then declare it required and `x db gen` writes the contract alone.
+
+**Before 2026-11-17** `x db gen` left a comment, `-- backfill "c", then: alter table … set not null;`, and recorded the column NOT NULL in that file's snapshot. Every database that ran it — a fresh one included — failed `x db migrate` with `X_DB_DRIFT` (`changed-column`), and a second `x db gen` wrote nothing. An app holding such a file, with the comment never carried out: declare the column `.nullable()`, `x db gen "relax c"` (a `drop not null`, a no-op on a database already repaired, and a snapshot that tells the truth), then declare it required again and `x db gen "contract c"`.
 
 ## A column drop takes two releases
 

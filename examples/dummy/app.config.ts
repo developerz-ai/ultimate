@@ -5,21 +5,38 @@
  * A named export, never a default: the CLI and the runtime both import `config` by name.
  *
  * The env keys the FRAMEWORK reads need no declaration here. A key only Postly reads is declared
- * below, in the `defineEnv` call — a read of one it does not name is `X_UNDECLARED_ENV` on the
- * `boundaries` step. Inline, not an `envSchema` export: `.env.example` stays hand-written, because
- * its loopback `APP_URL` is what a fresh clone's typed client needs and a schema default would
- * also hold in production.
+ * in `envSchema` below — a read of one it does not name is `X_UNDECLARED_ENV` on the `boundaries`
+ * step — and `.env.example` is its projection (`x env example`), never a hand-written twin.
  */
 
+import type { EnvSchema } from '@ultimat3/core';
 import { defineConfig, defineEnv, defineMeasurementActor } from '@ultimat3/core';
 
+export const envSchema = {
+  // Declared for its value in `.env.example`, which `bin/setup` copies to `.env`: the typed
+  // client (`apps/web/shared/client.ts`) posts to it and refuses to guess an origin. The default
+  // is read by nothing in production: every reader takes `Bun.env`, where a deploy sets its own.
+  APP_URL: {
+    type: 'url',
+    default: 'http://localhost:3000',
+    description: 'Public origin. A deploy sets its own; this loopback is for a fresh clone.',
+  },
+  RESEND_INBOUND_SECRET: {
+    type: 'string',
+    required: false,
+    secret: true,
+    description: "The support inbox's Resend webhook signing secret (whsec_…).",
+  },
+  BILLING_WEBHOOK_SECRET: {
+    type: 'string',
+    required: false,
+    secret: true,
+    description: 'Billing webhook HMAC keys, comma-separated so a rotation keeps the old one live.',
+  },
+} satisfies EnvSchema;
+
 /** Validated once, at module scope: a malformed value fails the boot naming every offender. */
-export const env = defineEnv({
-  // The support inbox's Resend webhook signing secret (`whsec_…`).
-  RESEND_INBOUND_SECRET: { type: 'string', required: false, secret: true },
-  // Billing webhook HMAC keys, comma-separated so a rotation keeps the old one live.
-  BILLING_WEBHOOK_SECRET: { type: 'string', required: false, secret: true },
-});
+export const env = defineEnv(envSchema);
 
 export const config = defineConfig({
   name: 'postly',

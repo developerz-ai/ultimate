@@ -1,5 +1,6 @@
-// The retention window when pods race: a sweep on one pod must never delete what another pod is
-// publishing or has just published, a build already published heals and re-dates its manifest
+// The retention window when pods race: a sweep on one pod must not delete what another pod is
+// publishing or has just published, even when that publish lands between the sweep's last
+// manifest read and its deletes; a build already published heals and re-dates its manifest
 // when a pod of it boots again (a rollback is the live build), a stalled disk cannot hold a pod
 // out of readiness, and a file swept between `stat` and its first byte is a miss, not a broken 200.
 
@@ -90,6 +91,72 @@ describe('a sweep racing another pod', () => {
 
     expect(await memory.exists(mkey('b'))).toBe(true);
     expect(await memory.exists(fileKey(reused.url))).toBe(true);
+  });
+});
+
+/** Runs `between` once, after the sweep's last manifest read and before its first delete. */
+const atFirstDelete = (disk: StorageDriver, between: () => Promise<void>): StorageDriver => {
+  let fired = false;
+  return {
+    ...disk,
+    delete: async (key: string) => {
+      if (!fired) {
+        fired = true;
+        await between();
+      }
+      return disk.delete(key);
+    },
+  };
+};
+
+describe("a publish landing between the sweep's last manifest read and its deletes", () => {
+  test('a build reusing a file the sweep judged unnamed keeps that file', async () => {
+    const clock = frozenClock('2026-11-03T00:00:00Z');
+    const memory = memoryStorageDriver({ clock });
+    const reused = js('/islands/a-11111111.js');
+    await publish(memory, clock, 'a1', [reused]);
+    clock.advance(HOUR);
+    // Build b reuses a1's file: found present, so never put, so as old as a1 itself.
+    const racing = atFirstDelete(memory, async () => {
+      await publish(memory, clock, 'b', [reused], 3);
+    });
+
+    await publish(racing, clock, 'a2', [js('/islands/a-33333333.js')]);
+
+    expect(await memory.exists(mkey('b'))).toBe(true);
+    expect(await memory.exists(fileKey(reused.url))).toBe(true);
+    expect((await memory.get(fileKey(reused.url))).object.contentType).toBe('text/javascript');
+  });
+
+  test('a dropped build re-dated by a rollback keeps its manifest and its files', async () => {
+    const clock = frozenClock('2026-11-03T00:00:00Z');
+    const memory = memoryStorageDriver({ clock });
+    const old = js('/islands/o-11111111.js');
+    await publish(memory, clock, 'old', [old]);
+    clock.advance(HOUR);
+    const racing = atFirstDelete(memory, async () => {
+      clock.advance(1);
+      await publish(memory, clock, 'old', [old]);
+    });
+
+    await publish(racing, clock, 'new', [js('/islands/n-22222222.js')]);
+
+    expect(await memory.exists(mkey('old'))).toBe(true);
+    expect(await memory.exists(fileKey(old.url))).toBe(true);
+  });
+
+  test('with no publish racing, the dropped build and its files still go', async () => {
+    const clock = frozenClock('2026-11-03T00:00:00Z');
+    const memory = memoryStorageDriver({ clock });
+    const old = js('/islands/o-11111111.js');
+    await publish(memory, clock, 'old', [old]);
+    clock.advance(HOUR);
+
+    const report = await publish(memory, clock, 'new', [js('/islands/n-22222222.js')]);
+
+    expect(report.swept).toBe(1);
+    expect(await memory.exists(mkey('old'))).toBe(false);
+    expect(await memory.exists(fileKey(old.url))).toBe(false);
   });
 });
 

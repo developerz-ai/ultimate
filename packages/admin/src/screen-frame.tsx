@@ -16,6 +16,7 @@ import type { AdminPageProps } from './pages';
 import type { RelationData } from './relations';
 import type { AdminResource } from './resource';
 import { LOOKUP_SEGMENT } from './resource-list';
+import { rowPath } from './row-path';
 import type { WidgetContext } from './widget-value';
 
 /** One request to one admin route: a GET, or the form a screen posted back at itself. */
@@ -63,7 +64,7 @@ export function widgetContextOf(
     // The route table is the app's; a widget three layers down gets a link or no link.
     hrefFor: (entity, id) => {
       const found = target(entity);
-      return found === undefined ? null : `${app.basePath}${found.path}/${id}`;
+      return found === undefined ? null : rowPath(`${app.basePath}${found.path}`, id);
     },
     labelFor: (entity, id) => relations.get(entity)?.labels.get(id),
     optionsFor: (entity) => relations.get(entity)?.options ?? null,

@@ -1,6 +1,7 @@
 // The one config file. Everything the app needs to boot is here, typed and validated at startup —
 // a missing value fails the boot with the exact command that fixes it, never at the first request.
 // A named export, never a default: the CLI and the runtime both import `config` by name.
+import type { EnvSchema } from '@ultimat3/core';
 import {
   defineConfig,
   defineEnv,
@@ -21,7 +22,7 @@ import { checkProductionEnv } from './production-env';
  * `x dev` runs Postgres in-process, events in-process and storage on local disk, so a clone boots
  * with no credentials and no Docker. Production supplies the real values; the same image reads both.
  */
-export const env = defineEnv({
+export const envSchema = {
   // --- Core ---
   DATABASE_URL: { type: 'url', required: false, description: 'unset = embedded PGlite' },
   NATS_URL: {
@@ -62,7 +63,28 @@ export const env = defineEnv({
   // A DSN is a public ingest key, not a credential — but it is still not something to log, and an
   // unset value must read as "reporting off", never as "on but broken".
   SENTRY_DSN: { type: 'string', required: false },
-});
+
+  // --- Agent reach ---
+  // Read by `.mcp.json`, never by the app: declared so `.env.example` names them for an agent's box.
+  DB_GATEWAY_URL: {
+    type: 'url',
+    required: false,
+    description: 'The audited read-only database gateway. The agent never holds a DATABASE_URL.',
+  },
+  ERROR_MONITOR_MCP_URL: {
+    type: 'url',
+    required: false,
+    description: "The error monitor's MCP endpoint: errors as a work queue.",
+  },
+  APP_MCP_TOKEN: {
+    type: 'string',
+    required: false,
+    secret: true,
+    description: "Bearer token for this app's own MCP server at APP_URL/mcp.",
+  },
+} satisfies EnvSchema;
+
+export const env = defineEnv(envSchema);
 
 // At module scope, beside the parse above, so a production pod with no origin fails before any
 // listener binds — and one with no hCaptcha secret says so in its first log lines.
@@ -84,6 +106,9 @@ export const config = defineConfig({
   // The deployment decides the bus (31.0.0: no config key): a NATS_URL set means every realtime
   // role shares it, none means one node's in-process bus.
   realtime: { enabled: true },
+  // Hashed assets outlive their build: a rolling deploy's open tabs still load their CSS and
+  // island chunks. `object` is the boot's disk once S3_ENDPOINT is set (production: R2).
+  assets: { retain: { disk: 'object', builds: 3 } },
   pwa: {
     enabled: true,
     // The document an offline navigation gets when the cache has no answer. Required once

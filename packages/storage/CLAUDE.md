@@ -177,7 +177,7 @@ Gotchas:
 - **`VARIANT_FORMATS` is this package's format vocabulary, and `IMAGE_FORMATS` is core's.** †
 - `transformImage()` encodes at exactly `fitDimensions()`'s size, `format` explicit — anything else
   is a layout shift. †
-- Bun's S3 flag is `virtualHostedStyle`; our `forcePathStyle` is its inverse.
+- Bun's S3 flag is `virtualHostedStyle`; our `forcePathStyle` is its inverse, and in virtual-hosted mode Bun takes the endpoint AS the bucket's host, so `clientTarget` and `s3ObjectUrl` both build that host with one `bucketHost` (`driver-s3-signed.ts`): never the bucket twice.
 - **No `region` signs for `auto`** (R2's; AWS refuses it) — `regionMismatch()` makes it `X_CONFIG_INVALID` naming `S3_REGION`. Full rule: `docs/history/storage.md`.
 - The signature check runs BEFORE the expiry check. Do not reorder.
 - `timingSafeEqual` is `@ultimat3/core`'s (`signed-url.ts` imports it) — the same

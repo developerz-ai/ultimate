@@ -62,10 +62,16 @@ function readWith(rest: string, set: SeparatorSet, notation: AmountNotation, tag
   return { integer: integer === '' ? '0' : integer, fraction: fraction ?? '' };
 }
 
+/** The mark `text` opens or closes with. Longest first: `en-ZA` writes ZAR's symbol `R`, and
+ * taking `R` off `ZAR 5` left `ZA` behind. */
+const edgeMark = (text: string, marks: readonly string[], edge: 'start' | 'end') =>
+  marks.find((mark) => (edge === 'start' ? text.startsWith(mark) : text.endsWith(mark)));
+
 /**
  * `parseAmount('1.234,56', { currency: 'EUR', locale: 'de-DE' })` → 123456 EUR. Reads the
  * currency format's separators and grouping (what `formatMoney` shows) and the plain-number ones;
- * the code, the symbol and the narrow symbol are ignored; a sign is a locale minus, `-`, or the
+ * the code, the symbol or the narrow symbol is read once, before or after the number (`10€50` is
+ * refused, never 1050); a sign is a locale minus, `-`, or the
  * locale's accounting parentheses. Refused (`X_MONEY_INPUT_INVALID`): a character the locale does
  * not use in a number, a group separator out of the locale's own grouping (`1.5` in `de-DE` is not
  * 1.5 and not 15), a second decimal mark, and more fraction digits than the currency has.
@@ -88,14 +94,26 @@ export function parseAmount(text: string, options: ParseAmountOptions): Money {
     negative = true;
     rest = rest.slice(1, -1).trim();
   }
-  // Longest first: `en-ZA` writes ZAR's symbol `R`, and stripping it first left `ZA` behind.
-  for (const mark of notation.marks) rest = rest.replace(mark, '').trim();
+  // A mark is read only at an edge — before the number, either side of a leading sign (`-$5`,
+  // `€ -5`), or after it. Removed from anywhere, `10€50` joined into 1050: a mark left inside is
+  // refused by `readWith` as a character that is not part of a number.
+  let marked = false;
+  const leadingMark = (): void => {
+    const mark = edgeMark(rest, notation.marks, 'start');
+    if (mark === undefined || marked) return;
+    marked = true;
+    rest = rest.slice(mark.length).trim();
+  };
+  leadingMark();
   const minus = notation.minus.find((sign) => rest.startsWith(sign));
   if (minus !== undefined) {
     if (negative) throw fail(`${renderCauseValue(minus)} is a second sign inside the parentheses`);
     negative = true;
     rest = rest.slice(minus.length).trim();
   }
+  leadingMark();
+  const trailing = marked ? undefined : edgeMark(rest, notation.marks, 'end');
+  if (trailing !== undefined) rest = rest.slice(0, -trailing.length).trim();
   if (rest === '') throw fail('there are no digits');
 
   // Either set may read the text; `notationOf` keeps both only where they cannot disagree, so the

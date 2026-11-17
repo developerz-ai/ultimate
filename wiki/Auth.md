@@ -270,7 +270,7 @@ const resolveToken = oauthBearerResolver(oauth, { actor: (grant) => actorFor(gra
 | Piece | What it does |
 |---|---|
 | `routes` | `GET /.well-known/oauth-authorization-server` (RFC 8414), `POST /oauth/token`, `/oauth/revoke` (RFC 7009), `/oauth/introspect` (RFC 7662), plus `/oauth/register` (RFC 7591, `registration: 'dynamic'`) and `/oauth/device` (RFC 8628). Plain `Route`s for `runtime.routes`, public, no cookie authenticates them. Every answer is `no-store` RFC 6749 JSON |
-| consent | the page calls `readRequest(url)` → `{ client, scopes, resource, redirectUri }` or a refusal; an unknown client or unregistered redirect has `redirectTo: null` — render it, never redirect. Its action calls `approve({ subject, request, scopes? })` / `deny({ request })` for the redirect URL (`code`, `state`, `iss`). A forged request is `X_AUTH_CONSENT_INVALID` (422) |
+| consent | the page calls `readRequest(url, { callerKey })` (`callerKey`: the request's address) → `{ client, scopes, resource, redirectUri }` or a refusal; an unknown client or unregistered redirect has `redirectTo: null` — render it, never redirect. Its action calls `approve({ subject, request, scopes? })` / `deny({ request })` for the redirect URL (`code`, `state`, `iss`). A forged request is `X_AUTH_CONSENT_INVALID` (422) |
 | device | the verification page calls `readDevice({ userCode, key })`, `approveDevice` / `denyDevice`; `key` is the caller's bucket — 10 misses lock it (`X_ACCOUNT_LOCKED`) |
 | `registerClient(...)` | a client the app creates itself — a partner's `client_credentials` client; the secret is shown once and stored hashed. A redirect URI, grant, scope or resource that is empty or holds whitespace is `X_AUTH_CLIENT_INVALID` (422, `meta.field`): the store keeps each list space-joined, so it would read back as a different list |
 | `resolve(token)` | `{ subject, scopes, clientId, resource } \| null`. `oauthBearerResolver(server, { actor, resource? })` is the `resolveToken` a bearer mount and `defineAppMcp` take; `actor` runs per call, so a removed member loses access at once |
@@ -289,6 +289,7 @@ const resolveToken = oauthBearerResolver(oauth, { actor: (grant) => actorFor(gra
 | `resource` (RFC 8707) binds the grant; one not in `resources` is `invalid_target` | `authorization-server-request.test.ts`, `oauth-bearer-resolver.test.ts` |
 | tokens are opaque and stored hashed, never a JWT, so `revoke` holds on the next lookup | `token-endpoints.test.ts` |
 | an `https://` `client_id` is a metadata document, fetched through `outbound({ dial: 'public' })`, 5 KiB, cached 5 minutes, public clients only | `authorization-server-clients.test.ts` |
+| every metadata-document fetch is metered (`X_ACCOUNT_LOCKED` past 10 a minute): per `callerKey`, or — when the consent page names none — on ONE shared bucket, so an unkeyed page is throttled as one caller | `authorization-server-clients.test.ts` |
 | `client_credentials`: confidential only, no refresh token, subject is the client | `grant-client-credentials.test.ts` |
 | dynamic registration never hands out `client_credentials` and is counted per address | `authorization-server-clients.test.ts` |
 

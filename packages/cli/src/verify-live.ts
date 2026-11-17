@@ -7,7 +7,12 @@ import type { Runner } from './exec';
 import { msg } from './messages';
 import { floorRequires, readVerifyFloor } from './verify-floor';
 import type { LoginProbe, Probe } from './verify-services';
-import { ensureTestServices, SERVICES_DOWN, SERVICES_UP } from './verify-services';
+import {
+  ensureTestServices,
+  SERVICES_DOWN,
+  SERVICES_UP,
+  TEST_DATABASE_KEY,
+} from './verify-services';
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 
 /** Whether this run asked for `live` by name or the committed floor holds it to running. */
@@ -23,6 +28,9 @@ function withEnv(ctx: VerifyContext, env: Readonly<Record<string, string>>): Ver
     ctx.runner(command, { ...options, env: { ...env, ...options.env } });
   return { ...ctx, runner, env: { ...(ctx.env ?? Bun.env), ...env } };
 }
+
+/** The database answered, so a `live` test that skipped did so with one in reach. */
+const reached = (outcome: StepOutcome): StepOutcome => ({ ...outcome, services: 'reached' });
 
 const withWarning = (outcome: StepOutcome, warning: string): StepOutcome => ({
   ...outcome,
@@ -47,15 +55,23 @@ export function withTestServices(step: VerifyStep, probe?: Probe, login?: LoginP
         ...(probe === undefined ? {} : { probe }),
         ...(login === undefined ? {} : { login }),
       });
-      if (verdict.kind === 'ambient') return step.run(ctx);
+      if (verdict.kind === 'ambient') {
+        // The caller's own URL is a database in reach; no stack and no URL is none.
+        const own = (ctx.env ?? Bun.env)[TEST_DATABASE_KEY];
+        const outcome = await step.run(ctx);
+        return own === undefined || own === '' ? outcome : reached(outcome);
+      }
       if (verdict.kind === 'unavailable') {
         const { code, cause, fix } = verdict.finding;
-        return withWarning(
-          await step.run(ctx),
-          msg('cli.verify.services.unavailable', { code, cause, fix }),
-        );
+        return {
+          ...withWarning(
+            await step.run(ctx),
+            msg('cli.verify.services.unavailable', { code, cause, fix }),
+          ),
+          services: 'unavailable',
+        };
       }
-      const outcome = await step.run(withEnv(ctx, verdict.env));
+      const outcome = reached(await step.run(withEnv(ctx, verdict.env)));
       // Whatever this run's `up` started, by compose's answer — a reachable Postgres beside a
       // freshly started Redis still leaves containers running; a stack already up says nothing.
       if (verdict.startedServices.length === 0) return outcome;

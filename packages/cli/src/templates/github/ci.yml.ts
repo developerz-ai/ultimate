@@ -7,6 +7,7 @@ import { REQUIRED_BUN } from '../../app-root';
 import { DEFAULT_PLAN_PARTS } from '../../verify-plan';
 import type { GeneratedFile, NameSet } from '../naming';
 import { TEST_COMPOSE_PATH, TEST_ENV_PATH } from '../scaffold-test-services';
+import { CACHE, CHECKOUT, DOWNLOAD_ARTIFACT, UPLOAD_ARTIFACT } from './actions';
 import { DEPENDABOT_PATH, dependabot } from './dependabot.yml';
 import { IMAGE_WORKFLOW_PATH, imageWorkflow } from './image.yml';
 import { RUNS_ON } from './runner';
@@ -19,9 +20,8 @@ const CI_WORKFLOW_NAME = 'ci';
 
 /**
  * Pinned by commit SHA with the version in the trailing comment, because this step runs before any
- * code of yours does and `@v2` is a tag its owner can move. `actions/*` follows its major tag
- * instead: GitHub owns the runner and the tag together. Same rule the framework's own
- * `.github/actions/setup/action.yml` states, and the same SHA.
+ * code of yours does and `@v2` is a tag its owner can move. Every `actions/*` step is pinned the
+ * same way (`actions.ts`): the framework's own workflows pin each `uses:`, and run these SHAs.
  */
 export const SETUP_BUN = 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0';
 
@@ -29,17 +29,21 @@ export const SETUP_BUN = 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c624218
 export const PLAN_COMMAND = `bun run verify plan --parts ${String(DEFAULT_PLAN_PARTS)} --json`;
 
 /**
- * Every job's first three steps: the tree, the Bun floor, the install cache. `bun-version` is
+ * Every job's first three steps: the tree, the Bun floor, the install cache. The checkout keeps no
+ * git credential: `bun install` runs a dependency's lifecycle scripts next, and the job token left
+ * in `.git/config` would be theirs to read. `bun-version` is
  * `package.json`'s `engines.bun` floor exactly — the OLDEST runtime the app declares, so a call
  * that needs a newer Bun fails here rather than in the install of whoever took the app at its
  * word; never `latest`, a runtime change nobody chose. The cache is keyed on the lockfile.
  */
-const SETUP_STEPS = `      - uses: actions/checkout@v7
+const SETUP_STEPS = `      - uses: ${CHECKOUT}
+        with:
+          persist-credentials: false
       - uses: ${SETUP_BUN}
         with:
           # engines.bun in package.json, exactly: the oldest Bun this app says it runs on.
           bun-version: '${REQUIRED_BUN}'
-      - uses: actions/cache@v6
+      - uses: ${CACHE}
         with:
           path: ~/.bun/install/cache
           key: bun-\${{ runner.os }}-\${{ hashFiles('bun.lock') }}
@@ -140,7 +144,7 @@ ${SETUP_STEPS}
           bun run verify --only "$ONLY" \${SHARD:+--shard "$SHARD"} --json > "$RUNNER_TEMP/parts/$PART.json"
       # Uploaded when the part is RED too: a part with no document reads, in the merge, as a step
       # nobody ran. \`overwrite\`, so a re-run's document replaces the attempt it re-ran.
-      - uses: actions/upload-artifact@v7
+      - uses: ${UPLOAD_ARTIFACT}
         if: \${{ !cancelled() }}
         with:
           name: verify-part-\${{ matrix.part }}
@@ -159,7 +163,7 @@ ${SETUP_STEPS}
     steps:
 ${SETUP_STEPS}
       - run: bun install
-      - uses: actions/download-artifact@v8
+      - uses: ${DOWNLOAD_ARTIFACT}
         with:
           pattern: verify-part-*
           path: \${{ runner.temp }}/parts

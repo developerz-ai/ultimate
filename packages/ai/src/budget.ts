@@ -293,10 +293,31 @@ export class BudgetLedger {
    */
   private async debit(tokens: number): Promise<void> {
     if (tokens === 0) return;
-    this.debitChain(tokens);
+    // The STORE first, the in-memory chain only once every write landed — as `reserve` orders it.
+    // A write that throws leaves the ledger exactly where it was, so the caller's `release` of the
+    // whole reservation brings it to zero; moving the chain first left it at `actual - 2×reserved`
+    // (negative), a ceiling admitting more than it declares.
     // The keys `reserve` took — a scope with a declared ceiling — and no others, so a reconcile
     // never creates the counter `takeScope` declined to.
-    for (const key of this.meteredKeys()) await this.store.add(key, tokens);
+    const landed: string[] = [];
+    try {
+      for (const key of this.meteredKeys()) {
+        await this.store.add(key, tokens);
+        landed.push(key);
+      }
+    } catch (error) {
+      // A write that landed on one scope before the next one threw is taken back, so every scope
+      // is left as it was; a store down for the undo too keeps the original throw.
+      for (const key of landed) {
+        try {
+          await this.store.add(key, -tokens);
+        } catch {
+          // The original throw is the one the caller acts on (it releases and logs it).
+        }
+      }
+      throw error;
+    }
+    this.debitChain(tokens);
   }
 
   /** The store keys this ledger meters: a key whose scope declares a ceiling. */

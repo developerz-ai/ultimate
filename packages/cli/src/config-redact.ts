@@ -1,12 +1,9 @@
 // The resolved `AppConfig` as JSON an operator may paste into an issue: every credential-named key
-// and every `secret()` value replaced, a URL's password cut out of its userinfo. The key rule is
-// core's `isRedactedKey` — the logger's — so a field the log line hides is hidden here too.
+// and every `secret()` value replaced, a URL's password cut out of its userinfo. Both rules are
+// core's — `isRedactedKey` (the logger's) and `redactUrlPassword` — so a field hidden there is here.
 
-import { isRedactedKey, isSecret, REDACTED } from '@ultimat3/core';
+import { isRedactedKey, isSecret, REDACTED, redactUrlPassword } from '@ultimat3/core';
 import type { JsonValue } from './output';
-
-/** `scheme://user:password@host` → `scheme://user:[redacted]@host`. The user stays: it is no secret. */
-const USERINFO_PASSWORD = /^([a-z][a-z0-9+.-]*:\/\/[^:/@\s]*):[^@/\s]*@/i;
 
 /** Past this depth a config is not data an operator wrote; the walk stops rather than recurse. */
 const MAX_DEPTH = 16;
@@ -14,7 +11,7 @@ const MAX_DEPTH = 16;
 export function redactConfigValue(value: unknown, depth = 0): JsonValue {
   if (isSecret(value)) return REDACTED;
   if (value === null || value === undefined) return null;
-  if (typeof value === 'string') return value.replace(USERINFO_PASSWORD, `$1:${REDACTED}@`);
+  if (typeof value === 'string') return redactUrlPassword(value);
   if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);
   if (typeof value === 'boolean') return value;
   // A config may carry a callback (a `health` probe, a `resolve` hook): named, never its source.

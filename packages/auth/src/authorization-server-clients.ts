@@ -24,6 +24,11 @@ const CLIENT_METADATA_CACHE_MAX = 1_000;
  * is waiting. A retry would also multiply every metered fetch by the vendor's attempt count.
  */
 const ONE_ATTEMPT = Object.freeze({ attempts: 1, base: 0, max: 0, jitter: 'none' as const });
+/**
+ * The bucket every fetch naming no caller shares: leaving `callerKey` out is metered, never free —
+ * one key for all of them, so an unkeyed consent page is throttled as one caller.
+ */
+const UNKEYED_CALLER = 'unkeyed';
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
@@ -69,9 +74,10 @@ function clientFromDocument(clientId: string, body: unknown, at: Date): AuthServ
 
 export interface ClientDirectory {
   /**
-   * `callerKey` (the caller's address) meters metadata fetches through `config.limiter`: an
-   * unauthenticated POST naming `https://<anyone>/<path>` would otherwise be one outbound GET per
-   * path. Rejects with `X_ACCOUNT_LOCKED` once the caller is over the limit.
+   * Every metadata fetch is metered through `config.limiter`: an unauthenticated request naming
+   * `https://<anyone>/<path>` would otherwise be one outbound GET per path. `callerKey` (the
+   * caller's address) is the bucket; absent, every unkeyed fetch shares ONE bucket. Rejects with
+   * `X_ACCOUNT_LOCKED` once the bucket is over the limit.
    */
   find(clientId: string, callerKey?: string): Promise<AuthServerClient | null>;
 }
@@ -97,7 +103,7 @@ export function clientDirectory(config: ResolvedAuthServerConfig): ClientDirecto
     const nowMs = config.clock.now().getTime();
     const hit = cache.get(clientId);
     if (hit !== undefined && hit.untilMs > nowMs) return hit.client;
-    if (callerKey !== undefined) await config.limiter.reserve(`oauth-client-metadata:${callerKey}`);
+    await config.limiter.reserve(`oauth-client-metadata:${callerKey ?? UNKEYED_CALLER}`);
     let client: AuthServerClient | null = null;
     try {
       const answer = await outbound(

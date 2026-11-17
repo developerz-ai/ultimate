@@ -129,6 +129,25 @@ describe('unit · a whole x verify', () => {
   });
 });
 
+describe('unit · a strict floor requiring live, its database in reach', () => {
+  // Round 3, P2-A: a live suite whose Postgres test skipped went green in CI under strict.
+  const live: TestCounts = { ran: 5, skipped: 1 };
+  test('an unwritten ceiling is 0 when the run reached its database', () => {
+    const held = judgeSkips('live', live, undefined, { strictWithDatabase: true });
+    expect(held.findings.map((finding) => finding.code)).toEqual(['X_VERIFY_SKIPS_OVER_CEILING']);
+    expect(held.findings[0]?.cause).toContain('allows 0');
+  });
+  test('a written ceiling decides; no database, or another step, keeps the warning', () => {
+    expect(judgeSkips('live', live, { live: 1 }, { strictWithDatabase: true }).findings).toEqual(
+      [],
+    );
+    expect(judgeSkips('live', live, undefined, { strictWithDatabase: false }).findings).toEqual([]);
+    expect(judgeSkips('contract', PROBE, undefined, { strictWithDatabase: true }).findings).toEqual(
+      [],
+    );
+  });
+});
+
 describe('unit · x verify merge judges the SUM of the shards', () => {
   const FILES = ['a.test.ts', 'b.test.ts'];
   const shard = (index: number, tests: TestCounts) => ({
@@ -163,5 +182,38 @@ describe('unit · x verify merge judges the SUM of the shards', () => {
       MERGED,
     );
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('unit · x verify merge: live skips under strict, by what each shard reached', () => {
+  const FILES = ['a.live.test.ts', 'b.live.test.ts'];
+  const shard = (index: number, services: 'reached' | 'unavailable') => ({
+    name: 'live',
+    ok: true,
+    durationMs: 1,
+    skipped: false,
+    findings: [],
+    tests: { ran: 3, skipped: 1 },
+    services,
+    shard: shardFiles(FILES, { index, total: 2 }),
+  });
+  const merged = (second: 'reached' | 'unavailable') =>
+    mergeParts(
+      [
+        { file: 'l1.json', durationMs: 1, steps: [shard(1, 'reached')] },
+        { file: 'l2.json', durationMs: 1, steps: [shard(2, second)] },
+      ],
+      { steps: ['live'], strict: true, problems: [] },
+      ['live'],
+    );
+
+  test('every shard had its database: a skip is red', () => {
+    const codes = (merged('reached').steps ?? []).flatMap((s) => s.findings.map((f) => f.code));
+    expect(codes).toContain('X_VERIFY_SKIPS_OVER_CEILING');
+  });
+
+  test('a shard without one skipped by design: a warning, not a red', () => {
+    const codes = (merged('unavailable').steps ?? []).flatMap((s) => s.findings.map((f) => f.code));
+    expect(codes).not.toContain('X_VERIFY_SKIPS_OVER_CEILING');
   });
 });

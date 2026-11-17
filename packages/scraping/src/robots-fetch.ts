@@ -9,7 +9,7 @@
 // `driver.open()`, and the proxy is a driver option the session only reports on the way back out.
 
 import type { HostRule } from '@ultimat3/core';
-import { finiteCount, isUltimateError, readWithinLimit } from '@ultimat3/core';
+import { finiteCount, isUltimateError } from '@ultimat3/core';
 import { type DeadlineTimer, deadlineSignal, resolveDialHost } from '@ultimat3/core/outbound';
 import type { ScrapeFetch } from './http';
 import { redirectHop } from './http-redirect';
@@ -103,16 +103,63 @@ const answerOf = async (response: Response, limit: number): Promise<RobotsAnswer
   }
   // Counted as it arrives rather than `.text()`, which materialises the whole body first: a
   // multi-gigabyte robots.txt is a heap the worker never gets back.
-  const capped = await readWithinLimit(response.body, limit);
-  return 'over' in capped ? undefined : new TextDecoder().decode(capped.bytes);
+  const head = await readHead(response.body, limit);
+  if (!head.over) return new TextDecoder().decode(head.bytes);
+  // RFC 9309 §2.5: a crawler parses AT LEAST the first 500 KiB. The rules inside the cap bind; the
+  // line the cap cut through is dropped, never parsed as a shorter rule. Answering "no file" here
+  // was allow-everything for any site that padded its robots.txt.
+  const end = head.bytes.lastIndexOf(LINE_FEED);
+  if (end < 0) return { unreachable: `robots.txt over ${String(limit)} bytes` };
+  return new TextDecoder().decode(head.bytes.subarray(0, end + 1));
+};
+
+const LINE_FEED = 0x0a;
+
+/**
+ * The body's first `limit` bytes, and whether more followed. Not core's `readWithinLimit`, which
+ * answers only "over" and drops what it read — here the head IS the answer. The stream is
+ * cancelled at the cap, so nothing past it is held or keeps arriving.
+ */
+const readHead = async (
+  body: ReadableStream<Uint8Array> | null,
+  limit: number,
+): Promise<{ readonly bytes: Uint8Array; readonly over: boolean }> => {
+  if (body === null) return { bytes: new Uint8Array(0), over: false };
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let over = false;
+  try {
+    while (!over) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const room = limit - total;
+      if (value.byteLength > room) over = true;
+      const kept = over ? value.subarray(0, room) : value;
+      chunks.push(kept);
+      total += kept.byteLength;
+    }
+  } finally {
+    // Cancelled, not drained: a body past the cap must stop arriving, not fill a socket buffer.
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { bytes, over };
 };
 
 /**
- * Reads `robotsUrl`. Three answers, after RFC 9309 §2.3.1: the text; `undefined` when the file is
- * UNAVAILABLE — a 4xx, a body past the cap, a redirect off `allowHosts` or past the hop cap, a
- * host the pin refuses — which the gate reads as no rules; and `{ unreachable }` for a 5xx, a 429,
- * a deadline, a cancellation or a network error, which the gate reads as complete disallow. A
- * server that cannot answer is not a server that has no rules.
+ * Reads `robotsUrl`. Three answers, after RFC 9309 §2.3.1: the text (a body past the cap: its
+ * whole lines inside it, §2.5); `undefined` when the file is UNAVAILABLE — a 4xx, a redirect off
+ * `allowHosts` or past the hop cap, a host the pin refuses — which the gate reads as no rules; and
+ * `{ unreachable }` for a 5xx, a 429, a deadline, a cancellation, a network error or a body past
+ * the cap with no line end inside it, which the gate reads as complete disallow. A server that
+ * cannot answer is not a server that has no rules.
  */
 export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
   const call: ScrapeFetch = init.fetch ?? fetch;
@@ -123,7 +170,7 @@ export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
   // outside the range [0, 9007199254740991]") straight into the gate's own `.catch`, and a `NaN`
   // cap makes `readWithinLimit` refuse after the request already left. A zero of either is the
   // same outcome spelled deliberately: an expired deadline and a cap every file is over — every
-  // origin refused, or (the cap) every origin unrestricted, for the whole run.
+  // origin refused, for the whole run.
   const limit = finiteCount(
     'robotsFetcher',
     'maxBytes',

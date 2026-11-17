@@ -98,7 +98,7 @@ refuses — is the exact `count()`.
 | `resources` | per-entity overrides — `listFields`, `labelField`, `columns`, `scopes`, `count` (a tile on `/admin`), `rows`, `sections`, `formGroups`, `related`, `fields.<name>.{sensitive,hintKey,on}`, `operations`, `repo`, `permission` (the noun its operations are named after; default the entity's name) | derived |
 | `actions` | `AdminAction[]` — a `permission` (never optional) plus a handler; optional `input` schema, `when(row)`, `batch`, `readonly`, `destructive` | none |
 | `pages` | custom screens, see below | none |
-| `auth.actor` | who is acting | the actor the HTTP pipeline resolved for the request |
+| `auth.actor` | who is acting — an `AdminActor`: `id`, `kind`, `roles`, `permissions`, `scopes`, `orgId`, `onBehalfOf`, `locale`, `timeZone`. Every decision is evaluated against core's `Actor` OF THAT KIND (absent `kind` = `'user'`), so a rule reading `actor.kind`, `scopes` or `onBehalfOf` fires on the admin, its MCP surface and a queued batch chunk alike | the actor the HTTP pipeline resolved for the request |
 | `auth.authz` | the one decision path | `roleAuthz()` — the role map decides each permission by name |
 | `audit` | `postgresAuditLog()` (the table `x_admin_audit`) or `memoryAuditLog({ sinks })` | a memory ring |
 
@@ -527,6 +527,11 @@ The token's scopes are what `actor(session)` returns as `tokenScopes` (`AdminMcp
 `adminTokenScopes` (`admin:destroy` ⇒ `admin:write` ⇒ `admin:read`): `tokenScopes: ['admin:read']`
 is a read-only agent token. Absent, the token is as strong as its actor. A stdio host builds its
 caller's `scopes` with `adminTokenScopes(granted)` too — an empty set is refused every tool.
+
+The caller is an **agent**: `resolveToken` builds `agentActor(...)` from what `actor(session)`
+returned, whatever `kind` it set, carrying its `scopes` (core's framework capabilities, never
+`tokenScopes`), `orgId` and `onBehalfOf` — so `can(perm, ({ actor }) => actor.kind !== 'agent')`
+refuses the tool here exactly as on the app's own routes.
 
 The list tool takes the list screen's own grammar: `scope` by name and `where` as
 `[{ field, op?, value }]`, through the same validator a URL passes — and the resource's `rows`

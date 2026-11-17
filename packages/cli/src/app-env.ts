@@ -9,6 +9,7 @@ import {
   APP_CONFIG_FILE,
   ENV_EXAMPLE_PATH,
   ERROR_DOCS_URL,
+  isJsonObject,
   parseEnvKeys,
   pushWired,
 } from '@ultimat3/core';
@@ -35,15 +36,15 @@ export const ENV_SCHEMA_EXPORT = 'envSchema';
 
 const ENV_TYPES = new Set(['string', 'url', 'number', 'integer', 'port', 'boolean', 'enum']);
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 const isDecl = (value: unknown): value is EnvVarDecl =>
-  isRecord(value) && typeof value['type'] === 'string' && ENV_TYPES.has(value['type']);
+  isJsonObject(value) && typeof value['type'] === 'string' && ENV_TYPES.has(value['type']);
 
-/** Structural, not `instanceof`: the schema is a plain record the app authored, never a class. */
+/**
+ * Structural, not `instanceof`: the schema is a plain record the app authored, never a class — and
+ * never an array, whose values would otherwise pass as declarations keyed `0`, `1`, ….
+ */
 export const isEnvSchema = (value: unknown): value is EnvSchema =>
-  isRecord(value) && Object.values(value).every(isDecl);
+  isJsonObject(value) && Object.values(value).every(isDecl);
 
 /**
  * The declaration `app.config.ts` exports, through the one loader (`app-config-load.ts`).

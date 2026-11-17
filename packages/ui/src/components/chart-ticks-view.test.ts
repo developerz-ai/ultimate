@@ -77,6 +77,27 @@ describe('niceTicks', () => {
     expect(flat.max).toBeGreaterThan(500);
   });
 
+  // Round 5: a range straddling zero under a cap of 2 climbs the ladder looking for two ticks that
+  // never come (one is always 0), until the floor's float-noise epsilon rounds `-24 / 5e10` to 0:
+  // the axis began at 0 and drew -24 off the plot.
+  test('a range straddling zero under a tight cap still covers its minimum', () => {
+    for (const [lo, hi] of [
+      [-24, 575],
+      [-0.001, 1000],
+      [-575, 24],
+    ] as const) {
+      const scale = niceTicks(lo, hi, 2);
+      expect([lo, hi, scale.min <= lo, scale.max >= hi]).toEqual([lo, hi, true, true]);
+      expect(scale.ticks).toHaveLength(2);
+    }
+    expect(niceTicks(-24, 575, 2).ticks).toEqual([-24, 575]);
+  });
+
+  test('a minimum a float-noise hair under a tick still gets the nice axis', () => {
+    // 0.7 - 0.4 is 0.29999999999999993: the axis at 0.3 is the one a reader means.
+    expect(niceTicks(0.7 - 0.4, 1, 8).ticks).toEqual([0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]);
+  });
+
   test('a reversed or non-finite bound is repaired rather than looping', () => {
     expect(niceTicks(10, 0, 6).ticks).toEqual([0, 2, 4, 6, 8, 10]);
     expect(niceTicks(Number.NaN, 5, 6).ticks.length).toBeGreaterThanOrEqual(2);

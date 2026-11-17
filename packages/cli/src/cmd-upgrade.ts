@@ -354,7 +354,7 @@ export const createUpgradeCommand = (
       const to = readTarget(ctx);
       // One hop per app at a time, and a stopped hop stops its children: every spawn below is
       // tagged, and SIGINT/SIGTERM kill that tree and release the lock before the signal lands.
-      const release = acquireUpgradeLock(root);
+      const release = await acquireUpgradeLock(root);
       const tag = upgradeTag();
       const pids = new Set<number>();
       const undoSignals = stopChildrenOnSignal({ tag, pids, cleanup: release });

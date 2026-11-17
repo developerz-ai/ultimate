@@ -1,9 +1,9 @@
 {
   "manifestVersion": 1,
-  "buildId": "a44fb9255723eca4",
+  "buildId": "3b1704aeed076f13",
   "app": {
     "name": "social-media-clone",
-    "version": "0.1.0"
+    "version": "1.0.0"
   },
   "routes": [
     {
@@ -1830,7 +1830,6 @@
           "filters": [
             "handle",
             "id",
-            "email",
             "role",
             "tz",
             "locale",
@@ -1839,7 +1838,6 @@
           "sorts": [
             "id",
             "handle",
-            "email",
             "deletedAt",
             "createdAt",
             "updatedAt"

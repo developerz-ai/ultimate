@@ -33,6 +33,27 @@ describe('deltaOf', () => {
     expect(deltaOf(1.5, 2, { absoluteBelow: 10, format: (n) => `${n} ms` })?.text).toBe('−0.5 ms');
   });
 
+  test('a difference that formats as zero is flat, as a percentage that rounds to 0% is', () => {
+    // The probe: 2 → 2.001 read "+0", trend up — a green arrow for a change the chip says is none.
+    expect(deltaOf(2.001, 2, { absoluteBelow: 10 })).toEqual({ text: '0', trend: 'flat' });
+    expect(deltaOf(1.999, 2, { absoluteBelow: 10 })).toEqual({ text: '0', trend: 'flat' });
+    expect(deltaOf(0.004, 0)).toEqual({ text: '0', trend: 'flat' });
+    // A caller's formatter decides what zero reads as: its own text, flat.
+    expect(deltaOf(2.001, 2, { absoluteBelow: 10, format: (n) => `${Math.round(n)} ms` })).toEqual({
+      text: '0 ms',
+      trend: 'flat',
+    });
+    // ...and a finer formatter keeps a difference the default's two places would have hidden.
+    expect(deltaOf(2.001, 2, { absoluteBelow: 10, format: (n) => n.toFixed(3) })).toEqual({
+      text: '+0.001',
+      trend: 'up',
+    });
+    expect(deltaOf(2, 2, { absoluteBelow: 10, format: (n) => `${n} ms` })).toEqual({
+      text: '0 ms',
+      trend: 'flat',
+    });
+  });
+
   test('every trend has an arrow path', () => {
     for (const trend of ['up', 'down', 'flat'] as const) {
       expect(DELTA_ARROW_PATH[trend]).toMatch(/^M/);

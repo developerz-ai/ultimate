@@ -71,6 +71,8 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['3b0u9i8hze00x', 'error'],
   ],
   'undeclared-env': [
+    ['1xkusngzbabza', 'error'],
+    ['2jbihvbp83mb4', 'error'],
     ['3gsy96z8bgrrl', 'error'],
     ['81vvl6xx5bb8', 'error'],
   ],
@@ -81,6 +83,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
   'untranslated-string': [
     ['2x85ib5eqdxzi', 'error'],
     ['3j5e8t1k120u3', 'error'],
+    ['d6gyn0l6szj8', 'error'],
     ['h57qtdwn7inz', 'error'],
   ],
   'unzoned-date': [
@@ -114,7 +117,7 @@ export const RELEASED_GUARD_TEST_FORMS: Readonly<Record<string, readonly string[
   'semantic-interactive': ['2uh0p6xoh996t', '393msxyy1bz36'],
   'unbounded-fanout': ['key86lol3wnh'],
   'undeclared-custom-property': ['30bi2v92swukf', 'svuf8sm14fm8'],
-  'undeclared-env': ['38run3rew6y0c'],
+  'undeclared-env': ['38run3rew6y0c', '8xdp7gp7hol7'],
   'undefined-style-class': ['1uy88gpk5k8p8', '2sy8me3i3bmzw'],
   'untranslated-string': ['30q3u45cey2eq', 'cgvfv231gnvg'],
   'unzoned-date': ['1siep3fqscks4', '20x6l238r09jk'],

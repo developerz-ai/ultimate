@@ -180,11 +180,32 @@ describe('unit · x env check', () => {
     ]);
     // `x doctor` says "shippable" over the same shell, so the difference is stated here.
     expect(result.summary).toContain('checked as production: no ULTIMATE_ENV named');
+    // The framework's secrets are not declared variables: the count is the app's alone, and the
+    // codes the deploy still owes are named apart.
+    expect(result.summary).not.toContain('missing or malformed');
+    expect(result.summary).toStartWith(
+      '2 declared variable(s), all present and valid — X_CURSOR_SECRET_DEV, X_STORAGE_SECRET_DEV',
+    );
     for (const finding of result.findings ?? []) {
       expect(finding.fix).not.toContain('export ');
       expect(finding.fix).toContain('# ');
       expect(finding.fix).toContain('ULTIMATE_ENV=development x env check');
     }
+  });
+
+  test('a declared variable missing beside them is counted alone, of the declared total', async () => {
+    const root = await appRoot('check-mixed');
+    const result = await envCommand.run(
+      context(['env', 'check'], root, { ULTIMATE_ENV: 'production' }),
+    );
+    expect(result.findings?.map((finding) => finding.code)).toEqual([
+      'X_ENV_MISSING',
+      'X_CURSOR_SECRET_DEV',
+      'X_STORAGE_SECRET_DEV',
+    ]);
+    expect(result.summary).toBe(
+      '1 of 2 declared variable(s) missing or malformed — X_CURSOR_SECRET_DEV, X_STORAGE_SECRET_DEV',
+    );
   });
 
   test('the machine line in that fix is true: the same table goes green', async () => {

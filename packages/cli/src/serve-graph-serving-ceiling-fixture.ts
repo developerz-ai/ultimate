@@ -331,5 +331,8 @@
  * plus `query/src/live-bounds.ts` — `X_QUERY_LIVE_UNBOUNDED`, refused after `sql()` in `read.ts`.
  * raised 1540 → 1541, measured 1541 (2026-11-17, plan 101b audit round 3, security):
  * `realtime/src/channel-tenant.ts`, a channel's tenant param checked before its policy (T1, P0).
+ * raised 1541 → 1545, measured 1545 (2026-11-17, plan 101b audit rounds 5–6): the four on
+ * `MIGRATE_CEILING` — `core/src/url-userinfo.ts`, `entity/src/predicate-operand.ts`,
+ * `time/src/plain-date.ts`, `db/src/not-null-contract.ts`.
  */
-export const SERVING_ROLE_CEILING = 1541;
+export const SERVING_ROLE_CEILING = 1545;

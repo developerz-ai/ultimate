@@ -155,8 +155,9 @@ describe('the arithmetic calendar answers as the day-by-day walk did', () => {
 });
 
 describe('a long span costs weeks of arithmetic, not a call into Intl per day', () => {
-  // The walk took ~830 ms for 30 years and ~500 ms for 5,000 business days. The bound is loose for
-  // CI; what it catches is a return to per-day `Intl`, which is two orders of magnitude over it.
+  // The walk took ~830 ms for 30 years and ~500 ms for 5,000 business days; arithmetic takes ~10 ms.
+  // Each test warms its zone first, and the 200 ms bound holds under a loaded 9-worker gate (50 ms
+  // did not), while a return to per-day `Intl` still lands well over it.
   const calendar = { zone: 'America/New_York', holidays: ['2020-12-25', '2021-12-25'] };
   const from = new Date('1996-01-01T14:00:00Z') as Instant;
 
@@ -164,15 +165,16 @@ describe('a long span costs weeks of arithmetic, not a call into Intl per day', 
     businessDaysBetween(from, new Date('1997-01-01T14:00:00Z') as Instant, calendar);
     const started = performance.now();
     const count = businessDaysBetween(from, new Date('2026-01-01T14:00:00Z') as Instant, calendar);
-    expect(performance.now() - started).toBeLessThan(50);
+    expect(performance.now() - started).toBeLessThan(200);
     // 7,828 weekdays, less one Friday holiday; the Saturday one was never a business day.
     expect(count).toBe(7827);
   });
 
   test('5,000 business days of addBusinessDays', () => {
+    addBusinessDays(from, 10, calendar);
     const started = performance.now();
     addBusinessDays(from, 5000, calendar);
     addBusinessDays(from, -5000, calendar);
-    expect(performance.now() - started).toBeLessThan(50);
+    expect(performance.now() - started).toBeLessThan(200);
   });
 });

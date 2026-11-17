@@ -1,7 +1,6 @@
 // A NOT NULL column added to an `appendOnly` table must arrive POPULATED in its own `add column`.
-// The ordinary path emits it nullable with a `-- backfill …, then: set not null` note — and that
-// backfill is an UPDATE the table's trigger refuses, so the note was an instruction nobody could
-// carry out. Refused at generation instead, with the default as the fix.
+// The ordinary path adds it nullable and contracts it in a later step once the rows are backfilled
+// — and that backfill is an UPDATE the table's trigger refuses, so the contract could never run. Refused at generation instead, with the default as the fix.
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
@@ -93,12 +92,12 @@ describe('appendOnly · adding a NOT NULL column', () => {
     expect(migration.up).not.toContain('backfill');
   });
 
-  test('a nullable column needs nothing, and a table that is not append-only keeps its note', () => {
+  test('a nullable column needs nothing, and a table that is not append-only gets its contract', () => {
     expect(generate([ledger(true, [column('memo')])], recorded(ledger(true))).up).toBe(
       'alter table "ledger" add column "memo" text;',
     );
-    expect(generate([ledger(false, [REQUIRED])], recorded(ledger(false))).up).toContain(
-      '-- backfill "memo", then:',
+    expect(generate([ledger(false, [REQUIRED])], recorded(ledger(false))).followUp?.up).toContain(
+      'alter table "ledger" alter column "memo" set not null;',
     );
   });
 });
@@ -129,9 +128,9 @@ describe('appendOnly · an existing column turned NOT NULL', () => {
     expect(refused.split('\n')[0]).toBe('X_MIGRATION_APPEND_ONLY_BACKFILL');
   });
 
-  test('a table that is not append-only keeps its backfill note, and dropping NOT NULL is fine', () => {
-    expect(generate([ledger(false, [REQUIRED])], recorded(ledger(false, [NULLABLE]))).up).toBe(
-      '-- backfill "memo", then: alter table "ledger" alter column "memo" set not null;',
+  test('a table that is not append-only gets its contract, and dropping NOT NULL is fine', () => {
+    expect(generate([ledger(false, [REQUIRED])], recorded(ledger(false, [NULLABLE]))).up).toContain(
+      'alter table "ledger" alter column "memo" set not null;',
     );
     expect(generate([ledger(true, [NULLABLE])], recorded(ledger(true, [REQUIRED]))).up).toBe(
       'alter table "ledger" alter column "memo" drop not null;',

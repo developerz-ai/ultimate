@@ -2,8 +2,9 @@
 // past its declared threshold through the same per-row gate an inline batch uses. A job and not a
 // ninth kind of thing — `enqueue` and a declaration are all it uses of `@ultimat3/jobs`.
 
-import { userActor, withChildContext } from '@ultimat3/core';
+import { ACTOR_KINDS, type ActorKind, type ActorOrigin, withChildContext } from '@ultimat3/core';
 import { type AnyJobHandle, getJob, job, t } from '@ultimat3/jobs';
+import { coreActorOf } from './actor';
 import type { AdminActor } from './authz';
 import { type BatchEnqueue, type BatchRow, runBatchRows } from './batch';
 import { AdminMountMissingError } from './errors';
@@ -25,6 +26,9 @@ const inputOf = (text: string): Readonly<Record<string, unknown>> => {
 /** The job's durable name: the queue key every queued chunk carries. Never renamed. */
 export const ADMIN_BATCH_JOB = 'admin.batch';
 
+/** Who can queue a chunk: anonymous never reaches the batch gate. */
+const QUEUED_KINDS = ['user', 'service', 'agent'] as const satisfies readonly ActorKind[];
+
 const chunkInput = t.object({
   basePath: t.string,
   entity: t.string,
@@ -36,9 +40,15 @@ const chunkInput = t.object({
   batchId: t.string,
   index: t.number.int(),
   requestId: t.string,
+  // Kind, scopes and `onBehalfOf` too: a chunk an agent queued was re-run as a user, so a rule
+  // refusing agents passed every queued row it refused inline. Absent kind (a chunk queued before
+  // the field existed) is a user, which is what it ran as then.
   actor: t.object({
     id: t.string,
+    kind: t.optional(t.enum(QUEUED_KINDS)),
     roles: t.array(t.string),
+    scopes: t.optional(t.array(t.string)),
+    onBehalfOf: t.optional(t.object({ actorId: t.string, actorKind: t.enum(ACTOR_KINDS) })),
     permissions: t.optional(t.array(t.string)),
     orgId: t.optional(t.string),
     locale: t.optional(t.string),
@@ -58,7 +68,10 @@ export interface AdminBatchChunk {
   readonly requestId: string;
   readonly actor: {
     readonly id: string;
+    readonly kind?: (typeof QUEUED_KINDS)[number] | undefined;
     readonly roles: readonly string[];
+    readonly scopes?: readonly string[] | undefined;
+    readonly onBehalfOf?: ActorOrigin | undefined;
     /** Direct grants: an operator who holds the permission with no role runs the batch too. */
     readonly permissions?: readonly string[] | undefined;
     readonly orgId?: string | undefined;
@@ -89,25 +102,20 @@ export async function runBatchChunk(chunk: AdminBatchChunk): Promise<readonly Ba
   }
   const actor: AdminActor = {
     id: chunk.actor.id,
+    ...(chunk.actor.kind === undefined ? {} : { kind: chunk.actor.kind }),
     roles: chunk.actor.roles,
+    ...(chunk.actor.scopes === undefined ? {} : { scopes: chunk.actor.scopes }),
+    ...(chunk.actor.onBehalfOf === undefined ? {} : { onBehalfOf: chunk.actor.onBehalfOf }),
     ...(chunk.actor.permissions === undefined ? {} : { permissions: chunk.actor.permissions }),
     ...(chunk.actor.orgId === undefined ? {} : { orgId: chunk.actor.orgId }),
     ...(chunk.actor.locale === undefined ? {} : { locale: chunk.actor.locale }),
     ...(chunk.actor.timeZone === undefined ? {} : { timeZone: chunk.actor.timeZone }),
   };
   const ctx = app.ctx({ actor, requestId: chunk.requestId });
-  // The operator is the ambient actor too, tenant included — what the entity's tenant guard
-  // reads — exactly as `mcp.ts` installs an agent for its call.
-  return withChildContext(
-    {
-      actor: userActor({
-        id: actor.id,
-        roles: [...(actor.roles ?? [])],
-        permissions: [...(actor.permissions ?? [])],
-        ...(actor.orgId === undefined ? {} : { orgId: actor.orgId }),
-      }),
-    },
-    () => runBatchRows({ resource, action, ctx, ids: chunk.ids, input: inputOf(chunk.input) }),
+  // The operator is the ambient actor too, of their real kind, tenant included — what the
+  // entity's tenant guard reads — exactly as `mcp.ts` installs an agent for its call.
+  return withChildContext({ actor: coreActorOf(actor) }, () =>
+    runBatchRows({ resource, action, ctx, ids: chunk.ids, input: inputOf(chunk.input) }),
   );
 }
 
@@ -131,6 +139,10 @@ export function adminBatchJob(): AnyJobHandle {
   }) as AnyJobHandle;
 }
 
+/** The kind a chunk carries; anonymous cannot have queued one, so it carries none. */
+const queuedKind = (kind: ActorKind | undefined): (typeof QUEUED_KINDS)[number] | undefined =>
+  kind === 'anonymous' ? undefined : kind;
+
 /** What `runAdminBatch` queues a chunk with: one `admin.batch` job, its id answered. */
 export const batchEnqueue =
   (basePath: string): BatchEnqueue =>
@@ -147,7 +159,10 @@ export const batchEnqueue =
       requestId: chunk.ctx.requestId,
       actor: {
         id: actor.id,
+        ...(queuedKind(actor.kind) === undefined ? {} : { kind: queuedKind(actor.kind) }),
         roles: [...(actor.roles ?? [])],
+        ...(actor.scopes === undefined ? {} : { scopes: [...actor.scopes] }),
+        ...(actor.onBehalfOf === undefined ? {} : { onBehalfOf: { ...actor.onBehalfOf } }),
         ...(actor.permissions === undefined ? {} : { permissions: [...actor.permissions] }),
         ...(actor.orgId === undefined ? {} : { orgId: actor.orgId }),
         ...(actor.locale === undefined ? {} : { locale: actor.locale }),

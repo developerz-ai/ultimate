@@ -386,6 +386,8 @@ describe('the decoder refuses what it cannot afford', () => {
 // policy threw — app code, so an app value. `String()` runs the value's own `toString`, and the
 // throw it raises escapes the handler's catch: the client is left waiting on a frame the node
 // never sent, which a reconnect cannot repair because the mutation throws again.
+const INTERNAL_FIX = 'x errors explain X_INTERNAL --json   # then fix the throwing call site';
+
 describe('toWireError over a throwable it does not control', () => {
   const hostile = (): ReadonlyMap<string, unknown> =>
     new Map<string, unknown>([
@@ -406,8 +408,8 @@ describe('toWireError over a throwable it does not control', () => {
       expect(() => {
         wire = toWireError(value);
       }).not.toThrow();
-      expect(wire?.code).toBe('X_PROTOCOL_VERSION');
-      expect(wire?.fix).toBe('x doctor realtime');
+      expect(wire?.code).toBe('X_INTERNAL');
+      expect(wire?.fix).toBe(INTERNAL_FIX);
       expect(wire?.cause.length).toBeGreaterThan(0);
     });
   }
@@ -422,9 +424,39 @@ describe('toWireError over a throwable it does not control', () => {
     });
 
     const wire = toWireError(trapped);
-    expect(wire.code).toBe('X_PROTOCOL_VERSION');
-    expect(wire.fix).toBe('x doctor realtime');
+    expect(wire.code).toBe('X_INTERNAL');
+    expect(wire.fix).toBe(INTERNAL_FIX);
     expect(wire.cause.length).toBeGreaterThan(0);
+  });
+
+  // Round 5: an uncoded throwable was `X_PROTOCOL_VERSION` with `x doctor realtime` — a version
+  // skew no rebuild repairs — while `@ultimat3/http`'s `factsOf` labels the same `TypeError`
+  // `X_INTERNAL`. One failure, one code on both surfaces; the decoder's own refusals keep theirs.
+  test('an uncoded throwable is X_INTERNAL, as HTTP labels it, never a protocol skew', () => {
+    const wire = toWireError(new TypeError("Cannot read properties of undefined (reading 'id')"));
+    expect(wire.code).toBe('X_INTERNAL');
+    expect(wire.fix).toBe(INTERNAL_FIX);
+  });
+
+  // HTTP's `toProblem` blanks an `X_INTERNAL` cause for a stranger: a driver's DSN, a row, a path.
+  // The socket is a stranger too; the node reports the real text (`sync-node.ts`'s `reportError`).
+  test("an X_INTERNAL cause never carries the throwable's own words to the socket", () => {
+    const secret = 'connect ECONNREFUSED postgres://app:hunter2@10.0.0.7:5432/app';
+    expect(toWireError(new Error(secret)).cause).not.toContain('hunter2');
+    expect(toWireError({ code: 'X_INTERNAL', cause: secret, fix: 'x' }).cause).not.toContain(
+      'hunter2',
+    );
+  });
+
+  test("a decode failure keeps X_PROTOCOL_VERSION and the decoder's own words", () => {
+    let wire: WireError | undefined;
+    try {
+      decode('not json');
+    } catch (error) {
+      wire = toWireError(error);
+    }
+    expect(wire?.code).toBe('X_PROTOCOL_VERSION');
+    expect(wire?.cause).toContain('frame is not JSON');
   });
 
   test('a throwable carrying the contract keeps every field it named', () => {

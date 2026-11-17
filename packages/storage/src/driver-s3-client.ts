@@ -4,7 +4,7 @@
 
 import { ConfigInvalidError } from '@ultimat3/core';
 import type { S3DriverOptions } from './driver-s3';
-import { requireEnv, resolveS3Target } from './driver-s3-signed';
+import { bucketHost, requireEnv, resolveS3Target } from './driver-s3-signed';
 
 /** Structural view of `Bun.S3Client` — typing it here keeps `bun-types` out of the contract. */
 export interface S3FileLike {
@@ -61,10 +61,17 @@ export function clientTarget(options: S3DriverOptions): Record<string, unknown> 
   const target = resolveS3Target(options);
   // Bun's flag is the inverse: path style means "not virtual hosted".
   const pathStyle = options.forcePathStyle;
+  const endpoint =
+    target.endpoint === undefined || pathStyle !== false
+      ? target.endpoint
+      : // Bun's virtual-hosted mode takes the endpoint AS the bucket's host: the bare account
+        // endpoint sent every request to the account root (on R2: an opaque `S3Error` for a read,
+        // `ListBuckets` for a list).
+        bucketHost(target.endpoint, options.bucket);
   return {
     bucket: options.bucket,
     ...(target.region === undefined ? {} : { region: target.region }),
-    ...(target.endpoint === undefined ? {} : { endpoint: target.endpoint }),
+    ...(endpoint === undefined ? {} : { endpoint }),
     ...(pathStyle === undefined ? {} : { virtualHostedStyle: !pathStyle }),
     ...(target.sessionToken === undefined ? {} : { sessionToken: target.sessionToken }),
   };

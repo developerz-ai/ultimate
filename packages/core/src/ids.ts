@@ -105,17 +105,24 @@ function hexOf(byteLength: number): string {
  * UUIDv7 per RFC 9562: 48-bit unix ms, version 7, 12-bit monotonic counter, 62 random bits.
  * Strictly increasing lexicographically even within the same millisecond, and never goes
  * backwards when the wall clock does.
+ *
+ * A pre-1970 clock mints at timestamp 0 (the field's floor), still monotonic: `frozenClock`
+ * accepts such an instant on purpose — a test pinned to 1969 — and an id that cannot encode it
+ * sorts first rather than refusing every context built on that clock. An Invalid Date and an
+ * instant past 2^48-1 ms are still refused (`X_INVARIANT`).
  */
 export function uuidV7(clock: Clock = systemClock): string {
-  let epochMs = clock.now().getTime();
+  const read = clock.now().getTime();
+  // `Math.max` keeps `NaN` as `NaN`, so an Invalid Date still reaches the refusal below.
+  let epochMs = Math.max(read, 0);
   // Before the clamp and before `lastEpochMs` is written: an Invalid Date minted `…-0NaN-7…` and
   // stored `NaN` as the high-water mark, so the next id skipped the clamp and could sort first.
   // `assert` only on the failing branch: its messages would otherwise be built on every id.
   if (!(epochMs >= 0 && epochMs <= MAX_EPOCH_MS)) {
     assert(
       false,
-      `uuidV7's clock read ${String(epochMs)} ms: a UUIDv7 holds 0 to 2^48-1 unix ms, so an Invalid Date or a pre-1970 instant has no encoding`,
-      "uuidV7(frozenClock('2026-01-01T00:00:00Z'))   // a clock at a valid instant on or after 1970",
+      `uuidV7's clock read ${String(read)} ms: a UUIDv7 holds up to 2^48-1 unix ms, so an Invalid Date or an instant past the year 10889 has no encoding`,
+      "uuidV7(frozenClock('2026-01-01T00:00:00Z'))   // a clock at a valid instant",
     );
   }
   if (epochMs < lastEpochMs) epochMs = lastEpochMs;

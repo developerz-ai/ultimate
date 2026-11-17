@@ -323,7 +323,11 @@ export function toWireError(error: unknown): WireError {
   // `renderThrowable` keeps an Error's own words without trusting `instanceof` or `.message`, and
   // `stringField` makes the four probes above it as total as the fallback they choose between —
   // `shape?.code` was a raw property read on that same app value.
-  const code = stringField(error, 'code') ?? 'X_PROTOCOL_VERSION';
+  // `X_INTERNAL` for a throwable with no code, as `@ultimat3/http`'s `factsOf` labels it: it was
+  // `X_PROTOCOL_VERSION` until round 5, sending the reader to rebuild a client over a server bug.
+  // The decoder's refusals are `ProtocolVersionError`s, coded already, so they keep theirs.
+  const code = stringField(error, 'code') ?? 'X_INTERNAL';
+  if (code === 'X_INTERNAL') return internalWireError(error);
   const cause = stringField(error, 'cause') ?? renderThrowable(error);
   const fix = stringField(error, 'fix') ?? 'x doctor realtime';
   const docs = stringField(error, 'docs');
@@ -331,6 +335,23 @@ export function toWireError(error: unknown): WireError {
   const retryAfterSeconds = retryHintOf(error);
   return retryAfterSeconds === undefined ? base : { ...base, retryAfterSeconds };
 }
+
+/**
+ * An unclassified failure, as a stranger gets it: HTTP's `toProblem` blanks the same cause, because
+ * it is a driver's DSN, a rejected row or a path, and nothing in it is the caller's to act on. The
+ * real text is the node's: `sync-node.ts` reports it, `live-reauth.ts` counts it. An authored
+ * `fix` and `docs` still ride, being instructions rather than evidence.
+ */
+function internalWireError(error: unknown): WireError {
+  const fix = stringField(error, 'fix') ?? INTERNAL_FIX;
+  const docs = stringField(error, 'docs');
+  const base = { code: 'X_INTERNAL', cause: INTERNAL_CAUSE, fix };
+  return docs === undefined ? base : { ...base, docs };
+}
+
+const INTERNAL_CAUSE =
+  'the sync node failed while handling this frame; the details are in its logs and error reports';
+const INTERNAL_FIX = 'x errors explain X_INTERNAL --json   # then fix the throwing call site';
 
 /**
  * `meta.retryAfterSeconds`, the field `@ultimat3/http`'s `X_RATE_LIMITED` carries — read as totally

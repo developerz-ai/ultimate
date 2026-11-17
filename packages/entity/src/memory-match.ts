@@ -20,6 +20,7 @@ import { likeMatches } from './like';
 import { DECIMAL_TEXT, numericOrder } from './numeric-compare';
 import { operatorUnknown } from './operator';
 import { orMembers, predicateNodeInvalid } from './predicate-node';
+import { operandFor } from './predicate-operand';
 import type { Predicate } from './tenancy';
 import { isTextContains, textContainsMatches } from './text-contains';
 import type { ColumnKind } from './types';
@@ -133,28 +134,51 @@ export const sameValueOfKind = (
   return left === right;
 };
 
+/**
+ * `col = array[…]` on an `arrayOf()` column: the same length and every element equal IN ORDER, each
+ * pair by the element's own kind — Postgres' `array_eq`. `===` compared two array references and
+ * matched no row where the database matched one. Unlike `@>`'s element test, a NULL element equals
+ * a NULL element here: `array_eq` treats them as equal, `=` inside containment does not.
+ */
+const sameArrayOfKind = (
+  elementKind: ColumnKind | undefined,
+  given: unknown,
+  operand: unknown,
+): boolean =>
+  Array.isArray(given) &&
+  Array.isArray(operand) &&
+  given.length === operand.length &&
+  given.every((each: unknown, at) =>
+    isNull(each) || isNull(operand[at])
+      ? isNull(each) && isNull(operand[at])
+      : sameValueOfKind(elementKind, each, operand[at]),
+  );
+
 /** One predicate against one stored row, in the meaning the Postgres driver compiles it to. */
 export const matchesPredicate = <Row>(
   entity: EntityCore<Row>,
   row: unknown,
-  predicate: Predicate,
+  asked: Predicate,
 ): boolean => {
   // BEFORE anything is read off the row. A full-text match has no in-memory meaning — see
   // `searchInMemory` — and `valueAt(row, '$search')` would answer `undefined`, which every
   // comparison below reads as NULL and silently turns into "no rows".
-  if (predicate.op === 'matches') throw searchInMemory(entity.$name);
+  if (asked.op === 'matches') throw searchInMemory(entity.$name);
   // A group holds when any member does; no member is no row, as Postgres' `1 = 0` answers.
-  if (predicate.op === 'or') {
-    return orMembers(predicate).some((member) => matchesPredicate(entity, row, member));
+  if (asked.op === 'or') {
+    return orMembers(asked).some((member) => matchesPredicate(entity, row, member));
   }
-  if (predicate.op === 'and') {
-    return orMembers(predicate).every((member) => matchesPredicate(entity, row, member));
+  if (asked.op === 'and') {
+    return orMembers(asked).every((member) => matchesPredicate(entity, row, member));
   }
   // A hop needs the target's rows, which one row does not carry: the memory driver resolves it to
   // an `in` list first (`memory-via.ts`), and a store held in process cannot answer one at all.
-  if (predicate.op === 'via') {
+  if (asked.op === 'via') {
     throw predicateNodeInvalid(entity.$name, 'a via hop cannot be judged row by row in process');
   }
+  // The operand in the one form `pg-sql.ts` binds too, or the refusal it raises
+  // (`predicate-operand.ts`): a zoneless instant, a fraction against an integer column.
+  const predicate = operandFor(entity, asked);
   // The column's declared kind, resolved once — `price.minor` included, which is the path a money
   // predicate and a money sort key both name.
   const kind = kindOf(entity, predicate.column);
@@ -175,8 +199,13 @@ export const matchesPredicate = <Row>(
    * A `money()` column holding NULL reaches this every time, with no hand-built row at all —
    * `valueAt(row, 'price.minor')` has nothing to read.
    */
+  const elementKind = held?.$meta.element?.$meta.kind;
   const equals = (candidate: unknown): boolean =>
-    !rowIsNull && !isNull(candidate) && sameValueOfKind(kind, actual, candidate);
+    !rowIsNull &&
+    !isNull(candidate) &&
+    (kind === 'array'
+      ? sameArrayOfKind(elementKind, actual, candidate)
+      : sameValueOfKind(kind, actual, candidate));
   // `col > NULL` is UNKNOWN in SQL and UNKNOWN is not a match, so a NULL on EITHER side matches no
   // row here either — `predicateSql` emits a bare `"col" > $1` and Postgres returns nothing. Without
   // this the fall-through compared `String(null)` as the text `"null"`, which sorts after `"5"` and

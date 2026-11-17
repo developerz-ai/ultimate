@@ -79,7 +79,10 @@ literals: a key in `app.config.ts` is a key in git. Missing ones throw `X_ENV_MI
 Endpoint, region and session token resolve ONCE for both transports, as Bun reads them: the
 option, then `S3_ENDPOINT`/`AWS_ENDPOINT`, `S3_REGION`/`AWS_REGION`,
 `S3_SESSION_TOKEN`/`AWS_SESSION_TOKEN` (or the one `sessionTokenEnv` names), from
-`s3Driver({ env })` or `process.env`. `s3Driver({ fetch, clock })` inject the signed path's transport and its clock (tests; default the
+`s3Driver({ env })` or `process.env`. With `forcePathStyle: false` both transports address
+`<bucket>.<endpoint host>` — or the endpoint as given when its host already starts with
+`<bucket>.` (`https://media.acct.r2.cloudflarestorage.com`), never the bucket twice.
+`s3Driver({ fetch, clock })` inject the signed path's transport and its clock (tests; default the
 global `fetch` and `systemClock`); `S3FetchLike` is the shape.
 `localDriver` keeps content type, etag, `cacheControl` and `metadata` in a `<root>/.meta/`
 sidecar so `get()`/`list()` round-trip everything `put()` was handed; sidecars never appear in

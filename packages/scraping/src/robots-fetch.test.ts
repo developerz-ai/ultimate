@@ -64,7 +64,11 @@ describe('unit · the default robots.txt read', () => {
       maxBytes: 4 * 1024,
       fetch: () => Promise.resolve(bodyResponse(oversized)),
     });
-    expect(await read('https://huge.test/robots.txt')).toBeUndefined();
+    // Zeros, no line end inside the cap: no whole rule to parse, so it fails closed — never the
+    // "no file" (allow everything) it used to answer. Rules inside a cap: `robots-fetch-cap.test.ts`.
+    expect(await read('https://huge.test/robots.txt')).toEqual({
+      unreachable: 'robots.txt over 4096 bytes',
+    });
     // The cap is enforced by counting as the stream arrives, so the producer is stopped early
     // rather than after a multi-gigabyte body has already been materialised by `.text()`.
     expect(pulled).toBeLessThan(4);

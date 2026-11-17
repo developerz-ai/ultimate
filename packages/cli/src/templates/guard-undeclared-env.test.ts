@@ -82,20 +82,84 @@ describe('unit · shipped guard · undeclared-env', () => {
     expect(findings).toEqual([]);
   });
 
-  // A declaration's own keys (`type`, `values`, `description`'s `Compose:`) are not names, and an
-  // inline `defineEnv({ … })` — no `envSchema` export — declares too.
-  test("a declaration's own keys are not declared names; an inline defineEnv declares", async () => {
+  // A declaration's own keys (`type`, `values`, `description`'s `Compose:`) are not names.
+  test("a declaration's own keys are not declared names", async () => {
     const typeRead = await shippedGuardFindings('undeclared-env', {
       'app.config.ts': SCHEMA,
       'apps/web/app/a.ts': 'export const a = [process.env.type, process.env.Compose];\n',
     });
     expect(typeRead).toHaveLength(2);
+  });
+
+  // One declaration form. `defineEnv` returns VALUES, so a record handed to it inline is gone
+  // afterwards: `x env check`, `x env example`, `x secrets` and `x deploy` read `envSchema` only.
+  test('an env declared anywhere but the envSchema export is refused, naming the conversion', async () => {
     const inline = await shippedGuardFindings('undeclared-env', {
       'app.config.ts':
         "export const env = defineEnv({\n  // --- billing ---\n  STRIPE_KEY: { type: 'string' },\n});\n",
       'apps/web/app/a.ts': 'export const a = process.env.STRIPE_KEY;\n',
     });
-    expect(inline).toEqual([]);
+    const form = inline.find((finding) => finding.at === 'app.config.ts');
+    expect(form?.code).toBe('X_UNDECLARED_ENV');
+    expect(form?.cause).toContain('app.config.ts:1');
+    expect(form?.fix).toContain('export const envSchema = {');
+    expect(form?.fix).toContain('export const env = defineEnv(envSchema);');
+    // Its keys are not declared: the read is reported too, until the conversion lands.
+    expect(at(inline)).toContain('apps/web/app/a.ts');
+    const named = await shippedGuardFindings('undeclared-env', {
+      'app.config.ts':
+        "const schema = { A: { type: 'string' } };\nexport const env = defineEnv(schema);\n",
+    });
+    expect(at(named)).toEqual(['app.config.ts']);
+    // The one form, and a comment naming the other, are silence.
+    const one = await shippedGuardFindings('undeclared-env', {
+      'app.config.ts': `${SCHEMA}// not defineEnv({ … }) inline\n`,
+    });
+    expect(one).toEqual([]);
+  });
+
+  // A record handed to `defineEnv` in app source is a declaration `x env` never reads: its keys
+  // must already be envSchema's. The agent shape's `model.ts` builds one from envSchema: allowed.
+  test('a defineEnv record outside app.config.ts declaring a name envSchema does not is refused', async () => {
+    const findings = await shippedGuardFindings('undeclared-env', {
+      'app.config.ts': SCHEMA,
+      'apps/web/api/ping.ts': [
+        "import { defineEnv } from '@ultimat3/core';",
+        "export const env = defineEnv({ PING_TOKEN: { type: 'string' } });",
+        'export const read = () => env.PING_TOKEN;',
+        '',
+      ].join('\n'),
+      'packages/domain/src/named.ts': [
+        "const local = { PLAN: envSchema.PLAN, HIDDEN_KEY: { type: 'string' } } satisfies EnvSchema;",
+        'export const env = defineEnv(local, { env: source });',
+        '',
+      ].join('\n'),
+    });
+    expect(findings.map((finding) => [finding.at, finding.cause.split(' ')[0]])).toEqual([
+      ['apps/web/api/ping.ts', 'apps/web/api/ping.ts:2'],
+      ['packages/domain/src/named.ts', 'packages/domain/src/named.ts:2'],
+    ]);
+    expect(findings[0]?.cause).toContain('PING_TOKEN');
+    expect(findings[0]?.fix).toContain("PING_TOKEN: { type: 'string'");
+    expect(findings[1]?.cause).toContain('HIDDEN_KEY');
+    expect(findings[1]?.cause).not.toContain('PLAN');
+  });
+
+  test('a defineEnv record built from envSchema, or envSchema itself, is not reported', async () => {
+    const findings = await shippedGuardFindings('undeclared-env', {
+      'app.config.ts': SCHEMA,
+      'apps/web/app/assistant/model.ts': [
+        'const modelEnv = {',
+        '  PLAN: need(envSchema.PLAN),',
+        '  STRIPE_WEBHOOK_SECRET: envSchema.STRIPE_WEBHOOK_SECRET,',
+        '} satisfies EnvSchema;',
+        'export const read = (source: Source) => defineEnv(modelEnv, { env: source });',
+        'export const all = () => defineEnv(envSchema);',
+        "export const note = 'defineEnv({ NOT_CODE: 1 })';",
+        '',
+      ].join('\n'),
+    });
+    expect(findings).toEqual([]);
   });
 
   // No declaration at all is not "nothing to check": every app-owned read is undeclared.

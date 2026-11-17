@@ -4,7 +4,6 @@
 
 // why: /proc files report size 0, and Bun.file reads a file by its size — it answers ''.
 import { readFile } from 'node:fs/promises';
-import type { DevLock } from './dev-lock';
 import type { Runner } from './exec';
 import { exec } from './exec';
 
@@ -48,7 +47,10 @@ export async function processStartTime(
  * The lock's pid is alive but is not the process that wrote it: its start time differs from the one
  * recorded. Compared only where both are known (no start time on Windows, or in a pre-30 lock).
  */
-export const reusedPid = async (lock: DevLock): Promise<boolean> => {
+export const reusedPid = async (lock: {
+  readonly pid: number;
+  readonly started?: string;
+}): Promise<boolean> => {
   if (lock.started === undefined) return false;
   const now = await processStartTime(lock.pid);
   return now !== undefined && now !== lock.started;

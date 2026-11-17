@@ -340,7 +340,9 @@ async function runStep(
   // share is judged by `x verify merge`, on the sum). A laptop without services stays a dev loop.
   const skips =
     outcome.shard === undefined && inCi(ctx.env ?? Bun.env)
-      ? judgeSkips(step.name, tests, floor?.skipCeiling)
+      ? judgeSkips(step.name, tests, floor?.skipCeiling, {
+          strictWithDatabase: floor?.strict === true && required && outcome.services === 'reached',
+        })
       : { findings: [], warnings: [] };
   const warnings = [...(outcome.warnings ?? []), ...skips.warnings, ...staleWhy];
   return {
@@ -362,6 +364,7 @@ async function runStep(
         : { slowest: outcome.slowest }),
       ...(outcome.shard === undefined ? {} : { shard: outcome.shard }),
       ...(tests === undefined ? {} : { tests }),
+      ...(outcome.services === undefined ? {} : { services: outcome.services }),
     },
     ...(outcome.coverage === undefined ? {} : { coverage: outcome.coverage }),
     ...(outcome.measured === undefined ? {} : { measured: outcome.measured }),

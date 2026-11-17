@@ -660,7 +660,9 @@ zero. Registration asks `attestation: 'none'` and trusts no statement. Which che
 OAuth 2.1 server: authorization code + PKCE (S256 only), refresh rotation with replay revocation,
 `client_credentials`, the device grant, RFC 7009/7662/7591/8414/8707/9207. `routes` go in
 `runtime.routes`; the consent and device pages are the app's (`readRequest`/`approve`/`deny`,
-`readDevice`/`approveDevice`/`denyDevice`). `oauthBearerResolver(server, { actor, resource? })` is
+`readDevice`/`approveDevice`/`denyDevice`); the consent page reads with
+`readRequest(url, { callerKey })` — every metadata-document fetch is metered, and an absent
+`callerKey` shares one bucket with every other unkeyed read. `oauthBearerResolver(server, { actor, resource? })` is
 the `resolveToken`. Stores: `memoryAuthServerStore()`, `postgresAuthServerStore({ executor })`
 over `SQL_AUTH_SERVER_TABLES`, which the boot applies. A code is spent only by a request that could
 redeem it: client, PKCE verifier, `redirect_uri` and `resource` are checked on `getCode` before
