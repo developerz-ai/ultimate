@@ -228,7 +228,11 @@ export const config = defineRoute({
   // island and the page boot +89 B each: the action and query clients trim their base URL with
   // `@ultimat3/core`'s linear `trimTrailingSlashes`, the one trim that replaced the quadratic
   // `/\/+$/` at 26 sites (CodeQL js/polynomial-redos). Raised 210kb → 210.1kb.
-  budget: { js: '210.1kb' },
+  // measured: 215,577 B (2026-11-17, plan 101b audit round 2; x build --target static) — why:
+  // the feed island +271 B (96,190 → 96,461 B) and the page boot +271 B (84,606 → 84,877 B), both against origin/main built the same way: `@ultimat3/core`'s
+  // `uuidV7` and `frozenClock` refuse an Invalid Date or out-of-range instant instead of minting a
+  // non-UUID that broke the next id's order (audit round 2, B1). Raised 210.1kb → 210.6kb.
+  budget: { js: '210.6kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 
