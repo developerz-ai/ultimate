@@ -9,6 +9,7 @@ import type { S3DriverOptions } from './driver-s3';
 import { s3Driver } from './driver-s3';
 import { clientTarget } from './driver-s3-client';
 import { bytesOf, catchError, FAKE_ENV, FakeS3Client, s3Error } from './driver-s3-fixture';
+import { s3ObjectUrl } from './driver-s3-signed';
 
 const KEY = 'org/o1/ledger.csv';
 const clock = frozenClock('2026-10-06T09:00:00.000Z');
@@ -271,5 +272,38 @@ describe('both transports read ONE table for endpoint, region and session token'
       virtualHostedStyle: false,
     });
     expect(clientTarget({ bucket: 'b', env: {} })).toEqual({ bucket: 'b' });
+  });
+
+  // Bun's virtual-hosted mode takes the endpoint AS the bucket's host. Handed the account endpoint,
+  // every request hit the account root: on R2 a read was an opaque S3Error and a list ListBuckets
+  // (measured 2026-11-17, a deployed app's retained assets). The host is the signed path's.
+  test('virtual-hosted addressing puts the bucket in the host, as the signed path does', () => {
+    const target = clientTarget({
+      bucket: 'media',
+      forcePathStyle: false,
+      env: { S3_ENDPOINT: 'https://acct.r2.cloudflarestorage.com', S3_REGION: 'auto' },
+    });
+    expect(target).toMatchObject({
+      endpoint: 'https://media.acct.r2.cloudflarestorage.com',
+      virtualHostedStyle: true,
+    });
+    expect(String(target['endpoint'])).toBe(
+      s3ObjectUrl(
+        {
+          bucket: 'media',
+          forcePathStyle: false,
+          env: { S3_ENDPOINT: 'https://acct.r2.cloudflarestorage.com' },
+        },
+        'k',
+      ).origin,
+    );
+    // An endpoint that already names the bucket is not prefixed twice.
+    expect(
+      clientTarget({
+        bucket: 'media',
+        forcePathStyle: false,
+        endpoint: 'https://media.acct.example',
+      }),
+    ).toMatchObject({ endpoint: 'https://media.acct.example' });
   });
 });
