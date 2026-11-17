@@ -10,24 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-### Highlights
-
-- **The gate's `live` step holds a strict floor to its word:** a `live` test that skipped with the database in reach is red, and a runner with no database stays a warning. The signal travels through `--json` to `x verify merge`.
-- **An island size ceiling can no longer read the coverage build by accident:** a test builder that hands both builds one bundle is refused, `X_TEST_ISLAND_BUILD_REUSED`.
-
-### Fixed
-
-- testing: under the gate's coverage run, `mountIsland` refuses a builder that hands the shipped build the same bundle it handed the coverage build (`X_TEST_ISLAND_BUILD_REUSED`) — a memo round `buildIslands` that ignores `options`. Measured instead, every island size ceiling read the unminified chunk: green under `bun test`, red in `x verify` (one adopter, 14 files). The fix names the call: `mountIsland({ build: buildIslands, root, file })`, or a memo keyed by `options.coverage`.
-- `x verify --json` now writes a `live` step's `services` (`reached` / `unavailable`). The step recorded it, but the JSON renderer copies fields by name and dropped it, so a gate part never carried it and `x verify merge` could not apply the strict `live` skip rule to a sharded run.
-
-### Changed
-
-- `live` under a strict floor holds its skips at 0 in CI when `x.verify.json` writes no `skipCeiling.live` **and the run reached its database** (`X_VERIFY_SKIPS_OVER_CEILING`): a test that skipped with Postgres in reach proved nothing. A runner with no database (a macOS or Windows job, a stack docker could not start) keeps today's warning, `X_TEST_SERVICES_UNAVAILABLE`. The step now records `services: "reached" | "unavailable"` in `--json` and in a gate part, so `x verify merge` judges a sharded `live` by what every shard reached. See wiki/Upgrading.md.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.42.0](docs/changelog/31.42.0.md) | 2026-11-17 | **The gate's `live` step holds a strict floor to its word:** a `live` test that skipped with the database in reach is red, and a runner with no database stays a warning. The signal travels through `--json` to `x verify merge`. |
 | [31.41.0](docs/changelog/31.41.0.md) | 2026-11-17 | **Audit round 3 (plan 101b, slice 20), its P2s:** `x dev`'s rebuild, the schema wait under an early SIGTERM, the test-services stack for older apps, and the docs the auditors falsified, plus three regressions an adopter's upgrade surfaced. Each fix has a test that failed first. |
 | [31.40.1](docs/changelog/31.40.1.md) | 2026-11-17 | **Audit round 3 (plan 101b, slice 20), its security half:** the realtime channel tenant leak (P0) and two P1s, each with a test that failed first. The round's P2s follow in the next release. |
 | [31.40.0](docs/changelog/31.40.0.md) | 2026-11-17 | **Audit round 2 (plan 101b, slice 20):** six read-only auditors (bugs in the unread tiers, concurrency, security on injection and secrets, a DX pass, an architecture review). Every confirmed finding is fixed, each with a test that failed first. Counts: P0 0 · P1 6 · P2 22 fixed (the DX pass by real use: 2 P1, 10 P2), plus 2 P2 parked for the next major or deferred to round 3. |
