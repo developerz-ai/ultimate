@@ -10,15 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-### Fixed
-
-- storage: an s3 disk in its default addressing (virtual-hosted, `S3_FORCE_PATH_STYLE` unset) now reaches its bucket. The Bun client was handed the account endpoint with `virtualHostedStyle: true`, which Bun reads as the bucket's own host, so every Bun-side request (read, stat, list, delete) went to the account root: on R2 a read failed with an opaque `S3Error` and a list as `ListBuckets`, and `assets.retain` logged `X_ASSET_RETAIN_FAILED`. The bucket now goes into the host, as the signed path already did. Measured on R2 before and after.
-- testing: under the gate's coverage run, `mountIsland` starts the covered and the shipped build together instead of one after the other. Since 31.41.0 the second build ran after the first, doubling a mount's time; a 5 s test over a Solid island went past its budget on a loaded runner.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.42.1](docs/changelog/31.42.1.md) | 2026-11-17 | **An s3 disk on R2 (or any endpoint) works in its default addressing:** the Bun client reached the account root instead of the bucket, so reads, lists and `assets.retain` failed unless `S3_FORCE_PATH_STYLE=1` was set. |
 | [31.42.0](docs/changelog/31.42.0.md) | 2026-11-17 | **The gate's `live` step holds a strict floor to its word:** a `live` test that skipped with the database in reach is red, and a runner with no database stays a warning. The signal travels through `--json` to `x verify merge`. |
 | [31.41.0](docs/changelog/31.41.0.md) | 2026-11-17 | **Audit round 3 (plan 101b, slice 20), its P2s:** `x dev`'s rebuild, the schema wait under an early SIGTERM, the test-services stack for older apps, and the docs the auditors falsified, plus three regressions an adopter's upgrade surfaced. Each fix has a test that failed first. |
 | [31.40.1](docs/changelog/31.40.1.md) | 2026-11-17 | **Audit round 3 (plan 101b, slice 20), its security half:** the realtime channel tenant leak (P0) and two P1s, each with a test that failed first. The round's P2s follow in the next release. |
