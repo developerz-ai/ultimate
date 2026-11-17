@@ -160,14 +160,4 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.44.0',
     none: "the agent shape's eval now refuses an edited template under its old version with X_EVAL_BASELINE_MISSING (re-record after bumping version), checked inside the one test that re-records, and files its baseline per version; an app's eval test, evals file and prompt are the author's — the old ones still gate on the scores and the hash, failing as X_TEST_FAILED rather than with the coded fix, so nothing breaks across the upgrade",
   },
-  {
-    template: 'packages/cli/src/templates/sign-in-password.ts',
-    since: '31.44.0',
-    none: "the sign-in actions a form posts (createSession, confirmSession, destroySession) now declare `native: { success: (output) => output.next }`, the 303 their `landAt` already answered; an app's actions are the author's and keep answering the same 303 — only the gate's X_NATIVE_FORM_UNANSWERED warning stays until the line is added",
-  },
-  {
-    template: 'packages/cli/src/templates/sign-in-shared.ts',
-    since: '31.44.0',
-    none: "the sign-in actions a form posts (createSession, confirmSession, destroySession) now declare `native: { success: (output) => output.next }`, the 303 their `landAt` already answered; an app's actions are the author's and keep answering the same 303 — only the gate's X_NATIVE_FORM_UNANSWERED warning stays until the line is added",
-  },
 ];
