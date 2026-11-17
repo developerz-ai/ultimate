@@ -486,6 +486,18 @@ never an empty result. The `fix` names the operator meant: `>`→`gt`, `>=`→`g
 `<=`→`lte`, `=`→`eq`, `!=`/`<>`→`neq`. `isOperator(value)` is the same test, for an op read off
 the wire.
 
+An operand is read by the column's kind, once for both drivers (`predicate-operand.ts`):
+
+| Column | Operand | Both drivers |
+|---|---|---|
+| `timestamp()` | a `Date` or ISO text with `Z`/an offset | compared as that instant |
+| `timestamp()` | zoneless ISO text (`'2026-01-01'`, `'2026-01-01T10:00'`) | read as UTC in both drivers, never the server's `TimeZone` |
+| `timestamp()` | a number | `X_INVARIANT_VIOLATED` — epoch milliseconds are no instant Postgres parses |
+| `date()` | a `Date` | its UTC calendar date (`plainDateUtc`), as `$parse` writes one |
+| `integer()` / `bigint()` | a fraction (`1.5`, `'1.5'`, `'1e1'`) | `X_INVARIANT_VIOLATED` — round it to the bound you mean |
+| `integer()` / `bigint()` / `decimal()` | any `like` | `X_INVARIANT_VIOLATED` — a number is matched by range |
+| `arrayOf()` | a list, under `eq`/`neq`/`in` | element by element, in order (`array_eq`) |
+
 ## A predicate tree: `andWhereNode`
 
 `andWhereNode(node)` (`As of 2026-11`) adds one predicate TREE to a chain, AND-ed with the rest —

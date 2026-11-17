@@ -98,6 +98,26 @@ describe('defineEnv', () => {
     expect(JSON.stringify(masked)).not.toContain('pw@host');
   });
 
+  test('maskedEnvValues masks a credential-named key and a URL password, not only secret:true', () => {
+    const loose = {
+      DATABASE_URL: { type: 'url' },
+      STRIPE_KEY: { type: 'string' },
+      S3_ENDPOINT: { type: 'url' },
+      REGION: { type: 'string' },
+    } as const satisfies EnvSchema;
+    const env = {
+      DATABASE_URL: 'postgres://app:hunter2@db:5432/app',
+      STRIPE_KEY: 'sk_live_abc',
+      S3_ENDPOINT: 'https://key:p@ss@s3.internal:9000',
+      REGION: 'us',
+    };
+    const masked = maskedEnvValues(loose, checkEnv(loose, { env }).values);
+    expect(masked['DATABASE_URL']).toBe(REDACTED);
+    expect(masked['STRIPE_KEY']).toBe(REDACTED);
+    expect(masked['S3_ENDPOINT']).toBe(`https://key:${REDACTED}@s3.internal:9000`);
+    expect(masked['REGION']).toBe('us');
+  });
+
   test('describeEnv emits declarations only, safe for x.manifest.json', () => {
     const summary = describeEnv(schema);
     expect(summary.find((entry) => entry.key === 'DATABASE_URL')).toEqual({

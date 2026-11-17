@@ -12,6 +12,7 @@ import {
   onShutdown,
   UltimateError,
 } from '@ultimat3/core';
+import { dbUnavailable } from '@ultimat3/db';
 import { SCHEMA_WAIT_ENV } from './framework-schema-stamp';
 
 export { SCHEMA_WAIT_ENV };
@@ -25,6 +26,14 @@ export const DEFAULT_SCHEMA_WAIT_MS = 300_000;
 /** The first wait and the ceiling of any one: a catalog read every 15s at worst, per pod. */
 const WAIT_BASE_MS = 1_000;
 const WAIT_MAX_MS = 15_000;
+
+/**
+ * The least any one schema read is given, deadline or none. The deadline bounds a read too — a
+ * catalog read on a blackholed database hangs until the pool gives up, ~125 s on a worker — but a
+ * read must be ALLOWED to answer: `0` is "refuse at once if behind", and the last read lands on the
+ * deadline by design. A reachable database answers a catalog read well inside a second.
+ */
+export const SCHEMA_READ_FLOOR_MS = 1_000;
 
 /** `X_CONFIG_INVALID`: a deadline that is not whole milliseconds is refused, never read as NaN. */
 export class SchemaWaitInvalidError extends UltimateError {
@@ -100,8 +109,12 @@ export async function waitForSchema<T>(
     if (isDraining()) throw drained();
     for (let attempt = 1; ; attempt += 1) {
       // Raced against the drain like the sleep below: a read on an unreachable database hangs
-      // until the pool gives up — ~125 s on a worker, past the pod's grace, so SIGKILL (137).
-      const verdict = await untilAborted(check(), stop.signal, drained);
+      // until the pool gives up — ~125 s on a worker, past the pod's grace, so SIGKILL (137). And
+      // against the deadline, which the read would otherwise outlive by that same ~125 s.
+      const boundMs = Math.max(deadlineMs - (clock.monotonic() - startedAt), SCHEMA_READ_FLOOR_MS);
+      const unanswered = (): UltimateError =>
+        refuse?.(clock.monotonic() - startedAt) ?? readUnanswered(boundMs, deadlineMs);
+      const verdict = await bounded(check(), stop.signal, drained, boundMs, unanswered);
       if (verdict.ready) {
         streak.passed();
         return verdict.value;
@@ -150,19 +163,38 @@ function waitDrained(waitedMs = 0): UltimateError {
 }
 
 /**
- * `work`, unless `signal` aborts first — then `refusal()`, thrown. The abandoned read is not
- * cancelled (the pool's own bound retires it); `Promise.race` keeps its late rejection handled.
+ * `X_DB_UNAVAILABLE`, `@ultimat3/db`'s own refusal: the FIRST read never answered inside its bound,
+ * so there is no verdict to refuse with — only a database that does not answer.
  */
-function untilAborted<V>(
+function readUnanswered(boundMs: number, deadlineMs: number): UltimateError {
+  return dbUnavailable(
+    `this role's first schema read did not answer within ${String(Math.round(boundMs))} ms (${SCHEMA_WAIT_ENV} is ${String(deadlineMs)}; a read is given at least ${String(SCHEMA_READ_FLOOR_MS)} ms)`,
+  );
+}
+
+/**
+ * `work`, unless `signal` aborts first — then `drained()` — or `boundMs` of REAL time pass — then
+ * `unanswered()`. Real time, never the injected clock: a database hangs in real time, and a frozen
+ * clock's `sleep` returns at once, which would cut every read a test makes. The abandoned read is
+ * not cancelled (the pool's own bound retires it); `Promise.race` keeps its late rejection handled.
+ */
+function bounded<V>(
   work: Promise<V>,
   signal: AbortSignal,
-  refusal: () => UltimateError,
+  drained: () => UltimateError,
+  boundMs: number,
+  unanswered: () => UltimateError,
 ): Promise<V> {
   let onAbort: () => void = () => undefined;
-  const aborted = new Promise<never>((_resolve, reject) => {
-    onAbort = () => reject(refusal());
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const cut = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(drained());
     if (signal.aborted) onAbort();
     else signal.addEventListener('abort', onAbort, { once: true });
+    timer = setTimeout(() => reject(unanswered()), boundMs);
   });
-  return Promise.race([work, aborted]).finally(() => signal.removeEventListener('abort', onAbort));
+  return Promise.race([work, cut]).finally(() => {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', onAbort);
+  });
 }

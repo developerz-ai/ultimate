@@ -5,8 +5,9 @@
 import { numeric } from '@ultimat3/schema';
 import { describeValue, renderFixShellArg } from './error-render';
 import { EnvMissingError } from './errors';
-import { REDACTED, redactKeys } from './logger';
+import { isRedactedKey, REDACTED, redactKeys } from './logger';
 import { type Role, resolveRole } from './roles';
+import { redactUrlPassword } from './url-userinfo';
 
 export type EnvVarType = 'string' | 'url' | 'number' | 'integer' | 'port' | 'boolean' | 'enum';
 
@@ -252,10 +253,11 @@ export function defineEnv<const S extends EnvSchema>(schema: S, options?: EnvOpt
 }
 
 /**
- * The resolved values with every `secret: true` key replaced. `checkEnv().values` carries the REAL
- * values because `defineEnv()` has to return them — so anything that PRINTS a report (`x env check
- * --json`, a doctor line, a log field) renders this instead, and the masking lives in one place
- * rather than at each printer.
+ * The resolved values with every `secret: true` key AND every credential-named key (`isRedactedKey`,
+ * the logger's and `x config`'s rule) replaced, and any other string's URL password cut from its
+ * userinfo. `checkEnv().values` carries the REAL values because `defineEnv()` has to return them —
+ * so anything that PRINTS a report (`x env check --json`, a doctor line, a log field) renders this
+ * instead, and the masking lives in one place rather than at each printer.
  */
 export function maskedEnvValues(
   schema: EnvSchema,
@@ -263,7 +265,9 @@ export function maskedEnvValues(
 ): Readonly<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(values)) {
-    out[key] = schema[key]?.secret === true && value !== undefined ? REDACTED : value;
+    if (value === undefined) out[key] = value;
+    else if (schema[key]?.secret === true || isRedactedKey(key)) out[key] = REDACTED;
+    else out[key] = typeof value === 'string' ? redactUrlPassword(value) : value;
   }
   return Object.freeze(out);
 }

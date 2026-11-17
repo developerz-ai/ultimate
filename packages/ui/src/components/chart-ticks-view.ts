@@ -3,9 +3,9 @@
 // Pure, so the server render and an island draw the same axis, and testable with no renderer.
 
 export interface NiceScale {
-  /** The axis' lowest tick — at or below the data's minimum. */
+  /** The axis' lowest tick — at or below the data's minimum, to within float noise. */
   readonly min: number;
-  /** The axis' highest tick — at or above the data's maximum. */
+  /** The axis' highest tick — at or above the data's maximum, to within float noise. */
   readonly max: number;
   readonly step: number;
   /** `min`, `min + step`, … `max`, as exact decimals. */
@@ -88,6 +88,10 @@ export function niceTicks(
     // data's own two ends are the only honest axis left.
     if (!(step > 0 && Number.isFinite(step) && Number.isFinite(min) && Number.isFinite(max))) break;
     if (count < 2) break;
+    // The floor/ceil epsilon absorbs float noise in `low / step`; once the step dwarfs the data
+    // it absorbs the data too — `-24 / 5e10` floored to 0 and the axis began above its minimum. A
+    // scale that no longer covers the data is no answer, and every higher rung only widens the gap.
+    if (!covers(min, max, low, high)) break;
     if (count <= cap) {
       const ticks = Array.from({ length: count }, (_, i) => exact(min + i * step));
       return { min, max, step, ticks };
@@ -95,6 +99,15 @@ export function niceTicks(
     step = nextStep(step);
   }
   return edgeScale(low, high);
+}
+
+/**
+ * `min..max` holds `low..high`, to within float noise: a billionth of the data's magnitude, so
+ * `0.7 - 0.4` (0.29999999999999993) still gets its axis at 0.3, and -24 never gets one at 0.
+ */
+function covers(min: number, max: number, low: number, high: number): boolean {
+  const noise = Math.max(Math.abs(low), Math.abs(high)) * 1e-9;
+  return min <= low + noise && max >= high - noise;
 }
 
 /**

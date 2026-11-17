@@ -1001,6 +1001,7 @@ export type { ToolDescriptionSource } from './tool-description';
 // A projected tool's description: `@ultimat3/mcp`'s and `@ultimat3/ai`'s, one tier apart from neither.
 export { toolDescription } from './tool-description';
 export { trimTrailingSlashes } from './trailing-slashes';
+export { redactUrlPassword, replaceUrlUserinfo } from './url-userinfo';
 export {
   frameworkVersion,
   readPackageVersion,

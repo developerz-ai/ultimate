@@ -13,6 +13,7 @@ import { microsToIso, seekAlias } from './instant';
 import { operatorUnknown } from './operator';
 import { allColumns, arrayLiteral, columnsOf, physicalName } from './pg-row';
 import { orMembers, predicateNodeInvalid, viaValue } from './predicate-node';
+import { operandFor } from './predicate-operand';
 import { viaTarget } from './predicate-screen';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { isTextContains, textContainsSql } from './text-contains';
@@ -76,13 +77,16 @@ const nullTestPath = <Row>(entity: EntityCore<Row>, predicate: Predicate): strin
     : predicate.column;
 };
 
-const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragment => {
+const predicateSql = <Row>(entity: EntityCore<Row>, asked: Predicate): SqlFragment => {
   // BEFORE the column is resolved: a `matches` predicate names `SEARCH_PROPERTY`, and an `or` group
   // `OR_PROPERTY` — neither is a column, and neither must ever be looked up as one.
-  if (predicate.op === 'matches') return searchSql(entity, predicate);
-  if (predicate.op === 'or') return orSql(entity, predicate);
-  if (predicate.op === 'and') return andSql(entity, predicate);
-  if (predicate.op === 'via') return viaSql(entity, predicate);
+  if (asked.op === 'matches') return searchSql(entity, asked);
+  if (asked.op === 'or') return orSql(entity, asked);
+  if (asked.op === 'and') return andSql(entity, asked);
+  if (asked.op === 'via') return viaSql(entity, asked);
+  // The operand memory compares (`predicate-operand.ts`), or the same refusal: a fraction bound to
+  // an `int4` parameter was a 500 here and rows there.
+  const predicate = operandFor(entity, asked);
   const column = columnRef(entity, nullTestPath(entity, predicate));
   const value = predicate.value;
   switch (predicate.op) {

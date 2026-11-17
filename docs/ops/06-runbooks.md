@@ -150,7 +150,8 @@ roll back with `x deploy --image <previous> --json` ([deploy contract](./07-depl
 `scheduler` or `replicator` boot: the framework stamp on `x_jobs` lacks this build's hash, or the
 `x_migrations` ledger lacks a migration it ships. The role runs no DDL. It waits for the migrate
 step, unready, with one `ultimate schema waiting` line, for up to `ULTIMATE_SCHEMA_WAIT_MS` (default
-300000), then exits with the code — `meta.waitedMs` says how long — and the platform restarts it
+300000), then exits with the code — `meta.waitedMs` says how long; a read that hangs ends at the same
+deadline (at least 1 s), as `X_DB_UNAVAILABLE` if none answered — and the platform restarts it
 ([deploy contract](./07-deploy-contract.md#a-role-over-a-schema-that-is-behind)). Alert:
 [UltimateSchemaUnapplied](#ultimateschemaunapplied); a fleet across a major,
 [UltimateVersionSkew](#ultimateversionskew).

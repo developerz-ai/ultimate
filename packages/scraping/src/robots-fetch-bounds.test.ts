@@ -1,12 +1,12 @@
 // The one `/robots.txt` read's deadline and cap when they are not numbers.
 //
-// Its own file because the outcome is not "the read fails" — it is that the read fails SILENTLY
-// and the gate reads the failure as permission. `robotsFetcher` answers `undefined` for a deadline,
-// a 404 and an over-cap body alike, and `robotsGate` turns `undefined` into `{ rules: [] }`,
-// which allows every path on the origin. So a `NaN` timeoutMs — `AbortSignal.timeout(NaN)` throws
-// a bare `TypeError`, caught by the gate's own `.catch` — switches robots off for the whole run
-// with no error, no log line and a green report. `scrape-run.ts` feeds this the run's page
-// timeout, so the value arrives from an app's `pageTimeout:` declaration.
+// Its own file because the outcome is not "the read fails" — it is that the read fails SILENTLY,
+// on every origin, for the whole run. (It once failed OPEN: a deadline and an over-cap body
+// answered `undefined`, which the gate reads as no rules. Both now fail closed — `{ unreachable }`
+// — so a bad bound is every origin refused instead.) A `NaN` timeoutMs — `AbortSignal.timeout(NaN)`
+// throws a bare `TypeError` — reaches the gate's own `.catch` with no error and no log line.
+// `scrape-run.ts` feeds this the run's page timeout, so the value arrives from an app's
+// `pageTimeout:` declaration.
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, renderThrowable } from '@ultimat3/core';
@@ -50,10 +50,10 @@ describe('unit · the robots read, bounded', () => {
   }
 
   // Both floors are 1 and both are claims about what zero MEANS here. `timeoutMs: 0` is a deadline
-  // that has already expired, so every read fails and every origin reads as unrestricted;
-  // `maxBytes: 0` puts every robots.txt over the cap, with the identical outcome. Neither is a
-  // caller declining a feature — both are robots enforcement, off, silently.
-  test('a zero deadline and a zero cap are both refused, because both mean "allow everything"', () => {
+  // that has already expired, so every read fails; `maxBytes: 0` puts every robots.txt over the
+  // cap with no whole line inside it, with the identical outcome. Neither is a caller declining a
+  // feature — both are every origin refused, for the whole run, silently.
+  test('a zero deadline and a zero cap are both refused, because both refuse every origin', () => {
     expect(refusal(() => robotsFetcher({ timeoutMs: 0 })).cause).toContain('timeoutMs');
     expect(refusal(() => robotsFetcher({ maxBytes: 0 })).cause).toContain('maxBytes');
   });

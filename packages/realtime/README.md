@@ -989,6 +989,11 @@ client" is the one instruction that cannot help — a rebuilt client spells the 
 The fix is `x queries list --json`, and the name the client sent is echoed back while the registry
 never is.
 
+A throw with no code — a live query's `TypeError`, a driver's error — is `X_INTERNAL` on the ack,
+as `@ultimat3/http` labels it, never `X_PROTOCOL_VERSION`. Its cause is withheld from the socket as
+HTTP withholds an unclassified 5xx's (a DSN, a row, a path); the node's error report holds the text.
+`As of 2026-11`.
+
 `As of 2026-07`: tiers 1–2 target v1, tier 3 targets v2.
 
 ### Error classes

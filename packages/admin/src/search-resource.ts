@@ -10,6 +10,7 @@ import type { AdminFilter, AdminRepo, AdminRow } from './registry';
 import { rowId } from './registry';
 import { labelOf } from './relations';
 import { type AdminResource, repoOf } from './resource';
+import { rowPath } from './row-path';
 
 /** Per resource, and per field within it. Search is a jump box, not a report. */
 const MAX_FIELDS_PER_RESOURCE = 3;
@@ -80,7 +81,7 @@ export async function searchResource(
         id,
         label: labelOf(row, resource),
         matchedField,
-        href: `${resource.path}/${id}`,
+        href: rowPath(resource.path, id),
       });
       if (hits.length >= limit) return true;
     }

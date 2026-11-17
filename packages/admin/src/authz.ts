@@ -7,10 +7,22 @@
 // @ultimat3/policy into it, a host app can supply its own, and tests can supply a stub —
 // but there is still exactly one decision per request.
 
+import type { ActorKind, ActorOrigin } from '@ultimat3/core';
 import { ADMIN_PERMISSION_SPEC, type AdminPermission } from './permissions';
 
 export interface AdminActor {
   readonly id: string;
+  /**
+   * Core's `Actor.kind`, so a rule that refuses agents (`actor.kind === 'agent'`) fires on the
+   * admin as on every other surface. Absent: `'user'`, what every hand-built `AdminActor` was.
+   * `policy-bridge.ts` rebuilt each caller as a user, so an agent over admin MCP or a queued batch
+   * chunk passed a rule written to refuse it.
+   */
+  readonly kind?: ActorKind;
+  /** Core's `Actor.scopes` (framework capabilities, `tenancy:cross`) — never an MCP token's. */
+  readonly scopes?: readonly string[];
+  /** Set under `impersonate()`: who is really acting. A rule refusing impersonation reads it. */
+  readonly onBehalfOf?: ActorOrigin;
   /**
    * The tenant this operator acts under. NOT optional in practice on a multi-tenant app: the
    * admin's subject reached `policyAuthz` with `orgId: undefined`, so an org-scoped rule could

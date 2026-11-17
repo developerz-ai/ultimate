@@ -15,6 +15,7 @@ describe('unit · adminActorFrom', () => {
     const actor = userActor({ id: 'u_1', roles: ['admin'], orgId: 'org_9' });
     expect(adminActorFrom(actor, 'es', 'Europe/Madrid')).toEqual({
       id: 'u_1',
+      kind: 'user',
       roles: ['admin'],
       locale: 'es',
       timeZone: 'Europe/Madrid',
@@ -42,6 +43,7 @@ describe('unit · requestActor', () => {
     const seen = await runWithContext(context, async () => requestActor());
     expect(seen.actor).toEqual({
       id: 'u_7',
+      kind: 'user',
       roles: ['ops'],
       locale: 'de',
       timeZone: 'Europe/Berlin',

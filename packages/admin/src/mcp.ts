@@ -18,6 +18,7 @@ import {
   type ResolvedToken,
   type ToolArgs,
 } from '@ultimat3/mcp';
+import { adminActorOf } from './actor';
 import type { AdminApp } from './admin';
 import type { AdminActor } from './authz';
 import type { AdminFieldType } from './fields';
@@ -129,22 +130,11 @@ const inputSchema = (tool: AdminMcpTool): JsonSchema => ({
 
 /**
  * `caller.actor` is whatever `resolveToken` returned, so the identity the tool runs as is the
- * one the session authenticated as — id, roles and the TENANT are the authz reads.
- *
- * `orgId` rides the whole way or an org-scoped rule cannot fire: this hop rebuilt an `AdminActor`
- * from id and roles alone, so every `AdminAuthz` decision over `POST /mcp` was evaluated with
- * `actor.orgId === undefined` while the same app's UI path saw the real org — and
- * `adminList`/`adminSearch` add no tenant predicate of their own. Absent stays ABSENT rather than
- * becoming an explicit `undefined` key: `policy-bridge.ts` hands it to `userActor`, where
- * "single-tenant app" and "we dropped it" must not be the same value by accident.
+ * one the session authenticated as — an agent, with its tenant, grants, scopes and `onBehalfOf`.
+ * Through `adminActorOf` (`actor.ts`), the one mapping: this hop used to re-spell id, roles,
+ * grants and org by hand and dropped the kind, so `policyAuthz` judged every agent as a user.
  */
-const adminActorOf = (caller: McpCaller): AdminActor => ({
-  id: caller.actor.id,
-  roles: caller.actor.roles,
-  // Direct grants too: the pipeline decides on roles and `permissions` as one set.
-  ...(caller.actor.permissions.length === 0 ? {} : { permissions: caller.actor.permissions }),
-  ...(caller.actor.orgId === undefined ? {} : { orgId: caller.actor.orgId }),
-});
+const callerActor = (caller: McpCaller): AdminActor => adminActorOf(caller.actor);
 
 /**
  * The tool names one caller may call, memoized.
@@ -184,7 +174,7 @@ function allowedToolNames(
   const cached = perApp.get(opts.app);
   if (cached !== undefined) return cached;
 
-  const ctx = opts.app.ctx({ actor: adminActorOf(caller), requestId: requestId() });
+  const ctx = opts.app.ctx({ actor: callerActor(caller), requestId: requestId() });
   // `adminMcpTools` is the actor's allowed list — the same derivation the UI's buttons use.
   // Never a second decision written for MCP.
   const names: ReadonlySet<string> = new Set(adminMcpTools(opts.app, ctx).map(({ name }) => name));
@@ -229,7 +219,7 @@ function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMc
       allowedToolNames(opts, requestId, caller).has(tool.name),
     async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
       const id = requestId();
-      const ctx = opts.app.ctx({ actor: adminActorOf(caller), requestId: id });
+      const ctx = opts.app.ctx({ actor: callerActor(caller), requestId: id });
       const result = await asCaller(caller.actor, id, () =>
         callAdminTool(opts.app, ctx, tool.name, args),
       );
@@ -283,10 +273,12 @@ export function adminMcp(opts: AdminMcpOptions): AppMcp {
       // `kind: 'agent'` — the same actor shape an agent gets everywhere else, so a policy
       // that distinguishes agents from people keeps working on this surface.
       //
-      // `orgId` is carried because this is the FIRST of the two hops between the app's resolver
-      // and an authz decision (`adminActorOf` is the second): dropped here, the tenant is gone
-      // before any tool, catalog filter or child context can see it, and nothing downstream can
-      // put it back.
+      // Whatever `kind` the resolver set, the caller here IS an agent: this is the agent surface.
+      //
+      // `orgId`, `scopes` and `onBehalfOf` are carried because this is the FIRST of the two hops
+      // between the app's resolver and an authz decision (`callerActor` is the second): dropped
+      // here, they are gone before any tool, catalog filter or child context can see them, and
+      // nothing downstream can put them back. `tokenScopes` is the token's, never `scopes`.
       return actor === null
         ? null
         : {
@@ -294,7 +286,9 @@ export function adminMcp(opts: AdminMcpOptions): AppMcp {
               id: actor.id,
               roles: actor.roles ?? [],
               permissions: actor.permissions ?? [],
+              scopes: actor.scopes ?? [],
               orgId: actor.orgId,
+              onBehalfOf: actor.onBehalfOf,
             }),
             scopes: adminTokenScopes(actor.tokenScopes),
           };

@@ -5,6 +5,7 @@
 import { renderFixShellArg, renderThrowable } from './error-render';
 import { registerErrorRetry } from './error-retry';
 import { UltimateError } from './errors';
+import { replaceUrlUserinfo } from './url-userinfo';
 
 /**
  * The eleven codes' retry classes, registered HERE and not in `error-retry.ts`'s core table: that
@@ -67,14 +68,13 @@ export function outboundTimeout(
 }
 
 /**
- * A transport failure in its own words with every query string cut (`?…`) and every URL's
- * userinfo cut (`//…@`): a runtime's message may quote the URL it was dialling, a signed URL keeps
- * its credential in the query, and a proxy URL keeps it before the `@`.
+ * A transport failure in its own words with every URL's userinfo cut (`//…@`) and every query
+ * string cut (`?…`): a runtime's message may quote the URL it was dialling, a proxy URL keeps its
+ * credential before the LAST `@` (`replaceUrlUserinfo`), and a signed URL keeps it in the query.
+ * Userinfo first: a `?` the query cut stops at would otherwise end an authority early.
  */
 export const transportText = (error: unknown): string =>
-  renderThrowable(error)
-    .replaceAll(/\?[^\s"'`)]*/g, '?…')
-    .replaceAll(/\/\/[^\s"'`/?#@]*@/g, '//…@');
+  replaceUrlUserinfo(renderThrowable(error), () => '…').replaceAll(/\?[^\s"'`)]*/g, '?…');
 
 /** The refusals that say the CALLER's bound ran out, not the vendor: a breaker hears nothing. */
 const CALLER_BOUND = new WeakSet<UltimateError>();
