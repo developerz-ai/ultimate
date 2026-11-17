@@ -10,6 +10,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- **Audit rounds 5 and 6 (plan 101b, slice 20), security first:**
+  - the admin hands a policy the caller's real actor, so an agent is judged as one over admin MCP and in queued batches (P0);
+  - a `sensitive` admin field is no longer a filter or sort oracle (P0);
+  - admin row links are encoded;
+  - URL passwords are redacted to the last `@`;
+  - an oversized `robots.txt` is obeyed, not ignored.
+- **The memory and Postgres drivers agree** on timestamp, date, array and integer operands.
+- **A required column migrates on a fresh database.**
+
+  Every confirmed finding has a test that failed first.
+
 ### Security
 
 - admin: a field marked `sensitive` is no longer a list filter or a sort key by default, though its column is indexed or unique. An operator with `admin:read` could otherwise read the hidden value back a few characters at a time with `?f.<field>.contains=` (UI or MCP `where`) or recover its order with `?sort=`. An explicit `filterable: true` / `sortable: true` override still applies.
