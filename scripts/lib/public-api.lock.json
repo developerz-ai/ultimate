@@ -1,6 +1,6 @@
 {
   "format": 2,
-  "version": "31.41.0",
+  "version": "31.42.0",
   "entries": {
     "@ultimat3/action": {
       "ACTION_ANSWER_COOKIE": {"hash":"0e5d26d4d453af41","shape":{"kind":"declaration","keyword":"const","head":"0e5d26d4"}},
@@ -1582,7 +1582,7 @@
       "SkippedRoute": {"hash":"2d5b7b630969edd6","shape":{"kind":"members","head":"6094611c","members":{"reason":"08e101d8","route":"1fb0a448","why":"1fb0a448"}}},
       "SourceFile": {"hash":"bf4a57417cf39c14","shape":{"kind":"members","head":"3a9b8a8e","members":{"path":"1fb0a448","source":"1fb0a448"}}},
       "StaticReport": {"hash":"5bffcb61232edc6e","shape":{"kind":"members","head":"235e41f7","members":{"buildId":"1fb0a448","emitted":"74b9c287","out":"1fb0a448","serviceWorkerWarnings":"f8639a23","skipped":"97011023","target":"c1f96dd5","unmeasured":"39c46e75"}}},
-      "StepOutcome": {"hash":"c2ac097bb306af28","shape":{"kind":"members","head":"8c9b8c44","members":{"coverage":"?7ff6c178","findings":"a4c2a735","measured":"?c4c97353","ok":"a001763a","output":"?1fb0a448","shard":"?ed68a5ce","slowest":"?97804c66","tests":"?cb11c153","warnings":"?f8639a23","widthReason":"?1fb0a448","workers":"?4e57c805"}}},
+      "StepOutcome": {"hash":"dadc1d294dfe8378","shape":{"kind":"members","head":"8c9b8c44","members":{"coverage":"?7ff6c178","findings":"a4c2a735","measured":"?c4c97353","ok":"a001763a","output":"?1fb0a448","services":"?11638c06","shard":"?ed68a5ce","slowest":"?97804c66","tests":"?cb11c153","warnings":"?f8639a23","widthReason":"?1fb0a448","workers":"?4e57c805"}}},
       "StorageRoutesOptions": {"hash":"d0f32512d0100ad1","shape":{"kind":"members","head":"ec1bbdc7","members":{"storage":"893584dc"}}},
       "TestType": {"hash":"163cb14fb8e907fb","shape":{"kind":"declaration","keyword":"type","head":"163cb14f"}},
       "UnknownCommandError": {"hash":"b818b29acbd44bf2","shape":{"kind":"class","head":"c0b9a53d","members":{},"ctor":["{known=713e7926,path=119ef915,suggestion=?119ef915,why=?119ef915}"]}},
