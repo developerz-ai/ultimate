@@ -19,6 +19,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - A SIGTERM during a serving role's module load no longer leaves its schema wait unbounded: the drain's `accept` phase ran before the wait registered its hook, so the first read hung on an unreachable database past the pod's grace (SIGKILL, 137). The wait now refuses before its first read when a drain has begun.
 - `x dev`: a request arriving after a save no longer joins a render begun before it and gets the pre-save HTML. The rebuild's clear goes through the new `IsrController.forgetAll()`, which evicts every render in flight, marks every fence and empties the store.
 - `x doctor` no longer reports `X_ENV_NAME_RESERVED` for an exporter's own OTLP variables (`OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_{ENDPOINT,HEADERS,PROTOCOL}`): core reads them before the general endpoint, which was already contract, so declaring the per-signal one was flagged and the general one was not.
+- testing: the e2e browser allows the ports Chrome otherwise refuses (`CHROME_RESTRICTED_PORTS`, through the launcher's new `allowedPorts`), so a test server on `port: 0` that is handed one (3659, 6000, â€¦) is loaded instead of failing with `net::ERR_UNSAFE_PORT`. Every other launch, `pdf()`'s in production included, keeps Chrome's refusal.
 - wiki: Routes and Render Modes said there is no client router; there is (`navigation.client`). It now also says a hand-rolled document swap runs no `<Hole>` reveal script, and names `refresh()` as the way.
 
 ### Changed
