@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- **An s3 disk on R2 (or any endpoint) works in its default addressing:** the Bun client reached the account root instead of the bucket, so reads, lists and `assets.retain` failed unless `S3_FORCE_PATH_STYLE=1` was set.
+
 ### Fixed
 
 - storage: an s3 disk in its default addressing (virtual-hosted, `S3_FORCE_PATH_STYLE` unset) now reaches its bucket. The Bun client was handed the account endpoint with `virtualHostedStyle: true`, which Bun reads as the bucket's own host, so every Bun-side request (read, stat, list, delete) went to the account root: on R2 a read failed with an opaque `S3Error` and a list as `ListBuckets`, and `assets.retain` logged `X_ASSET_RETAIN_FAILED`. The bucket now goes into the host, as the signed path already did. Measured on R2 before and after.
