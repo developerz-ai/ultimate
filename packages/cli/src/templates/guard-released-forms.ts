@@ -70,7 +70,10 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['2xnl4zuy9xv6f', 'error'],
     ['3b0u9i8hze00x', 'error'],
   ],
-  'undeclared-env': [['3gsy96z8bgrrl', 'error']],
+  'undeclared-env': [
+    ['3gsy96z8bgrrl', 'error'],
+    ['81vvl6xx5bb8', 'error'],
+  ],
   'undefined-style-class': [
     ['3food9t4vrzv8', 'error'],
     ['w7as1ib1ido8', 'error'],
