@@ -368,6 +368,16 @@ plan-101 DX ledger #21.
 | the browser | `useChannel(decl, params, handlers?)`; `topic()` is the one way to spell a topic, and `bun run channel-literals` refuses any other |
 | the manifest | lists every channel (`describeChannels`, on `@ultimat3/realtime/server`). In a contract diff these are **breaking**: a channel removed, its params changed, its policy changed, a record type no longer carried, `events` switched off |
 
+### A tenant param is the subscriber's org
+
+`As of 2026-11-17` (31.41.0). A channel param that names a records entity's tenant column — `orgId` on
+`records: [posts]` — must equal the subscribing actor's org, checked by the hub before the policy
+runs: the topic `org-feed.<orgId>` IS that org's stream of records, events and presence. Another
+org's value is `X_TOPIC_FORBIDDEN` (cause `X_TENANCY_ACTOR_MISMATCH`), an actor with no org
+`X_TENANCY_ACTOR_ORG_REQUIRED`, a proven `crossTenant()` scope passes. So `policy: can('post:read')`
+is enough: the policy decides the permission, the mechanism decides the tenant — the same split an
+HTTP read has.
+
 ## A channel event re-reads the page
 
 `As of 30.0.0`. For a server-rendered page with nothing to push but "this changed": the channel

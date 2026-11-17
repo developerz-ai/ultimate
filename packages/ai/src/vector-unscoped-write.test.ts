@@ -1,9 +1,9 @@
-// Single responsibility: a vector store WRITE with no tenant bound, inside a request acting for an
-// org, is refused — `upsert`, `prune` and `delete`, on both stores, and `indexDocument` through
-// one. Reads were already refused; a write compiled to `and true` and reached every tenant's rows.
+// Single responsibility: a vector store WRITE with no tenant bound, inside any request, is refused —
+// `upsert`, `prune` and `delete`, on both stores, for every actor, and `indexDocument` through one.
+// Reads were already refused; a write compiled to `and true` and reached every tenant's rows.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
+import { anonymousActor, ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { recordingClient } from '@ultimat3/db';
 import { hashEmbedder, normalizeVector } from './embeddings';
 import { postgresVectorStore } from './pg-vector';
@@ -19,6 +19,8 @@ const asOrg = <T>(orgId: string, fn: () => Promise<T>): Promise<T> =>
   runWithContext(ctxOf({ actor: userActor({ id: `u-${orgId}`, orgId }) }), fn);
 const inNoOrg = <T>(fn: () => Promise<T>): Promise<T> =>
   runWithContext(ctxOf({ actor: userActor({ id: 'u-1' }) }), fn);
+const asAnonymous = <T>(fn: () => Promise<T>): Promise<T> =>
+  runWithContext(ctxOf({ actor: anonymousActor() }), fn);
 
 const stores = (): readonly (readonly [string, (scope?: VectorScope) => VectorStore])[] => [
   [
@@ -43,7 +45,7 @@ const writes = (store: VectorStore): readonly (readonly [string, () => Promise<u
   ['delete', () => store.delete(['doc-1'])],
 ];
 
-describe('an unscoped write inside an org request', () => {
+describe('an unscoped write inside a request', () => {
   for (const [label, open] of stores()) {
     for (const [name, write] of writes(open())) {
       test(`${label}: ${name} is X_VECTOR_UNSCOPED`, async () => {
@@ -75,11 +77,19 @@ describe('an unscoped write inside an org request', () => {
       for (const [, write] of writes(open(UNSCOPED))) await asOrg('org-a', write);
     });
 
-    test(`${label}: outside a request, or for an actor with no org, writes run`, async () => {
+    test(`${label}: an org-less or anonymous write is X_VECTOR_UNSCOPED too`, async () => {
       for (const [, write] of writes(open())) {
-        await write();
-        await inNoOrg(write);
+        await expect(inNoOrg(write)).rejects.toMatchObject({ code: 'X_VECTOR_UNSCOPED' });
+        await expect(asAnonymous(write)).rejects.toMatchObject({ code: 'X_VECTOR_UNSCOPED' });
       }
+      for (const [, write] of writes(open(UNSCOPED))) {
+        await inNoOrg(write);
+        await asAnonymous(write);
+      }
+    });
+
+    test(`${label}: outside any request (a script, a boot task) writes run`, async () => {
+      for (const [, write] of writes(open())) await write();
     });
   }
 });

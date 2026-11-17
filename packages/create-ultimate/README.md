@@ -22,7 +22,7 @@ Thin wrapper over `x new` — same templates, same flags, no second code path.
 | `--no-example` | skip the example feature slice |
 | `--no-git` | leave a bare directory; do not `git init` and commit |
 | `--dry-run` | print the file list, write nothing |
-| `--force` | write into a directory that already exists and holds no `app.config.ts`; never over an app |
+| `--force` | write into a directory that already exists, holds no `app.config.ts` and none of the paths the scaffold writes (a fresh clone: `.git`, a `LICENSE`); one taken path (`README.md`, `package.json`, …) refuses the run with `X_GENERATE_CONFLICT` naming them, nothing written — never an overwrite |
 | `--json` | machine-readable output |
 
 ## Opening a repro bundle

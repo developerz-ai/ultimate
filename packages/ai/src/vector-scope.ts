@@ -19,7 +19,7 @@ export interface VectorScope {
   readonly allow?: Readonly<Record<string, readonly string[]>> | undefined;
   /**
    * Every tenant, ON PURPOSE — `UNSCOPED`'s mark, and the only way a read with no tenant bound
-   * runs inside a request acting for an org. Meaningless once a tenant is bound, so dropped then.
+   * runs inside a request. Meaningless once a tenant is bound, so dropped then.
    */
   readonly crossTenant?: true | undefined;
 }
@@ -27,7 +27,7 @@ export interface VectorScope {
 /**
  * Every tenant, every row, named on purpose: the backfill and migration path. Pass it as a
  * store's `scope` (or `.scoped(UNSCOPED)`) where a cross-tenant read is the point. A store opened
- * with no scope binds no tenant either, but reading it inside an org's request is refused.
+ * with no scope binds no tenant either, but reading or writing it inside any request is refused.
  */
 export const UNSCOPED: VectorScope = Object.freeze({ crossTenant: true });
 
@@ -58,16 +58,20 @@ export function narrowScope(store: string, base: VectorScope, next: VectorScope)
 }
 
 /**
- * Refuse any statement — read or write — that would reach every tenant inside a request acting for
- * one. Entities derive the tenant from the ambient actor; a vector store is bound by
+ * Refuse any statement — read or write — that would reach every tenant from inside a request.
+ * Entities derive the tenant from the ambient actor; a vector store is bound by
  * `.scoped({ tenant })`, and a forgotten call answered with every org's rows, deleted every org's
  * rows sharing an id (the key is `(tenant, id)`, so ids collide across tenants by design), or wrote
- * into the shared no-tenant bucket. Outside a request, or for an actor with no org, there is no
- * tenant to leak across — a single-tenant app and a job's system actor run as before.
+ * into the shared no-tenant bucket. An actor with no org is no exception: anonymous, an org-less
+ * user and a `tenant: 'none'` job have NO tenant to be confined to, so an unbound statement under
+ * them reached every org — the same actors `entity`'s `actorTenant` refuses
+ * (`X_TENANCY_ACTOR_ORG_REQUIRED`). A single-tenant app says so once, with `scope: UNSCOPED`.
+ * Outside any request (a script, a boot task) there is no identity to confine, and entity derives
+ * nothing there either: the statement runs as written.
  */
 export function assertTenantBound(store: string, scope: VectorScope): void {
   if (scope.tenant !== undefined || scope.crossTenant === true) return;
-  if (tryUseContext()?.actor.orgId === undefined) return;
+  if (tryUseContext() === undefined) return;
   throw new VectorUnscopedError({ store });
 }
 
@@ -78,8 +82,9 @@ export class VectorUnscopedError extends UltimateError {
       code: 'X_VECTOR_UNSCOPED',
       cause:
         `vector store "${input.store}" was read or written with no tenant bound, inside a request ` +
-        'acting for an org — the statement would reach every tenant’s rows. A deliberate ' +
-        'cross-tenant read or write (a backfill, a migration) opens the store with scope: UNSCOPED',
+        '— the statement would reach every tenant’s rows, whoever the actor (an org-less or ' +
+        'anonymous one included). A deliberate cross-tenant read or write (a backfill, a ' +
+        'migration, a single-tenant app) opens the store with scope: UNSCOPED',
       fix: 'vectorStore.scoped({ tenant: ctx.actor.orgId })',
     });
   }

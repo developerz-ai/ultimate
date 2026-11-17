@@ -172,6 +172,7 @@ A rule marked `†` has its full text in [`docs/history/realtime-rules.md`](../.
 - **A channel is a DECLARATION, no primitive** (docs/history/primitive-factories.md):
   `channel(name, { params, policy, catchUp, records?, events? })`, deny by default; `policy`
   REQUIRED (`X_CHANNEL_DECLARATION_INVALID`; public: `allow('public')`). Presence: `events`.
+- **A param naming a records entity's `$tenantColumn` is the subscriber's org** (`channel-tenant.ts`, before the policy). †
 - **A guard that FAILS on re-auth SUSPENDS the seat** (`guardFailures`): kept, silent until a pass.
   A `null` actor on a `row` channel and a tenancy refusal are DENIALS.
 - **A seat is decided for the actor ON the socket when the guard resolves** (`#settle`); a denied

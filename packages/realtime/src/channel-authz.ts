@@ -1,17 +1,21 @@
-// A declared channel's policy, asked on subscribe: the params are the input and the row is what
-// the channel's own loader answered. Through `@ultimat3/query`'s `guardQuery`, the package's one
-// authz seam — the same call `policy-gate.ts` makes for a live query.
+// A declared channel's subscribe decision: the tenant first (`channel-tenant.ts`), then the policy,
+// with the params as input and the row the channel's own loader answered. Through
+// `@ultimat3/query`'s `guardQuery`, the package's one authz seam — the call `policy-gate.ts` makes.
 
 import { type Actor, type Ctx, ctxOf, runWithContext } from '@ultimat3/core';
 import { guardQuery, QueryDeniedError } from '@ultimat3/query';
 import type { Channel } from './channel-decl';
+import { assertChannelTenant } from './channel-tenant';
 import { isTenancyDenial, TopicForbiddenError } from './errors';
 
 /**
  * A denial is `X_TOPIC_FORBIDDEN`. A loader or a rule that RAISED is not a denial and leaves as it
  * came, so the caller can tell an outage from a decision — `onActorChange` suspends the topic on one.
  *
- * Two answers are denials before any rule runs, because neither is an outage:
+ * Three answers are denials before any rule runs, because none is an outage:
+ * - **a param naming a records entity's tenant column that is not the actor's org**
+   (`assertChannelTenant`): every frame kind — records, events, presence — rides the seat this
+   grants, so the tenant is the mechanism's to check, never a rule's to remember.
  * - **nobody, on a channel that decides on a row.** A loader runs AS the subscriber; with no actor
  *   it would run as the node, and a row is not something nobody is entitled to.
  * - **a loader the tenant guard refused** (`TENANCY_DENIAL_CODES`): the actor has no org, or names
@@ -24,6 +28,7 @@ export async function authorizeChannel(
   topic: string,
   params: Readonly<Record<string, string>>,
 ): Promise<void> {
+  assertChannelTenant(channel, actor, topic, params, (who) => subscriberContext(ctx, who));
   const loader = channel.row;
   if (loader === undefined) return decide(channel, ctx, actor, topic, params, null);
   if (actor === null) {

@@ -90,3 +90,16 @@ wins. Older long forms: [`realtime.md`](realtime.md), [`realtime-agent-notes.md`
   on both from `onBulk` (channels: not a `recordPublisher` table). **A stale window's re-read
   re-snapshots EVERY subscriber**, before the lsn guard, even on a non-match (`live-replicator-bulk`,
   `live-fanout` tests).
+
+## A param naming a records entity's tenant column is the subscriber's org (2026-11-17, round 3 T1)
+
+A row is routed to `<channel>.<row's params>`, so a topic keyed by the tenant column IS one org's stream —
+of records, and of the events and presence that ride the same seat. Granting it on the policy alone handed
+org B's rows to any org-A member whose rule did not compare the org (`can('post:read')` does not, and the
+missing-policy refusal suggested exactly that shape). `assertChannelTenant` (`channel-tenant.ts`) runs in
+`authorizeChannel` before the policy, deciding through `@ultimat3/entity`'s `assertScoped` over the plan the
+subscribe amounts to (`<column> = <param>`, in the subscriber's context): another org is
+`X_TENANCY_ACTOR_MISMATCH`, no org `X_TENANCY_ACTOR_ORG_REQUIRED`, a proven `crossTenant()` passes. Either
+reaches the socket as `X_TOPIC_FORBIDDEN` naming that code, a denial the hub latches; anything else the guard
+raised is not a decision and leaves as it came. `channel-tenant.test.ts` (records, events, presence; no org;
+re-auth into another org drops the seat).
