@@ -22,7 +22,10 @@
 // why: Bun exposes no path-join or path-resolve primitive.
 import { join, resolve } from 'node:path';
 import { GENERATORS, quoteArg } from '@ultimat3/cli';
-import { READS_A_TABLE } from '../packages/cli/src/generate-feature-required';
+import {
+  ENFORCES_A_PERMISSION,
+  READS_A_TABLE,
+} from '../packages/cli/src/generate-feature-required';
 import { renderFixShellArg } from '../packages/core/src/error-render';
 import { nextCommandsIn } from './bench/first-hour-next';
 import { parseScriptArgs } from './lib/args';
@@ -70,6 +73,11 @@ export const generatorName = (kind: string): string => `smoke-${kind.replace(/:/
  * which a test here holds. The CLI's own list, never a copy here: a copy fell behind once.
  */
 const READ_A_SLICE: ReadonlySet<string> = READS_A_TABLE;
+/**
+ * `action`/`mutator` with no `--feature` and no slice of their name are `X_FEATURE_REQUIRED` too
+ * (31.40.0): their bare step runs into the resource's slice, beside `SECOND_SHAPES`' named ones.
+ */
+const NEEDS_A_SLICE: ReadonlySet<string> = ENFORCES_A_PERMISSION;
 const RESOURCE_SLICE = generatorName('resource');
 const SOLO_SLICE = 'smoke-solo';
 
@@ -183,7 +191,9 @@ export const firstRunPlan = (
               'g',
               kind,
               generatorName(kind),
-              ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
+              ...(READ_A_SLICE.has(kind) || NEEDS_A_SLICE.has(kind)
+                ? ['--feature', RESOURCE_SLICE]
+                : []),
               '--json',
             ],
   })),
