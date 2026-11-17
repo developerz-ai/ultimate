@@ -415,16 +415,6 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     none: "only `x new --shape saas` renders it, at scaffold time: `@ultimat3/flags` is now written exact like every @ultimat3/* (D9), and an existing app's range is x upgrade's to move, never this overlay's",
   },
   {
-    template: 'packages/cli/src/templates/sign-in-password.ts',
-    since: '31.40.0',
-    none: "createSession and confirmSession now declare `native: { success: ({ next }) => next }` (D10); an app's existing copies already answer a browser's form with a 303 through landAt's setRedirect, and the gate's X_NATIVE_FORM_UNANSWERED is a warning naming the file and the line to paste",
-  },
-  {
-    template: 'packages/cli/src/templates/sign-in-shared.ts',
-    since: '31.40.0',
-    none: "destroySession now declares `native: { success: ({ next }) => next }` (D10); an app's existing copy already answers a browser's form with a 303 through landAt's setRedirect, and the gate's X_NATIVE_FORM_UNANSWERED is a warning naming the file and the line to paste",
-  },
-  {
     template: 'CLAUDE.md',
     since: '31.40.0',
     codemod: 'docs-env-guard',
