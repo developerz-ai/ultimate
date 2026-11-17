@@ -407,11 +407,11 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   {
     template: 'package.json',
     since: '31.40.0',
-    none: 'the merge adds repository guard scripts only; an existing app does not run or need those root scripts, so no codemod moves an app file',
+    none: 'the root `@biomejs/biome` pin moves to 2.6.4; an existing app retains the Biome it installed, so no app file needs a codemod',
   },
   {
     template: 'packages/cli/src/templates/scaffold-repo.ts',
     since: '31.40.0',
-    none: 'the merge reformats this template header only; what `x new` writes is byte-identical, so no app holds anything to migrate',
+    none: '`x new` now writes the 2.6.4 Biome pin and schema URL; existing apps retain their installed version and valid config, so no app file needs a codemod',
   },
 ];
