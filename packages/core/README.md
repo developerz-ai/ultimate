@@ -396,6 +396,8 @@ request-scoped and never logged — `actorLabel()` stays id-only.
 ## Env fails once, completely
 
 ```ts
+import { defineEnv, type EnvSchema } from '@ultimat3/core';
+
 export const envSchema = {
   DATABASE_URL: { type: 'url', secret: true },
   PORT:         { type: 'port', default: 3000 },

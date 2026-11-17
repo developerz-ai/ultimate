@@ -34,6 +34,8 @@ const SCRIPT = 'template-codemods';
 const CODE = 'X_TEMPLATE_CODEMOD_MISSING';
 export const TEMPLATE_DIR = 'packages/cli/src/templates';
 const ROWS_FILE = 'scripts/template-codemods-rows.ts';
+/** Where `grep` finds a row: the current file and its history split. */
+const ROWS_FILES = 'scripts/template-codemods-rows*.ts';
 
 /**
  * What `x new` and `x g sign-in` write that an app then keeps: the templates these entry modules
@@ -109,7 +111,7 @@ export function templateCodemodGaps(input: {
       findings.push({
         code: CODE,
         cause: `${ROWS_FILE} answers for ${row.template}, which is no scaffold-owned template: a row for nothing excuses nothing`,
-        fix: `grep -n ${quoteArg(row.template)} ${ROWS_FILE}   # remove that row, or name the template as it is; then: bun run scripts/template-codemods.ts --json`,
+        fix: `grep -n ${quoteArg(row.template)} ${ROWS_FILES}   # remove that row, or name the template as it is; then: bun run scripts/template-codemods.ts --json`,
         at: ROWS_FILE,
       });
     } else if ('codemod' in row) {
@@ -126,7 +128,7 @@ export function templateCodemodGaps(input: {
       findings.push({
         code: CODE,
         cause: `${ROWS_FILE} excuses ${row.template} with "${row.none}", which says no reason an app needs no codemod`,
-        fix: `grep -n ${quoteArg(row.template)} ${ROWS_FILE}   # write in that row's none why an app that keeps the old file is not broken by it; then: bun run scripts/template-codemods.ts --json`,
+        fix: `grep -n ${quoteArg(row.template)} ${ROWS_FILES}   # write in that row's none why an app that keeps the old file is not broken by it; then: bun run scripts/template-codemods.ts --json`,
         at: ROWS_FILE,
       });
     }
