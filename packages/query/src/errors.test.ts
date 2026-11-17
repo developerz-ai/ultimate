@@ -19,6 +19,14 @@ describe('unit · X_QUERY_POLICY_MISSING pastes a permission, never the query na
     expect(permission ?? '').toMatch(/^[^:]+:[^:]+$/);
   });
 
+  // `allow()` takes a LABEL (`packages/policy/src/policy.ts`), never a permission: the public
+  // choice is `allow('public')`, the spelling the docs and the generators write.
+  test("the public choice is allow('public'), never allow('<resource>:<verb>')", () => {
+    const { fix } = new QueryPolicyMissingError('postList');
+    expect(fix).toContain("policy: allow('public')");
+    expect(fix).not.toMatch(/allow\('[^']*:[^']*'\)/);
+  });
+
   test('the cause still names the query, because that is what finds the file', () => {
     const error = new QueryPolicyMissingError('postList');
     expect(error.cause).toContain('postList');

@@ -22,7 +22,7 @@ export {
   CacheValueUnencodableError,
 } from './errors';
 export type { CacheFence, FenceScope } from './fence';
-export { markInvalidated, sampleFence } from './fence';
+export { markAllInvalidated, markInvalidated, sampleFence } from './fence';
 export type { CacheDependent, DependentKind } from './graph';
 export {
   dependentsOf,

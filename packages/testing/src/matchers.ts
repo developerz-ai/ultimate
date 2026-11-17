@@ -22,6 +22,8 @@ import type {
 } from './matcher-surface';
 import type { VisibleOptions } from './matcher-visible';
 import { assertVisibilityProbe, visibilityResult } from './matcher-visible';
+import type { JobLike } from './matchers-steps';
+import { isJob, recordSteps } from './matchers-steps';
 // `toHaveBeenCalledWith` on a `stub()`: bun's own name, so it is installed beside bun's matcher
 // rather than declared on `UltimateMatchers` (two declarations of one member do not merge).
 import './matcher-stub';
@@ -33,6 +35,8 @@ export type { MatcherResult } from './matcher-result';
 // `bun:test` augmentation for anyone consuming this package through `dist/` — which is every
 // package that reaches it across a project reference.
 export type { UltimateMatchers } from './matcher-surface';
+// `recordSteps` lives beside its recorder; the public path (`./matchers`) is unchanged.
+export { recordSteps } from './matchers-steps';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -126,37 +130,6 @@ async function decide(
   if (isRunnablePolicy(policy)) return policy.run({ row: null, ...context }).allowed;
   if (isPolicy(policy)) return policy.evaluate(context);
   return undefined;
-}
-
-interface JobLike {
-  run(context: {
-    input: unknown;
-    step: StepRecorder;
-    ctx: Record<string, unknown>;
-  }): Promise<unknown>;
-}
-
-interface StepRecorder {
-  run<T>(name: string, body: () => T | Promise<T>): Promise<T>;
-  sleep(duration: string): Promise<void>;
-}
-
-const isJob = (value: unknown): value is JobLike =>
-  isRecord(value) && typeof value['run'] === 'function';
-
-/** Runs the job with a recording step API, so the assertion is on the sequence, not the effects. */
-export async function recordSteps(job: unknown, input: unknown = {}): Promise<readonly string[]> {
-  if (!isJob(job)) throw new TestJobExpectedError();
-  const names: string[] = [];
-  const step: StepRecorder = {
-    run: async (name, body) => {
-      names.push(name);
-      return body();
-    },
-    sleep: async () => undefined,
-  };
-  await job.run({ input, step, ctx: {} });
-  return names;
 }
 
 /**

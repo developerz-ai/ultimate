@@ -42,6 +42,7 @@ import {
 } from './cache';
 import { judgedRead, judgedSql } from './declared-errors';
 import { QueryForeignError, QueryUnregisteredError } from './errors';
+import { assertLiveBounded } from './live-bounds';
 import { guardQuery, guardQueryBeforeInput } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
 import { spendReadLimit } from './rate-limit-gate';
@@ -388,6 +389,8 @@ function sourceOver(
   }
   // `sql` and the source's `execute` are where `errors:` judges a throw (`declared-errors.ts`).
   const built = judgedSql(target, queryName(target), () => defOf(target).sql(input, ctx));
+  // A `live: true` read declares a limit, refused on every surface (`live-bounds.ts`).
+  assertLiveBounded(queryName(target), target, built);
   // A `scoped()` policy narrows the read before a page is cut (`scope-compose.ts`) — never on an
   // unenforced build, which has no admitted subject to scope by.
   const subject = { actor: actorOf(ctx), input, ctx, query: queryName(target) };

@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { generateMigration, snapshotOf } from '@ultimat3/db';
 import { text, uuid } from './columns';
 import { entity } from './entity';
+import { EntityError } from './errors';
 import { distinctIndexes } from './index-identity';
 import type { IndexInit } from './index-init';
 import { uniqueConstraints } from './unique-constraints';
@@ -106,5 +107,37 @@ describe('unit · refused where it was written', () => {
     ['an empty include', [{ on: ['email'], include: [] }], 'include'],
   ] as const)('%s', (_, indexes, says) => {
     expect(refusal(indexes as readonly IndexInit<Columns>[])).toContain(says);
+  });
+});
+
+describe('unit · a partial index predicate is a callback', () => {
+  // The SQL-string spelling reads naturally and was the commonest mistake: it reached
+  // `index.where(...)` and threw an uncoded TypeError at declaration, so every `x` command loading
+  // the app reported `X_CLI_UNEXPECTED` with none of the entity's words in it.
+  test.each([
+    ['an SQL string', "email = 'x'"],
+    ['an object', { email: 'x' }],
+    ['null', null],
+  ] as const)('%s is X_INVARIANT_VIOLATED, and the fix shows the callback form', (_, where) => {
+    const caught = (() => {
+      try {
+        declare([{ on: ['email'], where } as unknown as IndexInit<Columns>]);
+      } catch (error) {
+        return error;
+      }
+      return expect.unreachable('the declaration was accepted');
+    })();
+    expect(caught).toBeInstanceOf(EntityError);
+    const refused = caught as EntityError;
+    expect(refused.code).toBe('X_INVARIANT_VIOLATED');
+    expect(refused.cause).toContain('index.where must be a callback');
+    expect(refused.fix).toContain("where: (c) => c.email.eq('x')");
+  });
+
+  test('the callback form still builds a partial index', () => {
+    const people = declare([{ on: ['email'], where: (c) => c.name.eq('x') }]);
+    expect(people.$describe().indexes.find((each) => each.where !== undefined)?.where).toContain(
+      'name',
+    );
   });
 });

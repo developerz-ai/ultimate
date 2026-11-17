@@ -1,7 +1,7 @@
-// What `x exercise` makes of a pass's records: one finding per `unreached` primitive, carrying the
-// override to paste as its fix, and per crossed tenant and diverged crash proof; the counts; the
-// table; and the one report document both `--json` and `.x/exercise.json` hold. Pure — records in, plain values out — so the gate step and the
-// command cannot disagree about what is red.
+// What `x exercise` makes of a pass's records: one finding per `unreached` primitive (its fix is
+// `exercise-findings-unreached.ts`'s), per crossed tenant and diverged crash proof; the counts; the
+// table; the one report `--json` and `.x/exercise.json` hold. Pure — records in, plain values out —
+// so the gate step and the command cannot disagree about what is red.
 
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
@@ -13,6 +13,8 @@ import {
 } from '@ultimat3/core';
 import type { ExercisePhaseMs, ExerciseRecord, ProofMs } from '@ultimat3/testing';
 import { crashEffectPlace, planSweepFindings, tenantProofFindings } from '@ultimat3/testing';
+import type { ExerciseFileFacts } from './exercise-findings-unreached';
+import { unreachedFinding } from './exercise-findings-unreached';
 import { msg } from './messages';
 import type { Finding } from './output';
 import { renderTable } from './table';
@@ -20,8 +22,8 @@ import { renderTable } from './table';
 /** Where the pass's report is written, app-root-relative: state, gitignored with the rest of `.x/`. */
 export const EXERCISE_REPORT_FILE = join('.x', 'exercise.json');
 
-/** The file an override is pasted into — `defineExercise()`'s one home. */
-export const EXERCISE_FILE = 'apps/web/exercise.ts';
+export type { ExerciseFileFacts } from './exercise-findings-unreached';
+export { EXERCISE_FILE } from './exercise-findings-unreached';
 
 type Outcome = ExerciseRecord['outcome'];
 
@@ -44,56 +46,6 @@ export const exerciseCounts = (records: readonly ExerciseRecord[]): ExerciseCoun
     off: count('off'),
   };
 };
-
-/**
- * A 5xx's own words — the cause testing recorded (credential values already masked there) and the
- * fields a validation failure names. The statement is inside the cause, so it is not said twice.
- */
-const defectOf = (record: ExerciseRecord): string => {
-  const defect = record.defect;
-  if (defect === undefined) return '';
-  const fields =
-    defect.fields === undefined
-      ? ''
-      : ` at ${defect.fields.map((field) => renderCauseValue(field)).join(', ')}`;
-  return ` — cause: ${renderCauseValue(defect.cause)}${fields}`;
-};
-
-/** Whether the app has an `apps/web/exercise.ts` yet: what an unreached finding's fix pastes into. */
-export type ExerciseFileState = 'present' | 'absent';
-
-const PASTE_NOTE =
-  "an inline .contract({ exercise: {...} }) in a test is not read here: move it, then pass .contract({ exercise }); or give the entry { off: '<why>' }";
-
-/**
- * `X_CONTRACT_EXERCISE_UNREACHED`, `@ultimat3/action`'s code for the same silence one level up: a
- * primitive no run got to as an allowed actor. The fix is pasted from its first character: into a
- * file that exists, the bare entry (thirty findings are thirty entries inside the ONE export, never
- * thirty `defineExercise` calls to unwrap); with no file yet, the whole file to create. Then the
- * one-primitive rerun that proves it.
- */
-const unreachedFinding =
-  (file: ExerciseFileState) =>
-  (record: ExerciseRecord): Finding => {
-    const name = renderFixShellArg(record.name, '<name>');
-    const entry = (
-      record.override ?? `${record.name}: { input: { /* a value it accepts */ } }`
-    ).replace(/[\s,]+$/, '');
-    const stopped = record.code === undefined ? '' : ` — stopped on ${record.code}`;
-    const why = record.reason === undefined ? '' : ` (${renderCauseValue(record.reason)})`;
-    const rerun = `then: x exercise ${name} --json`;
-    const paste =
-      file === 'present'
-        ? `${entry},   # paste inside export const exercise = defineExercise({ … }) in ${EXERCISE_FILE} (${PASTE_NOTE}); ${rerun}`
-        : `import { defineExercise } from '@ultimat3/testing'; export const exercise = defineExercise({ ${entry} });   # create ${EXERCISE_FILE} with this (${PASTE_NOTE}); ${rerun}`;
-    return {
-      code: 'X_CONTRACT_EXERCISE_UNREACHED',
-      cause: `${record.kind} ${renderCauseValue(record.name)} never reached its handler as an allowed actor in the exercise pass${stopped}${why}${defectOf(record)}`,
-      fix: record.fix ?? paste,
-      docs: ERROR_DOCS_URL,
-      at: EXERCISE_FILE,
-    };
-  };
 
 type CrashFinding = Extract<
   NonNullable<ExerciseRecord['crash']>,
@@ -150,7 +102,7 @@ export const crashFindingLines = (records: readonly ExerciseRecord[]): readonly 
  */
 export const exerciseFindings = (
   records: readonly ExerciseRecord[],
-  file: ExerciseFileState = 'present',
+  file?: ExerciseFileFacts,
 ): readonly Finding[] => [
   ...records.filter((one) => one.outcome === 'unreached').map(unreachedFinding(file)),
   ...tenantProofFindings(records).map((one) => ({ ...one, docs: ERROR_DOCS_URL })),

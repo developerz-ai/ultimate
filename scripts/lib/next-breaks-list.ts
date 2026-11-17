@@ -8,6 +8,12 @@ export interface BreakSource {
   readonly anchor: string;
 }
 
+/** A declaration the break deletes: `symbol` is declared in `path`, where its `@deprecated` sits. */
+export interface RemovedSymbol {
+  readonly path: string;
+  readonly symbol: string;
+}
+
 export interface ParkedBreak {
   /** The plan item ids that name it, as the plans spell them. */
   readonly ids: string;
@@ -15,6 +21,11 @@ export interface ParkedBreak {
   /** What changes for an app the day `next` merges. */
   readonly change: string;
   readonly sources: readonly BreakSource[];
+  /**
+   * What it deletes. Every source comment that promises a removal at the next major must be one
+   * of these (`X_NEXT_BREAK_UNPARKED`); one with no tag yet is reported as owed one.
+   */
+  readonly removes?: readonly RemovedSymbol[];
 }
 
 const P11 = 'docs/plans/2026/11/11/101-full-stack-efficiency-sweeps';
@@ -58,6 +69,7 @@ export const PARKED_BREAKS: readonly ParkedBreak[] = [
     title: "`sitemap`'s `now` option removed",
     change: '`clock?: Clock` is the one clock seam; the deprecated alias goes',
     sources: [OD10, { path: `${P11}/04-cache-seo.md`, anchor: '| K4 | P3' }],
+    removes: [{ path: 'packages/seo/src/sitemap.ts', symbol: 'now' }],
   },
   {
     ids: 'X8 / G1',
@@ -120,6 +132,117 @@ export const PARKED_BREAKS: readonly ParkedBreak[] = [
     change:
       'the listbox, option, `menuitem*` and treeitem roles and focusable-without-role join the audit, which has no warn mode',
     sources: [{ path: `${P11}/15-admin-ui-testing.md`, anchor: '| T3 | **already shipped**' }],
+  },
+  {
+    ids: 'tenantColumn',
+    title: "the replicator's and the record publisher's `tenantColumn` option removed",
+    change:
+      'ignored since 31.38.1: the tenant of a change is the column its entity declares (`entity(name, { tenant })`); passing the option stops compiling',
+    sources: [],
+    removes: [
+      { path: 'packages/realtime/src/live-replicator.ts', symbol: 'tenantColumn' },
+      { path: 'packages/realtime/src/record-publisher.ts', symbol: 'tenantColumn' },
+    ],
+  },
+  {
+    ids: 'orgIdOf',
+    title: '`orgIdOf` leaves `@ultimat3/realtime/server`',
+    change:
+      'the helper, unused now that a live window takes its org from its tenant alone, is no longer exported; importing it stops compiling',
+    sources: [],
+    removes: [{ path: 'packages/realtime/src/query-window.ts', symbol: 'orgIdOf' }],
+  },
+  {
+    ids: 'error-reference pages',
+    title: "the CLI's single-page error-reference checks removed",
+    change:
+      'the error reference is a page set since 31.35.0: `documentedCodesIn`, `liveCodesIn`, `declaredUnthrownIn`, `checkErrorCodeRegistryIn`, `checkErrorCodeDocsIn` and `checkErrorCodesThrownIn` are the one way',
+    sources: [],
+    removes: [
+      { path: 'packages/cli/src/error-contract.ts', symbol: 'documentedCodes' },
+      { path: 'packages/cli/src/error-contract.ts', symbol: 'liveCodes' },
+      { path: 'packages/cli/src/error-contract.ts', symbol: 'checkErrorCodeRegistry' },
+      { path: 'packages/cli/src/error-contract.ts', symbol: 'checkErrorCodeDocs' },
+      { path: 'packages/cli/src/error-unthrown.ts', symbol: 'declaredUnthrown' },
+      { path: 'packages/cli/src/error-unthrown.ts', symbol: 'checkErrorCodesThrown' },
+    ],
+  },
+  {
+    ids: 'legacy OAuth handshake cookie',
+    title: 'the pre-31.2 `__Host-x_oauth` handshake cookie is no longer read',
+    change:
+      'only `__Host-x_sso_<provider>` finishes a login; a handshake begun on a 31.1 pod across the upgrade deploy restarts',
+    sources: [],
+    removes: [
+      {
+        path: 'packages/auth/src/oauth-handshake-cookie.ts',
+        symbol: 'LEGACY_HANDSHAKE_COOKIE_PREFIX',
+      },
+    ],
+  },
+  {
+    ids: 'pwa never-wired',
+    title: "the PWA's declared-and-never-wired precache fields removed",
+    change:
+      '`ServiceWorkerConfig.shellUrl` / `shellRevision` / `shellBytes` and `PwaRoute.dataUrl` go; `revision` and `bytes`, set by the prerender pass, are the fed pair',
+    sources: [
+      { path: 'packages/pwa/CLAUDE.md', anchor: 'carried as candidates for the next major' },
+    ],
+    removes: [
+      { path: 'packages/pwa/src/service-worker.ts', symbol: 'shellUrl' },
+      { path: 'packages/pwa/src/service-worker.ts', symbol: 'shellRevision' },
+      { path: 'packages/pwa/src/service-worker.ts', symbol: 'shellBytes' },
+      { path: 'packages/pwa/src/precache.ts', symbol: 'shellUrl' },
+      { path: 'packages/pwa/src/precache.ts', symbol: 'shellRevision' },
+      { path: 'packages/pwa/src/precache.ts', symbol: 'shellBytes' },
+      { path: 'packages/pwa/src/strategies.ts', symbol: 'dataUrl' },
+    ],
+  },
+  {
+    ids: 'A7 realtime',
+    title: 'dead exports leave `@ultimat3/realtime/server`',
+    change:
+      '`parseLsn`, `normalizePatch`, `patchFromChange`, `kvStream`, `kvSubject`, `decodeValue`, `changeSubject` and `actorIdOf` are no longer exported; the package keeps them internally',
+    sources: [{ path: 'packages/realtime/src/server.ts', anchor: '  parseLsn,' }],
+    removes: [
+      { path: 'packages/realtime/src/changefeed.ts', symbol: 'parseLsn' },
+      { path: 'packages/realtime/src/matcher-bridge.ts', symbol: 'normalizePatch' },
+      { path: 'packages/realtime/src/matcher-bridge.ts', symbol: 'patchFromChange' },
+      { path: 'packages/realtime/src/nats-jetstream.ts', symbol: 'kvStream' },
+      { path: 'packages/realtime/src/nats-jetstream.ts', symbol: 'kvSubject' },
+      { path: 'packages/realtime/src/pg-values.ts', symbol: 'decodeValue' },
+      { path: 'packages/realtime/src/replicator-subject.ts', symbol: 'changeSubject' },
+      { path: 'packages/realtime/src/socket.ts', symbol: 'actorIdOf' },
+    ],
+  },
+  {
+    ids: 'A7 db',
+    title: '`recountSql` and `recountDriftSql` leave `@ultimat3/db`',
+    change:
+      'no longer exported; `x db recount` and the counter migration keep using them inside the package',
+    sources: [],
+    removes: [
+      { path: 'packages/db/src/generate-counter.ts', symbol: 'recountSql' },
+      { path: 'packages/db/src/generate-counter.ts', symbol: 'recountDriftSql' },
+    ],
+  },
+  {
+    ids: 'A7 admin',
+    title: 'the individual dev panels leave `@ultimat3/admin/dev`',
+    change:
+      '`DEV_PANELS` and `devDashboard` are the one way to a panel; `cachePanel` … `timelinePanel` are no longer exported',
+    sources: [],
+    removes: [
+      { path: 'packages/admin/src/dev/panel-cache.ts', symbol: 'cachePanel' },
+      { path: 'packages/admin/src/dev/panel-db.ts', symbol: 'dbPanel' },
+      { path: 'packages/admin/src/dev/panel-jobs.ts', symbol: 'jobsPanel' },
+      { path: 'packages/admin/src/dev/panel-live.ts', symbol: 'livePanel' },
+      { path: 'packages/admin/src/dev/panel-mail.ts', symbol: 'mailPanel' },
+      { path: 'packages/admin/src/dev/panel-manifest.ts', symbol: 'manifestPanel' },
+      { path: 'packages/admin/src/dev/panel-policy.ts', symbol: 'policyPanel' },
+      { path: 'packages/admin/src/dev/panel-routes.ts', symbol: 'routesPanel' },
+      { path: 'packages/admin/src/dev/panel-timeline.ts', symbol: 'timelinePanel' },
+    ],
   },
 ];
 

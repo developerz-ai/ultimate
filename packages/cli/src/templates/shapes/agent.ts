@@ -103,11 +103,11 @@ unitTest('the agent and its tool are MCP tools; the keeper is not', () => {
 });
 `;
 
-/** `@ultimat3/ai` joins the app's dependencies at the release's range: the agent imports it. */
+/** `@ultimat3/ai` joins the app's dependencies at the release's exact version: the agent imports it. */
 const dependencyEdit = (): ShapeEdit => ({
   path: 'package.json',
   find: '    "@ultimat3/auth": ',
-  replace: `    "@ultimat3/ai": "^${loadVersion()}",\n    "@ultimat3/auth": `,
+  replace: `    "@ultimat3/ai": "${loadVersion()}",\n    "@ultimat3/auth": `,
 });
 
 const edits = (): readonly ShapeEdit[] => [

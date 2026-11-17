@@ -70,7 +70,8 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_VECTOR_DIM_MISMATCH: 'embedding dimensions differ from the store',
   X_VECTOR_SCOPE_WIDENED: 'a derived vector scope tried to leave its tenant',
   X_AI_EMBEDDER_INVALID: 'an Embedder returned fewer vectors than texts it was given',
-  X_VECTOR_UNSCOPED: 'a vector store was read with no tenant bound inside an org request',
+  X_VECTOR_UNSCOPED:
+    'a vector store was read or written with no tenant bound inside an org request',
   X_AI_CONTENT_UNSUPPORTED: 'an image or document block the role, model or wire format cannot take',
   X_AI_MODEL_UNRESOLVED: 'a model call named no model',
   X_AGENT_TOOL_LOOP: 'an agent repeated one tool call with one result and was stopped',

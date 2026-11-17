@@ -151,3 +151,26 @@ describe('unit · the scaffold dashboard asks within the bound', () => {
     expect(rows).toBeLessThanOrEqual(max);
   });
 });
+
+// The one template that spliced the RAW name into a string literal, as a placeholder MCP tool
+// description the gate then passed (D5). Like an action, a generated read declares no tool: a
+// placeholder description is worse than none, so neither the name nor the tool reaches the file.
+describe('unit · a generated query exposes no MCP tool with a placeholder description', () => {
+  test('an ordinary name: no mcp key, and the comment says how to write one', () => {
+    const query = textAt(queryFiles('invoice-search', target), '/queries/invoice-search.ts');
+    expect(query).not.toContain('edit this description');
+    expect(query).not.toMatch(/^\s*mcp:/m);
+    expect(query).toContain("mcp: { expose: true, description: '…' }");
+  });
+
+  test('a quote in the name never reaches the file as code', () => {
+    const files = queryFiles("posts' + process.exit(7) + '", target);
+    const query = textAt(files, '/queries/posts-process-exit-7.ts');
+    expect(query).not.toContain('process.exit(7)');
+  });
+
+  test('the live read x g resource writes declares no tool either', () => {
+    const query = textAt(queryFiles('post-feed', { ...target, live: true }), '/live/post-feed.ts');
+    expect(query).not.toMatch(/^\s*mcp:/m);
+  });
+});

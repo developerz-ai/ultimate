@@ -27,7 +27,8 @@
 // One is about the POOL: a database call per row runs through `mapBounded`, never all at once.
 // Two more are about the REPO: an `await` per turn of a loop, REPORT ONLY (`severity: 'warning'`)
 // until the apps are clean of it, and a `.all()` that says no bound — failing the gate in an app
-// scaffolded from 31.23 on, while an older app keeps the report-only copy it was given.
+// scaffolded from 31.23 on, while an older app keeps the report-only copy it was given. One is
+// about the ENVIRONMENT: a variable is read only once `app.config.ts` declares it.
 
 import { SHIPPED_GUARD_NAMES as NAMES, type ShippedGuardName } from '../guards-shipped-names';
 import { animatedLayoutPropertyGuardFiles } from './guard-animated-layout-property';
@@ -53,6 +54,7 @@ import { runtimePinGuardFiles } from './guard-runtime-pin';
 import { semanticInteractiveGuardFiles } from './guard-semantic-interactive';
 import { unboundedFanoutGuardFiles } from './guard-unbounded-fanout';
 import { undeclaredCustomPropertyGuardFiles } from './guard-undeclared-custom-property';
+import { undeclaredEnvGuardFiles } from './guard-undeclared-env';
 import { undefinedStyleClassGuardFiles } from './guard-undefined-style-class';
 import { untranslatedStringGuardFiles } from './guard-untranslated-string';
 import { unzonedDateGuardFiles } from './guard-unzoned-date';
@@ -88,6 +90,7 @@ const SHIPPED: Readonly<Record<ShippedGuardName, () => readonly GeneratedFile[]>
   'semantic-interactive': semanticInteractiveGuardFiles,
   'unbounded-fanout': unboundedFanoutGuardFiles,
   'undeclared-custom-property': undeclaredCustomPropertyGuardFiles,
+  'undeclared-env': undeclaredEnvGuardFiles,
   'undefined-style-class': undefinedStyleClassGuardFiles,
   'untranslated-string': untranslatedStringGuardFiles,
   'unzoned-date': unzonedDateGuardFiles,

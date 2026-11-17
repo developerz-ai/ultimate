@@ -23,7 +23,7 @@ const i18nPackage = (app: NameSet, version: string): string => `{
     "typecheck": "tsc --noEmit -p ../../tsconfig.json"
   },
   "dependencies": {
-    "@ultimat3/i18n": "^${version}"
+    "@ultimat3/i18n": "${version}"
   }
 }
 `;

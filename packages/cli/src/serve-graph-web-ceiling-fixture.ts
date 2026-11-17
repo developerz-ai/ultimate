@@ -286,5 +286,7 @@
  * `..`, which a `file:` install's store directory names do.
  * raised 1734 → 1735, measured 1735 (2026-11-16, plan 101b audit round 1, security): the one on
  * `SERVING_ROLE_CEILING`, `realtime/src/change-tenant.ts`.
+ * raised 1735 → 1739, measured 1739 (2026-11-16, plan 101b audit round 2): the four on
+ * `SERVING_ROLE_CEILING`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1735;
+export const WEB_ROLE_CEILING = 1739;

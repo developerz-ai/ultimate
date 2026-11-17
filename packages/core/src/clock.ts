@@ -67,10 +67,15 @@ export const liveClock: Clock = /* @__PURE__ */ Object.freeze({
   monotonic: (): number => (installedClocks.current() ?? systemClock).monotonic(),
 });
 
+/**
+ * Screened: `new Date('2026-13-01')` is an Invalid Date, not a throw, and a clock stuck at `NaN`
+ * hands every reader a comparison that is always false and `uuidV7` an id that is no UUID. Refused
+ * where the bad instant enters, at construction and at `set`. A pre-1970 instant is a real one.
+ */
 function toEpochMs(at: Date | number | string): number {
-  if (at instanceof Date) return at.getTime();
-  if (typeof at === 'number') return at;
-  return new Date(at).getTime();
+  const ms =
+    at instanceof Date ? at.getTime() : typeof at === 'number' ? at : new Date(at).getTime();
+  return finiteOption('frozenClock', 'instant', ms);
 }
 
 /**

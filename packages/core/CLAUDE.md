@@ -63,11 +63,13 @@ top-level `UltimateError` use in `error-codes.ts`.
 | `allowHosts` | `host-rules.ts` | a wildcard admits no inward literal, no `localhost`/`*.localhost`; exact rules do |
 | which surface a route lives on, how it renders, caches offline and hydrates | `route-vocabulary.ts` (`SURFACES`, `RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration. Re-export it, never restate it; `@ultimat3/render` re-exports the `Surface` type only, never `SURFACES` (`X_HELPER_COPY`) |
 | which of two route patterns wins a pathname | `route-rank.ts` (`routeRank`) | the request router's order as one integer: segment by segment, literal 3 > `:param` 2 > `*catch-all` 1, ENDED 4, packed base 5 over 22 segments |
+| which pathnames a literal segment owns | `route-literal.ts` (`literalSegmentPattern`) | the ONE compiler, render's `compilePattern` and pwa's worker rules: raw, or each char `encodeURIComponent` escapes as its escape, either hex case. A subset of the router's (raw or decodes-to), never more. `/a\|b` owns `/a%7Cb` |
 | an `http.path` template (`/orders/:id`) | `route-path-template.ts` (pure, also on `./page`) + `route-path-merge.ts` (`mergePathParams`, `X_HTTP_PATH_INPUT_CONFLICT`) | `action` and `query` both pin one and share a tier; never a copy in either |
 | `errors:` | `declared-errors.ts`, `-openapi.ts`, `-scan.ts` | ONE copy for `action` and `query`. The HTTP status is passed in (`ErrorStatusOf`): http is above core. The scan is test-time only |
 | a session's loss, an island's poll | `session-lost.ts`, `visible-interval.ts` | the ONE poll an island takes; both on `./page` † |
 | which rungs a cache ladder has | `cache-vocabulary.ts` (`CACHE_TIERS`) | `@ultimat3/cache`'s read order, imported (no `TIER_ORDER` alias). `isr` is a `RenderMode`, never a tier |
 | which build of the APP this is | `app-version.ts` (`APP_VERSION`) | one reader, `dev` by default |
+| which build this PROCESS serves | `build-id.ts` (`installBuildId`, `./adapter`; `installedBuildId`) | the boot's one resolver installs it; `ctxOf`, health and the exercise route read it; `'dev'` unbooted. Core never reads `BUILD_ID` |
 | the values | `env.ts` | `checkEnv().values` holds REAL secrets — printing goes through `maskedEnvValues()` |
 | `.env.example` | `env-example.ts` | a projection of the schema, never hand-maintained |
 | loading `.env` | **Bun**, not us | `envFileCandidates()` documents the measured order; there is no `.env.staging` |

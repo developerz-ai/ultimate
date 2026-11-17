@@ -27,7 +27,10 @@ describe('unit · x new --shape saas', () => {
       expect(paths).toContain(`${BILLING_DIR}/${module}.ts`);
     expect(paths.filter((path) => path.startsWith('packages/billing'))).toEqual([]);
     const manifest = textAt('package.json');
-    expect(manifest).toContain('"@ultimat3/flags": "^');
+    // D9: pinned EXACT, as every other @ultimat3/* the scaffold writes — never a caret range.
+    const pinned = JSON.parse(manifest).dependencies['@ultimat3/flags'];
+    expect(pinned).toBe(JSON.parse(manifest).dependencies['@ultimat3/core']);
+    expect(pinned).toMatch(/^\d+\.\d+\.\d+/);
     expect(
       Object.keys(JSON.parse(manifest).dependencies).filter(
         (name) => !name.startsWith('@ultimat3/') && name !== 'solid-js',

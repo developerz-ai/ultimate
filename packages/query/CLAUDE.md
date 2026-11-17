@@ -26,13 +26,14 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `facade.ts` | the fluent surface — binds each projection to the query, re-implements none |
 | `http.ts` | route projection (`GET /_x/query/<kebab>`, `enforcedBy: 'handler'`) |
 | `client.ts` | typed read client (browser-safe); dispatches through `@ultimat3/core`'s `clientTransport`, never `fetch` |
-| `client-scale-pins.ts` | compile-time pin: `queryClient<Api['queries']>` over 100 reads in 50 modules — list, `.page` and `single: true` |
+| `client-scale-pins.ts` | compile-time pin: `queryClient` over 100 reads in 50 modules (list, `.page`, `single`) |
 | `record-answer.ts` | a read's HTTP answer: bare rows, or the record envelope when `rows:` is an entity's branded row schema |
 | — | flight control is **`@ultimat3/core`**'s `client-flight.ts` + `client-wire.ts`, re-exported. No local copy |
 | `registry.ts` | export-name registration, `describeQueries()`, the `registerPrimitiveRegistrar('query', …)` announcement |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic + `spendQueryLimit` (a live subscribe's spend) |
 | `rate-limit-gate.ts` | **the one place** a read's declared `rateLimit:` is spent |
 | `subscribes.ts` | the relations a live read declares, and the two assertions that keep them true |
+| `live-bounds.ts` | `X_QUERY_LIVE_UNBOUNDED`: a live source with no `.limit()`, refused after `sql()` in `read.ts` |
 | `sealed-shape.ts` | a live read keyed on a `.sealed()` column is refused at subscribe (`X_MATCHER_UNSUPPORTED`) |
 | `matcher.ts` | change event → minimal patch, `refill` when the window cannot place the row, or `X_MATCHER_UNSUPPORTED` |
 | `pagination.ts` | `paginate()` over core's cursor codec — no offset, ever |
@@ -178,9 +179,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **`@ultimat3/query/client` is the read client without the barrel** — `client.ts`
   imports core from `@ultimat3/core/page`, the page keys live in the leaf `page-keys.ts`, and
   `client.ts` never imports `page-controls.ts` or `stable.ts`. `client-bundle.test.ts` fails on any
-  titles table in the graph or past 14.5 kB; `client-subpath.test.ts` pins the specifier. Byte figures
-  (browser, minified): barrel `queryClient` 25,237 B (`As of 2026-10-02`); `./client` 14,494 B
-  (`As of 2026-11-05`: +1,013 B a pinned read's URL fill, the rest wave 5a's core `./page` additions).
+  titles table in the graph or past 14.5 kB; `client-subpath.test.ts` pins the specifier. `./client`:
+  14,494 B minified (`As of 2026-11-05`; history: `docs/history/query.md`).
 - **The record envelope is derived from `rows:`** — `answersRecords(rows)` (`hasEntityRows`,
   `@ultimat3/entity`), decided once at projection for `http.ts` and `openapi.ts`, sent on every
   answer. No `rows:` is byte-identical on the wire.

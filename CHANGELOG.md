@@ -2,7 +2,7 @@
 
 All notable changes to Ultimate. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Framework packages version in **lockstep** — a release bumps every package to the same version, in one commit, under one tag. Declare `@ultimat3/*` at `^<version>`, as `x new` writes, and let `bun.lock` pin the build; keep every one on the same version, since a mixed-version install is a combination nobody tested. See [PUBLISHING.md](PUBLISHING.md).
+Framework packages version in **lockstep** — a release bumps every package to the same version, in one commit, under one tag. Declare `@ultimat3/*` at the exact `<version>`, as `x new` and `x upgrade` write and `x doctor` holds an app to (`X_FRAMEWORK_PIN_RANGE`); keep every one on the same version, since a mixed-version install is a combination nobody tested. See [PUBLISHING.md](PUBLISHING.md).
 
 Semver applies from 1.0.0. A breaking change to a documented API needs a major — [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) says what "documented API" covers. From 23.0.0 on, each `BREAKING —` line names its migration as `(#N)` straight after the dash — row N of that major's `Entry by entry` table in Upgrading — and `bun run changelog-check` refuses a line without one (`X_DOC_MIGRATION_UNPAIRED`).
 
@@ -10,7 +10,52 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Highlights
+
+- **Audit round 2 (plan 101b, slice 20):** six read-only auditors (bugs in the unread tiers, concurrency, security on injection and secrets, a DX pass, an architecture review). Every confirmed finding is fixed, each with a test that failed first. Counts: P0 0 · P1 6 · P2 22 fixed (the DX pass by real use: 2 P1, 10 P2), plus 2 P2 parked for the next major or deferred to round 3.
+
+### Security
+
+- `@ultimat3/ai`: vector-store writes (`upsert`, `prune`, `delete`, and so `indexDocument`) on a store with no tenant bound, inside a request acting for an org, are refused with `X_VECTOR_UNSCOPED`, as reads already were. Before, a forgotten `.scoped({ tenant })` deleted or pruned every org's rows sharing the id and wrote into the shared no-tenant bucket.
+- `x g <kind> <name>` refuses a name with characters outside letters, digits, space, `_` and `-`, and `x g query` escapes the name in its generated description. Before, a quote in the name injected code into a module the app imports at boot.
+
+### Fixed
+
+- `/healthz`, `/readyz` and `ctx.buildId` (a worker job's audit `build_id` included) name the same build as `x-ultimate-build`. An unstamped image's `BUILD_ID=""` made them report `""`. The boot installs the id it resolves through `installBuildId` on `@ultimat3/core/adapter`; core no longer reads `BUILD_ID`. `x repro` reads an empty `BUILD_ID` as unstamped too.
+- pwa, render: one literal-segment matcher, `@ultimat3/core`'s `literalSegmentPattern`, serves the service worker's rules and `compilePattern`. The worker's rule for `/a|b` now matches `/a%7Cb`, the spelling `canonicalPath` writes, and `/50%` matches `/50%25`.
+- realtime: the replicator reads a change's tenant from the entity's declared tenant column. A key-only DELETE on a `tenant: 'workspaceId'` table whose key holds an `orgId` column was published as that org's change, so the row's real tenant never saw the delete.
+- realtime: a live window's org is its tenant alone; an untenanted window no longer filters changes by an `orgId` in its input.
+- A SIGTERM during a serving role's schema wait ends the wait even while a schema read is in flight. A read stuck on an unreachable database kept the pod up past its grace period, so it was SIGKILLed (137) instead of exiting with the drain code.
+- `x dev`: a render begun with the old module before a save no longer lands after the rebuild's ISR clear as a fresh page. The clear voids every fill in flight first (`markAllInvalidated`, now exported by `@ultimat3/cache`). A failed rebuild's stale modules are kept as this process's own, never reported against the next save.
+- core: `uuidV7()` refuses a clock reading an Invalid Date, a pre-1970 time or one past 48 bits (`X_INVARIANT`), instead of minting a non-UUID and breaking the next id's order. `frozenClock()`/`.set()` refuse an unparseable instant.
+- http: the memory rate-limit store moves `lastMs` forward only, as Redis and Postgres do. A clock stepping back no longer credits a refill twice or forgets a spent bucket early.
+- auth: `issueApiKey({ expiresAt })` refuses an Invalid Date (`X_CONFIG_INVALID`). Before, the key never expired in memory, and Postgres refused it with a raw timestamp error.
+- testing: `toEmitSteps` runs a real job. Each step body gets an `AbortSignal`, `waitForEvent` is a recorded step on its timeout branch (`X_JOB_TIMEOUT` when `required`), and the body gets the worker's arguments. Before, it crashed with an uncoded TypeError.
+- admin: a list cursor replayed under another `?sort=` field opens page one instead of an empty page.
+- entity: an index `where:` that is not a callback is `X_INVARIANT_VIOLATED` at declaration, with the callback form as the fix, instead of an uncoded TypeError.
+- entity: a cursor's scope renders filter values with core's injective `canonicalJson`, so `eq 1` and `eq '1'` no longer share cursors. A cursor minted before this release under a number, boolean, date, bigint or object filter is refused with `X_CURSOR_INVALID` on its next page; string, string-list and null-test filters keep their scope.
+- A `live: true` query with no `.limit()` is refused with `X_QUERY_LIVE_UNBOUNDED` wherever its source is built, so `x verify`'s `exercise` step rejects it, as the docs promised. An unbounded live query that used to serve rows now answers 500.
+- `x new` over an existing directory says what happened, and its fix names a free directory, never `--force`; `--force` over a directory holding an app is refused. The `errors` step also refuses a `--force` built inside an interpolated `fix:`.
+- The scaffolded CI's services part appends only `TEST_*` lines to `$GITHUB_ENV`: GitHub refused the env file's comment header, so every scaffolded app's services part was red. Codemod `ci-services-env` carries existing apps.
+- `x g action` / `x g mutator` into a slice `x g policy` or `x g resource` wrote asserts its handler as a writer in the org: `grantOf` reads the generator's own org write rule. Before, the generated handler was untested and an app's own 95% coverage floor went red on it.
+- `X_CONTRACT_EXERCISE_UNREACHED`: a policy predicate that returned false points at that predicate, and an existing `apps/web/exercise.ts` entry is edited in place, never pasted twice (TS1117). Neither fix carries per-run ids.
+- The `$view` unknown-key fix is the call's own key list minus the bad key, never `$view(['id'])`.
+- `X_IDEMPOTENCY_REQUIRED` names the declaring `file:line` and the missing `idempotencyKey` edit, never `anonymous-job-<n>` and an unrelated example.
+- `X_ACTION_POLICY_MISSING` and `X_QUERY_POLICY_MISSING` offer `can('<resource>:<verb>')` or `allow('public')`; `allow()` takes a label, never a permission.
+- `x errors explain` answers for the shipped guards' codes (`X_RAW_COLOUR`, …) and an app's own `guards/*.ts` codes.
+- `raw-colour` reports a colour typed into a component's inline `style`; `untranslated-string` reports typed user-facing attributes (`aria-label`, `title`, `placeholder`, `alt`, …).
+
+### Changed
+
+- `bun run scripts/next-breaks.ts` refuses a source comment that promises a removal at the next major unless a `PARKED_BREAKS` row removes that file and symbol (`X_NEXT_BREAK_UNPARKED`). The list gains 8 rows, and the issue marks removals still owed a `@deprecated` tag.
+- New shipped guard `undeclared-env` (`X_UNDECLARED_ENV`): a raw `process.env.X` / `Bun.env.X` that `app.config.ts` does not declare. Opt out with `"undeclared-env": "off"` in `guards/shipped.json`; codemod `docs-env-guard` adds its `CLAUDE.md` row.
+- `x new` pins `@ultimat3/*` exactly, as `x upgrade` writes and `x doctor` asks (`X_FRAMEWORK_PIN_RANGE`): a caret let `bun update` move the framework without the hop's codemods.
+- `x g action` / `x g mutator` with no `--feature` and no slice of that name is `X_FEATURE_REQUIRED`, as `x g query` already was.
+- `x g query` / `x g resource` no longer expose an MCP tool with a placeholder description.
+
+### Deprecated
+
+- realtime: `orgIdOf` (`@ultimat3/realtime/server`) is unused by the framework and is removed at the next major.
 
 ## Releases
 

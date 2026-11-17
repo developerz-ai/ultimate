@@ -3,7 +3,7 @@
 // `.x/exercise.json` carry.
 
 import { describe, expect, test } from 'bun:test';
-import type { ExerciseRecord } from '@ultimat3/testing';
+import type { ExerciseOverrides, ExerciseRecord } from '@ultimat3/testing';
 import {
   crashFindingLines,
   exerciseCounts,
@@ -37,6 +37,9 @@ const RECORDS: readonly ExerciseRecord[] = [
   record({ name: 'sendInvoice', kind: 'job', outcome: 'off', reason: 'calls the bank' }),
 ];
 
+/** An `apps/web/exercise.ts` that exists and names none of these primitives. */
+const FILE: ExerciseOverrides = { kind: 'exercise-overrides', entries: new Map() };
+
 describe('unit · exercise findings', () => {
   test('only unreached is a finding, under the code 39 registered', () => {
     const findings = exerciseFindings(RECORDS);
@@ -58,7 +61,7 @@ describe('unit · exercise findings', () => {
   // Thirty unreached primitives used to be thirty `defineExercise({ … })` calls to unwrap by hand:
   // into a file that exists, the fix is the ENTRY, pasted as-is inside the one export.
   test('into an existing exercise file the fix is the bare entry, pasteable as-is', () => {
-    const fix = exerciseFindings(RECORDS, 'present')[0]?.fix ?? '';
+    const fix = exerciseFindings(RECORDS, FILE)[0]?.fix ?? '';
     expect(fix).toStartWith("publishPost: { input: { postId: '<a posts id>' } },   # ");
     expect(fix).not.toContain('defineExercise({ publishPost');
     expect(fix).toContain('inside export const exercise = defineExercise({ … })');
@@ -66,7 +69,7 @@ describe('unit · exercise findings', () => {
 
   // An app with no `apps/web/exercise.ts` (every app upgrading into the step) is handed the file.
   test('with no exercise file the fix is the whole file to create, entry inside', () => {
-    const fix = exerciseFindings(RECORDS, 'absent')[0]?.fix ?? '';
+    const fix = exerciseFindings(RECORDS, undefined)[0]?.fix ?? '';
     expect(fix).toStartWith(
       "import { defineExercise } from '@ultimat3/testing'; export const exercise = defineExercise({ publishPost: { input: { postId: '<a posts id>' } } });",
     );
@@ -77,7 +80,7 @@ describe('unit · exercise findings', () => {
   test("an override's trailing comma is never doubled", () => {
     const [finding] = exerciseFindings(
       [record({ name: 'p', outcome: 'unreached', override: 'p: { off: "x" }, ' })],
-      'present',
+      FILE,
     );
     expect(finding?.fix).toStartWith('p: { off: "x" },   # ');
   });

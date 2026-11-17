@@ -89,7 +89,8 @@ async function answer(
     return { ok: true, command: 'repro', summary: summaryOf(subject), data: base };
   }
   const file = reproFile(subject);
-  const runningBuild = ctx.env['BUILD_ID'] ?? null;
+  // An empty `BUILD_ID` is an unstamped image, never a build named `""`.
+  const runningBuild = ctx.env['BUILD_ID'] || null;
   await writeRepro(root, file, await reproSource(root, subject, id, runningBuild), ctx.runner);
   const lines = [msg('cli.repro.written', { file })];
   if (!verify) {

@@ -379,6 +379,14 @@ describe('a declaration is not overruled by the environment', () => {
     });
   });
 
+  // The shipped Dockerfiles write `ENV BUILD_ID=${BUILD_ID}`, so an unstamped image carries `""`:
+  // the boot reads that as unstamped, and so must this fallback — never a build named `""`.
+  test('an empty BUILD_ID is unstamped: no build id, as the boot reads it', () => {
+    withEnv({ BUILD_ID: '' }, () => {
+      expect(defineHttpConfig({ rateLimit: { scope: 'process' as const } }).buildId).toBeNull();
+    });
+  });
+
   test('HOSTNAME is never the bind address: undeclared, the server binds every interface', () => {
     withEnv({ HOSTNAME: '3f1c9a7be2d4' }, () => {
       const base = { rateLimit: { scope: 'process' as const } };

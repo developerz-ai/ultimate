@@ -117,15 +117,69 @@ describe('unit · x g query and x g backfill never create a table', () => {
     expect(refused.fix).toStartWith('x g query posts --feature post --live');
   });
 
-  test('a job and an action still write no entity with no slice: unchanged', async () => {
+  test('a job still writes no entity with no slice: unchanged', async () => {
     const job = await written(['g', 'job', 'nightly']);
     expect(job.some((path) => path.endsWith('/entity.ts'))).toBe(false);
-    const action = await written(['g', 'action', 'close-thing']);
-    expect(action.some((path) => path.endsWith('/entity.ts'))).toBe(false);
   });
 
   test('a dry run refuses the same way', async () => {
     const refused = await refusal(['g', 'query', 'order', '--dry-run']);
     expect(refused.code).toBe('X_FEATURE_REQUIRED');
+  });
+});
+
+/** The slice `x g policy invoice` leaves: a permission subject, and no table. */
+const withInvoicePolicy = async (): Promise<void> => {
+  await written(['g', 'policy', 'invoice']);
+};
+
+// D13: `x g action refund-invoice` wrote `app/refund-invoice/policy.ts` and granted
+// `refund-invoice:read/write` in `roles.ts`, exit 0 — a permission subject nobody named. Only
+// `x g policy` and `x g resource` create one; an action or mutator writes into a slice.
+describe('unit · x g action and x g mutator never create a permission subject', () => {
+  for (const kind of ['action', 'mutator']) {
+    test(`x g ${kind} with no slice is refused, and writes nothing`, async () => {
+      const refused = await refusal(['g', kind, 'refund-invoice']);
+      expect(refused.code).toBe('X_FEATURE_REQUIRED');
+      expect(refused.cause).toContain('apps/web/app/refund-invoice');
+      expect(refused.fix).toStartWith('x g policy refund-invoice');
+      expect(await readdir(root)).toEqual(['app.config.ts']);
+    });
+
+    test(`x g ${kind} near a slice: the fix is the command the author meant`, async () => {
+      await withInvoicePolicy();
+      const refused = await refusal(['g', kind, 'invoices']);
+      expect(refused.code).toBe('X_FEATURE_REQUIRED');
+      expect(refused.fix).toStartWith(`x g ${kind} invoices --feature invoice`);
+    });
+
+    test(`x g ${kind} far from every slice: lists them, and leads with the new subject`, async () => {
+      await withInvoicePolicy();
+      const refused = await refusal(['g', kind, 'refund-payment']);
+      expect(refused.fix).toStartWith('x g policy refund-payment');
+      expect(refused.fix).toContain('invoice');
+      expect(await Bun.file(join(root, 'apps/web/app/refund-payment')).exists()).toBe(false);
+    });
+
+    test(`x g ${kind} --feature invoice writes into the slice, and no second subject`, async () => {
+      await withInvoicePolicy();
+      const files = await written(['g', kind, 'refund-invoice', '--feature', 'invoice']);
+      expect(files).toContain(`apps/web/app/invoice/actions/refund-invoice.ts`);
+      expect(files.some((path) => path.includes('/refund-invoice/'))).toBe(false);
+    });
+
+    test(`x g ${kind} invoice, a slice of that name: today's path`, async () => {
+      await withInvoicePolicy();
+      const files = await written(['g', kind, 'invoice']);
+      expect(files).toContain('apps/web/app/invoice/actions/invoice.ts');
+    });
+  }
+
+  test('the printed fix, run, writes the subject the action then lands in', async () => {
+    const refused = await refusal(['g', 'action', 'refund-invoice']);
+    const argv = (refused.fix ?? '').split('#')[0]?.trim().split(/\s+/).slice(1) ?? [];
+    await written(argv);
+    const files = await written(['g', 'action', 'refund-invoice']);
+    expect(files).toContain('apps/web/app/refund-invoice/actions/refund-invoice.ts');
   });
 });

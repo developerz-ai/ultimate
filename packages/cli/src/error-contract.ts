@@ -152,9 +152,12 @@ export async function checkErrorFixReport(root: string): Promise<ErrorFixReport>
   // At its point of use, like the catalog: `app-load.ts` imports this module for
   // `collectDeclaredCodes`, and a gate-only rule must not ride into every serving role's graph
   // (`serve-graph.test.ts`'s `SERVING_ROLE_CEILING`).
-  const { FIX_SEQUENCE_BASELINE, fixSequenceProblem, generatorForceProblem } = await import(
-    './fix-sequence'
-  );
+  const {
+    FIX_SEQUENCE_BASELINE,
+    fixSequenceProblem,
+    generatorForceProblem,
+    interpolatedForceProblem,
+  } = await import('./fix-sequence');
   const imports = createHelperResolver(root);
   let checked = 0;
   let unreadable = 0;
@@ -172,8 +175,12 @@ export async function checkErrorFixReport(root: string): Promise<ErrorFixReport>
       // The interpolation-blanked form for both rules: `x ${name}` names no command this can
       // resolve, and reading `<value>` as one would be a finding nobody can act on.
       const fix = staticFix(site.fix);
+      // The --force rule twice: on the blanked text, and inside the interpolations it blanks.
       const problem =
-        fixProblem(site.fix) ?? generatorForceProblem(fix) ?? citedCommandProblem(fix, catalog);
+        fixProblem(site.fix) ??
+        generatorForceProblem(fix) ??
+        interpolatedForceProblem(site.fix) ??
+        citedCommandProblem(fix, catalog);
       if (problem !== undefined) {
         findings.push(fixFinding(site, problem));
         continue;

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "602f064c6dadeb0035bf3d205c891191accce72d78cfc36148dcafe8bd15413f",
+  "buildId": "37d5b7e0f5a5d196363527bad9bc3a2f081195170e4187af71947ccdd8c877d5",
   "tiers": {
     "0": [
       "core",
@@ -3940,6 +3940,11 @@
       "at": "scripts/next-breaks.ts"
     },
     {
+      "code": "X_NEXT_BREAK_UNPARKED",
+      "owner": "scripts",
+      "at": "scripts/lib/next-breaks-tags.ts"
+    },
+    {
       "code": "X_NO_CONTEXT",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -4576,6 +4581,11 @@
     },
     {
       "code": "X_QUERY_INPUT_UNENCODABLE",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_LIVE_UNBOUNDED",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
     },

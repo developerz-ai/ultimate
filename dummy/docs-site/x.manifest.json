@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "8597ee03047a33fd",
+  "buildId": "ebbfffd75ee90dfe",
   "app": {
     "name": "docs-site",
     "version": "0.1.0"
@@ -1069,6 +1069,10 @@
     },
     {
       "code": "X_UNDECLARED_CUSTOM_PROPERTY",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_UNDECLARED_ENV",
       "package": "@ultimat3/cli"
     },
     {

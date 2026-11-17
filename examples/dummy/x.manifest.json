@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "afa9f461297c41e4",
+  "buildId": "f69e9831fcd8cab4",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -495,7 +495,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "210.1kb"
+        "js": "210.6kb"
       }
     },
     {
@@ -578,7 +578,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "242.8kb"
+        "js": "243.1kb"
       }
     },
     {
@@ -9524,6 +9524,10 @@
     },
     {
       "code": "X_UNDECLARED_CUSTOM_PROPERTY",
+      "package": "@ultimat3/cli"
+    },
+    {
+      "code": "X_UNDECLARED_ENV",
       "package": "@ultimat3/cli"
     },
     {

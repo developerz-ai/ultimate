@@ -1,8 +1,11 @@
-// `x g query`, `backfill`, `export-rows` and `import-rows` read a table, so a slice with no
-// `entity.ts` is refused rather than handed one: `x g query order` wrote 14 files and `next: x db
-// gen "create orders"`. Only `x g entity` and `x g resource` create a feature's data.
+// `X_FEATURE_REQUIRED`: a generator refused when its slice lacks what its body needs — a table for
+// `query`/`backfill`/`export-rows`/`import-rows` (`x g query order` once wrote 14 files over none),
+// a permission subject for `action`/`mutator` (D13). Only `x g entity`/`resource` create a table,
+// only `x g policy`/`resource` a subject; nothing else invents either.
 
 import { existsSync } from 'node:fs'; // why: a synchronous file probe, as the slice's own guard.
+// why: Bun ships no path helpers; the slice's own directory name is matched against its siblings.
+import { basename } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { commentSafe } from './comment-safe';
 import { closestSlice, slicesBeside } from './generate-feature';
@@ -16,6 +19,15 @@ export const READS_A_TABLE: ReadonlySet<Generator> = new Set<Generator>([
   'backfill',
   'export-rows',
   'import-rows',
+]);
+
+/**
+ * The generators whose body enforces `can('<slice>:<verb>')`: in a slice that does not exist the
+ * run wrote a `policy.ts` and granted the new subject in `roles.ts` — a permission nobody named.
+ */
+export const ENFORCES_A_PERMISSION: ReadonlySet<Generator> = new Set<Generator>([
+  'action',
+  'mutator',
 ]);
 
 /** Declared beside its one thrower: `errors.ts` sits at its 500-line ceiling. */
@@ -43,6 +55,7 @@ export interface SliceToRead {
  * Named flags stay out of the leading line's `--feature`, which this fix supplies itself.
  */
 export function assertSliceToRead(root: string, target: SliceToRead): void {
+  assertSliceToWrite(root, target);
   const { kind, name, feature, slice, flags } = target;
   if (!READS_A_TABLE.has(kind)) return;
   if (existsSync(containedPath(root, `${slice}/entity.ts`))) return;
@@ -66,5 +79,29 @@ export function assertSliceToRead(root: string, target: SliceToRead): void {
         : tables.length === 0
           ? `x g resource ${named}   # a new table: x g ${kind} reads one, and none exists yet`
           : `x g resource ${named}   # a new table, or x g ${kind} ${named} --feature <slice> to read one of: ${listed}`,
+  });
+}
+
+/**
+ * Refuses an action or mutator whose name names no slice and no `--feature` names one: the run
+ * would invent the permission subject it enforces. A `--feature` was already held to an existing
+ * directory by `assertFeatureExists`; a slice of the name's own spelling is today's path.
+ */
+function assertSliceToWrite(root: string, target: SliceToRead): void {
+  const { kind, name, feature, slice, flags } = target;
+  if (!ENFORCES_A_PERMISSION.has(kind) || feature !== undefined) return;
+  const slices = slicesBeside(root, slice);
+  if (slices.includes(basename(slice))) return;
+  const near = closestSlice(name, slices);
+  const named = quoteArg(name);
+  const listed = commentSafe(slices.join(', '));
+  throw new FeatureRequiredError({
+    cause: `x g ${kind} ${named} names no --feature and ${slice} is no slice (${slices.length === 0 ? 'no slice exists yet' : `slices: ${listed}`}), and an ${kind} never creates the permission subject it enforces — only x g policy and x g resource do`,
+    fix:
+      near !== undefined
+        ? `${[`x g ${kind} ${named} --feature ${quoteArg(near)}`, ...flags].join(' ')}   # or x g policy ${named} for a new permission subject`
+        : slices.length === 0
+          ? `x g policy ${named}   # a new permission subject: x g ${kind} writes into a slice, and none exists yet`
+          : `x g policy ${named}   # a new permission subject, or x g ${kind} ${named} --feature <slice> to write into one of: ${listed}`,
   });
 }

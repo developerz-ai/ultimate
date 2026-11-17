@@ -1,8 +1,9 @@
 // One `indexes: [...]` entry of `entity(name, { indexes })` turned into the `IndexDef` it declares,
 // refusing what Postgres would refuse later. Split out of `entity.ts` at the 500-line ceiling.
 
+import { describeValue } from '@ultimat3/core';
 import { declaredKeyPartsOf } from './declared-index-keys';
-import { invariantViolated } from './errors';
+import { EntityError, invariantViolated } from './errors';
 import type { InvariantColumns, Resolve } from './expr';
 import type { IndexInit } from './index-init';
 import { indexName } from './index-name';
@@ -15,6 +16,24 @@ export interface DeclaredIndexContext<C extends ColumnMap> {
   readonly columns: InvariantColumns<C>;
 }
 
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/**
+ * `where:` given as anything but a callback — usually the SQL string it reads like. Calling it
+ * raised an uncoded TypeError at declaration, which every `x` command loading the app reported as
+ * `X_CLI_UNEXPECTED`. Its own fix, not `invariantViolated`'s `x entities show`: that command loads
+ * the app, and this throw is what stops the load.
+ */
+const whereNotCallback = (name: string, on: readonly unknown[], where: unknown): EntityError => {
+  const first = on[0];
+  const column = typeof first === 'string' && IDENTIFIER.test(first) ? first : 'status';
+  return new EntityError({
+    code: 'X_INVARIANT_VIOLATED',
+    cause: `${name}.index: index.where must be a callback over the columns, got ${describeValue(where)}`,
+    fix: `where: (c) => c.${column}.eq('x')   # edit the indexes: entry on ${name}, in the file this finding names`,
+  });
+};
+
 export const declaredIndexOf = <C extends ColumnMap>(
   index: IndexInit<C>,
   context: DeclaredIndexContext<C>,
@@ -26,6 +45,9 @@ export const declaredIndexOf = <C extends ColumnMap>(
   // syntax error one migration later. Refused where it was written instead.
   if (columns.length === 0) {
     throw invariantViolated(name, 'index', 'an index must name at least one column');
+  }
+  if (index.where !== undefined && typeof index.where !== 'function') {
+    throw whereNotCallback(name, index.on, index.where);
   }
   const where = index.where?.(columnsExpr).toSql(resolve) ?? null;
   if (index.where !== undefined && where === null) {

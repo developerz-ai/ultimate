@@ -111,7 +111,7 @@ export const viewFor = <Row, K extends keyof Row & string>(
   const picked: readonly (readonly [K, AnyColumn])[] = keys.map((key) => {
     const column = columns[key];
     if (column === undefined) {
-      throw viewKeyUnknown(entityName, key, Object.keys(columns));
+      throw viewKeyUnknown(entityName, key, Object.keys(columns), keys);
     }
     return [key, column] as const;
   });

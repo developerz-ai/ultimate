@@ -268,7 +268,7 @@ One switch (`GenerateRequest.promptCache`), `promptCacheRule`: provider rows (`P
 
 In brief ([full text](../../docs/history/ai.md#evals-retrieval-fix-lines)): no fix line names
 an `ai` command (none exists); an eval gates on the DROP from its baseline, mean AND per case, and every prompt has one;
-retrieval is hybrid only; an unbound store read under an org actor is `X_VECTOR_UNSCOPED`;
+retrieval is hybrid only; an unbound store read OR written under an org actor is `X_VECTOR_UNSCOPED`;
 `postgresVectorStore()` filters tenant and policy in SQL on every statement (hnsw reads widen the
 scan, `pg-vector-recall.ts`); `scoped()` TIGHTENS.
 

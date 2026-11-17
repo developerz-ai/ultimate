@@ -6,10 +6,11 @@
 // path API, and `isAbsolute`/`join`/`relative`/`resolve` place the new app.
 import { existsSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
+import { renderThrowable } from '@ultimat3/core';
 import { AppNameInvalidError, appNameIssue } from './app-name';
 import { dedupe } from './cmd-generate';
 import { newSpec } from './cmd-new-spec';
+import { targetConflict } from './cmd-new-target';
 import type { CliCommand, CommandContext } from './command';
 import { invocationOf } from './command';
 import { AppNameEmptyError, AppNameIsPathError, MissingPositionalError } from './errors';
@@ -306,24 +307,16 @@ export const newCommand: CliCommand = {
         ),
       };
     }
-    if (existsSync(target) && !flagBool(ctx.args, 'force')) {
-      return {
-        ok: false,
-        command: 'new',
-        summary: msg('cli.usage'),
-        findings: [
-          {
-            code: 'X_GENERATE_CONFLICT',
-            cause: `${target} already exists`,
-            // The invocation the caller ran, with every flag it set: dropping `--dir` wrote a
-            // second app into the cwd, and the literal `x` is not installed under create-ultimate.
-            fix: `${[invocationOf(ctx, 'new'), quoteArg(app.kebab), ...callerFlags(ctx), '--force'].join(' ')}   # or choose another name`,
-            docs: ERROR_DOCS_URL,
-            at: target,
-          },
-        ],
-      };
-    }
+    // The invocation the caller ran, with every flag it set: dropping `--dir` wrote a second app
+    // into the cwd, and the literal `x` is not installed under create-ultimate.
+    const conflict = targetConflict({
+      target,
+      slug: app.kebab,
+      force: flagBool(ctx.args, 'force'),
+      invocation: invocationOf(ctx, 'new'),
+      flags: callerFlags(ctx),
+    });
+    if (conflict !== undefined) return conflict;
     // Read BEFORE writing: `--force` into a directory that already held files must never
     // `git add -A && git commit` them — they are the user's, and `x new` did not write them.
     const existed = existsSync(target);

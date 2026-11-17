@@ -74,7 +74,7 @@ Measured on a fresh scaffold, `As of 2026-08-23`.
 ## 1. Write your first action
 
 ```
-x g action publish-post
+x g action publish-post --feature post
 ```
 
 ```ts

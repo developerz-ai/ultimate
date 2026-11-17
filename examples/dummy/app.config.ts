@@ -4,12 +4,22 @@
  *
  * A named export, never a default: the CLI and the runtime both import `config` by name.
  *
- * The env keys below are the ones the FRAMEWORK reads. `defineConfig` has no generic `env` block
- * yet, so a key only the app reads — `APP_URL`, `BUILD_ID` — is declared at its point of use
- * (`apps/web/shared/client.ts`) rather than being smuggled in here as a field nothing validates.
+ * The env keys the FRAMEWORK reads need no declaration here. A key only Postly reads is declared
+ * below, in the `defineEnv` call — a read of one it does not name is `X_UNDECLARED_ENV` on the
+ * `boundaries` step. Inline, not an `envSchema` export: `.env.example` stays hand-written, because
+ * its loopback `APP_URL` is what a fresh clone's typed client needs and a schema default would
+ * also hold in production.
  */
 
-import { defineConfig, defineMeasurementActor } from '@ultimat3/core';
+import { defineConfig, defineEnv, defineMeasurementActor } from '@ultimat3/core';
+
+/** Validated once, at module scope: a malformed value fails the boot naming every offender. */
+export const env = defineEnv({
+  // The support inbox's Resend webhook signing secret (`whsec_…`).
+  RESEND_INBOUND_SECRET: { type: 'string', required: false, secret: true },
+  // Billing webhook HMAC keys, comma-separated so a rotation keeps the old one live.
+  BILLING_WEBHOOK_SECRET: { type: 'string', required: false, secret: true },
+});
 
 export const config = defineConfig({
   name: 'postly',

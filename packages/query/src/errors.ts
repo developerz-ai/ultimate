@@ -49,6 +49,7 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
     'a scoped policy guards a read whose source cannot take its predicate',
   X_LIVE_ORDER_COLLATION:
     'a live query is ordered by a text column the matcher cannot order as Postgres does',
+  X_QUERY_LIVE_UNBOUNDED: 'a live query declares no limit, so its window is the whole table',
 };
 
 /**
@@ -181,14 +182,14 @@ export class QueryDuplicateError extends UltimateError {
  * the `can('${name}')` this used to emit did not compile, and `assertPermission` would refuse it
  * the moment the app declared its own set. The reader needs the query's name to find the file and
  * the permission's SHAPE to fill the argument — the same split `@ultimat3/policy`'s own
- * `policyMissing()` already makes.
+ * `policyMissing()` already makes. The public choice is `allow('public')`: `allow()` takes a label.
  */
 export class QueryPolicyMissingError extends UltimateError {
   constructor(name: string) {
     super({
       code: 'X_QUERY_POLICY_MISSING',
       cause: `query "${name}" was registered without a policy`,
-      fix: `policy: can('<resource>:<verb>')   // on the query() that exports "${name}" — a permission your definePermissions() call declares, never the query's own name — or allow('<resource>:<verb>') to state that the read is public`,
+      fix: `policy: can('<resource>:<verb>')   // on the query() that exports "${name}" — a permission your definePermissions() call declares, never the query's own name — or policy: allow('public') to state that the read is public (allow() takes a label, never a permission)`,
     });
   }
 }

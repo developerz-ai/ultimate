@@ -74,7 +74,7 @@ A rule marked `†` has its full text in [`docs/history/entity-rules.md`](../../
   `groupColumnOf` before the statement and `countsFrom` after the rows. The bound is a REFUSAL at
   `MAX_GROUPS + 1`, never a truncation; it names a groupable column of THIS entity, never
   `x entity explain`. Full rule: `docs/history/entity.md`.
-- **The cursor codec is core's**; `assertSeekable` runs in `planFor`; a bad cursor is
+- **The cursor codec is core's, and so is the scope's value form** — `planScope` renders each predicate value with `canonicalJson` (injective: `1` ≠ `'1'`), never a local serializer (`cursor-scope.test.ts`); `assertSeekable` runs in `planFor`; a bad cursor is
   `X_CURSOR_INVALID`, never "from the top". †
 - **A NULLABLE sort key orders** `asc nulls last` / `desc nulls first`; the cursor tags NULL. †
 - **A `timestamp` cursor carries MICROSECONDS** (`seekPrecision`, `instant.ts`). Full rule: `docs/history/entity.md`.

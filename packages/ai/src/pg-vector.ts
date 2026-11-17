@@ -25,7 +25,13 @@ import type {
   VectorRecord,
   VectorStore,
 } from './vector';
-import { assertTenantRead, narrowScope, tenantOf, UNBOUND, type VectorScope } from './vector-scope';
+import {
+  assertTenantBound,
+  narrowScope,
+  tenantOf,
+  UNBOUND,
+  type VectorScope,
+} from './vector-scope';
 
 export interface PostgresVectorStoreInput {
   /** The table. Also the store's name in errors, and the stem of every index name. */
@@ -87,6 +93,9 @@ export class PostgresVectorStore implements VectorStore {
   }
 
   async upsert(records: readonly VectorRecord[]): Promise<void> {
+    // Before the empty-batch return, as in `delete`: a refusal that depends on the batch size is a
+    // forgotten `.scoped()` that only shows up once there is data to leak.
+    assertTenantBound(this.name, this.scope);
     if (records.length === 0) return;
     for (const record of records) this.assertDimension(record.vector.length);
     // One row per id, the LAST one winning — what `MemoryVectorStore` answers. Postgres refuses a
@@ -112,7 +121,7 @@ export class PostgresVectorStore implements VectorStore {
     k: number,
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
-    assertTenantRead(this.name, this.scope);
+    assertTenantBound(this.name, this.scope);
     this.assertDimension(vector.length);
     // `k` is the statement's `limit` and reaches Postgres as a bound parameter, so a `NaN` is the
     // database's error to report rather than this store's — and a fractional one is an error there
@@ -129,14 +138,14 @@ export class PostgresVectorStore implements VectorStore {
     k: number,
     filter?: MetadataFilter,
   ): Promise<readonly SearchHit[]> {
-    assertTenantRead(this.name, this.scope);
+    assertTenantBound(this.name, this.scope);
     return this.run(
       textSql(this.target, query, { scope: this.scope, filter, k: finiteCount(HYBRID, 'k', k) }),
     );
   }
 
   async hybrid(input: HybridSearchInput): Promise<readonly SearchHit[]> {
-    assertTenantRead(this.name, this.scope);
+    assertTenantBound(this.name, this.scope);
     this.assertDimension(input.vector.length);
     // The same three bounds `MemoryVectorStore.hybrid` screens, and they have to be screened in
     // BOTH stores: `rrfK` lands in `1.0 / (rrfK + rank)`, Postgres has a float8 `NaN`, and it
@@ -154,10 +163,12 @@ export class PostgresVectorStore implements VectorStore {
   }
 
   async prune(filter: MetadataFilter, keep: readonly string[]): Promise<void> {
+    assertTenantBound(this.name, this.scope);
     await this.client().execute(pruneSql(this.target, this.scope, filter, keep));
   }
 
   async delete(ids: readonly string[]): Promise<void> {
+    assertTenantBound(this.name, this.scope);
     if (ids.length === 0) return;
     await this.client().execute(deleteSql(this.target, this.scope, ids));
   }

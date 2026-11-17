@@ -2,6 +2,7 @@
 // phases on SIGTERM — stop accepting, finish in-flight, close resources — under one deadline,
 // and reports the same /healthz + /readyz state.
 
+import { installedBuildId } from './build-id';
 import { type Clock, systemClock } from './clock';
 import type { ReadinessMode } from './config-health';
 import { assertReadinessMode } from './config-health';
@@ -404,7 +405,7 @@ export function healthReport(
     ready: state === 'ready' && (mode === 'process' || dependencies),
     uptimeMs: Math.round(clock.monotonic() - startedAtMono),
     inflight,
-    buildId: process.env['BUILD_ID'] ?? 'dev',
+    buildId: installedBuildId(),
     checks,
     registered: readinessCheckCount(),
   };

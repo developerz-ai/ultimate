@@ -6,6 +6,12 @@ import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
 import { wrapImport, wrapList } from './wrap';
 
+/**
+ * The org rule `can<Feature>Write` decides — written here, read back by `grantOf`
+ * (`slice-foundation.ts`), so an action generated into this slice knows a writer in the org passes.
+ */
+export const ORG_WRITE_RULE = '({ actor, input }) => actor !== null && actor.orgId === input.orgId';
+
 /** Biome would rewrap this itself, so the generator emits the already-formatted form. */
 const permissionSet = (feature: NameSet): string =>
   wrapList(
@@ -67,7 +73,7 @@ export const can${feature.pascal}Read = can(
 /** Write compares the org the action's input names with the actor's — grant it apart from read. */
 export const can${feature.pascal}Write = can<${feature.pascal}Scope>(
   '${feature.kebab}:write',
-  ({ actor, input }) => actor !== null && actor.orgId === input.orgId,
+  ${ORG_WRITE_RULE},
 );
 
 /**

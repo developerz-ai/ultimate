@@ -89,13 +89,20 @@ export async function waitForSchema<T>(
   // The `accept` phase, the first: the boot is under `holdWhileBooting`'s handlers, so a SIGTERM
   // here is a drain, and this wait is the boot work it must end.
   const unregister = onShutdown('cli:schema-wait', () => stop.abort(), { phase: 'accept' });
+  // The refusal a drain ends the wait with: the last verdict's, or — when the drain lands on the
+  // first read — the drain itself, since nothing was read to refuse with.
+  let refuse: ((waitedMs?: number) => UltimateError) | undefined;
+  const drained = (): UltimateError => (refuse ?? waitDrained)(clock.monotonic() - startedAt);
   try {
     for (let attempt = 1; ; attempt += 1) {
-      const verdict = await check();
+      // Raced against the drain like the sleep below: a read on an unreachable database hangs
+      // until the pool gives up — ~125 s on a worker, past the pod's grace, so SIGKILL (137).
+      const verdict = await untilAborted(check(), stop.signal, drained);
       if (verdict.ready) {
         streak.passed();
         return verdict.value;
       }
+      refuse = verdict.refuse;
       const waitedMs = clock.monotonic() - startedAt;
       if (verdict.atOnce === true || deadlineMs === 0) throw verdict.refuse();
       if (waitedMs >= deadlineMs || stop.signal.aborted || isDraining()) {
@@ -116,10 +123,42 @@ export async function waitForSchema<T>(
         // The drain's abort ends the wait with the refusal `holdWhileBooting` turns into an exit
         // of `drainExitCode()`; any other rejection is the clock's own, and is rethrown as it came.
         if (!stop.signal.aborted) throw error;
-        throw verdict.refuse(clock.monotonic() - startedAt);
+        throw drained();
       }
     }
   } finally {
     unregister();
   }
+}
+
+/**
+ * `X_DRAINING`, core's code for work cut short by shutdown: a drain landed on the first read, so
+ * no verdict exists to refuse with. `holdWhileBooting` turns it into an exit of `drainExitCode()`.
+ */
+function waitDrained(waitedMs = 0): UltimateError {
+  return new UltimateError({
+    code: 'X_DRAINING',
+    cause: `a drain began while this role's first schema read was in flight (${String(waitedMs)} ms in), so the boot ended there instead of waiting on a database that may never answer`,
+    fix: 'x deploy verify --url https://app.example.com --build "$BUILD_ID"   # nothing to do on this pod: its replacement boots and reads the schema again',
+    retry: 'terminal',
+    meta: { waitedMs },
+  });
+}
+
+/**
+ * `work`, unless `signal` aborts first — then `refusal()`, thrown. The abandoned read is not
+ * cancelled (the pool's own bound retires it); `Promise.race` keeps its late rejection handled.
+ */
+function untilAborted<V>(
+  work: Promise<V>,
+  signal: AbortSignal,
+  refusal: () => UltimateError,
+): Promise<V> {
+  let onAbort: () => void = () => undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(refusal());
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  });
+  return Promise.race([work, aborted]).finally(() => signal.removeEventListener('abort', onAbort));
 }

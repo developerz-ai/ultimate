@@ -1,7 +1,7 @@
 // The order rule on a `fix:` line, for the `errors` step: the edit leads, the re-run follows —
 // `x verify   # after deleting .sensitive()` is pasted before it is read, and re-runs unchanged.
 // Shipped lines are ratcheted per file in `FIX_SEQUENCE_BASELINE`; a new one is
-// `X_ERROR_FIX_INVALID`. A generator offered with `--force` is never a fix (none shipped 2026-11).
+// `X_ERROR_FIX_INVALID`. A generator or scaffolder offered with `--force` is never a fix (none shipped 2026-11).
 
 /**
  * A comment opening with the precondition, in its deferred-edit form only: `<command>   # after
@@ -34,8 +34,13 @@ export function fixSequenceProblem(fix: string): string | undefined {
   return undefined;
 }
 
-/** `x g …` / `x generate …` carrying `--force`, before any `#` comment: the part that is pasted. */
-const FORCED_GENERATOR = /(?:^|[\s;|&(])x\s+(?:g|generate)\b[^#]*?\s--force(?![\w-])/;
+/**
+ * `x g …` / `x generate …` / `x new …` / `create-ultimate …` carrying `--force`, before any `#`
+ * comment: the part that is pasted. The scaffolders are generators too — `x new … --force` over an
+ * existing app reset its `roles.ts` to the template (D1).
+ */
+const FORCED_GENERATOR =
+  /(?:^|[\s;|&(])(?:x\s+(?:g|generate|new)|create-ultimate)\b[^#]*?\s--force(?![\w-])/;
 
 /**
  * A printed fix is pasted with no diff in front of it, and a generator's file can be shared — a
@@ -46,6 +51,26 @@ export function generatorForceProblem(fix: string): string | undefined {
   const runnable = fix.split(/\s#\s/)[0] ?? '';
   if (!FORCED_GENERATOR.test(runnable)) return undefined;
   return `fix "${fix}" runs a generator with --force, which overwrites a file other slices or generators may share, and a pasted fix shows no diff first — name the edit to the existing file instead`;
+}
+
+/** A quoted `--force` token, whole: `'--force-with-lease'` is another flag. */
+const QUOTED_FORCE = /(['"`])--force\1/;
+
+/**
+ * The same rule on the RAW fix, inside its interpolations: `${[invocation, name, '--force'].join(' ')}`
+ * blanks to `<value>`, so the text rule above never saw the `--force` that `x new` printed (D1).
+ * Two `indexOf` scans, as `staticFix` does — no regex re-scanning from every unclosed `${`.
+ */
+export function interpolatedForceProblem(raw: string): string | undefined {
+  for (let open = raw.indexOf('${'); open >= 0; ) {
+    const close = raw.indexOf('}', open + 2);
+    if (close < 0) return undefined;
+    if (QUOTED_FORCE.test(raw.slice(open + 2, close))) {
+      return `fix "${raw}" assembles --force into the command it prints, which overwrites what the target already holds, and a pasted fix shows no diff first — name a free target or the edit instead`;
+    }
+    open = raw.indexOf('${', close + 1);
+  }
+  return undefined;
 }
 
 /**

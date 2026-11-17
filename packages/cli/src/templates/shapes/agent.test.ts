@@ -65,7 +65,7 @@ describe('unit · x new --shape agent', () => {
   test('the long run is an agentJob acting as a role the app declares', () => {
     expect(textAt(files, `${DIR}/jobs/draft-post-later.ts`)).toContain('agentJob(draftPost, {');
     expect(textAt(files, 'apps/web/shared/roles.ts')).toContain('  assistant: {');
-    expect(textAt(files, 'package.json')).toContain('"@ultimat3/ai": "^');
+    expect(textAt(files, 'package.json')).toMatch(/"@ultimat3\/ai": "\d+\.\d+\.\d+"/);
   });
 
   test('the eval baseline is recorded against the prompt the shape writes', () => {

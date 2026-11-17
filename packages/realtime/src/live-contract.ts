@@ -43,12 +43,13 @@ export interface SnapshotArgs {
 
 export interface LiveQueryDefinition<R extends LiveRow = LiveRow> {
   readonly name: string;
-  /** Dependency set for the pre-filter. `x verify` rejects a `live: true` query without one. */
+  /** Dependency set for the pre-filter: required by this type; `@ultimat3/query` refuses an empty `subscribes:`. */
   readonly entities: readonly string[];
   /** Read set. Lets the pre-filter skip updates that touch no column this query reads. */
   readonly columns?: readonly string[];
   /**
-   * Bounded read (`orderBy` + `limit`, enforced by `x verify`), unfiltered by policy — and read
+   * Bounded read (`orderBy` + `limit`; no limit is `X_QUERY_LIVE_UNBOUNDED`, refused where
+   * `@ultimat3/query` builds the source — `live-bounds.ts`), unfiltered by policy — and read
    * FOR `tenant`: the org of the subscribers this window serves, `null` for subscribers that carry
    * none. A window is keyed by it (`live-tenant.ts`), so one read is never two orgs' rows.
    */
