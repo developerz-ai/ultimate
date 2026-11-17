@@ -183,16 +183,19 @@ is no `env.ts` convention and no separate discovery mechanism: importing the con
 the environment, so a bad env fails before the first listener binds.
 
 ```ts
-// app.config.ts
+// app.config.ts — `envSchema` is the one declaration form: `defineEnv` returns values, and
+// `x env`, `x secrets` and `x deploy` read the record back by this export name.
+import type { EnvSchema } from '@ultimat3/core';
 import { defineConfig, defineEnv } from '@ultimat3/core';
 
-const env = defineEnv({
+export const envSchema = {
   DATABASE_URL: { type: 'url', secret: true },
   REDIS_URL: { type: 'url', required: false },
   NATS_URL: { type: 'url', role: 'sync' },        // required for ROLE=sync only
   DRAIN_TIMEOUT_MS: { type: 'integer', default: 30_000 },
   VAPID_PUBLIC: { type: 'string', required: false },
-});
+} satisfies EnvSchema;
+export const env = defineEnv(envSchema);
 
 export const config = defineConfig({
   name: 'postly',

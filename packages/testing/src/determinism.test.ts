@@ -50,6 +50,27 @@ describe('unit · determinism', () => {
     expect(new Date(0).getTime()).toBe(0);
   });
 
+  test('Date called without new answers the frozen instant as a string, as the real one does', () => {
+    // The probe: `FrozenDate` was a class, so `Date()` threw a TypeError under every test preload
+    // where the real `Date()` answers the current time's string.
+    setFrozenClock('2026-01-01T00:00:00.000Z');
+    const called = (Date as unknown as (...args: readonly unknown[]) => string)();
+    expect(called).toBe(new Date().toString());
+    // Arguments are ignored, as they are by the real one: a call is always "now".
+    expect((Date as unknown as (...args: readonly unknown[]) => string)(0)).toBe(called);
+    advanceClock(1000);
+    expect((Date as unknown as () => string)()).toBe(new Date().toString());
+    expect((Date as unknown as () => string)()).not.toBe(called);
+    // What a call does not disturb: construction, the statics, and subclassing.
+    expect(new Date() instanceof Date).toBe(true);
+    expect(new Date(Date.now()).toISOString()).toBe(new Date().toISOString());
+    expect(Date.parse('2026-01-01T00:00:00.000Z')).toBe(Date.UTC(2026, 0, 1));
+    class Sub extends Date {}
+    const sub = new Sub();
+    expect(sub.getTime()).toBe(Date.now());
+    expect(sub instanceof Sub).toBe(true);
+  });
+
   test('a Date the runtime built for itself is still a Date', () => {
     // The frozen clock replaces `globalThis.Date` with a subclass, so a plain `instanceof Date`
     // would ask "is it a FrozenDate" — and a value that never went through the patched

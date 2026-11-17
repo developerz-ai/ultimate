@@ -8,6 +8,7 @@ import { codemod as biomeNoDefaultExport } from './biome-no-default-export';
 import { codemod as bunfigIslandCoverage } from './bunfig-island-coverage';
 import { codemod as chartDashboard } from './chart-dashboard';
 import { codemod as ciE2eBrowser } from './ci-e2e-browser';
+import { codemod as ciPinnedActions } from './ci-pinned-actions';
 import { codemod as ciServicesEnv } from './ci-services-env';
 import type { Codemod } from './codemod';
 import { codemod as defineErrorLeaf } from './define-error-leaf';
@@ -63,4 +64,5 @@ export const CODEMODS: readonly Codemod[] = [
   ciServicesEnv,
   docsEnvGuard,
   testServices,
+  ciPinnedActions,
 ];

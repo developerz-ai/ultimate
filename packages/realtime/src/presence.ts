@@ -12,7 +12,7 @@ import { presenceEvent } from './channel-presence';
 import type { ChannelEventsFrame } from './channel-wire';
 import type { Transport } from './fanout';
 import type { JsonObject } from './json';
-import { PROTOCOL_VERSION, type PresenceMember } from './sync-protocol';
+import { FRAME_LIMITS, PROTOCOL_VERSION, type PresenceMember } from './sync-protocol';
 
 export const PRESENCE_KEY_PREFIX = 'presence';
 /** Separate namespace: the sweep lease is one member per *node*, never one per participant. */
@@ -39,7 +39,10 @@ export interface PresenceOptions {
   readonly clock?: Clock;
   /** Member TTL. Clients should heartbeat at ttl/3 so one lost beat is not a false leave. */
   readonly ttlMs?: number;
-  /** Members on a full-set frame. The set itself is never capped — only what is shipped. */
+  /**
+   * Members on a full-set frame. The set itself is never capped — only what is shipped. Clamped to
+   * `FRAME_LIMITS.members`: past it a client refuses the frame whole, and `total` already says the rest.
+   */
   readonly maxMembers?: number;
   /**
    * This node's identity in the per-topic sweep election. Defaults to a fresh id per registry,
@@ -82,9 +85,10 @@ export class PresenceRegistry {
     this.#hub = options.hub;
     this.#clock = options.clock ?? systemClock;
     this.#ttlMs = finiteOption('presence', 'ttlMs', options.ttlMs ?? 30_000);
-    this.#maxMembers = Math.max(
-      1,
-      finiteOption('presence', 'maxMembers', options.maxMembers ?? DEFAULT_MAX_PRESENCE_MEMBERS),
+    const maxMembers = options.maxMembers ?? DEFAULT_MAX_PRESENCE_MEMBERS;
+    this.#maxMembers = Math.min(
+      FRAME_LIMITS.members,
+      Math.max(1, finiteOption('presence', 'maxMembers', maxMembers)),
     );
     this.#nodeId = options.nodeId ?? uuidV7();
   }
@@ -332,7 +336,11 @@ export class PresenceRegistry {
     members: readonly PresenceMember[],
   ): Promise<void> {
     if (!this.#hub) return;
-    await this.#hub.emit(name, presenceEvent(op, members));
+    // A client refuses a roster past `FRAME_LIMITS.members` whole, so one oversized leave (a sweep
+    // after a node died with its room) would reach every subscriber as nothing at all.
+    for (let at = 0; at < members.length; at += FRAME_LIMITS.members) {
+      await this.#hub.emit(name, presenceEvent(op, members.slice(at, at + FRAME_LIMITS.members)));
+    }
   }
 }
 

@@ -3,6 +3,7 @@
 // default branch. It runs no gate of its own — a second gate is a second definition of one — and
 // it deploys nothing: the image digest is the handoff, axiom 7's one deploy artifact.
 
+import { CHECKOUT } from './actions';
 import { DEFAULT_RUNNER } from './runner';
 
 /** Where the workflow lands, beside the gate it waits on. */
@@ -55,7 +56,7 @@ jobs:
     timeout-minutes: 30
     steps:
       # The commit the gate judged, not the tip of the branch when this run started.
-      - uses: actions/checkout@v7
+      - uses: ${CHECKOUT}
         with:
           ref: \${{ github.event.workflow_run.head_sha }}
           persist-credentials: false

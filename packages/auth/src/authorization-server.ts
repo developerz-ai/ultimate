@@ -37,8 +37,9 @@ export interface AuthorizationServer {
   readonly metadata: Readonly<Record<string, unknown>>;
   /**
    * The consent page's read of its own URL: what to show, or the refusal to show instead.
-   * `callerKey` (the request's address) meters a metadata-document fetch per caller, as the token
-   * route does — a page load naming `https://<anyone>/<path>` is otherwise one outbound GET each.
+   * Call it as `readRequest(url, { callerKey: <the request's address> })`: a metadata-document
+   * fetch is metered per caller, as the token route does. Left out, every unkeyed read shares ONE
+   * bucket — still metered, but one visitor's burst locks the consent page for all of them.
    */
   readRequest(url: string | URL, options?: ReadRequestOptions): Promise<ReadRequestResult>;
   /** The consent action's approval: the redirect URL carrying `code`, `state` and `iss`. */
@@ -78,7 +79,7 @@ export interface AuthorizationServer {
 }
 
 export interface ReadRequestOptions {
-  /** The caller's address: the limiter key for a metadata-document fetch. */
+  /** The caller's address: the limiter key for a metadata-document fetch. Absent: one shared key. */
   readonly callerKey?: string | undefined;
 }
 

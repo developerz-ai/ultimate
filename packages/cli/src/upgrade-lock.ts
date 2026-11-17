@@ -1,6 +1,7 @@
-// One `x upgrade` per app at a time: `.x/upgrade.lock`, claimed the way `dev-lock.ts` claims
-// `dev.lock` — written whole to a staging file, then hard-linked into place, so the create and the
-// exclusivity are one syscall. Two hops over one tree would each write pins and install under the other.
+// One `x upgrade` per app at a time: `.x/upgrade.lock`, claimed as `dev-lock.ts` claims `dev.lock`
+// (staged, then hard-linked: create and exclusivity are one syscall), its holder named by pid AND
+// OS start time (`dev-lock-identity.ts`), so a pid reused after a kill -9 never holds it. Two hops
+// over one tree would each write pins and install under the other.
 
 // why: the claim is synchronous link/write/unlink syscalls with no Bun equivalent, kept in one turn.
 import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -8,6 +9,7 @@ import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'no
 import { join } from 'node:path';
 import { renderFixShellArg, stringField, UltimateError } from '@ultimat3/core';
 import { isProcessAlive } from './dev-lock';
+import { reusedPid, startedOf } from './dev-lock-identity';
 import { stealStale } from './dev-lock-steal';
 
 /** App-root relative, beside the hop's record in the `.x/` every scaffold ignores. */
@@ -16,16 +18,19 @@ export const UPGRADE_LOCK_FILE = join('.x', 'upgrade.lock');
 interface Holder {
   readonly pid: number;
   readonly startedAt: string;
+  /** The holder's OS start time, where the OS reports one; absent in an older CLI's lock. */
+  readonly started?: string;
 }
 
 const parseHolder = (raw: string | undefined): Holder | undefined => {
   if (raw === undefined) return undefined;
   try {
-    const value = JSON.parse(raw) as { pid?: unknown; startedAt?: unknown };
+    const value = JSON.parse(raw) as { pid?: unknown; startedAt?: unknown; started?: unknown };
     if (typeof value.pid !== 'number') return undefined;
     return {
       pid: value.pid,
       startedAt: typeof value.startedAt === 'string' ? value.startedAt : '',
+      ...(typeof value.started === 'string' ? { started: value.started } : {}),
     };
   } catch {
     return undefined;
@@ -69,16 +74,20 @@ function claim(path: string, text: string): boolean {
 export interface LockDeps {
   /** Whether a pid is a live process. */
   readonly alive?: (pid: number) => boolean;
-  /** The pid this run records; a test claims as another process. */
+  /**
+   * The pid this run records; a test claims as another process. Recorded with no start time, since
+   * only this process's own is known: such a lock is judged by its pid alone.
+   */
   readonly pid?: number;
 }
 
 /**
  * Take the app's upgrade lock, or refuse with `X_UPGRADE_LOCKED` naming the live holder. A lock
- * whose holder is gone — a hop killed hard — is taken over under `stealStale`'s guard. Returns the
- * release, which removes the lock only while it still holds this run's bytes.
+ * whose holder is gone — a hop killed hard, its pid dead or reused — is taken over under
+ * `stealStale`'s guard. Returns the release, which removes the lock only while it still holds this
+ * run's bytes.
  */
-export function acquireUpgradeLock(root: string, deps: LockDeps = {}): () => void {
+export async function acquireUpgradeLock(root: string, deps: LockDeps = {}): Promise<() => void> {
   const alive = deps.alive ?? isProcessAlive;
   const path = join(root, UPGRADE_LOCK_FILE);
   try {
@@ -86,7 +95,9 @@ export function acquireUpgradeLock(root: string, deps: LockDeps = {}): () => voi
   } catch (error) {
     throw unwritable(path, error);
   }
-  const mine = `${JSON.stringify({ pid: deps.pid ?? process.pid, startedAt: new Date().toISOString() })}\n`;
+  const pid = deps.pid ?? process.pid;
+  const identity = deps.pid === undefined ? await startedOf(process.pid) : {};
+  const mine = `${JSON.stringify({ pid, startedAt: new Date().toISOString(), ...identity })}\n`;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (claim(path, mine)) {
       return () => {
@@ -95,7 +106,7 @@ export function acquireUpgradeLock(root: string, deps: LockDeps = {}): () => voi
     }
     const raw = readText(path);
     const holder = parseHolder(raw);
-    if (holder !== undefined && alive(holder.pid)) {
+    if (holder !== undefined && alive(holder.pid) && !(await reusedPid(holder))) {
       throw new UltimateError({
         code: 'X_UPGRADE_LOCKED',
         cause: `another x upgrade (pid ${String(holder.pid)}, since ${holder.startedAt || 'an unknown time'}) holds ${path}, and two hops in one app would write pins and install under each other`,

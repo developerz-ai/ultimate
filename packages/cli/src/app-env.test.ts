@@ -56,7 +56,61 @@ describe('unit · reading the app env declaration', () => {
     expect(isEnvSchema({ A: { type: 'not-a-type' } })).toBe(false);
     expect(isEnvSchema({ A: 'url' })).toBe(false);
     expect(isEnvSchema(null)).toBe(false);
+    // An array is an object to `typeof`, and its values are the declarations a record's would be.
+    expect(isEnvSchema([])).toBe(false);
+    expect(isEnvSchema([{ type: 'string' }])).toBe(false);
   });
+});
+
+/** The repo root, from this file: the tracked apps sit under it. */
+const REPO = join(import.meta.dir, '..', '..', '..');
+const CLI = join(import.meta.dir, 'bin.ts');
+const TRACKED_APPS = ['examples/dummy', 'dummy/social-media-clone', 'dummy/docs-site'];
+
+/** One subprocess: a tracked app's config is process-global state (`defineMeasurementActor`). */
+const spawnJson = async (argv: readonly string[]): Promise<unknown> => {
+  const run = Bun.spawn([process.execPath, ...argv], {
+    cwd: REPO,
+    env: { ...process.env, ULTIMATE_ENV: 'development' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const [out, said] = await Promise.all([
+    new Response(run.stdout).text(),
+    new Response(run.stderr).text(),
+  ]);
+  await run.exited;
+  return JSON.parse(out.trim().split('\n').at(-1) || JSON.stringify(said));
+};
+
+// The one declaration form (`export const envSchema`), on every app this repo gates: an inline
+// `defineEnv({ … })` left `x env check`, `x env init`, `x secrets` and `x deploy` reading nothing.
+describe('unit · the tracked apps declare their env the one way', () => {
+  test('x env check reads a declaration on each, and .env.example is its projection', async () => {
+    const answers = await Promise.all(
+      TRACKED_APPS.map(async (app) => {
+        const check = await spawnJson([CLI, 'env', 'check', '--cwd', app, '--json']);
+        const drift = await spawnJson([
+          '-e',
+          `const { envExampleFindings } = await import(${JSON.stringify(join(import.meta.dir, 'app-env.ts'))});
+console.log(JSON.stringify(await envExampleFindings(${JSON.stringify(join(REPO, app))})));`,
+        ]);
+        return { app, check, drift };
+      }),
+    );
+    const declares = (check: unknown): boolean => {
+      const variables = (check as { data?: { variables?: unknown } }).data?.variables;
+      return typeof variables === 'number' && variables > 0;
+    };
+    expect(
+      answers.map(({ app, check, drift }) => ({
+        app,
+        ok: (check as { ok?: unknown }).ok,
+        declares: declares(check),
+        drift,
+      })),
+    ).toEqual(TRACKED_APPS.map((app) => ({ app, ok: true, declares: true, drift: [] })));
+  }, 60_000);
 });
 
 describe('unit · the .env.example drift gate', () => {

@@ -489,4 +489,29 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.40.0',
     none: "only x g action/mutator renders it, into a slice whose write rule is x g policy's own: the generated test now asserts the handler and its exercise binds the org; files an app already holds are unchanged",
   },
+  {
+    template: 'packages/cli/src/templates/github/actions.ts',
+    since: '31.43.0',
+    codemod: 'ci-pinned-actions',
+  },
+  {
+    template: 'packages/cli/src/templates/github/ci.yml.ts',
+    since: '31.43.0',
+    codemod: 'ci-pinned-actions',
+  },
+  {
+    template: 'packages/cli/src/templates/github/image.yml.ts',
+    since: '31.43.0',
+    codemod: 'ci-pinned-actions',
+  },
+  {
+    template: '.github/workflows/ci.yml',
+    since: '31.43.0',
+    codemod: 'ci-pinned-actions',
+  },
+  {
+    template: '.github/workflows/image.yml',
+    since: '31.43.0',
+    codemod: 'ci-pinned-actions',
+  },
 ];

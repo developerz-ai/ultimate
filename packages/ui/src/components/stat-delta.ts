@@ -22,7 +22,10 @@ export interface DeltaOptions {
    * "+3", never "+150%". A zero baseline always gives the difference.
    */
   readonly absoluteBelow?: number | undefined;
-  /** Formats a difference's magnitude. Default: up to two decimals, no grouping. */
+  /**
+   * Formats a difference's magnitude. Default: up to two decimals, no grouping. A difference that
+   * formats as `format(0)` does is flat, and reads as that zero: the arrow agrees with the text.
+   */
   readonly format?: ((magnitude: number) => string) | undefined;
 }
 
@@ -52,8 +55,12 @@ export function deltaOf(
     baseline <= 0 || (below !== undefined && Number.isFinite(below) && Math.abs(baseline) < below);
   if (absolute) {
     const diff = current - baseline;
-    const text = (options.format ?? plain)(Math.abs(diff));
-    return diff === 0 ? { text: '0', trend: 'flat' } : signed(diff, text);
+    const format = options.format ?? plain;
+    const text = format(Math.abs(diff));
+    // Flat by what the chip SAYS, as the percentage is by its rounded figure: 2 → 2.001 formats as
+    // "0", and "+0" with an up arrow is a change the text itself denies.
+    const zero = format(0);
+    return text === zero ? { text: zero, trend: 'flat' } : signed(diff, text);
   }
   const pct = Math.round(((current - baseline) / baseline) * 100);
   return pct === 0 ? { text: '0%', trend: 'flat' } : signed(pct, `${Math.abs(pct)}%`);

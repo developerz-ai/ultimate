@@ -5,7 +5,8 @@
 // X_PUBLIC_API_BREAK_UNDECLARED; an additive change (an optional member or trailing parameter, a
 // parameter that accepts more) is listed as compatible, never reported. REPORT-ONLY this release:
 // a warning in `data.warnings`, exit 0; red under `--strict` and on every branch
-// `REFUSE_ON_BRANCHES` names. Compatible changes and declared breaks are recorded with `--write`.
+// `REFUSE_ON_BRANCHES` names, and a bump refuses one (`release-api-lock.ts`), before it ships.
+// Compatible changes and declared breaks are recorded with `--write`.
 //
 //   bun run scripts/public-api.ts [--write] [--strict] [--json]
 
@@ -63,6 +64,12 @@ const unscanned = (cause: string, fix: string): PublicApiReport => ({
   migratedFrom: [],
 });
 
+/**
+ * `packages/core` of `packages/core/src/index.ts`: the diff a break's fix names. Never the entry
+ * file alone — an index that only re-exports shows no change while the declaration it names moved.
+ */
+const packageDirOf = (source: string): string => source.split('/').slice(0, 2).join('/');
+
 function breakFinding(one: ApiBreak, lock: ApiLock, version: string, source: string): Finding {
   const what =
     one.kind === 'removed'
@@ -71,7 +78,7 @@ function breakFinding(one: ApiBreak, lock: ApiLock, version: string, source: str
   return {
     code: BREAK_CODE,
     cause: `${one.specifier} ${what}, and no \`BREAKING —\` entry under CHANGELOG.md [Unreleased] or in docs/changelog/${version}.md names it — code that compiled against ${lock.version} may not compile now`,
-    fix: `${lock.format === 1 ? 'git fetch --tags origin && ' : ''}git diff ${quoteArg(`v${lock.version}`)} -- ${quoteArg(source)}   # revert the change to \`${one.name}\`, or declare it on next: a "- **BREAKING —** (#N) \`${one.name}\` …" line under ## [Unreleased] in CHANGELOG.md, then bun run scripts/public-api.ts --write --json`,
+    fix: `${lock.format === 1 ? 'git fetch --tags origin && ' : ''}git diff ${quoteArg(`v${lock.version}`)} -- ${quoteArg(packageDirOf(source))}   # revert the change to \`${one.name}\`, or declare it on next: a "- **BREAKING —** (#N) \`${one.name}\` …" line under ## [Unreleased] in CHANGELOG.md, then bun run scripts/public-api.ts --write --json`,
     at: source,
   };
 }
