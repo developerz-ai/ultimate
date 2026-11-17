@@ -271,4 +271,5 @@ test('unit · a timed-out unit lists the files that never reported', () => {
   expect(unreportedFiles(output, files)).toEqual(['packages/cli/src/c.test.ts']);
   const failure = unitFailure('cli', { code: null, output, timedOut: true }, 450_000, files);
   expect(failure?.cause).toContain('never reported: packages/cli/src/c.test.ts');
+  // How far the run got: an overrun reports most files, a hang leaves a worker's queue behind.
 });

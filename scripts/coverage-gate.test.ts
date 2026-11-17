@@ -9,19 +9,20 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
 import { COVERAGE_BAR } from '../packages/cli/src/coverage-floor';
-import {
-  judge,
-  scopeLcov,
-  suiteFailure,
-  unimportedSources,
-  unitFailure,
-  withUnloadedCounted,
-} from './coverage-gate';
+import { judge, suiteFailure, unitFailure } from './coverage-gate';
 import { COVERAGE_PINS, COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
+import {
+  readingOf,
+  scopeLcov,
+  unimportedSources,
+  withUnloadedCounted,
+} from './lib/coverage-reading';
 import { UNIT_TIMEOUT_MS, unitWeight } from './lib/coverage-schedule';
 import {
   COVERAGE_GATE_FLAGS,
   SCRIPTS_UNIT,
+  scheduledNames,
+  scheduledWeight,
   shardUnits,
   testFileCount,
   unitOf,
@@ -361,6 +362,9 @@ describe('the units --all gates', () => {
       expect(scoped.lines).toBe(100);
       expect(scoped.unimported).toEqual(['scripts/never-loaded.ts']);
       const counted = withUnloadedCounted(root, scoped, lcov);
+      // `readingOf` is the one path both a whole unit and a folded one are read through.
+      expect(readingOf(root, 'scripts', lcov)).toEqual(counted);
+      expect(readingOf(root, 'money', lcov).measured).toBe(0);
       expect(counted.unimported).toEqual([]);
       expect(counted.measured).toBe(4);
       expect(counted.lines).toBe(50);
@@ -465,10 +469,37 @@ describe('the flags the gate reads', () => {
 
   test('--package names one unit, --all every one, --all --shard a share', () => {
     expect(unitsFor(root, flags({ package: 'core', json: true }))).toEqual(['core']);
-    expect(unitsFor(root, flags({ all: true }))).toEqual(unitsToGate(root));
+    const all = unitsFor(root, flags({ all: true }));
+    expect(all).toEqual(scheduledNames(root, unitsToGate(root)));
     expect(unitsFor(root, flags({ all: true, shard: '2/2', jobs: '2' }))).toEqual(
-      shardUnits(unitsToGate(root), '2/2', (name) => unitWeight(name)),
+      shardUnits(all, '2/2', scheduledWeight),
     );
+  });
+
+  test('a unit too heavy for one runner is scheduled as its parts, never whole', () => {
+    // `cli` is the one today (`PART_MS`): `--package cli` runs every part, `--all` deals them.
+    const parts = unitsFor(root, flags({ package: 'cli' }));
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts).toEqual(parts.map((_, at) => `cli#${String(at + 1)}/${String(parts.length)}`));
+    const all = unitsFor(root, flags({ all: true }));
+    expect(all).not.toContain('cli');
+    for (const part of parts) expect(all).toContain(part);
+    // A part weighs its share of the unit, so the shards stay balanced on core-seconds.
+    expect(scheduledWeight('cli#1/2')).toBe(unitWeight('cli') / 2);
+    expect(scheduledWeight('core')).toBe(unitWeight('core'));
+  });
+
+  test('--merge <dir> folds the cut units alone, and refuses to run a suite beside it', () => {
+    expect(unitsFor(root, flags({ merge: '.x/coverage-parts' }))).toEqual(['cli']);
+    for (const entries of [
+      { merge: true },
+      { merge: 'd', all: true },
+      { merge: 'd', package: 'cli' },
+    ]) {
+      const refused = refusal(entries) as { code: string; fix: string };
+      expect(refused.code).toBe('X_CLI_BAD_FLAG');
+      expect(refused.fix).toBe('bun run scripts/coverage-gate.ts --merge .x/coverage-parts');
+    }
   });
 
   test('--all given a value is refused, never read as off', () => {

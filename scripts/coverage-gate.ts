@@ -11,30 +11,38 @@
 //   bun run scripts/coverage-gate.ts --package core [--json]
 //   bun run scripts/coverage-gate.ts --package scripts [--json]
 //   bun run scripts/coverage-gate.ts --all [--jobs <n>] [--shard i/n] [--unit-timeout <seconds>] [--json]
+//   bun run scripts/coverage-gate.ts --merge <dir> [--json]
 //
 // `--shard i/n` is one CI runner's share of `--all`, dealt by each unit's measured core-seconds
-// (`UNIT_SECONDS`), so shard 1/2 is the same units on every runner. The lcov reader is the CLI's (`coverage-lcov.ts`),
-// the one an app's `x verify` reads its own floor through.
+// (`UNIT_SECONDS`), so shard 1/2 is the same units on every runner. A unit too heavy for one runner
+// is measured as parts (`lib/coverage-parts.ts`): a shard holding a part leaves its coverage in
+// `.x/coverage-parts/`, and `--merge` folds every part into the one reading the bar judges. The lcov
+// reader is the CLI's (`coverage-lcov.ts`), the one an app's `x verify` reads its own floor through.
 
-// why: rmSync — Bun has no recursive directory removal; readFileSync — the unimported-source scan
-// is synchronous (`Bun.file().text()` is async only); `join` — Bun ships no path joiner.
-import { readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+// why: mkdirSync/rmSync — Bun has no recursive directory creation or removal; `join`/`resolve` —
+// Bun ships no path joiner.
+import { mkdirSync, rmSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { finiteOption, renderFixShellArg } from '@ultimat3/core';
-import { parseLcov, percent } from '../packages/cli/src/coverage-lcov';
-import { hasExecutableCode, TEST_FILE, unloadedWeight } from '../packages/cli/src/coverage-source';
 import { BadFlagError } from '../packages/cli/src/errors';
 import { quoteArg } from '../packages/cli/src/shell-quote';
 import { E2E_PATH_GLOBS } from '../packages/cli/src/verify-tests';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
-import type { CoveragePin } from './lib/coverage-pins';
+import type { PartDocument, UnitPart } from './lib/coverage-parts';
 import {
-  COVERAGE_EXCLUDED,
-  COVERAGE_PINS,
-  COVERAGE_TARGET,
-  PIN_SLACK,
-  PINS_FILE,
-} from './lib/coverage-pins';
+  foldParts,
+  ownCoverage,
+  PARTS_DIR,
+  partDocument,
+  partFile,
+  partName,
+  readParts,
+  unitOfName,
+} from './lib/coverage-parts';
+import type { CoveragePin } from './lib/coverage-pins';
+import { COVERAGE_PINS, COVERAGE_TARGET, PIN_SLACK, PINS_FILE } from './lib/coverage-pins';
+import type { CoverageReading } from './lib/coverage-reading';
+import { ownSourceOf, readingOf } from './lib/coverage-reading';
 import {
   concurrency,
   leasePool,
@@ -45,43 +53,14 @@ import {
   unitTimeoutOf,
   workersFor,
 } from './lib/coverage-schedule';
-
 import type { CoverageUnit } from './lib/coverage-units';
-import {
-  atOf,
-  SCRIPTS_UNIT,
-  testFileCount,
-  testFilesOf,
-  unitOf,
-  unitsFor,
-} from './lib/coverage-units';
+import { atOf, testFilesOf, unitOf, unitPlan, unitsFor } from './lib/coverage-units';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { RunResult } from './lib/run';
 import { repoRoot, run } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { README_FACTS_FIX, README_FILE } from './readme-facts';
-
-export interface CoverageReading {
-  /** The unit's name — a package, or `scripts`. */
-  readonly pkg: string;
-  readonly lines: number;
-  readonly funcs: number;
-  /** Lines found in the unit's own source. Zero is the false green this gate refuses. */
-  readonly measured: number;
-  /**
-   * Source files with executable code that lcov has no record of at all. They are NOT zeroes in
-   * the percentage — bun records a file only when something imports it, so a module no test
-   * reaches is absent from both halves of the fraction and silently makes the number BETTER.
-   * `@ultimat3/ui` had 16 of these, and its denominator grew from 2,922 to 3,286 lines the day
-   * they were first imported.
-   */
-  readonly unimported: readonly string[];
-  /** Wall seconds the unit's suite took alone — what a `--shard` split is balanced by. */
-  readonly seconds?: number;
-  /** `bun test` workers the unit ran on — one is a single process (`testCommand`). */
-  readonly workers?: number;
-}
 
 /**
  * One unit's verdict. `required` is what it had to clear — the target, or its pin.
@@ -90,80 +69,6 @@ export interface CoverageVerdict {
   readonly reading: CoverageReading;
   readonly required: CoveragePin | undefined;
   readonly findings: readonly Finding[];
-}
-
-const isOwnSource = (unit: CoverageUnit, file: string): boolean =>
-  // `startsWith`, NOT `includes`. Bun writes `SF:` paths relative to the repo root, and both
-  // tracked apps carry a package of their own under the same name —
-  // `examples/dummy/packages/mcp/src/` and `dummy/social-media-clone/packages/mcp/src/` each
-  // CONTAIN `packages/mcp/src/`. A substring test folded them into the framework package's
-  // reading: `@ultimat3/mcp` measured 96.99% while its own sources were at 100%, carrying 35
-  // uncovered lines that belong to an app gated on its own ratchet.
-  file.startsWith(unit.source) &&
-  !TEST_FILE.test(file) &&
-  !COVERAGE_EXCLUDED.some((fragment) => file.includes(fragment));
-
-/**
- * Sum an lcov report over one unit's own sources.
- *
- * A record is counted when its `SF:` names a file under the unit's source that is neither a test
- * nor excluded. Everything else in the file belongs to a package this run merely imported, and
- * folding it in is the dilution this gate exists to undo.
- */
-export function scopeLcov(lcov: string, name: string): CoverageReading {
-  const unit = unitOf(name);
-  let lf = 0;
-  let lh = 0;
-  let fnf = 0;
-  let fnh = 0;
-  for (const record of parseLcov(lcov)) {
-    if (!isOwnSource(unit, record.file)) continue;
-    lf += record.linesFound;
-    lh += record.linesHit;
-    fnf += record.funcsFound;
-    fnh += record.funcsHit;
-  }
-  return {
-    pkg: name,
-    lines: percent(lh, lf),
-    funcs: percent(fnh, fnf),
-    measured: lf,
-    unimported: [],
-  };
-}
-
-/**
- * An `SF:` path as a path relative to `root`, which is the only form a glob result can be compared
- * against. Bun writes them root-relative; an absolute one and a `./`-prefixed one are normalised
- * rather than matched by suffix.
- *
- * `endsWith('/' + rel)` was the compare, and it re-introduced the exact collision `isOwnSource` has
- * a paragraph about above: both tracked apps carry `packages/<name>/src/`, so the app's
- * `examples/dummy/packages/mcp/src/mcp.ts` ENDS WITH `/packages/mcp/src/mcp.ts` and answered for
- * the framework file of that name. A framework module no suite imports then read as recorded, and
- * `X_COVERAGE_UNMEASURED` — the check whose whole job is to notice a file no test ever loads — went
- * quiet for every name an app happens to share.
- */
-const rootRelative = (root: string, file: string): string => {
-  const prefix = root.endsWith('/') ? root : `${root}/`;
-  if (file.startsWith(prefix)) return file.slice(prefix.length);
-  return file.startsWith('./') ? file.slice(2) : file;
-};
-
-/** Every non-test source file of the unit that has executable code and no lcov record. */
-export function unimportedSources(root: string, name: string, lcov: string): readonly string[] {
-  const unit = unitOf(name);
-  const recorded = new Set(parseLcov(lcov).map((record) => rootRelative(root, record.file)));
-  const missing: string[] = [];
-  for (const rel of new Bun.Glob(unit.glob).scanSync({ cwd: root })) {
-    if (TEST_FILE.test(rel)) continue;
-    if (/\.d\.ts$/.test(rel)) continue;
-    if (COVERAGE_EXCLUDED.some((fragment) => rel.includes(fragment))) continue;
-    if (recorded.has(rel)) continue;
-    if (!hasExecutableCode(readFileSync(join(root, rel), 'utf8'))) continue;
-    missing.push(rel);
-  }
-  return missing.sort();
 }
 
 /**
@@ -277,44 +182,6 @@ export function suiteFailure(
 }
 
 /**
- * `scripts/` counts a file no test loads at 0% — weighed off its source, the rule an app's
- * `x verify` applies to its own tree (`coverage-floor.ts`) — where a package REFUSES one. A
- * package's modules are library code a test can always import; half of `scripts/` is entry
- * points whose body is the `import.meta.main` block, and refusing each would be a pin list of
- * its own. Counted, they drag the one number down and the one pin says so.
- */
-export function withUnloadedCounted(
-  root: string,
-  reading: CoverageReading,
-  lcov: string,
-): CoverageReading {
-  const unit = unitOf(reading.pkg);
-  let lf = 0;
-  let lh = 0;
-  let fnf = 0;
-  let fnh = 0;
-  for (const record of parseLcov(lcov)) {
-    if (!isOwnSource(unit, record.file)) continue;
-    lf += record.linesFound;
-    lh += record.linesHit;
-    fnf += record.funcsFound;
-    fnh += record.funcsHit;
-  }
-  for (const rel of reading.unimported) {
-    const weight = unloadedWeight(readFileSync(join(root, rel), 'utf8'));
-    lf += weight.lines;
-    fnf += weight.funcs;
-  }
-  return {
-    ...reading,
-    lines: percent(lh, lf),
-    funcs: percent(fnh, fnf),
-    measured: lf,
-    unimported: [],
-  };
-}
-
-/**
  * The `bun test` one unit is measured by. One worker is the command this gate always ran: ONE
  * process, every file sharing it. More is `--parallel=<n>`, which implies `--isolate`: n processes,
  * every FILE in a fresh global, the way `x verify`'s `unit` step already runs every one of them —
@@ -346,7 +213,12 @@ export function withUnloadedCounted(
  * the five other units carrying e2e suites unmoved against their bars. Contract, live and job
  * suites stay in: `jobs` is measured by its job suites, and without them read 92.13/91.22.
  */
-export function testCommand(unit: CoverageUnit, dir: string, workers: number): readonly string[] {
+export function testCommand(
+  unit: CoverageUnit,
+  dir: string,
+  workers: number,
+  files?: readonly string[],
+): readonly string[] {
   const wide = workers > 1 ? [`--parallel=${String(workers)}`] : [];
   return [
     'bun',
@@ -356,7 +228,8 @@ export function testCommand(unit: CoverageUnit, dir: string, workers: number): r
     `--coverage-dir=${dir}`,
     ...wide,
     ...E2E_PATH_GLOBS.map((glob) => `--path-ignore-patterns=${glob}`),
-    unit.test,
+    // A part names its files, each `./`-prefixed: a bare path is a substring filter to `bun test`.
+    ...(files === undefined ? [unit.test] : files.map((file) => `./${file}`)),
   ];
 }
 
@@ -371,26 +244,40 @@ export function unitFailure(
   return suiteFailure(name, ran.code ?? 1, ran.output);
 }
 
-/** Runs one unit's suite with coverage, on `workers` workers, and reads the report back. */
+/** One scheduled name: a whole unit, or one part of a unit's plan. */
+interface Scheduled {
+  readonly name: string;
+  readonly unit: string;
+  readonly part?: UnitPart;
+}
+
+/** A measured name: a whole unit's verdict, a part's document, or the finding that stopped it. */
+type Measured =
+  | { readonly kind: 'verdict'; readonly verdict: CoverageVerdict }
+  | { readonly kind: 'part'; readonly doc: PartDocument }
+  | { readonly kind: 'finding'; readonly finding: Finding };
+
+/** Runs one suite with coverage — a whole unit, or a part's files — and answers its lcov. */
 async function measure(
   root: string,
-  name: string,
+  item: Scheduled,
   workers: number,
   timeoutMs: number,
-): Promise<CoverageReading> {
-  const unit = unitOf(name);
-  const dir = join(root, '.x', 'coverage', name);
+): Promise<{ readonly lcov: string; readonly seconds: number }> {
+  const unit = unitOf(item.unit);
+  const dir = join(root, '.x', 'coverage', item.name.replace(/[#/]/g, '-'));
   rmSync(dir, { recursive: true, force: true });
   const started = performance.now();
   // Both pipes are read: under GitHub Actions Bun reports a failing test as an `::error`
   // annotation on stdout, so stderr alone named three failures as "3 tests failed:" and nothing
   // else. `run()` owns the deadline: a suite that hangs is killed and reported, never waited on.
-  const ran = await run(testCommand(unit, dir, workers), {
+  const ran = await run(testCommand(unit, dir, workers, item.part?.files), {
     cwd: root,
     env: unitEnv(Bun.env, serviceKeys(root)),
     timeoutMs,
   });
-  const failure = unitFailure(name, ran, timeoutMs, testFilesOf(root, unit));
+  const files = item.part?.files ?? testFilesOf(root, unit);
+  const failure = unitFailure(item.unit, ran, timeoutMs, files);
   if (failure !== undefined) throw new ScriptError(failure);
   const file = Bun.file(join(dir, 'lcov.info'));
   if (!(await file.exists())) {
@@ -401,10 +288,34 @@ async function measure(
     });
   }
   const lcov = await file.text();
-  const scoped = { ...scopeLcov(lcov, name), unimported: unimportedSources(root, name, lcov) };
-  const reading = unit === SCRIPTS_UNIT ? withUnloadedCounted(root, scoped, lcov) : scoped;
   rmSync(dir, { recursive: true, force: true });
-  return { ...reading, seconds: Math.round((performance.now() - started) / 100) / 10, workers };
+  return { lcov, seconds: Math.round((performance.now() - started) / 100) / 10 };
+}
+
+/** A whole unit's verdict, from its own lcov or its parts' fold. */
+function verdictOf(
+  root: string,
+  name: string,
+  lcov: string,
+  run: { readonly seconds: number; readonly workers: number },
+): CoverageVerdict {
+  return judge({ ...readingOf(root, name, lcov), ...run }, COVERAGE_PINS[name]);
+}
+
+/** Folds each cut unit from `docs`; units whose parts are not all here are left to `--merge`. */
+function foldAll(
+  root: string,
+  units: readonly string[],
+  docs: readonly PartDocument[],
+): readonly (CoverageVerdict | Finding)[] {
+  return units.map((name) => {
+    const folded = foldParts(unitPlan(root, name), docs);
+    if ('code' in folded) return { ...folded, at: atOf(unitOf(name)) };
+    return verdictOf(root, name, folded.lcov, {
+      seconds: folded.seconds,
+      workers: folded.workers,
+    });
+  });
 }
 
 if (import.meta.main) {
@@ -442,56 +353,124 @@ if (import.meta.main) {
       json,
     );
   }
-  // A unit leases as many cores as it runs workers, so a widened `cli` and three narrow units
-  // never ask a 4-core runner for seven at once.
-  const width = new Map(
-    names.map((name) => [name, workersFor(testFileCount(root, unitOf(name)), jobs)]),
-  );
-  const settled = await leasePool(
-    names,
-    jobs,
-    (name) => width.get(name) ?? 1,
-    async (name): Promise<CoverageVerdict | Finding> => {
-      try {
-        const workers = width.get(name) ?? 1;
-        return judge(
-          await measure(root, name, workers, unitTimeout ?? UNIT_TIMEOUT_MS),
-          COVERAGE_PINS[name],
-        );
-      } catch (error) {
-        if (!(error instanceof ScriptError)) throw error;
-        return { ...error.toFinding(), at: atOf(unitOf(name)) };
-      }
-    },
-  );
-  // Reported in unit order whatever order the pool finished in, so two runs of one tree print
-  // one report.
+  const merge = flagString(args, 'merge');
+  const outcomes: (CoverageVerdict | Finding)[] = [];
+  const parts: PartDocument[] = [];
+  if (merge !== undefined) {
+    outcomes.push(...foldAll(root, names, await readParts(resolve(root, merge))));
+  } else {
+    // Each name resolved once: a part carries its files, dealt by the plan every runner computes.
+    const plans = new Map<string, readonly UnitPart[]>();
+    const items: Scheduled[] = names.map((name) => {
+      const unit = unitOfName(name);
+      if (unit === name) return { name, unit };
+      const plan = plans.get(unit) ?? unitPlan(root, unit);
+      plans.set(unit, plan);
+      return { name, unit, part: plan.find((one) => partName(one) === name) as UnitPart };
+    });
+    // A unit leases as many cores as it runs workers, so a widened `cli` and three narrow units
+    // never ask a 4-core runner for seven at once.
+    const width = new Map(
+      items.map((item) => [
+        item.name,
+        workersFor((item.part?.files ?? testFilesOf(root, unitOf(item.unit))).length, jobs),
+      ]),
+    );
+    const settled = await leasePool(
+      items,
+      jobs,
+      (item) => width.get(item.name) ?? 1,
+      async (item): Promise<Measured> => {
+        try {
+          const workers = width.get(item.name) ?? 1;
+          const ran = await measure(root, item, workers, unitTimeout ?? UNIT_TIMEOUT_MS);
+          if (item.part === undefined) {
+            return {
+              kind: 'verdict',
+              verdict: verdictOf(root, item.unit, ran.lcov, { seconds: ran.seconds, workers }),
+            };
+          }
+          const own = ownCoverage(ran.lcov, ownSourceOf(item.unit));
+          return {
+            kind: 'part',
+            doc: partDocument(item.part, own, { seconds: ran.seconds, workers }),
+          };
+        } catch (error) {
+          if (!(error instanceof ScriptError)) throw error;
+          return {
+            kind: 'finding',
+            finding: { ...error.toFinding(), at: atOf(unitOf(item.unit)) },
+          };
+        }
+      },
+    );
+    for (const outcome of settled) {
+      if (outcome.kind === 'verdict') outcomes.push(outcome.verdict);
+      else if (outcome.kind === 'finding') outcomes.push(outcome.finding);
+      else parts.push(outcome.doc);
+    }
+    // A unit whose every part ran here is judged here; one cut across shards waits for `--merge`.
+    const cut = [...plans].filter(([, plan]) =>
+      plan.every((part) => parts.some((doc) => doc.unit === part.unit && doc.index === part.index)),
+    );
+    outcomes.push(
+      ...foldAll(
+        root,
+        cut.map(([unit]) => unit),
+        parts,
+      ),
+    );
+    const left = parts.filter((doc) => !cut.some(([unit]) => unit === doc.unit));
+    if (left.length > 0) mkdirSync(join(root, PARTS_DIR), { recursive: true });
+    for (const doc of left)
+      await Bun.write(join(root, PARTS_DIR, partFile(doc)), JSON.stringify(doc));
+  }
   const verdicts: CoverageVerdict[] = [];
   const findings: Finding[] = [];
-  for (const outcome of settled) {
+  for (const outcome of outcomes) {
     if ('reading' in outcome) {
       verdicts.push(outcome);
       findings.push(...outcome.findings);
     } else findings.push(outcome);
   }
+  // Reported in unit order whatever order the pool finished in, so two runs of one tree print
+  // one report.
+  verdicts.sort((a, b) =>
+    a.reading.pkg < b.reading.pkg ? -1 : a.reading.pkg > b.reading.pkg ? 1 : 0,
+  );
 
   const ok = findings.length === 0;
   const shard = flagString(args, 'shard');
+  const scope =
+    merge !== undefined
+      ? ' folded from their parts'
+      : shard === undefined
+        ? ''
+        : ` of shard ${shard}`;
   report(
     {
       ok,
       script: 'coverage-gate',
       summary: ok
-        ? `${verdicts.length} unit(s)${shard === undefined ? '' : ` of shard ${shard}`} at or above their bar — target ${COVERAGE_TARGET}%, ${Object.keys(COVERAGE_PINS).length} pinned`
+        ? `${verdicts.length} unit(s)${scope} at or above their bar — target ${COVERAGE_TARGET}%, ${Object.keys(COVERAGE_PINS).length} pinned`
         : `${findings.length} coverage finding(s) across ${names.length} unit(s)`,
       findings,
       // Slowest first: the line to read when a shard is the slow one and the split needs moving.
-      lines: [...verdicts]
-        .sort((a, b) => (b.reading.seconds ?? 0) - (a.reading.seconds ?? 0))
-        .map(
-          (verdict) =>
-            `  ${String(verdict.reading.seconds ?? 0).padStart(6)}s  ${verdict.reading.pkg}  ${verdict.reading.lines}% / ${verdict.reading.funcs}%${(verdict.reading.workers ?? 1) > 1 ? `  (${String(verdict.reading.workers)} workers)` : ''}`,
-        ),
+      // A part measured here and judged by `--merge` is listed with its time and no verdict.
+      lines: [
+        ...[...verdicts]
+          .sort((a, b) => (b.reading.seconds ?? 0) - (a.reading.seconds ?? 0))
+          .map(
+            (verdict) =>
+              `  ${String(verdict.reading.seconds ?? 0).padStart(6)}s  ${verdict.reading.pkg}  ${verdict.reading.lines}% / ${verdict.reading.funcs}%${(verdict.reading.workers ?? 1) > 1 ? `  (${String(verdict.reading.workers)} workers)` : ''}`,
+          ),
+        ...parts
+          .filter((doc) => !verdicts.some((verdict) => verdict.reading.pkg === doc.unit))
+          .map(
+            (doc) =>
+              `  ${String(doc.seconds).padStart(6)}s  ${partName(doc)}  (${String(doc.workers)} workers) — judged by --merge, written to ${PARTS_DIR}/${partFile(doc)}`,
+          ),
+      ],
       data: verdicts.map((verdict) => verdict.reading),
     },
     json,
