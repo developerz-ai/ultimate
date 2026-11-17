@@ -207,6 +207,36 @@ describe('the job registry, in one process', () => {
   }, 30_000);
 });
 
+/**
+ * In an APP, a job a module declared when a test body imported it lazily stays for the worker's
+ * life: the module is a cache hit for every later file and will never call `job()` again. Restored
+ * exactly, the job left with the first file, and the second file's queue held a job "nothing
+ * registered" (X_INVARIANT) — 31.25.0 to 31.40.1, measured on one adopter's unit and job suites.
+ */
+const lazyJobImporter = (name: string): string => `import { expect, test } from 'bun:test';
+import { registeredJobs } from '${JOBS}';
+
+await import('./declare-job');
+
+test('${name} sees the job its lazy import declared', () => {
+  expect(registeredJobs().map((handle) => handle.name)).toContain('probeJob');
+});
+`;
+
+describe('the job registry, in an app', () => {
+  test('a job a lazily imported module declared is every later file’s too', async () => {
+    const { output, exitCode } = await runFixtures({
+      'app.config.ts': 'export {};\n',
+      'declare-job.ts': DECLARE_JOB,
+      'first.test.ts': lazyJobImporter('first'),
+      'second.test.ts': lazyJobImporter('second'),
+    });
+
+    expect(output).toContain('2 pass');
+    expect(exitCode).toBe(0);
+  }, 30_000);
+});
+
 const I18N = join(SRC, '..', '..', 'i18n', 'src', 'index.ts');
 
 describe('the locale config, in one process', () => {
