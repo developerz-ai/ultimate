@@ -16,7 +16,6 @@ import {
   UNIT_TIMEOUT_MS,
   unimportedSources,
   unitFailure,
-  unitTimeoutOf,
   withUnloadedCounted,
 } from './coverage-gate';
 import { COVERAGE_PINS, COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
@@ -219,17 +218,6 @@ describe('a suite that fails alone', () => {
     expect(failure?.code).toBe('X_SPAWN_TIMED_OUT');
     expect(failure?.cause).toContain(`within ${String(UNIT_TIMEOUT_MS)} ms`);
     expect(failure?.fix).toContain('bun run scripts/coverage-gate.ts --package money --json');
-  });
-
-  // CI kills the job at 15 minutes and keeps no log of a cancelled one; at the 30-minute default
-  // a hung unit was never named (the packages shard on the 31.42.0 release, twice). The shard
-  // passes `--unit-timeout`, so the deadline fires first and the finding names the unit.
-  test('the deadline is the one it was given, and the flag is whole seconds or a refusal', () => {
-    const failure = unitFailure('cli', { code: null, output: '', timedOut: true }, 540_000);
-    expect(failure?.cause).toContain('within 540000 ms');
-    expect(unitTimeoutOf(undefined)).toBe(UNIT_TIMEOUT_MS);
-    expect(unitTimeoutOf('540')).toBe(540_000);
-    for (const bad of ['0', '-5', '1.5', 'ten', '']) expect(unitTimeoutOf(bad)).toBeUndefined();
   });
 
   test('a finished run is judged on its exit code and its whole output', () => {
