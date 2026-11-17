@@ -26,6 +26,7 @@ import { codemod as reproGitignore } from './repro-gitignore';
 import { codemod as runtimePin } from './runtime-pin';
 import { codemod as solidFloor } from './solid-floor';
 import { codemod as testPorts } from './test-ports';
+import { codemod as testServices } from './test-services';
 import { codemod as testSuites } from './test-suites';
 import { codemod as themeToggleMountOver } from './theme-toggle-mount-over';
 import { codemod as vendoredGuards } from './vendored-guards';
@@ -61,4 +62,5 @@ export const CODEMODS: readonly Codemod[] = [
   migrateJobOrdered,
   ciServicesEnv,
   docsEnvGuard,
+  testServices,
 ];

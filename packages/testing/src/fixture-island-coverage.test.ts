@@ -9,12 +9,15 @@ import type { IslandBuilder } from './fixture-island';
 import { mountIsland } from './fixture-island';
 import { ISLAND_COVERAGE_ENV, islandCoverageDir } from './fixture-island-coverage';
 
-const CODE = 'export function mount(el) { el.textContent = "on"; }\n';
+/** The coverage build keeps whitespace for its map; the shipped one is minified. */
+const CODE = 'export function mount(el) {\n  el.textContent = "on";\n}\n';
+const SHIPPED = 'export function mount(e){e.textContent="on"}';
 const asked: unknown[] = [];
 const build: IslandBuilder = async (_root, options) => {
   asked.push(options);
+  const code = options?.coverage === true ? CODE : SHIPPED;
   return {
-    chunks: [{ file: 'apps/web/x.island.tsx', code: CODE, map: '{"mappings":";AAAA"}' }],
+    chunks: [{ file: 'apps/web/x.island.tsx', code, map: '{"mappings":";AAAA"}' }],
     shared: [{ url: '/islands/chunk-1.js', code: 'export const s = 1;\n', map: '{"m":1}' }],
   };
 };
@@ -31,7 +34,10 @@ describe('mountIsland under a coverage run', () => {
       process.env[ISLAND_COVERAGE_ENV] = dir;
       const mounted = await mountIsland({ build, root: '/app', file: 'apps/web/x.island.tsx' });
       mounted[Symbol.dispose]();
-      expect(asked).toEqual([{ only: 'apps/web/x.island.tsx', coverage: true }]);
+      expect(asked).toEqual([
+        { only: 'apps/web/x.island.tsx', coverage: true },
+        { only: 'apps/web/x.island.tsx' },
+      ]);
       const names = (await readdir(dir)).sort();
       const module = `${Bun.SHA256.hash(CODE, 'hex').slice(0, 16)}.mjs`;
       expect(names).toEqual([`${module}.json`, 'chunk-1.js.json'].sort());
@@ -40,6 +46,21 @@ describe('mountIsland under a coverage run', () => {
         cwd: process.cwd(),
         map: '{"mappings":";AAAA"}',
       });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // An app's size ceiling (`mounted.code.length`) weighs what ships: the unminified coverage
+  // build answered it from 31.27 to 31.40, red under `x verify` and green under `bun test`.
+  test('code is still the SHIPPED chunk — the covered build only runs and maps', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-island-maps-'));
+    try {
+      process.env[ISLAND_COVERAGE_ENV] = dir;
+      const mounted = await mountIsland({ build, root: '/app', file: 'apps/web/x.island.tsx' });
+      mounted[Symbol.dispose]();
+      expect(mounted.code).toBe(SHIPPED);
+      expect(mounted.el.textContent).toBe('on');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

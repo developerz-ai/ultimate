@@ -52,8 +52,27 @@ const GRPC_PORT = '4317';
 
 export type OtlpEnv = Readonly<Record<string, string | undefined>>;
 
-const signalKey = (signal: OtlpSignal, suffix: string): string =>
-  `OTEL_EXPORTER_OTLP_${signal.toUpperCase()}_${suffix}`;
+/** Each signal's own variables, spelled whole so `FRAMEWORK_ENV`'s scan sees every read. */
+const SIGNAL_KEYS = {
+  traces: {
+    ENDPOINT: 'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT',
+    HEADERS: 'OTEL_EXPORTER_OTLP_TRACES_HEADERS',
+    PROTOCOL: 'OTEL_EXPORTER_OTLP_TRACES_PROTOCOL',
+  },
+  metrics: {
+    ENDPOINT: 'OTEL_EXPORTER_OTLP_METRICS_ENDPOINT',
+    HEADERS: 'OTEL_EXPORTER_OTLP_METRICS_HEADERS',
+    PROTOCOL: 'OTEL_EXPORTER_OTLP_METRICS_PROTOCOL',
+  },
+  logs: {
+    ENDPOINT: 'OTEL_EXPORTER_OTLP_LOGS_ENDPOINT',
+    HEADERS: 'OTEL_EXPORTER_OTLP_LOGS_HEADERS',
+    PROTOCOL: 'OTEL_EXPORTER_OTLP_LOGS_PROTOCOL',
+  },
+} as const satisfies Record<OtlpSignal, Record<'ENDPOINT' | 'HEADERS' | 'PROTOCOL', string>>;
+
+const signalKey = (signal: OtlpSignal, suffix: 'ENDPOINT' | 'HEADERS' | 'PROTOCOL'): string =>
+  SIGNAL_KEYS[signal][suffix];
 
 /**
  * OTLP/HTTP JSON only. gRPC needs HTTP/2 plus protobuf, which is a dependency and a second wire

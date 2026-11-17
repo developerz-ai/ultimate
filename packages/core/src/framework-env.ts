@@ -67,7 +67,14 @@ export const FRAMEWORK_ENV: readonly FrameworkEnvName[] = [
   ...contract('core', 'OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_HEADERS'),
   ...contract('core', 'OTEL_EXPORTER_OTLP_PROTOCOL', 'OTEL_TRACES_SAMPLER'),
   ...contract('core', 'OTEL_TRACES_SAMPLER_ARG'),
-  // The signal-specific family (`OTEL_TRACES_EXPORTER`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`).
+  // Each exporter's own endpoint, headers and protocol (`otlp.ts`'s `SIGNAL_KEYS`), read before
+  // the general pair: configuration an app declares, exactly as it declares the general endpoint.
+  ...contract('core', 'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT', 'OTEL_EXPORTER_OTLP_TRACES_HEADERS'),
+  ...contract('core', 'OTEL_EXPORTER_OTLP_METRICS_ENDPOINT', 'OTEL_EXPORTER_OTLP_METRICS_HEADERS'),
+  ...contract('core', 'OTEL_EXPORTER_OTLP_LOGS_ENDPOINT', 'OTEL_EXPORTER_OTLP_LOGS_HEADERS'),
+  ...contract('core', 'OTEL_EXPORTER_OTLP_TRACES_PROTOCOL', 'OTEL_EXPORTER_OTLP_METRICS_PROTOCOL'),
+  ...contract('core', 'OTEL_EXPORTER_OTLP_LOGS_PROTOCOL'),
+  // The rest of the family (`OTEL_TRACES_EXPORTER`, `OTEL_LOGS_EXPORTER`): switches.
   prefix('OTEL_', 'core', 'switch'),
   ...host('core', 'USERNAME', 'USERDOMAIN'),
   ...contract('db', 'DATABASE_URL', 'DATABASE_POOL_MAX', 'DATABASE_POOLER'),

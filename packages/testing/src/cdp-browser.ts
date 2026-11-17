@@ -12,6 +12,7 @@ import type { LaunchedBrowser } from '@ultimat3/scraping/cdp';
 import {
   CdpBrowserMissingError,
   CHROME_CANDIDATES,
+  CHROME_RESTRICTED_PORTS,
   findChrome,
   LAUNCH_BUDGET_MS,
   launchChrome,
@@ -134,7 +135,12 @@ async function openLaunched(
   timeoutMs: number,
   acceptLanguage: string | undefined,
 ): Promise<E2eBrowser> {
-  const launched = await launchChrome({ executable, timeoutMs });
+  // The e2e browser loads pages its own tests serve on `port: 0`, which may be a port Chrome refuses.
+  const launched = await launchChrome({
+    executable,
+    timeoutMs,
+    allowedPorts: CHROME_RESTRICTED_PORTS,
+  });
   const { connection } = launched;
   try {
     const session = await cdpE2eSession({

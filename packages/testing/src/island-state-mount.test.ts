@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineIslandStates } from './define-island-states';
 import type { IslandBuilder } from './fixture-island';
+import { ISLAND_COVERAGE_ENV } from './fixture-island-coverage';
 import { FILE, LIVE_ISLAND, ROOT } from './fixture-island-fixtures.test';
 import { describeIslandState, mountIslandState } from './island-state-mount';
 import { testName } from './test-types';
@@ -97,6 +98,26 @@ describe(testName('unit', 'mountIslandState'), () => {
     using mounted = await mountIslandState(states, 'idle', flakyIsland);
     expect(mounted.text('[data-role="count"]')).toBe('count 0');
     expect(calls).toBe(2);
+  });
+
+  // Under the gate's coverage run a mount builds twice — covered to run, shipped for `code` — and
+  // a cache keyed by the island alone handed the covered bundle back as the shipped one: an island
+  // size ceiling read the unminified chunk (measured on an adopter: 107,247 B against 66,056 B).
+  test('under coverage, `code` is the shipped build, never the cached covered one', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-island-state-cov-'));
+    const covered = `${LIVE_ISLAND}\n// covered: whitespace kept\n`;
+    const twoBuilds: IslandBuilder = (_root, options) =>
+      Promise.resolve({
+        chunks: [{ file: FILE, code: options?.coverage === true ? covered : LIVE_ISLAND }],
+      });
+    try {
+      process.env[ISLAND_COVERAGE_ENV] = dir;
+      using mounted = await mountIslandState(states, 'idle', { build: twoBuilds, root: ROOT });
+      expect(mounted.code).toBe(LIVE_ISLAND);
+    } finally {
+      delete process.env[ISLAND_COVERAGE_ENV];
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test('the accessor outside its own block’s tests has nothing to hand over', () => {

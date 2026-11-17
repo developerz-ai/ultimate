@@ -33,12 +33,15 @@ describe('unit · shipped guard · undeclared-env', () => {
       'apps/web/app/billing/b.ts': "export const b = Bun.env['STRIPE_KEY'];\n",
       'packages/domain/src/c.tsx': 'export const c = import.meta.env.PUBLIC_KEY;\n',
       'packages/domain/src/d.ts': 'export const d = process.env["LEGACY_TOKEN"];\n',
+      // A template's `${…}` is code: the read inside it is a read.
+      'packages/domain/src/e.ts': 'export const e = `key=${process.env.TEMPLATED}`;\n',
     });
     expect(at(findings).sort()).toEqual([
       'apps/web/app/billing/b.ts',
       'apps/web/app/billing/service.ts',
       'packages/domain/src/c.tsx',
       'packages/domain/src/d.ts',
+      'packages/domain/src/e.ts',
     ]);
     const first = findings.find((finding) => finding.at === 'apps/web/app/billing/service.ts');
     expect(first?.code).toBe('X_UNDECLARED_ENV');
@@ -62,6 +65,15 @@ describe('unit · shipped guard · undeclared-env', () => {
         'export const d = (name: string) => Bun.env[name];',
         'export const e = { env: Bun.env };',
         '// process.env.NOT_READ is a note',
+        '',
+      ].join('\n'),
+      // A name quoted in prose or data is no read (a generated docs file, measured on an adopter),
+      // and the OS's own PATH, handed to a child process, is nothing a deploy declares.
+      'packages/domain/src/kb.generated.ts': [
+        'export const doc = "set process.env.API_TOKEN, then call";',
+        "export const two = 'or Bun.env[\\'API_TOKEN\\'] in a script';",
+        'export const tpl = `export TOKEN=${1} and read process.env.API_TOKEN`;',
+        "export const env = { PATH: Bun.env.PATH ?? '' };",
         '',
       ].join('\n'),
       'apps/web/app/a.test.ts': 'export const t = process.env.STRIPE_KEY;\n',

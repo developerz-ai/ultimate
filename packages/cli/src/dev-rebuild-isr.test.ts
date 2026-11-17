@@ -44,11 +44,41 @@ test('a render begun before the save never lands as a fresh page after the rebui
   );
   await Promise.resolve();
   // T1: the save's rebuild clears the store.
-  await clearIsrForRebuild(isr.store());
+  await clearIsrForRebuild(isr);
   expect(await isr.store().paths()).toEqual([]);
   // T2: the old render resolves.
   finish('v1-old-module');
   await inflight;
   const held = await isr.store().get('/pricing');
   expect(held === undefined || held.stale === true).toBe(true);
+});
+
+// Round 3, P2-B: the store was clean, yet a request arriving after the save JOINED the render begun
+// before it and was served the pre-save HTML. The clear evicts the flight, so it renders anew.
+test('a request after the rebuild clear renders anew, never joining a pre-save render', async () => {
+  registerRoute({
+    file: 'apps/web/site/pricing/page.tsx',
+    config: defineRoute({
+      render: 'isr',
+      revalidate: { tags: [tag('post')] },
+      offline: 'precache',
+      hydrate: 'never',
+      meta,
+    }),
+  });
+  const isr = isrController({ routes: describePages });
+  let finish!: (html: string) => void;
+  const before = isr.serve(
+    '/pricing',
+    () =>
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await Promise.resolve();
+  await clearIsrForRebuild(isr);
+  const after = await isr.serve('/pricing', async () => 'v2-new-module');
+  expect(after.entry.html).toBe('v2-new-module');
+  finish('v1-old-module');
+  await before;
 });

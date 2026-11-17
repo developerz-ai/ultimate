@@ -35,6 +35,9 @@ const goneSoon = async (pids: readonly number[]): Promise<boolean> => {
   return false;
 };
 
+// Every child here sleeps 20 s, never 300: each test kills it within milliseconds, and one the tag
+// scan missed under CI load used to outlive the test holding the runner's pipe, so the job hung to
+// its timeout (31.40.0's release commit, cancelled). Twenty seconds bounds that leak.
 describe('the deadline a step runs under', () => {
   test('a suite gets the suite number, a check the check number', () => {
     expect(stepDeadline('unit', [], 1)).toEqual({ ms: SUITE_STEP_TIMEOUT_MS });
@@ -120,7 +123,7 @@ describe('guardStep', () => {
     const guard = guardStep(exec, tag, {});
     // The shell backgrounds one sleeper and waits on another: two processes, one of which is
     // re-parented the moment the shell dies — the orphan a ppid walk would miss.
-    const running = guard.runner(['sh', '-c', 'sleep 300 & echo $! ; echo $$ ; sleep 300'], {
+    const running = guard.runner(['sh', '-c', 'sleep 20 & echo $! ; echo $$ ; sleep 20'], {
       cwd: process.cwd(),
     });
     let listed: readonly number[] = [];
@@ -134,8 +137,8 @@ describe('guardStep', () => {
     expect(expiry.killed.length).toBeGreaterThanOrEqual(3);
     // Read before the kill, so each is still its own argv and not an empty zombie.
     const commands = expiry.killed.map((one) => one.command);
-    expect(commands.filter((command) => command === 'sleep 300')).toHaveLength(2);
-    expect(commands.some((command) => command.startsWith('sh -c sleep 300 &'))).toBe(true);
+    expect(commands.filter((command) => command === 'sleep 20')).toHaveLength(2);
+    expect(commands.some((command) => command.startsWith('sh -c sleep 20 &'))).toBe(true);
     // The call the step was waiting on, with what the child had printed before it died.
     expect(expiry.inFlight).toHaveLength(1);
     expect(expiry.inFlight[0]?.command[0]).toBe('sh');
@@ -157,11 +160,11 @@ describe('guardStep', () => {
     const pid = new Promise<number>((resolve) => {
       spawned = resolve;
     });
-    const running = guard.runner(['sleep', '300'], { cwd: process.cwd(), onSpawn: spawned });
+    const running = guard.runner(['sleep', '20'], { cwd: process.cwd(), onSpawn: spawned });
     // The spawn has returned, so the child has exec'd with the environment it was given.
     const child = await pid;
     expect(await tagged(outer)).toEqual([child]);
-    expect(await killTagged(outer)).toEqual([{ pid: child, command: 'sleep 300' }]);
+    expect(await killTagged(outer)).toEqual([{ pid: child, command: 'sleep 20' }]);
     expect((await running).ok).toBe(false);
   });
 });
@@ -174,7 +177,7 @@ describe('where there is no procfs', () => {
     const pid = new Promise<number>((resolve) => {
       spawned = resolve;
     });
-    const running = guard.runner(['sleep', '300'], { cwd: process.cwd(), onSpawn: spawned });
+    const running = guard.runner(['sleep', '20'], { cwd: process.cwd(), onSpawn: spawned });
     const found = [await pid];
     expect(taggedPids(await psProcesses(), tag)).toEqual(found);
     expect(await killTagged(tag, psProcesses)).toHaveLength(1);

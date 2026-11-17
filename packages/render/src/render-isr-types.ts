@@ -99,6 +99,12 @@ export interface IsrController {
   inflight(): number;
   store(): IsrStore;
   /**
+   * Every page this controller stores or is rendering, forgotten: flights evicted, fences marked,
+   * the store emptied — so the next request renders, never joining a render begun before. `x dev`'s
+   * rebuild calls it on a save.
+   */
+  forgetAll(): Promise<void>;
+  /**
    * Register this controller as the framework's revalidator, so
    * `action({ cache: { invalidates: [tag.post] } })` reaches ISR in the same hop as
    * memo, LRU, Redis and the CDN. Returns a detach function for tests and reloads.
