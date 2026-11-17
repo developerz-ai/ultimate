@@ -133,19 +133,19 @@ schedules:
   - name: release-due
     days: [tue]
     hours_utc: [3]
-    brief_file: .dz/briefs/release-due.md
+    brief_file: .dz/schedules/release-due.md
   # The one exception, so a confirmed security fix does not wait up to a week for Tuesday.
   - name: security-release
     days: [mon, wed, thu, fri, sat, sun]
     hours_utc: [4]
-    brief_file: .dz/briefs/security-release.md
+    brief_file: .dz/schedules/security-release.md
   # The failures nothing announces: a red `main`, a publish that did not land, npm drift, a stuck
   # Dependabot PR. Bot-authored alarm issues never pass intake, so this is how they reach the bot.
   # Weekly (owner, 2026-11-06: routine maintenance weekly, CVE daily). Security has its own lanes.
   - name: health
     days: [mon]
     hours_utc: [7]
-    brief_file: .dz/briefs/health.md
+    brief_file: .dz/schedules/health.md
   # Leave it measurably better and one step ahead of the next Bun release: at most three small,
   # evidenced PRs, never a breaking change on `main` — a Bun or Solid playbook move
   # (docs/ops/08-raise-bun.md, 10-solid-major.md) is the one break it may open, against `next` (narrower than `escalate:` on
@@ -156,24 +156,38 @@ schedules:
   - name: improve
     days: [mon]
     hours_utc: [8]
-    brief_file: .dz/briefs/improve.md
+    brief_file: .dz/schedules/improve.md
   # A red `main` is repaired, never rerun to green: bisect by the failing step, revert when clean.
   - name: main-red
     days: [mon, tue, wed, thu, fri, sat, sun]
     hours_utc: [9]
-    brief_file: .dz/briefs/main-red.md
+    brief_file: .dz/schedules/main-red.md
   # Plan 101b slice 20 continuing: one rotating tier band through an auditor, at most three PRs.
   - name: audit
     days: [mon]
     hours_utc: [9]
-    brief_file: .dz/briefs/audit.md
+    brief_file: .dz/schedules/audit.md
   # Production evidence through the infrastructure's read paths; a framework finding becomes an issue.
   - name: evidence
     days: [wed]
     hours_utc: [7]
-    brief_file: .dz/briefs/evidence.md
+    brief_file: .dz/schedules/evidence.md
   # After a release: x upgrade + x verify over the tracked apps and a previous-minor scaffold.
   - name: adopter-canary
     days: [mon, tue, wed, thu, fri, sat, sun]
     hours_utc: [10]
-    brief_file: .dz/briefs/adopter-canary.md
+    brief_file: .dz/schedules/adopter-canary.md
+
+# Added by the developerz.ai maintainer agent: blocks from the current template this file did not have. Each states the value already in effect; edit it like any other key.
+
+# branches: on at 60 because this file exists. A branch with no new commit
+# this long is tagged archive/<branch>/<date> at its last commit, then deleted.
+# false keeps every branch. See /docs/maintainer-yml.
+branches:
+  close_inactive_after_days: 60
+
+# scout: the platform's daily survey of this repo files only what is already BROKEN
+# (red CI, failing tests, a security advisory, a broken build or link) — never an
+# improvement idea. `full` lets it file ideas too; `off` stops the survey.
+scout:
+  survey: broken_only
