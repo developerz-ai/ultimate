@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Fixed
+
+- `x verify --json` now writes a `live` step's `services` (`reached` / `unavailable`). The step recorded it, but the JSON renderer copies fields by name and dropped it, so a gate part never carried it and `x verify merge` could not apply the strict `live` skip rule to a sharded run.
+
 ### Changed
 
 - `live` under a strict floor holds its skips at 0 in CI when `x.verify.json` writes no `skipCeiling.live` **and the run reached its database** (`X_VERIFY_SKIPS_OVER_CEILING`): a test that skipped with Postgres in reach proved nothing. A runner with no database (a macOS or Windows job, a stack docker could not start) keeps today's warning, `X_TEST_SERVICES_UNAVAILABLE`. The step now records `services: "reached" | "unavailable"` in `--json` and in a gate part, so `x verify merge` judges a sharded `live` by what every shard reached. See wiki/Upgrading.md.

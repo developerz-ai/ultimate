@@ -373,6 +373,8 @@ export function renderJson(
     // The counts the human line's `why()` renders, as numbers: a `--json` reader deciding whether
     // a skipped lane is missing a suite or missing a prerequisite needs the same fact CI's log has.
     ...(step.tests === undefined ? {} : { tests: step.tests }),
+    // What a `live` step's database was: `x verify merge` reads it from the part to judge skips.
+    ...(step.services === undefined ? {} : { services: step.services }),
     // A FAILED step carries its captured stdout, exactly as the human renderer prints it. CI runs
     // `--json`, and without this the log said only "one or more unit tests failed" with a generic
     // fix line — the failing test's name and its assertion diff existed and were thrown away, so

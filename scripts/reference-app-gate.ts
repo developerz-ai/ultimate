@@ -64,6 +64,11 @@ export interface GateStep {
    * precisely what CI showed: a shard's exit code, no test name, and nothing in the log to find.
    */
   readonly output?: string;
+  /**
+   * The step's warnings, printed only when it is red: a `live` step whose database never came up
+   * fails as a vanished suite, and the reason (`X_TEST_SERVICES_UNAVAILABLE`) is a warning.
+   */
+  readonly warnings?: readonly string[];
   /** The step's wall time as the gate printed it: the CI log's only answer to where the minutes went. */
   readonly durationMs?: number;
 }
@@ -81,7 +86,10 @@ const asStep = (value: unknown): GateStep | undefined => {
   if (typeof value !== 'object' || value === null) return undefined;
   const { name, ok, skipped, findings } = value as Record<string, unknown>;
   if (typeof name !== 'string' || typeof ok !== 'boolean') return undefined;
-  const { output, durationMs } = value as Record<string, unknown>;
+  const { output, durationMs, warnings } = value as Record<string, unknown>;
+  const said = Array.isArray(warnings)
+    ? warnings.filter((line): line is string => typeof line === 'string')
+    : [];
   return {
     name,
     ok,
@@ -91,6 +99,7 @@ const asStep = (value: unknown): GateStep | undefined => {
       .filter((f) => f !== undefined),
     // Absent, never `''`: "captured nothing" and "output dropped" are different states.
     ...(typeof output === 'string' && output.length > 0 ? { output } : {}),
+    ...(said.length > 0 ? { warnings: said } : {}),
     ...(typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0
       ? { durationMs }
       : {}),
@@ -354,8 +363,9 @@ export const stepLines = (
     // Only on a red step, and only when it is NOT pinned: success stays quiet (the pattern
     // `packages/cli/src/output.ts:205-207` sets), and a pinned red is expected, so printing its
     // output every run would bury the one unpinned failure a reader is here for.
-    if (!step.ok && !step.skipped && pinned === '' && step.output !== undefined) {
-      for (const line of step.output.split('\n')) lines.push(`      | ${line}`);
+    if (!step.ok && !step.skipped && pinned === '') {
+      for (const warning of step.warnings ?? []) lines.push(`      ! ${warning}`);
+      for (const line of step.output?.split('\n') ?? []) lines.push(`      | ${line}`);
     }
   }
   return lines;
