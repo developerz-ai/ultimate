@@ -8,7 +8,7 @@ import { basename, join } from 'node:path';
 import { onFileBoundary } from './file-boundary';
 import { islandCoverageDir, recordChunkMap } from './fixture-island-coverage';
 import { createIslandDocument, FakeElement, handlerFor, parseHtml } from './island-dom';
-import { islandMountMissing, islandNotBuilt } from './island-errors';
+import { IslandBuildReusedError, islandMountMissing, islandNotBuilt } from './island-errors';
 import { installGlobals } from './island-globals';
 import type { ResizeInput } from './island-observers';
 import { deliverResize } from './island-observers';
@@ -208,6 +208,21 @@ export function disposeLiveIslands(): number {
 // guard that runs the boundary, and a mount a file forgot is one only this module can see.
 onFileBoundary(disposeLiveIslands);
 
+/**
+ * The shipped chunk's source, asked of the builder a second time under a coverage run. The SAME
+ * bundle back is a memo that ignored `options` (`X_TEST_ISLAND_BUILD_REUSED`); a builder that
+ * ignores `coverage` altogether answers a fresh bundle and its chunk is what it is.
+ */
+async function shippedCode(
+  options: MountIslandOptions,
+  covered: IslandBundleLike,
+  chunk: IslandChunkLike,
+): Promise<string> {
+  const bundle = await options.build(options.root, { only: options.file });
+  if (bundle === covered) throw new IslandBuildReusedError({ file: options.file });
+  return bundle.chunks.find((each) => each.file === options.file)?.code ?? chunk.code;
+}
+
 export async function mountIsland(options: MountIslandOptions): Promise<MountedIsland> {
   // `only`, because this fixture has always KNOWN which island it wants and asked for all of them
   // anyway — `island-bundle.ts` added the option for exactly this caller ("a test that mounts a
@@ -238,12 +253,7 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
 
   // What `code` answers is what ships: a coverage build keeps whitespace for its map, and an app's
   // size ceiling read it as the chunk (31.27–31.40: green under `bun test`, red in `x verify`).
-  const shipped =
-    coverage === undefined
-      ? chunk.code
-      : ((await options.build(options.root, { only: options.file })).chunks.find(
-          (each) => each.file === options.file,
-        )?.code ?? chunk.code);
+  const shipped = coverage === undefined ? chunk.code : await shippedCode(options, bundle, chunk);
 
   const { documentElement, globals, resizeObservers } = createIslandDocument();
   const restore = installGlobals({ ...globals, ...options.globals });

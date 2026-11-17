@@ -66,6 +66,30 @@ describe('mountIsland under a coverage run', () => {
     }
   });
 
+  // The memo an app wraps round `buildIslands` (`bundle ??= buildIslands(root, options)`) answered
+  // both calls with the covered bundle, so the fix above could not reach it: 14 test files in one
+  // adopter read the unminified chunk. Refused by name rather than measured wrongly.
+  test('a builder that answers the shipped build with the covered bundle is refused', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-island-maps-'));
+    let bundle: ReturnType<IslandBuilder> | undefined;
+    const memo: IslandBuilder = (root, options) => {
+      bundle ??= build(root, options);
+      return bundle;
+    };
+    try {
+      process.env[ISLAND_COVERAGE_ENV] = dir;
+      const mounting = mountIsland({ build: memo, root: '/app', file: 'apps/web/x.island.tsx' });
+      const refused = await mounting.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(refused).toBeUltimateError('X_TEST_ISLAND_BUILD_REUSED');
+      expect('document' in globalThis).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test('outside one, the builder is asked for the shipped build and nothing is recorded', async () => {
     const mounted = await mountIsland({ build, root: '/app', file: 'apps/web/x.island.tsx' });
     mounted[Symbol.dispose]();
