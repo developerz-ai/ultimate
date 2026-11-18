@@ -1,0 +1,74 @@
+# Keeps the Actions cache under GitHub's 10 GB repository cap. CodeQL's default setup saves a ~1.1 GB
+# overlay base per push to `main` and deletes none: on 2026-11-18 nine of them held 10.1 GB, the
+# repository sat at 11.8 GB, and eviction was taking the install caches every job restores.
+#
+# NOT a step of `x verify`: it reads and changes live repository state, which no commit decides.
+# Hourly because the pushes come in bursts; a day of them would refill the cap between daily runs.
+
+name: actions-cache
+
+on:
+  schedule:
+    - cron: '37 * * * *'
+  workflow_dispatch:
+
+# `actions: write` deletes cache entries; `issues: write` files and closes the one alarm.
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: actions-cache
+  cancel-in-progress: true
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    # A few hundred API calls at most; the bound is for a hung one.
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+
+      - name: delete superseded cache entries
+        id: prune
+        # `pipefail`: without it `tee` decides the exit status and the alarm below never fires.
+        shell: bash
+        run: |
+          set -o pipefail
+          bun run scripts/actions-cache-prune.ts --apply --json | tee prune.json
+        # Not a swallowed failure: the steps below key on this outcome, then fail the run.
+        continue-on-error: true
+
+      - name: open the alarm when the cache stays over budget
+        if: steps.prune.outcome == 'failure'
+        # One open issue, and no comment per hour: it is closed by the first clean run.
+        run: |
+          if ! err="$(gh label create actions-cache --color d73a4a --description 'the Actions cache stays over budget' 2>&1)"; then
+            gh api "repos/${GITHUB_REPOSITORY}/labels/actions-cache" >/dev/null 2>&1 || { printf '%s\n' "$err" >&2; exit 1; }
+          fi
+          existing="$(gh issue list --label actions-cache --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then exit 0; fi
+          summary="$(jq -r '.summary' prune.json)"
+          body="$(jq -r '"**" + .summary + "**\n\n" + ([.findings[] | "- `" + .code + "` " + .cause + "\n  - fix: `" + .fix + "`"] | join("\n"))' prune.json)"
+          gh issue create --label actions-cache --title "actions cache: $summary" --body "$body"
+
+      - name: close the alarm once the cache is back under budget
+        if: steps.prune.outcome == 'success'
+        run: |
+          summary="$(jq -r '.summary' prune.json)"
+          # Captured, never piped into the loop: a failed list must not end green.
+          open="$(gh issue list --label actions-cache --state open --json number --jq '.[].number')"
+          for number in $open; do
+            gh issue close "$number" --reason completed --comment "Clean run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}: $summary"
+          done
+
+      - name: fail the run so the health row sees it
+        if: steps.prune.outcome == 'failure'
+        run: exit 1

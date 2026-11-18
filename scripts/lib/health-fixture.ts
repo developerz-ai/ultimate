@@ -73,7 +73,7 @@ export const healthyReaders = (now: string = new Date().toISOString()): HealthRe
     }),
     'stale-bot-issues': async () => ({
       issues: [],
-      greens: { 'registry-audit.yml': [], 'compat.yml': [] },
+      greens: { 'registry-audit.yml': [], 'actions-cache.yml': [], 'compat.yml': [] },
     }),
     'stale-branches': async () => ({
       refs: { data: { repository: { refs: { totalCount: 0, nodes: [] } } } },

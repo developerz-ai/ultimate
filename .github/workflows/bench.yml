@@ -6,6 +6,7 @@
 # NOT a step of `x verify`, and it must never become one: it resolves npm and measures wall time,
 # and green may not depend on either. It changes no file on `main`: it opens a pull request with the
 # new JSON, which `bun run scripts/bench-claims.ts` then holds the prose to (`X_BENCH_CLAIM_STALE`).
+# One branch, so one open pull request: a new measurement replaces the last one that nobody merged.
 
 name: bench
 
@@ -78,20 +79,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet -- scripts/bench/results; then exit 0; fi
-          BRANCH="bench/${GITHUB_RUN_ID}"
+          BRANCH='bench/re-measured'
+          BODY="Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. \`bun run scripts/bench-claims.ts\` says which prose to update."
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$BRANCH"
           git add scripts/bench/results
           git commit -m "chore(bench): re-measure first hour and http-hello (run ${GITHUB_RUN_ID})"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          # Forced: the branch is always one commit of figures on today's `main`, and last week's
+          # figures are what this run supersedes. The replaced commit stays on the pull request.
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          OPEN="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$OPEN" ]; then
+            gh pr edit "$OPEN" --body "$BODY"
+            exit 0
+          fi
           # Refused — `GitHub Actions is not permitted to create or approve pull requests` — when the
           # repository or its organisation does not let Actions create pull requests; no
           # `permissions:` key can grant that. Both 2026-11 runs measured, pushed and died here. The
           # refusal names no approve flag as the fix: that switch also lets any workflow's token
           # approve a pull request, which is a review branch protection then cannot tell apart.
-          if ! gh pr create --head "$BRANCH" --title 'chore(bench): re-measured figures' \
-            --body "Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. \`bun run scripts/bench-claims.ts\` says which prose to update."; then
+          if ! gh pr create --head "$BRANCH" --title 'chore(bench): re-measured figures' --body "$BODY"; then
             echo "::error::no pull request for ${BRANCH} (pushed): this run needs GitHub Actions allowed to create pull requests, in the repository's and the organisation's Actions settings. Cost: a bot can then open pull requests, so required reviews must come from CODEOWNERS, which the bot cannot satisfy. Until then open it by hand: gh pr create --head ${BRANCH} --fill"
             exit 1
           fi
