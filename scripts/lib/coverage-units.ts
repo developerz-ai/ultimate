@@ -2,9 +2,16 @@
 // package, and `scripts/`), the flags, and the `--shard` split. Data and argv only — the
 // measurement and the ratchet are the gate's.
 
+// why: readFileSync — `unitsFor` is synchronous, and the weights are read once per invocation;
+// `join` — Bun ships no path joiner.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { BadFlagError } from '../../packages/cli/src/errors';
 import type { KnownFlags } from './args';
 import { refuseUnknownFlags } from './args';
+import { parseWeights, WEIGHTS_FILE } from './ci/test-weights';
+import type { UnitPart } from './coverage-parts';
+import { coverageFiles, PARTS_DIR, partName, planParts, unitOfName } from './coverage-parts';
 import { unitWeight } from './coverage-schedule';
 
 /**
@@ -66,6 +73,7 @@ export const COVERAGE_GATE_FLAGS = [
   'jobs',
   'shard',
   'unit-timeout',
+  'merge',
 ] as const;
 
 const refuse = (flag: string, reason: string, fix: string): BadFlagError =>
@@ -91,6 +99,42 @@ export function testFilesOf(root: string, unit: CoverageUnit): readonly string[]
   }
   return files;
 }
+
+/**
+ * The committed per-file weights a unit's parts are cut by, or none. Unreadable is no weights, not
+ * a refusal: every file then costs the same, which moves only the balance and the part count —
+ * never a verdict — and `scripts/lib/ci/test-weights.test.ts` holds the committed file valid.
+ */
+export function readWeights(root: string): Readonly<Record<string, number>> {
+  try {
+    const parsed = parseWeights(JSON.parse(readFileSync(join(root, WEIGHTS_FILE), 'utf8')));
+    return typeof parsed === 'string' ? {} : parsed.files;
+  } catch {
+    return {};
+  }
+}
+
+/** How `name` is measured: one part (the whole unit), or the weight bands of `planParts`. */
+export const unitPlan = (
+  root: string,
+  name: string,
+  weights: Readonly<Record<string, number>> = readWeights(root),
+): readonly UnitPart[] => planParts(name, coverageFiles(testFilesOf(root, unitOf(name))), weights);
+
+/** Each unit as it is scheduled: its own name, or one `unit#i/n` per part when it is cut. */
+export function scheduledNames(root: string, units: readonly string[]): readonly string[] {
+  const weights = readWeights(root);
+  return units.flatMap((name) => {
+    const plan = unitPlan(root, name, weights);
+    return plan.length === 1 ? [name] : plan.map(partName);
+  });
+}
+
+/** What a scheduled name weighs when shards are dealt: a part is its unit's share. */
+export const scheduledWeight = (name: string): number => {
+  const total = /#\d+\/(\d+)$/.exec(name)?.[1];
+  return unitWeight(unitOfName(name)) / (total === undefined ? 1 : Number(total));
+};
 
 /**
  * `--shard i/n`: the units this runner gates. Dealt heaviest first, each to the shard holding the
@@ -147,6 +191,19 @@ export function unitsFor(
   if (typeof rawAll === 'string') throw refuse('all', '--all takes no value', `${SELF} --all`);
   const all = rawAll === true;
   const shard = flags.get('shard');
+  const merge = flags.get('merge');
+  if (merge !== undefined) {
+    const fix = `${SELF} --merge ${PARTS_DIR}`;
+    if (typeof merge !== 'string') {
+      throw refuse('merge', '--merge takes the directory the shards wrote their parts to', fix);
+    }
+    if (only !== undefined || all || shard !== undefined) {
+      throw refuse('merge', '--merge folds parts the shards measured and runs no suite', fix);
+    }
+    // The units that are cut: a whole unit was judged by the shard that ran it.
+    const weights = readWeights(root);
+    return unitsToGate(root).filter((name) => unitPlan(root, name, weights).length > 1);
+  }
   if (typeof only === 'string' && all) {
     throw refuse('package', '--package and --all name two different runs', `${SELF} --all`);
   }
@@ -164,8 +221,8 @@ export function unitsFor(
       `${SELF} --all --shard 1/2`,
     );
   }
-  if (typeof only === 'string') return [only];
-  const units = unitsToGate(root);
+  if (typeof only === 'string') return scheduledNames(root, [only]);
+  const units = scheduledNames(root, unitsToGate(root));
   if (shard === undefined) return units;
-  return shardUnits(units, typeof shard === 'string' ? shard : '', (name) => unitWeight(name));
+  return shardUnits(units, typeof shard === 'string' ? shard : '', scheduledWeight);
 }

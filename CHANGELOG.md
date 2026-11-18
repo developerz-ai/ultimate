@@ -13,6 +13,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 ### Changed
 
 - The scaffold pins `@biomejs/biome` 2.6.4, and its `biome.json` `$schema` moves with it, so a new app lints with the same formatter this repository runs.
+- CI: `cli`'s coverage run now runs as two weight-band parts on separate `packages` runners, and `coverage-gate.ts --merge` folds them in a new `packages (merge)` job. Lines fold exactly; functions fold as a lower bound, because Bun's lcov counts functions without naming them. `cli` is pinned at 95% lines / 94.5% functions until the fold clears 95%. The suite had grown to 330â€“440 s against a 450 s deadline, and that is what read as a hang.
 
 ## Releases
 

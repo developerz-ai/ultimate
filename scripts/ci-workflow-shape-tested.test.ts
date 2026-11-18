@@ -34,13 +34,14 @@ const PATH_SKIPPED = [
 /**
  * Never reused: `deploy-proof` keeps its own due rule; `tested` and `changes` are questions;
  * `flaky` reruns a pull request's changed tests and `release-rehearsal` stamps the next minor
- * over them, and both run on nothing else.
+ * over them, and both run on nothing else. `verify` and `packages-merge` fold their parts' output.
  */
 const OWN_RULE = [
   'tested',
   'changes',
   'deploy-proof',
   'verify',
+  'packages-merge',
   'flaky',
   'release-rehearsal',
 ] as const;
@@ -75,6 +76,12 @@ describe('unit · ci.yml · a push a green PR run already tested', () => {
   test('verify still merges when a part is red, and is skipped only by tested', () => {
     expect([...needsOf(job('verify'))].sort()).toEqual(['gate', 'tested']);
     expect(job('verify').if).toBe(expr(`!cancelled() && ${REUSE_IF}`));
+  });
+
+  // A red shard must still reach the merge: a part it never wrote is named there, never skipped.
+  test('packages-merge folds when a shard is red, and is skipped only by tested', () => {
+    expect([...needsOf(job('packages-merge'))].sort()).toEqual(['packages', 'tested']);
+    expect(job('packages-merge').if).toBe(expr(`!cancelled() && ${REUSE_IF}`));
   });
 
   test('a red or cancelled tested job runs everything: the reuse condition is evaluated past it', () => {

@@ -18,7 +18,8 @@ import { renderFixShellArg } from '@ultimat3/core';
  * on three workers, `ai` 3.7 s → 8.4 s, `scraping` 1.9 s → 5.8 s. It pays only where one process
  * is the shard's whole wall clock: `cli`, 664 files, 430 s in one process on a runner (run
  * 42032367633), 1078 CPU-seconds and 233 s wall on four isolated workers here against 740 s in
- * one. Today that is `cli` (4 workers) and `scripts` (2).
+ * one. On CI 2026-11-17: each `cli` part (4 workers), `scripts` (3), and `jobs`, `db`, `entity`,
+ * `testing`, `realtime`, `core` (2).
  */
 export const FILES_PER_WORKER = 200;
 
@@ -94,46 +95,46 @@ export function leasePool<T, R>(
 
 /**
  * Core-seconds each unit cost — wall seconds × the workers it ran on, as the gate prints them
- * (`305.4s  cli … (4 workers)`) — what `--shard` deals units by. Measured ON CI 2026-11-09, run
- * 42697551693 (`packages (1/2)` and `(2/2)`, ubuntu-latest, four cores, no services), replacing the
- * 2026-11-05 local `taskset` table that read `scripts`, `jobs`, `db`, `core` and `realtime` at under
- * half their runner cost. A drifted number only moves the balance, never a verdict; a unit missing
- * weighs the median. Refresh from a run's two `packages` logs:
- * `gh api repos/developerz-ai/ultimate/actions/jobs/<id>/logs | grep -E '^\S+ +[0-9.]+s +[a-z-]+ '`.
+ * (`418.8s  cli … (4 workers)`) — what `--shard` deals units by; a unit cut into parts
+ * (`coverage-parts.ts`) deals each part at its share. Measured ON CI 2026-11-17, run 44167916553
+ * (`packages (1/3)`-`(3/3)`, ubuntu-latest, four cores, no services); `cli` grew 1221 → 1675 since
+ * 2026-11-09. A drifted number only moves the balance, never a verdict; a unit missing weighs the
+ * median. Refresh from a run's `packages` logs:
+ * `gh api --allow-escape-sequences repos/developerz-ai/ultimate/actions/jobs/<id>/logs | grep -E 's  [a-z-]+  [0-9.]+% /'`.
  */
 export const UNIT_SECONDS: Readonly<Record<string, number>> = {
-  action: 36,
-  admin: 25,
-  ai: 5,
+  action: 28,
+  admin: 21,
+  ai: 7,
   auth: 30,
-  cache: 7,
-  cli: 1221,
-  core: 58,
+  cache: 8,
+  cli: 1675,
+  core: 57,
   'create-ultimate': 2,
-  db: 229,
-  entity: 60,
+  db: 177,
+  entity: 129,
   flags: 1,
-  http: 21,
+  http: 7,
   i18n: 1,
-  jobs: 269,
+  jobs: 184,
   mail: 9,
-  manifest: 1,
-  mcp: 2,
+  manifest: 6,
+  mcp: 3,
   money: 1,
   notify: 5,
   policy: 1,
   pwa: 2,
   query: 2,
-  realtime: 67,
-  render: 10,
+  realtime: 74,
+  render: 8,
   schema: 1,
-  scraping: 6,
-  scripts: 311,
-  seo: 3,
+  scraping: 44,
+  scripts: 360,
+  seo: 2,
   storage: 7,
-  testing: 136,
-  time: 4,
-  ui: 6,
+  testing: 142,
+  time: 3,
+  ui: 10,
 };
 
 /** What `name` weighs when shards are dealt: its measured core-seconds, or the median's. */
@@ -175,7 +176,7 @@ export function unitEnv(
 }
 
 /**
- * One unit's whole suite, alone, before it is killed. `cli` is the longest: 1221 core-seconds
+ * One unit's whole suite, alone, before it is killed. `cli` is the longest: 1675 core-seconds
  * (`UNIT_SECONDS`), several minutes on its workers. A deadline, not a budget — what reaches it hung.
  */
 export const UNIT_TIMEOUT_MS = 1_800_000;

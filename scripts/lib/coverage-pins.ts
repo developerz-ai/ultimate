@@ -78,6 +78,21 @@ export interface CoveragePin {
  * written in `why`. Re-measure with `bun run scripts/coverage-gate.ts --all --json`.
  */
 export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {
+  cli: {
+    lines: 95,
+    funcs: 94.5,
+    why:
+      'Cut into two runners on 2026-11-17 (`scripts/lib/coverage-parts.ts`, ' +
+      'docs/history/ci-split.md): lines fold exactly, functions only as each file’s best part — ' +
+      'Bun’s lcov counts functions and names none, so the fold is a LOWER bound, never over the ' +
+      'truth. One run read 96.59% / 95.23% (CI run 44167916553); the weight-band fold of the same ' +
+      'tree reads 96.61% / 94.88%: 34 functions only a heavy suite reaches, in files a light test ' +
+      'also loads (db-diagnostics.ts 4, verify-checks.ts 3, verify-skip-reason.ts 3, …). Lines ' +
+      'stay at the bar; functions are held at 94.5, 0.38 under the fold (one run cleared 95% by ' +
+      '0.23). ' +
+      'Deleted when the fold clears 95% (X_COVERAGE_PIN_STALE says so): a unit test beside each ' +
+      'of those functions, or a Bun that writes FN: records.',
+  },
   scripts: {
     lines: 86,
     funcs: 91,

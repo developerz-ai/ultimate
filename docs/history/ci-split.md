@@ -68,7 +68,7 @@ servers a `services:` block cannot start.
 | `verify` | 1 | `x verify merge` over the six parts — the framework gate's verdict. `release.yml` reads the whole run's conclusion, which includes it (2026-10-03) |
 | `reference-app-verify` | 3 | one tracked app: build, gate, ratchet — the docs site the third since 2026-11-06 (plan 101, 42-adopt-docs-site) |
 | `scaffold-smoke` | 5 | one scaffold per runner: default, `--no-example`, and one per `x new --shape` (`api`, `blog`, `dashboard` since 2026-11-06), held to `NEW_SHAPES` by `scripts/ci-workflow-shape.test.ts` |
-| `packages` | 2 | each unit tested and covered alone; `cli` in one shard, every other unit in the other (2026-11-05, below) |
+| `packages` | 4 + 1 | each unit tested and covered alone; `cli` cut into two weight-band parts on two shards, the other 31 units on two more; `packages (merge)` folds the parts and judges `cli` (2026-11-17, below) |
 | `container` | 1 | unchanged |
 | `deploy-proof` | 1 | unchanged, `main` only |
 | `fault-drills` | 1 | `x drill` on `examples/dummy` against one Postgres: `pg-blackhole`, `worker-sigkill`, `web-sigterm` — added 2026-11-06, below |
@@ -196,7 +196,7 @@ Not done here, each with the measurement that decides it:
 
 | What | Where | Expected |
 |---|---|---|
-| split `cli`'s files across two `packages` runners and fold their lcov | `scripts/coverage-gate.ts` | **blocked on Bun's lcov, measured 2026-11-07**: it carries `FNF`/`FNH` counts and no `FN:` records, so lines union exactly across runners and functions only as a per-file max, a lower bound. `db` whole against two halves folded: lines 8180/8428 both ways; functions 1197 → 1182 (−1.19 points) split by name, 1189 (−0.63) with each subject's tests kept together. `cli` clears the 95% bar on functions by 0.43, so a split reads red over unchanged coverage, or needs a lower bar. Reopens when Bun writes `FN:`/`FNDA:` |
+| split `cli`'s files across two `packages` runners and fold their lcov | `scripts/coverage-gate.ts` | **blocked on Bun's lcov, measured 2026-11-07**: it carries `FNF`/`FNH` counts and no `FN:` records, so lines union exactly across runners and functions only as a per-file max, a lower bound. `db` whole against two halves folded: lines 8180/8428 both ways; functions 1197 → 1182 (−1.19 points) split by name, 1189 (−0.63) with each subject's tests kept together. `cli` clears the 95% bar on functions by 0.43, so a split reads red over unchanged coverage, or needs a lower bar. Reopens when Bun writes `FN:`/`FNDA:`. **Done 2026-11-17, below**: cut by weight band, and a pin that names the bound |
 | `live` and `e2e` shardable across runners (`SHARDABLE_STEPS`), and a merge that can read a step skipped by path | `packages/cli/src/verify-shard.ts`, `verify-tests.ts`, `verify-merge.ts` | `gate (live)` 334 s → ~170 s on two; a prose-only PR could then skip `live` and `e2e` too. `live` split 2026-11-09, below |
 
 ## `live` in two shards, a static part, 2026-11-09
@@ -309,6 +309,40 @@ Held by `scripts/ci-workflow-shape-unit-speed.test.ts`, which runs the merge ste
 - **Gain:** only `unit-1` and `unit-2` were faster both times.
 
 The same imbalance is cut on x64 by weighting the shards (below), with one architecture, one browser, one cache.
+
+## `cli` cut across runners, folded, 2026-11-17
+
+`packages (1/3)` ran `cli` alone in 330-440 s against its 450 s `--unit-timeout` (run 44167916553:
+418.8 s, 96.59 / 95.23), and about one run in three died `X_SPAWN_TIMED_OUT`. `cli` went from 888 to
+1028 test files in four days: every cheaper `cli` would be overtaken within a week, so it is cut.
+
+The fold, measured on one tree (`cli`'s 1035 coverage files, four isolated workers each, no
+services). Lines are exact either way; functions keep each file's best part, a lower bound:
+
+| `cli` | Lines (hit / found) | Functions (hit / found) |
+|---|---|---|
+| whole, one `bun test` | 96.60 (61805 / 63978) | 95.25 (7699 / 8083) |
+| two parts, longest-first deal, folded | 96.59 (61796) | 94.25 (7606 / 8070) |
+| **two parts, weight bands, folded** | 96.61 (61809) | 94.88 (7665 / 8079) |
+
+| Change | Why |
+|---|---|
+| a unit whose coverage files weigh over `PART_MS` (800 s of `scripts/lib/ci/test-weights.json`) is cut into `ceil(weight / PART_MS)` parts, scheduled as `cli#1/2`, `cli#2/2` and dealt to the shards at their share of `UNIT_SECONDS` (`scripts/lib/coverage-parts.ts`, `coverage-units.ts`) | the cut follows the suite: a new file costs the weights' median, so the part count grows with no number edited. 800 s × ~1.26 under coverage, over four workers, is ~250 s |
+| parts are WEIGHT BANDS — heaviest files to part 1, the many light files last — not longest-first | the light band is the unit tests, which reach nearly every function a heavy suite does; longest-first puts half of a file's callers in each part and loses three times the functions (table) |
+| a shard judges nothing about a part: it writes the part's lcov, scoped to the unit's own source, to `.x/coverage-parts/` and uploads it; `packages (merge)` runs `coverage-gate.ts --merge` and judges the fold with the same `judge()`, bar and pins | the reading is one lcov either way (`renderLcov` → `readingOf`), so a cut unit cannot be judged by a second rule. `--package cli` and `--all` run every part on one machine and fold there: the laptop reads the runner's number |
+| a part missing, or measured over another plan (`corpusHash` of its files, its `total`), is `X_COVERAGE_UNMEASURED` | a fold over the parts that happened to report would be a reading of a fraction |
+| `cli` pinned on functions at the fold's number, lines at the bar (`scripts/lib/coverage-pins.ts`) | the fold can only read LOW (Bun names no function), never over the truth. The pin holds the fold where it is; `X_COVERAGE_PIN_STALE` deletes it once the fold clears 95%, i.e. once a unit test reaches what only a heavy suite does, or Bun writes `FN:` |
+| four `packages` shards, not three | two `cli` parts of ~840 core-seconds each hold a shard alone; the other 31 units are two ~670 halves |
+| `UNIT_SECONDS` refreshed from run 44167916553 | `cli` 1221 → 1675; `jobs`, `db`, `entity` widened onto two workers since |
+
+Timing. Before: CI `cli` 418.8 s wall, 1675 core-seconds; on this box (`taskset` four cores,
+load ~7) 498.5 s wall, 1911 CPU-seconds. After, the same two parts on two four-core sets of an
+eight-core box another team loaded to 23-43: wall is not a measurement there (5 s test timeouts
+fired in both), but CPU splits the parts 43 : 57 (1077 : 1421 CPU-seconds) — the light band costs
+more under coverage than its weights say, ~0.4 s of isolation per file. Expected on CI:
+`cli#1/2` ≈ 0.43 × 418.8 ≈ 180 s, `cli#2/2` ≈ 240 s, then `packages (merge)` ≈ 40 s of checkout,
+install and a fold of two ~150 KB documents. The first run's `packages` logs are the proof; the
+next lever is a per-file overhead in `planParts`' cost, so the bands balance at ~210 s each.
 
 ## Fault drills, 2026-11-06
 

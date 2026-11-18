@@ -12,6 +12,7 @@ import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
 import type { GatePart } from './lib/ci-parts';
 import { partGaps, scriptCalls, shardSetGaps } from './lib/ci-parts';
 import { expr, type Job, jobOf, planRows, readWorkflow, text } from './lib/ci-workflow-read';
+import { PARTS_DIR } from './lib/coverage-parts';
 import { GATED_APPS } from './lib/gated-apps';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import * as verifyArgs from './lib/verify-args';
@@ -180,6 +181,24 @@ describe('unit · ci.yml · every reader of a job name still finds it', () => {
     expect(shardSetGaps('packages', shards)).toEqual([]);
     expect(packages.strategy?.['fail-fast']).toBe(false);
     expect(runsOf(packages)).toContain('scripts/coverage-gate.ts --all --shard "$SHARD"');
+  });
+
+  // A shard holding part of a cut unit only measures it: the unit is judged where the parts meet.
+  test('every part a packages shard writes reaches packages (merge), which judges the fold', () => {
+    const upload = (job('packages').steps ?? []).find((step) =>
+      text(step.uses).startsWith('actions/upload-artifact@'),
+    );
+    expect(text(upload?.with?.['path'])).toBe(`${PARTS_DIR}/`);
+    expect(upload?.with?.['include-hidden-files']).toBe(true);
+    expect(text(upload?.with?.['name'])).toStartWith('coverage-part-');
+    const merge = job('packages-merge');
+    const download = (merge.steps ?? []).find((step) =>
+      text(step.uses).startsWith('actions/download-artifact@'),
+    );
+    expect(text(download?.with?.['pattern'])).toBe('coverage-part-*');
+    expect(runsOf(merge)).toContain(
+      'scripts/coverage-gate.ts --merge "$RUNNER_TEMP/coverage-parts"',
+    );
   });
 
   // Run 42941773147: `packages (2/3)` had no origin/main, so every `scripts/*.test.ts` worker that
