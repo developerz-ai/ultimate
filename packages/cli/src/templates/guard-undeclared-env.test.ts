@@ -51,6 +51,12 @@ describe('unit · shipped guard · undeclared-env', () => {
     expect(first?.fix).toContain("STRIPE_KEY: { type: 'string'");
     expect(first?.fix).toContain('app.config.ts');
     expect(first?.fix).toContain('env.STRIPE_KEY');
+    // Opened by the line to paste into envSchema (X_FIX_PROSE: a fix opens with code).
+    expect(first?.fix?.startsWith("STRIPE_KEY: { type: 'string'")).toBe(true);
+    // A build-time constant (`bun build --define process.env.X=…`, an adopter's agent version) is
+    // no runtime env: the fix's second branch declares a global and defines it at build instead.
+    expect(first?.fix).toContain('declare const STRIPE_KEY: string');
+    expect(first?.fix).toContain('bun build --define STRIPE_KEY=\'"…"\'');
   });
 
   // The lookalikes: a declared name, the framework's own (exact and under a prefix), NODE_ENV, a

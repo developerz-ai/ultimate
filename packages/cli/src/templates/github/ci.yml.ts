@@ -151,6 +151,9 @@ ${SETUP_STEPS}
           path: \${{ runner.temp }}/parts/\${{ matrix.part }}.json
           if-no-files-found: error
           overwrite: true
+          # The verdict reads it in this run only: kept GitHub's 90 days, every push's parts
+          # pile up until the org's artifact storage quota stops CI from running at all.
+          retention-days: 1
 
   # THE VERDICT: \`x verify merge\` is green only when the parts are provably the whole gate — every
   # step from exactly one part, every shard of a split over one corpus, each part green. It runs

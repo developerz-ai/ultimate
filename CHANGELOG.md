@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Fixed
+
+- Scaffold CI: `ci.yml` uploads each `verify-part-*` document with `retention-days: 1`, because the verdict job reads it in the same run. Under GitHub's 90-day default, one adopter collected 2,706 such artifacts and hit the org's Actions storage quota, after which CI could not run. Codemod `ci-artifact-retention` adds the line to an existing app's upload when it has no `retention-days`.
+- Codemod `ci-pinned-actions` pins any tagged major of `actions/checkout`, `cache`, `upload-artifact` and `download-artifact`. It adds `persist-credentials: false` to each checkout it pins, inside the step's own `with:` when there is one. Before, it skipped a workflow that was not in the exact stock shape, such as `actions/checkout@v5` (two of nine adopters). It still never touches a SHA-pinned line or an action it has no pin for, and it reports a quoted line or an inline `with:` together with its diff.
+- The `undeclared-env` guard's fix (`X_UNDECLARED_ENV`) opens with the `envSchema` line to paste. It now has a second branch for a build-time constant injected by `bun build --define`: declare a global and define it at build time, so no deploy is asked for an env var it never sets.
+
 ### Changed
 
 - The scaffold pins `@biomejs/biome` 2.6.4, and its `biome.json` `$schema` moves with it, so a new app lints with the same formatter this repository runs.

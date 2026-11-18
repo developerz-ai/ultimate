@@ -253,6 +253,8 @@ describe('unit · the CI workflow x new writes · the gate in parts', () => {
     const upload = steps().find((step) => step.uses?.startsWith('actions/upload-artifact@'));
     expect(upload?.with?.['name']).toBe(`verify-part-${expr('matrix.part')}`);
     expect(upload?.with?.['overwrite']).toBe(true);
+    // Read by the verdict in this run only: GitHub's 90-day default filled an adopter's org quota.
+    expect(upload?.with?.['retention-days']).toBe(1);
     expect(String(steps().at(-1)?.if)).toBe(expr('!cancelled()'));
   });
 
