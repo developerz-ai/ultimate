@@ -3,7 +3,7 @@
 // with a partition attached, the schema dump loads back to the same bytes, and a concurrent build
 // on the parent is `X_MIGRATION_CONCURRENT_PARTITIONED`. Skips unless `TEST_DATABASE_URL` is set.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import { type PostgresClient, postgresClient } from './client';
 import { NO_TRANSACTION_MARKER } from './concurrent-index';
@@ -36,6 +36,12 @@ describe.skipIf(!hasPostgres)('a partitioned table · on Postgres', () => {
     const target = new URL(url ?? '');
     target.pathname = `/${database}`;
     client = postgresClient({ url: target.toString() });
+  }, LIVE_MS);
+
+  // Two tests here drop the schema, so each starts from the migrated one.
+  beforeEach(async () => {
+    await client.execute(raw('drop schema public cascade'));
+    await client.execute(raw('create schema public'));
     await migrate({ migrations, appVersion: 'test', client });
     await client.execute(raw(partitionFor('2026_12', '2026-12-01', '2027-01-01')));
   }, LIVE_MS);

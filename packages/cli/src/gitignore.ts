@@ -7,9 +7,10 @@
 // `Bun.file(p).text()` is async, and the ignore set is rebuilt inside an `fs.watch` callback where
 // an await opens a window for the next event. Delete when Bun ships sync equivalents.
 import { existsSync, readFileSync } from 'node:fs';
-// why: Bun exposes no path-join, dirname or relative primitive. The same necessity `fix-path.ts`
+import { dirname, join } from 'node:path';
+// why: Bun exposes no path-join or dirname primitive. The same necessity `fix-path.ts`
 // already records for `join`.
-import { dirname, join, relative, sep } from 'node:path';
+import { posixRelative } from './posix-path';
 
 /** One line of a `.gitignore`, read for what it states rather than for what a reader assumes. */
 export interface IgnorePattern {
@@ -94,7 +95,7 @@ function globFor(pattern: string): Bun.Glob {
 
 /** The path relative to `base`, POSIX-separated, or `undefined` when it is not under it. */
 function relativeUnder(base: string, path: string): string | undefined {
-  const rel = relative(base, path).split(sep).join('/');
+  const rel = posixRelative(base, path);
   return rel === '' || rel.startsWith('../') || rel === '..' ? undefined : rel;
 }
 

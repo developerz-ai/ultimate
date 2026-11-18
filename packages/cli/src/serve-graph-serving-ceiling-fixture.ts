@@ -334,5 +334,7 @@
  * raised 1541 → 1545, measured 1545 (2026-11-17, plan 101b audit rounds 5–6): the four on
  * `MIGRATE_CEILING` — `core/src/url-userinfo.ts`, `entity/src/predicate-operand.ts`,
  * `time/src/plain-date.ts`, `db/src/not-null-contract.ts`.
+ * raised 1545 → 1547, measured 1547 (2026-11-18, a queued write's binding): `core/src/client-scope-id.ts`
+ * and `action/src/replay-scope.ts`, the scope id and the check that compares it.
  */
-export const SERVING_ROLE_CEILING = 1545;
+export const SERVING_ROLE_CEILING = 1547;

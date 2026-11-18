@@ -172,6 +172,8 @@ Each worker then claims its list and nothing else. Every entry must be a queue t
 
 ```ts
 // app.config.ts
+import { defineConfig } from '@ultimat3/core';
+
 export const config = defineConfig({ name: 'shop', realtime: { maxSubscriptionsPerActor: 200 } });
 ```
 
@@ -558,6 +560,8 @@ export const config = defineConfig({
 **Not an `app.config.ts` block.** There is no `storage` key on `AppConfigInput`. Storage is `defineStorage()`, called from `app.config.ts`, and it declares **named disks** (Laravel's model) rather than a driver and a bucket — so `disk('uploads').put(…)` never changes when `local` becomes `s3`:
 
 ```ts
+import { defineStorage, localDriver } from '@ultimat3/storage';
+
 defineStorage({ disks: { uploads: localDriver({ root: '.storage/uploads' }) } });
 ```
 
@@ -663,6 +667,8 @@ How a SIGTERM'd process leaves: `DrainConfig` in [`packages/core/src/config-heal
 | `drain.workerRetireMs` | whole ms, `0`–`86400000` | `3600000` | how long a retiring worker may finish what it holds on a Kubernetes rollout or scale-down, aborting nothing; `0` turns it off. An idle worker exits at once. A job's `timeout` over it reds `x verify` (`X_JOB_OUTLASTS_DRAIN`) → [Deployment](Deployment#retiring-a-worker-before-sigterm) |
 
 ```ts
+import { defineConfig } from '@ultimat3/core';
+
 export const config = defineConfig({
   name: 'postly',
   // A report job runs up to 8 minutes; a deploy lets it finish.
@@ -789,6 +795,8 @@ Four names, one env var, and a spelling the framework does not use is a refusal 
 ```ts
 import { isLocal, isProduction, resolveEnvironment, tryResolveEnvironment } from '@ultimat3/core';
 
+declare const someRecord: Readonly<Record<string, string | undefined>>;
+
 resolveEnvironment();                          // 'development' | 'test' | 'staging' | 'production'
 resolveEnvironment({ fallback: 'production' });
 resolveEnvironment({ env: someRecord });
@@ -816,7 +824,9 @@ x env example        # writes .env.example from the app's envSchema
 ```
 
 ```ts
-import { renderEnvExample, ENV_EXAMPLE_PATH } from '@ultimat3/core';
+import { type EnvSchema, renderEnvExample, ENV_EXAMPLE_PATH } from '@ultimat3/core';
+
+declare const schema: EnvSchema;
 
 await Bun.write(ENV_EXAMPLE_PATH, renderEnvExample(schema));      // '.env.example'
 ```
@@ -842,14 +852,17 @@ Which files are read at boot: `.env` and `.env.<mode>` always, plus `.env.local`
 A value that redacts **by value**, so it stays redacted under a key nobody thought to add to a deny-list.
 
 ```ts
-import { secret, revealSecret, isSecret } from '@ultimat3/core';
+import { isSecret, logger, revealSecret, secret } from '@ultimat3/core';
 
-const token = secret(process.env.API_TOKEN, 'API_TOKEN');
+declare const apiToken: string;
+
+const token = secret(apiToken, 'API_TOKEN');
 
 `${token}`;                    // '[redacted]'
 JSON.stringify({ token });     // '{"token":"[redacted]"}'
 logger.info('boot', { token }); // token=[redacted]
 revealSecret(token);           // the real string — the one call that unwraps
+isSecret(token);               // true
 ```
 
 | Surface | Redacted |
@@ -883,7 +896,7 @@ Not configuration of the app: what `x verify` holds it to, committed at the repo
 { "exercise": { "unprovenMax": 0, "statementsMax": 100 } }
 ```
 
-`x new` writes exactly that; `x upgrade` writes the figures the hop measured into a file that states none, so the floor only falls. A malformed value is a `manifest`-step problem naming the shape → [CLI reference](CLI-Reference#x-exercise).
+`x new` writes exactly that; `x upgrade` writes the figures the hop measured into a file that states none, so the floor only falls; a figure the app already wrote is never changed, even when the pass's constant seed (31.47.0) lands above it → [Upgrading](Upgrading). A malformed value is a `manifest`-step problem naming the shape → [CLI reference](CLI-Reference#x-exercise).
 
 `x config show --json` prints the resolved config — defaults merged, credentials redacted; `--section database` for one key (since 31.17.0) → [CLI reference](CLI-Reference).
 

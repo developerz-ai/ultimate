@@ -2,7 +2,7 @@
 // subject's facts, `--write` landing the replay, and `--verify` reading the written test's run.
 // The runner is scripted (a `bun test` of the replay is the one process this command starts).
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp; the scratch app must be a fresh directory per run.
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: the scratch app lives under the OS temp directory, which only node:os names.
@@ -16,11 +16,6 @@ import { reproCommand } from './cmd-repro';
 import type { CommandContext } from './command';
 import type { ExecResult, Runner } from './exec';
 import { parseArgs } from './parse';
-
-const root = await mkdtemp(join(tmpdir(), 'x-repro-cmd-'));
-afterAll(() => rm(root, { recursive: true, force: true }));
-await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
-await Bun.write(join(root, 'package.json'), '{ "name": "scratch", "version": "0.0.0" }\n');
 
 const BUNDLE: FailureBundle = {
   id: 'bundle-1',
@@ -51,10 +46,21 @@ const FAILURE: JobFailure = {
   step: null,
 };
 
-const BUNDLE_FILE = join(root, 'bundle.json');
-const JOB_FILE = join(root, 'job.json');
-await Bun.write(BUNDLE_FILE, JSON.stringify({ ok: true, data: { bundle: BUNDLE } }));
-await Bun.write(JOB_FILE, JSON.stringify(FAILURE));
+// A scratch app per test: the replay one test writes is what another asserts is absent.
+let root = '';
+let bundleFile = '';
+let jobFile = '';
+
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), 'x-repro-cmd-'));
+  await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(root, 'package.json'), '{ "name": "scratch", "version": "0.0.0" }\n');
+  bundleFile = join(root, 'bundle.json');
+  jobFile = join(root, 'job.json');
+  await Bun.write(bundleFile, JSON.stringify({ ok: true, data: { bundle: BUNDLE } }));
+  await Bun.write(jobFile, JSON.stringify(FAILURE));
+});
+afterEach(() => rm(root, { recursive: true, force: true }));
 
 /** One scripted `bun test` result; every call is recorded so its count is asserted. */
 const scripted = (result: Pick<ExecResult, 'ok' | 'stdout' | 'stderr'>) => {
@@ -86,12 +92,12 @@ describe('x repro --from', () => {
 
   test('a request bundle answers its code, group, build and masked fields, and writes nothing', async () => {
     const { runner, calls } = scripted({ ok: true, stdout: '', stderr: '' });
-    const result = await reproCommand.run(ctxOf(['--from', BUNDLE_FILE], runner));
+    const result = await reproCommand.run(ctxOf(['--from', bundleFile], runner));
     expect(result.ok).toBe(true);
     expect(result.summary).toBe('action createPost answered X_PLANTED — fingerprint fp-1');
     expect(result.data).toMatchObject({
       kind: 'request',
-      id: BUNDLE_FILE,
+      id: bundleFile,
       code: 'X_PLANTED',
       fingerprint: 'fp-1',
       build: 'b-1',
@@ -104,7 +110,7 @@ describe('x repro --from', () => {
 
   test('a job with --write lands its replay under repro/ and names it', async () => {
     const { runner, calls } = scripted({ ok: true, stdout: '', stderr: '' });
-    const result = await reproCommand.run(ctxOf(['job-7', '--from', JOB_FILE, '--write'], runner));
+    const result = await reproCommand.run(ctxOf(['job-7', '--from', jobFile, '--write'], runner));
     const file = 'repro/repro-000000000000.job.test.ts';
     expect(result.summary).toBe(
       'job charge (00000000-0000-4000-8000-0000000000aa) died with X_DECLINED at step (the body)',
@@ -121,7 +127,7 @@ describe('x repro --from', () => {
       stdout: '',
       stderr: 'Received: "X_PLANTED: boom"',
     });
-    const result = await reproCommand.run(ctxOf(['--from', BUNDLE_FILE, '--verify'], runner));
+    const result = await reproCommand.run(ctxOf(['--from', bundleFile, '--verify'], runner));
     expect(calls).toEqual([['bun', 'test', './repro/repro-req1.contract.test.ts']]);
     expect(result.ok).toBe(true);
     expect(result.data).toMatchObject({ reproduced: true, got: 'X_PLANTED' });
@@ -133,7 +139,7 @@ describe('x repro --from', () => {
   test('--verify on a green run is not ok and reports X_REPRO_NOT_REPRODUCED', async () => {
     const { runner } = scripted({ ok: true, stdout: '', stderr: '' });
     const result = await reproCommand.run(
-      ctxOf(['--from', BUNDLE_FILE, '--verify'], runner, { BUILD_ID: 'b-2' }),
+      ctxOf(['--from', bundleFile, '--verify'], runner, { BUILD_ID: 'b-2' }),
     );
     expect(result.ok).toBe(false);
     expect(result.data).toMatchObject({ reproduced: false, got: null });
@@ -149,7 +155,7 @@ describe('x repro --from', () => {
   // `""` — which read as a different build and called the bug "maybe already fixed".
   test('an empty BUILD_ID names no running build', async () => {
     const { runner } = scripted({ ok: true, stdout: '', stderr: '' });
-    await reproCommand.run(ctxOf(['--from', BUNDLE_FILE, '--verify'], runner, { BUILD_ID: '' }));
+    await reproCommand.run(ctxOf(['--from', bundleFile, '--verify'], runner, { BUILD_ID: '' }));
     const written = await Bun.file(join(root, 'repro/repro-req1.contract.test.ts')).text();
     expect(written).not.toContain('replayed on');
     expect(written).toContain('Captured on build b-1.');

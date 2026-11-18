@@ -15,11 +15,11 @@
 // version are still two — and `dirname`/`join` walk a resolved entry up to the package that owns it.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 // why: Bun exposes no path API — `dirname` walks a resolved entry up to the package that owns it,
-// `join` reaches its manifest, and `relative` is what turns an absolute hit into the repo-relative
-// path a finding names.
-import { dirname, join, relative } from 'node:path';
+// `join` reaches its manifest.
+import { dirname, join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Finding } from './output';
+import { posixRelative } from './posix-path';
 import { readWorkspaceGraph } from './workspace-graph';
 
 /**
@@ -212,7 +212,7 @@ export type DuplicateProbe = (
 
 /** `<dir>@<version> (resolved from ., packages/i18n)` — one clause per copy. */
 const renderCopy = (root: string, copy: DuplicateCopy): string => {
-  const shown = relative(root, copy.dir).replaceAll('\\', '/');
+  const shown = posixRelative(root, copy.dir);
   const dir = shown === '' || shown.startsWith('..') ? copy.dir : shown;
   return `${dir}@${copy.version} (resolved from ${copy.from.join(', ')})`;
 };

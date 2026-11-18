@@ -3,7 +3,7 @@
 // else comes back, a copied row is byte-for-byte the row `insertAll` stores from the same input —
 // every awkward cell kind included — and COPY is one all-or-nothing statement past the bind ceiling.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError, subscribe } from '@ultimat3/core';
 import {
   generateMigration,
@@ -100,6 +100,8 @@ describe.skipIf(!hasPostgres)('live · postgres · count-only writes and copyAll
     for (const statement of statementsOf(migration.up)) await client.execute(raw(statement));
   });
 
+  beforeEach(() => client.execute(raw('truncate "pg_copy_live_loads"')));
+
   afterAll(async () => {
     await client.execute(raw(DROP));
     await client.close();
@@ -117,6 +119,7 @@ describe.skipIf(!hasPostgres)('live · postgres · count-only writes and copyAll
   });
 
   test('upsertAll returning:false counts only what it wrote', async () => {
+    await db().loads.insertAll([row('ins', 2)], { returning: false });
     const count = await db().loads.upsertAll([row('ins', 2), row('ins', 3)], {
       onConflict: ['batch', 'seq'],
       onMatch: 'nothing',

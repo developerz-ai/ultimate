@@ -1,4 +1,4 @@
-// `x exercise [<name>] [--seed n]` — every action, query, job and route `load` run once on rows
+// `x exercise [<name>] [--seed n|random]` — every action, query, job and route `load` run once on rows
 // with no test written: load the app, read `apps/web/exercise.ts`, run `@ultimat3/testing`'s pass
 // on a scratch database, write `.x/exercise.json`. CLI wiring only: the pass is testing's, the
 // verdict is `exercise-findings.ts`'s, so the gate step and this command read one rule.
@@ -40,10 +40,10 @@ import { exerciseFloorVerdict } from './exercise-floor-verdict';
 import { readExerciseOverrides } from './exercise-overrides';
 import { EXERCISE_APP_URL, servedInProcess } from './exercise-route-api';
 import { emptyReachWarnings, routeLoadWarnings } from './exercise-routes';
+import { readExerciseSeed } from './exercise-seed';
 import { readExerciseShard, shardReportFile } from './exercise-shard-flag';
 import { entityTenantFindings } from './exercise-static';
 import { subjectFindings, subjectProofFindings } from './exercise-subject';
-import { readIntFlag } from './flag-number';
 import { withAppUrl } from './measure-scope';
 import { msg } from './messages';
 import { withOfflinePorts } from './offline-ports';
@@ -59,31 +59,18 @@ export const exerciseRoles = (tenant: string): readonly NamedActor[] =>
     named.actor === null ? named : { ...named, actor: { ...named.actor, orgId: tenant } },
   );
 
-const readSeed = (ctx: CommandContext): number | undefined =>
-  readIntFlag(ctx.args, {
-    name: 'seed',
-    command: 'exercise',
-    min: 0,
-    max: 2_147_483_647,
-    example: 'x exercise --seed 1 --json',
-  });
-
 export const exerciseCommand: CliCommand = {
   spec: exerciseSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('exercise', ctx.cwd).dir;
-    const seed = readSeed(ctx);
+    const seed = readExerciseSeed(ctx.args);
     // Read before anything loads: a refused split runs nothing.
     readExerciseShard(ctx.args, ctx.args.positionals[0]);
     return withExerciseProcess(root, ctx.env, () => exercise(ctx, root, seed));
   },
 };
 
-async function exercise(
-  ctx: CommandContext,
-  root: string,
-  seed: number | undefined,
-): Promise<CommandResult> {
+async function exercise(ctx: CommandContext, root: string, seed: number): Promise<CommandResult> {
   const loaded = await loadApp(root);
   // `runtime.ts`'s ports, as a boot reads them — an `auditSink` declared there is what lets an
   // `audit: true` primitive run — through `offline-ports.ts`, so the pass reaches no real backend.
@@ -96,7 +83,7 @@ async function exercise(
 async function exercisePass(
   ctx: CommandContext,
   root: string,
-  seed: number | undefined,
+  seed: number,
   loaded: Awaited<ReturnType<typeof loadApp>>,
 ): Promise<CommandResult> {
   const only = ctx.args.positionals[0];
@@ -118,7 +105,7 @@ async function exercisePass(
     runExercisePass({
       entities,
       writer: entitySeedWriter({ entities: cores, client }),
-      ...(seed === undefined ? {} : { seed }),
+      seed,
       ...(overrides === undefined ? {} : { overrides }),
       ...(only === undefined ? {} : { only }),
       ...(shard === undefined ? {} : { shard }),
@@ -188,6 +175,7 @@ async function exercisePass(
         ? msg('cli.exercise.none')
         : msg('cli.exercise.summary', { ...report.counts, file: reportFile }),
     lines: [
+      msg('cli.exercise.seed', { seed }),
       ...renderExerciseTable(records),
       ...(phases === undefined ? [] : [exercisePhaseLine(phases)]),
       ...slowestProofLines(records),

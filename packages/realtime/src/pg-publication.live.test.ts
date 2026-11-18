@@ -10,7 +10,7 @@
 //   TEST_REPLICATION_URL=postgres://ultimate:ultimate@localhost:5433/postgres \
 //     bun test ./packages/realtime/src/pg-publication.live.test.ts
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresChangeFeed, postgresChangeFeed } from './changefeed';
 import { PgConnection } from './pg-connection';
 import { bunPgStream, parsePgUrl } from './pg-socket';
@@ -91,6 +91,10 @@ describe.skipIf(!ready)('live · the replicator ensures its publication', () => 
 
   beforeAll(async () => {
     sql = await connect();
+  });
+
+  // Whether the publication exists is what each test is about, so none inherits one.
+  beforeEach(async () => {
     await reset();
     for (const table of [POSTS, USERS, OPERATOR_TABLE]) {
       await sql.query(`CREATE TABLE ${table} (id text PRIMARY KEY)`);
@@ -116,7 +120,6 @@ describe.skipIf(!ready)('live · the replicator ensures its publication', () => 
   });
 
   test('a publication lacking an entity table gains it, and keeps the operator’s own', async () => {
-    await sql.query(`DROP PUBLICATION ${PUBLICATION}`);
     await sql.query(`CREATE PUBLICATION ${PUBLICATION} FOR TABLE ${POSTS}, ${OPERATOR_TABLE}`);
     const feed = feedFor(SLOTS[1], [POSTS, USERS]);
     await feed.start({ onChange: () => undefined });
@@ -125,7 +128,6 @@ describe.skipIf(!ready)('live · the replicator ensures its publication', () => 
   });
 
   test('a role owning none of the tables is refused with the statement to run', async () => {
-    await sql.query(`DROP PUBLICATION ${PUBLICATION}`);
     await sql.query(`CREATE ROLE ${OUTSIDER} LOGIN REPLICATION PASSWORD 'outsider'`);
     const target = new URL(url ?? '');
     target.username = OUTSIDER;

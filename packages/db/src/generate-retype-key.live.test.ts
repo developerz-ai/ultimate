@@ -9,7 +9,7 @@
 //
 // Every table here is dropped on the way in and on the way out; nothing is left behind.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
@@ -101,8 +101,12 @@ describe.skipIf(!hasPostgres)(
       await client.execute(raw(`drop table if exists "${ORGS}" cascade`));
     };
 
-    beforeAll(async () => {
+    beforeAll(() => {
       client = postgresClient({ url: url ?? '' });
+    });
+
+    // The two tables before the retype, one row each; a test that needs it applied applies it.
+    beforeEach(async () => {
       await teardown();
       await apply(
         generateMigration({ entities: [orgs('integer'), posts('integer')], name: 'init', now: at })
@@ -150,15 +154,17 @@ describe.skipIf(!hasPostgres)(
     });
 
     test('the key is back, and it still refuses a row pointing at no org', async () => {
+      await apply(retype().up);
       expect(await keyNames()).toEqual([KEY]);
       await expect(
         client.execute(
           raw(`insert into "${POSTS}" ("id", "org_code") values ('${uuid('2')}', 'nope')`),
         ),
-      ).rejects.toThrow();
+      ).rejects.toThrow(/SQLSTATE 23503/);
     });
 
     test('every row survived the rewrite', async () => {
+      await apply(retype().up);
       const rows = await client.query<{ org_code: string }>(
         raw(`select "org_code" from "${POSTS}" order by "id"`),
       );
@@ -166,6 +172,7 @@ describe.skipIf(!hasPostgres)(
     });
 
     test('and its down reverses the whole thing — back to integer, key intact', async () => {
+      await apply(retype().up);
       await apply(retype().down);
       expect(await typeOf(ORGS, 'code')).toBe('integer');
       expect(await typeOf(POSTS, 'org_code')).toBe('integer');

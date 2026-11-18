@@ -1,7 +1,7 @@
 // A swapped port is what its consumer reads for one test, and the value the test found again in the
 // next; every row of core's `ADAPTER_PORTS` is either swappable or names what a test does instead.
 
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { ADAPTER_PORT_NAMES, ambientClock, noWaitClock } from '@ultimat3/core';
 import { eventBus, jobDriver, memoryEventBus, memoryJobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
@@ -15,8 +15,21 @@ import { unitTest } from './test-types';
 const foundQueue = jobDriver();
 // The bus is not compared to a file-wide value: the preload hands every test a fresh one.
 let swappedBus: unknown;
-const foundMail = tryMailDriver();
 const foundClock = ambientClock();
+// The file's own driver, under every test: made outside a test, so it lasts until the file ends.
+let fileMail: MailDriver | undefined;
+beforeAll(async () => {
+  fileMail = await swapAdapter('mail', memoryMailDriver());
+});
+
+const expectWhatTheFileFound = (): void => {
+  expect(jobDriver()).toBe(foundQueue);
+  expect(eventBus()).not.toBe(swappedBus);
+  expect(tryMailDriver()).toBe(fileMail);
+  expect(ambientClock()).toBe(foundClock);
+};
+// Before EVERY test, so a swap that outlives its test is caught in any order the tests run.
+beforeEach(expectWhatTheFileFound);
 
 describe('swapAdapter', () => {
   test('the consumer reads the swapped adapter inside the test', async () => {
@@ -31,12 +44,7 @@ describe('swapAdapter', () => {
     expect(ambientClock()).toBe(clock);
   });
 
-  test('the next test reads what the file found', () => {
-    expect(jobDriver()).toBe(foundQueue);
-    expect(eventBus()).not.toBe(swappedBus);
-    expect(tryMailDriver()).toBe(foundMail);
-    expect(ambientClock()).toBe(foundClock);
-  });
+  test('the next test reads what the file found', expectWhatTheFileFound);
 
   test('two swaps of one port unwind to the first value', async () => {
     const first = await swapAdapter('jobs', memoryJobDriver());
@@ -82,12 +90,6 @@ describe('a scope that ends mid-swap', () => {
 // the body, the swap after the test. Each removes ITS install and no other, so the next test reads
 // what the file found — never the fixture's dead outbox, never the swap's driver.
 describe('a fixture and a swap on one port', () => {
-  // The file's own driver, under both: what every test of this block must find again.
-  let fileMail: MailDriver | undefined;
-  beforeAll(async () => {
-    fileMail = await swapAdapter('mail', memoryMailDriver());
-  });
-
   unitTest('the fixture installs, the test swaps over it', async ({ mail }) => {
     const mine = await swapAdapter('mail', memoryMailDriver());
     expect(tryMailDriver()).toBe(mine);

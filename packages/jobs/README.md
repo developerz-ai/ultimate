@@ -7,6 +7,20 @@ a job's code never names a backend.
 
 ```ts
 import { job, t } from '@ultimat3/jobs';
+import { type AnyMailDefinition } from '@ultimat3/mail';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly orgs: {
+      provision(id: string): Promise<{ id: string; name: string }>;
+      byId(id: string): Promise<{ id: string; name: string }>;
+    };
+    readonly mail: { send(mail: unknown, to: unknown): Promise<void> };
+  }
+}
+
+declare const welcomeEmail: AnyMailDefinition;
+declare const nudgeEmail: AnyMailDefinition;
 
 export const onboardOrg = job({
   input: t.object({ orgId: t.uuid }),
@@ -28,6 +42,14 @@ email. The 3-day sleep does not hold a process: the run suspends and the queue r
 ## The handle is the surface
 
 ```ts
+import { type JobHandle, type TaskHandle } from '@ultimat3/jobs';
+import { type Ctx } from '@ultimat3/core';
+
+declare const orgId: string;
+declare const nightlyDigest: TaskHandle;
+declare const onboardOrg: JobHandle<{ orgId: string }>;
+declare const ctx: Ctx;
+
 await onboardOrg.enqueue({ orgId });              // joins the ambient transaction
 await onboardOrg.as(ctx.actor, { orgId });        // same, tenantId stamped from the actor
 onboardOrg.describe();                            // the manifest row for this job
@@ -128,6 +150,12 @@ per-subscriber notification are the same three files with different names.
 ## The export name is the job's name
 
 ```ts
+import { type ApiModule, defineApi } from '@ultimat3/action';
+
+declare const postJobs: ApiModule;
+declare const orgJobs: ApiModule;
+declare const scheduledTasks: ApiModule;
+
 export const api = defineApi({
   jobs: [postJobs, orgJobs],     // module namespaces, never a list of name strings
   tasks: [scheduledTasks],
@@ -397,6 +425,10 @@ definition checksum, status, app version, rows processed, last cursor, started/c
 // The PASS is the no-op, never the enqueue. The one-live-run index covers `ready`/`delayed`/
 // `running`/`suspended`, and a completed job is in none of them — so this creates a real job row,
 // a worker runs it, it reads the ledger and reports what it found.
+import { type JobHandle } from '@ultimat3/jobs';
+
+declare const rewriteSlugs: JobHandle<{ force?: boolean }>;
+
 const again = await rewriteSlugs.enqueue({});    // → { deduped: false, … }
 // the run's own result:
 // → { name: 'rewrite-slugs', batches: 0, rows: 0, skipped: true, previousRunId: '…' }
@@ -432,7 +464,17 @@ diff between them is the alarm: a sweep merged, deployed and never enqueued had 
 up on no surface at all.
 
 ```ts
-import { isBackfill, pendingBackfills, registeredBackfills } from '@ultimat3/jobs';
+import {
+  isBackfill,
+  type JobHandle,
+  pendingBackfills,
+  registeredBackfills,
+} from '@ultimat3/jobs';
+
+declare const rewriteSlugs: JobHandle<{ force?: boolean }>;
+declare const runs: Parameters<typeof pendingBackfills>[0]['runs'];
+declare const environment: Parameters<typeof pendingBackfills>[0]['environment'];
+const declarations = registeredBackfills();
 
 registeredBackfills();          // [{ kind: 'backfill', name, checksum, requires, environments, counts }]
 isBackfill(rewriteSlugs);       // true — a plain job() is false, and so is a look-alike
@@ -457,6 +499,15 @@ anything is unswept so a cron or a deploy check can read the exit code alone.
 ### Three optional declarations, all of them DATA
 
 ```ts
+import { backfill } from '@ultimat3/jobs';
+import { database, entity, timestamp, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), publishedAt: timestamp().nullable() },
+});
+const db = database({ posts });
+
 export const dropLegacy = backfill({
   name: 'drop-legacy',
   tenant: 'none',                              // required, exactly as on job() — see the table above
@@ -1112,7 +1163,15 @@ wrote.
 ## The transactional outbox
 
 ```ts
-await ctx.tx(async (tx) => {
+import { type Ctx } from '@ultimat3/core';
+import { withTransaction } from '@ultimat3/db';
+import { type JobHandle } from '@ultimat3/jobs';
+
+declare const ctx: Ctx;
+declare const input: { readonly postId: string; readonly orgId: string };
+declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
+
+await withTransaction(async (tx) => {
   const post = await ctx.posts.publish(input.postId, tx);
   await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId }); // joins `tx`
 });

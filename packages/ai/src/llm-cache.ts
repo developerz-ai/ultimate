@@ -52,8 +52,8 @@ export interface LlmSemanticCache<TParsed> {
 
 export interface LlmCache<TParsed> {
   readonly semantic: LlmSemanticCache<TParsed>;
-  // `05-caching.md` also declares `invalidates: [tag.post]` here. It is deliberately absent
-  // until `@ultimat3/cache`'s fan-out can reach something that is not a `CacheTier`: storing
+  // No `invalidates: [tag.post]` here. It is deliberately absent until
+  // `@ultimat3/cache`'s fan-out can reach something that is not a `CacheTier`: storing
   // tags that the ONE invalidation path never visits would read as wired and silently not be.
   // Today the invalidation story is the prompt version (a bump reaches a different store) and
   // `ttl`.

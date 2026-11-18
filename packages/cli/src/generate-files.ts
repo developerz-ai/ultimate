@@ -2,8 +2,7 @@
 // `cmd-generate.ts` so a generator's output can be asserted on — by the generator tests, the
 // scaffold fixture and `x new` — without a command line, an app root or a filesystem.
 
-import { NotImplementedError } from '@ultimat3/core';
-import { BadFlagError } from './errors';
+import { BadFlagError, UnknownCommandError } from './errors';
 import type { Generator } from './generate-kinds';
 import { assertLiveSupported, assertSurfaceSupported, GENERATORS } from './generate-kinds';
 import type { SignInMode } from './generate-sign-in-mode';
@@ -332,10 +331,15 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
           ...(options.catalogModule === undefined ? {} : { catalogModule: options.catalogModule }),
         }),
       );
-    default:
-      throw new NotImplementedError({
-        cause: `generator "${String(options.kind)}" is not implemented in this build`,
-        fix: `x help g   # one of: ${GENERATORS.join(', ')}`,
+    default: {
+      // `never`: a generator added to GENERATORS without a case here stops compiling. At runtime
+      // only a JavaScript caller of this public function arrives, with a word that is no generator.
+      const unknown: never = options.kind;
+      throw new UnknownCommandError({
+        path: `g ${String(unknown)}`,
+        known: GENERATORS,
+        suggestion: 'help g',
       });
+    }
   }
 }

@@ -3,6 +3,7 @@
 
 import {
   BUILD_ID_HEADER,
+  CLIENT_REPLAY_SCOPE_HEADER,
   DATES_HEADER,
   IDEMPOTENCY_HEADER,
   RECORDS_HEADER,
@@ -31,6 +32,7 @@ export const DEFAULT_CORS: CorsConfig = {
     BUILD_ID_HEADER,
     'x-request-id',
     IDEMPOTENCY_HEADER,
+    CLIENT_REPLAY_SCOPE_HEADER,
     REQUEST_TIMEOUT_HEADER,
     'traceparent',
   ],

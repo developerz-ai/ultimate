@@ -105,6 +105,17 @@ describe('unit · judgeUnproven', () => {
     expect(findings[0]?.fix.startsWith('x exercise --json')).toBe(true);
   });
 
+  // A floor measured under random seeds can sit just under the constant seed's figure on upgrade:
+  // the way out is a re-measure and the helper the record names, never a floor raised for you.
+  test('the red names the re-measure and the seed helper, and offers no higher floor', () => {
+    const fix = judgeUnproven(ALL_UNPROVEN, { unprovenMax: 0 }).findings[0]?.fix ?? '';
+    expect(fix).toContain('re-measures at the constant seed');
+    expect(fix).toContain('fix the seed helper');
+    expect(fix).toContain('assuming no order between sized calls');
+    expect(fix).toContain('the floor only falls');
+    expect(fix).not.toContain('"unprovenMax":');
+  });
+
   test('an app that never opted in is warned with the figure to write, never red', () => {
     const { findings, warnings } = judgeUnproven(ALL_UNPROVEN, undefined);
     expect(findings).toEqual([]);

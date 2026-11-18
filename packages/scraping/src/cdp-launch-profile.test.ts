@@ -330,8 +330,11 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
           await launched.close();
         });
       } finally {
-        process.env['TMPDIR'] = savedTmp;
-        await rm(longRoot, { recursive: true, force: true });
+        // Assigning `undefined` would store the string "undefined": every later `tmpdir()` is then
+        // a relative directory that does not exist.
+        if (savedTmp === undefined) delete process.env['TMPDIR'];
+        else process.env['TMPDIR'] = savedTmp;
+        await rm(scratch, { recursive: true, force: true });
       }
     },
     LAUNCH_TEST_MS,

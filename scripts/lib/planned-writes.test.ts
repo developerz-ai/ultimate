@@ -2,6 +2,8 @@
 // file left behind either way.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+// why: Bun has no synchronous file write, and the setup must wait on no I/O (see `root`).
+import { writeFileSync } from 'node:fs';
 // why: Bun has no mkdtemp, readdir or rm of its own.
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 // why: Bun has no tmpdir() of its own.
@@ -18,8 +20,10 @@ afterAll(async () => {
 async function root(): Promise<string> {
   const dir = await mkdtemp(`${tmpdir()}/planned-writes-`);
   made.push(dir);
-  await Bun.write(`${dir}/a.txt`, 'a0');
-  await Bun.write(`${dir}/b.txt`, 'b0');
+  // Synchronous: a shared runner's I/O backlog was billed to the first test's 5 s (7.6 s on a
+  // 4-CPU compat runner), for a setup of two two-byte files.
+  writeFileSync(`${dir}/a.txt`, 'a0');
+  writeFileSync(`${dir}/b.txt`, 'b0');
   return dir;
 }
 

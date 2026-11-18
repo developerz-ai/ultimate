@@ -4,7 +4,7 @@
 // `deleteSql` compiled to `and true` and an org-A request deleted org-B's row sharing the id, and
 // an anonymous `searchText` read both orgs' rows. Gated on `TEST_DATABASE_URL`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type Actor, anonymousActor, ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { type PostgresClient, postgresClient, raw, statementsOf } from '@ultimat3/db';
 import { hashEmbedder, normalizeVector } from './embeddings';
@@ -36,6 +36,9 @@ describe.skipIf(!hasPostgres)('live · pgvector · an unbound write in an org re
     store = postgresVectorStore({ name: TABLE, dimension: 4, client });
     for (const statement of statementsOf(store.ddl())) await client.execute(raw(statement));
   });
+
+  // `tenants()` and `orgBRows()` read the whole table, so each test starts from an empty one.
+  beforeEach(() => client.execute(raw(`delete from "${TABLE}"`)));
 
   afterAll(async () => {
     if (available) await client.execute(raw(DROP));
@@ -77,6 +80,11 @@ describe.skipIf(!hasPostgres)('live · pgvector · an unbound write in an org re
   });
 
   test('a tenant-bound write touches only that tenant', async () => {
+    await store
+      .scoped({ tenant: 'org-b' })
+      .upsert([
+        { id: 'doc-1', vector: vec(1, 0, 0, 0), text: 'B secret', metadata: { source: 'doc' } },
+      ]);
     await asOrgA(async () => {
       const orgA = store.scoped({ tenant: 'org-a' });
       await orgA.upsert([

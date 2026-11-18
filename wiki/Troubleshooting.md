@@ -130,7 +130,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 |---|---|---|
 | `X_TEST_NETWORK_SEALED` | a test reached the network unmocked | the error names the URL. Mock it — sealed network is the design, not a bug |
 | A test passes alone, fails in the suite | shared state that should not exist — each worker gets its own cloned DB | check for a module-level singleton or a fixture written outside `seed()` |
-| Time-dependent failure | asserted on wall clock | use the frozen clock and `clock.advance('3d')` — it also drives `step.sleep` and cron |
+| Time-dependent failure | asserted on wall clock | use the frozen clock and `clock.advance('3d')` — it also makes a `step.sleep` due; it fires no cron ([Scheduled tasks](Scheduled-Tasks#testing)) |
 | A test flakes | **fix it or delete it the same day** | there is no `retry: 3`. A test that passes twice and fails the third trains people to ignore red |
 | Snapshot/UUID churn between runs | not using `seed(name)` | seeds are deterministic: same input → identical rows, identical UUIDs |
 | Job test doesn't drain | queue not advanced | `await runJobs.drain()`; workers run deterministically in tests |

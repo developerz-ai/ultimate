@@ -51,13 +51,18 @@ const responsesOf = (): Record<string, Record<string, unknown>> => {
 };
 
 describe('declared errors in the OpenAPI operation', () => {
-  test('undeclared and `errors: []` serialize to the same bytes, today’s four statuses', () => {
+  test('undeclared and `errors: []` serialize to the same bytes, today’s five statuses', () => {
     registerActions({ publishPost: define() });
     const undeclared = serializeOpenApi(buildOpenApi());
-    expect(Object.keys(responsesOf()).sort()).toEqual(['200', '400', '403', '422']);
+    expect(Object.keys(responsesOf()).sort()).toEqual(['200', '400', '403', '409', '422']);
     resetActions();
     registerActions({ publishPost: define([]) });
     expect(serializeOpenApi(buildOpenApi())).toBe(undeclared);
+  });
+
+  test('any action may refuse a replay queued by another session', () => {
+    registerActions({ publishPost: define() });
+    expect(responsesOf()['409']?.['description']).toBe('X_REPLAY_PRINCIPAL_MISMATCH');
   });
 
   test('a declared code adds its status, narrowed to its Problem type', () => {
@@ -72,7 +77,9 @@ describe('declared errors in the OpenAPI operation', () => {
   test('a code at a status the framework answers joins it, the open Problem kept', () => {
     registerActions({ publishPost: define(['X_OPENAPI_POST_LOCKED'], true) });
     const conflict = responsesOf()['409'];
-    expect(conflict?.['description']).toBe('X_IDEMPOTENCY_CONFLICT | X_OPENAPI_POST_LOCKED');
+    expect(conflict?.['description']).toBe(
+      'X_IDEMPOTENCY_CONFLICT | X_OPENAPI_POST_LOCKED | X_REPLAY_PRINCIPAL_MISMATCH',
+    );
     expect(JSON.stringify(conflict)).not.toContain('enum');
   });
 

@@ -223,3 +223,16 @@ describe('unit · what x g emits', () => {
     expect(paths.some((path) => path.startsWith('apps/web/site/'))).toBe(false);
   });
 });
+
+describe('unit · a generator kind no type admits', () => {
+  // `generate` is public and a JavaScript caller has no union to hold it: the word answers what
+  // `x g <word>` answers, an unknown command listing the generators.
+  test('is an unknown command naming every generator', () => {
+    const kind = 'nope' as unknown as (typeof GENERATORS)[number];
+    const refusal = thrownBy(() => generate({ kind, name: 'thing' }));
+    expect(refusal).toBeUltimateError('X_CLI_UNKNOWN_COMMAND');
+    expect((refusal as { cause: string }).cause).toContain('x g nope');
+    expect((refusal as { cause: string }).cause).toContain(GENERATORS[0]);
+    expect((refusal as { fix: string }).fix).toBe('x help g');
+  });
+});

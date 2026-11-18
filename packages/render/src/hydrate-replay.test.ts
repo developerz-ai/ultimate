@@ -146,8 +146,15 @@ const directive = (overrides: Partial<IslandDirective> = {}): IslandDirective =>
   ...overrides,
 });
 
-/** One turn, so a promise chain that WOULD have flushed has flushed. */
+/** The `mount` call the running harness has set in motion, which `settle` waits on. */
+let mountExpected: Promise<void> | undefined;
+
+/**
+ * The expected `mount` call, then one turn, so a promise chain that WOULD have flushed has flushed.
+ * Awaited as an event: how many loop turns the runtime's `import()` takes is Bun's to change.
+ */
 const settle = async (): Promise<void> => {
+  await mountExpected;
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
   await new Promise((resolve) => {
     setTimeout(resolve, 0);
@@ -177,12 +184,15 @@ async function bootReplayRuntime(
   });
   // The island's `mount`, as an island really writes it. The gate is what a chunk still resolving
   // its own imports looks like from the runtime's side.
-  globals['__xTestMount'] = (el: FakeElement): Promise<void> =>
-    gate.then(() => {
+  const mountCalled = Promise.withResolvers<void>();
+  globals['__xTestMount'] = (el: FakeElement): Promise<void> => {
+    mountCalled.resolve();
+    return gate.then(() => {
       if (!replaces) return;
       el.empty();
       el.appendChild(mounted);
     });
+  };
 
   const island = join(dir, 'island.mjs');
   await writeFile(
@@ -227,13 +237,19 @@ async function bootReplayRuntime(
     outsider,
     hits,
     fire: (type, init = {}) => {
+      // A press boots the island under either strategy.
+      mountExpected = mountCalled.promise;
       root.fire(type, { target: shell, ...init });
     },
-    finishMount,
+    finishMount: () => {
+      mountExpected = mountCalled.promise;
+      finishMount();
+    },
     goIdle: () => {
       idle();
     },
     dispose: async () => {
+      mountExpected = undefined;
       globals['document'] = undefined;
       globals['window'] = undefined;
       globals['requestIdleCallback'] = undefined;

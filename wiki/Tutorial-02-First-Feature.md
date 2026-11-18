@@ -91,6 +91,8 @@ The slice enforces one call direction, and `x verify`'s `boundaries` step is wha
 ## The entity
 
 ```ts
+import { entity, invariant, money, text, timestamp, uuid } from '@ultimat3/entity';
+
 export const todo = entity('todos', {
   // Naming the tenant column is what turns tenancy on: a read with no org predicate then fails
   // with X_TENANCY_UNSCOPED instead of leaking another org's rows.
@@ -117,6 +119,10 @@ Each invariant runs twice from one declaration — in the app on every write, an
 ## The policy decides once, everywhere
 
 ```ts
+import { can } from '@ultimat3/policy';
+
+type TodoScope = { readonly orgId: string };
+
 export const canTodoWrite = can<TodoScope>(
   'todo:write',
   ({ actor, input }) => actor !== null && actor.orgId === input.orgId,

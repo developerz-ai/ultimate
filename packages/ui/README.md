@@ -293,6 +293,25 @@ export const health = (
 
 
 ```tsx
+import { t } from '@ultimat3/i18n';
+import {
+  AppShell,
+  Button,
+  type Column,
+  DataTable,
+  PageHeader,
+  Section,
+  Toolbar,
+} from '@ultimat3/ui';
+import { type JSX } from 'solid-js';
+
+interface Order { readonly id: string }
+declare const nav: JSX.Element;
+declare const filters: JSX.Element;
+declare const columns: readonly Column<Order>[];
+declare const rows: readonly Order[];
+declare function SideNav(): JSX.Element;
+
 <AppShell header={<Toolbar label={t('nav.main')}>{nav}</Toolbar>} sidebar={<SideNav />}>
   <PageHeader
     title={t('orders.title')}

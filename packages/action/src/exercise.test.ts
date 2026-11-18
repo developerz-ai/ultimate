@@ -2,7 +2,7 @@
 // `.contract()` passed with zero handler runs, and a real call of the same action threw an uncoded
 // `TypeError`. Each test below is one verdict the exercise has to reach.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { EXERCISE_RUNS, isUltimateError, sealedHost, UltimateError } from '@ultimat3/core';
 import type { PgliteClient } from '@ultimat3/db';
 import { db, pgliteClient, raw, setDbClient, sql, withTransaction } from '@ultimat3/db';
@@ -235,6 +235,8 @@ describe('every run rolls back — PGlite', () => {
     await client.execute(raw('create table exercised (title text not null)'));
     setDbClient(client);
   });
+
+  beforeEach(() => client.execute(raw('delete from exercised')));
 
   afterAll(async () => {
     setDbClient(undefined);

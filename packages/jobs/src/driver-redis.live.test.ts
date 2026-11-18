@@ -169,8 +169,13 @@ async function steps(driver: JobDriver, queue: string): Promise<unknown[]> {
 describe.skipIf(url === '')('live · redis · the job driver', () => {
   const client = url === '' ? undefined : new Bun.RedisClient(url);
   const on = { prefix, ...(client === undefined ? {} : { client }) };
+  // A namespace per driver: `stats()` and `demand()` answer for everything under the prefix.
   const redisOn = (clock?: FrozenClock) =>
-    redisJobDriver({ ...on, ...(clock === undefined ? {} : { clock }) });
+    redisJobDriver({
+      ...on,
+      prefix: `${prefix}-${crypto.randomUUID()}`,
+      ...(clock === undefined ? {} : { clock }),
+    });
 
   afterAll(async () => {
     if (client === undefined) return;

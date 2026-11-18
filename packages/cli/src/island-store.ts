@@ -7,7 +7,7 @@
 // that names a different set of islands than the app has, or a chunk whose bytes do not hash to
 // what the index recorded is refused, and the boot builds instead — and says so.
 
-import { join, relative, sep } from 'node:path'; // why: Bun ships no path-join primitive.
+import { join } from 'node:path'; // why: Bun ships no path-join primitive.
 import { frameworkVersion } from '@ultimat3/core';
 import { contentHash, loadStylesheet } from '@ultimat3/render/server';
 import { IslandBuildFailedError } from './errors';
@@ -17,6 +17,7 @@ import type { IslandRealtime } from './island-realtime-state';
 import type { SourceDigester, SourceStamp } from './island-sources';
 import { changedSource, isRecordableSource, sourceDigester, stampSources } from './island-sources';
 import { islandStylesheets } from './island-styles';
+import { posixRelative } from './posix-path';
 import { PREBUILT_ISLANDS_DIR } from './serve-prebuilt-paths';
 
 /** App-root-relative, inside the image's prebuilt store (`serve-prebuilt-paths.ts` says why there). */
@@ -118,7 +119,7 @@ export async function writeIslandStore(
     });
   }
   const stylesheets = islandStylesheets()
-    .map((path) => relative(root, path).split(sep).join('/'))
+    .map((path) => posixRelative(root, path))
     .filter((path) => !path.startsWith('..'))
     .sort();
   const index: StoreIndex = {

@@ -5,6 +5,8 @@ Four tiers. **One invalidation graph, not three.**
 `bun add @ultimat3/cache` · guide: [Caching And Invalidation](https://github.com/developerz-ai/ultimate/wiki/Caching-And-Invalidation)
 
 ```ts
+import { tag } from '@ultimat3/cache';
+
 cache: { invalidates: [tag.post, tag.feed] }
 ```
 
@@ -37,12 +39,19 @@ other processes also write). Swap or omit any of them
 without touching a call site — order comes from `@ultimat3/core`'s `CACHE_TIERS`, not registration order.
 
 ```ts
-import { cacheStack, lruTier, memoTier, registerTier } from '@ultimat3/cache';
+import { cacheStack, lruTier, memoTier, registerTier, tag } from '@ultimat3/cache';
+import { database, entity, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const db = database({ posts });
 
 const stack = cacheStack([memoTier(), lruTier({ maxBytes: 64 * 1024 * 1024 })]);
 for (const tier of stack.tiers) registerTier(tier);
 
-const feed = await stack.read('feed:org-1', () => db.posts.recent(), {
+const feed = await stack.read('feed:org-1', () => db.posts.where({ orgId: 'org-1' }).limit(20).all(), {
   ttlMs: 30_000,
   tags: [tag('post')],
 });
@@ -110,6 +119,8 @@ called. 40,000 keys warmed by one rolling restart otherwise share one expiry ins
 inside the same 30-second window. The roll is injected, never `Math.random()` at a call site:
 
 ```ts
+import { lruTier, redisTier } from '@ultimat3/cache';
+
 lruTier({ rng: () => 0 });          // the full lease — what a test asserting an exact expiry wants
 redisTier({ jitterFraction: 0 });   // off entirely
 redisTier({ jitterFraction: 0.2 }); // a wider spread; outside [0, 1) is X_CACHE_JITTER_INVALID
@@ -140,6 +151,13 @@ already wrote is taken back. The caller still gets what the origin answered: a f
 publish, it never fails a read. It is exported for any cache doing its own read-through:
 
 ```ts
+import { type CacheTier, type FenceScope, sampleFence } from '@ultimat3/cache';
+
+declare const tier: CacheTier;
+declare const key: string;
+declare const tags: NonNullable<FenceScope['tags']>;
+declare function run(): Promise<unknown>;
+
 const fence = sampleFence({ key, tags });
 const value = await run();
 if (fence.isValid()) await tier.set(key, value, { tags });
@@ -170,7 +188,20 @@ replacing — an entry that outgrew the LRU's budget served its previous version
 `undefined`, so a lookup for a row that has not replicated yet is not held for the positive lease:
 
 ```ts
-await stack.read(key, () => db.posts.byId(id), { ttlMs: 300_000, negativeTtlMs: 5_000 });
+import { database, entity, uuid } from '@ultimat3/entity';
+import { cacheStack } from '@ultimat3/cache';
+
+declare const stack: ReturnType<typeof cacheStack>;
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const db = database({ posts });
+declare const id: string;
+declare const key: string;
+
+await stack.read(key, () => db.posts.where({ id }).one(), { ttlMs: 300_000, negativeTtlMs: 5_000 });
 ```
 
 **A promoted hit carries its own remaining life.** When a read hits a far tier and populates the
@@ -201,6 +232,10 @@ closed (`TierLabel`) so the panel can group by it. `'query-read'` is in that uni
 ## Tags
 
 ```ts
+import { tag } from '@ultimat3/cache';
+
+declare const id: string;
+
 tag.post          // the collection — busts lists
 tag('post', id)   // one row — also busts the lists that contained it
 ```
@@ -209,8 +244,8 @@ Wire form is `post` / `post:<id>`, identical in Redis keys, CDN surrogate keys a
 `--json` reports — the edge adds one `e:<entity>` index key per entity ([CDN](#cdn)). Invalidation is asymmetric-tolerant on purpose: busting a collection
 kills its rows, busting a row kills the collections that held it.
 
-`tag.post` is typed via a registry that `x manifest` generates, so `tag.pots` is a build
-error:
+`tag.post` is typed via a registry the app writes by hand, beside its `declareTags` call, so
+`tag.pots` is a build error. Nothing generates it:
 
 ```ts
 declare module '@ultimat3/cache' {
@@ -218,8 +253,8 @@ declare module '@ultimat3/cache' {
 }
 ```
 
-`declareTags()` takes the manifest's entity names at boot and is **additive and process-wide** —
-once anything is declared, an undeclared tag is `X_CACHE_TAG_UNKNOWN`. A test that declares its own
+`declareTags()` takes the tag names the app lists (`examples/dummy/packages/db/src/tags.ts`) and is
+**additive and process-wide** — until something is declared no tag is checked; once anything is, an undeclared tag is `X_CACHE_TAG_UNKNOWN`. A test that declares its own
 fixture entity therefore turns validation on for every later file in the same `bun test` process.
 `isolateDeclaredTags()` is the seam for that — see [Test seams](#test-seams).
 
@@ -285,6 +320,10 @@ your own payloads.
 ## Invalidating
 
 ```ts
+import { invalidateTags, tag } from '@ultimat3/cache';
+
+declare const postId: string;
+
 const report = await invalidateTags([tag('post', postId)]);
 ```
 
@@ -377,6 +416,10 @@ not reach `realtime` or a message bus — and whoever owns the transport (`@ulti
 boot, exactly as `@ultimat3/render` wires the `Revalidator`:
 
 ```ts
+import { receiveInvalidationBroadcast, registerInvalidationBroadcast } from '@ultimat3/cache';
+
+declare const bus: { publish(subject: string, tags: readonly string[]): Promise<void>; subscribe(subject: string, on: (tags: readonly string[]) => void): void };
+
 registerInvalidationBroadcast(async (wireTags) => bus.publish('cache.invalidate', wireTags));
 bus.subscribe('cache.invalidate', (wireTags) => receiveInvalidationBroadcast(wireTags));
 ```
@@ -437,6 +480,9 @@ Every registry here is process-global and `bun test` is one process, so a suite 
 registrations with an `isolate*()` — **capture and restore, never a reset**:
 
 ```ts
+import { declareTags, isolateDeclaredTags } from '@ultimat3/cache';
+import { afterAll } from 'bun:test';
+
 const restoreTags = isolateDeclaredTags();
 declareTags(['fixture']);
 afterAll(restoreTags);
@@ -460,6 +506,10 @@ unsubscribes (core's `resetInstrumentation()` is the backstop).
 ## CDN
 
 ```ts
+import { cacheHeaders, tag } from '@ultimat3/cache';
+
+declare const id: string;
+
 cacheHeaders({ sMaxAge: 300, staleWhileRevalidate: 86_400, tags: [tag('post', id)] });
 // => { 'Cache-Control': 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
 //      'Surrogate-Key': 'post:1 e:post', 'Cache-Tag': 'post:1,e:post' }

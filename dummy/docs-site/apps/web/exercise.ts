@@ -10,6 +10,9 @@ const FROM_DISK =
 
 export const exercise = defineExercise(
   {
+    'check-outbound-links': {
+      off: 'its whole work is a HEAD request to each external host the wiki links to, and the pass seals the network; check-outbound-links.test.ts runs the body with fetch replaced',
+    },
     health: {
       off: 'the readiness probe answers its own role and reads nothing: no statement, no effect, so every proof over it is vacuous',
     },

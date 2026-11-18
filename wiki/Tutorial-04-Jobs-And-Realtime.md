@@ -11,6 +11,15 @@ Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutori
 `x g resource` already wrote one. Its shape is the whole contract:
 
 ```ts
+import { t } from '@ultimat3/action';
+import { job } from '@ultimat3/jobs';
+
+// The slice's `repo.ts`, as `x g resource` wrote it.
+declare const repo: {
+  byId(id: string): Promise<{ readonly id: string } | null>;
+  list(limit: number): Promise<readonly { readonly id: string }[]>;
+};
+
 export const reindexTodo = job({
   input: t.object({ id: t.uuid, orgId: t.uuid }),
   tenant: (input) => input.orgId,              // the org the body reads as, from its own input
@@ -37,9 +46,17 @@ export const reindexTodo = job({
 The generated `reindex-todo.job.test.ts` pins the distant invariant rather than the happy path:
 
 ```ts
-const first = await reindexTodo.enqueue({ id });
+import { expect } from 'bun:test';
+import { type JobHandle } from '@ultimat3/jobs';
+
+declare const reindexTodo: JobHandle<{ id: string; orgId: string }>;
+
+declare const id: string;
+declare const orgId: string;
+
+const first = await reindexTodo.enqueue({ id, orgId });
 expect(first.deduped).toBe(false);
-const again = await reindexTodo.enqueue({ id });
+const again = await reindexTodo.enqueue({ id, orgId });
 expect(again.deduped).toBe(true);
 ```
 
@@ -69,6 +86,10 @@ bunx x g task daily-digest --feature todo
 `--feature todo` puts the task in the existing slice; without it the generator opens a `daily-digest` slice of its own. Either way the task and its job are added to `apps/web/api/index.ts`, which is what names them.
 
 ```ts
+import { type JobHandle, task } from '@ultimat3/jobs';
+
+declare const dailyDigestJob: JobHandle<{ id: string; orgId: string }>;
+
 export const dailyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',
@@ -151,6 +172,18 @@ export const todoListSorts = ['createdAt', 'title'] as const;
 ```
 
 ```ts
+import { t } from '@ultimat3/action';
+import { from, query, type QueryPolicy } from '@ultimat3/query';
+
+type Todo = { readonly id: string; readonly orgId: string; readonly title: string; readonly createdAt: Date };
+
+const todoListSorts = ['createdAt', 'title'] as const;
+declare const canTodoRead: QueryPolicy;
+// The slice's `repo.ts`, as `x g resource` wrote it.
+declare const repo: {
+  list(limit: number, sort: string, dir: 'asc' | 'desc'): Promise<readonly Todo[]>;
+};
+
 export const todoList = query({
   input: t.object({
     limit: t.number.default(50),
@@ -188,6 +221,11 @@ export const todoList = query({
 The generated `todo-list.live.test.ts` asserts on the **SQL text**, because that is the contract an agent reads to self-correct:
 
 ```ts
+import { type AnyQuery, sourceFor } from '@ultimat3/query';
+import { expect } from '@ultimat3/testing';
+
+declare const target: AnyQuery;
+
 const source = await sourceFor(
   target,
   { limit: 50 },

@@ -5,7 +5,7 @@
 //
 // Skips unless `TEST_DATABASE_URL` is set, as the live suite does.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient, raw, setDbClient } from '@ultimat3/db';
 import type { PlainDate } from '@ultimat3/time';
 import { plainDate } from '@ultimat3/time';
@@ -61,14 +61,28 @@ describe.skipIf(!hasPostgres)('live · postgres · adopting an existing table', 
     setDbClient(undefined);
   });
 
+  beforeEach(() => client.execute(raw('delete from legacy_accounts')));
+
   const db = () => database({ accounts }, { driver: postgresDriver() });
 
-  test('a write lands in the physical columns the table actually has', async () => {
-    const written = await db().accounts.insert({
+  const insertAda = () =>
+    db().accounts.insert({
       githubLogin: 'ada',
       balance: { minor: 125_000, currency: 'EUR' },
       openedOn: '2026-03-14' as PlainDate,
     });
+
+  /** The adoption case proper: a row inserted by something that is not Ultimate. */
+  const insertBruno = () =>
+    client.execute(
+      raw(
+        `insert into legacy_accounts (account_id, gh_login, amount_cents, currency, opened_on)
+         values ('00000000-0000-7000-8000-00000000ff01', 'bruno', 4200, 'USD', '2019-11-02')`,
+      ),
+    );
+
+  test('a write lands in the physical columns the table actually has', async () => {
+    const written = await insertAda();
     // Read back with SQL that names the LEGACY columns and knows nothing about the entity.
     const rows = await client.query<{
       gh_login: string;
@@ -88,6 +102,7 @@ describe.skipIf(!hasPostgres)('live · postgres · adopting an existing table', 
   });
 
   test('a read of the same table comes back as the entity row, property names and all', async () => {
+    await insertAda();
     const found = await db().accounts.where({ githubLogin: 'ada' }).one();
     expect(found).not.toBeNull();
     expect(found?.githubLogin).toBe('ada');
@@ -98,19 +113,14 @@ describe.skipIf(!hasPostgres)('live · postgres · adopting an existing table', 
   });
 
   test('a row this framework never wrote reads back the same way', async () => {
-    // The adoption case proper: the row is inserted by something that is not Ultimate.
-    await client.execute(
-      raw(
-        `insert into legacy_accounts (account_id, gh_login, amount_cents, currency, opened_on)
-         values ('00000000-0000-7000-8000-00000000ff01', 'bruno', 4200, 'USD', '2019-11-02')`,
-      ),
-    );
+    await insertBruno();
     const found = await db().accounts.where({ githubLogin: 'bruno' }).one();
     expect(found?.balance).toEqual({ minor: 4200, currency: 'USD' });
     expect(found?.openedOn).toBe(plainDate('2019-11-02'));
   });
 
   test('an update and a filtered write address the physical columns too', async () => {
+    await insertBruno();
     const found = await db().accounts.where({ githubLogin: 'bruno' }).one();
     await db().accounts.update(found?.id ?? '', { githubLogin: 'bruno-2' });
     expect(await db().accounts.where({ githubLogin: 'bruno-2' }).count()).toBe(1);
@@ -125,11 +135,13 @@ describe.skipIf(!hasPostgres)('live · postgres · adopting an existing table', 
   });
 
   test('ordering and cursors work over a renamed column, because the plan names properties', async () => {
+    await insertAda();
+    await insertBruno();
     const page = await db().accounts.orderBy('githubLogin', 'asc').limit(1).page();
     expect(page.rows[0]?.githubLogin).toBe('ada');
     expect(page.nextCursor).not.toBeNull();
     const next = await db().accounts.orderBy('githubLogin', 'asc').after(page.nextCursor).all();
-    expect(next[0]?.githubLogin).toBe('bruno-2');
+    expect(next[0]?.githubLogin).toBe('bruno');
   });
 });
 

@@ -4,13 +4,14 @@
 // `runShot`, so a cell's `verdict.json` means exactly what a single shot's does.
 
 // why: no Bun native joins a path.
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { escapeHtml } from '@ultimat3/core';
 import { routeEntries } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import type { ShotRun } from './cmd-shot';
 import { BadFlagError } from './errors';
 import type { CommandResult } from './output';
+import { posixRelative } from './posix-path';
 import { localizedShotPath } from './shot-locale';
 import type { ShotServer } from './shot-server';
 import { SHOT_DIR } from './shot-server';
@@ -185,7 +186,7 @@ export async function runShotMatrix(run: MatrixRun): Promise<CommandResult> {
       shots.push({
         cell,
         ok: artifacts.verdict.ok,
-        image: relative(run.outDir, artifacts.image).split('\\').join('/'),
+        image: posixRelative(run.outDir, artifacts.image),
       });
     }
   } finally {

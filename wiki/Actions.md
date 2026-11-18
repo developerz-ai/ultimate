@@ -3,10 +3,36 @@
 The load-bearing primitive. A mutation or command, server-authoritative, declared once.
 
 ```ts
+import { action, t } from '@ultimat3/action';
+import { tag } from '@ultimat3/cache';
+import type { Actor } from '@ultimat3/core';
+import type { JobHandle } from '@ultimat3/jobs';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/cache' {
+  interface CacheTagRegistry {
+    post: true;
+    feed: true;
+  }
+}
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
+declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+
 export const publishPost = action({
   input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
-  policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
@@ -250,7 +276,28 @@ Logic lives in `service.ts`; `actions/` holds declarations. An action whose `han
 Same declaration surface as `action`, plus a local half that runs client-side against the local store while the server call is in flight.
 
 ```ts
+import { mutator, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+declare module '@ultimat3/action' {
+  interface LocalTables {
+    posts: { likedByMe: boolean; likeCount: number };
+  }
+}
+
 export const likePost = mutator({
+  input:  t.object({ postId: t.uuid }),
+  output: t.object({ likeCount: t.number, likedByMe: t.boolean }),
+  policy: can('post:like'),
   // REQUIRED (`X_MUTATOR_NOT_IDEMPOTENT`): a replay under the same Idempotency-Key answers the
   // first result instead of running `server` again.
   idempotent: true,
@@ -388,10 +435,27 @@ Emitted with the action, and green on the first run: it pins the invariant the a
 
 ```ts
 // contract test — generated with the action
-test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
-  const { post, stranger } = await seed('two-orgs');
-  await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_FORBIDDEN');
+import { type Action, t } from '@ultimat3/action';
+import { testActor } from '@ultimat3/policy';
+import { contractTest, expect } from '@ultimat3/testing';
+
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+declare const postId: string;
+
+// Named here because this file does not boot the app; at boot `defineApi` stamps the same name.
+const target = publishPost.named('publishPost');
+
+// Holds the grant, wrong org: a denial here is the policy deciding, not the permission check.
+const outsider = testActor('outsider', {
+  orgId: '00000000-0000-4000-8000-000000000009',
+  permissions: ['post:publish'],
+}).actor;
+
+contractTest('publishPost denies a foreign org', async () => {
+  const denied = await target.as(outsider, { postId }).catch((error: unknown) => error);
+  expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 ```
 

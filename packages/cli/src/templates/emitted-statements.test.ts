@@ -60,10 +60,16 @@ const edit = async (path: string, from: string, to: string): Promise<void> => {
 
 const dbModule = () => join(root, 'db.ts');
 
+/** The slice's entity, on disk because `db.ts` imports it: no test may lean on an earlier one's. */
+const landEntity = async (): Promise<string> => {
+  const entity = generate({ kind: 'entity', name: 'invoice', dbModule: dbModule() });
+  await land(entity);
+  return String(entity.find((file) => file.path.endsWith('/entity.ts'))?.contents);
+};
+
 describe('unit · a generated statements assertion fails when its handler gains a loop', () => {
   test('x g query', async () => {
-    const entity = generate({ kind: 'entity', name: 'invoice', dbModule: dbModule() });
-    const entitySource = String(entity.find((file) => file.path.endsWith('/entity.ts'))?.contents);
+    const entitySource = await landEntity();
     await land(
       generate({
         kind: 'query',
@@ -97,8 +103,7 @@ describe('unit · a generated statements assertion fails when its handler gains 
     ['mutator', 'rename-invoice', 'async server(_ctx, input) {'],
   ] as const) {
     test(`x g ${kind}`, async () => {
-      const entity = generate({ kind: 'entity', name: 'invoice', dbModule: dbModule() });
-      const entitySource = String(entity.find((one) => one.path.endsWith('/entity.ts'))?.contents);
+      const entitySource = await landEntity();
       await land(
         generate({
           kind,
@@ -126,8 +131,7 @@ describe('unit · a generated statements assertion fails when its handler gains 
 // with nothing red. The generated test now names the tag; this runs it both ways.
 describe('unit · a generated action test fails when its cache tag is deleted', () => {
   test('x g action', async () => {
-    const entity = generate({ kind: 'entity', name: 'invoice', dbModule: dbModule() });
-    const entitySource = String(entity.find((one) => one.path.endsWith('/entity.ts'))?.contents);
+    const entitySource = await landEntity();
     await land(
       generate({
         kind: 'action',

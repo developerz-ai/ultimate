@@ -12,7 +12,7 @@
 // why: `join`/`relative` are `node:`-only by necessity: Bun exposes no path primitive, and a
 // workspace directory is checkout-relative while a caller's scan yields paths relative to its own
 // root.
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { singleLine, UltimateError } from '@ultimat3/core';
 import { DEFAULT_BASE, defaultBase, fetchFixFor } from './affected-base';
 import { readUnownedDirs } from './affected-unowned';
@@ -22,6 +22,7 @@ import { execOutput } from './exec';
 import type { JsonValue } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
+import { posixRelative } from './posix-path';
 import { quoteArg } from './shell-quote';
 import type { WorkspaceNode } from './workspace-graph';
 import { readWorkspaceGraph } from './workspace-graph';
@@ -309,7 +310,7 @@ export const scopePrefixes = (plan: AffectedPlan, root: string, cwd: string): re
   plan.rootWide.length > 0
     ? ['']
     : [...plan.workspaces.map((workspace) => workspace.dir), ...plan.unowned]
-        .map((dir) => relative(cwd, join(root, dir)).split('\\').join('/'))
+        .map((dir) => posixRelative(cwd, join(root, dir)))
         .filter((path) => !path.startsWith('..'));
 
 export const inScope = (path: string, prefixes: readonly string[]): boolean =>

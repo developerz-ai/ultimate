@@ -4,7 +4,7 @@
 // is a real one: a unique build over duplicate rows fails half-way exactly as a cancelled one does.
 // `concurrent-index.live.test.ts` is the same story on a Postgres server.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { DbClient } from './client';
 import type {
   ColumnDescriptionLike,
@@ -99,6 +99,12 @@ describe('concurrent index steps · the real embedded database', () => {
   });
   const migrations = [...files(initial), ...files(build)];
 
+  // Every case applies its own history to an empty database; the first one here pays the boot.
+  beforeEach(async () => {
+    await client.execute(raw('drop table if exists runs'));
+    await client.execute(raw('drop table if exists x_migrations'));
+  }, PGLITE_BOOT_MS);
+
   afterAll(async () => {
     await client.close();
   });
@@ -141,9 +147,10 @@ describe('concurrent index steps · the real embedded database', () => {
   );
 
   test('a rollback reverses the step outside a transaction too', async () => {
+    await migrate({ migrations, appVersion: 'test', client });
     expect(await rollback({ migrations, client })).toEqual([build.id]);
     expect(await validity(client, 'runs_status_key')).toBeNull();
-    // Forwards again, so the next test starts from the full schema.
+    // And forwards again: the step reversed is a step that can be re-applied.
     await migrate({ migrations, appVersion: 'test', client });
     expect(await validity(client, 'runs_status_key')).toBe(true);
   });
@@ -161,6 +168,7 @@ describe('concurrent index steps · the real embedded database', () => {
     });
     expect(contract.followUp).toBeDefined();
     const all = [...migrations, ...files(contract)];
+    await migrate({ migrations, appVersion: 'test', client });
 
     const report = await migrate({ migrations: all, appVersion: 'test', client });
 

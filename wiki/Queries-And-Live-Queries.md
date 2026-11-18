@@ -8,11 +8,27 @@ A `query` is a read. `live: true` makes it subscribable. Never writes, never enq
 
 ```ts
 // query
+import { from, query } from '@ultimat3/query';
+import { t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+import { database, entity, timestamp, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), createdAt: timestamp().defaultNow() },
+});
+const db = database({ posts });
+type Post = typeof posts.$row;
+
 export const liveFeed = query({
   input: t.object({ orgId: t.uuid }),
   policy: can('feed:read'),
   live: true,
-  sql: ({ orgId }) => db.posts.where({ orgId }).orderBy('createdAt').limit(50),
+  sql: ({ orgId }) =>
+    from<Post>('posts', () => db.posts.where({ orgId }).all())
+      .where({ orgId })
+      .orderBy('createdAt')
+      .limit(50),
 });
 ```
 
@@ -147,11 +163,26 @@ export const postRecord = query({
 ### A read of one object — `single: true`
 
 ```ts
+import { from, query } from '@ultimat3/query';
+import { t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), title: text() },
+});
+const db = database({ posts });
+type Post = typeof posts.$row;
+
 export const postById = query({
   input: t.object({ id: t.uuid }),
   policy: can('post:read'),
   single: true,
-  sql: ({ id }) => db.posts.where({ id }).limit(1),
+  sql: ({ id }) =>
+    from<Post>('posts', () => db.posts.where({ id }).all())
+      .where({ id })
+      .limit(1),
 });
 // GET /_x/query/post-by-id?id=…  → 200 { id, title, … }  ·  404 X_NOT_FOUND
 // await postById.client({ baseUrl })({ id })  → Promise<Row>
@@ -173,6 +204,12 @@ export const postById = query({
 
 ```ts
 // apps/web/shared/client.ts — the app's one place for both
+import { rpc } from '@ultimat3/action';
+import { queryClient } from '@ultimat3/query';
+import type { Api } from '../api';
+
+declare const baseUrl: string;
+
 export const client = rpc<Api['actions']>({ baseUrl });         // writes
 export const queries = queryClient<Api['queries']>({ baseUrl }); // reads
 ```
@@ -409,10 +446,10 @@ The contract. **Not yet a gate** — `As of 2026-08` `X_CACHE_UNTAGGED_QUERY` is
 | Case | Today |
 |---|---|
 | a cached query no tag covers | cached under a key no `invalidates` fan-out reaches — stale until its `ttlMs`, and forever without one |
-| a tag no entity declares | `X_CACHE_TAG_UNKNOWN`, `fix: x manifest` — the opposite mistake, and the one that is enforced |
+| a tag no entity declares | `X_CACHE_TAG_UNKNOWN`, whose fix is the `declareTags([...])` call to paste — the opposite mistake, and the one that is enforced |
 | the `x verify` gate | no step reads a query's tags. Nothing fails |
 
-Until it is a gate, tag coverage is a review item, not a build error. Declare the entity tag — `tags()` / `entityTag()` in [Caching and invalidation](Caching-And-Invalidation).
+Until it is a gate, tag coverage is a review item, not a build error. Declare the tag — `CacheTagRegistry` and `declareTags` in [Caching and invalidation](Caching-And-Invalidation).
 
 ## Subscription caps
 

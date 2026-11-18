@@ -65,6 +65,23 @@ describe('unit · compat part · run', () => {
     expect(doc.findings.map((one) => one.code)).toEqual(['X_TESTS_FAILED']);
   });
 
+  // What `run()` really hands back (compat run 43826824005): stderr joined after stdout, and verify's
+  // progress lines on stderr are JSON too. The last of them was read as the gate's document, so
+  // every red part said "0 failing tests" with no finding.
+  test('the gate’s document is found under verify’s JSON progress lines', async () => {
+    const progress = 'still running: unit (59s)\n{"step":"unit","ok":false,"ms":223053}';
+    const runner = async (): Promise<RunResult> => result(`${RED}\n${progress}\n`, 1);
+    const doc = await runPart({ root: '.', cell: cell('bun', 'canary'), part: PART, runner });
+    expect(doc.failures.map((one) => one.test)).toEqual(['b > adds']);
+    expect(doc.findings.map((one) => one.code)).toEqual(['X_TESTS_FAILED']);
+  });
+
+  test('progress lines alone are no document: the part is unreadable, not green', async () => {
+    const runner = async (): Promise<RunResult> => result('{"step":"unit","ok":true,"ms":1}', 137);
+    const doc = await runPart({ root: '.', cell: cell('bun', 'canary'), part: PART, runner });
+    expect(doc.findings.map((one) => one.code)).toEqual(['X_COMPAT_UNREADABLE']);
+  });
+
   test('a document that says green under a red exit is red: the exit is the verdict too', async () => {
     const runner = async (): Promise<RunResult> => result(JSON.stringify({ ok: true }), 1);
     expect((await runPart({ root: '.', cell: cell('bun', 'latest'), part: PART, runner })).ok).toBe(

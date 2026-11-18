@@ -3,7 +3,7 @@
 // pictures, every picture maps back to a declared state, and the island the manifest names exists.
 // Plus the constraint the whole design rests on: that file's module graph reaches no browser.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: no Bun native creates or removes a directory tree; this test needs a real one on disk.
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -61,6 +61,10 @@ const write = async (relative: string, source: string): Promise<string> => {
   return path;
 };
 
+beforeAll(async () => {
+  await write(ISLAND, 'export function mount(): void {}\n');
+});
+
 const load = async (path: string): Promise<readonly IslandStatesManifest[]> => {
   const module: unknown = await import(path);
   return Object.values(module as Record<string, unknown>).filter(isIslandStatesManifest);
@@ -68,7 +72,6 @@ const load = async (path: string): Promise<readonly IslandStatesManifest[]> => {
 
 describe(testName('unit', 'island states parity'), () => {
   test('a states file on disk loads to exactly the manifests it declares', async () => {
-    await write(ISLAND, 'export function mount(): void {}\n');
     const manifests = await load(await write(islandStatesFile(ISLAND), STATES_SOURCE));
     expect(manifests.length).toBe(1);
     expect(manifests[0]?.island).toBe(ISLAND);

@@ -2,7 +2,7 @@
 // resource from the app's own tables, the request's own actor, and the role map as the authz.
 // And the one thing it refuses: a resource with nothing to read rows through.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import {
@@ -40,9 +40,14 @@ beforeAll(async () => {
   await db.posts.insert({ title: 'Bound' });
 });
 
-afterAll(() => {
+// After each test, not once: a declared permission turns every undeclared name into a denial, so
+// one test's `definePermissions` would decide the next test's verdicts.
+afterEach(() => {
   defineRoles(previousRoles);
   restorePermissions(previousPermissions, previousPermissionSites);
+});
+
+afterAll(() => {
   clearRegistry();
 });
 
@@ -182,6 +187,12 @@ describe('unit · defineAdmin’s auth defaults', () => {
 
 describe('unit · roleAuthz', () => {
   test('a name that is not resource:verb, or that nothing declared, is DENIED — never thrown', () => {
+    // An EMPTY registry knows every name, so "nothing declared it" needs a declared neighbour.
+    definePermissions(['admin_bind_posts:read']);
+    defineRoles({
+      ...previousRoles,
+      bind_reader: { grants: ['admin:read', 'admin_bind_posts:read'] },
+    });
     const authz = roleAuthz();
     const actor = { id: 'u', roles: ['bind_reader'] };
     for (const permission of ['not-a-permission', 'admin_bind_nowhere:read']) {
@@ -304,6 +315,8 @@ describe('unit · policyAuthz decides an unmapped permission by the role map', (
   });
 
   test('a permission nothing declared is still refused, with the fix in the trace', () => {
+    definePermissions(['admin_bind_posts:read']);
+    defineRoles({ ...previousRoles, bind_ops: { grants: ['admin:read', 'job:read'] } });
     const decision = policyAuthz({ policies: {} }).decide({
       permission: 'admin_bind_nowhere:read',
       actor: { id: 'u', roles: ['bind_ops'] },

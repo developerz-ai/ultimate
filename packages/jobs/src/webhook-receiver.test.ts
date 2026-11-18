@@ -188,8 +188,13 @@ describe('webhookReceiver: the job', () => {
 
 describe('webhookReceiverRoutes: the one registration', () => {
   test('every declared receiver’s routes, and nothing a plain job declares', () => {
-    const a = receiverHarness();
-    const b = receiverHarness({ path: '/hooks/other', handshake: () => new Response('ok') });
+    // Named, because the registry lists by name and a minted `-10` sorts before `-9`.
+    const a = receiverHarness({ name: 'receiver-a' });
+    const b = receiverHarness({
+      name: 'receiver-b',
+      path: '/hooks/other',
+      handshake: () => new Response('ok'),
+    });
     expect(webhookReceiverRoutes()).toEqual([...a.receiver.routes(), ...b.receiver.routes()]);
     resetJobs();
     expect(webhookReceiverRoutes()).toEqual([]);

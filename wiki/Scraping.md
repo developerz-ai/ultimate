@@ -28,11 +28,14 @@ A scrape is a **`job`**, not a ninth primitive. `scrape()` returns a `JobHandle`
 ## The declaration
 
 ```ts
+import { t } from '@ultimat3/action';
+import { scrape } from '@ultimat3/scraping';
+
 export const dailyOrders = scrape({
   name: 'orders.daily',
-  input: t.object({ page: t.number.int() }),
+  input: t.object({ orgId: t.uuid, page: t.number.int() }),
   extract: t.object({ id: t.string, title: t.string }),
-  idempotencyKey: (input) => `orders:${input.page}`,
+  idempotencyKey: (input) => `orders:${input.orgId}:${input.page}`,
   tenant: (input) => input.orgId,
   allowHosts: ['shop.example'],
   expect: { minRows: 1 },
@@ -306,6 +309,34 @@ One declaration: a caller opens a session, events stream out, input goes in mid-
 comes back. Every piece is a field on `scrape()` or on its driver.
 
 ```ts
+import { t } from '@ultimat3/action';
+import {
+  type CdpLauncherLike,
+  type CdpResolver,
+  eventPrompt,
+  remoteBrowser,
+  scrape,
+  storageSessionStore,
+} from '@ultimat3/scraping';
+import { disk } from '@ultimat3/storage';
+
+// The app's own: the browser vendor's client, its row store, its login and its scrape body.
+declare const puppeteer: CdpLauncherLike;
+declare const provider: {
+  create(input: { tag: string | undefined; proxy: string | undefined; signal: AbortSignal | undefined }): Promise<{
+    readonly id: string;
+    readonly connectUrl: string;
+    readonly priceCents: number;
+  }>;
+  end(id: string): Promise<void>;
+};
+declare const connections: {
+  byId(id: string): Promise<{ readonly exit: string } | null>;
+};
+declare const runs: { record(runId: string, usage: unknown): Promise<void> };
+declare function login(): Promise<void>;
+declare function run(): Promise<readonly unknown[]>;
+
 const rent: CdpResolver = async ({ runId, egress, signal }) => {
   const rented = await provider.create({ tag: runId, proxy: egress, signal });
   return {

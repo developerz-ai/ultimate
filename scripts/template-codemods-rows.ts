@@ -12,6 +12,31 @@ export type TemplateCodemodRow =
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
   {
+    template: 'packages/cli/src/templates/github/ci.yml.ts',
+    since: '31.47.0',
+    codemod: 'ci-weekly-schedule',
+  },
+  {
+    template: 'packages/cli/src/templates/github/ci-schedule.ts',
+    since: '31.47.0',
+    codemod: 'ci-weekly-schedule',
+  },
+  {
+    template: 'packages/cli/src/templates/github/dependabot.yml.ts',
+    since: '31.47.0',
+    codemod: 'ci-weekly-schedule',
+  },
+  {
+    template: '.github/workflows/ci.yml',
+    since: '31.47.0',
+    codemod: 'ci-weekly-schedule',
+  },
+  {
+    template: '.github/dependabot.yml',
+    since: '31.47.0',
+    codemod: 'ci-weekly-schedule',
+  },
+  {
     template: 'packages/cli/src/templates/sign-in-shared.ts',
     since: '31.46.0',
     none: "x new's destroySession now answers a browser form with native: { success: (output) => output.next } and sign-in-flow.ts drops landAt (D10); an existing app's landAt still sends the 303 through setRedirect, which the native answer honours too, so it keeps working unchanged — the optional move is in wiki/Upgrading.md",
@@ -116,5 +141,15 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     template: 'packages/cli/src/templates/shapes/overlay.ts',
     since: '31.47.0',
     none: "the shape overlay's own keyed-record guard became core's isJsonObject (one home, X_HELPER_COPY); it runs inside x new and emits byte-identical files, so an app holds nothing that changed",
+  },
+  {
+    template: 'README.md',
+    since: '31.47.0',
+    none: "the scaffold's prose now says CI also runs weekly; ci-weekly-schedule carries the behaviour, and an app's own docs are its to edit, so x upgrade leaves them alone",
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-docs.ts',
+    since: '31.47.0',
+    none: "the scaffold's prose now says CI also runs weekly; ci-weekly-schedule carries the behaviour, and an app's own docs are its to edit, so x upgrade leaves them alone",
   },
 ];

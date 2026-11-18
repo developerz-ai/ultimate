@@ -2,7 +2,7 @@
 // a raw update and a multi-row update alike, a no-op update and a counter-only change record nothing,
 // the actor is the write transaction's, and the history table refuses every rewrite but its purge's.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import { applyLifecycle } from './lifecycle-live-fixture';
 import { raw, sql } from './sql';
@@ -38,8 +38,12 @@ describe.skipIf(!hasPostgres)('live · postgres · the history trigger', () => {
     return expect.unreachable('the history table accepted a rewrite');
   };
 
-  beforeAll(async () => {
+  beforeAll(() => {
     client = postgresClient({ url: url ?? '' });
+  });
+
+  // One test counts the images exactly and the other purges them.
+  beforeEach(async () => {
     await applyLifecycle(client, P);
     for (const id of [POST, OTHER]) {
       await client.execute(

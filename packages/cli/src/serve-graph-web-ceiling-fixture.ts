@@ -295,5 +295,7 @@
  * a file a concurrent publish on another pod reused.
  * raised 1741 → 1745, measured 1745 (2026-11-17, plan 101b audit rounds 5–6): the four on
  * `SERVING_ROLE_CEILING`. Nothing web-only.
+ * raised 1745 → 1747, measured 1747 (2026-11-18, a queued write's binding): `core/src/client-scope-id.ts`
+ * and `action/src/replay-scope.ts`, the scope id and the check that compares it.
  */
-export const WEB_ROLE_CEILING = 1745;
+export const WEB_ROLE_CEILING = 1747;

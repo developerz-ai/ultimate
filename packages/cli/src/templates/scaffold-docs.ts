@@ -184,6 +184,7 @@ with \`X_DB_DRIFT\`, and that is the fix it names.
 | \`.mcp.json\` | MCP client config: the dev tools, \`bunx @ultimat3/cli mcp serve --transport stdio\` |
 | \`apps/web/mcp.ts\` | the app's own \`POST /mcp\`: exposed actions, behind a bearer token |
 | \`.github/workflows/ci.yml\` | on push and pull request: \`bun run verify plan\` cuts the gate into parts, each runner runs \`bun run setup\` then its \`bun run verify --only …\`, and \`bun run verify merge\` folds them into the one verdict |
+| \`.github/workflows/ci.yml\`, weekly | the same gate on the default branch, so a quiet repository still learns the world moved; a red run keeps one issue open until the next green one |
 | \`.github/workflows/image.yml\` | after a green \`ci\` on the default branch: \`docker/Dockerfile\` to \`ghcr.io\`, tagged \`sha-<7>\`, always on \`ubuntu-latest\` (bash and Docker). \`ci.yml\` runs on \`vars.CI_RUNNER\`, default \`ubuntu-latest\` |
 `;
 

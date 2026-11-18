@@ -7,10 +7,13 @@ Named disks. **Call sites name a disk, never a driver.**
 ```ts
 import { defineStorage, disk, localDriver, s3Driver, scopedKey } from '@ultimat3/storage';
 
+declare const orgId: string;
+declare const bytes: Uint8Array;
+
 defineStorage({
   disks: {
     uploads: localDriver({ root: '.storage/uploads' }),
-    media: s3Driver({ bucket: 'media', endpoint: process.env.S3_ENDPOINT, forcePathStyle: true }),
+    media: s3Driver({ bucket: 'media', endpoint: process.env['S3_ENDPOINT'], forcePathStyle: true }),
   },
   default: 'uploads', // omit and the first disk wins
   shared: { media: ['brand/'] }, // the only un-scoped keys /_storage and /media serve (27.0.0)
@@ -408,9 +411,31 @@ policy never allowed.
 
 ```ts
 // 1. server, inside an action's handle: mint the grant
+import { type Ctx } from '@ultimat3/core';
+import {
+  acceptSignedUpload,
+  disk,
+  grantUpload,
+  uploadFile,
+  uploadPolicy,
+} from '@ultimat3/storage';
+
+type UploadInput = Parameters<typeof uploadFile>[0];
+declare function orgOf(actor: Ctx['actor']): string;
+declare const ctx: Ctx;
+declare const request: Request;
+declare const secret: string;
+declare const bytes: Uint8Array;
+declare const filename: string;
+declare const contentType: string;
+declare const size: number;
+declare const file: UploadInput['file'];
+declare const onProgress: UploadInput['onProgress'];
+declare const api: { requestUpload: UploadInput['grant'] };
+
 const grant = await grantUpload({
   disk: disk('uploads'),
-  orgId: ctx.actor.orgId,            // the ACTOR's org, never one read off the request
+  orgId: orgOf(ctx.actor),           // the ACTOR's org, never one read off the request
   request: { filename, contentType, size },
   policy: uploadPolicy({ maxBytes: 5e6 }),
   // target: { entity: 'post', id, field: 'cover' } — omit it and the key lands under `pending/`
@@ -424,7 +449,7 @@ const object = await acceptSignedUpload({
   url: request.url,                  // baseUrl defaults to `disk.signedUrlBase` — the very base
   secret,                            // the driver signed under, `/_storage/<disk name>`. Pass one
   disk: disk('uploads'),             // only for a route mounted somewhere else.
-  orgId: ctx.actor.orgId,
+  orgId: orgOf(ctx.actor),
   bytes, declaredContentType: request.headers.get('content-type') ?? undefined,
   policy: uploadPolicy({ maxBytes: 5e6 }),
 });

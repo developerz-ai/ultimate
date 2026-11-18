@@ -12,6 +12,7 @@ interface Update {
   readonly 'package-ecosystem'?: string;
   readonly directory?: string;
   readonly directories?: readonly string[];
+  readonly ignore?: readonly { readonly 'dependency-name'?: string }[];
   readonly groups?: Readonly<
     Record<
       string,
@@ -75,6 +76,16 @@ describe('unit · the dependabot.yml x new writes', () => {
     expect(dockerDirs.length).toBeGreaterThan(0);
     expect(ecosystem('docker').directories).toEqual(dockerDirs);
     expect(ecosystem('docker-compose').directories).toEqual(dockerDirs);
+  });
+
+  // The Dockerfile's `FROM oven/bun:` is held to `engines.bun` by the `runtime-pin` guard, so a bump
+  // of the image alone is a PR that guard can only refuse.
+  test('never proposes the Bun image the Dockerfile pins, which moves with the repo’s Bun', () => {
+    const dockerfile = docsFiles(app).find((file) => file.path === 'docker/Dockerfile');
+    expect(String(dockerfile?.contents)).toContain('FROM oven/bun:');
+    const ignored = (ecosystem('docker').ignore ?? []).map((entry) => entry['dependency-name']);
+    expect(ignored).toContain('oven/bun');
+    expect(ignored).toContain('postgres');
   });
 
   test('watches the workflows x new writes', () => {

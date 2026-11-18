@@ -7,13 +7,15 @@
 // so an old tab keeps what it started with.
 
 // why: Bun ships no path API; the entry is resolved to a file and named in the cause.
-import { dirname, join, relative } from 'node:path';
+
+import { dirname, join } from 'node:path';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders, jsonResponse, NO_STORE, textResponse } from '@ultimat3/http';
 import { contentHash } from '@ultimat3/render/server';
 import { assetRouteMeta } from './asset-route-meta';
 import { FrameworkScriptBuildFailedError, type FrameworkScriptKind } from './errors';
 import { describeBuildError } from './island-identity';
+import { posixRelative } from './posix-path';
 
 /**
  * The ONE prefix every framework-served, content-addressed script lives under — the sync worker,
@@ -120,7 +122,7 @@ async function buildFrameworkScript(
 ): Promise<FrameworkScript | undefined> {
   const entry = explicit ?? resolveEntry(root, specifier);
   if (entry === undefined) return undefined;
-  const label = relative(root, entry);
+  const label = posixRelative(root, entry);
   let built: Awaited<ReturnType<typeof Bun.build>>;
   try {
     built = await Bun.build({

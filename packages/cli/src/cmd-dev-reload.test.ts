@@ -4,7 +4,8 @@
 // one — embedded Postgres, the watcher, the HTTP role — never a stubbed rescan.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun has no mkdtemp and no recursive remove, only a per-file delete.
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join, relative } from 'node:path';
 import { invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
@@ -15,7 +16,9 @@ import { startDev } from './cmd-dev';
 import { DEV_FIXTURE_FILES, resetRegistries } from './cmd-dev-fixture';
 import { processRoot } from './process-root-fixture';
 
-const ROOT = processRoot(join(import.meta.dir, '..', '.dev-reload-fixture'));
+const BASE = processRoot(join(import.meta.dir, '..', '.dev-reload-fixture'));
+/** The running server's app: a fresh directory per boot, because Bun caches modules by path. */
+let root = '';
 
 /**
  * The shared fixture, plus the two shapes a real app's save goes through that it does not have:
@@ -134,55 +137,57 @@ let onReload: (file: string) => void = () => undefined;
 let onRestart: (pins: readonly StalePin[]) => void = () => undefined;
 const restoreTags = isolateDeclaredTags();
 
-beforeAll(async () => {
-  await rm(ROOT, { recursive: true, force: true });
+const boot = async (): Promise<void> => {
+  await mkdir(BASE, { recursive: true });
+  root = await mkdtemp(join(BASE, 'app-'));
   for (const [path, contents] of Object.entries(FILES)) {
-    await Bun.write(join(ROOT, path), contents);
+    await Bun.write(join(root, path), contents);
   }
   resetRegistries();
   server = await startDev({
-    root: ROOT,
+    root,
     port: 0,
     env: { BUILD_ID: 'stamped-7' },
     roles: ['web'],
     onReload: (file) => onReload(file),
     onRestart: (pins) => onRestart(pins),
   });
-}, BOOT_TIMEOUT_MS);
+};
 
-afterAll(async () => {
+const shutDown = async (): Promise<void> => {
   try {
     await server?.stop();
-    await rm(ROOT, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   } finally {
     resetRegistries();
-    restoreTags();
     resetLifecycle();
   }
-}, BOOT_TIMEOUT_MS);
+};
+
+afterAll(async () => {
+  await rm(BASE, { recursive: true, force: true });
+  restoreTags();
+});
 
 /**
- * The file a test saved, and the signal the watcher answers its restore with. Rerun-safe: the
- * module cache outlives a run under `--rerun-each`, so a file left at its saved text is what the
- * next run's fresh server imports — `headline two` where the test expects `headline one`. Each
- * test's edit is written back, and the rebuild awaited, before the next one starts.
+ * The file a test saved. The tests of one server share it, and each expects the fixture's text, so
+ * the edit is written back and its rebuild awaited before the next test starts.
  */
-let saved: { readonly file: string; readonly settles: 'reload' | 'restart' } | undefined;
+let saved: string | undefined;
 
 afterEach(async () => {
-  const edit = saved;
+  const file = saved;
   saved = undefined;
-  if (edit === undefined) return;
-  const settled = new Promise<void>((resolve) => {
-    // Only the restore's own file: a reload named after another is an earlier save's second tick.
-    if (edit.settles === 'reload') {
-      onReload = (file) => {
-        if (file === edit.file) resolve();
+  if (file !== undefined) {
+    const settled = new Promise<void>((resolve) => {
+      // Only the restore's own file: a reload named after another is an earlier save's second tick.
+      onReload = (landed) => {
+        if (landed === file) resolve();
       };
-    } else onRestart = () => resolve();
-  });
-  await Bun.write(join(ROOT, edit.file), FILES[edit.file] ?? '');
-  await settled;
+    });
+    await Bun.write(join(root, file), FILES[file] ?? '');
+    await settled;
+  }
   onReload = () => undefined;
   onRestart = () => undefined;
 }, BOOT_TIMEOUT_MS);
@@ -210,12 +215,15 @@ const save = async (file: string, from: string, to: string): Promise<string> => 
       if (landed === file) resolve(landed);
     };
   });
-  saved = { file, settles: 'reload' };
-  await Bun.write(join(ROOT, file), FILES[file]?.replace(from, to) ?? '');
+  saved = file;
+  await Bun.write(join(root, file), FILES[file]?.replace(from, to) ?? '');
   return reloaded;
 };
 
 describe('unit · x dev serves the save', () => {
+  beforeAll(boot, BOOT_TIMEOUT_MS);
+  afterAll(shutDown, BOOT_TIMEOUT_MS);
+
   // Plan 101 s2-con #1: `x dev` built its ISR controller and never attached it, so `invalidateTags`
   // reached no page and a tag-only one served its first render until the process restarted.
   test(
@@ -323,6 +331,13 @@ describe('unit · x dev serves the save', () => {
     },
     BOOT_TIMEOUT_MS,
   );
+});
+
+// A server of its own: a process that holds a stale read answers every later save with a restart,
+// for the rest of its life (`dev-rebuild.ts`), so on the shared one each `save` above never landed.
+describe('unit · x dev asks for the restart a re-import cannot replace', () => {
+  beforeAll(boot, BOOT_TIMEOUT_MS);
+  afterAll(shutDown, BOOT_TIMEOUT_MS);
 
   // The half no re-import can serve (one adopter, 2026-09-29: an admin page's `ui-*.tsx` under
   // `defineAdmin`, a slice's service under its query): the read that imports the service DEFINES a
@@ -341,11 +356,10 @@ describe('unit · x dev serves the save', () => {
       onReload = () => {
         reloaded = true;
       };
-      saved = { file, settles: 'restart' };
-      await Bun.write(join(ROOT, file), FILES[file]?.replace('greeting one', 'greeting two') ?? '');
+      await Bun.write(join(root, file), FILES[file]?.replace('greeting one', 'greeting two') ?? '');
       const pins = await restarted;
-      expect(pins.map((pin) => relative(ROOT, pin.changed))).toEqual([file]);
-      expect(pins.map((pin) => relative(ROOT, pin.pinned))).toEqual([
+      expect(pins.map((pin) => relative(root, pin.changed))).toEqual([file]);
+      expect(pins.map((pin) => relative(root, pin.pinned))).toEqual([
         'apps/web/app/greet/queries.ts',
       ]);
       // A second tick that changes nothing — a no-op save, or one write's watcher events landing a
@@ -354,7 +368,7 @@ describe('unit · x dev serves the save', () => {
       const again = new Promise<readonly StalePin[]>((resolve) => {
         onRestart = resolve;
       });
-      await Bun.write(join(ROOT, file), FILES[file]?.replace('greeting one', 'greeting two') ?? '');
+      await Bun.write(join(root, file), FILES[file]?.replace('greeting one', 'greeting two') ?? '');
       const held = await Promise.race([
         again,
         new Promise<'reloaded'>((resolve) => {
@@ -362,7 +376,7 @@ describe('unit · x dev serves the save', () => {
         }),
       ]);
       expect(
-        held === 'reloaded' ? 'reloaded' : held.map((pin) => relative(ROOT, pin.pinned)),
+        held === 'reloaded' ? 'reloaded' : held.map((pin) => relative(root, pin.pinned)),
       ).toEqual(['apps/web/app/greet/queries.ts']);
       expect(reloaded).toBe(false);
     },

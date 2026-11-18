@@ -10,7 +10,7 @@
 //
 // Every table here is dropped on the way in and on the way out; nothing is left behind.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
@@ -97,8 +97,12 @@ describe.skipIf(!hasPostgres)('live · postgres · a column that becomes generat
     await client.execute(raw(`drop table if exists "${TABLE}" cascade`));
   };
 
-  beforeAll(async () => {
+  beforeAll(() => {
     client = postgresClient({ url: url ?? '' });
+  });
+
+  // The table as it stood before the migration; a test that needs it applied applies it.
+  beforeEach(async () => {
     await teardown();
     await apply(generateMigration({ entities: [docs(undefined)], name: 'init', now: at }).up);
     await client.execute(
@@ -143,17 +147,20 @@ describe.skipIf(!hasPostgres)('live · postgres · a column that becomes generat
   });
 
   test('the partial index whose predicate names the column is back', async () => {
+    await apply(rebuild().up);
     expect(await indexNames()).toEqual([`${TABLE}_pkey`, INDEX]);
   });
 
   test('so is the CHECK, and it still refuses the row it always refused', async () => {
+    await apply(rebuild().up);
     expect(await checkNames()).toEqual([CHECK]);
     await expect(
       client.execute(raw(`insert into "${TABLE}" ("id", "title") values ('${uuid('2')}', '')`)),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/SQLSTATE 23514/);
   });
 
   test('and its down reverses the whole thing — plain column, both dependents restored', async () => {
+    await apply(rebuild().up);
     await apply(rebuild().down);
     expect(await indexNames()).toEqual([`${TABLE}_pkey`, INDEX]);
     expect(await checkNames()).toEqual([CHECK]);

@@ -8,7 +8,6 @@ import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp.
 import { tmpdir } from 'node:os';
 import { currentLogStream, setLogStream } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
-import { PLANNED_COMMANDS } from './cmd-planned';
 import { dispatch, sinkFor } from './dispatch';
 import type { CommandResult } from './output';
 import { SPECS } from './registry';
@@ -113,12 +112,9 @@ describe('unit · -j is --json on the parse-failure path too', () => {
   });
 });
 
-// A planned command is not built, and every invocation of one must say so. The unknown-flag
-// refusal fires in the parser, BEFORE any `run`, so `x logs tail --follow` answered
-// `X_CLI_BAD_FLAG` naming "known: json, help, cwd, verbose" — a flag list for a command that does
-// not exist yet — while `x logs tail` answered the honest X_NOT_IMPLEMENTED with a runnable fix.
-// One invocation apart, two different stories, and the wrong one sends an agent hunting a typo.
-describe('unit · a planned command answers X_NOT_IMPLEMENTED however it is invoked', () => {
+// The parser's refusals keep their own codes: an undeclared flag on a shipped command is a bad flag,
+// and a word that is no command stays unknown with or without one.
+describe("unit · a refused invocation answers the parser's own code", () => {
   const finding = (out: string): { code?: string; fix?: string } =>
     (JSON.parse(out) as { findings?: { code: string; fix: string }[] }).findings?.[0] ?? {};
 
@@ -130,16 +126,6 @@ describe('unit · a planned command answers X_NOT_IMPLEMENTED however it is invo
     expect(finding(result.out).code).toBe('X_CLI_UNKNOWN_COMMAND');
   });
 
-  test('every planned command answers it, with its own fix, for a flag it never declared', async () => {
-    for (const planned of PLANNED_COMMANDS) {
-      const result = await run([planned.name, '--no-such-flag', '--json']);
-      expect([planned.name, finding(result.out).code]).toEqual([planned.name, 'X_NOT_IMPLEMENTED']);
-      expect([planned.name, finding(result.out).fix]).toEqual([planned.name, planned.fix]);
-    }
-  });
-
-  // The pre-empt is scoped to planned commands: a shipped command's bad flag is still a bad flag,
-  // and a command nobody ships is still unknown.
   test('a shipped command and an unknown word keep their own refusals', async () => {
     expect(finding((await run(['doctor', '--no-such-flag', '--json'])).out).code).toBe(
       'X_CLI_BAD_FLAG',
@@ -151,7 +137,7 @@ describe('unit · a planned command answers X_NOT_IMPLEMENTED however it is invo
 
   // A Bun too old is a fact about the environment and outranks everything: it is why the version
   // check and the parse do not share one catch.
-  test('an unsupported Bun still wins over the planned pre-empt', async () => {
+  test('an unsupported Bun still wins over a refused parse', async () => {
     const lines: string[] = [];
     const code = await dispatch({
       argv: ['branch', '--follow', '--json'],

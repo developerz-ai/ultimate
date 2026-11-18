@@ -9,10 +9,13 @@ and the upload design is
 ```ts
 import { defineStorage, disk, localDriver, s3Driver, scopedKey } from '@ultimat3/storage';
 
+declare const orgId: string;
+declare const bytes: Uint8Array;
+
 defineStorage({
   disks: {
     uploads: localDriver({ root: '.storage/uploads' }),
-    media: s3Driver({ bucket: 'media', endpoint: process.env.S3_ENDPOINT, forcePathStyle: true }),
+    media: s3Driver({ bucket: 'media', endpoint: process.env['S3_ENDPOINT'], forcePathStyle: true }),
   },
   default: 'uploads',
 });
@@ -210,6 +213,10 @@ served only when nothing declared one. A `defineStorage` at module scope in any 
 
 ```ts
 // apps/web/shared/storage.ts
+import { defineStorage, localDriver, s3Driver } from '@ultimat3/storage';
+
+declare const bucket: string;
+
 export const storage = defineStorage({
   disks: { uploads: localDriver({ root: '.storage/uploads' }), evidence: s3Driver({ bucket }) },
   default: 'uploads',

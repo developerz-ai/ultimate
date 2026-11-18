@@ -144,7 +144,7 @@ export interface JobDriver {
 
 `leases` is the one optional member that **refuses** rather than degrades: without it a driver can only hold `concurrency.limit` per process, so `jobWorker().start()` throws `X_JOB_CONCURRENCY_UNENFORCEABLE` naming every job that declared one. Every other absent member is a capability the worker runs without.
 
-Switching is the `jobs:` field of `apps/<app>/runtime.ts` plus a migration of in-flight rows — no command `As of 2026-11-15`: no durable second driver ships, so `x jobs` has no `drain` (it left the registry; [Known gaps](../../wiki/Known-Gaps.md#open-by-decision)). Because step persistence is the driver's own `steps: StepStore` — written in the queue's storage, behind its transaction boundary — it works identically on every driver.
+Switching is the `jobs:` field of `apps/<app>/runtime.ts` plus a migration of in-flight rows — no command `As of 2026-11-18`: two durable drivers ship (`postgresJobDriver()`, and `redisJobDriver()` from `@ultimat3/jobs/redis`), and `x jobs` has no `drain` (it left the registry; [Known gaps](../../wiki/Known-Gaps.md#open-by-decision)). Because step persistence is the driver's own `steps: StepStore` — written in the queue's storage, behind its transaction boundary — it works identically on every driver.
 
 ## Scheduling
 

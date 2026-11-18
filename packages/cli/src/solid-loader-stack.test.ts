@@ -5,22 +5,29 @@
 import { expect, test } from 'bun:test';
 
 /**
- * Two transforms, the second started on the very microtask Babel's rewriter appears — what
- * `Bun.build` does when it loads a second `.tsx` while the first is still compiling. Waits on the
- * signal, never on a timer: the window is a few microtasks wide and no sleep would land in it.
+ * Two transforms, the second started by the very assignment that installs Babel's rewriter — what
+ * `Bun.build` does when it loads a second `.tsx` while the first is still compiling. An accessor,
+ * never a poll: the window is a few microtasks wide, and loading Babel can take loop turns that a
+ * microtask spin never yields to (Bun canary). The plain property is back before the stack is read.
  */
 const PROBE = `
 const { transformIslandTsx } = await import(${JSON.stringify(`${import.meta.dir}/solid-loader.ts`)});
 const found = Error.prepareStackTrace;
-const first = transformIslandTsx('export const A = () => <div>{1}</div>;', '/tmp/a.island.tsx');
-let turns = 0;
-while (Error.prepareStackTrace === found && turns < 1e6) { turns += 1; await Promise.resolve(); }
-const overlapped = Error.prepareStackTrace !== found;
-const second = transformIslandTsx('export const B = () => <p />;', '/tmp/b.island.tsx');
-await first;
+let current = found;
+let second;
+Object.defineProperty(Error, 'prepareStackTrace', {
+  configurable: true,
+  get: () => current,
+  set(value) {
+    current = value;
+    if (value !== found) second ??= transformIslandTsx('export const B = () => <p />;', '/tmp/b.island.tsx');
+  },
+});
+await transformIslandTsx('export const A = () => <div>{1}</div>;', '/tmp/a.island.tsx');
 await second;
+Object.defineProperty(Error, 'prepareStackTrace', { configurable: true, writable: true, value: current });
 const header = (new TypeError('selector moved').stack ?? '').split('\\n')[0];
-console.log(JSON.stringify({ overlapped, restored: Error.prepareStackTrace === found, header }));
+console.log(JSON.stringify({ overlapped: second !== undefined, restored: current === found, header }));
 `;
 
 test('overlapping first transforms leave Error.prepareStackTrace as they found it', async () => {

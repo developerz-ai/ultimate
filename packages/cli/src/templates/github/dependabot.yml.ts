@@ -8,6 +8,11 @@ export const DEPENDABOT_PATH = '.github/dependabot.yml';
 /** The directory `x new` writes its Dockerfile and compose files into. */
 const DOCKER_DIR = '/docker';
 
+/** The `docker` ignore entry for the image the Dockerfile builds on. */
+export const BUN_IMAGE_IGNORE = `      # \`FROM oven/bun\` moves with \`engines.bun\` and every other Bun pin (the \`runtime-pin\` guard).
+      - dependency-name: oven/bun
+`;
+
 export const dependabot = (): string => `version: 2
 
 # Weekly, grouped, and small — a dependency PR nobody can review in one sitting gets merged unread.
@@ -59,7 +64,7 @@ updates:
       # A Postgres MAJOR is a planned migration (a new data directory), never a weekly bump.
       - dependency-name: postgres
         update-types: ['version-update:semver-major']
-
+${BUN_IMAGE_IGNORE}
   - package-ecosystem: docker-compose
     directories: ['${DOCKER_DIR}']
     schedule:

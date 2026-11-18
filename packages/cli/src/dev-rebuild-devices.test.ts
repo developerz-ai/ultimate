@@ -3,7 +3,7 @@
 // than colliding with it — and the listener's door at that path answers with the edited handler.
 // The boot is the real one (`startDev`), the sockets are real, the save is a file on disk.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
@@ -14,7 +14,7 @@ import { startDev } from './cmd-dev';
 import { DEV_FIXTURE_FILES, resetRegistries } from './cmd-dev-fixture';
 import { processRoot } from './process-root-fixture';
 
-const ROOT = processRoot(join(import.meta.dir, '..', '.dev-devices-fixture'));
+const BASE = processRoot(join(import.meta.dir, '..', '.dev-devices-fixture'));
 const LINK = 'apps/web/app/devices/link.ts';
 
 const link = (generation: string): string => `import { userActor } from '@ultimat3/core';
@@ -44,16 +44,23 @@ export const twin = deviceSocket({
 /** Generous and explicit, for the reason `cmd-dev.test.ts` gives: a hang reports as a hang. */
 const BOOT_TIMEOUT_MS = 60_000;
 
-let server: DevServer;
+// One boot per test, each over a root of its own: every test saves over what the next one reads,
+// and `import()` evaluates a path once per process, so a reused root would serve the last save.
+let root = '';
+let roots = 0;
+let server: DevServer | undefined;
 let onReload: (file: string) => void = () => undefined;
 
-beforeAll(async () => {
-  await rm(ROOT, { recursive: true, force: true });
-  for (const [path, contents] of Object.entries(FILES)) await Bun.write(join(ROOT, path), contents);
+const booted = (): DevServer => server ?? expect.unreachable('no x dev is running');
+
+beforeEach(async () => {
+  roots += 1;
+  root = join(BASE, `app-${roots}`);
+  for (const [path, contents] of Object.entries(FILES)) await Bun.write(join(root, path), contents);
   resetRegistries();
   forgetDeviceSockets();
   server = await startDev({
-    root: ROOT,
+    root,
     port: 0,
     env: {},
     roles: ['web'],
@@ -61,10 +68,11 @@ beforeAll(async () => {
   });
 }, BOOT_TIMEOUT_MS);
 
-afterAll(async () => {
+afterEach(async () => {
   try {
     await server?.stop();
-    await rm(ROOT, { recursive: true, force: true });
+    server = undefined;
+    await rm(BASE, { recursive: true, force: true });
   } finally {
     resetRegistries();
     forgetDeviceSockets();
@@ -91,7 +99,7 @@ interface Dialled {
 
 /** A device's socket, raw: the frames the node sent it, read by type, and its close code. */
 const dial = async (): Promise<Dialled> => {
-  const url = `${server.url.replace('http', 'ws')}/link`;
+  const url = `${booted().url.replace('http', 'ws')}/link`;
   // Bun's constructor takes `{ headers }`; the DOM lib loaded beside it types no such overload.
   const ws = new (WebSocket as unknown as HeaderedWebSocket)(url, {
     headers: { authorization: 'Bearer ok' },
@@ -125,13 +133,15 @@ const write = (file: string, contents: string): Promise<string> => {
   const reloaded = new Promise<string>((resolve) => {
     onReload = resolve;
   });
-  return Bun.write(join(ROOT, file), contents).then(() => reloaded);
+  return Bun.write(join(root, file), contents).then(() => reloaded);
 };
 const save = (generation: string): Promise<string> => write(LINK, link(generation));
 
 describe('unit · x dev serves a saved deviceSocket', () => {
   test('a second declaration of the path in one scan is refused at its own file', () => {
-    const twin = server.findings.find((finding) => (finding.at ?? '').endsWith('devices/twin.ts'));
+    const twin = booted().findings.find((finding) =>
+      (finding.at ?? '').endsWith('devices/twin.ts'),
+    );
     expect(twin?.code).toBe('X_CONFIG_INVALID');
     expect(twin?.cause).toContain('already declares');
   });
@@ -149,11 +159,11 @@ describe('unit · x dev serves a saved deviceSocket', () => {
       expect(await save('two')).toContain('link.ts');
       // The re-evaluated module declared its path again and was NOT refused as a duplicate.
       expect(
-        server.findings
-          .filter((finding) => !(finding.at ?? '').endsWith('devices/twin.ts'))
+        booted()
+          .findings.filter((finding) => !(finding.at ?? '').endsWith('devices/twin.ts'))
           .map((finding) => finding.code),
       ).not.toContain('X_CONFIG_INVALID');
-      expect(server.findings.map((finding) => finding.code)).not.toContain(
+      expect(booted().findings.map((finding) => finding.code)).not.toContain(
         'X_DEV_RESTART_REQUIRED',
       );
       // The replaced declaration's sockets: a `reconnect` slot, then the close.
@@ -175,7 +185,7 @@ describe('unit · x dev serves a saved deviceSocket', () => {
     async () => {
       const twin = 'apps/web/app/devices/twin.ts';
       await write(twin, (FILES[twin] ?? '').replace("path: '/link'", "path: '/late-link'"));
-      const late = server.findings.find((finding) => finding.code === 'X_DEV_RESTART_REQUIRED');
+      const late = booted().findings.find((finding) => finding.code === 'X_DEV_RESTART_REQUIRED');
       expect(late?.cause).toContain("deviceSocket('/late-link')");
       expect(late?.at).toContain('twin.ts');
     },

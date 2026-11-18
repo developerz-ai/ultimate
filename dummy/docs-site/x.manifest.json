@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "ebbfffd75ee90dfe",
+  "buildId": "fc3f65f84e0fd238",
   "app": {
     "name": "docs-site",
     "version": "0.1.0"
@@ -800,6 +800,22 @@
   ],
   "jobs": [
     {
+      "name": "check-outbound-links",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
       "name": "mail.send",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -913,7 +929,16 @@
       "steps": []
     }
   ],
-  "tasks": [],
+  "tasks": [
+    {
+      "name": "check-outbound-links.schedule",
+      "cron": "0 3 * * *",
+      "tz": "UTC",
+      "enqueues": [
+        "check-outbound-links"
+      ]
+    }
+  ],
   "policies": [
     {
       "permission": "admin:destroy",

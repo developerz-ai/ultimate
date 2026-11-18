@@ -3,9 +3,9 @@
 // Interactive-free: every choice is a flag with a default, because an agent cannot answer prompts.
 
 // why: the target is a DIRECTORY, which `Bun.file().exists()` answers false for; Bun ships no
-// path API, and `isAbsolute`/`join`/`relative`/`resolve` place the new app.
+// path API, and `isAbsolute`/`join`/`resolve` place the new app.
 import { existsSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { renderThrowable } from '@ultimat3/core';
 import { AppNameInvalidError, appNameIssue } from './app-name';
 import { dedupe } from './cmd-generate';
@@ -22,6 +22,7 @@ import { type NewShape, readShape } from './new-shapes';
 import { runShapeGenerators } from './new-shapes-generate';
 import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
+import { posixRelative } from './posix-path';
 import { quoteArg } from './shell-quote';
 import type { GeneratedFile } from './templates';
 import { appFiles, names, repoFiles, resourceFiles } from './templates';
@@ -129,7 +130,7 @@ export function repositoryFix(git: RepositoryInit): string {
 
 /** `path` relative to `cwd` when it lies under it, else absolute — never a `../../` walk. */
 const displayPath = (cwd: string, path: string): string => {
-  const rel = relative(cwd, path);
+  const rel = posixRelative(cwd, path);
   return rel === '' || rel.startsWith('..') || isAbsolute(rel) ? path : rel;
 };
 

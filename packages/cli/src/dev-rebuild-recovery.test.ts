@@ -66,13 +66,15 @@ const save = async (contents: string): Promise<Outcome> => {
 };
 
 describe('unit · x dev after a load failure', () => {
+  // One test, because the fix is only a fix after the break: saved first, the good page registers
+  // /fresh, and the broken save then reads as a change to what x dev mounts.
   test(
-    'a new page that will not import is a restart, so the ready line a new child prints is red',
+    'a new page that will not import is a restart with a red ready line, and so is the save that fixes it',
     async () => {
-      const outcome = await save(GOOD.replace('generation one', 'generation two').replace(')', ''));
-      expect(outcome.kind).toBe('restart');
+      const broken = await save(GOOD.replace('generation one', 'generation two').replace(')', ''));
+      expect(broken.kind).toBe('restart');
       // The log says why — a module fails to load — never "a module that defines a primitive".
-      expect(outcome.kind === 'restart' ? outcome.line : '').toBe(
+      expect(broken.kind === 'restart' ? broken.line : '').toBe(
         `restarting: ${PAGE} changed which modules load (${PAGE} fails to load) — the new process prints the verdict`,
       );
       expect(server.findings.map((finding) => finding.at)).toContain(PAGE);
@@ -80,19 +82,14 @@ describe('unit · x dev after a load failure', () => {
       expect(server.findings.map((finding) => finding.code)).not.toContain(
         'X_DEV_RESTART_REQUIRED',
       );
-    },
-    BOOT_TIMEOUT_MS,
-  );
 
-  test(
-    'the save that fixes it is a restart too — the route it adds was never mounted — naming the page',
-    async () => {
-      const outcome = await save(GOOD.replace('generation one', 'generation three'));
-      expect(outcome.kind).toBe('restart');
-      const pins = outcome.kind === 'restart' ? outcome.pins : [];
+      // The route the fix adds was never mounted, so it restarts too, naming the page.
+      const fixed = await save(GOOD.replace('generation one', 'generation three'));
+      expect(fixed.kind).toBe('restart');
+      const pins = fixed.kind === 'restart' ? fixed.pins : [];
       expect(pins.map((pin) => relative(ROOT, pin.pinned))).toEqual([PAGE]);
       expect(pins.map((pin) => relative(ROOT, pin.changed))).toEqual([PAGE]);
-      expect(outcome.kind === 'restart' ? outcome.line : '').toBe(
+      expect(fixed.kind === 'restart' ? fixed.line : '').toBe(
         `restarting: ${PAGE} changed what x dev mounts (route /fresh (ssr, app) added) — the route table is built once, at boot`,
       );
     },

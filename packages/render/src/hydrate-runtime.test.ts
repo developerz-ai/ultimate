@@ -38,8 +38,15 @@ describe('the interaction runtime, executed', () => {
     readonly dispose: () => Promise<void>;
   }
 
-  /** One turn of the loop, so a promise chain that WOULD have flushed has flushed. */
+  /** The `mount` call the running harness has set in motion, which `settle` waits on. */
+  let mountExpected: Promise<void> | undefined;
+
+  /**
+   * The expected `mount` call, then one turn of the loop, so a promise chain that WOULD have
+   * flushed has flushed. An event, because how many turns `import()` takes is Bun's to change.
+   */
   const settle = async (): Promise<void> => {
+    await mountExpected;
     for (let i = 0; i < 8; i += 1) await Promise.resolve();
     await new Promise((resolve) => {
       setTimeout(resolve, 0);
@@ -59,8 +66,10 @@ describe('the interaction runtime, executed', () => {
         reject(new TypeError(message));
       };
     });
+    const mountCalled = Promise.withResolvers<void>();
     globals['__xTestMount'] = (): Promise<void> => {
       mounts += 1;
+      mountCalled.resolve();
       return gate;
     };
 
@@ -116,6 +125,7 @@ describe('the interaction runtime, executed', () => {
 
     return {
       fire: (type) => {
+        mountExpected = mountCalled.promise;
         for (const fn of listeners.get(type) ?? []) fn(new FakeEvent(type, { target: element }));
       },
       replayed,
@@ -408,7 +418,11 @@ describe('the visible runtime, executed', () => {
         reject(new TypeError(message));
       };
     });
-    globals['__xTestMount'] = (): Promise<void> => gate;
+    let mounting = false;
+    globals['__xTestMount'] = (): Promise<void> => {
+      mounting = true;
+      return gate;
+    };
 
     const island = join(dir, 'island.mjs');
     await writeFile(island, 'export function mount(){return globalThis.__xTestMount()}\n', 'utf8');
@@ -447,6 +461,8 @@ describe('the visible runtime, executed', () => {
       await writeFile(runtime, source, 'utf8');
       await import(Bun.pathToFileURL(runtime).href);
 
+      // Rejected only once `mount` holds the gate: earlier, nothing is listening for it yet.
+      await waitFor(() => mounting);
       failMount('mount is not a function');
       await waitFor(() => attributes.has('data-x-failed'));
 

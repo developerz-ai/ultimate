@@ -232,7 +232,12 @@ export const config = defineRoute({
   // the feed island +271 B (96,190 → 96,461 B) and the page boot +271 B (84,606 → 84,877 B), both against origin/main built the same way: `@ultimat3/core`'s
   // `uuidV7` and `frozenClock` refuse an Invalid Date or out-of-range instant instead of minting a
   // non-UUID that broke the next id's order (audit round 2, B1). Raised 210.1kb → 210.6kb.
-  budget: { js: '210.6kb' },
+  // measured: 215968 B (2026-11-18; x build --target static, against 215,577) — why: +391 B, the
+  // outbox in the page boot naming a replay's owner (`x-ultimate-replay-scope`, a session that is
+  // not the queue's holding the write queued), and the action client's title for
+  // `X_REPLAY_PRINCIPAL_MISMATCH`, the refusal of an offline write replayed under another session.
+  // Raised 210.6kb → 211kb.
+  budget: { js: '211kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

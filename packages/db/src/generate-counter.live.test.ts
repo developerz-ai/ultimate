@@ -2,7 +2,7 @@
 // a delete, a re-parent and a soft delete keep the count true, the recount repairs a drifted one,
 // and drift names a dropped counter trigger with the statements that re-create it.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import { diffSchema } from './drift';
 import { recountDriftSql, recountSql } from './generate-counter';
@@ -28,8 +28,18 @@ describe.skipIf(!hasPostgres)('live · postgres · the counter trigger', () => {
       await client.query<{ like_count: number }>(sql`select like_count from ${posts} order by id`)
     ).map((row) => row.like_count);
 
-  beforeAll(async () => {
+  const likeMany = (post: string, count: number) =>
+    client.execute(
+      sql`insert into ${likes} (id, org_id, post_id)
+          select gen_random_uuid(), ${ORG}, ${post} from generate_series(1, ${count}::int)`,
+    );
+
+  beforeAll(() => {
     client = postgresClient({ url: url ?? '', profile: { max: 20 } });
+  });
+
+  // Fresh tables and triggers: one test drops a trigger, and each counts from zero.
+  beforeEach(async () => {
     await applyLifecycle(client, P);
     for (const id of [A, B]) {
       await client.execute(
@@ -54,6 +64,8 @@ describe.skipIf(!hasPostgres)('live · postgres · the counter trigger', () => {
   });
 
   test('delete, re-parent, soft delete and a filtered delete stay true', async () => {
+    await likeMany(A, 20);
+    expect(await counts()).toEqual([20, 0]);
     await client.execute(
       sql`delete from ${likes} where id in (select id from ${likes} where post_id = ${A} limit 2)`,
     );
@@ -71,6 +83,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the counter trigger', () => {
   test('the recount repairs a drifted counter, and drift names a dropped trigger', async () => {
     const [counter] = lifecycleEntities(P)[0]?.counts ?? [];
     if (counter === undefined) return expect.unreachable('the fixture declares a counter');
+    await likeMany(A, 13);
     await client.execute(sql`update ${posts} set like_count = 99 where id = ${A}`);
     expect(await client.query(raw(recountDriftSql(`${P}_posts`, counter)))).toEqual([
       { key: A, stored: 99, actual: 13 },

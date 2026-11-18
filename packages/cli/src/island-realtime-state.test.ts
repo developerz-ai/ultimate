@@ -1,7 +1,7 @@
 // Which realtime islands restore page state (held, #506) and which only follow the socket: read
 // off the names each module of the island's graph takes from the barrel, and unknown means held.
 
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no temp-directory or recursive-remove native; each case writes a throwaway tree.
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
@@ -67,7 +67,8 @@ describe('followsOnly', () => {
   const write = (name: string, source: string): Promise<void> =>
     writeFile(join(root, at(name)), source);
 
-  beforeAll(async () => {
+  // A tree per test: one of them edits `feed.ts`, which is what another's answer is read from.
+  beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'ultimate-island-state-'));
     await mkdir(join(root, 'apps/web/app'), { recursive: true });
     await write('follow.ts', "export { useChannel as hold } from '@ultimat3/realtime';\n");
@@ -93,7 +94,7 @@ describe('followsOnly', () => {
     await write('plain.island.tsx', 'export const mount = 1;\n');
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
 

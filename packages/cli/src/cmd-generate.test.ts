@@ -2,7 +2,7 @@
 // argv it refuses. The bytes each generator emits are `generate-output.test.ts` and the catalogs
 // are `generate-catalogs.test.ts` — this file owns the filesystem and the command surface.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove, so a throwaway app root's lifetime is node:fs's.
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -293,7 +293,7 @@ describe('unit · x g refreshes a manifest and never invents one', () => {
     bunVersion: REQUIRED_BUN,
   });
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     await rm(ROOT, { recursive: true, force: true });
     await Bun.write(join(ROOT, 'app.config.ts'), `export const config = { name: 'gen' };\n`);
     await Bun.write(
@@ -303,7 +303,7 @@ describe('unit · x g refreshes a manifest and never invents one', () => {
     resetAppLoad();
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await rm(ROOT, { recursive: true, force: true });
     resetAppLoad();
   });

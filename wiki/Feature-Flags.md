@@ -18,6 +18,9 @@ and no surface of its own ([The eight primitives](The-Eight-Primitives)).
 
 ```ts
 import { defineFlag, isEnabled } from '@ultimat3/flags';
+import { type Actor } from '@ultimat3/core';
+
+declare const actor: Actor;
 
 export const newTaxEngine = defineFlag({
   kind: 'temporary',

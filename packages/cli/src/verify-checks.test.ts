@@ -3,7 +3,7 @@
 // `contract-diff`'s baseline is the manifest at HEAD: `x manifest` cannot rebaseline it. One module
 // that will not load is one finding, on `manifest`: every other step that loads the app stands down.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
 import type { RouteFact } from '@ultimat3/manifest';
@@ -39,12 +39,16 @@ beforeAll(async () => {
   await Bun.write(join(root, 'biome.json'), CONFIG);
   // Biome holds its own config to its format: a finding about it is not what these read.
   await exec([BIOME, 'check', '--write', 'biome.json'], { cwd: root });
-  await Bun.write(join(root, 'bad.ts'), 'const unused = 1;\nexport const used = 2;\n');
 });
 
 afterAll(() => lint?.dispose());
 
 describe('the lint step', () => {
+  // Rewritten per test: one of them repairs this file, and another reads its unused variable.
+  beforeEach(async () => {
+    await Bun.write(join(root, 'bad.ts'), 'const unused = 1;\nexport const used = 2;\n');
+  });
+
   test('an unused variable is a finding naming file, line and rule, with an edit as its fix', async () => {
     const outcome = await check();
     expect(outcome.ok).toBe(false);

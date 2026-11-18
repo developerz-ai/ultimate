@@ -32,38 +32,72 @@ Read order is **1 → 2 → 3 → origin**. A tier is never consulted for a requ
 
 ## Entity tags are the invalidation graph
 
-A tag is a typed handle derived from an [entity](Entities-And-Migrations). There is no string-keyed invalidation API.
+A tag is a typed handle the app declares once: `CacheTagRegistry` types `tag.post`, `declareTags` is the runtime list `X_CACHE_TAG_UNKNOWN` checks. No cache key is written by hand.
 
 ```ts
-export const tag = tags({
-  post: entityTag(posts),                       // tag.post, tag.post.id(x)
-  feed: derivedTag('feed', [tags.post]),        // invalidating post cascades to feed
-});
+// packages/db/src/tags.ts — the type registry and the runtime list name the same strings
+import { declareTags, tag } from '@ultimat3/cache';
+
+declare module '@ultimat3/cache' {
+  interface CacheTagRegistry {
+    post: true;
+    feed: true;
+  }
+}
+
+declareTags(['post', 'feed']);
+
+export { tag };   // tag.post — the collection · tag('post', postId) — one row
 ```
 
 | Tag form | Scope | Example |
 |---|---|---|
 | `tag.post` | all posts | a schema-level change |
-| `tag.post.id(postId)` | one row | the common case; narrowest eviction |
-| `tag.feed` | derived; declares `[tag.post]` as an upstream | list views that a post membership affects |
+| `tag('post', postId)` | one row | the common case; narrowest eviction |
+| `tag.feed` | a name of its own. Tags do not cascade: a write that stales it lists it | list views that a post membership affects |
 
 | Declared where | By |
 |---|---|
-| Queries | **automatic** — acquired from the tables their `sql` touches |
+| Queries | `cache: { tags: [...] }`. Nothing derives them from the `sql`; undeclared is `[]` |
 | Routes | `revalidate: { tags: [...] }` |
 | Actions / mutators | `cache: { invalidates: [...] }` |
-| LLM calls | `cache: { invalidates: [...] }` |
 
-The graph is a build-time artifact in `x.manifest.json`, so it records exactly what a write will evict — before you run it. `x cache graph --json` reads it (since 31.17.0), as does `x dev` → the `/_x` cache panel. Tag typing comes from a generated registry augmentation; `x manifest` regenerates it.
+The graph is a build-time artifact in `x.manifest.json`, so it records exactly what a write will evict — before you run it. `x cache graph --json` reads it (since 31.17.0), as does `x dev` → the `/_x` cache panel. Tag typing comes from the app's own `CacheTagRegistry` augmentation, written by hand beside `declareTags` (`examples/dummy/packages/db/src/tags.ts`); nothing generates it, `As of 2026-11`.
 
 ## One hop, all tiers
 
 ```ts
 // action
+import { action, t } from '@ultimat3/action';
+import { tag } from '@ultimat3/cache';
+import type { Actor } from '@ultimat3/core';
+import type { JobHandle } from '@ultimat3/jobs';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/cache' {
+  interface CacheTagRegistry {
+    post: true;
+    feed: true;
+  }
+}
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
+declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+
 export const publishPost = action({
   input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
-  policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
@@ -144,11 +178,11 @@ The bug is never "the cache is wrong". The bug is that invalidation is a *decisi
 | Failure mode | Cause | Removed by |
 |---|---|---|
 | Stale page after publish | forgot one `revalidate` call | tags are declared on the route, resolved from the graph |
-| Purging too much | uncertainty → `flushAll` | narrow `tag.post.id(x)` is the ergonomic default |
+| Purging too much | uncertainty → `flushAll` | narrow `tag('post', x)` is the ergonomic default |
 | Tier drift | Redis purged, CDN not | one fanout, all tiers |
 | Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated from the query name, the read's authority (`cache: { scope }`, default `actor`), its parsed input and its tags |
 | Stale forever | a query whose tables no tag covers | the tag rule — **not yet a gate**: `X_CACHE_UNTAGGED_QUERY` is reserved `As of 2026-08` and nothing raises it, so a cached query no tag covers is cached and never invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) |
-| Silent typo | `invalidates: [tag.pots]` | a compile error against the generated registry; at runtime `X_CACHE_TAG_UNKNOWN`, which a write logs as `action.invalidate.failed` rather than failing the commit it followed |
+| Silent typo | `invalidates: [tag.pots]` | a compile error against `CacheTagRegistry`; at runtime `X_CACHE_TAG_UNKNOWN`, which a write logs as `action.invalidate.failed` rather than failing the commit it followed |
 
 Agents are measurably bad at *distant* invariants — "edit here, remember to also edit there" is where LLM-written code regresses most. Declaring `invalidates` at the write site is local, checkable, and typed.
 
@@ -203,24 +237,43 @@ CDN never fails the write that triggered the bust, and the entry expires by TTL 
 Model calls are slow and metered; exact-match caching almost never hits because prompts differ by a word.
 
 ```ts
+import { t } from '@ultimat3/action';
+import { llm, type Prompt } from '@ultimat3/ai';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
+declare const summarizePrompt: Prompt<{ body: string }>;
+
 export const summarize = llm({
   model: 'claude-sonnet-5-5',
+  input:  t.object({ postId: t.uuid }),
+  output: t.object({ summary: t.string }),
+  policy: can('post:read'),
+  prompt: summarizePrompt,      // versioned artifact, see 09-ai-first.md
+  vars: async ({ input, ctx }) => ({ body: await ctx.posts.body(input.postId) }),
   cache: {
     semantic: { threshold: 0.97, ttl: '7d' }, // partitions on the ACTOR by default
-    invalidates: [tag.post],
   },
-  prompt: summarizePrompt,      // versioned artifact, see 09-ai-first.md
 });
 ```
 
 | Aspect | Rule |
 |---|---|
-| Store | pgvector table, one row per (prompt version, embedded input, scope) |
-| Key | embedding of the rendered prompt + model id + **prompt version** + **request locale** |
-| Hit | cosine similarity >= `threshold`; default 0.97, never below 0.9 |
+| Store | one `SemanticCache` per prompt version, locale and scope. Default `memorySemanticCache()`, per process; the `semanticCache` port replaces it |
+| Key | store: prompt ref + **prompt hash** + **request locale** + scope. Entry: matched by the embedding of the rendered prompt. The model id is in neither |
+| Hit | cosine similarity >= `threshold`, any value from 0 to 1. Undeclared: the store's default, 0.92 in `memorySemanticCache()`. Below ~0.9 unrelated prompts collide; nothing enforces that floor |
 | Scope | optional — the calling **actor** by default, so one org never reads another's completion. Widening is written down: `scope: () => 'global'` |
-| Bypass | `temperature > 0` results are cached but flagged; `cache: false` for anything user-visible-and-unique |
-| Invalidation | participates in the same tag graph; bumping the prompt version invalidates wholesale |
+| Bypass | omit `cache`. There is no `cache: false`, and `temperature` is not consulted |
+| Invalidation | no tag reaches it, `As of 2026-11`: `LlmCache` has no `invalidates` (`packages/ai/src/llm-cache.ts`). Bumping the prompt version moves to a different store; `ttl` ends the rest |
 | Metrics | every `llm()` call emits `ai.llm` on the instrumentation bus with `cacheHit`, `inputTokens` and `outputTokens`; hit rate and tokens saved are a subscriber's sum, and `gen_ai_client_token_usage` is on `/metrics` → [Observability](Observability) |
 
 **The locale is part of the key, and not part of the scope** — `As of 2026-08-24`. A prompt that takes `locale` as a var differs by one token between languages while carrying a whole document, so the two rendered prompts are near-identical to an embedder: measured over the reference app's summarize template, **0.9986**, against the `threshold: 0.97` in the snippet above. Before this, whichever language asked first was served to everyone — an English reader got the Spanish summary, and the model had done nothing wrong.
@@ -239,7 +292,7 @@ Ships since **31.17.0** (`graph`, `bust`, `clear`); `stats` is still **planned**
 | `x cache graph --tag post --json` | the blast radius of one tag |
 | `x cache bust <tag> --json` | the real fanout for one tag — the app's own tiers booted as a role boots them, then `invalidateTags`: shared tiers dropped, the edge purged, the bus told — and the invalidation report |
 | `x cache clear --json` | the same bust over every tag the app's modules declare |
-| hit rates | not a command: `stats` left `x cache` `As of 2026-11-15` — each serving process emits `cache.hit` / `cache.miss` on its own bus and nothing aggregates them ([Known gaps](Known-Gaps#not-built-yet)) |
+| hit rates | not a command: `stats` left `x cache` `As of 2026-11-15` — each serving process emits `cache.hit` / `cache.miss` on its own bus and nothing aggregates them ([Known gaps](Known-Gaps#open-by-decision)) |
 
 From code: `invalidateTags([...])` from `@ultimat3/cache`, the call `x cache bust` makes.
 
@@ -248,7 +301,7 @@ From code: `invalidateTags([...])` from `@ultimat3/cache`, the call `x cache bus
 | Code | Cause | Fix |
 |---|---|---|
 | `X_CACHE_UNTAGGED_QUERY` | **reserved, nothing raises it** `As of 2026-08` — a query's tables are covered by no tag, so it could never be invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) | declare the entity tag, then `x manifest` |
-| `X_CACHE_TAG_UNKNOWN` | `tag "<name>" is not declared by any entity` | `x manifest` |
+| `X_CACHE_TAG_UNKNOWN` | `tag "<name>" is not declared by any entity` | `declareTags(['<name>'])` beside the app's other declared tags, plus the name in its `CacheTagRegistry`; for a typo, correct the tag |
 | `X_CACHE_TOO_LARGE` | `entry "<key>" is <n>B, over the <tier> budget of <m>B` | `lruTier({ maxBytes: <n> })` / `redisTier({ maxValueBytes: <n> })` where the tier is built, or cache a projection instead of the row |
 | `X_CACHE_DRIVER_UNAVAILABLE` | `cache tier "<driver>" is unavailable` — a Redis command missed its deadline, or the tier is parked after one; or a purge driver built without its token | the error carries the exact config or command to fix |
 | `X_CACHE_PURGE_FAILED` | `<driver> refused the purge (HTTP <status>)` — a wrong token, a zone without tag purge, a throttle, or a key a CDN would split | `meta.retryable === true` → the identical purge can land again; otherwise set the env key the `fix` names |
@@ -262,6 +315,6 @@ Verbatim shapes: [`packages/cache/src/errors.ts`](https://github.com/developerz-
 - Never cache a value whose policy scope is not in its key.
 - `flushAll` has no shipped caller: `x cache clear` busts every declared tag through `invalidateTags`, never a flush, and there is no runtime API for it.
 - Cache misses must be correct and merely slower — no code path may depend on a hit.
-- Prefer `tag.post.id(x)` over `tag.post`. Narrow eviction is the default, not an optimization.
+- Prefer `tag('post', x)` over `tag.post`. Narrow eviction is the default, not an optimization.
 - A cache tier may never fail a business read or write. Tier errors land in the invalidation report, or in a `cache.tier_failure` event on the read ladder.
 - Realtime is not a cache tier. Live queries flow from logical replication on their own path ([Realtime](Realtime)).

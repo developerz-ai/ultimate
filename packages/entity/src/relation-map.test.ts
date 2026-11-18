@@ -7,6 +7,7 @@ import { text, uuid } from './columns';
 import { entity } from './entity';
 import { EntityError } from './errors';
 import { clearRegistry, getEntity } from './registry';
+import { restoreRegistryAfterEachTest } from './registry-restore-fixture';
 import { relationMap, relationNamed, relationsFor } from './relations';
 
 // The map projects the WHOLE registry, so this file owns the registry for its duration: an entity
@@ -28,6 +29,8 @@ const books = entity('relation_map_books', {
 afterAll(() => {
   clearRegistry();
 });
+
+restoreRegistryAfterEachTest();
 
 const caught = (run: () => unknown): EntityError | undefined => {
   try {

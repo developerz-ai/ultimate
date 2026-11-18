@@ -37,7 +37,7 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `seed-graph-order.ts` · `seed-graph-row.ts` · `seed-graph-shape.ts` | insert order over `$references()` (a cycle broken at a nullable key) · one row solved against invariants and unique keys · what the graph reads off an entity, structurally |
 | `seed-graph-error.ts` | `X_SEED_GRAPH_UNSATISFIED`, its fix naming the `defineFactory` to write; `X_SEED_GRAPH_ENTITY_UNKNOWN`, a plan and a writer built from two entity sets |
 | `seed-writer.ts` | `entitySeedWriter({ entities, client })` or `({ entities, driver? })` — the `SeedWriter` that writes a graph through each entity's own repository: Postgres or PGlite through a client, or a driver. `@ultimat3/entity` loads on the first write. `snapshot(rows)`, required on every `SeedWriter`, reads rows back as one digest each (`md5(t::text)` over a client), `null` for a row gone |
-| `exercise.ts` | `runExercisePass({ entities, writer, roles, seed?, overrides?, only? })` — every registered action, query and job once, each on its own committed tenant pair, one `ExerciseRecord` per primitive, the tenant proof's verdict on its `tenant`. What `x exercise` runs |
+| `exercise.ts` | `runExercisePass({ entities, writer, roles, seed?, overrides?, only? })` — every registered action, query and job once, each on its own committed tenant pair, one `ExerciseRecord` per primitive, the tenant proof's verdict on its `tenant`. What `x exercise` runs, always with a `seed`; omitted, each pass draws one, for several passes on one database |
 | `exercise-route-subjects.ts` · `exercise-route-loads.ts` | `routeLoadSubjects()` — every `app/`/`site/` file route with a `load`; handed to `runExercisePass({ …, routes, onRoutes })`, each load runs after the primitives in a tenant pair of its own (an `:id` bound to a seeded row, else the route's `prerender()` sample), one `RouteLoadRecord` each with the statement ceiling, scale and plan proofs |
 | `define-exercise.ts` | `defineExercise({ <name>: { actor, input?, runs? } \| { off: '<why>' } }, { actor?: <entity>, factories?: { <entity name>: defineFactory(…) }, setup?: () => mockFetch(…) \| cassette(…) })` — an app's overrides (the second argument names the entity whose rows are the actors, and the factories that build a table no generated row satisfies — a cross-column `satisfies` — keyed by entity name, unknown ones `X_DECLARATION_UNKNOWN`), `apps/web/exercise.ts`'s one export; a blank `off` is `X_CONTRACT_EXERCISE_UNDECLARED`, an unknown name `X_DECLARATION_UNKNOWN` when the pass runs. An entry's `statements: { max, why }` moves that primitive's statement ceiling (a blank `why` is `X_CONTRACT_EXERCISE_UNDECLARED`, `max` a whole count ≥ 1) |
 | `define-exercise-routes.ts` · `exercise-route-override.ts` | `defineExercise(…, { routes: { '<pattern>': { params?, search?, actor?, statements?, empty? } \| { off } } })` — a route load's entry, keyed by its URL pattern: `params`/`search` (values or functions) and an `actor` function (of the seated actor: the app's request-boundary resolution, facts and all) run in the load's own request before the observed call; `off` makes the record `off`; an unknown pattern is `X_DECLARATION_UNKNOWN` before a row; a blank reason `X_CONTRACT_EXERCISE_UNDECLARED`. `empty: '<why>'` on any entry rides the record as `empty` |
@@ -177,6 +177,12 @@ than a missing method three awaits into a later test.
 An app adds its own with `defineFixtures` and widens the type by augmenting `Fixtures`:
 
 ```ts
+import { type Actor } from '@ultimat3/core';
+import { defineFixtures, type SeedHandle } from '@ultimat3/testing';
+
+declare function loadSeed(name: string): SeedHandle;
+declare function actorFor(token: string, facts: unknown): Actor;
+
 defineFixtures({ seed: () => loadSeed, actorFor: () => actorFor });
 
 declare module '@ultimat3/testing' {
@@ -298,6 +304,10 @@ schema-checked. `As of 2026-11`.
 ## An N+1 fails the test it happened in
 
 ```ts
+import { expect, test } from '@ultimat3/testing';
+
+declare function renderFeed(): Promise<void>;
+
 test('the feed reads its authors once', async ({ statements }) => {
   await renderFeed();                              // a per-row findById throws here:
   //   X_N_PLUS_ONE_QUERY: members.findById ran 5 times in one request — one read per row
@@ -376,7 +386,27 @@ themselves, not from a directory convention.
 ## Factories
 
 ```ts
+import { entity, text, timestamp, uuid } from '@ultimat3/entity';
 import { belongsTo, defineFactory, hasMany } from '@ultimat3/testing';
+
+const orgs = entity('orgs', {
+  columns: { id: uuid().primaryKey(), slug: text(), name: text() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    slug: text(),
+    title: text(),
+    status: text().default('draft'),
+    publishedAt: timestamp().nullable(),
+  },
+});
+const comments = entity('comments', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid(), body: text() },
+});
 
 const orgFactory = defineFactory(orgs, {
   defaults: (n, ids) => ({ id: ids.uuid(), slug: `org-${n}`, name: `Org ${n}` }),
@@ -498,6 +528,11 @@ bound, one sent inside `expectedSeqScan(reason, fn)` or on an entity that declar
 ## Shared examples
 
 ```ts
+import { type Action } from '@ultimat3/action';
+import { behavesLike, describe, expect, sharedExamples, test } from '@ultimat3/testing';
+
+declare const publishPost: Action;
+
 const anAuthenticatedAction = sharedExamples<Action>('an authenticated action', (subject) => {
   test('denies an anonymous actor', async () => {
     // The POLICY is the receiver and the context is the argument — `toDenyPolicy` evaluates it.

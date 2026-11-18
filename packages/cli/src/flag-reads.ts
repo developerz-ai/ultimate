@@ -7,12 +7,13 @@
 // plan JSON, where nothing read the field; that flag is deleted rather than wired, and a second
 // one of its shape would pass here too.
 
-// why: `join`/`relative` are `node:`-only by necessity: Bun exposes no path-join primitive.
-import { join, relative } from 'node:path';
+// why: `join` is `node:`-only by necessity: Bun exposes no path-join primitive.
+import { join, posix } from 'node:path';
 import { ERROR_DOCS_URL, stripComments } from '@ultimat3/core';
 import type { Finding } from './output';
 import type { CommandSpec, FlagSpec } from './parse';
 import { GLOBAL_FLAGS } from './parse';
+import { posixRelative, toPosix } from './posix-path';
 
 /** A flag as declared, with the command that declares it. */
 export interface DeclaredFlag {
@@ -110,7 +111,9 @@ export async function checkFlagReads(
     const name = declared.flag.name;
     if ([...texts.values()].some((text) => readsFlag(text, name))) continue;
     const declaringFile = [...texts].find(([, text]) => declaresFlag(text, name))?.[0];
-    findings.push(unreadFinding(declared, join(relative('', srcDir), declaringFile ?? '')));
+    findings.push(
+      unreadFinding(declared, posix.join(posixRelative('', srcDir), toPosix(declaringFile ?? ''))),
+    );
   }
   return findings;
 }

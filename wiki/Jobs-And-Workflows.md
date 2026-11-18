@@ -10,6 +10,23 @@ Two factories return a `job` rather than a ninth primitive, so everything on thi
 
 ```ts
 // job
+import { job } from '@ultimat3/jobs';
+import { t } from '@ultimat3/action';
+import { type AnyMailDefinition } from '@ultimat3/mail';
+
+declare const welcomeEmail: AnyMailDefinition;
+declare const nudgeEmail: AnyMailDefinition;
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly orgs: {
+      provision(id: string): Promise<{ id: string; name: string }>;
+      byId(id: string): Promise<{ id: string; name: string }>;
+    };
+    readonly mail: { send(mail: unknown, to: unknown): Promise<void> };
+  }
+}
+
 export const onboardOrg = job({
   input: t.object({ orgId: t.uuid }),
   tenant: ({ orgId }) => orgId,               // the org this run acts as
@@ -219,6 +236,9 @@ export async function onDocSaved(docId: string, revision: number): Promise<void>
 Declared per job, held across the fleet.
 
 ```ts
+import { job } from '@ultimat3/jobs';
+import { t } from '@ultimat3/action';
+
 export const syncCrm = job({
   input: t.object({ orgId: t.uuid, accountId: t.uuid }),
   tenant: ({ orgId }) => orgId,
@@ -380,6 +400,14 @@ Every operator capability is a member of `JobIntrospection` (`driver.introspect`
 | how a run ended | `job({ onSettled })` — `completed` (with what `run` returned), `dead-lettered`, `dropped` or `refused`; after the row is settled, under the job's tenant, three tries of its own, on a live `ctx.signal` under `onSettledTimeout` (30 s by default): its `fetch` and its writes land | at least once across a crash (`redriven: true` on the re-drive), but at most once for a completion whose body returned a value; a hook that keeps failing is `X_JOB_ON_SETTLED_FAILED`, logged and reported, and the row is untouched. A cancel is not a settlement: whoever cancels is the observer |
 
 ```ts
+import { t } from '@ultimat3/action';
+import { job } from '@ultimat3/jobs';
+
+declare function loadRows(id: string): Promise<readonly { readonly id: string }[]>;
+declare function syncRow(row: { readonly id: string }): Promise<void>;
+declare function markAccountSynced(id: string, rows: number): Promise<void>;
+declare function markAccountBroken(id: string, code: string | undefined): Promise<void>;
+
 export const syncAccount = job({
   input: t.object({ accountId: t.uuid, orgId: t.uuid }),
   tenant: ({ orgId }) => orgId,
@@ -669,13 +697,21 @@ the event taxonomy, which endpoints exist, or what a payload means — the fan-o
 loop over its own subscription table. Do not hand-write a delivery job.
 
 ```ts
-import { memoryWebhookLedger, webhook } from '@ultimat3/jobs';
+import { memoryWebhookLedger, webhook, type WebhookEndpoint } from '@ultimat3/jobs';
+
+// The app's own tables: which endpoints exist and what an event says are never the framework's.
+declare function endpointById(id: string): Promise<WebhookEndpoint | null>;
+declare function eventById(id: string): Promise<{ topic: string; body: string } | null>;
+declare function subscribersOf(
+  topic: string,
+): Promise<readonly { readonly id: string; readonly orgId: string }[]>;
+declare const event: { readonly id: string };
 
 export const deliver = webhook({
   name: 'partner.webhooks',          // required: a durable queue key
   tenant: ({ orgId }) => orgId,      // the org that owns the endpoint — or 'none'
-  endpoint: ({ endpointId }) => db.endpoints.byId(endpointId), // read per attempt, never checkpointed
-  event: ({ eventId }) => db.events.byId(eventId),             // { topic, body }
+  endpoint: ({ endpointId }) => endpointById(endpointId), // read per attempt, never checkpointed
+  event: ({ eventId }) => eventById(eventId),             // { topic, body }
   ledger: memoryWebhookLedger(),     // dev only — a WebhookLedger over your own table in production
   disableAfter: 10,                  // DEFAULT_WEBHOOK_DISABLE_AFTER
 });
@@ -814,6 +850,9 @@ export const paymentEvents = webhookReceiver({
 One interface. **Job code never changes.** Step persistence hangs off the same object (`steps`), so it is identical on every implementation. It is the `jobs` adapter port: the interface is on `@ultimat3/jobs/adapter`, `memoryJobDriver` is the driver to copy, `behavesLike(jobDriverConformance, () => yourDriver())` proves one, and `jobs:` in `apps/<app>/runtime.ts` wires it — [Adapters](Adapters#jobs). The bus `step.waitForEvent` resumes from (`eventBus`) and the store behind the outbox (`outboxStore`) are two more ports, swapped the same way and no other: [Adapters](Adapters#eventbus), [Adapters](Adapters#outboxstore).
 
 ```ts
+import { type BackfillLedger, type ClaimedJob, type ClaimOptions, type EnqueueRequest, type EnqueueResult, type JobIntrospection, type LeaseStore, type NackOptions, type QueueStats, type StepStore } from '@ultimat3/jobs';
+import { type HeartbeatOptions } from '@ultimat3/jobs/adapter';
+
 export interface JobDriver {
   readonly name: string;
   /** Step persistence lives with the queue: one store, one transaction boundary. */
@@ -838,20 +877,21 @@ Three of the four optional members degrade rather than refuse: no `introspect` i
 
 **`leases` is the one that refuses.** The in-process limiter is a fast path over one heap and is multiplied by the replica count, so a driver with no `LeaseStore` can only hold `concurrency.limit` per process. `jobWorker().start()` therefore **throws `X_JOB_CONCURRENCY_UNENFORCEABLE`**, naming every registered job that declared `concurrency`, rather than logging a cap it cannot keep. `postgres` ships one; a driver you write yourself needs one before any job in the tree may declare `concurrency`.
 
-Two implementations ship, `As of 25.0.0`: `postgresJobDriver()` and `memoryJobDriver()`. **Redis is not a jobs driver**, and neither is NATS: 25.0.0 deleted both all-throw stubs (`createNatsDriver` and the Redis one), whose every method raised `X_NOT_IMPLEMENTED` — an app could typecheck against a driver that could not enqueue a job. NATS stays the realtime fanout transport.
+Three implementations ship, `As of 2026-11-18`: `postgresJobDriver()`, `redisJobDriver()` (from `@ultimat3/jobs/redis`, since 2026-10) and `memoryJobDriver()`. **NATS is not a jobs driver**; it stays the realtime fanout transport. 25.0.0 deleted the all-throw `createNatsDriver` and Redis stubs, whose every method raised `X_NOT_IMPLEMENTED` — an app could typecheck against a driver that could not enqueue a job. `redisJobDriver()` is a later, working implementation, not that stub.
 
-| Driver | Status `As of 25.0.0` | When | Trade-off |
+| Driver | Status `As of 2026-11-18` | When | Trade-off |
 |---|---|---|---|
 | `postgres` (default) | **shipped** | always, up to ~thousands of jobs/sec. `x dev` runs it too, against the embedded PGlite | outbox is free (same DB, same tx); `SELECT ... FOR UPDATE SKIP LOCKED` claiming; zero extra infra |
+| `redis` | **shipped** | a queue off the database, `jobs: redisJobDriver()` | one Lua script per operation; no `introspect`, `backfills` or `leases`, so a job declaring `concurrency` refuses `jobWorker().start()` (`X_JOB_CONCURRENCY_UNENFORCEABLE`); the outbox still stages in Postgres |
 | `memory` | **shipped**; there is no config value for any driver | tests and fixtures, through `memoryJobDriver()` | in-process; nothing survives a restart — which is why it was never a safe drain target |
 
 **There is no `jobs.driver`, and 5.0.0 is where it went.** It accepted `'postgres' | 'redis' | 'nats'` and had **no reader anywhere** — boot always built `postgresJobDriver`, stated in [`packages/jobs/src/driver.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/src/driver.ts)'s own header. So setting it to `redis` changed nothing at all and you silently got Postgres, which is the more dangerous behaviour because nothing reports it. From 5.0.0 to 24.x a stale key still rode through untyped; **25.0.0 refuses it** at `defineConfig`, naming the driver seam. Deleting it from `app.config.ts` is the whole of the upgrade.
 
 **The seam that does work is `jobs:` in `export const runtime = { … }`** (`apps/<app>/runtime.ts`; 31.0.0 deleted `setJobDriver`) — swap the driver, zero job-code change, which is what the interface buys; a test swaps one for itself with `await swapAdapter('jobs', driver)` from `@ultimat3/testing`. Every swappable backend works this way: [Adapters](Adapters). `redisJobDriver()` is the second durable driver (`As of 2026-10`, #710): `jobs: redisJobDriver()` on core's `redisClient()` — while Redis is down an `enqueue` is `X_DRIVER_UNAVAILABLE` at once, never a wait — imported from `@ultimat3/jobs/redis`, held to the same conformance suite as Postgres, without the operator surface (`x jobs show`, `retry`, `cancel`), backfill bookkeeping or fleet-wide `concurrency` — [`packages/jobs/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/README.md#drivers) has the table. There is no NATS jobs driver.
 
-**`x jobs` has no `drain`, `As of 2026-11-15`.** It was planned from 25.0.0 and left the registry ([Known gaps](Known-Gaps#open-by-decision)): with Postgres the one durable driver, there is nowhere to drain to. To stop a queue for maintenance, `x jobs pause <queue>`, then `x jobs list --queue <queue> --state running --json` until it is empty. Its two former `--to` values, `redis` and `nats`, were all-throw stubs — until 2026-10 a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back, nothing moved, and no worker could claim those jobs meanwhile. 25.0.0 deleted the stubs and the unreachable drain body. A drain that returns with a real second driver is new code, and owes the lesson of `--to memory`, a target until 2026-09: `memoryJobDriver()` is a `Map` inside the command's own process, so the drain enqueued each job into it, acked the durable row off the source, printed `ok: true`, and lost every copy when the command exited.
+**`x jobs` has no `drain`, `As of 2026-11-15`.** It was planned from 25.0.0 and left the registry ([Known gaps](Known-Gaps#open-by-decision)): moving in-flight rows between drivers is a migration no command owns. To stop a queue for maintenance, `x jobs pause <queue>`, then `x jobs list --queue <queue> --state running --json` until it is empty. Its two former `--to` values, `redis` and `nats`, were all-throw stubs — until 2026-10 a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back, nothing moved, and no worker could claim those jobs meanwhile. 25.0.0 deleted the stubs and the unreachable drain body. A drain that returns is new code, and owes the lesson of `--to memory`, a target until 2026-09: `memoryJobDriver()` is a `Map` inside the command's own process, so the drain enqueued each job into it, acked the durable row off the source, printed `ok: true`, and lost every copy when the command exited.
 
-So there is no cross-driver migration procedure — and none is needed while `postgres` is the only driver that runs.
+So the framework ships no cross-driver migration procedure: moving queued jobs from one driver to another is the application's to do.
 
 ## Dead letter
 
@@ -908,14 +948,31 @@ Full index: [Error codes](Error-Codes). Verbatim error shapes live in each packa
 
 ```ts
 // job test — the step guarantee, not the happy path
-test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) => {
-  const { org } = await seed('fresh-org');
+import type { JobHandle } from '@ultimat3/jobs';
+import type { AnyMailDefinition } from '@ultimat3/mail';
+import { expect, jobTest } from '@ultimat3/testing';
+
+declare const nudgeEmail: AnyMailDefinition;
+declare const onboardOrg: JobHandle<{ orgId: string }>;
+declare const orgId: string;
+
+jobTest('a resumed run replays its steps, and a mail blip retries the mail job', async ({
+  clock,
+  mail,
+  runJobs,
+}) => {
   mail.failOnce(nudgeEmail);
-  await runJobs(onboardOrg, { orgId: org.id });
+  await runJobs(onboardOrg, { orgId });
   clock.advance('3d');
-  const trace = await runJobs.drain();
-  expect(trace.steps.provision.executions).toBe(1);       // replayed from storage
-  expect(trace.steps['nudge'].executions).toBe(2);        // only this one retried
+  const resumed = await runJobs.drain();
+  expect(resumed.steps['provision']?.executions).toBe(1);    // replayed from storage
+  expect(resumed.steps['nudge']?.executions).toBe(1);
+  expect(mail.outbox()).toHaveLength(1);                  // the nudge's send was refused
+
+  clock.advance('1h');
+  const retried = await runJobs.drain();
+  expect(mail.outbox()).toHaveLength(2);                  // the mail job's retry lands
+  expect(retried.steps['nudge']?.executions).toBe(1);        // and the step never ran again
 });
 ```
 

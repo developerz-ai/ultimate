@@ -29,7 +29,7 @@ What it does **not** claim:
 |---|---|
 | A multi-node realtime **rate** | correctness across nodes is proven over a real NATS bus (`multi-node.live.test.ts`, `As of 2026-11-14`): a publish on one node delivered by another in order, a page resuming on a survivor from its cursor with nothing lost or twice, a restarted node's snapshot, a missed-bus gap re-served at once ([Realtime](Realtime#across-nodes-over-a-real-bus)). The 50k forced-restart benchmark is still **one** `sync` node over `InProcessTransport`; fanout throughput and per-node socket capacity across nodes are unmeasured targets, not results |
 | A rolling restart on **Compose** | Compose is the single-node rung: one published port has one binder, so a restart there is a restart. The invisible-restart proof is Kubernetes only ([Deployment](Deployment)) |
-| Not shipped, `As of 2026-09-23` | the plugin API, multi-region replication, and the Redis **job** driver — all behind the interfaces that ship today (there is no NATS job driver since 25.0.0). The Redis driver throws `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
+| Not shipped, `As of 2026-11-18` | the plugin API and multi-region replication, both decided ([Known gaps](Known-Gaps#open-by-decision)). The Redis **job** driver does ship: `redisJobDriver()` from `@ultimat3/jobs/redis`, without `introspect`, `backfills` or `leases`. There is no NATS job driver since 25.0.0 |
 
 ### What is actually finished?
 

@@ -5,7 +5,7 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { maskLiterals } from '../packages/core/src/source-mask';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
-import { BACKLOG, relativeFindings, relativeSites, scanRelative } from './posix-relative';
+import { relativeFindings, relativeSites, scanRelative } from './posix-relative';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms default.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -71,12 +71,11 @@ describe('the pinned backlog', () => {
   });
 
   test('a pin the file no longer needs is stale, and says the edit', () => {
-    const [path] = Object.keys(BACKLOG);
-    if (path === undefined) return expect.unreachable('the backlog is not empty yet');
-    const others = Object.entries(BACKLOG)
-      .filter(([one]) => one !== path)
-      .flatMap(([one, count]) => Array.from({ length: count }, () => site(one)));
-    const stale = relativeFindings(others);
+    const path = 'packages/cli/src/old.ts';
+    const stale = relativeFindings([site('packages/cli/src/kept.ts')], {
+      [path]: 1,
+      'packages/cli/src/kept.ts': 1,
+    });
     expect(stale).toHaveLength(1);
     expect(stale[0]?.fix).toContain(`BACKLOG['${path}']`);
   });

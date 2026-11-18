@@ -13,6 +13,7 @@ import { entity } from './entity';
 import type { Expr } from './expr';
 import { postgresDriver } from './pg-driver';
 import { clearRegistry } from './registry';
+import { restoreRegistryAfterEachTest } from './registry-restore-fixture';
 
 const PGLITE_BOOT_MS = 30_000;
 
@@ -64,6 +65,9 @@ afterAll(async () => {
 afterAll(() => {
   clearRegistry();
 });
+
+// A refused counter refuses every reading of the counters, so the stray key must end with its test.
+restoreRegistryAfterEachTest();
 
 type Db = ReturnType<typeof database<typeof ENTITIES>>;
 
@@ -168,7 +172,6 @@ describe('counts · where · refused', () => {
     return 'accepted';
   };
 
-  // Last: once registered, a refused counter refuses every reading of the counters, as it should.
   test('an app-only predicate is refused: the trigger could not hold the same rule', () => {
     const stray = entity('cntw_stray', {
       columns: {

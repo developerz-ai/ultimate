@@ -12,6 +12,37 @@ describe('rewriteLinks', () => {
     expect(rewriteLinks('[`a` [b]](p(q))', upper)).toBe('[`a` [b]](P(Q))');
   });
 
+  test('a code span closes only on a run of its own length', () => {
+    expect(rewriteLinks('`` ` [a](x) ` `` [b](y)', upper)).toBe('`` ` [a](x) ` `` [b](Y)');
+  });
+
+  test('a backtick run with no closer is literal, so the link after it is still one', () => {
+    expect(rewriteLinks('`` [a](x) ` [b](y)', upper)).toBe('`` [a](X) ` [b](Y)');
+  });
+
+  test("a link inside another link's text is that text: only the outer target resolves", () => {
+    expect(rewriteLinks('[![badge](image)](target)', upper)).toBe('[![badge](image)](TARGET)');
+  });
+
+  test('an unclosed bracket does not hide the link after it', () => {
+    expect(rewriteLinks('[a [b](c)', upper)).toBe('[a [b](C)');
+  });
+
+  test('a line of open brackets is read in one pass', () => {
+    const line = `${'[['.repeat(50_000)}[a](b)`;
+    expect(rewriteLinks(line, upper)).toBe(`${'[['.repeat(50_000)}[a](B)`);
+  });
+
+  test('a title is kept, and a target that never closes is no link', () => {
+    expect(rewriteLinks('[a](b "t") [c](d(e) "u") [f](g "h [i](j', upper)).toBe(
+      '[a](B "t") [c](D(E) "u") [f](g "h [i](j',
+    );
+  });
+
+  test('a link written inside a title is title text', () => {
+    expect(rewriteLinks('[a](b "[c](d)")', upper)).toBe('[a](B "[c](d)")');
+  });
+
   test('never touches a code span or a fence', () => {
     const text = ['`[a](x)` [b](y)', '```', '[c](z)', '```'].join('\n');
     expect(rewriteLinks(text, upper)).toBe(['`[a](x)` [b](Y)', '```', '[c](z)', '```'].join('\n'));

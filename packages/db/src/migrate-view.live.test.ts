@@ -11,7 +11,7 @@
 //
 // Every table, view and the ledger itself are dropped on the way in and on the way out.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
@@ -105,8 +105,12 @@ describe.skipIf(!hasPostgres)('live · postgres · a view over a retyped column'
     await client.execute(raw(`drop table if exists ${LEDGER_TABLE}`));
   };
 
-  beforeAll(async () => {
+  beforeAll(() => {
     client = postgresClient({ url: url ?? '' });
+  });
+
+  // The table and its view, with nothing migrated: the state every claim below starts from.
+  beforeEach(async () => {
     await teardown();
     const create = generateMigration({ entities: [docs('integer')], name: 'init', now: at }).up;
     for (const statement of statementsOf(create)) await client.execute(raw(statement));
@@ -145,6 +149,9 @@ describe.skipIf(!hasPostgres)('live · postgres · a view over a retyped column'
   });
 
   test('nothing was applied and the ledger records nothing', async () => {
+    await expect(migrate({ migrations: [retype], client })).rejects.toMatchObject({
+      code: 'X_MIGRATION_VIEW_DEPENDS',
+    });
     expect(await typeOfRank()).toBe('integer');
     const rows = await client.query<{ id: string }>(raw(`select id from ${LEDGER_TABLE}`));
     expect(rows).toEqual([]);
@@ -162,6 +169,8 @@ describe.skipIf(!hasPostgres)('live · postgres · a view over a retyped column'
   // `dv_notes"."mark`. Refusing on that is a deploy stopped over a view standing in nobody's way,
   // which is strictly worse than the message this whole preflight exists to improve.
   test('a pair the cross product invents is not a refusal', async () => {
+    await client.execute(raw(`drop view "${VIEW}"`));
+    await migrate({ migrations: [retype], client });
     await client.execute(
       raw(`create table "${NOTES}" ("id" uuid primary key, "rank" integer, "mark" integer)`),
     );

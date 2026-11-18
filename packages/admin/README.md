@@ -143,6 +143,22 @@ unfiltered list. An empty value is no parameter: a GET form submits every input 
 Money, JSON, file, sealed and tenant columns derive no filter.
 
 ```ts
+import { defineAdmin } from '@ultimat3/admin';
+import { database, entity, text, timestamp, uuid } from '@ultimat3/entity';
+
+const owners = entity('owners', { columns: { id: uuid().primaryKey(), name: text() } });
+const tickets = entity('tickets', {
+  columns: {
+    id: uuid().primaryKey(),
+    title: text(),
+    status: text(),
+    assigneeId: uuid(),
+    region: text(),
+    createdAt: timestamp().defaultNow(),
+  },
+});
+const db = database({ owners, tickets });
+
 defineAdmin({
   entities: [tickets, owners],
   db,
@@ -158,8 +174,8 @@ defineAdmin({
       rows: (actor) => [{ field: 'region', op: 'eq', value: actor.locale ?? '' }],
       // Computed list columns: one of six renderers, or a component.
       columns: {
-        age: { value: (row) => row.createdAt, render: 'relative-time' },
-        state: { value: (row) => ({ label: row.status, tone: 'warning' }), render: 'badge' },
+        age: { value: (row) => row['createdAt'], render: 'relative-time' },
+        state: { value: (row) => ({ label: row['status'], tone: 'warning' }), render: 'badge' },
       },
     },
   },
@@ -329,7 +345,21 @@ Every renderer is an ordinary component in an ordinary `.tsx` file importing `@u
 so a table can be lifted into a screen the generator never wrote:
 
 ```tsx
-import { AdminList, listHref, Widget } from '@ultimat3/admin';
+import {
+  type AdminApp,
+  type AdminField,
+  AdminList,
+  type AdminListProps,
+  type AdminRow,
+  listHref,
+  Widget,
+} from '@ultimat3/admin';
+
+declare const admin: AdminApp;
+declare const list: AdminListProps<AdminRow>;
+declare const field: AdminField;
+declare const row: { readonly total: number };
+const { resource, page, ctx, actor, authz, request, scope, counts } = list;
 
 <AdminList resource={resource} page={page} error={null} ctx={ctx} actor={actor} authz={authz}
   basePath={admin.basePath} request={request} scope={scope} counts={counts}
@@ -346,9 +376,15 @@ calls it, so there is no way to render a cell that skipped it.
 `x dev` and the container already do. A host that is neither asks the route table per request:
 
 ```ts
-import { adminRouteMatch } from '@ultimat3/admin';
+import { type AdminApp, adminRouteMatch } from '@ultimat3/admin';
+
+declare const admin: AdminApp;
+
+declare const url: URL;
+declare const request: Request;
 
 const matched = adminRouteMatch(admin, url.pathname);            // null → 404
+if (matched === null) throw new Response(null, { status: 404 });
 const answer = await matched.route.respond({
   ctx: await admin.requestCtx(request), params: matched.params, url: url.href,
   method: 'GET', form: null,                                     // or 'POST' + the parsed form
@@ -366,13 +402,25 @@ board, a deploy button. Declare it in `pages:` and it becomes a real admin route
 
 ```tsx
 // admin/ops/page.tsx — a component, nothing framework-shaped about it
-export function OpsPage(props: AdminPageProps) {
-  return <OpsBoard counts={await mediaStateCounts()} />;
+import { type AdminAuth, type AdminPageProps, type CrudCtx, defineAdmin } from '@ultimat3/admin';
+import { database, entity, uuid } from '@ultimat3/entity';
+import { type JSX } from 'solid-js';
+
+type Counts = Readonly<Record<string, number>>;
+declare function mediaStateCounts(ctx: CrudCtx): Promise<Counts>;
+declare function OpsBoard(props: { readonly counts: Counts }): JSX.Element;
+declare const auth: Partial<AdminAuth>;
+const posts = entity('posts', { columns: { id: uuid().primaryKey() } });
+const db = database({ posts });
+
+export async function OpsPage(props: AdminPageProps): Promise<JSX.Element> {
+  return <OpsBoard counts={await mediaStateCounts(props.ctx)} />;
 }
 
 // admin/index.ts
 defineAdmin({
   entities: [posts],
+  db,
   pages: [
     {
       path: '/ops',                       // rooted at basePath → /admin/ops
@@ -398,8 +446,11 @@ defineAdmin({
 list — no admin instance, no session:
 
 ```ts
-import { adminTestCtx } from '@ultimat3/admin';
+import { type AdminPageProps, adminTestCtx } from '@ultimat3/admin';
 import { renderView } from '@ultimat3/testing';
+import { type JSX } from 'solid-js';
+
+declare function OpsPage(props: AdminPageProps): Promise<JSX.Element>;
 
 const view = await renderView(OpsPage, {
   ctx: adminTestCtx({ granted: ['admin:read', 'ops:read'] }),
@@ -499,7 +550,17 @@ order (`ts_rank`), which no btree serves: deferred with ranking (plan 101-finish
 The admin exposes **its own MCP surface**, derived from the same resources and gated by the same authz — an agent sees exactly the tools its actor could have clicked.
 
 ```ts
-import { adminMcp, adminMcpTools } from '@ultimat3/admin';
+import {
+  type AdminApp,
+  type AdminMcpActor,
+  adminMcp,
+  adminMcpTools,
+  type CrudCtx,
+} from '@ultimat3/admin';
+
+declare const admin: AdminApp;
+declare const ctx: CrudCtx;
+declare function actorFor(token: string | undefined, facts: unknown): AdminMcpActor | null;
 
 // apps/admin/mcp.ts — module scope: the mount serves every apps/<app>/mcp.ts, after the scan
 export const mcp = adminMcp({

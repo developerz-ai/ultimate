@@ -16,6 +16,8 @@ import { FakeWs } from './cmd-dev-fixture';
 
 const dev = bootDevFixture('.dev-fixture');
 const portOf = (url: string | null): number => Number(new URL(url ?? '').port);
+/** The one request this file loops on purpose; its finding stays on the running server's list. */
+const LOOPED_REQUEST = 'req_looped';
 
 describe('unit · x dev boots the app', () => {
   test('every selected role is running, and the unselected ones are not', () => {
@@ -24,7 +26,7 @@ describe('unit · x dev boots the app', () => {
     expect(dev.server.running.scheduler).not.toBeNull();
     // At --port 0 the kernel picks the sync port too — never web + 1, which another socket may hold.
     expect(portOf(dev.server.running.syncUrl)).not.toBe(portOf(dev.server.url));
-    expect(dev.server.findings).toEqual([]);
+    expect(dev.server.findings.filter((finding) => finding.at !== LOOPED_REQUEST)).toEqual([]);
   });
 
   // `cmd-dev.ts` passed no `metricsPort`, so `METRICS_PORT` moved the scrape port in the container
@@ -102,7 +104,7 @@ describe('unit · x dev boots the app', () => {
     logger.warn = (line: string): void => {
       lines.push(line);
     };
-    const ctx = ctxOf({ requestId: 'req_looped' });
+    const ctx = ctxOf({ requestId: LOOPED_REQUEST });
     try {
       runWithContext(ctx, () => {
         for (let sent = 0; sent < 6; sent += 1) {
@@ -124,7 +126,7 @@ describe('unit · x dev boots the app', () => {
     expect(findings.length).toBe(before + 1);
     const finding = findings[findings.length - 1];
     expect(finding?.code).toBe('X_N_PLUS_ONE_QUERY');
-    expect(finding?.at).toBe('req_looped');
+    expect(finding?.at).toBe(LOOPED_REQUEST);
     expect(finding?.fix).toContain("db.members.andWhere('id', 'in', ids).all()");
 
     // 2. the timeline panel, through the source only this process can answer.

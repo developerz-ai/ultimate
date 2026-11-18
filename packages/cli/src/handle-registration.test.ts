@@ -2,7 +2,7 @@
 // entity is listed where `database()` reads it, imported where the formatter would put it, and a
 // file that is not the scaffold's shape is refused with the two lines rather than guessed at.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove, so a throwaway app root's lifetime is node:fs's.
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -114,14 +114,14 @@ describe('unit · registering on disk', () => {
   const read = (path: string) => Bun.file(join(root, path)).text();
   const ENTITY = 'apps/web/app/widget/entity.ts';
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'x-handle-'));
     await write('packages/db/package.json', '{\n  "name": "@shop/db",\n  "version": "0.0.0"\n}\n');
     await write('apps/web/package.json', '{\n  "name": "@shop/web",\n  "version": "0.0.0"\n}\n');
     await write(ENTITY, "export const widget = entity('widgets', { columns: {} });\n");
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
 
@@ -158,6 +158,7 @@ describe('unit · registering on disk', () => {
   });
 
   test('once the index exports the handle, a second run is silent and edits nothing', async () => {
+    await registerGeneratedEntities(root, [ENTITY], '@shop/db');
     await write(
       'packages/db/src/index.ts',
       "export { db, driver, selectDriver } from './client';\n",
@@ -187,7 +188,7 @@ describe('unit · a registration that cannot be made writes nothing', () => {
   const INLINE_HANDLE =
     "import { database } from '@ultimat3/entity';\nimport { posts } from './schema/posts';\n\nexport const db = database({ posts });\n";
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'x-handle-atomic-'));
     await write('packages/db/package.json', DB_MANIFEST);
     await write('apps/web/package.json', WEB_MANIFEST);
@@ -196,7 +197,7 @@ describe('unit · a registration that cannot be made writes nothing', () => {
     await write(ENTITY, "export const widget = entity('widgets', { columns: {} });\n");
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
 

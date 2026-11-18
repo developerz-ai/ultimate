@@ -3,7 +3,7 @@
 // instead of migrating again, and a migration change builds a new template and evicts down to the
 // newest previous one (#738) — where an app's hand-rolled copy of this kept every one it ever made.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, no directory listing and no recursive remove.
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -20,13 +20,19 @@ import { TEST_DB_DIR } from './test-db-template';
 // against bun's 5 s default: a hang detector, so the ceiling stays but sits above the real cost.
 const PGLITE_BOOT_MS = 300_000;
 
-const root = mkdtempSync(join(tmpdir(), 'x-test-database-'));
-afterAll(() => rmSync(root, { recursive: true, force: true }));
-writeFileSync(join(root, 'app.config.ts'), 'export default {};\n');
-mkdirSync(join(root, MIGRATIONS_DIR), { recursive: true });
-// Each migration names this load's root in a comment. A template is held in memory per migration
-// state for the life of the process, so a second load of this file (`--rerun-each`) with the same
-// migrations read the first load's template and wrote none into its own `.x/test-db`.
+let root = '';
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'x-test-database-'));
+  writeFileSync(join(root, 'app.config.ts'), 'export default {};\n');
+  mkdirSync(join(root, MIGRATIONS_DIR), { recursive: true });
+});
+
+afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+// Each migration names its test's root in a comment. A template is held in memory per migration
+// state for the life of the process, so another test (or a `--rerun-each` load) with the same
+// migrations would read that test's template and write none into its own `.x/test-db`.
 const migration = (name: string, ddl: string): void =>
   writeFileSync(join(root, MIGRATIONS_DIR, `${name}.sql`), `-- ${root}\n${ddl}`);
 const templates = (): readonly string[] =>

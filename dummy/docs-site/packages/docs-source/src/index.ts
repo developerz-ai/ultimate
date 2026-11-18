@@ -12,6 +12,8 @@ export {
   DocsSecondTitleError,
 } from './errors';
 export { clipText, plainText } from './lead';
+export type { OutboundLink } from './outbound';
+export { outboundLinks } from './outbound';
 export { searchEntries } from './search-entries';
 export { codeMarkdown, pieceMarkdown, siblingPath } from './sibling';
 export { pageUrl } from './targets';

@@ -9,14 +9,25 @@ dead-letter path, cancellation, `x jobs show` and its manifest row — the same 
 and `llm()` take ([The eight primitives](The-Eight-Primitives)). It is not a ninth primitive.
 
 ```ts
-import { inAppChannel, mailChannel, notifier, t } from '@ultimat3/notify';
+import { inAppChannel, mailChannel, type Mailer, notifier, type Recipient, t } from '@ultimat3/notify';
+
+interface Commented {
+  readonly postId: string;
+  readonly orgId: string;
+  readonly author: string;
+}
+declare const mailer: Mailer<Commented>;
+declare function subscribersOf(postId: string, signal: AbortSignal): Promise<readonly Recipient[]>;
+declare const postId: string;
+declare const orgId: string;
+declare const author: string;
 
 export const commentPosted = notifier({
   name: 'post.commented',
   input: t.object({ postId: t.uuid, orgId: t.uuid, author: t.string }),
   tenant: (params) => params.orgId,          // required, as on job()
   key: (params) => `comment:${params.postId}`, // the queue's dedupe key AND the ledger's event key
-  recipients: ({ input, ctx }) => posts.subscribers(input.postId, ctx.signal),
+  recipients: ({ input, ctx }) => subscribersOf(input.postId, ctx.signal),
   deliver: [
     { channel: inAppChannel() },               // immediately
     {

@@ -2,7 +2,7 @@
 // bound parameter would have stored it, a refused row stores nothing, and a copy on a pin belongs to
 // that pin's transaction. Live-only — the text format is the server's to judge, not a double's.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { type PostgresClient, postgresClient } from './client';
 import { identifier, raw, sql } from './sql';
@@ -35,6 +35,8 @@ describe.skipIf(!hasPostgres)('live · postgres · copyIn', () => {
       ),
     );
   });
+
+  beforeEach(() => client.execute(raw(`truncate "${TABLE}"`)));
 
   afterAll(async () => {
     await client.execute(raw(`drop table if exists "${TABLE}"`));
@@ -75,6 +77,7 @@ describe.skipIf(!hasPostgres)('live · postgres · copyIn', () => {
   });
 
   test('a duplicate key refuses the whole copy, typed, and the pool still answers', async () => {
+    await client.execute(raw(`insert into "${TABLE}" (id) values (1)`));
     try {
       await client.copyIn(target, [
         [10, 'new', null, null, null, null, null],

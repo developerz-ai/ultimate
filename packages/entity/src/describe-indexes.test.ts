@@ -2,15 +2,33 @@
 // a declared index or a unique invariant already leads with is LISTED (`coveredIndexes`) — and,
 // on `main`, still described, so an existing app's next `x db gen` drops nothing.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { text, uuid } from './columns';
 import { entity } from './entity';
 import { invariant } from './invariants';
-import { getEntity } from './registry';
+import { clearRegistry, getEntity } from './registry';
 import { coveringIndexOf } from './tenant-index';
 
 const posts = entity('e9_posts', { columns: { id: uuid().primaryKey() } });
 const fk = () => uuid().references(() => posts.id);
+
+// At module scope: both the listing tests and the "still described" test read these three.
+entity('e9_post_tags', {
+  columns: { postId: fk(), tagId: fk() },
+  primaryKey: ['postId', 'tagId'],
+});
+entity('e9_declared', {
+  columns: { id: uuid().primaryKey(), postId: fk(), kind: text({ max: 9 }) },
+  indexes: [{ on: ['postId', 'kind'] }],
+});
+entity('e9_unique_pair', {
+  columns: { id: uuid().primaryKey(), postId: fk(), slug: text({ max: 9 }) },
+  invariants: (c) => [invariant('e9_post_slug', c.unique(['postId', 'slug']))],
+});
+
+afterAll(() => {
+  clearRegistry();
+});
 
 const covered = (name: string) =>
   (getEntity(name)?.coveredIndexes ?? []).map((each) => [each.name, each.coveredBy]);
@@ -36,28 +54,16 @@ describe('unit · the covering rule', () => {
 
 describe('unit · a foreign key index another index already leads with', () => {
   test('join table: the primary key leads with the first key, so its index is covered', () => {
-    entity('e9_post_tags', {
-      columns: { postId: fk(), tagId: fk() },
-      primaryKey: ['postId', 'tagId'],
-    });
     expect(covered('e9_post_tags')).toEqual([['e9_post_tags_post_id_idx', 'e9_post_tags_pkey']]);
   });
 
   test('declared (fk, x): covered by that declaration', () => {
-    entity('e9_declared', {
-      columns: { id: uuid().primaryKey(), postId: fk(), kind: text({ max: 9 }) },
-      indexes: [{ on: ['postId', 'kind'] }],
-    });
     expect(covered('e9_declared')).toEqual([
       ['e9_declared_post_id_idx', 'e9_declared_post_id_kind_idx'],
     ]);
   });
 
   test('unique invariant (fk, y): covered by the invariant', () => {
-    entity('e9_unique_pair', {
-      columns: { id: uuid().primaryKey(), postId: fk(), slug: text({ max: 9 }) },
-      invariants: (c) => [invariant('e9_post_slug', c.unique(['postId', 'slug']))],
-    });
     expect(covered('e9_unique_pair')).toEqual([['e9_unique_pair_post_id_idx', 'e9_post_slug']]);
   });
 

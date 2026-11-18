@@ -5,7 +5,7 @@
 // agent actually reaches. The three capabilities that need a live Postgres (`db.query`,
 // `db.migrate`, `queue.depth`) are deliberately absent — they belong in a `.live.` suite.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
@@ -93,6 +93,12 @@ const resultOf = (
   return { text, isError: result?.isError === true, json };
 };
 
+/** The files `tests.run` discovers: a fixture holds them only while that describe runs. */
+const removeTestFiles = async (): Promise<void> => {
+  await rm(join(ROOT, 'probe.test.ts'), { force: true });
+  await rm(join(ROOT, 'packages'), { recursive: true, force: true });
+};
+
 beforeAll(async () => {
   await rm(ROOT, { recursive: true, force: true });
   await Bun.write(
@@ -100,9 +106,6 @@ beforeAll(async () => {
     JSON.stringify({ name: 'mcp-host-fixture', version: '1.0.0' }),
   );
   await Bun.write(join(ROOT, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
-  // Two files for `x test` to discover: `tests.run` is that command, never a bare `bun test`.
-  await Bun.write(join(ROOT, 'probe.test.ts'), '');
-  await Bun.write(join(ROOT, 'packages/seo/src/seo.test.ts'), '');
   resetAppLoad();
   // The fixture app has no prompt: one an earlier file on this worker registered would make the
   // eval step red for a reason this file never introduced.
@@ -123,6 +126,14 @@ afterAll(async () => {
 });
 
 describe('tests.run is x test, in the app root', () => {
+  // Two files for `x test` to discover: `tests.run` is that command, never a bare `bun test`.
+  beforeEach(async () => {
+    await Bun.write(join(ROOT, 'probe.test.ts'), '');
+    await Bun.write(join(ROOT, 'packages/seo/src/seo.test.ts'), '');
+  });
+
+  afterEach(removeTestFiles);
+
   const bunTests = (): readonly RunnerCall[] =>
     calls.filter((entry) => entry.command[0] === 'bun' && entry.command[1] === 'test');
 
@@ -167,8 +178,20 @@ describe('tests.run is x test, in the app root', () => {
 });
 
 describe('logs.tail reads the dev log off disk', () => {
-  test('a missing log is refused with a command that creates one, not an empty array', async () => {
+  const removeLogs = async (): Promise<void> => {
     await rm(join(STATE, 'dev.log'), { force: true });
+    await rm(join(STATE, 'logs'), { recursive: true, force: true });
+  };
+
+  beforeEach(async () => {
+    await removeLogs();
+    await Bun.write(join(STATE, 'dev.log'), 'one\ntwo\nthree\nfour\n');
+  });
+
+  afterEach(removeLogs);
+
+  test('a missing log is refused with a command that creates one, not an empty array', async () => {
+    await removeLogs();
     const { text, isError } = resultOf(await call('logs.tail'));
     expect(isError).toBe(true);
     expect(text).toContain('X_DEV_LOG_ABSENT');
@@ -177,6 +200,7 @@ describe('logs.tail reads the dev log off disk', () => {
   });
 
   test('a per-role tail with no log at all is refused with the command that writes one', async () => {
+    await removeLogs();
     const { text, isError } = resultOf(await call('logs.tail', { role: 'worker' }));
     expect(isError).toBe(true);
     expect(text).toContain('X_DEV_LOG_ABSENT');
@@ -186,7 +210,6 @@ describe('logs.tail reads the dev log off disk', () => {
   });
 
   test('the tail is the LAST n lines, and the trailing newline is not one of them', async () => {
-    await Bun.write(join(STATE, 'dev.log'), 'one\ntwo\nthree\nfour\n');
     expect(resultOf(await call('logs.tail', { lines: 2 })).text).toBe('three\nfour');
     // The default is 100, so a four-line log comes back whole rather than truncated.
     expect(resultOf(await call('logs.tail')).text).toBe('one\ntwo\nthree\nfour');
@@ -204,21 +227,17 @@ describe('logs.tail reads the dev log off disk', () => {
       { msg: 'odd', role: 7 },
     ].map((line) => (typeof line === 'string' ? line : JSON.stringify(line)));
     await Bun.write(join(STATE, 'dev.log'), `${lines.join('\n')}\n`);
-    try {
-      const worker = resultOf(await call('logs.tail', { role: 'worker' }));
-      expect(worker.isError).toBe(false);
-      expect(worker.text.split('\n').map((line) => JSON.parse(line).msg)).toEqual([
-        'job one',
-        'job two',
-      ]);
-      expect(resultOf(await call('logs.tail', { role: 'worker', lines: 1 })).text).toContain(
-        'job two',
-      );
-      // A role that wrote nothing is an empty tail, never another role's lines.
-      expect(resultOf(await call('logs.tail', { role: 'scheduler' })).text).toBe('');
-    } finally {
-      await Bun.write(join(STATE, 'dev.log'), 'one\ntwo\nthree\nfour\n');
-    }
+    const worker = resultOf(await call('logs.tail', { role: 'worker' }));
+    expect(worker.isError).toBe(false);
+    expect(worker.text.split('\n').map((line) => JSON.parse(line).msg)).toEqual([
+      'job one',
+      'job two',
+    ]);
+    expect(resultOf(await call('logs.tail', { role: 'worker', lines: 1 })).text).toContain(
+      'job two',
+    );
+    // A role that wrote nothing is an empty tail, never another role's lines.
+    expect(resultOf(await call('logs.tail', { role: 'scheduler' })).text).toBe('');
   });
 
   test('a role’s log is read from logs/<role>.log, never from dev.log', async () => {
@@ -244,6 +263,10 @@ describe('graph.query answers from the app graph x impact reads', () => {
 });
 
 describe('manifest.read prefers the committed file', () => {
+  afterEach(async () => {
+    await rm(join(ROOT, MANIFEST_FILENAME), { force: true });
+  });
+
   test('the generated file on disk is handed back verbatim', async () => {
     const committed = '{\n  "buildId": "committed-by-x-manifest"\n}';
     await Bun.write(join(ROOT, MANIFEST_FILENAME), committed);
@@ -268,13 +291,10 @@ describe('verify.run is the gate, run through the injected runner', () => {
 
   // Removed here rather than left to whichever test ran last: a fixture with no committed
   // manifest fails exactly the `manifest` step, which is what makes `ok: false` a fact of this
-  // describe and not of the file's ordering.
-  // The test files `tests.run` discovers go too: a unit step with tests to run asks for a coverage
-  // floor this fixture does not state, and that red would belong to the fixture, not the step.
-  beforeAll(async () => {
+  // describe and not of the file's ordering. No test file is left here either (`tests.run` removes
+  // its own): a unit step with tests to run asks for a coverage floor this fixture does not state.
+  beforeEach(async () => {
     await rm(join(ROOT, MANIFEST_FILENAME), { force: true });
-    await rm(join(ROOT, 'probe.test.ts'), { force: true });
-    await rm(join(ROOT, 'packages'), { recursive: true, force: true });
   });
 
   test('a failing step makes the whole answer an error, and carries its cause as detail', async () => {

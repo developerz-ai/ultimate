@@ -80,6 +80,22 @@ describe('CacheTagUnknownError', () => {
 
     expect(err.cause).toContain('declared: post, user');
   });
+
+  test('the fix is the declaration to paste, under the name declareTags takes', () => {
+    const collection = new CacheTagUnknownError({ tag: 'pots', known: ['post'] });
+    const row = new CacheTagUnknownError({ tag: 'pots:42', known: ['post'] });
+
+    expect(collection.fix).toStartWith('declareTags(["pots"])');
+    expect(collection.fix).toContain('CacheTagRegistry');
+    expect(row.fix).toStartWith('declareTags(["pots"])');
+    expect(collection.fix).not.toContain('x manifest');
+  });
+
+  test('a tag carrying a quote still renders a call that parses', () => {
+    const err = new CacheTagUnknownError({ tag: 'po"ts', known: [] });
+
+    expect(err.fix).toStartWith('declareTags(["po\\"ts"])');
+  });
 });
 
 describe('CacheTooLargeError', () => {

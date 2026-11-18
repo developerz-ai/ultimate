@@ -48,6 +48,8 @@ A `default` outside `locales` is `X_LOCALE_UNSUPPORTED` — and a compile error 
 ```ts
 import { negotiateLocale, t } from '@ultimat3/i18n';
 
+declare const request: Request;
+
 // per-request: the HTTP layer resolves the locale once
 const locale = negotiateLocale(request.headers.get('accept-language')); // 'de'
 

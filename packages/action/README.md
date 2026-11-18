@@ -20,6 +20,16 @@ An action carries its own projections, so app code never reaches through `.def` 
 never imports a projection function:
 
 ```ts
+import { type Actor } from '@ultimat3/core';
+import { type Action, t } from '@ultimat3/action';
+
+declare const actor: Actor;
+declare const postId: string;
+declare const baseUrl: string;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+
 publishPost.input                              // the declared input schema
 publishPost.output                             // the declared output schema
 publishPost.policy                             // the one policy object
@@ -44,11 +54,29 @@ imports one package for the primitive and its schemas, never two.
 
 ```ts
 import { action, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+import { tag } from '@ultimat3/cache';
+import { type JobHandle } from '@ultimat3/jobs';
+import { type Actor } from '@ultimat3/core';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string, tx?: unknown): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
+declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
 
 export const publishPost = action({
   input:  t.object({ postId: t.uuid, orgId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
-  policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
   idempotent: true,
@@ -376,6 +404,27 @@ projection an action has; it adds `local(tx, input)` for the optimistic write an
 strategy for the rebase.
 
 ```ts
+import { mutator, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/action' {
+  interface LocalTables {
+    posts: { likedByMe: boolean; likeCount: number };
+  }
+}
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string, tx?: unknown): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
+const PostLikes = t.object({ likeCount: t.number.int(), likedByMe: t.boolean });
+
 export const likePost = mutator({
   input: t.object({ postId: t.uuid }),
   output: PostLikes,
@@ -401,6 +450,16 @@ The projected surface carries the same three names the declaration used, on top 
 every action member above:
 
 ```ts
+import { type LocalTx, type Mutator, t } from '@ultimat3/action';
+import { type Ctx } from '@ultimat3/core';
+
+const LikePostInput = t.object({ postId: t.uuid });
+const PostLikes = t.object({ likeCount: t.number.int(), likedByMe: t.boolean });
+declare const likePost: Mutator<typeof LikePostInput, typeof PostLikes>;
+declare const tx: LocalTx;
+declare const ctx: Ctx;
+declare const postId: string;
+
 likePost.local(tx, { postId })            // the optimistic write, replayed on rebase
 await likePost.server(ctx, { postId })    // the authoritative write
 likePost.conflict                         // the declared strategy
@@ -980,6 +1039,21 @@ which fields, whose tenant, chained or not, kept how long:
 
 ```ts
 // apps/web/runtime.ts — every name below but `runtime` is the app's own
+import { type RuntimeOverrides } from '@ultimat3/cli/serve';
+import { type Actor, type Ctx } from '@ultimat3/core';
+
+declare function chainHead(ctx: Ctx): Promise<string>;
+declare function orgOf(actor: Actor): string;
+declare function subjectOf(name: string, input: unknown): string;
+declare function impersonatorOf(actor: Actor): string | null;
+declare function sha256(prev: string, record: unknown): Promise<string>;
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly db: { readonly auditRows: { insert(row: Record<string, unknown>): Promise<unknown> } };
+  }
+}
+
 export const runtime = { auditSink: {
   async write(record) {
     const { ctx } = record;                             // the services a sink needs to write a row
@@ -1021,6 +1095,18 @@ asserts the denial, not `X_FORBIDDEN`: a denial carries the policy decision's ow
 `can()` answers a null actor with `X_UNAUTHENTICATED`.
 
 ```ts
+import { type Actor, type Ctx } from '@ultimat3/core';
+import { type Action, t } from '@ultimat3/action';
+
+declare const myCtx: Ctx;
+
+declare const actor: Actor;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+declare const orgId: string;
+declare const postId: string;
+
 publishPost.contract({
   garbage: 42,                                 // what the input schema must reject
   input: { postId, orgId },                    // when the synthesized one cannot fit

@@ -4,7 +4,7 @@
 // cached in every importer, a restart to change — which is why the second half of this file pins
 // what a save to an action does NOT do, and what a save that will not parse leaves standing.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
@@ -17,9 +17,12 @@ import { processRoot } from './process-root-fixture';
 
 // Under `packages/cli/` for the reason `.dev-fixture` is: the page imports `@ultimat3/render`,
 // which resolves through this package's own node_modules and not from /tmp.
-const ROOT = processRoot(join(import.meta.dir, '..', '.app-reload-fixture'));
-const PAGE = join(ROOT, 'apps/web/app/hello/page.tsx');
-const ACTIONS = join(ROOT, 'apps/web/app/hello/actions.ts');
+const BASE = processRoot(join(import.meta.dir, '..', '.app-reload-fixture'));
+// A root per test, never a counter: `import()` evaluates a path once per PROCESS, and a rerun of
+// this file (`--rerun-each`) restarts a counter while the process keeps what the path evaluated to.
+let root = '';
+let PAGE = '';
+let ACTIONS = '';
 
 const page = (body: string): string =>
   `import { defineRoute } from '@ultimat3/render';
@@ -48,20 +51,29 @@ const rendered = async (): Promise<string> => {
   );
 };
 
-beforeAll(async () => {
+/** The scan every later save is measured against: the page and the action, as first written. */
+const firstScan = async (): Promise<void> => {
+  expect((await loadApp(root)).findings).toEqual([]);
+  expect(await rendered()).toContain('one');
+};
+
+beforeEach(async () => {
+  clearRoutes();
   resetRegistries();
-  await rm(ROOT, { recursive: true, force: true });
+  root = join(BASE, `app-${crypto.randomUUID()}`);
+  PAGE = join(root, 'apps/web/app/hello/page.tsx');
+  ACTIONS = join(root, 'apps/web/app/hello/actions.ts');
   await Bun.write(
-    join(ROOT, 'package.json'),
+    join(root, 'package.json'),
     JSON.stringify({ name: 'reload-fixture', version: '1.0.0' }),
   );
   await Bun.write(PAGE, page('one'));
   await Bun.write(ACTIONS, actions('one'));
 });
 
-afterAll(async () => {
+afterEach(async () => {
   try {
-    await rm(ROOT, { recursive: true, force: true });
+    await rm(BASE, { recursive: true, force: true });
   } finally {
     clearRoutes();
     resetRegistries();
@@ -71,36 +83,38 @@ afterAll(async () => {
 
 describe('unit · loadApp re-imports a route module whose source changed', () => {
   test('the first scan registers the page as written', async () => {
-    expect((await loadApp(ROOT)).findings).toEqual([]);
-    expect(await rendered()).toContain('one');
+    await firstScan();
   });
 
   test('a rescan after a save serves the saved page, and an unchanged one is not re-imported', async () => {
+    await firstScan();
     await Bun.write(PAGE, page('two'));
     const before = routeFor('/hello')?.component;
-    expect((await loadApp(ROOT)).findings).toEqual([]);
+    expect((await loadApp(root)).findings).toEqual([]);
     expect(await rendered()).toContain('two');
     expect(routeFor('/hello')?.component).not.toBe(before);
     // Same bytes, same module: a rescan for an unrelated save must not mint a page instance per tick.
     const settled = routeFor('/hello')?.component;
-    await loadApp(ROOT);
+    await loadApp(root);
     expect(routeFor('/hello')?.component).toBe(settled);
   });
 
   test('a save that will not parse is a finding at the file, and the last good page stays up', async () => {
+    await firstScan();
     await Bun.write(PAGE, 'export const config = defineRoute({');
-    const loaded = await loadApp(ROOT);
+    const loaded = await loadApp(root);
     expect(loaded.findings.map((finding) => finding.at)).toEqual(['apps/web/app/hello/page.tsx']);
-    expect(await rendered()).toContain('two');
+    expect(await rendered()).toContain('one');
     // Not sticky, unlike a registration failure: the next save is tried again.
     await Bun.write(PAGE, page('three'));
-    expect((await loadApp(ROOT)).findings).toEqual([]);
+    expect((await loadApp(root)).findings).toEqual([]);
     expect(await rendered()).toContain('three');
   });
 
   test('an action module is still registered once — its exports live in every importer', async () => {
+    await firstScan();
     await Bun.write(ACTIONS, actions('two'));
-    expect((await loadApp(ROOT)).findings).toEqual([]);
+    expect((await loadApp(root)).findings).toEqual([]);
     const greet = describeActions().find((described) => described.name === 'greet');
     expect(greet).toBeDefined();
     // One registration, one name: a re-import here would be `X_ACTION_DUPLICATE`, or a second
@@ -115,13 +129,14 @@ describe('unit · loadApp re-imports a route module whose source changed', () =>
   // the hash was the rewrite's and the component was not, the scan compared equal, and the page
   // on disk was not served until the save after it.
   test('a save that lands during the import is served on the next scan, not the one after', async () => {
+    await firstScan();
     const rewrite = `await Bun.write(import.meta.path, ${JSON.stringify(page('fresh'))});\n`;
     await Bun.write(PAGE, page('stale') + rewrite);
-    expect((await loadApp(ROOT)).findings).toEqual([]);
+    expect((await loadApp(root)).findings).toEqual([]);
     // This scan evaluated the module that says `stale`, and that is the page it registered.
     expect(await rendered()).toContain('stale');
     expect(await Bun.file(PAGE).text()).toBe(page('fresh'));
-    expect((await loadApp(ROOT)).findings).toEqual([]);
+    expect((await loadApp(root)).findings).toEqual([]);
     expect(await rendered()).toContain('fresh');
   });
 });

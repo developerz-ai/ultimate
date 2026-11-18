@@ -14,26 +14,111 @@ export interface LinkAt {
 /** The new target, or `undefined` to leave the link as written. */
 export type LinkResolver = (link: LinkAt) => string | undefined;
 
-// `[text](target "title")`, one level of brackets inside the text (`[`x`]` and `[a [b]]` both
-// occur in the wiki), and one level of parentheses inside the target.
-const LINK = /(!?\[(?:[^[\]]|\[[^\]]*\])*\]\()([^()\s]+(?:\([^()\s]*\))?)((?:\s+"[^"]*")?\))/g;
-const CODE_SPAN = /(`+)[\s\S]*?\1/g;
+const isSpace = (char: string): boolean => char.trim() === '';
+
+/** The first offset from `from` holding a space, a parenthesis, or the end of the line. */
+function wordEnd(line: string, from: number): number {
+  let end = from;
+  while (end < line.length) {
+    const char = line.charAt(end);
+    if (char === '(' || char === ')' || isSpace(char)) break;
+    end += 1;
+  }
+  return end;
+}
 
 /**
- * Links found on the line with every code span blanked to `x`s of the same length, so a bracket
- * inside code opens nothing while a link whose TEXT holds code (`[\`x verify\`](CLI-Reference)`)
- * is still one link; the splice is made on the line as written, at the same offsets.
+ * What follows `](` at `from`: the target, one level of parentheses inside it, an optional
+ * `"title"`, then the `)`, whose offset is `close`. Read by hand, each part stopping at the next
+ * parenthesis, space or quote, so no input makes it look back. `undefined` when it is not that.
  */
-function rewriteLine(line: string, at: number, resolve: LinkResolver): string {
-  const masked = line.replace(CODE_SPAN, (span) => 'x'.repeat(span.length));
+function targetAt(line: string, from: number): { target: string; close: number } | undefined {
+  let end = wordEnd(line, from);
+  if (end === from) return undefined;
+  if (line[end] === '(') {
+    end = wordEnd(line, end + 1);
+    if (line[end] !== ')') return undefined;
+    end += 1;
+  }
+  let next = end;
+  while (next < line.length && isSpace(line.charAt(next))) next += 1;
+  if (next > end) {
+    if (line[next] !== '"') return undefined;
+    next = line.indexOf('"', next + 1);
+    if (next < 0) return undefined;
+    next += 1;
+  }
+  return line[next] === ')' ? { target: line.slice(from, end), close: next } : undefined;
+}
+
+interface FoundLink {
+  /** Offset of the `[` that opens the link's text. */
+  readonly opener: number;
+  /** Offset of the target. */
+  readonly at: number;
+  readonly target: string;
+}
+
+/**
+ * `[text](target "title")` on a line, in order, in one pass: a stack pairs each `]` with its `[`,
+ * so brackets may nest in the text (`[a [b]](c)`). A link inside another's text is that link's
+ * text, as in the `[![badge](image)](target)` the wiki writes, so the outer one replaces it.
+ */
+function findLinks(line: string): readonly FoundLink[] {
+  const open: number[] = [];
+  const links: FoundLink[] = [];
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === '[') open.push(index);
+    if (line[index] !== ']') continue;
+    const opener = open.pop();
+    if (opener === undefined || line[index + 1] !== '(') continue;
+    const found = targetAt(line, index + 2);
+    if (found === undefined) continue;
+    while ((links.at(-1)?.opener ?? -1) > opener) links.pop();
+    links.push({ opener, at: index + 2, target: found.target });
+    // Past the `)`: brackets in a title are its text, never another link.
+    index = found.close;
+  }
+  return links;
+}
+
+/**
+ * The line with every code span blanked to `x`s of the same length. A span closes on the next run
+ * of exactly its opener's length, and a run with no such closer is literal. Knowing each length's
+ * last run means only a scan that will succeed is made, and it skips what it read: linear.
+ */
+function maskCodeSpans(line: string): string {
+  const runs = [...line.matchAll(/`+/g)].map((run) => ({ at: run.index, size: run[0].length }));
+  const lastOfSize = new Map(runs.map((run, index) => [run.size, index]));
   let out = '';
   let from = 0;
-  for (const match of masked.matchAll(LINK)) {
-    const open = match[1] ?? '';
-    const target = match[2] ?? '';
+  for (let open = 0; open < runs.length; open += 1) {
+    const opener = runs[open];
+    if (opener === undefined || (lastOfSize.get(opener.size) ?? open) <= open) continue;
+    let close = open + 1;
+    while (runs[close]?.size !== opener.size) close += 1;
+    const closer = runs[close];
+    if (closer === undefined) continue;
+    const end = closer.at + closer.size;
+    out += line.slice(from, opener.at) + 'x'.repeat(end - opener.at);
+    from = end;
+    open = close;
+  }
+  return out + line.slice(from);
+}
+
+/**
+ * Links found on the line with every code span blanked, so a bracket inside code opens nothing
+ * while a link whose TEXT holds code (`[\`x verify\`](CLI-Reference)`) is still one link; the
+ * splice is made on the line as written, at the same offsets.
+ */
+function rewriteLine(line: string, at: number, resolve: LinkResolver): string {
+  const masked = maskCodeSpans(line);
+  let out = '';
+  let from = 0;
+  for (const { at: targetAt, target } of findLinks(masked)) {
     const next = resolve({ line: at, target });
     if (next === undefined) continue;
-    const targetAt = match.index + open.length;
     out += line.slice(from, targetAt) + next;
     from = targetAt + target.length;
   }

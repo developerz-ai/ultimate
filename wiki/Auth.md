@@ -10,6 +10,10 @@ the walk-through is [Tutorial 3](Tutorial-03-Auth-And-Admin).
 ```ts
 import { defineAuth, login, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';
 
+declare const email: string;
+declare const password: string;
+declare const ip: string;
+
 export const auth = defineAuth({
   adapter: postgresAuthAdapter(),            // or memoryAuthAdapter()
   session: { absoluteTtlMs: 30 * 864e5, idleTtlMs: 7 * 864e5 },

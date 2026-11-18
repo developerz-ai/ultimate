@@ -7,15 +7,45 @@ A `route` is a URL + render mode + metadata + offline strategy. Render mode is a
 ## The canonical shape
 
 ```ts
+import { tag } from '@ultimat3/cache';
+import { defineRoute } from '@ultimat3/render';
+import { ld } from '@ultimat3/seo';
+
+declare module '@ultimat3/cache' {
+  interface CacheTagRegistry {
+    post: true;
+    feed: true;
+  }
+}
+
+interface Post {
+  readonly title: string;
+  readonly excerpt: string;
+  readonly cover: string;
+  readonly publishedAt: string;
+  readonly author: string;
+}
+declare function listPostSlugs(): Promise<readonly string[]>;
+declare function loadPost(slug: string): Promise<Post>;
+
 export const config = defineRoute({
   render:     'isr',                  // static | isr | ssr | stream
   revalidate: { tags: [tag.post] },
-  prerender:  () => db.posts.slugs(),
+  prerender:  () => listPostSlugs(),
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
   budget:     { js: '40kb' },
-  meta:       ({ post }) => ({ title: post.title, description: post.excerpt,
-                               og: { image: post.cover }, ld: ld.Article(post) }),
+  load:       ({ params }) => loadPost(params['slug'] ?? ''),
+  meta:       ({ data: post }) => ({
+    title: post.title,
+    description: post.excerpt,
+    og: { image: post.cover },
+    ld: [ld.Article({
+      headline: post.title,
+      datePublished: post.publishedAt,
+      author: { name: post.author },
+    })],
+  }),
 });
 ```
 
@@ -118,6 +148,8 @@ personal: a recipient landing addressed by a capability token in its path, or a 
 that must never answer with an old result. `cache` replaces that default:
 
 ```ts
+import { defineRoute } from '@ultimat3/render';
+
 export const config = defineRoute({
   render: 'ssr',
   offline: 'network-only',
@@ -426,7 +458,20 @@ See [I18n](I18n), [Timezones and dates](Timezones-And-Dates), [Money](Money).
 ## Image pipeline
 
 ```tsx
-<Image src={post.cover} alt={post.title} sizes="(max-width: 700px) 100vw, 700px" priority />
+import { Image } from '@ultimat3/ui';
+
+declare const post: { readonly cover: string; readonly title: string };
+
+export const cover = (
+  <Image
+    src={post.cover}
+    alt={post.title}
+    width={1400}
+    height={700}
+    sizes="(max-width: 700px) 100vw, 700px"
+    priority
+  />
+);
 ```
 
 One `<Image>` shape, one capability contract, stated once — in [`docs/idea/07-rendering-seo.md` → Image pipeline](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/07-rendering-seo.md#image-pipeline): variants, `srcset`, inlined dimensions, the blur placeholder, the `@ultimat3/core` runtime, and the `ImageTransformDriver` seam AVIF/WebP variants come from. Restating it here would let the two copies drift.
@@ -440,13 +485,16 @@ status on the response.
 ```ts
 import { defineRoute, withStatus } from '@ultimat3/render';
 
+declare function hostList(args: { id: string }): Promise<{ readonly label: string } | undefined>;
+
 export const config = defineRoute({
   render: 'ssr',
   offline: 'runtime',
   load: async ({ params }) => {
-    const host = await hostList({ id: params.host });
+    const hostId = params['host'] ?? '';
+    const host = await hostList({ id: hostId });
     return host === undefined
-      ? withStatus(404, { kind: 'missing' as const, hostId: params.host })
+      ? withStatus(404, { kind: 'missing' as const, hostId })
       : { kind: 'page' as const, host };
   },
   meta: ({ data, t }) => ({ title: data.kind === 'missing' ? t('notFound') : data.host.label }),

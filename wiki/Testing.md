@@ -89,7 +89,7 @@ Any test that can pass twice and fail the third time is worse than no test — i
 | Control | Behavior |
 |---|---|
 | **Seeds** | `seed(name)` builds a named, deterministic fixture graph via entity factories. Same input → identical rows, identical UUIDs |
-| **Frozen clock** | time starts at a fixed instant. `clock.advance('3d')` moves it, and it also drives `step.sleep` and cron in tests |
+| **Frozen clock** | time starts at a fixed instant. `clock.advance('3d')` moves it and makes a `step.sleep` due. It fires no cron: a task test reads `task.entries(occurrenceMs)` |
 | **Seeded RNG** | `Math.random`, `crypto.randomUUID`, and Bun's RNG are seeded per test file from its path — reproducible, distinct across files |
 | **Sealed network** | a `fetch`, a `new WebSocket(…)`, a `Bun.connect(…)` or a `node:net` / `node:tls` / `node:http` / `node:https` / `node:http2` connection (all dial through `net.Socket#connect`, sealed there) to anywhere not explicitly mocked or allowed **fails the test** with `X_TEST_NETWORK_SEALED`, naming the URL and the fix — every dial shares one gate, so the allow-list (`allowHost('host:port')` for a socket) and `offline()` apply to all of them — `offline()` refuses a loopback dial too (`X_TEST_NETWORK_OFFLINE`). A `node:*` refusal is the socket's `error` event, as a failed real dial is. A `mockFetch` route answers `fetch` only: a `node:http` request to a mocked host is refused, never dialled. A `Bun.udpSocket` send (and `node:dgram`, which sends through it) asks the same gate per datagram, the connected peer included: a refusal throws from `send`/`sendMany` as Bun's own UDP failures do, a refused `connect` option rejects, and `dgram` hands it to the send callback — or emits `error` when there is none. A unix socket is never sealed |
 | **Sealed names** | Every resolution path asks the same gate — `lookup`, every `resolve*`, `reverse`, `lookupService` (by `node:dns`, `node:dns/promises` or `Bun.dns`, a named import bound before the seal included), both `Resolver` classes and `Bun.dns.prefetch`: a host a `mockFetch` route names answers an address query (`lookup`, `A`, `ANY`) with `MOCKED_HOST_ADDRESS` (`11.11.11.11`, public, so an SSRF screen such as `screenDial` passes it and the dial it pins still meets the mock by its `Host`) and any other record type (`MX`, `TXT`, …) with `X_TEST_NETWORK_SEALED` — a mock declares an endpoint, not a zone; this machine, an `allowHost` name and a `lookup` of an address literal resolve for real (a `reverse` of a public address is sealed: it is a query); offline refuses every name (`X_TEST_NETWORK_OFFLINE`); any other name is `X_TEST_NETWORK_SEALED` — its fix opens with `mockFetch(…)` for an address query and with `allowHost('<name>')` for a record or reverse query, which no mock answers. A RegExp route names a host it matches at the origin or spells in its source |
@@ -219,6 +219,10 @@ committed baseline, never on an absolute score — models drift, prompts should 
 | the baseline was never recorded | `X_EVAL_BASELINE_MISSING` |
 
 ```ts
+import { defineEval, exact, jsonSchemaValid, type Prompt } from '@ultimat3/ai';
+
+declare const summarizePrompt: Prompt<{ ticket: string }>;
+
 export const summarizeEval = defineEval({
   name: 'summarize',
   prompt: summarizePrompt,
@@ -271,27 +275,61 @@ is the app's script — `transcriptOf(error)` hands over what happened.
 
 ```ts
 // contract test — generated as a scaffold with the action
-test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
-  const { post, stranger } = await seed('two-orgs');
-  await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_FORBIDDEN');
+import { type Action, t } from '@ultimat3/action';
+import { testActor } from '@ultimat3/policy';
+import { contractTest, expect } from '@ultimat3/testing';
+
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+declare const postId: string;
+
+// Named here because this file does not boot the app; at boot `defineApi` stamps the same name.
+const target = publishPost.named('publishPost');
+
+// Holds the grant, wrong org: a denial here is the policy deciding, not the permission check.
+const outsider = testActor('outsider', {
+  orgId: '00000000-0000-4000-8000-000000000009',
+  permissions: ['post:publish'],
+}).actor;
+
+contractTest('publishPost denies a foreign org', async () => {
+  const denied = await target.as(outsider, { postId }).catch((error: unknown) => error);
+  expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 ```
 
 ```ts
 // job test — the step guarantee, not the happy path
-test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) => {
-  const { org } = await seed('fresh-org');
+import type { JobHandle } from '@ultimat3/jobs';
+import type { AnyMailDefinition } from '@ultimat3/mail';
+import { expect, jobTest } from '@ultimat3/testing';
+
+declare const nudgeEmail: AnyMailDefinition;
+declare const onboardOrg: JobHandle<{ orgId: string }>;
+declare const orgId: string;
+
+jobTest('a resumed run replays its steps, and a mail blip retries the mail job', async ({
+  clock,
+  mail,
+  runJobs,
+}) => {
   mail.failOnce(nudgeEmail);
-  await runJobs(onboardOrg, { orgId: org.id });
+  await runJobs(onboardOrg, { orgId });
   clock.advance('3d');
-  const trace = await runJobs.drain();
-  expect(trace.steps.provision.executions).toBe(1);       // replayed from storage
-  expect(trace.steps['nudge'].executions).toBe(2);        // only this one retried
+  const resumed = await runJobs.drain();
+  expect(resumed.steps['provision']?.executions).toBe(1);    // replayed from storage
+  expect(resumed.steps['nudge']?.executions).toBe(1);
+  expect(mail.outbox()).toHaveLength(1);                  // the nudge's send was refused
+
+  clock.advance('1h');
+  const retried = await runJobs.drain();
+  expect(mail.outbox()).toHaveLength(2);                  // the mail job's retry lands
+  expect(retried.steps['nudge']?.executions).toBe(1);        // and the step never ran again
 });
 ```
 
-The `job` example is the one that matters: it asserts the durability guarantee, not that mail was sent. See [Jobs and workflows](Jobs-And-Workflows) and [Policies and authz](Policies-And-Authz).
+The `job` example is the one that matters: finished steps replay, and a refused send costs one retry of the mail job, never a re-run of the step that enqueued it. See [Jobs and workflows](Jobs-And-Workflows) and [Policies and authz](Policies-And-Authz).
 
 ## The accessibility audit
 
@@ -373,6 +411,14 @@ Installed by the preload on `expect`.
 enumerate a sealed column ([Sealed columns](Entities-And-Migrations#sealed-columns)):
 
 ```ts
+import { database, entity, text, uuid } from '@ultimat3/entity';
+import { expect } from '@ultimat3/testing';
+
+const connections = entity('connections', {
+  columns: { id: uuid().primaryKey(), label: text(), password: text().sealed() },
+});
+const db = database({ connections });
+
 const row = await db.connections.insert({ label: 'primary', password: 'hunter2' });
 
 expect(row).toEqual({ id: row.id, label: 'primary', password: 'hunter2' });    // fails, empty diff
@@ -438,6 +484,14 @@ The worked example: `examples/dummy/apps/web/app/settings/page.test.ts`. `As of 
 ## Running a mutator's local half
 
 ```ts
+import { type Mutator, t } from '@ultimat3/action';
+import { expect, memoryLocalTx } from '@ultimat3/testing';
+
+const RenameInput = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+declare const renamePost: Mutator<typeof RenameInput, typeof RenameInput>;
+declare const id: string;
+declare const orgId: string;
+
 const store = memoryLocalTx({ posts: { [id]: { id, title: 'before', pending: false } } });
 renamePost.local(store.tx, { id, orgId, title: 'after' });
 expect(store.rows('posts')).toEqual({ [id]: { id, title: 'after', pending: true } });
@@ -574,6 +628,11 @@ The last five are **declared, not built**. The framework does not bundle a brows
 
 ```ts
 // scripts/test-setup.ts
+import { defineFixtures, type PageLike } from '@ultimat3/testing';
+
+declare function openBrowserPage(): Promise<PageLike>;
+declare function loadSeed(name: string): Promise<void>;
+
 defineFixtures({ page: () => openBrowserPage(), seed: () => loadSeed });
 ```
 
@@ -584,6 +643,15 @@ defineFixtures({ page: () => openBrowserPage(), seed: () => loadSeed });
 ## A job under `runJobs`
 
 ```ts
+import { unitTest } from '@ultimat3/testing';
+import { expect } from 'bun:test';
+import { type JobHandle } from '@ultimat3/jobs';
+
+declare const reindexPost: JobHandle<{ id: string; orgId: string }>;
+
+declare const orgId: string;
+declare const id: string;
+
 unitTest('a row deleted before the run is skipped, not failed', async ({ runJobs }) => {
   const trace = await runJobs(reindexPost, { id, orgId });
   expect(trace.executions.map((run) => run.outcome)).toEqual(['completed']);
@@ -656,6 +724,18 @@ mount (`beforeAll`, 60 s unless `timeoutMs` says otherwise) and the teardown; th
 once per file.
 
 ```ts
+import { join } from 'node:path';
+import {
+  describeIslandState,
+  expect,
+  type IslandStatesManifest,
+  type IslandStateSuiteOptions,
+  test,
+} from '@ultimat3/testing';
+
+declare const buildIslands: IslandStateSuiteOptions['build'];
+declare const counterStates: IslandStatesManifest;
+
 const island = { build: buildIslands, root: join(import.meta.dir, '..', '..', '..') };
 
 describeIslandState(counterStates, 'idle', island, (mounted) => {
@@ -691,6 +771,13 @@ Symbol.for('ultimate.realtime'))`: that leaves the socket open. `As of 2026-11`.
 ## Testing an authenticator
 
 ```ts
+import type { Authenticator } from '@ultimat3/http';
+import { authRequest, expect, unitTest } from '@ultimat3/testing';
+
+declare const authenticate: Authenticator;     // what the app hands configureAuthenticator()
+declare const member: { readonly id: string };
+declare const token: string;
+
 unitTest('a session cookie resolves the member it was issued to', async () => {
   const actor = await authenticate(...(await authRequest({ cookies: { session: token } })));
   expect(actor?.id).toBe(member.id);
@@ -769,6 +856,10 @@ terminal and never the logger, so a test asserting on an `info` audit line passe
 `x dev` warns about a query loop; CI is where nobody is watching. Destructuring `statements` installs the same detector in **strict** mode for the length of one test:
 
 ```ts
+import { expect, test } from '@ultimat3/testing';
+
+declare function renderFeed(): Promise<void>;
+
 test('the feed reads its authors once', async ({ statements }) => {
   await renderFeed();
   //   X_N_PLUS_ONE_QUERY: members.findById ran 5 times in one request — one read per row
@@ -791,6 +882,12 @@ The loop runs to its end and the verdict is raised when the fixture is disposed 
 A deliberate loop is declared where it is written, never silenced at the test:
 
 ```ts
+import { expectedQueryLoop } from '@ultimat3/db';
+
+declare function searchEachField(term: string): Promise<void>;
+
+declare const term: string;
+
 await expectedQueryLoop('one indexed lookup per searchable field', () => searchEachField(term));
 ```
 
@@ -969,6 +1066,13 @@ unitTest('a cursor round-trips any position', () => {
 One contract, asserted against many subjects, with the subject passed as a **thunk** so a `beforeAll`-built value is read at test time rather than at declaration time.
 
 ```ts
+import { behavesLike, describe, expect, sharedExamples, test, testName } from '@ultimat3/testing';
+
+interface Denier {
+  denies(actor: 'anonymous'): boolean;
+}
+declare const publishPost: Denier;
+
 const anAuthenticatedAction = sharedExamples<Denier>('an authenticated action', (subject) => {
   test('denies an anonymous actor', () => {
     expect(subject().denies('anonymous')).toBe(true);
@@ -1060,6 +1164,7 @@ shape, same unreached code. `As of 2026-11`.
 | A step held by a cookie | `defineExercise({ finishSignIn: { request: { cookies: { pending: '<value>' } } } })` — the call's inbound request carries it, read by `useRequestCookie()` / `useRequestHeader()` in the handler; `headers: { … }` beside it. A function `request: async (actor) => ({ cookies: { sid: await mintSession(actor) } })` is awaited before each call, as that call's actor (A's and B's each mint their own). A cookie goes in `cookies`, never a `Cookie` header: that, a name outside the token set or a header `Headers` refuses is `X_EXERCISE_REQUEST_INVALID`. Read by `x exercise` and the contract step alike: `.contract({ exercise })` runs each generated run inside that request (`withRequestAs`, `@ultimat3/http`); with no `request` its call has none, so a handler reading a cookie there is `X_CONTRACT_DEFECT` on `X_NO_REQUEST` (`As of 2026-11-08`) |
 | Rows a generated value cannot satisfy | a cross-column `c.satisfies(…)` reads `X_SEED_GRAPH_UNSATISFIED`: `defineExercise({ … }, { factories: { bosses: defineFactory(bosses, { defaults: (i) => ({ … }) }) } })`, keyed by entity name, the graph's keys kept. A column that follows from a key or reference the graph picked: `derive: (row) => ({ scopeKey: … })` beside `build`/`reset`, reading `row.ownerOrgId`. A partial unique whose columns the factory builds is the database's to judge. An unknown name is `X_DECLARATION_UNKNOWN` |
 | Drift | a schema no draw satisfies is `unreached`, `X_CONTRACT_DRIFT`; its `override` binds each field the sampler names as a gap with what it needs (`digest: "<must match ^[0-9a-f]{64}$>"`), the contract step's `fix:` the same `input:` (`As of 2026-11-08`) |
+| Seed | one constant unless `--seed <n>` names another, so a tree gets one verdict; `--seed random` explores a fresh one, and the report's `seed` replays either (`As of 31.47.0`). Row ids follow the seed and the scale sweep's sized calls share one tenant, in order, so a call that archives a row changes what later calls find. A helper in `apps/web/exercise.ts` (an `input`, a factory) picks its rows by what they are, never by id order, and assumes no order between sized calls: one that does is reported `unproven`, at some seeds and not others |
 | Report | `.x/exercise.json` and `--json`: `{ seed, counts, records[] }`, each record `{ kind, name, outcome, code?, reason?, defect?, statements, effects, ms, override?, fix?, tenant?, crash? }` — `fix` where no override reaches it; `defect` on a 5xx: `{ cause, statement?, fields? }`, the error's own cause (a value the input held under a credential key or a `.sensitive()` field masked `[redacted]`), the SQL a database refusal names and the paths a validation failure names, all carried into the `X_CONTRACT_EXERCISE_UNREACHED` finding. The fields before `tenant` are A's call. The human table's `tenant` and `crash` columns are the verdicts, `-` where none ran |
 | Gate | the `exercise` step, after `job`, runs `x exercise --json` as a child and is red on its findings: `X_CONTRACT_EXERCISE_UNREACHED`, `X_TENANT_LEAK`, `X_TENANT_WRITE_CROSSED`, `X_JOB_CRASH_DIVERGED`, and — on a whole pass, not `x exercise <name>` — `X_ENTITY_TENANT_UNDECLARED`. `unreached` is never sampled or skipped: it is a finding whose `fix:` is the entry to paste |
 
@@ -1268,7 +1373,9 @@ What is red is `x.verify.json`'s call ([Configuration](Configuration#the-gates-f
 `x new` writes `{ "unprovenMax": 0, "statementsMax": 100 }`. An app scaffolded before 31.16.0 stays
 green with warnings until it opts in, and `x upgrade` writes the figures its hop measured — the
 busiest undeclared call, never under 100 — so the floor starts where the app is. A figure the run
-beats is a warning naming the lower number: the floor only falls.
+beats is a warning naming the lower number: the floor only falls. A figure measured before 31.47.0
+came from a random seed, so the constant one can land above it: `x exercise --json` re-measures, and
+each `unproven` record names the helper to fix. Nothing raises a floor for you.
 
 ## Memory, width and isolation
 

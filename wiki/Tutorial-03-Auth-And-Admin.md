@@ -124,6 +124,14 @@ The defaults: a 30-day absolute and a 7-day idle session, cookie `__Host-x_sessi
 Register, log in, resolve — the real flow, against Postgres, with `const auth = appAuth()` and `org` the seeded demo org (`DEMO_ORG_ID` from `apps/web/shared/demo-org.ts`):
 
 ```ts
+import { type Auth, login, register } from '@ultimat3/auth';
+
+declare const auth: Auth;
+declare const org: string;
+declare const email: string;
+declare const password: string;
+declare const ip: string;
+
 await register(auth, { email, password, orgId: org, roles: ['member'] });
 const { actor, token, cookie } = await login(auth, { email, password, ip });
 ```

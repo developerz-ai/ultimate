@@ -1,10 +1,13 @@
 // `hmac()` against the published vectors, and against the Bun bug it exists to route around: a
 // failed WebCrypto EC import leaves an OpenSSL error behind that the NEXT keyed `Bun.CryptoHasher`
-// in the process throws. The helper must survive it; the raw hasher is pinned to still fail, so
-// this suite turns red the day Bun fixes it — then delete the pin and the `why:` in `hmac.ts`.
+// in the process throws. The helper must survive it; on the Bun the gate pins the raw hasher must
+// still fail, so moving `.bun-version` to a fixed Bun turns this red — then delete the pin and the
+// `why:` in `hmac.ts`. Other Buns (`compat.yml`) may have the fix already: canary 1.4.5 does.
 
 import { describe, expect, test } from 'bun:test';
 import { hmac } from './hmac';
+
+const GATE_BUN = (await Bun.file(`${import.meta.dir}/../../../.bun-version`).text()).trim();
 
 /** A JWK whose point is not on P-256: `importKey` rejects it, and leaves the error queued. */
 const BAD_EC = { kty: 'EC', crv: 'P-256', d: 'AAAA', x: 'AAAA', y: 'AAAA' };
@@ -83,11 +86,14 @@ describe('after a failed WebCrypto EC import', () => {
     rawKeyedHasherThrows();
   });
 
-  // BUN BUG PIN (Bun 1.4.4). Red means Bun FIXED it: delete this test and the `why:` in `hmac.ts`
-  // — the helper can stay, it is still the one keyed hash (`bun run keyed-hasher`).
-  test('the raw keyed Bun.CryptoHasher still throws the stale error, once', async () => {
-    await failEcImport();
-    expect(rawKeyedHasherThrows()).toBe(true);
-    expect(rawKeyedHasherThrows()).toBe(false);
-  });
+  // BUN BUG PIN (Bun 1.4.4). Red means the pinned Bun FIXED it: delete this test and the `why:` in
+  // `hmac.ts` — the helper can stay, it is still the one keyed hash (`bun run keyed-hasher`).
+  test.if(Bun.version === GATE_BUN)(
+    'the raw keyed Bun.CryptoHasher still throws the stale error, once',
+    async () => {
+      await failEcImport();
+      expect(rawKeyedHasherThrows()).toBe(true);
+      expect(rawKeyedHasherThrows()).toBe(false);
+    },
+  );
 });

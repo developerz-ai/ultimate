@@ -2,7 +2,7 @@
 // refusal, the committed source, a regeneration with no flags, and the `drift` rail — a hand edit
 // is `X_CLIENT_EDITED`, a moved source is `X_CLIENT_STALE`, and both clear on regeneration.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp; the scratch app must be a fresh directory per run.
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: the scratch app lives under the OS temp directory, which only node:os names.
@@ -12,10 +12,7 @@ import { join } from 'node:path';
 import { checkClientDrift } from './client-emit-drift';
 import { dispatch } from './dispatch';
 
-const root = await mkdtemp(join(tmpdir(), 'x-client-cmd-'));
-afterAll(() => rm(root, { recursive: true, force: true }));
-await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
-await Bun.write(join(root, 'package.json'), '{ "name": "scratch", "version": "0.0.0" }\n');
+let root = '';
 
 const vendorDoc = (field: string): unknown => ({
   openapi: '3.1.0',
@@ -70,9 +67,21 @@ const run = async (...argv: string[]): Promise<Ran> => {
 const writeDoc = (doc: unknown): Promise<number> =>
   Bun.write(join(root, 'weather.json'), JSON.stringify(doc));
 
+/** The state every drift test starts from: the client vendored around the unsupported `alerts`. */
+const vendored = (): Promise<Ran> =>
+  run('vendor', 'weather', '--from', 'weather.json', '--only', 'read');
+
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), 'x-client-cmd-'));
+  await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(root, 'package.json'), '{ "name": "scratch", "version": "0.0.0" }\n');
+  await writeDoc(vendorDoc('celsius'));
+});
+
+afterEach(() => rm(root, { recursive: true, force: true }));
+
 describe('x client vendor', () => {
   test('a construct the compiler refuses is X_CLIENT_SPEC_UNSUPPORTED with its pointer', async () => {
-    await writeDoc(vendorDoc('celsius'));
     const ran = await run('vendor', 'weather', '--from', 'weather.json');
     expect(ran.code).toBe(1);
     expect(ran.body.findings?.[0]?.code).toBe('X_CLIENT_SPEC_UNSUPPORTED');
@@ -80,7 +89,7 @@ describe('x client vendor', () => {
   });
 
   test('--only around it writes source.json, schemas.ts and client.ts', async () => {
-    const ran = await run('vendor', 'weather', '--from', 'weather.json', '--only', 'read');
+    const ran = await vendored();
     expect(ran.body.ok).toBe(true);
     expect(ran.body.data?.operations).toEqual(['forecast']);
     expect(ran.body.data?.written).toEqual([
@@ -92,6 +101,7 @@ describe('x client vendor', () => {
   });
 
   test('a hand edit is X_CLIENT_EDITED; regenerating with no flags clears it and keeps --only', async () => {
+    await vendored();
     const client = Bun.file(join(root, 'apps/web/clients/weather/client.ts'));
     await Bun.write(client, `${await client.text()}\n// mine\n`);
     expect((await checkClientDrift(root)).map((f) => [f.code, f.at])).toEqual([
@@ -103,6 +113,7 @@ describe('x client vendor', () => {
   });
 
   test('a moved source is X_CLIENT_STALE whose fix regenerates it', async () => {
+    await vendored();
     const source = join(root, 'apps/web/clients/weather/source.json');
     const moved = vendorDoc('kelvin');
     await Bun.write(source, JSON.stringify(moved));
@@ -114,6 +125,7 @@ describe('x client vendor', () => {
   });
 
   test('reformatting source.json is not a change of contract', async () => {
+    await vendored();
     const source = join(root, 'apps/web/clients/weather/source.json');
     await Bun.write(source, JSON.stringify(JSON.parse(await Bun.file(source).text())));
     expect(await checkClientDrift(root)).toEqual([]);

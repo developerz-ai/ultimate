@@ -12,17 +12,32 @@ The `route` primitive and the four render modes.
 | `stream` | static shell flushed instantly, holes streamed | **default for app pages** |
 
 ```ts
+import { tag } from '@ultimat3/cache';
+import { defineRoute } from '@ultimat3/render';
+import { ld } from '@ultimat3/seo';
+
+interface Post {
+  readonly title: string;
+  readonly excerpt: string;
+  readonly cover: string;
+  readonly publishedAt: string;
+  readonly author: { readonly name: string };
+}
+declare function listPostSlugs(): Promise<readonly string[]>;
+declare function loadPost(slug: string): Promise<Post>;
+
 export const config = defineRoute({
   render:     'isr',                  // static | isr | ssr | stream
   revalidate: { tags: [tag.post] },
-  prerender:  () => db.posts.slugs(),
+  prerender:  () => listPostSlugs(),
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
   budget:     { js: '40kb' },
-  load:       ({ params }) => db.posts.bySlug(params.slug),   // once per render
+  load:       ({ params }) => loadPost(params['slug'] ?? ''),   // once per render
   meta:       ({ data, url }) => ({ title: data.title, description: data.excerpt,
                                     og: { image: data.cover }, canonical: url,
-                                    ld: ld.Article(data) }),
+                                    ld: [ld.Article({ headline: data.title, datePublished: data.publishedAt,
+                                                      author: data.author })] }),
 });
 
 export function Page(props: { data: Post }) { /* the SAME object meta was given */ }
@@ -152,6 +167,8 @@ declaration receives, all four required:
 
 ```ts
 import type { RouteConfig, RouteMetaContext } from '@ultimat3/render';
+
+type Post = { readonly id: string; readonly orgId: string; readonly title: string };
 
 declare const config: RouteConfig<Post>;
 declare const ctx: RouteMetaContext<Post>;   // { data, params, url, t }
@@ -298,6 +315,8 @@ types-only.
 with a plan toggle. The page stays `render: 'static'`; the modal is the only JavaScript on it.
 
 ```tsx
+import { defineRoute, island } from '@ultimat3/render';
+
 const ContactModal = island({ src: './contact-modal.island.tsx', props: ['subject'] });
 
 export const config = defineRoute({
@@ -489,6 +508,16 @@ by the request that carries it.
 ### It counts against the route's budget
 
 ```ts
+import { hydrateRuntime, islandCollector } from '@ultimat3/render';
+import { renderToHtml } from '@ultimat3/render/server';
+
+type CollectorInput = Parameters<typeof islandCollector>[0];
+declare const file: CollectorInput['file'];
+declare const resolve: NonNullable<CollectorInput['resolve']>;
+declare const config: { readonly hydrate: CollectorInput['hydrate'] };
+declare const page: Parameters<typeof renderToHtml>[0];
+declare const document: { body: string };
+
 const collector = islandCollector({ file, hydrate: config.hydrate, resolve });
 const html = await renderToHtml(page, { islands: collector });
 document.body += hydrateRuntime(collector.directives);   // the one thing left to remember

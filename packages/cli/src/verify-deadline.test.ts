@@ -35,6 +35,17 @@ const goneSoon = async (pids: readonly number[]): Promise<boolean> => {
   return false;
 };
 
+/** A spawned child shows its parent's environment until it execs, so the tag appears shortly after. */
+const taggedSoon = async (read: () => Promise<readonly number[]>): Promise<readonly number[]> => {
+  let pids = await read();
+  for (let i = 0; i < 100 && pids.length === 0; i += 1) {
+    // real-clock: the child execs on its own time, after the spawn that named its pid returned
+    await Bun.sleep(20);
+    pids = await read();
+  }
+  return pids;
+};
+
 // Every child here sleeps 20 s, never 300: each test kills it within milliseconds, and one the tag
 // scan missed under CI load used to outlive the test holding the runner's pipe, so the job hung to
 // its timeout (31.40.0's release commit, cancelled). Twenty seconds bounds that leak.
@@ -161,9 +172,8 @@ describe('guardStep', () => {
       spawned = resolve;
     });
     const running = guard.runner(['sleep', '20'], { cwd: process.cwd(), onSpawn: spawned });
-    // The spawn has returned, so the child has exec'd with the environment it was given.
     const child = await pid;
-    expect(await tagged(outer)).toEqual([child]);
+    expect(await taggedSoon(() => tagged(outer))).toEqual([child]);
     expect(await killTagged(outer)).toEqual([{ pid: child, command: 'sleep 20' }]);
     expect((await running).ok).toBe(false);
   });
@@ -179,7 +189,7 @@ describe('where there is no procfs', () => {
     });
     const running = guard.runner(['sleep', '20'], { cwd: process.cwd(), onSpawn: spawned });
     const found = [await pid];
-    expect(taggedPids(await psProcesses(), tag)).toEqual(found);
+    expect(await taggedSoon(async () => taggedPids(await psProcesses(), tag))).toEqual(found);
     expect(await killTagged(tag, psProcesses)).toHaveLength(1);
     expect((await running).ok).toBe(false);
     expect(await goneSoon(found)).toBe(true);

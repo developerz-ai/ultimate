@@ -340,6 +340,15 @@ The marker is SQL the migration's checksum covers, so it must be added **before*
 Same rule `llm()` follows for a model call ([`docs/idea/02-primitives.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/02-primitives.md)): a one-pass sweep over a table is durable background work with an input schema, a retry policy, an idempotency key and a queue — the definition of a `job` — so `backfill()` *returns* one instead of the framework growing a ninth kind of thing. That single line is what gives a backfill `.enqueue()`, the worker's cancellation, the dead-letter path, `x jobs show` and a manifest row for free, with nothing declared twice. See [Jobs and workflows](Jobs-And-Workflows) for the `job` primitive itself.
 
 ```ts
+import { backfill } from '@ultimat3/jobs';
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), title: text() },
+});
+const db = database({ posts });
+
 export const normalizePostTitles = backfill({
   name: 'normalize-post-titles',
   tenant: 'none',   // a sweep spans every tenant; the PASS opens the cross-tenant scope, not you
@@ -422,6 +431,10 @@ The batch runs inside its own durable step, and the checkpoint is written **afte
 Re-enqueueing a backfill that has already run to completion runs a **real job** whose pass is the no-op. The two are different facts and only the second one is dedupe:
 
 ```ts
+import { type JobHandle } from '@ultimat3/jobs';
+
+declare const normalizePostTitles: JobHandle<{ force?: boolean }>;
+
 const first = await normalizePostTitles.enqueue({});
 first.deduped;   // false — this is the run
 

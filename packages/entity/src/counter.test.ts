@@ -10,6 +10,7 @@ import { type Driver, database, memoryDriver } from './database';
 import { entity } from './entity';
 import { postgresDriver } from './pg-driver';
 import { clearRegistry } from './registry';
+import { restoreRegistryAfterEachTest } from './registry-restore-fixture';
 
 const PGLITE_BOOT_MS = 30_000;
 
@@ -56,6 +57,9 @@ afterAll(async () => {
 afterAll(() => {
   clearRegistry();
 });
+
+// A refused counter refuses every reading of the counters, so the stray key must end with its test.
+restoreRegistryAfterEachTest();
 
 type Db = ReturnType<typeof database<typeof ENTITIES>>;
 
@@ -127,7 +131,6 @@ describe('counts · declaration', () => {
       },
     ]);
   });
-  // Last: once registered, the stray key refuses every reading of the counters, as it should.
   test('a counter on a key that is no foreign key to the parent key is refused at describe', () => {
     const stray = entity('cnt_stray', {
       columns: {

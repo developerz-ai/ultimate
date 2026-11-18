@@ -3,8 +3,8 @@
 // dev server on purpose — the complete expected picture list has to exist before a capture starts,
 // or "produced nothing and exited 0" is a result nobody can tell from success.
 
-// why: no Bun native joins a path or relativises one; `Bun.file` and `import()` both take one joined.
-import { join, relative, sep } from 'node:path';
+// why: no Bun native joins a path; `Bun.file` and `import()` both take one joined.
+import { join } from 'node:path';
 import { ISLAND_EXTENSION } from '@ultimat3/render';
 import type { IslandStatesManifest } from '@ultimat3/testing';
 import {
@@ -17,6 +17,7 @@ import {
 import { ISLAND_GLOB } from './island-bundle';
 import { IslandStatesFileEmptyError } from './island-shot-errors';
 import { hasPathSegment } from './path-segments';
+import { posixRelative } from './posix-path';
 
 /**
  * `.island.states.ts`, built from the two constants that own its halves and restated as neither:
@@ -39,7 +40,7 @@ export async function discoverIslandStates(root: string): Promise<readonly strin
   const scan = new Bun.Glob(ISLAND_STATES_GLOB).scan({ cwd: root, absolute: true });
   for await (const absolute of scan) {
     if (hasPathSegment(absolute, 'node_modules')) continue;
-    files.push(relative(root, absolute).split(sep).join('/'));
+    files.push(posixRelative(root, absolute));
   }
   return files.sort();
 }

@@ -20,7 +20,7 @@
 
 // why: Bun ships no path API. `posix` does the specifier arithmetic (an app-relative route file is
 // POSIX by construction), `join`/`basename` the filesystem side.
-import { join, posix, relative, sep } from 'node:path';
+import { join, posix } from 'node:path';
 import type { IslandsConfig } from '@ultimat3/core';
 import { logger, renderThrowable } from '@ultimat3/core';
 import { ISLAND_EXTENSION } from '@ultimat3/render';
@@ -63,6 +63,7 @@ import { islandStylesPlugin, stylesheetsOf } from './island-styles';
 import type { Vendors } from './island-vendor';
 import { loadingVendor, vendorBuilder, vendorExternalPlugin, vendorShared } from './island-vendor';
 import { hasPathSegment } from './path-segments';
+import { posixRelative } from './posix-path';
 import { solidJsxCoveragePlugin, solidJsxPlugin } from './solid-loader';
 
 // `dev-rebuild.ts` names the options type here, where it lived before the split.
@@ -142,7 +143,7 @@ export async function discoverIslands(root: string): Promise<readonly string[]> 
   for await (const absolute of new Bun.Glob(ISLAND_GLOB).scan({ cwd: root, absolute: true })) {
     // Root-relative, as `isScannedModule` tests it: an app under `<anything>/node_modules/<app>`
     // holds the segment in every absolute path, and found no island at all.
-    const file = relative(root, absolute).split(sep).join('/');
+    const file = posixRelative(root, absolute);
     if (!hasPathSegment(file, 'node_modules')) files.push(file);
   }
   return files.sort();

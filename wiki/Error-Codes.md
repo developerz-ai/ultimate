@@ -34,7 +34,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 
 | Package | Page | Codes |
 |---|---|---|
-| `@ultimat3/action` | [Error-Codes-action](Error-Codes-action) | 33 |
+| `@ultimat3/action` | [Error-Codes-action](Error-Codes-action) | 34 |
 | `@ultimat3/admin` | [Error-Codes-admin](Error-Codes-admin) | 16 |
 | `@ultimat3/ai` | [Error-Codes-ai](Error-Codes-ai) | 36 |
 | `@ultimat3/auth` | [Error-Codes-auth](Error-Codes-auth) | 30 |
@@ -1010,6 +1010,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_REMOTE_VERIFY_HOST_MISSING | [scripts](Error-Codes-scripts) |
 | X_REMOTE_VERIFY_OFFSET_INVALID | [scripts](Error-Codes-scripts) |
 | X_REMOTE_VERIFY_SYNC_FAILED | [scripts](Error-Codes-scripts) |
+| X_REPLAY_PRINCIPAL_MISMATCH | [action](Error-Codes-action) |
 | X_REPLICATION_FAILED | [realtime](Error-Codes-realtime) |
 | X_REPLICATION_PROTOCOL | [realtime](Error-Codes-realtime) |
 | X_REPLICATION_SLOT_INVALIDATED | [realtime](Error-Codes-realtime) |

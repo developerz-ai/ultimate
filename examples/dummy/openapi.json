@@ -6079,6 +6079,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -6174,6 +6200,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -6242,6 +6294,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -6312,6 +6390,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -6380,6 +6484,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -6478,6 +6608,32 @@
               "X_POST_NOT_FOUND"
             ]
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -6569,7 +6725,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -6659,7 +6818,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -6800,7 +6962,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -6899,6 +7064,32 @@
               "X_POST_NOT_FOUND"
             ]
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -6994,6 +7185,32 @@
               "X_ORG_NOT_FOUND"
             ]
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -7068,6 +7285,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -7187,7 +7430,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -7277,7 +7523,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -7347,6 +7596,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -7448,6 +7723,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -7516,6 +7817,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -7589,6 +7916,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -7657,6 +8010,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -7746,7 +8125,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -7836,7 +8218,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -7907,6 +8292,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -7975,6 +8386,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -8045,6 +8482,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -8114,6 +8577,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -8182,6 +8671,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -8264,7 +8779,8 @@
                       "properties": {
                         "type": {
                           "enum": [
-                            "urn:ultimate:error:X_POST_SLUG_TAKEN"
+                            "urn:ultimate:error:X_POST_SLUG_TAKEN",
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
                           ]
                         }
                       }
@@ -8273,9 +8789,10 @@
                 }
               }
             },
-            "description": "X_POST_SLUG_TAKEN",
+            "description": "X_POST_SLUG_TAKEN | X_REPLAY_PRINCIPAL_MISMATCH",
             "x-ultimate-errors": [
-              "X_POST_SLUG_TAKEN"
+              "X_POST_SLUG_TAKEN",
+              "X_REPLAY_PRINCIPAL_MISMATCH"
             ]
           },
           "422": {
@@ -8403,7 +8920,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -8480,6 +9000,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -8548,6 +9094,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -8642,6 +9214,32 @@
             "description": "X_POST_NOT_FOUND",
             "x-ultimate-errors": [
               "X_POST_NOT_FOUND"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
             ]
           },
           "422": {
@@ -8751,6 +9349,32 @@
             "description": "X_POST_NOT_FOUND",
             "x-ultimate-errors": [
               "X_POST_NOT_FOUND"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
             ]
           },
           "422": {
@@ -8877,6 +9501,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -8947,6 +9597,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -9036,7 +9712,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -9126,7 +9805,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -9223,6 +9905,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -9291,6 +9999,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -9361,6 +10095,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -9429,6 +10189,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -9499,6 +10285,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -9567,6 +10379,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -9640,6 +10478,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -9708,6 +10572,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -9806,6 +10696,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -9874,6 +10790,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -9949,6 +10891,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -10089,7 +11057,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -10162,6 +11133,32 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -10230,6 +11227,32 @@
               }
             },
             "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {

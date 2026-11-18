@@ -24,12 +24,17 @@ const idOf = (n: number): string => `00000000-0000-7000-8000-${String(n).padStar
 describe('memory · a page past MAX_PAGE_BYTES', () => {
   // One string shared by every row: the store holds 1 MiB, the page weighs `HEAVY_ROWS` of it.
   const body = 'x'.repeat(MIB);
-  const db = database({ docs }, { driver: memoryDriver() });
-
-  test('is refused as X_ENTITY_PAGE_TOO_LARGE, naming select() and limit()', async () => {
+  /** A driver of the test's own, already past the bound. */
+  const heavyDatabase = async () => {
+    const db = database({ docs }, { driver: memoryDriver() });
     await db.docs.insertAll(
       Array.from({ length: HEAVY_ROWS }, (_, n) => ({ id: idOf(n + 1), title: `doc ${n}`, body })),
     );
+    return db;
+  };
+
+  test('is refused as X_ENTITY_PAGE_TOO_LARGE, naming select() and limit()', async () => {
+    const db = await heavyDatabase();
     const error = await db.docs
       .limit(HEAVY_ROWS)
       .all()
@@ -51,6 +56,7 @@ describe('memory · a page past MAX_PAGE_BYTES', () => {
   });
 
   test('is answered narrowed by select() or a smaller limit()', async () => {
+    const db = await heavyDatabase();
     const narrow = await db.docs.select({ id: true, title: true }).limit(HEAVY_ROWS).all();
     expect(narrow).toHaveLength(HEAVY_ROWS);
     expect(await db.docs.limit(50).all()).toHaveLength(50);

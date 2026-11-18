@@ -50,7 +50,7 @@ x version              # CLI version
 | `x jobs` | list, show, retry, cancel, remove and promote jobs; pause and resume a queue · `drain` was removed from the registry `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x tasks` | cron tasks, their timezone and their next run | shipped |
 | `x policy` | which clause decided a permission, and why | shipped |
-| `x exercise [<name>] [--seed n] [--shard i/n]` | run every action, query, job and route `load` once on generated rows, with no test written; the gate's `exercise` step | shipped |
+| `x exercise [<name>] [--seed n\|random] [--shard i/n]` | run every action, query, job and route `load` once on generated rows, with no test written; the gate's `exercise` step | shipped |
 | `x drill [<name>] [--list] [--budget-ms n]` | the app's roles as real processes on real Postgres, Redis and NATS, each dependency faulted through a proxy, each role signalled, or every role started before `ROLE=migrate`, red on any framework contract that does not hold. Not a gate step: it needs the services | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
 | `x mail preview <id>` | render a mail's declared `preview` in every locale, nothing sent | shipped |
@@ -69,7 +69,7 @@ x version              # CLI version
 | `x token create\|list\|revoke` | MCP and API tokens in the app's `x_api_keys`: issue one with exact scopes (plaintext shown once), list an owner's, revoke one · `grant` was removed from the registry `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x config show [--section <key>]` | the resolved `app.config.ts`, defaults merged, credentials redacted | shipped |
 | `x logs tail [--lines n] [--role <role>]` | the last lines of `.x/dev.log`, or one role's (its `.x/logs/<role>.log`, else its lines of the dev log) — the `logs.tail` MCP tool's reader | shipped |
-| `x cache graph\|bust <tag>\|clear` | the tag graph off the manifest (what each write evicts), a bust of one tag or every declared tag through the app's own tiers and bus · `stats` was removed `As of 2026-11-15` ([Known gaps](Known-Gaps#not-built-yet)) | shipped |
+| `x cache graph\|bust <tag>\|clear` | the tag graph off the manifest (what each write evicts), a bust of one tag or every declared tag through the app's own tiers and bus · `stats` was removed `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x explain <query> [--input <json>] [--org <id>]` | one declared query run once on the dev database, every statement it sent planned by the `exercise` step's oracle | shipped |
 | `x profile <route> [--runs 20] [--top 10]` | a CPU profile of rendering one route in this process: the hottest functions, file and line | shipped |
 | `x status [--url <origin>] [--samples n]` | the build each live worker runs (`x_job_workers`), and the build, status and role each sampled origin's `/readyz` answers | shipped |
@@ -1067,6 +1067,8 @@ Two files, one committed and one never:
 
 ```ts
 // app.config.ts
+import { defineEnv, type EnvSchema, installSecrets } from '@ultimat3/core';
+
 await installSecrets();
 export const envSchema = {
   SESSION_SECRET: { type: 'string', secret: true, description: 'Cookie signing key' },
@@ -1442,7 +1444,7 @@ Errors: `X_DECLARATION_UNKNOWN` (with the nearest name as its fix), `X_CLI_BAD_F
 ## x exercise
 
 ```bash
-x exercise [<name>] [--seed n] [--shard i/n] [--json]
+x exercise [<name>] [--seed n|random] [--shard i/n] [--json]
 ```
 
 Every action, query and job the app registers, run **once** against generated rows, with no test
@@ -1481,6 +1483,17 @@ export const exercise = defineExercise({
   sendInvoice: { off: 'charges a card through the payment provider' },
 });
 ```
+
+**The seed** (`As of 31.47.0`). Row ids and tenants are drawn from it, so it is part of the verdict.
+
+| Run | Seed | For |
+|---|---|---|
+| `x exercise`, and the gate's `exercise` step | one constant, `DEFAULT_SEED` from `@ultimat3/testing` | one tree, one verdict |
+| `x exercise --seed <n>` | `n`, 0 to 2147483647 | replaying a run |
+| `x exercise --seed random` | a fresh one | looking for a seed-dependent helper; never the gate |
+
+The first output line and `seed` in `.x/exercise.json` and `--json` name the seed used. Each pass
+has its own scratch database, so repeating a seed collides with nothing.
 
 A blank `off` reason is `X_CONTRACT_EXERCISE_UNDECLARED`; so is an `exercise.ts` with no single
 `defineExercise()` export. The gate's `exercise` step runs this command as a child and is red on
@@ -2159,7 +2172,7 @@ Every flag is read before the database opens: a refusal costs no boot.
 |---|---|---|
 | workers | every live row of `x_job_workers`, through the queue `x jobs list` opens (`DATABASE_URL`, else the embedded database) | `data.workers`: `count`, `draining`, `byBuild` (a row from before the build column is `unknown`), `rows[]` |
 | origins | `--url`: `--samples` (default 5, 1–50) `GET /readyz` per origin, each on its own connection, so a load balancer chooses again | `data.origins[]`: `origin`, `samples`, `byBuild` (`x-ultimate-build`), `byStatus` (`unreachable` when nothing answered), `unstamped` (a 2xx with no build), `roles` (named by a role's health port) |
-| unrecorded | — | `data.unrecorded`: `web`, `sync`, `scheduler`, `replicator` — no fleet-wide record holds their build; name each one's health origin in `--url` ([Known gaps](Known-Gaps#not-built-yet)) |
+| unrecorded | — | `data.unrecorded`: `web`, `sync`, `scheduler`, `replicator` — no fleet-wide record holds their build; name each one's health origin in `--url` ([Known gaps](Known-Gaps#open-by-decision)) |
 
 `--url` takes bare http(s) origins only — a path, query or credentials is `X_CLI_BAD_FLAG`, as is a `--samples` outside 1–50. Both are refused before any request or connection.
 
@@ -2204,7 +2217,7 @@ A route answering `>= 400` is profiled and reported red, `X_PROFILE_ROUTE_FAILED
 
 ## Planned commands
 
-None, `As of 2026-11-16`. The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`, and it is empty: a planned command is registered so it can exit `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, and the last three left the registry with plan 101b slice 13. `x branch`, `x ai` and `x money` are each a row in [Known gaps](Known-Gaps) with the decision ("not planned") and the extension point that does the job today, and the parser refuses each with `X_CLI_UNKNOWN_COMMAND`. `PLANNED_SUBCOMMANDS`, the one-level-down version, has been empty since `As of 2026-11-15` (`x db studio`, `x jobs drain`, `x token grant` and `x cache stats` went the same way). `cmd-planned.test.ts` asserts every row that returns is reachable through the parser and that no `fix` points at another planned command.
+None, `As of 2026-11-16`. The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`, and it is empty, and the registry builds no command from it: the last three left with plan 101b slice 13. `x branch`, `x ai` and `x money` are each a row in [Known gaps](Known-Gaps) with the decision ("not planned") and the extension point that does the job today, and the parser refuses each with `X_CLI_UNKNOWN_COMMAND`. `PLANNED_SUBCOMMANDS`, the one-level-down version, has been empty since `As of 2026-11-15` (`x db studio`, `x jobs drain`, `x token grant` and `x cache stats` went the same way). `cmd-planned.test.ts` holds both tables empty.
 
 `x token`, `x config`, `x logs` and `x cache` left this table `As of 2026-11` (plan 101-full-stack-efficiency-sweeps U5), `x status` `As of 2026-11-15`; each has its section above.
 

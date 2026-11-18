@@ -40,7 +40,6 @@ import { mailSpec } from './cmd-mail-spec';
 import { manifestSpec } from './cmd-manifest-spec';
 import { mcpSpec } from './cmd-mcp-spec';
 import { newSpec } from './cmd-new-spec';
-import { plannedCommands } from './cmd-planned';
 import { policySpec } from './cmd-policy-spec';
 import { prSpec } from './cmd-pr-spec';
 import { actionsSpec, entitiesSpec, queriesSpec } from './cmd-registries-spec';
@@ -141,14 +140,8 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(statusSpec, async () => (await import('./cmd-status')).statusCommand),
 ];
 
-/**
- * Planned last, so `x help` reads shipped-first and the tail is honestly labelled. They are in the
- * registry rather than absent from it because "not built yet" and "not a command" are different
- * facts, and only one of them is true — see `cmd-planned.ts`.
- */
 export const COMMANDS: readonly CliCommand[] = [
   ...LAZY_COMMANDS,
-  ...plannedCommands(),
   createHelpCommand(() => SPECS),
   createVersionCommand(cliVersion),
 ];

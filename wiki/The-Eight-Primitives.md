@@ -77,7 +77,12 @@ A table + its domain type + invariants. The single source of the DB schema, the 
 An authz rule, evaluated in every surface.
 
 ```ts
-policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
+import { can } from '@ultimat3/policy';
+import { type Actor } from '@ultimat3/core';
+
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+
+policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
 ```
 
 | Aspect | Rule |
@@ -91,10 +96,36 @@ policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
 A mutation or command, server-authoritative. Declared once, projected six ways.
 
 ```ts
+import { action, t } from '@ultimat3/action';
+import { tag } from '@ultimat3/cache';
+import type { Actor } from '@ultimat3/core';
+import type { JobHandle } from '@ultimat3/jobs';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/cache' {
+  interface CacheTagRegistry {
+    post: true;
+    feed: true;
+  }
+}
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
+declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+
 export const publishPost = action({
   input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
-  policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
@@ -116,7 +147,28 @@ export const publishPost = action({
 An action with an optimistic local twin. `local` runs client-side against the local store; `server` is authoritative. Same input, same name, both halves in one file.
 
 ```ts
+import { mutator, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+declare module '@ultimat3/action' {
+  interface LocalTables {
+    posts: { likedByMe: boolean; likeCount: number };
+  }
+}
+
 export const likePost = mutator({
+  input:  t.object({ postId: t.uuid }),
+  output: t.object({ likeCount: t.number, likedByMe: t.boolean }),
+  policy: can('post:like'),
   // REQUIRED (`X_MUTATOR_NOT_IDEMPOTENT`): a replay under the same Idempotency-Key answers the
   // first result instead of running `server` again.
   idempotent: true,
@@ -142,11 +194,27 @@ export const likePost = mutator({
 A read; optionally live (subscribable).
 
 ```ts
+import { from, query } from '@ultimat3/query';
+import { t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+import { database, entity, timestamp, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), createdAt: timestamp().defaultNow() },
+});
+const db = database({ posts });
+type Post = typeof posts.$row;
+
 export const liveFeed = query({
   input: t.object({ orgId: t.uuid }),
   policy: can('feed:read'),
   live: true,
-  sql: ({ orgId }) => db.posts.where({ orgId }).orderBy('createdAt').limit(50),
+  sql: ({ orgId }) =>
+    from<Post>('posts', () => db.posts.where({ orgId }).all())
+      .where({ orgId })
+      .orderBy('createdAt')
+      .limit(50),
 });
 ```
 
@@ -161,6 +229,23 @@ export const liveFeed = query({
 Durable background work, optionally multi-step. `idempotencyKey` is **required by the type**.
 
 ```ts
+import { job } from '@ultimat3/jobs';
+import { t } from '@ultimat3/action';
+import { type AnyMailDefinition } from '@ultimat3/mail';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly orgs: {
+      provision(id: string): Promise<{ id: string; name: string }>;
+      byId(id: string): Promise<{ id: string; name: string }>;
+    };
+    readonly mail: { send(mail: unknown, to: unknown): Promise<void> };
+  }
+}
+
+declare const welcomeEmail: AnyMailDefinition;
+declare const nudgeEmail: AnyMailDefinition;
+
 export const onboardOrg = job({
   input: t.object({ orgId: t.uuid }),
   tenant: ({ orgId }) => orgId,               // the org this run acts as
@@ -187,15 +272,45 @@ export const onboardOrg = job({
 A URL + render mode + metadata + offline strategy.
 
 ```ts
+import { tag } from '@ultimat3/cache';
+import { defineRoute } from '@ultimat3/render';
+import { ld } from '@ultimat3/seo';
+
+declare module '@ultimat3/cache' {
+  interface CacheTagRegistry {
+    post: true;
+    feed: true;
+  }
+}
+
+interface Post {
+  readonly title: string;
+  readonly excerpt: string;
+  readonly cover: string;
+  readonly publishedAt: string;
+  readonly author: string;
+}
+declare function listPostSlugs(): Promise<readonly string[]>;
+declare function loadPost(slug: string): Promise<Post>;
+
 export const config = defineRoute({
   render:     'isr',                  // static | isr | ssr | stream
   revalidate: { tags: [tag.post] },
-  prerender:  () => db.posts.slugs(),
+  prerender:  () => listPostSlugs(),
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
   budget:     { js: '40kb' },
-  meta:       ({ post }) => ({ title: post.title, description: post.excerpt,
-                               og: { image: post.cover }, ld: ld.Article(post) }),
+  load:       ({ params }) => loadPost(params['slug'] ?? ''),
+  meta:       ({ data: post }) => ({
+    title: post.title,
+    description: post.excerpt,
+    og: { image: post.cover },
+    ld: [ld.Article({
+      headline: post.title,
+      datePublished: post.publishedAt,
+      author: { name: post.author },
+    })],
+  }),
 });
 ```
 
@@ -212,6 +327,10 @@ Render modes: `static` (built once), `isr` (static + background regen), `ssr` (p
 A scheduled trigger. Enqueues jobs; never does work itself.
 
 ```ts
+import { type JobHandle, task } from '@ultimat3/jobs';
+
+declare const sendDigest: JobHandle<Record<string, never>>;
+
 export const nightlyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',

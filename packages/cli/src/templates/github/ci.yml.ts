@@ -1,6 +1,6 @@
 // The CI half of what `x new` writes: the gate workflow, cut into parallel parts by
 // `x verify plan` and folded back by `x verify merge`, and the image workflow (`image.yml.ts`)
-// that publishes only what that gate passed. Every command it runs is one of the app's own scripts
+// that publishes only what that gate passed; `ci-schedule.ts` is its weekly run. Every command it runs is one of the app's own scripts
 // — `bun run setup`, `bun run verify …` — never a restatement of the gate's steps (axiom 1).
 
 import { REQUIRED_BUN } from '../../app-root';
@@ -8,6 +8,7 @@ import { DEFAULT_PLAN_PARTS } from '../../verify-plan';
 import type { GeneratedFile, NameSet } from '../naming';
 import { TEST_COMPOSE_PATH, TEST_ENV_PATH } from '../scaffold-test-services';
 import { CACHE, CHECKOUT, DOWNLOAD_ARTIFACT, UPLOAD_ARTIFACT } from './actions';
+import { ALARM_JOB, CONCURRENCY_GROUP, PLAN_CONDITION, scheduleTrigger } from './ci-schedule';
 import { DEPENDABOT_PATH, dependabot } from './dependabot.yml';
 import { IMAGE_WORKFLOW_PATH, imageWorkflow } from './image.yml';
 import { RUNS_ON } from './runner';
@@ -72,13 +73,11 @@ const ci = (app: NameSet): string => `name: ${CI_WORKFLOW_NAME}
 on:
   push:
   pull_request:
-
+${scheduleTrigger(app.kebab)}
 # A newer push to a branch makes the run already in flight for it worthless, so it is cancelled —
 # except on the default branch, where every commit keeps its own verdict: that group is keyed by
 # SHA, so nothing there can supersede anything.
-concurrency:
-  group: ci-\${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.sha || github.ref }}
-  cancel-in-progress: true
+${CONCURRENCY_GROUP}  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -90,8 +89,7 @@ jobs:
     # A branch in THIS repository with an open pull request fires both events for one commit, and
     # the push run already gates that exact tree — so the pull_request run is skipped, not paid for
     # twice. A pull request from a FORK fires no push here, and it still runs.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
-    # A free GitHub-hosted runner unless the repository variable \`CI_RUNNER\` names another label.
+${PLAN_CONDITION}    # A free GitHub-hosted runner unless the repository variable \`CI_RUNNER\` names another label.
     runs-on: ${RUNS_ON}
     timeout-minutes: 5
     outputs:
@@ -172,7 +170,7 @@ ${SETUP_STEPS}
           path: \${{ runner.temp }}/parts
           merge-multiple: true
       - run: bun run verify merge "$RUNNER_TEMP"/parts/*.json
-`;
+${ALARM_JOB}`;
 
 /** The CI a new app is born with, in reading order: the gate, the image, the dependency updates. */
 export function githubFiles(app: NameSet): readonly GeneratedFile[] {

@@ -78,10 +78,12 @@ export {
   CLIENT_PATH_STYLE_META,
   CLIENT_PERSIST_META,
   CLIENT_PINS_META,
+  CLIENT_REPLAY_SCOPE_HEADER,
   CLIENT_SCOPE_HEADER,
   CLIENT_SCOPE_META,
   CLIENT_SYNC_META,
   CLIENT_SYNC_WORKER_META,
+  principalScopeName,
 } from './page-meta';
 export type { RecordEnvelope, RecordRows } from './record-envelope';
 export { decodeRecordEnvelope, RECORDS_HEADER } from './record-envelope';
@@ -89,6 +91,7 @@ export type { PageClient, RecordSink } from './record-sink';
 export { pageClient } from './record-sink';
 export { fillTemplate, templateParams } from './route-path-template';
 export { onSessionLost, sessionIsLost } from './session-lost';
+export { isSessionRefusalCode } from './session-refusal';
 // The key the theme boot script reads and the toggle island writes.
 export { THEME_STORAGE_KEY } from './theme-storage';
 export { trimTrailingSlashes } from './trailing-slashes';

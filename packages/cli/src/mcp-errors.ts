@@ -369,7 +369,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ASSET_RETAIN_UNDECLARED:
     "edit app.config.ts: add assets: { retain: { disk: 'assets', builds: 3 } }, naming a disk your defineStorage({ disks }) declares that every web pod reads",
   X_EXERCISE_UNPROVEN_ABOVE_FLOOR:
-    'x exercise --json   # each unproven record in .x/exercise.json names the proof and its reason: fix the seed or the override it names; the floor only falls',
+    'x exercise --json   # re-measures at the constant seed the gate runs (a floor from before 31.47.0 was measured under random seeds); each unproven record in .x/exercise.json names the proof and its reason: fix the seed helper or override it names, assuming no order between sized calls; the floor only falls',
   X_ENV_NAME_RESERVED:
     'edit app.config.ts: add an APP_ prefix to the envSchema name the finding cites (or delete it where the value is meant for the framework); then: x env example --json && x doctor --json',
   X_FRAMEWORK_PIN_RANGE:

@@ -1,7 +1,7 @@
 // A stubbed job answers from its script through a REAL worker pass, records what it was handed, and
 // is the declared body again in the next test — with no `afterEach` in this file doing it.
 
-import { beforeAll, describe, expect } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect } from 'bun:test';
 import { InternalError, serviceActor } from '@ultimat3/core';
 import { job, t } from '@ultimat3/jobs';
 import { stub } from './stub';
@@ -19,6 +19,13 @@ const welcome = job<{ readonly userId: string }>({
     ran.push(input.userId);
     return { sent: input.userId };
   },
+});
+
+const declaredRun = welcome.run;
+// Before EVERY test, so a stub that outlives its test is caught in any order the tests run.
+beforeEach(() => {
+  expect(welcome.run).toBe(declaredRun);
+  ran.length = 0;
 });
 
 describe('stub(job)', () => {

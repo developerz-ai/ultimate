@@ -67,6 +67,14 @@ describe('the built-in sources', () => {
 });
 
 describe('an installed source', () => {
+  /** An app whose committed secrets file exists: with none, `installSecrets` asks for no key. */
+  const committedApp = async (): Promise<string> => {
+    const app = join(root, 'app');
+    const at = { file: secretsPath(app), key: 'kms' };
+    await Bun.write(secretsPath(app), await sealSecrets({ SESSION_SECRET: 's' }, KEY, at));
+    return app;
+  };
+
   test('is what resolveMasterKey asks, and its release restores the default', async () => {
     install(kms(KEY));
     expect((await resolveMasterKey(root, {}))?.at).toBe('kms://k1');
@@ -75,9 +83,7 @@ describe('an installed source', () => {
   });
 
   test('installSecrets opens the committed file with its key and reports its name', async () => {
-    const app = join(root, 'app');
-    const at = { file: secretsPath(app), key: 'kms' };
-    await Bun.write(secretsPath(app), await sealSecrets({ SESSION_SECRET: 's' }, KEY, at));
+    const app = await committedApp();
     install(kms(KEY));
     const env: Record<string, string | undefined> = {};
     const report = await installSecrets({ root: app, env });
@@ -85,7 +91,7 @@ describe('an installed source', () => {
   });
 
   test('a source with no key is X_SECRETS_KEY_MISSING, never an empty install', async () => {
-    const app = join(root, 'app');
+    const app = await committedApp();
     install(kms(undefined));
     await expect(installSecrets({ root: app, env: {} })).rejects.toBeUltimateError(
       'X_SECRETS_KEY_MISSING',

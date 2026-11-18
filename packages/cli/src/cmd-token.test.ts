@@ -162,3 +162,18 @@ describe('unit · x token list and revoke', () => {
     expect(again).toMatchObject({ ok: true, data: { revoked: false } });
   });
 });
+
+describe('unit · x token with a subcommand it does not have', () => {
+  // The parser refuses this first; a `ParsedArgs` built by hand reaches the command, and the word
+  // is as unknown here as it is there.
+  test('a hand-built subcommand is unknown, never "not implemented"', async () => {
+    const root = appRoot();
+    const ctx = ctxFor(root, ['token', 'list']);
+    const args = { ...ctx.args, subcommand: 'grant' };
+    const { command } = fixture();
+    const refusal: unknown = await command.run({ ...ctx, args }).catch((error: unknown) => error);
+    expect(refusal).toBeUltimateError('X_CLI_UNKNOWN_COMMAND');
+    expect((refusal as { cause: string }).cause).toContain('x token grant');
+    expect((refusal as { fix: string }).fix).toBe('x help token');
+  });
+});

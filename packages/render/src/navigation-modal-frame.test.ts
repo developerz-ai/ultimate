@@ -125,11 +125,12 @@ describe('the frame opens on the click', () => {
   });
 
   test('a browser without popovers still gets a modal dialog: showModal()', () => {
+    const slow = held(() => htmlAnswer('modal:M', modalPage('M')));
+    const { win } = start({ '/m': slow.handler });
+    // Read after `start`: the tab is what installs the fake `HTMLElement` global.
     const proto = (globalThis as unknown as { HTMLElement: { prototype: object } }).HTMLElement
       .prototype as { showPopover?: unknown };
     const showPopover = proto.showPopover;
-    const slow = held(() => htmlAnswer('modal:M', modalPage('M')));
-    const { win } = start({ '/m': slow.handler });
     delete proto.showPopover;
     try {
       click(win, 'to-m');

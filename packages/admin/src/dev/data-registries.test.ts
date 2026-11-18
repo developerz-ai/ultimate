@@ -7,7 +7,7 @@
 // reading a field the registry does not publish under that name. A fake source would agree with
 // whatever this file believed the registry's shape to be, which is the belief under test.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { registerDependent, unregisterDependent } from '@ultimat3/cache';
 import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';
@@ -31,6 +31,17 @@ beforeAll(() => {
   resetTasks();
   driver = memoryJobDriver();
   installJobDriver(driver);
+  // Declared for the file: the run panel reads its concurrency key off this registration.
+  job({
+    name: 'dev_facts_digest',
+    tenant: 'none',
+    queue: 'mail',
+    input: t.object({ orgId: t.string }),
+    idempotencyKey: (input: { orgId: string }) => `digest:${input.orgId}`,
+    retry: { attempts: 5, backoff: 'linear', delay: 1_000 },
+    concurrency: { key: (input: { orgId: string }) => input.orgId, limit: 1 },
+    run: () => Promise.resolve(),
+  });
 });
 
 afterAll(async () => {
@@ -120,17 +131,6 @@ describe('routes()', () => {
 
 describe('jobDefs()', () => {
   test('the job registry reaches the panel with its queue and its retry policy', async () => {
-    job({
-      name: 'dev_facts_digest',
-      tenant: 'none',
-      queue: 'mail',
-      input: t.object({ orgId: t.string }),
-      idempotencyKey: (input: { orgId: string }) => `digest:${input.orgId}`,
-      retry: { attempts: 5, backoff: 'linear', delay: 1_000 },
-      concurrency: { key: (input: { orgId: string }) => input.orgId, limit: 1 },
-      run: () => Promise.resolve(),
-    });
-
     const facts = await defaultDevSources().jobDefs();
     const fact = facts.find((candidate) => candidate.name === 'dev_facts_digest');
     expect(fact).toBeDefined();
@@ -182,6 +182,14 @@ describe('tasks()', () => {
 });
 
 describe('queues() and jobRuns()', () => {
+  // Depth and running are exact counts, so no test inherits the jobs another one enqueued.
+  beforeEach(async () => {
+    resetJobDriver();
+    await driver.close?.();
+    driver = memoryJobDriver();
+    installJobDriver(driver);
+  });
+
   test('a queue with work in it reports its depth, and a claimed job is running', async () => {
     await driver.enqueue({
       name: 'dev_facts_digest',
@@ -226,6 +234,19 @@ describe('queues() and jobRuns()', () => {
   });
 
   test('a run carries its step trace, which is the panel’s whole question', async () => {
+    await driver.enqueue({
+      name: 'dev_facts_digest',
+      queue: 'mail',
+      input: { orgId: 'org-1' },
+      idempotencyKey: 'dev_facts:traced',
+      maxAttempts: 3,
+    });
+    await driver.claim({
+      queues: ['mail'],
+      limit: 1,
+      visibilityTimeoutMs: 30_000,
+      workerId: 'worker-1',
+    });
     const runId = (await driver.introspect?.list({ name: 'dev_facts_digest', limit: 10 }))?.[0]
       ?.runId;
     expect(typeof runId).toBe('string');
@@ -248,10 +269,10 @@ describe('queues() and jobRuns()', () => {
 
     expect(withStep.queue).toBe('mail');
     // `concurrency.key(input)` for this run: which lease it waits on, read off its own payload.
-    expect(['org-1', 'org-2']).toContain(withStep.concurrencyKey ?? '');
+    expect(withStep.concurrencyKey).toBe('org-1');
     // The queue's vocabulary is `ready|running|…`; the panel's is four words. A claimed job is
     // `running` in both, and the mapping is what this pins.
-    expect(['running', 'ok', 'failed', 'dead']).toContain(withStep.status);
+    expect(withStep.status).toBe('running');
     expect(withStep.steps[0]).toEqual({
       name: 'fetch-rows',
       status: 'failed',

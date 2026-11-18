@@ -316,6 +316,8 @@ A setter still on a package's `.` barrel is `X_ADAPTER_PORT_INCOMPLETE` on the `
 | codemod `ci-pinned-actions` pins any tagged major of `actions/checkout`, `cache`, `upload-artifact` and `download-artifact` (**31.45.0**), and adds `persist-credentials: false` to each checkout it pins, inside the step's own `with:` when it has one; 31.43–31.44 skipped a workflow on another major (`actions/checkout@v5`) | nothing: `x doctor` names it as `X_UPGRADE_CODEMODS_PENDING`, and `x upgrade --json` applies it. A SHA-pinned line and an action with no pin are never touched |
 | the shipped `undeclared-env` guard's fix changes (**31.45.0**), built in; its findings do not: `X_UNDECLARED_ENV` still opens with the `envSchema` line to paste, and adds a second branch for a build-time constant injected by `bun build --define process.env.X=…` (declare a global, `--define NAME=…`), which no deploy sets. A copy still in `guards/` keeps the old text until `x upgrade` migrates it to the release after 31.44.0 | nothing; for a `--define` constant, follow the second branch rather than declaring an env var |
 | `x g sign-in --password` and `x g invite` declare `native: { success: (output) => output.next }` on their six actions and drop the `landAt()` helper (**31.46.0**); an app scaffolded before keeps its `landAt`, whose `setRedirect` still answers its forms with a 303 | nothing. Optional, to have one redirect path: on each action, add `native: { success: (output) => output.next }`, replace `landAt(x)` with `x`, delete `landAt` from `sign-in-flow.ts` / `invite.ts`, and move the test that asserted `request.redirect` to a form post through `httpServer({ routes: [toRoute(target)] }).fetch(…)` with `accept: text/html`, asserting `303` and the `Location` — a fresh `x g sign-in --password` writes that test. Then `x verify --only unit,manifest` |
+| an offline replay sends `x-ultimate-replay-scope`, and the action route answers a session other than the queue's owner `409 X_REPLAY_PRINCIPAL_MISMATCH`, the entry kept `pending` (**31.47.0**, [Realtime](Realtime#tier-3-shipped-in-2100)); `DEFAULT_CORS.allowHeaders` lists the header | an app setting `cors.allowHeaders` replaces that list (`packages/http/src/config.ts`): add `x-ultimate-replay-scope` to it. A cross-origin caller sending the header needs this; the page outbox replays to a same-origin path, which has no preflight. An app on several processes sets `SESSION_SECRET` (32+ characters), or a replay reaching another process is refused |
+| `x exercise` with no `--seed`, and so `x verify`'s `exercise` step, runs one constant seed (**31.47.0**) where each run drew a random one, and `seed` in `.x/exercise.json` is always the number used, never `null`. One tree now gets one verdict, but an `exercise.unprovenMax` measured under random seeds can sit just below the constant seed's figure, so the first gate after the hop can be `X_EXERCISE_UNPROVEN_ABOVE_FLOOR`. `x upgrade` writes a figure only where the app states none, and never raises one | `x exercise --json`, then fix the helper or override each `unproven` record names: pick rows by what they are, never by id order, and assume no order between sized calls ([Testing](Testing)). If the figure that remains is the honest one, raising `unprovenMax` to it is your own reviewed edit of `x.verify.json`. `x exercise --seed random` looks for seed-dependent helpers |
 
 ## 29.x → 30.0.0, entry by entry
 
@@ -1040,7 +1042,7 @@ published limits and prices into the app's own `models.ts`, with the source and 
 each, as `examples/dummy/apps/web/app/models.ts` does.
 
 ```ts
-import { anthropicProvider, configureAi, providerGateway, registerModel } from '@ultimat3/ai';
+import { anthropicProvider, providerGateway, registerModel } from '@ultimat3/ai';
 
 const usd = (minor: number) => ({ minor, currency: 'USD' }) as const;
 
@@ -1055,12 +1057,13 @@ export const appModel = registerModel({
   reasoning: { effort: true, adaptive: true, disableThinkingUpTo: undefined },
 });
 
-configureAi({
-  gateway: providerGateway({
+// apps/<app>/runtime.ts — the boot installs it
+export const runtime = {
+  aiGateway: providerGateway({
     providers: [anthropicProvider({ models: [appModel.id] })],
     defaultModel: appModel.id,
   }),
-});
+};
 ```
 
 ```diff
@@ -2564,6 +2567,11 @@ connection after the caller's socket had already been answered `X_TIMEOUT`.
 `X_MCP_RATE_LIMITED`, 429, with `Retry-After`.
 
 ```ts
+import { type DefineAppMcpInput, type McpServer, mcpHttpRoute } from '@ultimat3/mcp';
+
+declare const server: McpServer;
+declare const resolveToken: NonNullable<DefineAppMcpInput['resolveToken']>;
+
 mcpHttpRoute({ server, resolveToken, rateLimits: { read: 600, write: 60 } });
 // or defineAppMcp({ …, rateLimits: { read: 600, write: 60 } })
 ```
@@ -2578,6 +2586,14 @@ honest for `x mcp serve` and a lie for N replicas behind one URL, each enforcing
 on its own:
 
 ```ts
+import type { PgExecutor } from '@ultimat3/action';
+import { postgresRateLimitStore } from '@ultimat3/http';
+import { type DefineAppMcpInput, type McpServer, mcpHttpRoute } from '@ultimat3/mcp';
+
+declare const server: McpServer;
+declare const resolveToken: NonNullable<DefineAppMcpInput['resolveToken']>;
+declare const executor: PgExecutor;
+
 mcpHttpRoute({ server, resolveToken, rateLimitStore: postgresRateLimitStore({ executor }) });
 ```
 
@@ -2766,6 +2782,8 @@ your own that should keep its authored cause needs a status of its own — that 
 classified:
 
 ```ts
+import { registerErrorStatus } from '@ultimat3/http';
+
 registerErrorStatus({ X_PAYMENTS_UNREACHABLE: 502 });   // from @ultimat3/http, once at boot
 ```
 
@@ -3011,6 +3029,12 @@ worker and nothing in the framework calls `generateServiceWorker`; the generated
 `regenerate:` header names the call for that reason.
 
 ```ts
+import { generateServiceWorker, type PwaRoute, type ServiceWorkerConfig } from '@ultimat3/pwa';
+
+declare const routes: readonly PwaRoute[];
+declare const config: ServiceWorkerConfig;
+declare const buildId: string;
+
 generateServiceWorker(routes, config, buildId);   // from @ultimat3/pwa
 ```
 
@@ -3394,6 +3418,15 @@ was not: you were on Postgres the whole time.
 Which driver runs is `setJobDriver(driver)`, and only that:
 
 ```ts
+import type { PgExecutor } from '@ultimat3/action';
+
+// This release's API, declared because it is gone: since 31.0.0 the driver is `jobs:` in
+// `apps/<app>/runtime.ts`.
+declare function setJobDriver(driver: unknown): void;
+declare function createPgDriver(options: { executor: PgExecutor }): unknown;
+declare function createMemoryDriver(): unknown;
+declare const executor: PgExecutor;
+
 setJobDriver(createPgDriver({ executor }))   // production
 setJobDriver(createMemoryDriver())           // a test
 ```
@@ -3578,6 +3611,8 @@ Two things are not compile errors and are the ones to read first: the **seven be
 Entry 18's pair, both sides or neither:
 
 ```ts
+import { configureLifecycle } from '@ultimat3/core';
+
 configureLifecycle({ deadlineMs: 600_000 });   // and terminationGracePeriodSeconds >= 600
 ```
 
@@ -3876,6 +3911,8 @@ Server behavior on a stale build ID:
 Full detail: [PWA and offline](PWA-And-Offline).
 
 ## Migrating jobs between drivers — **still nowhere to migrate to**
+
+**Superseded `As of 2026-11-18`:** this section records the state before `redisJobDriver()` shipped (`@ultimat3/jobs/redis`, 2026-10) and before 31.0.0 replaced `setJobDriver` with `jobs:` in `apps/<app>/runtime.ts`. Current drivers: [Jobs and workflows](Jobs-And-Workflows). `x jobs drain` no longer exists; moving in-flight rows is the app's own migration.
 
 **There is no `jobs.driver` field.** 5.0.0 deleted it, because it selected nothing: boot always built the Postgres driver, so `jobs: { driver: 'redis' }` gave you Postgres in silence; since 25.0.0 the key is refused by name (`X_CONFIG_INVALID`). Which driver runs is `setJobDriver(driver)` at boot, and only that.
 

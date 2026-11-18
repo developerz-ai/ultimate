@@ -3,7 +3,8 @@
 // Split from `site-seo.test.ts`, which covers the `site/` pages alone.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+// why: Bun has no recursive remove and no way to set a file's modification time.
+import { rm, utimes } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive; the fixture's route file is root-relative.
 import { join } from 'node:path';
 import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
@@ -128,9 +129,12 @@ describe('seo.sitemap.lastmod', () => {
   test("'mtime' reads each route file's modification time", async () => {
     const file = 'apps/web/site/precios/page.tsx';
     await Bun.write(join(ROOT, file), 'export {};\n');
-    const expected = new Date(Bun.file(join(ROOT, file)).lastModified).toISOString();
+    // A set instant, not the write's: a filesystem's sub-millisecond mtime rounds differently
+    // through `stat` and `Bun.file`, so reading it back here could disagree by one millisecond.
+    const modified = new Date('2026-01-02T03:04:05.000Z');
+    await utimes(join(ROOT, file), modified, modified);
     route(file, { render: 'static' });
-    expect(lastmods(await sitemapOf([], 'mtime'))).toEqual([expected]);
+    expect(lastmods(await sitemapOf([], 'mtime'))).toEqual([modified.toISOString()]);
   });
 
   test("'mtime' on a file that is not there writes no <lastmod> rather than a wrong one", async () => {

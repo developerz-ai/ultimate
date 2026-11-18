@@ -65,7 +65,10 @@ describe('awaitPageRuntime', () => {
     const { asked } = parsingWith(null);
     const runtime = chunk();
     await awaitPageRuntime({ boot: BOOT, load: runtime.load });
-    expect(asked).toEqual([`script[src^="${BOOT}"]`]);
+    // Only the boot lookup: installing the runtime may also read the page's scope meta.
+    expect(asked.filter((selector) => selector.startsWith('script'))).toEqual([
+      `script[src^="${BOOT}"]`,
+    ]);
     expect(runtime.loads()).toBe(1);
     expect(peekPageRealtime()?.store).toBeDefined();
   });
@@ -152,7 +155,9 @@ describe('awaitPageRuntime', () => {
     let asked = false;
     host.document = {
       readyState: 'complete',
-      querySelector: () => {
+      // Only the boot lookup counts: installing the runtime may read the page's scope meta.
+      querySelector: (selector: string) => {
+        if (!selector.startsWith('script')) return null;
         asked = true;
         return new FakeScript();
       },

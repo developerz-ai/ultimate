@@ -169,10 +169,20 @@ describe.skipIf(!hasPostgres)('live · pgvector · PostgresVectorStore', () => {
     });
 
     test('`(tenant, id)` is the key, so one tenant can never overwrite another tenant’s row', async () => {
-      const [mine] = await acme().search(vec(1, 0, 0, 0), 1);
-      const [theirs] = await store.scoped({ tenant: 'globex' }).search(vec(1, 0, 0, 0), 1);
-      expect(mine?.text).toBe('alpha guide to x_vector_drift');
-      expect(theirs?.text).toBe('globex alpha x_vector_drift');
+      // One id written by both tenants, on a vector of its own: the corpus rows are other tests'.
+      const globex = store.scoped({ tenant: 'globex' });
+      const shared = vec(0, 0, 0, 1);
+      await acme().upsert([{ id: 'shared', vector: shared, text: 'acme copy' }]);
+      await globex.upsert([{ id: 'shared', vector: shared, text: 'globex copy' }]);
+      try {
+        const [mine] = await acme().search(shared, 1);
+        const [theirs] = await globex.search(shared, 1);
+        expect([mine?.id, mine?.text]).toEqual(['shared', 'acme copy']);
+        expect([theirs?.id, theirs?.text]).toEqual(['shared', 'globex copy']);
+      } finally {
+        await acme().delete(['shared']);
+        await globex.delete(['shared']);
+      }
     });
   });
 

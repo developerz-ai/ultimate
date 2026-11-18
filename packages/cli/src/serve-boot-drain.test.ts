@@ -2,7 +2,7 @@
 // through `httpServer`, so a worker pod kept the default grace — five seconds of claiming jobs
 // after SIGTERM, every one of them aborted when the drain reached its `accept` phase.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
@@ -25,7 +25,27 @@ afterAll(async () => {
   resetLifecycle();
 });
 
+/**
+ * An app root of its own for one boot: `import()` evaluates `app.config.ts` once per PROCESS, so a
+ * second boot over one path would run on the first boot's `drain` whatever the file now says.
+ */
+const appRoot = async (config: string): Promise<string> => {
+  const root = join(ROOT, `boot-${Bun.randomUUIDv7()}`);
+  await Bun.write(
+    join(root, 'package.json'),
+    JSON.stringify({ name: 'serve-drain-fixture', version: '1.0.0' }),
+  );
+  await Bun.write(
+    join(root, 'app.config.ts'),
+    "import { defineConfig } from '@ultimat3/core';\n" +
+      `export const config = defineConfig(${config});\n`,
+  );
+  return root;
+};
+
 describe('unit · the drain each role runs', () => {
+  afterEach(() => resetLifecycle());
+
   test('a role nothing routes to stops claiming at drain start: no readiness grace', () => {
     for (const role of ['worker', 'scheduler', 'replicator'] as const) {
       expect(lifecycleForRole(role, { readinessGraceMs: 4_000 })).toEqual({ readinessGraceMs: 0 });
@@ -83,20 +103,13 @@ describe('unit · the drain each role runs', () => {
   });
 
   test('a booted ROLE=worker process drains with no grace, whatever was configured before it', async () => {
-    await rm(ROOT, { recursive: true, force: true });
-    await Bun.write(
-      join(ROOT, 'package.json'),
-      JSON.stringify({ name: 'serve-drain-fixture', version: '1.0.0' }),
-    );
-    await Bun.write(
-      join(ROOT, 'app.config.ts'),
-      "import { defineConfig } from '@ultimat3/core';\n" +
-        "export const config = defineConfig({ name: 'serve-drain-fixture', drain: { readinessGraceMs: 4000, deadlineMs: 90000 } });\n",
+    const root = await appRoot(
+      "{ name: 'serve-drain-fixture', drain: { readinessGraceMs: 4000, deadlineMs: 90000 } }",
     );
     // The production default (5 s outside a local environment), set the way a boot inherits it.
     configureLifecycle({ readinessGraceMs: 7_000 });
-    const env = { NODE_ENV: 'test', ULTIMATE_STATE_DIR: join(ROOT, '.x') };
-    const worker = await serveApp({ root: ROOT, env, role: 'worker', port: 0, metricsPort: 0 });
+    const env = { NODE_ENV: 'test', ULTIMATE_STATE_DIR: join(root, '.x') };
+    const worker = await serveApp({ root, env, role: 'worker', port: 0, metricsPort: 0 });
     try {
       expect(readinessGraceMs()).toBe(0);
       // …and with the budget `app.config.ts` declared, not the lifecycle's built-in 25 s.
@@ -107,25 +120,16 @@ describe('unit · the drain each role runs', () => {
   }, 120_000);
 
   test("the role's grace is set BEFORE the services: a worker drained mid-schema-wait has none", async () => {
-    await rm(ROOT, { recursive: true, force: true });
-    await Bun.write(
-      join(ROOT, 'package.json'),
-      JSON.stringify({ name: 'serve-drain-fixture', version: '1.0.0' }),
-    );
-    await Bun.write(
-      join(ROOT, 'app.config.ts'),
-      "import { defineConfig } from '@ultimat3/core';\n" +
-        "export const config = defineConfig({ name: 'serve-drain-fixture' });\n",
-    );
+    const root = await appRoot("{ name: 'serve-drain-fixture' }");
     configureLifecycle({ readinessGraceMs: 7_000 });
     // Refused inside `startServices` — where the schema wait runs — before any later boot step.
     const env = {
       NODE_ENV: 'test',
-      ULTIMATE_STATE_DIR: join(ROOT, '.x'),
+      ULTIMATE_STATE_DIR: join(root, '.x'),
       DATABASE_POOL_MAX: 'many',
     };
     const outcome = await serveApp({
-      root: ROOT,
+      root,
       env,
       role: 'worker',
       port: 0,

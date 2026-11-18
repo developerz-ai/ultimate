@@ -7,6 +7,12 @@ Package: `@ultimat3/mail` (tier 4) — the full reference is
 
 ```ts
 import { blocks, defineMail, send, t } from '@ultimat3/mail';
+import { type Ctx } from '@ultimat3/core';
+
+declare const user: { readonly id: string; readonly name: string; readonly email: string; readonly role: string };
+
+declare const url: string;
+declare const ctx: Ctx;
 
 export const receiptMail = defineMail({
   id: 'receipt',

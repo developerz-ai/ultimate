@@ -4,8 +4,9 @@
 // `--out apps` deleted the app's pages and `--out .x` its embedded dev database.
 
 import { lstat, readdir, rm } from 'node:fs/promises'; // why: Bun has no recursive delete or readdir.
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'; // why: Bun ships no path resolve/relative.
+import { isAbsolute, join, resolve } from 'node:path'; // why: Bun ships no path resolve.
 import { UltimateError } from '@ultimat3/core';
+import { posixRelative } from './posix-path';
 
 /** Written into every export directory a build empties: the proof the next build may empty it. */
 export const EXPORT_MARKER = '.x-export';
@@ -21,8 +22,8 @@ const MARKER_TEXT =
 
 /** True when `dir` is `root` itself or one of its ancestors. */
 const containsRoot = (dir: string, root: string): boolean => {
-  const up = relative(resolve(dir), resolve(root));
-  return up === '' || (up !== '..' && !up.startsWith(`..${sep}`) && !isAbsolute(up));
+  const up = posixRelative(resolve(dir), resolve(root));
+  return up === '' || (up !== '..' && !up.startsWith('../') && !isAbsolute(up));
 };
 
 /** Why `out` is not the build's to empty, or `undefined` when it is. */

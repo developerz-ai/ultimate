@@ -97,22 +97,22 @@ describe.skipIf(!ready)('live · a keyed table on REPLICA IDENTITY DEFAULT', () 
     await sql.query(`DROP TABLE IF EXISTS ${TABLE}`);
   };
 
-  /** Every patch the subscriber was sent since the last call, as `op:id`. */
-  const patchesSince = (() => {
-    let seen = 0;
-    return (): string[] => {
-      const fresh = ws.frames.slice(seen);
-      seen = ws.frames.length;
-      return fresh.flatMap((frame) =>
-        frame.type === 'patch' ? frame.patches.map((patch) => `${patch.op}:${patch.id}`) : [],
-      );
-    };
-  })();
+  /** Every patch the subscriber was sent for one row, as `op:id`. */
+  const patchesOf = (id: string): string[] =>
+    ws.frames.flatMap((frame) =>
+      frame.type === 'patch'
+        ? frame.patches.filter((patch) => patch.id === id).map((patch) => `${patch.op}:${id}`)
+        : [],
+    );
 
-  /** Waits until `count` changes have been decoded AND delivered to the registry. */
-  const settle = async (count: number): Promise<void> => {
+  /** The decoded changes of one row: each test owns its row, so none reads another's position. */
+  const changesOf = (id: string): ChangeEvent[] =>
+    events.filter((event) => (event.after ?? event.before)?.id === id);
+
+  /** Waits until `count` changes of the row have been decoded AND delivered to the registry. */
+  const settle = async (id: string, count: number): Promise<void> => {
     // real-clock: the walsender decodes and streams the commit on its own time
-    for (let poll = 0; poll < 200 && events.length < count; poll += 1) await Bun.sleep(25);
+    for (let poll = 0; poll < 200 && changesOf(id).length < count; poll += 1) await Bun.sleep(25);
     await delivered;
   };
 
@@ -126,7 +126,12 @@ describe.skipIf(!ready)('live · a keyed table on REPLICA IDENTITY DEFAULT', () 
     // DEFAULT, stated so the case cannot drift: the identity under test.
     await sql.query(`ALTER TABLE ${TABLE} REPLICA IDENTITY DEFAULT`);
     await sql.query(
-      `INSERT INTO ${TABLE} VALUES ('a', 'o1', 'published', 'A'), ('b', 'o1', 'draft', 'B'), ('c', 'o1', 'draft', 'C')`,
+      `INSERT INTO ${TABLE} VALUES
+         ('leaves', 'o1', 'published', 'L'),
+         ('enters', 'o1', 'draft', 'E'),
+         ('held', 'o1', 'draft', 'H'),
+         ('outside', 'o1', 'draft', 'O'),
+         ('removed', 'o1', 'draft', 'R')`,
     );
 
     resetQueries();
@@ -183,8 +188,7 @@ describe.skipIf(!ready)('live · a keyed table on REPLICA IDENTITY DEFAULT', () 
       input: { status: 'published' },
     });
     if (frame.type !== 'snapshot') return expect.unreachable('expected a snapshot');
-    expect(frame.rows.map((row) => row.id)).toEqual(['a']);
-    patchesSince();
+    expect(frame.rows.map((row) => row.id)).toEqual(['leaves']);
   });
 
   afterAll(async () => {
@@ -196,45 +200,49 @@ describe.skipIf(!ready)('live · a keyed table on REPLICA IDENTITY DEFAULT', () 
   });
 
   test('an update moving a row OUT of the filter removes it — with no old tuple at all', async () => {
-    await sql.query(`UPDATE ${TABLE} SET status = 'draft' WHERE id = 'a'`);
-    await settle(1);
-    expect(events[0]?.op).toBe('update');
+    await sql.query(`UPDATE ${TABLE} SET status = 'draft' WHERE id = 'leaves'`);
+    await settle('leaves', 1);
+    expect(changesOf('leaves')[0]?.op).toBe('update');
     // DEFAULT on a non-key update: Postgres sends NO before-image.
-    expect(events[0]?.before).toBeNull();
-    expect(patchesSince()).toEqual(['delete:a']);
+    expect(changesOf('leaves')[0]?.before).toBeNull();
+    expect(patchesOf('leaves')).toEqual(['delete:leaves']);
   });
 
   test('an update moving a row IN inserts it, whole', async () => {
-    await sql.query(`UPDATE ${TABLE} SET status = 'published' WHERE id = 'b'`);
-    await settle(2);
-    expect(events[1]?.before).toBeNull();
-    const frame = ws.frames.at(-1);
-    expect(patchesSince()).toEqual(['insert:b']);
-    if (frame?.type !== 'patch') return expect.unreachable('expected a patch frame');
-    expect(frame.patches[0]?.row).toMatchObject({ id: 'b', status: 'published', title: 'B' });
+    await sql.query(`UPDATE ${TABLE} SET status = 'published' WHERE id = 'enters'`);
+    await settle('enters', 1);
+    expect(changesOf('enters')[0]?.before).toBeNull();
+    expect(patchesOf('enters')).toEqual(['insert:enters']);
+    const patch = ws.frames
+      .flatMap((frame) => (frame.type === 'patch' ? frame.patches : []))
+      .find((each) => each.id === 'enters');
+    expect(patch?.row).toMatchObject({ id: 'enters', status: 'published', title: 'E' });
   });
 
   test('a delete of a held row, whose before-image is the key alone, deletes it', async () => {
-    await sql.query(`DELETE FROM ${TABLE} WHERE id = 'b'`);
-    await settle(3);
-    const before: Readonly<Record<string, unknown>> = events[2]?.before ?? {};
+    await sql.query(`UPDATE ${TABLE} SET status = 'published' WHERE id = 'held'`);
+    await settle('held', 1);
+    await sql.query(`DELETE FROM ${TABLE} WHERE id = 'held'`);
+    await settle('held', 2);
+    const before: Readonly<Record<string, unknown>> = changesOf('held')[1]?.before ?? {};
     // Key-only: every non-key column absent or null.
-    expect(before['id']).toBe('b');
+    expect(before['id']).toBe('held');
     expect(before['title'] ?? null).toBeNull();
     expect(before['status'] ?? null).toBeNull();
-    expect(patchesSince()).toEqual(['delete:b']);
+    expect(patchesOf('held')).toEqual(['insert:held', 'delete:held']);
   });
 
   test('a row the window never held, updated while still outside the filter, sends nothing', async () => {
-    await sql.query(`UPDATE ${TABLE} SET status = 'archived', title = 'C2' WHERE id = 'c'`);
-    await settle(4);
-    expect(events).toHaveLength(4);
-    expect(patchesSince()).toEqual([]);
+    await sql.query(`UPDATE ${TABLE} SET status = 'archived', title = 'O2' WHERE id = 'outside'`);
+    await settle('outside', 1);
+    expect(changesOf('outside')).toHaveLength(1);
+    expect(patchesOf('outside')).toEqual([]);
   });
 
   test('and a delete of a row the window never held sends nothing either', async () => {
-    await sql.query(`DELETE FROM ${TABLE} WHERE id = 'c'`);
-    await settle(5);
-    expect(patchesSince()).toEqual([]);
+    await sql.query(`DELETE FROM ${TABLE} WHERE id = 'removed'`);
+    await settle('removed', 1);
+    expect(changesOf('removed')).toHaveLength(1);
+    expect(patchesOf('removed')).toEqual([]);
   });
 });

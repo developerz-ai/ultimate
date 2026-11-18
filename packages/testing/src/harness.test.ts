@@ -1,9 +1,15 @@
 // A fake `boot` proves the harness lifecycle contract without a real server behind it. The
 // determinism and the seal it installs are process-global and bun shares one process across files,
-// so the last describe below asserts the teardown put back exactly what it found — this file used
+// so the teardown checks below assert it put back exactly what it found — this file used
 // to repair that by hand in an `afterAll`, which fixed the leak here and nowhere else.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+// why: Bun ships no temp-directory primitive and no recursive delete.
+import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun ships no path-join primitive.
+import { join } from 'node:path';
 import { isDeterminismInstalled, seededRandom } from './determinism';
 import { testNetwork } from './fixture-network';
 import type { AppOptions, BootedApp, HarnessDeps } from './harness';
@@ -39,6 +45,8 @@ function recorder(): Recorder {
 
 /** Nothing listens here, so a request that gets past the seal fails locally and immediately. */
 const CLOSED_PORT = 59_431;
+/** A whole `bun test` process, started cold. */
+const CHILD_TIMEOUT_MS = 20_000;
 
 /** `undefined` when the request unexpectedly succeeded — which then fails the assertion. */
 const failureCode = async (url: string): Promise<string | undefined> =>
@@ -66,6 +74,61 @@ function fakeBoot(rec: Recorder): AppOptions['boot'] {
     return app;
   };
 }
+
+/**
+ * "Closed once it finished" needs one test to run AFTER a block or another test, which only a
+ * declared order gives, and this file may run shuffled. So the order is a child's: an unshuffled
+ * `bun test` of its own, reading each recorder right after the lifecycle it belongs to.
+ */
+const LIFECYCLE_CHILD = `
+import { afterAll, expect, test } from 'bun:test';
+import { describeApp, testApp } from ${JSON.stringify(join(import.meta.dir, 'harness.ts'))};
+const recorder = () => ({ closed: false });
+const fakeBoot = (rec) => async () => ({
+  fetch: () => new Response('ok'),
+  close: async () => { rec.closed = true; },
+});
+const inBlock = recorder();
+const isolated = recorder();
+const closed = {};
+describeApp('block', { boot: fakeBoot(inBlock) }, (app) => {
+  test('runs inside the block', () => { expect(inBlock.closed).toBe(false); app(); });
+});
+test('reads the block', () => { closed.block = inBlock.closed; });
+testApp('isolated', { boot: fakeBoot(isolated) }, async () => {
+  expect(isolated.closed).toBe(false);
+});
+test('reads the isolated test', () => { closed.isolated = isolated.closed; });
+afterAll(() => { console.log('CLOSED ' + JSON.stringify(closed)); });
+`;
+
+let lifecycleRun: Promise<{ block?: boolean; isolated?: boolean }> | undefined;
+
+/** One child answers both tests below. Its database is the PGlite fallback, never a server. */
+const childLifecycle = (): Promise<{ block?: boolean; isolated?: boolean }> => {
+  lifecycleRun ??= (async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-harness-lifecycle-'));
+    try {
+      await Bun.write(join(dir, 'lifecycle.test.ts'), LIFECYCLE_CHILD);
+      const { TEST_DATABASE_URL: _test, DATABASE_URL: _app, ...env } = process.env;
+      const run = Bun.spawn(['bun', 'test', './lifecycle.test.ts'], {
+        cwd: dir,
+        env,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [stdout, stderr] = await Promise.all([
+        new Response(run.stdout).text(),
+        new Response(run.stderr).text(),
+      ]);
+      expect(`exit ${await run.exited}\n${stderr}`).toStartWith('exit 0');
+      return JSON.parse(/^CLOSED (.*)$/m.exec(stdout)?.[1] ?? '{}');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  })();
+  return lifecycleRun;
+};
 
 describe(testName('unit', 'describeApp lifecycle'), () => {
   const rec = recorder();
@@ -103,9 +166,13 @@ describe(testName('unit', 'describeApp lifecycle'), () => {
     },
   );
 
-  test('close() ran once the describe block finished', () => {
-    expect(rec.closed).toBe(true);
-  });
+  test(
+    'close() ran once the describe block finished',
+    async () => {
+      expect((await childLifecycle()).block).toBe(true);
+    },
+    CHILD_TIMEOUT_MS,
+  );
 });
 
 describe(testName('unit', 'describeApp: accessing the handle before boot'), () => {
@@ -183,35 +250,52 @@ describe(testName('unit', 'testApp'), () => {
     expect(response.status).toBe(200);
   });
 
-  test('close() already ran once the isolated test finished', () => {
-    expect(rec.closed).toBe(true);
-  });
+  test(
+    'close() already ran once the isolated test finished',
+    async () => {
+      expect((await childLifecycle()).isolated).toBe(true);
+    },
+    CHILD_TIMEOUT_MS,
+  );
 });
 
-// Registered last on purpose: bun runs describes in declaration order, so by the time these run
-// every boot above has been torn down. `bun test` is ONE process, so what these assert about this
-// file is what the next FILE inherits — an unsealed `fetch` here is real egress there.
+const expectSealRestored = (): void => {
+  expect(SEALED_BEFORE).toBe(true);
+  expect(isNetworkSealed()).toBe(true);
+};
+
+const expectClockAndRandomRestored = (): void => {
+  expect(isDeterminismInstalled()).toBe(true);
+  // Not just "frozen": the same instant. A boot declaring `now: '2030-…'` restores the clock it
+  // found rather than re-freezing at the default.
+  expect(Date.now()).toBe(NOW_BEFORE);
+  expect(Math.random).toBe(RANDOM_BEFORE);
+};
+
+const expectAllowListRestored = async (): Promise<void> => {
+  // `allowHosts` above let 127.0.0.1:59431 through. Nothing may inherit that.
+  await expect(fetch(`http://127.0.0.1:${CLOSED_PORT}/x`)).rejects.toBeUltimateError(
+    'X_TEST_NETWORK_SEALED',
+  );
+  expect(requestLog().map((call) => call.url)).toContain(`http://127.0.0.1:${CLOSED_PORT}/x`);
+};
+
+// `bun test` is ONE process, so what these assert about this file is what the next FILE inherits
+// — an unsealed `fetch` here is real egress there. The tests hold between boots in any order; the
+// file-level `afterAll` is the check that runs after every boot has been torn down.
 describe(testName('unit', 'teardown restores the process state it found'), () => {
-  test('the preload owns the seal, and a booted app hands it back sealed', () => {
-    expect(SEALED_BEFORE).toBe(true);
-    expect(isNetworkSealed()).toBe(true);
-  });
+  test('the preload owns the seal, and a booted app hands it back sealed', expectSealRestored);
+  test(
+    'the frozen clock and the seeded RNG survive every boot above',
+    expectClockAndRandomRestored,
+  );
+  test('the allow-list a boot added is gone again', expectAllowListRestored);
+});
 
-  test('the frozen clock and the seeded RNG survive every boot above', () => {
-    expect(isDeterminismInstalled()).toBe(true);
-    // Not just "frozen": the same instant. A boot declaring `now: '2030-…'` restores the clock it
-    // found rather than re-freezing at the default.
-    expect(Date.now()).toBe(NOW_BEFORE);
-    expect(Math.random).toBe(RANDOM_BEFORE);
-  });
-
-  test('the allow-list a boot added is gone again', async () => {
-    // `allowHosts` above let 127.0.0.1:59431 through. Nothing may inherit that.
-    await expect(fetch(`http://127.0.0.1:${CLOSED_PORT}/x`)).rejects.toBeUltimateError(
-      'X_TEST_NETWORK_SEALED',
-    );
-    expect(requestLog().map((call) => call.url)).toContain(`http://127.0.0.1:${CLOSED_PORT}/x`);
-  });
+afterAll(async () => {
+  expectSealRestored();
+  expectClockAndRandomRestored();
+  await expectAllowListRestored();
 });
 
 // A rejecting `close` is the case `describeApp`/`testApp` cannot express: both rethrow it into the
@@ -339,8 +423,8 @@ describe(testName('unit', 'a boot that throws'), () => {
   });
 });
 
-// Registered after the block above for the same reason it was registered last: this one INSTALLS
-// outer state on the process-global gate, so it has to run where nothing later reads it.
+// This one INSTALLS outer state on the process-global gate, and its `finally` takes it all back,
+// so the tests around it read the gate they would have read without it.
 describe(testName('unit', 'a boot restores the network gate it found, never clears it'), () => {
   test('an outer mock, allow-list and offline state all survive a nested bootApp', async () => {
     const network = testNetwork();

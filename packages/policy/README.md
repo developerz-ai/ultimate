@@ -9,8 +9,17 @@ object through the *same* `evaluate()`.
 `bun add @ultimat3/policy` · guide: [Policies And Authz](https://github.com/developerz-ai/ultimate/wiki/Policies-And-Authz)
 
 ```ts
+import { action, t } from '@ultimat3/action';
+import { type Actor } from '@ultimat3/core';
+import { can } from '@ultimat3/policy';
+
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+
 export const publishPost = action({
-  policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  input: t.object({ postId: t.uuid }),
+  output: t.object({ id: t.uuid, orgId: t.uuid, title: t.string }),
+  policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  handle: ({ input, ctx }) => ctx.posts.publish(input.postId),
 });
 ```
 
@@ -40,6 +49,9 @@ are different problems with different fixes.
 ## One predicate signature, every surface
 
 ```ts
+import { type Actor } from '@ultimat3/policy';
+import { type Ctx } from '@ultimat3/core';
+
 interface PolicyArgs<I = unknown, R = unknown> {
   input: I;
   actor: Actor | null;
@@ -53,6 +65,10 @@ live query's per-row gate:
 
 ```ts
 // decides on input alone — `row` is null
+import { can } from '@ultimat3/policy';
+
+type Post = { readonly id: string; readonly orgId: string; readonly title: string; readonly authorId: string };
+
 can<{ orgId: string }>('post:create', ({ actor, input }) => actor?.orgId === input.orgId);
 
 // decides about a row the surface already loaded

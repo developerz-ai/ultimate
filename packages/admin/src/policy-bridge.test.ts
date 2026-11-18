@@ -13,7 +13,7 @@
 // `row === null`: an org-scoped or ownership rule could not fire, a role-only rule allowed, and
 // `adminList`/`adminSearch` add no tenant predicate of their own.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, newId, text, uuid } from '@ultimat3/entity';
 import {
   clearPermissions,
@@ -82,7 +82,24 @@ afterAll(() => {
   restoreRoles(ambientRoles, ambientRoleSites);
 });
 
+/** The set every test below this block's decides against. */
+const declareSubjectPermissions = (): void => {
+  definePermissions([
+    ...ADMIN_PERMISSIONS,
+    'admin_subject_post:read',
+    'admin_subject_post:write',
+    'admin_subject_post:delete',
+  ]);
+};
+
 describe('the admin permission registration', () => {
+  // These tests empty the registry, and an empty one is permissive: left so, the next test's
+  // "nothing declared it" would be allowed.
+  afterEach(() => {
+    clearPermissions();
+    declareSubjectPermissions();
+  });
+
   test('importing the bridge declares nothing — an empty set stays permissive', async () => {
     clearPermissions();
     // A FRESH evaluation, by a specifier no earlier file can have loaded: a module evaluates once
@@ -130,12 +147,7 @@ let authz: AdminAuthz;
 
 beforeAll(async () => {
   const { policyAuthz } = await import('./policy-bridge');
-  definePermissions([
-    ...ADMIN_PERMISSIONS,
-    'admin_subject_post:read',
-    'admin_subject_post:write',
-    'admin_subject_post:delete',
-  ]);
+  declareSubjectPermissions();
   // The role really holds every permission asked for below, so a denial in these tests is the ROW
   // rule refusing and never `actorHas` — which is the distinction they exist to draw. Named for
   // this file so the merge cannot collide with an app's own `admin`.

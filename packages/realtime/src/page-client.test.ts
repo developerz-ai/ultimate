@@ -3,7 +3,7 @@
 // page runtime is a THIRD build, loaded once. Both islands must reach its one store and open ONE
 // socket while carrying none of it (#505). Built for real, the way `x build` builds an island.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 // why: `node:fs`/`node:os` — Bun has no temp-directory API and no recursive remove.
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: `node:os` — the temp directory's location; Bun exposes none.
@@ -102,6 +102,17 @@ beforeAll(async () => {
   runtime = await bundle<RuntimeCopy>('runtime', RUNTIME_SOURCE);
 });
 
+const sync = { url: 'ws://node.test/_x/sync', buildId: 'build-1' };
+
+// What the page boot (or the runtime chunk) does before any island's hook runs, on a fresh page.
+beforeEach(() => {
+  resetPage();
+  dialled.length = 0;
+  runtime.installPageRuntime();
+  first.installRealtime({ signal, sync });
+  second.installRealtime({ signal, sync });
+});
+
 afterAll(async () => {
   resetPage();
   globalThis.WebSocket = realWebSocket;
@@ -120,12 +131,8 @@ describe('two island bundles on one page', () => {
   });
 
   test('share ONE record store: a record adopted through either shows in both', () => {
-    const sync = { url: 'ws://node.test/_x/sync', buildId: 'build-1' };
-    // What the page boot (or the runtime chunk) does before any island's hook runs.
     const installed = runtime.installPageRuntime();
     expect(runtime.installPageRuntime()).toBe(installed); // once per page, whoever asks again
-    first.installRealtime({ signal, sync });
-    second.installRealtime({ signal, sync });
     const a = first.useRecord('posts', 'p1');
     const b = second.useRecord('posts', 'p1');
 

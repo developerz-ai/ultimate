@@ -18,6 +18,8 @@ runs a route that did not ask for it.** The server enforces both, before any app
 
 ```ts
 // app.config.ts
+import { defineConfig } from '@ultimat3/core';
+
 export const config = defineConfig({
   name: 'acme',
   navigation: { client: ['app'] },

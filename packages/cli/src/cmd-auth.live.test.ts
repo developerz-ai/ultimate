@@ -4,7 +4,7 @@
 // Skips unless `TEST_DATABASE_URL` is set — never `DATABASE_URL`: this file creates and drops a
 // database of its own, because the boot applies the framework's DDL to whatever it opens.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -96,8 +96,12 @@ describeLive('live · postgres · x auth seal-mfa', () => {
   beforeAll(async () => {
     root = mkdtempSync(join(tmpdir(), 'x-auth-live-'));
     writeFileSync(join(root, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
-    await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
     await sweepProbeDatabases(adminExecutor, PROBE_DB);
+  });
+
+  // A database of its own per test: "fresh" is one test's whole claim.
+  beforeEach(async () => {
+    await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
     await on(url ?? '', `create database ${PROBE_DB}`);
   });
 
@@ -118,6 +122,8 @@ describeLive('live · postgres · x auth seal-mfa', () => {
   test(
     'plaintext rows are sealed in place, and a second run is a no-op',
     async () => {
+      // The command creates the tables it reads; the rows go in once they exist.
+      await authCommand.run(context());
       for (const [id, secret] of [
         [1, "'JBSWY3DPEHPK3PXP'"],
         [2, "'GEZDGNBVGY3TQOJQ'"],

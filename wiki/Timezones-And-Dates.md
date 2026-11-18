@@ -129,6 +129,10 @@ Parsed once into milliseconds. A bare number is a type error — the unit must b
 
 ```ts
 // task (cron)
+import { type JobHandle, task } from '@ultimat3/jobs';
+
+declare const sendDigest: JobHandle<Record<string, never>>;
+
 export const nightlyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',
@@ -162,8 +166,8 @@ Cron is a civil-calendar schedule; sleeps are elapsed time. Mixing them is where
 
 | Control | Behavior |
 |---|---|
-| Frozen clock | time starts at a fixed instant, does not advance on its own |
-| `clock.advance('3d')` | moves it, and also drives `step.sleep` and cron dispatch |
+| Frozen clock | time starts at `2026-01-01T00:00:00.000Z` (`DEFAULT_NOW`), does not advance on its own |
+| `clock.advance('3d')` | moves it, and makes a `step.sleep` due. It fires no cron: a task test reads `task.entries(occurrenceMs)` ([Scheduled tasks](Scheduled-Tasks#testing)) |
 | Fixed zone | `UTC` unless a test declares otherwise |
 | Fixed locale | `en-US` unless a test declares otherwise |
 | tz-dependent bugs | fail deterministically — declare a zone in the test and the bug reproduces every run |
@@ -172,11 +176,15 @@ Cron is a civil-calendar schedule; sleeps are elapsed time. Mixing them is where
 Declare a zone when the behavior is the point:
 
 ```ts
-test('digest window respects the org zone', async ({ seed, clock }) => {
-  const { org } = await seed('org-in-berlin');
+import { expect, test } from '@ultimat3/testing';
+
+declare const org: { readonly id: string };
+declare function digestWindow(org: { readonly id: string }, zone: string): { readonly label: string };
+
+test('digest window respects the org zone', async ({ clock }) => {
   clock.advance('1d');
   const window = digestWindow(org, 'Europe/Berlin');
-  expect(window.label).toBe('Jul 27, 2026');
+  expect(window.label).toBe('Jan 2, 2026');    // the frozen clock starts at 2026-01-01T00:00Z
 });
 ```
 

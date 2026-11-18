@@ -151,4 +151,6 @@ export const TIER_3_ERROR_STATUS = {
   X_JOB_INTROSPECTION_UNSUPPORTED: 501,
   // @ultimat3/query — a live query declares no limit, so its window is the whole table
   X_QUERY_LIVE_UNBOUNDED: 500,
+  // @ultimat3/action — a queued offline write was replayed under a session that did not queue it
+  X_REPLAY_PRINCIPAL_MISMATCH: 409,
 } satisfies Readonly<Record<string, number>>;

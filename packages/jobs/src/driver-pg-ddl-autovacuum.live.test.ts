@@ -4,7 +4,7 @@
 // the table) wait out more dead rows than a 43-row `x_scheduler_state` holds live ones (25% dead,
 // production 2026-11-14). Skips unless `TEST_DATABASE_URL`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { dbExecutor, postgresClient, raw, readTableStorageDrift } from '@ultimat3/db';
@@ -42,6 +42,12 @@ describe.skipIf(!hasPostgres)('live · postgres · the small hot tables vacuum e
     client = postgresClient({ url: probeUrl(), role: 'web', profile: { max: 1 } });
   });
 
+  // "Fresh" is one test's claim, and the other resets what it needs applied.
+  beforeEach(async () => {
+    await client.execute(raw('drop schema public cascade'));
+    await client.execute(raw('create schema public'));
+  });
+
   afterAll(async () => {
     await client.close();
     await admin.execute(raw(`drop database if exists ${PROBE_DB} with (force)`));
@@ -67,6 +73,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the small hot tables vacuum e
   });
 
   test('a hand reset is drift, and the next apply undoes it', async () => {
+    await apply();
     await client.execute(
       raw(
         'alter table x_scheduler_state reset (autovacuum_vacuum_threshold, autovacuum_vacuum_scale_factor)',

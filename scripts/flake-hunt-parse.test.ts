@@ -70,6 +70,28 @@ describe('unit · flake-hunt · failedTests', () => {
     expect(failedTests(repeated)).toHaveLength(2);
   });
 
+  // A shard is many `bun test` batches, each ending in its own repeat: the first one must not end
+  // the read, or every failure in a later batch goes unnamed (compat run 43826824005, unit-1).
+  test('a repeat ends one batch, and the next batch is still read', () => {
+    const batches = [
+      'packages/a.test.ts:',
+      '(fail) first [1ms]',
+      '',
+      '1 tests failed:',
+      '(fail) first [1ms]',
+      '── batch 2 of 2 ──',
+      'packages/b.test.ts:',
+      '(fail) second [1ms]',
+      '',
+      '1 tests failed:',
+      '(fail) second [1ms]',
+    ].join('\n');
+    expect(failedTests(batches).map(({ file, test }) => ({ file, test }))).toEqual([
+      { file: 'packages/a.test.ts', test: 'first' },
+      { file: 'packages/b.test.ts', test: 'second' },
+    ]);
+  });
+
   test('ANSI colour is stripped before a name is read', () => {
     const coloured =
       'packages/a.test.ts:\n\u001b[31m(fail)\u001b[0m red one \u001b[2m[1ms]\u001b[0m';

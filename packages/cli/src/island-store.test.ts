@@ -265,13 +265,6 @@ describe('unit · the island store is stale once a source it was built from chan
   });
 });
 
-// LAST, deliberately: an island build's stylesheets are process-global (`island-styles.ts`), so
-// once these run every later store in this file names a sheet the next fixture deletes.
-/**
- * A container that served the stored chunks never ran the island build, so an island's own
- * `.module.scss` never registered: its rules were missing from every pod that read the store, and
- * present on any that rebuilt — two surface stylesheets for one image (one adopter, 22.3.2).
- */
 // The document renderer asks two things of every island a page renders: does it reach realtime
 // (the page boot), and has it state to restore (the hold). Both were answered by the BUILD, in the
 // process that ran it — so a pod that read a verified store knew neither, rendered no page boot
@@ -382,31 +375,52 @@ describe('unit · the island store carries which islands are realtime', () => {
   });
 });
 
+/**
+ * A container that served the stored chunks never ran the island build, so an island's own
+ * `.module.scss` never registered: its rules were missing from every pod that read the store, and
+ * present on any that rebuilt — two surface stylesheets for one image (one adopter, 22.3.2).
+ *
+ * In a root of their own: the sheets an island build loaded are process-global
+ * (`island-styles.ts`) and a store records those under its root, so a sheet built under `ROOT`
+ * would be named by every later store there, after the next fixture had deleted it.
+ */
 describe('unit · the island store carries the island stylesheets', () => {
+  const STYLED_ROOT = processRoot(join(import.meta.dir, '..', '.island-fixture', 'store-styled'));
+  const SHEET = 'apps/web/site/styled.module.scss';
   const STYLED =
     "import styles from './styled.module.scss';\n" +
     'export function mount(el: HTMLElement): void { el.className = styles.box ?? ""; }\n';
 
+  beforeEach(async () => {
+    await rm(STYLED_ROOT, { recursive: true, force: true });
+    await Bun.write(
+      join(STYLED_ROOT, 'package.json'),
+      JSON.stringify({ name: 'island-store-styled-fixture' }),
+    );
+    await Bun.write(join(STYLED_ROOT, SHEET), '.box{color:teal}');
+    await Bun.write(join(STYLED_ROOT, 'apps/web/site/styled.island.tsx'), STYLED);
+    await writeIslandStore(STYLED_ROOT, await buildIslands(STYLED_ROOT));
+  });
+
+  afterEach(async () => {
+    clearStylesheets();
+    await rm(STYLED_ROOT, { recursive: true, force: true });
+  });
+
   test('the index names them, app-relative; a boot from the store registers them', async () => {
-    await write('apps/web/site/styled.module.scss', '.box{color:teal}');
-    await write('apps/web/site/styled.island.tsx', STYLED);
-    await stored();
-    const index = (await Bun.file(join(ROOT, ISLAND_STORE_DIR, 'index.json')).json()) as {
+    const index = (await Bun.file(join(STYLED_ROOT, ISLAND_STORE_DIR, 'index.json')).json()) as {
       stylesheets: string[];
     };
-    expect(index.stylesheets).toEqual(['apps/web/site/styled.module.scss']);
+    expect(index.stylesheets).toEqual([SHEET]);
     clearStylesheets();
     expect(stylesFor('site')).not.toContain('teal');
-    expect((await readIslandStore(ROOT)).stale).toBeUndefined();
+    expect((await readIslandStore(STYLED_ROOT)).stale).toBeUndefined();
     expect(stylesFor('site')).toContain('teal');
   });
 
   test('a store naming a stylesheet the app no longer has is refused', async () => {
-    await write('apps/web/site/styled.module.scss', '.box{color:teal}');
-    await write('apps/web/site/styled.island.tsx', STYLED);
-    await stored();
-    await rm(join(ROOT, 'apps/web/site/styled.module.scss'));
+    await rm(join(STYLED_ROOT, SHEET));
     // The sheet is also one of the chunk's recorded sources, and those are checked first.
-    expect((await readIslandStore(ROOT)).stale).toContain('apps/web/site/styled.module.scss');
+    expect((await readIslandStore(STYLED_ROOT)).stale).toContain(SHEET);
   });
 });

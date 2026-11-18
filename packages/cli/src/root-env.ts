@@ -3,8 +3,9 @@
 // run from `apps/web` found the app and none of its `.env`, and silently used the embedded
 // database. Loaded once, after the root is known, never overriding a real environment variable.
 
-import { isAbsolute, join, relative, resolve } from 'node:path'; // why: Bun ships no path join/resolve.
+import { isAbsolute, join, resolve } from 'node:path'; // why: Bun ships no path join/resolve.
 import { findAppRoot } from './app-root';
+import { posixRelative } from './posix-path';
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -122,7 +123,7 @@ async function envFilesIn(dir: string, names: readonly string[]): Promise<Map<st
 
 /** True when `dir` is `root` or below it. */
 const isWithin = (root: string, dir: string): boolean => {
-  const rel = relative(resolve(root), resolve(dir));
+  const rel = posixRelative(resolve(root), resolve(dir));
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 };
 

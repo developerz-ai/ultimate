@@ -3,7 +3,12 @@
 One authz system. Authentication is `@ultimat3/auth` ([Auth](Auth)); **authorization is this page**, because it must be identical in HTTP, WebSocket, jobs, and MCP.
 
 ```ts
-policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
+import { can } from '@ultimat3/policy';
+import { type Actor } from '@ultimat3/core';
+
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+
+policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
 ```
 
 ## `can(permission, predicate)`
@@ -304,10 +309,27 @@ Generated with the primitive, fails until filled in:
 
 ```ts
 // contract test — generated as a scaffold with the action
-test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
-  const { post, stranger } = await seed('two-orgs');
-  await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_FORBIDDEN');
+import { type Action, t } from '@ultimat3/action';
+import { testActor } from '@ultimat3/policy';
+import { contractTest, expect } from '@ultimat3/testing';
+
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+declare const postId: string;
+
+// Named here because this file does not boot the app; at boot `defineApi` stamps the same name.
+const target = publishPost.named('publishPost');
+
+// Holds the grant, wrong org: a denial here is the policy deciding, not the permission check.
+const outsider = testActor('outsider', {
+  orgId: '00000000-0000-4000-8000-000000000009',
+  permissions: ['post:publish'],
+}).actor;
+
+contractTest('publishPost denies a foreign org', async () => {
+  const denied = await target.as(outsider, { postId }).catch((error: unknown) => error);
+  expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 ```
 

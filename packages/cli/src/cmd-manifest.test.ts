@@ -2,8 +2,9 @@
 // `x.manifest.json` reports the same code `x verify` reports for it, and a partial load never
 // persists — `x.manifest.json` is the compatibility contract, so a subset of the app is a lie.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp and no recursive remove, only a per-file delete.
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { resetActions } from '@ultimat3/action';
@@ -26,8 +27,13 @@ import { msg } from './messages';
 import type { FlagValue } from './parse';
 import { processRoot } from './process-root-fixture';
 
-const WHOLE = processRoot(join(import.meta.dir, '..', '.manifest-whole-fixture'));
-const PARTIAL = processRoot(join(import.meta.dir, '..', '.manifest-partial-fixture'));
+// Under `packages/cli/` so the fixtures resolve `@ultimat3/*`. Each test takes roots of its own:
+// Bun caches a module by path for the life of the process, so a reused root would not register its
+// routes again, and a test would read the manifest whichever ran before it had written.
+const WHOLE_BASE = processRoot(join(import.meta.dir, '..', '.manifest-whole-fixture'));
+const PARTIAL_BASE = processRoot(join(import.meta.dir, '..', '.manifest-partial-fixture'));
+let whole = '';
+let partial = '';
 
 const APP_CONFIG = `export const config = { name: 'fixture' };\n`;
 
@@ -53,9 +59,11 @@ const PARTIAL_FILES: Readonly<Record<string, string>> = {
   'apps/web/app/broken.ts': `export { nope } from './does-not-exist';\n`,
 };
 
-const write = async (root: string, files: Readonly<Record<string, string>>): Promise<void> => {
-  await rm(root, { recursive: true, force: true });
+const write = async (base: string, files: Readonly<Record<string, string>>): Promise<string> => {
+  await mkdir(base, { recursive: true });
+  const root = await mkdtemp(join(base, 'app-'));
   for (const [path, contents] of Object.entries(files)) await Bun.write(join(root, path), contents);
+  return root;
 };
 
 const resetRegistries = (): void => {
@@ -116,87 +124,90 @@ const verified = async (root: string): Promise<Stale> => {
 const exists = (root: string, file: string): Promise<boolean> =>
   Bun.file(join(root, file)).exists();
 
-beforeAll(async () => {
-  await write(WHOLE, WHOLE_FILES);
-  await write(PARTIAL, PARTIAL_FILES);
+/** `x manifest` over the whole app: what the `--check` tests judge. */
+const generated = async (): Promise<void> => {
+  expect((await manifestCommand.run(contextFor(whole, {}))).ok).toBe(true);
+};
+
+beforeEach(async () => {
+  resetRegistries();
+  whole = await write(WHOLE_BASE, WHOLE_FILES);
+  partial = await write(PARTIAL_BASE, PARTIAL_FILES);
+});
+
+afterEach(async () => {
+  await rm(whole, { recursive: true, force: true });
+  await rm(partial, { recursive: true, force: true });
   resetRegistries();
 });
 
 afterAll(async () => {
-  await rm(WHOLE, { recursive: true, force: true });
-  await rm(PARTIAL, { recursive: true, force: true });
-  resetRegistries();
+  await rm(WHOLE_BASE, { recursive: true, force: true });
+  await rm(PARTIAL_BASE, { recursive: true, force: true });
 });
 
 describe('unit · x manifest', () => {
   test('--check on an app that never generated one says it is missing — the gate`s own answer', async () => {
-    const result = await manifestCommand.run(contextFor(WHOLE, { check: true }));
+    const result = await manifestCommand.run(contextFor(whole, { check: true }));
     expect(result.ok).toBe(false);
     expect(result.summary).toBe(msg('cli.manifest.stale'));
     expect(result.findings?.map((finding) => finding.code)).toEqual(['X_MANIFEST_MISSING']);
     expect(result.findings?.[0]?.docs).toBe(ERROR_DOCS_URL);
     expect(result.findings?.[0]?.fix).toBe('x manifest');
     expect(result.findings?.[0]?.at).toBe(MANIFEST_FILENAME);
-    expect(await verified(WHOLE)).toEqual(await checked(WHOLE));
+    expect(await verified(whole)).toEqual(await checked(whole));
   });
 
   test('a whole load writes both generated files', async () => {
-    const result = await manifestCommand.run(contextFor(WHOLE, {}));
+    const result = await manifestCommand.run(contextFor(whole, {}));
     expect(result.ok).toBe(true);
     expect(result.summary).toContain(MANIFEST_FILENAME);
-    expect(await exists(WHOLE, MANIFEST_FILENAME)).toBe(true);
-    expect(await exists(WHOLE, OPENAPI_FILE)).toBe(true);
+    expect(await exists(whole, MANIFEST_FILENAME)).toBe(true);
+    expect(await exists(whole, OPENAPI_FILE)).toBe(true);
   });
 
   test('--check on what was just written says fresh, with no findings', async () => {
-    const result = await manifestCommand.run(contextFor(WHOLE, { check: true }));
+    await generated();
+    const result = await manifestCommand.run(contextFor(whole, { check: true }));
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(msg('cli.manifest.fresh'));
     expect(result.findings ?? []).toEqual([]);
-    expect(await verified(WHOLE)).toEqual([]);
+    expect(await verified(whole)).toEqual([]);
   });
 
   // Row j: `--check` read `x.manifest.json` alone and answered fresh over a stale `openapi.json`.
   test('--check reports a stale openapi.json, and the fresh manifest beside it does not hide it', async () => {
-    const spec = join(WHOLE, OPENAPI_FILE);
-    const original = await Bun.file(spec).text();
-    try {
-      await Bun.write(spec, '{"openapi":"3.1.0","paths":{}}\n');
-      const result = await manifestCommand.run(contextFor(WHOLE, { check: true }));
-      expect(result.ok).toBe(false);
-      expect(result.findings?.map((finding) => [finding.code, finding.at])).toEqual([
-        ['X_MANIFEST_STALE', OPENAPI_FILE],
-      ]);
-      // ONE check: the gate's `manifest` step answered green here while this command said stale,
-      // so `x verify --only manifest` and `x manifest --check` disagreed about one file.
-      expect(await verified(WHOLE)).toEqual([['X_MANIFEST_STALE', OPENAPI_FILE]]);
-    } finally {
-      await Bun.write(spec, original);
-    }
+    await generated();
+    await Bun.write(join(whole, OPENAPI_FILE), '{"openapi":"3.1.0","paths":{}}\n');
+    const result = await manifestCommand.run(contextFor(whole, { check: true }));
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((finding) => [finding.code, finding.at])).toEqual([
+      ['X_MANIFEST_STALE', OPENAPI_FILE],
+    ]);
+    // ONE check: the gate's `manifest` step answered green here while this command said stale,
+    // so `x verify --only manifest` and `x manifest --check` disagreed about one file.
+    expect(await verified(whole)).toEqual([['X_MANIFEST_STALE', OPENAPI_FILE]]);
   });
 
   test('a hand-edited x.manifest.json is drift to both, by the same code', async () => {
-    const file = join(WHOLE, MANIFEST_FILENAME);
+    await generated();
+    const file = join(whole, MANIFEST_FILENAME);
     const original = await Bun.file(file).text();
-    try {
-      await Bun.write(file, original.replace('"1.4.0"', '"9.9.9"'));
-      expect(await checked(WHOLE)).toEqual([['X_MANIFEST_DRIFT', MANIFEST_FILENAME]]);
-      expect(await verified(WHOLE)).toEqual(await checked(WHOLE));
-    } finally {
-      await Bun.write(file, original);
-    }
+    await Bun.write(file, original.replace('"1.4.0"', '"9.9.9"'));
+    expect(await checked(whole)).toEqual([['X_MANIFEST_DRIFT', MANIFEST_FILENAME]]);
+    expect(await verified(whole)).toEqual(await checked(whole));
   });
 
   test('a partial load writes neither file: a subset of the app is not the contract', async () => {
-    const result = await manifestCommand.run(contextFor(PARTIAL, {}));
+    const result = await manifestCommand.run(contextFor(partial, {}));
     expect(result.ok).toBe(false);
     expect(result.findings?.map((finding) => finding.at)).toEqual(['apps/web/app/broken.ts']);
-    expect(await exists(PARTIAL, MANIFEST_FILENAME)).toBe(false);
-    expect(await exists(PARTIAL, OPENAPI_FILE)).toBe(false);
+    expect(await exists(partial, MANIFEST_FILENAME)).toBe(false);
+    expect(await exists(partial, OPENAPI_FILE)).toBe(false);
   });
 
   test('the blocked run still reports the build id and the counts, so --json loses nothing', async () => {
-    const result = await manifestCommand.run(contextFor(PARTIAL, {}));
+    const result = await manifestCommand.run(contextFor(partial, {}));
     expect(result.summary).toBe(msg('cli.manifest.blocked', { count: 1 }));
     const data = result.data as { buildId?: string; counts?: { routes?: number } };
     expect(data.buildId?.length).toBeGreaterThan(0);

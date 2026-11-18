@@ -143,9 +143,12 @@ describe.skipIf(!hasPostgres)(
     });
 
     test('the DDL is idempotent: applying it again over the migrated table changes nothing', async () => {
+      const count = () =>
+        client.query<{ n: number }>(raw('select count(*)::int as n from x_audit'));
+      const before = await count();
+      expect(before[0]?.n).toBeGreaterThan(0);
       await applyDdl(client);
-      const rows = await client.query<{ n: number }>(raw('select count(*)::int as n from x_audit'));
-      expect(rows).toEqual([{ n: 8 }]);
+      expect(await count()).toEqual(before);
     });
   },
 );

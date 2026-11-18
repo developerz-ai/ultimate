@@ -6,14 +6,14 @@ import type { CommandSpec } from './parse';
 export const exerciseSpec: CommandSpec = {
   name: 'exercise',
   summary: 'run every action, query and job once on generated rows, with no test written',
-  usage: 'x exercise [<name>] [--seed n] [--shard i/n] [--json]',
+  usage: 'x exercise [<name>] [--seed n|random] [--shard i/n] [--json]',
   requiresApp: true,
   flags: [
     {
       name: 'seed',
       type: 'string',
       summary:
-        'the integer the seed graph and every generated input are drawn from; same seed, same pass',
+        'the integer the seed graph and every generated input are drawn from; same seed, same pass. Default: one constant, so the gate is reproducible; random explores a fresh one and reports it',
     },
     {
       name: 'shard',

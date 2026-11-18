@@ -29,11 +29,27 @@ The first two are automatic — nothing to opt into, no `dataloader()`, no `batc
 `findMany` tags the rows it returns with their own foreign key **values** (never the rows) under a per-request store. The first `findById` whose id matches one of those values then resolves that key for **every** row of the page in one statement, and the rest of a `for … of` loop is served from memory:
 
 ```ts
-const page = await db.posts.findMany({ orgId });
+import { entity, postgresRepo, uuid } from '@ultimat3/entity';
+
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+declare const orgId: string;
+
+const page = await postgresRepo(posts).findMany({ orgId });
 for (const post of page.rows) {
   // Two statements for the whole loop: the page, then one `where "id" in (…)` over every
   // author on it. Every lookup after the first is memory.
-  const author = await db.users.findById(post.authorId, { orgId });
+  const author = await postgresRepo(members).findById(post.authorId, { orgId });
 }
 ```
 
@@ -42,11 +58,28 @@ Controlled by the `jitPreload` option, default `true`, on `postgresDriver({ jitP
 ### `.preload('relation')` — named on the chain
 
 ```ts
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey(), name: text() } });
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), name: text() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+declare const orgId: string;
+
 export const db = database({ orgs, posts, members });
 
 // Two statements: the page, then one `select … where "id" in (…)` over its authors.
 const page = await db.posts.where({ orgId }).preload('author').page();
-page.rows[0].author;   // the member row, or null — always present
+page.rows[0]?.author;   // the member row, or null — always present
 ```
 
 A `belongsTo` attaches the row or `null`; a `hasMany` attaches an array, always present so "no author" and "nobody preloaded the author" cannot read the same. `preload()` is resolved on the chain (`relationNamed`), so an unknown relation fails there and not a page later. Attachment happens after the projection — `select()` is widened internally with every preloaded relation's own key, so a projection can never drop what a preload needs; `plan().select` reports the widened list that actually ran. Only the terminals that read a row resolve it: `page()`, `all()`, `one()` — never `count()`, `countBy()` or `plan()`, since none of those has a row to attach one to.
@@ -70,6 +103,28 @@ Reach for `.preload()` when the relation is part of what the page *is* — a lis
 A loop of `insert()` calls is the same defect a per-row read loop is, on the other side of the statement:
 
 ```ts
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), status: text().default('draft') },
+});
+const likes = entity('likes', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid(), memberId: uuid() },
+  indexes: [{ on: ['postId', 'memberId'], unique: true }],
+});
+const tags = entity('tags', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), name: text() },
+});
+const db = database({ likes, posts, tags });
+declare const names: readonly string[];
+declare const rows: readonly { orgId: string; postId: string; memberId: string }[];
+declare const orgId: string;
+declare const postId: string;
+declare const memberId: string;
+
 await db.tags.insertAll(names.map((name) => ({ orgId, name })));         // one statement, n rows
 
 await db.likes.upsertAll(rows, {                                         // insert, or leave what's there
@@ -98,6 +153,25 @@ const removed = await db.likes.deleteWhere({ orgId, postId, memberId });
 The chain's own terminal for "every row, not one page":
 
 ```ts
+import { database, entity, uuid } from '@ultimat3/entity';
+
+declare const search: { index(rows: readonly object[]): Promise<void> };
+
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+const db = database({ members, posts });
+declare const orgId: string;
+
 await using batches = db.posts.where({ orgId }).preload('author').inBatches(500);
 for await (const batch of batches) {
   await search.index(batch);

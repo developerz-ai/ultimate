@@ -309,7 +309,7 @@ unchanged tree, nothing. A failed build is the step's verdict, with the build's 
 | `X_MATCHER_UNSUPPORTED` | a `live: true` read the incremental matcher cannot evaluate | set `live: false` and poll, or reshape the query to equality filters + `orderBy` + `limit` |
 | `X_IDEMPOTENCY_REQUIRED` | a JS or generated `job()` whose ONLY missing field is `idempotencyKey` (TypeScript refuses the omission first). Missing it and any other required field is `X_JOB_DECLARATION_INVALID`, listing every one; a job with no `name` is told to name itself before the key is written | add `idempotencyKey: (input) => \`<job>:${input.id}\`` to the job definition |
 | `X_MANIFEST_STALE` | `openapi.json` is stale (`X_MANIFEST_DRIFT` for a stale `framework.manifest.json`) | `x manifest --json` |
-| `X_CACHE_TAG_UNKNOWN` | `cache.invalidates` names a tag no entity declared | `x manifest` |
+| `X_CACHE_TAG_UNKNOWN` | `cache.invalidates` names a tag no entity declared | `declareTags(['<name>'])` in the app's tag module, plus the name in its `CacheTagRegistry`; for a typo, correct the tag |
 | anything else | every error carries a `fix:` | `x errors explain <CODE> --json` |
 
 Every row's command is the error's own registered `fix:` line, not a paraphrase — `x errors explain <CODE> --json` prints it for any code, and that output is the authority if this table ever falls behind.

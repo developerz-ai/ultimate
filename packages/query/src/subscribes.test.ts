@@ -15,6 +15,8 @@ import { from } from './source';
 // The last test registers `liveFeed` outside any block that resets: left registered, the next
 // file on a shared worker generated a migration for a `posts` subscription its app never declared.
 afterAll(() => resetQueries());
+// Every case registers the one name `liveFeed`, and a second registration is refused.
+beforeEach(() => resetQueries());
 
 interface Post {
   readonly id: string;
@@ -46,10 +48,6 @@ const thrownBy = (run: () => unknown): unknown => {
 };
 
 describe('unit · a live read declares the relations it subscribes to', () => {
-  beforeEach(() => {
-    resetQueries();
-  });
-
   test('the declaration reaches the descriptor verbatim', () => {
     const feed = registerQuery('liveFeed', defineFeed(['posts']));
 
@@ -84,10 +82,6 @@ describe('unit · a live read declares the relations it subscribes to', () => {
 });
 
 describe('unit · a declaration that disagrees with the read is refused', () => {
-  beforeEach(() => {
-    resetQueries();
-  });
-
   test('the resolved relation missing from the declaration refuses at subscribe', async () => {
     const feed = registerQuery('liveFeed', defineFeed(['post']));
 

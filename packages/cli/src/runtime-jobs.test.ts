@@ -2,7 +2,7 @@
 // off the app's own `app.config.ts`, and the served queue set never narrower than what the app's
 // own jobs are enqueued on.
 
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API and no recursive remove — `Object.keys(Bun)` has `file`,
 // `write` and `Glob`, and nothing that makes or removes a directory tree.
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -131,6 +131,7 @@ describe('startRoles hands the worker its configured queues', () => {
   afterEach(async () => {
     await running?.stop();
     running = undefined;
+    resetJobs();
     resetDevRolesState();
   });
 
@@ -237,6 +238,10 @@ const probeJob = (name: string, queue: string): void => {
 // Issue #673: a Deployment that serves `banks` must claim `banks` and nothing else. The image and
 // `app.config.ts` are the same for every Deployment, so the per-Deployment answer is the env.
 describe('WORKER_QUEUES — the exact queues this worker serves', () => {
+  // The known set is the job registry's, so each test starts from none, whatever ran before it.
+  beforeEach(() => {
+    resetJobs();
+  });
   afterEach(() => {
     resetJobs();
   });

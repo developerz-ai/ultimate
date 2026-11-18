@@ -4,7 +4,7 @@
 // interrupted build is recovered on the next run. `concurrent-index-embedded.test.ts` runs the same
 // recovery on PGlite; this one is the server `ROLE=migrate` talks to.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import type {
   ColumnDescriptionLike,
@@ -79,10 +79,12 @@ describe.skipIf(!hasPostgres)('live · postgres · a concurrent index step', () 
     return row?.valid ?? null;
   };
 
-  beforeAll(async () => {
+  beforeAll(() => {
     client = postgresClient({ url: url ?? '' });
-    await clean();
   });
+
+  // Every test migrates from an empty database: the ledger and the index are what each one is about.
+  beforeEach(() => clean());
 
   afterAll(async () => {
     await clean();
@@ -108,6 +110,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a concurrent index step', () 
   });
 
   test('an interrupted build is INVALID with no ledger row; the next run rebuilds it', async () => {
+    await migrate({ migrations: [created], client });
     await client.execute(raw(`insert into "${TABLE}" (id, status) values (1, 'x'), (2, 'x')`));
     const failed = await migrate({ migrations: chain, client }).then(
       () => undefined,
@@ -124,12 +127,11 @@ describe.skipIf(!hasPostgres)('live · postgres · a concurrent index step', () 
   });
 
   test('the step sets no lock_timeout — the build waits out an older transaction', async () => {
-    // Back to before the build, then a reader holding a snapshot open across it. A concurrent
-    // build waits for every such transaction, and that wait IS a lock wait: under the 3 s bound
-    // the transactional path takes it would be 55P03 and an INVALID index. 200 ms here, so the
-    // test says the same thing in a fraction of the time.
-    await client.execute(raw(`drop index "${STATUS.name}"`));
-    await client.execute(raw(`delete from ${LEDGER_TABLE} where id = '${built.id}'`));
+    // Before the build, a reader holding a snapshot open across it. A concurrent build waits for
+    // every such transaction, and that wait IS a lock wait: under the 3 s bound the transactional
+    // path takes it would be 55P03 and an INVALID index. 200 ms here, so the test says the same
+    // thing in a fraction of the time.
+    await migrate({ migrations: [created], client });
     const reader = postgresClient({ url: url ?? '' });
     const observer = postgresClient({ url: url ?? '' });
     try {
@@ -175,9 +177,11 @@ describe.skipIf(!hasPostgres)('live · postgres · a concurrent index step', () 
   });
 
   test('a constraint key renamed to a concurrent replacement: the replacement first, then the key', async () => {
-    // `status` already carries the built key from the chain; make the old one a real CONSTRAINT
-    // and rename it to a concurrently built replacement. The step builds the new unique index
-    // while the constraint still guards writes, and unhooks the constraint only after.
+    // `status` carries the built key from the chain; make the old one a real CONSTRAINT and rename
+    // it to a concurrently built replacement. The step builds the new unique index while the
+    // constraint still guards writes, and unhooks the constraint only after.
+    await migrate({ migrations: chain, client });
+    await client.execute(raw(`insert into "${TABLE}" (id, status) values (1, 'x')`));
     await client.execute(raw(`drop index "${STATUS.name}"`));
     await client.execute(
       raw(`alter table "${TABLE}" add constraint "${STATUS.name}" unique ("status")`),

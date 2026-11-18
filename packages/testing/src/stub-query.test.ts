@@ -2,7 +2,7 @@
 // the input is still parsed (the stub records the parsed value), the SQL is never built, and the
 // next test reads through the declaration again.
 
-import { describe, expect } from 'bun:test';
+import { beforeEach, describe, expect } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { from, query } from '@ultimat3/query';
@@ -32,6 +32,12 @@ const secret = query({
   policy: deny('stubbed primitives still answer to their policy'),
   sql: () => from<Note>('stub_query_secret', []),
 }).named('stubQuerySecret');
+
+// Before EVERY test, so a stub that outlives its test is caught in any order the tests run.
+beforeEach(async () => {
+  expect(await notes.as(ada, { q: 'probe' })).toEqual([{ id: 'real', title: 'from sql' }]);
+  built.length = 0;
+});
 
 describe('stub(query)', () => {
   unitTest('the rows are the script; the SQL is never built; the call is recorded', async () => {

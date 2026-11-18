@@ -78,10 +78,36 @@ x g action publish-post --feature post
 ```
 
 ```ts
+import { action, t } from '@ultimat3/action';
+import { tag } from '@ultimat3/cache';
+import type { Actor } from '@ultimat3/core';
+import type { JobHandle } from '@ultimat3/jobs';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/cache' {
+  interface CacheTagRegistry {
+    post: true;
+    feed: true;
+  }
+}
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
+declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+
 export const publishPost = action({
   input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
-  policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
