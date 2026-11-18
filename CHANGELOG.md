@@ -10,18 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-### Highlights
-
-- **One redirect path for a browser's form (D10):** the sign-in and invite actions `x g sign-in` and `x g invite` write answer a native form post through `native:` alone, and the hand-written `landAt()` helper is gone. The generated tests now post a real form through the HTTP pipeline. A fresh saas app gates green with no `X_NATIVE_FORM_UNANSWERED`.
-
-### Changed
-
-- `x g sign-in --password` and `x g invite` answer a browser's own form through one path: each action (`createSession`, `confirmSession`, `destroySession`, `inviteMember`, `acceptInvite`, `revokeInvite`) declares `native: { success: (output) => output.next }`, and the hand-rolled `landAt()` helper that sniffed `accept` and called `setRedirect` is gone. Each still returns `next` as data for the typed client and MCP, and its generated test posts the form through `httpServer` and asserts the 303, so a new `--shape saas` app gates with no `X_NATIVE_FORM_UNANSWERED` warning.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.46.0](docs/changelog/31.46.0.md) | 2026-11-18 | **One redirect path for a browser's form (D10):** the sign-in and invite actions `x g sign-in` and `x g invite` write answer a native form post through `native:` alone, and the hand-written `landAt()` helper is gone. The generated tests now post a real form through the HTTP pipeline. A fresh saas app gates green with no `X_NATIVE_FORM_UNANSWERED`. |
 | [31.45.0](docs/changelog/31.45.0.md) | 2026-11-18 | **Faster, steadier CI, and what the adopter rollout taught:** |
 | [31.44.0](docs/changelog/31.44.0.md) | 2026-11-17 | **Audit rounds 5 and 6 (plan 101b, slice 20), security first:** |
 | [31.43.0](docs/changelog/31.43.0.md) | 2026-11-17 | **Audit round 4 (plan 101b, slice 20):** OAuth client-metadata fetches are metered for every caller; presence leave frames fit the client's frame limit; the `assets.retain` sweep no longer deletes a file another pod's publish reused; `x upgrade` survives a reused pid; scaffold CI pins every action by SHA; one env declaration form, `envSchema`. Each fix has a test that failed first. |
