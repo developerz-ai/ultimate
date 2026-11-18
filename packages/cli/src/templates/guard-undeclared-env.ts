@@ -225,7 +225,8 @@ export function undeclaredEnv(files: readonly SourceFile[], config: string): rea
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${lineOf(text, match.index)} reads \${match[0]}, which app.config.ts does not declare — x env check never asks for it, so a deploy without it boots and fails at the first read\`,
-        fix: \`add \${name}: { type: 'string', description: '…' } to envSchema in app.config.ts, read it as env.\${name} in \${file.path}, then: x env example\`,
+        // Second branch: a value \`bun build --define\` bakes in is no runtime env, and no deploy sets it.
+        fix: \`\${name}: { type: 'string', description: '…' },   // into envSchema in app.config.ts, read it as env.\${name} in \${file.path}, then: x env example. A build-time constant, not runtime env: declare const \${name}: string in a .d.ts, read \${name} in place of \${match[0]}, and bun build --define \${name}='"…"'\`,
         at: file.path,
       });
     }

@@ -1,59 +1,143 @@
-// 31.43.0: the workflows `x new` writes run every action by commit SHA (`templates/github/
-// actions.ts`), and ci.yml's checkouts drop the job token before `bun install`. Each stock line is
-// swapped wherever it stands — every occurrence is the template's, so many is no guess — and a
-// file still holding a movable `actions/*` tag after the swap is the author's, reported whole.
+// 31.43.0: `x new`'s workflows run every action by commit SHA (`templates/github/actions.ts`) and
+// a checkout drops the job token before `bun install`. Line by line, so any tagged major moves
+// (`@v5` included); a SHA or an action with no pin is never touched, and a line no edit reads
+// safely (quoted, an inline `with:`) leaves the file the author's, with the diff.
 
 import { CACHE, CHECKOUT, DOWNLOAD_ARTIFACT, UPLOAD_ARTIFACT } from '../templates/github/actions';
 import { CI_WORKFLOW_PATH } from '../templates/github/ci.yml';
 import { IMAGE_WORKFLOW_PATH } from '../templates/github/image.yml';
 import type { Codemod, CodemodApp, CodemodResult } from './codemod';
 import { unifiedDiff } from './engine-diff';
-import type { SnippetEdit } from './engine-edits';
 import { mergeResults, readText } from './engine-edits';
 
-const SETUP_BUN = '      - uses: oven-sh/setup-bun@';
+/** Each action this codemod pins, to the pin the template writes today. */
+const PINS: Readonly<Record<string, string>> = {
+  checkout: CHECKOUT,
+  cache: CACHE,
+  'upload-artifact': UPLOAD_ARTIFACT,
+  'download-artifact': DOWNLOAD_ARTIFACT,
+};
 
-/** ci.yml: each checkout is followed by setup-bun, so it has no `with:` of its own to collide. */
-export const CI_PINNED_EDITS: readonly SnippetEdit[] = [
-  {
-    from: `      - uses: actions/checkout@v7\n${SETUP_BUN}`,
-    to: `      - uses: ${CHECKOUT}\n        with:\n          persist-credentials: false\n${SETUP_BUN}`,
-  },
-  { from: '      - uses: actions/cache@v6\n', to: `      - uses: ${CACHE}\n` },
-  { from: '      - uses: actions/upload-artifact@v7\n', to: `      - uses: ${UPLOAD_ARTIFACT}\n` },
-  {
-    from: '      - uses: actions/download-artifact@v8\n',
-    to: `      - uses: ${DOWNLOAD_ARTIFACT}\n`,
-  },
-];
-
-/** image.yml: its checkout already set `persist-credentials: false`; only the pin moves. */
-export const IMAGE_PINNED_EDITS: readonly SnippetEdit[] = [
-  { from: '      - uses: actions/checkout@v7\n', to: `      - uses: ${CHECKOUT}\n` },
-];
-
-/** A GitHub-owned action still on a tag: what a stock file never holds once the edits ran. */
-const MOVABLE = /uses:\s*actions\/[\w./-]+@v\d[^\n]*$/m;
+const NAMES = Object.keys(PINS).join('|');
+/** A step's `uses:` on a tag — `- uses:` or a later key of the step — in the one shape edited. */
+const TAGGED = new RegExp(`^( *)(- )?uses: actions/(${NAMES})@v\\d+(?:\\.\\d+){0,2}[ \\t]*$`);
+/** Any mention of a pinned action that is not a SHA: what must have read as TAGGED, or be refused. */
+const MENTION = new RegExp(`actions/(?:${NAMES})@(?![0-9a-f]{40}(?![\\w-]))`);
+const WITH = /^with:(.*)$/;
 
 const NOTHING: CodemodResult = { changed: [], skipped: [] };
 
-async function pin(
-  app: CodemodApp,
-  path: string,
-  edits: readonly SnippetEdit[],
-): Promise<CodemodResult> {
+/** A line this codemod cannot edit safely, as its 1-based number and text. */
+class Unsafe {
+  constructor(
+    readonly line: number,
+    readonly text: string,
+  ) {}
+}
+
+const indentOf = (line: string): number => line.length - line.trimStart().length;
+const isBlank = (line: string): boolean => line.trim() === '';
+
+/** The step's lines around its `uses:` at `at`, as [first, last], keys at `keys` columns. */
+const stepRange = (lines: readonly string[], at: number, keys: number, dashed: boolean) => {
+  let first = at;
+  if (!dashed) {
+    while (first > 0) {
+      const line = lines[first - 1] ?? '';
+      first -= 1;
+      if (indentOf(line) === keys - 2 && line.trimStart().startsWith('- ')) break;
+      if (!isBlank(line) && indentOf(line) < keys) return undefined;
+    }
+  }
+  let last = at;
+  for (let next = at + 1; next < lines.length; next += 1) {
+    const line = lines[next] ?? '';
+    if (isBlank(line)) continue;
+    if (indentOf(line) < keys) break;
+    last = next;
+  }
+  return [first, last] as const;
+};
+
+/** The lines a checkout's step needs inserted to drop the token, and where; Unsafe when unreadable. */
+const persistInsert = (
+  lines: readonly string[],
+  at: number,
+  keys: number,
+  dashed: boolean,
+): { readonly after: number; readonly lines: readonly string[] } | Unsafe | undefined => {
+  const range = stepRange(lines, at, keys, dashed);
+  if (range === undefined) return new Unsafe(at + 1, lines[at] ?? '');
+  const [first, last] = range;
+  const own = (index: number): string => {
+    const line = lines[index] ?? '';
+    return indentOf(line) === keys || (index === first && dashed) ? line.trimStart() : '';
+  };
+  for (let index = first; index <= last; index += 1) {
+    const key = own(index).replace(/^- /, '');
+    const opened = WITH.exec(key);
+    if (opened === null) continue;
+    if (!/^\s*(?:#.*)?$/.test(opened[1] ?? '')) return new Unsafe(index + 1, lines[index] ?? '');
+    const children = lines.slice(index + 1, last + 1).filter((line) => !isBlank(line));
+    if (children.some((line) => line.trimStart().startsWith('persist-credentials:'))) return;
+    const inner = children[0] === undefined ? keys + 2 : indentOf(children[0]);
+    return { after: index, lines: [`${' '.repeat(inner)}persist-credentials: false`] };
+  }
+  const pad = ' '.repeat(keys);
+  return { after: at, lines: [`${pad}with:`, `${pad}  persist-credentials: false`] };
+};
+
+/** `text` with every tagged pin moved and each moved checkout's token dropped, or the first Unsafe. */
+function pinActions(text: string): string | Unsafe {
+  const lines = text.split('\n');
+  // Bottom-up, so an insert never shifts a line still to be read.
+  for (let at = lines.length - 1; at >= 0; at -= 1) {
+    const line = lines[at] ?? '';
+    const tagged = TAGGED.exec(line);
+    if (tagged === null) {
+      if (MENTION.test(line)) return new Unsafe(at + 1, line);
+      continue;
+    }
+    const [, lead = '', dash, name = ''] = tagged;
+    const keys = lead.length + (dash === undefined ? 0 : 2);
+    if (name === 'checkout') {
+      const insert = persistInsert(lines, at, keys, dash !== undefined);
+      if (insert instanceof Unsafe) return insert;
+      if (insert !== undefined) lines.splice(insert.after + 1, 0, ...insert.lines);
+    }
+    lines[at] = `${lead}${dash ?? ''}uses: ${PINS[name] ?? ''}`;
+  }
+  return lines.join('\n');
+}
+
+/** The template's own change, for a file it leaves to the author. */
+const TEMPLATE_DIFF = (path: string): string =>
+  unifiedDiff(
+    path,
+    `${Object.keys(PINS)
+      .map((name) => `      - uses: actions/${name}@v<N>`)
+      .join('\n')}\n`,
+    `${Object.entries(PINS)
+      .map(([name, pin]) =>
+        name === 'checkout'
+          ? `      - uses: ${pin}\n        with:\n          persist-credentials: false`
+          : `      - uses: ${pin}`,
+      )
+      .join('\n')}\n`,
+  );
+
+async function pin(app: CodemodApp, path: string): Promise<CodemodResult> {
   const file = await readText(app, path);
   if (file === undefined) return NOTHING;
-  const next = edits.reduce((source, edit) => source.replaceAll(edit.from, edit.to), file.text);
-  if (MOVABLE.test(next)) {
-    const side = (key: 'from' | 'to') => `${edits.map((edit) => edit[key]).join('\n')}\n`;
+  const next = pinActions(file.text);
+  if (next instanceof Unsafe) {
     return {
       changed: [],
       skipped: [
         {
           path,
-          reason: `${path} runs an actions/* step by movable tag in a shape the scaffold never wrote (${MOVABLE.exec(next)?.[0].trim() ?? ''}), so the diff below is the template's change, to make by hand`,
-          diff: unifiedDiff(path, side('from'), side('to')),
+          reason: `${path}:${String(next.line)} runs ${next.text.trim()} in a shape this codemod cannot edit safely (quoted, commented, an inline with:), so the diff below is the template's change, to make by hand`,
+          diff: TEMPLATE_DIFF(path),
         },
       ],
     };
@@ -68,8 +152,5 @@ export const codemod: Codemod = {
   since: '31.43.0',
   summary: `${CI_WORKFLOW_PATH}, ${IMAGE_WORKFLOW_PATH}: every actions/* step pinned by commit SHA, and ci.yml's checkouts keep no git credential`,
   run: async (app) =>
-    mergeResults([
-      await pin(app, CI_WORKFLOW_PATH, CI_PINNED_EDITS),
-      await pin(app, IMAGE_WORKFLOW_PATH, IMAGE_PINNED_EDITS),
-    ]),
+    mergeResults([await pin(app, CI_WORKFLOW_PATH), await pin(app, IMAGE_WORKFLOW_PATH)]),
 };

@@ -7,6 +7,7 @@ import { codemod as authenticatorSessionRefusal } from './authenticator-session-
 import { codemod as biomeNoDefaultExport } from './biome-no-default-export';
 import { codemod as bunfigIslandCoverage } from './bunfig-island-coverage';
 import { codemod as chartDashboard } from './chart-dashboard';
+import { codemod as ciArtifactRetention } from './ci-artifact-retention';
 import { codemod as ciE2eBrowser } from './ci-e2e-browser';
 import { codemod as ciPinnedActions } from './ci-pinned-actions';
 import { codemod as ciServicesEnv } from './ci-services-env';
@@ -65,4 +66,5 @@ export const CODEMODS: readonly Codemod[] = [
   docsEnvGuard,
   testServices,
   ciPinnedActions,
+  ciArtifactRetention,
 ];

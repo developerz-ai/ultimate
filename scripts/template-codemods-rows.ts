@@ -26,6 +26,16 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.45.0',
     none: 'x new now writes the 2.6.4 Biome pin and schema URL and every @ultimat3/* exact (D9); an existing app retains its valid Biome config, while its caret is moved exact by its next x upgrade hop and x doctor names the line and the version until then',
   },
+  {
+    template: 'packages/cli/src/templates/github/ci.yml.ts',
+    since: '31.45.0',
+    codemod: 'ci-artifact-retention',
+  },
+  {
+    template: '.github/workflows/ci.yml',
+    since: '31.45.0',
+    codemod: 'ci-artifact-retention',
+  },
   ...TEMPLATE_CODEMOD_ROWS_31_40,
   {
     template: 'packages/cli/src/templates/github/actions.ts',
