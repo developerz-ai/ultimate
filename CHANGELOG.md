@@ -10,7 +10,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- The scaffold pins `@biomejs/biome` 2.6.4, and its `biome.json` `$schema` moves with it, so a new app lints with the same formatter this repository runs.
 
 ## Releases
 
