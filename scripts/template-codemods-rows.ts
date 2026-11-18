@@ -12,6 +12,21 @@ export type TemplateCodemodRow =
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
   {
+    template: 'packages/cli/src/templates/sign-in-shared.ts',
+    since: '31.46.0',
+    none: "x new's destroySession now answers a browser form with native: { success: (output) => output.next } and sign-in-flow.ts drops landAt (D10); an existing app's landAt still sends the 303 through setRedirect, which the native answer honours too, so it keeps working unchanged — the optional move is in wiki/Upgrading.md",
+  },
+  {
+    template: 'packages/cli/src/templates/sign-in-password.ts',
+    since: '31.46.0',
+    none: "x new's createSession and confirmSession declare native: { success: (output) => output.next } in place of landAt (D10); an existing app's landAt-based actions still answer its forms with a 303, and rewriting an action an app owns is not a safe mechanical edit — the optional move is in wiki/Upgrading.md",
+  },
+  {
+    template: 'packages/cli/src/templates/sign-in-action-tests.ts',
+    since: '31.46.0',
+    none: "x new's sign-in action tests post the browser form through httpServer and toRoute so the native answer runs (D10); an existing app's tests assert its own landAt redirect, which still holds, so its files stay correct as written",
+  },
+  {
     template: 'biome.json',
     since: '31.45.0',
     none: 'the merge updates only the `$schema` editor hint; an existing app keeps its installed Biome and its own config remains valid, so no codemod moves an app file',

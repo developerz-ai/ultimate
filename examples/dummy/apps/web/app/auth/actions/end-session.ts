@@ -2,8 +2,8 @@
  * Signing out. "Sign out" is a SESSION write — a cookie and a full navigation — so the action
  * revokes the session its cookie names, expires that cookie and sets the demo cookie to
  * `DEMO_SIGNED_OUT` on the response the pipeline is assembling (its last stage copies `ctx.headers`
- * onto whatever the handler returned) and, for a browser's native form post, redirects to the
- * public home. The navigation is load-bearing: the next document names
+ * onto whatever the handler returned); a browser's native form post lands on the public home
+ * through the action's `native:` answer. The navigation is load-bearing: the next document names
  * no principal, and the page's realtime rescopes on it — the previous member's records leave the
  * store and the disk (plan 101, slice 03).
  *
@@ -13,7 +13,7 @@
 import { action, t } from '@ultimat3/action';
 import { logout, signOutHeaders } from '@ultimat3/auth';
 import { readCookie } from '@ultimat3/core';
-import { setCookie, setRedirect, useRequestHeader } from '@ultimat3/http';
+import { setCookie, useRequestHeader } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { DEMO_MEMBER_COOKIE, DEMO_SIGNED_OUT } from '../demo-actor';
 import { auth } from '../login';
@@ -30,6 +30,9 @@ export const endSession = action({
   output: t.object({ ok: t.boolean, next: t.string }),
   // Anyone may end their own session, signed in or not — ending none is a no-op, never a refusal.
   policy: allow('end-session'),
+  // A browser's own form post lands home (a 303 the HTTP projection answers); an agent calling the
+  // action gets the JSON, `next` included.
+  native: { success: (output) => output.next },
   async handle({ ctx }) {
     const landed = carriesHeaders(ctx);
     const { policy } = auth.sessions;
@@ -50,8 +53,6 @@ export const endSession = action({
         ctx.headers.append(name, value);
       }
     }
-    // A browser's form post gets the navigation; an agent calling the action gets the JSON.
-    if ((useRequestHeader('accept') ?? '').includes('text/html')) setRedirect(AFTER_SIGN_OUT);
     return { ok: landed, next: AFTER_SIGN_OUT };
   },
 });

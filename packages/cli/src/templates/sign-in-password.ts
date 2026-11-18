@@ -74,7 +74,7 @@ import { useRequestContext } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { appAuth } from '../auth';
 import { challengeOf, holdChallenge, SECOND_FACTOR_PATH } from '../sign-in-challenge';
-import { landAt, NEXT_PARAM, nextPath } from '../sign-in-flow';
+import { NEXT_PARAM, nextPath } from '../sign-in-flow';
 
 export const createSession = action({
   input: t.object({
@@ -86,6 +86,8 @@ export const createSession = action({
   // Public by declaration: signing in is the one operation nobody holds a permission for yet.
   policy: allow('public'),
   mcp: { expose: false },
+  // A browser's own form lands where the output says; fetch and the typed client read \`next\`.
+  native: { success: (output) => output.next },
   async handle({ input }) {
     const request = useRequestContext('createSession');
     try {
@@ -95,7 +97,7 @@ export const createSession = action({
         ip: request.ip,
       });
       request.headers.append('set-cookie', signedIn.cookie);
-      return { ok: true, next: landAt(nextPath(input[NEXT_PARAM])), secondFactor: false };
+      return { ok: true, next: nextPath(input[NEXT_PARAM]), secondFactor: false };
     } catch (error) {
       const challenge = challengeOf(error);
       if (challenge === null) throw error;
@@ -106,7 +108,7 @@ export const createSession = action({
         next === undefined
           ? SECOND_FACTOR_PATH
           : \`\${SECOND_FACTOR_PATH}?\${NEXT_PARAM}=\${encodeURIComponent(nextPath(next))}\`;
-      return { ok: false, next: landAt(then), secondFactor: true };
+      return { ok: false, next: then, secondFactor: true };
     }
   },
 });
@@ -121,7 +123,7 @@ import { useRequestContext } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { appAuth } from '../auth';
 import { dropChallenge, heldChallenge } from '../sign-in-challenge';
-import { landAt, NEXT_PARAM, nextPath } from '../sign-in-flow';
+import { NEXT_PARAM, nextPath } from '../sign-in-flow';
 
 export const confirmSession = action({
   input: t.object({
@@ -131,6 +133,8 @@ export const confirmSession = action({
   output: t.object({ ok: t.boolean, next: t.string }),
   policy: allow('public'),
   mcp: { expose: false },
+  // A browser's own form lands where the output says; fetch and the typed client read \`next\`.
+  native: { success: (output) => output.next },
   async handle({ input }) {
     const request = useRequestContext('confirmSession');
     const challenge = heldChallenge();
@@ -138,7 +142,7 @@ export const confirmSession = action({
     const signedIn = await completeMfa(appAuth(), challenge, input.code, { ip: request.ip });
     dropChallenge();
     request.headers.append('set-cookie', signedIn.cookie);
-    return { ok: true, next: landAt(nextPath(input[NEXT_PARAM])) };
+    return { ok: true, next: nextPath(input[NEXT_PARAM]) };
   },
 });
 `;

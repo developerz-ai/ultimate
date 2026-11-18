@@ -43,7 +43,6 @@ const moduleSource = (
 // actions beside this file are the app's policy over it.
 ${catalogImport(module)}import { defineMemberInvite, type MailSender } from '@ultimat3/auth';
 import { EnvMissingError } from '@ultimat3/core';
-import { setRedirect, useRequestHeader } from '@ultimat3/http';
 import { blocks, defineMail, send, t } from '@ultimat3/mail';
 
 /** A week: long enough to survive a holiday, short enough that a stale inbox is not a door. */
@@ -100,12 +99,6 @@ export const inviteLink =
     url.search = new URLSearchParams({ orgId, token }).toString();
     return url.href;
   };
-
-/** A browser that posted the native form gets a 303; an agent posting JSON gets the path as data. */
-export const landAt = (path: string): string => {
-  if ((useRequestHeader('accept') ?? '').includes('text/html')) setRedirect(path);
-  return path;
-};
 `;
 
 const policySource =
@@ -140,7 +133,7 @@ const inviteMemberSource =
 import { action, t } from '@ultimat3/action';
 import { authForbidden } from '@ultimat3/auth';
 import { appAuth } from '../auth';
-import { appOrigin, INVITES_PATH, inviteLink, inviteMailer, landAt, memberInvite } from '../invite';
+import { appOrigin, INVITES_PATH, inviteLink, inviteMailer, memberInvite } from '../invite';
 import { canInvite } from '../policy';
 
 export const inviteMember = action({
@@ -149,6 +142,8 @@ export const inviteMember = action({
   policy: canInvite,
   // Mailing a person is a browser operation here; an app that wants it as a tool exposes it.
   mcp: { expose: false },
+  // A browser's own form lands where the output says; fetch and the typed client read \`next\`.
+  native: { success: (output) => output.next },
   async handle({ input, ctx }) {
     const orgId = ctx.actor.orgId;
     if (typeof orgId !== 'string' || orgId === '') {
@@ -160,7 +155,7 @@ export const inviteMember = action({
       locale: ctx.locale,
       link: inviteLink(appOrigin(), orgId),
     });
-    return { ok: true, next: landAt(INVITES_PATH) };
+    return { ok: true, next: INVITES_PATH };
   },
 });
 `;
@@ -175,7 +170,7 @@ import { isAnonymous } from '@ultimat3/core';
 import { useRequestContext, useRequestCookie } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { appAuth } from '../auth';
-import { AFTER_JOIN, landAt, memberInvite } from '../invite';
+import { AFTER_JOIN, memberInvite } from '../invite';
 
 export const acceptInvite = action({
   input: t.object({ orgId: t.uuid, token: t.string.min(1).max(256) }),
@@ -184,6 +179,8 @@ export const acceptInvite = action({
   // the handler refuses an anonymous caller before it reads it.
   policy: allow('invite-link'),
   mcp: { expose: false },
+  // A browser's own form lands where the output says; fetch and the typed client read \`next\`.
+  native: { success: (output) => output.next },
   async handle({ input, ctx }) {
     if (isAnonymous(ctx.actor)) throw authUnauthenticated('POST acceptInvite');
     const auth = appAuth();
@@ -199,7 +196,7 @@ export const acceptInvite = action({
     if (joined.cookie !== undefined) {
       useRequestContext('acceptInvite').headers.append('set-cookie', joined.cookie);
     }
-    return { ok: true, next: landAt(AFTER_JOIN) };
+    return { ok: true, next: AFTER_JOIN };
   },
 });
 `;
@@ -210,7 +207,7 @@ const revokeInviteSource =
 import { action, t } from '@ultimat3/action';
 import { authForbidden } from '@ultimat3/auth';
 import { appAuth } from '../auth';
-import { INVITES_PATH, landAt, memberInvite } from '../invite';
+import { INVITES_PATH, memberInvite } from '../invite';
 import { canInvite } from '../policy';
 
 export const revokeInvite = action({
@@ -218,6 +215,8 @@ export const revokeInvite = action({
   output: t.object({ ok: t.boolean, next: t.string, memberRemoved: t.boolean }),
   policy: canInvite,
   mcp: { expose: false },
+  // A browser's own form lands where the output says; fetch and the typed client read \`next\`.
+  native: { success: (output) => output.next },
   async handle({ input, ctx }) {
     const orgId = ctx.actor.orgId;
     if (typeof orgId !== 'string' || orgId === '') {
@@ -228,8 +227,7 @@ export const revokeInvite = action({
       email: input.email,
       reason: \`revokeInvite by \${ctx.actor.id}\`,
     });
-    const next = landAt(INVITES_PATH);
-    return { ok: true, next, memberRemoved: revoked.memberRemoved };
+    return { ok: true, next: INVITES_PATH, memberRemoved: revoked.memberRemoved };
   },
 });
 `;
