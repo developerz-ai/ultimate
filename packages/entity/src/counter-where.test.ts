@@ -12,7 +12,7 @@ import { type Driver, database, memoryDriver } from './database';
 import { entity } from './entity';
 import type { Expr } from './expr';
 import { postgresDriver } from './pg-driver';
-import { clearRegistry } from './registry';
+import { clearRegistry, registerEntity, registeredEntities } from './registry';
 
 const PGLITE_BOOT_MS = 30_000;
 
@@ -168,20 +168,28 @@ describe('counts · where · refused', () => {
     return 'accepted';
   };
 
-  // Last: once registered, a refused counter refuses every reading of the counters, as it should.
+  // `entity()` registers at the CALL, before `$describe()` refuses, so this stray is unregistered
+  // again here: a registered refused counter throws on every `registeredCounters()` read — and the
+  // memory driver reads them on every write — which let this file's order decide its neighbours.
   test('an app-only predicate is refused: the trigger could not hold the same rule', () => {
-    const stray = entity('cntw_stray', {
-      columns: {
-        id: uuid().primaryKey(),
-        postId: uuid().references(() => posts.id, {
-          countedIn: {
-            to: () => posts.upCount,
-            where: (): Expr => whereColumns(stray).label.matches((value) => value.length > 0),
-          },
-        }),
-        label: text(),
-      },
-    });
-    expect(code(() => stray.$describe())).toBe('X_ENTITY_COUNTS_INVALID');
+    const restore = registeredEntities();
+    try {
+      const stray = entity('cntw_stray', {
+        columns: {
+          id: uuid().primaryKey(),
+          postId: uuid().references(() => posts.id, {
+            countedIn: {
+              to: () => posts.upCount,
+              where: (): Expr => whereColumns(stray).label.matches((value) => value.length > 0),
+            },
+          }),
+          label: text(),
+        },
+      });
+      expect(code(() => stray.$describe())).toBe('X_ENTITY_COUNTS_INVALID');
+    } finally {
+      clearRegistry();
+      for (const entry of restore) registerEntity(entry);
+    }
   });
 });
