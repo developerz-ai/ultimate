@@ -10,6 +10,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Highlights
+
+- **Faster, steadier CI, and what the adopter rollout taught:**
+  - `cli` coverage runs as two weight-band parts folded by `--merge`; the longest `packages` job dropped from about 8½ to about 4¾ minutes, and no longer times out.
+  - The scaffold keeps same-run CI artifacts for 1 day instead of 90; one app had filled its org's Actions storage. The `ci-artifact-retention` codemod carries this to existing apps.
+  - `ci-pinned-actions` pins tagged versions such as `@v5`.
+  - `X_UNDECLARED_ENV`'s fix covers build-time `--define` constants.
+
 ### Fixed
 
 - Scaffold CI: `ci.yml` uploads each `verify-part-*` document with `retention-days: 1`, because the verdict job reads it in the same run. Under GitHub's 90-day default, one adopter collected 2,706 such artifacts and hit the org's Actions storage quota, after which CI could not run. Codemod `ci-artifact-retention` adds the line to an existing app's upload when it has no `retention-days`.
