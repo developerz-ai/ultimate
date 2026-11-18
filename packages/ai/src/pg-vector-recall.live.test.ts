@@ -18,6 +18,8 @@ import { type PostgresVectorStore, postgresVectorStore } from './pg-vector';
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
 const TABLE = 'ai_live_recall';
+/** Rows per seed statement — small enough that the hnsw and gin maintenance stays under 10 s. */
+const SEED_CHUNK = 1_000;
 
 describe.skipIf(!hasPostgres)('live · pgvector · a small tenant on a large table', () => {
   let client: PostgresClient;
@@ -34,14 +36,20 @@ describe.skipIf(!hasPostgres)('live · pgvector · a small tenant on a large tab
     // only index that can answer the search — the plan a large production table takes.
     await client.execute(raw(`alter table "${TABLE}" drop constraint "${TABLE}_pkey"`));
     // 10,000 rows: 9,950 of tenant `big`, 50 of tenant `small`, every vector a point on the sphere.
-    await client.execute(
-      raw(`insert into "${TABLE}" ("tenant", "id", "embedding", "content")
-           select case when i % 200 = 0 then 'small' else 'big' end, 'row-' || i,
-             ('[' || sin(i)::text || ',' || cos(i)::text || ',' ||
-                     sin(i * 3)::text || ',' || cos(i * 7)::text || ']')::vector,
-             'row ' || i
-           from generate_series(1, 10000) i`),
-    );
+    // Chunked: one 10,000-row statement maintains the hnsw graph and both gin indexes for every row
+    // it adds, and the `web` role's statement bound ends it at 10 s — measured X_DB_STATEMENT_TIMEOUT
+    // at 10,012 ms on an idle box, against 1.6-2.2 s per 1,000 rows when split. The bound is the
+    // framework's own guard, so the seed spreads under it rather than raising it.
+    for (let start = 1; start <= 10_000; start += SEED_CHUNK) {
+      await client.execute(
+        raw(`insert into "${TABLE}" ("tenant", "id", "embedding", "content")
+             select case when i % 200 = 0 then 'small' else 'big' end, 'row-' || i,
+               ('[' || sin(i)::text || ',' || cos(i)::text || ',' ||
+                       sin(i * 3)::text || ',' || cos(i * 7)::text || ']')::vector,
+               'row ' || i
+             from generate_series(${String(start)}, ${String(start + SEED_CHUNK - 1)}) i`),
+      );
+    }
     await client.execute(raw(`analyze "${TABLE}"`));
     pinned = await client.reserve();
     await pinned.execute(raw('set enable_seqscan = off'));

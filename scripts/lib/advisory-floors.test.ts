@@ -21,9 +21,10 @@ const solid: PackageFacts = {
 };
 const sourceMap: PackageFacts = { versions: ['1.0.0', '1.2.1', '1.2.2'], dependencies: {} };
 const sass: PackageFacts = {
-  versions: ['1.106.1', '1.108.2'],
+  versions: ['1.106.1', '1.107.1', '1.108.2'],
   dependencies: {
     '1.106.1': { 'source-map-js': '>=0.6.2 <2.0.0' },
+    '1.107.1': { 'source-map-js': '>=0.6.2 <2.0.0' },
     '1.108.2': { 'source-map-js': '>=0.6.2 <2.0.0' },
   },
 };
@@ -46,6 +47,12 @@ const declared = (name: string, declaredRange: string): Declaration => ({
   name,
   range: declaredRange,
 });
+
+/** What the framework's own `bun.lock` resolves on this tree, as the audit reads it. */
+const LOCKED: Readonly<Record<string, readonly string[]>> = {
+  sass: ['1.107.1'],
+  'source-map-js': ['1.2.2'],
+};
 
 describe('decideFloor', () => {
   test('raises a caret range to the first release whose own range excludes the advisory', () => {
@@ -77,6 +84,70 @@ describe('decideFloor', () => {
       package: 'source-map-js',
       via: 'sass',
     });
+  });
+
+  test('the framework lockfile is the floor when no release of the dependency is', () => {
+    const resolved = (name: string): readonly string[] | undefined => LOCKED[name];
+    const verdict = decideFloor(declared('sass', '1.107.1'), world, resolved);
+    expect(verdict.kind).toBe('lockfile');
+    expect(verdict.kind === 'lockfile' && verdict.resolved).toEqual({
+      'source-map-js': ['1.2.2'],
+    });
+  });
+
+  test('a lockfile that still resolves an advised version closes nothing', () => {
+    const resolved = (name: string): readonly string[] | undefined =>
+      name === 'source-map-js' ? ['1.2.1'] : LOCKED[name];
+    expect(decideFloor(declared('sass', '1.107.1'), world, resolved).kind).toBe('unfloorable');
+  });
+
+  test('one vulnerable copy anywhere in the tree closes nothing, beside a patched one', () => {
+    const resolved = (name: string): readonly string[] | undefined =>
+      name === 'source-map-js' ? ['1.2.2', '1.2.1'] : LOCKED[name];
+    expect(decideFloor(declared('sass', '1.107.1'), world, resolved).kind).toBe('unfloorable');
+  });
+
+  test('a lockfile with no version of the exposed package closes nothing', () => {
+    const resolved = (name: string): readonly string[] | undefined =>
+      name === 'sass' ? ['1.107.1'] : undefined;
+    expect(decideFloor(declared('sass', '1.107.1'), world, resolved).kind).toBe('unfloorable');
+  });
+
+  test('a lockfile outside the declared range closes nothing: an app installs the manifest', () => {
+    const resolved = (name: string): readonly string[] | undefined =>
+      name === 'sass' ? ['1.108.2'] : LOCKED[name];
+    expect(decideFloor(declared('sass', '1.107.1'), world, resolved).kind).toBe('unfloorable');
+  });
+
+  test('a lockfile that does not resolve the declared package closes nothing', () => {
+    const resolved = (name: string): readonly string[] | undefined =>
+      name === 'sass' ? undefined : LOCKED[name];
+    expect(decideFloor(declared('sass', '1.107.1'), world, resolved).kind).toBe('unfloorable');
+  });
+
+  test('a resolved head no advisory can cover — a git ref — closes nothing at all', () => {
+    const gitHead = (name: string): readonly string[] | undefined =>
+      name === 'source-map-js' ? ['github:some/fork'] : LOCKED[name];
+    expect(decideFloor(declared('sass', '1.107.1'), world, gitHead).kind).toBe('unfloorable');
+    const undeclared = (name: string): readonly string[] | undefined =>
+      name === 'sass' ? ['file:../sass'] : LOCKED[name];
+    expect(decideFloor(declared('sass', '1.107.1'), world, undeclared).kind).toBe('unfloorable');
+  });
+
+  test('an unread lockfile is the same verdict as no lockfile at all, byte for byte', () => {
+    const unread = (): readonly string[] | undefined => undefined;
+    const cases: readonly (readonly [string, string])[] = [
+      ['solid-js', '^1.9.0'],
+      ['solid-js', '^1.9.18'],
+      ['sass', '1.106.1'],
+      ['sass', '1.107.1'],
+      ['left-pad', '^1.0.0'],
+    ];
+    for (const [name, declaredRange] of cases) {
+      expect(decideFloor(declared(name, declaredRange), world, unread)).toEqual(
+        decideFloor(declared(name, declaredRange), world),
+      );
+    }
   });
 
   test('an open range that is not a plain caret, tilde or pin is reported, never rewritten', () => {

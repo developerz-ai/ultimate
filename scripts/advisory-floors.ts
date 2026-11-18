@@ -4,6 +4,11 @@
 // advisory names — the dependency's own, or one it pulls in? When a raised floor closes it,
 // `--write` raises it in place, so an app installs a patched tree with no `overrides` of its own.
 //
+// Two of them no dart-sass or immutable release will ever floor — their ranges already admit the
+// patched versions. There the framework's own `bun.lock` IS the floor, so a declaration whose
+// locked versions are all past every advisory is reported in `data.locked` rather than as a
+// finding, and turns red again the moment a lockfile refresh resolves a vulnerable copy.
+//
 // An OPERATOR command `security-channel.yml` runs daily, never a `x verify` step: green may not
 // depend on the network (registry-audit.ts states the same rule).
 //
@@ -18,6 +23,7 @@ import type {
   Exposure,
   FloorVerdict,
   PackageFacts,
+  ResolvedVersions,
   World,
 } from './lib/advisory-floors';
 import { decideFloor, parseAdvisories, raiseManifest } from './lib/advisory-floors';
@@ -57,6 +63,36 @@ export function declarationsOf(manifest: string, json: unknown): Declaration[] {
         : [{ manifest, field, name, range }],
     );
   });
+}
+
+/**
+ * The repo's own `bun.lock`, read as the versions it resolves per package — the same shape
+ * `packages/cli/src/doctor-advisory-floors.ts:56-64` reads, nested `parent/name` entries included,
+ * because one vulnerable copy anywhere in the tree is the defect. `undefined` when the file is
+ * absent or unparsable: an unread lockfile closes nothing, so every floor it might have held stays
+ * reported.
+ */
+export async function lockedVersions(root: string): Promise<ResolvedVersions | undefined> {
+  const file = Bun.file(`${root}/bun.lock`);
+  if (!(await file.exists())) return undefined;
+  try {
+    const parsed: unknown = Bun.JSONC.parse(await file.text());
+    const packages =
+      typeof parsed === 'object' && parsed !== null ? Reflect.get(parsed, 'packages') : undefined;
+    if (typeof packages !== 'object' || packages === null) return undefined;
+    const entries = Object.entries(packages as Record<string, unknown>);
+    return (name) =>
+      entries.flatMap(([key, entry]) => {
+        if (key !== name && !key.endsWith(`/${name}`)) return [];
+        const head = Array.isArray(entry) ? entry[0] : undefined;
+        return typeof head === 'string' && head.startsWith(`${name}@`)
+          ? [head.slice(name.length + 1)]
+          : [];
+      });
+  } catch {
+    // Not swallowed: unreadable is `undefined`, which closes nothing and keeps every finding red.
+    return undefined;
+  }
 }
 
 export interface LoadedWorld {
@@ -194,6 +230,9 @@ function findingOf(verdict: FloorVerdict): Finding | undefined {
       fix: 'GH_TOKEN="$(gh auth token)" bun run scripts/advisory-floors.ts',
     };
   }
+  // A floor the lockfile holds is not a defect: it is reported in `data.locked`, and the whole
+  // point of the verdict is that it goes red by itself when that floor is gone.
+  if (verdict.kind === 'lockfile') return undefined;
   if (verdict.kind === 'raise') {
     return {
       code: 'X_ADVISORY_RANGE_OPEN',
@@ -218,13 +257,22 @@ export interface Raise extends Declaration {
   readonly advisories: readonly Exposure[];
 }
 
+/** One declaration no release floors, held closed by the framework's own `bun.lock` today. */
+export interface Locked extends Declaration {
+  readonly exposures: readonly Exposure[];
+  /** What the lockfile resolves for each exposed package — the evidence, not a promise. */
+  readonly resolved: Readonly<Record<string, readonly string[]>>;
+}
+
 export interface AdvisoryFloorsResult extends ScriptResult {
   readonly raises: readonly Raise[];
+  readonly locked: readonly Locked[];
 }
 
 export function advisoryFloorsResult(
   declarations: readonly Declaration[],
   loaded: LoadedWorld,
+  resolved?: ResolvedVersions,
 ): AdvisoryFloorsResult {
   // A dependency of a dependency that did not answer is unjudged too: its advisories are the ones
   // `decideFloor` would have read through the range, and none read is not none found.
@@ -237,7 +285,7 @@ export function advisoryFloorsResult(
     (declaration): FloorVerdict =>
       unjudged(declaration.name)
         ? { kind: 'unknown', declaration }
-        : decideFloor(declaration, loaded.world),
+        : decideFloor(declaration, loaded.world, resolved),
   );
   const findings = verdicts.flatMap((verdict) => findingOf(verdict) ?? []);
   const raises = verdicts.flatMap((v): Raise[] =>
@@ -245,16 +293,24 @@ export function advisoryFloorsResult(
       ? [{ ...v.declaration, from: v.declaration.range, to: v.to, advisories: v.exposures }]
       : [],
   );
+  const locked = verdicts.flatMap((v): Locked[] =>
+    v.kind === 'lockfile'
+      ? [{ ...v.declaration, exposures: v.exposures, resolved: v.resolved }]
+      : [],
+  );
+  const held =
+    locked.length === 0 ? '' : `; ${locked.length} held by bun.lock, no range able to floor it`;
   return {
     ok: findings.length === 0,
     script: SCRIPT,
     summary:
       findings.length === 0
-        ? `${declarations.length} published dependency range(s) admit no advised version`
-        : `${findings.length} of ${declarations.length} published dependency range(s) admit an advised version; ${raises.length} raisable`,
+        ? `${declarations.length} published dependency range(s) admit no advised version${held}`
+        : `${findings.length} of ${declarations.length} published dependency range(s) admit an advised version; ${raises.length} raisable${held}`,
     findings,
-    data: { raises },
+    data: { raises, locked },
     raises,
+    locked,
   };
 }
 
@@ -279,7 +335,11 @@ if (import.meta.main) {
     )
   ).flat();
   const token = process.env['GH_TOKEN'] ?? process.env['GITHUB_TOKEN'];
-  const result = advisoryFloorsResult(declarations, await loadWorld(declarations, fetch, token));
+  const result = advisoryFloorsResult(
+    declarations,
+    await loadWorld(declarations, fetch, token),
+    await lockedVersions(root),
+  );
   if (args.flags.get('write') === true) {
     for (const raise of result.raises) {
       const path = `${root}/${raise.manifest}`;

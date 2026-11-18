@@ -17,6 +17,8 @@ const hasPostgres = typeof url === 'string' && url.length > 0;
 const TABLE = 'ai_live_docs';
 const DROP = `drop table if exists "${TABLE}" cascade`;
 const DIMENSION = 4;
+/** Rows per seed statement — small enough that hnsw and gin maintenance stays under the 10 s bound. */
+const SEED_CHUNK = 1_250;
 
 const vec = (...values: number[]): Float32Array => normalizeVector(Float32Array.from(values));
 const ids = (hits: readonly SearchHit[]): readonly string[] => hits.map((hit) => hit.id);
@@ -320,23 +322,29 @@ describe.skipIf(!hasPostgres)('live · pgvector · PostgresVectorStore', () => {
 
     beforeAll(async () => {
       if (!available) return;
-      await client.execute(
-        raw(`insert into "${TABLE}" ("tenant", "id", "embedding", "content")
-             select 'bulk', 'bulk-' || i,
-               ('[' || sin(i)::text || ',' || cos(i)::text || ',' ||
-                       sin(i * 2)::text || ',' || cos(i * 2)::text || ']')::vector,
-               'bulk document ' || i
-             from generate_series(1, 5000) i
-             on conflict do nothing`),
-      );
+      // Chunked for the same reason `recall` is: the row count is the point (a table big enough for
+      // the planner to prefer the index), not one statement. One 5,000-row insert maintained the
+      // hnsw graph and both gin indexes per row and tripped the `web` role's 10 s statement bound —
+      // measured X_DB_STATEMENT_TIMEOUT on a loaded box, against 1.8-2.2 s per 1,250 rows split.
+      for (let start = 1; start <= 5_000; start += SEED_CHUNK) {
+        await client.execute(
+          raw(`insert into "${TABLE}" ("tenant", "id", "embedding", "content")
+               select 'bulk', 'bulk-' || i,
+                 ('[' || sin(i)::text || ',' || cos(i)::text || ',' ||
+                         sin(i * 2)::text || ',' || cos(i * 2)::text || ']')::vector,
+                 'bulk document ' || i
+               from generate_series(${String(start)}, ${String(start + SEED_CHUNK - 1)}) i
+               on conflict do nothing`),
+        );
+      }
       // Without stats the planner sizes every tenant at the default guess and picks the exact
       // path for all of them, which is a correct answer and a slow one. `x db migrate` analyzes;
       // a bulk backfill that skips it is why a search that used the index yesterday scans today.
       await client.execute(raw(`analyze "${TABLE}"`));
-      // 30s, not Bun's 5s default: 5,000 inserts each maintain the hnsw graph, which is pure server
-      // work — measured 3.6s on a 12-core laptop against pgvector:pg16 with no other load, so a
-      // shared CI runner crosses 5s on a busy day (PR #504's `verify` job: 5,012ms, twice).
-    }, 30_000);
+      // 60s: 5,000 rows each maintaining the hnsw graph and both gin indexes is pure server work,
+      // and the chunks above are sized to stay under the statement bound on a busy runner rather
+      // than to be fast on an idle one.
+    }, 60_000);
 
     test('the search this store emits is answered by the hnsw index', async () => {
       const plan = await planOf(searchSql(target, vec(1, 0, 0, 0), { scope: {}, k: 10 }));

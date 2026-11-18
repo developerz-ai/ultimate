@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AdvisoryFetch } from './advisory-floors';
 import {
   ADVISORY_API,
@@ -6,8 +9,9 @@ import {
   advisoryFloorsResult,
   declarationsOf,
   loadWorld,
+  lockedVersions,
 } from './advisory-floors';
-import type { Declaration } from './lib/advisory-floors';
+import type { Declaration, ResolvedVersions } from './lib/advisory-floors';
 
 // The shell around `lib/advisory-floors.ts`: which declarations it audits, what it asks the two
 // services, and the findings `.github/workflows/security-channel.yml` turns into a PR or an issue.
@@ -63,6 +67,13 @@ const fetcher: AdvisoryFetch = async (url) => {
   return json(ADVISORIES[parsed.searchParams.get('affects') ?? ''] ?? []);
 };
 
+/** What this checkout's `bun.lock` resolves, past every advisory it reaches. */
+const CLEAN: Readonly<Record<string, readonly string[]>> = {
+  sass: ['1.106.1'],
+  immutable: ['5.1.9'],
+  'source-map-js': ['1.2.2'],
+};
+
 const solidPeer: Declaration = {
   manifest: 'packages/ui/package.json',
   field: 'peerDependencies',
@@ -116,6 +127,116 @@ describe('advisoryFloorsResult', () => {
     });
   });
 
+  test('a lockfile past every advisory holds it: listed in data.locked, never a finding', async () => {
+    const sass: Declaration = {
+      manifest: 'packages/render/package.json',
+      field: 'dependencies',
+      name: 'sass',
+      range: '1.106.1',
+    };
+    const resolved: ResolvedVersions = (name) => CLEAN[name];
+    const result = advisoryFloorsResult(
+      [sass],
+      await loadWorld([sass], fetcher, undefined),
+      resolved,
+    );
+    expect(result.ok).toBe(true);
+    expect(result.findings).toEqual([]);
+    expect(result.data).toMatchObject({
+      raises: [],
+      locked: [
+        {
+          manifest: 'packages/render/package.json',
+          field: 'dependencies',
+          name: 'sass',
+          range: '1.106.1',
+          resolved: { immutable: ['5.1.9'], 'source-map-js': ['1.2.2'] },
+        },
+      ],
+    });
+    expect(result.summary).toContain('1 held by bun.lock');
+  });
+
+  test('a lockfile still resolving an advised version keeps the range red', async () => {
+    const sass: Declaration = {
+      manifest: 'packages/render/package.json',
+      field: 'dependencies',
+      name: 'sass',
+      range: '1.106.1',
+    };
+    const resolved: ResolvedVersions = (name) => (name === 'immutable' ? ['5.1.7'] : CLEAN[name]);
+    const result = advisoryFloorsResult(
+      [sass],
+      await loadWorld([sass], fetcher, undefined),
+      resolved,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.locked).toEqual([]);
+    expect(result.data).toMatchObject({ locked: [] });
+    expect(result.findings?.[0]).toMatchObject({
+      code: 'X_ADVISORY_UNFLOORABLE',
+      fix: 'bun update immutable source-map-js',
+    });
+  });
+
+  test('no lockfile read at all keeps the same range red, and lists nothing as held', async () => {
+    const sass: Declaration = {
+      manifest: 'packages/render/package.json',
+      field: 'dependencies',
+      name: 'sass',
+      range: '1.106.1',
+    };
+    const result = advisoryFloorsResult([sass], await loadWorld([sass], fetcher, undefined));
+    expect(result.ok).toBe(false);
+    expect(result.locked).toEqual([]);
+    expect(result.summary).not.toContain('held by bun.lock');
+    expect(result.findings?.[0]).toMatchObject({ code: 'X_ADVISORY_UNFLOORABLE' });
+  });
+
+  test('a lockfile missing an exposed package holds nothing', async () => {
+    const sass: Declaration = {
+      manifest: 'packages/render/package.json',
+      field: 'dependencies',
+      name: 'sass',
+      range: '1.106.1',
+    };
+    const partial: ResolvedVersions = (name) =>
+      name === 'source-map-js'
+        ? CLEAN['source-map-js']
+        : name === 'sass'
+          ? CLEAN['sass']
+          : undefined;
+    const result = advisoryFloorsResult(
+      [sass],
+      await loadWorld([sass], fetcher, undefined),
+      partial,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.locked).toEqual([]);
+    expect(result.findings?.[0]).toMatchObject({ code: 'X_ADVISORY_UNFLOORABLE' });
+  });
+
+  test('every held declaration is counted in the summary', async () => {
+    const held = (manifest: string): Declaration => ({
+      manifest,
+      field: 'dependencies',
+      name: 'sass',
+      range: '1.106.1',
+    });
+    const declarations = [held('packages/render/package.json'), held('packages/ui/package.json')];
+    const result = advisoryFloorsResult(
+      declarations,
+      await loadWorld(declarations, fetcher, undefined),
+      (name) => CLEAN[name],
+    );
+    expect(result.ok).toBe(true);
+    expect(result.locked.map((l) => l.manifest)).toEqual([
+      'packages/render/package.json',
+      'packages/ui/package.json',
+    ]);
+    expect(result.summary).toContain('2 held by bun.lock');
+  });
+
   test('a dependency of a dependency that does not answer leaves the range unjudged', async () => {
     const partial: AdvisoryFetch = async (url, init) =>
       url.includes('affects=seroval') ? new Response('', { status: 503 }) : fetcher(url, init);
@@ -132,6 +253,66 @@ describe('advisoryFloorsResult', () => {
     const result = advisoryFloorsResult([solidPeer], loaded);
     expect(result.ok).toBe(false);
     expect(result.findings?.map((f) => f.code)).toContain('X_ADVISORY_UNREACHABLE');
+  });
+});
+
+describe('lockedVersions', () => {
+  test('reads every copy a package resolves, nested ones included, and nothing else', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-locked-versions-'));
+    await Bun.write(
+      join(root, 'bun.lock'),
+      [
+        '{',
+        '  "lockfileVersion": 1,',
+        '  "packages": {',
+        '    "sass": ["sass@1.107.1", "", {}],',
+        '    "immutable": ["immutable@5.1.9", "", {}],',
+        '    "other/immutable": ["immutable@5.1.7", "", {}],',
+        '    "left-pad": ["left-pad@1.0.0", "", {}],',
+        '  },',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    const resolved = await lockedVersions(root);
+    await rm(root, { recursive: true, force: true });
+    expect(resolved?.('immutable')).toEqual(['5.1.9', '5.1.7']);
+    expect(resolved?.('sass')).toEqual(['1.107.1']);
+    expect(resolved?.('seroval')).toEqual([]);
+  });
+
+  test('a checkout with no lockfile closes nothing, rather than closing everything', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-locked-versions-'));
+    expect(await lockedVersions(root)).toBeUndefined();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test('an unparsable lockfile closes nothing either: a read in part is not a read', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-locked-versions-'));
+    await Bun.write(join(root, 'bun.lock'), '{ "packages": { "sass": ["sass@1.107.1", \n');
+    const resolved = await lockedVersions(root);
+    await rm(root, { recursive: true, force: true });
+    expect(resolved).toBeUndefined();
+  });
+
+  test('a lockfile entry that names no version is never read as one', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-locked-versions-'));
+    await Bun.write(
+      join(root, 'bun.lock'),
+      [
+        '{',
+        '  "packages": {',
+        '    "sass": ["sass@1.107.1"],',
+        '    "immutable": ["", {}],',
+        '  },',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    const resolved = await lockedVersions(root);
+    await rm(root, { recursive: true, force: true });
+    expect(resolved?.('sass')).toEqual(['1.107.1']);
+    expect(resolved?.('immutable')).toEqual([]);
   });
 });
 

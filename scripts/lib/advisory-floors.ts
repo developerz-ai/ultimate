@@ -1,7 +1,13 @@
 // Decide, per declared external dependency of a published package, whether its range admits a
 // version an npm advisory names — its own, or one of its dependencies' through the range the
-// dependency declares — and the smallest raised floor that admits none. Pure: the registry and the
-// advisory database arrive as a `World`, so the decision is pinned by fixtures, never the network.
+// dependency declares — and the smallest raised floor that admits none. Pure: the registry, the
+// advisory database and the framework's own lockfile arrive as a `World` and a `ResolvedVersions`,
+// so the decision is pinned by fixtures, never the network.
+//
+// A range no release of the dependency floors is STILL reported: `unfloorable` when nothing else
+// closes it, and `lockfile` when the framework's own `bun.lock` resolves every exposed package past
+// every advisory. The second is a floor that exists — in the lockfile, not in a range — so the
+// audit says so and stays red the moment the lockfile regresses.
 
 import { ScriptError } from './script-error';
 
@@ -21,6 +27,12 @@ export interface World {
   readonly facts: (name: string) => PackageFacts | undefined;
   readonly advisories: (name: string) => readonly Advisory[];
 }
+
+/**
+ * The versions the framework's own `bun.lock` resolves for `name` — every nested copy included.
+ * `undefined` when the lockfile was not read, which closes nothing.
+ */
+export type ResolvedVersions = (name: string) => readonly string[] | undefined;
 
 /** One external range a published manifest declares. */
 export interface Declaration {
@@ -50,6 +62,18 @@ export type FloorVerdict =
       readonly kind: 'unfloorable';
       readonly declaration: Declaration;
       readonly exposures: readonly Exposure[];
+    }
+  | {
+      /**
+       * No release of the dependency floors it, and the framework's own `bun.lock` resolves every
+       * exposed package past every advisory: the floor is the lockfile, not a range. Reported in
+       * `data.locked`, never as a finding — and red again the moment the lockfile regresses.
+       */
+      readonly kind: 'lockfile';
+      readonly declaration: Declaration;
+      readonly exposures: readonly Exposure[];
+      /** What the lockfile resolves for each exposed package: the evidence the verdict rests on. */
+      readonly resolved: Readonly<Record<string, readonly string[]>>;
     };
 
 /** The three shapes a floor can be raised in without changing what the range means. */
@@ -79,11 +103,53 @@ function exposuresOf(name: string, version: string, world: World): Exposure[] {
   return [...own, ...through];
 }
 
+/** A version `Bun.semver` can order and an advisory can cover; a git or `file:` head is neither. */
+const RELEASE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]*)?$/;
+
+/**
+ * The versions the lockfile resolves, when they close every exposure: each a release, each admitted
+ * by the range it was declared under, and none covered by an advisory on its own package. Any
+ * `undefined` — absent, unorderable, or still vulnerable — is not closed, because an unread
+ * lockfile is never a clean one and one vulnerable copy anywhere in the tree is the defect.
+ */
+function closedByLockfile(
+  declaration: Declaration,
+  exposures: readonly Exposure[],
+  world: World,
+  resolved: ResolvedVersions | undefined,
+): Readonly<Record<string, readonly string[]>> | undefined {
+  if (resolved === undefined) return undefined;
+  const declared = resolved(declaration.name) ?? [];
+  if (declared.length === 0) return undefined;
+  const inRange = declared.every(
+    (version) => RELEASE.test(version) && Bun.semver.satisfies(version, declaration.range),
+  );
+  if (!inRange) return undefined;
+  const closing: Record<string, readonly string[]> = {};
+  for (const exposure of exposures) {
+    const versions = resolved(exposure.package) ?? [];
+    if (versions.length === 0) return undefined;
+    const advisories = world.advisories(exposure.package);
+    for (const version of versions) {
+      if (!RELEASE.test(version)) return undefined;
+      if (advisories.some((advisory) => Bun.semver.satisfies(version, advisory.vulnerable))) {
+        return undefined;
+      }
+    }
+    closing[exposure.package] = versions;
+  }
+  return closing;
+}
+
 const unique = (exposures: readonly Exposure[]): Exposure[] => [
   ...new Map(exposures.map((e) => [`${e.advisory} ${e.package}`, e])).values(),
 ];
 
-export function decideFloor(declaration: Declaration, world: World): FloorVerdict {
+export function decideFloor(
+  declaration: Declaration,
+  world: World,
+  resolved?: ResolvedVersions,
+): FloorVerdict {
   const facts = world.facts(declaration.name);
   if (facts === undefined) return { kind: 'unknown', declaration };
   const versions = ascending(facts.versions);
@@ -94,8 +160,15 @@ export function decideFloor(declaration: Declaration, world: World): FloorVerdic
 
   const exposures = exposedIn(declaration.range);
   if (exposures.length === 0) return { kind: 'clean', declaration };
+  // No range can close it: the lockfile is the only floor left, and whether it holds is a fact.
+  const unfloored = (): FloorVerdict => {
+    const closed = closedByLockfile(declaration, exposures, world, resolved);
+    return closed === undefined
+      ? { kind: 'unfloorable', declaration, exposures }
+      : { kind: 'lockfile', declaration, exposures, resolved: closed };
+  };
   const shape = RAISABLE.exec(declaration.range);
-  if (shape === null) return { kind: 'unfloorable', declaration, exposures };
+  if (shape === null) return unfloored();
   const [, operator = '', major = '', minor = '', patch = ''] = shape;
   const base = `${major}.${minor}.${patch}`;
   // Same major, and the same minor under 0.x: a caret on 0.y is a minor-wide range, so moving
@@ -109,7 +182,7 @@ export function decideFloor(declaration: Declaration, world: World): FloorVerdic
       return { kind: 'raise', declaration, to: candidate, exposures };
     }
   }
-  return { kind: 'unfloorable', declaration, exposures };
+  return unfloored();
 }
 
 interface RawVulnerability {

@@ -148,14 +148,28 @@ describeLive('live · postgres · the rate-limit table writes no WAL', () => {
    * an update. One key alone is HOT even on a full page (measured 0.999 on the v31 table); a table
    * of 2,000 live buckets is what production has: this shape measured 0.949 at fillfactor 70 and
    * 0.315 at the default 100.
+   *
+   * The measurement gets a schema and a relation of its OWN, and that is the point, not tidiness.
+   * `n_tup_upd` / `n_tup_hot_upd` are per-RELATION counters the collector sums over every backend
+   * that touched the relation, and each backend publishes its own on its own timer (at most once a
+   * second, and at exit). On the shared `x_rate_limit` this suite's earlier `wal` take — and, under
+   * the gate, any sibling suite on the same server — lands a flush inside the window: measured
+   * 3,001 updates for 3,000 takes, red on a green table. Quiescing the read does not help, because
+   * the arriving row is indistinguishable from one of the takes. A private relation is the only
+   * shape where every update in the window is one this measurement made.
    */
   const hotRatio = async (
+    label: string,
     keys: number,
     takes: number,
   ): Promise<{ updates: number; ratio: number }> => {
-    // One connection, so the counters this backend accumulated are the ones flushed below.
-    const one = connect(1);
+    const schema = `x_rl_hot_${String(process.pid)}_${label}_${crypto.randomUUID().slice(0, 8)}`;
+    const one = new Bun.SQL(url as string, { max: 1, connection: { search_path: schema } });
     try {
+      await one.unsafe(`create schema ${schema}`, []);
+      for (const piece of SQL_RATE_LIMIT_TABLE.split(';')) {
+        if (piece.trim().length > 0) await one.unsafe(piece, []);
+      }
       await untilHorizonClear(one);
       const single = postgresRateLimitStore({
         executor: {
@@ -164,29 +178,30 @@ describeLive('live · postgres · the rate-limit table writes no WAL', () => {
         },
       });
       const roomy = { capacity: 1_000_000, refillPerSecond: 1 };
-      for (let key = 0; key < keys; key += 1) await single.take(`hot-${key}`, roomy, 1, 10_000);
-      await one.unsafe('select pg_stat_force_next_flush()', []);
-      const before = await hotCounts(one);
-      for (let take = 0; take < takes; take += 1) {
-        await single.take(`hot-${take % keys}`, roomy, 1, 20_000 + take);
+      for (let key = 0; key < keys; key += 1) {
+        await single.take(`hot-${String(key)}`, roomy, 1, 10_000);
       }
-      await one.unsafe('select pg_stat_force_next_flush()', []);
-      const after = await hotCounts(one);
+      const before = await settledHotCounts(one);
+      for (let take = 0; take < takes; take += 1) {
+        await single.take(`hot-${String(take % keys)}`, roomy, 1, 20_000 + take);
+      }
+      const after = await settledHotCounts(one);
       const updates = after.updates - before.updates;
       return { updates, ratio: (after.hot - before.hot) / updates };
     } finally {
+      await one.unsafe(`drop schema if exists ${schema} cascade`, []);
       await one.end();
     }
   };
 
   test('1,000 takes on one key are HOT updates, more than 90% of them', async () => {
-    const { updates, ratio } = await hotRatio(1, 1_000);
+    const { updates, ratio } = await hotRatio('one', 1, 1_000);
     expect(updates).toBe(1_000);
     expect(ratio).toBeGreaterThan(0.9);
   });
 
   test('3,000 takes over 2,000 live buckets stay HOT too — the page has room', async () => {
-    const { updates, ratio } = await hotRatio(2_000, 3_000);
+    const { updates, ratio } = await hotRatio('many', 2_000, 3_000);
     expect(updates).toBe(3_000);
     expect(ratio).toBeGreaterThan(0.9);
   }, 30_000);
@@ -274,4 +289,32 @@ const hotCounts = async (on: Bun.SQL): Promise<{ updates: number; hot: number }>
     [],
   )) as { updates: string | number; hot: string | number }[];
   return { updates: Number(rows[0]?.updates ?? 0), hot: Number(rows[0]?.hot ?? 0) };
+};
+
+/** How long a counter read waits for the flushes other backends still owe the collector. */
+const COUNTER_SETTLE_MS = 2_000;
+
+/**
+ * The same two numbers, read only once they have STOPPED moving. `n_tup_upd` and `n_tup_hot_upd`
+ * are table-global: the collector sums every backend's count for the relation, and each backend
+ * publishes its own on its own timer (at most once a second, and at exit). A flush that lands
+ * between the before and after read is an update this measurement did not make — this suite's own
+ * earlier `wal` take arrived that way and 3,000 takes read as 3,001, red on a green table. So each
+ * snapshot flushes, reads, and is accepted only when two reads agree; a counter that never settles
+ * fails by name rather than handing back a number nobody can attribute.
+ */
+const settledHotCounts = async (on: Bun.SQL): Promise<{ updates: number; hot: number }> => {
+  let seen = await hotCounts(on);
+  const until = performance.now() + COUNTER_SETTLE_MS;
+  while (performance.now() < until) {
+    await on.unsafe('select pg_stat_force_next_flush()', []);
+    // real-clock: another backend's flush runs on its own timer, not this test's
+    await Bun.sleep(5);
+    const next = await hotCounts(on);
+    if (next.updates === seen.updates && next.hot === seen.hot) return next;
+    seen = next;
+  }
+  expect.unreachable(
+    `the x_rate_limit counters still moved after ${String(COUNTER_SETTLE_MS)} ms (last read ${String(seen.updates)} updates / ${String(seen.hot)} HOT) — another backend is writing this table: select pid, state, query from pg_stat_activity where state <> 'idle'`,
+  );
 };
