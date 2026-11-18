@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Every rule-file text a shipped guard was ever released as, hashed: read from each `v31.*` tag's
+// Every rule-file text a shipped guard was ever released as, hashed: read from each release tag's
 // own templates and the tree's, written to `packages/cli/src/templates/guard-released-forms.ts` so
 // the `vendored-guards` codemod tells a stale but unedited copy from an app's edit.
 //
@@ -10,26 +10,30 @@ import { mkdirSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { guardFormHash } from '../../packages/cli/src/guards-vendored';
-import { reportOnlyForm } from '../../packages/cli/src/templates/scaffold-guards';
+import {
+  reportOnlyForm,
+  SHIPPED_GUARD_NAMES,
+} from '../../packages/cli/src/templates/scaffold-guards';
 import { ENTRY, extractTemplates, gitTreeSource, SCRATCH } from './guard-refresh-archive';
 import { git } from './release-due-git';
 import { repoRoot } from './run';
 
 export const FORMS_FILE = 'packages/cli/src/templates/guard-released-forms.ts';
-/** The first release whose scaffold shipped guards as copies; earlier ones shipped none. */
-const FIRST = 'v31.0.0';
-
 type Forms = Record<string, Map<string, 'error' | 'warning'>>;
 /** Guard name → every hash its test file was released as. */
 type TestForms = Record<string, Set<string>>;
 
+/** What a tag's `scaffold-guards.ts` exports: only `scaffoldGuardFiles` is in every release. */
 interface ScaffoldGuards {
-  readonly SHIPPED_GUARD_NAMES: readonly string[];
-  readonly shippedGuardFiles: (
-    name: string,
-  ) => readonly { readonly path: string; readonly contents: unknown }[] | undefined;
-  readonly shippedGuardSource: (name: string) => string | undefined;
+  readonly scaffoldGuardFiles: () => readonly GuardFile[];
+  readonly SHIPPED_GUARD_NAMES?: readonly string[];
+  readonly shippedGuardFiles?: (name: string) => readonly GuardFile[] | undefined;
   readonly shippedGuardSources?: (name: string) => readonly string[];
+}
+
+interface GuardFile {
+  readonly path: string;
+  readonly contents: unknown;
 }
 
 const add = (forms: Forms, name: string, text: string): void => {
@@ -38,25 +42,41 @@ const add = (forms: Forms, name: string, text: string): void => {
   forms[name] = known;
 };
 
+const textOf = (files: readonly GuardFile[], path: string): string | undefined => {
+  const contents = files.find((file) => file.path === path)?.contents;
+  return typeof contents === 'string' ? contents : undefined;
+};
+
 const collect = async (forms: Forms, tests: TestForms, module: string): Promise<void> => {
   const guards = (await import(module)) as ScaffoldGuards;
-  for (const name of guards.SHIPPED_GUARD_NAMES) {
-    const texts = guards.shippedGuardSources?.(name) ?? [guards.shippedGuardSource(name) ?? ''];
-    for (const text of texts) if (text !== '') add(forms, name, text);
-    const test = guards.shippedGuardFiles(name)?.find((file) => file.path.endsWith('.test.ts'));
-    if (typeof test?.contents === 'string') {
+  const scaffolded = guards.scaffoldGuardFiles();
+  // A guard no longer shipped has no built-in rule for its copy to give way to: it stays the app's.
+  for (const name of SHIPPED_GUARD_NAMES) {
+    const files = guards.shippedGuardFiles?.(name) ?? scaffolded;
+    const rule = textOf(files, `guards/${name}.ts`);
+    for (const text of guards.shippedGuardSources?.(name) ?? (rule === undefined ? [] : [rule])) {
+      add(forms, name, text);
+    }
+    const test = textOf(files, `guards/${name}.test.ts`);
+    if (test !== undefined) {
       const known = tests[name] ?? new Set<string>();
-      known.add(guardFormHash(test.contents));
+      known.add(guardFormHash(test));
       tests[name] = known;
     }
   }
 };
 
-/** Every `v31.*` tag from the first that shipped guards, oldest first. */
+/**
+ * Every release tag whose templates hold the guard list, oldest first. Every major, never one: an
+ * app keeps the copy it was scaffolded with through later upgrades, so a v31 app can hold a v30 form.
+ */
 const releaseTags = async (root: string): Promise<readonly string[]> => {
-  const listed = await git(['tag', '-l', 'v31.*', '--sort=version:refname'], root);
-  const tags = listed.output.split('\n').filter((tag) => /^v31\.\d+\.\d+$/.test(tag));
-  return tags.slice(Math.max(0, tags.indexOf(FIRST)));
+  const listed = await git(['tag', '-l', 'v*', '--sort=version:refname'], root);
+  const tags = listed.output.split('\n').filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag));
+  return tags.filter(
+    (tag) =>
+      Bun.spawnSync(['git', 'cat-file', '-e', `${tag}:${ENTRY}`], { cwd: root }).exitCode === 0,
+  );
 };
 
 export async function releasedForms(
