@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // Enforce, on `x verify`'s `manifest` step, that every TypeScript subpath a package exports has its
 // row in tsconfig.base.json's `paths`, pointing at the same file. An app resolves a subpath through
 // its workspace symlink and the package's `exports`; the repo root resolves through `paths` alone,
@@ -6,6 +7,7 @@
 //
 //   bun run scripts/tsconfig-paths.ts [--json]
 
+import { isJsonObject } from '../packages/core/src/json-object';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -82,17 +84,14 @@ export function tsconfigPathFindingFor(gap: TsconfigPathGap): Finding {
   };
 }
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /** Every string `.ts`/`.tsx` subpath export of every package, as a `paths` row would name it. */
 export async function readSubpathExports(root: string): Promise<readonly SubpathExport[]> {
   const found: SubpathExport[] = [];
   for await (const path of new Bun.Glob('packages/*/package.json').scan({ cwd: root })) {
     const manifest: unknown = await Bun.file(`${root}/${path}`).json();
-    if (!isRecord(manifest) || typeof manifest['name'] !== 'string') continue;
+    if (!isJsonObject(manifest) || typeof manifest['name'] !== 'string') continue;
     const exports = manifest['exports'];
-    if (!isRecord(exports)) continue;
+    if (!isJsonObject(exports)) continue;
     const dir = path.split(/[\\/]/)[1] ?? '';
     for (const [key, value] of Object.entries(exports)) {
       if (key === '.' || typeof value !== 'string' || !/\.tsx?$/.test(value)) continue;
@@ -109,9 +108,9 @@ export async function readSubpathExports(root: string): Promise<readonly Subpath
 /** `compilerOptions.paths`, read through Bun's JSONC-tolerant loader. */
 async function readPaths(root: string): Promise<Readonly<Record<string, readonly string[]>>> {
   const config: unknown = Bun.JSONC.parse(await Bun.file(`${root}/${TSCONFIG}`).text());
-  const options = isRecord(config) ? config['compilerOptions'] : undefined;
-  const paths = isRecord(options) ? options['paths'] : undefined;
-  if (!isRecord(paths)) return {};
+  const options = isJsonObject(config) ? config['compilerOptions'] : undefined;
+  const paths = isJsonObject(options) ? options['paths'] : undefined;
+  if (!isJsonObject(paths)) return {};
   const out: Record<string, readonly string[]> = {};
   for (const [key, value] of Object.entries(paths)) {
     out[key] = Array.isArray(value) ? value.filter((one) => typeof one === 'string') : [];

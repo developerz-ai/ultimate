@@ -3,8 +3,9 @@
 // `<prev>` is one below the stamped major. Read through injected `gh` and `npm` runners.
 
 import { renderFixShellArg } from '../packages/core/src/error-render';
+import { isJsonObject } from '../packages/core/src/json-object';
 import type { FinishedRow, Runner } from './finished-rule';
-import { green, isRecord, parsedOutput, red, unverdicted } from './finished-rule';
+import { green, parsedOutput, red, unverdicted } from './finished-rule';
 import type { Finding } from './lib/log';
 
 const refsArgs = (prefix: string): readonly string[] => [
@@ -48,7 +49,7 @@ export async function lanesRow(
     runners.npm(DIST_TAGS, root),
   ]);
   const distTags = parsedOutput(tags);
-  if (!next.ok || !release.ok || !isRecord(distTags)) {
+  if (!next.ok || !release.ok || !isJsonObject(distTags)) {
     return unverdicted('lanes-exist', command, 'gh or npm answered no readable document');
   }
   const has = (output: string, ref: string): boolean =>

@@ -3,6 +3,7 @@
 // this package's answer and the reader on disk is `@ultimat3/cli`'s — two owners of that question
 // is a sidecar one of them accepts and the other cannot use.
 
+import { isJsonObject } from '@ultimat3/core';
 import { PARTITION_INTERVALS, type PartitionInterval } from './entity-shape';
 import type {
   CheckDescription,
@@ -14,11 +15,6 @@ import type {
   TriggerRecord,
   ViewDescription,
 } from './introspect';
-
-type Row = Record<string, unknown>;
-
-const isRow = (value: unknown): value is Row =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const str = (value: unknown): value is string => typeof value === 'string';
 const bool = (value: unknown): value is boolean => typeof value === 'boolean';
@@ -38,7 +34,7 @@ const directions = (value: unknown): value is readonly ('asc' | 'desc' | null)[]
   Array.isArray(value) && value.every(order);
 
 function column(value: unknown): ColumnDescription | undefined {
-  if (!isRow(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const {
     name,
     dataType,
@@ -75,14 +71,14 @@ function column(value: unknown): ColumnDescription | undefined {
 
 /** The predicate is the snapshot's own spelling, so both halves are plain strings or nothing. */
 function check(value: unknown): CheckDescription | undefined {
-  if (!isRow(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const { name, expression } = value;
   if (!str(name) || !str(expression)) return undefined;
   return { name, expression };
 }
 
 function index(value: unknown): IndexDescription | undefined {
-  if (!isRow(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const { name, columns, unique, primary, where, order: direction, using } = value;
   const { expression, orders, include, operatorClass } = value;
   if (!str(name) || !strings(columns) || !bool(unique) || !bool(primary)) return undefined;
@@ -119,7 +115,7 @@ function index(value: unknown): IndexDescription | undefined {
 }
 
 function foreignKey(value: unknown): ForeignKeyDescription | undefined {
-  if (!isRow(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const { name, columns, referencedTable, referencedColumns, onDelete } = value;
   if (!str(name) || !strings(columns) || !str(referencedTable)) return undefined;
   if (!strings(referencedColumns) || !nullableStr(onDelete)) return undefined;
@@ -139,7 +135,7 @@ function all<T>(value: unknown, one: (item: unknown) => T | undefined): readonly
 }
 
 function trigger(value: unknown): TriggerRecord | undefined {
-  if (!isRow(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const { name, install, recount } = value;
   if (!str(name) || !strings(install)) return undefined;
   // `recount` arrived in 31.23 on counter triggers; a record written before carries none.
@@ -148,7 +144,7 @@ function trigger(value: unknown): TriggerRecord | undefined {
 }
 
 function tableOf(value: unknown): TableDescription | undefined {
-  if (!isRow(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const { schema, name, primaryKey } = value;
   if (!str(schema) || !str(name) || !strings(primaryKey)) return undefined;
   const columns = all(value['columns'], column);
@@ -209,7 +205,7 @@ function tableOf(value: unknown): TableDescription | undefined {
  * regenerating it. A file that will not parse is *absent* — which the caller already handles.
  */
 export function parseSnapshot(value: unknown): SchemaDescription | undefined {
-  if (!isRow(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const tables = all(value['tables'], tableOf);
   if (tables === undefined) return undefined;
   const recorded = value['views'];
@@ -220,7 +216,7 @@ export function parseSnapshot(value: unknown): SchemaDescription | undefined {
 
 /** One recorded view: a name, the flag, the statements — anything else is not a snapshot. */
 function viewOf(value: unknown): ViewDescription | undefined {
-  if (!isRow(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const { name, materialized, create } = value;
   if (typeof name !== 'string') return undefined;
   if (!(materialized === undefined || materialized === true)) return undefined;

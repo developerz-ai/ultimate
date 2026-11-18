@@ -9,7 +9,7 @@
 // Only `tools/call` comes through here: every other method runs as the person, in no tenant.
 
 import type { Actor } from '@ultimat3/core';
-import { logger, renderCauseValue, renderThrowable } from '@ultimat3/core';
+import { isJsonObject, logger, renderCauseValue, renderThrowable } from '@ultimat3/core';
 import {
   McpTenantInvalidError,
   McpTenantRequiredError,
@@ -141,7 +141,7 @@ export async function tenantStep(
   rawArgs: unknown,
   caller: McpCaller,
 ): Promise<TenantStep> {
-  const args = isRecord(rawArgs) ? rawArgs : {};
+  const args = isJsonObject(rawArgs) ? rawArgs : {};
   const value = Object.hasOwn(args, tenant.arg) ? args[tenant.arg] : undefined;
   if (typeof value !== 'string' || value.length === 0) {
     return { kind: 'refused', error: new McpTenantRequiredError({ arg: tenant.arg }) };
@@ -176,6 +176,3 @@ function unresolved(cause: string, thrown?: unknown): TenantStep {
   logger.error('mcp.tenant.unresolved', { surface: 'mcp', code: error.code, cause: error.cause });
   return { kind: 'refused', error };
 }
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);

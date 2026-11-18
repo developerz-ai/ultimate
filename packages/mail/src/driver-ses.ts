@@ -9,6 +9,7 @@ import {
   ConfigInvalidError,
   EnvMissingError,
   finiteCount,
+  isJsonObject,
   isUltimateError,
   liveClock,
   nanoid,
@@ -99,10 +100,6 @@ function requireFrom(from: string): string {
     cause: 'the ses driver was configured without a from address',
     fix: 'aws sesv2 list-email-identities — then set MAIL_FROM to one verified in this region',
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -207,7 +204,7 @@ export function sesMailDriver(options: SesDriverOptions): MailDriver {
     }
 
     const parsed: unknown = await response.json().catch(() => undefined);
-    const id = isRecord(parsed) ? parsed['MessageId'] : undefined;
+    const id = isJsonObject(parsed) ? parsed['MessageId'] : undefined;
     // A 2xx is acceptance. The id is what SNS notifications name the message by, so a local one
     // is a correlation lost — but never a reason to report an accepted send as failed.
     const result = resultFor(

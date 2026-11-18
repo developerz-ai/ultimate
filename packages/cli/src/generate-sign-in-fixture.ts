@@ -7,10 +7,8 @@
 import { mkdirSync, readdirSync, symlinkSync } from 'node:fs';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
+import { isJsonObject } from '@ultimat3/core';
 import { DIR_LINK, workspaceRoot } from './scaffold-typecheck-fixture';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 /** Links the checkout's dependencies and packages under `<dir>/node_modules`. */
 export async function linkWorkspace(dir: string): Promise<void> {
@@ -26,7 +24,7 @@ export async function linkWorkspace(dir: string): Promise<void> {
     const manifest = Bun.file(join(root, 'packages', entry.name, 'package.json'));
     if (!(await manifest.exists())) continue;
     const parsed: unknown = await manifest.json();
-    const name = isRecord(parsed) && typeof parsed['name'] === 'string' ? parsed['name'] : '';
+    const name = isJsonObject(parsed) && typeof parsed['name'] === 'string' ? parsed['name'] : '';
     if (!name.startsWith('@ultimat3/')) continue;
     symlinkSync(
       join(root, 'packages', entry.name),

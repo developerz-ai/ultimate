@@ -3,6 +3,7 @@
 // is not an `Operator`, so an executor that does not know it refuses the op rather than silently
 // dropping the filter.
 
+import { isJsonObject } from '@ultimat3/core';
 import { EntityError } from './entity-error';
 import { checkedPredicate, type Operator } from './operator';
 import type { Predicate } from './tenancy';
@@ -91,16 +92,13 @@ export const predicateNodeInvalid = (entityName: string, detail: string): Entity
     fix: `andWhereNode({ or: [{ column, op, value }, …] })   # or { via: { column, entity, target }, where: [ … ] }: entity is a registered entity name, column and target its declared properties, at most ${MAX_PREDICATE_DEPTH} levels deep`,
   });
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /**
  * The tree as plan predicates, its shape checked on the line the author wrote. Columns are judged
  * later, by `screenPredicates`, against the entity each level is about — a `via`'s inner level is
  * the target's, which only the registry knows.
  */
 export const nodePredicate = (entityName: string, node: unknown, depth = 1): Predicate => {
-  if (!isRecord(node)) throw predicateNodeInvalid(entityName, 'a node is not an object');
+  if (!isJsonObject(node)) throw predicateNodeInvalid(entityName, 'a node is not an object');
   const group = node['or'] !== undefined ? 'or' : node['and'] !== undefined ? 'and' : undefined;
   const via = node['via'];
   if ((group !== undefined || via !== undefined) && depth > MAX_PREDICATE_DEPTH) {
@@ -125,9 +123,9 @@ const viaPredicate = (
   where: unknown,
   depth: number,
 ): Predicate => {
-  const column = isRecord(via) ? via['column'] : undefined;
-  const entity = isRecord(via) ? via['entity'] : undefined;
-  const target = isRecord(via) ? via['target'] : undefined;
+  const column = isJsonObject(via) ? via['column'] : undefined;
+  const entity = isJsonObject(via) ? via['entity'] : undefined;
+  const target = isJsonObject(via) ? via['target'] : undefined;
   if (typeof column !== 'string' || typeof entity !== 'string' || typeof target !== 'string') {
     throw predicateNodeInvalid(entityName, '`via` needs { column, entity, target }, each a string');
   }

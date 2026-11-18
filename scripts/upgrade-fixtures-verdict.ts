@@ -2,6 +2,7 @@
 // the hop left to a human named, and the coded findings. The plan's bar is ZERO hand edits, so a
 // hop that is green but leaves a stale guard or a skipped codemod behind is not yet done.
 
+import { isJsonObject } from '../packages/core/src/json-object';
 import type { Finding } from './lib/log';
 
 /** A path the author would have had to open after the hop, and why. */
@@ -36,10 +37,8 @@ export interface HopReading {
 
 type Rec = Readonly<Record<string, unknown>>;
 
-const isRecord = (value: unknown): value is Rec =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 const records = (value: unknown): readonly Rec[] =>
-  Array.isArray(value) ? value.filter(isRecord) : [];
+  Array.isArray(value) ? value.filter(isJsonObject) : [];
 const text = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 const texts = (value: unknown): readonly string[] =>
@@ -71,11 +70,11 @@ export const commandDocument = (output: string, command: string): Rec | undefine
         return undefined;
       }
     })
-    .find((parsed): parsed is Rec => isRecord(parsed) && parsed['command'] === command);
+    .find((parsed): parsed is Rec => isJsonObject(parsed) && parsed['command'] === command);
 
 /** `data.codemods` in either shape the codemod engine reports: a list, or `{ applied, skipped }`. */
 export const readCodemods = (value: unknown): readonly CodemodOutcome[] | null => {
-  const list = isRecord(value) ? (value['applied'] ?? value['codemods']) : value;
+  const list = isJsonObject(value) ? (value['applied'] ?? value['codemods']) : value;
   if (!Array.isArray(list)) return null;
   return records(list).map((entry) => ({
     id: text(entry['id']) ?? '?',
@@ -90,7 +89,7 @@ export const readCodemods = (value: unknown): readonly CodemodOutcome[] | null =
 /** Every place the hop's report says a human still has to act, with the file to open. */
 export const handStepsOf = (data: Rec, codemods: readonly CodemodOutcome[] | null): HandStep[] => {
   const steps: HandStep[] = [];
-  const verify = isRecord(data['verify']) ? data['verify'] : {};
+  const verify = isJsonObject(data['verify']) ? data['verify'] : {};
   for (const finding of records(verify['findings'])) {
     const step = text(finding['step']);
     steps.push({
@@ -100,7 +99,7 @@ export const handStepsOf = (data: Rec, codemods: readonly CodemodOutcome[] | nul
       required: true,
     });
   }
-  const guards = isRecord(data['guards']) ? data['guards'] : {};
+  const guards = isJsonObject(data['guards']) ? data['guards'] : {};
   for (const guard of records(guards['differs'])) {
     steps.push({
       path: `guards/${text(guard['name']) ?? '?'}.ts`,
@@ -117,7 +116,7 @@ export const handStepsOf = (data: Rec, codemods: readonly CodemodOutcome[] | nul
       required: false,
     });
   }
-  const bun = isRecord(data['bun']) ? data['bun'] : {};
+  const bun = isJsonObject(data['bun']) ? data['bun'] : {};
   for (const manual of records(bun['manual'])) {
     steps.push({
       path: text(manual['path']) ?? '?',
@@ -153,8 +152,8 @@ export const handStepsOf = (data: Rec, codemods: readonly CodemodOutcome[] | nul
 
 /** `x upgrade --json`'s whole document, or undefined when the CLI printed none. */
 export const readHop = (document: unknown): HopReading | undefined => {
-  if (!isRecord(document)) return undefined;
-  const data = isRecord(document['data']) ? document['data'] : undefined;
+  if (!isJsonObject(document)) return undefined;
+  const data = isJsonObject(document['data']) ? document['data'] : undefined;
   const refusals = records(document['findings']).flatMap((one) => asFinding(one) ?? []);
   if (data === undefined) {
     return {
@@ -168,7 +167,7 @@ export const readHop = (document: unknown): HopReading | undefined => {
       refusals,
     };
   }
-  const verify = isRecord(data['verify']) ? data['verify'] : undefined;
+  const verify = isJsonObject(data['verify']) ? data['verify'] : undefined;
   const codemods = readCodemods(data['codemods']);
   return {
     green: document['ok'] === true && verify?.['ok'] === true,

@@ -3,8 +3,9 @@
 // `roadmap` — it reads this repository's own roadmap — so it is the one skip read as whole.
 
 import { renderFixShellArg } from '../packages/core/src/error-render';
+import { isJsonObject } from '../packages/core/src/json-object';
 import type { FinishedRow } from './finished-rule';
-import { green, isRecord, red } from './finished-rule';
+import { green, red } from './finished-rule';
 import type { Finding } from './lib/log';
 
 /** Steps that check the framework repository itself, which no app carries. */
@@ -19,9 +20,9 @@ export interface GatedAppRead {
 }
 
 const stringsAt = (value: unknown, key: string): readonly string[] => {
-  const field = isRecord(value) ? value[key] : undefined;
+  const field = isJsonObject(value) ? value[key] : undefined;
   if (Array.isArray(field)) return field.filter((one) => typeof one === 'string');
-  return isRecord(field) ? Object.keys(field) : [];
+  return isJsonObject(field) ? Object.keys(field) : [];
 };
 
 function appFindings(app: GatedAppRead, stepNames: readonly string[]): readonly Finding[] {
@@ -34,7 +35,7 @@ function appFindings(app: GatedAppRead, stepNames: readonly string[]): readonly 
     fix: `bun run scripts/reference-app-gate.ts --app ${dir} --json   # make ${step} green, then: bun run scripts/reference-app-gate.ts --unpin ${dir}:${renderFixShellArg(step, '<step>')}`,
     at: PINS_FILE,
   }));
-  if (!isRecord(app.floor)) {
+  if (!isJsonObject(app.floor)) {
     return [
       ...findings,
       {

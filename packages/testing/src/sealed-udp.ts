@@ -4,6 +4,7 @@
 
 // why: Bun's `dgram.Socket#send` drops a throw when no callback is given (measured); patched below.
 import dgram from 'node:dgram';
+import { isJsonObject } from '@ultimat3/core';
 import { dialUrl } from './sealed-node-sockets';
 import type { SocketGate } from './sealed-sockets';
 
@@ -18,13 +19,10 @@ interface ConnectTarget {
 /** The refusals this seal raised: the only errors the `dgram` patch re-emits. */
 const refusals = new WeakSet<Error>();
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 /** The peer a `connect` option names, as the gate's URL; `undefined` for an unconnected socket. */
 const peerOf = (options: unknown): string | undefined => {
-  const connect: unknown = isRecord(options) ? options['connect'] : undefined;
-  if (!isRecord(connect)) return undefined;
+  const connect: unknown = isJsonObject(options) ? options['connect'] : undefined;
+  if (!isJsonObject(connect)) return undefined;
   const target: ConnectTarget = connect;
   return typeof target.hostname === 'string'
     ? dialUrl(target.hostname, target.port, 'udp')
@@ -38,7 +36,7 @@ const peerOf = (options: unknown): string | undefined => {
  */
 const remoteOf = (socket: object): string | undefined => {
   const remote: unknown = Reflect.get(socket, 'remoteAddress');
-  if (!isRecord(remote) || typeof remote['address'] !== 'string') return undefined;
+  if (!isJsonObject(remote) || typeof remote['address'] !== 'string') return undefined;
   return dialUrl(remote['address'], remote['port'], 'udp');
 };
 
@@ -107,7 +105,7 @@ export function installUdpSeal(gate: SocketGate): () => void {
       if (refusal !== undefined) throw refusal;
     }
     const socket = await original(options);
-    if (isRecord(socket)) sealSends(socket, gate);
+    if (isJsonObject(socket)) sealSends(socket, gate);
     return socket;
   };
   Reflect.set(Bun, 'udpSocket', sealed);

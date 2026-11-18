@@ -2,6 +2,7 @@
 // cast past `name` and `ok`: `findings: [null]` merged green, and a step with no `durationMs`
 // reached `Math.max` as `undefined` — a part a CI job hand-edited, or truncated, was believed.
 
+import { isJsonObject } from '@ultimat3/core';
 import type { Finding, TestServicesState } from './output';
 import type { TestCounts } from './test-counts';
 
@@ -24,21 +25,18 @@ export interface PartStep {
   };
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0;
 
 /** What every finding is: code, cause and fix as strings. Optional fields ride along as written. */
 export const isFinding = (value: unknown): value is Finding =>
-  isRecord(value) &&
+  isJsonObject(value) &&
   typeof value['code'] === 'string' &&
   typeof value['cause'] === 'string' &&
   typeof value['fix'] === 'string';
 
 const isTests = (value: unknown): value is TestCounts =>
-  isRecord(value) &&
+  isJsonObject(value) &&
   isCount(value['ran']) &&
   isCount(value['skipped']) &&
   (value['errors'] === undefined || isCount(value['errors']));
@@ -47,7 +45,7 @@ const isTextList = (value: unknown): value is readonly string[] =>
   Array.isArray(value) && value.every((line) => typeof line === 'string');
 
 const isShard = (value: unknown): value is NonNullable<PartStep['shard']> =>
-  isRecord(value) &&
+  isJsonObject(value) &&
   isCount(value['index']) &&
   isCount(value['total']) &&
   typeof value['corpusHash'] === 'string' &&
@@ -56,7 +54,7 @@ const isShard = (value: unknown): value is NonNullable<PartStep['shard']> =>
 
 /** The step, or the reason it is not one — phrased to follow "holds a step …". */
 export function readPartStep(raw: unknown): PartStep | string {
-  if (!isRecord(raw) || typeof raw['name'] !== 'string' || typeof raw['ok'] !== 'boolean') {
+  if (!isJsonObject(raw) || typeof raw['name'] !== 'string' || typeof raw['ok'] !== 'boolean') {
     return 'holds a step without a name and ok';
   }
   const name = raw['name'];

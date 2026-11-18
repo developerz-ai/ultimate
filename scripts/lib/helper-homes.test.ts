@@ -242,6 +242,53 @@ describe('JsonValue, declared once in @ultimat3/schema (plan 101 D6)', () => {
   });
 });
 
+describe('isJsonObject: a guard that is only the keyed-record test, under any name', () => {
+  test('both drifted variants, arrow and function, readonly or not', () => {
+    const arrow =
+      "const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>\n  typeof value === 'object' && value !== null && !Array.isArray(value);";
+    const loose =
+      "const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;";
+    const fn =
+      "function isAttrs(value: unknown): value is Record<string, unknown> {\n  return typeof value === 'object' && value !== null;\n}";
+    for (const copy of [arrow, loose, fn]) expect(helpersIn(copy)).toEqual(['isJsonObject']);
+  });
+
+  test('narrowing to a local alias of the record type is the same copy', () => {
+    const aliased =
+      "type Row = Readonly<Record<string, unknown>>;\nconst isRow = (value: unknown): value is Row =>\n  typeof value === 'object' && value !== null && !Array.isArray(value);";
+    expect(helpersIn(aliased)).toEqual(['isJsonObject']);
+  });
+
+  test('a domain type, or a body that tests more, is a different predicate', () => {
+    const domain =
+      "const isRow = (value: unknown): value is AdminRow => typeof value === 'object' && value !== null;";
+    const more =
+      "const isAction = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && 'run' in v;";
+    const callable =
+      "const isRecord = (v: unknown): v is Record<string, unknown> =>\n  (typeof v === 'object' || typeof v === 'function') && v !== null;";
+    expect(helpersIn(`${domain}\n${more}\n${callable}`)).toEqual([]);
+  });
+
+  test('the three held copies are exempt by file, and only there', () => {
+    const copy =
+      "function isRecord(value: unknown): value is Record<string, unknown> {\n  return typeof value === 'object' && value !== null && !Array.isArray(value);\n}";
+    for (const held of [
+      'packages/schema/src/sensitive.ts',
+      'packages/create-ultimate/src/repro.ts',
+      'packages/entity/src/sealed-repo.ts',
+    ]) {
+      expect(helpersIn(copy, held)).toEqual([]);
+    }
+    expect(helpersIn(copy, 'packages/entity/src/other.ts')).toEqual(['isJsonObject']);
+  });
+
+  test('a call, or an explicit array-too test, is a use', () => {
+    const use =
+      "import { isJsonObject } from '@ultimat3/core';\nconst ok = Array.isArray(v) || isJsonObject(v);";
+    expect(helpersIn(use)).toEqual([]);
+  });
+});
+
 describe('what is never a copy', () => {
   test('each helper in its own home', () => {
     const samples: Readonly<Record<string, string>> = {
@@ -257,6 +304,8 @@ describe('what is never a copy', () => {
       grantCovers: "return grant.endsWith(':*') && wanted.startsWith(grant.slice(0, -1));",
       x509Spki: 'if (first & 0x80) { const count = first & 0x7f; length = length * 256 + b; }',
       JsonValue: 'export type JsonValue = string | readonly JsonValue[];',
+      isJsonObject:
+        "function isJsonObject(value: unknown): value is Record<string, unknown> {\n  return typeof value === 'object' && value !== null && !Array.isArray(value);\n}",
     };
     for (const rule of HELPER_HOMES) {
       expect(helpersIn(samples[rule.helper] ?? '', rule.home)).toEqual([]);

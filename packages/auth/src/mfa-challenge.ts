@@ -2,10 +2,16 @@
 // carrying a sealed, short-lived challenge; `completeMfa` opens it, meters the code against the
 // same buckets a password guess spends, and only then mints the session.
 
-import { isUltimateError, openText, randomHex, type SealKeySource, seal } from '@ultimat3/core';
+import {
+  isJsonObject,
+  isUltimateError,
+  openText,
+  randomHex,
+  type SealKeySource,
+  seal,
+} from '@ultimat3/core';
 import type { Auth, LoginResult } from './auth';
 import { type AuthError, mfaChallengeInvalid, mfaCodeRejected, mfaRequired } from './errors';
-import { isRecord } from './json';
 import { openLoginAttempt } from './login-attempt';
 import { recoveryCodeHash, TOTP_DIGITS, verifyTotp } from './mfa';
 import { openTotpSecret } from './mfa-secret';
@@ -63,7 +69,7 @@ async function openChallenge(
     if (isUltimateError(thrown) && !UNOPENABLE.has(thrown.code)) throw thrown;
     throw mfaChallengeInvalid();
   }
-  if (!isRecord(parsed)) throw mfaChallengeInvalid();
+  if (!isJsonObject(parsed)) throw mfaChallengeInvalid();
   const { userId, nonce, expiresAtMs } = parsed;
   if (typeof userId !== 'string' || typeof nonce !== 'string' || typeof expiresAtMs !== 'number') {
     throw mfaChallengeInvalid();

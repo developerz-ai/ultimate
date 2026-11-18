@@ -3,7 +3,7 @@
 // every tier stores TEXT, no two readers ever share one mutable object. Lives here, not in
 // `@ultimat3/query`'s cursor codec: query is tier 3, and this package is tier 1.
 
-import { renderThrowable } from '@ultimat3/core';
+import { isJsonObject, renderThrowable } from '@ultimat3/core';
 import { CacheValueUnencodableError } from './errors';
 
 /** The member that marks a tagged value. Only this codec writes it; an app's own is escaped. */
@@ -38,9 +38,6 @@ export const CACHE_CODEC_MARK = 'x1:';
 
 type Tagged = { readonly [TAG]: 'date' | 'bigint' | 'map' | 'set'; readonly v: unknown };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /** A copy with every tag-shaped key given one more `$`, or the object itself when it has none. */
 const escapeKeys = (value: Record<string, unknown>): Record<string, unknown> => {
   const keys = Object.keys(value);
@@ -62,7 +59,9 @@ const unescapeKeys = (value: Record<string, unknown>): Record<string, unknown> =
  */
 function transform(holder: unknown, key: string, value: unknown): unknown {
   const raw =
-    isRecord(holder) || Array.isArray(holder) ? (holder as Record<string, unknown>)[key] : value;
+    isJsonObject(holder) || Array.isArray(holder)
+      ? (holder as Record<string, unknown>)[key]
+      : value;
   if (raw instanceof Date) {
     return { [TAG]: 'date', v: Number.isNaN(raw.getTime()) ? null : raw.toISOString() };
   }
@@ -77,7 +76,7 @@ function transform(holder: unknown, key: string, value: unknown): unknown {
   }
   if (raw instanceof Map) return { [TAG]: 'map', v: [...raw.entries()] };
   if (raw instanceof Set) return { [TAG]: 'set', v: [...raw] };
-  return isRecord(value) ? escapeKeys(value) : value;
+  return isJsonObject(value) ? escapeKeys(value) : value;
 }
 
 /** A limit this codec refuses at, carried out of `JSON.stringify` to `encodeCacheValue`. */
@@ -136,7 +135,7 @@ const untag = (value: Record<string, unknown>): { readonly revived: unknown } | 
 
 /** Bottom-up, so a tagged value's members are already revived when the tag itself is read. */
 const revive = (_key: string, value: unknown): unknown => {
-  if (!isRecord(value)) return value;
+  if (!isJsonObject(value)) return value;
   const tagged = untag(value);
   return tagged === undefined ? unescapeKeys(value) : tagged.revived;
 };

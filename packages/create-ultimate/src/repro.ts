@@ -38,6 +38,8 @@ export const reproSpec: CommandSpec = {
   ],
 };
 
+// why: core's `isJsonObject`, restated — this package's one permitted import is `@ultimat3/cli`
+// (`scripts/lib/tiers.ts`). Pinned in `scripts/lib/helper-homes.ts`.
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 

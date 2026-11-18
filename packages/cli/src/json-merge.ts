@@ -2,11 +2,10 @@
 // nested (`{ site: { home: { title } } }`) — a shallow spread of two generators' contributions
 // under the same top-level key drops one of them entirely, and neither generator can see the other.
 
+import { isJsonObject } from '@ultimat3/core';
+
 /** A parsed JSON object: the only shape a `merge: 'json'` file is ever allowed to hold. */
 export type JsonObject = Record<string, unknown>;
-
-const isObject = (value: unknown): value is JsonObject =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * `incoming` merged under `held`, leaf by leaf. `held` always wins — on disk it is the file a
@@ -30,7 +29,7 @@ export function mergeJsonDeep(
       continue;
     }
     const current = held[key];
-    if (!isObject(current) || !isObject(value)) continue;
+    if (!isJsonObject(current) || !isJsonObject(value)) continue;
     const nested = mergeJsonDeep(current, value);
     if (!nested.gained) continue;
     merged[key] = nested.merged;
@@ -48,7 +47,7 @@ const isSorted = (keys: readonly string[]): boolean =>
 /** Every key of every level, sorted — the order a generator's own fresh output is written in. */
 export function sortJsonDeep(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortJsonDeep);
-  if (!isObject(value)) return value;
+  if (!isJsonObject(value)) return value;
   return Object.fromEntries(
     Object.keys(value)
       .sort(byCodeUnit)
@@ -80,7 +79,10 @@ export function mergeJsonInPlace(held: JsonObject, incoming: JsonObject): JsonOb
       if (!Object.hasOwn(held, key)) return [key, sortJsonDeep(incoming[key])];
       const current = held[key];
       const next = incoming[key];
-      return [key, isObject(current) && isObject(next) ? mergeJsonInPlace(current, next) : current];
+      return [
+        key,
+        isJsonObject(current) && isJsonObject(next) ? mergeJsonInPlace(current, next) : current,
+      ];
     }),
   );
 }

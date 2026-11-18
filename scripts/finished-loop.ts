@@ -2,8 +2,9 @@
 // bot, and the newest red push to main was repaired by a PR the bot opened — no person on either
 // path. Read through an injected `gh`; an answer it cannot give is `unverdicted`, never green.
 
+import { isJsonObject } from '../packages/core/src/json-object';
 import type { FinishedRow, Runner } from './finished-rule';
-import { green, isRecord, parsedOutput, red, stringField, unverdicted } from './finished-rule';
+import { green, parsedOutput, red, stringField, unverdicted } from './finished-rule';
 import type { Finding } from './lib/log';
 
 /** The developerz.ai maintainer (`.dz/maintainer/maintainer.yml`), as `gh pr --json author` names it. */
@@ -58,7 +59,7 @@ export const LOOP_COMMAND = `gh ${RELEASE_PR.join(' ')}; gh ${MAIN_RUNS.join(' '
 const firstPr = (doc: unknown): { login: string; url: string } | undefined => {
   if (!Array.isArray(doc)) return undefined;
   const pr: unknown = doc[0];
-  const login = stringField(isRecord(pr) ? pr['author'] : undefined, 'login');
+  const login = stringField(isJsonObject(pr) ? pr['author'] : undefined, 'login');
   return login === undefined ? undefined : { login, url: stringField(pr, 'url') ?? '' };
 };
 

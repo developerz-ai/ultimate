@@ -3,6 +3,7 @@
 // differs only in severity becomes a `guards/shipped.json` row; any other edit is kept as the app's
 // own guard under a new name, the shipped one off, with the reason and the diff — never lost.
 
+import { isJsonObject } from '@ultimat3/core';
 import {
   parseShippedConfig,
   SHIPPED_GUARD_CONFIG,
@@ -27,9 +28,6 @@ const SEVERITY_LINE = /^\s*severity:\s*'warning',\s*\n/gm;
 const REPORT_ONLY = /^\s*severity:\s*'warning',\s*$/m;
 const withoutSeverity = (text: string): string =>
   text.replaceAll('\r\n', '\n').replaceAll(SEVERITY_LINE, '');
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** What one copy becomes: deleted at a severity, or kept as the app's own guard. */
 type Verdict =
@@ -78,8 +76,8 @@ const moveBaselines = async (
   } catch {
     return false;
   }
-  const baseline = isRecord(floor) ? floor[GUARD_BASELINE_FIELD] : undefined;
-  if (!isRecord(floor) || !isRecord(baseline)) return false;
+  const baseline = isJsonObject(floor) ? floor[GUARD_BASELINE_FIELD] : undefined;
+  if (!isJsonObject(floor) || !isJsonObject(baseline)) return false;
   const moved = Object.fromEntries(
     Object.entries(baseline).map(([key, value]) => [renamed.get(key) ?? key, value]),
   );

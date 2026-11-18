@@ -6,6 +6,7 @@ import {
   ConfigInvalidError,
   EnvMissingError,
   finiteCount,
+  isJsonObject,
   // The status table is core's: this package's copy and `packages/cache/src/purge-http.ts`'s were
   // byte-identical in two packages that cannot import each other, so one was always going to be
   // edited alone. A throttle or a transient conflict can land unchanged; every other 4xx here is a
@@ -72,17 +73,13 @@ function fixFor(status: number): string {
   return 'check the request against https://resend.com/docs/api-reference/emails/send-email';
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /** Prefers Resend's own message; falls back to the raw body, capped so a huge page can't flood logs. */
 async function detailFor(response: Response): Promise<string> {
   const text = await response.text().catch(() => '');
   if (text === '') return `HTTP ${response.status} with an empty body`;
   try {
     const parsed: unknown = JSON.parse(text);
-    const message = isRecord(parsed) ? parsed['message'] : undefined;
+    const message = isJsonObject(parsed) ? parsed['message'] : undefined;
     if (typeof message === 'string' && message !== '') return message;
   } catch {
     // Not JSON — fall through to the truncated raw text below.
@@ -93,7 +90,7 @@ async function detailFor(response: Response): Promise<string> {
 /** A 2xx is acceptance regardless of body shape; the id is best-effort, never a reason to fail. */
 async function idFor(response: Response, message: MailMessage): Promise<string> {
   const parsed: unknown = await response.json().catch(() => undefined);
-  const id = isRecord(parsed) ? parsed['id'] : undefined;
+  const id = isJsonObject(parsed) ? parsed['id'] : undefined;
   if (typeof id === 'string' && id !== '') return id;
   const local = `resend_${nanoid(12)}`;
   logger.warn('mail.resend.no_id', { mailId: message.mailId, id: local });

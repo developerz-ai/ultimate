@@ -5,26 +5,21 @@
 // Deliberately shallow: only the top level is compared, so an optional property added INSIDE a
 // nested object still reads as breaking — over-reporting is the safe side of a contract check.
 
-import { canonicalJson } from '@ultimat3/core';
+import { canonicalJson, isJsonObject } from '@ultimat3/core';
 import type { ManifestChange } from './diff-change';
-
-type JsonObject = Readonly<Record<string, unknown>>;
-
-const isObject = (value: unknown): value is JsonObject =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const names = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
 /** True when `after` accepts every payload `before` does, by only adding optional properties. */
 export function onlyAddsOptionalProperties(before: unknown, after: unknown): boolean {
-  if (!isObject(before) || !isObject(after)) return false;
+  if (!isJsonObject(before) || !isJsonObject(after)) return false;
   // Only a CLOSED schema: an open one (`additionalProperties` true or absent) already accepted any
   // extra key, so a new typed property can refuse a payload it used to take (`{ trigger: 123 }`).
   if (before['additionalProperties'] !== false) return false;
   const beforeProps = before['properties'];
   const afterProps = after['properties'];
-  if (!isObject(beforeProps) || !isObject(afterProps)) return false;
+  if (!isJsonObject(beforeProps) || !isJsonObject(afterProps)) return false;
   // Everything but `properties` and `required` must be the same (type, additionalProperties, …).
   const { properties: _bp, required: beforeRequired, ...beforeRest } = before;
   const { properties: _ap, required: afterRequired, ...afterRest } = after;

@@ -5,7 +5,7 @@
 // Never a smaller catalog, never one name twice.
 
 import type { ErrorAudience } from '@ultimat3/core';
-import { fixFor, logger, stringField } from '@ultimat3/core';
+import { fixFor, isJsonObject, logger, stringField } from '@ultimat3/core';
 import type { McpCatalogNameSource } from './catalog-errors';
 import { McpCatalogToolDuplicateError, McpCatalogUnresolvedError } from './catalog-errors';
 import { asFrameworkError, forAudience } from './framework-error';
@@ -133,7 +133,7 @@ export async function catalogFor(boot: CatalogBoot, caller: McpCaller): Promise<
 }
 
 function merge(boot: CatalogBoot, resolved: McpResolvedCatalog): CatalogView {
-  if (!isRecord(resolved) || !Array.isArray(resolved.tools)) {
+  if (!isJsonObject(resolved) || !Array.isArray(resolved.tools)) {
     throw new McpCatalogUnresolvedError({
       cause: 'the catalog resolver answered something other than { tools: [...] }',
     });
@@ -195,6 +195,3 @@ function refused<T>(check: () => T): T {
     });
   }
 }
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);

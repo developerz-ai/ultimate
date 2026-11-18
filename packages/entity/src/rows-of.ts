@@ -3,6 +3,7 @@
 // branches that can hold a row, so an output with none costs one WeakMap read per call.
 
 import type { Row } from '@ultimat3/core';
+import { isJsonObject } from '@ultimat3/core';
 import { isSchemaNode, nodeOf, type SchemaNode } from '@ultimat3/schema';
 import { projectionOf, type RecordProjection } from './record-projection';
 
@@ -60,9 +61,6 @@ export const projectionsIn = (schema: unknown): readonly RecordProjection[] => {
   return [...found.values()];
 };
 
-const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /**
  * Inside a union the IR cannot say which arm a value took, so a branded arm claims the value only
  * when it carries every column of that row as an OWN key — `$parse` writes every column, `null`
@@ -100,16 +98,17 @@ const walk = (node: SchemaNode, value: unknown, found: Found, inUnion: boolean):
   if (projection !== undefined) {
     // A row's own columns are never walked: a column node carries no brand, and a `json()` value
     // shaped like a row is data, not a record.
-    if (isObject(value) && (!inUnion || fits(projection, value))) collect(found, projection, value);
+    if (isJsonObject(value) && (!inUnion || fits(projection, value)))
+      collect(found, projection, value);
     return;
   }
   if (node.kind === 'array' && node.items !== undefined && Array.isArray(value)) {
     for (const item of value) walk(node.items, item, found, inUnion);
-  } else if (node.kind === 'object' && node.properties !== undefined && isObject(value)) {
+  } else if (node.kind === 'object' && node.properties !== undefined && isJsonObject(value)) {
     for (const [key, child] of Object.entries(node.properties)) {
       if (Object.hasOwn(value, key)) walk(child, value[key], found, inUnion);
     }
-  } else if (node.kind === 'record' && node.valueNode !== undefined && isObject(value)) {
+  } else if (node.kind === 'record' && node.valueNode !== undefined && isJsonObject(value)) {
     for (const entry of Object.values(value)) walk(node.valueNode, entry, found, inUnion);
   } else if (node.kind === 'union') {
     for (const arm of node.anyOf ?? []) walk(arm, value, found, true);

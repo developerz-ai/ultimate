@@ -4,7 +4,13 @@
 
 import type { ExpectExtendMatchers } from 'bun:test';
 import { expect } from 'bun:test';
-import { describeValue, isUltimateError, renderCauseValue, stringField } from '@ultimat3/core';
+import {
+  describeValue,
+  isJsonObject,
+  isUltimateError,
+  renderCauseValue,
+  stringField,
+} from '@ultimat3/core';
 import { TestJobExpectedError, TestSchemaExpectedError } from './errors';
 import { toHaveEnqueued, toHaveSentMail } from './matcher-doubles';
 import {
@@ -38,9 +44,6 @@ export type { UltimateMatchers } from './matcher-surface';
 // `recordSteps` lives beside its recorder; the public path (`./matchers`) is unchanged.
 export { recordSteps } from './matchers-steps';
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 /**
  * The Ultimate error code carried by `value`, or `undefined` for anything that is not one.
  *
@@ -72,7 +75,7 @@ interface StandardSchema {
 }
 
 const isStandardSchema = (value: unknown): value is StandardSchema =>
-  isRecord(value) && isRecord(value['~standard']);
+  isJsonObject(value) && isJsonObject(value['~standard']);
 
 /**
  * The receiver check, SYNCHRONOUS and separate from the work — measured against Bun 1.4.0: a
@@ -112,10 +115,10 @@ interface RunnablePolicy {
 }
 
 const isPolicy = (value: unknown): value is PolicyLike =>
-  isRecord(value) && typeof value['evaluate'] === 'function';
+  isJsonObject(value) && typeof value['evaluate'] === 'function';
 
 const isRunnablePolicy = (value: unknown): value is RunnablePolicy =>
-  isRecord(value) && typeof value['run'] === 'function';
+  isJsonObject(value) && typeof value['run'] === 'function';
 
 /**
  * `undefined` means "not a policy at all", which is a different failure from a denial.
@@ -143,7 +146,7 @@ async function decide(
 const result = (pass: boolean, message: () => string): MatcherResult => ({ pass, message });
 
 const isOpenApiLike = (value: unknown): value is OpenApiLike =>
-  isRecord(value) &&
+  isJsonObject(value) &&
   Array.isArray(value['operations']) &&
   value['operations'].every(
     (entry) => typeof (entry as OpenApiLike['operations'][number] | null)?.operationId === 'string',

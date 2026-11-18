@@ -9,13 +9,11 @@
 // Every rule here is Postgres', reproduced rather than approximated. Where the two could not be
 // made to agree the operator is refused instead (`memory-match.ts`), never guessed at.
 
+import { isJsonObject } from '@ultimat3/core';
 import { isNullish as isNull } from './is-null';
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /** Neither an object nor an array — which is exactly the set the top-level exception below covers. */
-const isScalar = (value: unknown): boolean => !isRecord(value) && !Array.isArray(value);
+const isScalar = (value: unknown): boolean => !isJsonObject(value) && !Array.isArray(value);
 
 /**
  * Two ELEMENTS, equal. `===` plus the one case it gets wrong here: an `arrayOf(timestamp())` row
@@ -63,7 +61,7 @@ const contains = (left: unknown, right: unknown, top: boolean): boolean => {
     }
     return top && isScalar(right) && left.some((candidate) => sameElement(candidate, right));
   }
-  if (isRecord(left) && isRecord(right)) {
+  if (isJsonObject(left) && isJsonObject(right)) {
     return Object.keys(right).every(
       (key) => Object.hasOwn(left, key) && contains(left[key], right[key], false),
     );
@@ -107,6 +105,6 @@ export const arrayOverlaps = (left: readonly unknown[], right: readonly unknown[
 export const jsonHasKey = (value: unknown, key: unknown): boolean => {
   if (typeof key !== 'string' || isNull(value)) return false;
   if (Array.isArray(value)) return value.some((item) => item === key);
-  if (isRecord(value)) return Object.hasOwn(value, key);
+  if (isJsonObject(value)) return Object.hasOwn(value, key);
   return value === key;
 };

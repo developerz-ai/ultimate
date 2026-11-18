@@ -3,6 +3,7 @@
 // for `delete_resource`, preview unless `live: true`, and commit only with `confirmed_by_user:
 // true` → the server's `dispatch`. Every call that runs goes through the flat path's one dispatch.
 
+import { isJsonObject } from '@ultimat3/core';
 import {
   McpUserConfirmationRequiredError,
   McpWrongToolError,
@@ -51,7 +52,7 @@ export async function splitCall(
     const wrong = new McpWrongToolError({ resource, action, called: name, useTool });
     return host.refuse(id, action, wrong, caller);
   }
-  const params = isRecord(args['params']) ? args['params'] : {};
+  const params = isJsonObject(args['params']) ? args['params'] : {};
   if (name !== DELETE_RESOURCE) {
     return host.dispatch(id, action, resolveAddressed(host, tool, params, caller), caller);
   }
@@ -124,6 +125,3 @@ function liftToolArgs(
   if (ownsPreview) rest[LIVE] = live;
   return { params: rest, live, confirmed: pick(CONFIRMED), ownsPreview };
 }
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);

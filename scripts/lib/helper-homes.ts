@@ -81,6 +81,27 @@ const derLengthWalks = (text: string): number[] =>
     BYTE_ACCUMULATE.test(text.slice(Math.max(0, index - 400), index + 400)),
   );
 
+/** `Record<string, unknown>`, readonly or not: the type an "is this a keyed record" guard narrows to. */
+const RECORD_TYPE = String.raw`(?:Readonly\s*<\s*)?Record\s*<\s*string\s*,\s*unknown\s*>(?:\s*>)?`;
+/**
+ * A one-parameter type guard whose WHOLE body is `typeof v === 'object' && v !== null`, with or
+ * without `&& !Array.isArray(v)`: both variants, because the copies had drifted between them. The
+ * narrowed type is the record literal or a local alias of it (`type Loose = Readonly<Record<…>>`),
+ * never a domain type — `value is AdminRow` is a cast with a reason, and anything more in the body
+ * (`&& 'kind' in v`) is a different predicate.
+ */
+const RECORD_GUARD = new RegExp(
+  String.raw`\(\s*(\w+)\s*:\s*unknown\s*\)\s*:\s*\1\s+is\s+(${RECORD_TYPE}|[\w$]+)\s*(?:=>|\{\s*return)\s*typeof\s+\1\s*===\s*(['"\x60])object\3\s*&&\s*\1\s*!==\s*null\s*(?:&&\s*!\s*Array\s*\.\s*isArray\s*\(\s*\1\s*\)\s*)?[;})]`,
+  'g',
+);
+const recordGuards = ({ stripped }: Views): number[] =>
+  [...stripped.matchAll(RECORD_GUARD)]
+    .filter(([, , type = '']) => {
+      if (!/^[\w$]+$/.test(type)) return true;
+      return new RegExp(String.raw`\btype\s+${type}\s*=\s*${RECORD_TYPE}\s*;`).test(stripped);
+    })
+    .map((match) => match.index);
+
 export const HELPER_HOMES: readonly HelperHome[] = [
   { helper: 'fnv1a', home: 'packages/core/src/fnv1a.ts', find: fnvConstants },
   {
@@ -184,6 +205,22 @@ export const HELPER_HOMES: readonly HelperHome[] = [
     // realtime's is the MUTABLE wire domain its local store writes into, and realtime does not
     // depend on schema. A held divergence, named here so it is a decision and not an oversight.
     exempt: ['packages/realtime/src/json.ts'],
+  },
+  {
+    helper: 'isJsonObject',
+    home: 'packages/core/src/json-object.ts',
+    // `stripped`: `'object'` is string contents. Sixty-one modules hand-rolled it as `isRecord`
+    // (and `isObject`, `isPlainObject`, `isAttrs`) before this row, half of them letting an array
+    // through. A call site that means "an array too" says `Array.isArray(v) || isJsonObject(v)`.
+    find: recordGuards,
+    exempt: [
+      // tier 0 below core: `core -> schema` is the declared edge, never the reverse.
+      'packages/schema/src/sensitive.ts',
+      // its one permitted import is `@ultimat3/cli` (`scripts/lib/tiers.ts`).
+      'packages/create-ultimate/src/repro.ts',
+      // lets an ARRAY through on purpose: a seal walk fails closed, never skipped.
+      'packages/entity/src/sealed-repo.ts',
+    ],
   },
 ];
 

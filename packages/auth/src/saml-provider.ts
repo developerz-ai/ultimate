@@ -3,14 +3,13 @@
 // (RelayState + InResponseTo), verifies it (`verifySamlResponse`), claims its assertion ID once,
 // and reads one profile out of it.
 
-import { timingSafeEqual } from '@ultimat3/core';
+import { isJsonObject, timingSafeEqual } from '@ultimat3/core';
 import {
   type IdentityProvider,
   type IdentityRedirect,
   replayStepFor,
   type VerifiedIdentity,
 } from './identity-provider';
-import { isRecord } from './json';
 import { assertFiniteAuthCount } from './policy-numbers';
 import type { SamlAssertion } from './saml-assertion';
 import { NAMEID_EMAIL } from './saml-dom';
@@ -69,7 +68,7 @@ function readState(provider: string, state: string): SamlState {
     parsed = null;
   }
   if (
-    !isRecord(parsed) ||
+    !isJsonObject(parsed) ||
     typeof parsed['requestId'] !== 'string' ||
     typeof parsed['relayState'] !== 'string'
   ) {

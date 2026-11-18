@@ -7,6 +7,8 @@
 // recreates, so the role serves nothing between the old container's exit and the new one's
 // healthcheck.
 
+import { isJsonObject } from '@ultimat3/core';
+
 /**
  * How one serving role is rolled. `start-first` is the zero-downtime path; `stop-first` is
  * compose's own recreate, kept where two containers of the role cannot coexist, with the reason.
@@ -18,9 +20,6 @@ export type ComposeStrategy =
 /** The roles that stay up serving — the only ones a rollout strategy applies to. */
 export const SERVING_ROLES = ['web', 'sync', 'worker', 'scheduler'] as const;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /**
  * The host port a `ports:` entry pins, or `undefined` when Docker picks it. Short syntax is
  * `[[ip:]host:]container[/proto]`: `3000` and `127.0.0.1::3000` leave the host side to Docker, so
@@ -28,7 +27,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * container can hold. Long syntax pins one when `published` is said.
  */
 function pinnedHostPort(entry: unknown): string | undefined {
-  if (isRecord(entry)) {
+  if (isJsonObject(entry)) {
     const published = entry['published'];
     return published === undefined || published === null || published === ''
       ? undefined
@@ -43,7 +42,7 @@ function pinnedHostPort(entry: unknown): string | undefined {
 
 /** One service's strategy: start-first unless something in its definition forbids a second copy. */
 function strategyOf(service: unknown): ComposeStrategy {
-  if (!isRecord(service)) {
+  if (!isJsonObject(service)) {
     return { kind: 'stop-first', why: 'the compose file declares no such service' };
   }
   if (service['container_name'] !== undefined) {
@@ -67,7 +66,7 @@ function strategyOf(service: unknown): ComposeStrategy {
     };
   }
   const deploy = service['deploy'];
-  const declared = isRecord(deploy) ? deploy['replicas'] : undefined;
+  const declared = isJsonObject(deploy) ? deploy['replicas'] : undefined;
   const replicas =
     typeof declared === 'number' && Number.isSafeInteger(declared) && declared >= 0 ? declared : 1;
   return { kind: 'start-first', replicas };
@@ -85,8 +84,8 @@ export function composeStrategies(text: string | undefined): ReadonlyMap<string,
   } catch {
     parsed = undefined;
   }
-  const services = isRecord(parsed) ? parsed['services'] : undefined;
-  if (!isRecord(services)) return new Map();
+  const services = isJsonObject(parsed) ? parsed['services'] : undefined;
+  if (!isJsonObject(services)) return new Map();
   const strategies = new Map<string, ComposeStrategy>(
     SERVING_ROLES.map((role) => [role, strategyOf(services[role])]),
   );
@@ -135,7 +134,7 @@ export interface ComposeDatabase {
 
 /** One `environment:` entry, from either of compose's two spellings (map or `KEY=value` list). */
 function environmentValue(environment: unknown, key: string): string | undefined {
-  if (isRecord(environment)) {
+  if (isJsonObject(environment)) {
     const value = environment[key];
     return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined;
   }
@@ -156,9 +155,9 @@ export function composeDatabase(text: string | undefined): ComposeDatabase | und
   } catch {
     return undefined;
   }
-  const services = isRecord(parsed) ? parsed['services'] : undefined;
-  const db = isRecord(services) ? services['db'] : undefined;
-  if (!isRecord(db)) return undefined;
+  const services = isJsonObject(parsed) ? parsed['services'] : undefined;
+  const db = isJsonObject(services) ? services['db'] : undefined;
+  if (!isJsonObject(db)) return undefined;
   const user = environmentValue(db['environment'], 'POSTGRES_USER') ?? 'postgres';
   return { user, database: environmentValue(db['environment'], 'POSTGRES_DB') ?? user };
 }

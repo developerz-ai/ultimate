@@ -4,8 +4,9 @@
 // answer it could not give is `unverdicted`, never green.
 
 import { renderFixShellArg } from '../packages/core/src/error-render';
+import { isJsonObject } from '../packages/core/src/json-object';
 import type { FinishedRow, Runner } from './finished-rule';
-import { green, isRecord, parsedOutput, RERUN, red, unverdicted } from './finished-rule';
+import { green, parsedOutput, RERUN, red, unverdicted } from './finished-rule';
 import { COMPAT_COMMAND, compatReader, judgeCompat } from './lib/health-compat';
 import type { Finding } from './lib/log';
 
@@ -57,10 +58,10 @@ interface Job {
 }
 
 const jobsOf = (doc: unknown): readonly Job[] | undefined => {
-  const jobs = isRecord(doc) ? doc['jobs'] : undefined;
+  const jobs = isJsonObject(doc) ? doc['jobs'] : undefined;
   if (!Array.isArray(jobs)) return undefined;
   return jobs.flatMap((job: unknown): Job[] =>
-    isRecord(job) && typeof job['name'] === 'string'
+    isJsonObject(job) && typeof job['name'] === 'string'
       ? [
           {
             name: job['name'],
@@ -81,7 +82,7 @@ export async function shapesRow(
   const verdicts = new Map<string, { conclusion: string; url: string }>();
   for (const run of runs) {
     if (verdicts.size === shapes.length) break;
-    if (!isRecord(run) || typeof run['databaseId'] !== 'number') continue;
+    if (!isJsonObject(run) || typeof run['databaseId'] !== 'number') continue;
     const id = run['databaseId'];
     const jobs = jobsOf(
       parsedOutput(await gh(['run', 'view', String(id), '--json', 'jobs'], root)),
@@ -126,7 +127,7 @@ export async function shapesRow(
 export async function flakeRow(root: string, gh: Runner, nowMs: number): Promise<FinishedRow> {
   const runs = parsedOutput(await gh(FLAKE_RUNS, root));
   if (!Array.isArray(runs)) return unverdicted('tests-deterministic', FLAKE_COMMAND, 'no run list');
-  const nights = runs.filter(isRecord);
+  const nights = runs.filter(isJsonObject);
   const greenNights = nights.filter((run) => run['conclusion'] === 'success').length;
   const newest = Date.parse(String(nights[0]?.['createdAt'] ?? ''));
   const fresh = nowMs - newest <= NIGHT_MS;

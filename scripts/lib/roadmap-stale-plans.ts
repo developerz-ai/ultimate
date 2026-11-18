@@ -6,6 +6,7 @@
 // why: host-separator paths into the checkout; Bun ships no path API.
 import { join, posix } from 'node:path';
 import { renderFixShellArg } from '../../packages/core/src/error-render';
+import { isJsonObject } from '../../packages/core/src/json-object';
 import { PLAN_STATUS_GLOB } from '../plan-status';
 import type { Finding } from './log';
 import type { TrackerEdit } from './plan-tracker-dated';
@@ -45,9 +46,6 @@ export async function gitLastTouch(root: string, dir: string): Promise<LastTouch
   const shallow = await git(['rev-parse', '--is-shallow-repository'], root);
   return { at, boundary: shallow.ok && shallow.output.trim() === 'true' };
 }
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** The template's `last_updated: <YYYY-MM-DD>`, as UTC midnight; anything else is no date. */
 const lastUpdated = (doc: Readonly<Record<string, unknown>>): number | undefined => {
@@ -98,7 +96,7 @@ export async function stalePlanFindings(root: string, deps: StaleDeps): Promise<
     } catch {
       continue; // broken YAML is X_PLAN_STATUS_INVALID, `plan-status`'s finding
     }
-    if (!isRecord(doc) || doc['status'] !== 'in_progress') continue;
+    if (!isJsonObject(doc) || doc['status'] !== 'in_progress') continue;
     const dir = posix.dirname(path);
     const touch = await deps.lastTouch(root, dir);
     if (touch === undefined) continue;

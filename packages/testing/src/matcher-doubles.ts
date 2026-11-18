@@ -25,6 +25,8 @@ interface QueueLike {
   enqueued(handle: EnqueuedJobRef<unknown>): Promise<readonly JobRecord[]>;
 }
 
+// why: NOT core's `isJsonObject` — a FUNCTION with `enqueued`/`outbox` properties is a valid
+// receiver too, which the keyed-record test refuses.
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   (typeof value === 'object' || typeof value === 'function') && value !== null;
 

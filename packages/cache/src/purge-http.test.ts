@@ -11,7 +11,6 @@ import {
   chunked,
   defaultPurgeFetch,
   detailFrom,
-  isRecord,
   purgeBody,
   purgePost,
 } from './purge-http';
@@ -166,15 +165,6 @@ describe('purgeBody', () => {
     const detail = detailFrom(await purgeBody(new Response('x'.repeat(5000))));
     expect(detail.length).toBeLessThan(300);
     expect(detail.endsWith('…')).toBe(true);
-  });
-});
-
-describe('isRecord', () => {
-  test('an object is a record; an array, null and a primitive are not', () => {
-    expect(isRecord({ a: 1 })).toBe(true);
-    expect(isRecord([1])).toBe(false);
-    expect(isRecord(null)).toBe(false);
-    expect(isRecord('post')).toBe(false);
   });
 });
 

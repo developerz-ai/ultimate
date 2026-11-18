@@ -3,7 +3,7 @@
 // tags ARE Ultimate's wire tags, so a `Cache-Tag` response header and an `invalidates: [tag.post]`
 // name the same string — the alternative, purging by URL, would need a route list nobody keeps.
 
-import { isRetryableStatus } from '@ultimat3/core';
+import { isJsonObject, isRetryableStatus } from '@ultimat3/core';
 import type { PurgeDriver } from './cdn';
 import { CachePurgeFailedError } from './errors';
 import type { PurgeFetch } from './purge-http';
@@ -13,7 +13,6 @@ import {
   DEFAULT_PURGE_TIMEOUT_MS,
   defaultPurgeFetch,
   detailFrom,
-  isRecord,
   purgeBody,
   purgePost,
   requireCredential,
@@ -59,12 +58,12 @@ const fixFor = (status: number): string => {
 
 /** Cloudflare's own errors, when it sent any: `{"errors":[{"code":1122,"message":"…"}]}`. */
 function messagesFrom(payload: unknown): string | undefined {
-  if (!isRecord(payload)) return undefined;
+  if (!isJsonObject(payload)) return undefined;
   const errors = payload['errors'];
   if (!Array.isArray(errors) || errors.length === 0) return undefined;
   const messages = errors
     .map((entry) =>
-      isRecord(entry) && typeof entry['message'] === 'string' ? entry['message'] : undefined,
+      isJsonObject(entry) && typeof entry['message'] === 'string' ? entry['message'] : undefined,
     )
     .filter((message): message is string => message !== undefined);
   return messages.length > 0 ? messages.join('; ') : undefined;
@@ -108,7 +107,7 @@ export function cloudflarePurgeDriver(options: CloudflarePurgeOptions): PurgeDri
         fix: fixFor(response.status),
       });
     }
-    if (isRecord(body.json) && body.json['success'] === false) {
+    if (isJsonObject(body.json) && body.json['success'] === false) {
       throw new CachePurgeFailedError({
         driver: 'cloudflare',
         detail:

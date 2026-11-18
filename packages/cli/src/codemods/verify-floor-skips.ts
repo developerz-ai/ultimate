@@ -2,14 +2,12 @@
 // `skip` with its why — and sets `strict`. An older app gains the `skip` rows that hold for it
 // (roadmap; job with no job suite; e2e with no page). `strict` is 31.28.0's (`verify-floor-steps`).
 
+import { isJsonObject } from '@ultimat3/core';
 import { floorSteps } from '../templates/scaffold-verify-floor';
 import { VERIFY_FLOOR_FILE } from '../verify-floor';
 import type { Codemod, CodemodApp } from './codemod';
 
 export type Floor = Record<string, unknown>;
-
-export const isObject = (value: unknown): value is Floor =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const any = async (app: CodemodApp, pattern: string): Promise<boolean> =>
   (await app.glob(pattern)).length > 0;
@@ -39,7 +37,7 @@ async function excused(app: CodemodApp): Promise<Readonly<Record<string, string>
 
 /** `floor` with `skip` merged in, placed right after `steps` as the scaffold writes it. */
 function withSkip(floor: Floor, skip: Readonly<Record<string, string>>): Floor {
-  const merged = { ...(isObject(floor['skip']) ? floor['skip'] : {}), ...skip };
+  const merged = { ...(isJsonObject(floor['skip']) ? floor['skip'] : {}), ...skip };
   const out: Floor = {};
   for (const [key, value] of Object.entries(floor)) {
     if (key === 'skip') continue;
@@ -65,7 +63,7 @@ export const codemod: Codemod = {
     } catch {
       floor = undefined;
     }
-    if (!isObject(floor)) {
+    if (!isJsonObject(floor)) {
       return {
         changed: [],
         skipped: [
@@ -74,7 +72,7 @@ export const codemod: Codemod = {
       };
     }
     const steps = Array.isArray(floor['steps']) ? floor['steps'] : [];
-    const held = isObject(floor['skip']) ? floor['skip'] : {};
+    const held = isJsonObject(floor['skip']) ? floor['skip'] : {};
     const add = Object.fromEntries(
       Object.entries(await excused(app)).filter(
         ([step]) => !steps.includes(step) && !(step in held),

@@ -11,6 +11,7 @@
 // the picture is of. The schema's job is the SHAPE of a step (`anyOf` over five one-key objects);
 // the CLI's is the count, the lengths and the policies.
 
+import { isJsonObject } from '@ultimat3/core';
 import type {
   UiColorScheme,
   UiInspectActive,
@@ -143,13 +144,10 @@ export const UI_INTERACT_STEP_SCHEMA: JsonSchema = {
   ],
 };
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /** Everything array-shaped goes through; the CLI is the parser, and it refuses whole. */
 const stepsOf = (value: unknown): readonly Readonly<Record<string, unknown>>[] =>
   Array.isArray(value)
-    ? value.map((item): Readonly<Record<string, unknown>> => (isRecord(item) ? item : {}))
+    ? value.map((item): Readonly<Record<string, unknown>> => (isJsonObject(item) ? item : {}))
     : [];
 
 /** The one `ui.interact` tool, spread into the dev catalog beside the three `ui.*` eyes. */
@@ -199,7 +197,7 @@ export function uiInteractTools(host: UiInteractHost, scope: string): readonly A
       },
       async handle(args: ToolArgs) {
         const route = typeof args['route'] === 'string' ? args['route'] : '';
-        const asked = isRecord(args['inspect']) ? inspectSpecOf(args['inspect']) : undefined;
+        const asked = isJsonObject(args['inspect']) ? inspectSpecOf(args['inspect']) : undefined;
         const result = await host.interactRoute({
           route,
           viewport: viewportOf(args),

@@ -3,7 +3,7 @@
 // `src/**/*-fixture.ts`, so a module an entry reaches under that suffix is a published package
 // that fails on import — and the defect is the name, not the exclusion.
 
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, isJsonObject } from '@ultimat3/core';
 import type { ClosureHost } from './import-closure';
 import { importClosure } from './import-closure';
 import type { Finding } from './output';
@@ -15,13 +15,11 @@ export const FIXTURE_SUFFIX = '-fixture.ts';
 /** A package directory, read by package-relative POSIX path. */
 export type PackageReader = Pick<ClosureHost, 'read'>;
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null;
-
 /** Every string under `exports` / `bin`, whatever the nesting: a condition map is still a file. */
 const targetsOf = (value: unknown): readonly string[] => {
   if (typeof value === 'string') return [value];
-  return isRecord(value) ? Object.values(value).flatMap(targetsOf) : [];
+  // An array is walked too: `exports` allows a fallback list (`".": ["./a.js", { … }]`).
+  return Array.isArray(value) || isJsonObject(value) ? Object.values(value).flatMap(targetsOf) : [];
 };
 
 /**
@@ -30,7 +28,7 @@ const targetsOf = (value: unknown): readonly string[] => {
  * entry to walk from.
  */
 export function entryFilesOf(manifest: unknown): readonly string[] {
-  if (!isRecord(manifest)) return [];
+  if (!isJsonObject(manifest)) return [];
   const targets = [...targetsOf(manifest['exports']), ...targetsOf(manifest['bin'])];
   const files = targets
     .map((target) => target.replace(/^\.\//, ''))

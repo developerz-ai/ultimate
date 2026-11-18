@@ -2,20 +2,18 @@
 // with the reason the summed shard counts give, and the same not-strict warning a whole run
 // prints. Split from `verify-merge.ts`, which folds the verdict; this folds the reasons.
 
+import { isJsonObject } from '@ultimat3/core';
 import type { StepResult } from './output';
 import type { VerifyFloor } from './verify-floor';
 import { ranNothingReason } from './verify-skip-reason';
 import { skipWhy } from './verify-strict';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** A part document's `data.skipReasons`, string values only; absent when it carries none. */
 export const readPartSkipReasons = (
   data: Record<string, unknown>,
 ): Readonly<Record<string, string>> | undefined => {
   const raw = data['skipReasons'];
-  if (!isRecord(raw)) return undefined;
+  if (!isJsonObject(raw)) return undefined;
   const reasons = Object.entries(raw).filter(
     (entry): entry is [string, string] => typeof entry[1] === 'string',
   );

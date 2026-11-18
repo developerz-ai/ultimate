@@ -1,15 +1,12 @@
 // Single responsibility: what a route's `prerender()` answered, normalised — every page as its
 // params, plus what the page said about itself for a sitemap (`lastmod`, `locales`).
 
-import { renderCauseValue, renderThrowable } from '@ultimat3/core';
+import { isJsonObject, renderCauseValue, renderThrowable } from '@ultimat3/core';
 import { PrerenderFailedError } from './errors';
 import type { RouteEntry } from './registry';
 import type { PrerenderEntry, RouteParams } from './route';
 
 const ENTRY_KEYS: readonly string[] = ['params', 'lastmod', 'locales'];
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * Is `item` the ENTRY form — `{ params: { … }, lastmod?, locales? }` — rather than a params object?
@@ -20,7 +17,7 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 const paramsShape = (keys: readonly string[]): string =>
   `{ ${keys.map((key) => `${key}: '…'`).join(', ')} }`;
 
-const isEntry = (item: Readonly<Record<string, unknown>>): boolean => isRecord(item['params']);
+const isEntry = (item: Readonly<Record<string, unknown>>): boolean => isJsonObject(item['params']);
 
 function entryOf(entry: RouteEntry, item: Readonly<Record<string, unknown>>): PrerenderEntry {
   const refuse = (problem: string): never => {
@@ -96,7 +93,7 @@ export async function enumeratePrerenderEntries(
       return { params: { [only]: item } };
     }
     // A `null` reached `Object.hasOwn` in `static-path.ts` and left the build as a bare `TypeError`.
-    if (!isRecord(item)) {
+    if (!isJsonObject(item)) {
       throw new PrerenderFailedError(
         `prerender() for ${entry.path} returned ${renderCauseValue(item)} as one of its items, which is neither a params object nor a string`,
         `prerender: () => [${paramsShape(keys)}]   // in ${entry.file}: params objects, or strings for a one-param route`,

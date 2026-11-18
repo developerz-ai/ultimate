@@ -6,6 +6,7 @@
 import type { Actor } from '@ultimat3/core';
 import {
   bindDrawn,
+  isJsonObject,
   isUltimateError,
   renderExerciseKey,
   renderFixShellArg,
@@ -76,14 +77,11 @@ export function inputThrew(name: string, key: string, error: unknown) {
  * actor is not in, and a policy comparing the two denies every run.
  */
 function rehomed(input: unknown, from: string | undefined, to: string | undefined): unknown {
-  if (from === undefined || to === undefined || from === to || !isPlainObject(input)) return input;
+  if (from === undefined || to === undefined || from === to || !isJsonObject(input)) return input;
   return Object.fromEntries(
     Object.entries(input).map(([key, value]) => [key, value === from ? to : value]),
   );
 }
-
-const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * Whether an override's input is declared `async` — state the pass computes, which a load that

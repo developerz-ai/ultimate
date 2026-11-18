@@ -5,6 +5,7 @@
 import type { Actor } from '@ultimat3/core';
 import {
   anonymousActor,
+  isJsonObject,
   renderCauseValue,
   renderFixLiteral,
   runWithContext,
@@ -41,17 +42,14 @@ function refuse(name: string, why: string): never {
   });
 }
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /**
  * The declared request as inbound headers. Each cookie value is percent-encoded, which
  * `useRequestCookie` (core's `readCookie`) inverts exactly: the value declared is the value read.
  */
 function inboundHeaders(name: string, declared: unknown): Headers {
-  if (!isRecord(declared)) return refuse(name, 'that is not an object of cookies and headers');
+  if (!isJsonObject(declared)) return refuse(name, 'that is not an object of cookies and headers');
   const { cookies = {}, headers = {} } = declared;
-  if (!isRecord(cookies) || !isRecord(headers)) {
+  if (!isJsonObject(cookies) || !isJsonObject(headers)) {
     return refuse(name, 'whose cookies or headers is not an object of strings');
   }
   const inbound = new Headers();

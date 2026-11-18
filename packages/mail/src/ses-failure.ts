@@ -3,7 +3,7 @@
 // its status does — `MessageRejected`, `SendingPausedException` and a bad request are all 400 — so
 // the type decides, and core's status table answers only for a type this table does not know.
 
-import { isRetryableStatus } from '@ultimat3/core';
+import { isJsonObject, isRetryableStatus } from '@ultimat3/core';
 
 /** What the driver needs to build `sendFailed(...)`: the verdict, the fix, and the text to show. */
 export interface SesFailure {
@@ -71,10 +71,6 @@ function fixFor(kind: SesClass | undefined, region: string): string {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /** `MessageRejected:http://internal.amazon.com/…` or `com.amazonaws.ses#MessageRejected` → the name. */
 function typeName(raw: string): string | undefined {
   const name = (raw.split(':')[0] ?? '').split('#').pop()?.trim() ?? '';
@@ -82,7 +78,7 @@ function typeName(raw: string): string | undefined {
 }
 
 function bodyField(body: unknown, ...keys: readonly string[]): string | undefined {
-  if (!isRecord(body)) return undefined;
+  if (!isJsonObject(body)) return undefined;
   for (const key of keys) {
     const value = body[key];
     if (typeof value === 'string' && value !== '') return value;

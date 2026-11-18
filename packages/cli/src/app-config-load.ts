@@ -6,13 +6,16 @@
 // why: Bun exposes no path-join primitive, and the config path is app-root-relative.
 import { join } from 'node:path';
 import type { AppConfig, AppConfigInput } from '@ultimat3/core';
-import { APP_CONFIG_FILE, ConfigInvalidError, defineConfig, describeValue } from '@ultimat3/core';
+import {
+  APP_CONFIG_FILE,
+  ConfigInvalidError,
+  defineConfig,
+  describeValue,
+  isJsonObject,
+} from '@ultimat3/core';
 
 /** The export every app declares. Named, never default — the CLI and the runtime both import it. */
 export const APP_CONFIG_EXPORT = 'config';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * One named export of `root`'s `app.config.ts`, or `undefined` when the root has no such file or
@@ -37,7 +40,7 @@ export async function loadAppConfig(root: string): Promise<AppConfig | undefined
   const path = join(root, APP_CONFIG_FILE);
   if (!(await Bun.file(path).exists())) return undefined;
   const exported = await appConfigExport(root, APP_CONFIG_EXPORT);
-  if (!isRecord(exported)) {
+  if (!isJsonObject(exported)) {
     throw new ConfigInvalidError({
       cause: `${path} exports no ${APP_CONFIG_EXPORT} object (${describeValue(exported)})`,
       fix: "export const config = defineConfig({ name: 'my-app' });",

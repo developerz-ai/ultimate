@@ -12,6 +12,7 @@
 import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; each candidate is joined to the app root.
 import { join } from 'node:path';
+import { isJsonObject } from '@ultimat3/core';
 import { assertRuntimeKeys } from './runtime-keys';
 import type { RuntimeOverrides } from './runtime-overrides';
 
@@ -19,9 +20,6 @@ import type { RuntimeOverrides } from './runtime-overrides';
 export const APP_RUNTIME_GLOB = 'apps/*/runtime.ts';
 /** The export that file makes — a `RuntimeOverrides`. */
 export const APP_RUNTIME_EXPORT = 'runtime';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 /**
  * The first `apps/<app>/runtime.ts` exporting `runtime`, or `undefined` when no app declares one.
@@ -44,7 +42,9 @@ export async function loadAppRuntime(root: string): Promise<RuntimeOverrides | u
   for (const file of files.sort()) {
     const module = (await import(join(root, file))) as Record<string, unknown>;
     const exported = module[APP_RUNTIME_EXPORT];
-    if (isRecord(exported)) {
+    // An array is let through on purpose: its index keys reach `assertRuntimeKeys` and are refused
+    // by name, where skipping it would read a malformed `runtime` as "no override declared".
+    if (Array.isArray(exported) || isJsonObject(exported)) {
       assertRuntimeKeys(file, exported);
       return exported as RuntimeOverrides;
     }

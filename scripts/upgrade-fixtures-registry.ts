@@ -8,6 +8,7 @@ import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 // why: Bun exposes no path-join primitive.
 import { dirname, join } from 'node:path';
 import { renderFixShellArg } from '../packages/core/src/error-render';
+import { isJsonObject } from '../packages/core/src/json-object';
 import type { Finding } from './lib/log';
 import { LONG_RUN_TIMEOUT_MS, run } from './lib/run';
 import type { PackedPackage } from './upgrade-fixtures-packument';
@@ -21,9 +22,6 @@ import {
 } from './upgrade-fixtures-packument';
 
 export const UPSTREAM = 'https://registry.npmjs.org';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const integrityOf = async (file: string): Promise<string> => {
   const hasher = new Bun.CryptoHasher('sha512');
@@ -74,7 +72,7 @@ export async function packHead(
     const manifestFile = Bun.file(join(root, 'packages', dir, 'package.json'));
     if (!(await manifestFile.exists())) continue;
     const manifest: unknown = await manifestFile.json();
-    if (!isRecord(manifest) || manifest['private'] === true) continue;
+    if (!isJsonObject(manifest) || manifest['private'] === true) continue;
     const { name, version } = manifest;
     if (typeof name !== 'string' || !name.startsWith(`${SCOPE}/`) || typeof version !== 'string') {
       continue;
@@ -99,7 +97,7 @@ export async function packHead(
       cwd: dest,
     });
     const shipped: unknown = packedManifest.ok ? JSON.parse(packedManifest.output) : manifest;
-    const base = isRecord(shipped) ? shipped : manifest;
+    const base = isJsonObject(shipped) ? shipped : manifest;
     const stamped =
       target === version
         ? { file, manifest: base }

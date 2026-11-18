@@ -3,7 +3,7 @@
 // said `bunx biome check --write .`, which exits "Skipped 1 suggested fixes", still red; a finding
 // per formatted file was twenty commands for one keystroke's worth of work (plan 101 19b, Y1).
 
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, isJsonObject } from '@ultimat3/core';
 import { commentSafe } from './comment-safe';
 import type { ExecResult } from './exec';
 import { execOutput } from './exec';
@@ -27,12 +27,9 @@ interface Diagnostic {
   readonly line: number;
 }
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null;
-
 /** Only what fails the step. `info` and `warning` exit 0, so they cannot be why it is red. */
 const diagnosticFrom = (value: unknown): Diagnostic | undefined => {
-  if (!isRecord(value) || !isRecord(value['location'])) return undefined;
+  if (!isJsonObject(value) || !isJsonObject(value['location'])) return undefined;
   const { severity, category, message, location } = value as {
     severity?: unknown;
     category?: unknown;
@@ -42,7 +39,7 @@ const diagnosticFrom = (value: unknown): Diagnostic | undefined => {
   if (severity !== 'error' && severity !== 'fatal') return undefined;
   const { path, start } = location;
   if (typeof category !== 'string' || typeof path !== 'string') return undefined;
-  const line = isRecord(start) && typeof start['line'] === 'number' ? start['line'] : 0;
+  const line = isJsonObject(start) && typeof start['line'] === 'number' ? start['line'] : 0;
   return { category, message: typeof message === 'string' ? message : category, path, line };
 };
 
@@ -92,7 +89,7 @@ export function lintFindings(stdout: string): readonly Finding[] | undefined {
   } catch {
     return undefined;
   }
-  if (!isRecord(report) || !Array.isArray(report['diagnostics'])) return undefined;
+  if (!isJsonObject(report) || !Array.isArray(report['diagnostics'])) return undefined;
   const diagnostics = report['diagnostics'].flatMap((value) => {
     const diagnostic = diagnosticFrom(value);
     return diagnostic === undefined ? [] : [diagnostic];

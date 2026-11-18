@@ -2,13 +2,13 @@
 // it — on only under `registration: 'dynamic'`, counted per address. Never a machine client: an
 // open endpoint handing out `client_credentials` would let anyone mint itself a scope.
 
+import { isJsonObject } from '@ultimat3/core';
 import { isRedirectUri, storeClient } from './authorization-server-clients';
 import type { ResolvedAuthServerConfig } from './authorization-server-config';
 import type { AuthServerGrant, ClientAuthMethod } from './authorization-server-types';
 import { DEVICE_GRANT } from './authorization-server-types';
 import type { AuthServerHttpContext, AuthServerHttpRequest } from './authorization-server-wire';
 import { jsonAnswer, throttledAnswer } from './authorization-server-wire';
-import { isRecord } from './json';
 
 const SELF_SERVICE_GRANTS: ReadonlySet<string> = new Set<AuthServerGrant>([
   'authorization_code',
@@ -45,7 +45,8 @@ export async function registerHandler(
   } catch {
     return metadataError('invalid_client_metadata', 'the body is not JSON');
   }
-  if (!isRecord(body)) return metadataError('invalid_client_metadata', 'the body is not an object');
+  if (!isJsonObject(body))
+    return metadataError('invalid_client_metadata', 'the body is not an object');
   const grants = stringList(body['grant_types'] ?? ['authorization_code', 'refresh_token']);
   if (
     grants === null ||

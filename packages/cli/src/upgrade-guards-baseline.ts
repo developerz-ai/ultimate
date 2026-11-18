@@ -4,15 +4,13 @@
 
 // why: Bun exposes no path-join primitive; `x.verify.json` sits at the app root.
 import { join } from 'node:path';
+import { isJsonObject } from '@ultimat3/core';
 import { parseJson } from './upgrade-registry';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
 import { GUARD_BASELINE_FIELD } from './verify-guard-baseline';
 
 /** The floor's bytes before the write, or null when there was no file: what a rollback restores. */
 export type FloorPrior = string | null;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * Writes `guardBaseline[name] = findings`; the prior bytes, or undefined when it refused. No file
@@ -26,9 +24,9 @@ export async function writeGuardBaseline(
   const file = Bun.file(join(root, VERIFY_FLOOR_FILE));
   const prior = (await file.exists()) ? await file.text() : null;
   const payload = prior === null ? { steps: [] } : parseJson(prior);
-  if (!isRecord(payload)) return undefined;
+  if (!isJsonObject(payload)) return undefined;
   const current = payload[GUARD_BASELINE_FIELD];
-  if (current !== undefined && !isRecord(current)) return undefined;
+  if (current !== undefined && !isJsonObject(current)) return undefined;
   if (current !== undefined && Object.hasOwn(current, name)) return undefined;
   const next = { ...payload, [GUARD_BASELINE_FIELD]: { ...(current ?? {}), [name]: findings } };
   await Bun.write(file, `${JSON.stringify(next, null, 2)}\n`);

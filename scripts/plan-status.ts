@@ -12,6 +12,7 @@
 import { join } from 'node:path';
 import { renderCauseValue } from '@ultimat3/core';
 import { quoteArg } from '../packages/cli/src/shell-quote';
+import { isJsonObject } from '../packages/core/src/json-object';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -32,9 +33,6 @@ export const PLAN_STATUSES = [
 
 const ALLOWED: ReadonlySet<string> = new Set(PLAN_STATUSES);
 const ENUM = PLAN_STATUSES.join(' | ');
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * A value as a reader would write it back: a string quoted, anything else by its JSON — through
@@ -70,7 +68,7 @@ export function statusFindings(path: string, text: string): readonly Finding[] {
       },
     ];
   }
-  if (!isRecord(doc)) return [invalid(path, 'status', undefined)];
+  if (!isJsonObject(doc)) return [invalid(path, 'status', undefined)];
   const findings: Finding[] = [];
   if (typeof doc['status'] !== 'string' || !ALLOWED.has(doc['status'])) {
     findings.push(invalid(path, 'status', doc['status']));
@@ -88,7 +86,7 @@ export function statusFindings(path: string, text: string): readonly Finding[] {
   }
   const slices: readonly unknown[] = Array.isArray(raw) ? raw : [];
   slices.forEach((slice: unknown, index) => {
-    const row = isRecord(slice) ? slice : {};
+    const row = isJsonObject(slice) ? slice : {};
     const name = typeof row['file'] === 'string' ? row['file'] : `#${String(index + 1)}`;
     if (typeof row['status'] !== 'string' || !ALLOWED.has(row['status'])) {
       findings.push(invalid(path, `slices[${name}].status`, row['status']));

@@ -11,6 +11,7 @@ import type { Clock, Scheduler } from '@ultimat3/core';
 import {
   generationFence,
   isFixShellSafe,
+  isJsonObject,
   liveClock,
   logger,
   renderFixLiteral,
@@ -19,7 +20,7 @@ import {
   singleFlight,
 } from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
-import { decodeJwtSegment, isRecord } from './json';
+import { decodeJwtSegment } from './json';
 import type { OAuthProvider } from './oauth';
 import { oauthExchangeFailed, oauthTokenInvalid } from './oauth-errors';
 import type { OAuthFetch } from './oauth-exchange';
@@ -227,10 +228,10 @@ export function jwksClient(options: JwksClientOptions): JwksKeySource {
       });
     }
     const body: unknown = await response.json().catch(() => undefined);
-    const entries = isRecord(body) && Array.isArray(body['keys']) ? body['keys'] : [];
+    const entries = isJsonObject(body) && Array.isArray(body['keys']) ? body['keys'] : [];
     const next = new Map<string, CryptoKey>();
     for (const entry of entries) {
-      if (!isRecord(entry)) continue;
+      if (!isJsonObject(entry)) continue;
       const alg = algorithmOf(entry);
       const kid = entry['kid'];
       const named = typeof kid === 'string' && kid !== '';

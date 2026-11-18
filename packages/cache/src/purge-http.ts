@@ -157,10 +157,6 @@ export function detailFrom(body: PurgeBody): string {
     : body.text;
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 export interface PurgePostInput {
   readonly driver: string;
   readonly url: string;

@@ -3,9 +3,9 @@
 // and UV flags, the attested key, the signature. Pure: no store, no clock. Every refusal answers
 // `null` plus the name of the check, which the caller logs; the challenge is the caller's to match.
 
+import { isJsonObject } from '@ultimat3/core';
 import { base64Url, canonicalBase64UrlBytes } from './base64url';
 import { importCoseKey, PASSKEY_ALGORITHMS, verifyCoseSignature } from './cose-key';
-import { isRecord } from './json';
 import type { PasskeyRelyingParty } from './passkey-config';
 import {
   type AuthenticatorData,
@@ -63,7 +63,7 @@ export function readEnvelope(
   raw: unknown,
   type: 'webauthn.create' | 'webauthn.get',
 ): Checked<CeremonyEnvelope> {
-  if (!isRecord(raw) || raw['type'] !== 'public-key' || !isRecord(raw['response'])) {
+  if (!isJsonObject(raw) || raw['type'] !== 'public-key' || !isJsonObject(raw['response'])) {
     return refuse('envelope');
   }
   const id = raw['id'];

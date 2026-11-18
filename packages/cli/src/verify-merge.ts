@@ -16,7 +16,13 @@
 import { existsSync } from 'node:fs';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-import { APP_CONFIG_FILE, ERROR_DOCS_URL, renderThrowable, UltimateError } from '@ultimat3/core';
+import {
+  APP_CONFIG_FILE,
+  ERROR_DOCS_URL,
+  isJsonObject,
+  renderThrowable,
+  UltimateError,
+} from '@ultimat3/core';
 import { judgeCoverage } from './coverage-floor';
 import type { CoverageMap } from './coverage-lcov';
 import { decodeCoverage, mergeCoverage } from './coverage-lcov';
@@ -74,9 +80,6 @@ export interface MergeOptions {
   readonly riders?: MergeRiders;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /**
  * The LAST non-empty line, and only it: an app's own wrapper script (an older scaffold's
  * `bin/check --json`) prints the build's document and then the gate's. Never "the last line that parses" — a part whose tail is not the gate's document is
@@ -99,14 +102,14 @@ export function parsePart(file: string, text: string, command: string = GATE_COM
       command,
     });
   }
-  if (!isRecord(doc) || doc['command'] !== 'verify' || !Array.isArray(doc['steps'])) {
+  if (!isJsonObject(doc) || doc['command'] !== 'verify' || !Array.isArray(doc['steps'])) {
     throw new VerifyMergeInputError({
       file,
       reason: 'is not an x verify --json document (no "command": "verify" with "steps")',
       command,
     });
   }
-  const data = isRecord(doc['data']) ? doc['data'] : {};
+  const data = isJsonObject(doc['data']) ? doc['data'] : {};
   const steps: PartStep[] = [];
   for (const raw of doc['steps'] as unknown[]) {
     const step = readPartStep(raw);
@@ -114,9 +117,11 @@ export function parsePart(file: string, text: string, command: string = GATE_COM
     steps.push(step);
   }
   const coverage = new Map<string, CoverageMap>();
-  for (const [step, entry] of Object.entries(isRecord(data['coverage']) ? data['coverage'] : {})) {
+  for (const [step, entry] of Object.entries(
+    isJsonObject(data['coverage']) ? data['coverage'] : {},
+  )) {
     // A part that judged its own floor carries numbers, not facts: nothing here to fold.
-    if (!isRecord(entry) || !('facts' in entry)) continue;
+    if (!isJsonObject(entry) || !('facts' in entry)) continue;
     const map = decodeCoverage(entry['facts']);
     if (map === undefined) {
       throw new VerifyMergeInputError({

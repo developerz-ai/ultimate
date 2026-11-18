@@ -4,7 +4,7 @@
 // The keys are the WIRE's own names (`top_p`, `service_tier`), never a translated set: a body builder
 // spreads a screened bag as it stands, the way it passes a content block through.
 
-import { renderCauseValue } from '@ultimat3/core';
+import { isJsonObject, renderCauseValue } from '@ultimat3/core';
 import { AiRequestInvalidError } from './errors';
 import type { SamplingWire } from './sampling';
 
@@ -70,9 +70,6 @@ export const PROVIDER_OPTION_KEYS: { readonly [W in SamplingWire]: readonly stri
   openai: Object.keys(RULES.openai).sort(),
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const refuse = (detail: string, fix: string): never => {
   throw new AiRequestInvalidError({ detail, fix });
 };
@@ -117,7 +114,7 @@ function screenFields(
   fields: Readonly<Record<string, Rule>>,
   bag: unknown,
 ): void {
-  if (!isRecord(bag)) {
+  if (!isJsonObject(bag)) {
     refuse(
       `providerOptions.${path} is ${renderCauseValue(bag)}; it must be an object`,
       FIX(wire, key),
@@ -147,7 +144,7 @@ function screenFields(
  */
 export function screenProviderOptions(options: unknown): void {
   if (options === undefined) return;
-  if (!isRecord(options)) {
+  if (!isJsonObject(options)) {
     refuse(
       `providerOptions is ${renderCauseValue(options)}; it must be an object keyed by wire format`,
       `providerOptions: { openai: { top_p: 0.9 } }   # keyed by ${WIRES.join(', ')}`,

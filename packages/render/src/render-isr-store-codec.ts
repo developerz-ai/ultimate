@@ -3,10 +3,8 @@
  * totally — anything else is a miss, never a cast.
  */
 
+import { isJsonObject } from '@ultimat3/core';
 import type { IsrEntry } from './render-isr-store';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * The stored text as an entry for `path`, or `undefined`. A shared store holds what another
@@ -20,7 +18,7 @@ export function parseIsrEntry(text: string, path: string): IsrEntry | undefined 
   } catch {
     return undefined;
   }
-  if (!isRecord(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const { html, hash, generatedAt, ttlMs, stale, status } = value;
   if (value['path'] !== path || typeof html !== 'string' || typeof hash !== 'string') {
     return undefined;
