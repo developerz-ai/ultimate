@@ -48,30 +48,33 @@ cursor, snapshot or gap-repair path is under test. Not a multi-node result and n
 figure. [`scripts/bench/restart-bench.ts`](../restart-bench.ts), results committed under
 [`scripts/bench/results/`](./).
 
-## A stranger's first hour, and requests per second — `As of 2026-11-06`
+## A stranger's first hour, and requests per second — `As of 2026-11-18`
 
-One local run on an 8-core laptop (Intel i7-10610U, Bun 1.4.4, `box.runner: local`), **not yet a CI
-figure**: `.github/workflows/bench.yml` re-measures five runs on `ubuntu-latest` weekly and opens a
-pull request. Other work was running on the same box, so read these as one machine's order of
-magnitude, never as a ceiling.
+Five runs on a GitHub `ubuntu-latest` runner (4-core Xeon 6975P-C, 15 GB, Bun 1.4.4, `box.runner:
+ubuntu26`), by `.github/workflows/bench.yml`, which re-measures weekly and opens a pull request;
+every figure is the median of the five. The previous figures were one local run on an 8-core laptop
+against 29.4.0. Box and version both changed, so **the times below are not a measured speed-up**:
+read them as one machine's order of magnitude, never as a ceiling.
 
 **First hour** ([`first-hour.ts`](../first-hour.ts), [`first-hour.json`](first-hour.json)): the
-published `create-ultimate@latest` — `29.4.0` that day (`npm view create-ultimate version`) — under
-a clean `HOME` and `BUN_INSTALL`. Scaffold 4.7s, `bun run setup` 43.3s with a cold Bun cache, leaving
-165 MB of `node_modules` across 106 installed packages and 261 app files. **The first
-`bun run verify` was red** on 29.4.0: `budgets` reported `X_BUDGET_UNMEASURED` because nothing had
-built yet — the step builds first since plan 101's slice 21, which 29.4.0 predates — so the run
-records `verify` as failed and every later step as skipped, with no time.
+published `create-ultimate@latest` — `31.46.0` in all five runs (`runs[].resolved`) — under a clean
+`HOME` and `BUN_INSTALL`. Scaffold 1.5s, `bun run setup` 8.0s with a cold Bun cache, leaving
+197 MB of `node_modules` across 107 installed packages and 311 app files. **The install got
+bigger**: 29.4.0 left 165 MB, 106 packages and 261 app files. The first `bun run verify` is green in
+all five runs, median 23.1s; the first of the five took 55.5s and the other four 22.4–23.1s, a gap
+this bench does not explain. On 29.4.0 it was red (`budgets`, `X_BUDGET_UNMEASURED`, because nothing
+had built yet); the step has built first since plan 101's slice 21.
 
-**Requests per second** ([`http-hello.ts`](../http-hello.ts)): that scaffold under `x dev` — every
-role in one process, embedded Postgres, a development server and not the production image —
-loaded by one client at concurrency 16, three 30 s runs back to back, every answer 2xx. The
+**Requests per second** ([`http-hello.ts`](../http-hello.ts)): the last run's scaffold under `x dev`
+— every role in one process, embedded Postgres, a development server and not the production image —
+loaded by one client at concurrency 16, five 30 s runs back to back, every answer 2xx. The
 scaffold's read bucket was raised for the run in its own `apps/web/app/http.ts` (the shipped one
 answers a single client 429 past a 120-request burst, and a 429 is `X_BENCH_RUN_FAILED`). `/`
-([`http-hello.json`](http-hello.json)): median 267 req/s, p50 45.74 ms, p99 181.85 ms; cold start
-to the first 2xx 4.8s, 542 MiB resident across the process group. A typed read through the whole
-pipeline, `/_x/query/post-list?limit=10` ([`http-hello-query.json`](http-hello-query.json)): median
-183 req/s, p50 60.36 ms, p99 258.26 ms.
+([`http-hello.json`](http-hello.json)): median 1,147 req/s, p50 12.63 ms, p99 26.86 ms; cold start
+to the first 2xx 1.1s, 551 MiB resident across the process group (**up** from 542 MiB in the laptop
+run). A typed read through the whole pipeline, `/_x/query/post-list?limit=10`
+([`http-hello-query.json`](http-hello-query.json)): median
+875 req/s, p50 16.55 ms, p99 35.3 ms.
 
 **Live-query fan-out, unrelated tables** ([`realtime-fanout.bench.ts`](../realtime-fanout.bench.ts)),
 `As of 2026-11-09`: 10,000 windows reading `posts`, 5,000 changes on `comments`, in process. Before
@@ -156,7 +159,7 @@ carried routes, islands and actions, and measured ~5 ms a file serially.
 [`http-prod-image.json`](http-prod-image.json)): a fresh scaffold built by `x build --target
 docker` and deployed by `x deploy` on its own `docker-compose.prod.yml`
 (`docker/deploy-proof/compose.sh` with `KEEP_STACK=1`), the read bucket raised as `bench.yml` does,
-`/` for 30 s at concurrency 16 per pod, every answer 2xx. One `web` pod: **1,439 req/s**, p50 9.4 ms, p99 38.09 ms — 5.4× the 267 req/s `x dev` served above. Three pods on the same host: 1,196 req/s in sum, p99 203.89 ms: on one saturated box three pods and the load generator
+`/` for 30 s at concurrency 16 per pod, every answer 2xx. One `web` pod: **1,439 req/s**, p50 9.4 ms, p99 38.09 ms, on a 12-core VM; not compared with the `x dev` figure above, which now comes from a 4-core CI runner. Three pods on the same host: 1,196 req/s in sum, p99 203.89 ms: on one saturated box three pods and the load generator
 share the same cores, so this is **not** a horizontal-scaling figure, and none is claimed. A clean
 1-vs-3 comparison needs pods on separate hosts.
 

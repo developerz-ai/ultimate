@@ -2,7 +2,7 @@
 // carries it, the dot path into that result, and the pattern that reads it off the prose. Data only,
 // split from the checker at its file ceiling; the checker re-exports these names.
 
-import { SCALE_CLAIMS } from '../bench/scale-claims';
+import { SCALE_CLAIMS, SCALE_LADDER } from '../bench/scale-claims';
 
 export const CLAIMS_FILE = 'scripts/bench/results/README.md';
 export const RESULTS_50K = 'scripts/bench/results/50k-restart.json';
@@ -77,7 +77,7 @@ const FIRST_HOUR_CLAIMS: readonly BenchClaim[] = [
     file: RESULTS_FIRST_HOUR,
     path: 'spread.scaffold ms.median',
     format: 'seconds',
-    pattern: /`create-ultimate` \(29\.4\.0\) \| ([\d.]+) s \|/,
+    pattern: /`create-ultimate` \(\d+\.\d+\.\d+\) \| ([\d.]+) s \|/,
   },
   {
     label: 'the setup step, compared',
@@ -194,6 +194,22 @@ const HTTP_CLAIMS: readonly BenchClaim[] = [
     path: 'coldStartMs',
     format: 'seconds',
     pattern: /cold start to the first 2xx \(`x dev`\) \| ([\d.]+) s \|/,
+  },
+  {
+    label: "/'s median requests per second, on the scale ladder",
+    doc: SCALE_LADDER,
+    file: RESULTS_HTTP_HOME,
+    path: 'spread.rps.median',
+    format: 'count',
+    pattern: /fresh scaffold, `\/` \| ([\d,]+) req\/s median/,
+  },
+  {
+    label: "/'s median p99, on the scale ladder",
+    doc: SCALE_LADDER,
+    file: RESULTS_HTTP_HOME,
+    path: 'spread.p99Ms.median',
+    format: 'plain',
+    pattern: /fresh scaffold, `\/` \| [\d,]+ req\/s median, p99 ([\d.]+) ms/,
   },
 ];
 
