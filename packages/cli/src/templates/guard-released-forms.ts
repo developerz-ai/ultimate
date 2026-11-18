@@ -5,23 +5,36 @@
 export const RELEASED_GUARD_FORMS: Readonly<
   Record<string, readonly (readonly [string, 'error' | 'warning'])[]>
 > = {
-  'animated-layout-property': [['2hqr04589t23q', 'error']],
+  'animated-layout-property': [
+    ['2hqr04589t23q', 'error'],
+    ['2z9j3sd8e7lgl', 'error'],
+  ],
   'bare-error': [
     ['1m3eimglwzrdq', 'error'],
     ['1njzso3r6drnd', 'error'],
+    ['1ot9kwydyzd0j', 'error'],
+    ['2aaavkemg4qee', 'error'],
+    ['2s43pcjqyhmfi', 'error'],
   ],
   'error-declared': [
     ['1rlzex7nalpiw', 'error'],
     ['2tfw2hq80msju', 'error'],
     ['3kqd7d8pzpcnn', 'error'],
   ],
-  'focus-visible': [['4c2nf0mpzn0z', 'error']],
+  'focus-visible': [
+    ['3i4t0gznxyytf', 'error'],
+    ['4c2nf0mpzn0z', 'error'],
+  ],
   'image-dimensions': [
     ['1cfzth883qzt5', 'error'],
+    ['1upoweaclyd8', 'error'],
     ['33uv2ua4a9zcf', 'error'],
   ],
   'island-mount-clears': [['1v09h5ptzqvs2', 'error']],
-  'island-without-states': [['2os1f5fb6aass', 'error']],
+  'island-without-states': [
+    ['2os1f5fb6aass', 'error'],
+    ['31gjhz3nyf0gz', 'error'],
+  ],
   'native-confirm': [
     ['1f7eh34hj085a', 'error'],
     ['2b134wpkoaqso', 'error'],
@@ -29,8 +42,10 @@ export const RELEASED_GUARD_FORMS: Readonly<
   ],
   'raw-breakpoint': [['wdo3lsqmvsya', 'error']],
   'raw-colour': [
+    ['17jw6r17ah3dq', 'error'],
     ['1e2pkqnmrjt44', 'error'],
     ['3onnbx54g9zmd', 'error'],
+    ['mdo7f20dnyof', 'error'],
   ],
   'raw-fetch': [
     ['17xdeprvzx5v2', 'error'],
@@ -54,6 +69,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
   'repo-raw-sql': [
     ['12qj02j416sib', 'error'],
     ['2kr7gbv7j2m0v', 'error'],
+    ['2m5sh5923zcdx', 'error'],
     ['3nmlelym16o78', 'error'],
   ],
   'repo-unbounded': [
@@ -63,6 +79,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
   'runtime-pin': [['28ffbpwy4q2ji', 'error']],
   'semantic-interactive': [
     ['29pfa4ea628cv', 'error'],
+    ['2m280ivq01zs2', 'error'],
     ['d4ncwu39wtrk', 'error'],
   ],
   'unbounded-fanout': [['xk4dv9vsq8gg', 'error']],
@@ -82,12 +99,17 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['w7as1ib1ido8', 'error'],
   ],
   'untranslated-string': [
+    ['211cleyx8cmgn', 'error'],
+    ['2tmea7cmz7rvr', 'error'],
     ['2x85ib5eqdxzi', 'error'],
     ['3j5e8t1k120u3', 'error'],
     ['d6gyn0l6szj8', 'error'],
     ['h57qtdwn7inz', 'error'],
   ],
   'unzoned-date': [
+    ['14sc1shft1opi', 'error'],
+    ['38jqi2md5adsi', 'error'],
+    ['3caz4m0vn66dz', 'error'],
     ['8apjndc5ybvm', 'error'],
     ['haaxmgzsgjns', 'error'],
   ],
@@ -96,7 +118,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
 /** Every hash each shipped guard's TEST file was released as: an unedited test goes without a note. */
 export const RELEASED_GUARD_TEST_FORMS: Readonly<Record<string, readonly string[]>> = {
   'animated-layout-property': ['191zjn08f13h4'],
-  'bare-error': ['1w7vwbtypxdwe'],
+  'bare-error': ['17uv4zrzcuwbk', '1epwa72g9sk4u', '1w7vwbtypxdwe'],
   'error-declared': ['2hj2bs2czhxnw', 'qe8afpq7pzf1'],
   'focus-visible': ['12c0rk3ljkx6q'],
   'image-dimensions': ['3p4hkambgpb4j'],
@@ -104,7 +126,7 @@ export const RELEASED_GUARD_TEST_FORMS: Readonly<Record<string, readonly string[
   'island-without-states': ['vls0ujdd16gw'],
   'native-confirm': ['1c7vps5wn37uv', 'qwyn1mzn9ace'],
   'raw-breakpoint': ['w356i8dreh7j'],
-  'raw-colour': ['1tc7cambk8byr', '319l3wictp9lf'],
+  'raw-colour': ['1nhoblzxa9kp1', '1tc7cambk8byr', '319l3wictp9lf'],
   'raw-fetch': ['2lips924uo00f'],
   'raw-interval': ['1z55givy4sst0'],
   'raw-length': ['1hpgz9jowk5qu'],
@@ -112,7 +134,7 @@ export const RELEASED_GUARD_TEST_FORMS: Readonly<Record<string, readonly string[
   'raw-shadow': ['3kg8ft6y3ia0y'],
   'raw-z-index': ['3fb40f6bwp8kq'],
   'repo-await-in-loop': ['2axgbb82wldt4'],
-  'repo-raw-sql': ['c5pfl8w3qj94', 'f19j7irkta44'],
+  'repo-raw-sql': ['1wxenxatjt885', 'c5pfl8w3qj94', 'f19j7irkta44'],
   'repo-unbounded': ['98ncw525gpmo'],
   'runtime-pin': ['dy20fh65qziz'],
   'semantic-interactive': ['2uh0p6xoh996t', '393msxyy1bz36'],
@@ -120,6 +142,6 @@ export const RELEASED_GUARD_TEST_FORMS: Readonly<Record<string, readonly string[
   'undeclared-custom-property': ['30bi2v92swukf', 'svuf8sm14fm8'],
   'undeclared-env': ['38run3rew6y0c', '8xdp7gp7hol7'],
   'undefined-style-class': ['1uy88gpk5k8p8', '2sy8me3i3bmzw'],
-  'untranslated-string': ['30q3u45cey2eq', 'cgvfv231gnvg'],
-  'unzoned-date': ['1siep3fqscks4', '20x6l238r09jk'],
+  'untranslated-string': ['30q3u45cey2eq', 'cgvfv231gnvg', 'kdo3fxwgix3j'],
+  'unzoned-date': ['1m46q3h8t4v7v', '1siep3fqscks4', '20x6l238r09jk', '3jzdaqcytkgil'],
 };

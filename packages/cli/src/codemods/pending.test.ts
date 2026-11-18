@@ -37,7 +37,7 @@ describe('unit · codemods still owed', () => {
     expect(finding?.code).toBe('X_UPGRADE_CODEMODS_PENDING');
     expect(finding?.cause).toContain('fix-a (31.28.0)');
     expect(finding?.at).toBe('a.txt');
-    expect(finding?.fix).toStartWith('x upgrade --json');
+    expect(finding?.fix).toStartWith('x upgrade codemods --from 0.0.0 --json');
     expect(await Bun.file(join(dir, 'a.txt')).text()).toBe('old\n');
   });
 

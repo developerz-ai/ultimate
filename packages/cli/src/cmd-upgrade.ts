@@ -11,6 +11,7 @@ import { runUpgradeCodemods } from './cmd-upgrade-codemods';
 import { upgradeSpec } from './cmd-upgrade-spec';
 import type { CliCommand, CommandContext } from './command';
 import { failed, ok } from './command';
+import { supersededFindings } from './doctor-superseded';
 import { BadFlagError, BunVersionError } from './errors';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
@@ -24,7 +25,7 @@ import type { BunEdit, BunManual } from './upgrade-bun-floor';
 import { editBunSites, floorOf, isBunSite } from './upgrade-bun-floor';
 import { requireCleanTree } from './upgrade-clean-tree';
 import { repoScripts, runHopGate, runRepoScripts } from './upgrade-gate';
-import { atTargetCodemods, EVERY_RELEASE, previewCodemods } from './upgrade-gate-codemods';
+import { EVERY_RELEASE, previewCodemods } from './upgrade-gate-codemods';
 import { acquireUpgradeLock } from './upgrade-lock';
 import { readManifests, readPins, rewritePins } from './upgrade-pins';
 import type { UpgradeHop } from './upgrade-plan';
@@ -32,7 +33,6 @@ import { planHop, releaseOf } from './upgrade-plan';
 import { publishedVersions, releaseBunRange } from './upgrade-registry';
 import type { PlannedWrites } from './upgrade-report';
 import { humanLines, NO_WRITES, report, thenLine } from './upgrade-report';
-import { codemodLines } from './upgrade-report-codemods';
 import { findUpgradeRoot } from './upgrade-root';
 import { stopChildrenOnSignal, tagRunner, upgradeTag } from './upgrade-signals';
 import type { UnfinishedHop } from './upgrade-unfinished';
@@ -177,9 +177,8 @@ export const createUpgradeCommand = (
       // A record for some other target is a hop since undone (`git stash`): nothing left to finish.
       if (unfinished !== undefined && !dryRun) await clearUnfinished(root);
       const then = thenLine({ hop, dryRun, app, gate: undefined, scripts: [] });
-      const carried = app
-        ? await atTargetCodemods({ runner: ctx.runner, root, to: hop.to, dryRun })
-        : undefined;
+      // No version moved, so no codemod is owed: a hand run is `x upgrade codemods --from <version>`.
+      const superseded = app ? await supersededFindings(root) : [];
       const summary =
         hop.next === null
           ? msg('cli.upgrade.atLatest', { version: hop.to })
@@ -198,11 +197,10 @@ export const createUpgradeCommand = (
           scripts: [],
           then,
           typescript,
-          ...carried,
+          superseded,
         }),
         lines: [
           ...typescript.map((lag) => msg('cli.upgrade.typescript', { ...lag })),
-          ...codemodLines(carried?.codemods ?? null),
           msg('cli.upgrade.then', { then }),
         ],
       });

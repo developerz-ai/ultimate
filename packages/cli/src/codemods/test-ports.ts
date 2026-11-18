@@ -1,6 +1,7 @@
 // 31.27.0: the test stack's host ports are the app's own (its name picks an offset into each band),
-// so two apps on one machine stop dialling each other's Postgres. Only a compose file and env file
-// still byte-for-byte the old scaffold's move; an edited one is reported with the diff.
+// so two apps on one machine stop dialling each other's Postgres. The compose file publishes what
+// the env file names, so they move together, only while both are the old scaffold's byte for byte;
+// otherwise neither moves and each is reported with its diff.
 
 import type { NameSet } from '../templates/naming';
 import { names } from '../templates/naming';
@@ -11,9 +12,10 @@ import {
   testPorts,
   testServicesFiles,
 } from '../templates/scaffold-test-services';
-import type { Codemod, CodemodApp, CodemodResult } from './codemod';
+import type { Codemod, CodemodResult } from './codemod';
 import { unifiedDiff } from './engine-diff';
-import { mergeResults, readText } from './engine-edits';
+import type { FileText } from './engine-edits';
+import { readText } from './engine-edits';
 
 const NOTHING: CodemodResult = { changed: [], skipped: [] };
 
@@ -42,30 +44,27 @@ function before(today: string, app: NameSet): string {
   return text;
 }
 
-async function move(
-  app: CodemodApp,
-  path: string,
-  today: string,
-  name: NameSet,
-): Promise<CodemodResult> {
-  const file = await readText(app, path);
-  if (file === undefined || file.text === today) return NOTHING;
-  const old = before(today, name);
-  if (file.text === old) {
-    await app.write(path, file.restore(today));
-    return { changed: [path], skipped: [] };
-  }
-  return {
-    changed: [],
-    skipped: [
-      {
-        path,
-        reason:
-          "it is no longer the old scaffold's file byte for byte, so its ports stay: the diff is the scaffold's change, to make by hand if two apps share this machine",
-        diff: unifiedDiff(path, old, today),
-      },
-    ],
-  };
+interface PortFile {
+  readonly path: string;
+  readonly today: string;
+  readonly old: string;
+  readonly file: FileText | undefined;
+}
+
+const isMovable = ({ file, today, old }: PortFile): boolean =>
+  file !== undefined && (file.text === today || file.text === old);
+
+/** Every file still short of today's, each with why it stays and the change to make by hand. */
+function heldBack(files: readonly PortFile[]): CodemodResult {
+  const blockers = files.filter((one) => !isMovable(one)).map((one) => one.path);
+  const skipped = files.flatMap(({ path, today, old, file }) => {
+    if (file === undefined || file.text === today) return [];
+    const reason = blockers.includes(path)
+      ? "it is no longer the old scaffold's file byte for byte, so the test ports stay in both files: the diff is the scaffold's change, to make by hand in both if two apps share this machine"
+      : `${blockers.join(' and ')} cannot move with it, and the two must name the same ports, so this file stays too: the diff is the scaffold's change, to make by hand in both if two apps share this machine`;
+    return [{ path, reason, diff: unifiedDiff(path, old, today) }];
+  });
+  return { changed: [], skipped };
 }
 
 export const codemod: Codemod = {
@@ -76,11 +75,19 @@ export const codemod: Codemod = {
     const kebab = appName((await readText(app, TEST_ENV_PATH))?.text ?? '');
     if (kebab === undefined) return NOTHING;
     const name = names(kebab);
-    const results: CodemodResult[] = [];
-    for (const file of testServicesFiles(name)) {
-      if (typeof file.contents === 'string')
-        results.push(await move(app, file.path, file.contents, name));
+    const files: PortFile[] = [];
+    for (const { path, contents } of testServicesFiles(name)) {
+      if (typeof contents !== 'string') continue;
+      const old = before(contents, name);
+      files.push({ path, today: contents, old, file: await readText(app, path) });
     }
-    return mergeResults(results);
+    if (!files.every(isMovable)) return heldBack(files);
+    const changed: string[] = [];
+    for (const { path, today, file } of files) {
+      if (file === undefined || file.text === today) continue;
+      await app.write(path, file.restore(today));
+      changed.push(path);
+    }
+    return { changed, skipped: [] };
   },
 };

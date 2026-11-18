@@ -152,6 +152,94 @@ describe('unit · codemod vendored-guards · a stale release form', () => {
   });
 });
 
+/** `guards/bare-error.ts` exactly as `x new` wrote it at v25.0.0, before any v31 form existed. */
+const BARE_ERROR_V25 = `${[
+  '// bare-error: a failure this app raises carries a code, a cause and an executable fix.',
+  '// `x verify` discovers every file in `guards/` and runs its `guard` inside the `boundaries`',
+  '// step — nothing registers this file, so nothing can forget to.',
+  '',
+  "import type { Finding, Guard } from '@ultimat3/cli';",
+  '',
+  '/** The app owns the codes its own conventions raise — this one is named for the guard. */',
+  "const CODE = 'X_BARE_ERROR';",
+  '',
+  '/**',
+  ' * A THROW, never a construction. `new Error(…)` handed to something as INPUT is legitimate — a',
+  ' * test fixture, an `AbortSignal` reason, a rejection this module is passing along — and only the',
+  ' * throw is this module stating its own verdict.',
+  ' */',
+  'const BARE_THROW = /\\bthrow\\s+new\\s+(Error|TypeError|RangeError|SyntaxError)\\s*\\(/g;',
+  '',
+  'export interface SourceFile {',
+  '  /** App-root-relative POSIX path, so the finding names the file an author opens. */',
+  '  readonly path: string;',
+  '  readonly source: string;',
+  '}',
+  '',
+  '/** Comments blanked IN PLACE — not deleted — so a reported line number still points at the source. */',
+  'const blank = (text: string): string =>',
+  '  text',
+  "    .replaceAll(/\\/\\*[\\s\\S]*?\\*\\//g, (match) => match.replaceAll(/[^\\n]/g, ' '))",
+  "    .replaceAll(/(?<![:\\w])\\/\\/[^\\n]*/g, (match) => ' '.repeat(match.length));",
+  '',
+  "const lineOf = (text: string, index: number): number => text.slice(0, index).split('\\n').length;",
+  '',
+  '/** Pure — the caller does the I/O — so the rule is testable without a filesystem. */',
+  'export function bareThrows(files: readonly SourceFile[]): readonly Finding[] {',
+  '  const findings: Finding[] = [];',
+  '  for (const file of files) {',
+  '    const text = blank(file.source);',
+  '    for (const match of text.matchAll(BARE_THROW)) {',
+  '      const line = lineOf(text, match.index);',
+  "      const thrown = match[1] ?? 'Error';",
+  '      findings.push({',
+  '        code: CODE,',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: the old scaffold's source, verbatim
+  '        cause: `${file.path}:${line} throws a bare ${thrown} — it reaches its reader as a stack trace with no code, no cause and nothing to run`,',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: the old scaffold's source, verbatim
+  '        fix: `subclass UltimateError in ${file.path} with an X_SCREAMING_SNAKE code, a cause and a fix naming a command, then: x verify`,',
+  '        at: file.path,',
+  '      });',
+  '    }',
+  '  }',
+  '  return findings;',
+  '}',
+  '',
+  'export const guard: Guard = {',
+  "  summary: 'a failure carries a code, a cause and an executable fix — never a bare Error',",
+  '  async check(_root, sources) {',
+  '    // A test states its verdict with `expect.unreachable()`, which the suite reports on its own',
+  "    // terms. The run's ONE read of the source: every guard asking for this glob shares the walk.",
+  "    const code = await sources.files('{apps,packages}/**/*.{ts,tsx}');",
+  '    return bareThrows(',
+  '      code',
+  '        .filter((file) => !/\\.(?:test|d)\\.tsx?$/.test(file.path))',
+  '        .map((file) => ({ path: file.path, source: file.text })),',
+  '    );',
+  '  },',
+  '};',
+].join('\n')}\n`;
+
+// The committed table, not a test's own: an app keeps its scaffold's copy across majors.
+describe('unit · codemod vendored-guards · a copy from before v31', () => {
+  test('is deleted with the shipped rule left on, never kept as an edit', async () => {
+    const app = memoryCodemodApp({ ...vendoredTree(), 'guards/bare-error.ts': BARE_ERROR_V25 });
+    const result = await codemod.run(app);
+    expect(app.files['guards/bare-error.ts']).toBeUndefined();
+    expect(app.files['guards/app-bare-error.ts']).toBeUndefined();
+    expect(severities(app.files)).toEqual({});
+    expect(result.skipped).toEqual([]);
+  });
+
+  test('one line changed is still the app’s edit: kept, the shipped rule off', async () => {
+    const edited = `${BARE_ERROR_V25}// a rule of ours\n`;
+    const app = memoryCodemodApp({ ...vendoredTree(), 'guards/bare-error.ts': edited });
+    await codemod.run(app);
+    expect(app.files['guards/app-bare-error.ts']).toBe(edited);
+    expect(severities(app.files)).toEqual({ 'bare-error': 'off' });
+  });
+});
+
 describe('unit · codemod vendored-guards · a stale release test', () => {
   test('an older release’s test goes with its rule, with no note: nobody added a case', async () => {
     const old = `${ruleTest('raw-fetch')}// as an older release wrote it\n`;

@@ -200,17 +200,6 @@ describe('unit · x upgrade, a codemod that moves a manifest', () => {
     expect(output.data?.codemods).toMatchObject({ reinstalled: true });
   });
 
-  test('already at the target, the rerun installs too', async () => {
-    const dir = await pinned({}, '31.28.0');
-    const { runner, spawned } = withCodemods({
-      versions: ['31.28.0'],
-      codemods: moved,
-      codemodsWrite: RAISED,
-    });
-    await run(dir, runner);
-    expect(spawned).toEqual(['pm view', 'x upgrade', 'install']);
-  });
-
   test('codemods that touch no manifest install nothing more', async () => {
     const dir = await pinned();
     const { runner, spawned } = withCodemods();
@@ -256,32 +245,31 @@ describe('unit · x upgrade, an installed CLI that fails or under-reports', () =
 });
 
 describe('unit · x upgrade, already at the target', () => {
-  // No version moves, and still no copy of an old template is left: every codemod is idempotent, so
-  // the run asks for all of them up to the release the app is on, and the ones already done say so.
-  test('the codemods up to the release it is on still run, through the installed CLI', async () => {
-    // At 31.28.0 by its pins, and still holding the hook an older template wrote.
+  // No version moved, so no codemod is owed: replaying them from 0.0.0 re-reported every old skip.
+  test('runs no codemod, writes nothing and installs nothing', async () => {
     const dir = await pinned({}, '31.28.0');
-    const { runner, asked } = withCodemods({
-      versions: ['31.28.0'],
-      codemods: '{"ok":false,"findings":[{"code":"X_CLI_UNKNOWN_COMMAND"}]}',
-      codemodsCode: 1,
-    });
+    const { runner, asked, spawned } = withCodemods({ versions: ['31.28.0'] });
     const { code, output } = await run(dir, runner);
     expect(code).toBe(0);
-    expect(asked).toEqual([
-      ['upgrade', 'codemods', '--from', '0.0.0', '--to', '31.28.0', '--json'],
-    ]);
-    expect(output.data?.codemods).toMatchObject({ source: 'driver', from: '0.0.0', to: '31.28.0' });
-    expect(await read(dir, SETTINGS)).toContain(HOOK);
+    expect(asked).toEqual([]);
+    expect(spawned).toEqual(['pm view']);
+    expect(output.data?.codemods).toBeNull();
+    expect(await read(dir, SETTINGS)).toBe(oldSettings());
   });
 
-  test('a dry run there previews and writes nothing', async () => {
+  test('a dry run there previews nothing either', async () => {
     const dir = await pinned({}, '31.28.0');
     const { runner, asked } = withCodemods({ versions: ['31.28.0'] });
     const { output } = await run(dir, runner, ['--dry-run']);
     expect(asked).toEqual([]);
-    expect(output.data?.codemods).toMatchObject({ dryRun: true, from: '0.0.0' });
+    expect(output.data?.codemods).toBeNull();
     expect(await read(dir, SETTINGS)).toBe(oldSettings());
+  });
+
+  test('the superseded workarounds are still reported', async () => {
+    const dir = await pinned({}, '31.28.0');
+    const { output } = await run(dir, withCodemods({ versions: ['31.28.0'] }).runner);
+    expect(output.data?.superseded).toEqual([]);
   });
 });
 

@@ -143,6 +143,11 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     none: "the shape overlay's own keyed-record guard became core's isJsonObject (one home, X_HELPER_COPY); it runs inside x new and emits byte-identical files, so an app holds nothing that changed",
   },
   {
+    template: 'packages/cli/src/templates/scaffold-suites.ts',
+    since: '31.47.1',
+    codemod: 'e2e-suite-floor',
+  },
+  {
     template: 'README.md',
     since: '31.47.0',
     none: "the scaffold's prose now says CI also runs weekly; ci-weekly-schedule carries the behaviour, and an app's own docs are its to edit, so x upgrade leaves them alone",

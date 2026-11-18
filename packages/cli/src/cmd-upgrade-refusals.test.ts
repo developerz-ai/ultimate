@@ -125,12 +125,12 @@ describe('unit · x upgrade, the states with no hop', () => {
     expect(output.data?.then).toContain('x upgrade --json');
   });
 
-  test('at latest answers done, runs no install and no gate — only the idempotent codemods', async () => {
+  test('at latest answers done, and runs no install, no gate and no codemod', async () => {
     const dir = await fixture();
     const { runner, spawned } = recording({ versions: ['19.0.0', '19.4.0'] });
     const { code, output } = await run(dir, runner);
     expect(code).toBe(0);
-    expect(spawned).toEqual(['pm view', 'x upgrade']);
+    expect(spawned).toEqual(['pm view']);
     expect(output.data).toMatchObject({
       from: '19.4.0',
       to: '19.4.0',

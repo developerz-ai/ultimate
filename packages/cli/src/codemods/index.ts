@@ -20,6 +20,7 @@ import { codemod as docsGateProse } from './docs-gate-prose';
 import { codemod as docsIslandRows } from './docs-island-rows';
 import { codemod as docsShippedGuards } from './docs-shipped-guards';
 import { codemod as docsTestServices } from './docs-test-services';
+import { codemod as e2eSuiteFloor } from './e2e-suite-floor';
 import { codemod as formatEditedHook } from './format-edited-hook';
 import { codemod as helmAlertsDeploy } from './helm-alerts-deploy';
 import { codemod as helmAlertsObjective } from './helm-alerts-objective';
@@ -69,4 +70,5 @@ export const CODEMODS: readonly Codemod[] = [
   ciPinnedActions,
   ciArtifactRetention,
   ciWeeklySchedule,
+  e2eSuiteFloor,
 ];
