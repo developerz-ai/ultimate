@@ -22,8 +22,10 @@ describe('unit · password sign-in keeps ?next= across the second factor', () =>
     expect(action).toContain('SECOND_FACTOR_PATH}?');
     expect(action).toContain('NEXT_PARAM}=');
     expect(action).toContain('encodeURIComponent(nextPath(next))');
-    expect(action).toContain('next: landAt(then), secondFactor: true');
-    expect(action).not.toContain('landAt(SECOND_FACTOR_PATH)');
+    expect(action).toContain('next: then, secondFactor: true');
+    // The one redirect path: `native:` answers the browser from `next`; nothing sniffs `accept`.
+    expect(action).toContain('native: { success: (output) => output.next },');
+    expect(action).not.toContain('setRedirect');
   });
 
   test('the second-factor form posts the next path back to confirmSession', () => {

@@ -56,10 +56,10 @@ export const arrayLiteral = (prefix: string, items: readonly string[], suffix: s
 };
 
 const flowSource =
-  (): string => `// Where a signed-in browser goes, and the one browser/agent split every sign-in action makes. The
-// destination is a FIXED path or a same-origin \`?next=\`: the endpoint that hands out a session is
-// the classic open redirect, and \`nextAfterSignIn\` is the framework's one check for it.
-import { NEXT_PARAM, nextAfterSignIn, setRedirect, useRequestHeader } from '@ultimat3/http';
+  (): string => `// Where a signed-in browser goes. The destination is a FIXED path or a same-origin \`?next=\`: the
+// endpoint that hands out a session is the classic open redirect, and \`nextAfterSignIn\` is the
+// framework's one check for it. Each action returns it as \`next\`; its \`native:\` lands there.
+import { NEXT_PARAM, nextAfterSignIn } from '@ultimat3/http';
 
 /** Where a browser lands with no \`?next=\`. The app's to move. */
 export const AFTER_SIGN_IN = '/dashboard';
@@ -70,15 +70,6 @@ export { NEXT_PARAM };
 /** A same-origin path to go to next, or the fallback. Never another origin. */
 export const nextPath = (raw: string | undefined, fallback = AFTER_SIGN_IN): string =>
   nextAfterSignIn(raw, fallback);
-
-/**
- * A browser that posted the native form gets a 303 to where it was going; an agent that posted
- * JSON gets the same path as data. One operation, two audiences — \`setRedirect\` is that seam.
- */
-export const landAt = (path: string): string => {
-  if ((useRequestHeader('accept') ?? '').includes('text/html')) setRedirect(path);
-  return path;
-};
 `;
 
 const flowTest =
@@ -104,7 +95,6 @@ import { logout, signOutHeaders } from '@ultimat3/auth';
 import { useRequestContext, useRequestCookie } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { appAuth } from '../auth';
-import { landAt } from '../sign-in-flow';
 
 export const destroySession = action({
   // A native form with no field posts no body, and an action's input is an object: the form
@@ -113,6 +103,8 @@ export const destroySession = action({
   output: t.object({ ok: t.boolean, next: t.string, revoked: t.boolean }),
   policy: allow('public'),
   mcp: { expose: false },
+  // A browser's own form lands where the output says; fetch and the typed client read \`next\`.
+  native: { success: (output) => output.next },
   async handle() {
     const auth = appAuth();
     const token = useRequestCookie(auth.sessions.policy.cookieName);
@@ -121,7 +113,7 @@ export const destroySession = action({
     for (const [name, value] of signOutHeaders({ session: auth.sessions.policy })) {
       response.append(name, value);
     }
-    return { ok: true, next: landAt('/'), revoked };
+    return { ok: true, next: '/', revoked };
   },
 });
 `;

@@ -1,6 +1,9 @@
 // The tests `x g invite` writes beside its files: the link shape on its own, then each action RUN
 // inside a real request context over the app's migrated database, so the paths a person takes —
-// refused, invited, joined, replayed, removed — are what is held.
+// refused, invited, joined, replayed, removed — are what is held. A browser's own form is posted
+// through the pipeline as well (`formPostSource`), so each 303 is the action's `native:` answer.
+
+import { formPostSource } from './sign-in-action-tests';
 
 const DATABASE = `// A template restore is ~0.5 s; its first build (initdb plus every migration) is what this bounds.
 const BOOT_MS = 120_000;
@@ -15,7 +18,7 @@ afterAll(() => setDbClient(undefined));`;
 const SHARED_IMPORTS = `import { migratedDatabase } from '@ultimat3/cli';
 import { type Actor, runWithContext } from '@ultimat3/core';
 import { setDbClient } from '@ultimat3/db';
-import { asCtx, defineHttpConfig, requestContext } from '@ultimat3/http';
+import { asCtx, defineHttpConfig, httpServer, requestContext } from '@ultimat3/http';
 import { testActor } from '@ultimat3/policy';
 import { afterAll, beforeAll, expect, reusableDatabase, unitTest } from '@ultimat3/testing';`;
 
@@ -36,7 +39,9 @@ const postAs = (
   return { output, request };
 };
 
-const target = ${action}.named('${action}');`;
+const target = ${action}.named('${action}');
+
+${formPostSource(true)}`;
 
 /** Org ids are uuids: \`x_users.org_id\` is one. */
 const ORGS = `const ORG = '00000000-0000-4000-8000-0000000000a1';
@@ -75,8 +80,9 @@ unitTest('an invite is the declared member-invite purpose and lives a week', () 
 export const inviteMemberTest =
   (): string => `// inviteMember, run inside a real request over the app's migrated database: an actor without the
 // grant is refused, and one holding it mails a single-use link into their own org.
+import { toRoute } from '@ultimat3/action';
 ${SHARED_IMPORTS}
-import { INVITE_ACCEPT_PATH } from '../invite';
+import { INVITE_ACCEPT_PATH, INVITES_PATH } from '../invite';
 import { inviteMember } from './invite-member';
 
 ${DATABASE}
@@ -133,15 +139,27 @@ unitTest('with no APP_URL declared nothing is mailed', async ({ mail, runJobs })
   await runJobs.drain();
   expect(mail.lastTo('nobody@example.com')).toBeUndefined();
 });
+
+// \`mail\` named so the fixture installs the test mail driver the pipeline's send reaches.
+unitTest('a browser posting the invite form is sent back', async ({ mail, runJobs }) => {
+  const inviter = testActor('inviter', { orgId: ORG, permissions: ['member:invite'] }).actor;
+  await withAppUrl('https://invites.example', async () => {
+    const { landed } = await formPost({ email: 'form@example.com' }, inviter);
+    expect(landed).toEqual({ status: 303, location: INVITES_PATH });
+  });
+  await runJobs.drain();
+  expect(mail.lastTo('form@example.com')).toBeDefined();
+});
 `;
 
 export const acceptInviteTest =
   (): string => `// acceptInvite, run inside a real request over the app's migrated database: anonymous is refused,
 // the invited account joins and its session is rotated, and the spent link never works again.
+import { toRoute } from '@ultimat3/action';
 import { login, register } from '@ultimat3/auth';
 ${SHARED_IMPORTS}
 import { appAuth } from '../auth';
-import { memberInvite } from '../invite';
+import { AFTER_JOIN, memberInvite } from '../invite';
 import { acceptInvite } from './accept-invite';
 
 ${DATABASE}
@@ -186,15 +204,28 @@ unitTest('a link for one org redeems in no other', async () => {
   expect(refused).toBeUltimateError('X_UNAUTHENTICATED');
   expect((await appAuth().adapter.findUserById(user.id))?.orgId).toBeNull();
 });
+
+unitTest('a browser accepting from the invite page is sent on into the app', async () => {
+  const user = await register(appAuth(), { email: 'form-join@example.com', password: PASSWORD });
+  const { token } = await memberInvite.invite(appAuth(), silent, {
+    orgId: ORG,
+    email: 'form-join@example.com',
+    locale: 'en',
+  });
+  const { landed } = await formPost({ orgId: ORG, token }, testActor(user.id).actor);
+  expect(landed).toEqual({ status: 303, location: AFTER_JOIN });
+  expect((await appAuth().adapter.findUserById(user.id))?.orgId).toBe(ORG);
+});
 `;
 
 export const revokeInviteTest =
   (): string => `// revokeInvite, run inside a real request over the app's migrated database: an actor without the
 // grant is refused, and an inviter removes a joined member from their own org.
+import { toRoute } from '@ultimat3/action';
 import { register } from '@ultimat3/auth';
 ${SHARED_IMPORTS}
 import { appAuth } from '../auth';
-import { memberInvite } from '../invite';
+import { INVITES_PATH, memberInvite } from '../invite';
 import { revokeInvite } from './revoke-invite';
 
 ${DATABASE}
@@ -224,5 +255,11 @@ unitTest('a joined member is removed from the inviter org, never from another', 
   const { output } = await post({ email: 'leave@example.com' }, inviter);
   expect(output.memberRemoved).toBe(true);
   expect((await appAuth().adapter.findUserById(user.id))?.orgId).toBeNull();
+});
+
+unitTest('a browser revoking from the invites page is sent back to it', async () => {
+  const inviter = testActor('inviter', { orgId: ORG, permissions: ['member:invite'] }).actor;
+  const { landed } = await formPost({ email: 'never-invited@example.com' }, inviter);
+  expect(landed).toEqual({ status: 303, location: INVITES_PATH });
 });
 `;

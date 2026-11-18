@@ -1,9 +1,10 @@
 // `endSession`, run inside a real request context: what it writes onto the response the pipeline
 // assembles — the session cookie expired, and the demo viewer's switch, script-settable by design.
 
+import { toRoute } from '@ultimat3/action';
 import { createSession, memoryAuthAdapter } from '@ultimat3/auth';
 import { ctxOf, runWithContext } from '@ultimat3/core';
-import { asCtx, defineHttpConfig, requestContext } from '@ultimat3/http';
+import { asCtx, defineHttpConfig, httpServer, requestContext } from '@ultimat3/http';
 import { describe, expect, test } from '@ultimat3/testing';
 import { AFTER_SIGN_OUT, endSession } from './actions/end-session';
 import { sessionAuthenticator } from './authenticator';
@@ -46,7 +47,27 @@ describe('ending the demo session', () => {
   });
 
   test('a native form post is sent home; an agent gets the JSON and no redirect', async () => {
-    expect((await signOut('text/html')).request.redirect).toBeDefined();
+    // Through the pipeline, as the layout's own `<form method="post">` posts it: the 303 is the
+    // action's `native:` answer, which a direct call never reaches.
+    const route = toRoute(endSession);
+    const server = httpServer({
+      routes: [route],
+      config: defineHttpConfig({ dev: true, rateLimit: { scope: 'process' } }),
+    });
+    const post = (accept: string) =>
+      server.fetch(
+        new Request(`https://postly.test${route.path}`, {
+          method: 'POST',
+          headers: {
+            accept,
+            'content-type': 'application/x-www-form-urlencoded',
+            origin: 'https://postly.test',
+          },
+          body: new URLSearchParams({}),
+        }),
+      );
+    const browser = await post('text/html');
+    expect([browser.status, browser.headers.get('location')]).toEqual([303, AFTER_SIGN_OUT]);
     expect((await signOut('application/json')).request.redirect).toBeUndefined();
   });
 

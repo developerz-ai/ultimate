@@ -1,7 +1,8 @@
 // The tests `x g sign-in` writes for its actions: each handler RUN inside a real request context,
 // over the app's migrated database (`migratedDatabase`, the framework tables included), so the
 // paths a person takes — refused, signed in, a second factor owed, signed out — are what is held.
-// `destroySessionTest` is both shapes'; the other two are the password shape's.
+// `destroySessionTest` is both shapes'; the other two are the password shape's. A browser's own
+// form is posted through the pipeline (`formPostSource`): its 303 is the action's `native:`.
 
 /** The app's migrated database installed under `db()` for the file, as `page-db.test.ts` does. */
 const DATABASE = `// A template restore is ~0.5 s; its first build (initdb plus every migration) is what this bounds.
@@ -18,9 +19,44 @@ afterAll(() => setDbClient(undefined));`;
 const SHARED_IMPORTS = `import { migratedDatabase } from '@ultimat3/cli';
 import { runWithContext } from '@ultimat3/core';
 import { setDbClient } from '@ultimat3/db';
-import { asCtx, defineHttpConfig, requestContext } from '@ultimat3/http';
+import { asCtx, defineHttpConfig, httpServer, requestContext } from '@ultimat3/http';
 import { afterAll, beforeAll, expect, reusableDatabase, unitTest } from '@ultimat3/testing';
 import { appAuth } from '../auth';`;
+
+/**
+ * \`formPost\`: \`target\` posted the way a browser's own \`<form method="post">\` posts it — through
+ * the pipeline, so the 303 is what the action's \`native:\` answers. \`actor\` adds the signed-in
+ * caller an \`authenticate\` hook would resolve; without it the caller is anonymous.
+ */
+export const formPostSource = (actor: boolean): string => {
+  // Biome's layout: the two-parameter list fits on one line, the three-parameter one does not.
+  const signature = actor
+    ? '(\n  fields: Record<string, string>,\n  actor: Actor,\n  headers: Record<string, string> = {},\n)'
+    : '(fields: Record<string, string>, headers: Record<string, string> = {})';
+  const hooks = actor ? '\n    hooks: { authenticate: () => actor },' : '';
+  return `/** \`target\` posted as a browser's own form, through the pipeline: its \`native:\` answers. */
+const formPost = async ${signature} => {
+  const route = toRoute(target);
+  const server = httpServer({
+    routes: [route],
+    config: defineHttpConfig({ dev: true, rateLimit: { scope: 'process' } }),${hooks}
+  });
+  const response = await server.fetch(
+    new Request(\`https://app.test\${route.path}\`, {
+      method: 'POST',
+      headers: {
+        accept: 'text/html',
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'https://app.test',
+        ...headers,
+      },
+      body: new URLSearchParams(fields),
+    }),
+  );
+  const landed = { status: response.status, location: response.headers.get('location') };
+  return { response, landed };
+};`;
+};
 
 /** The request the pipeline would build, the action run inside it, and both handed back. */
 const requestOf = (
@@ -41,6 +77,7 @@ const requestOf = (
 export const createSessionTest =
   (): string => `// createSession, run inside a real request over the app's migrated database: a wrong password is
 // refused, a right one sets the session cookie, and a second factor still owed holds the challenge.
+import { toRoute } from '@ultimat3/action';
 import { generateTotpSecret, register, saveTotpSecret } from '@ultimat3/auth';
 ${SHARED_IMPORTS}
 import { MFA_CHALLENGE_COOKIE, SECOND_FACTOR_PATH } from '../sign-in-challenge';
@@ -53,9 +90,11 @@ const target = createSession.named('createSession');
 const PASSWORD = 'a long scaffold test passphrase';
 
 /** One POST, as the pipeline hands it to the action: the response headers come back with it. */
-const post = async (input: Parameters<typeof target>[0], accept = 'application/json') => {
-${requestOf('/auth/sign-in', '{ accept }', 'target(input, { ctx })')}
+const post = async (input: Parameters<typeof target>[0]) => {
+${requestOf('/auth/sign-in', "{ accept: 'application/json' }", 'target(input, { ctx })')}
 };
+
+${formPostSource(false)}
 
 /** A person who can sign in, under an address no other test in this file uses. */
 const person = (email: string) => register(appAuth(), { email, password: PASSWORD });
@@ -91,12 +130,11 @@ unitTest('the right password sets the session cookie and lands where it was goin
   expect(request.redirect).toBeUndefined();
 });
 
-unitTest('a browser posting the form is sent on with a 303', async () => {
+unitTest('a browser posting the form is sent on with a 303 and the session', async () => {
   await person('form@example.com');
-  const input = { email: 'form@example.com', password: PASSWORD };
-  const { output, request } = await post(input, 'text/html');
-  expect(output.next).toBe(AFTER_SIGN_IN);
-  expect(request.redirect).toEqual({ location: AFTER_SIGN_IN, status: 303 });
+  const { response, landed } = await formPost({ email: 'form@example.com', password: PASSWORD });
+  expect(landed).toEqual({ status: 303, location: AFTER_SIGN_IN });
+  expect(sets(response, appAuth().sessions.policy.cookieName)).toBe(true);
 });
 
 unitTest('a second factor still owed holds the challenge and sets no session', async () => {
@@ -112,6 +150,7 @@ unitTest('a second factor still owed holds the challenge and sets no session', a
 export const confirmSessionTest =
   (): string => `// confirmSession, run inside a real request over the app's migrated database: with no challenge
 // held it refuses, a wrong code is refused, and the held challenge plus the right code signs in.
+import { toRoute } from '@ultimat3/action';
 import {
   generateTotpSecret,
   login,
@@ -137,6 +176,8 @@ ${requestOf(
   'target(input, { ctx })',
 )}
 };
+
+${formPostSource(false)}
 
 /** A person with a second factor, and the cookie holding the challenge the first leg sealed. */
 const challenged = async (email: string) => {
@@ -182,11 +223,19 @@ unitTest('the held challenge and the right code sign in, and drop the challenge'
   // Cleared, an empty value: the challenge is spent, and a reload starts the sign-in over.
   expect(lines.some((line) => line.startsWith(\`\${MFA_CHALLENGE_COOKIE}=;\`))).toBe(true);
 });
+
+unitTest('a browser posting the second-factor form is sent on with a 303', async () => {
+  const { secret, cookie } = await challenged('second-form@example.com');
+  const code = totpCode(secret, totpStep(new Date()));
+  const { landed } = await formPost({ code, next: '/posts' }, { cookie });
+  expect(landed).toEqual({ status: 303, location: '/posts' });
+});
 `;
 
 export const destroySessionTest =
   (): string => `// destroySession, run inside a real request over the app's migrated database: a live session is
 // revoked, and a caller with none still signs out — cleared, and landed at the home page.
+import { toRoute } from '@ultimat3/action';
 import { login, register } from '@ultimat3/auth';
 ${SHARED_IMPORTS}
 import { destroySession } from './destroy-session';
@@ -196,13 +245,15 @@ ${DATABASE}
 const target = destroySession.named('destroySession');
 
 /** One sign-out POST carrying \`cookie\`, as the pipeline hands it to the action. */
-const signOut = async (accept: string, cookie?: string) => {
+const signOut = async (cookie?: string) => {
 ${requestOf(
   '/auth/sign-out',
-  '{ accept, ...(cookie === undefined ? {} : { cookie }) }',
+  "{ accept: 'application/json', ...(cookie === undefined ? {} : { cookie }) }",
   "target({ confirm: 'sign-out' }, { ctx })",
 )}
 };
+
+${formPostSource(false)}
 
 unitTest('destroySession is a declared action off the MCP surface', () => {
   expect(target.kind).toBe('action');
@@ -220,18 +271,18 @@ unitTest('a live session is revoked, and a second sign-out finds nothing to revo
   await register(appAuth(), { email: 'leaving@example.com', password });
   const { token } = await login(appAuth(), { email: 'leaving@example.com', password });
   const cookie = \`\${appAuth().sessions.policy.cookieName}=\${token}\`;
-  const { output } = await signOut('application/json', cookie);
+  const { output } = await signOut(cookie);
   expect(output).toEqual({ ok: true, next: '/', revoked: true });
-  expect((await signOut('application/json', cookie)).output.revoked).toBe(false);
+  expect((await signOut(cookie)).output.revoked).toBe(false);
 });
 
 unitTest('with no session it still signs out, and a browser lands at the home page', async () => {
-  const { output, request } = await signOut('text/html');
-  expect(output).toEqual({ ok: true, next: '/', revoked: false });
-  expect(request.redirect).toEqual({ location: '/', status: 303 });
+  expect((await signOut()).output).toEqual({ ok: true, next: '/', revoked: false });
+  const { response, landed } = await formPost({ confirm: 'sign-out' });
+  expect(landed).toEqual({ status: 303, location: '/' });
   // The expired session cookie and the cleared browser state, whether or not a session existed.
   const expired = \`\${appAuth().sessions.policy.cookieName}=;\`;
-  expect(request.headers.getSetCookie().some((line) => line.startsWith(expired))).toBe(true);
-  expect(request.headers.get('clear-site-data')).not.toBeNull();
+  expect(response.headers.getSetCookie().some((line) => line.startsWith(expired))).toBe(true);
+  expect(response.headers.get('clear-site-data')).not.toBeNull();
 });
 `;

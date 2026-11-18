@@ -37,9 +37,17 @@ describe('unit · the sign-in action tests', () => {
       'expect(sets(request, appAuth().sessions.policy.cookieName)).toBe(true);',
     );
     expect(source).toContain('expect(sets(request, MFA_CHALLENGE_COOKIE)).toBe(true);');
-    expect(source).toContain(
-      'expect(request.redirect).toEqual({ location: AFTER_SIGN_IN, status: 303 });',
-    );
+    expect(source).toContain('expect(landed).toEqual({ status: 303, location: AFTER_SIGN_IN });');
+  });
+
+  test('each posts a browser form through the pipeline, so its native answer is run', () => {
+    for (const source of Object.values(sources)) {
+      expect(source).toContain('const server = httpServer({');
+      expect(source).toContain("accept: 'text/html',");
+      expect(source).toMatch(
+        /await formPost\(\{[^\n]*\);\n {2}expect\(landed\)\.toEqual\(\{ status: 303,/,
+      );
+    }
   });
 
   test('second factor: refused with no challenge held, signed in with one and the right code', () => {
@@ -52,6 +60,6 @@ describe('unit · the sign-in action tests', () => {
   test('sign-out: a live session revoked, and none still lands at the home page', () => {
     const source = sources.destroySession;
     expect(source).toContain("expect(output).toEqual({ ok: true, next: '/', revoked: true });");
-    expect(source).toContain("expect(request.redirect).toEqual({ location: '/', status: 303 });");
+    expect(source).toContain("expect(landed).toEqual({ status: 303, location: '/' });");
   });
 });
