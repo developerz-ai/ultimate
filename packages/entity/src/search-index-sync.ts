@@ -3,6 +3,7 @@
 // or soft-stamped — removed at a tombstone no older than its last version. Ops are taken when the
 // write runs and sent at COMMIT (`search-mirror-batch.ts`), so a rollback indexes nothing.
 
+import { isJsonObject } from '@ultimat3/core';
 import { entityNow } from './clock';
 import type { EntityCore } from './entity';
 import { SOFT_DELETE_COLUMN } from './entity';
@@ -28,8 +29,6 @@ export interface SearchMirror {
   /** The write touched `count` rows its driver did not name: said out loud, never silent. */
   unnamed(op: string, count: number): void;
 }
-
-const isRecord = (row: unknown): row is Record_ => typeof row === 'object' && row !== null;
 
 const tenantOf = (core: EntityCore<unknown>, row: Record_): string | null => {
   const column = core.$tenantColumn;
@@ -69,7 +68,7 @@ export const mirrorFor = (
   return {
     changed: (op, rows) =>
       guarded(op, () => {
-        for (const row of rows.filter(isRecord)) {
+        for (const row of rows.filter(isJsonObject)) {
           const stamp = core.$softDelete ? row[SOFT_DELETE_COLUMN] : null;
           if (stamp instanceof Date) {
             removal(op, row, stamp.getTime());
@@ -81,7 +80,7 @@ export const mirrorFor = (
       }),
     deleted: (op, rows) =>
       guarded(op, () => {
-        for (const row of rows.filter(isRecord)) removal(op, row, deletedAt);
+        for (const row of rows.filter(isJsonObject)) removal(op, row, deletedAt);
       }),
     unnamed: (op, count) => guarded(op, () => batch.unnamed(entity, op, count)),
   };

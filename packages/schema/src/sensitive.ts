@@ -37,6 +37,8 @@ function nodeFor(schema: unknown): SchemaNode | undefined {
   }
 }
 
+// why: core's `isJsonObject`, restated — tier 0 below core (`core -> schema` is the declared edge),
+// so this package cannot import it. Pinned in `scripts/lib/helper-homes.ts`.
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

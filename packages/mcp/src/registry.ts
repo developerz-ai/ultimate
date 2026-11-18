@@ -19,6 +19,7 @@
 // narrow token; a token holding every scope still cannot see a tool its role may not.
 
 import type { Actor, McpEffect } from '@ultimat3/core';
+import { isJsonObject } from '@ultimat3/core';
 import { McpToolDuplicateError } from './errors';
 import type { McpListParams } from './list-params';
 import type { ArgIssue } from './validate-args';
@@ -329,13 +330,9 @@ export class ToolRegistry {
    */
   resolve(name: string, rawArgs: unknown, caller: McpCaller): ToolResolution {
     const arg = this.#tenantArg;
-    const isRecord = typeof rawArgs === 'object' && rawArgs !== null && !Array.isArray(rawArgs);
     // A non-record stays as it is rather than becoming `{}`: validation refuses it as a whole, and
     // an empty object here would answer a malformed call as an argument-less one.
-    const args =
-      arg === undefined || !isRecord
-        ? rawArgs
-        : withoutKey(rawArgs as Readonly<Record<string, unknown>>, arg);
+    const args = arg === undefined || !isJsonObject(rawArgs) ? rawArgs : withoutKey(rawArgs, arg);
     const found = this.#tools.get(name);
     const tool = found === undefined || !visibleToCaller(found, caller) ? undefined : found;
     if (tool === undefined) {

@@ -7,7 +7,7 @@
 // `pathToFileURL` is the only spelling of an absolute path `import()` accepts on every host.
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ERROR_DOCS_URL, renderCauseValue, renderThrowable } from '@ultimat3/core';
+import { ERROR_DOCS_URL, isJsonObject, renderCauseValue, renderThrowable } from '@ultimat3/core';
 import { fixProblem } from './error-contract';
 import { type GuardSources, guardSources } from './guard-sources';
 import {
@@ -59,11 +59,8 @@ export interface Guard {
   readonly severity?: 'warning';
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 const isGuard = (value: unknown): value is Guard =>
-  isRecord(value) &&
+  isJsonObject(value) &&
   typeof value['summary'] === 'string' &&
   value['summary'].trim() !== '' &&
   typeof value['check'] === 'function' &&
@@ -91,7 +88,7 @@ const shown = (value: unknown): string =>
  * static scan cannot reach: a `fix` assembled at run time has no literal to read.
  */
 export function findingProblem(value: unknown): string | undefined {
-  if (!isRecord(value)) return `${shown(value)} is not a finding object`;
+  if (!isJsonObject(value)) return `${shown(value)} is not a finding object`;
   const code = value['code'];
   if (typeof code !== 'string' || !CODE.test(code)) {
     return `${shown(code)} is not an X_SCREAMING_SNAKE code, so nothing can explain it`;
@@ -139,7 +136,7 @@ const notAGuard = (path: string, exported: unknown): Finding => {
       `${path} exports no \`guard\`, so a file in ${GUARD_DIR}/ enforces nothing`,
     );
   }
-  const severity = isRecord(exported) ? exported['severity'] : undefined;
+  const severity = isJsonObject(exported) ? exported['severity'] : undefined;
   return invalid(
     path,
     severity !== undefined && severity !== 'warning'
@@ -213,7 +210,7 @@ async function runGuardModule(
   } catch (error) {
     return refused(failed(path, `${path} could not be imported: ${messageOf(error)}`));
   }
-  const exported = isRecord(loaded) ? loaded['guard'] : undefined;
+  const exported = isJsonObject(loaded) ? loaded['guard'] : undefined;
   if (!isGuard(exported)) return refused(notAGuard(path, exported));
   let returned: unknown;
   try {

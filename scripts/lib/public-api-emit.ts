@@ -4,6 +4,7 @@
 
 // why: Bun has no recursive mkdir/remove of its own; node:fs/promises is the only way.
 import { mkdir, rm } from 'node:fs/promises';
+import { isJsonObject } from '../../packages/core/src/json-object';
 import { localBin } from './local-bin';
 import { toPosix } from './posix-path';
 import type { DtsTree } from './public-api-symbols';
@@ -21,17 +22,14 @@ export interface ApiEntry {
   readonly source: string;
 }
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const TS_FILE = /\.tsx?$/;
 
 /** One package's entries, read from its `package.json` `exports` (a string is the main entry). */
 export async function packageEntries(root: string, pkg: ApiPackage): Promise<readonly ApiEntry[]> {
   const manifest: unknown = await Bun.file(`${root}/packages/${pkg.dir}/package.json`).json();
-  const raw = isRecord(manifest) ? manifest['exports'] : undefined;
+  const raw = isJsonObject(manifest) ? manifest['exports'] : undefined;
   const exports: Readonly<Record<string, unknown>> = typeof raw === 'string' ? { '.': raw } : {};
-  const table = isRecord(raw) ? raw : exports;
+  const table = isJsonObject(raw) ? raw : exports;
   const entries: ApiEntry[] = [];
   for (const [key, value] of Object.entries(table)) {
     if (typeof value !== 'string' || !TS_FILE.test(value)) continue;

@@ -14,7 +14,7 @@
 import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; each candidate is joined to root.
 import { join } from 'node:path';
-import { logger, peerAddressClass } from '@ultimat3/core';
+import { isJsonObject, logger, peerAddressClass } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { callerLocality, jsonResponse, originListed, selfOrigin } from '@ultimat3/http';
 import {
@@ -54,9 +54,6 @@ export interface AppMcpMount {
   readonly warning: McpAppUnmountedError | undefined;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 /**
  * `defineAppMcp`'s own default — `mcp/src/transport-http.ts`, `input.path ?? '/mcp'` — named here
  * ONLY in a warning about an endpoint that has no route and so no resolved path. It never decides
@@ -70,7 +67,7 @@ async function exposed(root: string): Promise<boolean> {
 }
 
 const isAppMcp = (value: unknown): value is AppMcp =>
-  isRecord(value) && 'server' in value && 'tools' in value && 'route' in value;
+  isJsonObject(value) && 'server' in value && 'tools' in value && 'route' in value;
 
 /** The export as a list of endpoints, or `undefined` when it is not one (the "missing" case). */
 function endpointsOf(exported: unknown): readonly AppMcp[] | undefined {

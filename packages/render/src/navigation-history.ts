@@ -5,6 +5,8 @@
  * controller and nothing else.
  */
 
+import { isJsonObject } from '@ultimat3/core/page';
+
 /** The router's own slot in `history.state`, beside whatever an app keeps there. */
 export const STATE_KEY = '__x';
 
@@ -21,13 +23,10 @@ export type HistoryMode = 'push' | 'replace' | 'none' | undefined;
 
 export const withoutFragment = (url: string): string => url.split('#')[0] ?? url;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 /** The router's entry in a `history.state`, or `undefined` for an entry an app pushed. */
 export const entryOf = (state: unknown): EntryState | undefined => {
-  const entry = isRecord(state) ? state[STATE_KEY] : undefined;
-  return isRecord(entry) && typeof entry['doc'] === 'string'
+  const entry = isJsonObject(state) ? state[STATE_KEY] : undefined;
+  return isJsonObject(entry) && typeof entry['doc'] === 'string'
     ? (entry as unknown as EntryState)
     : undefined;
 };

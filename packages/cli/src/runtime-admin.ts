@@ -4,6 +4,7 @@
 // nothing else: which screen a URL names, who may see it and what it renders are the admin's.
 
 import type { AdminApp, AdminRouteConfig } from '@ultimat3/admin';
+import { isJsonObject } from '@ultimat3/core';
 import type { Route, RouteMeta } from '@ultimat3/http';
 import { asCtx, html, redirect, routeNotFound } from '@ultimat3/http';
 import type { RouteEntry } from '@ultimat3/render';
@@ -91,7 +92,7 @@ async function answer(
     url: request.url.href,
     method,
     // A POST with no body is a form with no fields — a button-only form posts exactly that.
-    form: method === 'POST' ? (isRecord(form) ? form : {}) : null,
+    form: method === 'POST' ? (isJsonObject(form) ? form : {}) : null,
   });
   if (response.kind === 'redirect') {
     // 303, always: the browser must GET the page it lands on, not re-POST the form at it.
@@ -115,9 +116,6 @@ async function answer(
   const document = typeof result.body === 'string' ? result.body : '';
   return html(document, { status: result.status, headers: result.headers });
 }
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const METHODS: readonly ('GET' | 'POST')[] = ['GET', 'POST'];
 

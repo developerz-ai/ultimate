@@ -2,6 +2,7 @@
 // hash AND its shape, so a change can be told additive from breaking; format 1 (31.19–31.21) held
 // hashes only, and parses with no shapes — `public-api-migrate.ts` re-baselines it from the tags.
 
+import { isJsonObject } from '../../packages/core/src/json-object';
 import type { ApiSymbol } from './public-api-compat';
 import type { ApiShape, LocalShape } from './public-api-shape';
 
@@ -19,24 +20,21 @@ export interface ApiLock {
   readonly entries: ApiSnapshot;
 }
 
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const strings = (value: unknown): value is readonly string[] =>
   Array.isArray(value) && value.every((one) => typeof one === 'string');
 
 const codes = (value: unknown): Record<string, string> | undefined => {
-  if (!isRecord(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const all = Object.entries(value);
   const kept = all.filter((pair): pair is [string, string] => typeof pair[1] === 'string');
   return kept.length === all.length ? Object.fromEntries(kept) : undefined;
 };
 
 function parseLocals(value: unknown): Record<string, LocalShape> | undefined {
-  if (!isRecord(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const out: Record<string, LocalShape> = {};
   for (const [name, local] of Object.entries(value)) {
-    if (!isRecord(local) || typeof local['hash'] !== 'string') return undefined;
+    if (!isJsonObject(local) || typeof local['hash'] !== 'string') return undefined;
     if (local['shape'] === undefined) {
       out[name] = { hash: local['hash'] };
       continue;
@@ -49,15 +47,15 @@ function parseLocals(value: unknown): Record<string, LocalShape> | undefined {
 }
 
 function parseShape(value: unknown): ApiShape | undefined {
-  if (isRecord(value) && value['kind'] === 'unrecorded') return { kind: 'unrecorded' };
-  if (isRecord(value) && value['kind'] === 'overloads' && Array.isArray(value['signatures'])) {
+  if (isJsonObject(value) && value['kind'] === 'unrecorded') return { kind: 'unrecorded' };
+  if (isJsonObject(value) && value['kind'] === 'overloads' && Array.isArray(value['signatures'])) {
     const signatures = value['signatures'].map(parseShape);
     const functions = signatures.filter((one) => one?.kind === 'function');
     return functions.length === signatures.length
       ? { kind: 'overloads', signatures: functions }
       : undefined;
   }
-  if (!isRecord(value) || typeof value['head'] !== 'string') return undefined;
+  if (!isJsonObject(value) || typeof value['head'] !== 'string') return undefined;
   const { head, kind } = value;
   const members = codes(value['members']);
   if ((kind === 'members' || kind === 'value') && members !== undefined) {
@@ -81,7 +79,7 @@ function parseShape(value: unknown): ApiShape | undefined {
 
 function parseSymbol(value: unknown, format: 1 | 2): ApiSymbol | undefined {
   if (format === 1) return typeof value === 'string' ? { hash: value } : undefined;
-  if (!isRecord(value) || typeof value['hash'] !== 'string') return undefined;
+  if (!isJsonObject(value) || typeof value['hash'] !== 'string') return undefined;
   if (value['shape'] === undefined) return { hash: value['hash'] };
   const shape = parseShape(value['shape']);
   return shape === undefined ? undefined : { hash: value['hash'], shape };
@@ -89,7 +87,11 @@ function parseSymbol(value: unknown, format: 1 | 2): ApiSymbol | undefined {
 
 /** The lock parsed from `unknown`, or the reason it is not one. */
 export function parseLock(value: unknown): ApiLock | string {
-  if (!isRecord(value) || typeof value['version'] !== 'string' || !isRecord(value['entries'])) {
+  if (
+    !isJsonObject(value) ||
+    typeof value['version'] !== 'string' ||
+    !isJsonObject(value['entries'])
+  ) {
     return 'is not an object with a string `version` and an `entries` object';
   }
   const raw = value['format'] ?? 1;
@@ -99,7 +101,7 @@ export function parseLock(value: unknown): ApiLock | string {
   const format = raw === 1 ? 1 : 2;
   const entries: Record<string, Record<string, ApiSymbol>> = {};
   for (const [specifier, names] of Object.entries(value['entries'])) {
-    if (!isRecord(names)) return `holds \`${specifier}\`, which is not an object of symbols`;
+    if (!isJsonObject(names)) return `holds \`${specifier}\`, which is not an object of symbols`;
     const symbols: Record<string, ApiSymbol> = {};
     for (const [name, symbol] of Object.entries(names)) {
       const parsed = parseSymbol(symbol, format);

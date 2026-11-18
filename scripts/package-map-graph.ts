@@ -19,6 +19,7 @@
 // why: Bun has no path-join primitive of its own.
 import { join } from 'node:path';
 import { renderFixShellArg } from '@ultimat3/core';
+import { isJsonObject } from '../packages/core/src/json-object';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -368,18 +369,13 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
   return findings;
 }
 
-/** A JSON object, narrowed. The hand parse that replaces an `as RawManifest` on a value
- *  `Bun.file().json()` hands over untyped: a manifest is whatever is on disk, not what we hoped. */
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /** Every dependency NAME a parsed manifest declares, across both fields this rule reads. */
 export const manifestDeps = (parsed: unknown): readonly string[] =>
-  !isRecord(parsed)
+  !isJsonObject(parsed)
     ? []
     : ['dependencies', 'peerDependencies'].flatMap((field) => {
         const held = parsed[field];
-        return isRecord(held) ? Object.keys(held) : [];
+        return isJsonObject(held) ? Object.keys(held) : [];
       });
 
 export interface GraphWorkspaces {

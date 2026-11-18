@@ -2,7 +2,7 @@
 // catalog keys it drops, in-place edits, and files it adds. Never a second scaffold, so every fix to
 // the default reaches every shape on the next release.
 
-import { assert } from '@ultimat3/core';
+import { assert, isJsonObject } from '@ultimat3/core';
 import type { GeneratedFile, NameSet } from '../naming';
 
 /** One in-place edit of a scaffold file: `find` must occur exactly once, or the overlay is stale. */
@@ -34,20 +34,17 @@ const CATALOG = 'packages/i18n/catalogs/en.json';
 /** A stale overlay is the framework's bug, never the app's: the shape tests name which one. */
 const FIX = 'bun test ./packages/cli/src/templates/shapes';
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /** The catalog with each dotted key's subtree removed, re-serialised the way `catalogJson` does. */
 export function dropCatalogKeys(contents: string, keys: readonly string[]): string {
   const catalog: unknown = JSON.parse(contents);
-  assert(isRecord(catalog), `${CATALOG} is not a JSON object`, FIX);
+  assert(isJsonObject(catalog), `${CATALOG} is not a JSON object`, FIX);
   for (const key of keys) {
     const segments = key.split('.');
     const leaf = segments.pop() ?? '';
     let node: unknown = catalog;
-    for (const segment of segments) node = isRecord(node) ? node[segment] : undefined;
+    for (const segment of segments) node = isJsonObject(node) ? node[segment] : undefined;
     assert(
-      isRecord(node) && Object.hasOwn(node, leaf),
+      isJsonObject(node) && Object.hasOwn(node, leaf),
       `a shape drops catalog key ${key}, which the base scaffold no longer writes`,
       FIX,
     );

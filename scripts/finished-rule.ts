@@ -2,6 +2,7 @@
 // the three verdicts a row can carry. `green` is only ever a fact read; a row whose source could
 // not be read is `unverdicted`, which `--check` refuses exactly like `red`.
 
+import { isJsonObject } from '../packages/core/src/json-object';
 import { jsonDocument } from './lib/health-narrow';
 import type { Finding } from './lib/log';
 import type { RunResult } from './lib/run';
@@ -71,10 +72,7 @@ export const unverdicted = (row: FinishedRowId, command: string, detail: string)
 export const parsedOutput = (result: RunResult): unknown =>
   result.ok ? jsonDocument(result.output) : undefined;
 
-export const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 export const stringField = (value: unknown, key: string): string | undefined => {
-  const field = isRecord(value) ? value[key] : undefined;
+  const field = isJsonObject(value) ? value[key] : undefined;
   return typeof field === 'string' ? field : undefined;
 };

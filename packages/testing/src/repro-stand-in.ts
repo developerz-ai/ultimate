@@ -2,16 +2,13 @@
 // secret, so a replay needs one that the schema accepts: the masked paths are filled from a seeded
 // `arbitrary()` value of the same schema (input), or from the column's own candidates (a row).
 
-import { REDACTED, uuidV7 } from '@ultimat3/core';
+import { isJsonObject, REDACTED, uuidV7 } from '@ultimat3/core';
 import type { EntityCore } from '@ultimat3/entity';
 import { arbitrary } from '@ultimat3/schema/sample';
 import { candidatesFor, type SeedColumn } from './seed-graph-values';
 
 /** The seed every stand-in draws from: the same bundle, the same replay. */
 const STAND_IN_SEED = 0x5eed;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** Every `REDACTED` leaf of `value` replaced by the leaf at the same place in `sample`. */
 function fill(value: unknown, sample: unknown): unknown {
@@ -20,11 +17,11 @@ function fill(value: unknown, sample: unknown): unknown {
     const items = Array.isArray(sample) ? sample : [];
     return value.map((entry, index) => fill(entry, items[index] ?? items[0]));
   }
-  if (!isRecord(value)) return value;
+  if (!isJsonObject(value)) return value;
   const out: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
     Object.defineProperty(out, key, {
-      value: fill(entry, isRecord(sample) ? sample[key] : undefined),
+      value: fill(entry, isJsonObject(sample) ? sample[key] : undefined),
       enumerable: true,
       writable: true,
       configurable: true,

@@ -5,7 +5,7 @@
 
 // why: Bun ships no path joiner; `guards/shipped.json` sits under the app root.
 import { join } from 'node:path';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, isJsonObject } from '@ultimat3/core';
 import { SHIPPED_GUARD_NAMES, type ShippedGuardName } from './guards-shipped-names';
 import type { Finding } from './output';
 
@@ -27,9 +27,6 @@ export type ShippedSeverities = Readonly<Record<string, ShippedSeverity>>;
 
 const SEVERITIES: readonly string[] = ['error', 'warning', 'off'];
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /**
  * `{ "severity": { "<shipped guard>": "error" | "warning" | "off" } }`, or the problems. A row
  * naming a guard the framework does not ship is a problem, never ignored: a typo covers nothing.
@@ -44,13 +41,13 @@ export function parseShippedConfig(
   } catch {
     return { severity: {}, problems: ['it does not parse as JSON'] };
   }
-  if (!isRecord(payload)) return { severity: {}, problems: ['it is not a JSON object'] };
+  if (!isJsonObject(payload)) return { severity: {}, problems: ['it is not a JSON object'] };
   const problems: string[] = Object.keys(payload)
     .filter((key) => key !== SHIPPED_SEVERITY_FIELD)
     .map((key) => `${JSON.stringify(key)} is not a key it reads — "${SHIPPED_SEVERITY_FIELD}" is`);
   const raw = payload[SHIPPED_SEVERITY_FIELD];
   if (raw === undefined) return { severity: {}, problems };
-  if (!isRecord(raw)) {
+  if (!isJsonObject(raw)) {
     return {
       severity: {},
       problems: [...problems, `"${SHIPPED_SEVERITY_FIELD}" is not an object of guard → severity`],

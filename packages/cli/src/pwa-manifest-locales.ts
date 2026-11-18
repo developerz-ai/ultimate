@@ -2,7 +2,7 @@
 // `lang`, its `start_url`, its text and its shortcut URLs. `pwa-artifacts.ts` builds one manifest per
 // routed locale from this; the `pwa` block is read structurally, for `colorsOf`'s reason there.
 
-import { localeSegment, localizePath } from '@ultimat3/core';
+import { isJsonObject, localeSegment, localizePath } from '@ultimat3/core';
 import type { AppLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import type {
   ManifestIcon,
@@ -16,9 +16,6 @@ export interface AppLocales {
   readonly routed: readonly string[];
   readonly fallback: string;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 const strings = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
@@ -45,7 +42,7 @@ export const spellIn = (path: string, locale: string, locales: AppLocales): stri
  */
 function textIn(value: unknown, locale: string, locales: AppLocales): string | undefined {
   if (typeof value === 'string') return value.trim() === '' ? undefined : value;
-  if (!isRecord(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   for (const key of [locale, locales.fallback]) {
     const entry = value[key];
     if (typeof entry === 'string' && entry.trim() !== '') return entry;
@@ -58,7 +55,7 @@ const PURPOSES = new Set(['any', 'maskable', 'monochrome']);
 function iconsOf(value: unknown): readonly ManifestIcon[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((icon): readonly ManifestIcon[] => {
-    if (!isRecord(icon)) return [];
+    if (!isJsonObject(icon)) return [];
     const { src, sizes, type, purpose } = icon;
     if (typeof src !== 'string' || typeof sizes !== 'string' || typeof type !== 'string') return [];
     return [
@@ -77,7 +74,7 @@ function iconsOf(value: unknown): readonly ManifestIcon[] {
 function shortcutsIn(value: unknown, locale: string, locales: AppLocales): ManifestShortcut[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((shortcut): ManifestShortcut[] => {
-    if (!isRecord(shortcut) || typeof shortcut['url'] !== 'string') return [];
+    if (!isJsonObject(shortcut) || typeof shortcut['url'] !== 'string') return [];
     const name = textIn(shortcut['name'], locale, locales);
     if (name === undefined) return [];
     const shortName = textIn(shortcut['shortName'], locale, locales);
@@ -98,7 +95,7 @@ function shortcutsIn(value: unknown, locale: string, locales: AppLocales): Manif
 function screenshotsIn(value: unknown, locale: string, locales: AppLocales): ManifestScreenshot[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((shot): ManifestScreenshot[] => {
-    if (!isRecord(shot)) return [];
+    if (!isJsonObject(shot)) return [];
     const src = textIn(shot['src'], locale, locales);
     const { sizes, type, formFactor } = shot;
     if (src === undefined || typeof sizes !== 'string' || typeof type !== 'string') return [];

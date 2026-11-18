@@ -17,8 +17,11 @@ const REMOVED: Readonly<Record<string, string>> = Object.freeze({
 const isPendingPort = (key: string): boolean =>
   (ADAPTER_PORT_NAMES as readonly string[]).includes(key) && !isWired(key);
 
-/** Throws on the first key `RuntimeOverrides` does not declare. `file` is root-relative. */
-export function assertRuntimeKeys(file: string, runtime: Readonly<Record<string, unknown>>): void {
+/**
+ * Throws on the first key `RuntimeOverrides` does not declare. `file` is root-relative. `object`,
+ * not a record: only its own keys are read, so an array export is refused by its index keys too.
+ */
+export function assertRuntimeKeys(file: string, runtime: object): void {
   for (const key of Object.keys(runtime)) {
     if (isWired(key) || EXTENSIONS.has(key)) continue;
     const named = renderCauseValue(key);

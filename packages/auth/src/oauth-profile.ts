@@ -3,10 +3,15 @@
 // when there is not. `emailVerified` is carried honestly rather than assumed — it is what
 // decides whether this login may attach itself to an existing account by address.
 
-import { logger, renderFixLiteral, renderFixShellArg, renderThrowable } from '@ultimat3/core';
+import {
+  isJsonObject,
+  logger,
+  renderFixLiteral,
+  renderFixShellArg,
+  renderThrowable,
+} from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
 import { idTokenEmailVerified, isVerifiedFlag } from './id-token';
-import { isRecord } from './json';
 import type { OAuthProviderId } from './oauth';
 import { oauthExchangeFailed, restartAt } from './oauth-errors';
 import {
@@ -136,7 +141,7 @@ async function githubPrimaryEmail(
   const entries = Array.isArray(result.body) ? result.body : [];
   const verified = entries.filter(
     (entry): entry is GithubEmail =>
-      isRecord(entry) &&
+      isJsonObject(entry) &&
       typeof entry['email'] === 'string' &&
       entry['verified'] === true &&
       typeof entry['primary'] === 'boolean',
@@ -175,7 +180,7 @@ export async function userinfoBody(
       fix: `providerFor(${renderFixLiteral(provider, "'<id>'")}).scopes   // confirm the ${provider} app still grants each one, then ${restartAt(provider)}`,
     });
   }
-  if (!isRecord(result.body)) {
+  if (!isJsonObject(result.body)) {
     throw oauthExchangeFailed({
       provider,
       stage: 'userinfo',

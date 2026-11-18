@@ -3,8 +3,9 @@
 // such strings, or a `// why:` comment directly above (or beside) its key in the table's source.
 // A bare count is a debt nobody explained, and it fails the row.
 
+import { isJsonObject } from '../packages/core/src/json-object';
 import type { FinishedRow } from './finished-rule';
-import { green, isRecord, red } from './finished-rule';
+import { green, red } from './finished-rule';
 import type { Finding } from './lib/log';
 import { lineOf } from './lib/source-scan';
 
@@ -24,7 +25,7 @@ const nonEmpty = (value: unknown): boolean => typeof value === 'string' && value
 /** A row value that carries its own reason. */
 function reasonedValue(value: unknown): boolean {
   if (nonEmpty(value)) return true;
-  if (!isRecord(value)) return false;
+  if (!isJsonObject(value)) return false;
   if (nonEmpty(value['why']) || nonEmpty(value['reason'])) return true;
   return Object.values(value).every(nonEmpty);
 }
@@ -56,7 +57,7 @@ const rowsOf = (value: unknown): readonly (readonly [string, unknown])[] => {
   if (Array.isArray(value)) {
     return value.map((row: unknown, index) => [typeof row === 'string' ? row : String(index), row]);
   }
-  return isRecord(value) ? Object.entries(value) : [];
+  return isJsonObject(value) ? Object.entries(value) : [];
 };
 
 /** Every unreasoned row of one table, as `[key, line]`. */
@@ -66,7 +67,7 @@ export function unreasonedRows(table: PinTableRead): readonly (readonly [string,
     const line = keyLine(table.source, key);
     // A string inside an ARRAY is the row's key, not its reason.
     const own = Array.isArray(table.value)
-      ? isRecord(row) && reasonedValue(row)
+      ? isJsonObject(row) && reasonedValue(row)
       : reasonedValue(row);
     if (!own && !commentReason(table.source, line)) out.push([key, line]);
   }

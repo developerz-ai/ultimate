@@ -3,6 +3,7 @@
 // every modern result carries, and the mirrored-header check HTTP owes a modern request. Split from
 // `server.ts` so that file stays a dispatch. MCP 2026-07-28, `basic/versioning`.
 
+import { isJsonObject } from '@ultimat3/core';
 import { McpHeaderMismatchError, McpProtocolUnsupportedError } from './errors-transport';
 import { SPLIT_DISPATCHERS } from './meta-split';
 import type { MetaSurface } from './meta-surface';
@@ -73,7 +74,7 @@ export const CAPABILITIES = {
 /** The `_meta` version a request names, or `undefined` for one that names none. */
 export function requestedVersion(body: JsonRpcRequest): unknown {
   const meta = paramsOf(body)?.['_meta'];
-  return isRecord(meta) ? meta[META_PROTOCOL_VERSION] : undefined;
+  return isJsonObject(meta) ? meta[META_PROTOCOL_VERSION] : undefined;
 }
 
 /**
@@ -134,8 +135,8 @@ export function stamped(
   serverInfo: ServerInfo,
 ): JsonRpcResponse {
   const result = response.result;
-  if (!isRecord(result)) return response;
-  const meta = isRecord(result['_meta']) ? result['_meta'] : {};
+  if (!isJsonObject(result)) return response;
+  const meta = isJsonObject(result['_meta']) ? result['_meta'] : {};
   return resultResponse(response.id, {
     ...result,
     resultType: 'complete',
@@ -168,7 +169,7 @@ export function classifyBody(
   if (meta !== undefined && (name === MANAGE_RESOURCE || SPLIT_DISPATCHERS.includes(name))) {
     // Billed as the tool it reaches, so the dispatcher is never a cheap door to a write.
     const args = params?.['arguments'];
-    const action = isRecord(args) ? args['action'] : undefined;
+    const action = isJsonObject(args) ? args['action'] : undefined;
     return typeof action === 'string' ? tools.verbClass(action) : 'write';
   }
   if (meta !== undefined && META_TOOL_NAMES.includes(name)) return 'read';
@@ -265,6 +266,3 @@ export function httpStatusOf(body: unknown, response: JsonRpcResponse): number {
   }
   return 200;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);

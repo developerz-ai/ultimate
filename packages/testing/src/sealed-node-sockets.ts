@@ -4,6 +4,7 @@
 
 // why: `net.Socket` is the class every node:* client socket is, and the only place they all meet.
 import net from 'node:net';
+import { isJsonObject } from '@ultimat3/core';
 import type { SocketGate } from './sealed-sockets';
 
 /** A dial target as a URL, so the gate parses one shape. IPv6 literals need their brackets. */
@@ -19,8 +20,6 @@ interface Target {
   readonly path?: unknown;
 }
 
-const isRecord = (value: unknown): value is Target => typeof value === 'object' && value !== null;
-
 /**
  * The TCP dial `connect`'s arguments name, or `undefined` for a unix socket — a path on this
  * machine, never egress. Node's three shapes: `[options, cb]` (what `net.connect`, `tls`, `http`
@@ -28,11 +27,12 @@ const isRecord = (value: unknown): value is Target => typeof value === 'object' 
  */
 const tcpTarget = (args: readonly unknown[]): string | undefined => {
   const first = Array.isArray(args[0]) ? args[0][0] : args[0];
-  if (isRecord(first)) {
-    const host = first.host ?? first.hostname;
+  if (isJsonObject(first)) {
+    const target: Target = first;
+    const host = target.host ?? target.hostname;
     if (typeof host !== 'string')
-      return typeof first.path === 'string' ? undefined : 'tcp://localhost:0';
-    return dialUrl(host, first.port);
+      return typeof target.path === 'string' ? undefined : 'tcp://localhost:0';
+    return dialUrl(host, target.port);
   }
   if (typeof first === 'string' && !/^\d+$/.test(first)) return undefined;
   return dialUrl(typeof args[1] === 'string' ? args[1] : 'localhost', first);

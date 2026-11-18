@@ -64,6 +64,10 @@ describe('loadAppRuntime', () => {
     const typo = await refusal('typo-key', 'export const runtime = { jobDriver: {} };\n');
     expect(typo.code).toBe('X_CONFIG_INVALID');
     expect(typo.cause).toContain('jobDriver');
+    // An ARRAY export reaches the key check and is refused, never skipped as "no override".
+    const listed = await refusal('array-export', 'export const runtime = [{ middleware: [] }];\n');
+    expect(listed.code).toBe('X_CONFIG_INVALID');
+    expect(listed.cause).toContain('runtime');
     // No ADAPTER_PORTS row is pending since wave E (every port is a field), so `runtime-keys.ts`'s
     // pending branch has no subject today; a row added pending is that branch's case again.
   });

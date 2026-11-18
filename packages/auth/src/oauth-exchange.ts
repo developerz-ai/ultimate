@@ -6,6 +6,7 @@
 import type { Clock } from '@ultimat3/core';
 import {
   EnvMissingError,
+  isJsonObject,
   liveClock,
   logger,
   renderCauseValue,
@@ -15,7 +16,6 @@ import {
 } from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
 import { type IdTokenClaims, verifyIdToken } from './id-token';
-import { isRecord } from './json';
 import { type IdTokenKeys, providerJwks } from './jwks';
 import {
   assertOAuthCallback,
@@ -150,7 +150,7 @@ export async function providerDetail(
   if (text === '') return 'the response body was empty';
   try {
     const parsed: unknown = JSON.parse(text);
-    if (isRecord(parsed)) {
+    if (isJsonObject(parsed)) {
       // `message` is not an OAuth error field (RFC 6749 §5.2 defines `error` and
       // `error_description`), and a gateway that echoes the request body puts `client_secret` in
       // it — so a `coded-only` leg never reads it.
@@ -269,7 +269,7 @@ async function postForm(
   }
 
   const parsed: unknown = await response.json().catch(() => undefined);
-  if (!isRecord(parsed)) {
+  if (!isJsonObject(parsed)) {
     throw oauthExchangeFailed({
       provider,
       stage: 'token',

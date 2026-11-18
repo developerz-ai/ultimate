@@ -2,6 +2,8 @@
 // release shipped (`asOf`), or npm's packument plus the working tree as one more release
 // (`withHead`). No I/O — `upgrade-fixtures-registry.ts` fetches, packs and serves.
 
+import { isJsonObject } from '../packages/core/src/json-object';
+
 export const SCOPE = '@ultimat3';
 
 /** One packed workspace: what its packument entry is made of. */
@@ -15,9 +17,6 @@ export interface PackedPackage {
   readonly integrity: string;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const RELEASE = /^\d+\.\d+\.\d+$/;
 
 /**
@@ -27,7 +26,7 @@ const RELEASE = /^\d+\.\d+\.\d+$/;
  * when nothing is left: a package that did not exist yet.
  */
 export const asOf = (upstream: unknown, ceiling: string): Record<string, unknown> | undefined => {
-  if (!isRecord(upstream) || !isRecord(upstream['versions'])) return undefined;
+  if (!isJsonObject(upstream) || !isJsonObject(upstream['versions'])) return undefined;
   const kept = Object.entries(upstream['versions']).filter(
     ([version]) => RELEASE.test(version) && Bun.semver.order(version, ceiling) <= 0,
   );
@@ -50,9 +49,9 @@ export const withHead = (
   head: PackedPackage,
   tarballUrl: string,
 ): Record<string, unknown> => {
-  const base = isRecord(upstream) ? upstream : { name: head.name };
-  const versions = isRecord(base['versions']) ? base['versions'] : {};
-  const tags = isRecord(base['dist-tags']) ? base['dist-tags'] : {};
+  const base = isJsonObject(upstream) ? upstream : { name: head.name };
+  const versions = isJsonObject(base['versions']) ? base['versions'] : {};
+  const tags = isJsonObject(base['dist-tags']) ? base['dist-tags'] : {};
   return {
     ...base,
     name: head.name,

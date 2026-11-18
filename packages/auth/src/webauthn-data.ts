@@ -2,9 +2,9 @@
 // bytes the browser forwarded — `authenticatorData` (W3C WebAuthn L3 §6.1) and `clientDataJSON`
 // (§5.8.1). Parsing only: what each field must equal is `passkey-verify.ts`'s to decide.
 
+import { isJsonObject } from '@ultimat3/core';
 import { canonicalBase64UrlBytes } from './base64url';
 import { type CborValue, decodeCborItem } from './cbor';
-import { isRecord } from './json';
 
 /** User Present, User Verified, Attested credential data, Extension data (§6.1 flags). */
 export const FLAG_UP = 0x01;
@@ -79,7 +79,7 @@ export function parseClientData(bytes: Uint8Array): ClientData | null {
   } catch {
     return null;
   }
-  if (!isRecord(parsed)) return null;
+  if (!isJsonObject(parsed)) return null;
   const { type, challenge, origin, crossOrigin } = parsed;
   if (typeof type !== 'string' || typeof origin !== 'string') return null;
   if (canonicalBase64UrlBytes(challenge) === null || typeof challenge !== 'string') return null;

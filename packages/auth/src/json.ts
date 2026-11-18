@@ -1,18 +1,10 @@
-// Single responsibility: reading untrusted JSON — a provider's response body, or a JWT payload the
-// caller presented. Both questions were answered six and three times over in this package, and on a
-// JWT payload "is this an object" is what gates every claim read after it, so two copies quietly
-// disagreeing about (say) an array would be two different answers to a security question.
+// Single responsibility: decoding a JWT payload segment the caller presented. Answered three times
+// over in this package until it moved here; "is this an object" — the question that gates every
+// claim read after it — is core's `isJsonObject`, which refuses an array, so `[]` never narrows to a
+// claims record.
 
+import { isJsonObject } from '@ultimat3/core';
 import { base64UrlBytes } from './tokens';
-
-/**
- * An ARRAY IS NOT A RECORD. That is the whole of the disagreement between the two variants of this
- * predicate in the wild, and it matters here: `JSON.parse('[1,2]')` is an object with numeric keys,
- * so without the array check a JWT payload of `[]` narrows to `Record<string, unknown>` and every
- * `parsed['iss']` below it reads `undefined` from a shape no issuer ever sends.
- */
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * A base64url JWT segment as a JSON object, or `null` for every way it can fail to be one: not
@@ -29,5 +21,5 @@ export function decodeJwtSegment(segment: string): Record<string, unknown> | nul
   } catch {
     return null;
   }
-  return isRecord(parsed) ? parsed : null;
+  return isJsonObject(parsed) ? parsed : null;
 }

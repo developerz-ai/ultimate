@@ -5,7 +5,7 @@
 // keyword outside the subset (`format`, `oneOf`, `$ref`) would be PUBLISHED and never enforced — so
 // it is refused, never dropped: dropping a constraint the author wrote widens the tool silently.
 
-import { renderCauseValue } from '@ultimat3/core';
+import { isJsonObject, renderCauseValue } from '@ultimat3/core';
 import { McpCatalogUnresolvedError } from './catalog-errors';
 import type { JsonSchema } from './wire';
 
@@ -54,7 +54,7 @@ export function runtimeInputSchema(tool: string, value: unknown): JsonSchema {
 
 function node(tool: string, value: unknown, at: string, depth: number): JsonSchema {
   if (depth > MAX_DEPTH) refuse(tool, at, `nests deeper than ${MAX_DEPTH}`);
-  if (!isRecord(value)) refuse(tool, at, 'is not a JSON Schema object');
+  if (!isJsonObject(value)) refuse(tool, at, 'is not a JSON Schema object');
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
     if (!KEYWORDS.has(key)) {
@@ -71,7 +71,7 @@ function keyword(tool: string, key: string, value: unknown, at: string, depth: n
       if (!TYPES.has(value)) refuse(tool, at, 'is not a JSON Schema type');
       return value;
     case 'properties': {
-      if (!isRecord(value)) refuse(tool, at, 'is not an object');
+      if (!isJsonObject(value)) refuse(tool, at, 'is not an object');
       const out: Record<string, unknown> = {};
       for (const [name, child] of Object.entries(value)) {
         put(out, name, node(tool, child, `${at}.${name}`, depth + 1));
@@ -124,9 +124,6 @@ function refuse(tool: string, at: string, why: string): never {
     cause: `runtime tool ${renderCauseValue(tool)}: ${at} ${why}`,
   });
 }
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isScalar = (value: unknown): value is string | number | boolean | null =>
   value === null || ['string', 'number', 'boolean'].includes(typeof value);

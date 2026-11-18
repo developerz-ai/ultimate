@@ -4,6 +4,7 @@
 // four endpoints that nobody re-checks when the vendor moves one.
 
 import {
+  isJsonObject,
   renderCauseValue,
   renderFixLiteral,
   renderFixShellArg,
@@ -11,7 +12,6 @@ import {
   trimTrailingSlashes,
 } from '@ultimat3/core';
 import { outboundResponse } from '@ultimat3/core/outbound';
-import { isRecord } from './json';
 import type { OAuthProvider, TokenEndpointAuth } from './oauth';
 import { oauthExchangeFailed } from './oauth-errors';
 import type { OAuthFetch } from './oauth-exchange';
@@ -123,7 +123,7 @@ export async function discoverOAuthProvider(
   }
 
   const body: unknown = await response.json().catch(() => undefined);
-  if (!isRecord(body)) {
+  if (!isJsonObject(body)) {
     throw oauthExchangeFailed({
       provider: input.id,
       stage: 'discovery',

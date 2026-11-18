@@ -3,7 +3,7 @@
 // size-capped, metered per caller, cached oldest-first — and proving a confidential one's secret.
 // The secret is hashed at rest and compared hash to hash in constant time, never with `===`.
 
-import { logger, stringField, timingSafeEqual } from '@ultimat3/core';
+import { isJsonObject, logger, stringField, timingSafeEqual } from '@ultimat3/core';
 import { outbound } from '@ultimat3/core/outbound';
 import type { ResolvedAuthServerConfig } from './authorization-server-config';
 import { type ClientListField, clientInvalid } from './authorization-server-errors';
@@ -12,7 +12,6 @@ import type {
   AuthServerGrant,
   ClientAuthMethod,
 } from './authorization-server-types';
-import { isRecord } from './json';
 import { randomToken, sha256Hex } from './tokens';
 
 /** A metadata document is a few hundred bytes; 5 KiB is RFC 7591 metadata with room to spare. */
@@ -53,7 +52,7 @@ const strings = (value: unknown): readonly string[] | null =>
 
 /** The document, read as a public client or not at all. A secret in it would be published. */
 function clientFromDocument(clientId: string, body: unknown, at: Date): AuthServerClient | null {
-  if (!isRecord(body) || body['client_id'] !== clientId) return null;
+  if (!isJsonObject(body) || body['client_id'] !== clientId) return null;
   const redirects = strings(body['redirect_uris']);
   if (redirects === null || redirects.length === 0 || !redirects.every(isRedirectUri)) return null;
   const method = body['token_endpoint_auth_method'];

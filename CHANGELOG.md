@@ -10,7 +10,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- Internal: 63 hand-rolled keyed-record guards (`isRecord`, `isObject`, `isPlainObject`, `isRow`, â€¦) across 14 packages and `scripts/` now import core's `isJsonObject`; a call site that also means an array says `Array.isArray(v) || isJsonObject(v)`. A new copy is `X_HELPER_COPY` (`bun run flight-copies`, `scripts/lib/helper-homes.ts`). One visible change: `findingProblem` reports a guard finding that is an ARRAY as "not a finding object" rather than as a missing code.
 
 ## Releases
 

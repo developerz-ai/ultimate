@@ -7,7 +7,7 @@
 
 // why: Bun exposes no path-join primitive; the chart path is handed to helm as one joined string.
 import { join } from 'node:path';
-import { UltimateError } from '@ultimat3/core';
+import { isJsonObject, UltimateError } from '@ultimat3/core';
 import { loadAppConfig } from './app-config-load';
 import { BadFlagError } from './errors';
 
@@ -26,9 +26,6 @@ const DURATION = /^(?:\d+(?:h|m|s|ms))+$/;
 /** A namespace and a release are both DNS-1123 labels; helm caps a release at 53 characters. */
 const LABEL = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/;
 const RELEASE_MAX = 53;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 /** `--timeout`, screened: a value helm would reject is refused before anything is spawned. */
 export function readHelmTimeout(raw: string | undefined): string {
@@ -135,10 +132,10 @@ export function readRollout(target: HelmTarget, stdout: string): Rollout {
   } catch {
     parsed = undefined;
   }
-  const info = isRecord(parsed) ? parsed['info'] : undefined;
-  const status = isRecord(info) ? info['status'] : undefined;
-  const revision = isRecord(parsed) ? parsed['version'] : undefined;
-  const namespace = isRecord(parsed) ? parsed['namespace'] : undefined;
+  const info = isJsonObject(parsed) ? parsed['info'] : undefined;
+  const status = isJsonObject(info) ? info['status'] : undefined;
+  const revision = isJsonObject(parsed) ? parsed['version'] : undefined;
+  const namespace = isJsonObject(parsed) ? parsed['namespace'] : undefined;
   return {
     release: target.release,
     namespace: typeof namespace === 'string' ? namespace : (target.namespace ?? null),

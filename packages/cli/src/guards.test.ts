@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { VERIFY_STEPS } from './cmd-verify';
 import { exec } from './exec';
-import { GUARD_DIR, guardFindings, guardPaths } from './guards';
+import { findingProblem, GUARD_DIR, guardFindings, guardPaths } from './guards';
 import { guardFiles } from './templates';
 
 /** A throwaway app root holding exactly the guard files a case needs. */
@@ -106,6 +106,13 @@ describe('unit · a guard that cannot be trusted is a finding, never a silent pa
     await withGuards({ 'nocode.ts': source }, async (root) => {
       expect(codes(await guardFindings(root))).toEqual(['X_GUARD_FINDING_INVALID']);
     });
+  });
+
+  // An array is not a finding OBJECT: refused as the wrong shape, never read for a `code` it lacks.
+  test('a finding that is an array is refused as not a finding object', () => {
+    expect(findingProblem([{ code: 'X_A', cause: 'c', fix: 'x verify' }])).toContain(
+      'is not a finding object',
+    );
   });
 
   // The validator is the thing that turns a guard's output into a structured failure. If IT is

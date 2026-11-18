@@ -48,6 +48,11 @@ describe('unit · entryFilesOf', () => {
       entryFilesOf({ exports: { './icons/*': './src/icons/*.ts', './t': './a.scss' } }),
     ).toEqual([]);
   });
+
+  test('a fallback ARRAY under exports is walked: each of its targets is an entry', () => {
+    const manifest = { exports: { '.': ['./src/index.ts', { import: './src/esm.ts' }] } };
+    expect(entryFilesOf(manifest)).toEqual(['src/esm.ts', 'src/index.ts']);
+  });
 });
 
 describe('unit · fixturesReachedFrom', () => {

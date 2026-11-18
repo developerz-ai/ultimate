@@ -3,7 +3,7 @@
 // client. The keys are Ultimate's wire tags unchanged (`post`, `post:1`), which is the property
 // that keeps an edge purge and an app-level invalidation from ever meaning different things.
 
-import { isRetryableStatus } from '@ultimat3/core';
+import { isJsonObject, isRetryableStatus } from '@ultimat3/core';
 import type { PurgeDriver } from './cdn';
 import { CachePurgeFailedError } from './errors';
 import type { PurgeFetch } from './purge-http';
@@ -13,7 +13,6 @@ import {
   DEFAULT_PURGE_TIMEOUT_MS,
   defaultPurgeFetch,
   detailFrom,
-  isRecord,
   type PurgeBody,
   purgeBody,
   purgePost,
@@ -61,7 +60,7 @@ const fixFor = (status: number): string => {
  */
 function acceptedFrom(body: PurgeBody, batch: readonly string[]): string[] {
   const payload = body.json;
-  if (!isRecord(payload)) return [...batch];
+  if (!isJsonObject(payload)) return [...batch];
   // `Object.hasOwn`, never `in`: a surrogate key named `constructor` or `toString` answered `true`
   // out of a body that never mentioned it, so `InvalidationReport.tiers` listed keys nothing had
   // purged — a partial bust reading as a clean one.

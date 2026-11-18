@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 // Refuse a test file whose measured wall time is over the budget with no stated reason. One file
 // that grows past its shard's share sets CI's wall time on its own, and nothing said so: the unit
 // shards ran 238–415 s on main (run 43903381662, 2026-11-16), led by single files of 21–41 s.
@@ -13,6 +14,7 @@
 //
 //   bun run scripts/test-slow.ts [--json]
 
+import { isJsonObject } from '../packages/core/src/json-object';
 import { parseScriptArgs } from './lib/args';
 import { WEIGHTS_FILE } from './lib/ci/test-weights';
 import { corpus } from './lib/corpus';
@@ -75,13 +77,10 @@ export type WeightsRead =
   | { readonly kind: 'read'; readonly files: ReadonlyMap<string, number> }
   | { readonly kind: 'unread'; readonly problem: string };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /** The weights document, checked: every entry a finite, non-negative millisecond count. */
 export function parseWeights(value: unknown): WeightsRead {
-  const raw = isRecord(value) ? value['files'] : undefined;
-  if (!isRecord(raw)) {
+  const raw = isJsonObject(value) ? value['files'] : undefined;
+  if (!isJsonObject(raw)) {
     return { kind: 'unread', problem: 'it is not an object with a "files" object' };
   }
   const files = new Map<string, number>();

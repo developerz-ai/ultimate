@@ -3,7 +3,7 @@
 // icons, so an upstream fix is a version bump plus a re-run and never a hand edit.
 
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
-import { renderCauseValue } from '@ultimat3/core';
+import { isJsonObject, renderCauseValue } from '@ultimat3/core';
 import type { IconGlyph } from '../components/icon-glyph';
 import { iconElements } from '../components/icon-glyph';
 import { invalidIconDataError, runtimeMissingError } from '../errors';
@@ -84,9 +84,6 @@ function malformedNode(name: string, node: unknown): ReturnType<typeof invalidIc
   );
 }
 
-const isAttrs = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /**
  * An icon name, as characters: lowercase kebab-case, no leading, trailing or doubled hyphen. The
  * same allowlist-over-a-sink shape as `SAFE_ATTR_VALUE`, one layer up — the name is interpolated
@@ -108,7 +105,7 @@ function toGlyph(name: string, value: unknown): IconGlyph {
   for (const node of value as unknown[]) {
     if (!Array.isArray(node) || typeof node[0] !== 'string') throw malformedNode(name, node);
     const rawAttrs: unknown = node[1] ?? {};
-    if (!isAttrs(rawAttrs)) throw malformedNode(name, node);
+    if (!isJsonObject(rawAttrs)) throw malformedNode(name, node);
     const attrs: Record<string, string> = {};
     for (const [key, item] of Object.entries(rawAttrs)) {
       // Upstream keys an element for its diff tooling; it is not an SVG attribute.

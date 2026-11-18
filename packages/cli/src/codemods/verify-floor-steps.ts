@@ -3,13 +3,14 @@
 // names every gate step — required or excused — `strict` goes on. Short of that, `strict: false`
 // is written once with a note: a decision recorded, not a question asked on every upgrade.
 
+import { isJsonObject } from '@ultimat3/core';
 import { floorSteps } from '../templates/scaffold-verify-floor';
 import { VERIFY_FLOOR_FILE } from '../verify-floor';
 import { VERIFY_STEP_NAMES } from '../verify-step';
 import type { Codemod, CodemodResult } from './codemod';
 import { unifiedDiff } from './engine-diff';
 import type { Floor } from './verify-floor-skips';
-import { floorSuites, isObject, renderFloor } from './verify-floor-skips';
+import { floorSuites, renderFloor } from './verify-floor-skips';
 
 const NOTHING: CodemodResult = { changed: [], skipped: [] };
 
@@ -50,9 +51,9 @@ export const codemod: Codemod = {
       return NOTHING;
     }
     // `verify-floor-skips` already reports a floor that is not a JSON object.
-    if (!isObject(floor) || !Array.isArray(floor['steps'])) return NOTHING;
+    if (!isJsonObject(floor) || !Array.isArray(floor['steps'])) return NOTHING;
     const held: unknown[] = floor['steps'];
-    const skip = isObject(floor['skip']) ? floor['skip'] : {};
+    const skip = isJsonObject(floor['skip']) ? floor['skip'] : {};
     const wanted = floorSteps(await floorSuites(app)).steps;
     const added = wanted.filter((step) => !held.includes(step) && !(step in skip));
     // `steps` replaced where it stands: the app's key order kept.

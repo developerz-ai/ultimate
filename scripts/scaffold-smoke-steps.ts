@@ -10,6 +10,7 @@
 import { join } from 'node:path';
 import type { Runner } from '@ultimat3/cli';
 import { exec, VERIFY_STEP_NAMES } from '@ultimat3/cli';
+import { isJsonObject } from '../packages/core/src/json-object';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -28,15 +29,12 @@ export interface RanStep {
   readonly ran?: number;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /** The `--json` step payloads, read for `skipped` and `tests.ran` alone; a malformed one is dropped. */
 export const ranSteps = (stdout: string): readonly RanStep[] =>
   (parseStepPayloads(stdout) ?? []).flatMap((payload): RanStep[] => {
-    if (!isRecord(payload) || typeof payload['name'] !== 'string') return [];
+    if (!isJsonObject(payload) || typeof payload['name'] !== 'string') return [];
     const tests = payload['tests'];
-    const ran = isRecord(tests) && typeof tests['ran'] === 'number' ? tests['ran'] : undefined;
+    const ran = isJsonObject(tests) && typeof tests['ran'] === 'number' ? tests['ran'] : undefined;
     return [
       {
         name: payload['name'],
@@ -59,8 +57,8 @@ export const excusedSteps = (floorText: string | undefined): readonly string[] =
   } catch {
     return [];
   }
-  const skip = isRecord(payload) ? payload['skip'] : undefined;
-  if (!isRecord(skip)) return [];
+  const skip = isJsonObject(payload) ? payload['skip'] : undefined;
+  if (!isJsonObject(skip)) return [];
   return Object.entries(skip).flatMap(([step, why]) =>
     typeof why === 'string' && why.trim() !== '' ? [step] : [],
   );

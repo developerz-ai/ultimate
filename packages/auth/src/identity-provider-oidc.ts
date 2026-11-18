@@ -3,14 +3,13 @@
 // behind the port, no protocol of its own. The port adds one thing: the handshake's `state` is
 // claimed ONCE in the shared replay store, keyed on when it was issued, before the code is spent.
 
-import { timingSafeEqual } from '@ultimat3/core';
+import { isJsonObject, timingSafeEqual } from '@ultimat3/core';
 import {
   type IdentityProvider,
   type IdentityRedirect,
   replayStepFor,
   type VerifiedIdentity,
 } from './identity-provider';
-import { isRecord } from './json';
 import type { IdTokenKeys } from './jwks';
 import {
   assertOAuthCallback,
@@ -67,7 +66,7 @@ export function decodeOidcState(provider: OAuthProviderId, state: string): Store
     parsed = null;
   }
   if (
-    !isRecord(parsed) ||
+    !isJsonObject(parsed) ||
     !FIELDS.every((field) => typeof parsed[field] === 'string') ||
     typeof parsed['issuedAt'] !== 'number' ||
     !Number.isFinite(parsed['issuedAt'])

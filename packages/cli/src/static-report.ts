@@ -10,7 +10,7 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RenderMode } from '@ultimat3/core';
-import { RENDER_MODES, SURFACES } from '@ultimat3/core';
+import { isJsonObject, RENDER_MODES, SURFACES } from '@ultimat3/core';
 import type { Surface } from '@ultimat3/render';
 import { SURFACE_SPECS, surfaceAllows } from '@ultimat3/render';
 import type { JsonValue } from './output';
@@ -179,9 +179,6 @@ export function skippedRoute(
   };
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 /**
  * A closed vocabulary, checked against the vocabulary itself. `typeof value === 'string'` is what
  * `surface` and `render` were held to, and a string is not a `Surface`: the parse then handed back
@@ -194,7 +191,7 @@ const inDomain = (domain: readonly string[], value: unknown): boolean =>
   typeof value === 'string' && domain.includes(value);
 
 const isSkipped = (value: unknown): value is SkippedRoute =>
-  isRecord(value) &&
+  isJsonObject(value) &&
   typeof value['route'] === 'string' &&
   inDomain(SURFACES, value['surface']) &&
   inDomain(RENDER_MODES, value['render']) &&
@@ -206,7 +203,7 @@ const optionalString = (value: unknown): boolean =>
 
 /** The three coded fields are optional TOGETHER on the way in; a present one must be a string. */
 const isUnmeasured = (value: unknown): value is UnmeasuredRoute =>
-  isRecord(value) &&
+  isJsonObject(value) &&
   typeof value['path'] === 'string' &&
   typeof value['reason'] === 'string' &&
   optionalString(value['code']) &&
@@ -215,7 +212,7 @@ const isUnmeasured = (value: unknown): value is UnmeasuredRoute =>
   (value['weighable'] === undefined || value['weighable'] === false);
 
 const isEmitted = (value: unknown): value is EmittedPage =>
-  isRecord(value) &&
+  isJsonObject(value) &&
   typeof value['route'] === 'string' &&
   typeof value['path'] === 'string' &&
   typeof value['file'] === 'string';
@@ -226,7 +223,7 @@ const isEmitted = (value: unknown): value is EmittedPage =>
  * already handles, rather than as a report with a `skipped` nobody can render.
  */
 export function parseStaticReport(value: unknown): StaticReport | undefined {
-  if (!isRecord(value)) return undefined;
+  if (!isJsonObject(value)) return undefined;
   const { target, out, buildId, emitted, skipped, unmeasured, serviceWorkerWarnings } = value;
   if (target !== 'static' || typeof out !== 'string' || typeof buildId !== 'string') {
     return undefined;

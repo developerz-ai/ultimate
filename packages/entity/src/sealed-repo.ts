@@ -26,6 +26,9 @@ import { predicateColumns } from './write-where';
 
 type Loose = Readonly<Record<string, unknown>>;
 
+// why: NOT core's `isJsonObject` — an ARRAY passes here, so an object-shaped value always goes
+// through the seal walk (and a row missing a required sealed column is refused) rather than past it
+// unsealed. A seal fails closed. Pinned in `scripts/lib/helper-homes.ts`.
 const isRecord = (value: unknown): value is Loose => typeof value === 'object' && value !== null;
 
 /**
