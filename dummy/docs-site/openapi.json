@@ -170,6 +170,16 @@
             },
             "description": "policy denied"
           },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH"
+          },
           "422": {
             "content": {
               "application/problem+json": {

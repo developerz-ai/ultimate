@@ -176,7 +176,7 @@ describe('mountOpenApi', () => {
     const created = op(doc, '/v1/create-case');
     expect(created.security).toEqual([{ bearer: ['cases:write'] }]);
     expect(Object.keys(created.responses).sort()).toEqual(
-      ['200', '400', '401', '403', '404', '422', '429'].sort(),
+      ['200', '400', '401', '403', '404', '409', '422', '429'].sort(),
     );
     expect(created['x-ultimate']?.['scope']).toBe('cases:write');
     expect(Object.keys(created.responses['401']?.headers ?? {})).toEqual(['WWW-Authenticate']);

@@ -62,7 +62,7 @@ const posts = entity('posts', {
     authorId: uuid().references(() => members.id),
   },
 });
-const db = database({ posts });
+const db = database({ members, posts });
 declare const orgId: string;
 
 const page = await db.posts.where({ orgId }).preload('author').page();

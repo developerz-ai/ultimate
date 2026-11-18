@@ -49,13 +49,14 @@ The generated `reindex-todo.job.test.ts` pins the distant invariant rather than 
 import { expect } from 'bun:test';
 import { type JobHandle } from '@ultimat3/jobs';
 
-declare const reindexTodo: JobHandle<{ id: string }>;
+declare const reindexTodo: JobHandle<{ id: string; orgId: string }>;
 
 declare const id: string;
+declare const orgId: string;
 
-const first = await reindexTodo.enqueue({ id });
+const first = await reindexTodo.enqueue({ id, orgId });
 expect(first.deduped).toBe(false);
-const again = await reindexTodo.enqueue({ id });
+const again = await reindexTodo.enqueue({ id, orgId });
 expect(again.deduped).toBe(true);
 ```
 

@@ -4,6 +4,9 @@
 // Registries are process-global, so every test resets them.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+// Loaded here so its `mail.send` job registers before `beforeEach` isolates the registry: the first
+// pass to import it would otherwise add a job the next pass in that test then counts.
+import '@ultimat3/mail';
 // why: Bun ships no recursive delete.
 import { rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive.

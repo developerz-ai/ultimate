@@ -61,8 +61,10 @@ export const ALARM_JOB = `
           VERDICT: \${{ needs.verify.result }}
         run: |
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          # Its own assignment, so a failed lookup stops the job instead of reading as Issues off.
+          issues_enabled="$(gh repo view --json hasIssuesEnabled --jq .hasIssuesEnabled)"
           # With Issues off there is nowhere to write: a green week must not turn red over that.
-          if [ "$(gh repo view --json hasIssuesEnabled --jq .hasIssuesEnabled)" != true ]; then
+          if [ "$issues_enabled" != true ]; then
             echo "::warning::Issues are off here, so this verdict ($VERDICT) reaches nobody: $run_url"
             exit 0
           fi

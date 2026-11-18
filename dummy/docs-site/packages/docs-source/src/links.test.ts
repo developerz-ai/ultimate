@@ -39,6 +39,10 @@ describe('rewriteLinks', () => {
     );
   });
 
+  test('a link written inside a title is title text', () => {
+    expect(rewriteLinks('[a](b "[c](d)")', upper)).toBe('[a](B "[c](d)")');
+  });
+
   test('never touches a code span or a fence', () => {
     const text = ['`[a](x)` [b](y)', '```', '[c](z)', '```'].join('\n');
     expect(rewriteLinks(text, upper)).toBe(['`[a](x)` [b](Y)', '```', '[c](z)', '```'].join('\n'));

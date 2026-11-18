@@ -300,7 +300,12 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       ),
       '422': problemResponse('X_BODY_INVALID'),
       '403': problemResponse('policy denied'),
-      ...(idempotent ? { '409': problemResponse('X_IDEMPOTENCY_CONFLICT') } : {}),
+      // Every action: any of them may be a queued offline write replayed under another session.
+      '409': problemResponse(
+        idempotent
+          ? 'X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH'
+          : 'X_REPLAY_PRINCIPAL_MISMATCH',
+      ),
     }),
     'x-ultimate': {
       capability: policyCapability(def.policy),

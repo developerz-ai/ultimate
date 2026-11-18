@@ -29,10 +29,10 @@ function wordEnd(line: string, from: number): number {
 
 /**
  * What follows `](` at `from`: the target, one level of parentheses inside it, an optional
- * `"title"`, then the `)`. Read by hand, each part stopping at the next parenthesis, space or
- * quote, so no input makes it look back. `undefined` when that is not what follows.
+ * `"title"`, then the `)`, whose offset is `close`. Read by hand, each part stopping at the next
+ * parenthesis, space or quote, so no input makes it look back. `undefined` when it is not that.
  */
-function targetAt(line: string, from: number): string | undefined {
+function targetAt(line: string, from: number): { target: string; close: number } | undefined {
   let end = wordEnd(line, from);
   if (end === from) return undefined;
   if (line[end] === '(') {
@@ -48,7 +48,7 @@ function targetAt(line: string, from: number): string | undefined {
     if (next < 0) return undefined;
     next += 1;
   }
-  return line[next] === ')' ? line.slice(from, end) : undefined;
+  return line[next] === ')' ? { target: line.slice(from, end), close: next } : undefined;
 }
 
 interface FoundLink {
@@ -72,10 +72,12 @@ function findLinks(line: string): readonly FoundLink[] {
     if (line[index] !== ']') continue;
     const opener = open.pop();
     if (opener === undefined || line[index + 1] !== '(') continue;
-    const target = targetAt(line, index + 2);
-    if (target === undefined) continue;
+    const found = targetAt(line, index + 2);
+    if (found === undefined) continue;
     while ((links.at(-1)?.opener ?? -1) > opener) links.pop();
-    links.push({ opener, at: index + 2, target });
+    links.push({ opener, at: index + 2, target: found.target });
+    // Past the `)`: brackets in a title are its text, never another link.
+    index = found.close;
   }
   return links;
 }

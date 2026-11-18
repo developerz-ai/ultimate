@@ -155,7 +155,9 @@ describe('awaitPageRuntime', () => {
     let asked = false;
     host.document = {
       readyState: 'complete',
-      querySelector: () => {
+      // Only the boot lookup counts: installing the runtime may read the page's scope meta.
+      querySelector: (selector: string) => {
+        if (!selector.startsWith('script')) return null;
         asked = true;
         return new FakeScript();
       },

@@ -110,7 +110,7 @@ const FAKE_GH = `#!/usr/bin/env bash
 all="$*"
 printf '%s\\n' "\${all//$'\\n'/ }" >> "$GH_LOG"
 case "$1 $2" in
-  'repo view') printf '%s\\n' "$FAKE_ISSUES_ON" ;;
+  'repo view') [ -z "$FAKE_REPO_FAILS" ] || exit 1; printf '%s\\n' "$FAKE_ISSUES_ON" ;;
   'issue list') [ -z "$FAKE_LIST_FAILS" ] || exit 1; printf '%s' "$FAKE_OPEN" ;;
 esac
 `;
@@ -126,6 +126,7 @@ describe.skipIf(process.platform === 'win32')('unit · the alarm script, execute
     readonly open?: string;
     readonly issuesOn?: string;
     readonly listFails?: boolean;
+    readonly repoFails?: boolean;
   }) => {
     const dir = await mkdtemp(join(tmpdir(), 'ci-alarm-'));
     dirs.push(dir);
@@ -142,6 +143,7 @@ describe.skipIf(process.platform === 'win32')('unit · the alarm script, execute
         FAKE_OPEN: scenario.open ?? '',
         FAKE_ISSUES_ON: scenario.issuesOn ?? 'true',
         FAKE_LIST_FAILS: scenario.listFails === true ? '1' : '',
+        FAKE_REPO_FAILS: scenario.repoFails === true ? '1' : '',
         GITHUB_SERVER_URL: 'https://github.example',
         GITHUB_REPOSITORY: 'acme/shop',
         GITHUB_RUN_ID: '42',
@@ -206,6 +208,13 @@ describe.skipIf(process.platform === 'win32')('unit · the alarm script, execute
     expect(lookup).toContain('--state open');
     expect(lookup).toContain('--author app/github-actions');
     expect(lookup).toContain(`select(.title == "${ALARM_ISSUE_TITLE}")`);
+  });
+
+  test('a repository lookup that fails fails the job, never reads as Issues off', async () => {
+    const { code, stdout, writes } = await run({ verdict: 'failure', repoFails: true });
+    expect(code).not.toBe(0);
+    expect(stdout).not.toContain('::warning::');
+    expect(writes).toEqual([]);
   });
 
   test('a lookup that fails fails the job, rather than filing a duplicate', async () => {

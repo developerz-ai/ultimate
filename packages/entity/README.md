@@ -454,7 +454,7 @@ const posts = entity('posts', {
 const checkpoints = entity('checkpoints', {
   columns: { id: uuid().primaryKey(), cursor: text().nullable() },
 });
-const db = database({ checkpoints, posts });
+const db = database({ checkpoints, members, posts });
 declare const id: string;
 declare const orgId: string;
 declare const ctx: Ctx;

@@ -31,7 +31,6 @@ The first two are automatic — nothing to opt into, no `dataloader()`, no `batc
 ```ts
 import { entity, postgresRepo, uuid } from '@ultimat3/entity';
 
-const users = entity('users', { columns: { id: uuid().primaryKey() } });
 const members = entity('members', {
   tenant: 'orgId',
   columns: { id: uuid().primaryKey(), orgId: uuid() },
@@ -50,7 +49,7 @@ const page = await postgresRepo(posts).findMany({ orgId });
 for (const post of page.rows) {
   // Two statements for the whole loop: the page, then one `where "id" in (…)` over every
   // author on it. Every lookup after the first is memory.
-  const author = await postgresRepo(users).findById(post.authorId, { orgId });
+  const author = await postgresRepo(members).findById(post.authorId, { orgId });
 }
 ```
 
@@ -113,6 +112,7 @@ const posts = entity('posts', {
 const likes = entity('likes', {
   tenant: 'orgId',
   columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid(), memberId: uuid() },
+  indexes: [{ on: ['postId', 'memberId'], unique: true }],
 });
 const tags = entity('tags', {
   tenant: 'orgId',
@@ -169,7 +169,7 @@ const posts = entity('posts', {
     authorId: uuid().references(() => members.id),
   },
 });
-const db = database({ posts });
+const db = database({ members, posts });
 declare const orgId: string;
 
 await using batches = db.posts.where({ orgId }).preload('author').inBatches(500);

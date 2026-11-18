@@ -891,7 +891,7 @@ Three implementations ship, `As of 2026-11-18`: `postgresJobDriver()`, `redisJob
 
 **`x jobs` has no `drain`, `As of 2026-11-15`.** It was planned from 25.0.0 and left the registry ([Known gaps](Known-Gaps#open-by-decision)): moving in-flight rows between drivers is a migration no command owns. To stop a queue for maintenance, `x jobs pause <queue>`, then `x jobs list --queue <queue> --state running --json` until it is empty. Its two former `--to` values, `redis` and `nats`, were all-throw stubs — until 2026-10 a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back, nothing moved, and no worker could claim those jobs meanwhile. 25.0.0 deleted the stubs and the unreachable drain body. A drain that returns is new code, and owes the lesson of `--to memory`, a target until 2026-09: `memoryJobDriver()` is a `Map` inside the command's own process, so the drain enqueued each job into it, acked the durable row off the source, printed `ok: true`, and lost every copy when the command exited.
 
-So there is no cross-driver migration procedure — and none is needed while `postgres` is the only driver that runs.
+So the framework ships no cross-driver migration procedure: moving queued jobs from one driver to another is the application's to do.
 
 ## Dead letter
 
