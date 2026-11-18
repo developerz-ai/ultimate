@@ -47,7 +47,7 @@ describe('unit · a new measurement supersedes the last one', () => {
   test('one fixed branch, force-pushed, and an open pull request is updated, never doubled', () => {
     // A branch per run left #1140 and #1172 open side by side, each unmergeable by the next week.
     expect(prShell).toContain("BRANCH='bench/re-measured'");
-    expect(prShell).not.toContain('BRANCH="bench/${GITHUB_RUN_ID}"');
+    expect(prShell).not.toContain('BRANCH="bench/');
     expect(prShell).toContain('git push --force');
     expect(prShell).toContain('gh pr list --head "$BRANCH" --state open');
     expect(prShell.indexOf('gh pr edit "$OPEN"')).toBeLessThan(

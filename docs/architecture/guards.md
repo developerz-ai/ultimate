@@ -12,6 +12,7 @@ The codes are in
 
 | Command | What its header says it refuses | Codes |
 |---|---|---|
+| `bun run scripts/actions-cache-prune.ts` | Keep this repository's Actions cache under GitHub's 10 GB cap: delete each entry a newer one on the same ref and key family supersedes, where only the newest is ever restored. | `X_ACTIONS_CACHE_API_FAILED` `X_ACTIONS_CACHE_OVER_BUDGET` `X_CLI_BAD_FLAG` |
 | `bun run scripts/adapter-ports.ts` | Enforce, as a build error, that every `ADAPTER_PORTS` row (packages/core/src/registrar.ts) ships whole: a `RuntimeOverrides` field, a boot binding, its interface (and installer) on the package's `./adapter`, a `<x>Conformance` on `@ultimat3/testing/conformance` and a `wiki/Adapters.md` section — and that no backend is swapped any other way: no `set*`/`configure*`/`install*` on a `.` barrel, no port-shaped type on a `./adapter` that no row lists (`X_ADAPTER_PORT_INCOMPLETE`). | `X_ADAPTER_PORT_INCOMPLETE` |
 | `bun run scripts/adoption-claims.ts` | Enforce, on `x verify`'s `manifest` step, that a published page says who uses Ultimate ONLY through the generated production-apps block (`scripts/production-apps.ts`). | `X_ADOPTION_CLAIM_UNGENERATED` |
 | `bun run scripts/advisory-floors.ts` | Does any published `@ultimat3/*` package declare a dependency range that admits a version an npm advisory names — the dependency's own, or one it pulls in? | `X_ADVISORY_MANIFEST_MOVED` `X_ADVISORY_RANGE_OPEN` `X_ADVISORY_UNFLOORABLE` `X_ADVISORY_UNREACHABLE` `X_CLI_BAD_FLAG` |
