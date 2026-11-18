@@ -28,23 +28,25 @@ Who uses it:
 
 ## Measured, and how to reproduce it
 
-One local run on an 8-core laptop, `As of 2026-11-06`, not yet a CI figure; the method, the box and
-the caveats are [`scripts/bench/results/README.md`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/README.md),
+Medians of five runs on a 4-core GitHub `ubuntu-latest` runner, `As of 2026-11-18`; the method, the
+box and the caveats are [`scripts/bench/results/README.md`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/README.md),
 and every number below is held to the committed JSON by `bun run scripts/bench-claims.ts`
 (`X_BENCH_CLAIM_STALE`).
 
 | Figure | Measured |
 |---|---|
-| scaffold, published `create-ultimate` (29.4.0) | 4.7 s |
-| `bun run setup`, cold Bun cache | 43.3 s |
-| `node_modules` after setup | 165 MB |
-| first `bun run verify` | **red on 29.4.0**: `budgets` was `X_BUDGET_UNMEASURED` until something built; the step builds first on `main` |
-| `/` under `x dev`, one client, concurrency 16 | median 267 req/s, p99 181.85 ms |
-| a typed read, `/_x/query/post-list` | median 183 req/s, p99 258.26 ms |
-| cold start to the first 2xx (`x dev`) | 4.8 s |
+| scaffold, published `create-ultimate` (31.46.0) | 1.5 s |
+| `bun run setup`, cold Bun cache | 8.0 s |
+| `node_modules` after setup | 197 MB |
+| first `bun run verify` | green in all five runs, median 23.1 s |
+| `/` under `x dev`, one client, concurrency 16 | median 1,147 req/s, p99 26.86 ms |
+| a typed read, `/_x/query/post-list` | median 875 req/s, p99 35.3 ms |
+| cold start to the first 2xx (`x dev`) | 1.1 s |
 
 `x dev` is the development server — every role and an embedded Postgres in one process — so these
-are a laptop's first-hour numbers, not a production capacity claim.
+are a CI runner's first-hour numbers, not a production capacity claim. The previous figures came from
+a laptop on 29.4.0, so the difference in times is not a measured speed-up; `node_modules` did grow,
+from 165 MB.
 
 Reproduce on any machine with Bun and a clone of this repository:
 
@@ -56,7 +58,7 @@ bun run scripts/bench/http-hello.ts --url http://localhost:3000/ --seconds 30 --
 `http-hello.ts --url` loads any URL, so point it at your own app on any stack and compare like with
 like. It refuses a run under 10 s (`X_BENCH_RUN_TOO_SHORT`), and a non-2xx answer or a server that
 dies mid-run is `X_BENCH_RUN_FAILED`, never a figure. `.github/workflows/bench.yml` re-measures weekly
-and on every release, on a free `ubuntu-latest` runner, and opens a pull request with the JSON.
+and on dispatch, on a free `ubuntu-latest` runner, and opens a pull request with the JSON.
 
 ## Rails
 

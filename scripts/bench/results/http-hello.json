@@ -4,73 +4,101 @@
   "concurrency": 16,
   "box": {
     "os": "linux-x64",
-    "cpu": "Intel(R) Core(TM) i7-10610U CPU @ 1.80GHz",
-    "cores": 8,
-    "memoryGb": 31,
+    "cpu": "Intel(R) Xeon(R) 6975P-C",
+    "cores": 4,
+    "memoryGb": 15,
     "bun": "1.4.4",
-    "runner": "local"
+    "runner": "ubuntu26"
   },
-  "coldStartMs": 4766,
-  "rssMb": 542,
+  "coldStartMs": 1056,
+  "rssMb": 551,
   "spread": {
     "rps": {
-      "min": 249.51,
-      "median": 267.03,
-      "n": 3
+      "min": 1106.84,
+      "median": 1147.96,
+      "n": 5
     },
     "p50Ms": {
-      "min": 43.43,
-      "median": 45.74,
-      "n": 3
+      "min": 12.46,
+      "median": 12.63,
+      "n": 5
     },
     "p99Ms": {
-      "min": 157.03,
-      "median": 181.85,
-      "n": 3
+      "min": 26.47,
+      "median": 26.86,
+      "n": 5
     }
   },
   "runs": [
     {
-      "requests": 7505,
-      "ok": 7505,
+      "requests": 33219,
+      "ok": 33219,
       "non2xx": 0,
       "errors": 0,
       "statuses": {
-        "200": 7505
+        "200": 33219
       },
-      "durationMs": 30079.19,
-      "rps": 249.51,
-      "p50Ms": 51.51,
-      "p99Ms": 181.85,
-      "bytes": 29772335
+      "durationMs": 30012.58,
+      "rps": 1106.84,
+      "p50Ms": 12.97,
+      "p99Ms": 29.62,
+      "bytes": 131779773
     },
     {
-      "requests": 8036,
-      "ok": 8036,
+      "requests": 34397,
+      "ok": 34397,
       "non2xx": 0,
       "errors": 0,
       "statuses": {
-        "200": 8036
+        "200": 34397
       },
-      "durationMs": 30093.92,
-      "rps": 267.03,
-      "p50Ms": 45.74,
-      "p99Ms": 182,
-      "bytes": 31878812
+      "durationMs": 30013.09,
+      "rps": 1146.07,
+      "p50Ms": 12.65,
+      "p99Ms": 27.12,
+      "bytes": 136452899
     },
     {
-      "requests": 9179,
-      "ok": 9179,
+      "requests": 34453,
+      "ok": 34453,
       "non2xx": 0,
       "errors": 0,
       "statuses": {
-        "200": 9179
+        "200": 34453
       },
-      "durationMs": 30040.45,
-      "rps": 305.55,
-      "p50Ms": 43.43,
-      "p99Ms": 157.03,
-      "bytes": 36413093
+      "durationMs": 30012.47,
+      "rps": 1147.96,
+      "p50Ms": 12.63,
+      "p99Ms": 26.86,
+      "bytes": 136675051
+    },
+    {
+      "requests": 34760,
+      "ok": 34760,
+      "non2xx": 0,
+      "errors": 0,
+      "statuses": {
+        "200": 34760
+      },
+      "durationMs": 30014.62,
+      "rps": 1158.1,
+      "p50Ms": 12.51,
+      "p99Ms": 26.47,
+      "bytes": 137892920
+    },
+    {
+      "requests": 34899,
+      "ok": 34899,
+      "non2xx": 0,
+      "errors": 0,
+      "statuses": {
+        "200": 34899
+      },
+      "durationMs": 30012.65,
+      "rps": 1162.81,
+      "p50Ms": 12.46,
+      "p99Ms": 26.63,
+      "bytes": 138444333
     }
   ]
 }
