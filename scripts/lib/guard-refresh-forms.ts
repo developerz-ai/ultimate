@@ -73,10 +73,7 @@ const collect = async (forms: Forms, tests: TestForms, module: string): Promise<
 const releaseTags = async (root: string): Promise<readonly string[]> => {
   const listed = await git(['tag', '-l', 'v*', '--sort=version:refname'], root);
   const tags = listed.output.split('\n').filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag));
-  return tags.filter(
-    (tag) =>
-      Bun.spawnSync(['git', 'cat-file', '-e', `${tag}:${ENTRY}`], { cwd: root }).exitCode === 0,
-  );
+  return tags.filter((tag) => gitTreeSource(root, tag).present([ENTRY]).has(ENTRY));
 };
 
 export async function releasedForms(
