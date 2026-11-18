@@ -380,19 +380,23 @@ describe('validateArgs: a property named after one of Object.prototype', () => {
  * already compiles once per schema; this is the same rule on the MCP side of the same contract.
  */
 describe('validateArgs: a declared pattern is compiled once per schema, not once per call', () => {
-  const schema: JsonSchema = {
+  // A schema per test: the memo is keyed on the node, so a shared one is already compiled by
+  // whichever test ran first.
+  const slugSchema = (): JsonSchema => ({
     type: 'object',
     properties: { slug: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' } },
     required: ['slug'],
-  };
+  });
 
   test('a hundred calls against one registered schema compile it once', () => {
+    const schema = slugSchema();
     const before = compiledPatternCount();
     for (let i = 0; i < 100; i += 1) validateArgs(schema, { slug: `post-${i}` });
     expect(compiledPatternCount() - before).toBe(1);
   });
 
   test('the memo does not change the verdict, in either direction', () => {
+    const schema = slugSchema();
     expect(validateArgs(schema, { slug: 'a-good-slug' }).ok).toBe(true);
     const bad = validateArgs(schema, { slug: 'Not A Slug' });
     expect(bad.ok).toBe(false);

@@ -87,25 +87,27 @@ describe('held islands, executed', () => {
     readonly visibility: () => string;
     readonly finishMount: () => void;
     readonly failMount: () => void;
+    /** What this island's `mount` resolves with. */
+    readonly gate: Promise<void>;
     getAttribute(name: string): string | null;
   }
 
   const globals = globalThis as unknown as Record<string, unknown>;
   const realSetTimeout = globalThis.setTimeout;
   let cleanup: (() => Promise<void>) | undefined;
-  let chunks: readonly string[] = [];
+  let mountsCalled: readonly Promise<void>[] = [];
 
   afterEach(async () => {
     globalThis.setTimeout = realSetTimeout;
     await cleanup?.();
     cleanup = undefined;
-    chunks = [];
+    mountsCalled = [];
   });
 
   const settle = async (): Promise<void> => {
-    // The chunks first: `import()` may take any number of loop turns (Bun canary: more than one),
-    // and this one resolves after the runtime's own, so every `mount` has been called.
-    await Promise.all(chunks.map((url) => import(url)));
+    // A held island boots at once, so every `mount` is due. Awaited as an event: how many loop
+    // turns the runtime's `import()` takes is Bun's to change.
+    await Promise.all(mountsCalled);
     for (let i = 0; i < 8; i += 1) await Promise.resolve();
     await new Promise((resolve) => {
       realSetTimeout(resolve, 0);
@@ -173,10 +175,12 @@ describe('held islands, executed', () => {
     const els = Array.from({ length: count }, (_u, i) =>
       heldElement(`${Bun.pathToFileURL(chunk).href}?i=${i}`),
     );
-    chunks = els.map((el) => el.getAttribute('data-x-entry') ?? '');
+    const called = new Map(els.map((el) => [el, Promise.withResolvers<void>()]));
+    mountsCalled = [...called.values()].map(({ promise }) => promise);
     let mounts = 0;
-    globals['__xTestMount'] = (el: { gate: Promise<void> }): Promise<void> => {
+    globals['__xTestMount'] = (el: Held): Promise<void> => {
       mounts += 1;
+      called.get(el)?.resolve();
       return el.gate;
     };
     globals['document'] = {

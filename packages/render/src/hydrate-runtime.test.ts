@@ -38,16 +38,15 @@ describe('the interaction runtime, executed', () => {
     readonly dispose: () => Promise<void>;
   }
 
-  /** The running harness's chunk, which `settle` waits on. */
-  let chunk: string | undefined;
+  /** The `mount` call the running harness has set in motion, which `settle` waits on. */
+  let mountExpected: Promise<void> | undefined;
 
   /**
-   * The chunk, then one turn of the loop, so a promise chain that WOULD have flushed has flushed.
-   * `import()` may take any number of turns (Bun canary: more than one); this one resolves after
-   * the runtime's.
+   * The expected `mount` call, then one turn of the loop, so a promise chain that WOULD have
+   * flushed has flushed. An event, because how many turns `import()` takes is Bun's to change.
    */
   const settle = async (): Promise<void> => {
-    if (chunk !== undefined) await import(chunk);
+    await mountExpected;
     for (let i = 0; i < 8; i += 1) await Promise.resolve();
     await new Promise((resolve) => {
       setTimeout(resolve, 0);
@@ -67,14 +66,15 @@ describe('the interaction runtime, executed', () => {
         reject(new TypeError(message));
       };
     });
+    const mountCalled = Promise.withResolvers<void>();
     globals['__xTestMount'] = (): Promise<void> => {
       mounts += 1;
+      mountCalled.resolve();
       return gate;
     };
 
     const island = join(dir, 'island.mjs');
     await writeFile(island, 'export function mount(){return globalThis.__xTestMount()}\n', 'utf8');
-    chunk = Bun.pathToFileURL(island).href;
 
     const replayed: string[] = [];
     class FakeEvent {
@@ -125,6 +125,7 @@ describe('the interaction runtime, executed', () => {
 
     return {
       fire: (type) => {
+        mountExpected = mountCalled.promise;
         for (const fn of listeners.get(type) ?? []) fn(new FakeEvent(type, { target: element }));
       },
       replayed,

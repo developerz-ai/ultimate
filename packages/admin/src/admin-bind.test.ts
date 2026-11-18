@@ -2,7 +2,7 @@
 // resource from the app's own tables, the request's own actor, and the role map as the authz.
 // And the one thing it refuses: a resource with nothing to read rows through.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import {
@@ -40,9 +40,14 @@ beforeAll(async () => {
   await db.posts.insert({ title: 'Bound' });
 });
 
-afterAll(() => {
+// After each test, not once: a declared permission turns every undeclared name into a denial, so
+// one test's `definePermissions` would decide the next test's verdicts.
+afterEach(() => {
   defineRoles(previousRoles);
   restorePermissions(previousPermissions, previousPermissionSites);
+});
+
+afterAll(() => {
   clearRegistry();
 });
 

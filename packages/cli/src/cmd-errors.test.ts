@@ -39,7 +39,9 @@ const rejection = async (argv: readonly string[]): Promise<{ readonly fix: strin
 // paid here and not by whichever test the order puts first: `REPO_SCAN_TIMEOUT_MS`'s value as a
 // literal, for the reason `error-catalog.test.ts` repeats it too. Through `run`, never the loaders
 // directly, so a `run` that stopped loading them still reds the throw-site test below.
-beforeAll(() => run(['errors', 'list']), 180_000);
+beforeAll(async () => {
+  await run(['errors', 'list']);
+}, 180_000);
 
 describe('unit · x errors explain', () => {
   // `X_DB_DRIFT` and not `X_CONFIG_INVALID`: the exemplar has to be a code the CLI neither owns

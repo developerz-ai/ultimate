@@ -31,7 +31,14 @@ const MAX_POLLS = 10_000;
 describe.skipIf(!hasPostgres)('live · postgres · x db recount', () => {
   let client: PostgresClient;
   const drop = async () => {
-    for (const table of ['rcl_kids', 'rcl_parents', 'rcu_kids', 'rcu_parents']) {
+    for (const table of [
+      'rcl_kids',
+      'rcl_parents',
+      'rci_kids',
+      'rci_parents',
+      'rcu_kids',
+      'rcu_parents',
+    ]) {
       await client.execute(raw(`drop table if exists ${table} cascade`));
     }
   };
@@ -129,10 +136,17 @@ describe.skipIf(!hasPostgres)('live · postgres · x db recount', () => {
   });
 
   test('the window key binds as text for an integer key, across several windows', async () => {
-    const report = await recountInBatches(client, 'rcl_parents', counter('rcl_kids'), {
+    await client.execute(
+      raw('create table rci_parents (id integer primary key, n integer not null)'),
+    );
+    await client.execute(raw('create table rci_kids (id serial primary key, parent_id integer)'));
+    await client.execute(raw('insert into rci_parents values (1, 5), (2, 5), (3, 5)'));
+    await client.execute(raw('insert into rci_kids (parent_id) values (2)'));
+    const report = await recountInBatches(client, 'rci_parents', counter('rci_kids'), {
       write: false,
-      batch: 1,
+      batch: 2,
     });
-    expect(report).toEqual({ batches: 1, drifted: 0, rows: [] });
+    expect(report.batches).toBe(2);
+    expect(report.rows.map((row) => `${row.key}=${row.actual}`)).toEqual(['1=0', '2=1', '3=0']);
   });
 });

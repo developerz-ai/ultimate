@@ -19,20 +19,20 @@ const globals = globalThis as unknown as Record<string, unknown>;
 const realSetTimeout = globalThis.setTimeout;
 const realClearTimeout = globalThis.clearTimeout;
 let cleanup: (() => Promise<void>) | undefined;
-let chunk: string | undefined;
+let mountCalled: Promise<void> | undefined;
 
 afterEach(async () => {
   globalThis.setTimeout = realSetTimeout;
   globalThis.clearTimeout = realClearTimeout;
   await cleanup?.();
   cleanup = undefined;
-  chunk = undefined;
+  mountCalled = undefined;
 });
 
 const settle = async (): Promise<void> => {
-  // The chunk first: `import()` may take any number of loop turns (Bun canary: more than one), and
-  // this one resolves after the runtime's own, so `mount` has been called.
-  if (chunk !== undefined) await import(chunk);
+  // A held island boots at once, so `mount` is due. Awaited as an event: how many loop turns the
+  // runtime's `import()` takes is Bun's to change.
+  await mountCalled;
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
   await new Promise((resolve) => {
     realSetTimeout(resolve, 0);
@@ -69,15 +69,19 @@ async function held(strategy: Exclude<HydrateStrategy, 'never'>): Promise<Harnes
   const dir = await mkdtemp(join(tmpdir(), 'ultimate-hold-replay-'));
   const chunkPath = join(dir, 'island.mjs');
   await writeFile(chunkPath, 'export function mount(){return globalThis.__xTestMount()}\n', 'utf8');
-  chunk = pathToFileURL(chunkPath).href;
   let finishMount = (): void => undefined;
   const gate = new Promise<void>((resolve) => {
     finishMount = resolve;
   });
-  globals['__xTestMount'] = (): Promise<void> => gate;
+  const called = Promise.withResolvers<void>();
+  mountCalled = called.promise;
+  globals['__xTestMount'] = (): Promise<void> => {
+    called.resolve();
+    return gate;
+  };
 
   const attributes = new Map<string, string>([
-    ['data-x-entry', chunk],
+    ['data-x-entry', pathToFileURL(chunkPath).href],
     ['data-x-hydrate', strategy],
     [ISLAND_HOLD_ATTRIBUTE, ''],
   ]);

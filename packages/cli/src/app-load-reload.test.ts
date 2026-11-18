@@ -18,12 +18,11 @@ import { processRoot } from './process-root-fixture';
 // Under `packages/cli/` for the reason `.dev-fixture` is: the page imports `@ultimat3/render`,
 // which resolves through this package's own node_modules and not from /tmp.
 const BASE = processRoot(join(import.meta.dir, '..', '.app-reload-fixture'));
-// A root per test: `import()` evaluates a path once per PROCESS, so a page another test imported
-// from the same path would answer this test's first scan with that test's bytes.
+// A root per test, never a counter: `import()` evaluates a path once per PROCESS, and a rerun of
+// this file (`--rerun-each`) restarts a counter while the process keeps what the path evaluated to.
 let root = '';
 let PAGE = '';
 let ACTIONS = '';
-let roots = 0;
 
 const page = (body: string): string =>
   `import { defineRoute } from '@ultimat3/render';
@@ -61,8 +60,7 @@ const firstScan = async (): Promise<void> => {
 beforeEach(async () => {
   clearRoutes();
   resetRegistries();
-  roots += 1;
-  root = join(BASE, `app-${roots}`);
+  root = join(BASE, `app-${crypto.randomUUID()}`);
   PAGE = join(root, 'apps/web/app/hello/page.tsx');
   ACTIONS = join(root, 'apps/web/app/hello/actions.ts');
   await Bun.write(

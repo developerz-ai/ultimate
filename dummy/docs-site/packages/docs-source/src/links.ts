@@ -14,9 +14,39 @@ export interface LinkAt {
 /** The new target, or `undefined` to leave the link as written. */
 export type LinkResolver = (link: LinkAt) => string | undefined;
 
-// `[text](target "title")`, one level of brackets inside the text (`[`x`]` and `[a [b]]` both
-// occur in the wiki), and one level of parentheses inside the target.
-const LINK = /(!?\[(?:[^[\]]|\[[^\]]*\])*\]\()([^()\s]+(?:\([^()\s]*\))?)((?:\s+"[^"]*")?\))/g;
+// What follows `](`: the target, one level of parentheses inside it, an optional title, the `)`.
+// Anchored by the caller at one `](`, and every part stops at the next `(`, space or quote.
+const TARGET = /([^()\s]+(?:\([^()\s]*\))?)(?:\s+"[^"]*")?\)/y;
+
+interface FoundLink {
+  /** Offset of the `[` that opens the link's text. */
+  readonly opener: number;
+  /** Offset of the target. */
+  readonly at: number;
+  readonly target: string;
+}
+
+/**
+ * `[text](target "title")` on a line, in order, in one pass: a stack pairs each `]` with its `[`,
+ * so brackets may nest in the text (`[a [b]](c)`). A link inside another's text is that link's
+ * text, as in the `[![badge](image)](target)` the wiki writes, so the outer one replaces it.
+ */
+function findLinks(line: string): readonly FoundLink[] {
+  const open: number[] = [];
+  const links: FoundLink[] = [];
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === '[') open.push(index);
+    if (line[index] !== ']') continue;
+    const opener = open.pop();
+    if (opener === undefined || line[index + 1] !== '(') continue;
+    TARGET.lastIndex = index + 2;
+    const target = TARGET.exec(line)?.[1];
+    if (target === undefined) continue;
+    while ((links.at(-1)?.opener ?? -1) > opener) links.pop();
+    links.push({ opener, at: index + 2, target });
+  }
+  return links;
+}
 
 /**
  * The line with every code span blanked to `x`s of the same length. A span closes on the next run
@@ -52,12 +82,9 @@ function rewriteLine(line: string, at: number, resolve: LinkResolver): string {
   const masked = maskCodeSpans(line);
   let out = '';
   let from = 0;
-  for (const match of masked.matchAll(LINK)) {
-    const open = match[1] ?? '';
-    const target = match[2] ?? '';
+  for (const { at: targetAt, target } of findLinks(masked)) {
     const next = resolve({ line: at, target });
     if (next === undefined) continue;
-    const targetAt = match.index + open.length;
     out += line.slice(from, targetAt) + next;
     from = targetAt + target.length;
   }

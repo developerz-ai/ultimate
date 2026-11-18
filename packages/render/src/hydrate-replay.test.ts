@@ -146,15 +146,15 @@ const directive = (overrides: Partial<IslandDirective> = {}): IslandDirective =>
   ...overrides,
 });
 
-/** The running harness's chunk, which `settle` waits on. */
-let chunk: string | undefined;
+/** The `mount` call the running harness has set in motion, which `settle` waits on. */
+let mountExpected: Promise<void> | undefined;
 
 /**
- * The chunk, then one turn, so a promise chain that WOULD have flushed has flushed. `import()` may
- * take any number of loop turns (Bun canary: more than one); this one resolves after the runtime's.
+ * The expected `mount` call, then one turn, so a promise chain that WOULD have flushed has flushed.
+ * Awaited as an event: how many loop turns the runtime's `import()` takes is Bun's to change.
  */
 const settle = async (): Promise<void> => {
-  if (chunk !== undefined) await import(chunk);
+  await mountExpected;
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
   await new Promise((resolve) => {
     setTimeout(resolve, 0);
@@ -184,12 +184,15 @@ async function bootReplayRuntime(
   });
   // The island's `mount`, as an island really writes it. The gate is what a chunk still resolving
   // its own imports looks like from the runtime's side.
-  globals['__xTestMount'] = (el: FakeElement): Promise<void> =>
-    gate.then(() => {
+  const mountCalled = Promise.withResolvers<void>();
+  globals['__xTestMount'] = (el: FakeElement): Promise<void> => {
+    mountCalled.resolve();
+    return gate.then(() => {
       if (!replaces) return;
       el.empty();
       el.appendChild(mounted);
     });
+  };
 
   const island = join(dir, 'island.mjs');
   await writeFile(
@@ -197,8 +200,7 @@ async function bootReplayRuntime(
     'export function mount(el){return globalThis.__xTestMount(el)}\n',
     'utf8',
   );
-  chunk = Bun.pathToFileURL(island).href;
-  root.setAttribute('data-x-entry', chunk);
+  root.setAttribute('data-x-entry', Bun.pathToFileURL(island).href);
   // What `emitIslandAttributes` writes for the same directive. Without it the runtime falls back
   // to `click` alone and a `keydown` fired below reaches no listener at all.
   root.setAttribute('data-x-events', REPLAY_EVENTS.join(' '));
@@ -235,14 +237,19 @@ async function bootReplayRuntime(
     outsider,
     hits,
     fire: (type, init = {}) => {
+      // A press boots the island under either strategy.
+      mountExpected = mountCalled.promise;
       root.fire(type, { target: shell, ...init });
     },
-    finishMount,
+    finishMount: () => {
+      mountExpected = mountCalled.promise;
+      finishMount();
+    },
     goIdle: () => {
       idle();
     },
     dispose: async () => {
-      chunk = undefined;
+      mountExpected = undefined;
       globals['document'] = undefined;
       globals['window'] = undefined;
       globals['requestIdleCallback'] = undefined;
