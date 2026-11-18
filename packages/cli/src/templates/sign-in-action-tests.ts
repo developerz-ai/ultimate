@@ -1,6 +1,5 @@
-// The tests `x g sign-in` writes for its actions: each handler RUN inside a real request context,
-// over the app's migrated database (`migratedDatabase`, the framework tables included), so the
-// paths a person takes — refused, signed in, a second factor owed, signed out — are what is held.
+// The tests `x g sign-in` writes for its actions: each handler run in a real request context over
+// the app's migrated database, so refused, signed in, second factor owed and signed out are held.
 // `destroySessionTest` is both shapes'; the other two are the password shape's. A browser's own
 // form is posted through the pipeline (`formPostSource`): its 303 is the action's `native:`.
 
