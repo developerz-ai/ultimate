@@ -142,4 +142,24 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.47.0',
     none: "the shape overlay's own keyed-record guard became core's isJsonObject (one home, X_HELPER_COPY); it runs inside x new and emits byte-identical files, so an app holds nothing that changed",
   },
+  {
+    template: 'AGENTS.md',
+    since: '31.47.0',
+    none: "the scaffold's prose now says CI also runs weekly; ci-weekly-schedule carries the behaviour, and an app's own docs are its to edit, so x upgrade leaves them alone",
+  },
+  {
+    template: 'CLAUDE.md',
+    since: '31.47.0',
+    none: "the scaffold's prose now says CI also runs weekly; ci-weekly-schedule carries the behaviour, and an app's own docs are its to edit, so x upgrade leaves them alone",
+  },
+  {
+    template: 'README.md',
+    since: '31.47.0',
+    none: "the scaffold's prose now says CI also runs weekly; ci-weekly-schedule carries the behaviour, and an app's own docs are its to edit, so x upgrade leaves them alone",
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-docs.ts',
+    since: '31.47.0',
+    none: "the scaffold's prose now says CI also runs weekly; ci-weekly-schedule carries the behaviour, and an app's own docs are its to edit, so x upgrade leaves them alone",
+  },
 ];
