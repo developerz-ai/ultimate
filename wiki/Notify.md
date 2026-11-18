@@ -10,6 +10,19 @@ and `llm()` take ([The eight primitives](The-Eight-Primitives)). It is not a nin
 
 ```ts
 import { inAppChannel, mailChannel, notifier, t } from '@ultimat3/notify';
+import { entity, uuid } from '@ultimat3/entity';
+import { type AnyMailDefinition } from '@ultimat3/mail';
+
+declare const mailer: AnyMailDefinition;
+
+declare const author: string;
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+declare const orgId: string;
+declare const postId: string;
 
 export const commentPosted = notifier({
   name: 'post.commented',

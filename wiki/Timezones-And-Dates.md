@@ -129,6 +129,10 @@ Parsed once into milliseconds. A bare number is a type error — the unit must b
 
 ```ts
 // task (cron)
+import { type JobHandle, task } from '@ultimat3/jobs';
+
+declare const sendDigest: JobHandle<{ orgId: string }>;
+
 export const nightlyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',
@@ -172,6 +176,8 @@ Cron is a civil-calendar schedule; sleeps are elapsed time. Mixing them is where
 Declare a zone when the behavior is the point:
 
 ```ts
+import { expect, test } from '@ultimat3/testing';
+
 test('digest window respects the org zone', async ({ seed, clock }) => {
   const { org } = await seed('org-in-berlin');
   clock.advance('1d');

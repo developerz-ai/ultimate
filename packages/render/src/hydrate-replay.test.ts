@@ -146,8 +146,15 @@ const directive = (overrides: Partial<IslandDirective> = {}): IslandDirective =>
   ...overrides,
 });
 
-/** One turn, so a promise chain that WOULD have flushed has flushed. */
+/** The running harness's chunk, which `settle` waits on. */
+let chunk: string | undefined;
+
+/**
+ * The chunk, then one turn, so a promise chain that WOULD have flushed has flushed. `import()` may
+ * take any number of loop turns (Bun canary: more than one); this one resolves after the runtime's.
+ */
 const settle = async (): Promise<void> => {
+  if (chunk !== undefined) await import(chunk);
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
   await new Promise((resolve) => {
     setTimeout(resolve, 0);
@@ -190,7 +197,8 @@ async function bootReplayRuntime(
     'export function mount(el){return globalThis.__xTestMount(el)}\n',
     'utf8',
   );
-  root.setAttribute('data-x-entry', Bun.pathToFileURL(island).href);
+  chunk = Bun.pathToFileURL(island).href;
+  root.setAttribute('data-x-entry', chunk);
   // What `emitIslandAttributes` writes for the same directive. Without it the runtime falls back
   // to `click` alone and a `keydown` fired below reaches no listener at all.
   root.setAttribute('data-x-events', REPLAY_EVENTS.join(' '));
@@ -234,6 +242,7 @@ async function bootReplayRuntime(
       idle();
     },
     dispose: async () => {
+      chunk = undefined;
       globals['document'] = undefined;
       globals['window'] = undefined;
       globals['requestIdleCallback'] = undefined;

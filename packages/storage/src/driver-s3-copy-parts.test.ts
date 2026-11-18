@@ -93,6 +93,7 @@ describe('copyS3InParts', () => {
 describe('copyS3InParts, when a part or the Complete goes wrong', () => {
   test('a refused part stops its siblings, and every one in flight settles before the abort', async () => {
     const events: string[] = [];
+    const refusal = Promise.withResolvers<void>();
     const { fake, target, stat } = await wired(undefined, (fake) => async (url, init) => {
       const part = new URL(url).searchParams.get('partNumber');
       if (init.method === 'DELETE') events.push('abort');
@@ -103,17 +104,21 @@ describe('copyS3InParts, when a part or the Complete goes wrong', () => {
           status: 503,
         });
       }
-      // Held for a few event-loop turns: long enough that part 1's refusal arrives first.
-      for (let turn = 0; turn < 5; turn += 1)
-        await new Promise((resolve) => setTimeout(resolve, 0));
+      // Held until part 1's refusal has landed, then one loop turn for its worker to stop the rest:
+      // counting turns alone raced the refusal, and lost on a faster timer (Bun canary).
+      await refusal.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
       events.push(`end ${part}`);
       return fake.fetch(url, init);
     });
-    const caught = await copyS3InParts(target, {
-      source: 'org/o/big.bin',
-      stat,
-      partBytes: 1,
-    }).catch((error: unknown) => error);
+    const refused = (answer: S3Refusal): never => {
+      refusal.resolve();
+      return target.refused(answer);
+    };
+    const caught = await copyS3InParts(
+      { ...target, refused },
+      { source: 'org/o/big.bin', stat, partBytes: 1 },
+    ).catch((error: unknown) => error);
     expect(caught instanceof Refused ? caught.refusal.code : '').toBe('SlowDown');
     // Four started together; part 1's refusal stopped the other six from ever starting.
     expect(events.filter((event) => event.startsWith('start')).length).toBe(4);

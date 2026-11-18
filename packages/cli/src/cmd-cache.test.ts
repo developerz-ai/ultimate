@@ -169,3 +169,17 @@ describe('unit · x cache boots as a CLI command, not as the migrate step', () =
     expect(stopped).toBe(1);
   });
 });
+
+describe('unit · x cache with a subcommand it does not have', () => {
+  // The parser refuses this first; a `ParsedArgs` built by hand reaches the command, and the word
+  // is as unknown here as it is there.
+  test('a hand-built subcommand is unknown, never "not implemented"', async () => {
+    const ctx = ctxFor(appRoot(), ['cache', 'graph']);
+    const args = { ...ctx.args, subcommand: 'stats' };
+    const command = cacheCommandOver(async () => expect.unreachable('no cache is opened'));
+    const refusal: unknown = await command.run({ ...ctx, args }).catch((error: unknown) => error);
+    expect(refusal).toBeUltimateError('X_CLI_UNKNOWN_COMMAND');
+    expect((refusal as { cause: string }).cause).toContain('x cache stats');
+    expect((refusal as { fix: string }).fix).toBe('x help cache');
+  });
+});

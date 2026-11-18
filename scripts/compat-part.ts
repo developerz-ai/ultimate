@@ -62,6 +62,18 @@ const asFindings = (value: unknown): readonly Finding[] =>
       : [];
   });
 
+/** One of `verify`'s stderr progress lines (`verify-progress.ts`): JSON, and never the verdict. */
+const PROGRESS_LINE = /^\s*\{"step":/;
+
+/** `run()` joins stderr after stdout, so the gate's document is read with its progress lines out. */
+const gateDocument = (output: string): unknown =>
+  jsonDocument(
+    output
+      .split('\n')
+      .filter((line) => !PROGRESS_LINE.test(line))
+      .join('\n'),
+  );
+
 const spawn: Runner = (command, cwd) => run(command, { cwd, timeoutMs: PART_TIMEOUT_MS });
 
 export async function runPart(input: {
@@ -86,7 +98,7 @@ export async function runPart(input: {
     rerun: rerunOf(cell, part),
     tail: spawned.output.split('\n').slice(-TAIL_LINES).join('\n'),
   };
-  const doc = jsonDocument(spawned.output);
+  const doc = gateDocument(spawned.output);
   if (typeof record(doc)['ok'] !== 'boolean') {
     const finding: Finding = {
       code: 'X_COMPAT_UNREADABLE',

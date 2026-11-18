@@ -38,8 +38,16 @@ describe('the interaction runtime, executed', () => {
     readonly dispose: () => Promise<void>;
   }
 
-  /** One turn of the loop, so a promise chain that WOULD have flushed has flushed. */
+  /** The running harness's chunk, which `settle` waits on. */
+  let chunk: string | undefined;
+
+  /**
+   * The chunk, then one turn of the loop, so a promise chain that WOULD have flushed has flushed.
+   * `import()` may take any number of turns (Bun canary: more than one); this one resolves after
+   * the runtime's.
+   */
   const settle = async (): Promise<void> => {
+    if (chunk !== undefined) await import(chunk);
     for (let i = 0; i < 8; i += 1) await Promise.resolve();
     await new Promise((resolve) => {
       setTimeout(resolve, 0);
@@ -66,6 +74,7 @@ describe('the interaction runtime, executed', () => {
 
     const island = join(dir, 'island.mjs');
     await writeFile(island, 'export function mount(){return globalThis.__xTestMount()}\n', 'utf8');
+    chunk = Bun.pathToFileURL(island).href;
 
     const replayed: string[] = [];
     class FakeEvent {
@@ -408,7 +417,11 @@ describe('the visible runtime, executed', () => {
         reject(new TypeError(message));
       };
     });
-    globals['__xTestMount'] = (): Promise<void> => gate;
+    let mounting = false;
+    globals['__xTestMount'] = (): Promise<void> => {
+      mounting = true;
+      return gate;
+    };
 
     const island = join(dir, 'island.mjs');
     await writeFile(island, 'export function mount(){return globalThis.__xTestMount()}\n', 'utf8');
@@ -447,6 +460,8 @@ describe('the visible runtime, executed', () => {
       await writeFile(runtime, source, 'utf8');
       await import(Bun.pathToFileURL(runtime).href);
 
+      // Rejected only once `mount` holds the gate: earlier, nothing is listening for it yet.
+      await waitFor(() => mounting);
       failMount('mount is not a function');
       await waitFor(() => attributes.has('data-x-failed'));
 

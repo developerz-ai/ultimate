@@ -219,6 +219,10 @@ committed baseline, never on an absolute score — models drift, prompts should 
 | the baseline was never recorded | `X_EVAL_BASELINE_MISSING` |
 
 ```ts
+import { defineEval, exact, jsonSchemaValid, type Prompt } from '@ultimat3/ai';
+
+declare const summarizePrompt: Prompt<{ body: string }>;
+
 export const summarizeEval = defineEval({
   name: 'summarize',
   prompt: summarizePrompt,
@@ -271,6 +275,13 @@ is the app's script — `transcriptOf(error)` hands over what happened.
 
 ```ts
 // contract test — generated as a scaffold with the action
+import { expect, test } from '@ultimat3/testing';
+import { type Action, t } from '@ultimat3/action';
+
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
   const { post, stranger } = await seed('two-orgs');
   await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
@@ -280,6 +291,14 @@ test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
 
 ```ts
 // job test — the step guarantee, not the happy path
+import { expect, test } from '@ultimat3/testing';
+import { type JobHandle } from '@ultimat3/jobs';
+import { type AnyMailDefinition } from '@ultimat3/mail';
+
+declare const nudgeEmail: AnyMailDefinition;
+
+declare const onboardOrg: JobHandle<{ orgId: string }>;
+
 test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) => {
   const { org } = await seed('fresh-org');
   mail.failOnce(nudgeEmail);
@@ -373,6 +392,14 @@ Installed by the preload on `expect`.
 enumerate a sealed column ([Sealed columns](Entities-And-Migrations#sealed-columns)):
 
 ```ts
+import { expect } from '@ultimat3/testing';
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const connections = entity('connections', {
+  columns: { id: uuid().primaryKey(), email: text(), label: text(), password: text() },
+});
+const db = database({ connections });
+
 const row = await db.connections.insert({ label: 'primary', password: 'hunter2' });
 
 expect(row).toEqual({ id: row.id, label: 'primary', password: 'hunter2' });    // fails, empty diff
@@ -390,6 +417,10 @@ a request does; `renderView` renders one component with its own props.
 ```ts
 import { expect, renderRoute, renderView, unitTest } from '@ultimat3/testing';
 import * as page from './page';
+import { t } from '@ultimat3/i18n';
+
+type Viewer = { readonly staff: boolean };
+declare const viewer: Viewer;
 
 unitTest('the dashboard counts the posts of the org that is looking', async () => {
   const view = await renderRoute(page, { url: 'https://example.test/dashboard', actor: viewer });
@@ -438,6 +469,12 @@ The worked example: `examples/dummy/apps/web/app/settings/page.test.ts`. `As of 
 ## Running a mutator's local half
 
 ```ts
+import { memoryLocalTx } from '@ultimat3/testing';
+import { expect } from 'bun:test';
+
+declare const orgId: string;
+declare const id: string;
+
 const store = memoryLocalTx({ posts: { [id]: { id, title: 'before', pending: false } } });
 renamePost.local(store.tx, { id, orgId, title: 'after' });
 expect(store.rows('posts')).toEqual({ [id]: { id, title: 'after', pending: true } });
@@ -574,6 +611,10 @@ The last five are **declared, not built**. The framework does not bundle a brows
 
 ```ts
 // scripts/test-setup.ts
+import { defineFixtures } from '@ultimat3/testing';
+
+declare function loadSeed(): Promise<void>;
+
 defineFixtures({ page: () => openBrowserPage(), seed: () => loadSeed });
 ```
 
@@ -584,6 +625,15 @@ defineFixtures({ page: () => openBrowserPage(), seed: () => loadSeed });
 ## A job under `runJobs`
 
 ```ts
+import { unitTest } from '@ultimat3/testing';
+import { expect } from 'bun:test';
+import { type JobHandle } from '@ultimat3/jobs';
+
+declare const reindexPost: JobHandle<{ id: string; orgId: string }>;
+
+declare const orgId: string;
+declare const id: string;
+
 unitTest('a row deleted before the run is skipped, not failed', async ({ runJobs }) => {
   const trace = await runJobs(reindexPost, { id, orgId });
   expect(trace.executions.map((run) => run.outcome)).toEqual(['completed']);
@@ -656,6 +706,10 @@ mount (`beforeAll`, 60 s unless `timeoutMs` says otherwise) and the teardown; th
 once per file.
 
 ```ts
+import { join } from 'node:path';
+import { describeIslandState } from '@ultimat3/testing';
+import { expect, test } from 'bun:test';
+
 const island = { build: buildIslands, root: join(import.meta.dir, '..', '..', '..') };
 
 describeIslandState(counterStates, 'idle', island, (mounted) => {
@@ -691,6 +745,14 @@ Symbol.for('ultimate.realtime'))`: that leaves the socket open. `As of 2026-11`.
 ## Testing an authenticator
 
 ```ts
+import { authRequest, unitTest } from '@ultimat3/testing';
+import { authenticate } from '@ultimat3/auth';
+import { expect } from 'bun:test';
+
+declare const member: { readonly id: string };
+
+declare const token: string;
+
 unitTest('a session cookie resolves the member it was issued to', async () => {
   const actor = await authenticate(...(await authRequest({ cookies: { session: token } })));
   expect(actor?.id).toBe(member.id);
@@ -769,6 +831,10 @@ terminal and never the logger, so a test asserting on an `info` audit line passe
 `x dev` warns about a query loop; CI is where nobody is watching. Destructuring `statements` installs the same detector in **strict** mode for the length of one test:
 
 ```ts
+import { expect, test } from '@ultimat3/testing';
+
+declare function renderFeed(): Promise<void>;
+
 test('the feed reads its authors once', async ({ statements }) => {
   await renderFeed();
   //   X_N_PLUS_ONE_QUERY: members.findById ran 5 times in one request — one read per row
@@ -791,6 +857,12 @@ The loop runs to its end and the verdict is raised when the fixture is disposed 
 A deliberate loop is declared where it is written, never silenced at the test:
 
 ```ts
+import { expectedQueryLoop } from '@ultimat3/db';
+
+declare function searchEachField(term: string): Promise<void>;
+
+declare const term: string;
+
 await expectedQueryLoop('one indexed lookup per searchable field', () => searchEachField(term));
 ```
 
@@ -969,6 +1041,14 @@ unitTest('a cursor round-trips any position', () => {
 One contract, asserted against many subjects, with the subject passed as a **thunk** so a `beforeAll`-built value is read at test time rather than at declaration time.
 
 ```ts
+import { behavesLike, sharedExamples, testName } from '@ultimat3/testing';
+import { describe, expect, test } from 'bun:test';
+import { type Action, t } from '@ultimat3/action';
+
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+
 const anAuthenticatedAction = sharedExamples<Denier>('an authenticated action', (subject) => {
   test('denies an anonymous actor', () => {
     expect(subject().denies('anonymous')).toBe(true);

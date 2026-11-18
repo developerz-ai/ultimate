@@ -1067,6 +1067,8 @@ Two files, one committed and one never:
 
 ```ts
 // app.config.ts
+import { defineEnv, type EnvSchema, installSecrets } from '@ultimat3/core';
+
 await installSecrets();
 export const envSchema = {
   SESSION_SECRET: { type: 'string', secret: true, description: 'Cookie signing key' },
@@ -2204,7 +2206,7 @@ A route answering `>= 400` is profiled and reported red, `X_PROFILE_ROUTE_FAILED
 
 ## Planned commands
 
-None, `As of 2026-11-16`. The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`, and it is empty: a planned command is registered so it can exit `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, and the last three left the registry with plan 101b slice 13. `x branch`, `x ai` and `x money` are each a row in [Known gaps](Known-Gaps) with the decision ("not planned") and the extension point that does the job today, and the parser refuses each with `X_CLI_UNKNOWN_COMMAND`. `PLANNED_SUBCOMMANDS`, the one-level-down version, has been empty since `As of 2026-11-15` (`x db studio`, `x jobs drain`, `x token grant` and `x cache stats` went the same way). `cmd-planned.test.ts` asserts every row that returns is reachable through the parser and that no `fix` points at another planned command.
+None, `As of 2026-11-16`. The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`, and it is empty, and the registry builds no command from it: the last three left with plan 101b slice 13. `x branch`, `x ai` and `x money` are each a row in [Known gaps](Known-Gaps) with the decision ("not planned") and the extension point that does the job today, and the parser refuses each with `X_CLI_UNKNOWN_COMMAND`. `PLANNED_SUBCOMMANDS`, the one-level-down version, has been empty since `As of 2026-11-15` (`x db studio`, `x jobs drain`, `x token grant` and `x cache stats` went the same way). `cmd-planned.test.ts` holds both tables empty.
 
 `x token`, `x config`, `x logs` and `x cache` left this table `As of 2026-11` (plan 101-full-stack-efficiency-sweeps U5), `x status` `As of 2026-11-15`; each has its section above.
 

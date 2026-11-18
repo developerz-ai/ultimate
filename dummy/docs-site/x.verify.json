@@ -9,6 +9,7 @@
     "unit",
     "contract",
     "live",
+    "job",
     "exercise",
     "e2e",
     "eval",
@@ -21,7 +22,6 @@
     "manifest"
   ],
   "skip": {
-    "job": "this app declares no job yet: x g job <name> writes one with its .job.test.ts, and then job moves from \"skip\" to \"steps\"",
     "roadmap": "a framework-repository step: it checks docs/idea/14-roadmap.md, which only the Ultimate monorepo ships"
   },
   "strict": true,

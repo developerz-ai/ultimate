@@ -17,6 +17,12 @@ boundary stays thin.
 ```ts
 import { db, sql, raw, withTransaction, currentTx, setDbClient } from '@ultimat3/db';
 
+declare const cache: { restore(id: string): void };
+
+declare const orgId: string;
+declare const id: string;
+type Post = { readonly id: string; readonly orgId: string; readonly title: string };
+
 const rows = await db().query<Post>(sql`select * from posts where org_id = ${orgId}`);
 
 await withTransaction(async (tx) => {
@@ -184,7 +190,9 @@ policy) live above it, and `@ultimat3/mcp` imports nothing of this package but o
 `endOfBlockComment` (a nested `/* */` ends where Postgres ends it, `null` when it never closes).
 
 ```ts
-import { ensureReadOnlyRole, readOnlyQuery } from '@ultimat3/db';
+import { db, ensureReadOnlyRole, readOnlyQuery } from '@ultimat3/db';
+
+declare const statement: string;
 
 const role = await ensureReadOnlyRole(db());                   // layer 1, once at boot
 const { rows, guards } = await readOnlyQuery(statement, { role }); // layer 2, per statement
@@ -535,6 +543,10 @@ process. The module is resolved on the first statement, never at import, so an i
 ever talks to a managed Postgres never loads it.
 
 ```ts
+import { branchPglite, pgliteClient, pgliteDataDir, setDbClient } from '@ultimat3/db';
+
+declare const services: { readonly db: { readonly url: string } };
+
 const dev = pgliteClient({ dataDir: pgliteDataDir(services.db.url) });  // or memory://
 await dev.ping();                                       // pay the ~3s boot before serving
 setDbClient(dev);

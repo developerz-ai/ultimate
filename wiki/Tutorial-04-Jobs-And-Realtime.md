@@ -11,6 +11,9 @@ Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutori
 `x g resource` already wrote one. Its shape is the whole contract:
 
 ```ts
+import { job } from '@ultimat3/jobs';
+import { t } from '@ultimat3/action';
+
 export const reindexTodo = job({
   input: t.object({ id: t.uuid, orgId: t.uuid }),
   tenant: (input) => input.orgId,              // the org the body reads as, from its own input
@@ -37,6 +40,13 @@ export const reindexTodo = job({
 The generated `reindex-todo.job.test.ts` pins the distant invariant rather than the happy path:
 
 ```ts
+import { expect } from 'bun:test';
+import { type JobHandle } from '@ultimat3/jobs';
+
+declare const reindexTodo: JobHandle<{ id: string }>;
+
+declare const id: string;
+
 const first = await reindexTodo.enqueue({ id });
 expect(first.deduped).toBe(false);
 const again = await reindexTodo.enqueue({ id });
@@ -69,6 +79,10 @@ bunx x g task daily-digest --feature todo
 `--feature todo` puts the task in the existing slice; without it the generator opens a `daily-digest` slice of its own. Either way the task and its job are added to `apps/web/api/index.ts`, which is what names them.
 
 ```ts
+import { type JobHandle, task } from '@ultimat3/jobs';
+
+declare const dailyDigestJob: JobHandle<{ id: string; orgId: string }>;
+
 export const dailyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',
@@ -151,6 +165,11 @@ export const todoListSorts = ['createdAt', 'title'] as const;
 ```
 
 ```ts
+import { from, query } from '@ultimat3/query';
+import { t } from '@ultimat3/action';
+
+type Todo = { readonly id: string; readonly orgId: string; readonly title: string };
+
 export const todoList = query({
   input: t.object({
     limit: t.number.default(50),
@@ -188,6 +207,9 @@ export const todoList = query({
 The generated `todo-list.live.test.ts` asserts on the **SQL text**, because that is the contract an agent reads to self-correct:
 
 ```ts
+import { sourceFor } from '@ultimat3/query';
+import { expect } from 'bun:test';
+
 const source = await sourceFor(
   target,
   { limit: 50 },

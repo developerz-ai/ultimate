@@ -18,7 +18,16 @@ import {
   providerGateway,
   openAiProvider,
   registerModel,
+  type GatewayCache,
 } from '@ultimat3/ai';
+import { type Actor } from '@ultimat3/core';
+
+declare const memoCache: GatewayCache;
+
+declare const ticket: { readonly body: string };
+declare const env: { readonly LLM_TOKEN: string; readonly LLM_URL: string };
+
+declare const actor: Actor;
 
 // 1. Your models: your ids, your contract's prices (integer minor units), the source you read them from.
 registerModel({
@@ -171,6 +180,16 @@ transport by itself above the ceiling and returns the assembled result — the l
 the transport, so it is not one the caller has to change API for.
 
 ```ts
+import { type Gateway, runLlmToolCall } from '@ultimat3/ai';
+import { type Actor } from '@ultimat3/core';
+
+declare const messages: Parameters<Gateway['stream']>[0]['messages'];
+
+declare function debit(cost: unknown): void;
+declare const ai: Gateway;
+
+declare const actor: Actor;
+
 for await (const chunk of ai.stream({ messages, maxTokens: 64_000 })) {
   if (chunk.type === 'text') process.stdout.write(chunk.text);
   if (chunk.type === 'tool-call') await runLlmToolCall(tools, chunk.call, actor);
@@ -194,6 +213,8 @@ uses; `baseUrl` selects the provider. `hashEmbedder()` is the deterministic offl
 and the test suite run on.
 
 ```ts
+import { remoteEmbedder } from '@ultimat3/ai';
+
 const embedder = remoteEmbedder({ name: 'voyage-3', dimension: 1_024 });  // EMBEDDINGS_API_KEY
 ```
 
@@ -209,6 +230,10 @@ half-written at the wrong width has no error to report, only worse answers.
 Vertex, a fine-tune, a negotiated rate — all expressible, none needing a fork.
 
 ```ts
+import { type Provider, providerGateway, registerModel } from '@ultimat3/ai';
+
+declare const InternalGatewayProvider: new () => Provider;
+
 registerModel({
   id: 'llama-internal-70b',
   contextWindow: 128_000,
@@ -360,8 +385,12 @@ Not a ninth primitive. A model call has an input schema, an output schema and a 
 is an `action` — so `llm()` returns one, and everything an action projects, it projects.
 
 ```ts
-import { llm, t } from '@ultimat3/ai';
+import { llm, type Prompt, t } from '@ultimat3/ai';
 import { can } from '@ultimat3/policy';
+import { toolFrom } from '@ultimat3/mcp';
+
+declare const summarizePrompt: Prompt<{ body: string }>;
+const HOUSE_LARGE = 'house-large';
 
 export const summarize = llm({
   model:  HOUSE_LARGE,                                          // imported from your models.ts
@@ -392,6 +421,14 @@ summarize.contract();    // the contract tests
 ### Streaming is the same action
 
 ```ts
+import { type Ctx } from '@ultimat3/core';
+
+declare function save(value: unknown): void;
+declare function write(text: string): void;
+
+declare const ctx: Ctx;
+declare const postId: string;
+
 for await (const chunk of summarize.stream({ postId }, { ctx })) {
   if (chunk.type === 'text') write(chunk.text);
   if (chunk.type === 'done') save(chunk.value);   // validated against `output`
@@ -425,6 +462,16 @@ The second half of "no ninth primitive": a tool-using run is still one server-au
 operation with an input schema, an output schema and a policy.
 
 ```ts
+import { agent, type Prompt, t } from '@ultimat3/ai';
+import { can } from '@ultimat3/policy';
+import { type Action } from '@ultimat3/action';
+
+declare const issueRefund: Action;
+declare const lookupOrder: Action;
+
+declare const progress: { turn: number }[];
+declare const supportPrompt: Prompt<{ orderId: string }>;
+
 export const support = agent({
   input:  t.object({ orderId: t.string }),
   output: t.object({ answer: t.string }),
@@ -845,6 +892,10 @@ runs — and the redactor sits on both, between the row and a third-party endpoi
 `vars()` alone until 2026-09-23, so an agent's tool results left the process unredacted.
 
 ```ts
+import { configureAi } from '@ultimat3/ai';
+
+declare function scrubPatientIdentifiers(text: string): string;
+
 configureAi({ redact: (text) => scrubPatientIdentifiers(text) });
 ```
 
@@ -864,6 +915,10 @@ long before a provider exists. One way in (31.0.0): `aiGateway` in `apps/<app>/r
 
 ```ts
 // apps/web/runtime.ts
+import { type Provider, providerGateway } from '@ultimat3/ai';
+
+declare const yourProvider: Provider;
+
 export const runtime = {
   aiGateway: providerGateway({ providers: [yourProvider], defaultModel: 'house-large' }),
 };
@@ -929,6 +984,13 @@ export const summarizeEval = defineEval({
 
 ```ts
 // app/support/summarize.eval.test.ts — the suite `x verify` runs
+import { test } from 'bun:test';
+import { type Gateway } from '@ultimat3/ai';
+
+declare const summarizeEval: { assert(gateway: Gateway): Promise<void> };
+
+declare const ai: Gateway;
+
 test('summarize holds its recorded scores', async () => {
   await summarizeEval.assert(ai);   // throws X_EVAL_THRESHOLD on a drop past 0.05
 });
@@ -1000,6 +1062,8 @@ baseline is the same file, keyed by the agent's prompt hash. Exported types: `Ag
 ## Prompts are versioned artifacts
 
 ```ts
+import { definePrompt } from '@ultimat3/ai';
+
 export const summarize = definePrompt<{ ticket: string }>({
   id: 'summarize',
   version: '1.0.0',
@@ -1061,6 +1125,10 @@ is still `ctx.actor` and tools are still matched against the declaration.
 ## Retrieval
 
 ```ts
+import { assembleContext, type Embedder, indexDocument, postgresVectorStore, retrieve } from '@ultimat3/ai';
+
+declare const embedder: Embedder;
+
 const store = postgresVectorStore({ name: 'doc_chunks', dimension: 256 });   // memoryVectorStore() in dev
 await indexDocument({ store, embedder, document: { id: 'faq', text } });
 
@@ -1090,6 +1158,12 @@ then `x db migrate`.
 ### The scope is the leak-proofing
 
 ```ts
+import { type VectorStore } from '@ultimat3/ai';
+
+declare const store: VectorStore;
+
+declare const orgId: string;
+
 const tenantStore = store.scoped({ tenant: orgId, allow: { visibility: ['public', 'internal'] } });
 ```
 
@@ -1125,6 +1199,17 @@ any `source` the caller passed, because `indexDocument` prunes a re-index by it.
 
 ```ts
 // `ProjectableAction` — `{ name, mcp?, inputJsonSchema?, run }`, the projection SEAM.
+import { runLlmToolCall, toLlmTools } from '@ultimat3/ai';
+import { type Actor } from '@ultimat3/core';
+import { type Action, t } from '@ultimat3/action';
+
+declare const suspendUser: Action;
+
+declare const actor: Actor;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+
 const tools = toLlmTools([publishPost, suspendUser]);   // only those with mcp.expose
 const result = await runLlmToolCall(actions, call, actor);
 ```

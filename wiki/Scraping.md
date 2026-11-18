@@ -28,6 +28,9 @@ A scrape is a **`job`**, not a ninth primitive. `scrape()` returns a `JobHandle`
 ## The declaration
 
 ```ts
+import { scrape } from '@ultimat3/scraping';
+import { t } from '@ultimat3/action';
+
 export const dailyOrders = scrape({
   name: 'orders.daily',
   input: t.object({ page: t.number.int() }),
@@ -306,6 +309,18 @@ One declaration: a caller opens a session, events stream out, input goes in mid-
 comes back. Every piece is a field on `scrape()` or on its driver.
 
 ```ts
+import { type CdpResolver, eventPrompt, remoteBrowser, scrape, storageSessionStore } from '@ultimat3/scraping';
+import { t } from '@ultimat3/action';
+import { disk } from '@ultimat3/storage';
+import { entity, text, uuid } from '@ultimat3/entity';
+
+declare const provider: { create(input: object): Promise<{ cdpUrl: string }> };
+declare function run(): Promise<unknown>;
+
+const connections = entity('connections', {
+  columns: { id: uuid().primaryKey(), email: text(), label: text(), password: text() },
+});
+
 const rent: CdpResolver = async ({ runId, egress, signal }) => {
   const rented = await provider.create({ tag: runId, proxy: egress, signal });
   return {

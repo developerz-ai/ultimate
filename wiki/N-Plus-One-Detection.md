@@ -31,14 +31,46 @@ Full row, verbatim: [Error codes → `@ultimat3/entity`](Error-Codes-entity).
 
 ```ts
 // naive: one statement per row
+import { entity, postgresRepo, uuid } from '@ultimat3/entity';
+
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+
 const authors = [];
 for (const post of posts) {
-  authors.push(await db.members.findById(post.authorId));
+  authors.push(await postgresRepo(members).findById(post.authorId));
 }
 ```
 
 ```ts
 // one statement for the page
+import { database, entity, uuid } from '@ultimat3/entity';
+
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+const db = database({ posts });
+declare const orgId: string;
+
 const page = await db.posts.where({ orgId }).preload('author').page();
 ```
 
@@ -164,6 +196,10 @@ detector in **strict** mode for the length of one test — its verdict fails the
 opt-in, there is no `strict: true` flag to forget:
 
 ```ts
+import { expect, test } from '@ultimat3/testing';
+
+declare function loadFeed(): Promise<void>;
+
 test('the feed reads its authors once', async ({ statements }) => {
   await loadFeed();
   // X_N_PLUS_ONE_QUERY: members.findById ran 5 times in one request — one read per row

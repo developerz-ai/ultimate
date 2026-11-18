@@ -87,19 +87,25 @@ describe('held islands, executed', () => {
     readonly visibility: () => string;
     readonly finishMount: () => void;
     readonly failMount: () => void;
+    getAttribute(name: string): string | null;
   }
 
   const globals = globalThis as unknown as Record<string, unknown>;
   const realSetTimeout = globalThis.setTimeout;
   let cleanup: (() => Promise<void>) | undefined;
+  let chunks: readonly string[] = [];
 
   afterEach(async () => {
     globalThis.setTimeout = realSetTimeout;
     await cleanup?.();
     cleanup = undefined;
+    chunks = [];
   });
 
   const settle = async (): Promise<void> => {
+    // The chunks first: `import()` may take any number of loop turns (Bun canary: more than one),
+    // and this one resolves after the runtime's own, so every `mount` has been called.
+    await Promise.all(chunks.map((url) => import(url)));
     for (let i = 0; i < 8; i += 1) await Promise.resolve();
     await new Promise((resolve) => {
       realSetTimeout(resolve, 0);
@@ -167,6 +173,7 @@ describe('held islands, executed', () => {
     const els = Array.from({ length: count }, (_u, i) =>
       heldElement(`${Bun.pathToFileURL(chunk).href}?i=${i}`),
     );
+    chunks = els.map((el) => el.getAttribute('data-x-entry') ?? '');
     let mounts = 0;
     globals['__xTestMount'] = (el: { gate: Promise<void> }): Promise<void> => {
       mounts += 1;

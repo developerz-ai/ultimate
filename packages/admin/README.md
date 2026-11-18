@@ -143,6 +143,8 @@ unfiltered list. An empty value is no parameter: a GET form submits every input 
 Money, JSON, file, sealed and tenant columns derive no filter.
 
 ```ts
+import { defineAdmin } from '@ultimat3/admin';
+
 defineAdmin({
   entities: [tickets, owners],
   db,
@@ -329,7 +331,16 @@ Every renderer is an ordinary component in an ordinary `.tsx` file importing `@u
 so a table can be lifted into a screen the generator never wrote:
 
 ```tsx
-import { AdminList, listHref, Widget } from '@ultimat3/admin';
+import { type AdminApp, AdminList, listHref, Widget } from '@ultimat3/admin';
+import { type Actor, type Ctx } from '@ultimat3/core';
+
+declare const scope: string;
+
+declare const admin: AdminApp;
+
+declare const request: Request;
+declare const actor: Actor;
+declare const ctx: Ctx;
 
 <AdminList resource={resource} page={page} error={null} ctx={ctx} actor={actor} authz={authz}
   basePath={admin.basePath} request={request} scope={scope} counts={counts}
@@ -346,9 +357,15 @@ calls it, so there is no way to render a cell that skipped it.
 `x dev` and the container already do. A host that is neither asks the route table per request:
 
 ```ts
-import { adminRouteMatch } from '@ultimat3/admin';
+import { type AdminApp, adminRouteMatch } from '@ultimat3/admin';
+
+declare const admin: AdminApp;
+
+declare const url: URL;
+declare const request: Request;
 
 const matched = adminRouteMatch(admin, url.pathname);            // null → 404
+if (matched === null) throw new Response(null, { status: 404 });
 const answer = await matched.route.respond({
   ctx: await admin.requestCtx(request), params: matched.params, url: url.href,
   method: 'GET', form: null,                                     // or 'POST' + the parsed form
@@ -499,7 +516,14 @@ order (`ts_rank`), which no btree serves: deferred with ranking (plan 101-finish
 The admin exposes **its own MCP surface**, derived from the same resources and gated by the same authz — an agent sees exactly the tools its actor could have clicked.
 
 ```ts
-import { adminMcp, adminMcpTools } from '@ultimat3/admin';
+import { type AdminApp, adminMcp, adminMcpTools } from '@ultimat3/admin';
+import { type Actor, type Ctx } from '@ultimat3/core';
+
+declare function actorFor(token: string, facts: unknown): Actor;
+
+declare const admin: AdminApp;
+
+declare const ctx: Ctx;
 
 // apps/admin/mcp.ts — module scope: the mount serves every apps/<app>/mcp.ts, after the scan
 export const mcp = adminMcp({

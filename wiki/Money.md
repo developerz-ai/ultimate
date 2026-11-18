@@ -31,6 +31,8 @@ That is deliberate. `minor` is not a `bigint` because money is projected onto ev
 `scale` names the decimal places `minor` counts, **when they are not the currency's own**. Absent — the shape every value and every row already had — means the currency's natural minor unit: 2 for USD, 0 for JPY, 3 for KWD.
 
 ```ts
+import { fromMinor, toDecimalString } from '@ultimat3/money';
+
 fromMinor(1999, 'USD');            // $19.99      — no scale key, the currency's own minor unit
 fromMinor(2, 'USD', 6);            // $0.000002   — minor counts millionths
 toDecimalString(fromMinor(2, 'USD', 6));   // '0.000002'
@@ -314,6 +316,12 @@ the person, never round or guess.
 | OTel span attributes | `cost.minor` + `cost.currency` as separate attributes, never a formatted string |
 
 ```ts
+import { llm, type Prompt } from '@ultimat3/ai';
+import { t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+declare const summarizePrompt: Prompt<{ body: string }>;
+
 export const summarize = llm({
   model: 'claude-sonnet-5-5',
   input:  t.object({ postId: t.uuid }),

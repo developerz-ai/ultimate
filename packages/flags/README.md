@@ -67,6 +67,11 @@ the registrar to project. The eight primitives stay eight.
 
 ```ts
 import { isEnabled } from '@ultimat3/flags';
+import { type Actor } from '@ultimat3/core';
+
+declare const bank: { readonly id: string };
+
+declare const actor: Actor;
 
 if (isEnabled('checkout.new-tax-engine', actor)) {
   // …
@@ -152,6 +157,8 @@ context at all, every such call answers alike, and no single subject is split.
 ## Overrides, out of band
 
 ```ts
+import { applyFlagSnapshot } from '@ultimat3/flags';
+
 applyFlagSnapshot({ 'billing.dunning-emails': { default: false } });
 ```
 

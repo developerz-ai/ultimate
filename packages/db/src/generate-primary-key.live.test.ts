@@ -4,7 +4,7 @@
 // refuses the drop while another table's foreign key hangs off it (`2BP01`), which is the refusal
 // `primary-key.ts` raises one step earlier. Every table here is dropped on the way in and out.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import { diffSchema } from './drift';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
@@ -67,8 +67,12 @@ describe.skipIf(!hasPostgres)('live · postgres · changing a primary key', () =
 
   const before = posts(['id'], ['id', 'slug', 'org_id']);
 
-  beforeAll(async () => {
+  beforeAll(() => {
     client = postgresClient({ url: url ?? '' });
+  });
+
+  // Each test rekeys the table its own way, so each gets the populated original.
+  beforeEach(async () => {
     await teardown();
     await apply(generateMigration({ entities: [before], name: 'init', now: at }).up);
     await client.execute(
@@ -116,12 +120,6 @@ describe.skipIf(!hasPostgres)('live · postgres · changing a primary key', () =
     });
     await apply(migration.up);
     expect(await liveKey()).toEqual(['slug']);
-    await client.execute(raw(`alter table "${POSTS}" drop constraint "${POSTS}_pkey"`));
-    await client.execute(raw(`alter table "${POSTS}" add column "id" text`));
-    await client.execute(raw(`update "${POSTS}" set "id" = "slug"`));
-    await client.execute(
-      raw(`alter table "${POSTS}" add constraint "${POSTS}_pkey" primary key ("id")`),
-    );
   });
 
   test('the server refuses what the generator refuses: a key a foreign key hangs off', async () => {

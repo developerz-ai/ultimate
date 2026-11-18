@@ -72,6 +72,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 ## Type-level enforcement
 
 ```ts
+import { ld } from '@ultimat3/seo';
+
 ld.Article({ headline: 'Ship it', author: { name: 'Ada' } });
 //  ^ error: Property 'datePublished' is missing — required by schema.org
 ```
@@ -142,6 +144,8 @@ A CDN or `sharp`-backed transform implements `ImageTransformDriver` from `@ultim
 `@ultimat3/core`'s pipeline — zero dependencies, no `sharp`, no native binary.
 
 ```ts
+import { builtinImageDriver } from '@ultimat3/seo';
+
 const images = builtinImageDriver({ read: (src) => Bun.file(`public${src}`).bytes() });
 
 // a 1200x630 source
@@ -179,6 +183,11 @@ The two lists are `@ultimat3/core`'s `DECODABLE_FORMATS` and `ENCODABLE_FORMATS`
 back, so a server route never hand-rolls its own parsing of what `responsiveImage()` wrote.
 
 ```ts
+import { parseImageQuery } from '@ultimat3/seo';
+
+declare const intrinsicWidth: number;
+declare const src: string;
+
 const query = parseImageQuery(new URL(req.url).searchParams);
 // null: none of w/f/q was present — a plain asset read, not a transform.
 if (query !== null) {
@@ -208,9 +217,24 @@ if (query !== null) {
 ## Usage
 
 ```ts
+import { defineRoute } from '@ultimat3/render';
+import { ld } from '@ultimat3/seo';
+import { entity, text, timestamp, uuid } from '@ultimat3/entity';
+
+declare function listPostSlugs(): Promise<readonly string[]>;
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    title: text(),
+    publishedAt: timestamp().nullable(),
+  },
+});
+
 export const config = defineRoute({
   render: 'isr',
-  prerender: () => db.posts.slugs(),
+  prerender: () => listPostSlugs(),
   meta: ({ post }) => ({
     title: post.title,
     titleTemplate: '%s — Ultimate',

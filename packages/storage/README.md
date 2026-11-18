@@ -7,6 +7,9 @@ Named disks. **Call sites name a disk, never a driver.**
 ```ts
 import { defineStorage, disk, localDriver, s3Driver, scopedKey } from '@ultimat3/storage';
 
+declare const orgId: string;
+declare const bytes: Uint8Array;
+
 defineStorage({
   disks: {
     uploads: localDriver({ root: '.storage/uploads' }),
@@ -408,6 +411,18 @@ policy never allowed.
 
 ```ts
 // 1. server, inside an action's handle: mint the grant
+import { acceptSignedUpload, disk, grantUpload, uploadFile, uploadPolicy } from '@ultimat3/storage';
+import { type Ctx } from '@ultimat3/core';
+
+declare const secret: string;
+
+declare const request: Request;
+declare const filename: string;
+declare const ctx: Ctx;
+declare const contentType: string;
+declare const size: number;
+declare const bytes: Uint8Array;
+
 const grant = await grantUpload({
   disk: disk('uploads'),
   orgId: ctx.actor.orgId,            // the ACTOR's org, never one read off the request

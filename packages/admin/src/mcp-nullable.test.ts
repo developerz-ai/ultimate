@@ -88,11 +88,12 @@ describe("a nullable field's tool schema admits null", () => {
   });
 
   test('null for a NOT NULL column is still refused at the argument check', async () => {
+    const stored = await db.notes.where({}).count();
     const response = await create({ title: null });
     const refused =
       response?.error !== undefined ||
       (response?.result as { isError?: boolean } | undefined)?.isError === true;
     expect(refused).toBe(true);
-    expect(await db.notes.where({ title: 'kept' }).count()).toBe(1);
+    expect(await db.notes.where({}).count()).toBe(stored);
   });
 });

@@ -132,6 +132,8 @@ Each of the five, and `fingerprint`, `storeMode` and render's `contentHash`, has
 ## Errors are instructions
 
 ```ts
+import { UltimateError } from '@ultimat3/core';
+
 throw new UltimateError({
   code: 'X_DB_DRIFT',
   cause: 'table "posts" has column "publish_at" not present in any migration',
@@ -155,6 +157,8 @@ config faults, during the incident they were already causing. Classify the codes
 app throws once, beside the module that declares them:
 
 ```ts
+import { registerErrorRetry } from '@ultimat3/core';
+
 registerErrorRetry({ X_OAUTH_EXCHANGE_FAILED: 'retryable', X_RATE_LIMITED: 'retry-after' });
 ```
 
@@ -265,6 +269,10 @@ build: `error instanceof Error` runs a `Proxy`'s `getPrototypeOf` trap, and
 throws one line *before* the total renderer that was meant to make the path safe.
 
 ```ts
+import { renderThrowable, stringField } from '@ultimat3/core';
+
+declare const error: unknown;
+
 const code = stringField(error, 'code') ?? 'X_TRANSPORT_UNAVAILABLE';
 const cause = stringField(error, 'cause') ?? renderThrowable(error);
 ```
@@ -320,6 +328,10 @@ a job boundary the class is gone and the `code` is what survives — match on th
 ## Context
 
 ```ts
+import { agentActor, ctxOf, runWithContext, useContext, withChildContext } from '@ultimat3/core';
+
+declare function render(): Promise<void>;
+
 const ctx = ctxOf({ actor: agentActor({ id: 'mcp-1', scopes: ['post:publish'] }) });
 await runWithContext(ctx, async () => {
   const { actor, locale, tz, logger } = useContext();   // throws X_NO_CONTEXT outside
@@ -371,6 +383,14 @@ fetch one. Resolve the graph ONCE per request and hand it to the actor every sur
 carries:
 
 ```ts
+import { actorFact, userActor, withFacts } from '@ultimat3/core';
+import { can } from '@ultimat3/policy';
+
+declare const user: { readonly id: string; readonly name: string; readonly email: string; readonly role: string };
+type Viewer = { readonly staff: boolean };
+declare const viewer: Viewer;
+declare function canSee(viewer: Viewer, row: unknown): boolean;
+
 declare module '@ultimat3/core' {
   interface ActorFacts { readonly viewer: Viewer }   // declared once, app-wide
 }
@@ -433,6 +453,8 @@ Loading `.env` is **Bun's**, not ours. `envFileCandidates()` states what it does
 ## One environment, one key
 
 ```ts
+import { isLocal, isProduction, resolveEnvironment, tryResolveEnvironment } from '@ultimat3/core';
+
 resolveEnvironment();      // 'development' | 'test' | 'staging' | 'production'
 tryResolveEnvironment();   // the same, `undefined` instead of a throw for an unrecognised value
 isProduction();            // exact; nothing else counts
@@ -467,7 +489,13 @@ embedded PGlite included. Never a `DATABASE_URL` truthiness check: `x dev` sets 
 ## A secret is redacted by value, not by name
 
 ```ts
-const dsn = secret(process.env.DATABASE_URL ?? '', 'DATABASE_URL');
+import { type Logger, revealSecret, secret } from '@ultimat3/core';
+
+declare function connect(dsn: string): void;
+
+declare const logger: Logger;
+
+const dsn = secret(process.env['DATABASE_URL'] ?? '', 'DATABASE_URL');
 logger.info('boot', { dsn });        // {"dsn":"[redacted]"}
 connect(revealSecret(dsn));          // the one greppable way out
 ```
@@ -506,6 +534,8 @@ out. There is no vault integration and there will not be one — that is a platf
 
 ```ts
 // app.config.ts
+import { defineEnv, type EnvSchema, installSecrets } from '@ultimat3/core';
+
 await installSecrets();                       // secrets.enc.json → process.env, real env wins
 export const envSchema = {
   SESSION_SECRET: { type: 'string', secret: true },
@@ -663,6 +693,12 @@ match with `sealAll()`; uniqueness cannot be held across keys.
 ## Metrics: same seam as tracing, one signal over
 
 ```ts
+import { collectMetrics, counter, gauge, histogram, metricsText } from '@ultimat3/core';
+
+declare function pending(): number;
+
+declare const ms: number;
+
 const published = counter('posts_published_total', { description: 'posts published' });
 published.add(1, { plan: 'pro' });
 
@@ -757,6 +793,12 @@ raised at `parseSentryDsn`, at configuration, never at a report.
 ## One cursor, everywhere
 
 ```ts
+import { decodeCursor, encodeCursor } from '@ultimat3/core';
+
+declare const scope: string;
+
+declare const cursor: string;
+
 encodeCursor({ scope, key: ['2026-01-01T00:00:00.000Z'], id: 'p_9' }); // base64url(body).hmac
 decodeCursor(cursor, scope);                                          // or X_CURSOR_INVALID
 ```
@@ -970,6 +1012,10 @@ answers what an element carries.
 ## One image pipeline, everywhere
 
 ```ts
+import { blurDataUrl, probeImage, transformImageBytes } from '@ultimat3/core';
+
+declare const bytes: Uint8Array;
+
 probeImage(bytes);                                     // { format, width, height, mimeType }
 await transformImageBytes(bytes, { width: 640, format: 'webp', quality: 80 });
 await blurDataUrl(bytes);                              // ThumbHash PNG data: URI, the LQIP

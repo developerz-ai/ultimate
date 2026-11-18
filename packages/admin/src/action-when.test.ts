@@ -154,8 +154,9 @@ const status = (answer: { response: AdminRouteResponse }): number | string =>
 
 describe('unit · when(row) decides the button', () => {
   test('on the detail page: shown on a row it applies to, absent on one it does not', async () => {
-    expect((await ask(`${BASE}/${ids.idle}`)).html).toContain('ACTIVATE-BUTTON');
-    expect((await ask(`${BASE}/${ids.active}`)).html).not.toContain('ACTIVATE-BUTTON');
+    // The form's own field, not the label: the row's audit trail names a refused action too.
+    expect((await ask(`${BASE}/${ids.idle}`)).html).toContain('value="widget.activate"');
+    expect((await ask(`${BASE}/${ids.active}`)).html).not.toContain('value="widget.activate"');
   });
 
   test('on each list row — and the row it reads carries no sealed value', async () => {

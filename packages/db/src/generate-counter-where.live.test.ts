@@ -2,7 +2,7 @@
 // holds over it — insert, flip in and out, NULL, re-parent, delete — the migration's first recount
 // honours the same predicate, and the key-range recount repairs drift window by window.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration } from './generate';
@@ -82,11 +82,20 @@ describe.skipIf(!hasPostgres)('live · postgres · a counter with a where', () =
       sql`insert into ${raw(`"${LIKES}"`)} (id, post_id, kind) values (gen_random_uuid(), ${post}, ${kind})`,
     );
 
-  beforeAll(async () => {
-    client = postgresClient({ url: url ?? '', profile: { max: 4 } });
+  const dropTables = async (): Promise<void> => {
     for (const table of [LIKES, POSTS]) {
       await client.execute(raw(`drop table if exists "${table}" cascade`));
     }
+  };
+
+  beforeAll(() => {
+    client = postgresClient({ url: url ?? '', profile: { max: 4 } });
+  });
+
+  // Every test starts from the migration's own tables, two posts and no like: the triggers one
+  // test swaps and the counts it moves are never the next one's starting point.
+  beforeEach(async () => {
+    await dropTables();
     const up = generateMigration({ entities: entities(), name: 'where', now: new Date(0) }).up;
     for (const statement of statementsOf(up)) await client.execute(raw(statement));
     for (const id of ids)
@@ -94,9 +103,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a counter with a where', () =
   });
 
   afterAll(async () => {
-    for (const table of [LIKES, POSTS]) {
-      await client.execute(raw(`drop table if exists "${table}" cascade`));
-    }
+    await dropTables();
     await client.close();
   });
 
@@ -110,6 +117,11 @@ describe.skipIf(!hasPostgres)('live · postgres · a counter with a where', () =
 
   test('flipping a predicate column moves the count both ways', async () => {
     const likes = raw(`"${LIKES}"`);
+    await like(A, 'up');
+    await like(A, 'up');
+    await like(A, 'down');
+    await like(A, null);
+    expect(await counts()).toEqual([2, 0]);
     await client.execute(sql`update ${likes} set kind = 'up' where kind = 'down'`);
     expect(await counts()).toEqual([3, 0]);
     await client.execute(
@@ -126,6 +138,10 @@ describe.skipIf(!hasPostgres)('live · postgres · a counter with a where', () =
 
   test('the key-range recount repairs every window and leaves a true counter alone', async () => {
     const posts = raw(`"${POSTS}"`);
+    await like(B, 'up');
+    await like(B, 'up');
+    await like(B, 'down');
+    expect(await counts()).toEqual([0, 2]);
     await client.execute(sql`update ${posts} set up_count = 9`);
     const drifted: string[] = [];
     let after: string | null = null;
@@ -148,10 +164,6 @@ describe.skipIf(!hasPostgres)('live · postgres · a counter with a where', () =
   });
 
   test('rolling back a changed where restores the old trigger AND counts under it', async () => {
-    const posts = raw(`"${POSTS}"`);
-    const likes = raw(`"${LIKES}"`);
-    await client.execute(sql`delete from ${likes}`);
-    await client.execute(sql`update ${posts} set up_count = 0`);
     await like(A, 'up');
     await like(A, 'down');
     expect(await counts()).toEqual([1, 0]);

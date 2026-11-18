@@ -240,6 +240,7 @@ in the transcript all session:
 
 ```ts
 import { assertMcpSurfaceBudget } from '@ultimat3/mcp';
+import { test } from 'bun:test';
 
 test('the staff surface stays small', async () => {
   // The derivation beside the number: the size measureMcpSurface reported, × a margin.
@@ -339,6 +340,10 @@ name, same file; the order is the contract:
 
 ```ts
 // apps/web/mcp.ts
+import { defineAppMcp, type McpOAuth } from '@ultimat3/mcp';
+
+declare const oauth: McpOAuth;
+
 export const mcp = [
   defineAppMcp({ name: 'acme', include: 'exposed', scopes: CUSTOMER_SCOPES, resolveToken: customerToken, oauth }),
   defineAppMcp({ name: 'acme-admin', path: '/mcp/admin', tools: staffTools, surface: 'meta', groups, scopes: STAFF_SCOPES, resolveToken: staffToken, oauth }),
@@ -373,6 +378,8 @@ where `2025-06-18` required it; `2025-03-26` defines none, its discovery being R
 authorization-server metadata at the origin:
 
 ```ts
+import { defineAppMcp } from '@ultimat3/mcp';
+
 export const mcp = defineAppMcp({
   include: 'exposed',
   scopes: MCP_SCOPES,
@@ -618,6 +625,12 @@ LLM-generated context files measurably reduce task success. A model writing "her
 One typed entry point for model calls — provider-agnostic, observable, cached, evaluated.
 
 ```ts
+import { llm, type Prompt } from '@ultimat3/ai';
+import { t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+declare const summarizePrompt: Prompt<{ body: string }>;
+
 export const summarize = llm({
   model: 'claude-sonnet-5-5',
   input:  t.object({ postId: t.uuid }),

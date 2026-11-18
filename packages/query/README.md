@@ -5,14 +5,28 @@ A read. Optionally live. Never a mutation — writes are `action`.
 `bun add @ultimat3/query` · guide: [Queries And Live Queries](https://github.com/developerz-ai/ultimate/wiki/Queries-And-Live-Queries)
 
 ```ts
-import { query, t } from '@ultimat3/query';
+import { from, query, t } from '@ultimat3/query';
+import { can } from '@ultimat3/policy';
+import { database, entity, timestamp, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), createdAt: timestamp().defaultNow() },
+});
+const db = database({ posts });
+type Post = typeof posts.$row;
+declare const orgId: string;
 
 export const liveFeed = query({
   input: t.object({ orgId: t.uuid }),
   policy: can('feed:read'),
   live: true,
   mcp: { expose: true, description: 'The org feed' },
-  sql: ({ orgId }) => db.posts.where({ orgId }).orderBy('createdAt').limit(50),
+  sql: ({ orgId }) =>
+    from<Post>('posts', () => db.posts.where({ orgId }).all())
+      .where({ orgId })
+      .orderBy('createdAt')
+      .limit(50),
 });
 
 const rows = await liveFeed({ orgId });        // typed rows, policy enforced
@@ -50,6 +64,9 @@ feature:
 ```ts
 import { queryClient } from '@ultimat3/query';
 import type { Api } from '../api';                 // a TYPE, so no module-graph edge
+
+declare const baseUrl: string;
+declare const slug: string;
 
 export const queries = queryClient<Api['queries']>({ baseUrl });
 const [post] = await queries.publicPost({ slug }); // typed input, typed rows
@@ -203,6 +220,8 @@ rows (`explainQuery`, `describeSql`), and the shared, subject-less window a sync
 `(query, input)`. Both say so, in words:
 
 ```ts
+import { sourceFor } from '@ultimat3/query';
+
 const source = await sourceFor(target, input, {
   unenforced: 'a scaffolded test asserts the SQL text; the policy is asserted separately',
 });

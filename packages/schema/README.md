@@ -140,6 +140,8 @@ disappears from `openapi.json`, the MCP tool schema, the typed client and every 
 once — axiom 2 broken for every such rule in the product.
 
 ```ts
+import { t } from '@ultimat3/schema';
+
 const booking = t.object({ startDate: t.date, endDate: t.date }).refine({
   name: 'end-after-start',                       // stable id → `x-ultimate-refinements`
   message: 'endDate must be after startDate',    // the rule, never the value
@@ -163,6 +165,8 @@ validator), and states the flags in `description` for a reader.
 ### `discriminatedUnion` names the branch it judged
 
 ```ts
+import { t } from '@ultimat3/schema';
+
 const body = t.discriminatedUnion(
   'kind',
   t.object({ kind: t.literal('post'), slug: t.slug }),
@@ -186,6 +190,8 @@ provider swap.
 ## Errors tell an agent exactly what to send
 
 ```ts
+import { parse, t } from '@ultimat3/schema';
+
 parse(t.object({ postId: t.uuid, notify: t.boolean }), { postId: 'abc', notify: 'yes' }, 'input');
 ```
 
@@ -268,6 +274,14 @@ swap. `introspect()` is what OpenAPI/MCP generation needs; a provider without it
 ## JSON Schema and coercion
 
 ```ts
+import { coerceQuery, numeric, parse, toJsonSchema, toWireOutputSchema, toWireSchema } from '@ultimat3/schema';
+import { type Action, t } from '@ultimat3/action';
+
+declare const url: URL;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+
 toJsonSchema(publishPost);                    // OpenAPI 3.1 (2020-12)
 toWireSchema(publishPost);                    // an MCP tool's inputSchema: what tools/list serves
 toWireOutputSchema(publishPost);              // its outputSchema: structure only; undefined for a non-object root

@@ -2,10 +2,11 @@
 // prebuilt store (`island-store.ts`) verified only its own chunk bytes, so a source edited after
 // `x build --target prebuilt` still verified and a boot served the chunk built from the old one.
 
-// why: Bun ships no path join/resolve/relative primitive.
-import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
+// why: Bun ships no path join/resolve primitive.
+import { isAbsolute, join, posix, resolve } from 'node:path';
 import { contentHash } from '@ultimat3/render/server';
 import { hasPathSegment } from './path-segments';
+import { posixRelative } from './posix-path';
 
 /**
  * App-root-relative POSIX paths of the files an output was built from — its source map's
@@ -49,7 +50,7 @@ export async function sourcesOnDisk(root: string, map: unknown): Promise<SourceP
   const cwd = process.cwd();
   const paths = (Array.isArray(listed) ? listed : [])
     .filter((one): one is string => typeof one === 'string')
-    .map((one) => relative(root, resolve(cwd, one)).split(sep).join('/'))
+    .map((one) => posixRelative(root, resolve(cwd, one)))
     .filter(isRecordableSource);
   const present = await Promise.all(paths.map((one) => Bun.file(join(root, one)).exists()));
   return [...new Set(paths.filter((_, index) => present[index]))].sort();

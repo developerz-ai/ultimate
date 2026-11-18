@@ -7,6 +7,12 @@ every string is an i18n key, every colour is a design token, and delivery is a j
 
 ```ts
 import { defineMail, send, blocks, t } from '@ultimat3/mail';
+import { type Ctx } from '@ultimat3/core';
+
+declare const user: { readonly id: string; readonly name: string; readonly email: string; readonly role: string };
+
+declare const url: string;
+declare const ctx: Ctx;
 
 export const receiptMail = defineMail({
   id: 'receipt',

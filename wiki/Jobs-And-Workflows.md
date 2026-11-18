@@ -10,6 +10,23 @@ Two factories return a `job` rather than a ninth primitive, so everything on thi
 
 ```ts
 // job
+import { job } from '@ultimat3/jobs';
+import { t } from '@ultimat3/action';
+import { type AnyMailDefinition } from '@ultimat3/mail';
+
+declare const welcomeEmail: AnyMailDefinition;
+declare const nudgeEmail: AnyMailDefinition;
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly orgs: {
+      provision(id: string): Promise<{ id: string; name: string }>;
+      byId(id: string): Promise<{ id: string; name: string }>;
+    };
+    readonly mail: { send(mail: unknown, to: unknown): Promise<void> };
+  }
+}
+
 export const onboardOrg = job({
   input: t.object({ orgId: t.uuid }),
   tenant: ({ orgId }) => orgId,               // the org this run acts as
@@ -219,6 +236,9 @@ export async function onDocSaved(docId: string, revision: number): Promise<void>
 Declared per job, held across the fleet.
 
 ```ts
+import { job } from '@ultimat3/jobs';
+import { t } from '@ultimat3/action';
+
 export const syncCrm = job({
   input: t.object({ orgId: t.uuid, accountId: t.uuid }),
   tenant: ({ orgId }) => orgId,
@@ -380,6 +400,15 @@ Every operator capability is a member of `JobIntrospection` (`driver.introspect`
 | how a run ended | `job({ onSettled })` — `completed` (with what `run` returned), `dead-lettered`, `dropped` or `refused`; after the row is settled, under the job's tenant, three tries of its own, on a live `ctx.signal` under `onSettledTimeout` (30 s by default): its `fetch` and its writes land | at least once across a crash (`redriven: true` on the re-drive), but at most once for a completion whose body returned a value; a hook that keeps failing is `X_JOB_ON_SETTLED_FAILED`, logged and reported, and the row is untouched. A cancel is not a settlement: whoever cancels is the observer |
 
 ```ts
+import { job } from '@ultimat3/jobs';
+import { t } from '@ultimat3/action';
+
+declare function syncRow(row: { readonly id: string }): Promise<void>;
+declare function loadRows(id: string): Promise<readonly { readonly id: string }[]>;
+
+declare function markAccountBroken(id: string, code: string): Promise<void>;
+declare function markAccountSynced(id: string, rows: number): Promise<void>;
+
 export const syncAccount = job({
   input: t.object({ accountId: t.uuid, orgId: t.uuid }),
   tenant: ({ orgId }) => orgId,
@@ -671,6 +700,8 @@ loop over its own subscription table. Do not hand-write a delivery job.
 ```ts
 import { memoryWebhookLedger, webhook } from '@ultimat3/jobs';
 
+declare function subscribersOf(event: string): Promise<readonly { readonly id: string; readonly url: string }[]>;
+
 export const deliver = webhook({
   name: 'partner.webhooks',          // required: a durable queue key
   tenant: ({ orgId }) => orgId,      // the org that owns the endpoint — or 'none'
@@ -814,6 +845,9 @@ export const paymentEvents = webhookReceiver({
 One interface. **Job code never changes.** Step persistence hangs off the same object (`steps`), so it is identical on every implementation. It is the `jobs` adapter port: the interface is on `@ultimat3/jobs/adapter`, `memoryJobDriver` is the driver to copy, `behavesLike(jobDriverConformance, () => yourDriver())` proves one, and `jobs:` in `apps/<app>/runtime.ts` wires it — [Adapters](Adapters#jobs). The bus `step.waitForEvent` resumes from (`eventBus`) and the store behind the outbox (`outboxStore`) are two more ports, swapped the same way and no other: [Adapters](Adapters#eventbus), [Adapters](Adapters#outboxstore).
 
 ```ts
+import { type BackfillLedger, type ClaimedJob, type ClaimOptions, type EnqueueRequest, type EnqueueResult, type JobIntrospection, type LeaseStore, type NackOptions, type QueueStats, type StepStore } from '@ultimat3/jobs';
+import { type HeartbeatOptions } from '@ultimat3/jobs/adapter';
+
 export interface JobDriver {
   readonly name: string;
   /** Step persistence lives with the queue: one store, one transaction boundary. */
@@ -908,6 +942,14 @@ Full index: [Error codes](Error-Codes). Verbatim error shapes live in each packa
 
 ```ts
 // job test — the step guarantee, not the happy path
+import { expect, test } from '@ultimat3/testing';
+import { type JobHandle } from '@ultimat3/jobs';
+import { type AnyMailDefinition } from '@ultimat3/mail';
+
+declare const nudgeEmail: AnyMailDefinition;
+
+declare const onboardOrg: JobHandle<{ orgId: string }>;
+
 test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) => {
   const { org } = await seed('fresh-org');
   mail.failOnce(nudgeEmail);

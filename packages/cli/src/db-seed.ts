@@ -7,7 +7,7 @@
 
 // why: `node:path` for the joiner and the app-root-relative spelling every finding is keyed by; Bun
 // exposes neither.
-import { relative, sep } from 'node:path';
+
 import type { Environment } from '@ultimat3/core';
 import { UltimateError } from '@ultimat3/core';
 import type { Driver, Seed, SeedTier } from '@ultimat3/entity';
@@ -16,6 +16,7 @@ import { BadFlagError } from './errors';
 import type { Finding, JsonValue } from './output';
 import { findingFrom } from './output';
 import { hasPathSegment } from './path-segments';
+import { posixRelative } from './posix-path';
 import { quoteArg } from './shell-quote';
 import { isTest } from './source-files';
 import { renderTable } from './table';
@@ -104,7 +105,7 @@ export async function discoverSeeds(root: string): Promise<SeedDiscovery> {
   const seen = new Set<string>();
   for (const pattern of SEED_GLOBS) {
     for await (const absolute of new Bun.Glob(pattern).scan({ cwd: root, absolute: true })) {
-      const file = relative(root, absolute).split(sep).join('/');
+      const file = posixRelative(root, absolute);
       // Root-relative, as `loadApp` tests it: an absolute path under `my.test.app/` is no test.
       if (hasPathSegment(absolute, 'node_modules') || isTest(file)) continue;
       if (seen.has(absolute)) continue;

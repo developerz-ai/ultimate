@@ -248,14 +248,17 @@ describe('unit · adminRepoFor over a typed handle', () => {
   });
 
   test('find, update and destroy address one row', async () => {
-    const id = ids[0] ?? '';
-    expect((await repo.find(id))?.['title']).toBe('a');
-    expect((await repo.update(id, { title: 'A' }))['title']).toBe('A');
+    // Its own row: the five every other test reads stay as they were seeded.
+    const id = String((await repo.create({ title: 'own', rank: 9 }))['id']);
+    const other = ids[0] ?? '';
+    expect((await repo.find(id))?.['title']).toBe('own');
+    expect((await repo.update(id, { title: 'OWN' }))['title']).toBe('OWN');
     // A patch stays a patch: the column it did not name is untouched.
-    expect((await repo.find(id))?.['rank']).toBe(1);
-    const extra = String((await repo.create({ title: 'gone', rank: 9 }))['id']);
-    await repo.destroy(extra);
-    expect(await repo.find(extra)).toBeNull();
+    expect((await repo.find(id))?.['rank']).toBe(9);
+    expect((await repo.find(other))?.['title']).toBe('a');
+    await repo.destroy(id);
+    expect(await repo.find(id)).toBeNull();
+    expect((await repo.find(other))?.['title']).toBe('a');
   });
 
   test('an id the primary key column rejects never reaches the driver', async () => {

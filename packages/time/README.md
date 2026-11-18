@@ -62,6 +62,9 @@ mutable `Date` that a single `setUTCFullYear` corrupted for the whole process.
 
 ```ts
 import { formatWithOffset, fromIso, nextLocalSlot, now, toZoned } from '@ultimat3/time';
+import { type Clock } from '@ultimat3/core';
+
+declare const clock: Clock;
 
 const at = fromIso('2026-03-14T08:00:00Z');
 formatWithOffset(at, { locale: 'en-GB', zone: 'Europe/Berlin' });

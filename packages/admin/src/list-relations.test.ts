@@ -172,6 +172,19 @@ const ask = (role: string, path: string): Promise<Answer> =>
     },
   );
 
+/** Runs `body` with the owners past the select ceiling, then puts the small target back. */
+const withManyOwners = async (body: () => Promise<void>): Promise<void> => {
+  const extra: string[] = [];
+  for (let index = 10; index < 60; index += 1) {
+    extra.push(String((await db.owners.insert({ name: `Owner ${index}` })).id));
+  }
+  try {
+    await body();
+  } finally {
+    for (const id of extra) await db.owners.delete(id);
+  }
+};
+
 describe('unit · a reference cell shows the target’s label, read in one batch', () => {
   test('50 rows referencing 10 owners issue ONE read of owners — not 50, and not 10', async () => {
     const answer = await ask('reader', BASE);
@@ -209,14 +222,15 @@ describe('unit · a reference cell shows the target’s label, read in one batch
   });
 
   test('a target past the select ceiling costs one more read, and the filter becomes a lookup link', async () => {
-    for (let index = 10; index < 60; index += 1) await db.owners.insert({ name: `Owner ${index}` });
-    const answer = await ask('reader', BASE);
-    // The probe that found it too large, then the labels of the ids on the page.
-    expect(answer.issued.filter((one) => one.startsWith('admin_rel_owners.'))).toHaveLength(2);
-    expect(answer.issued).toHaveLength(5);
-    expect(answer.html).toContain('>Owner 3</a>');
-    expect(answer.html).not.toContain(`<option value="${ownerIds[0]}">`);
-    expect(answer.html).toContain('href="/admin/admin_rel_owners/lookup?return=');
+    await withManyOwners(async () => {
+      const answer = await ask('reader', BASE);
+      // The probe that found it too large, then the labels of the ids on the page.
+      expect(answer.issued.filter((one) => one.startsWith('admin_rel_owners.'))).toHaveLength(2);
+      expect(answer.issued).toHaveLength(5);
+      expect(answer.html).toContain('>Owner 3</a>');
+      expect(answer.html).not.toContain(`<option value="${ownerIds[0]}">`);
+      expect(answer.html).toContain('href="/admin/admin_rel_owners/lookup?return=');
+    });
   });
 
   test('a target the actor may not read is an id with no name, no link and no read', async () => {
@@ -255,20 +269,24 @@ describe('unit · the lookup screen is the picker, with no script', () => {
   });
 
   test('it pages by keyset, and the next link keeps the term and the way back', async () => {
-    // 60 owners by now, 50 to a page.
-    const back = encodeURIComponent(BASE);
-    const first = await ask(
-      'reader',
-      `/admin/admin_rel_owners/lookup?term=Owner&return=${back}&as=f.ownerId`,
-    );
-    const next = /<a href="([^"]+)"[^>]*rel="next"/.exec(first.html)?.[1]?.replaceAll('&amp;', '&');
-    expect(next).toContain('/admin/admin_rel_owners/lookup?term=Owner&return=');
-    expect(next).toContain('&as=f.ownerId&cursor=');
-    const second = await ask('reader', next ?? '');
-    expect(second.response.kind === 'document' && second.response.status).toBe(200);
-    expect(second.html).toContain('rel="prev"');
-    // The second page's results still link back to the list with the filter set.
-    expect(second.html).toContain(`href="${BASE}?f.ownerId=`);
+    // 60 owners, 50 to a page.
+    await withManyOwners(async () => {
+      const back = encodeURIComponent(BASE);
+      const first = await ask(
+        'reader',
+        `/admin/admin_rel_owners/lookup?term=Owner&return=${back}&as=f.ownerId`,
+      );
+      const next = /<a href="([^"]+)"[^>]*rel="next"/
+        .exec(first.html)?.[1]
+        ?.replaceAll('&amp;', '&');
+      expect(next).toContain('/admin/admin_rel_owners/lookup?term=Owner&return=');
+      expect(next).toContain('&as=f.ownerId&cursor=');
+      const second = await ask('reader', next ?? '');
+      expect(second.response.kind === 'document' && second.response.status).toBe(200);
+      expect(second.html).toContain('rel="prev"');
+      // The second page's results still link back to the list with the filter set.
+      expect(second.html).toContain(`href="${BASE}?f.ownerId=`);
+    });
   });
 
   test('opened on its own, a result opens the row', async () => {

@@ -293,6 +293,9 @@ export const health = (
 
 
 ```tsx
+import { AppShell, Button, DataTable, PageHeader, Section, Toolbar } from '@ultimat3/ui';
+import { t } from '@ultimat3/i18n';
+
 <AppShell header={<Toolbar label={t('nav.main')}>{nav}</Toolbar>} sidebar={<SideNav />}>
   <PageHeader
     title={t('orders.title')}

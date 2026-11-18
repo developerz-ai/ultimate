@@ -18,11 +18,32 @@ Tier 2 covers ~90% of "make it realtime". Tier 3 buys exactly one extra property
 
 ```ts
 // query
+import { from, query } from '@ultimat3/query';
+import { mutator, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+import { database, entity, integer, timestamp, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    likeCount: integer().default(0),
+    createdAt: timestamp().defaultNow(),
+  },
+});
+const db = database({ posts });
+type Post = typeof posts.$row;
+
 export const liveFeed = query({
   input: t.object({ orgId: t.uuid }),
   policy: can('feed:read'),
   live: true,
-  sql: ({ orgId }) => db.posts.where({ orgId }).orderBy('createdAt').limit(50),
+  sql: ({ orgId }) =>
+    from<Post>('posts', () => db.posts.where({ orgId }).all())
+      .where({ orgId })
+      .orderBy('createdAt')
+      .limit(50),
 });
 
 // mutator (action + optimistic local twin)

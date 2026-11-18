@@ -182,6 +182,12 @@ describe('unit · defineAdmin’s auth defaults', () => {
 
 describe('unit · roleAuthz', () => {
   test('a name that is not resource:verb, or that nothing declared, is DENIED — never thrown', () => {
+    // An EMPTY registry knows every name, so "nothing declared it" needs a declared neighbour.
+    definePermissions(['admin_bind_posts:read']);
+    defineRoles({
+      ...previousRoles,
+      bind_reader: { grants: ['admin:read', 'admin_bind_posts:read'] },
+    });
     const authz = roleAuthz();
     const actor = { id: 'u', roles: ['bind_reader'] };
     for (const permission of ['not-a-permission', 'admin_bind_nowhere:read']) {
@@ -304,6 +310,8 @@ describe('unit · policyAuthz decides an unmapped permission by the role map', (
   });
 
   test('a permission nothing declared is still refused, with the fix in the trace', () => {
+    definePermissions(['admin_bind_posts:read']);
+    defineRoles({ ...previousRoles, bind_ops: { grants: ['admin:read', 'job:read'] } });
     const decision = policyAuthz({ policies: {} }).decide({
       permission: 'admin_bind_nowhere:read',
       actor: { id: 'u', roles: ['bind_ops'] },

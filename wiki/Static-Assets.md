@@ -180,6 +180,7 @@ A test that renders a page calling `asset()` without loading the app installs a 
 
 ```ts
 import { setAssetResolver } from '@ultimat3/render';
+import { afterAll, beforeAll } from 'bun:test';
 
 beforeAll(() => setAssetResolver((path) => `/${path}`));
 afterAll(() => setAssetResolver(undefined));

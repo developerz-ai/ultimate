@@ -104,6 +104,9 @@ A `level` outside 1–6 throws `X_UI_INVALID_VALUE` rather than emitting an `<h7
 `Button` has no `href`. A link that looks like a button is `<Link appearance="button">`; a pager on a server-rendered list is `<Pagination hrefFor>`. Neither needs an island.
 
 ```tsx
+import { Link, listUrl, Pagination } from '@ultimat3/ui';
+import { t } from '@ultimat3/i18n';
+
 <Link appearance="button" variant="secondary" size="sm" href="/posts/new">{t('posts.new')}</Link>
 
 // `page` is a framework `Page` (a query's `.page()`): `nextCursor` is `string | null`, handed as is.

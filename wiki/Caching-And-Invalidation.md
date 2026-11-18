@@ -35,6 +35,17 @@ Read order is **1 → 2 → 3 → origin**. A tier is never consulted for a requ
 A tag is a typed handle derived from an [entity](Entities-And-Migrations). There is no string-keyed invalidation API.
 
 ```ts
+import { entity, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const tags = entity('tags', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+
 export const tag = tags({
   post: entityTag(posts),                       // tag.post, tag.post.id(x)
   feed: derivedTag('feed', [tags.post]),        // invalidating post cascades to feed
@@ -60,10 +71,30 @@ The graph is a build-time artifact in `x.manifest.json`, so it records exactly w
 
 ```ts
 // action
+import { action, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+import { tag } from '@ultimat3/cache';
+import { type JobHandle } from '@ultimat3/jobs';
+import { type Actor } from '@ultimat3/core';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string, tx?: unknown): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
+declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+
 export const publishPost = action({
   input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
-  policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
@@ -203,6 +234,11 @@ CDN never fails the write that triggered the bust, and the entry expires by TTL 
 Model calls are slow and metered; exact-match caching almost never hits because prompts differ by a word.
 
 ```ts
+import { llm, type Prompt } from '@ultimat3/ai';
+import { tag } from '@ultimat3/cache';
+
+declare const summarizePrompt: Prompt<{ body: string }>;
+
 export const summarize = llm({
   model: 'claude-sonnet-5-5',
   cache: {

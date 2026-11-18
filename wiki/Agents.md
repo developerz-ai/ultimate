@@ -734,6 +734,15 @@ export const triageBacklog = hive({
 ### Three member outcomes, never two
 
 ```ts
+import { type Ctx } from '@ultimat3/core';
+
+declare function retryLater(index: number, reason: string): void;
+declare function use(index: number, value: unknown): void;
+declare function log(index: number, code: string, reason: string): void;
+
+declare const orderIds: readonly string[];
+declare const ctx: Ctx;
+
 const result = await triageBacklog({ orderIds }, { ctx });
 
 for (const member of result.members) {

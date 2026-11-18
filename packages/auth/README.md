@@ -9,6 +9,10 @@ authorizes on a session row, a user row or an api key — http, actions, jobs an
 ```ts
 import { defineAuth, login, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';
 
+declare const email: string;
+declare const password: string;
+declare const ip: string;
+
 export const auth = defineAuth({
   adapter: postgresAuthAdapter(),          // or memoryAuthAdapter(), or your Better Auth binding
   session: { absoluteTtlMs: 30 * 864e5, idleTtlMs: 7 * 864e5 },
@@ -57,6 +61,13 @@ account survive 15 guesses and hides each replica's lockout from the other two. 
 more than one process says so and brings a limiter that says the same:
 
 ```ts
+import { type AuthAdapter, defineAuth } from '@ultimat3/auth';
+import { type RateLimitStore } from '@ultimat3/http';
+
+declare const myLimiter: RateLimitStore;
+
+declare const adapter: AuthAdapter;
+
 defineAuth({
   adapter,
   rateLimit: { maxAttempts: 5, scope: 'shared' },  // the whole fleet's allowance
@@ -98,6 +109,12 @@ same JWT: a Kubernetes projected service-account token, a SPIFFE JWT-SVID, and a
 It is also the shape RFC 8693's `subject_token` takes.
 
 ```ts
+import { actorFromService, jwksClient, verifyWorkloadToken } from '@ultimat3/auth';
+import { type Clock } from '@ultimat3/core';
+
+declare const clock: Clock;
+declare const token: string;
+
 const { identity } = await verifyWorkloadToken({
   token,
   issuers: ['https://kubernetes.default.svc'],
@@ -364,6 +381,14 @@ export const login = oauthLogin(auth, {
 ```
 
 ```ts
+import { providerFor, providerJwks, verifyIdToken } from '@ultimat3/auth';
+import { type Clock } from '@ultimat3/core';
+
+declare const clock: Clock;
+declare const clientId: string;
+declare const idToken: string;
+declare const nonce: string;
+
 const keys = providerJwks(providerFor('bigco-sso'));
 const claims = await verifyIdToken({ provider: 'bigco-sso', idToken, clientId, nonce, clock, keys });
 ```
@@ -386,6 +411,13 @@ throws before the query is built. SSO "works" and the person can do nothing unti
 SQL, so the omission logs `auth.oauth.user_created_without_grants` rather than passing silently.
 
 ```ts
+import { type Auth, oauthLogin } from '@ultimat3/auth';
+
+declare const directory: { lookup(email: string): Promise<{ orgId: string; groups: readonly string[] }> };
+
+declare const auth: Auth;
+declare function toRole(group: string): string;
+
 oauthLogin(auth, {
   resolveGrants: async (profile) => {
     const member = await directory.lookup(profile.email);
@@ -945,6 +977,10 @@ seams — but they are the seams, not the path.
 ### Account linking
 
 ```ts
+import { type AuthAdapter, defineAuth } from '@ultimat3/auth';
+
+declare const adapter: AuthAdapter;
+
 defineAuth({ adapter, providers: ['github'], link: 'verified-email' })  // the default
 ```
 

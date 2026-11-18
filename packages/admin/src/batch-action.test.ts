@@ -121,7 +121,6 @@ describe('unit · a batch runs each row through the button’s gate', () => {
     const two = await insert('two');
     const locked = await insert('locked');
     const context = ctx();
-    const before = (await admin.audit.entries({ limit: 200 })).length;
 
     const result = await runAdminBatch({
       resource,
@@ -135,11 +134,11 @@ describe('unit · a batch runs each row through the button’s gate', () => {
       { id: locked, outcome: 'refused', reason: 'probe.locked-row' },
     ]);
     expect(ran).toEqual([one, two]);
-    const entries = (await admin.audit.entries({ limit: 200 })).slice(
-      0,
-      (await admin.audit.entries({ limit: 200 })).length - before,
+    // By this test's own rows: the log is shared with the file's other batches, and capped.
+    const mine = new Set([one, two, locked]);
+    const actionEntries = (await admin.audit.entries({ limit: 200 })).filter(
+      (entry) => entry.operation === 'item.activate' && mine.has(String(entry.entityId)),
     );
-    const actionEntries = entries.filter((entry) => entry.operation === 'item.activate');
     expect(actionEntries.map((entry) => [entry.entityId, entry.outcome]).reverse()).toEqual([
       [one, 'allowed'],
       [two, 'allowed'],

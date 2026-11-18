@@ -43,10 +43,21 @@ The edit an agent should make is the route's `offline` field, and `x build` read
 ## Derived from the route
 
 ```ts
+import { defineRoute } from '@ultimat3/render';
+import { tag } from '@ultimat3/cache';
+import { ld } from '@ultimat3/seo';
+import { entity, text, uuid } from '@ultimat3/entity';
+
+declare function listPostSlugs(): Promise<readonly string[]>;
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), title: text() },
+});
+
 export const config = defineRoute({
   render:     'isr',                  // static | isr | ssr | stream
   revalidate: { tags: [tag.post] },
-  prerender:  () => db.posts.slugs(),
+  prerender:  () => listPostSlugs(),
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
   budget:     { js: '40kb' },

@@ -228,9 +228,8 @@ function positionalFault(spec: CommandSpec, sub: string, word: string): Citation
  * parses, so a resolution that only asked "is this a known name" would accept `x logs tail` — the
  * exact citation that throws `X_NOT_IMPLEMENTED` at the reader.
  *
- * Flags are NOT judged on a planned command. `cmd-planned.ts` builds its spec from a name, a
- * summary and a usage line and declares no flags at all, so every flag its own usage line documents
- * would read as unknown — while the real refusal is `X_NOT_IMPLEMENTED` one level up.
+ * Flags are NOT judged on a planned command: a `CommandCatalog` row names it and declares no flags,
+ * so every flag would read as unknown — while the real refusal is `X_NOT_IMPLEMENTED` one level up.
  */
 export function citationFault(
   citation: FixCitation,

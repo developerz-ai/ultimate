@@ -177,6 +177,13 @@ than a missing method three awaits into a later test.
 An app adds its own with `defineFixtures` and widens the type by augmenting `Fixtures`:
 
 ```ts
+import { defineFixtures, type SeedHandle } from '@ultimat3/testing';
+import { type Actor } from '@ultimat3/core';
+
+declare function actorFor(token: string, facts: unknown): Actor;
+
+declare function loadSeed(): Promise<void>;
+
 defineFixtures({ seed: () => loadSeed, actorFor: () => actorFor });
 
 declare module '@ultimat3/testing' {
@@ -298,6 +305,10 @@ schema-checked. `As of 2026-11`.
 ## An N+1 fails the test it happened in
 
 ```ts
+import { expect, test } from '@ultimat3/testing';
+
+declare function renderFeed(): Promise<void>;
+
 test('the feed reads its authors once', async ({ statements }) => {
   await renderFeed();                              // a per-row findById throws here:
   //   X_N_PLUS_ONE_QUERY: members.findById ran 5 times in one request — one read per row
@@ -377,6 +388,19 @@ themselves, not from a directory convention.
 
 ```ts
 import { belongsTo, defineFactory, hasMany } from '@ultimat3/testing';
+import { entity, text, timestamp, uuid } from '@ultimat3/entity';
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey(), name: text() } });
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    title: text(),
+    status: text().default('draft'),
+    publishedAt: timestamp().nullable(),
+  },
+});
 
 const orgFactory = defineFactory(orgs, {
   defaults: (n, ids) => ({ id: ids.uuid(), slug: `org-${n}`, name: `Org ${n}` }),
@@ -498,6 +522,14 @@ bound, one sent inside `expectedSeqScan(reason, fn)` or on an entity that declar
 ## Shared examples
 
 ```ts
+import { behavesLike, sharedExamples } from '@ultimat3/testing';
+import { type Action, t } from '@ultimat3/action';
+import { describe, expect, test } from 'bun:test';
+
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+
 const anAuthenticatedAction = sharedExamples<Action>('an authenticated action', (subject) => {
   test('denies an anonymous actor', async () => {
     // The POLICY is the receiver and the context is the argument — `toDenyPolicy` evaluates it.

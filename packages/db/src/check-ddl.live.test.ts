@@ -6,7 +6,7 @@
 //
 // Every table here is dropped on the way in and on the way out; nothing is left behind.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
@@ -98,10 +98,42 @@ describe.skipIf(!hasPostgres)('live · postgres · a column CHECK survives a reg
       await client.execute(raw(`drop table if exists "${table}" cascade`));
   };
 
-  beforeAll(async () => {
+  /** The database an old generator left: the inline anonymous CHECKs, over the wider set. */
+  const createOld = (): Promise<unknown> =>
+    client.execute(
+      raw(
+        `create table "chk_old" ("id" uuid primary key, "title" text not null, ` +
+          `"status" text not null check (${WIDER_STATUS_CHECK}), ` +
+          `"price_scale" integer check (${SCALE_CHECK}))`,
+      ),
+    );
+
+  /** The database where the check was declared after the table: no constraint at all. */
+  const createAbsent = (): Promise<unknown> =>
+    client.execute(
+      raw(
+        `create table "chk_absent" ("id" uuid primary key, "title" text not null, ` +
+          `"status" text not null, "price_scale" integer)`,
+      ),
+    );
+
+  const repairOf = (table: string) =>
+    generateMigration({
+      entities: [entity(table)],
+      current: preFieldSnapshot(table),
+      name: 'name the checks',
+      now: at,
+    });
+
+  /** Refused BY THE CHECK: a missing table or a bad uuid is a different failure. */
+  const refusedByCheck = (write: Promise<unknown>): Promise<void> =>
+    expect(write).rejects.toThrow(/SQLSTATE 23514/);
+
+  beforeAll(() => {
     client = postgresClient({ url: url ?? '' });
-    await drop(TABLE, 'chk_old', 'chk_absent');
   });
+
+  beforeEach(() => drop(TABLE, 'chk_old', 'chk_absent'));
 
   afterAll(async () => {
     await drop(TABLE, 'chk_old', 'chk_absent');
@@ -111,13 +143,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a column CHECK survives a reg
   test("Postgres' own name for an anonymous single-column CHECK is `<table>_<column>_check`", async () => {
     // The premise the whole repair rests on. If this is not the name, the repair migration adds a
     // SECOND constraint beside the one an already-generated database is holding.
-    await client.execute(
-      raw(
-        `create table "chk_old" ("id" uuid primary key, "title" text not null, ` +
-          `"status" text not null check (${WIDER_STATUS_CHECK}), ` +
-          `"price_scale" integer check (${SCALE_CHECK}))`,
-      ),
-    );
+    await createOld();
     expect(await checkNames('chk_old')).toEqual([
       'chk_old_price_scale_check',
       'chk_old_status_check',
@@ -125,12 +151,8 @@ describe.skipIf(!hasPostgres)('live · postgres · a column CHECK survives a reg
   });
 
   test('the repair APPLIES on a database holding the old anonymous form — no 42710', async () => {
-    const repair = generateMigration({
-      entities: [entity('chk_old')],
-      current: preFieldSnapshot('chk_old'),
-      name: 'name the checks',
-      now: at,
-    });
+    await createOld();
+    const repair = repairOf('chk_old');
     expect(repair.up).toContain('drop constraint if exists "chk_old_status_check"');
     // An unguarded `add constraint` is `42710` here, inside ROLE=migrate, with the server's words.
     await apply(repair.up);
@@ -145,34 +167,26 @@ describe.skipIf(!hasPostgres)('live · postgres · a column CHECK survives a reg
     // only thing that can move the constraint. A repair that left the old anonymous one in place
     // — under any name — accepts this row, which is why the assertion is the narrowed value and
     // not a value neither set allows.
-    await expect(insertStatus('chk_old', '1', 'archived')).rejects.toThrow();
-    await expect(insertStatus('chk_old', '2', 'nope')).rejects.toThrow();
+    await createOld();
+    await insertStatus('chk_old', '0', 'archived');
+    await client.execute(raw(`delete from "chk_old"`));
+    await apply(repairOf('chk_old').up);
+    await refusedByCheck(insertStatus('chk_old', '1', 'archived'));
+    await refusedByCheck(insertStatus('chk_old', '2', 'nope'));
     await insertStatus('chk_old', '3', 'draft');
   });
 
   test('the repair APPLIES on a database holding nothing — the same statement, no drop to do', async () => {
     // The other half the generator cannot tell apart: a check declared after the table was created
     // emitted NOTHING under the old generator, so this database has no constraint at all.
-    await client.execute(
-      raw(
-        `create table "chk_absent" ("id" uuid primary key, "title" text not null, ` +
-          `"status" text not null, "price_scale" integer)`,
-      ),
-    );
+    await createAbsent();
     expect(await checkNames('chk_absent')).toEqual([]);
-    await apply(
-      generateMigration({
-        entities: [entity('chk_absent')],
-        current: preFieldSnapshot('chk_absent'),
-        name: 'name the checks',
-        now: at,
-      }).up,
-    );
+    await apply(repairOf('chk_absent').up);
     expect(await checkNames('chk_absent')).toEqual([
       'chk_absent_price_scale_check',
       'chk_absent_status_check',
     ]);
-    await expect(insertStatus('chk_absent', '3', 'nope')).rejects.toThrow();
+    await refusedByCheck(insertStatus('chk_absent', '3', 'nope'));
   });
 
   test('a table this generator creates carries the CHECK under the same name', async () => {
@@ -184,6 +198,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a column CHECK survives a reg
   });
 
   test('regenerating against its own snapshot emits nothing AND applies', async () => {
+    await apply(generateMigration({ entities: [entity(TABLE)], name: 'init', now: at }).up);
     const second = generateMigration({
       entities: [entity(TABLE)],
       current: snapshotOf([entity(TABLE)]),
@@ -193,17 +208,15 @@ describe.skipIf(!hasPostgres)('live · postgres · a column CHECK survives a reg
     expect(second.up).toBe('');
     await apply(second.up);
     // The measured claim: after a regeneration `status` STILL refuses a value outside the set.
-    await expect(insertStatus(TABLE, '4', 'nope')).rejects.toThrow();
+    await refusedByCheck(insertStatus(TABLE, '4', 'nope'));
     await insertStatus(TABLE, '5', 'published');
   });
 
   test('the repair is reversible — its down applies and leaves the table without the constraints', async () => {
-    const repair = generateMigration({
-      entities: [entity('chk_absent')],
-      current: preFieldSnapshot('chk_absent'),
-      name: 'name the checks',
-      now: at,
-    });
+    await createAbsent();
+    const repair = repairOf('chk_absent');
+    await apply(repair.up);
+    expect(await checkNames('chk_absent')).toHaveLength(2);
     await apply(repair.down);
     expect(await checkNames('chk_absent')).toEqual([]);
   });

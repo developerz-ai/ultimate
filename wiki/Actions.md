@@ -3,10 +3,30 @@
 The load-bearing primitive. A mutation or command, server-authoritative, declared once.
 
 ```ts
+import { action, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+import { tag } from '@ultimat3/cache';
+import { type JobHandle } from '@ultimat3/jobs';
+import { type Actor } from '@ultimat3/core';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string, tx?: unknown): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
+declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+
 export const publishPost = action({
   input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
-  policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
@@ -250,6 +270,23 @@ Logic lives in `service.ts`; `actions/` holds declarations. An action whose `han
 Same declaration surface as `action`, plus a local half that runs client-side against the local store while the server call is in flight.
 
 ```ts
+import { mutator } from '@ultimat3/action';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string, tx?: unknown): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+declare module '@ultimat3/action' {
+  interface LocalTables {
+    posts: { likedByMe: boolean; likeCount: number };
+  }
+}
+
 export const likePost = mutator({
   // REQUIRED (`X_MUTATOR_NOT_IDEMPOTENT`): a replay under the same Idempotency-Key answers the
   // first result instead of running `server` again.
@@ -388,6 +425,13 @@ Emitted with the action, and green on the first run: it pins the invariant the a
 
 ```ts
 // contract test — generated with the action
+import { expect, test } from '@ultimat3/testing';
+import { type Action, t } from '@ultimat3/action';
+
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
   const { post, stranger } = await seed('two-orgs');
   await expect(publishPost.as(actorFor(stranger), { postId: post.id }))

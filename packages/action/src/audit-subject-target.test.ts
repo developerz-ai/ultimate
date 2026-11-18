@@ -2,7 +2,7 @@
 // the erase overwrites who acted and what they sent, in bounded batches, and keeps the row — the
 // record of what happened outlives the person it was about.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { pgliteClient, raw } from '@ultimat3/db';
 import { SQL_AUDIT_TABLE } from './audit-postgres';
@@ -19,6 +19,11 @@ beforeAll(async () => {
   for (const statement of SQL_AUDIT_TABLE.split(';')) {
     if (statement.trim() !== '') await client.execute(raw(statement));
   }
+}, PGLITE_BOOT_MS);
+
+// The erase rewrites these rows, so each test starts from the untouched trail.
+beforeEach(async () => {
+  await client.execute(raw('delete from x_audit'));
   const rows: [number, string, string | null][] = [
     [1, 'me', null],
     [2, 'me', null],
@@ -34,7 +39,7 @@ beforeAll(async () => {
       [id(n), actor, behalf],
     );
   }
-}, PGLITE_BOOT_MS);
+});
 
 afterAll(async () => {
   await client.close();

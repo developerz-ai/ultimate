@@ -51,6 +51,8 @@ Tier 2 covers what people almost always mean by "make it realtime": the list upd
 
 ```ts
 // mutator (action + optimistic local twin)
+import { mutator } from '@ultimat3/action';
+
 export const likePost = mutator({
   // REQUIRED (`X_MUTATOR_NOT_IDEMPOTENT`): a replay under the same Idempotency-Key answers the
   // first result instead of running `server` again.

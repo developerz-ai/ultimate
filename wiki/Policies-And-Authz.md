@@ -3,7 +3,12 @@
 One authz system. Authentication is `@ultimat3/auth` ([Auth](Auth)); **authorization is this page**, because it must be identical in HTTP, WebSocket, jobs, and MCP.
 
 ```ts
-policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
+import { can } from '@ultimat3/policy';
+import { type Actor } from '@ultimat3/core';
+
+declare function ownsPost(actor: Actor | null, postId: string): boolean;
+
+policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
 ```
 
 ## `can(permission, predicate)`
@@ -304,6 +309,13 @@ Generated with the primitive, fails until filled in:
 
 ```ts
 // contract test — generated as a scaffold with the action
+import { expect, test } from '@ultimat3/testing';
+import { type Action, t } from '@ultimat3/action';
+
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
   const { post, stranger } = await seed('two-orgs');
   await expect(publishPost.as(actorFor(stranger), { postId: post.id }))

@@ -18,10 +18,12 @@
  */
 
 import { defineApi } from '@ultimat3/action';
+import * as checkOutboundLinks from '../app/check-outbound-links/jobs/check-outbound-links';
 import * as health from './health';
 
 export const api = defineApi({
   actions: [health],
+  jobs: [checkOutboundLinks],
 });
 
 /** What the typed client is shaped from — imported as a TYPE only by `shared/browser-client.ts`. */

@@ -8,6 +8,10 @@ A `task` is a cron trigger that enqueues jobs. It never does work itself.
 
 ```ts
 // task (cron)
+import { type JobHandle, task } from '@ultimat3/jobs';
+
+declare const sendDigest: JobHandle<{ orgId: string }>;
+
 export const nightlyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',
@@ -33,6 +37,10 @@ If it has a handler body, it is a [job](Jobs-And-Workflows), not a task.
 `enqueue` must be cheap and synchronous-shaped: build inputs, return the list. Fanning out per tenant is a job that enqueues children, not a loop with a DB read inside `enqueue`.
 
 ```ts
+import { type JobHandle, task } from '@ultimat3/jobs';
+
+declare const fanOutKeyRotation: JobHandle<Record<string, never>>;
+
 export const rotateApiKeys = task({
   cron: '15 2 * * 1',
   tz: 'Europe/Berlin',
@@ -174,6 +182,11 @@ $ x tasks list --json
 Frozen clock. `clock.advance` drives cron — never `sleep`, never wall-clock.
 
 ```ts
+import { expect, test } from '@ultimat3/testing';
+import { type JobHandle } from '@ultimat3/jobs';
+
+declare const sendDigest: JobHandle<{ orgId: string }>;
+
 test('nightlyDigest enqueues one digest job per day', async ({ seed, clock }) => {
   await seed('one-org');
   clock.advance('3d');

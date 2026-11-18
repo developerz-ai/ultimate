@@ -19,10 +19,9 @@ import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
 import { loadAppRuntime } from './app-runtime';
 import { cacheGraph, neverEvicted } from './cache-graph';
-import { cacheSpec } from './cmd-cache-spec';
-import { plannedSubcommand } from './cmd-planned';
+import { CACHE_SUBCOMMANDS, cacheSpec } from './cmd-cache-spec';
 import type { CliCommand, CommandContext } from './command';
-import { MissingPositionalError } from './errors';
+import { MissingPositionalError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { findingFrom } from './output';
@@ -180,7 +179,12 @@ export const cacheCommandOver = (open: OpenCache): CliCommand => ({
       // entry cached under no tag is not reached: it waits for its TTL, as it would for any write.
       return bust(ctx, open, root, knownTags, 'x cache clear --json');
     }
-    throw plannedSubcommand('cache', sub);
+    // The parser refuses this first; it covers a `ParsedArgs` built by hand.
+    throw new UnknownCommandError({
+      path: `cache ${sub}`,
+      known: CACHE_SUBCOMMANDS,
+      suggestion: 'help cache',
+    });
   },
 });
 

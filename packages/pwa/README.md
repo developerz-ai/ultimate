@@ -7,6 +7,11 @@ the second copy is the one nobody updates.
 `bun add @ultimat3/pwa` · guide: [PWA And Offline](https://github.com/developerz-ai/ultimate/wiki/PWA-And-Offline)
 
 ```ts
+import { generateServiceWorker } from '@ultimat3/pwa';
+import { describePages } from '@ultimat3/render';
+
+declare const buildId: string;
+
 const { source, precache, warnings } = generateServiceWorker(describePages(), config, buildId);
 ```
 
@@ -79,6 +84,11 @@ and the app dies with a blank screen and no error anyone can act on.
 // The generated worker posts this to every page it controls, on activation — and this is the
 // whole message, which `version-skew.test.ts` holds the interface to.
 // { type: 'AppUpdateAvailable', to: BUILD_ID }
+import { detectSkew } from '@ultimat3/pwa';
+
+declare const message: { readonly to: string };
+declare const clientBuildId: string;
+
 detectSkew(clientBuildId, message.to); // 'current' | 'stale' | 'unknown'
 ```
 

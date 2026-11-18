@@ -30,7 +30,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | Passthrough | declared per command (`CommandSpec.passthrough`); every other command refuses a `--` tail with `X_CLI_BAD_FLAG` |
 | App root | `CommandSpec.requiresApp`, enforced by `dispatch.ts` before `run` |
 | Declared flags | every flag a command declares is read in this package's source — `flag-reads.test.ts` (`X_CLI_FLAG_UNREAD`) |
-| Planned commands | `PLANNED_COMMANDS` / `PLANNED_SUBCOMMANDS` (`cmd-planned.ts`): in the registry, exit `X_NOT_IMPLEMENTED` with a fix naming a shipped command |
+| Planned commands | none: `PLANNED_COMMANDS` / `PLANNED_SUBCOMMANDS` (`cmd-planned.ts`) stay empty, and the registry builds nothing from them. A command ships, or the parser refuses it `X_CLI_UNKNOWN_COMMAND` with its decision in `wiki/Known-Gaps.md` |
 | Errors | codes + titles in `error-codes.ts`, a runnable line per code in `mcp-errors.ts` (typed over `CliErrorCode`); a family at the ceiling moves to `error-codes-<family>.ts` / `mcp-errors-<family>.ts` (`-verify`: the gate's floor, run and split); classes in `errors.ts` or beside their one thrower when `errors.ts` is at its ceiling. Never a bare `Error` |
 | Subprocesses | only through `exec.ts`'s injectable `Runner`; `gh` through `ctx.runner` with a required `fix` |
 | Templates | `templates/*.ts` return strings, pre-formatted for Biome (`wrap.ts`'s `wrapList` / `wrapImport` / `sortSpecifiers`); no fixture files on disk |

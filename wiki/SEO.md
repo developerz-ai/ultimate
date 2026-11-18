@@ -8,6 +8,9 @@ Route metadata itself is declared on `defineRoute({ meta })` ([Routes and render
 modes](Routes-And-Render-Modes)).
 
 ```ts
+import { defineRoute } from '@ultimat3/render';
+import { ld } from '@ultimat3/seo';
+
 export const config = defineRoute({
   render: 'isr',
   meta: ({ post }) => ({
@@ -45,6 +48,8 @@ declaration order, for SSR and prerender alike. `canonical` and hreflang keep th
 the surface stylesheet is the renderer's, so neither `rel` is spellable here.
 
 ```ts
+import { asset, defineRoute } from '@ultimat3/render';
+
 export const config = defineRoute({
   render: 'static',
   meta: () => ({

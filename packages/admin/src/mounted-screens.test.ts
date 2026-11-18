@@ -310,23 +310,25 @@ describe('unit · defineAdmin({ entities, db }) serves its screens', () => {
 
   test('a posted edit patches the row; an empty sealed box leaves the stored secret alone', async () => {
     // The version the edit form carries: the row as it was when the form was drawn.
-    const [shown] = await db.gadgets.where({ id: rowId }).all();
-    const answer = await ask('operator', `${BASE}/${rowId}/edit`, {
-      title: 'Sprocket II',
+    // Its own row: the list and paging tests read the two seeded ones as they were seeded.
+    const shown = await db.gadgets.insert({ title: 'Zed', stock: 1, apiKey: 'CANARY-EDIT' });
+    const id = String(shown.id);
+    const answer = await ask('operator', `${BASE}/${id}/edit`, {
+      title: 'Zed II',
       stock: '9',
       apiKey: '',
-      [VERSION_FIELD]: rowVersion(shown ?? {}),
+      [VERSION_FIELD]: rowVersion(shown),
     });
-    expect(statusOf(answer)).toBe(`${BASE}/${rowId}`);
-    const [stored] = await db.gadgets.where({ id: rowId }).all();
-    expect(stored?.title).toBe('Sprocket II');
+    expect(statusOf(answer)).toBe(`${BASE}/${id}`);
+    const [stored] = await db.gadgets.where({ id }).all();
+    expect(stored?.title).toBe('Zed II');
     expect(stored?.stock).toBe(9);
-    expect(stored?.apiKey).toBe('CANARY-KEY');
+    expect(stored?.apiKey).toBe('CANARY-EDIT');
+    await db.gadgets.delete(id);
   });
 
   test('a delete needs the typed confirmation, then removes the row', async () => {
-    const [doomed] = await db.gadgets.where({ title: 'Flange' }).all();
-    const id = String(doomed?.id);
+    const id = String((await db.gadgets.insert({ title: 'Zed doomed', stock: 1 })).id);
     const unconfirmed = await ask('operator', `${BASE}/${id}`, { _operation: 'delete' });
     expect(statusOf(unconfirmed)).toBe(403);
     expect(await db.gadgets.where({ id }).count()).toBe(1);

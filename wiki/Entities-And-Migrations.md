@@ -34,6 +34,13 @@ Rename a column and the entity type changes, the action's output stops matching,
 `As of 2026-08`:
 
 ```ts
+import { entity, enumerated, integer, invariant, text, timestamp, uuid } from '@ultimat3/entity';
+
+const POST_STATUSES = ['draft', 'published'] as const;
+const TITLE_MAX = 120;
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey() } });
+
 export const posts = entity('posts', {
   columns: {
     id: uuid().primaryKey(),
@@ -393,6 +400,8 @@ export async function insert(row: Omit<Widget, 'id' | 'createdAt'>): Promise<Wid
 
 ```ts
 // packages/db/src/client.ts — the handle. `x g entity` adds the import and the line.
+import { database } from '@ultimat3/entity';
+
 const entities = {
   posts: post,
   widgets: widget,
@@ -479,6 +488,11 @@ A feature with more than one table: `x g entity <second> --feature <feature>` wr
 
 ```ts
 // One `select … where "id" in ($1, $2, $3, …)`, not one statement per post.
+import { entity, uuid } from '@ultimat3/entity';
+
+const users = entity('users', { columns: { id: uuid().primaryKey() } });
+declare const orgId: string;
+
 const authors = await Promise.all(posts.map((post) => users.findById(post.authorId, { orgId })));
 ```
 
@@ -499,11 +513,28 @@ A `for … of` loop awaits between iterations, so no two of its lookups share a 
 they came from batches them instead, `As of 2026-08`:
 
 ```ts
-const page = await db.posts.findMany({ orgId });
+import { entity, postgresRepo, uuid } from '@ultimat3/entity';
+
+const users = entity('users', { columns: { id: uuid().primaryKey() } });
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+declare const orgId: string;
+
+const page = await postgresRepo(posts).findMany({ orgId });
 for (const post of page.rows) {
   // Two statements for the whole loop: the page, then one `where "id" in (…)` over every author
   // on it. Every lookup after the first is memory.
-  const author = await db.users.findById(post.authorId, { orgId });
+  const author = await postgresRepo(users).findById(post.authorId, { orgId });
 }
 ```
 
@@ -526,11 +557,28 @@ The eager, declarative third of the family: the relation is named on the chain a
 before the caller sees a row, `As of 2026-08`:
 
 ```ts
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey(), name: text() } });
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), name: text() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+declare const orgId: string;
+
 export const db = database({ orgs, posts, members });
 
 // Two statements: the page, then one `select … where "id" in (…)` over its authors.
 const page = await db.posts.where({ orgId }).preload('author').page();
-page.rows[0].author;        // the member row, or null — always present
+page.rows[0]?.author;        // the member row, or null — always present
 ```
 
 Nothing new to declare: `'author'` is the relation the `authorId` foreign key on `posts` already
@@ -605,6 +653,25 @@ for one page meant. Staging and production say nothing; refusing is a break, and
 
 ```ts
 // One statement per batch, one page of rows in memory at a time.
+import { database, entity, uuid } from '@ultimat3/entity';
+
+declare const search: { index(rows: readonly object[]): Promise<void> };
+
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+const db = database({ posts });
+declare const orgId: string;
+
 for await (const batch of db.posts.where({ orgId }).preload('author').inBatches(500)) {
   await search.index(batch);
 }
@@ -617,6 +684,25 @@ Stopping early keeps the position, which is what makes a long backfill a job tha
 time and pick up where it stopped:
 
 ```ts
+import { database, entity, text, uuid } from '@ultimat3/entity';
+import { type Ctx } from '@ultimat3/core';
+
+declare const checkpoint: string | null;
+declare const deadline: Date;
+declare const search: { index(rows: readonly object[]): Promise<void> };
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const checkpoints = entity('checkpoints', {
+  columns: { id: uuid().primaryKey(), cursor: text().nullable() },
+});
+const db = database({ checkpoints, posts });
+declare const id: string;
+declare const orgId: string;
+declare const ctx: Ctx;
+
 await using batches = db.posts.where({ orgId }).after(checkpoint).inBatches(500);
 for await (const batch of batches) {
   await search.index(batch);
@@ -659,6 +745,20 @@ them, `As of 2026-08`:
 
 ```ts
 // One statement for all of `ids`, not one `select count(*)` per post.
+import { database, entity, integer, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), likeCount: integer().default(0) },
+});
+const likes = entity('likes', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid() },
+});
+const db = database({ likes, posts });
+declare const orgId: string;
+declare const ids: readonly string[];
+
 const counts = await db.likes.where({ orgId }).andWhere('postId', 'in', ids).countBy('postId');
 for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0 });
 ```
@@ -761,6 +861,24 @@ the same defect on the write side, and `insertAll`/`upsertAll` are its answer, `
 call is all or nothing, `As of 2026-11-02`:
 
 ```ts
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const likes = entity('likes', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid(), memberId: uuid() },
+});
+const tags = entity('tags', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), name: text() },
+});
+const counters = entity('counters', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), day: text() },
+});
+const db = database({ counters, likes, tags });
+declare const orgId: string;
+declare const names: readonly string[];
+
 await db.tags.insertAll(names.map((name) => ({ orgId, name })));   // one statement, n rows
 
 await db.likes.upsertAll(rows, {                                  // insert, or leave what is there
@@ -919,6 +1037,16 @@ in `packages/<pkg>/seeds/<name>.ts` or `packages/<pkg>/src/seed.ts` — the two 
 looks.
 
 ```ts
+import { defineSeed, entity, integer, text, uuid } from '@ultimat3/entity';
+
+const reports = entity('reports', { columns: { id: uuid().primaryKey(), slug: text() } });
+const plans = entity('plans', {
+  columns: { id: uuid().primaryKey(), code: text(), currency: text(), monthly: integer() },
+});
+declare const monthly: number;
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey(), name: text() } });
+
 export const dev = defineSeed('dev', async ({ insert, upsert, exists, id }) => {
   // The table owns the id, so the NATURAL key is the only key: insert, or update what is there.
   await upsert(plans, { by: ['code', 'currency'] }, { code: 'team', currency: 'EUR', monthly });
@@ -1039,6 +1167,12 @@ zone because it names no instant.
 A credential column is `text().sealed()`. The row reads `string`; the database holds ciphertext.
 
 ```ts
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const db = database({ connections });
+
+declare const email: string;
+
 export const connections = entity('connections', {
   columns: {
     id: uuid().primaryKey(),
@@ -1097,6 +1231,10 @@ password: true })` and `preload()` keep the property, still server-only.
 **Testing a sealed row.** `toEqual` walks enumerable properties. Write one of:
 
 ```ts
+import { expect } from '@ultimat3/testing';
+
+declare const id: string;
+
 expect(row).toEqualRow({ id, label: 'primary', password: 'hunter2' }); // every own property
 expect(row.password).toBe('hunter2');
 expect(row).toMatchObject({ password: 'hunter2' });
@@ -1140,6 +1278,12 @@ A column with existing plaintext is migrated — expand, backfill, contract.
 // apps/web/app/connection/backfills/seal-connection-passwords.ts — a backfill IS a job: register
 // the module in defineApi({ jobs }) beside the slice's other jobs
 import { backfill } from '@ultimat3/jobs';
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const connections = entity('connections', {
+  columns: { id: uuid().primaryKey(), email: text(), label: text(), password: text() },
+});
+const db = database({ connections });
 
 export const sealConnectionPasswords = backfill({
   name: 'seal-connection-passwords',
@@ -1175,6 +1319,8 @@ Three overrides, `As of 2026-08`, and together they are what makes a schema Ulti
 generate declarable at all. An entity that uses none of them emits exactly what it always did.
 
 ```ts
+import { date, entity, money, text, uuid } from '@ultimat3/entity';
+
 export const accounts = entity('account', {
   table: 'legacy_accounts',
   columns: {

@@ -7,9 +7,11 @@ admin screen, cache tags and the manifest are all projections of that one call.
 `bun add @ultimat3/entity` · guide: [Entities And Migrations](https://github.com/developerz-ai/ultimate/wiki/Entities-And-Migrations)
 
 ```ts
-import {
-  entity, enumerated, integer, invariant, text, timestamp, url, uuid,
-} from '@ultimat3/entity';
+import { entity, enumerated, integer, invariant, text, timestamp, url, uuid } from '@ultimat3/entity';
+
+const POST_STATUSES = ['draft', 'published'] as const;
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey() } });
 
 export const posts = entity('posts', {
   tenant: 'orgId',
@@ -283,11 +285,20 @@ the physical names alone and would deliver `ghLogin` where the repository says `
 ## Branded ids
 
 ```ts
+import { database, entity, uuid } from '@ultimat3/entity';
+
+type PostId = string & { readonly __brand: 'PostId' };
+type UserId = string & { readonly __brand: 'UserId' };
+
+const users = entity('users', { columns: { id: uuid().primaryKey() } });
+declare const postId: PostId;
+
 export const posts = entity('posts', {
   columns: { id: uuid<PostId>().primaryKey(), authorId: uuid<UserId>().references(() => users.id) },
 });
 
-const post = await db.posts.findById(postId);   // PostId — a UserId here is a compile error
+const db = database({ posts });
+const post = await db.posts.where({ id: postId }).one();   // PostId — a UserId here is a compile error
 ```
 
 The brand is declared once, on the column, and carried by the whole chain: `RowOf`, `Insertable`,
@@ -349,6 +360,15 @@ database, and `x verify` reports the other as a rule the database does not know.
 ## One typed handle
 
 ```ts
+import { database, entity, timestamp, uuid } from '@ultimat3/entity';
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey() } });
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), createdAt: timestamp().defaultNow() },
+});
+declare const orgId: string;
+
 export const db = database({ orgs, posts });
 
 db.posts.where({ orgId }).orderBy('createdAt').limit(50).page(); // { rows, nextCursor, hasMore }
@@ -412,6 +432,33 @@ the terminal, not something the caller writes around `page()`:
 
 ```ts
 // One statement per batch, one page of rows in memory at a time.
+import { database, entity, text, uuid } from '@ultimat3/entity';
+import { type Ctx } from '@ultimat3/core';
+
+declare const checkpoint: string | null;
+declare const deadline: Date;
+declare const search: { index(rows: readonly object[]): Promise<void> };
+
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+const checkpoints = entity('checkpoints', {
+  columns: { id: uuid().primaryKey(), cursor: text().nullable() },
+});
+const db = database({ checkpoints, posts });
+declare const id: string;
+declare const orgId: string;
+declare const ctx: Ctx;
+
 for await (const batch of db.posts.where({ orgId }).preload('author').inBatches(500)) {
   await search.index(batch);
 }
@@ -813,6 +860,20 @@ asks N times. `countBy(column)` is that whole loop as one statement, keyed by th
 
 ```ts
 // One statement for every post in `ids`, not one `select count(*)` each.
+import { database, entity, integer, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), likeCount: integer().default(0) },
+});
+const likes = entity('likes', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid() },
+});
+const db = database({ likes, posts });
+declare const orgId: string;
+declare const ids: readonly string[];
+
 const counts = await db.likes.where({ orgId }).andWhere('postId', 'in', ids).countBy('postId');
 for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0 });
 ```
@@ -886,6 +947,46 @@ one row at a time: a `for … of` deleting or patching one row per iteration is 
 not `n`.
 
 ```ts
+import { database, entity, integer, text, timestamp, uuid } from '@ultimat3/entity';
+
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+    title: text(),
+    status: text().default('draft'),
+    rank: integer().default(0),
+    publishedAt: timestamp().nullable(),
+  },
+});
+const likes = entity('likes', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid(), userId: uuid() },
+});
+const participants = entity('participants', {
+  columns: {
+    id: uuid().primaryKey(),
+    conversationId: uuid(),
+    userId: uuid(),
+    lastReadAt: timestamp().nullable(),
+  },
+});
+const db = database({ likes, participants, posts });
+declare const authorId: string;
+declare const id: string;
+declare const ids: readonly string[];
+declare const userId: string;
+declare const title: string;
+declare const conversationId: string;
+declare const postId: string;
+declare const lastReadAt: Date;
+
 db.posts.delete(id);                                        // by a single primary key
 db.posts.update(id, { title });                             // ditto; named columns validate as insert does
 
@@ -1078,6 +1179,24 @@ export const members = entity('members', {
 Each call is all or nothing, `As of 2026-11-02`.
 
 ```ts
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const likes = entity('likes', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid(), memberId: uuid() },
+});
+const tags = entity('tags', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), name: text() },
+});
+const counters = entity('counters', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), day: text() },
+});
+const db = database({ counters, likes, tags });
+declare const orgId: string;
+declare const names: readonly string[];
+
 await db.tags.insertAll(names.map((name) => ({ orgId, name })));   // one statement, n rows
 
 await db.likes.upsertAll(rows, {                                  // insert, or leave what is there
@@ -1114,7 +1233,9 @@ caller counts what it actually inserted.
 ## Relations are the foreign keys, read twice
 
 ```ts
-relationMap().posts;
+import { relationMap, relationNamed, relationsFor } from '@ultimat3/entity';
+
+relationMap()['posts'];
 // { org:     { kind: 'belongsTo', to: 'orgs',    localKey: 'orgId',    remoteKey: 'id' },
 //   author:  { kind: 'belongsTo', to: 'members', localKey: 'authorId', remoteKey: 'id' },
 //   likes:   { kind: 'hasMany',   to: 'likes',   localKey: 'id',       remoteKey: 'postId' } }
@@ -1157,11 +1278,28 @@ loop it causes — reach for `preload()` to carry the relation from the start, w
 either pattern to trigger it:
 
 ```ts
+import { database, entity, text, uuid } from '@ultimat3/entity';
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey(), name: text() } });
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), name: text() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+declare const orgId: string;
+
 export const db = database({ orgs, posts, members });
 
 // Two statements: the page, then one `select … where "id" in (…)` over its authors.
 const page = await db.posts.where({ orgId }).preload('author').page();
-page.rows[0].author;        // the member row, or null — always present
+page.rows[0]?.author;        // the member row, or null — always present
 ```
 
 | | |
@@ -1177,6 +1315,14 @@ page.rows[0].author;        // the member row, or null — always present
 ## Two drivers, one meaning
 
 ```ts
+import { database, entity, postgresDriver, uuid } from '@ultimat3/entity';
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey() } });
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+
 database({ orgs, posts });                                 // memoryDriver() — the default
 database({ orgs, posts }, { driver: postgresDriver() });   // production
 ```
@@ -1237,7 +1383,12 @@ never a transaction split across two stores. The scaffolded handle's line is
 object — the one seam a test harness needs, `As of 2026-08`:
 
 ```ts
-import { defaultDriver } from '@ultimat3/entity';
+import { defaultDriver, entity, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
 
 defaultDriver().repo(posts).insert(row); // seeds what database({ posts }) reads
 defaultDriver().reset?.();               // between tests; `?.` because Postgres has no reset
@@ -1337,6 +1488,11 @@ store was constructed (`driverStores()`). The meanings a custom store borrows �
 `As of 2026-08`:
 
 ```ts
+import { entity, postgresRepo, uuid } from '@ultimat3/entity';
+
+const users = entity('users', { columns: { id: uuid().primaryKey() } });
+declare const orgId: string;
+
 const repo = postgresRepo(users);
 // One statement, not one per post: the lookups issued in this microtask are one `in`.
 const authors = await Promise.all(posts.map((post) => repo.findById(post.authorId, { orgId })));
@@ -1362,6 +1518,23 @@ next lookup exists. So a page leaves its foreign key values behind, and the firs
 one of them resolves that key for every row of the page:
 
 ```ts
+import { entity, postgresRepo, uuid } from '@ultimat3/entity';
+
+const users = entity('users', { columns: { id: uuid().primaryKey() } });
+const members = entity('members', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const posts = entity('posts', {
+  tenant: 'orgId',
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid(),
+    authorId: uuid().references(() => members.id),
+  },
+});
+declare const orgId: string;
+
 const page = await postgresRepo(posts).findMany({ orgId });
 for (const post of page.rows) {
   // Two statements for the whole loop: the page, then one `in` over every author on it.
@@ -1387,6 +1560,8 @@ is what an author is handed when it did not. It takes a repeated statement — t
 reached, never a count this package keeps — and returns the error every surface renders:
 
 ```ts
+import { nPlusOne } from '@ultimat3/entity';
+
 nPlusOne({ kind: 'read', subject: 'members.findById', count: 50, entity: 'members', op: 'findById' });
 // X_N_PLUS_ONE_QUERY: a read repeated once per row
 //   cause: members.findById ran 50 times in one request — one read per row

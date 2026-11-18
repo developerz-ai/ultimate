@@ -22,6 +22,10 @@ only covers what someone remembered to put inside its `try`.
 ## The idiom
 
 ```ts
+import { type DbClient } from '@ultimat3/db';
+
+declare const client: DbClient;
+
 using connection = await client.reserve();
 await connection.execute(sql`...`);
 // released automatically here, however the block exits

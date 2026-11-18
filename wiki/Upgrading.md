@@ -2220,6 +2220,8 @@ error, and the old objects are orphaned until your bucket's lifecycle rule colle
 
 ```ts
 // before — answered ALLOWED, and admitsAnonymous() agreed, so http did not 401 first
+import { allow, and } from '@ultimat3/policy';
+
 policy: and(...requiredCaps.map(can))   // requiredCaps filtered to empty
 
 // after — refused where it is written
@@ -2564,6 +2566,8 @@ connection after the caller's socket had already been answered `X_TIMEOUT`.
 `X_MCP_RATE_LIMITED`, 429, with `Retry-After`.
 
 ```ts
+import { mcpHttpRoute } from '@ultimat3/mcp';
+
 mcpHttpRoute({ server, resolveToken, rateLimits: { read: 600, write: 60 } });
 // or defineAppMcp({ …, rateLimits: { read: 600, write: 60 } })
 ```
@@ -2578,6 +2582,12 @@ honest for `x mcp serve` and a lie for N replicas behind one URL, each enforcing
 on its own:
 
 ```ts
+import { mcpHttpRoute } from '@ultimat3/mcp';
+import { postgresRateLimitStore } from '@ultimat3/http';
+import { type PgExecutor } from '@ultimat3/action';
+
+declare const executor: PgExecutor;
+
 mcpHttpRoute({ server, resolveToken, rateLimitStore: postgresRateLimitStore({ executor }) });
 ```
 
@@ -2766,6 +2776,8 @@ your own that should keep its authored cause needs a status of its own — that 
 classified:
 
 ```ts
+import { registerErrorStatus } from '@ultimat3/http';
+
 registerErrorStatus({ X_PAYMENTS_UNREACHABLE: 502 });   // from @ultimat3/http, once at boot
 ```
 
@@ -3011,6 +3023,10 @@ worker and nothing in the framework calls `generateServiceWorker`; the generated
 `regenerate:` header names the call for that reason.
 
 ```ts
+import { generateServiceWorker } from '@ultimat3/pwa';
+
+declare const buildId: string;
+
 generateServiceWorker(routes, config, buildId);   // from @ultimat3/pwa
 ```
 
@@ -3394,6 +3410,10 @@ was not: you were on Postgres the whole time.
 Which driver runs is `setJobDriver(driver)`, and only that:
 
 ```ts
+import { type PgExecutor } from '@ultimat3/action';
+
+declare const executor: PgExecutor;
+
 setJobDriver(createPgDriver({ executor }))   // production
 setJobDriver(createMemoryDriver())           // a test
 ```
@@ -3578,6 +3598,8 @@ Two things are not compile errors and are the ones to read first: the **seven be
 Entry 18's pair, both sides or neither:
 
 ```ts
+import { configureLifecycle } from '@ultimat3/core';
+
 configureLifecycle({ deadlineMs: 600_000 });   // and terminationGracePeriodSeconds >= 600
 ```
 

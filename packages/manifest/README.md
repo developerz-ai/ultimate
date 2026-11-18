@@ -6,7 +6,9 @@ it is how an agent learns what the app *is* without reading every file.
 `bun add @ultimat3/manifest` · guide: [Agents](https://github.com/developerz-ai/ultimate/wiki/Agents)
 
 ```ts
-import { buildManifest, emitManifest, assertNoDrift, verifyContract } from '@ultimat3/manifest';
+import { assertNoDrift, buildManifest, emitManifest, frameworkSources, type Manifest, verifyContract } from '@ultimat3/manifest';
+
+declare const committed: Manifest;
 
 const manifest = buildManifest(frameworkSources({ app, routes, policies }));
 await emitManifest({ manifest });                  // x manifest

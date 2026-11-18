@@ -172,6 +172,8 @@ Each worker then claims its list and nothing else. Every entry must be a queue t
 
 ```ts
 // app.config.ts
+import { defineConfig } from '@ultimat3/core';
+
 export const config = defineConfig({ name: 'shop', realtime: { maxSubscriptionsPerActor: 200 } });
 ```
 
@@ -558,6 +560,8 @@ export const config = defineConfig({
 **Not an `app.config.ts` block.** There is no `storage` key on `AppConfigInput`. Storage is `defineStorage()`, called from `app.config.ts`, and it declares **named disks** (Laravel's model) rather than a driver and a bucket — so `disk('uploads').put(…)` never changes when `local` becomes `s3`:
 
 ```ts
+import { defineStorage, localDriver } from '@ultimat3/storage';
+
 defineStorage({ disks: { uploads: localDriver({ root: '.storage/uploads' }) } });
 ```
 
@@ -663,6 +667,8 @@ How a SIGTERM'd process leaves: `DrainConfig` in [`packages/core/src/config-heal
 | `drain.workerRetireMs` | whole ms, `0`–`86400000` | `3600000` | how long a retiring worker may finish what it holds on a Kubernetes rollout or scale-down, aborting nothing; `0` turns it off. An idle worker exits at once. A job's `timeout` over it reds `x verify` (`X_JOB_OUTLASTS_DRAIN`) → [Deployment](Deployment#retiring-a-worker-before-sigterm) |
 
 ```ts
+import { defineConfig } from '@ultimat3/core';
+
 export const config = defineConfig({
   name: 'postly',
   // A report job runs up to 8 minutes; a deploy lets it finish.
@@ -842,7 +848,9 @@ Which files are read at boot: `.env` and `.env.<mode>` always, plus `.env.local`
 A value that redacts **by value**, so it stays redacted under a key nobody thought to add to a deny-list.
 
 ```ts
-import { secret, revealSecret, isSecret } from '@ultimat3/core';
+import { isSecret, type Logger, revealSecret, secret } from '@ultimat3/core';
+
+declare const logger: Logger;
 
 const token = secret(process.env.API_TOKEN, 'API_TOKEN');
 

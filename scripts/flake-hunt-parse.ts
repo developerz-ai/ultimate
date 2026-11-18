@@ -13,7 +13,7 @@ export interface FailedTest {
 const HEADER = /^(?:::group::)?(\S.*\.test\.[cm]?[jt]sx?):$/;
 /** A failure line, its trailing `[1.20ms]` timing dropped so a rerun names the same test. */
 const FAIL = /^\s*\(fail\)\s+(.*?)(?:\s+\[[\d.]+m?s\])?\s*$/;
-/** Bun's end-of-run repeat of every failure, under no file header: never a second failure. */
+/** Bun's end-of-run repeat of a batch's failures, under no file header: never a second failure. */
 const REPEAT = /^\s*\d+ tests? failed:?\s*$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: an ANSI escape IS a control character.
 const ANSI = /\u001b\[[0-9;]*m/g;
@@ -26,7 +26,11 @@ export function failedTests(output: string): readonly FailedTest[] {
   let since: string[] = [];
   for (const raw of output.split('\n')) {
     const line = raw.replace(ANSI, '');
-    if (REPEAT.test(line)) break;
+    // Ends this batch only: a gate shard is many `bun test` runs, one output.
+    if (REPEAT.test(line)) {
+      file = undefined;
+      continue;
+    }
     const header = HEADER.exec(line);
     if (header !== null) {
       file = header[1];
