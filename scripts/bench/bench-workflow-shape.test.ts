@@ -50,6 +50,8 @@ describe('unit · a new measurement supersedes the last one', () => {
     expect(prShell).not.toContain('BRANCH="bench/');
     expect(prShell).toContain('git push --force');
     expect(prShell).toContain('gh pr list --head "$BRANCH" --state open');
+    expect(prShell).toContain('gh pr edit "$OPEN"');
+    expect(prShell).toContain('if ! gh pr create');
     expect(prShell.indexOf('gh pr edit "$OPEN"')).toBeLessThan(
       prShell.indexOf('if ! gh pr create'),
     );
