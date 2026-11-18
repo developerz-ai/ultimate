@@ -10,21 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-### Fixed
-
-- Scaffold CI: `ci.yml` uploads each `verify-part-*` document with `retention-days: 1`, because the verdict job reads it in the same run. Under GitHub's 90-day default, one adopter collected 2,706 such artifacts and hit the org's Actions storage quota, after which CI could not run. Codemod `ci-artifact-retention` adds the line to an existing app's upload when it has no `retention-days`.
-- Codemod `ci-pinned-actions` pins any tagged major of `actions/checkout`, `cache`, `upload-artifact` and `download-artifact`. It adds `persist-credentials: false` to each checkout it pins, inside the step's own `with:` when there is one. Before, it skipped a workflow that was not in the exact stock shape, such as `actions/checkout@v5` (two of nine adopters). It still never touches a SHA-pinned line or an action it has no pin for, and it reports a quoted line or an inline `with:` together with its diff.
-- The `undeclared-env` guard's fix (`X_UNDECLARED_ENV`) opens with the `envSchema` line to paste. It now has a second branch for a build-time constant injected by `bun build --define`: declare a global and define it at build time, so no deploy is asked for an env var it never sets.
-
-### Changed
-
-- The scaffold pins `@biomejs/biome` 2.6.4, and its `biome.json` `$schema` moves with it, so a new app lints with the same formatter this repository runs.
-- CI: `cli`'s coverage run now runs as two weight-band parts on separate `packages` runners, and `coverage-gate.ts --merge` folds them in a new `packages (merge)` job. Lines fold exactly; functions fold as a lower bound, because Bun's lcov counts functions without naming them. `cli` is pinned at 95% lines / 94.5% functions until the fold clears 95%. The suite had grown to 330â€“440 s against a 450 s deadline, and that is what read as a hang.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.45.0](docs/changelog/31.45.0.md) | 2026-11-18 | **Faster, steadier CI, and what the adopter rollout taught:** |
 | [31.44.0](docs/changelog/31.44.0.md) | 2026-11-17 | **Audit rounds 5 and 6 (plan 101b, slice 20), security first:** |
 | [31.43.0](docs/changelog/31.43.0.md) | 2026-11-17 | **Audit round 4 (plan 101b, slice 20):** OAuth client-metadata fetches are metered for every caller; presence leave frames fit the client's frame limit; the `assets.retain` sweep no longer deletes a file another pod's publish reused; `x upgrade` survives a reused pid; scaffold CI pins every action by SHA; one env declaration form, `envSchema`. Each fix has a test that failed first. |
 | [31.42.1](docs/changelog/31.42.1.md) | 2026-11-17 | **An s3 disk on R2 (or any endpoint) works in its default addressing:** the Bun client reached the account root instead of the bucket, so reads, lists and `assets.retain` failed unless `S3_FORCE_PATH_STYLE=1` was set. |

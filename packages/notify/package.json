@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/notify",
-  "version": "31.44.0",
+  "version": "31.45.0",
   "description": "Notifications: one declaration, many channels — fan-out, preference gate, digest window, delivery ledger, in-app inbox",
   "keywords": [
     "ultimate",
@@ -46,12 +46,12 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/action": "31.44.0",
-    "@ultimat3/core": "31.44.0",
-    "@ultimat3/i18n": "31.44.0",
-    "@ultimat3/jobs": "31.44.0",
-    "@ultimat3/policy": "31.44.0",
-    "@ultimat3/schema": "31.44.0",
-    "@ultimat3/time": "31.44.0"
+    "@ultimat3/action": "31.45.0",
+    "@ultimat3/core": "31.45.0",
+    "@ultimat3/i18n": "31.45.0",
+    "@ultimat3/jobs": "31.45.0",
+    "@ultimat3/policy": "31.45.0",
+    "@ultimat3/schema": "31.45.0",
+    "@ultimat3/time": "31.45.0"
   }
 }
