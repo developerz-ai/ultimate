@@ -10,30 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-### Security
-
-- A replayed offline write is bound to the principal that queued it. A replay under another session is refused with 409 `X_REPLAY_PRINCIPAL_MISMATCH` and stays pending for its owner. Page replays are same-origin; a cross-origin caller behind a custom CORS `allowHeaders` must allow `x-ultimate-replay-scope`.
-
-### Added
-
-- Scaffolded apps run their full CI weekly, and a scheduled failure opens one issue. `x upgrade` brings this to existing apps and leaves a workflow with its own `schedule:` alone.
-- `dummy/docs-site` runs a real nightly job, so all three tracked apps assert every app step.
-
-### Fixed
-
-- Order-dependent and timing-dependent tests found by the nightly flake hunt and the compatibility matrix, and the matrix's issue text, which read a progress line as its verdict.
-- Documentation code examples: hundreds of README and wiki fences now compile against the current API, and the job-driver pages agree that `redisJobDriver()` ships.
-
-### Changed
-
-- `x exercise` and the gate's `exercise` step run one constant seed by default, so the same code gets the same verdict. `--seed <n>` still overrides it, `--seed random` explores a fresh one, and the output and `.x/exercise.json` name the seed used. An `exercise.unprovenMax` measured under random seeds can now sit just below the measured figure: `X_EXERCISE_UNPROVEN_ABOVE_FLOOR` says to re-measure and fix the seed helper each unproven record names, and no floor is raised for you.
-- Every `wiki/Known-Gaps.md` row carries a decision, and shipped `NotImplementedError` sites are implemented, removed or decided. Unknown `x` subcommands that were stubs answer `X_CLI_UNKNOWN_COMMAND`; `plannedSubcommand` is deprecated.
-- Internal: 63 hand-rolled keyed-record guards (`isRecord`, `isObject`, `isPlainObject`, `isRow`, â€¦) across 14 packages and `scripts/` now import core's `isJsonObject`; a call site that also means an array says `Array.isArray(v) || isJsonObject(v)`. A new copy is `X_HELPER_COPY` (`bun run flight-copies`, `scripts/lib/helper-homes.ts`). One visible change: `findingProblem` reports a guard finding that is an ARRAY as "not a finding object" rather than as a missing code.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.47.0](docs/changelog/31.47.0.md) | 2026-11-18 | **The finish sweep (plan 101):** a replayed offline write is bound to the principal that queued it, the gate's `exercise` step gives the same verdict for the same code, scaffolded apps run their full CI weekly and open one issue on a scheduled failure, and every known gap, stub and exemption now carries a decision or is gone. |
 | [31.46.0](docs/changelog/31.46.0.md) | 2026-11-18 | **One redirect path for a browser's form (D10):** the sign-in and invite actions `x g sign-in` and `x g invite` write answer a native form post through `native:` alone, and the hand-written `landAt()` helper is gone. The generated tests now post a real form through the HTTP pipeline. A fresh saas app gates green with no `X_NATIVE_FORM_UNANSWERED`. |
 | [31.45.0](docs/changelog/31.45.0.md) | 2026-11-18 | **Faster, steadier CI, and what the adopter rollout taught:** |
 | [31.44.0](docs/changelog/31.44.0.md) | 2026-11-17 | **Audit rounds 5 and 6 (plan 101b, slice 20), security first:** |
