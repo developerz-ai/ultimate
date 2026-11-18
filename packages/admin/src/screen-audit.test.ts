@@ -3,7 +3,7 @@
 // or the log says; an app's own log that ignores a field draws no entry it should not; and a
 // sensitive field's value is masked even when the entry holds it in clear.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { ctxOf, REDACTED, runWithContext, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { resetCatalogs } from '@ultimat3/i18n';
@@ -60,6 +60,16 @@ let paged: AdminApp;
 let custom: AdminApp;
 let rowId = '';
 
+// Every GET below is itself audited, so a shared trail would page differently per test order. The
+// admin keeps one log; what it delegates to is rebuilt for each case.
+let trail = memoryAuditLog({ capacity: 5_000 });
+const currentTrail: AuditLog = {
+  kind: 'memory',
+  append: (entry) => trail.append(entry),
+  entries: (query) => trail.entries(query),
+  atomic: (run) => trail.atomic(run),
+};
+
 beforeAll(async () => {
   defineRoles({
     ...previousRoles,
@@ -69,9 +79,20 @@ beforeAll(async () => {
   });
   const db = database({ notes }, { driver: memoryDriver() });
   const resources = { [ENTITY]: { fields: { email: { sensitive: true } } } };
-  const trail = memoryAuditLog({ capacity: 5_000 });
-  paged = defineAdmin({ entities: [notes], db, resources, audit: trail });
+  paged = defineAdmin({ entities: [notes], db, resources, audit: currentTrail });
   rowId = String((await db.notes.insert({ title: 'One note', email: PLAINTEXT })).id);
+
+  const inner = memoryAuditLog();
+  custom = defineAdmin({ entities: [notes], db, audit: careless(inner), basePath: '/ops' });
+  await inner.append(draft('u-allowed'));
+  await inner.append(draft('u-denied', { outcome: 'denied' }));
+  await inner.append(
+    draft('u-other-org', { outcome: 'denied', actor: { id: 'u-other-org', orgId: ORG_B } }),
+  );
+});
+
+beforeEach(async () => {
+  trail = memoryAuditLog({ capacity: 5_000 });
   // 101 changes in org A, oldest first: `u-000` is the one entry a 100-entry page cannot reach.
   for (let n = 0; n <= 100; n++) await trail.append(draft(`u-${String(n).padStart(3, '0')}`));
   // 101 refusals, so a filtered trail needs its older link too.
@@ -86,14 +107,6 @@ beforeAll(async () => {
       entityId: rowId,
       diff: [{ field: 'email', before: PLAINTEXT, after: 'b@example.test' }],
     }),
-  );
-
-  const inner = memoryAuditLog();
-  custom = defineAdmin({ entities: [notes], db, audit: careless(inner), basePath: '/ops' });
-  await inner.append(draft('u-allowed'));
-  await inner.append(draft('u-denied', { outcome: 'denied' }));
-  await inner.append(
-    draft('u-other-org', { outcome: 'denied', actor: { id: 'u-other-org', orgId: ORG_B } }),
   );
 });
 

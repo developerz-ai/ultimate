@@ -7,20 +7,25 @@
 // table that will be missing in production is exactly the defect this file exists to catch, and a
 // check that skips unless someone exports a URL is a check nobody runs.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { pgliteClient, raw, sql } from '@ultimat3/db';
 import { applyFrameworkSchema, frameworkTableNames } from './framework-schema';
 
 describe('the framework schema, applied to the real embedded database', () => {
   // A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget.
   const PGLITE_BOOT_MS = 60_000;
-  const client = pgliteClient();
+  // A database per test: "applies" and "applies twice" each mean something only from empty.
+  let client: ReturnType<typeof pgliteClient>;
   const apply = (): Promise<readonly string[]> =>
     applyFrameworkSchema((statement) => client.execute(raw(statement)));
 
-  afterAll(async () => {
-    await client.close();
+  beforeEach(() => {
+    client = pgliteClient();
   });
+
+  afterEach(async () => {
+    await client.close();
+  }, PGLITE_BOOT_MS);
 
   test(
     'every statement applies, and every table a row claims is really there afterwards',
@@ -43,6 +48,7 @@ describe('the framework schema, applied to the real embedded database', () => {
     async () => {
       // `startQueue` is on every boot path there is, so the second `x dev` of the day and every
       // rolling restart re-run this. `create table if not exists` is the whole guarantee.
+      await apply();
       await expect(apply()).resolves.toEqual(frameworkTableNames());
     },
     PGLITE_BOOT_MS,
@@ -51,6 +57,7 @@ describe('the framework schema, applied to the real embedded database', () => {
   test(
     'x_sessions really does carry the foreign key that makes row order load-bearing',
     async () => {
+      await apply();
       const rows = await client.query<{ table_name: string }>(sql`
         select ccu.table_name
         from information_schema.table_constraints tc

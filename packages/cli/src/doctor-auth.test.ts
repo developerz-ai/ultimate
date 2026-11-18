@@ -2,7 +2,7 @@
 // is told at deploy — not by a user at sign-in — that secrets are still unsealed or a retired
 // table is still there.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { AUTH_TABLES } from '@ultimat3/auth';
 import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import {
@@ -49,7 +49,7 @@ describe('unit · doctor · auth storage', () => {
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;
-/** Its own database: the probe reads the whole of `x_users`, and this file creates a table. */
+/** Its own database, per test: the probe reads the whole of `x_users`, and one test creates it. */
 const PROBE_DB = probeDatabaseName('x_doctor_auth_probe');
 
 const probeUrl = (): string => {
@@ -79,12 +79,15 @@ const adminExecutor = {
 
 describeLive('live · postgres · doctor · auth storage', () => {
   beforeAll(async () => {
-    await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
     await sweepProbeDatabases(adminExecutor, PROBE_DB);
+  });
+
+  beforeEach(async () => {
+    await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
     await on(url ?? '', `create database ${PROBE_DB}`);
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
   });
 

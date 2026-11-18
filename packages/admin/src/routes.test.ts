@@ -2,7 +2,7 @@
 // its own page file, and these assertions are what stop that host from typing the permission a
 // second time — the shape the deployed demo shipped on five pages until 1.2.0.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { clearRoutes, describePages, routeEntries } from '@ultimat3/render';
@@ -20,9 +20,6 @@ const post = entity('admin_routes_post', {
   columns: { id: uuid().primaryKey(), title: text({ max: 120 }) },
 });
 
-// The route list is one per process and every admin mounts into it: a file that ran first left
-// its own `/back-office` mount there, so this file reads the list from empty — and leaves it so.
-clearRoutes();
 afterAll(() => {
   clearRegistry();
   clearRoutes();
@@ -41,7 +38,10 @@ const ops: AdminCustomPage = {
 };
 
 let app: AdminApp;
-beforeAll(() => {
+// The route list is one per process and every admin mounts into it — another file's, and the ones
+// the cases below define — so each case reads it from empty, holding this one admin alone.
+beforeEach(() => {
+  clearRoutes();
   app = defineAdmin({
     entities: [post],
     db: database({ post }, { driver: memoryDriver() }),

@@ -38,7 +38,7 @@ queries, jobs, MCP tools, published operations and tests it touches, each with p
 
 | Rule | Detail | Refused by |
 |---|---|---|
-| One gate | \`bun run verify\` — \`bunx x verify\`, which builds what its \`budgets\` step weighs. Green means shippable; never merge red. CI runs the same gate, cut into parts: \`bun run verify plan --json\` names them, each runner runs \`bun run setup && bun run verify --only <steps>\`, and \`bun run verify merge\` is the verdict | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request and once a week; \`.github/workflows/image.yml\` publishes only a commit it passed |
+| One gate | \`bun run verify\` — \`bunx x verify\`, which builds what its \`budgets\` step weighs. Green means shippable; never merge red. CI runs the same gate, cut into parts: \`bun run verify plan --json\` names them, each runner runs \`bun run setup && bun run verify --only <steps>\`, and \`bun run verify merge\` is the verdict | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
 | Coverage | the unit suite covers 95% of the lines and functions of this app's own source — every file under \`apps/\` and \`packages/\`, one no test loads counted at 0%. A floor, not the goal: a test added to raise it is proven by mutation — break the source, watch it go red, restore | \`X_COVERAGE_BELOW_FLOOR\` on the \`unit\` step; \`coverage\` in \`x.verify.json\` states the floor, and it only rises |
 | One way | generators, not hand-rolled files: \`bunx x g resource\`, \`bunx x g action\`, \`bunx x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
@@ -183,7 +183,8 @@ with \`X_DB_DRIFT\`, and that is the fix it names.
 | \`x.manifest.json\` | generated facts: routes, actions, jobs, policies |
 | \`.mcp.json\` | MCP client config: the dev tools, \`bunx @ultimat3/cli mcp serve --transport stdio\` |
 | \`apps/web/mcp.ts\` | the app's own \`POST /mcp\`: exposed actions, behind a bearer token |
-| \`.github/workflows/ci.yml\` | on push, pull request and a weekly schedule (a scheduled failure opens one issue): \`bun run verify plan\` cuts the gate into parts, each runner runs \`bun run setup\` then its \`bun run verify --only …\`, and \`bun run verify merge\` folds them into the one verdict |
+| \`.github/workflows/ci.yml\` | on push and pull request: \`bun run verify plan\` cuts the gate into parts, each runner runs \`bun run setup\` then its \`bun run verify --only …\`, and \`bun run verify merge\` folds them into the one verdict |
+| \`.github/workflows/ci.yml\`, weekly | the same gate on the default branch, so a quiet repository still learns the world moved; a red run keeps one issue open until the next green one |
 | \`.github/workflows/image.yml\` | after a green \`ci\` on the default branch: \`docker/Dockerfile\` to \`ghcr.io\`, tagged \`sha-<7>\`, always on \`ubuntu-latest\` (bash and Docker). \`ci.yml\` runs on \`vars.CI_RUNNER\`, default \`ubuntu-latest\` |
 `;
 

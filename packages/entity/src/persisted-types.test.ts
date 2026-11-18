@@ -3,10 +3,13 @@ import { uuid } from './columns';
 import { entity } from './entity';
 import { persistedRecordTypes } from './persisted-types';
 import { clearRegistry } from './registry';
+import { restoreRegistryAfterEachTest } from './registry-restore-fixture';
 
 afterAll(() => {
   clearRegistry();
 });
+
+restoreRegistryAfterEachTest();
 
 describe('persistedRecordTypes()', () => {
   test('names every persist: true entity, sorted, and no other', () => {

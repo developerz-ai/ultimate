@@ -896,7 +896,7 @@ Not configuration of the app: what `x verify` holds it to, committed at the repo
 { "exercise": { "unprovenMax": 0, "statementsMax": 100 } }
 ```
 
-`x new` writes exactly that; `x upgrade` writes the figures the hop measured into a file that states none, so the floor only falls. A malformed value is a `manifest`-step problem naming the shape → [CLI reference](CLI-Reference#x-exercise).
+`x new` writes exactly that; `x upgrade` writes the figures the hop measured into a file that states none, so the floor only falls; a figure the app already wrote is never changed, even when the pass's constant seed (31.47.0) lands above it → [Upgrading](Upgrading). A malformed value is a `manifest`-step problem naming the shape → [CLI reference](CLI-Reference#x-exercise).
 
 `x config show --json` prints the resolved config — defaults merged, credentials redacted; `--section database` for one key (since 31.17.0) → [CLI reference](CLI-Reference).
 

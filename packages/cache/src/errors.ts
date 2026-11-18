@@ -1,6 +1,6 @@
 // The X_* codes owned by @ultimat3/cache. Each one names the exact config change or
 // command that resolves it, so an agent reading the failure can act without a doc lookup.
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, renderFixLiteral, UltimateError } from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const CACHE_OWNED_ERROR_CODES = [
@@ -54,12 +54,15 @@ export class CacheDriverUnavailableError extends UltimateError {
  */
 export class CacheTagUnknownError extends UltimateError {
   constructor(input: { tag: string; known: readonly string[] }) {
+    // `declareTags` takes the name; a row tag arrives in its wire form, `<name>:<id>`.
+    const name = input.tag.split(':', 1)[0] ?? input.tag;
     super({
       code: 'X_CACHE_TAG_UNKNOWN',
       cause: `tag "${input.tag}" is not declared by any entity (declared: ${
         input.known.length > 0 ? input.known.join(', ') : 'none'
       })`,
-      fix: 'x manifest',
+      // Only the app declares tags, so the repair is an edit there: nothing generates either half.
+      fix: `declareTags([${renderFixLiteral(name, "'<tag>'")}])   // in the module that already calls declareTags, and add the name to its CacheTagRegistry; for a typo, use a declared name from the cause instead`,
     });
   }
 }
@@ -67,11 +70,16 @@ export class CacheTagUnknownError extends UltimateError {
 /** A single entry cannot fit the tier's byte budget, so caching it would evict everything. */
 export class CacheTooLargeError extends UltimateError {
   constructor(input: { key: string; bytes: number; maxBytes: number; tier: string }) {
+    const bytes = String(input.bytes);
+    // The cap is a constructor option on every tier, never an `app.config.ts` key.
+    const raise =
+      input.tier === 'redis'
+        ? `redisTier({ maxValueBytes: ${bytes} })`
+        : `lruTier({ maxBytes: ${bytes} })`;
     super({
       code: 'X_CACHE_TOO_LARGE',
       cause: `entry "${input.key}" is ${input.bytes}B, over the ${input.tier} budget of ${input.maxBytes}B`,
-      // The cap is a constructor option on every tier, never an `app.config.ts` key.
-      fix: `${input.tier}Tier({ ${input.tier === 'redis' ? 'maxValueBytes' : 'maxBytes'}: ${String(input.bytes)} }) where the tier is built, or cache a projection instead of the row`,
+      fix: `${raise} where the tier is built, or cache a projection instead of the row`,
     });
   }
 }

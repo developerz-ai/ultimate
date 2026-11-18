@@ -7,8 +7,9 @@
 // left in the output directory. Both halves need a real `prerenderSite`, because the defect lives
 // in the ORDER two file operations happen in and no fixture can fake an order.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+// why: Bun has no mkdtemp and no recursive remove, only a per-file delete.
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { clearRoutes, defineRoute, island, registerRoute, themeScriptBody } from '@ultimat3/render';
@@ -22,7 +23,10 @@ import { VERIFY_STATIC_OUT } from './verify-budgets-build';
 
 // Its own directory: `prerender.test.ts` and `prerender-islands.test.ts` wrote the SAME root, and
 // under the gate's parallel workers each file's build read the other's `app.config.ts` and output.
-const ROOT = processRoot(join(import.meta.dir, '..', '.prerender-budgets-fixture'));
+const BASE = processRoot(join(import.meta.dir, '..', '.prerender-budgets-fixture'));
+// A root per test: Bun caches `app.config.ts` by path for the life of the process, so on a shared
+// root a build read the config of whichever test imported it first, `pwa` block or none.
+let root = '';
 
 // `defineRoute`, not a literal: the registry refuses a raw declaration, and this is the exact
 // config `x new` writes for `site/page.tsx` — `js: '0kb'` included, which is the promise under test.
@@ -47,16 +51,21 @@ const pwaConfig = (): string =>
 
 beforeEach(async () => {
   clearRoutes();
-  await rm(ROOT, { recursive: true, force: true });
+  await mkdir(BASE, { recursive: true });
+  root = await mkdtemp(join(BASE, 'build-'));
   await Bun.write(
-    join(ROOT, 'package.json'),
+    join(root, 'package.json'),
     JSON.stringify({ name: 'prerender-fixture', version: '1.0.0' }),
   );
 });
 
 afterEach(async () => {
   clearRoutes();
-  await rm(ROOT, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true });
+});
+
+afterAll(async () => {
+  await rm(BASE, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -85,14 +94,14 @@ describe('x build --target static · the framework`s bytes are counted, never ch
   });
 
   test('frameworkJsBytes is the registration`s real size on a CLEAN output directory', async () => {
-    await Bun.write(join(ROOT, 'app.config.ts'), pwaConfig());
+    await Bun.write(join(root, 'app.config.ts'), pwaConfig());
     registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
 
-    const out = join(ROOT, 'static');
+    const out = join(root, 'static');
     expect(await Bun.file(join(out, 'x-sw-register.js')).exists()).toBe(false);
-    await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+    await prerenderSite({ root: root, out, origin: 'https://example.test' });
 
-    const stats = await readBuildStats(ROOT);
+    const stats = await readBuildStats(root);
     const home = stats?.routes.find((route) => route.path === '/');
     // The app ships none of its own, which is what makes the framework's number the whole story.
     expect(home?.jsBytes).toBe(0);
@@ -100,17 +109,17 @@ describe('x build --target static · the framework`s bytes are counted, never ch
   });
 
   test('and a REUSED output directory records the same number, not the last build`s file', async () => {
-    await Bun.write(join(ROOT, 'app.config.ts'), pwaConfig());
+    await Bun.write(join(root, 'app.config.ts'), pwaConfig());
     registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
 
-    const out = join(ROOT, 'static');
-    await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
-    const first = (await readBuildStats(ROOT))?.routes.find((route) => route.path === '/');
+    const out = join(root, 'static');
+    await prerenderSite({ root: root, out, origin: 'https://example.test' });
+    const first = (await readBuildStats(root))?.routes.find((route) => route.path === '/');
     // Second pass over the SAME directory, exactly as a gate run twice does. Nothing was
     // cleaned, so the previous `/x-sw-register.js` is sitting there.
     expect(await Bun.file(join(out, 'x-sw-register.js')).exists()).toBe(true);
-    await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
-    const second = (await readBuildStats(ROOT))?.routes.find((route) => route.path === '/');
+    await prerenderSite({ root: root, out, origin: 'https://example.test' });
+    const second = (await readBuildStats(root))?.routes.find((route) => route.path === '/');
 
     expect(first?.frameworkJsBytes).toBe(REGISTRATION_BYTES);
     expect(second?.frameworkJsBytes).toBe(first?.frameworkJsBytes);
@@ -140,7 +149,7 @@ export function mount(el: HTMLElement): void {
   ] as const)(
     '%s: its chunk at its on-disk size, and the hydration runtime as inline bytes',
     async (_name, file, path, render) => {
-      await Bun.write(join(ROOT, file.replace('page.tsx', 'plain.island.tsx')), PLAIN_ISLAND);
+      await Bun.write(join(root, file.replace('page.tsx', 'plain.island.tsx')), PLAIN_ISLAND);
       registerRoute({
         file,
         config: defineRoute({
@@ -153,9 +162,9 @@ export function mount(el: HTMLElement): void {
         component: (): unknown => Plain({ children: '…' }),
       });
 
-      const out = join(ROOT, 'static');
-      await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
-      const row = (await readBuildStats(ROOT))?.routes.find((one) => one.path === path);
+      const out = join(root, 'static');
+      await prerenderSite({ root: root, out, origin: 'https://example.test' });
+      const row = (await readBuildStats(root))?.routes.find((one) => one.path === path);
 
       const [charged] = row?.charged ?? [];
       expect(row?.charged).toHaveLength(1);
@@ -191,7 +200,7 @@ export function mount(): void {
     });
 
   test('a scoped app/ page: its page boot is charged, the runtime chunk is not', async () => {
-    await Bun.write(join(ROOT, 'apps/web/app/live/live.island.tsx'), LIVE_ISLAND);
+    await Bun.write(join(root, 'apps/web/app/live/live.island.tsx'), LIVE_ISLAND);
     registerRoute({
       file: 'apps/web/app/live/page.tsx',
       config: route('stream'),
@@ -199,8 +208,8 @@ export function mount(): void {
       // A stream is always scoped (`private, no-store`) — the mode that needs no policy to be.
     });
 
-    await prerenderSite({ root: ROOT, out: join(ROOT, 'static'), origin: 'https://example.test' });
-    const row = (await readBuildStats(ROOT))?.routes.find((one) => one.path === '/live');
+    await prerenderSite({ root: root, out: join(root, 'static'), origin: 'https://example.test' });
+    const row = (await readBuildStats(root))?.routes.find((one) => one.path === '/live');
     const urls = (row?.charged ?? []).map((one) => one.url);
 
     expect(urls.some((url) => url.startsWith('/_x/assets/page-boot/'))).toBe(true);
@@ -209,15 +218,15 @@ export function mount(): void {
   });
 
   test('a static export: no boot in the document, so the runtime chunk is charged', async () => {
-    await Bun.write(join(ROOT, 'apps/web/site/live/live.island.tsx'), LIVE_ISLAND);
+    await Bun.write(join(root, 'apps/web/site/live/live.island.tsx'), LIVE_ISLAND);
     registerRoute({
       file: 'apps/web/site/live/page.tsx',
       config: route('static'),
       component: (): unknown => Live({ children: '…' }),
     });
 
-    await prerenderSite({ root: ROOT, out: join(ROOT, 'static'), origin: 'https://example.test' });
-    const row = (await readBuildStats(ROOT))?.routes.find((one) => one.path === '/live');
+    await prerenderSite({ root: root, out: join(root, 'static'), origin: 'https://example.test' });
+    const row = (await readBuildStats(root))?.routes.find((one) => one.path === '/live');
     const urls = (row?.charged ?? []).map((one) => one.url);
 
     expect(urls.some(isRuntimeChunk)).toBe(true);
@@ -245,8 +254,8 @@ export function mount(el: HTMLElement): void {
     for (const key of ORIGIN_KEYS) delete process.env[key];
     try {
       // No `site.origin` either: the config names the app and nothing else.
-      await Bun.write(join(ROOT, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
-      await Bun.write(join(ROOT, 'apps/web/site/plain/plain.island.tsx'), PLAIN_ISLAND);
+      await Bun.write(join(root, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
+      await Bun.write(join(root, 'apps/web/site/plain/plain.island.tsx'), PLAIN_ISLAND);
       registerRoute({
         file: 'apps/web/site/plain/page.tsx',
         config: defineRoute({
@@ -258,20 +267,20 @@ export function mount(el: HTMLElement): void {
         }),
         component: (): unknown => Plain({ children: '…' }),
       });
-      const deployed = join(ROOT, '.x', 'static', 'index.html');
+      const deployed = join(root, '.x', 'static', 'index.html');
       await Bun.write(deployed, '<!-- the deployable build, origin https://real.example -->');
 
-      expect(await readBuildStats(ROOT)).toBeUndefined();
-      await prerenderSite({ root: ROOT, out: join(ROOT, VERIFY_STATIC_OUT) });
+      expect(await readBuildStats(root)).toBeUndefined();
+      await prerenderSite({ root: root, out: join(root, VERIFY_STATIC_OUT) });
       // What the build read, recorded in the stats: `budgets` judges a later save against it.
-      expect((await readBuildStats(ROOT))?.sourcesAt).toBe(await newestSourceMtime(ROOT));
-      const unset = (await readBuildStats(ROOT))?.routes.find((one) => one.path === '/plain');
+      expect((await readBuildStats(root))?.sourcesAt).toBe(await newestSourceMtime(root));
+      const unset = (await readBuildStats(root))?.routes.find((one) => one.path === '/plain');
       await prerenderSite({
-        root: ROOT,
-        out: join(ROOT, 'static'),
+        root: root,
+        out: join(root, 'static'),
         origin: 'https://real.example',
       });
-      const set = (await readBuildStats(ROOT))?.routes.find((one) => one.path === '/plain');
+      const set = (await readBuildStats(root))?.routes.find((one) => one.path === '/plain');
 
       expect(unset?.jsBytes).toBeGreaterThan(0);
       expect(unset?.jsBytes).toBe(set?.jsBytes ?? -1);

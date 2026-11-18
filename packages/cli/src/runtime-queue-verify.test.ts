@@ -2,7 +2,7 @@
 // the wait's deadline is read from the env the boot was HANDED, and the one statement that reads
 // the framework stamp and the app's ledger together runs on a real server, ledger absent or not.
 
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -23,7 +23,9 @@ const BOOT_MS = 60_000;
 let root = '';
 let running: RunningQueue | undefined;
 
-beforeAll(async () => {
+// A root per test: the embedded database lives under it, and one test's stamp is what another's
+// "no migrate ever ran" is about.
+beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'x-verify-'));
   await Bun.write(join(root, MIGRATIONS_DIR, '0001_init.sql'), 'create table notes (id int);\n');
 });
@@ -33,11 +35,8 @@ afterEach(async () => {
   running = undefined;
   resetJobDriver();
   setDbClient(undefined);
-}, BOOT_MS);
-
-afterAll(async () => {
   await rm(root, { recursive: true, force: true });
-});
+}, BOOT_MS);
 
 const refusal = async (work: Promise<RunningQueue>): Promise<UltimateError> => {
   try {

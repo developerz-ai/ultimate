@@ -17,15 +17,39 @@ export type LinkResolver = (link: LinkAt) => string | undefined;
 // `[text](target "title")`, one level of brackets inside the text (`[`x`]` and `[a [b]]` both
 // occur in the wiki), and one level of parentheses inside the target.
 const LINK = /(!?\[(?:[^[\]]|\[[^\]]*\])*\]\()([^()\s]+(?:\([^()\s]*\))?)((?:\s+"[^"]*")?\))/g;
-const CODE_SPAN = /(`+)[\s\S]*?\1/g;
 
 /**
- * Links found on the line with every code span blanked to `x`s of the same length, so a bracket
- * inside code opens nothing while a link whose TEXT holds code (`[\`x verify\`](CLI-Reference)`)
- * is still one link; the splice is made on the line as written, at the same offsets.
+ * The line with every code span blanked to `x`s of the same length. A span closes on the next run
+ * of exactly its opener's length, and a run with no such closer is literal. Knowing each length's
+ * last run means only a scan that will succeed is made, and it skips what it read: linear.
+ */
+function maskCodeSpans(line: string): string {
+  const runs = [...line.matchAll(/`+/g)].map((run) => ({ at: run.index, size: run[0].length }));
+  const lastOfSize = new Map(runs.map((run, index) => [run.size, index]));
+  let out = '';
+  let from = 0;
+  for (let open = 0; open < runs.length; open += 1) {
+    const opener = runs[open];
+    if (opener === undefined || (lastOfSize.get(opener.size) ?? open) <= open) continue;
+    let close = open + 1;
+    while (runs[close]?.size !== opener.size) close += 1;
+    const closer = runs[close];
+    if (closer === undefined) continue;
+    const end = closer.at + closer.size;
+    out += line.slice(from, opener.at) + 'x'.repeat(end - opener.at);
+    from = end;
+    open = close;
+  }
+  return out + line.slice(from);
+}
+
+/**
+ * Links found on the line with every code span blanked, so a bracket inside code opens nothing
+ * while a link whose TEXT holds code (`[\`x verify\`](CLI-Reference)`) is still one link; the
+ * splice is made on the line as written, at the same offsets.
  */
 function rewriteLine(line: string, at: number, resolve: LinkResolver): string {
-  const masked = line.replace(CODE_SPAN, (span) => 'x'.repeat(span.length));
+  const masked = maskCodeSpans(line);
   let out = '';
   let from = 0;
   for (const match of masked.matchAll(LINK)) {

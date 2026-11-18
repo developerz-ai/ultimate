@@ -10,6 +10,8 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { action, resetActions, rpc, t } from '@ultimat3/action';
 import { registerActions } from '@ultimat3/action/loader';
+import { generateMigration } from '@ultimat3/db';
+import { entity, text, uuid } from '@ultimat3/entity';
 import { registeredJobs, resetJobs, restoreJobs } from '@ultimat3/jobs';
 import {
   can,
@@ -22,11 +24,13 @@ import { from, query, resetQueries } from '@ultimat3/query';
 import { registerQuery } from '@ultimat3/query/loader';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { disk } from '@ultimat3/storage';
+import { DEFAULT_SEED } from '@ultimat3/testing';
 import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
 import { REQUIRED_BUN } from './app-root';
 import { exerciseCommand, exerciseRoles } from './cmd-exercise';
 import type { CommandContext } from './command';
 import { EXERCISE_REPORT_FILE } from './exercise-findings';
+import { MIGRATIONS_DIR } from './migrations';
 import type { FlagValue } from './parse';
 import { processRoot } from './process-root-fixture';
 
@@ -307,6 +311,98 @@ describe('unit · x exercise', () => {
       );
     expect(await codeOf(contextFor(['cxWorks'], { shard: '1/2' }))).toBe('X_VERIFY_SHARD_INVALID');
     expect(await codeOf(contextFor([], { shard: '3/2' }))).toBe('X_VERIFY_SHARD_INVALID');
+  });
+
+  describe('the seed', () => {
+    /** The gate's own invocation: `x exercise --json`, no `--seed` on it. */
+    const asTheGate = (): CommandContext => {
+      const ctx = contextFor();
+      (ctx.args.flags as Map<string, FlagValue>).delete('seed');
+      return ctx;
+    };
+
+    interface Pass {
+      readonly seed: unknown;
+      readonly tenants: readonly string[];
+      readonly verdict: unknown;
+      readonly lines: readonly string[];
+    }
+
+    let tenants: string[] = [];
+    // One value: a second registration under this name is only legal for the same action.
+    const cxTenant = action({
+      input: t.object({}),
+      output: t.object({ ok: t.boolean }),
+      policy: can('cx:write'),
+      handle: async ({ ctx: call }) => {
+        tenants.push(call.actor.orgId ?? '');
+        return { ok: true };
+      },
+    });
+
+    /** One pass, and the tenants its handler ran in: they are drawn from the seed, as row ids are. */
+    const pass = async (ctx: CommandContext): Promise<Pass> => {
+      tenants = [];
+      registerActions({ cxTenant });
+      const result = await exerciseCommand.run(ctx);
+      const written = (await Bun.file(join(ROOT, EXERCISE_REPORT_FILE)).json()) as {
+        seed: unknown;
+        counts: unknown;
+      };
+      return {
+        seed: written.seed,
+        tenants,
+        verdict: { ok: result.ok, findings: result.findings ?? [], counts: written.counts },
+        lines: result.lines ?? [],
+      };
+    };
+
+    // A table with a primary key: the rows are committed, so a second pass on this seed finding
+    // the first's rows would die on the key. Each pass has to start on a scratch database.
+    const withSeededTable = async (work: () => Promise<void>): Promise<void> => {
+      const rows = entity('cx_seed_rows', {
+        columns: { id: uuid().primaryKey(), label: text({ max: 40 }) },
+      });
+      const { up } = generateMigration({
+        entities: [rows.$describe()],
+        name: 'seed_rows',
+        now: new Date('2026-11-18T00:00:00.000Z'),
+      });
+      await Bun.write(join(ROOT, MIGRATIONS_DIR, '0001_seed_rows.sql'), `${up}\n`);
+      try {
+        await work();
+      } finally {
+        await rm(join(ROOT, 'packages'), { recursive: true, force: true });
+      }
+    };
+
+    test('two runs with no --seed use one seed, one set of rows and one verdict', async () => {
+      await withSeededTable(async () => {
+        const first = await pass(asTheGate());
+        const second = await pass(asTheGate());
+        expect(first.seed).toBe(DEFAULT_SEED);
+        expect(second.seed).toBe(DEFAULT_SEED);
+        expect(first.tenants.length).toBeGreaterThan(0);
+        expect(second.tenants).toEqual(first.tenants);
+        expect(second.verdict).toEqual(first.verdict);
+      });
+    }, 60_000);
+
+    test('--seed overrides the default, and the run prints the seed that replays it', async () => {
+      const gate = await pass(asTheGate());
+      const other = await pass(contextFor([], { seed: '8' }));
+      expect(other.seed).toBe(8);
+      expect(other.tenants).not.toEqual(gate.tenants);
+      expect(other.lines.some((line) => line.includes('x exercise --seed 8 --json'))).toBe(true);
+    }, 60_000);
+
+    test('--seed random explores a seed the report names, and that seed replays it', async () => {
+      const explored = await pass(contextFor([], { seed: 'random' }));
+      expect(explored.seed).toBeNumber();
+      const replayed = await pass(contextFor([], { seed: String(explored.seed) }));
+      expect(replayed.tenants).toEqual(explored.tenants);
+      expect(replayed.verdict).toEqual(explored.verdict);
+    }, 60_000);
   });
 
   // A page's load reads through the app's own typed client over APP_URL: answered in process.

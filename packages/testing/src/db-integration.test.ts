@@ -8,7 +8,7 @@
 // `TEST_DATABASE_URL`; a laptop with nothing installed just skips this file, same as
 // `acquireWorkerDatabase` falling back to PGlite for every other suite.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   checkDb,
   createBranch,
@@ -65,6 +65,10 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
     await client.close();
     await adminClient.close();
     await worker.drop();
+  });
+
+  beforeEach(async () => {
+    await client.execute(sql`truncate widgets, widget_parts restart identity`);
   });
 
   test('postgresClient runs real statements over a real socket', async () => {
@@ -245,6 +249,7 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
   test('createBranch clones live data via CREATE DATABASE ... TEMPLATE', async () => {
     const branchName = `${worker.database}_branch`;
     let branched = false;
+    await client.execute(sql`insert into widgets (name) values (${'left-hinge-v2'})`);
     try {
       // Release every connection `client` holds on the worker db — the source of the clone —
       // before asking Postgres to copy it. Otherwise this is `X_DB_UNAVAILABLE`: "source database
@@ -262,8 +267,8 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
 
       const branchClient = postgresClient({ url: urlFor(worker.url, branchName) });
       try {
-        // The branch is a copy-on-write clone made *after* the insert/update above, so the
-        // renamed row must already be there — proving this is real data, not a fresh schema.
+        // The branch is a copy-on-write clone made *after* the insert above, so the row must
+        // already be there — proving this is real data, not a fresh schema.
         const row = await branchClient.one<{ name: string }>(
           sql`select name from widgets where name = ${'left-hinge-v2'}`,
         );

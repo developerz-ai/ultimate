@@ -21,11 +21,15 @@ const demo = factorySeed('demo', async ({ id }) => {
   await postFactory.create({ id: id('post:hello'), org });
 });
 
-const appDriver = memoryDriver();
-const seedFor = seedFixture({ seeds: [demo], driver: () => appDriver });
+/** One app database: each `seedFor()` is what one test's fixture hands it. */
+const appWith = () => {
+  const appDriver = memoryDriver();
+  return { appDriver, seedFor: seedFixture({ seeds: [demo], driver: () => appDriver }) };
+};
 
 describe('seed fixture', () => {
   unitTest('runs the named seed into the app driver and picks rows by label', async () => {
+    const { appDriver, seedFor } = appWith();
     const seed = seedFor();
     const { acme, hello } = await seed('demo').pick({ acme: 'org:acme', hello: 'post:hello' });
     expect(acme['name']).toBe('Acme');
@@ -35,11 +39,13 @@ describe('seed fixture', () => {
   });
 
   unitTest('one run per test: a second seed(name) is the same handle', () => {
-    const seed = seedFor();
+    const seed = appWith().seedFor();
     expect(seed('demo')).toBe(seed('demo'));
   });
 
   unitTest('a replay writes nothing and still finds every label', async () => {
+    const { seedFor } = appWith();
+    expect((await seedFor()('demo').ran).metrics.inserted).toBe(2);
     const handle = seedFor()('demo');
     expect((await handle.ran).metrics.inserted).toBe(0);
     const { acme } = await handle.pick({ acme: 'org:acme' });
@@ -47,7 +53,7 @@ describe('seed fixture', () => {
   });
 
   unitTest('an unknown seed or label is refused by name', async () => {
-    const seed = seedFor();
+    const seed = appWith().seedFor();
     expect(() => seed('prod')).toThrow(/no seed named "prod".*known: demo/);
     await expect(seed('demo').pick({ who: 'org:nobody' })).rejects.toThrow(
       /wrote no row labelled "org:nobody"/,

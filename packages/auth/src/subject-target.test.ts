@@ -2,7 +2,7 @@
 // no digest; the erase removes the user — sessions and accounts by cascade — their API keys and
 // verifications, and touches nobody else.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { pgliteClient, raw } from '@ultimat3/db';
 import { authSubjectTarget } from './subject-target';
@@ -26,6 +26,11 @@ beforeAll(async () => {
       if (statement.trim() !== '') await client.execute(raw(statement));
     }
   }
+}, PGLITE_BOOT_MS);
+
+// An erase is the thing under test, so every case starts from the whole cast.
+beforeEach(async () => {
+  await client.execute(raw('truncate x_users, x_verifications cascade'));
   for (const [id, email] of [
     [ME, 'me@x.test'],
     [YOU, 'you@x.test'],
@@ -59,7 +64,7 @@ beforeAll(async () => {
       [id, identifier],
     );
   }
-}, PGLITE_BOOT_MS);
+});
 
 afterAll(async () => {
   await client.close();

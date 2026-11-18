@@ -4,7 +4,7 @@
 // entities were declared by hand beside a generated one. And in an app whose `packages/db` is a
 // schema and a seed, the same run wrote a `client.ts` nothing imports.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, mkdir, symlink or recursive remove — a throwaway app root is node:fs's.
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -74,10 +74,17 @@ describe('unit · x g entity --feature: the first entity and every one after it'
   let root = '';
   const read = (path: string): Promise<string> => Bun.file(join(root, path)).text();
 
-  beforeAll(async () => {
+  /** The entities a test stands on, generated in order into its own app. */
+  const generated = async (...names: readonly string[]): Promise<void> => {
+    for (const name of names) {
+      expect((await generateCommand.run(contextFor(root, name))).findings).toEqual([]);
+    }
+  };
+
+  beforeEach(async () => {
     root = await newApp('x-generate-second-entity-');
   });
-  afterAll(async () => {
+  afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
 
@@ -93,6 +100,7 @@ describe('unit · x g entity --feature: the first entity and every one after it'
   });
 
   test('the second lands BESIDE it as entity-<name>.ts + repo-<name>.ts; the first is untouched', async () => {
+    await generated('blog-post');
     const first = await read(`${SLICE}/entity.ts`);
     const repo = await read(`${SLICE}/repo.ts`);
     const planned = await generateCommand.run(
@@ -131,6 +139,7 @@ describe('unit · x g entity --feature: the first entity and every one after it'
   });
 
   test('it joins the handle, the role map and the catalog exactly as a first entity does', async () => {
+    await generated('blog-post', 'blog-attempt');
     const handle = await read(HANDLE_FILE);
     expect(handle).toContain(
       "import { blogAttempt } from '@gen/web/app/blog/entity-blog-attempt';",
@@ -148,6 +157,7 @@ describe('unit · x g entity --feature: the first entity and every one after it'
   });
 
   test('the Nth is one more pair of siblings', async () => {
+    await generated('blog-post', 'blog-attempt');
     const result = await generateCommand.run(contextFor(root, 'blog-keyword-batch'));
     expect(result.findings).toEqual([]);
     expect(filesOf(result.data)).toContain(`${SLICE}/entity-blog-keyword-batch.ts`);
@@ -155,6 +165,7 @@ describe('unit · x g entity --feature: the first entity and every one after it'
   });
 
   test('the SAME entity again is still a conflict — on its own files, never on a sibling’s', async () => {
+    await generated('blog-post', 'blog-attempt');
     const first = await generateCommand.run(contextFor(root, 'blog-post'));
     expect(first.ok).toBe(false);
     expect(first.findings?.map((finding) => finding.at)).toContain(`${SLICE}/entity.ts`);
@@ -169,6 +180,7 @@ describe('unit · x g entity --feature: the first entity and every one after it'
   });
 
   test('every one passes its own tests, and x db gen’s registry holds all three tables', async () => {
+    await generated('blog-post', 'blog-attempt', 'blog-keyword-batch');
     await Bun.write(join(root, 'registry.test.ts'), REGISTRY_PROBE);
     const run = await exec(
       [
@@ -210,7 +222,7 @@ describe('unit · an app whose db package and role map are its own', () => {
   const OWN_INDEX =
     "export { db, sql } from '@ultimat3/db';\nexport * as schema from './schema';\n";
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     root = await newApp('x-generate-own-db-');
     // The pre-handle layout: an index over `@ultimat3/db`'s client and a schema, no `client.ts`.
     await rm(join(root, HANDLE_FILE));
@@ -218,7 +230,7 @@ describe('unit · an app whose db package and role map are its own', () => {
     await Bun.write(join(root, INDEX), OWN_INDEX);
     await Bun.write(join(root, ROLES_FILE), OWN_ROLES);
   });
-  afterAll(async () => {
+  afterEach(async () => {
     await rm(root, { recursive: true, force: true });
   });
 

@@ -11,7 +11,7 @@
 // `resource.secretFields` — a list no reader iterates — so a row with a required sealed column can
 // still be created from the admin, and an edit that leaves the box empty leaves the secret alone.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { inspectJob, job, memoryJobDriver, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
@@ -36,7 +36,8 @@ const accounts = entity('admin_sealed_accounts', {
   },
 });
 
-const table = database({ accounts }, { driver: memoryDriver() }).accounts;
+const freshTable = () => database({ accounts }, { driver: memoryDriver() }).accounts;
+let table = freshTable();
 
 /** The adapter a host binds over the entity's table: the rows are the repository's own. */
 const repo: AdminRepo<AdminRow> = {
@@ -61,7 +62,9 @@ const WRITER = ['admin:write', 'admin_sealed_accounts:read', 'admin_sealed_accou
 
 let id = '';
 
-beforeAll(async () => {
+// A table per case: the write cases below add rows and rotate the one secret others read back.
+beforeEach(async () => {
+  table = freshTable();
   id = (await table.insert({ name: 'Ada', credential: CANARY, contact: LOOKUP_CANARY })).id;
 });
 

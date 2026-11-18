@@ -117,7 +117,8 @@ export interface ExercisePhases extends ExercisePhaseMs {
 }
 
 export interface ExerciseReport {
-  readonly seed: number | null;
+  /** What the pass ran on: `x exercise --seed <this>` replays it. */
+  readonly seed: number;
   readonly counts: ExerciseCounts;
   /** Milliseconds per phase: absent only when the pass threw before it could say. */
   readonly phases?: ExercisePhases;
@@ -126,10 +127,10 @@ export interface ExerciseReport {
 
 export const exerciseReport = (
   records: readonly ExerciseRecord[],
-  seed: number | undefined,
+  seed: number,
   phases?: ExercisePhases,
 ): ExerciseReport => ({
-  seed: seed ?? null,
+  seed,
   counts: exerciseCounts(records),
   ...(phases === undefined ? {} : { phases }),
   records,

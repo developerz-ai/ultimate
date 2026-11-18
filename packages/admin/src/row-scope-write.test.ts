@@ -2,7 +2,7 @@
 // outside its own scope, and may not move one out of it. Refused before the repo is asked to write
 // — nothing lands, and the attempt is on the log as a denial.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   clearRegistry,
   database,
@@ -65,13 +65,17 @@ const count = (): Promise<number> => db.cases.count();
 
 let euId = '';
 
-beforeAll(async () => {
+beforeAll(() => {
   defineRoles({
     ...previousRoles,
     'scope-writer': {
       grants: ['admin:read', 'admin:write', 'admin_scope_writes:read', 'admin_scope_writes:write'],
     },
   });
+});
+
+// A row of its own per case: one case renames it, another asserts it was left alone.
+beforeEach(async () => {
   euId = String((await db.cases.insert({ title: 'Alpha', region: 'eu', weight: 1 })).id);
 });
 

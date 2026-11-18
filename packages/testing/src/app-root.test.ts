@@ -1,6 +1,6 @@
 // An app root is a directory holding `app.config.ts`, and nothing else is.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API; mkdtemp/rm own the fixture directory.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
@@ -9,8 +9,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isAppRoot } from './app-root';
 
-const dir = mkdtempSync(join(tmpdir(), 'x-app-root-'));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+let dir = '';
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'x-app-root-'));
+});
+afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('unit · app root', () => {
   test('a directory without app.config.ts is not an app', () => {

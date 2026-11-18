@@ -7,7 +7,7 @@
 // objects would prove the stub, and the projection's whole job is to read the descriptors the
 // framework actually produces.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { action, jsonSchemaOf, mutator, resetActions, t } from '@ultimat3/action';
 import { registerAction } from '@ultimat3/action/loader';
 import { tag } from '@ultimat3/cache';
@@ -30,7 +30,7 @@ const APP = { name: 'acme', version: '1.4.2' } as const;
 
 /**
  * The four permissions the fixtures below name. `can()` asserts its permission when the policy is
- * BUILT — which is in `beforeAll` here — and `isKnownPermission` is permissive only while the
+ * BUILT — which is in `beforeEach` here — and `isKnownPermission` is permissive only while the
  * registry is EMPTY, so a `definePermissions()` any earlier file in this one `bun test` process ran
  * turns strict checking on and every fixture below throws X_PERMISSION_UNKNOWN. Declaring the set
  * this file uses removes the dependency on which files it is sharded with; restoring the ambient
@@ -45,7 +45,10 @@ beforeAll(() => {
   ambientPermissions = knownPermissions();
   ambientSites = permissionDeclarationSites();
   definePermissions([...OWN_PERMISSIONS]);
+});
 
+// Every case reads the registries whole and one adds jobs to them, so each starts from this set.
+beforeEach(() => {
   clearEntities();
   resetActions();
   resetQueries();

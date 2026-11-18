@@ -90,7 +90,10 @@ export const config = defineRoute({
   // board island +89 B: the action and query clients trim their base URL with `@ultimat3/core`'s
   // linear `trimTrailingSlashes`, the one trim that replaced the quadratic `/\/+$/` at 26 sites
   // (CodeQL js/polynomial-redos). Raised 110.3kb → 110.4kb.
-  budget: { js: '110.4kb' },
+  // measured: 113106 B (2026-11-18; x build --target static, against 112,991) — why: +115 B, the
+  // action client's title for `X_REPLAY_PRINCIPAL_MISMATCH`, the refusal of an offline write
+  // replayed under another session. Raised 110.4kb → 110.5kb.
+  budget: { js: '110.5kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

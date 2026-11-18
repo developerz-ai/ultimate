@@ -3,7 +3,7 @@
 // passes its own test against the in-memory driver. The bytes of each template are
 // `templates/entity.test.ts`; this file owns the disk and the command surface.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, mkdir, symlink or recursive remove — a throwaway app root is node:fs's.
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -79,7 +79,12 @@ const filesOf = (data: unknown): readonly string[] =>
 const nextOf = (data: unknown): readonly string[] | undefined =>
   (data as { readonly next?: readonly string[] }).next;
 
-beforeAll(async () => {
+/** The entity a test stands on, generated into its own app. */
+const generated = async (name: string): Promise<void> => {
+  expect((await generateCommand.run(contextFor(name))).findings).toEqual([]);
+};
+
+beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'x-generate-entity-'));
   // `--no-example`: the handle starts empty and neither manifest names the other workspace, so
   // the first entity has every edit to make.
@@ -89,31 +94,30 @@ beforeAll(async () => {
   await symlink(FRAMEWORK, join(root, 'node_modules', '@ultimat3'));
 });
 
-afterAll(async () => {
+afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
 describe('unit · x g entity writes a repo over the typed handle', () => {
-  // What the dry run said it would touch, held for the run that follows: the two lists are one.
-  let plannedFiles: readonly string[] = [];
+  // What a dry run says it will touch: the run that follows it touches the same list.
+  const WIDGET_PLAN = [
+    'apps/web/app/widget/entity.ts',
+    'apps/web/app/widget/entity.test.ts',
+    'apps/web/app/widget/repo.ts',
+    'apps/web/app/widget/repo.test.ts',
+    'packages/i18n/catalogs/en.json',
+    // The edits outside the slice: the dry run named none of them, and the run made all four.
+    ROLES_FILE,
+    HANDLE_FILE,
+    'packages/db/package.json',
+    'apps/web/package.json',
+  ];
 
   test('--dry-run lists every file the run touches — created AND edited — and edits nothing', async () => {
     const before = await read(HANDLE_FILE);
     const roles = await read(ROLES_FILE);
     const result = await generateCommand.run(contextFor('widget', [['dry-run', true]]));
-    plannedFiles = filesOf(result.data);
-    expect(plannedFiles).toEqual([
-      'apps/web/app/widget/entity.ts',
-      'apps/web/app/widget/entity.test.ts',
-      'apps/web/app/widget/repo.ts',
-      'apps/web/app/widget/repo.test.ts',
-      'packages/i18n/catalogs/en.json',
-      // The edits outside the slice: the dry run named none of them, and the run made all four.
-      ROLES_FILE,
-      HANDLE_FILE,
-      'packages/db/package.json',
-      'apps/web/package.json',
-    ]);
+    expect(filesOf(result.data)).toEqual(WIDGET_PLAN);
     // Which of those already exist and are edited rather than created.
     expect((result.data as { readonly edits?: readonly string[] }).edits).toEqual([
       ROLES_FILE,
@@ -127,6 +131,7 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
   });
 
   test('the first entity joins the handle, both manifests gain their edge, and next says so', async () => {
+    const planned = await generateCommand.run(contextFor('widget', [['dry-run', true]]));
     const result = await generateCommand.run(contextFor('widget'));
     expect(result.findings).toEqual([]);
     expect(result.ok).toBe(true);
@@ -134,7 +139,7 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
     // The plan was the run: same files, same order, the re-projected contracts aside.
     const contracts = ['x.manifest.json', 'openapi.json'];
     expect(filesOf(result.data).filter((path) => !contracts.includes(path))).toEqual([
-      ...plannedFiles,
+      ...filesOf(planned.data),
     ]);
     const handle = await read(HANDLE_FILE);
     expect(handle).toContain("import { widget } from '@gen/web/app/widget/entity';");
@@ -149,6 +154,7 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
   });
 
   test('the repo it wrote has no SQL text, no row decoding and no tenant predicate in SQL', async () => {
+    await generated('widget');
     const repo = await read('apps/web/app/widget/repo.ts');
     expect(repo).not.toContain('sql`');
     expect(repo).not.toContain('decodeRow');
@@ -170,6 +176,7 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
   // below are the coverage — the subprocess must reach `10 pass` (the scaffolded client test gained
   // its testDriver case, the repo test its sort-before-bound case) — so only the budget moves.
   test('the generated repo passes its own test, and the admin finds every label it reads', async () => {
+    await generated('widget');
     await Bun.write(join(root, 'admin-keys.test.ts'), ADMIN_KEYS_PROBE);
     const run = await exec(
       [
@@ -187,6 +194,7 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
   }, 60_000);
 
   test('a second entity lands in key order, and owes no install', async () => {
+    await generated('widget');
     const result = await generateCommand.run(contextFor('gadget'));
     expect(result.ok).toBe(true);
     expect(await read(HANDLE_FILE)).toContain(
@@ -196,6 +204,7 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
   });
 
   test('a handle with no entity set is X_DB_HANDLE_UNREGISTERED, naming both lines', async () => {
+    await generated('widget');
     const handle = await read(HANDLE_FILE);
     const inline = handle
       .replace(/const entities = \{[^}]*\};\n/, '')
@@ -212,7 +221,6 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
     expect(await Bun.file(join(root, 'apps/web/app/sprocket/repo.ts')).exists()).toBe(true);
     expect(await read(HANDLE_FILE)).toBe(inline);
     expect(nextOf(result.data)).toBeUndefined();
-    await Bun.write(join(root, HANDLE_FILE), handle);
   });
 
   test('--admin lists the override under resources: in the app admin, with its import', async () => {
@@ -251,7 +259,6 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
   });
 
   test('an index that does not export the handle is named, with the line', async () => {
-    const index = await read(INDEX_FILE);
     await Bun.write(
       join(root, INDEX_FILE),
       "export { db, sql, withTransaction } from '@ultimat3/db';\n",
@@ -263,6 +270,5 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
     expect(finding?.fix).toContain("export { db, driver, selectDriver } from './client';");
     // The handle itself was still extended: one finding, about the one thing that is wrong.
     expect(await read(HANDLE_FILE)).toContain('  flanges: flange,');
-    await Bun.write(join(root, INDEX_FILE), index);
   });
 });

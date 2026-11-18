@@ -5,7 +5,7 @@
 // a type, so there was no runtime escape — fork the package, or lose PKCE, the sealed handshake,
 // issuer pinning and account linking together.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { AuthError } from './errors';
 import { beginOAuth, type OAuthProvider } from './oauth';
 import {
@@ -41,9 +41,21 @@ const codeOf = (call: () => unknown): string => {
   return 'did-not-throw';
 };
 
+// The registry is one per process: every case puts back exactly what it found.
+let held: ReturnType<typeof registeredOAuthProviders> = [];
+beforeEach(() => {
+  held = registeredOAuthProviders();
+});
+afterEach(() => {
+  restoreOAuthProviders(held);
+});
+
 describe('the oauth provider registry', () => {
-  test('an enterprise IdP reaches a real handshake, PKCE and all', () => {
+  beforeEach(() => {
     registerOAuthProvider(bigco);
+  });
+
+  test('an enterprise IdP reaches a real handshake, PKCE and all', () => {
     const handshake = beginOAuth({
       provider: 'bigco-sso',
       clientId: 'client-id',
@@ -91,31 +103,21 @@ describe('the oauth provider registry', () => {
 
 describe('registeredOAuthProviders / restoreOAuthProviders', () => {
   test('the registry becomes exactly what was handed back, the built-ins with it', () => {
-    const held = registeredOAuthProviders();
     expect(held.map((provider) => provider.id)).toEqual([...oauthProviderIds()]);
     registerOAuthProvider({ ...bigco, id: 'restore-probe' });
-    try {
-      restoreOAuthProviders(held);
-      expect(hasOAuthProvider('restore-probe')).toBe(false);
-      expect(oauthProviderIds()).toEqual(held.map((provider) => provider.id));
-      // Forgotten, so declared afresh; a name the restore kept is still refused.
-      expect(() => registerOAuthProvider({ ...bigco, id: 'restore-probe' })).not.toThrow();
-      expect(codeOf(() => registerOAuthProvider({ ...bigco, id: 'restore-probe' }))).toBe(
-        'X_OAUTH_PROVIDER_DUPLICATE',
-      );
-    } finally {
-      restoreOAuthProviders(held);
-    }
+    restoreOAuthProviders(held);
+    expect(hasOAuthProvider('restore-probe')).toBe(false);
+    expect(oauthProviderIds()).toEqual(held.map((provider) => provider.id));
+    // Forgotten, so declared afresh; a name the restore kept is still refused.
+    expect(() => registerOAuthProvider({ ...bigco, id: 'restore-probe' })).not.toThrow();
+    expect(codeOf(() => registerOAuthProvider({ ...bigco, id: 'restore-probe' }))).toBe(
+      'X_OAUTH_PROVIDER_DUPLICATE',
+    );
   });
 
   test('a restored provider is still frozen: the restore is no way around the seal', () => {
-    const held = registeredOAuthProviders();
-    try {
-      restoreOAuthProviders([...held, { ...bigco, id: 'restore-unfrozen', scopes: ['openid'] }]);
-      expect(Object.isFrozen(providerFor('restore-unfrozen'))).toBe(true);
-      expect(Object.isFrozen(providerFor('restore-unfrozen').scopes)).toBe(true);
-    } finally {
-      restoreOAuthProviders(held);
-    }
+    restoreOAuthProviders([...held, { ...bigco, id: 'restore-unfrozen', scopes: ['openid'] }]);
+    expect(Object.isFrozen(providerFor('restore-unfrozen'))).toBe(true);
+    expect(Object.isFrozen(providerFor('restore-unfrozen').scopes)).toBe(true);
   });
 });

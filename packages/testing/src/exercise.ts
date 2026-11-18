@@ -65,9 +65,10 @@ export interface ExercisePassOptions {
   readonly entities: readonly SeedEntity[];
   readonly writer: SeedWriter;
   /**
-   * Seeds the pass's one graph: the shared rows and every primitive's tenants. Omitted, each pass
-   * draws a fresh one: the rows are COMMITTED, so a second pass on one seed against one database
-   * collides on its keys. Given, the pass replays byte for byte — on a database that has not seen it.
+   * Seeds the pass's one graph: the shared rows and every primitive's tenants. Given, the pass
+   * replays byte for byte — on a database that has not seen it; `x exercise` always gives one, on
+   * a scratch database per pass. Omitted, for a caller running several passes on ONE database, each
+   * draws a fresh one: the rows are COMMITTED, so a repeated seed would collide on its keys.
    */
   readonly seed?: number;
   readonly overrides?: ExerciseOverrides;

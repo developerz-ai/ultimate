@@ -38,17 +38,23 @@ const documentInstalled = (): boolean => 'document' in globalThis;
 const seen: string[] = [];
 
 describeIslandState(states, 'idle', island, (mounted) => {
+  // Counted across this block's tests: a mount per TEST would read 0 again in the second one.
+  let clicks = 0;
+  const clickOnce = (): void => {
+    expect(mounted().text('[data-role="count"]')).toBe(`count ${clicks}`);
+    expect(mounted().fire('button', 'click')).toBe(true);
+    clicks += 1;
+    expect(mounted().text('[data-role="count"]')).toBe(`count ${clicks}`);
+  };
+
   test('the block mounts the state it names, with that state’s props', () => {
     seen.push('idle');
-    expect(mounted().text('[data-role="count"]')).toBe('count 0');
+    clickOnce();
     // The server shell went in and `mount` replaced it.
     expect(mounted().find('span')).toBeNull();
   });
 
-  test('one mount per block: the second test sees what the first one did', () => {
-    expect(mounted().fire('button', 'click')).toBe(true);
-    expect(mounted().text('[data-role="count"]')).toBe('count 1');
-  });
+  test('one mount per block: the second test sees what the first one did', clickOnce);
 });
 
 /** What `teardown` saw when it ran: whether the island's fake `document` was still installed. */
@@ -121,7 +127,7 @@ describe(testName('unit', 'mountIslandState'), () => {
   });
 
   test('the accessor outside its own block’s tests has nothing to hand over', () => {
-    // Blocks run in declaration order, so the block below has not mounted yet.
+    // The block below has either not mounted yet or already disposed: this runs outside it.
     expect(() => lateAccessor?.()).toThrow(/is not mounted/);
     expect(lateAccessor).toBeDefined();
   });
@@ -139,7 +145,7 @@ describeIslandState(states, 'idle', island, (mounted) => {
 afterAll(() => {
   // Both blocks ran, each disposed its mount, and the island was built ONCE for the file — the
   // four mounts above (three blocks and one `using`) share one bundle.
-  expect(seen).toEqual(['idle', 'long-label']);
+  expect(seen.toSorted()).toEqual(['idle', 'long-label']);
   expect(builds).toBe(1);
   expect(documentInstalled()).toBe(false);
   // `teardown` ran once, for its block only, and AFTER the dispose: the document was gone.

@@ -139,7 +139,7 @@ export function judgeUnproven(
         {
           code: 'X_EXERCISE_UNPROVEN_ABOVE_FLOOR',
           cause: `exercise left ${count} unproven, ${String(tally.figure)} of the reached; x.verify.json "${EXERCISE_FIELD}.unprovenMax" allows ${String(max)}: ${named}`,
-          fix: 'x exercise --json   # each unproven record in .x/exercise.json names the proof and its reason: fix the seed or the override it names; the floor only falls',
+          fix: 'x exercise --json   # re-measures at the constant seed the gate runs (a floor from before 31.47.0 was measured under random seeds); each unproven record in .x/exercise.json names the proof and its reason: fix the seed helper or override it names, assuming no order between sized calls; the floor only falls',
           docs: ERROR_DOCS_URL,
           at: 'x.verify.json',
         },

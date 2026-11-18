@@ -2,6 +2,7 @@
 // concurrency and job condition that let it run, and the alarm that reaches a person when it goes
 // red. Shared with the `ci-weekly-schedule` codemod, so an upgraded app gets these same bytes.
 
+import { fnv1a } from '@ultimat3/core';
 import { DEFAULT_RUNNER } from './runner';
 
 /** The one issue a red scheduled run opens; the alarm finds it again by this exact title. */
@@ -12,9 +13,7 @@ export const ALARM_ISSUE_TITLE = 'Scheduled gate is red on the default branch';
  * queue at one instant, and 1–58 stays off the top of the hour, when GitHub delays schedules most.
  */
 export function weeklyCron(name: string): string {
-  let hash = 0x811c9dc5;
-  for (const char of name) hash = Math.imul(hash ^ (char.codePointAt(0) ?? 0), 0x01000193);
-  return `${String(1 + ((hash >>> 0) % 58))} 4 * * 0`;
+  return `${String(1 + (fnv1a(name) % 58))} 4 * * 0`;
 }
 
 /** The `schedule:` entry under `on:`, its reasoning kept beside it. */

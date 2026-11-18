@@ -3,7 +3,7 @@
 // `authServerStoreConformance` (memory, and Postgres in `live`); this is the unit-tier run of the
 // SQL itself, which `@ultimat3/auth` cannot borrow from the package above it.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { pgliteClient, raw } from '@ultimat3/db';
 import { refreshAfterNarrowing, serverFixture } from './authorization-server-fixture';
@@ -27,6 +27,12 @@ beforeAll(async () => {
   }
   store = postgresAuthServerStore({ executor });
 }, PGLITE_BOOT_MS);
+
+beforeEach(async () => {
+  await client.execute(
+    raw('truncate x_oauth_clients, x_oauth_grants, x_oauth_codes, x_oauth_tokens, x_oauth_devices'),
+  );
+});
 
 afterAll(async () => {
   await client.close();
@@ -168,9 +174,42 @@ describe('postgresAuthServerStore on PGlite', () => {
   });
 
   test('purge removes what expired and what sat idle, and counts it', async () => {
-    expect(await store.purge(at(100_000), at(100_000))).toBeGreaterThan(0);
+    await store.putGrant({
+      id: 'g2',
+      clientId: 'c2',
+      subject: 'walk',
+      scopes: ['read'],
+      resource: null,
+      createdAt: at(0),
+      refreshedAt: at(0),
+      revokedAt: null,
+    });
+    await store.putToken({
+      tokenHash: 'r2',
+      kind: 'refresh',
+      grantId: 'g2',
+      createdAt: at(0),
+      expiresAt: at(3600),
+      retiredAt: null,
+    });
+    await store.putCode({
+      codeHash: 'code-2',
+      grantId: 'g2',
+      clientId: 'c2',
+      subject: 'walk',
+      scopes: ['read'],
+      resource: null,
+      redirectUri: 'https://app.test/cb',
+      codeChallenge: 'x'.repeat(43),
+      expiresAt: at(120),
+      usedAt: null,
+    });
+    await store.putDevice(device('d4', 'uc-4'));
+    expect(await store.purge(at(100_000), at(100_000))).toBe(4);
     expect(await store.getGrant('g2')).toBeNull();
     expect(await store.getToken('r2')).toBeNull();
+    expect(await store.getCode('code-2')).toBeNull();
+    expect(await store.deviceByUserCode('uc-4')).toBeNull();
     expect(await store.purge(at(100_000), at(100_000))).toBe(0);
   });
 

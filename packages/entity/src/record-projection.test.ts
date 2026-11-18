@@ -10,6 +10,7 @@ import { entity } from './entity';
 import { ENTITY_BRAND, projectionOf, recordProjection } from './record-projection';
 import { recordProjectionForTable, recordTypeForTable } from './record-table';
 import { clearRegistry } from './registry';
+import { restoreRegistryAfterEachTest } from './registry-restore-fixture';
 
 const posts = entity('record_projection_posts', {
   columns: {
@@ -31,6 +32,9 @@ const memberships = entity('record_projection_memberships', {
 afterAll(() => {
   clearRegistry();
 });
+
+// Two entities over one table refuse every table lookup, so that test's pair must end with it.
+restoreRegistryAfterEachTest();
 
 const ORG = '00000000-0000-7000-8000-0000000000a1';
 const USER = '00000000-0000-7000-8000-0000000000b2';

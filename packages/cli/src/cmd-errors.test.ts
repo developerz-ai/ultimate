@@ -2,7 +2,7 @@
 // things asserted hardest here are that a real code answers with a runnable fix, and that an
 // invented one is refused instead of explained.
 
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
 import { ERRORS_SUBCOMMANDS, errorsCommand } from './cmd-errors';
@@ -35,6 +35,12 @@ const rejection = async (argv: readonly string[]): Promise<{ readonly fix: strin
   return caught as { readonly fix: string };
 };
 
+// The first `run` of any subcommand reads every installed package's source once, so that cost is
+// paid here and not by whichever test the order puts first: `REPO_SCAN_TIMEOUT_MS`'s value as a
+// literal, for the reason `error-catalog.test.ts` repeats it too. Through `run`, never the loaders
+// directly, so a `run` that stopped loading them still reds the throw-site test below.
+beforeAll(() => run(['errors', 'list']), 180_000);
+
 describe('unit · x errors explain', () => {
   // `X_DB_DRIFT` and not `X_CONFIG_INVALID`: the exemplar has to be a code the CLI neither owns
   // nor borrows, or the test stops asserting the projection it is named for. `X_CONFIG_INVALID`
@@ -59,9 +65,7 @@ describe('unit · x errors explain', () => {
       `  fix:   ${String(data['fix'])}`,
       `  docs:  ${ERROR_DOCS_URL}`,
     ]);
-    // Reads every installed package's source once: `REPO_SCAN_TIMEOUT_MS`'s value as a literal,
-    // for the reason `error-catalog.test.ts` repeats it too.
-  }, 180_000);
+  });
 
   test("a CLI code answers with the CLI's own fix, not the generic gate", async () => {
     const result = await run(['errors', 'explain', 'X_BUN_VERSION']);

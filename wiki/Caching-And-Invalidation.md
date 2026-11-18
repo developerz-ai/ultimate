@@ -58,7 +58,7 @@ export { tag };   // tag.post — the collection · tag('post', postId) — one 
 
 | Declared where | By |
 |---|---|
-| Queries | **automatic** — acquired from the tables their `sql` touches |
+| Queries | `cache: { tags: [...] }`. Nothing derives them from the `sql`; undeclared is `[]` |
 | Routes | `revalidate: { tags: [...] }` |
 | Actions / mutators | `cache: { invalidates: [...] }` |
 
@@ -268,11 +268,11 @@ export const summarize = llm({
 
 | Aspect | Rule |
 |---|---|
-| Store | pgvector table, one row per (prompt version, embedded input, scope) |
-| Key | embedding of the rendered prompt + model id + **prompt version** + **request locale** |
-| Hit | cosine similarity >= `threshold`; default 0.97, never below 0.9 |
+| Store | one `SemanticCache` per prompt version, locale and scope. Default `memorySemanticCache()`, per process; the `semanticCache` port replaces it |
+| Key | store: prompt ref + **prompt hash** + **request locale** + scope. Entry: matched by the embedding of the rendered prompt. The model id is in neither |
+| Hit | cosine similarity >= `threshold`, any value from 0 to 1. Undeclared: the store's default, 0.92 in `memorySemanticCache()`. Below ~0.9 unrelated prompts collide; nothing enforces that floor |
 | Scope | optional — the calling **actor** by default, so one org never reads another's completion. Widening is written down: `scope: () => 'global'` |
-| Bypass | `temperature > 0` results are cached but flagged; `cache: false` for anything user-visible-and-unique |
+| Bypass | omit `cache`. There is no `cache: false`, and `temperature` is not consulted |
 | Invalidation | no tag reaches it, `As of 2026-11`: `LlmCache` has no `invalidates` (`packages/ai/src/llm-cache.ts`). Bumping the prompt version moves to a different store; `ttl` ends the rest |
 | Metrics | every `llm()` call emits `ai.llm` on the instrumentation bus with `cacheHit`, `inputTokens` and `outputTokens`; hit rate and tokens saved are a subscriber's sum, and `gen_ai_client_token_usage` is on `/metrics` → [Observability](Observability) |
 
@@ -301,7 +301,7 @@ From code: `invalidateTags([...])` from `@ultimat3/cache`, the call `x cache bus
 | Code | Cause | Fix |
 |---|---|---|
 | `X_CACHE_UNTAGGED_QUERY` | **reserved, nothing raises it** `As of 2026-08` — a query's tables are covered by no tag, so it could never be invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) | declare the entity tag, then `x manifest` |
-| `X_CACHE_TAG_UNKNOWN` | `tag "<name>" is not declared by any entity` | `x manifest` |
+| `X_CACHE_TAG_UNKNOWN` | `tag "<name>" is not declared by any entity` | `declareTags(['<name>'])` beside the app's other declared tags, plus the name in its `CacheTagRegistry`; for a typo, correct the tag |
 | `X_CACHE_TOO_LARGE` | `entry "<key>" is <n>B, over the <tier> budget of <m>B` | `lruTier({ maxBytes: <n> })` / `redisTier({ maxValueBytes: <n> })` where the tier is built, or cache a projection instead of the row |
 | `X_CACHE_DRIVER_UNAVAILABLE` | `cache tier "<driver>" is unavailable` — a Redis command missed its deadline, or the tier is parked after one; or a purge driver built without its token | the error carries the exact config or command to fix |
 | `X_CACHE_PURGE_FAILED` | `<driver> refused the purge (HTTP <status>)` — a wrong token, a zone without tag purge, a throttle, or a key a CDN would split | `meta.retryable === true` → the identical purge can land again; otherwise set the env key the `fix` names |

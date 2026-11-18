@@ -1,7 +1,7 @@
 // `fallbackModels` beyond the one-call case `gateway.test.ts` pins: the stream's first-chunk rule,
 // the attempt spans under one parent, a whole chain failing, the chain's screen, and the class table.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
 import { breaker, resetTelemetry, subscribe, withSpan } from '@ultimat3/core';
 import { echoProvider } from './echo-provider';
@@ -61,6 +61,19 @@ const drain = async (stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[]>
   return chunks;
 };
 
+/** The spans each case of this block ends, its subscription released with the case. */
+const collectSpans = (): (() => readonly ReadableSpan[]) => {
+  let spans: ReadableSpan[] = [];
+  let release = (): void => {};
+  beforeEach(() => {
+    resetTelemetry();
+    spans = [];
+    release = subscribe('span.end', (event) => spans.push(event.payload));
+  });
+  afterEach(() => release());
+  return () => spans;
+};
+
 describe('a streamed fallback', () => {
   test('falls over when the first model fails before its first chunk, and says so on done', async () => {
     const calls: string[] = [];
@@ -100,20 +113,15 @@ describe('a streamed fallback', () => {
 });
 
 describe('one trace', () => {
-  let spans: ReadableSpan[] = [];
-  beforeEach(() => {
-    resetTelemetry();
-    spans = [];
-    subscribe('span.end', (event) => spans.push(event.payload));
-  });
+  const spans = collectSpans();
 
   test('one parent span, one ai.model.attempt child per model, the failed one naming its class', async () => {
     const calls: string[] = [];
     const gateway = gatewayOf(host(PRIMARY, calls, 429), host(SECOND, calls));
     await withSpan('caller', () => gateway.generate(ask));
 
-    const parent = spans.find((span) => span.name === 'caller');
-    const attempts = spans.filter((span) => span.name === 'ai.model.attempt');
+    const parent = spans().find((span) => span.name === 'caller');
+    const attempts = spans().filter((span) => span.name === 'ai.model.attempt');
     expect(attempts.map((span) => span.attributes['gen_ai.request.model'])).toEqual([
       PRIMARY,
       SECOND,
@@ -125,7 +133,7 @@ describe('one trace', () => {
 
   test('a call with no fallbackModels opens no attempt span — its trace is what it was', async () => {
     await gatewayOf(echo).generate({ model: PRIMARY, messages: ask.messages, maxTokens: 16 });
-    expect(spans.filter((span) => span.name === 'ai.model.attempt')).toEqual([]);
+    expect(spans().filter((span) => span.name === 'ai.model.attempt')).toEqual([]);
   });
 });
 
@@ -142,10 +150,9 @@ describe('a whole chain failing', () => {
 });
 
 describe('a chain ending on an undeclared failure', () => {
+  const spans = collectSpans();
+
   test('the last error is thrown as it stands, and the meter and trace still count every model', async () => {
-    resetTelemetry();
-    const spans: ReadableSpan[] = [];
-    subscribe('span.end', (event) => spans.push(event.payload));
     const calls: string[] = [];
     const gateway = gatewayOf(host(PRIMARY, calls, 529), host(SECOND, calls, 400));
     const meter = runMeter();
@@ -157,7 +164,7 @@ describe('a chain ending on an undeclared failure', () => {
     expect(String((failure as { cause?: unknown }).cause)).not.toContain('→');
     expect(meter.billed()).toMatchObject({ calls: 0, unsettled: 2 });
     expect(
-      spans
+      spans()
         .filter((span) => span.name === 'ai.model.attempt')
         .map((span) => span.attributes['gen_ai.request.model']),
     ).toEqual([PRIMARY, SECOND]);

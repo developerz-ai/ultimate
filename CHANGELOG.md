@@ -26,6 +26,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Changed
 
+- `x exercise` and the gate's `exercise` step run one constant seed by default, so the same code gets the same verdict. `--seed <n>` still overrides it, `--seed random` explores a fresh one, and the output and `.x/exercise.json` name the seed used. An `exercise.unprovenMax` measured under random seeds can now sit just below the measured figure: `X_EXERCISE_UNPROVEN_ABOVE_FLOOR` says to re-measure and fix the seed helper each unproven record names, and no floor is raised for you.
 - Every `wiki/Known-Gaps.md` row carries a decision, and shipped `NotImplementedError` sites are implemented, removed or decided. Unknown `x` subcommands that were stubs answer `X_CLI_UNKNOWN_COMMAND`; `plannedSubcommand` is deprecated.
 - Internal: 63 hand-rolled keyed-record guards (`isRecord`, `isObject`, `isPlainObject`, `isRow`, â€¦) across 14 packages and `scripts/` now import core's `isJsonObject`; a call site that also means an array says `Array.isArray(v) || isJsonObject(v)`. A new copy is `X_HELPER_COPY` (`bun run flight-copies`, `scripts/lib/helper-homes.ts`). One visible change: `findingProblem` reports a guard finding that is an ARRAY as "not a finding object" rather than as a missing code.
 

@@ -2,7 +2,7 @@
 // same fact (a generated locale catalog is worthless if nothing ever teaches the app to import
 // it), one at the pure `dedupe()` level and one through the real `x g` command end to end.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
@@ -87,7 +87,7 @@ describe('unit · dedupe rejects a merge: json file a generator could not have m
 // caught the original bug, which was entirely about nothing ever calling it again after scaffold time.
 describe('unit · x g regenerates the app catalog index for every locale on disk', () => {
   // Under `packages/cli/`, same as the manifest fixture in cmd-generate.test.ts, and its own
-  // directory so the two fixtures' independent beforeAll/afterAll never race each other.
+  // directory so the two fixtures' independent hooks never race each other.
   const ROOT = processRoot(join(import.meta.dir, '..', '.generate-i18n-fixture'));
   const INDEX_PATH = join(ROOT, 'packages/i18n/src/index.ts');
 
@@ -139,7 +139,8 @@ describe('unit · x g regenerates the app catalog index for every locale on disk
     resetAppLoad();
   };
 
-  beforeAll(seedApp);
+  // Every test writes the route and catalogs it judges, so each starts from the scaffold's shape.
+  beforeEach(seedApp);
 
   afterAll(async () => {
     await rm(ROOT, { recursive: true, force: true });
@@ -165,7 +166,6 @@ describe('unit · x g regenerates the app catalog index for every locale on disk
   });
 
   test('a --locales catalog the app has not added yet is refused, with nothing written', async () => {
-    await seedApp();
     const failure = await thrownByAsync(() => generateCommand.run(contextFor('es')));
     expect(failure.code).toBe('X_CLI_BAD_FLAG');
     expect(failure.fix).toBe('x i18n add es');
@@ -174,7 +174,6 @@ describe('unit · x g regenerates the app catalog index for every locale on disk
   });
 
   test('an app with no i18n package is left alone', async () => {
-    await seedApp();
     await rm(join(ROOT, 'packages/i18n'), { recursive: true, force: true });
     const result = await generateCommand.run(contextFor('es'));
     expect((result.data as { files?: readonly string[] }).files).toContain(

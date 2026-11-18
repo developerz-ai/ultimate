@@ -3,14 +3,18 @@
 // itself per principal (plan 101, decision 8). Keyed SHA-256 over the principal, never the id:
 // the HTML is cacheable by a browser and readable by every script on the page.
 
-import type { Actor, ClientScopeIdOptions } from '@ultimat3/core';
+import type { Actor } from '@ultimat3/core';
 import { clientScopeId } from '@ultimat3/core';
 import { AuthError } from './errors';
 
 /** `wiki/Configuration.md`'s floor for `SESSION_SECRET`, the same one the oauth handshake reads. */
 const MIN_SECRET_LENGTH = 32;
 
-export type ClientScopeOptions = ClientScopeIdOptions;
+export interface ClientScopeOptions {
+  /** Defaults to `SESSION_SECRET`. */
+  readonly secret?: string | undefined;
+  readonly env?: Readonly<Record<string, string | undefined>> | undefined;
+}
 
 /**
  * `''` for the anonymous page — the empty scope core reads as "nobody". Otherwise the principal

@@ -12,6 +12,14 @@ describe('rewriteLinks', () => {
     expect(rewriteLinks('[`a` [b]](p(q))', upper)).toBe('[`a` [b]](P(Q))');
   });
 
+  test('a code span closes only on a run of its own length', () => {
+    expect(rewriteLinks('`` ` [a](x) ` `` [b](y)', upper)).toBe('`` ` [a](x) ` `` [b](Y)');
+  });
+
+  test('a backtick run with no closer is literal, so the link after it is still one', () => {
+    expect(rewriteLinks('`` [a](x) ` [b](y)', upper)).toBe('`` [a](X) ` [b](Y)');
+  });
+
   test('never touches a code span or a fence', () => {
     const text = ['`[a](x)` [b](y)', '```', '[c](z)', '```'].join('\n');
     expect(rewriteLinks(text, upper)).toBe(['`[a](x)` [b](Y)', '```', '[c](z)', '```'].join('\n'));

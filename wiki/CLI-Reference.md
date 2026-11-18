@@ -50,7 +50,7 @@ x version              # CLI version
 | `x jobs` | list, show, retry, cancel, remove and promote jobs; pause and resume a queue · `drain` was removed from the registry `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x tasks` | cron tasks, their timezone and their next run | shipped |
 | `x policy` | which clause decided a permission, and why | shipped |
-| `x exercise [<name>] [--seed n] [--shard i/n]` | run every action, query, job and route `load` once on generated rows, with no test written; the gate's `exercise` step | shipped |
+| `x exercise [<name>] [--seed n\|random] [--shard i/n]` | run every action, query, job and route `load` once on generated rows, with no test written; the gate's `exercise` step | shipped |
 | `x drill [<name>] [--list] [--budget-ms n]` | the app's roles as real processes on real Postgres, Redis and NATS, each dependency faulted through a proxy, each role signalled, or every role started before `ROLE=migrate`, red on any framework contract that does not hold. Not a gate step: it needs the services | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
 | `x mail preview <id>` | render a mail's declared `preview` in every locale, nothing sent | shipped |
@@ -1444,7 +1444,7 @@ Errors: `X_DECLARATION_UNKNOWN` (with the nearest name as its fix), `X_CLI_BAD_F
 ## x exercise
 
 ```bash
-x exercise [<name>] [--seed n] [--shard i/n] [--json]
+x exercise [<name>] [--seed n|random] [--shard i/n] [--json]
 ```
 
 Every action, query and job the app registers, run **once** against generated rows, with no test
@@ -1483,6 +1483,17 @@ export const exercise = defineExercise({
   sendInvoice: { off: 'charges a card through the payment provider' },
 });
 ```
+
+**The seed** (`As of 31.47.0`). Row ids and tenants are drawn from it, so it is part of the verdict.
+
+| Run | Seed | For |
+|---|---|---|
+| `x exercise`, and the gate's `exercise` step | one constant, `DEFAULT_SEED` from `@ultimat3/testing` | one tree, one verdict |
+| `x exercise --seed <n>` | `n`, 0 to 2147483647 | replaying a run |
+| `x exercise --seed random` | a fresh one | looking for a seed-dependent helper; never the gate |
+
+The first output line and `seed` in `.x/exercise.json` and `--json` name the seed used. Each pass
+has its own scratch database, so repeating a seed collides with nothing.
 
 A blank `off` reason is `X_CONTRACT_EXERCISE_UNDECLARED`; so is an `exercise.ts` with no single
 `defineExercise()` export. The gate's `exercise` step runs this command as a child and is red on

@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no temp-directory API and no recursive remove.
 import { mkdtempSync, rmSync } from 'node:fs';
 // why: Bun exposes no tmpdir().
@@ -7,15 +7,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { nestedAppRootFindings } from './verify-drift-owner';
 
-const root = mkdtempSync(join(tmpdir(), 'drift-owner-'));
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+let root = '';
+
+// Every test starts from a legal repository: the root config, a workspace, and a dependency's own.
+beforeEach(async () => {
+  root = mkdtempSync(join(tmpdir(), 'drift-owner-'));
+  await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(root, 'apps/api/app/status/status.ts'), 'export const a = 1;\n');
+  // A dependency's own config is not this app's: node_modules is never read.
+  await Bun.write(join(root, 'node_modules/x/app.config.ts'), 'export const config = {};\n');
+});
+afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 describe('unit · one repository is one app: one image, one migration owner', () => {
   test('a repository whose only app.config.ts is at the root finds nothing', async () => {
-    await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
-    await Bun.write(join(root, 'apps/api/app/status/status.ts'), 'export const a = 1;\n');
-    // A dependency's own config is not this app's: node_modules is never read.
-    await Bun.write(join(root, 'node_modules/x/app.config.ts'), 'export const config = {};\n');
     expect(await nestedAppRootFindings(root)).toEqual([]);
   });
 

@@ -8,10 +8,13 @@ import { describeTenancy } from './describe-tenancy';
 import { entity } from './entity';
 import { invariant } from './invariants';
 import { clearRegistry } from './registry';
+import { restoreRegistryAfterEachTest } from './registry-restore-fixture';
 
 afterAll(() => {
   clearRegistry();
 });
+
+restoreRegistryAfterEachTest();
 
 entity('dtn_posts', { columns: { id: uuid().primaryKey(), orgId: uuid().tenant() } });
 entity('dtn_notes', {

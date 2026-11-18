@@ -3,7 +3,7 @@
 // scratch app's db package, the bundle beside it, every `@ultimat3/*` linked to a framework
 // checkout — what it refuses to open, and that every line it prints renders.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no synchronous existence check.
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -12,8 +12,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createApp } from './index';
 
-const parent = mkdtempSync(join(tmpdir(), 'create-ultimate-repro-'));
-afterAll(() => rmSync(parent, { recursive: true, force: true }));
+// A directory per case: an open claims `repro-<id>` under it, and a case counts what it holds.
+let parent = '';
+beforeEach(() => {
+  parent = mkdtempSync(join(tmpdir(), 'create-ultimate-repro-'));
+});
+afterEach(() => rmSync(parent, { recursive: true, force: true }));
 const CHECKOUT = resolve(import.meta.dir, '..', '..', '..');
 
 /** What a stranger could put in an attachment: code, and a path that climbs out. */
@@ -104,6 +108,8 @@ describe('create-ultimate repro', () => {
 
   test('a second open into the same directory is refused, nothing overwritten', async () => {
     const path = await fileWith('bundle.json', BUNDLE);
+    const opened = await run(['repro', path, '--framework', CHECKOUT, '--json']);
+    expect(opened.code).toBe(0);
     const { code, out } = await run(['repro', path, '--framework', CHECKOUT, '--json']);
     expect(code).toBe(1);
     expect(codeOf(out)).toBe('X_CLI_BAD_FLAG');

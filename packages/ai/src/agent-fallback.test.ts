@@ -2,7 +2,7 @@
 // turn, a bad bag fails the declaration, a run's own model is never asked twice, and the run's bill
 // and trace count the failed model.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
 import { ctxOf, resetTelemetry, subscribe, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
@@ -28,12 +28,14 @@ const Output = t.object({ answer: t.string });
 const ctx = ctxOf({ actor: userActor({ id: 'ada', orgId: 'org-a' }) });
 
 let spans: ReadableSpan[] = [];
+let releaseSpans = (): void => {};
 beforeEach(() => {
   resetAiRuntime();
   resetTelemetry();
   spans = [];
-  subscribe('span.end', (event) => spans.push(event.payload));
+  releaseSpans = subscribe('span.end', (event) => spans.push(event.payload));
 });
+afterEach(() => releaseSpans());
 
 const overloaded: Provider = {
   name: 'primary-host',

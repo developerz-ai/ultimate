@@ -66,7 +66,7 @@ Any test that can pass twice and fail the third time is worse than no test — i
 | Control | Behavior |
 |---|---|
 | **Seeds** | `seed(name)` builds a named, deterministic fixture graph via entity factories and returns a handle; `await handle.pick({ … })` takes the rows out by label. Same input → identical rows, identical UUIDs |
-| **Frozen clock** | time starts at a fixed instant. `clock.advance('3d')` moves it, and it also drives `step.sleep` and cron in tests |
+| **Frozen clock** | time starts at a fixed instant. `clock.advance('3d')` moves it and makes a `step.sleep` due. It fires no cron, `As of 2026-11`: a task test reads `task.entries(occurrenceMs)`, and a whole dispatch round builds `jobScheduler({ driver, clock, tasks })` and calls `tick()` |
 | **Seeded RNG** | `Math.random`, `crypto.randomUUID`, and Bun's RNG are seeded per test file from its path — reproducible, distinct across files |
 | **Sealed network** | any egress not explicitly mocked **fails the test** with `X_TEST_NETWORK_SEALED`, naming the URL and the fix |
 | **Fixed timezone + locale** | `UTC` and `en-US` unless a test declares otherwise; a tz-dependent bug fails deterministically |
@@ -90,31 +90,63 @@ Each type is a first-class runner with its own fixture shape — not a naming co
 
 ```ts
 // contract test — generated as a scaffold with the action
-test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
-  // `seed(name)` hands back a handle, not rows; `pick` names the seed labels and aliases them.
-  const { post, stranger } = await seed('dev').pick({
-    post: 'post:draft',
-    stranger: 'user:outsider',
-  });
-  await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_FORBIDDEN');
+import { type Action, t } from '@ultimat3/action';
+import { testActor } from '@ultimat3/policy';
+import { contractTest, expect } from '@ultimat3/testing';
+
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+declare const postId: string;
+
+// Named here because this file does not boot the app; at boot `defineApi` stamps the same name.
+const target = publishPost.named('publishPost');
+
+// Holds the grant, wrong org: a denial here is the policy deciding, not the permission check.
+const outsider = testActor('outsider', {
+  orgId: '00000000-0000-4000-8000-000000000009',
+  permissions: ['post:publish'],
+}).actor;
+
+contractTest('publishPost denies a foreign org', async () => {
+  const denied = await target.as(outsider, { postId }).catch((error: unknown) => error);
+  expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 ```
 
-`seed` and `actorFor` are the **app's** fixtures, registered in its `scripts/test-setup.ts`; the labels are the ids its own seed file declares. `clock`, `mail`, `network`, `runJobs` and `statements` are the framework's, and arrive in every test.
+`clock`, `mail`, `network`, `push`, `runJobs` and `statements` are the framework's, and arrive in every test. `seed` and `actorFor` are the **app's** fixtures, registered in its `scripts/test-setup.ts` and declared by augmenting `Fixtures`; `examples/dummy/apps/web/app/posts/actions.contract.test.ts` is that form of this test.
 
 ```ts
 // job test — the step guarantee, not the happy path
-test('onboardOrg retries only the failed step', async ({ seed, clock, mail, runJobs }) => {
-  const { org } = await seed('dev').pick({ org: 'org:fresh' });
+import type { JobHandle } from '@ultimat3/jobs';
+import type { AnyMailDefinition } from '@ultimat3/mail';
+import { expect, jobTest } from '@ultimat3/testing';
+
+declare const nudgeEmail: AnyMailDefinition;
+declare const onboardOrg: JobHandle<{ orgId: string }>;
+declare const orgId: string;
+
+jobTest('a resumed run replays its steps, and a mail blip retries the mail job', async ({
+  clock,
+  mail,
+  runJobs,
+}) => {
   mail.failOnce(nudgeEmail);
-  await runJobs(onboardOrg, { orgId: org.id });
+  await runJobs(onboardOrg, { orgId });
   clock.advance('3d');
-  const trace = await runJobs.drain();
-  expect(trace.steps.provision.executions).toBe(1);       // replayed from storage
-  expect(trace.steps['nudge'].executions).toBe(2);        // only this one retried
+  const resumed = await runJobs.drain();
+  expect(resumed.steps['provision']?.executions).toBe(1);    // replayed from storage
+  expect(resumed.steps['nudge']?.executions).toBe(1);
+  expect(mail.outbox()).toHaveLength(1);                  // the nudge's send was refused
+
+  clock.advance('1h');
+  const retried = await runJobs.drain();
+  expect(mail.outbox()).toHaveLength(2);                  // the mail job's retry lands
+  expect(retried.steps['nudge']?.executions).toBe(1);        // and the step never ran again
 });
 ```
+
+`nudge` runs once: with a queue driver installed, `send()` enqueues `mail.send`, so `failOnce` fails the mail job and the step that enqueued it has already succeeded. The running proof is `examples/dummy/apps/web/app/orgs/jobs.job.test.ts`.
 
 ## Fixtures you write once
 

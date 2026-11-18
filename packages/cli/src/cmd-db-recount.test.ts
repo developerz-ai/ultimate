@@ -2,7 +2,7 @@
 // transaction each, the dry run reports every drifted row without writing, and `--write` repairs
 // them all — whatever the batch size.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import type { CounterDescriptionLike } from '@ultimat3/db';
 import { pgliteClient, raw } from '@ultimat3/db';
@@ -29,6 +29,11 @@ beforeAll(async () => {
   await client.execute(
     raw('create table rc_children (id serial primary key, parent_id integer, kind text)'),
   );
+}, PGLITE_BOOT_MS);
+
+// Every test starts from the drifted rows: `--write` repairs them for whatever runs after it.
+beforeEach(async () => {
+  await client.execute(raw('truncate rc_parents, rc_children'));
   // Five parents, every stored count wrong; parent 3 is already true at 0.
   await client.execute(raw('insert into rc_parents values (1, 9), (2, 9), (3, 0), (4, 9), (5, 9)'));
   await client.execute(
@@ -36,7 +41,7 @@ beforeAll(async () => {
       `insert into rc_children (parent_id, kind) values (1, 'up'), (1, 'up'), (2, 'down'), (4, 'up'), (5, null)`,
     ),
   );
-}, PGLITE_BOOT_MS);
+});
 
 afterAll(async () => {
   await client.close();

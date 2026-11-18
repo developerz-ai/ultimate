@@ -199,7 +199,12 @@ export const config = defineRoute({
   // the page boot +271 B (84,606 → 84,877 B against origin/main built the same way): `@ultimat3/core`'s
   // `uuidV7` and `frozenClock` refuse an Invalid Date or out-of-range instant instead of minting a
   // non-UUID that broke the next id's order (audit round 2, B1). Raised 242.8kb → 243.1kb.
-  budget: { js: '243.1kb' },
+  // measured: 249350 B (2026-11-18; x build --target static, against 248,867) — why: +483 B, the
+  // outbox in the page boot naming a replay's owner (`x-ultimate-replay-scope`, a session that is
+  // not the queue's holding the write queued), and the action client's title for
+  // `X_REPLAY_PRINCIPAL_MISMATCH`, the refusal of an offline write replayed under another session.
+  // Raised 243.1kb → 243.6kb.
+  budget: { js: '243.6kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),

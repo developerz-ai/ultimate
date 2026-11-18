@@ -4,29 +4,24 @@
 
 ## Template DB cloning
 
-```
-bun test --workers 8
-  once:        migrate + seed  →  myapp_test_tpl
-  per worker:  CREATE DATABASE myapp_test_N TEMPLATE myapp_test_tpl   (~100-400ms)
-  per file:    truncate the tables that file touched
-  teardown:    drop on exit;  --keep-db to inspect a failure
-```
+`acquireWorkerDatabase` (`packages/testing/src/template-db.ts`), `As of 2026-11`. Workers come from `x test --workers N` or `bun test --parallel=N`; `bun test` has no `--workers`.
 
 | Phase | Mechanism | Constraint |
 |---|---|---|
-| Build the template | apply every migration, run the base seed, `ANALYZE` | done once per run; skipped when the migration checksum set is unchanged and the template exists |
-| Close template connections | the builder disconnects before cloning | Postgres refuses `CREATE DATABASE ... TEMPLATE t` while any session is connected to `t` — this is the #1 flake in naive implementations |
-| Clone | `CREATE DATABASE myapp_test_N TEMPLATE myapp_test_tpl` | file-level copy, no SQL replay; cost is data size, not migration count |
-| Serialize clones | clone statements run one at a time | concurrent clones of the same template contend; the loop is short enough that serializing costs less than retrying |
-| Reset between files | `TRUNCATE ... RESTART IDENTITY CASCADE` on the tables the file wrote (tracked by a session hook) | a file declaring `readonly` gets a savepoint instead |
-| Teardown | `DROP DATABASE ... WITH (FORCE)` | `--keep-db` skips it and prints the connection string |
+| Lock | `pg_advisory_lock(hashtext(template))`, held through the clone | a clone outside it fails when the next worker's migration keeps a session on the template past Postgres's 5 s wait |
+| Build the template | `CREATE DATABASE "ultimate_test_template" TEMPLATE template0`; "already exists" is tolerated | a template can outlive a run |
+| Migrate | the `migrate` callback, on every acquire | unconditional: a template found rather than created may hold an older schema |
+| Clone | `DROP DATABASE IF EXISTS "ultimate_test_template_wN" WITH (FORCE)`, then `CREATE DATABASE … TEMPLATE "ultimate_test_template"` | file-level copy, no SQL replay |
+| No admin URL | no `TEST_DATABASE_URL` or `DATABASE_URL`: a PGlite handle, `pglite://memory/<name>` | `bun test` works with nothing installed |
+| Reset between files | none here. `reusableDatabase(open)` is the opt-in: it restores a snapshot on each later acquire | it does not undo DDL a test ran |
+| Teardown | `drop()`, or `await using`: `DROP DATABASE IF EXISTS … WITH (FORCE)` | no `--keep-db` flag exists |
 
 ## Worker → DB assignment
 
 | Step | Detail |
 |---|---|
 | Worker identity | `ULTIMATE_TEST_WORKER` first, then `BUN_TEST_WORKER_ID`, then `JEST_WORKER_ID` (`packages/testing/src/template-db.ts`'s `workerId`), read once at module init. **The second key is what carries the pool, `As of 2026-08-27`**: `x test` runs one `bun test --parallel=N` rather than N processes of its own, and Bun numbers each real worker 1..N with that variable. The first key is set only by `x verify`'s coverage run, which spawns its own slices and names each one's database by slot |
-| Name | `${app}_test_${workerIndex}` — deterministic, so a failed run's database is findable by index |
+| Name | `${template}_w${worker}` (`databaseNameFor`) — deterministic, so a failed run's database is findable by index |
 | Connection | the pool for that process is built from a rewritten `DATABASE_URL`; `env.DATABASE_URL` inside a test resolves to the worker's clone |
 | Sticky per file | a test file runs entirely on one worker, so one file = one database for its lifetime |
 | Cross-worker isolation | absolute. No shared rows, no shared sequences, no shared advisory locks (lock keys are namespaced by worker index) |
@@ -40,7 +35,7 @@ A test that can pass twice and fail the third time is worse than no test — it 
 | Control | Mechanism | Failure it removes |
 |---|---|---|
 | **Seeds** | `seed(name)` builds a named fixture graph via entity factories; ids are derived from a hash of `(seedName, entity, index)` | "works on my machine" from random ids landing in a different sort order |
-| **Frozen clock** | time starts at a fixed instant; `clock.advance('3d')` moves it and also drives `step.sleep`, cron, TTLs, and lease expiry | tests that fail at midnight, or only in CI's timezone |
+| **Frozen clock** | time starts at a fixed instant; `clock.advance('3d')` moves it, which makes a `step.sleep` due and reaches TTLs and lease expiry. It fires no cron (`As of 2026-11`): the `runJobs` fixture runs no scheduler | tests that fail at midnight, or only in CI's timezone |
 | **Seeded RNG** | `Math.random`, `crypto.randomUUID`, and Bun's RNG seeded per file from its path — reproducible, distinct across files | two files generating the same "random" key and colliding |
 | **Sealed network** | any egress not explicitly mocked fails with `X_TEST_NETWORK_SEALED`, naming the URL and the fix | a suite that is slow and occasionally red because a third party is |
 | **Fixed tz + locale** | `UTC` and `en-US` unless declared otherwise | a DST bug that reproduces only in October ([`10-cross-cutting.md`](./10-cross-cutting.md)) |
@@ -100,27 +95,63 @@ eval exists to catch.
 
 ```ts
 // contract test — generated as a scaffold with the action
-test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
-  const { post, stranger } = await seed('two-orgs');
-  await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_FORBIDDEN');
+import { type Action, t } from '@ultimat3/action';
+import { testActor } from '@ultimat3/policy';
+import { contractTest, expect } from '@ultimat3/testing';
+
+const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+const PublishPostInput = t.object({ postId: t.uuid });
+declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+declare const postId: string;
+
+// Named here because this file does not boot the app; at boot `defineApi` stamps the same name.
+const target = publishPost.named('publishPost');
+
+// Holds the grant, wrong org: a denial here is the policy deciding, not the permission check.
+const outsider = testActor('outsider', {
+  orgId: '00000000-0000-4000-8000-000000000009',
+  permissions: ['post:publish'],
+}).actor;
+
+contractTest('publishPost denies a foreign org', async () => {
+  const denied = await target.as(outsider, { postId }).catch((error: unknown) => error);
+  expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 ```
 
 ```ts
 // job test — the step guarantee, not the happy path
-test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) => {
-  const { org } = await seed('fresh-org');
+import type { JobHandle } from '@ultimat3/jobs';
+import type { AnyMailDefinition } from '@ultimat3/mail';
+import { expect, jobTest } from '@ultimat3/testing';
+
+declare const nudgeEmail: AnyMailDefinition;
+declare const onboardOrg: JobHandle<{ orgId: string }>;
+declare const orgId: string;
+
+jobTest('a resumed run replays its steps, and a mail blip retries the mail job', async ({
+  clock,
+  mail,
+  runJobs,
+}) => {
   mail.failOnce(nudgeEmail);
-  await runJobs(onboardOrg, { orgId: org.id });
+  await runJobs(onboardOrg, { orgId });
   clock.advance('3d');
-  const trace = await runJobs.drain();
-  expect(trace.steps.provision.executions).toBe(1);       // replayed from storage
-  expect(trace.steps['nudge'].executions).toBe(2);        // only this one retried
+  const resumed = await runJobs.drain();
+  expect(resumed.steps['provision']?.executions).toBe(1);    // replayed from storage
+  expect(resumed.steps['nudge']?.executions).toBe(1);
+  expect(mail.outbox()).toHaveLength(1);                  // the nudge's send was refused
+
+  clock.advance('1h');
+  const retried = await runJobs.drain();
+  expect(mail.outbox()).toHaveLength(2);                  // the mail job's retry lands
+  expect(retried.steps['nudge']?.executions).toBe(1);        // and the step never ran again
 });
 ```
 
-Generated scaffolds fail until filled in — an untested primitive is a red build, not a backlog item:
+`nudge` runs once: `send()` enqueues `mail.send` when a queue driver is installed, so `failOnce` fails the mail job, not the step (`examples/dummy/apps/web/app/orgs/jobs.job.test.ts`).
+
+Generated scaffolds run and pass as generated, and go red when the declaration they pin changes (`packages/cli/src/templates/emitted-statements.test.ts`):
 
 | Primitive | Scaffold |
 |---|---|

@@ -446,7 +446,7 @@ The contract. **Not yet a gate** — `As of 2026-08` `X_CACHE_UNTAGGED_QUERY` is
 | Case | Today |
 |---|---|
 | a cached query no tag covers | cached under a key no `invalidates` fan-out reaches — stale until its `ttlMs`, and forever without one |
-| a tag no entity declares | `X_CACHE_TAG_UNKNOWN`, `fix: x manifest` — the opposite mistake, and the one that is enforced |
+| a tag no entity declares | `X_CACHE_TAG_UNKNOWN`, whose fix is the `declareTags([...])` call to paste — the opposite mistake, and the one that is enforced |
 | the `x verify` gate | no step reads a query's tags. Nothing fails |
 
 Until it is a gate, tag coverage is a review item, not a build error. Declare the tag — `CacheTagRegistry` and `declareTags` in [Caching and invalidation](Caching-And-Invalidation).

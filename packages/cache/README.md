@@ -244,8 +244,8 @@ Wire form is `post` / `post:<id>`, identical in Redis keys, CDN surrogate keys a
 `--json` reports — the edge adds one `e:<entity>` index key per entity ([CDN](#cdn)). Invalidation is asymmetric-tolerant on purpose: busting a collection
 kills its rows, busting a row kills the collections that held it.
 
-`tag.post` is typed via a registry that `x manifest` generates, so `tag.pots` is a build
-error:
+`tag.post` is typed via a registry the app writes by hand, beside its `declareTags` call, so
+`tag.pots` is a build error. Nothing generates it:
 
 ```ts
 declare module '@ultimat3/cache' {
@@ -253,8 +253,8 @@ declare module '@ultimat3/cache' {
 }
 ```
 
-`declareTags()` takes the manifest's entity names at boot and is **additive and process-wide** —
-once anything is declared, an undeclared tag is `X_CACHE_TAG_UNKNOWN`. A test that declares its own
+`declareTags()` takes the tag names the app lists (`examples/dummy/packages/db/src/tags.ts`) and is
+**additive and process-wide** — until something is declared no tag is checked; once anything is, an undeclared tag is `X_CACHE_TAG_UNKNOWN`. A test that declares its own
 fixture entity therefore turns validation on for every later file in the same `bun test` process.
 `isolateDeclaredTags()` is the seam for that — see [Test seams](#test-seams).
 

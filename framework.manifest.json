@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2da269890d2f0f7e805a57edf7cf5a0c39806e205e47611d8f5c4a29f5543956",
+  "buildId": "aad89b6ccf57beb37e4e32ee5e1be82c4d4ce42b4f945359a9cdab6cc1fcffd2",
   "tiers": {
     "0": [
       "core",
@@ -4923,6 +4923,11 @@
       "code": "X_REMOTE_VERIFY_SYNC_FAILED",
       "owner": "scripts",
       "at": "scripts/remote-verify.ts"
+    },
+    {
+      "code": "X_REPLAY_PRINCIPAL_MISMATCH",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
     },
     {
       "code": "X_REPLICATION_FAILED",

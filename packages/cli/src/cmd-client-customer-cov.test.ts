@@ -2,7 +2,7 @@
 // committed `openapi.json` compiled into `types.ts` + `index.ts` (+ `package.json` on
 // `--package`), the stamp a regeneration reads, `--only`, and the two refusals before any write.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp; the scratch app must be a fresh directory per run.
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: the scratch app lives under the OS temp directory, which only node:os names.
@@ -16,10 +16,15 @@ import type { CommandContext } from './command';
 import type { Runner } from './exec';
 import { parseArgs } from './parse';
 
-const root = await mkdtemp(join(tmpdir(), 'x-client-customer-'));
-afterAll(() => rm(root, { recursive: true, force: true }));
-await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
-await Bun.write(join(root, 'package.json'), '{ "name": "scratch", "version": "0.0.0" }\n');
+// A scratch app per test: one test's `openapi.json` is the state another's refusal is about.
+let root = '';
+
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), 'x-client-customer-'));
+  await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(root, 'package.json'), '{ "name": "scratch", "version": "0.0.0" }\n');
+});
+afterEach(() => rm(root, { recursive: true, force: true }));
 
 const json = (schema: unknown) => ({ content: { 'application/json': { schema } } });
 const DOCUMENT = {

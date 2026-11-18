@@ -2,7 +2,7 @@
 // still parsed (the stub records the parsed value), its output schema still checks the canned
 // answer, and the next test runs the declared handler again.
 
-import { describe, expect } from 'bun:test';
+import { beforeEach, describe, expect } from 'bun:test';
 import { action, t } from '@ultimat3/action';
 import { registerActions } from '@ultimat3/action/loader';
 import { InternalError, userActor } from '@ultimat3/core';
@@ -33,6 +33,12 @@ const guarded = action({
 });
 // Named in place, as the boot names an app's exports: a stub keys on the object the test imported.
 registerActions({ stubActionCharge: charge, stubActionGuarded: guarded });
+
+// Before EVERY test, so a stub that outlives its test is caught in any order the tests run.
+beforeEach(async () => {
+  expect(await charge.as(ada, { cartId: 'probe', cents: 1 })).toEqual({ chargeId: 'real-probe' });
+  handled.length = 0;
+});
 
 describe('stub(action)', () => {
   unitTest('the handler is the script; the call is recorded with its actor', async () => {
