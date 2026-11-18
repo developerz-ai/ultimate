@@ -2,7 +2,7 @@
 // directions, INCLUDE and `gin_trgm_ops`, read back by `introspectSchema` and compared by
 // `diffSchema` — clean as built, red after a hand rebuild. Its own table, dropped in and out.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import { diffSchema } from './drift';
 import type { IndexDescriptionLike } from './entity-shape';
@@ -44,8 +44,12 @@ describe.skipIf(!hasPostgres)('index key parts on Postgres', () => {
     return diffSchema({ tables: [ours] }, { tables: [expected] }).differences;
   };
 
-  beforeAll(async () => {
+  beforeAll(() => {
     client = postgresClient({ url: url as string });
+  });
+
+  // One test rebuilds indexes by hand; the other reads them as declared.
+  beforeEach(async () => {
     await client.execute(raw(`drop table if exists ${TABLE}`));
     await client.execute(
       raw(`create table ${TABLE} (id int primary key, email text, org int, at int, name text)`),

@@ -97,10 +97,26 @@ A mutation or command, server-authoritative. Declared once, projected six ways.
 
 ```ts
 import { action, t } from '@ultimat3/action';
-import { can } from '@ultimat3/policy';
 import { tag } from '@ultimat3/cache';
-import { type JobHandle } from '@ultimat3/jobs';
-import { type Actor } from '@ultimat3/core';
+import type { Actor } from '@ultimat3/core';
+import type { JobHandle } from '@ultimat3/jobs';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/cache' {
+  interface CacheTagRegistry {
+    post: true;
+    feed: true;
+  }
+}
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
 
 declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
 declare function ownsPost(actor: Actor | null, postId: string): boolean;
@@ -131,9 +147,28 @@ export const publishPost = action({
 An action with an optimistic local twin. `local` runs client-side against the local store; `server` is authoritative. Same input, same name, both halves in one file.
 
 ```ts
-import { mutator } from '@ultimat3/action';
+import { mutator, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+declare module '@ultimat3/action' {
+  interface LocalTables {
+    posts: { likedByMe: boolean; likeCount: number };
+  }
+}
 
 export const likePost = mutator({
+  input:  t.object({ postId: t.uuid }),
+  output: t.object({ likeCount: t.number, likedByMe: t.boolean }),
+  policy: can('post:like'),
   // REQUIRED (`X_MUTATOR_NOT_IDEMPOTENT`): a replay under the same Idempotency-Key answers the
   // first result instead of running `server` again.
   idempotent: true,
@@ -198,6 +233,16 @@ import { job } from '@ultimat3/jobs';
 import { t } from '@ultimat3/action';
 import { type AnyMailDefinition } from '@ultimat3/mail';
 
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly orgs: {
+      provision(id: string): Promise<{ id: string; name: string }>;
+      byId(id: string): Promise<{ id: string; name: string }>;
+    };
+    readonly mail: { send(mail: unknown, to: unknown): Promise<void> };
+  }
+}
+
 declare const welcomeEmail: AnyMailDefinition;
 declare const nudgeEmail: AnyMailDefinition;
 
@@ -227,16 +272,26 @@ export const onboardOrg = job({
 A URL + render mode + metadata + offline strategy.
 
 ```ts
-import { defineRoute } from '@ultimat3/render';
 import { tag } from '@ultimat3/cache';
+import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
-import { entity, text, uuid } from '@ultimat3/entity';
 
+declare module '@ultimat3/cache' {
+  interface CacheTagRegistry {
+    post: true;
+    feed: true;
+  }
+}
+
+interface Post {
+  readonly title: string;
+  readonly excerpt: string;
+  readonly cover: string;
+  readonly publishedAt: string;
+  readonly author: string;
+}
 declare function listPostSlugs(): Promise<readonly string[]>;
-const posts = entity('posts', {
-  tenant: 'orgId',
-  columns: { id: uuid().primaryKey(), orgId: uuid(), title: text() },
-});
+declare function loadPost(slug: string): Promise<Post>;
 
 export const config = defineRoute({
   render:     'isr',                  // static | isr | ssr | stream
@@ -245,8 +300,17 @@ export const config = defineRoute({
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
   budget:     { js: '40kb' },
-  meta:       ({ post }) => ({ title: post.title, description: post.excerpt,
-                               og: { image: post.cover }, ld: ld.Article(post) }),
+  load:       ({ params }) => loadPost(params['slug'] ?? ''),
+  meta:       ({ data: post }) => ({
+    title: post.title,
+    description: post.excerpt,
+    og: { image: post.cover },
+    ld: [ld.Article({
+      headline: post.title,
+      datePublished: post.publishedAt,
+      author: { name: post.author },
+    })],
+  }),
 });
 ```
 
@@ -265,7 +329,7 @@ A scheduled trigger. Enqueues jobs; never does work itself.
 ```ts
 import { type JobHandle, task } from '@ultimat3/jobs';
 
-declare const sendDigest: JobHandle<{ orgId: string }>;
+declare const sendDigest: JobHandle<Record<string, never>>;
 
 export const nightlyDigest = task({
   cron: '0 3 * * *',

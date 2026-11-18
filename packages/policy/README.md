@@ -9,14 +9,17 @@ object through the *same* `evaluate()`.
 `bun add @ultimat3/policy` · guide: [Policies And Authz](https://github.com/developerz-ai/ultimate/wiki/Policies-And-Authz)
 
 ```ts
-import { action } from '@ultimat3/action';
-import { can } from '@ultimat3/policy';
+import { action, t } from '@ultimat3/action';
 import { type Actor } from '@ultimat3/core';
+import { can } from '@ultimat3/policy';
 
 declare function ownsPost(actor: Actor | null, postId: string): boolean;
 
 export const publishPost = action({
+  input: t.object({ postId: t.uuid }),
+  output: t.object({ id: t.uuid, orgId: t.uuid, title: t.string }),
   policy: can<{ postId: string }>('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  handle: ({ input, ctx }) => ctx.posts.publish(input.postId),
 });
 ```
 

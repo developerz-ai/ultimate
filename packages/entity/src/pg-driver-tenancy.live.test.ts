@@ -8,7 +8,7 @@
 // Its own tables, as every live file has: `beforeAll` runs `drop table … cascade`, so two files
 // sharing a name would each destroy the other's schema. Skips unless `TEST_DATABASE_URL` is set.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import {
   generateMigration,
@@ -90,6 +90,9 @@ describe.skipIf(!hasPostgres)('live · postgres · tenancy', () => {
     acme = (await db.orgs.insert({ slug: 'acme' })).id;
     other = (await db.orgs.insert({ slug: 'globex' })).id;
   });
+
+  // The composite-key test counts a tenant's tags exactly.
+  beforeEach(() => client.execute(raw('delete from "pg_tenancy_live_invoice_tags"')));
 
   afterAll(async () => {
     await client.execute(raw(DROP));

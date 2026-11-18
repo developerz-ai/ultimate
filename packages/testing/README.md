@@ -177,12 +177,11 @@ than a missing method three awaits into a later test.
 An app adds its own with `defineFixtures` and widens the type by augmenting `Fixtures`:
 
 ```ts
-import { defineFixtures, type SeedHandle } from '@ultimat3/testing';
 import { type Actor } from '@ultimat3/core';
+import { defineFixtures, type SeedHandle } from '@ultimat3/testing';
 
+declare function loadSeed(name: string): SeedHandle;
 declare function actorFor(token: string, facts: unknown): Actor;
-
-declare function loadSeed(): Promise<void>;
 
 defineFixtures({ seed: () => loadSeed, actorFor: () => actorFor });
 
@@ -387,19 +386,26 @@ themselves, not from a directory convention.
 ## Factories
 
 ```ts
-import { belongsTo, defineFactory, hasMany } from '@ultimat3/testing';
 import { entity, text, timestamp, uuid } from '@ultimat3/entity';
+import { belongsTo, defineFactory, hasMany } from '@ultimat3/testing';
 
-const orgs = entity('orgs', { columns: { id: uuid().primaryKey(), name: text() } });
+const orgs = entity('orgs', {
+  columns: { id: uuid().primaryKey(), slug: text(), name: text() },
+});
 const posts = entity('posts', {
   tenant: 'orgId',
   columns: {
     id: uuid().primaryKey(),
     orgId: uuid(),
+    slug: text(),
     title: text(),
     status: text().default('draft'),
     publishedAt: timestamp().nullable(),
   },
+});
+const comments = entity('comments', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid(), body: text() },
 });
 
 const orgFactory = defineFactory(orgs, {
@@ -522,13 +528,10 @@ bound, one sent inside `expectedSeqScan(reason, fn)` or on an entity that declar
 ## Shared examples
 
 ```ts
-import { behavesLike, sharedExamples } from '@ultimat3/testing';
-import { type Action, t } from '@ultimat3/action';
-import { describe, expect, test } from 'bun:test';
+import { type Action } from '@ultimat3/action';
+import { behavesLike, describe, expect, sharedExamples, test } from '@ultimat3/testing';
 
-const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
-const PublishPostInput = t.object({ postId: t.uuid });
-declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+declare const publishPost: Action;
 
 const anAuthenticatedAction = sharedExamples<Action>('an authenticated action', (subject) => {
   test('denies an anonymous actor', async () => {

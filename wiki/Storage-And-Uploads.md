@@ -15,7 +15,7 @@ declare const bytes: Uint8Array;
 defineStorage({
   disks: {
     uploads: localDriver({ root: '.storage/uploads' }),
-    media: s3Driver({ bucket: 'media', endpoint: process.env.S3_ENDPOINT, forcePathStyle: true }),
+    media: s3Driver({ bucket: 'media', endpoint: process.env['S3_ENDPOINT'], forcePathStyle: true }),
   },
   default: 'uploads',
 });

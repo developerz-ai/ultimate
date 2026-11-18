@@ -316,17 +316,28 @@ the person, never round or guess.
 | OTel span attributes | `cost.minor` + `cost.currency` as separate attributes, never a formatted string |
 
 ```ts
-import { llm, type Prompt } from '@ultimat3/ai';
 import { t } from '@ultimat3/action';
+import { llm, type Prompt } from '@ultimat3/ai';
 import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
 
 declare const summarizePrompt: Prompt<{ body: string }>;
 
 export const summarize = llm({
   model: 'claude-sonnet-5-5',
   input:  t.object({ postId: t.uuid }),
-  output: t.object({ summary: t.string, tags: t.string.array() }),
+  output: t.object({ summary: t.string, tags: t.array(t.string) }),
   prompt: summarizePrompt,                       // versioned artifact
+  vars:   async ({ input, ctx }) => ({ body: await ctx.posts.body(input.postId) }),
   cache:  { semantic: { threshold: 0.97, ttl: '7d' } },
   budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } },
   policy: can('post:read'),

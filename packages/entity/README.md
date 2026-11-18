@@ -978,14 +978,15 @@ const participants = entity('participants', {
   },
 });
 const db = database({ likes, participants, posts });
-declare const authorId: string;
 declare const id: string;
 declare const ids: readonly string[];
-declare const userId: string;
 declare const title: string;
-declare const conversationId: string;
 declare const postId: string;
+declare const userId: string;
+declare const authorId: string;
+declare const conversationId: string;
 declare const lastReadAt: Date;
+declare const rows: readonly { readonly id: string; readonly rank: number }[];
 
 db.posts.delete(id);                                        // by a single primary key
 db.posts.update(id, { title });                             // ditto; named columns validate as insert does
@@ -1179,32 +1180,36 @@ export const members = entity('members', {
 Each call is all or nothing, `As of 2026-11-02`.
 
 ```ts
-import { database, entity, text, uuid } from '@ultimat3/entity';
+import { database, entity, integer, text, uuid } from '@ultimat3/entity';
 
-const likes = entity('likes', {
-  tenant: 'orgId',
-  columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid(), memberId: uuid() },
-});
 const tags = entity('tags', {
   tenant: 'orgId',
   columns: { id: uuid().primaryKey(), orgId: uuid(), name: text() },
 });
+const likes = entity('likes', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid(), postId: uuid(), memberId: uuid() },
+  indexes: [{ on: ['orgId', 'postId', 'memberId'], unique: true }],   // what onConflict names
+});
 const counters = entity('counters', {
   tenant: 'orgId',
-  columns: { id: uuid().primaryKey(), orgId: uuid(), day: text() },
+  columns: { id: uuid().primaryKey(), orgId: uuid(), day: text(), total: integer() },
+  indexes: [{ on: ['orgId', 'day'], unique: true }],
 });
 const db = database({ counters, likes, tags });
 declare const orgId: string;
 declare const names: readonly string[];
+declare const likeRows: Parameters<typeof db.likes.upsertAll>[0];
+declare const counterRows: Parameters<typeof db.counters.upsertAll>[0];
 
 await db.tags.insertAll(names.map((name) => ({ orgId, name })));   // one statement, n rows
 
-await db.likes.upsertAll(rows, {                                  // insert, or leave what is there
+await db.likes.upsertAll(likeRows, {                              // insert, or leave what is there
   onConflict: ['orgId', 'postId', 'memberId'],
   onMatch: 'nothing',
 });
 
-await db.counters.upsertAll(rows, { onConflict: ['orgId', 'day'] });   // insert, or overwrite
+await db.counters.upsertAll(counterRows, { onConflict: ['orgId', 'day'] });   // insert, or overwrite
 ```
 
 `insertAll` is `insert` in bulk and nothing else: rows are `Insertable`, each one goes through
@@ -1389,6 +1394,7 @@ const posts = entity('posts', {
   tenant: 'orgId',
   columns: { id: uuid().primaryKey(), orgId: uuid() },
 });
+declare const row: typeof posts.$row;
 
 defaultDriver().repo(posts).insert(row); // seeds what database({ posts }) reads
 defaultDriver().reset?.();               // between tests; `?.` because Postgres has no reset
@@ -1490,8 +1496,12 @@ store was constructed (`driverStores()`). The meanings a custom store borrows â€
 ```ts
 import { entity, postgresRepo, uuid } from '@ultimat3/entity';
 
-const users = entity('users', { columns: { id: uuid().primaryKey() } });
+const users = entity('users', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
 declare const orgId: string;
+declare const posts: readonly { readonly authorId: string }[];
 
 const repo = postgresRepo(users);
 // One statement, not one per post: the lookups issued in this microtask are one `in`.

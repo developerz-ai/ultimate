@@ -9,6 +9,16 @@ a job's code never names a backend.
 import { job, t } from '@ultimat3/jobs';
 import { type AnyMailDefinition } from '@ultimat3/mail';
 
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly orgs: {
+      provision(id: string): Promise<{ id: string; name: string }>;
+      byId(id: string): Promise<{ id: string; name: string }>;
+    };
+    readonly mail: { send(mail: unknown, to: unknown): Promise<void> };
+  }
+}
+
 declare const welcomeEmail: AnyMailDefinition;
 declare const nudgeEmail: AnyMailDefinition;
 
@@ -454,11 +464,17 @@ diff between them is the alarm: a sweep merged, deployed and never enqueued had 
 up on no surface at all.
 
 ```ts
-import { isBackfill, type JobHandle, pendingBackfills, registeredBackfills } from '@ultimat3/jobs';
-
-declare const environment: string;
+import {
+  isBackfill,
+  type JobHandle,
+  pendingBackfills,
+  registeredBackfills,
+} from '@ultimat3/jobs';
 
 declare const rewriteSlugs: JobHandle<{ force?: boolean }>;
+declare const runs: Parameters<typeof pendingBackfills>[0]['runs'];
+declare const environment: Parameters<typeof pendingBackfills>[0]['environment'];
+const declarations = registeredBackfills();
 
 registeredBackfills();          // [{ kind: 'backfill', name, checksum, requires, environments, counts }]
 isBackfill(rewriteSlugs);       // true — a plain job() is false, and so is a look-alike
@@ -1147,13 +1163,15 @@ wrote.
 ## The transactional outbox
 
 ```ts
-import { type JobHandle } from '@ultimat3/jobs';
 import { type Ctx } from '@ultimat3/core';
+import { withTransaction } from '@ultimat3/db';
+import { type JobHandle } from '@ultimat3/jobs';
 
-declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
 declare const ctx: Ctx;
+declare const input: { readonly postId: string; readonly orgId: string };
+declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
 
-await ctx.tx(async (tx) => {
+await withTransaction(async (tx) => {
   const post = await ctx.posts.publish(input.postId, tx);
   await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId }); // joins `tx`
 });

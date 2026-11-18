@@ -160,6 +160,8 @@ export { MAX_RETRY_AFTER_SECONDS, retryAfterSecondsOf } from './client-retry-aft
  */
 export type { ClientScope } from './client-scope';
 export { onRescope, rescope } from './client-scope';
+export type { ClientScopeIdOptions } from './client-scope-id';
+export { clientScopeId } from './client-scope-id';
 export type { StreamRequest } from './client-stream';
 export { clientStream } from './client-stream';
 export { clientTransport } from './client-transport';
@@ -891,10 +893,12 @@ export {
   CLIENT_PATH_STYLE_META,
   CLIENT_PERSIST_META,
   CLIENT_PINS_META,
+  CLIENT_REPLAY_SCOPE_HEADER,
   CLIENT_SCOPE_HEADER,
   CLIENT_SCOPE_META,
   CLIENT_SYNC_META,
   CLIENT_SYNC_WORKER_META,
+  principalScopeName,
 } from './page-meta';
 /** The structural Postgres seam http, auth, action and jobs share without a `@ultimat3/db` edge. */
 export type { PgExecutor } from './pg-executor';

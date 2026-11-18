@@ -1040,7 +1040,7 @@ published limits and prices into the app's own `models.ts`, with the source and 
 each, as `examples/dummy/apps/web/app/models.ts` does.
 
 ```ts
-import { anthropicProvider, configureAi, providerGateway, registerModel } from '@ultimat3/ai';
+import { anthropicProvider, providerGateway, registerModel } from '@ultimat3/ai';
 
 const usd = (minor: number) => ({ minor, currency: 'USD' }) as const;
 
@@ -1055,12 +1055,13 @@ export const appModel = registerModel({
   reasoning: { effort: true, adaptive: true, disableThinkingUpTo: undefined },
 });
 
-configureAi({
-  gateway: providerGateway({
+// apps/<app>/runtime.ts — the boot installs it
+export const runtime = {
+  aiGateway: providerGateway({
     providers: [anthropicProvider({ models: [appModel.id] })],
     defaultModel: appModel.id,
   }),
-});
+};
 ```
 
 ```diff
@@ -2220,8 +2221,6 @@ error, and the old objects are orphaned until your bucket's lifecycle rule colle
 
 ```ts
 // before — answered ALLOWED, and admitsAnonymous() agreed, so http did not 401 first
-import { allow, and } from '@ultimat3/policy';
-
 policy: and(...requiredCaps.map(can))   // requiredCaps filtered to empty
 
 // after — refused where it is written
@@ -2566,7 +2565,10 @@ connection after the caller's socket had already been answered `X_TIMEOUT`.
 `X_MCP_RATE_LIMITED`, 429, with `Retry-After`.
 
 ```ts
-import { mcpHttpRoute } from '@ultimat3/mcp';
+import { type DefineAppMcpInput, type McpServer, mcpHttpRoute } from '@ultimat3/mcp';
+
+declare const server: McpServer;
+declare const resolveToken: NonNullable<DefineAppMcpInput['resolveToken']>;
 
 mcpHttpRoute({ server, resolveToken, rateLimits: { read: 600, write: 60 } });
 // or defineAppMcp({ …, rateLimits: { read: 600, write: 60 } })
@@ -2582,10 +2584,12 @@ honest for `x mcp serve` and a lie for N replicas behind one URL, each enforcing
 on its own:
 
 ```ts
-import { mcpHttpRoute } from '@ultimat3/mcp';
+import type { PgExecutor } from '@ultimat3/action';
 import { postgresRateLimitStore } from '@ultimat3/http';
-import { type PgExecutor } from '@ultimat3/action';
+import { type DefineAppMcpInput, type McpServer, mcpHttpRoute } from '@ultimat3/mcp';
 
+declare const server: McpServer;
+declare const resolveToken: NonNullable<DefineAppMcpInput['resolveToken']>;
 declare const executor: PgExecutor;
 
 mcpHttpRoute({ server, resolveToken, rateLimitStore: postgresRateLimitStore({ executor }) });
@@ -3023,8 +3027,10 @@ worker and nothing in the framework calls `generateServiceWorker`; the generated
 `regenerate:` header names the call for that reason.
 
 ```ts
-import { generateServiceWorker } from '@ultimat3/pwa';
+import { generateServiceWorker, type PwaRoute, type ServiceWorkerConfig } from '@ultimat3/pwa';
 
+declare const routes: readonly PwaRoute[];
+declare const config: ServiceWorkerConfig;
 declare const buildId: string;
 
 generateServiceWorker(routes, config, buildId);   // from @ultimat3/pwa
@@ -3410,8 +3416,13 @@ was not: you were on Postgres the whole time.
 Which driver runs is `setJobDriver(driver)`, and only that:
 
 ```ts
-import { type PgExecutor } from '@ultimat3/action';
+import type { PgExecutor } from '@ultimat3/action';
 
+// This release's API, declared because it is gone: since 31.0.0 the driver is `jobs:` in
+// `apps/<app>/runtime.ts`.
+declare function setJobDriver(driver: unknown): void;
+declare function createPgDriver(options: { executor: PgExecutor }): unknown;
+declare function createMemoryDriver(): unknown;
 declare const executor: PgExecutor;
 
 setJobDriver(createPgDriver({ executor }))   // production
@@ -3898,6 +3909,8 @@ Server behavior on a stale build ID:
 Full detail: [PWA and offline](PWA-And-Offline).
 
 ## Migrating jobs between drivers — **still nowhere to migrate to**
+
+**Superseded `As of 2026-11-18`:** this section records the state before `redisJobDriver()` shipped (`@ultimat3/jobs/redis`, 2026-10) and before 31.0.0 replaced `setJobDriver` with `jobs:` in `apps/<app>/runtime.ts`. Current drivers: [Jobs and workflows](Jobs-And-Workflows). `x jobs drain` no longer exists; moving in-flight rows is the app's own migration.
 
 **There is no `jobs.driver` field.** 5.0.0 deleted it, because it selected nothing: boot always built the Postgres driver, so `jobs: { driver: 'redis' }` gave you Postgres in silence; since 25.0.0 the key is refused by name (`X_CONFIG_INVALID`). Which driver runs is `setJobDriver(driver)` at boot, and only that.
 

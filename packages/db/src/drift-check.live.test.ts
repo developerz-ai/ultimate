@@ -6,7 +6,7 @@
 //
 // Every table here is dropped on the way in and on the way out; nothing is left behind.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import { appTables, diffSchema } from './drift';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
@@ -83,10 +83,14 @@ describe.skipIf(!hasPostgres)('live · postgres · a CHECK the catalog no longer
   beforeAll(async () => {
     // Its own schema, so `introspectSchema()` sees this table and nothing else the server is holding.
     admin = postgresClient({ url: url ?? '' });
-    await admin.execute(raw(`drop schema if exists "${SCHEMA}" cascade`));
-    await admin.execute(raw(`create schema "${SCHEMA}"`));
     client = postgresClient({ url: scopedUrl(url ?? '') });
     declared = snapshotOf([entity]);
+  });
+
+  // The migrated table, with its constraints as declared: tests drop and add them by hand.
+  beforeEach(async () => {
+    await admin.execute(raw(`drop schema if exists "${SCHEMA}" cascade`));
+    await admin.execute(raw(`create schema "${SCHEMA}"`));
     for (const statement of statementsOf(
       generateMigration({ entities: [entity], name: 'init', now: at }).up,
     )) {
@@ -145,6 +149,9 @@ describe.skipIf(!hasPostgres)('live · postgres · a CHECK the catalog no longer
   });
 
   test('and the fix is a COMMAND that runs — after it, the report is clean again', async () => {
+    await client.execute(
+      raw(`alter table "${SCHEMA}"."${TABLE}" drop constraint "${TABLE}_status_check"`),
+    );
     const [difference] = diffSchema(await live(), declared).differences;
     const fix = difference?.fix ?? '';
     if (Bun.which('psql') !== null) {

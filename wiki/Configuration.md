@@ -795,6 +795,8 @@ Four names, one env var, and a spelling the framework does not use is a refusal 
 ```ts
 import { isLocal, isProduction, resolveEnvironment, tryResolveEnvironment } from '@ultimat3/core';
 
+declare const someRecord: Readonly<Record<string, string | undefined>>;
+
 resolveEnvironment();                          // 'development' | 'test' | 'staging' | 'production'
 resolveEnvironment({ fallback: 'production' });
 resolveEnvironment({ env: someRecord });
@@ -822,7 +824,9 @@ x env example        # writes .env.example from the app's envSchema
 ```
 
 ```ts
-import { renderEnvExample, ENV_EXAMPLE_PATH } from '@ultimat3/core';
+import { type EnvSchema, renderEnvExample, ENV_EXAMPLE_PATH } from '@ultimat3/core';
+
+declare const schema: EnvSchema;
 
 await Bun.write(ENV_EXAMPLE_PATH, renderEnvExample(schema));      // '.env.example'
 ```
@@ -848,16 +852,17 @@ Which files are read at boot: `.env` and `.env.<mode>` always, plus `.env.local`
 A value that redacts **by value**, so it stays redacted under a key nobody thought to add to a deny-list.
 
 ```ts
-import { isSecret, type Logger, revealSecret, secret } from '@ultimat3/core';
+import { isSecret, logger, revealSecret, secret } from '@ultimat3/core';
 
-declare const logger: Logger;
+declare const apiToken: string;
 
-const token = secret(process.env.API_TOKEN, 'API_TOKEN');
+const token = secret(apiToken, 'API_TOKEN');
 
 `${token}`;                    // '[redacted]'
 JSON.stringify({ token });     // '{"token":"[redacted]"}'
 logger.info('boot', { token }); // token=[redacted]
 revealSecret(token);           // the real string — the one call that unwraps
+isSecret(token);               // true
 ```
 
 | Surface | Redacted |

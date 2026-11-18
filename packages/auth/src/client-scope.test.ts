@@ -2,7 +2,7 @@
 // rendered for, without telling it who that is.
 
 import { describe, expect, test } from 'bun:test';
-import { anonymousActor, userActor } from '@ultimat3/core';
+import { anonymousActor, clientScopeId, userActor } from '@ultimat3/core';
 import { clientScopeOf } from './client-scope';
 
 const SECRET = 'x'.repeat(32);
@@ -61,6 +61,13 @@ describe('clientScopeOf', () => {
 
     expect(first).toMatch(/^[0-9a-f]{32}$/);
     expect(clientScopeOf(actor, { env: {} })).toBe(first);
+  });
+
+  // `@ultimat3/action` judges a replay with core's function: a second fallback key here would
+  // refuse every replay on an app with no SESSION_SECRET.
+  test('is the id core derives, under the same fallback key', () => {
+    const actor = userActor({ id: 'alice' });
+    expect(clientScopeOf(actor, { env: {} })).toBe(clientScopeId(actor, { env: {} }));
   });
 
   // The floor guarded only the env path: `{ secret: 'x' }` keyed every page's scope with one

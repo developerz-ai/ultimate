@@ -7,7 +7,7 @@
 //
 // Every table, type and row here is dropped on the way in and on the way out; nothing is left behind.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
@@ -126,8 +126,12 @@ describe.skipIf(!hasPostgres)('live · postgres · retyping a column a predicate
     await client.execute(raw(`drop type if exists "${ENUM}" cascade`));
   };
 
-  beforeAll(async () => {
+  beforeAll(() => {
     client = postgresClient({ url: url ?? '' });
+  });
+
+  // The table before the retype, two rows in it; a test that needs it applied applies it.
+  beforeEach(async () => {
     await teardown();
     // The enum type is hand-written, exactly as `examples/dummy`'s `0001_init.sql` writes it:
     // `SchemaDescription` has no field for a CREATE TYPE, so the generator neither makes nor
@@ -164,6 +168,7 @@ describe.skipIf(!hasPostgres)('live · postgres · retyping a column a predicate
   });
 
   test('the dependent partial index is back, and the independent ones were never touched', async () => {
+    await apply(retype().up);
     expect(await indexNames()).toEqual([
       `${TABLE}_feed_idx`,
       `${TABLE}_org_idx`,
@@ -177,6 +182,7 @@ describe.skipIf(!hasPostgres)('live · postgres · retyping a column a predicate
   });
 
   test('the predicate the index came back with is the one the entity declares', async () => {
+    await apply(retype().up);
     const rows = await client.query<{ indexdef: string }>(
       raw(
         `select indexdef from pg_indexes where tablename = '${TABLE}' ` +
@@ -187,6 +193,7 @@ describe.skipIf(!hasPostgres)('live · postgres · retyping a column a predicate
   });
 
   test('the dependent CHECK is back and still refuses an incoherent row', async () => {
+    await apply(retype().up);
     expect(await constraintNames()).toEqual([`${TABLE}_publish_coherent_check`]);
     await expect(
       client.execute(
@@ -195,10 +202,11 @@ describe.skipIf(!hasPostgres)('live · postgres · retyping a column a predicate
             `values ('${uuid('3')}', '${uuid('a')}', null, 'published')`,
         ),
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/SQLSTATE 23514/);
   });
 
   test('every row survived the rewrite', async () => {
+    await apply(retype().up);
     const rows = await client.query<{ status: string }>(
       raw(`select "status" from "${TABLE}" order by "id"`),
     );
@@ -206,6 +214,7 @@ describe.skipIf(!hasPostgres)('live · postgres · retyping a column a predicate
   });
 
   test('and its down reverses the whole thing — back to the enum, predicates intact', async () => {
+    await apply(retype().up);
     await apply(retype().down);
     expect(await typeOf('status')).toBe(ENUM);
     expect(await indexNames()).toEqual([

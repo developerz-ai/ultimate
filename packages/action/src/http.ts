@@ -44,6 +44,7 @@ import { answerNatively, isNativeFormPost } from './native-answer';
 import { withDeclaredErrors } from './openapi-errors';
 import { assertActionRateLimit, fixedRateLimit } from './rate-limit-gate';
 import { carriesRecords, recordResponse } from './record-wire';
+import { assertReplayPrincipal } from './replay-scope';
 
 /** The digest a request's idempotency key names its write by; none for a missing or blank one. */
 async function writeOriginOf(req: UltimateRequest): Promise<string | undefined> {
@@ -121,6 +122,8 @@ function projectRoute(
       // 403ing still has to learn the endpoint is going away.
       for (const [header, value] of Object.entries(sunsetting)) req.ctx.headers.set(header, value);
     }
+    // First, before the body is read: a replay under the wrong session is not this caller's write.
+    assertReplayPrincipal(req, name);
     // No `catch`: an error — framework or not — takes the path every route's error takes. This
     // used to answer `problem(error)` itself, so the `error-map` stage never saw it: no
     // `onError`/`reportError` on a 5xx, no HTML error page or sign-in redirect for a browser, no

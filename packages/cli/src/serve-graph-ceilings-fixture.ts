@@ -340,8 +340,10 @@
  * `entity/src/predicate-operand.ts` (an operand read one way by both drivers) and the
  * `time/src/plain-date.ts` it reads a `Date` against a `date()` column with, and
  * `db/src/not-null-contract.ts` (a required column's NOT NULL contract step).
+ * raised 987 → 989, measured 989 (2026-11-18, a queued write's binding): `core/src/client-scope-id.ts`
+ * (the scope id auth renders and action judges, one key) and `action/src/replay-scope.ts` (the check).
  */
-export const MIGRATE_CEILING = 987;
+export const MIGRATE_CEILING = 989;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

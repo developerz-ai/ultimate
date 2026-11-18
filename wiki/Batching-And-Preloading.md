@@ -120,9 +120,10 @@ const tags = entity('tags', {
 });
 const db = database({ likes, posts, tags });
 declare const names: readonly string[];
+declare const rows: readonly { orgId: string; postId: string; memberId: string }[];
 declare const orgId: string;
-declare const memberId: string;
 declare const postId: string;
+declare const memberId: string;
 
 await db.tags.insertAll(names.map((name) => ({ orgId, name })));         // one statement, n rows
 

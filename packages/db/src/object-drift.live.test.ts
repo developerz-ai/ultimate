@@ -7,7 +7,7 @@
 // resolved against the LIVE CATALOG instead — the same object, the same definition, the same
 // token — so a missing host tool costs the suite nothing and skips it nothing.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun's only file read is `Bun.file().text()`, and it is a promise — this assertion reads
 // its own source synchronously, inside a synchronous test body.
 import { readFileSync } from 'node:fs';
@@ -234,8 +234,12 @@ describe.skipIf(!gated)('live · postgres · an unexpected-object fix runs as wr
     return undefined;
   };
 
-  beforeAll(async () => {
+  beforeAll(() => {
     admin = postgresClient({ url: url ?? '' });
+  });
+
+  // The last test drops every object it is told to, so each test gets them back.
+  beforeEach(async () => {
     await admin.execute(raw(`drop schema if exists ${S} cascade`));
     await admin.execute(raw('drop function if exists public.od_touch()'));
     await admin.execute(raw(`create schema ${S}`));

@@ -7,12 +7,13 @@ the second copy is the one nobody updates.
 `bun add @ultimat3/pwa` · guide: [PWA And Offline](https://github.com/developerz-ai/ultimate/wiki/PWA-And-Offline)
 
 ```ts
-import { generateServiceWorker } from '@ultimat3/pwa';
-import { describePages } from '@ultimat3/render';
+import { generateServiceWorker, type PwaRoute } from '@ultimat3/pwa';
 
+declare const routes: readonly PwaRoute[];   // `x build` derives these from the route table
+declare const config: Parameters<typeof generateServiceWorker>[1];
 declare const buildId: string;
 
-const { source, precache, warnings } = generateServiceWorker(describePages(), config, buildId);
+const { source, precache, warnings } = generateServiceWorker(routes, config, buildId);
 ```
 
 ## Browser entry: `@ultimat3/pwa/client`

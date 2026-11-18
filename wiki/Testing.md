@@ -89,7 +89,7 @@ Any test that can pass twice and fail the third time is worse than no test — i
 | Control | Behavior |
 |---|---|
 | **Seeds** | `seed(name)` builds a named, deterministic fixture graph via entity factories. Same input → identical rows, identical UUIDs |
-| **Frozen clock** | time starts at a fixed instant. `clock.advance('3d')` moves it, and it also drives `step.sleep` and cron in tests |
+| **Frozen clock** | time starts at a fixed instant. `clock.advance('3d')` moves it and makes a `step.sleep` due. It fires no cron: a task test reads `task.entries(occurrenceMs)` |
 | **Seeded RNG** | `Math.random`, `crypto.randomUUID`, and Bun's RNG are seeded per test file from its path — reproducible, distinct across files |
 | **Sealed network** | a `fetch`, a `new WebSocket(…)`, a `Bun.connect(…)` or a `node:net` / `node:tls` / `node:http` / `node:https` / `node:http2` connection (all dial through `net.Socket#connect`, sealed there) to anywhere not explicitly mocked or allowed **fails the test** with `X_TEST_NETWORK_SEALED`, naming the URL and the fix — every dial shares one gate, so the allow-list (`allowHost('host:port')` for a socket) and `offline()` apply to all of them — `offline()` refuses a loopback dial too (`X_TEST_NETWORK_OFFLINE`). A `node:*` refusal is the socket's `error` event, as a failed real dial is. A `mockFetch` route answers `fetch` only: a `node:http` request to a mocked host is refused, never dialled. A `Bun.udpSocket` send (and `node:dgram`, which sends through it) asks the same gate per datagram, the connected peer included: a refusal throws from `send`/`sendMany` as Bun's own UDP failures do, a refused `connect` option rejects, and `dgram` hands it to the send callback — or emits `error` when there is none. A unix socket is never sealed |
 | **Sealed names** | Every resolution path asks the same gate — `lookup`, every `resolve*`, `reverse`, `lookupService` (by `node:dns`, `node:dns/promises` or `Bun.dns`, a named import bound before the seal included), both `Resolver` classes and `Bun.dns.prefetch`: a host a `mockFetch` route names answers an address query (`lookup`, `A`, `ANY`) with `MOCKED_HOST_ADDRESS` (`11.11.11.11`, public, so an SSRF screen such as `screenDial` passes it and the dial it pins still meets the mock by its `Host`) and any other record type (`MX`, `TXT`, …) with `X_TEST_NETWORK_SEALED` — a mock declares an endpoint, not a zone; this machine, an `allowHost` name and a `lookup` of an address literal resolve for real (a `reverse` of a public address is sealed: it is a query); offline refuses every name (`X_TEST_NETWORK_OFFLINE`); any other name is `X_TEST_NETWORK_SEALED` — its fix opens with `mockFetch(…)` for an address query and with `allowHost('<name>')` for a record or reverse query, which no mock answers. A RegExp route names a host it matches at the origin or spells in its source |
@@ -221,7 +221,7 @@ committed baseline, never on an absolute score — models drift, prompts should 
 ```ts
 import { defineEval, exact, jsonSchemaValid, type Prompt } from '@ultimat3/ai';
 
-declare const summarizePrompt: Prompt<{ body: string }>;
+declare const summarizePrompt: Prompt<{ ticket: string }>;
 
 export const summarizeEval = defineEval({
   name: 'summarize',
@@ -275,42 +275,61 @@ is the app's script — `transcriptOf(error)` hands over what happened.
 
 ```ts
 // contract test — generated as a scaffold with the action
-import { expect, test } from '@ultimat3/testing';
 import { type Action, t } from '@ultimat3/action';
+import { testActor } from '@ultimat3/policy';
+import { contractTest, expect } from '@ultimat3/testing';
 
 const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
 const PublishPostInput = t.object({ postId: t.uuid });
 declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+declare const postId: string;
 
-test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
-  const { post, stranger } = await seed('two-orgs');
-  await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_FORBIDDEN');
+// Named here because this file does not boot the app; at boot `defineApi` stamps the same name.
+const target = publishPost.named('publishPost');
+
+// Holds the grant, wrong org: a denial here is the policy deciding, not the permission check.
+const outsider = testActor('outsider', {
+  orgId: '00000000-0000-4000-8000-000000000009',
+  permissions: ['post:publish'],
+}).actor;
+
+contractTest('publishPost denies a foreign org', async () => {
+  const denied = await target.as(outsider, { postId }).catch((error: unknown) => error);
+  expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 ```
 
 ```ts
 // job test — the step guarantee, not the happy path
-import { expect, test } from '@ultimat3/testing';
-import { type JobHandle } from '@ultimat3/jobs';
-import { type AnyMailDefinition } from '@ultimat3/mail';
+import type { JobHandle } from '@ultimat3/jobs';
+import type { AnyMailDefinition } from '@ultimat3/mail';
+import { expect, jobTest } from '@ultimat3/testing';
 
 declare const nudgeEmail: AnyMailDefinition;
-
 declare const onboardOrg: JobHandle<{ orgId: string }>;
+declare const orgId: string;
 
-test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) => {
-  const { org } = await seed('fresh-org');
+jobTest('a resumed run replays its steps, and a mail blip retries the mail job', async ({
+  clock,
+  mail,
+  runJobs,
+}) => {
   mail.failOnce(nudgeEmail);
-  await runJobs(onboardOrg, { orgId: org.id });
+  await runJobs(onboardOrg, { orgId });
   clock.advance('3d');
-  const trace = await runJobs.drain();
-  expect(trace.steps.provision.executions).toBe(1);       // replayed from storage
-  expect(trace.steps['nudge'].executions).toBe(2);        // only this one retried
+  const resumed = await runJobs.drain();
+  expect(resumed.steps['provision']?.executions).toBe(1);    // replayed from storage
+  expect(resumed.steps['nudge']?.executions).toBe(1);
+  expect(mail.outbox()).toHaveLength(1);                  // the nudge's send was refused
+
+  clock.advance('1h');
+  const retried = await runJobs.drain();
+  expect(mail.outbox()).toHaveLength(2);                  // the mail job's retry lands
+  expect(retried.steps['nudge']?.executions).toBe(1);        // and the step never ran again
 });
 ```
 
-The `job` example is the one that matters: it asserts the durability guarantee, not that mail was sent. See [Jobs and workflows](Jobs-And-Workflows) and [Policies and authz](Policies-And-Authz).
+The `job` example is the one that matters: finished steps replay, and a refused send costs one retry of the mail job, never a re-run of the step that enqueued it. See [Jobs and workflows](Jobs-And-Workflows) and [Policies and authz](Policies-And-Authz).
 
 ## The accessibility audit
 
@@ -392,11 +411,11 @@ Installed by the preload on `expect`.
 enumerate a sealed column ([Sealed columns](Entities-And-Migrations#sealed-columns)):
 
 ```ts
-import { expect } from '@ultimat3/testing';
 import { database, entity, text, uuid } from '@ultimat3/entity';
+import { expect } from '@ultimat3/testing';
 
 const connections = entity('connections', {
-  columns: { id: uuid().primaryKey(), email: text(), label: text(), password: text() },
+  columns: { id: uuid().primaryKey(), label: text(), password: text().sealed() },
 });
 const db = database({ connections });
 
@@ -417,10 +436,6 @@ a request does; `renderView` renders one component with its own props.
 ```ts
 import { expect, renderRoute, renderView, unitTest } from '@ultimat3/testing';
 import * as page from './page';
-import { t } from '@ultimat3/i18n';
-
-type Viewer = { readonly staff: boolean };
-declare const viewer: Viewer;
 
 unitTest('the dashboard counts the posts of the org that is looking', async () => {
   const view = await renderRoute(page, { url: 'https://example.test/dashboard', actor: viewer });
@@ -469,11 +484,13 @@ The worked example: `examples/dummy/apps/web/app/settings/page.test.ts`. `As of 
 ## Running a mutator's local half
 
 ```ts
-import { memoryLocalTx } from '@ultimat3/testing';
-import { expect } from 'bun:test';
+import { type Mutator, t } from '@ultimat3/action';
+import { expect, memoryLocalTx } from '@ultimat3/testing';
 
-declare const orgId: string;
+const RenameInput = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
+declare const renamePost: Mutator<typeof RenameInput, typeof RenameInput>;
 declare const id: string;
+declare const orgId: string;
 
 const store = memoryLocalTx({ posts: { [id]: { id, title: 'before', pending: false } } });
 renamePost.local(store.tx, { id, orgId, title: 'after' });
@@ -611,9 +628,10 @@ The last five are **declared, not built**. The framework does not bundle a brows
 
 ```ts
 // scripts/test-setup.ts
-import { defineFixtures } from '@ultimat3/testing';
+import { defineFixtures, type PageLike } from '@ultimat3/testing';
 
-declare function loadSeed(): Promise<void>;
+declare function openBrowserPage(): Promise<PageLike>;
+declare function loadSeed(name: string): Promise<void>;
 
 defineFixtures({ page: () => openBrowserPage(), seed: () => loadSeed });
 ```
@@ -707,8 +725,16 @@ once per file.
 
 ```ts
 import { join } from 'node:path';
-import { describeIslandState } from '@ultimat3/testing';
-import { expect, test } from 'bun:test';
+import {
+  describeIslandState,
+  expect,
+  type IslandStatesManifest,
+  type IslandStateSuiteOptions,
+  test,
+} from '@ultimat3/testing';
+
+declare const buildIslands: IslandStateSuiteOptions['build'];
+declare const counterStates: IslandStatesManifest;
 
 const island = { build: buildIslands, root: join(import.meta.dir, '..', '..', '..') };
 
@@ -745,12 +771,11 @@ Symbol.for('ultimate.realtime'))`: that leaves the socket open. `As of 2026-11`.
 ## Testing an authenticator
 
 ```ts
-import { authRequest, unitTest } from '@ultimat3/testing';
-import { authenticate } from '@ultimat3/auth';
-import { expect } from 'bun:test';
+import type { Authenticator } from '@ultimat3/http';
+import { authRequest, expect, unitTest } from '@ultimat3/testing';
 
+declare const authenticate: Authenticator;     // what the app hands configureAuthenticator()
 declare const member: { readonly id: string };
-
 declare const token: string;
 
 unitTest('a session cookie resolves the member it was issued to', async () => {
@@ -1041,13 +1066,12 @@ unitTest('a cursor round-trips any position', () => {
 One contract, asserted against many subjects, with the subject passed as a **thunk** so a `beforeAll`-built value is read at test time rather than at declaration time.
 
 ```ts
-import { behavesLike, sharedExamples, testName } from '@ultimat3/testing';
-import { describe, expect, test } from 'bun:test';
-import { type Action, t } from '@ultimat3/action';
+import { behavesLike, describe, expect, sharedExamples, test, testName } from '@ultimat3/testing';
 
-const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
-const PublishPostInput = t.object({ postId: t.uuid });
-declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
+interface Denier {
+  denies(actor: 'anonymous'): boolean;
+}
+declare const publishPost: Denier;
 
 const anAuthenticatedAction = sharedExamples<Denier>('an authenticated action', (subject) => {
   test('denies an anonymous actor', () => {

@@ -386,10 +386,10 @@ carries:
 import { actorFact, userActor, withFacts } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 
-declare const user: { readonly id: string; readonly name: string; readonly email: string; readonly role: string };
 type Viewer = { readonly staff: boolean };
 declare const viewer: Viewer;
-declare function canSee(viewer: Viewer, row: unknown): boolean;
+declare const user: { readonly id: string; readonly role: string };
+declare function canSee(viewer: Viewer | undefined, row: unknown): boolean;
 
 declare module '@ultimat3/core' {
   interface ActorFacts { readonly viewer: Viewer }   // declared once, app-wide

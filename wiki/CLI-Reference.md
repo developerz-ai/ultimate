@@ -69,7 +69,7 @@ x version              # CLI version
 | `x token create\|list\|revoke` | MCP and API tokens in the app's `x_api_keys`: issue one with exact scopes (plaintext shown once), list an owner's, revoke one · `grant` was removed from the registry `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x config show [--section <key>]` | the resolved `app.config.ts`, defaults merged, credentials redacted | shipped |
 | `x logs tail [--lines n] [--role <role>]` | the last lines of `.x/dev.log`, or one role's (its `.x/logs/<role>.log`, else its lines of the dev log) — the `logs.tail` MCP tool's reader | shipped |
-| `x cache graph\|bust <tag>\|clear` | the tag graph off the manifest (what each write evicts), a bust of one tag or every declared tag through the app's own tiers and bus · `stats` was removed `As of 2026-11-15` ([Known gaps](Known-Gaps#not-built-yet)) | shipped |
+| `x cache graph\|bust <tag>\|clear` | the tag graph off the manifest (what each write evicts), a bust of one tag or every declared tag through the app's own tiers and bus · `stats` was removed `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x explain <query> [--input <json>] [--org <id>]` | one declared query run once on the dev database, every statement it sent planned by the `exercise` step's oracle | shipped |
 | `x profile <route> [--runs 20] [--top 10]` | a CPU profile of rendering one route in this process: the hottest functions, file and line | shipped |
 | `x status [--url <origin>] [--samples n]` | the build each live worker runs (`x_job_workers`), and the build, status and role each sampled origin's `/readyz` answers | shipped |
@@ -2161,7 +2161,7 @@ Every flag is read before the database opens: a refusal costs no boot.
 |---|---|---|
 | workers | every live row of `x_job_workers`, through the queue `x jobs list` opens (`DATABASE_URL`, else the embedded database) | `data.workers`: `count`, `draining`, `byBuild` (a row from before the build column is `unknown`), `rows[]` |
 | origins | `--url`: `--samples` (default 5, 1–50) `GET /readyz` per origin, each on its own connection, so a load balancer chooses again | `data.origins[]`: `origin`, `samples`, `byBuild` (`x-ultimate-build`), `byStatus` (`unreachable` when nothing answered), `unstamped` (a 2xx with no build), `roles` (named by a role's health port) |
-| unrecorded | — | `data.unrecorded`: `web`, `sync`, `scheduler`, `replicator` — no fleet-wide record holds their build; name each one's health origin in `--url` ([Known gaps](Known-Gaps#not-built-yet)) |
+| unrecorded | — | `data.unrecorded`: `web`, `sync`, `scheduler`, `replicator` — no fleet-wide record holds their build; name each one's health origin in `--url` ([Known gaps](Known-Gaps#open-by-decision)) |
 
 `--url` takes bare http(s) origins only — a path, query or credentials is `X_CLI_BAD_FLAG`, as is a `--samples` outside 1–50. Both are refused before any request or connection.
 

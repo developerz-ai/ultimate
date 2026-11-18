@@ -1403,7 +1403,15 @@ secret is unset and an entity is `persist: true`. Not built because the scope id
 optional `SESSION_SECRET`: with the per-process fallback key a legitimate replay after a restart,
 or to another replica, would mismatch and be dropped, so the check would have to switch itself off
 exactly there. It also needs an `action → auth` edge that does not exist. `wiki/Known-Gaps.md`
-carries the row.
+carried the row.
+
+**Built, 2026-11-18 (31.47.0), with three changes to that design.** The derivation moved to core
+(`clientScopeId`), so no `action → auth` edge exists. The refusal (`X_REPLAY_PRINCIPAL_MISMATCH`,
+still only on replays, in its own `x-ultimate-replay-scope` header) is 409 and leaves the entry
+`pending` instead of failing it: nothing was decided about the write, and a held entry is what makes
+checking safe with the per-process key, so the check never switches itself off. A 401 to a signed-in
+queue holds the same way. The queue's scope is the binding, so entries from older builds need no
+migration. Not changed: a page loaded as another account still wipes the queue.
 
 **The ring floor's origin mark.** A node that has received no change holds no position, so its
 first read has no lsn to floor the ring at. Rejected: skipping the floor while the node holds no

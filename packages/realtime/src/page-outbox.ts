@@ -1,18 +1,23 @@
 /**
  * The page's ONE outbox: writes a page could not send, persisted under the current principal and
  * replayed IN ORDER over HTTP, each under its own idempotency key. AT LEAST once — an entry leaves
- * the disk when its ack is written. A principal change abandons the pass and wipes the queue.
+ * the disk when its ack is written. A principal change abandons the pass and wipes the queue; a
+ * session this page cannot see change (another tab) is refused by the server and the entry waits.
  */
 
 import type { ClientScope, UltimateError } from '@ultimat3/core/page';
 import {
+  CLIENT_REPLAY_SCOPE_HEADER,
   classifyThrown,
   clientTransport,
   finiteCount,
+  isSessionRefusalCode,
+  isUltimateError,
   OUTBOX_DRAIN_MESSAGE,
   onRescope,
   pageClient,
   renderThrowable,
+  stringField,
 } from '@ultimat3/core/page';
 import type { LocalStore } from './local-store-idb';
 import { pageLocalStore, scopeKey } from './local-store-idb';
@@ -58,8 +63,11 @@ export interface OutboxOptions {
   /**
    * One write, over HTTP. Default: `clientTransport` to the entry's pin or `actionPath(entry.name)` (`pinned-wire.ts`), adding every
    * record the answer carried (`type:key`) to `carried` — what its overlay settles against.
+   * `scope` is the queue's owner (`scopeKey`), which the request must name; none on an unscoped page.
    */
-  readonly send?: ((entry: OutboxEntry, carried: Set<string>) => Promise<unknown>) | undefined;
+  readonly send?:
+    | ((entry: OutboxEntry, carried: Set<string>, scope: string | undefined) => Promise<unknown>)
+    | undefined;
   readonly overlays?: (() => OutboxOverlays | undefined) | undefined;
   /**
    * Runs, and is awaited, before a write is queued. The boot hands it the record persister's
@@ -84,10 +92,29 @@ export interface OutboxOptions {
 
 const EMPTY: DrainReport = { sent: 0, collapsed: 0, remaining: 0, stoppedAt: null };
 
-/** One principal's open queue, and the scope the drain lock is named after. */
+/**
+ * One principal's open queue, and its scope: what the drain lock is named after and what every
+ * replay names as its owner. The queue a write sits in IS its binding, so an entry written by a
+ * build older than the header is bound too, with nothing to migrate.
+ */
 interface Held {
   readonly queue: OfflineQueue;
   readonly scope: string | undefined;
+  /** A signed-in principal's: only such a queue can have its session go missing. */
+  readonly signedIn: boolean;
+}
+
+/** `@ultimat3/action`'s refusal of a replay under a session that is not the queue's owner. */
+const NOT_THE_OWNER = 'X_REPLAY_PRINCIPAL_MISMATCH';
+
+/**
+ * The server said who is asking, and it is not who queued this: says nothing about the write, so
+ * it stays queued for its owner. Never `fail`: that would drop a write nobody refused.
+ */
+function ownerIsAbsent(error: unknown, signedIn: boolean): boolean {
+  const code = stringField(error, 'code');
+  if (code === undefined) return false;
+  return code === NOT_THE_OWNER || (signedIn && isSessionRefusalCode(code));
 }
 
 export function localOutbox(options: OutboxOptions): PageOutbox {
@@ -151,7 +178,8 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
   /** Never rejects: a queue the disk would not open is a memory queue, said once by code. */
   const open = async (): Promise<void> => {
     const at = epoch;
-    const scope = scopeKey(principal());
+    const who = principal();
+    const scope = scopeKey(who);
     let queue: OfflineQueue;
     try {
       queue = await OfflineQueue.open(queueStore(await options.local, scope), ceiling);
@@ -166,7 +194,7 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
       return;
     }
     held?.queue.abandon();
-    held = { queue, scope };
+    held = { queue, scope, signedIn: typeof who === 'string' };
     notify();
   };
   let ready = open();
@@ -183,17 +211,22 @@ export function localOutbox(options: OutboxOptions): PageOutbox {
   let again = false;
 
   const deliver =
-    ({ queue, scope }: Held) =>
+    ({ queue, scope, signedIn }: Held) =>
     async (mutation: QueuedMutation): Promise<void> => {
       const carried = new Set<string>();
       try {
         const { key, name, input, http } = mutation;
-        await send({ key, name, input, ...(http === undefined ? {} : { http }) }, carried);
+        await send({ key, name, input, ...(http === undefined ? {} : { http }) }, carried, scope);
       } catch (error) {
         const kind = classifyThrown(error);
-        // The network, or a server asking to be asked again: stays queued, and the pass stops so
-        // nothing behind it overtakes it. So does a queue whose principal left mid-send.
-        if (kind === 'retryable' || kind === 'retry-after' || queue.abandoned) throw error;
+        const absent = ownerIsAbsent(error, signedIn);
+        if (absent && !queue.abandoned && isUltimateError(error)) warn(error);
+        // The network, a server asking to be asked again, or a session that is not this queue's
+        // owner: stays queued, and the pass stops so nothing behind it overtakes it. So does a
+        // queue whose principal left mid-send.
+        if (absent || kind === 'retryable' || kind === 'retry-after' || queue.abandoned) {
+          throw error;
+        }
         // Anything else is the server's decision about this write — kept for the UI, never resent.
         await queue.fail(mutation.key, toQueueError(error));
         notify();
@@ -387,13 +420,19 @@ function exclusive<T>(name: string, work: () => Promise<T>): Promise<T> {
 
 const LOCAL_LOCKS: unique symbol = Symbol.for('ultimate.outbox-locks');
 type LockHost = { [LOCAL_LOCKS]?: Map<string, Promise<unknown>> };
-async function sendOverHttp(entry: OutboxEntry, carried: Set<string>): Promise<unknown> {
+async function sendOverHttp(
+  entry: OutboxEntry,
+  carried: Set<string>,
+  scope: string | undefined,
+): Promise<unknown> {
   const wire = mutationWire(entry.name, entry.input, entry.http);
   return await clientTransport({
     method: wire.method,
     url: wire.url,
     body: wire.body,
     idempotencyKey: entry.key,
+    // The cookie is whoever signed in last, in any tab; this says who the write is for.
+    ...(scope === undefined ? {} : { headers: { [CLIENT_REPLAY_SCOPE_HEADER]: scope } }),
     onEnvelope: (envelope) => carriedBy(envelope, carried),
   });
 }

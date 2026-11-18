@@ -21,153 +21,57 @@
 // why: re-keyed per fence in plan 101 sweep 11c — 138 failing fences, the same 138 the per-package
 // counts held, at 138 sites; `pin-raises` reads a wholly re-keyed table against its old total.
 //
+// Every row carries a `// why:`: the fence cannot compile as written, being a fragment by design or
+// importing the app's own files. A row without one is `X_FINISHED_PIN_UNREASONED`.
+//
 // Shrink it with `bun run scripts/readme-fences.ts --pin`, which lowers a row and refuses to
 // raise one. Adding or raising a row is a hand edit, on purpose, in a review.
 
 export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
+  // why: a function body shown alone: its top-level `return` does not parse
   'action: const key = req.header(IDEMPOTENCY_HEADER);': 1,
-  'action: export const likePost = mutator({': 1,
-  "action: import { action, t } from '@ultimat3/action';": 1,
+  // why: imports `../app/posts/actions`, `../app/posts/live`, `../app/posts/mutator`: the
+  // app's own files, which a one-file fixture cannot resolve
   "action: import { defineApi } from '@ultimat3/action';": 1,
+  // why: imports `../api`: the app's own files, which a one-file fixture cannot resolve
   "action: import { rpc } from '@ultimat3/action';": 1,
-  'action: likePost.local(tx, { postId })            // the optimistic write, replayed on rebase': 1,
-  'action: publishPost.contract({': 1,
-  'action: publishPost.input                              // the declared input schema': 1,
-  // why: re-keyed, not raised — 31.0.0 moved the audit sink to runtime.ts (Upgrading #43); the
-  // hash-chain fragment is the same site, and the other `setAuditSink` fence now compiles (2 → 1)
-  "action: // apps/web/runtime.ts — every name below but `runtime` is the app's own": 1,
-  'admin: // admin/ops/page.tsx — a component, nothing framework-shaped about it': 1,
-  'admin: defineAdmin({': 1,
-  "admin: import { AdminList, listHref, Widget } from '@ultimat3/admin';": 1,
-  "admin: import { adminMcp, adminMcpTools } from '@ultimat3/admin';": 1,
-  "admin: import { adminRouteMatch } from '@ultimat3/admin';": 1,
-  "admin: import { adminTestCtx } from '@ultimat3/admin';": 1,
-  'ai: // `ProjectableAction` — `{ name, mcp?, inputJsonSchema?, run }`, the projection SEAM.': 1,
-  'ai: // app/support/summarize.eval.test.ts — the suite `x verify` runs': 1,
+  // why: imports `./prompts`: the app's own files, which a one-file fixture cannot resolve
   'ai: // app/support/summarize.evals.ts — the declaration the gate reads': 1,
-  // why: re-keyed, not raised — 31.0.0 moved `gateway` off configureAi (Upgrading #41); same fence
-  'ai: configureAi({ redact: (text) => scrubPatientIdentifiers(text) });': 1,
-  "ai: const store = postgresVectorStore({ name: 'doc_chunks', dimension: 256 });   // memoryVectorStore() in dev": 1,
-  "ai: const tenantStore = store.scoped({ tenant: orgId, allow: { visibility: ['public', 'internal'] } });": 1,
-  'ai: export const summarize = definePrompt<{ ticket: string }>({': 1,
-  'ai: export const support = agent({': 1,
-  'ai: for await (const chunk of ai.stream({ messages, maxTokens: 64_000 })) {': 1,
-  'ai: for await (const chunk of summarize.stream({ postId }, { ctx })) {': 1,
-  'ai: import {': 1,
-  "ai: import { llm, t } from '@ultimat3/ai';": 1,
-  'ai: registerModel({': 1,
-  "auth: const keys = providerJwks(providerFor('bigco-sso'));": 1,
-  'auth: const { identity } = await verifyWorkloadToken({': 1,
-  'auth: defineAuth({': 1,
-  "auth: defineAuth({ adapter, providers: ['github'], link: 'verified-email' })  // the default": 1,
-  "auth: import { defineAuth, login, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';": 1,
-  'auth: oauthLogin(auth, {': 1,
-  'cache: await stack.read(key, () => db.posts.byId(id), { ttlMs: 300_000, negativeTtlMs: 5_000 });': 1,
-  'cache: cache: { invalidates: [tag.post, tag.feed] }': 1,
-  "cache: cacheHeaders({ sMaxAge: 300, staleWhileRevalidate: 86_400, tags: [tag('post', id)] });": 1,
-  'cache: const fence = sampleFence({ key, tags });': 1,
-  "cache: const report = await invalidateTags([tag('post', postId)]);": 1,
-  'cache: const restoreTags = isolateDeclaredTags();': 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
-  "cache: import { cacheStack, lruTier, memoTier, registerTier } from '@ultimat3/cache';": 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
-  'cache: lruTier({ rng: () => 0 });          // the full lease — what a test asserting an exact expiry wants': 1,
-  "cache: registerInvalidationBroadcast(async (wireTags) => bus.publish('cache.invalidate', wireTags));": 1,
-  'cache: tag.post          // the collection — busts lists': 1,
-  'core: // app.config.ts': 1,
-  "core: const code = stringField(error, 'code') ?? 'X_TRANSPORT_UNAVAILABLE';": 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
-  "core: const ctx = ctxOf({ actor: agentActor({ id: 'mcp-1', scopes: ['post:publish'] }) });": 1,
-  "core: const dsn = secret(process.env.DATABASE_URL ?? '', 'DATABASE_URL');": 1,
-  "core: const published = counter('posts_published_total', { description: 'posts published' });": 1,
-  "core: declare module '@ultimat3/core' {": 1,
-  "core: encodeCursor({ scope, key: ['2026-01-01T00:00:00.000Z'], id: 'p_9' }); // base64url(body).hmac": 1,
-  'core: probeImage(bytes);                                     // { format, width, height, mimeType }': 1,
-  "core: registerErrorRetry({ X_OAUTH_EXCHANGE_FAILED: 'retryable', X_RATE_LIMITED: 'retry-after' });": 1,
-  "core: resolveEnvironment();      // 'development' | 'test' | 'staging' | 'production'": 1,
-  'core: throw new UltimateError({': 1,
-  "db: import { db, sql, raw, withTransaction, currentTx, setDbClient } from '@ultimat3/db';": 1,
-  "db: import { ensureReadOnlyRole, readOnlyQuery } from '@ultimat3/db';": 1,
+  // why: a function body shown alone: its top-level `return` does not parse
   "db: return expectedQueryLoop('one indexed lookup per text field beats one unindexed OR', async () => {": 1,
+  // why: a function body shown alone: its top-level `return` does not parse
   "db: return withStatementAttribution('members', 'findById', () =>": 1,
-  'entity: // One statement for every post in `ids`, not one `select count(*)` each.': 1,
-  'entity: // One statement per batch, one page of rows in memory at a time.': 1,
-  'entity: await db.tags.insertAll(names.map((name) => ({ orgId, name })));   // one statement, n rows': 1,
-  'entity: const page = await postgresRepo(posts).findMany({ orgId });': 1,
-  'entity: const repo = postgresRepo(users);': 1,
-  'entity: database({ orgs, posts });                                 // memoryDriver() — the default': 1,
-  'entity: db.posts.delete(id);                                        // by a single primary key': 1,
-  'entity: export const db = database({ orgs, posts });': 1,
-  'entity: export const db = database({ orgs, posts, members });': 1,
-  "entity: export const posts = entity('posts', {": 1,
-  'entity: import {': 1,
-  "entity: import { defaultDriver } from '@ultimat3/entity';": 1,
-  "entity: nPlusOne({ kind: 'read', subject: 'members.findById', count: 50, entity: 'members', op: 'findById' });": 1,
-  'entity: relationMap().posts;': 1,
+  // why: object members shown without their call, opening `targeting:`; they do not parse
+  // alone
   'flags: // whole tenants, named — the 90% case, which is why it has a shorthand': 1,
-  "flags: applyFlagSnapshot({ 'billing.dunning-emails': { default: false } });": 1,
-  "flags: import { isEnabled } from '@ultimat3/flags';": 1,
+  // why: imports `../catalogs/en.json`, `../catalogs/es.json`: the app's own files, which a
+  // one-file fixture cannot resolve
   "i18n: // the app's own packages/i18n/src/index.ts — its whole i18n module": 1,
-  "i18n: import { negotiateLocale, t } from '@ultimat3/i18n';": 1,
-  'jobs: // The PASS is the no-op, never the enqueue. The one-live-run index covers `ready`/`delayed`/': 1,
-  'jobs: await ctx.tx(async (tx) => {': 1,
-  'jobs: await onboardOrg.enqueue({ orgId });              // joins the ambient transaction': 1,
-  'jobs: export const api = defineApi({': 1,
-  'jobs: export const dropLegacy = backfill({': 1,
+  // why: imports `@postly/db`: the app's own files, which a one-file fixture cannot resolve
   "jobs: import { backfill } from '@ultimat3/jobs';": 1,
-  "jobs: import { isBackfill, pendingBackfills, registeredBackfills } from '@ultimat3/jobs';": 1,
-  "jobs: import { job, t } from '@ultimat3/jobs';": 1,
+  // why: object members shown without their call, opening `run:`; they do not parse alone
   'jobs: run: async ({ input, ctx, step }) => {': 1,
+  // why: object members shown without their call, opening `tenant:`; their types come from
+  // that call
   'jobs: tenant: (input) => input.orgId   // the run acts under this org': 1,
-  "mail: import { defineMail, send, blocks, t } from '@ultimat3/mail';": 1,
-  "manifest: import { buildManifest, emitManifest, assertNoDrift, verifyContract } from '@ultimat3/manifest';": 1,
-  'mcp: // apps/admin/app/admin/mcp.ts — under app/, so the app scan imports it': 1,
+  // why: imports `../api/posts`: the app's own files, which a one-file fixture cannot resolve
   "mcp: import { publishPost } from '../api/posts';": 1,
-  'policy: // decides on input alone — `row` is null': 1,
-  'policy: export const publishPost = action({': 1,
-  'policy: interface PolicyArgs<I = unknown, R = unknown> {': 1,
-  'pwa: // The generated worker posts this to every page it controls, on activation — and this is the': 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
-  'pwa: const { source, precache, warnings } = generateServiceWorker(describePages(), config, buildId);': 1,
-  'query: const source = await sourceFor(target, input, {': 1,
+  // why: object members shown without their call, opening `deprecated:`; they do not parse
+  // alone
   "query: deprecated: { since: '2026-08-01T00:00:00Z', sunset: '2026-12-31T23:59:59Z', replacedBy: 'searchOrders' },": 1,
-  "query: import { query, t } from '@ultimat3/query';": 1,
+  // why: imports `../api`: the app's own files, which a one-file fixture cannot resolve
   "query: import { queryClient } from '@ultimat3/query';": 1,
+  // why: object members shown without their call, opening `rateLimit:`; they do not parse
+  // alone
   'query: rateLimit: { limit: 3, windowMs: 600_000 },   // 3 held, one back every three and a bit minutes': 1,
-  'realtime: // query': 1,
-  "render: const ContactModal = island({ src: './contact-modal.island.tsx', props: ['subject'] });": 1,
-  'render: export const config = defineRoute({': 1,
-  "render: import type { RouteConfig, RouteMetaContext } from '@ultimat3/render';": 1,
-  'schema: const body = t.discriminatedUnion(': 1,
-  'schema: const booking = t.object({ startDate: t.date, endDate: t.date }).refine({': 1,
+  // why: imports `./ark`: the app's own files, which a one-file fixture cannot resolve
   "schema: import { configureSchemaProvider } from '@ultimat3/schema';": 1,
-  "schema: parse(t.object({ postId: t.uuid, notify: t.boolean }), { postId: 'abc', notify: 'yes' }, 'input');": 1,
-  'schema: toJsonSchema(publishPost);                    // OpenAPI 3.1 (2020-12)': 1,
-  'seo: const images = builtinImageDriver({ read: (src) => Bun.file(`public${src}`).bytes() });': 1,
-  'seo: const query = parseImageQuery(new URL(req.url).searchParams);': 1,
-  'seo: export const config = defineRoute({': 1,
-  "seo: ld.Article({ headline: 'Ship it', author: { name: 'Ada' } });": 1,
-  "storage: // 1. server, inside an action's handle: mint the grant": 1,
-  "storage: import { defineStorage, disk, localDriver, s3Driver, scopedKey } from '@ultimat3/storage';": 1,
-  "testing: const anAuthenticatedAction = sharedExamples<Action>('an authenticated action', (subject) => {": 1,
-  // why: re-keyed, not raised — the 31.0.0 factories rewrite (Upgrading #40) reopened this fence
-  "testing: import { belongsTo, defineFactory, hasMany } from '@ultimat3/testing';": 1,
-  'testing: defineFixtures({ seed: () => loadSeed, actorFor: () => actorFor });': 1,
-  "testing: test('the feed reads its authors once', async ({ statements }) => {": 1,
-  "time: import { formatWithOffset, fromIso, nextLocalSlot, now, toZoned } from '@ultimat3/time';": 1,
+  // why: elides code with `…`, which does not parse
   "ui: <Accordion level={3} exclusive items={[{ id: 'ship', title: t('faq.ship'), panel: <p>…</p> }]} />": 1,
-  "ui: <AppShell header={<Toolbar label={t('nav.main')}>{nav}</Toolbar>} sidebar={<SideNav />}>": 1,
+  // why: several JSX elements listed side by side, not one expression
   "ui: import { Button, Field, Input } from '@ultimat3/ui';": 1,
+  // why: several JSX elements listed side by side, not one expression
   "ui: import { Icon } from '@ultimat3/ui';": 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
-  // why: re-keyed, not raised — 31.0.0 moved the gateway to apps/<app>/runtime.ts (Upgrading #41)
-  'ai: // apps/web/runtime.ts': 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
-  "ai: const embedder = remoteEmbedder({ name: 'voyage-3', dimension: 1_024 });  // EMBEDDINGS_API_KEY": 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
-  'db: const dev = pgliteClient({ dataDir: pgliteDataDir(services.db.url) });  // or memory://': 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
-  'render: const collector = islandCollector({ file, hydrate: config.hydrate, resolve });': 1,
 };
 
 /** How many fences at this site may fail today. Absent means zero: a new example compiles or

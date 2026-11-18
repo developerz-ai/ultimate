@@ -51,9 +51,28 @@ Tier 2 covers what people almost always mean by "make it realtime": the list upd
 
 ```ts
 // mutator (action + optimistic local twin)
-import { mutator } from '@ultimat3/action';
+import { mutator, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+declare module '@ultimat3/action' {
+  interface LocalTables {
+    posts: { likedByMe: boolean; likeCount: number };
+  }
+}
 
 export const likePost = mutator({
+  input:  t.object({ postId: t.uuid }),
+  output: t.object({ likeCount: t.number, likedByMe: t.boolean }),
+  policy: can('post:like'),
   // REQUIRED (`X_MUTATOR_NOT_IDEMPOTENT`): a replay under the same Idempotency-Key answers the
   // first result instead of running `server` again.
   idempotent: true,

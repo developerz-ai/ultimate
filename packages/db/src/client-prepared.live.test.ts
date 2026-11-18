@@ -5,7 +5,7 @@
 // closed. PGlite uses unnamed statements, which is why `x dev` never showed it — only a real
 // server can, so this file is live-only.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import { identifier, raw, sql } from './sql';
 
@@ -22,6 +22,9 @@ describe.skipIf(!hasPostgres)('live · postgres · a warm statement across a mig
     // ONE connection, so the statement warmed below is the one re-run: with a pool of several the
     // second send could land on a cold connection and pass for the wrong reason.
     client = postgresClient({ url: url ?? '', role: 'web', profile: { max: 1 } });
+  });
+
+  beforeEach(async () => {
     await client.execute(raw(`drop table if exists "${TABLE}"`));
     await client.execute(raw(`create table "${TABLE}" (id integer primary key, name text)`));
   });
@@ -44,6 +47,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a warm statement across a mig
   test('insert … returning * still runs after a column is dropped', async () => {
     const write = (id: number) =>
       sql`insert into ${table} (id, name) values (${id}, 'b') returning *`;
+    await client.execute(raw(`alter table "${TABLE}" add column extra text`));
     for (let turn = 0; turn < 3; turn += 1) await client.query(write(10 + turn));
     await client.execute(raw(`alter table "${TABLE}" drop column extra`));
     const rows = await client.query<Record<string, unknown>>(write(20));

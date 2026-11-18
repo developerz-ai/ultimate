@@ -5,7 +5,7 @@
 // holds `OUTBOX_STAGING_LOCK` until it commits, and an idle claim reports it, so the relay keeps
 // polling instead of resting. Skips unless `TEST_DATABASE_URL` is set.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { probeDatabaseName, sweepProbeDatabases, uuidV7 } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
@@ -57,6 +57,9 @@ describe.skipIf(!hasPostgres)('live · postgres · a stage the outbox wake silen
       if (statement.trim().length > 0) await relayPod.execute(raw(statement));
     }
   });
+
+  // Each test reads exactly which rows a claim took, so none inherits another's.
+  beforeEach(() => relayPod.execute(raw('delete from x_outbox')));
 
   afterAll(async () => {
     await relayPod.close();

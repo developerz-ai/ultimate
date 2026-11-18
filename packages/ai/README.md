@@ -180,15 +180,14 @@ transport by itself above the ceiling and returns the assembled result — the l
 the transport, so it is not one the caller has to change API for.
 
 ```ts
-import { type Gateway, runLlmToolCall } from '@ultimat3/ai';
+import { type Gateway, type ProjectableAction, runLlmToolCall } from '@ultimat3/ai';
 import { type Actor } from '@ultimat3/core';
 
-declare const messages: Parameters<Gateway['stream']>[0]['messages'];
-
-declare function debit(cost: unknown): void;
 declare const ai: Gateway;
-
+declare const messages: Parameters<Gateway['stream']>[0]['messages'];
+declare const tools: readonly ProjectableAction[];
 declare const actor: Actor;
+declare function debit(cost: unknown): void;
 
 for await (const chunk of ai.stream({ messages, maxTokens: 64_000 })) {
   if (chunk.type === 'text') process.stdout.write(chunk.text);
@@ -389,6 +388,16 @@ import { llm, type Prompt, t } from '@ultimat3/ai';
 import { can } from '@ultimat3/policy';
 import { toolFrom } from '@ultimat3/mcp';
 
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string, tx?: unknown): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
 declare const summarizePrompt: Prompt<{ body: string }>;
 const HOUSE_LARGE = 'house-large';
 
@@ -421,13 +430,16 @@ summarize.contract();    // the contract tests
 ### Streaming is the same action
 
 ```ts
+import { type LlmAction, t } from '@ultimat3/ai';
 import { type Ctx } from '@ultimat3/core';
 
-declare function save(value: unknown): void;
-declare function write(text: string): void;
-
+const SummarizeInput = t.object({ postId: t.uuid });
+const Summary = t.object({ summary: t.string, tags: t.array(t.string) });
+declare const summarize: LlmAction<typeof SummarizeInput, typeof Summary>;
 declare const ctx: Ctx;
 declare const postId: string;
+declare function write(text: string): void;
+declare function save(value: { summary: string; tags: string[] }): void;
 
 for await (const chunk of summarize.stream({ postId }, { ctx })) {
   if (chunk.type === 'text') write(chunk.text);
@@ -462,15 +474,14 @@ The second half of "no ninth primitive": a tool-using run is still one server-au
 operation with an input schema, an output schema and a policy.
 
 ```ts
+import { type Action } from '@ultimat3/action';
 import { agent, type Prompt, t } from '@ultimat3/ai';
 import { can } from '@ultimat3/policy';
-import { type Action } from '@ultimat3/action';
 
-declare const issueRefund: Action;
-declare const lookupOrder: Action;
-
-declare const progress: { turn: number }[];
 declare const supportPrompt: Prompt<{ orderId: string }>;
+declare const lookupOrder: Action;
+declare const issueRefund: Action;
+declare const progress: unknown[];
 
 export const support = agent({
   input:  t.object({ orderId: t.string }),
@@ -482,7 +493,7 @@ export const support = agent({
   maxToolResultChars: 4_000,
   budget: { tokensPerRun: 200_000, costPerCall: { minor: 50, currency: 'USD' } },
   policy: can('order:support'),
-  onTurn: ({ turn, toolCalls, cost }) => progress.push({ turn, toolCalls, cost }),
+  onTurn: ({ turn, toolCalls, cost }) => { progress.push({ turn, toolCalls, cost }); },
 });
 ```
 
@@ -1125,9 +1136,17 @@ is still `ctx.actor` and tools are still matched against the declaration.
 ## Retrieval
 
 ```ts
-import { assembleContext, type Embedder, indexDocument, postgresVectorStore, retrieve } from '@ultimat3/ai';
+import {
+  assembleContext,
+  type Embedder,
+  indexDocument,
+  postgresVectorStore,
+  retrieve,
+} from '@ultimat3/ai';
 
 declare const embedder: Embedder;
+declare const text: string;
+declare const query: string;
 
 const store = postgresVectorStore({ name: 'doc_chunks', dimension: 256 });   // memoryVectorStore() in dev
 await indexDocument({ store, embedder, document: { id: 'faq', text } });
@@ -1199,16 +1218,14 @@ any `source` the caller passed, because `indexDocument` prunes a re-index by it.
 
 ```ts
 // `ProjectableAction` — `{ name, mcp?, inputJsonSchema?, run }`, the projection SEAM.
-import { runLlmToolCall, toLlmTools } from '@ultimat3/ai';
+import { type LlmToolCall, runLlmToolCall, toLlmTools, type ProjectableAction } from '@ultimat3/ai';
 import { type Actor } from '@ultimat3/core';
-import { type Action, t } from '@ultimat3/action';
 
-declare const suspendUser: Action;
-
+declare const publishPost: ProjectableAction;
+declare const suspendUser: ProjectableAction;
+declare const actions: readonly ProjectableAction[];
+declare const call: LlmToolCall;
 declare const actor: Actor;
-const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
-const PublishPostInput = t.object({ postId: t.uuid });
-declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
 
 const tools = toLlmTools([publishPost, suspendUser]);   // only those with mcp.expose
 const result = await runLlmToolCall(actions, call, actor);

@@ -12,18 +12,19 @@ The `route` primitive and the four render modes.
 | `stream` | static shell flushed instantly, holes streamed | **default for app pages** |
 
 ```ts
-import { defineRoute } from '@ultimat3/render';
 import { tag } from '@ultimat3/cache';
+import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
-import { entity, text, uuid } from '@ultimat3/entity';
 
-declare function loadPost(slug: string): Promise<Post>;
+interface Post {
+  readonly title: string;
+  readonly excerpt: string;
+  readonly cover: string;
+  readonly publishedAt: string;
+  readonly author: { readonly name: string };
+}
 declare function listPostSlugs(): Promise<readonly string[]>;
-const posts = entity('posts', {
-  tenant: 'orgId',
-  columns: { id: uuid().primaryKey(), orgId: uuid(), title: text() },
-});
-type Post = { readonly id: string; readonly orgId: string; readonly title: string };
+declare function loadPost(slug: string): Promise<Post>;
 
 export const config = defineRoute({
   render:     'isr',                  // static | isr | ssr | stream
@@ -35,7 +36,8 @@ export const config = defineRoute({
   load:       ({ params }) => loadPost(params['slug'] ?? ''),   // once per render
   meta:       ({ data, url }) => ({ title: data.title, description: data.excerpt,
                                     og: { image: data.cover }, canonical: url,
-                                    ld: ld.Article(data) }),
+                                    ld: [ld.Article({ headline: data.title, datePublished: data.publishedAt,
+                                                      author: data.author })] }),
 });
 
 export function Page(props: { data: Post }) { /* the SAME object meta was given */ }
@@ -508,6 +510,13 @@ by the request that carries it.
 ```ts
 import { hydrateRuntime, islandCollector } from '@ultimat3/render';
 import { renderToHtml } from '@ultimat3/render/server';
+
+type CollectorInput = Parameters<typeof islandCollector>[0];
+declare const file: CollectorInput['file'];
+declare const resolve: NonNullable<CollectorInput['resolve']>;
+declare const config: { readonly hydrate: CollectorInput['hydrate'] };
+declare const page: Parameters<typeof renderToHtml>[0];
+declare const document: { body: string };
 
 const collector = islandCollector({ file, hydrate: config.hydrate, resolve });
 const html = await renderToHtml(page, { islands: collector });

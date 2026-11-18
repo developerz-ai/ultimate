@@ -74,8 +74,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 ```ts
 import { ld } from '@ultimat3/seo';
 
+// @ts-expect-error Property 'datePublished' is missing — required by schema.org
 ld.Article({ headline: 'Ship it', author: { name: 'Ada' } });
-//  ^ error: Property 'datePublished' is missing — required by schema.org
 ```
 
 A missing `datePublished` is a compile error, not a Search Console warning three
@@ -183,10 +183,12 @@ The two lists are `@ultimat3/core`'s `DECODABLE_FORMATS` and `ENCODABLE_FORMATS`
 back, so a server route never hand-rolls its own parsing of what `responsiveImage()` wrote.
 
 ```ts
-import { parseImageQuery } from '@ultimat3/seo';
+import { type ImageTransformDriver, parseImageQuery } from '@ultimat3/seo';
 
-declare const intrinsicWidth: number;
+declare const req: Request;
+declare const images: ImageTransformDriver;
 declare const src: string;
+declare const intrinsicWidth: number;
 
 const query = parseImageQuery(new URL(req.url).searchParams);
 // null: none of w/f/q was present — a plain asset read, not a transform.
@@ -219,23 +221,25 @@ if (query !== null) {
 ```ts
 import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
-import { entity, text, timestamp, uuid } from '@ultimat3/entity';
 
+interface Post {
+  readonly slug: string;
+  readonly title: string;
+  readonly excerpt: string;
+  readonly cover: string;
+  readonly publishedAt: string;
+  readonly author: { readonly name: string };
+  readonly locales: readonly string[];
+}
 declare function listPostSlugs(): Promise<readonly string[]>;
-const posts = entity('posts', {
-  tenant: 'orgId',
-  columns: {
-    id: uuid().primaryKey(),
-    orgId: uuid(),
-    title: text(),
-    publishedAt: timestamp().nullable(),
-  },
-});
+declare function loadPost(slug: string): Promise<Post>;
 
 export const config = defineRoute({
   render: 'isr',
   prerender: () => listPostSlugs(),
-  meta: ({ post }) => ({
+  offline: 'precache',
+  load: ({ params }) => loadPost(params['slug'] ?? ''),
+  meta: ({ data: post }) => ({
     title: post.title,
     titleTemplate: '%s — Ultimate',
     description: post.excerpt,

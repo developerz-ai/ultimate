@@ -11,8 +11,14 @@ Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutori
 `x g resource` already wrote one. Its shape is the whole contract:
 
 ```ts
-import { job } from '@ultimat3/jobs';
 import { t } from '@ultimat3/action';
+import { job } from '@ultimat3/jobs';
+
+// The slice's `repo.ts`, as `x g resource` wrote it.
+declare const repo: {
+  byId(id: string): Promise<{ readonly id: string } | null>;
+  list(limit: number): Promise<readonly { readonly id: string }[]>;
+};
 
 export const reindexTodo = job({
   input: t.object({ id: t.uuid, orgId: t.uuid }),
@@ -165,10 +171,17 @@ export const todoListSorts = ['createdAt', 'title'] as const;
 ```
 
 ```ts
-import { from, query } from '@ultimat3/query';
 import { t } from '@ultimat3/action';
+import { from, query, type QueryPolicy } from '@ultimat3/query';
 
-type Todo = { readonly id: string; readonly orgId: string; readonly title: string };
+type Todo = { readonly id: string; readonly orgId: string; readonly title: string; readonly createdAt: Date };
+
+const todoListSorts = ['createdAt', 'title'] as const;
+declare const canTodoRead: QueryPolicy;
+// The slice's `repo.ts`, as `x g resource` wrote it.
+declare const repo: {
+  list(limit: number, sort: string, dir: 'asc' | 'desc'): Promise<readonly Todo[]>;
+};
 
 export const todoList = query({
   input: t.object({
@@ -207,8 +220,10 @@ export const todoList = query({
 The generated `todo-list.live.test.ts` asserts on the **SQL text**, because that is the contract an agent reads to self-correct:
 
 ```ts
-import { sourceFor } from '@ultimat3/query';
-import { expect } from 'bun:test';
+import { type AnyQuery, sourceFor } from '@ultimat3/query';
+import { expect } from '@ultimat3/testing';
+
+declare const target: AnyQuery;
 
 const source = await sourceFor(
   target,

@@ -3,7 +3,7 @@
 // overwrites by primary key, so the defect this file pins is invisible everywhere else.
 // Skips unless `TEST_DATABASE_URL` is set, exactly as the rest of the live suite does.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   generateMigration,
   type PostgresClient,
@@ -93,6 +93,11 @@ describe.skipIf(!hasPostgres)('live · postgres · a seed replays', () => {
     for (const statement of statementsOf(migration.up)) await client.execute(raw(statement));
   });
 
+  // Every claim here counts rows, and the dry-run ones need an EMPTY database.
+  beforeEach(() =>
+    client.execute(raw('truncate "seed_live_posts", "seed_live_plans", "seed_live_orgs" cascade')),
+  );
+
   afterAll(async () => {
     await client.execute(raw(DROP));
     await client.close();
@@ -153,6 +158,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a seed replays', () => {
 
   test('a changed reference row is updated in one statement, and keeps its created_at', async () => {
     const driver = postgresDriver();
+    await fixture(2500).run({ driver });
     await client.execute(
       raw(`update "seed_live_plans" set created_at = '2024-05-05T00:00:00Z' where code = 'team'`),
     );
@@ -166,8 +172,9 @@ describe.skipIf(!hasPostgres)('live · postgres · a seed replays', () => {
     expect(rows[0]?.created_at.toISOString()).toBe('2024-05-05T00:00:00.000Z');
   });
   test('a key another tenant holds is skipped by the dry run, as the real run skips it', async () => {
-    // After the runs above `post:one` belongs to acme. The conflict target is the primary key, and
-    // a key is global — so a seed naming that id under another org writes nothing, dry or not.
+    // `post:one` belongs to acme. The conflict target is the primary key, and a key is global —
+    // so a seed naming that id under another org writes nothing, dry or not.
+    await fixture(2500).run({ driver: postgresDriver() });
     const theirs = '00000000-0000-7000-8000-0000000000d2';
     await client.execute(
       raw(`insert into "seed_live_orgs" (id, slug, name) values ('${theirs}', 'them', 'Them')`),

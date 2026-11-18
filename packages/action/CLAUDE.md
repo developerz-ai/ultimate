@@ -22,7 +22,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `tool-gate.ts` | a named tool's gate: `mcp` registers, `ai` reads, first wins |
 | `define-api.ts` | `defineApi({ actions, mutators, queries, llm, jobs, tasks })` — the app's one boot call, and the `Api` type the typed clients are shaped from |
 | `client-scale-pins.ts` | compile-time pin: `rpc<Api['actions']>` over 300 actions in 100 modules, 100 reads in 50 |
-| `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
+| `http.ts`, `replay-scope.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
 | `openapi-complete.ts` | the COMPLETE document (`defineApi({ openapi })`: info, servers, security schemes, 401/429 by the ROUTE's `meta.auth`, a declared `rateLimit` or `meter`) and a bearer mount's own cut |
 | `http-path.ts` | where an action is served: the app's `pathStyle` + a per-action `http.path` pin, read lazily by every projection; the pin's `:param` template + `method` (`ACTION_HTTP_METHODS`), `assertPinnedHttp`, `filledRoute`, `pathParametersOf`, `actionHttpPinOf` |

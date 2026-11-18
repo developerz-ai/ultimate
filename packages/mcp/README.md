@@ -110,11 +110,12 @@ user's app:
 
 ```ts
 // apps/admin/app/admin/mcp.ts — under app/, so the app scan imports it
-import { defineAppMcp, type McpResource, t } from '@ultimat3/mcp';
+import { defineAppMcp, type McpResource, type ResolvedToken, t } from '@ultimat3/mcp';
 import { type Actor } from '@ultimat3/core';
 
 declare const orgExport: McpResource;
-declare const sessions: { resolveAgentToken(token: string): Promise<Actor | null> };
+declare const sessions: { resolveAgentToken(token: string): Promise<ResolvedToken | null> };
+declare function orgOf(actor: Actor): string;
 declare function seats(org: { id: string; name: string }): { used: number; limit: number };
 
 export const mcp = defineAppMcp({
@@ -129,7 +130,7 @@ export const mcp = defineAppMcp({
       policy: 'org:administer',          // an existing permission, never a new rule
       destructive: false,
       async handle({ ctx }) {
-        return seats(await ctx.orgs.byId(ctx.actor.orgId));
+        return seats(await ctx.orgs.byId(orgOf(ctx.actor)));
       },
     },
   },
@@ -180,7 +181,6 @@ Both lists take the primitives themselves, exactly as the app declared them:
 
 ```ts
 import { publishPost } from '../api/posts';
-import { defineAppMcp } from '@ultimat3/mcp';
 
 defineAppMcp({ name: 'postly', actions: [publishPost] });
 // X_MCP_TOOL_UNDECLARED unless publishPost declared mcp: { expose: true }

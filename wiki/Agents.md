@@ -734,14 +734,18 @@ export const triageBacklog = hive({
 ### Three member outcomes, never two
 
 ```ts
-import { type Ctx } from '@ultimat3/core';
+import { type Action, t } from '@ultimat3/action';
+import type { HiveOutput } from '@ultimat3/ai';
+import type { Ctx } from '@ultimat3/core';
 
-declare function retryLater(index: number, reason: string): void;
-declare function use(index: number, value: unknown): void;
-declare function log(index: number, code: string, reason: string): void;
-
-declare const orderIds: readonly string[];
+const TriageInput = t.object({ orderIds: t.array(t.uuid) });
+const Verdict = t.object({ verdict: t.string });
+declare const triageBacklog: Action<typeof TriageInput, HiveOutput<typeof Verdict>>;
+declare const orderIds: string[];
 declare const ctx: Ctx;
+declare function use(index: number, value: { verdict: string }): void;
+declare function log(index: number, code: string, reason: string): void;
+declare function retryLater(index: number, reason: string): void;
 
 const result = await triageBacklog({ orderIds }, { ctx });
 

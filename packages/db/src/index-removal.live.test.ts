@@ -8,7 +8,7 @@
 // Every table and the ledger are dropped on the way in and on the way out, and `pg_class` is
 // re-read at the end: nothing is left behind.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration } from './generate';
@@ -168,10 +168,12 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
     return report.applied.map((applied) => applied.id);
   };
 
-  beforeAll(async () => {
+  beforeAll(() => {
     client = postgresClient({ url: url ?? '' });
-    await clean();
   });
+
+  // Each test walks the chain itself from an empty database, as far as its claim needs.
+  beforeEach(() => clean());
 
   afterAll(async () => {
     await clean();
@@ -197,6 +199,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
   });
 
   test('`drop index` on that one is 2BP01, and neither `if exists` nor `concurrently` helps', async () => {
+    await applyThrough(1);
     for (const statement of [
       `drop index "${POSTS}_slug_key"`,
       `drop index if exists "${POSTS}_slug_key"`,
@@ -223,12 +226,14 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
     expect(dropped.up).not.toContain(`drop constraint if exists "${POSTS}_feed_idx"`);
     expect(dropped.up).toContain(`drop index concurrently if exists "${POSTS}_feed_idx";`);
 
+    await applyThrough(1);
     expect(await applyThrough(2)).toEqual([dropped.id]);
     // Only the primary key's own index is left; the constraint went with its index.
     expect(await objects(POSTS)).toEqual([{ name: `${POSTS}_pkey`, constraint: `${POSTS}_pkey` }]);
   });
 
   test('its down restores every one — as an INDEX, which is the recorded shape it can rebuild', async () => {
+    await applyThrough(2);
     expect(await rollback({ migrations: chain.slice(0, 2), client, steps: 1 })).toEqual([
       dropped.id,
     ]);
@@ -254,11 +259,15 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
   test('and it re-applies on the reversed database too — the pair is correct on both', async () => {
     // Now `<table>_slug_key` is a plain index rather than a constraint, which is the OTHER of the
     // two databases the generator cannot tell apart. The same `up` has to be right on both.
+    await applyThrough(2);
+    await rollback({ migrations: chain.slice(0, 2), client, steps: 1 });
+    expect(await objects(POSTS)).toContainEqual({ name: `${POSTS}_slug_key`, constraint: null });
     expect(await applyThrough(2)).toEqual([dropped.id]);
     expect(await objects(POSTS)).toEqual([{ name: `${POSTS}_pkey`, constraint: `${POSTS}_pkey` }]);
   });
 
   test('an index a retype moved aside is dropped ONCE — a second drop is 42704', async () => {
+    await applyThrough(2);
     await client.execute(
       raw(
         `create table "${RETYPED}" ("id" uuid primary key, "org_id" uuid not null, ` +

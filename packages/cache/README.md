@@ -151,17 +151,12 @@ already wrote is taken back. The caller still gets what the origin answered: a f
 publish, it never fails a read. It is exported for any cache doing its own read-through:
 
 ```ts
-import { type CacheTier, sampleFence } from '@ultimat3/cache';
-import { entity, uuid } from '@ultimat3/entity';
+import { type CacheTier, type FenceScope, sampleFence } from '@ultimat3/cache';
 
 declare const tier: CacheTier;
-declare function run(): Promise<unknown>;
-
-const tags = entity('tags', {
-  tenant: 'orgId',
-  columns: { id: uuid().primaryKey(), orgId: uuid() },
-});
 declare const key: string;
+declare const tags: NonNullable<FenceScope['tags']>;
+declare function run(): Promise<unknown>;
 
 const fence = sampleFence({ key, tags });
 const value = await run();

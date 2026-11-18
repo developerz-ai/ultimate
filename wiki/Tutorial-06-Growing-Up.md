@@ -139,8 +139,7 @@ Named rather than left to be discovered:
 | no Helm chart in a scaffolded app | 3 |
 | no OTLP **logs** signal, and a rejected export is dropped with a `warn` rather than retried — traces and metrics do export | 3–4 |
 | a custom-metrics adapter, which the chart's HPAs need and the framework never ships | 3–4 |
-| `x logs` planned — `X_NOT_IMPLEMENTED`, with `x dev` → the `/_x` timeline panel as its fix | any |
-| the Redis **job** driver throws `X_NOT_IMPLEMENTED` (no NATS job driver since 25.0.0) | any |
+| `redisJobDriver()` has no `introspect`, `backfills` or `leases`, so `x jobs show`/`retry`/`cancel` and queue pauses answer for Postgres only (no NATS job driver since 25.0.0) | any |
 | realtime tier 3 (local-first, `persist: true`), the plugin API, multi-region replication | **not shipped**, `As of 2026-08` |
 
 Each sits behind an interface that ships today and fails loudly, rather than pretending to work. The full list, with a workaround per row: [Known gaps](Known-Gaps).

@@ -65,9 +65,6 @@ feature:
 import { queryClient } from '@ultimat3/query';
 import type { Api } from '../api';                 // a TYPE, so no module-graph edge
 
-declare const baseUrl: string;
-declare const slug: string;
-
 export const queries = queryClient<Api['queries']>({ baseUrl });
 const [post] = await queries.publicPost({ slug }); // typed input, typed rows
 ```
@@ -220,7 +217,10 @@ rows (`explainQuery`, `describeSql`), and the shared, subject-less window a sync
 `(query, input)`. Both say so, in words:
 
 ```ts
-import { sourceFor } from '@ultimat3/query';
+import { type AnyQuery, sourceFor } from '@ultimat3/query';
+
+declare const target: AnyQuery;
+declare const input: unknown;
 
 const source = await sourceFor(target, input, {
   unenforced: 'a scaffolded test asserts the SQL text; the policy is asserted separately',

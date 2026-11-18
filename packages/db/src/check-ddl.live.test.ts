@@ -126,8 +126,9 @@ describe.skipIf(!hasPostgres)('live · postgres · a column CHECK survives a reg
     });
 
   /** Refused BY THE CHECK: a missing table or a bad uuid is a different failure. */
-  const refusedByCheck = (write: Promise<unknown>): Promise<void> =>
-    expect(write).rejects.toThrow(/SQLSTATE 23514/);
+  const refusedByCheck = async (write: Promise<unknown>): Promise<void> => {
+    await expect(write).rejects.toThrow(/SQLSTATE 23514/);
+  };
 
   beforeAll(() => {
     client = postgresClient({ url: url ?? '' });

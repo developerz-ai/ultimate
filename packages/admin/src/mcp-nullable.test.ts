@@ -94,6 +94,10 @@ describe("a nullable field's tool schema admits null", () => {
       response?.error !== undefined ||
       (response?.result as { isError?: boolean } | undefined)?.isError === true;
     expect(refused).toBe(true);
+    // Refused by the published schema, naming the field — not by the insert further down.
+    const text = JSON.stringify(response?.result ?? response?.error);
+    expect(text).toContain('X_INPUT_INVALID');
+    expect(text).toContain('title');
     expect(await db.notes.where({}).count()).toBe(stored);
   });
 });

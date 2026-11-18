@@ -104,14 +104,20 @@ A `level` outside 1–6 throws `X_UI_INVALID_VALUE` rather than emitting an `<h7
 `Button` has no `href`. A link that looks like a button is `<Link appearance="button">`; a pager on a server-rendered list is `<Pagination hrefFor>`. Neither needs an island.
 
 ```tsx
-import { Link, listUrl, Pagination } from '@ultimat3/ui';
+import type { Page } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
+import { Link, listUrl, Pagination } from '@ultimat3/ui';
 
-<Link appearance="button" variant="secondary" size="sm" href="/posts/new">{t('posts.new')}</Link>
-
-// `page` is a framework `Page` (a query's `.page()`): `nextCursor` is `string | null`, handed as is.
-const list = listUrl(props.url, { sorts: ['title', 'createdAt'] });
-<Pagination nextCursor={page.nextCursor} hrefFor={list.hrefFor} firstHref={list.firstHref} />
+export function PostsFooter(props: { readonly url: URL; readonly page: Page<object> }) {
+  // `page` is a framework `Page` (a query's `.page()`): `nextCursor` is `string | null`, handed as is.
+  const list = listUrl(props.url, { sorts: ['title', 'createdAt'] });
+  return (
+    <>
+      <Link appearance="button" variant="secondary" size="sm" href="/posts/new">{t('posts.new')}</Link>
+      <Pagination nextCursor={props.page.nextCursor} hrefFor={list.hrefFor} firstHref={list.firstHref} />
+    </>
+  );
+}
 ```
 
 `listUrl(url, { sorts, ns?, limit? })` reads a list's state out of its URL — `sort`, `cursor`, `limit`, `q`, never throwing: an unknown sort or a hostile limit is the default — and writes it back as hrefs: `hrefFor` (the cursor, everything else kept), `sortHrefFor` and `href(change)` (the change, the cursor dropped), `firstHref` (`undefined` on the first page). Param names are `sort`, `dir`, `after`, `limit`, `q`; `ns: 'runs'` prefixes them all (`runs.after`) for two lists on a page, and then any change but a cursor drops every cursor on the page, since a cursor is bound to its filter and sort (`X_CURSOR_INVALID`). The same object feeds a `DataTable`'s `hrefFor`, `sortHrefFor` and `firstHref`.

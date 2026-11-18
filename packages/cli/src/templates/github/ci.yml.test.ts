@@ -71,15 +71,15 @@ describe('unit · the CI workflow x new writes', () => {
 
   // Parsed, not matched: a workflow that is not YAML is accepted by every `toContain` in this file
   // and by no runner on GitHub.
-  test('it is YAML: the plan, the gate in parts, the verdict — each a list of steps', () => {
-    expect(Object.keys(parsed().jobs ?? {})).toEqual(['plan', 'gate', 'verify']);
-    for (const name of ['plan', 'gate', 'verify']) {
+  test('it is YAML: the plan, the gate in parts, the verdict, the alarm — each a list of steps', () => {
+    expect(Object.keys(parsed().jobs ?? {})).toEqual(['plan', 'gate', 'verify', 'alarm']);
+    for (const name of ['plan', 'gate', 'verify', 'alarm']) {
       expect(job(name).steps?.length ?? 0).toBeGreaterThan(0);
     }
   });
 
-  test('it triggers on push and on pull request, and on nothing else', () => {
-    expect(Object.keys(parsed().on ?? {}).sort()).toEqual(['pull_request', 'push']);
+  test('it triggers on push, on pull request and on its schedule, and on nothing else', () => {
+    expect(Object.keys(parsed().on ?? {}).sort()).toEqual(['pull_request', 'push', 'schedule']);
   });
 
   // A `branches:` filter under `push` is silent when it is wrong: `x new` runs a plain `git init`
@@ -163,7 +163,7 @@ describe('unit · the CI workflow x new writes', () => {
 
   // A hung step holds a runner for GitHub's six-hour default with no signal at all.
   test('every job is bounded in time', () => {
-    for (const name of ['plan', 'gate', 'verify']) {
+    for (const name of ['plan', 'gate', 'verify', 'alarm']) {
       expect(job(name)['timeout-minutes']).toBeGreaterThan(0);
     }
   });
@@ -290,7 +290,7 @@ describe('unit · the CI workflow pays for each commit once', () => {
   // pull request — which fires no push in this repository — must still be gated.
   test('a same-repository pull request is skipped, and a fork pull request still runs', () => {
     const gate = doc().jobs?.['plan']?.if ?? '';
-    expect(gate).toContain("github.event_name == 'push'");
+    expect(gate).toContain("github.event_name != 'pull_request'");
     expect(gate).toContain('github.event.pull_request.head.repo.full_name != github.repository');
   });
 
@@ -326,9 +326,13 @@ describe('unit · the runner each emitted workflow asks for', () => {
   // the override, so moving the gate to a bigger or self-hosted runner is a setting, never an edit
   // to a file `x new` wrote and a later scaffold would diff against.
   test('the gate runs on vars.CI_RUNNER, falling back to the free ubuntu-latest', () => {
-    for (const job of Object.values(jobsOf(CI_WORKFLOW_PATH))) {
+    const { alarm, ...gate } = jobsOf(CI_WORKFLOW_PATH);
+    expect(Object.keys(gate)).toEqual(['plan', 'gate', 'verify']);
+    for (const job of Object.values(gate)) {
       expect(job['runs-on']).toBe(expr("vars.CI_RUNNER || 'ubuntu-latest'"));
     }
+    // The alarm needs `gh`, which a configured label need not have: the image job's reasoning.
+    expect(alarm?.['runs-on']).toBe('ubuntu-latest');
   });
 
   // The image job's steps are bash and Docker. On a Windows label the default shell is pwsh and

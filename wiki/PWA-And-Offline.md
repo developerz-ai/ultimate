@@ -43,16 +43,26 @@ The edit an agent should make is the route's `offline` field, and `x build` read
 ## Derived from the route
 
 ```ts
-import { defineRoute } from '@ultimat3/render';
 import { tag } from '@ultimat3/cache';
+import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
-import { entity, text, uuid } from '@ultimat3/entity';
 
+declare module '@ultimat3/cache' {
+  interface CacheTagRegistry {
+    post: true;
+    feed: true;
+  }
+}
+
+interface Post {
+  readonly title: string;
+  readonly excerpt: string;
+  readonly cover: string;
+  readonly publishedAt: string;
+  readonly author: string;
+}
 declare function listPostSlugs(): Promise<readonly string[]>;
-const posts = entity('posts', {
-  tenant: 'orgId',
-  columns: { id: uuid().primaryKey(), orgId: uuid(), title: text() },
-});
+declare function loadPost(slug: string): Promise<Post>;
 
 export const config = defineRoute({
   render:     'isr',                  // static | isr | ssr | stream
@@ -61,8 +71,17 @@ export const config = defineRoute({
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
   budget:     { js: '40kb' },
-  meta:       ({ post }) => ({ title: post.title, description: post.excerpt,
-                               og: { image: post.cover }, ld: ld.Article(post) }),
+  load:       ({ params }) => loadPost(params['slug'] ?? ''),
+  meta:       ({ data: post }) => ({
+    title: post.title,
+    description: post.excerpt,
+    og: { image: post.cover },
+    ld: [ld.Article({
+      headline: post.title,
+      datePublished: post.publishedAt,
+      author: { name: post.author },
+    })],
+  }),
 });
 ```
 
@@ -269,7 +288,7 @@ The client is not broken and the server is not broken; they disagree about which
 | 3 | **N-deploy asset retention** | `assets: { retain: { disk, builds } }` in `app.config.ts`: every web pod publishes its hashed files to that shared disk before it reports ready, and answers an earlier build's `/islands`, `/styles` and assets from it on a miss. Unset (the default), a pod serves only what it built. A **count of deploys, with no time component**. Proven in a browser `As of 2026-11`: a tab opened on build 0 survives six deploys that each change an island, and its first click boots build 0's chunk with a 200 and no 404 ([`six-deploys.e2e.test.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/e2e/six-deploys.e2e.test.ts)); without `retain` the same click is a 404. `retentionPlan` was removed in 30.0.0: it kept nothing on its own, because no boot called it |
 | 4 | **`AppUpdateAvailable` signal, not a 404** | a Solid signal flips when the server reports a newer build. The app renders its own "Update available — reload" affordance. **No forced navigation, no lost form state, no dinosaur** |
 | 5 | **Forced reload after a grace period** | **Not a capability of this package.** Deleted in 9.0.0 — `updateSignal`/`updatePolicy` computed a deadline nothing acted on, and `pwa` (tier 4) sits above the two runtimes that hold both build ids. The service worker posts `{ type: 'AppUpdateAvailable', to }`; act on it yourself, or read `useConnection().updateAvailable` |
-| 6 | **Skew is observable** | the `/_x` live panel reports the build-ID distribution of connected clients, so "how many users are three deploys behind" has an answer. Outside dev, `x status --url <origin> --json` reports the builds the serving processes answer with and every live worker's; the connected-clients distribution itself has no aggregate outside the sync node ([Known gaps](Known-Gaps#not-built-yet)) |
+| 6 | **Skew is observable** | the `/_x` live panel reports the build-ID distribution of connected clients, so "how many users are three deploys behind" has an answer. Outside dev, `x status --url <origin> --json` reports the builds the serving processes answer with and every live worker's; the connected-clients distribution itself has no aggregate outside the sync node ([Known gaps](Known-Gaps#open-by-decision)) |
 | 7 | **Build ID scopes the SW cache** | preview/branch builds get their own cache namespace and SW scope, so a preview can never poison prod caches |
 
 Server behaviour on a stale build ID:

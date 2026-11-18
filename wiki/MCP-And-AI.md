@@ -239,10 +239,13 @@ The same catalog as data, for a test: `mcp.server.catalog(caller)` — every act
 in the transcript all session:
 
 ```ts
-import { assertMcpSurfaceBudget } from '@ultimat3/mcp';
-import { test } from 'bun:test';
+import { type AppMcp, assertMcpSurfaceBudget, type McpCaller } from '@ultimat3/mcp';
+import { unitTest } from '@ultimat3/testing';
 
-test('the staff surface stays small', async () => {
+declare const mcp: AppMcp;
+declare const staffCaller: McpCaller;
+
+unitTest('the staff surface stays small', async () => {
   // The derivation beside the number: the size measureMcpSurface reported, × a margin.
   await assertMcpSurfaceBudget(mcp.server, staffCaller, { toolsList: 4_000, listResources: 12_000 });
 });
@@ -340,9 +343,19 @@ name, same file; the order is the contract:
 
 ```ts
 // apps/web/mcp.ts
-import { defineAppMcp, type McpOAuth } from '@ultimat3/mcp';
+import { defineAppMcp, type DefineAppMcpInput, type McpOAuth, type McpScopes } from '@ultimat3/mcp';
 
+type Input = DefineAppMcpInput;
 declare const oauth: McpOAuth;
+declare const groups: NonNullable<Input['groups']>;
+declare const CUSTOMER_SCOPES: McpScopes;
+declare const STAFF_SCOPES: McpScopes;
+declare const AFFILIATE_SCOPES: McpScopes;
+declare const customerToken: NonNullable<Input['resolveToken']>;
+declare const staffToken: NonNullable<Input['resolveToken']>;
+declare const affiliateToken: NonNullable<Input['resolveToken']>;
+declare const staffTools: NonNullable<Input['tools']>;
+declare const affiliateTools: NonNullable<Input['tools']>;
 
 export const mcp = [
   defineAppMcp({ name: 'acme', include: 'exposed', scopes: CUSTOMER_SCOPES, resolveToken: customerToken, oauth }),
@@ -378,7 +391,10 @@ where `2025-06-18` required it; `2025-03-26` defines none, its discovery being R
 authorization-server metadata at the origin:
 
 ```ts
-import { defineAppMcp } from '@ultimat3/mcp';
+import { defineAppMcp, type DefineAppMcpInput, type McpScopes } from '@ultimat3/mcp';
+
+declare const MCP_SCOPES: McpScopes;
+declare const resolveToken: NonNullable<DefineAppMcpInput['resolveToken']>;
 
 export const mcp = defineAppMcp({
   include: 'exposed',
@@ -625,17 +641,28 @@ LLM-generated context files measurably reduce task success. A model writing "her
 One typed entry point for model calls — provider-agnostic, observable, cached, evaluated.
 
 ```ts
-import { llm, type Prompt } from '@ultimat3/ai';
 import { t } from '@ultimat3/action';
+import { llm, type Prompt } from '@ultimat3/ai';
 import { can } from '@ultimat3/policy';
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
 
 declare const summarizePrompt: Prompt<{ body: string }>;
 
 export const summarize = llm({
   model: 'claude-sonnet-5-5',
   input:  t.object({ postId: t.uuid }),
-  output: t.object({ summary: t.string, tags: t.string.array() }),
+  output: t.object({ summary: t.string, tags: t.array(t.string) }),
   prompt: summarizePrompt,                       // versioned artifact
+  vars:   async ({ input, ctx }) => ({ body: await ctx.posts.body(input.postId) }),
   cache:  { semantic: { threshold: 0.97, ttl: '7d' } },
   budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } },
   policy: can('post:read'),

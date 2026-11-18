@@ -68,6 +68,25 @@ describe('an Open row', () => {
   });
 });
 
+describe('a pin outside ## Open', () => {
+  const live = `| D | why [pin](${PIN}#two) |`;
+  const dead = `| D | why [pin](${PIN}#three) |`;
+  const open = [`| A | s [pin](${PIN}#two) | w |`];
+
+  test('naming a real test is clean', () => {
+    expect(codes(page(open, [live]))).toEqual([]);
+  });
+
+  test('naming no test is X_KNOWN_GAP_UNPINNED, at its line', () => {
+    expect(codes(page(open, [dead]))).toEqual(['X_KNOWN_GAP_UNPINNED wiki/Known-Gaps.md:13']);
+  });
+
+  test('is read in every later section, Closed included', () => {
+    const closed = `${page(open)}\n## Closed\n\n| G | 1.0.0 | [pin](${PIN}#three) |\n`;
+    expect(codes(closed)).toHaveLength(1);
+  });
+});
+
 describe('the baseline', () => {
   test('a listed row may stay unpinned; one pinned since, or gone, is X_KNOWN_GAP_PIN_STALE', () => {
     expect(codes(page(['| A | s | w |']), ['A'])).toEqual([]);

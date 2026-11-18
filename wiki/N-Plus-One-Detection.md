@@ -30,25 +30,19 @@ Full row, verbatim: [Error codes → `@ultimat3/entity`](Error-Codes-entity).
 ## Before / after
 
 ```ts
-// naive: one statement per row
 import { entity, postgresRepo, uuid } from '@ultimat3/entity';
 
 const members = entity('members', {
   tenant: 'orgId',
   columns: { id: uuid().primaryKey(), orgId: uuid() },
 });
-const posts = entity('posts', {
-  tenant: 'orgId',
-  columns: {
-    id: uuid().primaryKey(),
-    orgId: uuid(),
-    authorId: uuid().references(() => members.id),
-  },
-});
+const repo = postgresRepo(members);
+declare const posts: readonly { readonly authorId: string }[];
 
+// naive: one statement per row
 const authors = [];
 for (const post of posts) {
-  authors.push(await postgresRepo(members).findById(post.authorId));
+  authors.push(await repo.findById(post.authorId));
 }
 ```
 

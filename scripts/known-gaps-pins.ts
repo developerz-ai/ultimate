@@ -9,6 +9,9 @@
 // that cannot be tested — one unreproduced sighting — writes `pin: none` and why, in the row.
 // `## Open by decision` rows need none: they are not going to close.
 //
+// A pin WRITTEN anywhere else on the page is still a claim that a test exists, so it is held to the
+// same check: a section that needs no pin may carry one, but never a dead one.
+//
 // RATCHET: rows unpinned when this rule landed are listed by their first cell in
 // `scripts/lib/known-gaps-unpinned-pins.ts`. The list only falls: a new row is pinned when it is
 // written, and a listed row pinned (or closed) since is a stale entry to delete.
@@ -84,6 +87,20 @@ function deadPin(url: string, tree: PinTree): string | undefined {
     : `pins "${title}", which ${path} has no test titled`;
 }
 
+/** Every `[pin]` outside `## Open`, whose rows the loop below already reads. */
+function pinsElsewhere(markdown: string): readonly { line: number; url: string }[] {
+  const pins: { line: number; url: string }[] = [];
+  let inOpen = false;
+  markdown.split('\n').forEach((text, index) => {
+    if (text.startsWith('## ')) inOpen = text.trim() === '## Open';
+    if (inOpen) return;
+    for (const match of text.matchAll(PIN_LINK)) {
+      pins.push({ line: index + 1, url: match[1] ?? '' });
+    }
+  });
+  return pins;
+}
+
 const at = (row: OpenRow): string => `${KNOWN_GAPS}:${String(row.line)}`;
 
 /** Every row with no live pin and no baseline entry, and every baseline entry that is stale. */
@@ -123,6 +140,17 @@ export function checkKnownGapPins(
       cause: `${at(row)} "${row.key}" ${dead[0] ?? 'links no test asserting today’s behaviour'}, so closing the gap would leave this row standing`,
       fix: `${RERUN}   # then add [pin](https://github.com/developerz-ai/ultimate/blob/main/<the test file>#<the test title>) to ${at(row)}, or state "pin: none" and why`,
       at: at(row),
+    });
+  }
+  for (const { line, url } of pinsElsewhere(markdown)) {
+    const dead = deadPin(url, tree);
+    if (dead === undefined) continue;
+    const where = `${KNOWN_GAPS}:${String(line)}`;
+    findings.push({
+      code: 'X_KNOWN_GAP_UNPINNED',
+      cause: `${where} ${dead}, so the row cites evidence that does not exist`,
+      fix: `${RERUN}   # then point the [pin] at ${where} at a test that exists, or remove the link`,
+      at: where,
     });
   }
   const keys = new Set(rows.map((row) => row.key));

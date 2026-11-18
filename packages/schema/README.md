@@ -274,18 +274,24 @@ swap. `introspect()` is what OpenAPI/MCP generation needs; a provider without it
 ## JSON Schema and coercion
 
 ```ts
-import { coerceQuery, numeric, parse, toJsonSchema, toWireOutputSchema, toWireSchema } from '@ultimat3/schema';
-import { type Action, t } from '@ultimat3/action';
+import {
+  coerceQuery,
+  numeric,
+  parse,
+  t,
+  toJsonSchema,
+  toWireOutputSchema,
+  toWireSchema,
+} from '@ultimat3/schema';
 
+const publishPost = t.object({ postId: t.uuid });
 declare const url: URL;
-const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
-const PublishPostInput = t.object({ postId: t.uuid });
-declare const publishPost: Action<typeof PublishPostInput, typeof PostView>;
 
 toJsonSchema(publishPost);                    // OpenAPI 3.1 (2020-12)
 toWireSchema(publishPost);                    // an MCP tool's inputSchema: what tools/list serves
 toWireOutputSchema(publishPost);              // its outputSchema: structure only; undefined for a non-object root
-toJsonSchema(publishPost, { dialect: 'x' });  // X_SCHEMA_UNSUPPORTED — the two spellings are closed
+// @ts-expect-error X_SCHEMA_UNSUPPORTED at runtime too — the two spellings are closed
+toJsonSchema(publishPost, { dialect: 'x' });
 parse(publishPost, coerceQuery(publishPost, url.searchParams));
 numeric(' 12 ');                              // 12 — numeric('0x10'), numeric(' '): undefined
 ```

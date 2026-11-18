@@ -18,10 +18,10 @@ Tier 2 covers ~90% of "make it realtime". Tier 3 buys exactly one extra property
 
 ```ts
 // query
-import { from, query } from '@ultimat3/query';
 import { mutator, t } from '@ultimat3/action';
-import { can } from '@ultimat3/policy';
 import { database, entity, integer, timestamp, uuid } from '@ultimat3/entity';
+import { can } from '@ultimat3/policy';
+import { from, query } from '@ultimat3/query';
 
 const posts = entity('posts', {
   tenant: 'orgId',
@@ -48,6 +48,9 @@ export const liveFeed = query({
 
 // mutator (action + optimistic local twin)
 export const likePost = mutator({
+  input: t.object({ postId: t.uuid }),
+  output: t.object({ likeCount: t.number.int(), likedByMe: t.boolean }),
+  policy: can('post:like'),
   // REQUIRED (`X_MUTATOR_NOT_IDEMPOTENT`): a replay under the same Idempotency-Key answers the
   // first result instead of running `server` again.
   idempotent: true,

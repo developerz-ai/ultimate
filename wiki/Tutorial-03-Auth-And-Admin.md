@@ -127,8 +127,7 @@ Register, log in, resolve — the real flow, against Postgres, with `const auth 
 import { type Auth, login, register } from '@ultimat3/auth';
 
 declare const auth: Auth;
-declare const org: { readonly id: string };
-
+declare const org: string;
 declare const email: string;
 declare const password: string;
 declare const ip: string;

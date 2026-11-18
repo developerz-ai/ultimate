@@ -251,12 +251,16 @@ describe('the browser path to the page seam', () => {
   // `defineError({ problemMeta, publicCause })` — the meta key rule, the app meta table
   // (`problem-meta-declared.ts`) and the public-cause set an island's error module now declares
   // through; no titles table joined. The next whole kilobyte above the measurement.
-  test('the whole entry reaches no titles table and stays under 36 kB (36,425 B as of 2026-11-14)', async () => {
+  //
+  // measured: 37,055 B (2026-11-18, Bun 1.4.4), 36,872 without this change. why: +183 B, a queued
+  // write's binding: `CLIENT_REPLAY_SCOPE_HEADER`, `principalScopeName` and `isSessionRefusalCode`,
+  // which the outbox reads here so a replay names its owner. The next whole kilobyte above it.
+  test('the whole entry reaches no titles table and stays under 37 kB (37,055 B as of 2026-11-18)', async () => {
     const whole = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const { modules } = await build('whole', '', false, whole);
     expect(modules.filter(isTitlesTable)).toEqual([]);
     const { bytes } = await build('whole-min', '', true, whole);
-    expect(bytes).toBeLessThan(36_864);
+    expect(bytes).toBeLessThan(37_888);
   }, 60_000);
 
   // The barrel PARSES every module it names before shaking; a static `node:zlib` import in

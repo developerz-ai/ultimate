@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   BUILD_ID_HEADER,
+  CLIENT_REPLAY_SCOPE_HEADER,
   clientTransport,
   ctxOf,
   DATES_HEADER,
@@ -288,6 +289,7 @@ describe('DEFAULT_CORS', () => {
       BUILD_ID_HEADER,
       'x-request-id',
       IDEMPOTENCY_HEADER,
+      CLIENT_REPLAY_SCOPE_HEADER,
       REQUEST_TIMEOUT_HEADER,
       'traceparent',
     ]);

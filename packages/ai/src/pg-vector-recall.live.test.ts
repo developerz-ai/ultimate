@@ -34,14 +34,18 @@ describe.skipIf(!hasPostgres)('live · pgvector · a small tenant on a large tab
     // only index that can answer the search — the plan a large production table takes.
     await client.execute(raw(`alter table "${TABLE}" drop constraint "${TABLE}_pkey"`));
     // 10,000 rows: 9,950 of tenant `big`, 50 of tenant `small`, every vector a point on the sphere.
-    await client.execute(
-      raw(`insert into "${TABLE}" ("tenant", "id", "embedding", "content")
-           select case when i % 200 = 0 then 'small' else 'big' end, 'row-' || i,
-             ('[' || sin(i)::text || ',' || cos(i)::text || ',' ||
-                     sin(i * 3)::text || ',' || cos(i * 7)::text || ']')::vector,
-             'row ' || i
-           from generate_series(1, 10000) i`),
-    );
+    // In batches: each row updates the hnsw graph, and one statement for all of them can outlast
+    // the role's statement_timeout on a busy server.
+    for (let first = 1; first <= 10_000; first += 1_000) {
+      await client.execute(
+        raw(`insert into "${TABLE}" ("tenant", "id", "embedding", "content")
+             select case when i % 200 = 0 then 'small' else 'big' end, 'row-' || i,
+               ('[' || sin(i)::text || ',' || cos(i)::text || ',' ||
+                       sin(i * 3)::text || ',' || cos(i * 7)::text || ']')::vector,
+               'row ' || i
+             from generate_series(${first}, ${first + 999}) i`),
+      );
+    }
     await client.execute(raw(`analyze "${TABLE}"`));
     pinned = await client.reserve();
     await pinned.execute(raw('set enable_seqscan = off'));

@@ -9,6 +9,7 @@ import type { ClientScope, RecordRows, Row } from '@ultimat3/core/page';
 import {
   finiteOption,
   isJsonObject,
+  principalScopeName,
   renderThrowable,
   type UltimateError,
 } from '@ultimat3/core/page';
@@ -50,12 +51,12 @@ export interface LocalStore {
 
 /**
  * The storage key of a principal, or `undefined` for an UNSCOPED page (rendered for nobody):
- * nothing is persisted there, because there is no principal to key it by. Prefixed so a principal
- * spelled `anon` can never share the anonymous visitor's rows.
+ * nothing is persisted there, because there is no principal to key it by. Core spells the rest,
+ * because a replay names its queue's owner to the server in this same token.
  */
 export function scopeKey(principal: ClientScope['principal']): string | undefined {
   if (principal === undefined) return undefined;
-  return principal === null ? 'anon' : `p:${principal}`;
+  return principalScopeName(principal);
 }
 
 const RECORDS = 'records';

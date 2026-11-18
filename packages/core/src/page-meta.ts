@@ -15,6 +15,23 @@ export const CLIENT_SCOPE_META = 'ultimate-scope';
 export const CLIENT_SCOPE_HEADER = 'x-ultimate-scope';
 
 /**
+ * On a REPLAY of a queued offline write, the principal whose queue holds it, as
+ * `principalScopeName` spells it. `@ultimat3/realtime`'s outbox sends it and `@ultimat3/action`'s
+ * route refuses a session that is someone else (`X_REPLAY_PRINCIPAL_MISMATCH`): two tier-3 packages
+ * that cannot import each other, agreeing here. Absent on every write that is not a replay.
+ */
+export const CLIENT_REPLAY_SCOPE_HEADER = 'x-ultimate-replay-scope';
+
+/**
+ * A principal as one non-empty token: the page's outbox partition and the replay header's value.
+ * Never blank for the anonymous visitor, because a proxy may drop an empty header and a dropped one
+ * claims nobody. Prefixed so a principal spelled `anon` is not the anonymous visitor.
+ */
+export function principalScopeName(principal: string | null): string {
+  return principal === null ? 'anon' : `p:${principal}`;
+}
+
+/**
  * The build id the document was rendered by. `x-ultimate-build` — the same spelling as the header,
  * and the one `@ultimat3/pwa` shipped as `BUILD_ID_META`, so no shipped reader changes.
  */

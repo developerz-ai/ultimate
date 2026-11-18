@@ -2,7 +2,7 @@
 // drop, following the printed fix. Before `retired` the N-1 entity read and wrote a column the
 // generated drop had just removed, and both answered X_DB_SCHEMA_STALE: no zero-downtime drop existed.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError, probeDatabaseName } from '@ultimat3/core';
 import {
   type EntityDescriptionLike,
@@ -55,8 +55,13 @@ describe.skipIf(!hasPostgres)('live · a column drops across two releases', () =
     await migrate({ migrations: applied, client, appVersion: 'test', production: true });
   };
 
-  beforeAll(async () => {
+  beforeAll(() => {
     admin = postgresClient({ url: url ?? '' });
+  });
+
+  // A database per test: the ledger one test writes is a list the next could not ship.
+  beforeEach(async () => {
+    applied.length = 0;
     await admin.execute(raw(`create database "${SCRATCH}"`));
     const scoped = new URL(url ?? '');
     scoped.pathname = `/${SCRATCH}`;
@@ -64,12 +69,13 @@ describe.skipIf(!hasPostgres)('live · a column drops across two releases', () =
     setDbClient(client);
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     setDbClient(undefined);
     await client.close();
     await admin.execute(raw(`drop database "${SCRATCH}" with (force)`));
-    await admin.close();
   });
+
+  afterAll(() => admin.close());
 
   test('neither release ever reads a column that is gone', async () => {
     // Release 1: the table, with the column.

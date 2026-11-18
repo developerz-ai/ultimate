@@ -69,6 +69,17 @@ describe.skipIf(!hasPostgres)('live · postgres · the wide column vocabulary', 
 
   const db = () => database({ records }, { driver: postgresDriver() });
 
+  const insertTreasury = () =>
+    db().records.insert({
+      label: 'treasury',
+      rate: '1.23456789',
+      effectiveOn: '2026-03-14' as PlainDate,
+      externalId: '9007199254740993',
+      settings: { plan: 'team', seats: 12 },
+      tags: ['alpha', 'with,comma', 'quote"inside'],
+      blob: new Uint8Array([0, 255, 16]),
+    });
+
   test('the generated DDL carries the precise Postgres type of every column', async () => {
     const columns = await client.query<{ column_name: string; data_type: string }>(
       raw(
@@ -89,15 +100,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the wide column vocabulary', 
   });
 
   test('every value survives the round trip as the type the row declared', async () => {
-    const written = await db().records.insert({
-      label: 'treasury',
-      rate: '1.23456789',
-      effectiveOn: '2026-03-14' as PlainDate,
-      externalId: '9007199254740993',
-      settings: { plan: 'team', seats: 12 },
-      tags: ['alpha', 'with,comma', 'quote"inside'],
-      blob: new Uint8Array([0, 255, 16]),
-    });
+    const written = await insertTreasury();
     const stored = await db().records.where({ id: written.id }).one();
     expect(stored).not.toBeNull();
     // The decimal keeps every digit AND the trailing zeroes the column's scale defines.
@@ -115,7 +118,8 @@ describe.skipIf(!hasPostgres)('live · postgres · the wide column vocabulary', 
   });
 
   test('the whole row is JSON, which a bigint or a Buffer would not have been', async () => {
-    const [row] = (await db().records.where({ label: 'treasury' }).all()) as readonly {
+    const { id } = await insertTreasury();
+    const [row] = (await db().records.where({ id }).all()) as readonly {
       rate: string;
       externalId: string;
       effectiveOn: string;

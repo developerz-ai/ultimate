@@ -1,6 +1,6 @@
 /**
- * The refusals of the HTTP declaration an app makes about its actions: a pinned `http.path`, the
- * app's `pathStyle`, and the `openapi` block. Split from `errors.ts` at its ceiling; the codes and
+ * The refusals of the HTTP projection: the declaration an app makes about its actions (a pinned
+ * `http.path`, the app's `pathStyle`, the `openapi` block) and a replay under the wrong session. Split from `errors.ts` at its ceiling; the codes and
  * titles are registered in `error-titles.ts`, one registry, imported bare so constructing one of
  * these registers its title first.
  */
@@ -81,6 +81,22 @@ export class OpenApiConfigInvalidError extends UltimateError {
       code: 'X_OPENAPI_CONFIG_INVALID',
       cause: `defineApi({ openapi }) cannot produce a valid document: ${reason}`,
       fix: "defineApi({ ..., openapi: { title: 'My API', version: '1.0.0', servers: [{ url: 'https://www.example.com' }] } }) — non-empty title and version, absolute http(s) server URLs, and a mount document named like 'openapi.v1.json'",
+    });
+  }
+}
+
+/**
+ * A queued offline write came back under a session that is not the principal whose queue holds it.
+ * 409, which a page reads as "ask again later": the write is not refused on its merits, it is held
+ * for its owner. Neither principal is rendered: the answer goes to whoever holds the cookie now.
+ */
+export class ReplayPrincipalMismatchError extends UltimateError {
+  constructor(input: { name: string }) {
+    super({
+      code: 'X_REPLAY_PRINCIPAL_MISMATCH',
+      cause: `a queued write to action "${input.name}" names the principal that queued it, and this session is someone else: another tab signed out or in, or SESSION_SECRET is unset and another process rendered the page`,
+      fix: 'await pageOutbox().replay()   // @ultimat3/realtime, in the tab that queued the write, once that account has signed back in: the entry is kept for it, and loading a page as another account wipes it',
+      meta: { action: input.name },
     });
   }
 }

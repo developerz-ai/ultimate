@@ -10,7 +10,7 @@ A `task` is a cron trigger that enqueues jobs. It never does work itself.
 // task (cron)
 import { type JobHandle, task } from '@ultimat3/jobs';
 
-declare const sendDigest: JobHandle<{ orgId: string }>;
+declare const sendDigest: JobHandle<{ occurrenceMs: number }>;
 
 export const nightlyDigest = task({
   cron: '0 3 * * *',
@@ -179,30 +179,35 @@ $ x tasks list --json
 
 ## Testing
 
-Frozen clock. `clock.advance` drives cron — never `sleep`, never wall-clock.
+A task is tested without a scheduler: `task.entries(occurrenceMs)` is what a tick would enqueue. `clock.advance` fires no cron, `As of 2026-11` — the `runJobs` fixture runs no scheduler. A test of a whole dispatch round builds `jobScheduler({ driver, clock, tasks })` and calls `tick()`.
 
 ```ts
-import { expect, test } from '@ultimat3/testing';
-import { type JobHandle } from '@ultimat3/jobs';
+import { type JobHandle, task } from '@ultimat3/jobs';
+import { expect, unitTest } from '@ultimat3/testing';
 
-declare const sendDigest: JobHandle<{ orgId: string }>;
+declare const sendDigest: JobHandle<{ occurrenceMs: number }>;
 
-test('nightlyDigest enqueues one digest job per day', async ({ seed, clock }) => {
-  await seed('one-org');
-  clock.advance('3d');
-  const trace = await runJobs.drain();
-  expect(trace.enqueued(sendDigest)).toHaveLength(3);
+const nightlyDigest = task({
+  cron: '0 3 * * *',
+  tz: 'UTC',
+  enqueue: (occurrenceMs) => [[sendDigest, { occurrenceMs }]],
+});
+
+unitTest('nightlyDigest enqueues one digest for the occurrence it fires for', () => {
+  const occurrenceMs = Date.parse('2026-03-04T03:00:00.000Z');
+  expect(nightlyDigest.describe()).toMatchObject({ cron: '0 3 * * *', tz: 'UTC' });
+  expect(nightlyDigest.entries(occurrenceMs)).toEqual([[sendDigest, { occurrenceMs }]]);
 });
 ```
 
 | Asserted | Why |
 |---|---|
-| Tick count over an advanced window | the cron expression means what you think in the declared `tz` |
-| Idempotency absorbs a replayed tick | advance to the same instant twice; the job row count must not change |
-| DST boundary | advance across a spring-forward and a fall-back in the task's zone |
-| `enqueue` returns the right inputs | the pairs, not the work |
+| Occurrences over a window | walk `nextTaskRun(task, from)`: the cron expression means what you think in the declared `tz` |
+| Idempotency absorbs a replayed tick | `runJobs.enqueue` the same entry twice; `runJobs.depth(job)` must not change |
+| DST boundary | `nextTaskRun` across a spring-forward and a fall-back in the task's zone |
+| `entries(occurrenceMs)` returns the right inputs | the pairs, not the work |
 
-Runner: `x test job` (tasks are dispatch, jobs are the assertion surface). See [Testing](Testing).
+Runner: `x test unit` for the entries, `x test job` for the job they enqueue. See [Testing](Testing).
 
 ## Errors
 

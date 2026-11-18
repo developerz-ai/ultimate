@@ -2,7 +2,7 @@
 // fillfactor, re-applying it converges a table created plain, drift is clean after apply and red
 // after a hand `alter`. Its own table, dropped on the way in and on the way out.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient } from './client';
 import { raw } from './sql';
 import { tableDdl, tableStorage } from './table-storage';
@@ -24,10 +24,11 @@ describe.skipIf(!hasPostgres)('tableStorage on Postgres', () => {
   };
   const ddl = tableDdl(STORAGE, 'key text primary key, n int not null');
 
-  beforeAll(async () => {
+  beforeAll(() => {
     client = postgresClient({ url: url as string });
-    await client.execute(raw('drop table if exists x_table_storage_probe'));
   });
+
+  beforeEach(() => client.execute(raw('drop table if exists x_table_storage_probe')));
 
   afterAll(async () => {
     await client.execute(raw('drop table if exists x_table_storage_probe'));
@@ -45,6 +46,7 @@ describe.skipIf(!hasPostgres)('tableStorage on Postgres', () => {
   });
 
   test('drift is red after a hand alter, and the next apply converges it', async () => {
+    await apply(ddl);
     await client.execute(raw('alter table x_table_storage_probe set logged'));
     await client.execute(raw('alter table x_table_storage_probe reset (fillfactor)'));
     const drift = await readTableStorageDrift(client, [STORAGE]);
@@ -58,6 +60,7 @@ describe.skipIf(!hasPostgres)('tableStorage on Postgres', () => {
   });
 
   test('re-applying to a table already unlogged rewrites nothing', async () => {
+    await apply(ddl);
     const before = await client.query<{ readonly node: string }>(
       raw(`select relfilenode::text as node from pg_class where relname = 'x_table_storage_probe'`),
     );

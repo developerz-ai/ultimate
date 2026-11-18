@@ -11,14 +11,30 @@ modes](Routes-And-Render-Modes)).
 import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
 
+interface Post {
+  readonly title: string;
+  readonly excerpt: string;
+  readonly cover: string;
+  readonly publishedAt: string;
+  readonly author: string;
+}
+declare function loadPost(slug: string): Promise<Post>;
+
 export const config = defineRoute({
   render: 'isr',
-  meta: ({ post }) => ({
+  revalidate: { ttl: '1h' },
+  offline: 'runtime',
+  load: ({ params }) => loadPost(params['slug'] ?? ''),
+  meta: ({ data: post }) => ({
     title: post.title,
     titleTemplate: '%s — Ultimate',
     description: post.excerpt,
     og: { type: 'article', image: post.cover, publishedTime: post.publishedAt },
-    ld: [ld.Article({ headline: post.title, datePublished: post.publishedAt, author: post.author })],
+    ld: [ld.Article({
+      headline: post.title,
+      datePublished: post.publishedAt,
+      author: { name: post.author },
+    })],
   }),
 });
 ```
@@ -52,6 +68,7 @@ import { asset, defineRoute } from '@ultimat3/render';
 
 export const config = defineRoute({
   render: 'static',
+  offline: 'precache',
   meta: () => ({
     title: 'Acme',
     description: 'Notificaciones electrónicas con constancia de entrega',

@@ -59,6 +59,16 @@ import { tag } from '@ultimat3/cache';
 import { type JobHandle } from '@ultimat3/jobs';
 import { type Actor } from '@ultimat3/core';
 
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string, tx?: unknown): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
 declare const notifySubscribers: JobHandle<{ postId: string; orgId: string }>;
 declare function ownsPost(actor: Actor | null, postId: string): boolean;
 const PostView = t.object({ id: t.uuid, orgId: t.uuid, title: t.string });
@@ -397,6 +407,22 @@ strategy for the rebase.
 import { mutator, t } from '@ultimat3/action';
 import { can } from '@ultimat3/policy';
 
+declare module '@ultimat3/action' {
+  interface LocalTables {
+    posts: { likedByMe: boolean; likeCount: number };
+  }
+}
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: {
+      publish(id: string, tx?: unknown): Promise<{ id: string; orgId: string; title: string }>;
+      like(id: string): Promise<{ likeCount: number; likedByMe: boolean }>;
+      body(id: string): Promise<string>;
+    };
+  }
+}
+
 const PostLikes = t.object({ likeCount: t.number.int(), likedByMe: t.boolean });
 
 export const likePost = mutator({
@@ -424,14 +450,13 @@ The projected surface carries the same three names the declaration used, on top 
 every action member above:
 
 ```ts
-import { type Ctx } from '@ultimat3/core';
 import { type LocalTx, type Mutator, t } from '@ultimat3/action';
+import { type Ctx } from '@ultimat3/core';
 
 const LikePostInput = t.object({ postId: t.uuid });
-const PostLikes = t.object({ likeCount: t.integer, likedByMe: t.boolean });
+const PostLikes = t.object({ likeCount: t.number.int(), likedByMe: t.boolean });
 declare const likePost: Mutator<typeof LikePostInput, typeof PostLikes>;
 declare const tx: LocalTx;
-
 declare const ctx: Ctx;
 declare const postId: string;
 
@@ -1017,11 +1042,17 @@ which fields, whose tenant, chained or not, kept how long:
 import { type RuntimeOverrides } from '@ultimat3/cli/serve';
 import { type Actor, type Ctx } from '@ultimat3/core';
 
+declare function chainHead(ctx: Ctx): Promise<string>;
+declare function orgOf(actor: Actor): string;
 declare function subjectOf(name: string, input: unknown): string;
 declare function impersonatorOf(actor: Actor): string | null;
 declare function sha256(prev: string, record: unknown): Promise<string>;
-declare function orgOf(actor: Actor): string;
-declare function chainHead(ctx: Ctx): Promise<string>;
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly db: { readonly auditRows: { insert(row: Record<string, unknown>): Promise<unknown> } };
+  }
+}
 
 export const runtime = { auditSink: {
   async write(record) {

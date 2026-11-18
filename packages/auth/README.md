@@ -61,12 +61,10 @@ account survive 15 guesses and hides each replica's lockout from the other two. 
 more than one process says so and brings a limiter that says the same:
 
 ```ts
-import { type AuthAdapter, defineAuth } from '@ultimat3/auth';
-import { type RateLimitStore } from '@ultimat3/http';
-
-declare const myLimiter: RateLimitStore;
+import { type AuthAdapter, type AuthLimiter, defineAuth } from '@ultimat3/auth';
 
 declare const adapter: AuthAdapter;
+declare const myLimiter: AuthLimiter;
 
 defineAuth({
   adapter,
@@ -413,9 +411,10 @@ SQL, so the omission logs `auth.oauth.user_created_without_grants` rather than p
 ```ts
 import { type Auth, oauthLogin } from '@ultimat3/auth';
 
-declare const directory: { lookup(email: string): Promise<{ orgId: string; groups: readonly string[] }> };
-
 declare const auth: Auth;
+declare const directory: {
+  lookup(email: string | null): Promise<{ orgId: string; groups: readonly string[] }>;
+};
 declare function toRole(group: string): string;
 
 oauthLogin(auth, {

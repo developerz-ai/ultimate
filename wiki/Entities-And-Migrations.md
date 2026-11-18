@@ -400,7 +400,11 @@ export async function insert(row: Omit<Widget, 'id' | 'createdAt'>): Promise<Wid
 
 ```ts
 // packages/db/src/client.ts — the handle. `x g entity` adds the import and the line.
-import { database } from '@ultimat3/entity';
+import { database, type Driver, entity, uuid } from '@ultimat3/entity';
+
+declare const driver: Driver;
+const post = entity('posts', { columns: { id: uuid().primaryKey() } });
+const widget = entity('widgets', { columns: { id: uuid().primaryKey() } });
 
 const entities = {
   posts: post,
@@ -487,13 +491,18 @@ A feature with more than one table: `x g entity <second> --feature <feature>` wr
 `findById` called several times in one microtask of one request is **one** statement, `As of 2026-08`:
 
 ```ts
-// One `select … where "id" in ($1, $2, $3, …)`, not one statement per post.
-import { entity, uuid } from '@ultimat3/entity';
+import { entity, postgresRepo, uuid } from '@ultimat3/entity';
 
-const users = entity('users', { columns: { id: uuid().primaryKey() } });
+const users = entity('users', {
+  tenant: 'orgId',
+  columns: { id: uuid().primaryKey(), orgId: uuid() },
+});
+const repo = postgresRepo(users);
+declare const posts: readonly { readonly authorId: string }[];
 declare const orgId: string;
 
-const authors = await Promise.all(posts.map((post) => users.findById(post.authorId, { orgId })));
+// One `select … where "id" in ($1, $2, $3, …)`, not one statement per post.
+const authors = await Promise.all(posts.map((post) => repo.findById(post.authorId, { orgId })));
 ```
 
 Nothing to opt into — no `dataloader()`, no `batch()`. `findById` keeps its signature and its meaning, which is the only way the fix reaches code that is already written.
@@ -878,15 +887,17 @@ const counters = entity('counters', {
 const db = database({ counters, likes, tags });
 declare const orgId: string;
 declare const names: readonly string[];
+declare const likeRows: readonly { orgId: string; postId: string; memberId: string }[];
+declare const counterRows: readonly { orgId: string; day: string }[];
 
 await db.tags.insertAll(names.map((name) => ({ orgId, name })));   // one statement, n rows
 
-await db.likes.upsertAll(rows, {                                  // insert, or leave what is there
+await db.likes.upsertAll(likeRows, {                              // insert, or leave what is there
   onConflict: ['orgId', 'postId', 'memberId'],
   onMatch: 'nothing',
 });
 
-await db.counters.upsertAll(rows, { onConflict: ['orgId', 'day'] });   // insert, or overwrite
+await db.counters.upsertAll(counterRows, { onConflict: ['orgId', 'day'] });   // insert, or overwrite
 ```
 
 Rows are `Insertable` and go through `$parse` exactly as one row does, so declared defaults are
@@ -1039,13 +1050,13 @@ looks.
 ```ts
 import { defineSeed, entity, integer, text, uuid } from '@ultimat3/entity';
 
-const reports = entity('reports', { columns: { id: uuid().primaryKey(), slug: text() } });
 const plans = entity('plans', {
   columns: { id: uuid().primaryKey(), code: text(), currency: text(), monthly: integer() },
 });
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey(), slug: text(), name: text() } });
+const reports = entity('reports', { columns: { id: uuid().primaryKey(), slug: text() } });
 declare const monthly: number;
-
-const orgs = entity('orgs', { columns: { id: uuid().primaryKey(), name: text() } });
+declare const generated: readonly { id: string; slug: string }[];
 
 export const dev = defineSeed('dev', async ({ insert, upsert, exists, id }) => {
   // The table owns the id, so the NATURAL key is the only key: insert, or update what is there.
@@ -1169,10 +1180,6 @@ A credential column is `text().sealed()`. The row reads `string`; the database h
 ```ts
 import { database, entity, text, uuid } from '@ultimat3/entity';
 
-const db = database({ connections });
-
-declare const email: string;
-
 export const connections = entity('connections', {
   columns: {
     id: uuid().primaryKey(),
@@ -1181,6 +1188,9 @@ export const connections = entity('connections', {
     email: text().sealed({ lookup: true }).unique(),     // equality only
   },
 });
+
+const db = database({ connections });
+declare const email: string;
 
 const row = await db.connections.where({ email }).one();  // found by the stored string
 row?.password;                                            // the plaintext, on the server
@@ -1234,6 +1244,7 @@ password: true })` and `preload()` keep the property, still server-only.
 import { expect } from '@ultimat3/testing';
 
 declare const id: string;
+declare const row: { readonly id: string; readonly label: string; readonly password: string };
 
 expect(row).toEqualRow({ id, label: 'primary', password: 'hunter2' }); // every own property
 expect(row.password).toBe('hunter2');
@@ -1277,11 +1288,15 @@ A column with existing plaintext is migrated — expand, backfill, contract.
 ```ts
 // apps/web/app/connection/backfills/seal-connection-passwords.ts — a backfill IS a job: register
 // the module in defineApi({ jobs }) beside the slice's other jobs
-import { backfill } from '@ultimat3/jobs';
 import { database, entity, text, uuid } from '@ultimat3/entity';
+import { backfill } from '@ultimat3/jobs';
 
 const connections = entity('connections', {
-  columns: { id: uuid().primaryKey(), email: text(), label: text(), password: text() },
+  columns: {
+    id: uuid().primaryKey(),
+    password: text().nullable(),
+    passwordSealed: text().nullable().sealed(),
+  },
 });
 const db = database({ connections });
 

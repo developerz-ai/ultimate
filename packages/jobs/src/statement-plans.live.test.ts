@@ -131,6 +131,12 @@ describe.skipIf(!hasPostgres)('live · postgres · every jobs statement plans wi
       values: [],
     });
     cases = planned(Number(clock[0]?.now));
+    // Here and not in the case tests: the index test below reads what ALL of them read.
+    for (const [name, statement] of Object.entries(SHAPE)) {
+      for (const index of statement.cases.keys()) {
+        await plan(statement.sql, cases[name]?.cases[index]?.params ?? []);
+      }
+    }
   }, 120_000);
 
   afterAll(async () => {
@@ -191,7 +197,7 @@ describe.skipIf(!hasPostgres)('live · postgres · every jobs statement plans wi
     }
   }
 
-  // Declared after the cases, so it runs after them: every index on the two tables has a reader. An
+  // Every index on the two tables has a reader. An
   // index that none of them reads costs a write on every insert and every non-HOT update, for nothing
   // — the question `x_jobs_created_idx` was asked, and answered by `SQL_JOB_LIST` and the enqueue wake.
   test('every index on x_jobs and x_outbox is read by some statement', async () => {

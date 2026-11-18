@@ -4,7 +4,7 @@
 // so does a run that comes back after another process confirmed the slot past it.
 // Skips unless TEST_REPLICATION_URL names a server with `wal_level = logical`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { entity, entityForTable, text } from '@ultimat3/entity';
 import { type AdvisoryLock, memoryAdvisoryLock } from './advisory-lock';
 import { postgresChangeFeed } from './changefeed';
@@ -90,7 +90,7 @@ const lossy = (bus: Transport, drops: (payload: string) => boolean): Transport =
 describe.skipIf(!ready)('live · a replicator restart and the sync node that reads it', () => {
   let sql: PgConnection;
   const transport = new InProcessTransport();
-  const gaps = new SeqGapDetector();
+  let gaps = new SeqGapDetector();
   let changes = 0;
   let invalidations = 0;
   let next = 0;
@@ -105,11 +105,17 @@ describe.skipIf(!ready)('live · a replicator restart and the sync node that rea
     });
   // One lock per process: a new process takes a grant the last one let go of, or never held.
   const lock = () => memoryAdvisoryLock(`x:replicator:live-chain-${crypto.randomUUID()}`);
-  const confirmed = async (): Promise<string> => {
-    const [row] = await sql.query(
-      `SELECT confirmed_flush_lsn FROM pg_replication_slots WHERE slot_name = '${SLOT}'`,
-    );
-    return row?.[0] ?? '';
+  /** Until the slot is confirmed through everything written so far — a commit, then its keepalive. */
+  const confirmedThroughNow = async (): Promise<void> => {
+    const [row] = await sql.query('SELECT pg_current_wal_lsn()::text');
+    const target = row?.[0] ?? '';
+    const through = `SELECT confirmed_flush_lsn >= '${target}'::pg_lsn FROM pg_replication_slots WHERE slot_name = '${SLOT}'`;
+    for (let poll = 0; poll < 400; poll += 1) {
+      const [answer] = await sql.query(through);
+      if (answer?.[0] === 't') return;
+      // real-clock: the slot is confirmed on the walsender's time, by a status update it reads.
+      await Bun.sleep(50);
+    }
   };
   const write = async (): Promise<void> => {
     next += 1;
@@ -140,6 +146,11 @@ describe.skipIf(!ready)('live · a replicator restart and the sync node that rea
     });
   });
 
+  // What a sync node remembers of the runs it saw: a crash one test stages is no other's history.
+  beforeEach(() => {
+    gaps = new SeqGapDetector();
+  });
+
   afterAll(async () => {
     if (sql === undefined) return;
     await transport.close();
@@ -152,6 +163,7 @@ describe.skipIf(!ready)('live · a replicator restart and the sync node that rea
   });
 
   test('stop() then start(): the new run chains on, no window is invalidated', async () => {
+    const [changesBefore, invalidationsBefore] = [changes, invalidations];
     const replicator: Replicator = changeFeedReplicator({ feed: feed(), transport, lock: lock() });
     expect(await replicator.start()).toBe(true);
     await write();
@@ -160,8 +172,8 @@ describe.skipIf(!ready)('live · a replicator restart and the sync node that rea
     expect(await replicator.start()).toBe(true);
     await write();
     await replicator.stop();
-    expect(changes).toBe(3);
-    expect(invalidations).toBe(0);
+    expect(changes - changesBefore).toBe(3);
+    expect(invalidations - invalidationsBefore).toBe(0);
   }, 60_000);
 
   test('a clean stop, then a NEW process — a deploy: no window is invalidated', async () => {
@@ -183,10 +195,10 @@ describe.skipIf(!ready)('live · a replicator restart and the sync node that rea
     const doomed = feed();
     const old = changeFeedReplicator({ feed: doomed, transport, lock: lock() });
     expect(await old.start()).toBe(true);
-    const was = await confirmed();
     await write();
-    // real-clock: the slot is confirmed on the walsender's time, by a status update it reads.
-    for (let poll = 0; poll < 400 && (await confirmed()) === was; poll += 1) await Bun.sleep(50);
+    // Through the write itself: any earlier movement of the slot (a fresh one confirms its start
+    // on the first status update) would leave the change to be replayed, and nothing to detect.
+    await confirmedThroughNow();
     // Killed: the socket drops, nothing is confirmed or said on the way out.
     doomed.abandon();
     const next = changeFeedReplicator({ feed: feed(), transport, lock: lock() });
@@ -215,18 +227,6 @@ describe.skipIf(!ready)('live · a replicator restart and the sync node that rea
     });
     const insert = (id: string) =>
       sql.query(`INSERT INTO ${TABLE} (id, org_id) VALUES ('${id}', 'org-1')`);
-    /** Until the slot is confirmed through everything written so far — a commit, then its keepalive. */
-    const confirmedThroughNow = async (): Promise<void> => {
-      const [row] = await sql.query('SELECT pg_current_wal_lsn()::text');
-      const target = row?.[0] ?? '';
-      const through = `SELECT confirmed_flush_lsn >= '${target}'::pg_lsn FROM pg_replication_slots WHERE slot_name = '${SLOT}'`;
-      for (let poll = 0; poll < 400; poll += 1) {
-        const [answer] = await sql.query(through);
-        if (answer?.[0] === 't') return;
-        // real-clock: the slot is confirmed on the walsender's time, by a status update it reads.
-        await Bun.sleep(50);
-      }
-    };
     const key = `x:replicator:live-cut-${crypto.randomUUID()}`;
     // P1's takeover loop waits on this: the test says when it asks again.
     const retries: (() => void)[] = [];
