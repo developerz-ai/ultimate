@@ -14,9 +14,42 @@ export interface LinkAt {
 /** The new target, or `undefined` to leave the link as written. */
 export type LinkResolver = (link: LinkAt) => string | undefined;
 
-// What follows `](`: the target, one level of parentheses inside it, an optional title, the `)`.
-// Anchored by the caller at one `](`, and every part stops at the next `(`, space or quote.
-const TARGET = /([^()\s]+(?:\([^()\s]*\))?)(?:\s+"[^"]*")?\)/y;
+const isSpace = (char: string): boolean => char.trim() === '';
+
+/** The first offset from `from` holding a space, a parenthesis, or the end of the line. */
+function wordEnd(line: string, from: number): number {
+  let end = from;
+  while (end < line.length) {
+    const char = line.charAt(end);
+    if (char === '(' || char === ')' || isSpace(char)) break;
+    end += 1;
+  }
+  return end;
+}
+
+/**
+ * What follows `](` at `from`: the target, one level of parentheses inside it, an optional
+ * `"title"`, then the `)`. Read by hand, each part stopping at the next parenthesis, space or
+ * quote, so no input makes it look back. `undefined` when that is not what follows.
+ */
+function targetAt(line: string, from: number): string | undefined {
+  let end = wordEnd(line, from);
+  if (end === from) return undefined;
+  if (line[end] === '(') {
+    end = wordEnd(line, end + 1);
+    if (line[end] !== ')') return undefined;
+    end += 1;
+  }
+  let next = end;
+  while (next < line.length && isSpace(line.charAt(next))) next += 1;
+  if (next > end) {
+    if (line[next] !== '"') return undefined;
+    next = line.indexOf('"', next + 1);
+    if (next < 0) return undefined;
+    next += 1;
+  }
+  return line[next] === ')' ? line.slice(from, end) : undefined;
+}
 
 interface FoundLink {
   /** Offset of the `[` that opens the link's text. */
@@ -39,8 +72,7 @@ function findLinks(line: string): readonly FoundLink[] {
     if (line[index] !== ']') continue;
     const opener = open.pop();
     if (opener === undefined || line[index + 1] !== '(') continue;
-    TARGET.lastIndex = index + 2;
-    const target = TARGET.exec(line)?.[1];
+    const target = targetAt(line, index + 2);
     if (target === undefined) continue;
     while ((links.at(-1)?.opener ?? -1) > opener) links.pop();
     links.push({ opener, at: index + 2, target });

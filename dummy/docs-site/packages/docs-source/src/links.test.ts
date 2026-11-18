@@ -33,6 +33,12 @@ describe('rewriteLinks', () => {
     expect(rewriteLinks(line, upper)).toBe(`${'[['.repeat(50_000)}[a](B)`);
   });
 
+  test('a title is kept, and a target that never closes is no link', () => {
+    expect(rewriteLinks('[a](b "t") [c](d(e) "u") [f](g "h [i](j', upper)).toBe(
+      '[a](B "t") [c](D(E) "u") [f](g "h [i](j',
+    );
+  });
+
   test('never touches a code span or a fence', () => {
     const text = ['`[a](x)` [b](y)', '```', '[c](z)', '```'].join('\n');
     expect(rewriteLinks(text, upper)).toBe(['`[a](x)` [b](Y)', '```', '[c](z)', '```'].join('\n'));
