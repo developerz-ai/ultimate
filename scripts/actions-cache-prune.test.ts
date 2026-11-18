@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { CacheEntry } from './actions-cache-prune';
-import { entryOf, supersededEntries } from './actions-cache-prune';
+import { alreadyGone, entryOf, supersededEntries } from './actions-cache-prune';
 
 let next = 0;
 const entry = (key: string, createdAt: string, ref = 'refs/heads/main'): CacheEntry => {
@@ -17,12 +17,21 @@ describe('unit · a superseded cache entry is pruned, a live one never', () => {
     const older = `${base}4ed847b5a6b18291c52d310247e7959d0b0d59a7-44247094773-1`;
     const oldest = `${base}b69f8ed913434bd4cb1cd9e8c190f86b43d7f02f-44246243231-1`;
     const dead = supersededEntries([
-      entry(`${base}084da633e8372fd825f5a062c0883e576c5217d5-44261531405-1`, '2026-11-18T08:01:32Z'),
+      entry(
+        `${base}084da633e8372fd825f5a062c0883e576c5217d5-44261531405-1`,
+        '2026-11-18T08:01:32Z',
+      ),
       entry(older, '2026-11-18T06:08:19Z'),
       entry(oldest, '2026-11-18T06:02:09Z'),
       // Another language, and another query configuration: each its own newest.
-      entry(`${base.replace('javascript', 'actions')}${'a'.repeat(40)}-1-1`, '2026-11-18T01:00:00Z'),
-      entry(`${base.replace('c801913f1ee29663', '0123456789abcdef')}${'b'.repeat(40)}-1-1`, '2026-11-18T01:00:00Z'),
+      entry(
+        `${base.replace('javascript', 'actions')}${'a'.repeat(40)}-1-1`,
+        '2026-11-18T01:00:00Z',
+      ),
+      entry(
+        `${base.replace('c801913f1ee29663', '0123456789abcdef')}${'b'.repeat(40)}-1-1`,
+        '2026-11-18T01:00:00Z',
+      ),
     ]);
     expect(keys(dead)).toEqual([older, oldest]);
   });
@@ -63,5 +72,12 @@ describe('unit · a gh cache object is read, or refused', () => {
     );
     expect(entryOf({ id: 3, ref: 'r', key: 'k', created_at: 't' })).toBe(undefined);
     expect(entryOf(null)).toBe(undefined);
+  });
+});
+
+describe('unit · a delete that lost the race to eviction is no failure', () => {
+  test('a 404 is already gone; any other refusal is not', () => {
+    expect(alreadyGone('gh: Not Found (HTTP 404)')).toBe(true);
+    expect(alreadyGone('gh: Resource not accessible by integration (HTTP 403)')).toBe(false);
   });
 });

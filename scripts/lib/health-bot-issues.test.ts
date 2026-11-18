@@ -20,7 +20,10 @@ const issue = (number: number, label: string, updatedAt: string) => ({
 });
 const green = (createdAt: string) => [{ createdAt, url: 'run' }];
 const judge = (issues: unknown, greens: Record<string, unknown> = {}) =>
-  judgeBotIssues({ issues, greens: { 'registry-audit.yml': [], 'compat.yml': [], ...greens } });
+  judgeBotIssues({
+    issues,
+    greens: { 'registry-audit.yml': [], 'actions-cache.yml': [], 'compat.yml': [], ...greens },
+  });
 const verdict = (issues: unknown, greens: Record<string, unknown> = {}) => {
   const out = judge(issues, greens);
   return 'verdict' in out ? out.verdict : out.code;

@@ -6,8 +6,8 @@
 //   bun run scripts/actions-cache-prune.ts [--apply] [--json]
 
 import { isJsonObject } from '../packages/core/src/json-object';
-import { parseScriptArgs } from './lib/args';
-import type { Finding } from './lib/log';
+import { flagBool, parseScriptArgs } from './lib/args';
+import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
 import { ScriptError } from './lib/script-error';
@@ -66,7 +66,8 @@ export const supersededEntries = (entries: readonly CacheEntry[]): CacheEntry[] 
 export const entryOf = (value: unknown): CacheEntry | undefined => {
   if (!isJsonObject(value)) return undefined;
   const { id, ref, key, size_in_bytes: size, created_at: createdAt } = value;
-  if (typeof id !== 'number' || typeof ref !== 'string' || typeof key !== 'string') return undefined;
+  if (typeof id !== 'number' || typeof ref !== 'string' || typeof key !== 'string')
+    return undefined;
   if (typeof size !== 'number' || typeof createdAt !== 'string') return undefined;
   return { id, ref, key, sizeInBytes: size, createdAt };
 };
@@ -80,7 +81,14 @@ const apiFailed = (what: string, output: string): ScriptError =>
 
 const listEntries = async (root: string): Promise<CacheEntry[]> => {
   const listed = await run(
-    ['gh', 'api', '--paginate', 'repos/{owner}/{repo}/actions/caches?per_page=100', '--jq', '.actions_caches[]'],
+    [
+      'gh',
+      'api',
+      '--paginate',
+      'repos/{owner}/{repo}/actions/caches?per_page=100',
+      '--jq',
+      '.actions_caches[]',
+    ],
     { cwd: root },
   );
   if (!listed.ok) throw apiFailed('list the Actions caches', listed.output);
@@ -100,6 +108,41 @@ const listEntries = async (root: string): Promise<CacheEntry[]> => {
 
 const gb = (bytes: number): string => `${(bytes / 1e9).toFixed(2)} GB`;
 
+/** GitHub evicted the entry between the listing and the delete: the outcome wanted, not a failure. */
+export const alreadyGone = (output: string): boolean => /HTTP 404/.test(output);
+
+const overBudget = (kept: number): Finding => ({
+  code: 'X_ACTIONS_CACHE_OVER_BUDGET',
+  cause: `${gb(kept)} of Actions cache stays after pruning, over the ${gb(BUDGET_BYTES)} budget under GitHub's 10 GB cap: entries are evicted before CI restores them`,
+  fix: 'bun run scripts/actions-cache-prune.ts --json   # then add the largest superseded family to SUPERSEDED_PREFIXES, or shrink that cache',
+  at: 'scripts/actions-cache-prune.ts',
+});
+
+const prune = async (root: string, apply: boolean): Promise<ScriptResult> => {
+  const entries = await listEntries(root);
+  const dead = supersededEntries(entries);
+  for (const entry of apply ? dead : []) {
+    const deleted = await run(
+      ['gh', 'api', '-X', 'DELETE', `repos/{owner}/{repo}/actions/caches/${entry.id}`],
+      { cwd: root },
+    );
+    if (!deleted.ok && !alreadyGone(deleted.output)) {
+      throw apiFailed(`delete cache ${entry.id} (${entry.key})`, deleted.output);
+    }
+  }
+  const total = entries.reduce((sum, entry) => sum + entry.sizeInBytes, 0);
+  const freed = dead.reduce((sum, entry) => sum + entry.sizeInBytes, 0);
+  const kept = total - freed;
+  const findings = kept > BUDGET_BYTES ? [overBudget(kept)] : [];
+  return {
+    ok: findings.length === 0,
+    script: 'actions-cache-prune',
+    summary: `${apply ? 'deleted' : 'would delete'} ${dead.length} superseded of ${entries.length} cache entries (${gb(freed)}); ${gb(kept)} stays`,
+    findings,
+    data: { apply, total, freed, kept, superseded: dead.map((entry) => entry.key) },
+  };
+};
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2), {
     names: ['apply'],
@@ -110,39 +153,19 @@ if (import.meta.main) {
         fix: 'bun run scripts/actions-cache-prune.ts --json   # then --apply',
       }),
   });
-  const apply = args.flags.get('apply') === true;
-  const root = repoRoot();
-  const entries = await listEntries(root);
-  const dead = supersededEntries(entries);
-  for (const entry of apply ? dead : []) {
-    const deleted = await run(
-      ['gh', 'api', '-X', 'DELETE', `repos/{owner}/{repo}/actions/caches/${entry.id}`],
-      { cwd: root },
+  try {
+    report(await prune(repoRoot(), flagBool(args, 'apply')), args.json);
+  } catch (error) {
+    if (!(error instanceof ScriptError)) throw error;
+    const { code, cause, fix } = error;
+    report(
+      {
+        ok: false,
+        script: 'actions-cache-prune',
+        summary: 'the Actions cache could not be pruned',
+        findings: [{ code, cause, fix }],
+      },
+      args.json,
     );
-    if (!deleted.ok) throw apiFailed(`delete cache ${entry.id} (${entry.key})`, deleted.output);
   }
-  const total = entries.reduce((sum, entry) => sum + entry.sizeInBytes, 0);
-  const freed = dead.reduce((sum, entry) => sum + entry.sizeInBytes, 0);
-  const kept = total - freed;
-  const findings: Finding[] =
-    kept > BUDGET_BYTES
-      ? [
-          {
-            code: 'X_ACTIONS_CACHE_OVER_BUDGET',
-            cause: `${gb(kept)} of Actions cache stays after pruning, over the ${gb(BUDGET_BYTES)} budget under GitHub's 10 GB cap: entries are being evicted before they are restored`,
-            fix: `gh api --paginate 'repos/{owner}/{repo}/actions/caches?per_page=100' --jq '.actions_caches[] | [.size_in_bytes, .ref, .key] | @tsv' | sort -rn | head   # the largest family: a SUPERSEDED_PREFIXES row in scripts/actions-cache-prune.ts, or a smaller cache`,
-            at: 'scripts/actions-cache-prune.ts',
-          },
-        ]
-      : [];
-  report(
-    {
-      ok: findings.length === 0,
-      script: 'actions-cache-prune',
-      summary: `${apply ? 'deleted' : 'would delete'} ${dead.length} superseded of ${entries.length} cache entries (${gb(freed)}); ${gb(kept)} stays`,
-      findings,
-      data: { apply, total, freed, kept, deleted: dead.map((entry) => entry.key) },
-    },
-    args.json,
-  );
 }
