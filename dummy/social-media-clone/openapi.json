@@ -927,11 +927,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             },
-            "description": "X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1006,11 +1022,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             },
-            "description": "X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1085,11 +1117,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             },
-            "description": "X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1179,7 +1227,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1269,7 +1320,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1344,11 +1398,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             },
-            "description": "X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1423,11 +1493,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             },
-            "description": "X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1517,7 +1603,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1592,11 +1681,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             },
-            "description": "X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1671,11 +1776,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             },
-            "description": "X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1765,7 +1886,10 @@
                 }
               }
             },
-            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {
@@ -1840,11 +1964,27 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Problem"
+                    },
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "urn:ultimate:error:X_REPLAY_PRINCIPAL_MISMATCH"
+                          ]
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             },
-            "description": "X_REPLAY_PRINCIPAL_MISMATCH"
+            "description": "X_REPLAY_PRINCIPAL_MISMATCH",
+            "x-ultimate-errors": [
+              "X_REPLAY_PRINCIPAL_MISMATCH"
+            ]
           },
           "422": {
             "content": {

@@ -78,7 +78,7 @@ describe('declared errors in the OpenAPI operation', () => {
     registerActions({ publishPost: define(['X_OPENAPI_POST_LOCKED'], true) });
     const conflict = responsesOf()['409'];
     expect(conflict?.['description']).toBe(
-      'X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH | X_OPENAPI_POST_LOCKED',
+      'X_IDEMPOTENCY_CONFLICT | X_OPENAPI_POST_LOCKED | X_REPLAY_PRINCIPAL_MISMATCH',
     );
     expect(JSON.stringify(conflict)).not.toContain('enum');
   });

@@ -44,7 +44,7 @@ import { answerNatively, isNativeFormPost } from './native-answer';
 import { withDeclaredErrors } from './openapi-errors';
 import { assertActionRateLimit, fixedRateLimit } from './rate-limit-gate';
 import { carriesRecords, recordResponse } from './record-wire';
-import { assertReplayPrincipal } from './replay-scope';
+import { assertReplayPrincipal, REPLAY_REFUSAL } from './replay-scope';
 
 /** The digest a request's idempotency key names its write by; none for a missing or blank one. */
 async function writeOriginOf(req: UltimateRequest): Promise<string | undefined> {
@@ -270,8 +270,9 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       required: true,
       content: { 'application/json': { schema: { $ref: schemaRef(inputSchemaName(name)) } } },
     },
-    // The declared refusals join the framework's own, per status (`openapi-errors.ts`).
-    responses: withDeclaredErrors(def.errors, {
+    // The declared refusals join the framework's own, per status (`openapi-errors.ts`). The replay
+    // refusal is every action's: any of them may be a queued write replayed under another session.
+    responses: withDeclaredErrors([...new Set([...(def.errors ?? []), REPLAY_REFUSAL])], {
       // Only an output that references an entity row changes shape: every other operation's
       // bytes are the ones `x verify`'s contract diff already holds.
       '200': enveloped
@@ -300,12 +301,7 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       ),
       '422': problemResponse('X_BODY_INVALID'),
       '403': problemResponse('policy denied'),
-      // Every action: any of them may be a queued offline write replayed under another session.
-      '409': problemResponse(
-        idempotent
-          ? 'X_IDEMPOTENCY_CONFLICT | X_REPLAY_PRINCIPAL_MISMATCH'
-          : 'X_REPLAY_PRINCIPAL_MISMATCH',
-      ),
+      ...(idempotent ? { '409': problemResponse('X_IDEMPOTENCY_CONFLICT') } : {}),
     }),
     'x-ultimate': {
       capability: policyCapability(def.policy),
