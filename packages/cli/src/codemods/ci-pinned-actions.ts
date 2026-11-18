@@ -1,8 +1,7 @@
-// 31.43.0: the workflows `x new` writes run every action by commit SHA (`templates/github/
-// actions.ts`), and a checkout drops the job token before `bun install`. Read line by line, not as
-// the template's bytes: any tagged major of an action with a pin moves (two of nine adopters held
-// `@v5`), a SHA or an action with no pin is never touched, and a tagged line in a shape no line
-// edit reads safely (quoted, an inline `with:`) leaves the whole file the author's, with the diff.
+// 31.43.0: `x new`'s workflows run every action by commit SHA (`templates/github/actions.ts`) and
+// a checkout drops the job token before `bun install`. Line by line, so any tagged major moves
+// (`@v5` included); a SHA or an action with no pin is never touched, and a line no edit reads
+// safely (quoted, an inline `with:`) leaves the file the author's, with the diff.
 
 import { CACHE, CHECKOUT, DOWNLOAD_ARTIFACT, UPLOAD_ARTIFACT } from '../templates/github/actions';
 import { CI_WORKFLOW_PATH } from '../templates/github/ci.yml';
