@@ -50,6 +50,7 @@ describe('unit · a new measurement supersedes the last one', () => {
     expect(prShell).not.toContain('BRANCH="bench/');
     expect(prShell).toContain('git push --force');
     expect(prShell).toContain('gh pr list --head "$BRANCH" --state open');
+    expect(prShell).toContain('gh pr edit "$OPEN"');
     // The `exit 0` is what keeps an updated pull request from falling through to a refused create.
     expect(prShell).toMatch(/gh pr edit "\$OPEN" --body "\$BODY"\n\s+exit 0\n/);
     expect(prShell).toContain('if ! gh pr create');
