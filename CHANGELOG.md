@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- **The finish sweep (plan 101):** a replayed offline write is bound to the principal that queued it, the gate's `exercise` step gives the same verdict for the same code, scaffolded apps run their full CI weekly and open one issue on a scheduled failure, and every known gap, stub and exemption now carries a decision or is gone.
+
 ### Security
 
 - A replayed offline write is bound to the principal that queued it. A replay under another session is refused with 409 `X_REPLAY_PRINCIPAL_MISMATCH` and stays pending for its owner. Page replays are same-origin; a cross-origin caller behind a custom CORS `allowHeaders` must allow `x-ultimate-replay-scope`.
