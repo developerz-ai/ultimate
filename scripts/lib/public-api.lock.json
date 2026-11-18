@@ -1,6 +1,6 @@
 {
   "format": 2,
-  "version": "31.47.0",
+  "version": "31.47.1",
   "entries": {
     "@ultimat3/action": {
       "ACTION_ANSWER_COOKIE": {"hash":"0e5d26d4d453af41","shape":{"kind":"declaration","keyword":"const","head":"0e5d26d4"}},

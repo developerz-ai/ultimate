@@ -10,17 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-### Fixed
-
-- `x upgrade` no longer leaves `X_VERIFY_SUITE_VANISHED` on an app with pages but no `apps/web/site/page.tsx`. The `e2e` floor now follows the suite: codemod `e2e-suite-floor` writes a `page.e2e.test.ts` beside the shortest parameter-free page, and where no page can be visited it moves `e2e` to `skip` with the reason.
-- Codemod `test-ports` moves `docker/docker-compose.test.yml` and `docker/test-services.env` together or not at all. An edited or missing file used to leave the other on different ports; now each file still to change is reported with its diff.
-- Codemod `vendored-guards` recognises unedited guard copies from every release that shipped them, not only v31. Such a copy is now deleted and the shipped rule stays on, where it used to be kept as an app guard with the shipped rule off.
-- `x upgrade` on an app already at its target runs no codemod, so it no longer replays them from 0.0.0 and repeats old skips. Codemods an older CLI left behind (`X_UPGRADE_CODEMODS_PENDING`) are applied with `x upgrade codemods --from 0.0.0 --json`.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.47.1](docs/changelog/31.47.1.md) | 2026-11-18 | **`x upgrade` leaves an old app green:** an app with pages but no `site/page.tsx` gets a working e2e suite or a stated skip, `test-ports` moves both files or neither, old scaffold guard copies are recognised, and re-running at the target version changes nothing. |
 | [31.47.0](docs/changelog/31.47.0.md) | 2026-11-18 | **The finish sweep (plan 101):** a replayed offline write is bound to the principal that queued it, the gate's `exercise` step gives the same verdict for the same code, scaffolded apps run their full CI weekly and open one issue on a scheduled failure, and every known gap, stub and exemption now carries a decision or is gone. |
 | [31.46.0](docs/changelog/31.46.0.md) | 2026-11-18 | **One redirect path for a browser's form (D10):** the sign-in and invite actions `x g sign-in` and `x g invite` write answer a native form post through `native:` alone, and the hand-written `landAt()` helper is gone. The generated tests now post a real form through the HTTP pipeline. A fresh saas app gates green with no `X_NATIVE_FORM_UNANSWERED`. |
 | [31.45.0](docs/changelog/31.45.0.md) | 2026-11-18 | **Faster, steadier CI, and what the adopter rollout taught:** |
