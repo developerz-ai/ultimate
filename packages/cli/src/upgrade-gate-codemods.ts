@@ -130,22 +130,5 @@ export async function previewCodemods(
   return { codemods: { ...own, source: 'driver' }, superseded: await supersededFindings(root) };
 }
 
-/** Below every release: an app already at its target reruns every codemod, which are idempotent. */
+/** Below every release: a resumed hop reruns every codemod, which are idempotent. */
 export const EVERY_RELEASE = '0.0.0';
-
-/**
- * No version moves, and still no copy of an old template stays: every codemod up to the release
- * the app is on, through the installed CLI as a hop would (a dry run previews this CLI's list).
- * Each is idempotent, so one already applied is a run that changes nothing.
- */
-export async function atTargetCodemods(input: {
-  readonly runner: Runner;
-  readonly root: string;
-  readonly to: string;
-  readonly dryRun: boolean;
-}): Promise<{ readonly codemods: HopCodemods; readonly superseded: readonly Finding[] }> {
-  const { runner, root, to } = input;
-  if (input.dryRun) return previewCodemods(root, EVERY_RELEASE, to);
-  const codemods = await applyHopCodemods({ runner, root, from: EVERY_RELEASE, to });
-  return { codemods, superseded: await supersededFindings(root) };
-}

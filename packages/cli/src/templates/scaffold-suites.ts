@@ -61,6 +61,28 @@ e2eTest('/ loads in a browser and names itself', async ({ page }) => {
 });
 `;
 
+/**
+ * The suite `x upgrade` gives an app with no landing page, beside the page it visits. The status and
+ * never the title: an anonymous browser may be refused a page behind sign-in, which is the page
+ * working; a 5xx, or an app that does not boot, is what no app should ship.
+ */
+export const pageE2eSuite = (
+  url: string,
+): string => `// ${url} in a real browser, against the running app. A page behind sign-in may refuse this anonymous
+// visit, and that passes: what fails is a server error, or an app that does not boot. Sign in here
+// to assert more. Its own file because the gate types a test by its FILENAME.
+import { e2eTest, expect } from '@ultimat3/testing';
+
+e2eTest('${url} answers a browser without a server error', async ({ page }) => {
+  await page.goto('${url}');
+  const status = await page.evaluate(() => {
+    const [navigation] = performance.getEntriesByType('navigation');
+    return (navigation as PerformanceNavigationTiming).responseStatus;
+  });
+  expect(status).toBeLessThan(500);
+});
+`;
+
 /** The live suite, in the db package every scaffold writes. */
 export const liveSuiteFiles = (): readonly GeneratedFile[] => [
   { path: LIVE_SUITE_PATH, contents: liveSuite() },

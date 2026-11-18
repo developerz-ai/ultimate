@@ -1,34 +1,46 @@
 // 31.27.0: a scaffold's x.verify.json names every gate step — required in `steps`, or excused in
 // `skip` with its why — and sets `strict`. An older app gains the `skip` rows that hold for it
-// (roadmap; job with no job suite; e2e with no page). `strict` is 31.28.0's (`verify-floor-steps`).
+// (roadmap; job with no job suite; e2e with no suite to run). `strict` is 31.28.0's
+// (`verify-floor-steps`).
 
 import { isJsonObject } from '@ultimat3/core';
 import { floorSteps } from '../templates/scaffold-verify-floor';
 import { VERIFY_FLOOR_FILE } from '../verify-floor';
 import type { Codemod, CodemodApp } from './codemod';
+import type { E2eSuitePlan } from './e2e-suite';
+import { e2eSuitePlan, NO_STATIC_PAGE_WHY } from './e2e-suite';
 
 export type Floor = Record<string, unknown>;
 
 const any = async (app: CodemodApp, pattern: string): Promise<boolean> =>
   (await app.glob(pattern)).length > 0;
 
-/** What the app ships suites for, as `floorSteps` asks it: a job suite, a page to load. */
+/**
+ * What the app ships suites for, as `floorSteps` asks it: a job suite, and an e2e suite it holds or
+ * `test-suites` writes. Never "has a page": that required a suite no codemod had created.
+ */
 export async function floorSuites(
   app: CodemodApp,
 ): Promise<{ readonly jobs: boolean; readonly pages: boolean }> {
   return {
     jobs: await any(app, '{apps,packages}/**/*.job.test.ts'),
-    pages: await any(app, 'apps/*/{site,app}/**/page.tsx'),
+    pages: (await e2eSuitePlan(app)).kind !== 'none',
   };
 }
 
-/** The steps that cannot run in this app, each with the scaffold's own why. */
+/** Why `e2e` cannot run: no page at all is the scaffold's own row, pages with no URL are not. */
+export const e2eExcuse = (plan: E2eSuitePlan): string =>
+  plan.kind === 'none' && plan.pages
+    ? NO_STATIC_PAGE_WHY
+    : String(floorSteps({ jobs: false, pages: false }).skip.e2e);
+
+/** The steps that cannot run in this app, each with its why. */
 async function excused(app: CodemodApp): Promise<Readonly<Record<string, string>>> {
   const { jobs, pages } = await floorSuites(app);
   const why = floorSteps({ jobs: false, pages: false }).skip;
   const out: Record<string, string> = {};
   if (!jobs && why.job !== undefined) out['job'] = why.job;
-  if (!pages && why.e2e !== undefined) out['e2e'] = why.e2e;
+  if (!pages) out['e2e'] = e2eExcuse(await e2eSuitePlan(app));
   if (!(await app.exists('docs/idea/14-roadmap.md')) && why.roadmap !== undefined) {
     out['roadmap'] = why.roadmap;
   }
@@ -36,7 +48,7 @@ async function excused(app: CodemodApp): Promise<Readonly<Record<string, string>
 }
 
 /** `floor` with `skip` merged in, placed right after `steps` as the scaffold writes it. */
-function withSkip(floor: Floor, skip: Readonly<Record<string, string>>): Floor {
+export function withSkip(floor: Floor, skip: Readonly<Record<string, string>>): Floor {
   const merged = { ...(isJsonObject(floor['skip']) ? floor['skip'] : {}), ...skip };
   const out: Floor = {};
   for (const [key, value] of Object.entries(floor)) {

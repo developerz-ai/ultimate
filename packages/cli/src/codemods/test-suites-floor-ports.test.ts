@@ -171,14 +171,40 @@ describe('unit · codemod test-ports', () => {
     expect(await testPorts.run(app)).toEqual({ changed: [], skipped: [] });
   });
 
-  test('an edited file keeps its ports and is reported with the diff; its untouched twin moves', async () => {
+  test('an edited compose file holds the env file back too: both reported, neither moved', async () => {
     const edited = `${oldCompose()}# mine\n`;
     const app = memoryCodemodApp({ [TEST_ENV_PATH]: OLD_ENV, [TEST_COMPOSE_PATH]: edited });
     const result = await testPorts.run(app);
+    expect(result.changed).toEqual([]);
     expect(app.files[TEST_COMPOSE_PATH]).toBe(edited);
-    expect(result.skipped.map((skip) => skip.path)).toEqual([TEST_COMPOSE_PATH]);
+    expect(app.files[TEST_ENV_PATH]).toBe(OLD_ENV);
+    expect(result.skipped.map((skip) => skip.path)).toEqual([TEST_COMPOSE_PATH, TEST_ENV_PATH]);
     expect(result.skipped[0]?.diff).toContain("-    ports: ['127.0.0.1:55432:5432']");
-    expect(result.changed).toEqual([TEST_ENV_PATH]);
+    expect(result.skipped[1]?.diff).toContain('-TEST_DATABASE_URL=');
+    expect(result.skipped[1]?.reason).toContain(TEST_COMPOSE_PATH);
+  });
+
+  test('an edited env file holds the compose file back the same way', async () => {
+    const edited = `${OLD_ENV}# mine\n`;
+    const app = memoryCodemodApp({ [TEST_ENV_PATH]: edited, [TEST_COMPOSE_PATH]: oldCompose() });
+    const result = await testPorts.run(app);
+    expect(result.changed).toEqual([]);
+    expect(app.files[TEST_COMPOSE_PATH]).toBe(oldCompose());
+    expect(result.skipped.map((skip) => skip.path)).toEqual([TEST_COMPOSE_PATH, TEST_ENV_PATH]);
+  });
+
+  test('no compose file: the env file keeps the ports whatever serves them', async () => {
+    const app = memoryCodemodApp({ [TEST_ENV_PATH]: OLD_ENV });
+    const result = await testPorts.run(app);
+    expect(result.changed).toEqual([]);
+    expect(app.files[TEST_ENV_PATH]).toBe(OLD_ENV);
+    expect(result.skipped.map((skip) => skip.path)).toEqual([TEST_ENV_PATH]);
+  });
+
+  test('one file already at today’s ports: the old twin joins it', async () => {
+    const app = memoryCodemodApp({ [TEST_ENV_PATH]: OLD_ENV, [TEST_COMPOSE_PATH]: compose });
+    expect(await testPorts.run(app)).toEqual({ changed: [TEST_ENV_PATH], skipped: [] });
+    expect(app.files[TEST_ENV_PATH]).toBe(env);
   });
 
   test('a CRLF pair (a Windows checkout) moves too, and keeps CRLF', async () => {

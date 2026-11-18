@@ -1,6 +1,6 @@
 // The codemods an app still owes, for `x doctor`: an `x upgrade` driven by a CLI older than the
 // engine applied none, and the installed CLI's gate cannot write. A dry run of every codemod up to
-// this CLI's release names them; `x upgrade --json` at the target then applies them (idempotent).
+// this CLI's release names them; `x upgrade codemods --from 0.0.0` applies them (idempotent).
 
 import type { Finding } from '../output';
 import type { Codemod } from './codemod';
@@ -29,7 +29,7 @@ export async function pendingCodemodFindings(
     {
       code: CODEMODS_PENDING,
       cause: `${String(files.length)} file(s) still as an older scaffold wrote them, owed by ${owed.map((one) => `${one.id} (${one.since})`).join(', ')}: the x upgrade that installed ${to} ran under a CLI with no codemods — ${files.slice(0, 8).join(', ')}`,
-      fix: 'x upgrade --json   # on a clean tree; at the release it is on, it applies every codemod still owed',
+      fix: 'x upgrade codemods --from 0.0.0 --json   # applies every codemod still owed, up to this release',
       at: files[0] ?? '.',
     },
   ];

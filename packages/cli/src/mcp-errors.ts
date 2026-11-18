@@ -401,7 +401,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_REPRO_BUNDLE_INVALID:
     'x repro --json   # lists the failing jobs and error groups; then run it again with one id and --bundle, and attach the file it writes',
   X_ADVISORY_FLOOR_UNMET: 'bun update source-map-js immutable',
-  X_UPGRADE_CODEMODS_PENDING: 'x upgrade --json',
+  X_UPGRADE_CODEMODS_PENDING: 'x upgrade codemods --from 0.0.0 --json',
   X_UPGRADE_LOCKED: 'cat .x/upgrade.lock',
   X_APP_MIGRATIONS_UNAPPLIED: 'x db migrate --json',
 };
