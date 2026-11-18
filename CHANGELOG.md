@@ -10,6 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- **One redirect path for a browser's form (D10):** the sign-in and invite actions `x g sign-in` and `x g invite` write answer a native form post through `native:` alone, and the hand-written `landAt()` helper is gone. The generated tests now post a real form through the HTTP pipeline. A fresh saas app gates green with no `X_NATIVE_FORM_UNANSWERED`.
+
 ### Changed
 
 - `x g sign-in --password` and `x g invite` answer a browser's own form through one path: each action (`createSession`, `confirmSession`, `destroySession`, `inviteMember`, `acceptInvite`, `revokeInvite`) declares `native: { success: (output) => output.next }`, and the hand-rolled `landAt()` helper that sniffed `accept` and called `setRedirect` is gone. Each still returns `next` as data for the typed client and MCP, and its generated test posts the form through `httpServer` and asserts the 303, so a new `--shape saas` app gates with no `X_NATIVE_FORM_UNANSWERED` warning.
