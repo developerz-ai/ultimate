@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "aad89b6ccf57beb37e4e32ee5e1be82c4d4ce42b4f945359a9cdab6cc1fcffd2",
+  "buildId": "e88166ec2b241b76a9f3e613624a83953f62ca5c66cbc790a088570878c26533",
   "tiers": {
     "0": [
       "core",
@@ -303,6 +303,16 @@
       "code": "X_ACTION_UNREGISTERED",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_ACTIONS_CACHE_API_FAILED",
+      "owner": "scripts",
+      "at": "scripts/actions-cache-prune.ts"
+    },
+    {
+      "code": "X_ACTIONS_CACHE_OVER_BUDGET",
+      "owner": "scripts",
+      "at": "scripts/actions-cache-prune.ts"
     },
     {
       "code": "X_ADAPTER_PORT_INCOMPLETE",

@@ -16,6 +16,7 @@ import type { RunResult } from './run';
  */
 export const BOT_ALARMS: Readonly<Record<string, string | null>> = {
   'registry-drift': 'registry-audit.yml',
+  'actions-cache': 'actions-cache.yml',
   compat: 'compat.yml',
   'flake-hunt': null,
 };
