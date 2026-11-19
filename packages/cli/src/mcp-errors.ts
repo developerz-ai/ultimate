@@ -406,7 +406,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_APP_MIGRATIONS_UNAPPLIED: 'x db migrate --json',
   X_HEAVY_LEDGER_UNAVAILABLE: 'x heavy status --json',
   X_HEAVY_MEMORY_INVALID: 'export ULTIMATE_HEAVY_MEMORY=8g',
-  X_HEAVY_COMMAND_NOT_FOUND: 'x heavy run -- bun test',
+  X_HEAVY_COMMAND_NOT_FOUND: 'x heavy run --json -- bun test',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

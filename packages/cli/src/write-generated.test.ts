@@ -71,7 +71,7 @@ describe('unit · x new on disk', () => {
       expect(lstatSync(agents).isSymbolicLink()).toBe(true);
       expect(readlinkSync(agents)).toBe('CLAUDE.md');
       expect(lstatSync(join(root, 'CLAUDE.md')).isFile()).toBe(true);
-      expect(await Bun.file(agents).text()).toContain('`AGENTS.md` being a symlink to it');
+      expect(await Bun.file(agents).text()).toContain('`AGENTS.md` is a symlink to it');
     },
   );
 });

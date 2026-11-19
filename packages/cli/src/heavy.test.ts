@@ -128,7 +128,13 @@ describe.skipIf(NO_FLOCK)('withCheckoutLock', () => {
           appendFileSync(${JSON.stringify(log)}, '-${name}\\n');
         },
       );`;
-    const env = { ...Bun.env, ...envFor(dir), [HEAVY_HOLD_ENV]: join(dir, 'holds', 'parent') };
+    // `CI` cleared: a CI runner has no ledger, so there the lock under test would not be taken.
+    const env = {
+      ...Bun.env,
+      ...envFor(dir),
+      CI: '',
+      [HEAVY_HOLD_ENV]: join(dir, 'holds', 'parent'),
+    };
     const runs = ['a', 'b', 'c', 'd'].map((name) =>
       Bun.spawn(['bun', '-e', source(name)], { env, stdout: 'ignore', stderr: 'ignore' }),
     );

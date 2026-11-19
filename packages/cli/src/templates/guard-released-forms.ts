@@ -88,11 +88,11 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['3b0u9i8hze00x', 'error'],
   ],
   'undeclared-env': [
-    ['13k4amuxgsnla', 'error'],
-    ['1xkusngzbabza', 'error'],
-    ['2jbihvbp83mb4', 'error'],
-    ['3gsy96z8bgrrl', 'error'],
-    ['81vvl6xx5bb8', 'error'],
+    ['16pof11n1trhg', 'error'],
+    ['1f8kizielequo', 'error'],
+    ['2jb32jms80mge', 'error'],
+    ['2t3qtexnpfnyq', 'error'],
+    ['3gsoj050vbe69', 'error'],
   ],
   'undefined-style-class': [
     ['3food9t4vrzv8', 'error'],

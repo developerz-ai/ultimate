@@ -16,11 +16,9 @@
 // `release-due-flags.test.ts`, which owns the parser, the flag reader and the JSON envelope.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { type TempTree, tempTree } from '@ultimat3/testing';
 import { FETCH_MAIN, type GitRunner } from './lib/base-ref';
 import { git as gitIn } from './lib/release-due-git';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
@@ -30,9 +28,14 @@ import { decideAt, lastReleaseTag, readWindow, refreshTags } from './release-due
 // Each test spawns a dozen git processes.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-const madeDirs: string[] = [];
+const trees: TempTree[] = [];
+const ownedDir = (prefix: string): string => {
+  const tree = tempTree(prefix);
+  trees.push(tree);
+  return tree.path;
+};
 afterAll(async () => {
-  for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+  await Promise.all(trees.splice(0).map((tree) => tree.dispose()));
 });
 
 const HOUR = 3_600_000;
@@ -52,12 +55,10 @@ const CHANGELOG =
 
 /** A repository with one publishable package, released and tagged at 1.0.0 — or untagged. */
 async function released(options: { readonly tag: boolean } = { tag: true }) {
-  const dir = await mkdtemp(join(tmpdir(), 'release-due-'));
-  madeDirs.push(dir);
+  const dir = ownedDir('release-due-');
   // A bare upstream reachable as `origin`, so `baseRef()` resolves and `decideAt` can read
-  // both HEAD and the base SHA from the same fixture. Tracks in `madeDirs` for cleanup.
-  const upstream = await mkdtemp(join(tmpdir(), 'release-due-upstream-'));
-  madeDirs.push(upstream);
+  // both HEAD and the base SHA from the same fixture. Owned like `dir`.
+  const upstream = ownedDir('release-due-upstream-');
   // Through the one bounded, non-interactive git the script uses: no call here can outlive
   // GIT_TIMEOUT_MS or wait on stdin, whatever git or the machine is doing.
   const git = async (argv: readonly string[], hoursAgo = 72): Promise<string> => {

@@ -154,15 +154,20 @@ describe('unit · release-due-next · an open window proposes only a ready next'
   });
 });
 
-describe('unit · release-due-next · the brief keys one row per reason', () => {
-  test('the `data.nextLane.reason` table is the closed list, plus the proposal row', async () => {
+describe('unit · release-due-next · the brief states the major path', () => {
+  test('it acts on the proposal, and every reason it names is a real one', async () => {
     const brief = await Bun.file(join(repoRoot(), '.dz/briefs/release-due.md')).text();
-    const start = brief.indexOf('| `data.nextLane.reason` |');
-    expect(start, 'the next-lane table vanished from the brief').toBeGreaterThan(-1);
-    const rows = brief.slice(start).split('\n\n')[0]?.split('\n').slice(2) ?? [];
-    const keys = rows.map((row) => /^\| `([a-z_]+)` \|/.exec(row)?.[1] ?? row.slice(0, 40));
-    expect(keys.slice(0, -1).sort()).toEqual([...NEXT_LANE_REASONS].sort());
-    expect(rows.at(-1)).toContain('`data.nextLane.steps`');
-    expect(rows.at(-1)).toContain('`data.nextLane.prTitle`');
+    const start = brief.indexOf('## The major path: `data.nextLane`');
+    expect(start, 'the major path vanished from the brief').toBeGreaterThan(-1);
+    const section = brief.slice(start).split('\n## ')[0] ?? '';
+    for (const field of ['propose: true', 'prTitle', 'steps', 'reason']) {
+      expect(section).toContain(`\`data.nextLane.${field}`);
+    }
+    // Every other reason is "do nothing", so only a reason it singles out can go stale.
+    const named = [...section.matchAll(/`([a-z]+_[a-z_]+)`/g)].map((match) => match[1] ?? '');
+    expect(named.length).toBeGreaterThan(0);
+    expect(
+      named.filter((name) => !(NEXT_LANE_REASONS as readonly string[]).includes(name)),
+    ).toEqual([]);
   });
 });

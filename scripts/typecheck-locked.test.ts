@@ -1,10 +1,12 @@
 // The root `typecheck` script is the ledgered one: a raw `tsc -b` there would let an agent's compiler
 // race the gate's over one `dist/`, with no entry in the machine ledger to explain the memory.
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { typecheckArgv } from './typecheck-locked';
+
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 describe('unit · bun run typecheck', () => {
   test('the root script goes through the ledger, and no other script builds', async () => {
