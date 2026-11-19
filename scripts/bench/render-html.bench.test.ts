@@ -1,7 +1,7 @@
 // The SSR walker's big-page cost as a regression test (plan 101 slice 14 P1). One `async` frame and
 // one `Promise.all` per node made a 50k-row table ~30× a template string and allocate ~150–210 MiB.
-// Held as a RATIO to a template-string baseline timed in the same loop, never as wall-clock ms: a
-// shared CI runner slows both sides alike, and an absolute ceiling there is a flake, not a test.
+// Held as a RATIO of CPU time to a template-string baseline run in the same loop, never as wall-clock
+// ms: time spent waiting for a core on a shared machine is no cost of the walker's.
 
 import { describe, expect, test } from 'bun:test';
 import { renderToHtml } from '../../packages/render/src/render-html';

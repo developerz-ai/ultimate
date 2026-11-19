@@ -10,7 +10,23 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Added
+
 - **Many agents on one machine:** `x verify`, `x test`, every lane and `bun run coverage` reserve their measured memory in one flock-backed ledger per machine, first come first served, at most 4 cores locally; `x heavy status` and `x heavy run` expose it, and a new app's `CLAUDE.md` says a worker runs its own files and the coordinator runs the gate once ([Working with many agents](wiki/Many-Agents.md)).
+- `setCookie(line)` in `@ultimat3/http` sets a line `@ultimat3/auth` returned, so an action can issue a session cookie.
+- `MAIL_TIMEOUT_MS` sets the SMTP read/write deadline for an env-selected driver.
+- `usesDefaultRedisClient`, and the `cache.tier.default-redis` boot warning.
+- `x drill roll-before-migrate` plays sync and replicator when their services are set.
+
+### Changed
+
+- `lruTier` and `redisTier` refuse a bad `jitterFraction` at construction; cache limit fixes name `cacheTiers` in `runtime.ts`.
+- A scaffolded agent brief runs `bunx x verify --only typecheck`, which queues in the machine ledger, in place of a raw `bun run typecheck`.
+
+### Fixed
+
+- The replicator no longer crash-loops on an app that declares a view entity.
+- `x upgrade` runs `bun update` for a transitive package `bun.lock` holds under an advisory floor, so an upgraded app no longer keeps the vulnerable version until someone acts on `x doctor`'s warning.
 
 ## Releases
 

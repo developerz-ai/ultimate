@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d76d3f3dbc355e2b5e0d9bfba52d692729411bfae29c77561fccd09b0c7f30ec",
+  "buildId": "5248ed420bc65e1a777442f8c4ec60569c994b44c3354f91ff1125aa5e737fe1",
   "tiers": {
     "0": [
       "core",
@@ -2718,6 +2718,21 @@
       "code": "X_HEALTH_ROW_UNREADABLE",
       "owner": "scripts",
       "at": "scripts/health.ts"
+    },
+    {
+      "code": "X_HEAVY_COMMAND_NOT_FOUND",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-tooling.ts"
+    },
+    {
+      "code": "X_HEAVY_LEDGER_UNAVAILABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-tooling.ts"
+    },
+    {
+      "code": "X_HEAVY_MEMORY_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_HELPER_COPY",

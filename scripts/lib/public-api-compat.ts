@@ -93,6 +93,9 @@ function declarationChange(
 
 type Signature = Extract<ApiShape, { kind: 'function' }>;
 
+const sameHeading = (one: Signature, next: Signature): boolean =>
+  next.head === one.head || next.constHead === one.head;
+
 const signaturesOf = (shape: ApiShape | undefined): readonly Signature[] | undefined =>
   shape?.kind === 'function' ? [shape] : shape?.kind === 'overloads' ? shape.signatures : undefined;
 
@@ -109,7 +112,7 @@ function callShapes(was: ApiShape, now: ApiShape | undefined): ApiChange | undef
     // The FIRST overload that accepts the call is the one TypeScript resolves it against: a wider
     // one put in front answers every existing call with its own return, whatever follows it.
     const first = current.find(
-      (next) => next.head === one.head && params(one.params, next.params).kind !== 'break',
+      (next) => sameHeading(one, next) && params(one.params, next.params).kind !== 'break',
     );
     if (first === undefined) {
       return breaks(
@@ -120,7 +123,7 @@ function callShapes(was: ApiShape, now: ApiShape | undefined): ApiChange | undef
     const later = current.slice(current.indexOf(first) + 1);
     const shadowed = later.some(
       (next) =>
-        next.head === one.head &&
+        sameHeading(one, next) &&
         next.returns === one.returns &&
         params(one.params, next.params).kind !== 'break',
     );

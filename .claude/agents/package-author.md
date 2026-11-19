@@ -68,8 +68,9 @@ Run `bun run boundaries` and read the failures rather than adding an exception.
 `bun run boundaries` after every structural change — it is fast and it is the whole point of your
 role. `bun test ./packages/<name>/` for the package (with the `./`: a bare `packages/<name>` is a
 substring filter that also runs the tracked apps' same-named packages). **Do not run
-`bun run verify` or `bun run manifest`** unless you are working alone, and `bun run typecheck` only
-under the run's `flock` lock; those are shared state and the coordinator owns them.
+`bun run verify` or `bun run manifest`** unless you are working alone, and `bun run typecheck` once,
+when otherwise done (it queues for the checkout's one compiler); the first two are shared state and
+the coordinator owns them.
 
 No git writes — reads only. Never commit.
 

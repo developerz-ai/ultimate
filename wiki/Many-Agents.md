@@ -16,7 +16,7 @@ One ledger per machine and user, at `/tmp/ultimate-heavy-<uid>`, shared by every
 
 | Enters the ledger | Reserves |
 |---|---|
-| `tsc -b` of a monorepo (`x verify`'s `typecheck`, `bun run typecheck:locked`) | 6,016 MB, plus this checkout's one-compiler lock |
+| `tsc -b` of a monorepo (`x verify`'s `typecheck`, `bun run typecheck` at this repository's root) | 6,016 MB, plus this checkout's one-compiler lock |
 | `tsc -p .` of an app (`x verify --only typecheck`) | 768 MB, plus the same lock |
 | `biome check .` (`x verify --only lint`) | 2,112 MB |
 | every batch of `bun test` workers (`x test`, `x verify`'s suites) | 704 MB + 1,280 MB per worker |
@@ -24,9 +24,9 @@ One ledger per machine and user, at `/tmp/ultimate-heavy-<uid>`, shared by every
 | one coverage unit (`bun run coverage`), one heavy `bun run preflight` step | 704 MB + 1,280 MB per worker |
 | anything under `x heavy run` | `--mb`, default a monorepo typecheck |
 
-**What does not enter it, stated:** a bare `bun test ./path`; `x test` selecting 3 files or fewer; an app's own `bun run typecheck` and `bun run lint` scripts (raw `tsc` and `biome`); `bun run typecheck` at this repository's root; `x build`, including the one `budgets` runs; the `drift`, `exercise` and `contract-diff` steps; `x dev`; the test services in Docker; the agent sessions themselves. Those are why only half the memory is offered.
+**What does not enter it, stated:** a bare `bun test ./path`; `x test` selecting 3 files or fewer; an app's own `bun run typecheck` and `bun run lint` scripts (raw `tsc` and `biome`: a scaffolded agent brief says `bunx x verify --only typecheck` instead); `x build`, including the one `budgets` runs; the `drift`, `exercise` and `contract-diff` steps; `x dev`; the test services in Docker; the agent sessions themselves. Those are why only half the memory is offered.
 
-Every entry is an `flock(2)`, and a holder hands the locked descriptor to its workload, so the kernel frees a reservation only when the holder **and** the workload are gone. Kill a wrapper with `kill -9` and its reservation lasts until the command it started exits; a killed waiter leaves the queue at once. A daemon left running by a killed run keeps its reservation until it stops, and `x heavy status` names the run.
+Every entry is an `flock(2)`, and a holder hands the locked descriptor to the command it starts, so the kernel frees a reservation only when the holder **and** that command are gone. Kill a wrapper with `kill -9` and its reservation lasts until the command it started exits; a killed waiter leaves the queue at once. Descendants keep it only by inheritance: a shell's background job does, and a process started through `Bun.spawn` or `node:child_process` does not, because both close the descriptor. So a daemon a shell left running keeps the reservation until it stops (`x heavy status` names the run), and workers a killed `bun` command leaves behind are unaccounted. `As of 2026-11-18`, Bun 1.4.4.
 
 ```sh
 x heavy status            # who runs, who waits, load, memory

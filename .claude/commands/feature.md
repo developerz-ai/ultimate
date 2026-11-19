@@ -46,12 +46,12 @@ Hive for **search** (a broad sweep wanting conclusions) or **scale** (path-separ
 |---|---|---|
 | lint | `bunx @biomejs/biome check <its files>` | `bun run lint` |
 | tests | `bun test ./packages/<pkg>/src/<file>.test.ts`, `-t '<name>'` only with a path — always the `./` | part of `verify` |
-| typecheck | once when done: `mkdir -p node_modules/.cache/<run> && flock node_modules/.cache/<run>/tsc.lock bun run typecheck` | part of `verify` |
+| typecheck | once when done: `bun run typecheck` | part of `verify` |
 | boundaries | only if it added a cross-package import: `bun run boundaries` | part of `verify` |
 | manifest | never | `bun run manifest`, once, after every agent is done |
 | the gate | never | `bun run verify`, in the background |
 
-`tsc -b` and the manifest are shared state: concurrent typechecks interleave `.tsbuildinfo`/`dist/` writes into errors nobody owns (`flock` is util-linux, absent on macOS). Never hand a worker `bun run test:affected`: the dirty tree is everyone's, so "affected" is the monorepo.
+`tsc -b` and the manifest are shared state: `bun run typecheck` serialises the compiler per checkout, because concurrent runs interleave `.tsbuildinfo`/`dist/` writes into errors nobody owns. Never hand a worker `bun run test:affected`: the dirty tree is everyone's, so "affected" is the monorepo.
 
 ### Every brief carries all of these
 

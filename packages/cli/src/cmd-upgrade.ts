@@ -11,6 +11,7 @@ import { runUpgradeCodemods } from './cmd-upgrade-codemods';
 import { upgradeSpec } from './cmd-upgrade-spec';
 import type { CliCommand, CommandContext } from './command';
 import { failed, ok } from './command';
+import { staleTransitiveFloors } from './doctor-advisory-floors';
 import { supersededFindings } from './doctor-superseded';
 import { BadFlagError, BunVersionError } from './errors';
 import type { Runner } from './exec';
@@ -86,15 +87,27 @@ async function planWrites(input: {
   return { files, edited, manual };
 }
 
-/** `bun install`, or the refusal carrying the one command that undoes what was just written. */
-async function install(runner: Runner, root: string, to: string): Promise<void> {
-  const result = await runner([process.execPath, 'install'], { cwd: root });
+/** One `bun` step of the install, or the refusal carrying the command that undoes the pins. */
+async function installStep(
+  runner: Runner,
+  root: string,
+  to: string,
+  args: readonly string[],
+): Promise<void> {
+  const result = await runner([process.execPath, ...args], { cwd: root });
   if (result.ok) return;
   throw new UltimateError({
     code: 'X_UPGRADE_INSTALL_FAILED',
-    cause: `bun install exited ${String(result.code)} after pinning ${to}: ${execOutput(result).slice(-800) || 'no output'}`,
+    cause: `bun ${args.join(' ')} exited ${String(result.code)} after pinning ${to}: ${execOutput(result).slice(-800) || 'no output'}`,
     fix: 'git restore .   # undoes the pins, since the tree was clean; then fix what the cause names and re-run: x upgrade --json',
   });
+}
+
+/** `bun install` keeps what the lockfile resolves, so a patched transitive release is asked for. */
+async function install(runner: Runner, root: string, to: string): Promise<void> {
+  await installStep(runner, root, to, ['install']);
+  const stale = await staleTransitiveFloors(root);
+  if (stale.length > 0) await installStep(runner, root, to, ['update', ...stale]);
 }
 
 const stageLine = (stage: string): string => JSON.stringify({ upgrade: stage });

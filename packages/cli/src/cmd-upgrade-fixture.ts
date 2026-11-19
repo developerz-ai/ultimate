@@ -46,6 +46,16 @@ export const emptyFixture = (): string => owned('ultimate-upgrade-noapp-');
 
 const GUARD = 'guards/no-raw-colors.ts';
 
+/** A lockfile with one transitive package under its advisory floor and one already past it. */
+export const STALE_ADVISORY_LOCK = `{
+  "lockfileVersion": 1,
+  "packages": {
+    "immutable": ["immutable@5.1.3", "", {}, "sha512-x"],
+    "source-map-js": ["source-map-js@1.2.3", "", {}, "sha512-x"],
+  },
+}
+`;
+
 /** An app with pins, committed; `{ repository: false }` writes the same tree and never runs git. */
 export const fixture = async (
   files: Readonly<Record<string, string>> = {},
@@ -150,6 +160,8 @@ interface Script {
   readonly registryCode?: number;
   readonly engines?: string;
   readonly installCode?: number;
+  /** `bun update <advisory packages>`'s exit code. */
+  readonly updateCode?: number;
   readonly doctor?: string;
   readonly exercise?: string;
   readonly exerciseCode?: number;
@@ -221,6 +233,9 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
     const only = args[2] === '--only' ? ` --only ${args[3] ?? ''}` : '';
     const label = args[0]?.endsWith('bin.ts') ? `x ${args[1]}${only}` : args.slice(0, 2).join(' ');
     spawned.push(label);
+    if (args[0] === 'update') {
+      return answer(command, '', script.updateCode ?? 0, 'error: registry unreachable');
+    }
     switch (label) {
       case 'pm view':
         if ((script.registryCode ?? 0) !== 0) {

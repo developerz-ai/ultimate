@@ -9,6 +9,9 @@ export type TemplateCodemodRow =
   | { readonly template: string; readonly since: string; readonly codemod: string }
   | { readonly template: string; readonly since: string; readonly none: string };
 
+const BRIEF_TYPECHECK_WHY =
+  "an agent brief now names bunx x verify --only typecheck, which queues in the machine ledger; an existing app's brief still names bun run typecheck, which keeps working, and its .claude files are the app's to edit, so x upgrade leaves them alone";
+
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
   {
@@ -18,6 +21,36 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   },
   { template: 'CLAUDE.md', since: '31.48.0', codemod: 'docs-many-agents' },
   { template: 'AGENTS.md', since: '31.48.0', codemod: 'docs-many-agents' },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude-agents.ts',
+    since: '31.48.0',
+    none: BRIEF_TYPECHECK_WHY,
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-claude-commands.ts',
+    since: '31.48.0',
+    none: BRIEF_TYPECHECK_WHY,
+  },
+  {
+    template: '.claude/agents/data.md',
+    since: '31.48.0',
+    none: BRIEF_TYPECHECK_WHY,
+  },
+  {
+    template: '.claude/agents/server.md',
+    since: '31.48.0',
+    none: BRIEF_TYPECHECK_WHY,
+  },
+  {
+    template: '.claude/agents/web.md',
+    since: '31.48.0',
+    none: BRIEF_TYPECHECK_WHY,
+  },
+  {
+    template: '.claude/commands/feature.md',
+    since: '31.48.0',
+    none: BRIEF_TYPECHECK_WHY,
+  },
   {
     template: 'packages/cli/src/templates/github/ci.yml.ts',
     since: '31.47.0',

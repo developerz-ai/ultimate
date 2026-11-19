@@ -104,6 +104,14 @@ function localShapes(lines: readonly string[]): Record<string, LocalShape> {
   );
 }
 
+/** One line of an overload set, carrying the heading the same name has as an arrow `const`. */
+function overloadOf(words: readonly string[], localLines: readonly string[]) {
+  const shape = structural(words, localLines);
+  if (shape?.kind !== 'function' || words[0] !== 'function') return shape;
+  const heading = ['const', words[1], ':', ...words.slice(2, topLevel(words, '(', 2))].join(' ');
+  return { ...shape, constHead: shortDigest([heading, localLines.join('\n')].join('\n')) };
+}
+
 /**
  * The shape of one symbol's text as `symbolReader` builds it: its own declaration(s), then any
  * `local …` lines. Overloads, merged declarations, enums, namespaces and every type this cannot
@@ -121,7 +129,7 @@ export function shapeOf(text: string): ApiShape {
     }
     if (shaped !== undefined) return shaped;
   }
-  const signatures = own.map((line) => structural(tokenize(line), localLines));
+  const signatures = own.map((line) => overloadOf(tokenize(line), localLines));
   if (own.length > 1 && signatures.every((one) => one?.kind === 'function')) {
     return { kind: 'overloads', signatures: signatures.filter((one) => one?.kind === 'function') };
   }

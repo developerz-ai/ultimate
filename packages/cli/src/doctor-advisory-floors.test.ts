@@ -7,7 +7,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reportDoctor } from './cmd-doctor';
 import { probe } from './cmd-doctor-fixture';
-import { ADVISORY_FLOOR_UNMET, advisoryFloorFindings } from './doctor-advisory-floors';
+import {
+  ADVISORY_FLOOR_UNMET,
+  advisoryFloorFindings,
+  staleTransitiveFloors,
+} from './doctor-advisory-floors';
 
 const roots: string[] = [];
 afterAll(async () => {
@@ -34,6 +38,25 @@ async function app(lockText: string | undefined): Promise<string> {
   if (lockText !== undefined) await Bun.write(join(root, 'bun.lock'), lockText);
   return root;
 }
+
+describe('unit · the transitive packages x upgrade refreshes', () => {
+  test('names only a transitive package under its floor', async () => {
+    const root = await app(
+      lock({
+        'solid-js': 'solid-js@1.9.0',
+        immutable: 'immutable@5.1.3',
+        'source-map-js': 'source-map-js@1.2.2',
+      }),
+    );
+    expect(await staleTransitiveFloors(root)).toEqual(['immutable']);
+  });
+
+  test('a nested copy under its floor counts, and no lockfile names nothing', async () => {
+    const nested = await app(lock({ 'sass/immutable': 'immutable@5.0.0' }));
+    expect(await staleTransitiveFloors(nested)).toEqual(['immutable']);
+    expect(await staleTransitiveFloors(await app(undefined))).toEqual([]);
+  });
+});
 
 describe('unit · x doctor advisory floors', () => {
   test('a patched tree is quiet', async () => {
