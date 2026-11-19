@@ -209,7 +209,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` (the ONE install), `JOBS_TABLE_STORAGE` (fillfactor 80), the hot tables' autovacuum as `tableStorage()` in `JOBS_STORAGE`, drift-checked. Comments carry no `;` and no `'` |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
 | `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled`, told beside the claim pass (`burialTeller`) and started only inside its debt's grace |
-| `retry.ts` / `retry-default.ts` | the dead-letter decision over core's `backoffDelay`; the app's default (`jobs.maxAttempts`/`backoff`), resolved when `handle.retry` is READ |
+| `retry.ts` / `retry-default.ts` | the dead-letter decision over core's `backoffDelay`; the app's default (`jobs.maxAttempts`/`backoff`), resolved when `handle.retry` is READ; `DEFAULT_RETRY.attempts` is core's `JOBS_MAX_ATTEMPTS_DEFAULT` |
 | `retry-classification.ts` | the other half: what the thrown error says, and the stop reason |
 | `retry-jitter.ts` | `retry.jitter` refused at `job()` unless a `JitterMode` (a v30 boolean names its mapping) |
 | `execute-unwind.ts` / `execute-ctx.ts` | a saga failed for good; caller ctx |
@@ -241,8 +241,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `counters.ts` / `counter-batch.ts` | bucket arithmetic, `nackOutcome`, the memory counters; the pg driver's per-process batch, flushed every 10 s and on close |
 | `driver-memory-operator.ts` / `driver-pg-operator.ts` | each driver's operator members |
 | `progress.ts` / `settled.ts` / `redact-input.ts` | the progress throttle; the `onSettled` runner; a payload as an operator reads it |
-| `settled-types.ts` / `driver-settle.ts` / `settle-redrive.ts` / `scheduler-upkeep.ts` | what `onSettled` is handed; the settle fence and the `onSettled` debt contract; the leader's re-drive of lost debts; the leader's cadence (counter fold, re-drive) |
-| `driver-memory-settle.ts` / `driver-pg-settle-debt.ts` / `driver-redis-settle.ts` | the `onSettled` debt per driver: a map, `x_jobs.settle_owed`, the `owed` ZSET — held equal by `@ultimat3/testing`'s `SETTLE_DEBT_CHECKS` |
+| `settled-types.ts` / `*settle*.ts` / `scheduler-upkeep.ts` | `onSettled`'s input, fence and debt (one per driver, held equal by `SETTLE_DEBT_CHECKS`); the leader's re-drive and cadence † |
 | `scheduler-state.ts` | `SchedulerState`, `fire`, `readWatermarks` (one read a round), the memory watermark |
 | `scheduler-leader.ts` / `scheduler-occurrences.ts` | `LeaderElection` + `soleLeader`; which occurrences fall in a window |
 | `idle-backoff.ts` / `enqueue-signal.ts` | the wait both polling loops share, and the rest (`restAfter`); the two wake signals and `wakeIsLive` |

@@ -8,6 +8,7 @@ import {
   DRAIN_DEADLINE_DEFAULT_MS,
   finiteCount,
   isUltimateError,
+  laterHooksReserveMs,
   WORKER_DRAIN_DEADLINE_MAX_MS,
   WORKER_RETIRE_DEFAULT_MS,
 } from '@ultimat3/core';
@@ -27,7 +28,8 @@ type WorkerDrain = Pick<Partial<DrainConfig>, 'deadlineMs' | 'workerDeadlineMs' 
 
 /**
  * The retire when on, for it aborts nothing; else when a SIGTERM drain CANCELS a held job, which is
- * the cut-off's `cancelAt` (`worker-drain-cutoff.ts`), a margin before the deadline itself.
+ * the cut-off's `cancelAt` (`worker-drain-cutoff.ts`): a margin before core's in-flight wait ends,
+ * which is itself the later hooks' reserve before the deadline (`ShutdownReason.inflightUntil`).
  */
 export function workerBudgetMs(drain: WorkerDrain | undefined): number {
   // Screened here, not trusted: `defineConfig` screens an app's config, but this is exported, and a
@@ -44,7 +46,7 @@ export function workerBudgetMs(drain: WorkerDrain | undefined): number {
     drain?.workerDeadlineMs ?? drain?.deadlineMs ?? DRAIN_DEADLINE_DEFAULT_MS,
     1,
   );
-  return cutoffTimes(deadline, 0).cancelAt;
+  return cutoffTimes(deadline, 0, deadline - laterHooksReserveMs(deadline)).cancelAt;
 }
 
 function outlastsFinding(job: BudgetedJob, limitMs: number, budgetMs: number): Finding {

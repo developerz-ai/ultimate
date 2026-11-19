@@ -6,7 +6,7 @@ import { installedBuildId } from './build-id';
 import { type Clock, systemClock } from './clock';
 import type { ReadinessMode } from './config-health';
 import { assertReadinessMode } from './config-health';
-import { DRAIN_DEADLINE_DEFAULT_MS } from './drain-deadline';
+import { DRAIN_DEADLINE_DEFAULT_MS, laterHooksReserveMs as reserveOf } from './drain-deadline';
 import { UltimateError } from './errors';
 import { finiteCount } from './finite-option';
 import { settleWithin } from './lifecycle-deadline';
@@ -288,7 +288,7 @@ function remainingBudget(reason: ShutdownReason): number {
 /** The slice of the budget kept for `inflight` and `close` hooks: a fifth, at most 2s; none without one. */
 function laterHooksReserveMs(): number {
   if (!registrations.some((entry) => entry.phase !== 'accept')) return 0;
-  return Math.min(2_000, Math.floor(deadlineMs / 5));
+  return reserveOf(deadlineMs);
 }
 
 async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<void> {

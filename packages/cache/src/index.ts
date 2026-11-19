@@ -102,6 +102,11 @@ export {
   tagMatches,
   tagsIntersect,
 } from './tags';
+export {
+  assertFiniteCapacity,
+  assertFiniteDurationMs,
+  assertFiniteSimilarityFloor,
+} from './tier-bounds';
 export type { TierOperation } from './tier-failures';
 export { bestEffort } from './tier-failures';
 export type { FenceVerdict, TierFence } from './tier-fence';
@@ -119,9 +124,6 @@ export type {
   TtlScope,
 } from './tiers';
 export {
-  assertFiniteCapacity,
-  assertFiniteDurationMs,
-  assertFiniteSimilarityFloor,
   assertTtl,
   cacheStack,
   DEFAULT_LOAD_DEADLINE_MS,

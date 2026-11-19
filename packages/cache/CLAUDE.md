@@ -11,7 +11,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 ## Rules
 
 - **A tier's own LIMIT is screened where `app.config.ts` names it** — `assertFiniteCapacity`,
-  `assertFiniteDurationMs`, `assertFiniteSimilarityFloor`, beside `assertTtl` in `tiers.ts`, all
+  `assertFiniteDurationMs`, `assertFiniteSimilarityFloor` (`tier-bounds.ts`; `assertTtl` is in `tiers.ts`), all
   raising `X_CACHE_LIMIT_INVALID`. A `NaN` limit makes every comparison false, so the guard switches
   itself off (no eviction, no similarity floor). Never `Math.max(1, x)` in front: a clamp is not a
   validator. **The `Finite` in the names is load-bearing** — `bun run finite-bounds` recognises a
@@ -205,6 +205,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `tags.ts` | `tag` factory, wire form, match semantics, `tagKeys`, declared-tag registry |
 | `graph.ts` | tag → dependents (cache keys, ISR routes, CDN paths, live queries) |
 | `tiers.ts` | `CacheTier`, `TierLabel`, `assertTtl`, read-through stack |
+| `tier-bounds.ts` | `assertFiniteCapacity` / `assertFiniteDurationMs` / `assertFiniteSimilarityFloor`: a tier's other screened knobs |
 | `fence.ts` | the invalidation fence a fill (here or in `query`) checks before it publishes |
 | `tier-leading.ts` | which fence each in-flight load holds, and whether a reader may join it |
 | `tier-fence.ts` | `TierFence`/`FenceVerdict`, and how a fill samples and asks a shared tier's fence |

@@ -128,7 +128,7 @@ helm upgrade app docker/helm --set roles.worker.retireSeconds=7200 \
   --set drain.workerDeadlineSeconds=7500   # 2 h worker; `x deploy --method helm` sets both itself
 ```
 
-**`x verify` holds the job to it**: a job whose declared `timeout` exceeds the worker's budget (`drain.workerRetireMs` when above 0, else `drain.workerDeadlineMs`, else `drain.deadlineMs`) reds the `manifest` step with `X_JOB_OUTLASTS_DRAIN`, naming the job, its limit and the budget. A job with no `timeout` is not graded.
+**`x verify` holds the job to it**: a job whose declared `timeout` exceeds the worker's budget (`drain.workerRetireMs` when above 0, else when the drain cancels a held job: `drain.workerDeadlineMs`, else `drain.deadlineMs`, less the later hooks' reserve and the 2 s cut-off margin — 21 s of 25 s, `As of 2026-11-19`) reds the `manifest` step with `X_JOB_OUTLASTS_DRAIN`, naming the job, its limit and the budget. A job with no `timeout` is not graded.
 
 **Compose stays SIGTERM with `stop_grace_period`**: it has no `preStop`, and a SIGKILL mid-job is worse than a handed-back claim, so size `stop_grace_period` to the drain as below. It is the single-node rung, and makes no such claim → [scale ladder](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md).
 

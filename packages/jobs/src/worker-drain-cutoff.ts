@@ -3,6 +3,7 @@
 // effect it interrupted. Only near the end of the drain budget is what is still running told to
 // stop (`cancel`), and a beat later what is still held goes back to the queue (`handBack`).
 
+import type { ShutdownReason } from '@ultimat3/core';
 import { logger, renderThrowable, systemClock } from '@ultimat3/core';
 import type { DrainBudget } from './drain-wait';
 import { JobDrainedError } from './errors';
@@ -104,27 +105,30 @@ export function armDrainCutoff(
 export function armWorkerCutoff(input: {
   readonly budget: DrainBudget;
   readonly workerId: string;
-  /** The shutdown's signal name, carried on the reason the bodies read. */
-  readonly signal: string;
+  /** The shutdown that armed it: its signal name rides the reason the bodies read, and core's
+   *  `inflightUntil` is where the cut-off measures back from (`cutoffTimes`). */
+  readonly shutdown: ShutdownReason;
   readonly drain: AbortController;
   readonly held: HeldRuns;
-  /** `deadlineAt − inflightUntil` of the shutdown that armed it (`cutoffTimes`). */
-  readonly reserveMs: number;
 }): DrainCutoff {
-  const { workerId, held } = input;
+  const { workerId, held, shutdown } = input;
+  const reserveMs = Math.max(
+    0,
+    shutdown.deadlineAt - (shutdown.inflightUntil ?? shutdown.deadlineAt),
+  );
   return armDrainCutoff(
     input.budget,
     {
       cancel: () => {
         if (held.size > 0)
           logger.warn('jobs.worker.drain-cancelling', { workerId, held: held.size });
-        input.drain.abort(new JobDrainedError({ workerId, signal: input.signal }));
+        input.drain.abort(new JobDrainedError({ workerId, signal: shutdown.signal }));
       },
       handBack: async () => {
         const handed = await held.handBackAll();
         if (handed > 0) logger.warn('jobs.worker.drain-handed-back', { workerId, handed });
       },
     },
-    input.reserveMs,
+    reserveMs,
   );
 }

@@ -59,6 +59,7 @@ export const FRAMEWORK_ENV: readonly FrameworkEnvName[] = [
   ...contract('cli', 'PGSSLMODE'),
   ...toggles('cli', 'OTEL_SDK_DISABLED'),
   ...internal('cli', 'ULTIMATE_SEED_TIER', 'ULTIMATE_STATE_DIR', 'ULTIMATE_BUILD_CAPTURE'),
+  ...internal('cli', 'ULTIMATE_TASK_RUN'),
   ...internal('cli', 'ULTIMATE_DEV_CHILD', 'ULTIMATE_DEV_SUPERVISOR_PID', 'X_ENV'),
   ...internal('cli', 'ULTIMATE_KEEP_GLOBAL_CLI', 'ULTIMATE_VERIFY_STEP', 'CI_RUNNER'),
   ...host('cli', 'CI', 'GITHUB_SHA', 'GITHUB_BASE_REF', 'EDITOR', 'VISUAL', 'USERPROFILE'),

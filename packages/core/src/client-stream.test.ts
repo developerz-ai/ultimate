@@ -5,11 +5,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { IDEMPOTENCY_HEADER } from './client-dispatch';
 import { rescope } from './client-scope';
-import { clientStream, takeFrames } from './client-stream';
+import { clientStream } from './client-stream';
 import { failure, fakeFetch, heldFetch, json, recordingSink } from './client-transport-fixture';
 import { isUltimateError } from './errors';
 import { RECORDS_HEADER } from './record-envelope';
 import { sessionIsLost } from './session-lost';
+import { takeFrames } from './sse-frames';
 import { DATES_HEADER, wireDatePaths } from './wire-dates';
 
 afterEach(() => {

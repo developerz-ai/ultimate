@@ -216,6 +216,7 @@ export function scrape<I, Row>(definition: ScrapeDefinition<I, Row>): JobHandle<
     input: definition.input,
     idempotencyKey: definition.idempotencyKey,
     tenant: definition.tenant,
+    // The identity sentinel `@ultimat3/jobs`' `resolvedRetry` reads as "declares none".
     retry: definition.retry ?? DEFAULT_RETRY,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),

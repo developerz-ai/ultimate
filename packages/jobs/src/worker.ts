@@ -28,8 +28,7 @@ import { type ClaimAnswer, createClaimSweep } from './worker-claim-sweep';
 import { armWorkerCutoff, type DrainCutoff } from './worker-drain-cutoff';
 import { assertConcurrencyEnforceable, createFleetSlots } from './worker-fleet-slots';
 import { createHeldRuns } from './worker-held';
-import type { ClaimLoop } from './worker-loop';
-import { createClaimLoop, fillsAsk } from './worker-loop';
+import { type ClaimLoop, createClaimLoop, fillsAsk } from './worker-loop';
 import { resolveWorkerTimings } from './worker-options';
 import { createProcessCap } from './worker-process-cap';
 import { createQueueDepthPublisher } from './worker-queue-depth';
@@ -341,11 +340,9 @@ export function jobWorker(options: WorkerOptions): Worker {
     cutoff = armWorkerCutoff({
       budget,
       workerId,
-      signal: shutdown.signal,
+      shutdown, // core owns the instant its in-flight wait ends; the cut-off lands a margin before
       drain: drainSignal,
       held: inFlight,
-      // Core owns the instant its in-flight wait ends; the cut-off lands a margin before it.
-      reserveMs: Math.max(0, shutdown.deadlineAt - (shutdown.inflightUntil ?? shutdown.deadlineAt)),
     });
   };
 

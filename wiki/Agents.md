@@ -544,7 +544,7 @@ export async function writeThenFix(ctx: Ctx, problem: string): Promise<{ title: 
 | Before | After |
 |---|---|
 | tools, system prompt (stable block, per-run block) | **the same bytes** — the provider's cached prefix survives |
-| first user message: the rendered prompt | the prompt verbatim, then one `[compacted: N earlier turns …]` text block holding the summary |
+| first user message: the rendered prompt | the prompt verbatim, then one `[compacted: N earlier turns …]` text block holding the summary, then the user's own text from summarised turns, ≤ 8,000 chars in total across every compaction (`KEPT_USER_CHARS`, newest kept first). `As of 2026-11-19` |
 | turns 1 … N−k | gone — folded into the summary |
 | the last `keepTurns` turns (each an assistant message and the user message answering its tool calls) | **the same bytes** — no tool call is ever separated from its result |
 

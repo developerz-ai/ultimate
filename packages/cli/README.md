@@ -34,6 +34,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
 | `x actions` / `x queries` / `x entities` | the declaration registries | `list` and `show <name>`, straight off the registries |
 | `x tasks list\|show` | cron tasks | timezone and next run, off `registeredTasks()` |
+| `x tasks run <name>` | fire a task now | its jobs onto the app's queue (`TaskHandle.enqueue()`); under `ULTIMATE_ENV=production` only with `--production` or `ULTIMATE_TASK_RUN=<name>`, else `X_TASK_RUN_PRODUCTION` |
 | `x jobs list\|show\|retry\|cancel\|delete\|promote\|pause\|resume` | the queue | depth, dead letters, step traces, `retry --from-step`, `cancel --reason`; `list --json` pages as `rows`/`nextCursor`/`hasMore`; `drain` is planned (`X_NOT_IMPLEMENTED`) |
 | `x test [type]` | one of the six test types, or all | same type rule as the gate; `--filter`, `--sample N` |
 | `x env check\|example\|init` | the typed environment `envSchema` declares; `init --production` writes `.env.production` for a compose deploy, secrets generated, never printed | and the `.env.example` rendered from it, plus the framework's deploy-required secrets (`ULTIMATE_CURSOR_SECRET`, `STORAGE_SIGNING_SECRET` unless `S3_ENDPOINT` is set), which `check` asks for wherever the boot refuses them — outside `development`/`test`, or with no environment named |

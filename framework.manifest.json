@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "93058c71c6f55c6e741a0ae67486ab19331d2b5c440e61062f9694a10d07fc75",
+  "buildId": "0194ad3a677f4631040ceba425489ab9a58d64ed5f4aecbf784d9f48714ca212",
   "tiers": {
     "0": [
       "core",
@@ -6183,6 +6183,11 @@
       "code": "X_SYNC_UNCONFIGURED",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_TASK_RUN_PRODUCTION",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_TELEMETRY_SAMPLER_ARG_INVALID",

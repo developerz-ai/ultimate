@@ -152,3 +152,10 @@ as it stood, verbatim; the package file keeps a one-line rule marked `†`. Wher
 | `driver-pg-operator-sql.ts` / `driver-pg-settle-sql.ts` | their statements; `SQL_ACK` / `SQL_NACK` (no counter since 31.13.0) and `SQL_COUNTER_FLUSH`, the batch `counter-batch.ts` writes |
 | `driver-pg-outbox-sql.ts` | the `x_outbox` statements |
 | `driver-pg-demand-sql.ts` | `QUEUE_DEMAND_ROWS` and `SQL_QUEUE_DEMAND`; the scaler fixture's `SQL_SCALER_DEMAND` reads the same predicate |
+
+## Files rows merged: `onSettled` (2026-11-19)
+
+| File | Owns |
+|---|---|
+| `settled-types.ts` / `driver-settle.ts` / `settle-redrive.ts` / `scheduler-upkeep.ts` | what `onSettled` is handed; the settle fence and the `onSettled` debt contract; the leader's re-drive of lost debts; the leader's cadence (counter fold, re-drive) |
+| `driver-memory-settle.ts` / `driver-pg-settle-debt.ts` / `driver-redis-settle.ts` | the `onSettled` debt per driver: a map, `x_jobs.settle_owed`, the `owed` ZSET — held equal by `@ultimat3/testing`'s `SETTLE_DEBT_CHECKS` |

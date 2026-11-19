@@ -11,41 +11,11 @@ import { settleAnswer } from './client-transport';
 import { notifyClientWrite } from './client-writes';
 import { RECORDS_HEADER } from './record-envelope';
 import { pageClient } from './record-sink';
+import { takeFrames } from './sse-frames';
 import { DATES_HEADER, reviveWireDates } from './wire-dates';
 
 /** What `clientStream` reads: a write's request, never a raw body or a flight. */
 export type StreamRequest = StreamDispatch;
-
-interface Frame {
-  readonly event: string;
-  readonly data: string;
-  /** The `x-ultimate-dates` value for this frame's data, when the server named any. */
-  readonly dates?: string;
-}
-
-/** Splits a growing buffer into complete frames; the incomplete tail is handed back. */
-export function takeFrames(buffer: string): { readonly frames: Frame[]; readonly rest: string } {
-  const frames: Frame[] = [];
-  const blocks = buffer.split(/\r?\n\r?\n/);
-  const rest = blocks.pop() ?? '';
-  for (const block of blocks) {
-    let event = 'message';
-    let dates: string | undefined;
-    const data: string[] = [];
-    for (const line of block.split(/\r?\n/)) {
-      // A `:` line is a comment — the server's keep-alive.
-      if (line.startsWith(':')) continue;
-      if (line.startsWith('event:')) event = line.slice(6).trim();
-      else if (line.startsWith('dates:')) dates = line.slice(6).trim();
-      else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
-    }
-    if (data.length > 0) {
-      const text = data.join('\n');
-      frames.push(dates === undefined ? { event, data: text } : { event, data: text, dates });
-    }
-  }
-  return { frames, rest };
-}
 
 export async function* clientStream<TChunk = unknown, TOutput = unknown>(
   req: StreamRequest,

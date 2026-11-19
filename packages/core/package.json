@@ -33,6 +33,7 @@
     "./adapter": "./src/adapter.ts",
     "./page": "./src/page.ts",
     "./internal/error-status": "./src/error-status-declared.ts",
+    "./internal/sse-frames": "./src/sse-frames.ts",
     "./outbound": "./src/outbound-subpath.ts",
     "./redis": "./src/redis-client.ts",
     "./render-node": "./src/render-node.ts",

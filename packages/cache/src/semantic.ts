@@ -13,9 +13,8 @@ import {
   assertFiniteCapacity,
   assertFiniteDurationMs,
   assertFiniteSimilarityFloor,
-  assertTtl,
-  nowMs,
-} from './tiers';
+} from './tier-bounds';
+import { assertTtl, nowMs } from './tiers';
 import { decodeCacheValue, encodeCacheValue } from './value-codec';
 
 export type Embedding = readonly number[];

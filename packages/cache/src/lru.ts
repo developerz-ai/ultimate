@@ -9,6 +9,7 @@ import { utf8ByteLength } from './byte-length';
 import { CacheTooLargeError } from './errors';
 import type { CacheTag } from './tags';
 import { serializeTag } from './tags';
+import { assertFiniteCapacity, assertFiniteDurationMs } from './tier-bounds';
 import type {
   CacheEntry,
   CacheSetOptions,
@@ -17,13 +18,7 @@ import type {
   TierInvalidation,
   TtlJitter,
 } from './tiers';
-import {
-  assertFiniteCapacity,
-  assertFiniteDurationMs,
-  assertJitterFraction,
-  assertTtl,
-  nowMs,
-} from './tiers';
+import { assertJitterFraction, assertTtl, nowMs } from './tiers';
 import { decodeCacheValue, encodeCacheValue } from './value-codec';
 
 export interface LruOptions {

@@ -108,6 +108,49 @@ const sourceFiles = async (): Promise<readonly string[]> => {
 
 const read = (path: string): Promise<string> => Bun.file(`${repoRoot()}/${path}`).text();
 
+interface Entry {
+  readonly path: string;
+  readonly source: string;
+}
+
+/** Every file a value of a package's `exports` map names, conditions included, repo-relative. */
+const entryPaths = (pkg: string, exports: unknown): readonly string[] => {
+  if (typeof exports === 'string') return [`packages/${pkg}/${exports.replace(/^\.\//, '')}`];
+  if (exports === null || typeof exports !== 'object') return [];
+  return Object.values(exports).flatMap((value: unknown) => entryPaths(pkg, value));
+};
+
+const packageEntries = async (): Promise<readonly Entry[]> => {
+  const entries: Entry[] = [];
+  for (const manifest of new Bun.Glob('packages/*/package.json').scanSync({ cwd: repoRoot() })) {
+    const pkg = manifest.split('\\').join('/').split('/')[1] ?? '';
+    const parsed = (await Bun.file(`${repoRoot()}/${manifest}`).json()) as { exports?: unknown };
+    for (const path of entryPaths(pkg, parsed.exports)) {
+      if (path.endsWith('.ts') && (await Bun.file(`${repoRoot()}/${path}`).exists())) {
+        entries.push({ path, source: await read(path) });
+      }
+    }
+  }
+  return entries;
+};
+
+/**
+ * Can an app import it? Only through an entry of the package that declares it: the entry IS the
+ * declaring module, or names the function (re-exports are explicit — no `export *`, CLAUDE.md). A
+ * helper a package's modules share and no entry names is internal, never a factory.
+ */
+export const importable = (
+  found: { readonly factory: string; readonly at: string },
+  entries: readonly Entry[],
+): boolean => {
+  const pkg = found.at.split('/')[1];
+  const named = new RegExp(`\\b${found.factory.replace(/\$/g, '\\$')}\\b`);
+  return entries.some(
+    (entry) =>
+      entry.path.split('/')[1] === pkg && (entry.path === found.at || named.test(entry.source)),
+  );
+};
+
 /**
  * Every type that IS an `Action`/`JobHandle`, to a fixpoint. One hop is not enough and never was:
  * `llm()` returns `LlmAction`, which `extends Action` — so a scan keyed on the two root names alone
@@ -164,7 +207,10 @@ export function factoriesIn(
 const files = await sourceFiles();
 const sources = await Promise.all(files.map(read));
 const kinds = primitiveTypes(sources);
-const declared = files.flatMap((path, index) => factoriesIn(path, sources[index] as string, kinds));
+const entries = await packageEntries();
+const declared = files
+  .flatMap((path, index) => factoriesIn(path, sources[index] as string, kinds))
+  .filter((found) => importable(found, entries));
 
 const rowFor = (name: string) => PRIMITIVE_FACTORIES.find((entry) => entry.factory === name);
 
@@ -328,6 +374,33 @@ describe('unit · the scan itself can fail', () => {
     expect(ships('src/job.test.ts', unshippedGlobs({}))).toBe(false);
     expect(files).not.toContain('packages/jobs/src/operator-surface-fixture.ts');
     expect(files).toContain('packages/jobs/src/backfill.ts');
+  });
+
+  /**
+   * `factoryJob()` (`packages/jobs/src/job.ts`) returns a `JobHandle` and is exported from its
+   * module for the package's own factories, but no entry of `@ultimat3/jobs` names it: an app
+   * cannot import it, so it is no factory and needs no row. A function an entry re-exports is one.
+   */
+  test('an export no package entry names is internal; one an entry names is a factory', () => {
+    const entries = [
+      { path: 'packages/jobs/src/index.ts', source: "export { backfill } from './backfill';\n" },
+      { path: 'packages/scraping/src/cdp.ts', source: 'export function cdpAt() {}\n' },
+    ];
+    expect(importable({ factory: 'backfill', at: 'packages/jobs/src/backfill.ts' }, entries)).toBe(
+      true,
+    );
+    expect(importable({ factory: 'factoryJob', at: 'packages/jobs/src/job.ts' }, entries)).toBe(
+      false,
+    );
+    // A subpath that IS the declaring module exports everything in it.
+    expect(importable({ factory: 'cdpAt', at: 'packages/scraping/src/cdp.ts' }, entries)).toBe(
+      true,
+    );
+    // Named in ANOTHER package's entry is not this package's export.
+    expect(importable({ factory: 'backfill', at: 'packages/ai/src/backfill.ts' }, entries)).toBe(
+      false,
+    );
+    expect(declared.map((entry) => entry.factory)).not.toContain('factoryJob');
   });
 
   test('a DeviceSocket-returning export is a route factory', () => {

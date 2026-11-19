@@ -360,8 +360,17 @@
  * (`define-driver`, `driver-{counters,delete,kit-types,repo-reads,repo-writes,scope,
  * versioned-write,write-scope}.ts`) — `action/src/tx-scope.ts` now reads `memoryTxOpen` off
  * `@ultimat3/entity/adapter`, which evaluates the whole subpath barrel.
+ * lowered 1011 → 1003, measured 1003 (2026-11-19, r9 final integration, metafile walk against
+ * origin/main's 989): `memoryTxOpen` moved to the one-export leaf `@ultimat3/entity/internal/
+ * memory-tx` (`entity/src/memory-tx-entry.ts`), so the driver kit left this graph (−10, +1), and
+ * `cache/src/tier-bounds.ts` (+1) is `tiers.ts` split at its 500-line ceiling (the three
+ * `assertFinite*` screens). The 14 modules on this graph since origin/main, every one named:
+ * `cache/src/{shared-scopes,tier-bounds}.ts`, `cli/src/{app-config-load,runtime-database-ssl,
+ * runtime-jobs}.ts`, `db/src/{column-drop,migrate-dev-fix}.ts`, `entity/src/{instant-range,
+ * memory-tx-entry,pg-sql-in,uuid-text}.ts`, `http/src/{fault-report,wire-dates-cap}.ts`,
+ * `jobs/src/retry-default.ts`.
  */
-export const MIGRATE_CEILING = 1011;
+export const MIGRATE_CEILING = 1003;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

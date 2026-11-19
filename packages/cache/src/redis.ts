@@ -23,6 +23,7 @@ import { DEFAULT_REDIS_COMMAND_TIMEOUT_MS, withinDeadline } from './redis-deadli
 import { bumpGenerations, sampleGenerations } from './redis-fence';
 import type { CacheTag } from './tags';
 import { parseTag, serializeTag } from './tags';
+import { assertFiniteCapacity, assertFiniteDurationMs } from './tier-bounds';
 import type {
   CacheEntry,
   CacheSetOptions,
@@ -31,13 +32,7 @@ import type {
   TierInvalidation,
   TtlJitter,
 } from './tiers';
-import {
-  assertFiniteCapacity,
-  assertFiniteDurationMs,
-  assertJitterFraction,
-  assertTtl,
-  nowMs,
-} from './tiers';
+import { assertJitterFraction, assertTtl, nowMs } from './tiers';
 import { decodeCacheValue, encodeCacheValue } from './value-codec';
 
 /** The slice of Bun's Redis client this tier uses. Narrow on purpose: easy to fake in tests. */

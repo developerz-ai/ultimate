@@ -305,5 +305,9 @@
  * Nothing web-only.
  * raised 1758 → 1762, measured 1762 (2026-11-19, r9 verification fixes): the four on
  * `SERVING_ROLE_CEILING`. Nothing web-only.
+ * raised 1762 → 1764, measured 1764 (2026-11-19, r9 final integration, metafile walk against
+ * origin/main's 1748): the two on `SERVING_ROLE_CEILING`, `entity/src/memory-tx-entry.ts` and
+ * `cache/src/tier-bounds.ts`. Since origin/main: exactly the 16 that `SERVING_ROLE_CEILING` names.
+ * Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1762;
+export const WEB_ROLE_CEILING = 1764;

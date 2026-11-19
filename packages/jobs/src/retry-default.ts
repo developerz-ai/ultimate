@@ -41,7 +41,9 @@ export function resolvedRetry(declared: RetryPolicy | undefined): RetryPolicy {
   // `=== DEFAULT_RETRY` is the identity sentinel this replaces, kept ONLY so the factories outside
   // this package that still pass `definition.retry ?? DEFAULT_RETRY` (`@ultimat3/notify`'s
   // `notifier.ts`, `@ultimat3/scraping`'s `scrape.ts`) keep the app's default until they pass
-  // `undefined`. Delete it with the last of them; nothing in this package relies on it.
+  // `undefined`. They cannot yet: the public `job()` refuses `retry: undefined`, and widening
+  // `JobDefinition.retry` is a public-shape change that waits on `next`. Delete it with the last
+  // of them; nothing in this package relies on it.
   if (declared === undefined || declared === DEFAULT_RETRY)
     return { ...DEFAULT_RETRY, ...installed };
   if (installed === undefined) return { ...DEFAULT_RETRY, ...declared };

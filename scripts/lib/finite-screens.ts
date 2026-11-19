@@ -14,7 +14,7 @@
 //   the `??` out of the call (the evasion this rule exists to refuse), or a rename. It renamed.
 //   THREE SHIPPED FILES now carry a comment saying the spelling is load-bearing —
 //   `packages/jobs/src/clock.ts`, `packages/auth/src/policy-numbers.ts` and
-//   `packages/cache/src/tiers.ts` ("the `Finite` in all three names here is load-bearing"). A gate
+//   `packages/cache/src/tier-bounds.ts` ("the `Finite` in all three names here is load-bearing"). A gate
 //   that dictates identifiers in three packages is a gate designing the code.
 //
 //   A NON-SCREEN READ AS A REPAIR. `InfiniteScroll(` matched `[\w$]*[Ff]inite[\w$]*` — a SolidJS
@@ -77,7 +77,8 @@ export const SCREENING_CALLEES: readonly FiniteScreen[] = [
   },
   {
     callee: 'assertFiniteCapacity',
-    screens: 'cache/src/tiers.ts — a tier ceiling, where a bad one evicts nothing rather than all',
+    screens:
+      'cache/src/tier-bounds.ts — a tier ceiling, where a bad one evicts nothing rather than all',
   },
   {
     callee: 'assertFiniteCount',
@@ -85,7 +86,8 @@ export const SCREENING_CALLEES: readonly FiniteScreen[] = [
   },
   {
     callee: 'assertFiniteDurationMs',
-    screens: "cache/src/tiers.ts — a driver's request budget, which AbortSignal.timeout throws on",
+    screens:
+      "cache/src/tier-bounds.ts — a driver's request budget, which AbortSignal.timeout throws on",
   },
   {
     callee: 'assertFiniteImageQuality',
@@ -110,7 +112,7 @@ export const SCREENING_CALLEES: readonly FiniteScreen[] = [
   {
     callee: 'assertFiniteSimilarityFloor',
     screens:
-      'cache/src/tiers.ts — the semantic floor, where NaN deletes the boundary rather than moves it',
+      'cache/src/tier-bounds.ts — the semantic floor, where NaN deletes the boundary rather than moves it',
   },
   {
     callee: 'assertFiniteToleranceMs',

@@ -350,5 +350,14 @@
  * `db/src/migrate-dev-fix.ts`, `cache/src/shared-scopes.ts` and `http/src/wire-dates-cap.ts` (the
  * three on `MIGRATE_CEILING`) and `cli/src/runtime-cache-frame.ts` (the bust frame's codec, split
  * from `runtime-cache.ts`). `runtime-jobs.ts` and the entity driver kit were already on this graph.
+ * raised 1562 → 1564, measured 1564 (2026-11-19, r9 final integration, metafile walk against
+ * origin/main's 1548): `entity/src/memory-tx-entry.ts` (`memoryTxOpen`'s one-export leaf, v-arch
+ * F13: off the barrel, and off `/adapter`, whose driver kit is ten modules) and
+ * `cache/src/tier-bounds.ts` (`tiers.ts` split at its 500-line ceiling). The 16 modules on this
+ * graph since origin/main, every one named: `auth/src/mfa-handoff.ts`, `cache/src/{shared-scopes,
+ * tier-bounds}.ts`, `cli/src/{role-select,runtime-cache-frame,runtime-cache-ttl,
+ * runtime-database-ssl}.ts`, `db/src/{column-drop,migrate-dev-fix}.ts`, `entity/src/{instant-range,
+ * memory-tx-entry,pg-sql-in,uuid-text}.ts`, `http/src/{fault-report,wire-dates-cap}.ts`,
+ * `jobs/src/retry-default.ts`.
  */
-export const SERVING_ROLE_CEILING = 1562;
+export const SERVING_ROLE_CEILING = 1564;

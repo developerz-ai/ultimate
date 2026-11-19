@@ -136,7 +136,9 @@ export const sso = identityProviderRoutes(auth, {
 A user with a second factor is sent to `mfaPath` (303) with the sealed challenge in the
 `__Host-x_mfa` cookie; that page finishes with
 `completeMfa(auth, readMfaChallenge(request) ?? '', code)`. `oauthLogin(auth, { mfaPath })` is the
-same option.
+same option. The write half is exported too — `mfaChallengeOf`, `mfaChallengeCookie`,
+`MFA_CHALLENGE_COOKIE` — so a password sign-in holds its challenge in the same cookie
+(`x g sign-in --password` does, `As of 2026-11-19`).
 
 `defineAuth({ providers })` lists both ids; an unknown or not-enabled id is `X_IDENTITY_PROVIDER_UNKNOWN` (404).
 

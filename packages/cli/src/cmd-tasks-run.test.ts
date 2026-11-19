@@ -1,6 +1,6 @@
 // `x tasks run <name>`: a scheduled task fired now, through the task's own manual-run path — the
 // jobs its occurrence would enqueue land on the app's queue, the result names each one, and a
-// production environment asks for it by flag. Driven against `@ultimat3/jobs`' real registries.
+// production environment asks for it by flag (or, in a container, by `ULTIMATE_TASK_RUN`). Driven against `@ultimat3/jobs`' real registries.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API; `requireAppRoot` needs an app root on disk.
@@ -159,13 +159,31 @@ describe('unit · x tasks run', () => {
     const thrown = await rejectedBy(() =>
       tasksCommand.run(contextFor(appRoot(), ['nightlyDigest'], { env })),
     );
-    expect(thrown.code).toBe('X_CLI_BAD_FLAG');
+    // `x db seed`'s refusal form: its own code (the argv was well formed, the answer is still no),
+    // the container's env-var half named in the cause, the explicit flag line as the fix.
+    expect(thrown.code).toBe('X_TASK_RUN_PRODUCTION');
     expect(thrown.cause).toContain('production');
+    expect(thrown.cause).toContain('ULTIMATE_TASK_RUN=nightlyDigest');
     expect(thrown.fix).toBe('x tasks run nightlyDigest --production --json');
     expect(await driver.introspect?.list({})).toEqual([]);
     const asked = await tasksCommand.run(
       contextFor(appRoot(), ['nightlyDigest'], { env, flags: { production: true } }),
     );
+    expect(asked.ok).toBe(true);
+    expect(await driver.introspect?.list({})).toHaveLength(2);
+  });
+
+  test('a container whose command line is fixed names the task in ULTIMATE_TASK_RUN', async () => {
+    registerDigest();
+    const other = { ULTIMATE_ENV: 'production', ULTIMATE_TASK_RUN: 'weeklyReport' };
+    const thrown = await rejectedBy(() =>
+      tasksCommand.run(contextFor(appRoot(), ['nightlyDigest'], { env: other })),
+    );
+    // Naming another task consents to nothing: the variable says which task this deploy fires.
+    expect(thrown.code).toBe('X_TASK_RUN_PRODUCTION');
+    expect(await driver.introspect?.list({})).toEqual([]);
+    const named = { ULTIMATE_ENV: 'production', ULTIMATE_TASK_RUN: 'nightlyDigest' };
+    const asked = await tasksCommand.run(contextFor(appRoot(), ['nightlyDigest'], { env: named }));
     expect(asked.ok).toBe(true);
     expect(await driver.introspect?.list({})).toHaveLength(2);
   });

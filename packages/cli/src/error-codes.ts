@@ -236,6 +236,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_GUARD_BUILT_IN',
   'X_REPRO_BUNDLE_INVALID',
   'X_APP_MIGRATIONS_UNAPPLIED',
+  'X_TASK_RUN_PRODUCTION',
 ] as const;
 
 /**
@@ -464,6 +465,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_REPRO_BUNDLE_INVALID: 'the file is not a repro bundle this version can open',
   X_APP_MIGRATIONS_UNAPPLIED:
     'a serving role booted over a database missing migrations this build ships',
+  X_TASK_RUN_PRODUCTION: 'x tasks run refused to fire a task in production unasked',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

@@ -402,6 +402,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_HEAVY_LEDGER_UNAVAILABLE: 'x heavy status --json',
   X_HEAVY_MEMORY_INVALID: 'export ULTIMATE_HEAVY_MEMORY=8g',
   X_HEAVY_COMMAND_NOT_FOUND: 'x heavy run --json -- bun test',
+  // `X_SEED_ENVIRONMENT`'s form: which task to consent to is what this table cannot know, and the
+  // raised error's own `fix:` carries the named invocation; `ULTIMATE_TASK_RUN` stays in the cause.
+  X_TASK_RUN_PRODUCTION:
+    'x tasks list --json   # then name the task: x tasks run <name> --production --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

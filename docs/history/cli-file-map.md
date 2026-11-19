@@ -350,3 +350,15 @@ which bus carries cache/ISR invalidations: transport if it crosses processes, el
 ## `page-speculation.ts` (moved 2026-11-15)
 
 Speculation Rules for documents WITHOUT the router (`navigation.speculation`): an allow-list of pure-read pages
+
+## `dev-lock-live.ts` / `db-{migrate,rollback}-pass.ts` / `dev-db-*.ts` (moved 2026-11-19)
+
+a live `x dev` on the embedded database runs `x db migrate|rollback` itself (`POST /_x/db/…`), then rebuilds; `x db reset|status|diagnostics|recount|seed`, `backfill --write`, `x jobs` writes, `x tasks run` and `x auth seal-mfa` refuse, the fix stopping it first
+
+## `codemods/` / `cmd-upgrade-codemods.ts` / `upgrade-gate-codemods.ts` (moved 2026-11-19)
+
+a template change an app keeps, carried by a codemod (`codemod.ts`, the ONE list `codemods/index.ts`); the hop's installed CLI applies them before its gate; `scripts/template-codemods.ts` refuses one with none
+
+## `framework-schema-verify.ts` / `-wait.ts` / `app-migrations-verdict.ts` / `serve-boot-probe.ts` (moved 2026-11-19)
+
+a serving role behind its schema (stamp or app ledger) WAITS, `ULTIMATE_SCHEMA_WAIT_MS`, probe port up; a newer major refuses at once

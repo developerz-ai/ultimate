@@ -20,7 +20,8 @@ export const tasksSpec: CommandSpec = {
     {
       name: 'production',
       type: 'boolean',
-      summary: 'run: fire it where ULTIMATE_ENV resolves production — real work, asked for by name',
+      summary:
+        'run: fire it where ULTIMATE_ENV resolves production — real work, asked for by name; also ULTIMATE_TASK_RUN=<name>',
       subcommands: ['run'],
     },
   ],

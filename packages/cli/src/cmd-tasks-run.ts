@@ -2,39 +2,51 @@
 // app's queue — so a cron job is exercised in dev without waiting for its cron or editing it.
 // Through the task's own manual-run path (`TaskHandle.enqueue`), the one the admin's run-now uses.
 
-import { isProduction } from '@ultimat3/core';
+import { isProduction, UltimateError } from '@ultimat3/core';
 import type { TaskHandle } from '@ultimat3/jobs';
 import type { CommandContext } from './command';
 import { refuseEmbeddedWriteBesideDev } from './dev-lock-live';
-import { BadFlagError } from './errors';
 import { withJobDriver } from './jobs-driver';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { flagBool } from './parse';
 import { quoteArg } from './shell-quote';
 
+/** The container's half of the consent: the task this deploy fires, named, as a fixed argv can. */
+export const TASK_RUN_ENV = 'ULTIMATE_TASK_RUN';
+
 /**
  * Does this environment fire only when asked by name? `x db seed`'s production gate, mirrored: the
  * same predicate (`ULTIMATE_ENV` resolved `production`; staging runs unasked, as a `dev` seed does;
- * an `ULTIMATE_ENV` that is no environment refuses with `X_ENVIRONMENT_INVALID`), and consent is a
- * flag naming what is asked for. Pinned against `seedTiersFor` by `cmd-tasks-run.test.ts`.
+ * an `ULTIMATE_ENV` that is no environment refuses with `X_ENVIRONMENT_INVALID`), and consent is
+ * named — `--production` on the command line, or `ULTIMATE_TASK_RUN=<name>` for a container whose
+ * command line is fixed, as `--tier` and `ULTIMATE_SEED_TIER` are. Pinned against `seedTiersFor`.
  */
 export const tasksRunNeedsFlag = (env: Readonly<Record<string, string | undefined>>): boolean =>
   isProduction({ env });
 
 /**
- * Production fires only by flag. Not a scheduled occurrence: the scheduler's watermark is never
+ * `X_SEED_ENVIRONMENT`'s form: its own code, not `X_CLI_BAD_FLAG` — the argv was well formed and
+ * the answer is still no. The env var is in the cause, the one pasteable flag line is the fix.
+ */
+export class TaskRunProductionError extends UltimateError {
+  constructor(name: string) {
+    super({
+      code: 'X_TASK_RUN_PRODUCTION',
+      cause: `ULTIMATE_ENV resolved production, where firing ${name} enqueues real work beside its next scheduled occurrence — x tasks run fires there only when asked by name; ${TASK_RUN_ENV}=${name} says this deploy takes it`,
+      fix: `x tasks run ${quoteArg(name)} --production --json`,
+    });
+  }
+}
+
+/**
+ * Production fires only when asked. Not a scheduled occurrence: the scheduler's watermark is never
  * moved, so the next real tick still fires — a manual run in production is real work twice.
  */
 function refuseUnaskedProduction(ctx: CommandContext, name: string): void {
-  if (flagBool(ctx.args, 'production')) return;
+  if (flagBool(ctx.args, 'production') || ctx.env[TASK_RUN_ENV] === name) return;
   if (!tasksRunNeedsFlag(ctx.env)) return;
-  throw new BadFlagError({
-    flag: 'production',
-    command: 'tasks run',
-    reason: `ULTIMATE_ENV resolved production, where firing ${name} enqueues real work beside its next scheduled occurrence — x tasks run fires there only when --production asks by name`,
-    fix: `x tasks run ${quoteArg(name)} --production --json`,
-  });
+  throw new TaskRunProductionError(name);
 }
 
 /** One job a fire enqueued, as `TaskHandle.enqueue` answers it (`@ultimat3/jobs` exports no name). */

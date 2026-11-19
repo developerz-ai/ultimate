@@ -137,7 +137,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `markReady()`, `drain()`, the payloads) — never a private state or in-flight counter.
 - **`stop()` hands its two hooks back ABOVE its early return** (`packages/http/e2e/server.e2e.test.ts`
   reads `shutdownHookCount()`).
-- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`): `zstd` then `gzip` by weight; a 304's validator is its 200's (`etag-form.ts`); `private`/`no-store`/`no-cache`/`no-transform` is identity (BREACH); a refused response is the SAME object. An `immutable` asset is coded ONCE in the background at br 11 / zstd 19 / gzip 9 (`compress-precode.ts`, 2 keys at a time; a coder that throws is logged, never unhandled), and later hits are lookups. ‡
+- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`): `zstd` then `gzip` by weight; a 304's validator is its 200's (`etag-form.ts`); `private`/`no-store`/`no-cache`/`no-transform` is identity (BREACH); a refused response is the SAME object. An `immutable` asset is pre-coded once (`compress-precode.ts`). ‡
 
 ## Rules — errors and the problem document
 
@@ -237,7 +237,8 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `error-titles.ts` | the owned codes, titles and `retry-after` classes, registered at import — the one `sideEffects` module. Server realm only: a browser reads title and delay off the body and `Retry-After` |
 | `correlation.ts` | the inbound request id and trace, read before the context and the span exist |
 | `forwarded.ts` | one hop-indexed reader for every header a trusted proxy writes |
-| `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule |
+| `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule, read from the right |
+| `wire-dates-cap.ts` | `cappedWireDates`: `x-ultimate-dates` or none past 4 KB, one warn per route |
 | `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
 | `csrf.ts` | the origin proof an unsafe method from a browser must carry, signed in or not |
 | `webhook-verify.ts` | the INBOUND webhook: canonical string, constant-time mac, replay window. Outbound is `@ultimat3/jobs`' `webhook()` |

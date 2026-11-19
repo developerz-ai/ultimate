@@ -26,7 +26,9 @@ export async function reverseApplied(
   steps: number,
 ): Promise<readonly string[]> {
   const migrations = await readMigrations(root);
-  const confirm = rollbackConfirm(await withoutDown(root, migrations), env, steps);
+  // The binding, so a database on another machine needs the names whatever the environment says.
+  const database = resolveServices(root, env).db;
+  const confirm = rollbackConfirm(await withoutDown(root, migrations), env, steps, database);
   return rollback({ migrations, steps, confirm });
 }
 

@@ -278,6 +278,11 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ].map((template) => ({
     template,
     since: '31.49.0',
-    none: "x g sign-in --oidc now also writes the second-factor leg and passes mfaPath; a sign-in an app already generated is its own code and keeps signing in as it did, and the password shape's files render byte-identical, so x upgrade leaves them alone",
+    none: "x g sign-in --oidc now also writes the second-factor leg and passes mfaPath, and both shapes hold the second-factor challenge in auth's own __Host-x_mfa cookie; a sign-in an app already generated is its own code and keeps signing in as it did with its own cookie, so x upgrade leaves them alone",
   })),
+  {
+    template: 'packages/cli/src/templates/sign-in-challenge.ts',
+    since: '31.49.0',
+    none: "x g sign-in now holds the second-factor challenge in auth's own cookie for both shapes; an existing app's sign-in-challenge.ts is its own code and keeps working with its own cookie, so x upgrade leaves it alone",
+  },
 ];
