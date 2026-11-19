@@ -47,6 +47,18 @@ describe('unit · x upgrade --only, a scoped gate', () => {
     expect(output.data?.then).toContain('x verify --only unit,live,e2e --json');
   });
 
+  // An older CLI's whole gate, every step of it named: nothing is owed, so it is the full gate.
+  test('every step the installed release has, named: the full gate, reported as one', async () => {
+    const dir = await fixture();
+    const older = ['typecheck', 'lint', 'unit'];
+    const { runner, spawned } = recording({ plan: planDocument(older) });
+    const { output } = await run(dir, runner, ['--only', older.join(',')]);
+    expect(spawned.slice(-2)).toEqual(['x verify plan', 'x verify']);
+    expect(output.data?.proof).toBe('verify');
+    expect(output.data?.verify).not.toHaveProperty('notRun');
+    expect(output.summary).toContain('the gate is green');
+  });
+
   test('an installed CLI with no plan to ask: this CLI`s list stands in', async () => {
     const dir = await fixture();
     const { output } = await run(dir, recording({ plan: 'error: unknown command' }).runner, [

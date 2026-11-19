@@ -302,10 +302,11 @@ export async function runHopGate(input: {
   const exerciseFloor = await ratchetExerciseFloor(root, stamp);
   onStage('verify');
   const { only } = input;
-  // The installed gate's own list first: the steps owed to CI are steps that CLI has.
+  // The installed gate's own list first: the steps owed to CI are steps that CLI has. None owed
+  // (every one of its steps named) is that CLI's full gate, run and reported as one.
   const notRun = only === undefined ? undefined : await installedNotRun(installed, only);
   const verify =
-    only === undefined || notRun === undefined
+    only === undefined || notRun === undefined || notRun.length === 0
       ? readVerify(await installed(['verify', '--json']))
       : {
           ...readVerify(await installed(['verify', '--only', only.steps.join(','), '--json'])),
