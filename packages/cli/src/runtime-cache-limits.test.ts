@@ -111,3 +111,32 @@ describe('unit · a supplied redis rung with no client of its own', () => {
     expect(defaultRedisWarnings()).toEqual([]);
   });
 });
+
+describe('cache.defaultTtlMs', () => {
+  const leaseOf = async (tiers: readonly CacheTierName[], supplied: readonly CacheTier[]) => {
+    release = startCacheTiers({
+      env: {},
+      purge: noopPurgeDriver(),
+      transport: new InProcessTransport(),
+      tiers,
+      supplied,
+      defaultTtlMs: 5_000,
+    });
+    const before = Date.now();
+    await rung('lru').set('k', 1);
+    const entry = await rung('lru').get<number>('k');
+    return (entry?.expiresAt ?? expect.unreachable('the value was not held')) - before;
+  };
+
+  test('is the lease of a value set with no ttlMs on the rung the boot builds', async () => {
+    const lease = await leaseOf(['request-memo', 'lru'], []);
+    // The tier's own default is 60 s; jitter shaves at most 5 % off 5 s.
+    expect(lease).toBeLessThanOrEqual(5_000 + 50);
+    expect(lease).toBeGreaterThan(4_000);
+  });
+
+  test('leaves a supplied rung with the lease it was built with', async () => {
+    const lease = await leaseOf(['request-memo', 'lru'], [lruTier({ defaultTtlMs: 120_000 })]);
+    expect(lease).toBeGreaterThan(100_000);
+  });
+});
