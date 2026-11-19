@@ -304,14 +304,52 @@ services:
 
 **The `/app/.x` tmpfs is owned by the image's user** (`As of 30.0.0`): `'/app/.x:uid=1000,gid=1000'` in the scaffold (its `USER 1000:1000`), `uid=65532` in the framework's specimen (distroless `nonroot`). A tmpfs mounts root-owned under `read_only: true`, so before this every role refused at boot with `X_STORAGE_UNWRITABLE … EACCES mkdir '/app/.x/storage'`. An app scaffolded earlier edits that one line.
 
-> **`web` and `sync` are one replica each, and the file says so** `As of 2026-08`. Both publish a host port, one host port has exactly one binder, so both declare `replicas: 1` — a ceiling that is declared rather than discovered when the second container dies on `port is already allocated`. `worker`, `scheduler` and `replicator` publish nothing; `worker` scales freely.
+> **`web` and `sync` are one container each, and the file says so** `As of 2026-11`. Both publish a host port, one host port has exactly one binder, so both declare `replicas: 1` — a ceiling that is declared rather than discovered when the second container dies on `port is already allocated`. One container is no longer one core: it runs one process per declared CPU on one port ([Processes per container](#processes-per-container)). `worker`, `scheduler` and `replicator` publish nothing; `worker` scales freely.
 >
 > | Want | Do |
 > |---|---|
-> | more `web`/`sync` on the same box | delete their `ports:` lines, add a reverse proxy of your choosing to the compose file, point it at the service names — compose DNS resolves each to every replica |
+> | more cores for `web`/`sync` on the same box | raise the service's `cpus:` (and `mem_limit` at 256 MiB per process): the container runs that many processes on its one port |
+> | more `web`/`sync` containers on the same box | delete their `ports:` lines, add a reverse proxy of your choosing to the compose file, point it at the service names — compose DNS resolves each to every replica |
 > | more `web`/`sync`, full stop | the Helm chart below, which carries a per-role HPA and an Ingress |
 >
 > The framework ships neither proxy: a proxy image in `docker-compose.prod.yml` is a dependency every app inherits and a second answer to "how does traffic reach a role" beside the chart's Ingress. This is the rung-1 ceiling → [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md).
+
+## Processes per container
+
+**A production container runs one process per declared CPU, on one port** `As of 2026-11`. The process the platform starts becomes a supervisor: it opens `METRICS_PORT`, spawns N copies of the same entry point (`ULTIMATE_CHILD=<i>/<N>` in each), and the children share the role's port through `SO_REUSEPORT` — the kernel hands each new connection to one of them. One process per core is the only way a Bun app uses a second core: a process runs JavaScript on one thread.
+
+**Production containers only.** `x dev`, the test runner and every environment other than `production` and `staging` run one process; a count set there is ignored with one `info` line, never refused (a `.env` shared with production must not stop a laptop).
+
+**`ULTIMATE_PROCESSES`** = `auto` (the default, also unset or blank) or a positive whole number, per service. Anything else is `X_PROCESSES_INVALID`. The boot names the count and the clamp that bound it in one line: `ultimate processes` with `count`, `binding` and each clamp's value.
+
+`auto` is the minimum of:
+
+| Clamp (`binding`) | Value |
+|---|---|
+| `environment` | 1 outside `production` / `staging` |
+| `platform` | 1 off Linux: Bun ignores `reusePort` on macOS and Windows |
+| `role` | 1 for `scheduler`, `replicator`, `migrate` (a lease row, a replication slot, run-once) |
+| `cpu` | the cgroup's CPU quota in whole CPUs, floored, at least 1 (`cpus: '1.5'` → 1), and no more than `availableParallelism()`. **No quota declared (`cpu.max` = `max`) → 1**, whatever the host has |
+| `memory` | `floor((memory limit − 32 MiB) / 256 MiB)`, at least 1; no bound when unlimited |
+| `pool` | `DATABASE_POOL_MAX`, else the role's profile (web 20, sync 10, worker 8): every child needs a connection |
+| `shared-state` | 1 if any per-process state would split: the `lru` cache tier with neither `NATS_URL` nor `REDIS_URL`, a `runtime.ts` store whose `scope` is not `'shared'`, the embedded database (no `DATABASE_URL`), `sync` without `NATS_URL` or a crossing transport |
+| `image` | 1 when the image carries no prebuilt store (`X_IMAGE_NOT_PREBUILT`): each child would compile the islands |
+
+An explicit count is honoured and checked: 1 always runs; above 1 it is refused for a singleton role (`X_PROCESSES_ROLE_SINGLETON`), off Linux (`X_PROCESSES_UNBALANCED`), over per-process state (`X_PROCESSES_UNSHARED_STATE`) and above the pool (`X_PROCESSES_OVER_POOL`); above the memory fit it runs with a `warn` line. A child that exits unexpectedly 5 times in 5 minutes is `X_PROCESS_CRASH_LOOP`: the siblings drain and the container exits 1 for the platform to restart.
+
+**Per container, never per process**: `DATABASE_POOL_MAX` (each child gets its `childShare`, so the container's connections do not grow with N), `jobs.concurrency` and `jobs.maxInFlight` (split the same way; a queue whose total is below N is served only by children with index < total, so `concurrency: 1` stays serial across the container). Each worker child holds its own LISTEN session: connections per container = pool + N for `worker`. `x doctor` prints both per role; `x deploy verify` reports N registry rows per worker container (`data.queues.containers`). Per-process still, and so N× per container: `perTenant` / `ratePerTenant` job caps and the per-actor socket caps — as with N containers today.
+
+| What | Rule |
+|---|---|
+| `cpus:` | the knob `auto` reads. The shipped compose files declare `web: '2'`, `sync: '1'`, `worker: '1'` per replica (raise it for CPU-heavy queues), `scheduler`/`replicator: '0.5'` |
+| memory | 256 MiB per child plus headroom. Measured private memory of a reference-app web child: 104–106 MiB idle, 227 MiB peak under load; worker and sync 97–100 MiB idle; the supervisor about 3 MiB (`As of 2026-11`, Bun 1.4.4, Linux) |
+| `init: true` | on every service. Bun as PID 1 never reaps an orphaned grandchild (zombies stay) and ignores SIGTERM until a handler is installed (`docker stop` waited out its grace and SIGKILLed); Docker's init fixes both |
+| `sysctls: { net.ipv4.tcp_migrate_req: 1 }` | on `web` and `sync`. Closing a shared-port listener — a drain, a crash — resets every connection still queued on it: 93–109 of 200 queued connections reset with the host default 0, 0 of 200 with the sysctl (Linux ≥ 5.14, per network namespace). `x doctor` warns when N > 1 and it reads 0 |
+| a proxy in front | nginx and Caddy defaults need nothing: under load an HTTP/1.1 proxy opens one upstream connection per in-flight request, and CPU-bound work split 24–26 % per child at N=4. The upstream needs **at least 4 × N concurrent connections at peak**: with about 2N or fewer long-lived connections some child often gets none (balancing is per connection, by hash) and 20–40 % of throughput is lost. Do not cap upstream connections near N (`max_conns`, a tunnel with a fixed connection count). An HTTP/2-multiplexed upstream (one connection) is **unsupported for N > 1**: unmeasured, and the worst case puts everything on one child |
+| probes | the supervisor answers `METRICS_PORT`: `/healthz` (alive, not in a crash loop), `/readyz` (every child that is not draining reported ready), `/metrics` (every child's, merged with a `child` label → [Observability](Observability)). The image's `HEALTHCHECK` on `$PORT/readyz` reaches one child at random. A child opens no boot probe on the shared port: a plain bind would refuse its siblings (EADDRINUSE) and a shared one would take real traffic to answer 503 |
+| drain | SIGTERM, SIGINT and SIGUSR2 (worker retire) go to every child at once; each child's budget starts at its `draining` acknowledgement (a CPU-saturated child heard the signal 1.9–5.2 s late, measured) and it is SIGKILLed 2 s past it; one outer ceiling, the longest budget + 6 s from the signal, bounds the container. Children drain in parallel, so `stop_grace_period` and `terminationGracePeriodSeconds` do not change. Exit 0 if every child exited 0, 70 if any hit its drain deadline |
+
+What it buys, measured (`As of 2026-11`, Bun 1.4.4, Linux, 8 cores, a box shared with other agents — read the ratios, not the absolutes): a handler burning ~2 ms of CPU went from 523 rps at N=1 to 1,485–1,711 at N=4 (2.9–3.3×); the reference app spends 0.24–0.34 CPU-ms per request and one process saturates one core at 3.4–4.7k rps, so `web` sits in the CPU-bound row. A pure-wait handler gains nothing until one process saturates (~50k rps here). The full table: [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md).
 
 ## Helm
 
@@ -325,6 +363,8 @@ services:
 | `scheduler` | none — `replicas: 1` | 1 | `PodDisruptionBudget` maxUnavailable 1, leader lock covers overlap |
 | `replicator` | none — `replicas: 1` | 1 | owns the slot; `strategy: Recreate`, because a surged pod can only stand by unready and `maxUnavailable: 0` would never retire the holder |
 | `migrate` | n/a | — | pre-install/pre-upgrade `Job` hook; blocks the release on failure |
+
+**One process per pod**: both charts set `ULTIMATE_PROCESSES: "1"` on every role (`env.ULTIMATE_PROCESSES` in values wins). Per-pod parallelism is the HPA's; the chart sets CPU requests and no limits, and a pod with no CPU limit would read the node's cores.
 
 CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. The framework **declares** both series — `connections` and `queue_demand`, with `rps` derived from the monotonic `http_requests_total` — and `SCALING_METRICS` maps each role's signal to its series so the chart and the role table cannot drift. `As of 2026-08` every role serves `/metrics` on `METRICS_PORT` (default 9090) and `http`/`realtime`/`jobs` call the recorders, so the signals exist. **The chart's half is closed in 2.0.0**: `values.yaml` declares `metricsPort: 9090`, `_helpers.tpl` emits a container port named `metrics` on every role but `migrate`, `service.yaml` publishes it by name and `templates/servicemonitor.yaml` ships the scrape target. `serviceMonitor.enabled` is `auto`: the object renders wherever the cluster serves the Prometheus operator's kind and is skipped where it does not, so `helm install` never fails on an unknown kind — and `templates/alert-rules.yaml` ships the mechanism alerts the same way (`alerts.enabled: auto`). One thing remains, and it is not the chart's: turning scraped series into the `Pods` metrics an HPA reads needs a **custom-metrics adapter**. Do not hand-add a metrics container port — the chart already emits one and a duplicate is rejected by the API server → [Observability](Observability).
 

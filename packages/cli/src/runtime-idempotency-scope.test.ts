@@ -36,4 +36,19 @@ describe('unit · the idempotency store a container boot ends with', () => {
     expect(warnIfIdempotencyProcessScoped(shared)).toBe(false);
     expect(warned).toEqual([]);
   });
+
+  test('in one of several supervised children it is refused: siblings would each keep their own', () => {
+    expect(() =>
+      warnIfIdempotencyProcessScoped(memoryIdempotencyStore(), { ULTIMATE_CHILD: '0/2' }),
+    ).toThrow(expect.objectContaining({ code: 'X_PROCESSES_UNSHARED_STATE' }));
+  });
+
+  test('a lone child (1/1) keeps the warning', () => {
+    logger.warn = (message: string) => {
+      warned.push(message);
+    };
+    expect(
+      warnIfIdempotencyProcessScoped(memoryIdempotencyStore(), { ULTIMATE_CHILD: '0/1' }),
+    ).toBe(true);
+  });
 });

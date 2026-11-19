@@ -1,18 +1,20 @@
 // What the boot reads of `jobs.*` off the app's own `app.config.ts`: the queues a `worker` serves
-// and the slots each gets, `WORKER_QUEUES` off the Deployment's env (the one per-Deployment answer:
-// every Deployment runs the same image and config, issues #673, #676), and the retry of a job that
+// and the per-CONTAINER slots each gets (a supervised child's share: `runtime-jobs-share.ts`),
+// `WORKER_QUEUES` off the Deployment's env (issues #673, #676), and the retry of a job that
 // declares none (`jobs.maxAttempts` / `jobs.backoff`), installed for every role.
 
-import type { AppConfig, JobsConcurrency } from '@ultimat3/core';
+import type { AppConfig, JobsConcurrency, SupervisedChild } from '@ultimat3/core';
 import {
   ConfigInvalidError,
   renderCauseValue,
   renderFixShellArg,
+  supervisedChild,
   UltimateError,
 } from '@ultimat3/core';
-import { registeredJobs, type WorkerOptions } from '@ultimat3/jobs';
+import { DEFAULT_QUEUE, registeredJobs, type WorkerOptions } from '@ultimat3/jobs';
 import { installDefaultRetry, resetDefaultRetry } from '@ultimat3/jobs/adapter';
 import type { Env } from './runtime-bindings';
+import { childWorkerShare } from './runtime-jobs-share';
 
 /** The env key a worker Deployment names its queues with: `WORKER_QUEUES=banks,banks-long`. */
 export const WORKER_QUEUES_ENV = 'WORKER_QUEUES';
@@ -30,10 +32,13 @@ export interface WorkerConfig {
    * the registered jobs' queues, the set an exact entry must belong to (`refuseUnknownQueues`).
    */
   readonly configured: readonly string[];
+  /** Per CONTAINER: a supervised child runs its `child` share of each total. */
   readonly concurrency: JobsConcurrency | undefined;
-  /** `jobs.maxInFlight`: runs across every queue this process serves. Unset: no process cap. */
+  /** `jobs.maxInFlight`: runs across every queue the container serves. Unset: no cap. */
   readonly maxInFlight?: number | undefined;
   readonly visibilityTimeoutMs: number | undefined;
+  /** `ULTIMATE_CHILD`, read once: absent when this process is the container's only one. */
+  readonly child?: SupervisedChild | undefined;
 }
 
 /** A root with no `app.config.ts`: no queue of its own, and the worker's own timings. */
@@ -92,7 +97,9 @@ export function workerConfigOf(config: AppConfig | undefined, env: Env = {}): Wo
           maxInFlight: config.jobs.maxInFlight,
           visibilityTimeoutMs: config.jobs.visibilityTimeoutMs,
         };
-  return fromEnv === undefined ? base : { ...base, queues: fromEnv, exact: true };
+  const child = supervisedChild(env);
+  const read = child === undefined ? base : { ...base, child };
+  return fromEnv === undefined ? read : { ...read, queues: fromEnv, exact: true };
 }
 
 /**
@@ -182,13 +189,22 @@ export function workerOptionsFor(config: WorkerConfig | undefined): WorkerConfig
   const exact = config?.exact === true;
   if (exact) refuseUnknownQueues(config?.queues ?? [], config?.configured ?? [], registered);
   const queues = workerQueuesFor(config?.queues ?? [], registered, exact);
-  // Passed as written: `jobWorker` reads a table by own key and runs a queue it does not name at
-  // core's `JOBS_CONCURRENCY_DEFAULT` — the one slot default, so no second table is built here.
-  const concurrency = config?.concurrency;
+  // Unsupervised, passed as written: `jobWorker` reads a table by own key and runs a queue it does
+  // not name at core's `JOBS_CONCURRENCY_DEFAULT`. A child gets every served queue named, its share.
+  const child = config?.child;
+  const { concurrency, maxInFlight } =
+    child === undefined
+      ? { concurrency: config?.concurrency, maxInFlight: config?.maxInFlight }
+      : childWorkerShare({
+          queues: queues ?? [DEFAULT_QUEUE],
+          concurrency: config?.concurrency,
+          maxInFlight: config?.maxInFlight,
+          child,
+        });
   return {
     ...(queues === undefined ? {} : { queues }),
     ...(concurrency === undefined ? {} : { concurrency }),
-    ...(config?.maxInFlight === undefined ? {} : { maxInFlight: config.maxInFlight }),
+    ...(maxInFlight === undefined ? {} : { maxInFlight }),
     ...(config?.visibilityTimeoutMs === undefined
       ? {}
       : { visibilityTimeoutMs: config.visibilityTimeoutMs }),

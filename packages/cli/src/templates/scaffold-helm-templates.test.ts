@@ -136,3 +136,18 @@ describe('unit · the image reference', () => {
     expect(repository).not.toContain('developerz-ai');
   });
 });
+
+describe('unit · one process per pod', () => {
+  /**
+   * The chart sets CPU requests and no limits, so a pod's cgroup has no quota and Bun reads the
+   * node's cores: `ULTIMATE_PROCESSES=auto` would see none declared and run 1 already, but the pin
+   * says it, and per-pod parallelism stays the HPA's. A value in `env` wins over the pin.
+   */
+  test('both charts pin ULTIMATE_PROCESSES to 1 unless env names it', async () => {
+    for (const [chart, text] of await both('_helpers.tpl')) {
+      const pin =
+        /\{\{- if not \(hasKey \$root\.Values\.env "ULTIMATE_PROCESSES"\) \}\}\n\s+- name: ULTIMATE_PROCESSES\n\s+value: "1"\n/;
+      expect({ chart, pinned: pin.test(text) }).toEqual({ chart, pinned: true });
+    }
+  });
+});

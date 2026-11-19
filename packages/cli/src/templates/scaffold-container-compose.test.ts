@@ -16,6 +16,9 @@ interface Service {
   readonly security_opt?: readonly string[];
   readonly mem_limit?: string;
   readonly stop_grace_period?: string;
+  readonly init?: boolean;
+  readonly cpus?: string;
+  readonly sysctls?: Record<string, number>;
   readonly logging?: { driver?: string; options?: Record<string, string> };
 }
 
@@ -79,6 +82,31 @@ describe('unit · the scaffolded compose file is hardened and rotates its logs',
       const seconds = Number(/^(\d+)s$/.exec(service.stop_grace_period ?? '')?.[1] ?? 0);
       expect([name, seconds > needed]).toEqual([name, true]);
     }
+  });
+
+  // Bun as PID 1 does not reap orphaned grandchildren and ignores SIGTERM without a handler
+  // (measured on Bun 1.4.4, 2026-11): an init is what makes `docker stop` a drain.
+  test('every service runs under an init', () => {
+    for (const [name, service] of Object.entries(services())) {
+      expect([name, service.init]).toEqual([name, true]);
+    }
+  });
+
+  // `cpus` is what `ULTIMATE_PROCESSES=auto` reads; the two port-sharing roles keep a closing
+  // process's queued connections (`tcp_migrate_req`).
+  test('every serving role declares its CPU budget, and the port roles the migrate sysctl', () => {
+    const all = services();
+    expect(['web', 'sync', 'worker', 'scheduler'].map((name) => [name, all[name]?.cpus])).toEqual([
+      ['web', '2'],
+      ['sync', '1'],
+      ['worker', '1'],
+      ['scheduler', '0.5'],
+    ]);
+    for (const name of ['web', 'sync']) {
+      expect([name, all[name]?.sysctls]).toEqual([name, { 'net.ipv4.tcp_migrate_req': 1 }]);
+    }
+    // 2 processes at 256 MiB each, plus the supervisor and headroom.
+    expect(all['web']?.mem_limit).toBe('1g');
   });
 
   test('sync ships at zero replicas, with the recipe for turning it on', () => {

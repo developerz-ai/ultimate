@@ -104,4 +104,13 @@ describe('unit · the boot probe listener', () => {
     });
     expect(healthz.status).toBe(200);
   });
+
+  test('a supervised child opens none: its siblings share the port, and a probe would take traffic', () => {
+    for (const role of ['web', 'sync'] as const) {
+      const env = { ULTIMATE_CHILD: '0/2' };
+      expect(
+        openBootProbe({ role, port: UNBOUND_PORT, hostname: '127.0.0.1', env }),
+      ).toBeUndefined();
+    }
+  });
 });

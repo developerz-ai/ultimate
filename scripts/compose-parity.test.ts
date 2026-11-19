@@ -318,6 +318,31 @@ describe('the compose files agree with the deploy plan', () => {
         expect(on, `${at}: set deploy: { replicas: 0 } on ${on.join(', ')}`).toEqual([]);
       });
 
+      test('the specimens run every app process under an init, with a declared CPU budget', () => {
+        // Bun as PID 1 never reaps an orphaned grandchild and ignores SIGTERM without a handler
+        // (Bun 1.4.4, measured 2026-11): `init: true` makes `docker stop` a drain. `cpus` is what
+        // `ULTIMATE_PROCESSES=auto` reads; a serving role without one runs a single process. The
+        // SPECIMENS only, as above: a tracked app's own file sizes its own containers.
+        if (at !== COMPOSE_FILE && !at.startsWith('x new')) return;
+        const noInit = roleServices(table).filter((name) => table[name]?.['init'] !== true);
+        expect(noInit, `${at}: set init: true on ${noInit.join(', ')}`).toEqual([]);
+        const serving = roleServices(table).filter((name) => {
+          const role = roleOf(table[name] ?? {});
+          return role !== undefined && role !== 'migrate';
+        });
+        const unbudgeted = serving.filter((name) => typeof table[name]?.['cpus'] !== 'string');
+        expect(unbudgeted, `${at}: declare cpus: '<n>' on ${unbudgeted.join(', ')}`).toEqual([]);
+        // A closing SO_REUSEPORT listener resets its queued connections unless the kernel may
+        // migrate them (93–109 of 200 reset, 0 with the sysctl): both port-sharing roles carry it.
+        for (const role of HTTP_ROLES) {
+          const sysctls = table[role]?.['sysctls'];
+          expect(
+            isRecord(sysctls) && sysctls['net.ipv4.tcp_migrate_req'] === 1,
+            `${at}: ${role} needs sysctls: { net.ipv4.tcp_migrate_req: 1 }`,
+          ).toBe(true);
+        }
+      });
+
       test('backfill overrides the entrypoint, or its command is discarded', () => {
         const backfill = table['backfill'];
         if (backfill === undefined) return; // reported by the rule above, not twice here.

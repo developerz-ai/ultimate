@@ -309,5 +309,7 @@
  * origin/main's 1748): the two on `SERVING_ROLE_CEILING`, `entity/src/memory-tx-entry.ts` and
  * `cache/src/tier-bounds.ts`. Since origin/main: exactly the 16 that `SERVING_ROLE_CEILING` names.
  * Nothing web-only.
+ * raised 1764 → 1768, measured 1768 (2026-11-19, multi-process containers): the four on
+ * `SERVING_ROLE_CEILING`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1764;
+export const WEB_ROLE_CEILING = 1768;

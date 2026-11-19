@@ -3,6 +3,7 @@
 
 import type { WorkerRecord } from '@ultimat3/jobs';
 import { printableBuild } from './cmd-deploy-verify-sample';
+import type { WorkerContainer } from './deploy-verify-processes';
 
 /** One `GET /readyz`. A `null` status is a sample nothing answered: refused, reset, timed out. */
 export interface Sample {
@@ -152,6 +153,8 @@ export interface QueueGrade {
   readonly unserved: readonly UnservedQueue[];
   /** On `--idle-ok`, no serving worker, depth 0. */
   readonly idle: readonly string[];
+  /** The registry's rows of this build per container (`deploy-verify-processes.ts`). */
+  readonly containers?: readonly WorkerContainer[];
 }
 
 /** No `DATABASE_URL`, or a window that never closed: nothing was read, so nothing passed. */

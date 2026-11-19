@@ -406,6 +406,17 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // raised error's own `fix:` carries the named invocation; `ULTIMATE_TASK_RUN` stays in the cause.
   X_TASK_RUN_PRODUCTION:
     'x tasks list --json   # then name the task: x tasks run <name> --production --json',
+  X_PROCESSES_INVALID:
+    'ULTIMATE_PROCESSES=auto   # in the deploy environment of this service, or a positive whole number such as 2',
+  X_PROCESSES_ROLE_SINGLETON:
+    'ULTIMATE_PROCESSES=1   # in the environment of the scheduler, replicator and migrate services',
+  X_PROCESSES_UNSHARED_STATE:
+    'NATS_URL=nats://<host>:4222   # or REDIS_URL for the cache, drop the per-process store from apps/<app>/runtime.ts, or set ULTIMATE_PROCESSES=1',
+  X_PROCESSES_OVER_POOL:
+    'DATABASE_POOL_MAX=<processes>   # at least ULTIMATE_PROCESSES, or lower ULTIMATE_PROCESSES to the pool size',
+  X_PROCESSES_UNBALANCED: 'ULTIMATE_PROCESSES=1   # or run the image in a Linux container',
+  X_PROCESS_CRASH_LOOP:
+    'docker compose logs --tail 200 <service>   # the last error line with the crashing child index names the boot error to fix',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

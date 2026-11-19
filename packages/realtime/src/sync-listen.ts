@@ -2,7 +2,7 @@
 // so the node itself stays testable with no server: this file is the only place realtime calls
 // `Bun.serve`, and the only thing in the package that knows a port exists.
 
-import { finiteOption, markListening, onShutdown } from '@ultimat3/core';
+import { finiteOption, markListening, onShutdown, sharedPortOption } from '@ultimat3/core';
 import type { SyncNode } from './sync-node';
 
 export interface ListenOptions {
@@ -45,6 +45,8 @@ export function listenSyncNode(node: SyncNode, options: ListenOptions = {}): Syn
     // Spread, not `hostname: options.hostname` — Bun reads an explicit `undefined` as a request
     // and not as an absence, and the default it applies to a missing key is the one we want.
     ...(options.hostname === undefined ? {} : { hostname: options.hostname }),
+    // A supervised child on Linux shares the port with its siblings; anything else binds alone.
+    ...sharedPortOption(process.env),
     fetch: node.fetch,
     websocket: node.websocket,
   });

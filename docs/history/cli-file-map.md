@@ -362,3 +362,16 @@ a template change an app keeps, carried by a codemod (`codemod.ts`, the ONE list
 ## `framework-schema-verify.ts` / `-wait.ts` / `app-migrations-verdict.ts` / `serve-boot-probe.ts` (moved 2026-11-19)
 
 a serving role behind its schema (stamp or app ledger) WAITS, `ULTIMATE_SCHEMA_WAIT_MS`, probe port up; a newer major refuses at once
+
+## `runtime-{jobs,realtime,notify-retention,cache,purge,replica,database-ssl}.ts` (moved 2026-11-19)
+
+the `app.config.ts` sections the boot obeys (`*Of(config)`); `database.ssl` adds `sslmode=require` where neither the URL nor `PGSSLMODE` sets one, on every pool (`withAppTls`)
+
+## `dev-host.ts` / `dev-tls*.ts` (moved 2026-11-19)
+
+`x dev --host` (loopback default) and `--tls`: a cached self-signed cert in `.x/tls/`, WebCrypto + hand-written DER
+
+## `supervise*.ts` (2026-11-19)
+
+`ULTIMATE_PROCESSES` = `auto` | a count, production and staging containers only (`x dev` and tests run one). `supervise-count.ts`: auto is the minimum of the cgroup CPU quota (none declared → 1), the memory fit ((`memory.max` − 32 MiB) / 256 MiB), the pool, the role (scheduler/replicator/migrate 1), per-process state (`unsharedState`, the ONE decision: auto clamps, an explicit count is refused `X_PROCESSES_UNSHARED_STATE`, a child refuses an idempotency store only its boot sees), a prebuilt image, Linux; one `ultimate processes` boot line names the binding clamp. `supervise.ts`: N `Bun.spawn` children of the same argv, `ipc` json, `ULTIMATE_CHILD=i/N` + a `DATABASE_POOL_MAX` share each; signal handlers before the first spawn; backoff 1, 2, 4… ≤ 30 s, reset after 60 s up, 5 crashes in 5 min → `X_PROCESS_CRASH_LOOP`, exit 1; a child's drain bound starts at its `draining` ack, one outer ceiling, exit 0/70/1. `supervise-probe.ts`: the container's `METRICS_PORT` (`/healthz`, `/readyz`, `/metrics` merged with `child="i"`). `supervise-child.ts`: `ready`/`draining`/`gone`/`fatal`, IPC `disconnect` + an original-ppid poll. `serve-boot-probe.ts` opens nothing in a child; its scrape is loopback `:0` (`serve.ts`).
+

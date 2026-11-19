@@ -18,8 +18,22 @@ const WORKER_BRIEF_WHY =
 const QUERY_VIEW_WHY =
   "x g query and x g resource now answer the slice's View; an existing app's reads are its own code and keep answering the row they always did — narrowing them would drop fields a deployed client may read, so x upgrade leaves them alone";
 
+const PROCESSES_COMPOSE_WHY =
+  "new apps' compose declares cpus per role, init: true and the tcp_migrate_req sysctl for processes per container; an existing app's compose declares no cpus, so ULTIMATE_PROCESSES=auto runs one process as before, and sizing a container's CPU and memory is the app's decision, so x upgrade leaves it alone (wiki/Upgrading.md)";
+
+const PROCESSES_HELM_WHY =
+  'new charts pin ULTIMATE_PROCESSES=1 on every role; an existing chart sets no CPU limit, so auto already resolves to one process per pod, and the pin only states it, so x upgrade leaves the chart alone';
+
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
+  ...[
+    'packages/cli/src/templates/scaffold-container-compose.ts',
+    'docker/docker-compose.prod.yml',
+  ].map((template) => ({ template, since: '31.49.0', none: PROCESSES_COMPOSE_WHY })),
+  ...[
+    'packages/cli/src/templates/scaffold-helm-templates.ts',
+    'docker/helm/templates/_helpers.tpl',
+  ].map((template) => ({ template, since: '31.49.0', none: PROCESSES_HELM_WHY })),
   ...[
     'packages/cli/src/templates/scaffold-gitattributes.ts',
     'packages/cli/src/templates/scaffold-bin.ts',

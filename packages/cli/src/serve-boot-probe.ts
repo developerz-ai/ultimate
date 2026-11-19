@@ -4,7 +4,7 @@
 // restarts it at the startup probe's budget. `bootRoles` stops it just before the role binds.
 
 import type { HealthPayload, Role } from '@ultimat3/core';
-import { markListening, readyzPayload, stringField } from '@ultimat3/core';
+import { markListening, readyzPayload, stringField, supervisedChild } from '@ultimat3/core';
 import { rolePorts } from './metrics-endpoint';
 import { livenessPayload } from './runtime-liveness';
 import {
@@ -25,6 +25,11 @@ export interface BootProbeInput {
   readonly port: number;
   readonly hostname: string;
   readonly tls?: ListenerTls;
+  /**
+   * Whose `ULTIMATE_CHILD` decides: a supervised child opens no probe. Defaults to the process's
+   * own environment, which is where the supervisor wrote it.
+   */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 /** Seconds a client is told to come back after, while the pod boots. */
@@ -60,9 +65,13 @@ function servedWithTls<T>(serve: () => T): T {
 
 /**
  * `undefined` for the roles whose probes knock on the metrics port — open before any boot work
- * (`serve.ts`) — and for an ephemeral boot (a test), whose real port is not known yet.
+ * (`serve.ts`) — for an ephemeral boot (a test), whose real port is not known yet, and for a
+ * supervised child: a plain bind would refuse its siblings' `reusePort` listeners (EADDRINUSE,
+ * measured), and a `reusePort` one would take a share of real traffic and answer it 503. The
+ * container's probes go to the supervisor's `METRICS_PORT` instead.
  */
 export function openBootProbe(input: BootProbeInput): BootProbe | undefined {
+  if (supervisedChild(input.env ?? process.env) !== undefined) return undefined;
   const port = rolePorts(input.port, [input.role])[0]?.port;
   if (port === undefined) return undefined;
   const { role } = input;

@@ -4,7 +4,7 @@
 // is exactly what the `accept` phase exists to prevent, and `@ultimat3/http`, the worker and the
 // scheduler all register theirs there.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import {
   drain,
   onShutdown,
@@ -120,5 +120,39 @@ describe('the interface it binds', () => {
     const listener = listenSyncNode(fakeNode([]), { port: 0 });
     expect(new URL(listener.url).hostname).not.toBe('127.0.0.1');
     listener.stop();
+  });
+});
+
+describe('the shared port', () => {
+  afterEach(() => {
+    delete process.env['ULTIMATE_CHILD'];
+    resetLifecycle();
+    resetListeners();
+  });
+
+  // One node for both binds, so its `fetch` and `websocket` compare equal across them.
+  const node = fakeNode([]);
+
+  /** What `Bun.serve` received for one real bind on an ephemeral loopback port. */
+  const optionsUnder = (child: string | undefined): Record<string, unknown> => {
+    if (child === undefined) delete process.env['ULTIMATE_CHILD'];
+    else process.env['ULTIMATE_CHILD'] = child;
+    const serve = spyOn(Bun, 'serve');
+    try {
+      listenSyncNode(node, { port: 0, hostname: '127.0.0.1' }).stop();
+      const options = serve.mock.calls[0]?.[0];
+      if (options === undefined) return expect.unreachable('Bun.serve was not called');
+      return options as unknown as Record<string, unknown>;
+    } finally {
+      serve.mockRestore();
+    }
+  };
+
+  test('only a supervised child on Linux asks for reusePort, and nothing else changes', () => {
+    const alone = optionsUnder(undefined);
+    expect(Object.hasOwn(alone, 'reusePort')).toBe(false);
+    const { reusePort, ...rest } = optionsUnder('1/2');
+    expect(reusePort).toBe(process.platform === 'linux' ? true : undefined);
+    expect(rest).toEqual(alone);
   });
 });

@@ -237,6 +237,12 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_REPRO_BUNDLE_INVALID',
   'X_APP_MIGRATIONS_UNAPPLIED',
   'X_TASK_RUN_PRODUCTION',
+  'X_PROCESSES_INVALID',
+  'X_PROCESSES_ROLE_SINGLETON',
+  'X_PROCESSES_UNSHARED_STATE',
+  'X_PROCESSES_OVER_POOL',
+  'X_PROCESSES_UNBALANCED',
+  'X_PROCESS_CRASH_LOOP',
 ] as const;
 
 /**
@@ -466,6 +472,12 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_APP_MIGRATIONS_UNAPPLIED:
     'a serving role booted over a database missing migrations this build ships',
   X_TASK_RUN_PRODUCTION: 'x tasks run refused to fire a task in production unasked',
+  X_PROCESSES_INVALID: 'ULTIMATE_PROCESSES is not auto or a count',
+  X_PROCESSES_ROLE_SINGLETON: 'this role runs as one process per container',
+  X_PROCESSES_UNSHARED_STATE: 'more than one process over per-process state',
+  X_PROCESSES_OVER_POOL: 'more processes than database pool connections',
+  X_PROCESSES_UNBALANCED: 'SO_REUSEPORT does not balance on this platform',
+  X_PROCESS_CRASH_LOOP: 'a child process kept crashing',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws
