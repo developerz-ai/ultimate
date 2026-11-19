@@ -6,7 +6,8 @@
 import { isFixShellSafe } from '@ultimat3/core';
 import type { DbClient } from './client';
 import type { SchemaDescription } from './introspect';
-import { embeddedDev, embeddedResetFix, migrationConflict } from './migration-errors';
+import { embeddedDev, embeddedResetFix } from './migrate-dev-fix';
+import { migrationConflict } from './migration-errors';
 import { raw, sql } from './sql';
 import { SQLSTATE, sqlState } from './sqlstate';
 

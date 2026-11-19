@@ -249,7 +249,9 @@ export async function rejoinBuckets(
   for (const [bucket, members] of removed) {
     for (const member of members) {
       const score = survivors.get(member);
-      if (score !== undefined) sends.push(client.send('ZADD', [bucket, score, member]));
+      // `GT` (Redis 6.2+): a fill that re-joined since, at a LATER score, keeps it. The read score
+      // written over it made the membership prunable while the fill's value still lived.
+      if (score !== undefined) sends.push(client.send('ZADD', [bucket, 'GT', score, member]));
     }
   }
   const settled = await Promise.allSettled(sends);

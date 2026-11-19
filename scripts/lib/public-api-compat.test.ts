@@ -226,6 +226,28 @@ describe('public-api-compat · values and classes, read by callers', () => {
       'break: member `a` was removed',
     );
   });
+
+  const REG = 'class R { send ( topic : string , frame : F ) : number ; }';
+  const sent = (params: string, returns = 'number'): string =>
+    `class R { send ( ${params} ) : ${returns} ; }`;
+
+  test('a method that gained optional trailing parameters is compatible, as a function is', () => {
+    expect(verdict(REG, sent('topic : string , frame : F , to ? : A'))).toBe(
+      'compatible: optional trailing parameter(s) added to `send`',
+    );
+    expect(verdict(REG, sent('topic : string , frame : F , to ? : A , at ? : number'))).toBe(
+      'compatible: optional trailing parameter(s) added to `send`',
+    );
+  });
+
+  test('a method that needs more, takes less, narrows a parameter or answers otherwise breaks', () => {
+    const changed = 'break: member `send` changed its type';
+    expect(verdict(REG, sent('topic : string , frame : F , to : A'))).toBe(changed);
+    expect(verdict(REG, sent('topic : string , frame : F , to : A , at ? : number'))).toBe(changed);
+    expect(verdict(REG, sent('topic : string'))).toBe(changed);
+    expect(verdict(REG, sent('topic : "a" , frame : F , to ? : A'))).toBe(changed);
+    expect(verdict(REG, sent('topic : string , frame : F , to ? : A', 'string'))).toBe(changed);
+  });
 });
 
 describe('public-api-compat · object-literal parameters', () => {

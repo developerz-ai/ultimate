@@ -63,18 +63,52 @@ const rejected = async (call: Promise<unknown>): Promise<{ code: string; fix: st
   )) as { code: string; fix: string };
 
 describe('unit · x errors explain answers the app’s own codes', () => {
-  test('inside the app: title, cause, fix, status and where it is declared', async () => {
+  test('inside the app: title, status and where it is declared, from the registry', async () => {
     const result = await run(['errors', 'explain', 'X_TICKET_NOT_FOUND', '--json'], await app());
     expect(result.ok).toBe(true);
-    expect(result.data).toMatchObject({
+    expect(result.data).toEqual({
       code: 'X_TICKET_NOT_FOUND',
       title: 'no such ticket',
       status: 404,
-      fix: 'x queries list --json, then pass an id the ticket read returns',
+      docs: expect.any(String),
       site: { at: ERRORS, line: 4 },
     });
-    expect(String((result.data as { cause: string }).cause)).toContain('no ticket with id');
-    expect(result.lines?.join('\n')).toContain('x queries list --json');
+    expect(result.lines?.join('\n')).toContain(`${ERRORS}:4`);
+    expect(result.lines?.join('\n')).toContain('404');
+  }, 30_000);
+
+  // The registry holds a title and a status, never a cause or a fix: those are functions of params
+  // only a throw has. A declaration no source reader could parse answers exactly as a plain one.
+  test('a declaration whose cause and fix are not literals answers the same fields', async () => {
+    const dir = await app();
+    await Bun.write(
+      join(dir, 'apps/web/app/refund/errors.ts'),
+      `import { defineError } from ${JSON.stringify(import.meta.resolve('@ultimat3/core/page'))};
+
+const FIX = 'x queries list --json';
+const why = (id: string): string => \`refund \${id} holds a \\\` and a }); in its text\`;
+
+export const RefundRefusedError = defineError<{ readonly id: string }>({
+  code: 'X_REFUND_REFUSED',
+  title: 'refund refused',
+  offSocket: true,
+  cause: (input) => why(input.id),
+  fix: FIX,
+});
+`,
+    );
+    const result = await run(['errors', 'explain', 'X_REFUND_REFUSED', '--json'], dir);
+    expect(result.data).toEqual({
+      code: 'X_REFUND_REFUSED',
+      title: 'refund refused',
+      status: null,
+      docs: expect.any(String),
+      site: { at: 'apps/web/app/refund/errors.ts', line: 7 },
+    });
+    const printed = result.lines?.join('\n') ?? '';
+    expect(printed).not.toContain('cause:');
+    expect(printed).not.toContain('fix:');
+    expect(printed).not.toContain('grep');
   }, 30_000);
 
   test('a code the app does not declare is still unknown, and the fix says where codes live', async () => {

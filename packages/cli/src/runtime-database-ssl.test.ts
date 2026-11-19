@@ -85,6 +85,25 @@ describe('unit · database.ssl', () => {
     }
   });
 
+  test('an empty sslmode or ssl is not a stated mode', () => {
+    const base = 'postgres://app@db.internal:5432/app';
+    for (const query of ['sslmode=', 'ssl=', 'SSLMODE=', 'sslmode=&ssl=', 'sslmode=%20']) {
+      const out = new URL(withRequiredTls(`${base}?${query}&application_name=web`, {}));
+      expect(out.searchParams.getAll('sslmode')).toEqual(['require']);
+      expect([...out.searchParams.keys()].sort()).toEqual(['application_name', 'sslmode']);
+    }
+    // One spelling empty, the other stated: the stated one is the operator's.
+    const stated = `${base}?sslmode=&ssl=true`;
+    expect(withRequiredTls(stated, {})).toBe(stated);
+  });
+
+  test("an upper-case SSLMODE is the operator's", () => {
+    for (const query of ['SSLMODE=disable', 'SslMode=verify-full', 'SSL=false', 'Ssl=true']) {
+      const url = `postgres://app@db.internal:5432/app?${query}`;
+      expect(withRequiredTls(url, {})).toBe(url);
+    }
+  });
+
   test('PGSSLMODE in the boot env is the operator stating the mode: nothing is added', () => {
     const url = 'postgres://app@db.internal:5432/app';
     expect(withRequiredTls(url, { PGSSLMODE: 'verify-full' })).toBe(url);

@@ -217,7 +217,13 @@ export {
   MFA_CHALLENGE_TTL_MS,
   mfaChallengeRequired,
 } from './mfa-challenge';
-export { clearMfaChallengeCookie, readMfaChallenge } from './mfa-handoff';
+export {
+  clearMfaChallengeCookie,
+  MFA_CHALLENGE_COOKIE,
+  mfaChallengeCookie,
+  mfaChallengeOf,
+  readMfaChallenge,
+} from './mfa-handoff';
 export type {
   PostgresTotpReplayGuard,
   PostgresTotpReplayGuardOptions,

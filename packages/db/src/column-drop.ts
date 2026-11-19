@@ -12,6 +12,7 @@ import type { ColumnDescription, TableDescription } from './introspect';
 import { migrationIrreversible } from './migration-errors';
 import { migrationNameArg } from './primary-key';
 import { contractsMarkerFor } from './retired';
+import { indexDependsOn } from './retype-dependents';
 import { columnDropNotRetired, columnRebuildNotRetired } from './rolling-errors';
 import { identifier } from './sql';
 
@@ -82,7 +83,8 @@ export function admitRebuilds(
 
 /**
  * What hung off the dropped columns, as the previous snapshot recorded it: `drop column` took every
- * index and foreign key over one, and `add column` brings none of them back. Without these a
+ * foreign key over one and every index that depends on one (`indexDependsOn`: a key, an INCLUDE
+ * column, a predicate or an expression that reads it), and `add column` brings none of them back. Without these a
  * rollback left a database its own snapshot called drifted (`missing-index`,
  * `missing-foreign-key`), and the `down` before it dropped a constraint that was not there
  * (`42704`). A CHECK is `checkPlan`'s, already restored.
@@ -109,7 +111,7 @@ function restoreDependents(
     );
   }
   for (const index of live.indexes) {
-    if (index.primary || !over(index.columns)) continue;
+    if (index.primary || ![...dropped].some((column) => indexDependsOn(index, column))) continue;
     restores.push(createIndex(live.name, asDeclared(index)));
   }
   plan.down.push(...restores.filter((statement) => !plan.down.includes(statement)));

@@ -146,6 +146,9 @@ const readStatement = async <Row>(
   return answers;
 };
 
+/** `in_failed_transaction`: a statement sent after the first refusal aborted the transaction. */
+const IN_FAILED_TRANSACTION = '25P02';
+
 /** SQLSTATE class 22, data exception: the server refused a VALUE, not the statement's shape. */
 const isDataError = (error: unknown): boolean => sqlState(error)?.startsWith('22') === true;
 
@@ -157,9 +160,9 @@ const isDataError = (error: unknown): boolean => sqlState(error)?.startsWith('22
  * stands alone: about `2k·log2(n)` statements for `k` bad ids, never one per id.
  *
  * Anything else — a dropped connection, a timeout, a stale schema — is the statement's own failure
- * and is rethrown for every caller, as before. So is a retry that fails for a reason of its own
- * (a transaction the first refusal aborted answers `25P02`): those ids get the FIRST refusal, the
- * one the unsplit statement gave them.
+ * and is rethrown for every caller, as before; a half that fails that way answers its ids with its
+ * own failure. Only a half sent into a transaction the first refusal aborted (`25P02`) gets the
+ * FIRST refusal, the one the unsplit statement gave them.
  */
 export const readByIds = async <Row>(
   read: PointRead<Row>,
@@ -191,7 +194,9 @@ const isolate = async <Row>(
         await isolate(read, half, error, answers);
         continue;
       }
-      const own = isDataError(error) ? error : refusal;
+      // Only a transaction the first refusal ABORTED inherits it; a half's own failure (a pool
+      // timeout, a failover's 57P01) is that half's answer, never "invalid input syntax".
+      const own = sqlState(error) === IN_FAILED_TRANSACTION ? refusal : error;
       for (const id of half) answers.set(keyOf(read.key.kind, id), { error: own });
     }
   }

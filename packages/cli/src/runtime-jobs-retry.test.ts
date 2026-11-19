@@ -1,5 +1,5 @@
 // `jobs.maxAttempts` / `jobs.backoff` as the retry of a job that declares none: installed by the
-// boot for every role (`startServices`), by name, and never by reading the worker's config.
+// boot every entry point shares (`startQueue`), by name, and never by reading the worker's config.
 // Split from `runtime-jobs.test.ts` at the size ceiling.
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -14,6 +14,7 @@ import { resetDefaultRetry } from '@ultimat3/jobs/adapter';
 import { loadAppConfig } from './app-config-load';
 import { resolveServices } from './runtime-bindings';
 import { installJobsRetry, workerConfigOf } from './runtime-jobs';
+import { startQueue } from './runtime-queue';
 import { startServices } from './runtime-services';
 
 const dirs: string[] = [];
@@ -84,6 +85,24 @@ describe('jobs.maxAttempts and jobs.backoff', () => {
         expect(sweep.retry).toMatchObject({ attempts: 7, backoff: 'fixed' });
       } finally {
         await runtime.stop();
+      }
+    },
+    { timeout: 60_000 },
+  );
+
+  test(
+    'the queue-only boot installs it: a command that enqueues stamps the attempts the worker runs',
+    async () => {
+      // `x tasks run`, `x jobs`, `x db backfill` boot `startQueue` alone, never `startServices`:
+      // installed only there, a row they enqueued carried 3 while the worker retried by 7.
+      const sweep = purge({ name: 'sweep', targets: () => [] });
+      const root = await appRoot(SEVEN_FIXED);
+      const env = { ULTIMATE_ENV: 'development' } as const;
+      const queue = await startQueue(resolveServices(root, env), undefined, env, 'apply');
+      try {
+        expect(sweep.retry).toMatchObject({ attempts: 7, backoff: 'fixed' });
+      } finally {
+        await queue.stop();
       }
     },
     { timeout: 60_000 },

@@ -7,8 +7,8 @@ import type { EntityCore } from '@ultimat3/entity';
 import { t } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import type { JobHandle } from './job';
-import { job } from './job';
-import { DEFAULT_RETRY, type RetryPolicy } from './retry';
+import { factoryJob } from './job';
+import type { RetryPolicy } from './retry';
 import { RefreshViewInvalidError } from './rollup-errors';
 
 export interface RefreshViewDefinition {
@@ -61,14 +61,14 @@ export function refreshView(definition: RefreshViewDefinition): JobHandle<Record
   const statement = concurrently
     ? sql`refresh materialized view concurrently ${target}`
     : sql`refresh materialized view ${target}`;
-  return job<Record<string, never>, RefreshViewReport>({
+  return factoryJob<Record<string, never>, RefreshViewReport>({
     name: definition.name,
     input: t.object({}),
     // One refresh at a time: a second enqueue while one runs would compute the same rows again.
     idempotencyKey: () => `refresh-view:${definition.name}`,
     // A materialized view spans every tenant's rows; the read path scopes them, not the refresh.
     tenant: 'none',
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     run: ({ step }) =>

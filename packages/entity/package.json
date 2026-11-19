@@ -26,6 +26,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./adapter": "./src/adapter.ts",
+    "./internal/memory-tx": "./src/memory-tx-entry.ts",
     "./record": "./src/record.ts"
   },
   "files": [

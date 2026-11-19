@@ -67,6 +67,14 @@ export function roleFromEnv(env: Env): Role {
 }
 
 /**
+ * May this app run `role`? The ONE answer the container's `ROLE` (`assertRoleDeclared`) and
+ * `x dev`'s selection (`rolesDeclaredForDev`, `role-select.ts`) both ask, by the rule below.
+ */
+export function roleDeclared(role: Role, config: AppConfig | undefined): boolean {
+  return config === undefined || role === 'migrate' || config.roles.includes(role);
+}
+
+/**
  * Throws `X_CONFIG_INVALID` when `role` is absent from `config.roles`. Unset, `roles` is every
  * role (core's default), so an app that never wrote the key boots each one as it always did; so
  * does a root with no `app.config.ts`. `migrate` is never refused: it is the release phase — run
@@ -74,7 +82,8 @@ export function roleFromEnv(env: Env): Role {
  * migrations to apply.
  */
 export function assertRoleDeclared(role: Role, config: AppConfig | undefined): void {
-  if (config === undefined || role === 'migrate' || config.roles.includes(role)) return;
+  if (roleDeclared(role, config)) return;
+  if (config === undefined) return;
   const declared = config.roles.map((name) => `'${name}'`);
   // Members of core's closed `ROLES` set (`defineConfig` refused the rest, `roleFromEnv` the
   // env's), screened all the same: a fix is pasted, and the guard reads the call, not the proof.

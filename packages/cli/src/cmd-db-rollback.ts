@@ -4,6 +4,7 @@
 
 import { isNonTransactional } from '@ultimat3/db';
 import type { CommandContext } from './command';
+import { ROLLBACK_STEPS } from './db-dev-wire';
 import { stepFinding } from './db-finding';
 import { rollbackPass } from './db-rollback-pass';
 import { intFlagOr } from './flag-number';
@@ -11,19 +12,12 @@ import { msg } from './messages';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 import type { CommandResult } from './output';
 
-/** Read before anything is opened: `--steps 0` and `--steps all` never reach the ledger. */
-const STEPS = {
-  name: 'steps',
-  command: 'db rollback',
-  min: 1,
-  example: 'x db rollback --steps 1',
-} as const;
-
 export async function runRollbackCommand(
   ctx: CommandContext,
   root: string,
 ): Promise<CommandResult> {
-  const steps = intFlagOr(ctx.args, STEPS, 1);
+  // Read before anything is opened: `--steps 0` and `--steps all` never reach the ledger.
+  const steps = intFlagOr(ctx.args, ROLLBACK_STEPS, 1);
   let reverted: readonly string[];
   try {
     reverted = await rollbackPass(root, ctx.env, steps);

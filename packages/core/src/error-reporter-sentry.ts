@@ -67,7 +67,10 @@ export function parseSentryDsn(dsn: string): SentryDsn {
     projectId === undefined
   ) {
     // The userinfo dropped, as in the cause: the key and any legacy secret stay out of `meta`.
-    const where = `${url.protocol}//${url.host}${url.pathname}`;
+    // Only an HTTP URL HAS a userinfo to drop: a scheme-less `key:secret@host/1` parses as scheme
+    // `key:` over an opaque path `secret@host/1`, so it is described, never spelled.
+    const http = url.protocol === 'https:' || url.protocol === 'http:';
+    const where = http ? `${url.protocol}//${url.host}${url.pathname}` : describeValue(dsn);
     throw new ErrorReporterDsnInvalidError({
       cause: `"${where}" has no publicKey, no projectId or a non-HTTP scheme`,
       fix: DSN_FIX,

@@ -12,10 +12,9 @@ import { stampConsumer } from './consumer-registry';
 import type { ConsumerDefinition, ConsumerHandle, ConsumerInput } from './consumer-types';
 import type { EnqueueResult } from './driver';
 import type { JobHandle } from './job';
-import { job } from './job';
+import { factoryJob } from './job';
 import type { EnqueueManyOptions } from './job-enqueue-many';
 import type { EnqueueOptions } from './outbox';
-import { DEFAULT_RETRY } from './retry';
 import { task } from './task';
 
 const MINUTE_MS = 60_000;
@@ -82,7 +81,7 @@ export function consumer<Item, C>(definition: ConsumerDefinition<Item, C>): Cons
   const cron = rearmCron(name, definition.rearm ?? '1m');
   const queue = definition.queue === undefined ? {} : { queue: definition.queue };
 
-  const handle: JobHandle<ConsumerInput> = job<ConsumerInput>({
+  const handle: JobHandle<ConsumerInput> = factoryJob<ConsumerInput>({
     name,
     input: t.object({ key: t.string.min(1) }),
     tenant: definition.tenant,
@@ -91,7 +90,7 @@ export function consumer<Item, C>(definition: ConsumerDefinition<Item, C>): Cons
     idempotencyKey: ({ key }) => `consumer:${name}:${key}`,
     // The backstop the key alone cannot be: two rows of one key never run at once.
     concurrency: { key: ({ key }) => key, limit: 1, whenBusy: 'wait' },
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...queue,
     run: (args) => asConsumer(name, () => consumerRun({ definition, size }, args)),
   });
@@ -114,12 +113,12 @@ export function consumer<Item, C>(definition: ConsumerDefinition<Item, C>): Cons
 
   // `keys` may read the database, and a task's entries are synchronous — so the tick enqueues
   // this one arm run, which asks `keys` and enqueues every key it answers.
-  const arm = job<Record<string, never>>({
+  const arm = factoryJob<Record<string, never>>({
     name: `${name}.arm`,
     input: t.object({}),
     tenant: 'none',
     idempotencyKey: () => `consumer:${name}:arm`,
-    retry: DEFAULT_RETRY,
+    retry: undefined,
     ...queue,
     async run({ ctx, step }) {
       const keys = await definition.keys({ ctx });

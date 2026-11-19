@@ -32,9 +32,8 @@ import type { DurationInput } from './clock';
 import { nowMs } from './clock';
 import { JobTenantMismatchError } from './errors-tenant';
 import type { JobHandle } from './job';
-import { job } from './job';
+import { factoryJob } from './job';
 import type { RetryPolicy } from './retry';
-import { DEFAULT_RETRY } from './retry';
 import type { JobTenant } from './tenant';
 import type { Outcome, WebhookFetch } from './webhook-attempt';
 import { attemptDelivery, deliveryError, deliverySignal } from './webhook-attempt';
@@ -202,14 +201,14 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
     definition.fetch ?? ((url, init) => fetch(url, { ...init, signal: init.signal ?? null }));
 
   // Named so `run` can read the deadline `job()` resolved — one parse of `timeout`, never two.
-  const handle: JobHandle<WebhookDeliveryInput> = job<WebhookDeliveryInput>({
+  const handle: JobHandle<WebhookDeliveryInput> = factoryJob<WebhookDeliveryInput>({
     name: definition.name,
     input: t.object({ endpointId: t.string, eventId: t.string, orgId: t.optional(t.string) }),
     // Endpoint AND event: the same event fans out to every subscribed endpoint, so a key on the
     // event alone would dedupe every one of those deliveries into the first endpoint's row.
     idempotencyKey: ({ endpointId, eventId }) => `${definition.name}:${endpointId}:${eventId}`,
     tenant: tenantOf(definition),
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     async run({ input, ctx, attempt }): Promise<WebhookReport> {

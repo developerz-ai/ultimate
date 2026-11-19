@@ -303,5 +303,7 @@
  * Nothing web-only.
  * raised 1756 → 1758, measured 1758 (2026-11-19, r9 sweep 2): the two on `SERVING_ROLE_CEILING`.
  * Nothing web-only.
+ * raised 1758 → 1762, measured 1762 (2026-11-19, r9 verification fixes): the four on
+ * `SERVING_ROLE_CEILING`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1758;
+export const WEB_ROLE_CEILING = 1762;

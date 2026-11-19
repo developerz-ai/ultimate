@@ -109,12 +109,17 @@ export const bindLateFault = (ctx: RequestContext, hooks: ServerHooks): void => 
  * Records a fault that surfaced after the response was handed over — a streamed body's producer —
  * exactly as the `error-map` stage would have: monitor (5xx), `hooks.onError`, the log line. ONCE
  * per request; a second call records nothing. `false` only when no pipeline request is behind
- * `ctx`, and the caller then owns the report. Never throws: nothing is above it.
+ * `ctx`: nothing is recorded, since a producer driven outside the pipeline is a test.
+ *
+ * The caller's hang-up (`isCallerAbort` on `ctx.signal`, which carries every signal a context it
+ * was derived inside brought) is not a fault: nobody is there to answer and nothing failed, so it
+ * records nothing and leaves the request's one report unspent. Never throws: nothing is above it.
  */
 export const reportLateFault = (
   error: unknown,
   ctx: Ctx | undefined = tryUseContext(),
 ): boolean => {
+  if (ctx !== undefined && isCallerAbort(error, ctx.signal)) return true;
   for (let scope = ctx; scope !== undefined; scope = parentContext(scope)) {
     const record = late.get(scope);
     if (record === undefined) continue;

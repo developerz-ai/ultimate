@@ -70,6 +70,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     fleetSlots,
     workerId,
     pollIntervalMs,
+    visibilityTimeoutMs,
     context: options.context,
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
@@ -171,7 +172,7 @@ export function jobWorker(options: WorkerOptions): Worker {
         for (const [index, job] of claimed.entries()) {
           const queue = job.queue;
           // Both caps, and what becomes of a job that passes neither — `worker-admit.ts`.
-          const admission = await admit(job, queue, () => claimed.slice(index + 1));
+          const admission = await admit(job, queue, () => claimed.slice(index + 1), askedAt);
           if (admission.kind === 'waiting') continue;
           if (admission.kind === 'refused') {
             // Settled without a body: counted and returned with the pass, the one job this loop
@@ -343,6 +344,8 @@ export function jobWorker(options: WorkerOptions): Worker {
       signal: shutdown.signal,
       drain: drainSignal,
       held: inFlight,
+      // Core owns the instant its in-flight wait ends; the cut-off lands a margin before it.
+      reserveMs: Math.max(0, shutdown.deadlineAt - (shutdown.inflightUntil ?? shutdown.deadlineAt)),
     });
   };
 

@@ -17,7 +17,7 @@ import {
   uuidV7,
 } from '@ultimat3/core';
 import { channelFramesDropped, GapRepairs } from './channel-gaps';
-import type { Audience, DeliverRecordsTo } from './channel-tenant';
+import type { Audience } from './channel-tenant';
 import type { ChannelRecordsFrame } from './channel-wire';
 import { CLOSE } from './close-codes';
 import { DropWindow } from './socket-drops';
@@ -77,12 +77,6 @@ import {
   DEFAULT_MAX_BUFFERED_BYTES,
   DEFAULT_MAX_FRAMES_PER_SECOND,
 } from './socket-defaults';
-
-/**
- * `deliverRecords` to an `Audience`. A function rather than a parameter: `SocketRegistry` is public
- * API, and a changed member signature is a break (`scripts/public-api.ts`). Set by the class below.
- */
-export let deliverRecordsTo: DeliverRecordsTo;
 
 export function actorIdOf(actor: Actor | null): string | null {
   return actor === null ? null : actor.id;
@@ -416,19 +410,10 @@ export class SocketRegistry {
 
   /**
    * A `records` delivery. An owed `replay-gap` goes out first; a socket that then drops the frame is
-   * marked for the next one. `deliver`'s twin, because only a records stream can be repaired.
+   * marked for the next one. `deliver`'s twin, because only a records stream can be repaired. A
+   * member `to` does not admit is sent `to.withheld` instead (`channel-tenant.ts`).
    */
-  deliverRecords(topic: string, epoch: string, frame: ChannelRecordsFrame): number {
-    return this.#records(topic, epoch, frame, undefined);
-  }
-
-  static {
-    deliverRecordsTo = (registry, topic, epoch, frame, to) =>
-      registry.#records(topic, epoch, frame, to);
-  }
-
-  /** A member `to` does not admit is sent `to.withheld` instead (`channel-tenant.ts`). */
-  #records(topic: string, epoch: string, frame: ChannelRecordsFrame, to?: Audience): number {
+  deliverRecords(topic: string, epoch: string, frame: ChannelRecordsFrame, to?: Audience): number {
     const members = this.#byTopic.get(topic);
     if (!members) return 0;
     const text = encode(frame);

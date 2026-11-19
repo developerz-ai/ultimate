@@ -1,6 +1,6 @@
 // What `x db rollback` asks before the first `down` runs, under the migrate lock, of the exact rows
-// about to be reversed: every one has a `-- down` half on disk, and outside development the operator
-// named each id in `ROLLBACK_ALLOW_DESTRUCTIVE` — the migrate role's own written override.
+// about to be reversed: every one has a `-- down` half on disk, and on a deploy — or a database on
+// another machine — the operator named each id in `ROLLBACK_ALLOW_DESTRUCTIVE`.
 
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
@@ -8,18 +8,43 @@ import { join } from 'node:path';
 import { renderFixShellArg, tryResolveEnvironment } from '@ultimat3/core';
 import type { LedgerRow, Migration } from '@ultimat3/db';
 import { DbError, migrationIrreversible, ROLLBACK_ALLOW_DESTRUCTIVE_ENV } from '@ultimat3/db';
+import { namedDeployed } from './framework-env';
+import { isLoopbackHostname } from './loopback-host';
 import { MIGRATIONS_DIR, parseMigrationSql } from './migrations';
+import type { ServiceBinding } from './runtime-bindings';
 
 type Env = Readonly<Record<string, string | undefined>>;
 
+/** The database the rollback runs against: `resolveServices(root, env).db`. */
+export type RollbackDatabase = Pick<ServiceBinding, 'mode' | 'url'>;
+
 /**
- * Development and test reverse freely: the database is the developer's own. Everything else needs
- * the names — staging included, which exists to fail the way production fails — and so does an
- * `ULTIMATE_ENV` that is not an environment: a typo must not read as "not production".
+ * Is `url` a Postgres on another machine? A local socket (no host, or a `host=` that is a path) and
+ * a loopback name are this machine's; a URL that does not parse is another's — fail closed.
  */
-export function rollbackNeedsConsent(env: Env): boolean {
-  const environment = tryResolveEnvironment({ env });
-  return environment !== 'development' && environment !== 'test';
+function remoteDatabase(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return true;
+  }
+  const host = parsed.hostname || (parsed.searchParams.get('host') ?? '');
+  if (host === '' || host.startsWith('/')) return false;
+  return !isLoopbackHostname(host);
+}
+
+/**
+ * Who needs the names. A NAMED deploy — `namedDeployed`, framework-env's own predicate: staging
+ * included, which exists to fail the way production fails — and an `ULTIMATE_ENV` that is no
+ * environment: a typo must not read as "not production". And, whatever the environment resolves
+ * to, an external database on another machine: `DATABASE_URL=<prod> x db rollback` from a shell
+ * that names nothing resolves development, and reversed production unasked. A developer's own
+ * database (embedded, loopback, a local socket) reverses freely.
+ */
+export function rollbackNeedsConsent(env: Env, database?: RollbackDatabase): boolean {
+  if (namedDeployed(env) || tryResolveEnvironment({ env }) === undefined) return true;
+  return database?.mode === 'external' && remoteDatabase(database.url);
 }
 
 const namedIn = (allow: string | undefined): ReadonlySet<string> =>
@@ -36,15 +61,20 @@ const namedIn = (allow: string | undefined): ReadonlySet<string> =>
  * not only those whose `up` was destructive: the consent `ledgerAheadOfBuild` takes for an older
  * image over a newer schema, asked here of the schema change itself.
  */
-function assertNamed(targets: readonly LedgerRow[], env: Env, steps: number): void {
-  if (!rollbackNeedsConsent(env)) return;
+function assertNamed(
+  targets: readonly LedgerRow[],
+  env: Env,
+  steps: number,
+  database: RollbackDatabase | undefined,
+): void {
+  if (!rollbackNeedsConsent(env, database)) return;
   const named = namedIn(env[ROLLBACK_ALLOW_DESTRUCTIVE_ENV]);
   const unnamed = targets.filter((row) => !named.has(row.id)).map((row) => row.id);
   if (unnamed.length === 0) return;
   const all = targets.map((row) => row.id).join(',');
   throw new DbError({
     code: 'X_MIGRATION_ROLLBACK_DESTRUCTIVE',
-    cause: `x db rollback would reverse ${String(targets.length)} applied migration(s) outside development, and ${ROLLBACK_ALLOW_DESTRUCTIVE_ENV} does not name ${unnamed.join(', ')} — a down drops what its up added, rows included, under a build that still reads it`,
+    cause: `x db rollback would reverse ${String(targets.length)} applied migration(s) on a deployed or remote database, and ${ROLLBACK_ALLOW_DESTRUCTIVE_ENV} does not name ${unnamed.join(', ')} — a down drops what its up added, rows included, under a build that still reads it`,
     fix: `${ROLLBACK_ALLOW_DESTRUCTIVE_ENV}=${renderFixShellArg(all, '<migration id>')} x db rollback --steps ${String(steps)} --json   # names each migration it reverses; first deploy a build that no longer reads what they added`,
     meta: { refused: unnamed, steps },
   });
@@ -81,14 +111,18 @@ function assertReversible(targets: readonly LedgerRow[], unmarked: ReadonlySet<s
   }
 }
 
-/** `rollback()`'s `confirm`: reversibility first (it is true in every environment), then consent. */
+/**
+ * `rollback()`'s `confirm`: reversibility first (it is true in every environment), then consent.
+ * `database` is the binding the pass runs against; absent, only the environment is asked.
+ */
 export function rollbackConfirm(
   unmarked: ReadonlySet<string>,
   env: Env,
   steps: number,
+  database?: RollbackDatabase,
 ): (targets: readonly LedgerRow[]) => void {
   return (targets) => {
     assertReversible(targets, unmarked);
-    assertNamed(targets, env, steps);
+    assertNamed(targets, env, steps, database);
   };
 }

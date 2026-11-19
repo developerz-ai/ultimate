@@ -6,10 +6,11 @@
 
 import type { PgExecutor } from '@ultimat3/core';
 import type { AuditRecord } from './audit';
+import { acceptedIdOf } from './audit-accepted';
 import type { BatchAuditSink, BatchedAuditSink, BatchedAuditSinkOptions } from './audit-batch';
 import { batchedAuditSink } from './audit-batch';
 import { rowOf } from './audit-postgres-row';
-import { outsideTransactions } from './tx-scope';
+import { isUniqueViolation, outsideTransactions } from './tx-scope';
 
 /**
  * Applied by the boot, never by an app migration — the rule `SQL_IDEMPOTENCY_TABLE` follows, and
@@ -205,7 +206,16 @@ export function postgresAuditSink(
   const exec = grouped ? outsideTransactions(options.executor) : options.executor;
   const sink: PostgresAuditSink = {
     async write(record: AuditRecord): Promise<void> {
-      await exec.query(SQL_AUDIT_INSERT, Object.values(rowOf(record)));
+      const row = Object.values(rowOf(record));
+      try {
+        await exec.query(SQL_AUDIT_INSERT, row);
+      } catch (error) {
+        // Group commit's single retry can meet its own batch still committing: its `not exists`
+        // ran first, it then waited on the key and drew 23505. Sent once more it sees the
+        // committed row and skips it if identical; a different row raises again, as it should.
+        if (acceptedIdOf(record) === undefined || !isUniqueViolation(error)) throw error;
+        await exec.query(SQL_AUDIT_INSERT, row);
+      }
     },
     async writeMany(records: readonly AuditRecord[]): Promise<void> {
       if (records.length === 0) return;

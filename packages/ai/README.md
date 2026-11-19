@@ -600,7 +600,9 @@ reported for the last one — is compared with the model row's `contextWindow` l
 the last `keepTurns`; the summary joins the first user message (after the prompt, verbatim, marked
 `[compacted: …]`), the kept turns follow byte for byte, and the turn is sent. What the **user**
 said in the summarised turns — a `.continue()` instruction — is carried into that first message
-verbatim, newest first up to `KEPT_USER_CHARS` (8,000 characters), never left to the summary alone.
+verbatim, newest first up to `KEPT_USER_CHARS` (8,000 characters) **in total** — what earlier
+compactions carried is charged against the same allowance, so a long chat's head stays bounded —
+and beyond it left to the summary.
 
 | Rule | Why |
 |---|---|

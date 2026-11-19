@@ -10,7 +10,7 @@ import {
   resetJobDriver,
 } from './adapter';
 import { memoryJobDriver } from './driver-memory';
-import { job, resetJobs } from './job';
+import { factoryJob, job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 import { purge } from './purge';
 import { DEFAULT_RETRY, retrySchedule } from './retry';
@@ -88,5 +88,38 @@ describe('the retry of a job that declares none', () => {
     expect(() => installDefaultRetry({ attempts: 0, backoff: 'fixed' })).toThrow(/X_INVARIANT/);
     expect(() => installDefaultRetry({ attempts: 2.5, backoff: 'fixed' })).toThrow(/X_INVARIANT/);
     expect(purge({ name: 'sweep', targets: () => [] }).retry).toEqual(DEFAULT_RETRY);
+  });
+
+  test('a factory\'s `retry: undefined` is "declares none": the installed default, read late', () => {
+    const none = factoryJob({
+      tenant: 'none',
+      name: 'none',
+      input: passthrough<Record<string, never>>(),
+      idempotencyKey: () => 'k',
+      retry: undefined,
+      run: () => Promise.resolve(),
+    });
+    expect(none.retry).toEqual(DEFAULT_RETRY);
+    installDefaultRetry({ attempts: 5, backoff: 'fixed' });
+    expect(none.retry).toEqual({ ...DEFAULT_RETRY, attempts: 5, backoff: 'fixed' });
+  });
+
+  test("a policy spelled out as DEFAULT_RETRY's values is DECLARED: its own 3 attempts", () => {
+    installDefaultRetry({ attempts: 5, backoff: 'fixed' });
+    expect(declared({ ...DEFAULT_RETRY }).retry.attempts).toBe(3);
+  });
+
+  test('job() still refuses an omitted or undefined retry: an app states its own', () => {
+    const loose = {
+      tenant: 'none',
+      name: 'omitted',
+      input: passthrough<Record<string, never>>(),
+      idempotencyKey: () => 'k',
+      run: () => Promise.resolve(),
+    } as unknown as Parameters<typeof job>[0];
+    expect(() => job(loose)).toThrow(/X_JOB_DECLARATION_INVALID/);
+    expect(() => job({ ...loose, retry: undefined } as unknown as typeof loose)).toThrow(
+      /X_JOB_DECLARATION_INVALID/,
+    );
   });
 });

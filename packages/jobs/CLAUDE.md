@@ -108,7 +108,8 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
 - **A claimed job is counted with core's `beginWork()`**: the drain's in-flight phase waits. The
   teardown's wait is bounded on SIGTERM (`drain-wait.ts`), unbounded on `stop()`; one teardown, joined.
 - **A deploy lets a running job FINISH**: SIGTERM only stops claiming; `X_DRAINING` at
-  `deadlineAt − margin`; settles `interrupted`. †
+  `inflightUntil − margin` (core's `ShutdownReason.inflightUntil`, where its in-flight wait ends; else
+  `deadlineAt`); settles `interrupted`. †
 - **`X_RATE_LIMITED` defers uncounted** (`rateLimitDeferralMs`).
 - **The drain waits out the claim round it races** — `tick()` registers its round in `rounds`
   synchronously with its guard.

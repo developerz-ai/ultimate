@@ -214,6 +214,13 @@ export interface CacheTier {
    */
   fence?(scope: FenceScope): Promise<TierFence>;
   /**
+   * Which entries this tier's bust clears, as a string a peer can compare: two tiers of one name
+   * and one `scope` hold the same keys (`redisTier`: its namespace, so per build). Only read beside
+   * `fence`: an inbound broadcast skips a fenced tier ONLY when the sender named this same scope —
+   * omitted, the tier is cleared on every inbound broadcast.
+   */
+  readonly scope?: string;
+  /**
    * Drop every entry — implemented ONLY by a tier whose store is this process's own heap (`lru`).
    * `flushProcessTiers()` calls it when the process cannot know which busts it missed. A shared
    * tier omits it: whoever ran a bust cleared that store for everyone.

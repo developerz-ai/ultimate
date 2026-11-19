@@ -21,7 +21,7 @@ Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
 | `model-resolve.ts` | `resolveModel` / `modelForCall` — declaration → prompt → gateway `defaultModel`, none is `X_AI_MODEL_UNRESOLVED` naming all three; `describedModel` for a published fact |
 | `model-fixture.ts` | the rows this package's own suites register (`useFixtureModels()`). Not shipped |
 | `provider.ts` | `Provider` interface, the request half; re-exports the Anthropic names |
-| `anthropic-provider.ts` | `anthropicProvider()`, stream-only rule (`requiresStreaming`), message parse; `strict` per tool |
+| `anthropic-provider.ts` / `-strict.ts` | `anthropicProvider()`, `requiresStreaming`, message parse; which tools keep `strict` |
 | `echo-provider.ts` | `echoProvider()`, the deterministic double. A fixture that needs a tool call uses `scriptedProvider`, never a hand-rolled `Provider` |
 | `scripted-provider.ts` | `scriptedProvider()`, the scripted double that calls tools, and `X_AI_SCRIPT_EXHAUSTED`: one call past the script is refused, never answered with the last turn again |
 | `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |

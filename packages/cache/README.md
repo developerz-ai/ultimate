@@ -294,7 +294,7 @@ pod whose clock runs ahead from pruning a member whose value key still lives.
 | read | `ZSCAN … COUNT 1000` (`BUST_PAGE_SIZE`), buckets concurrently | a page per round trip; returns every member present for the whole scan, so a concurrent prune or re-score skips nothing — a score/offset cursor did |
 | sweep | `ZREM` of what was read, 1,000 members per command, 8 in flight | — |
 | delete | `UNLINK` per value key, 1,024 per burst | `UNLINK` frees off the server's main thread |
-| re-join | `ZADD` back, at its read score, each member whose `UNLINK` was refused | only on a refusal |
+| re-join | `ZADD … GT` back, at its read score unless a fill since scored it later, each member whose `UNLINK` was refused (Redis ≥ 6.2) | only on a refusal |
 
 10k members clear in 25 sequential round trips (≤ 100 is the test). Every command names **one
 key**, so a bust is slot-local on Redis Cluster and Dragonfly whatever tags it carries;
@@ -435,8 +435,13 @@ bus.subscribe('cache.invalidate', (wireTags) => receiveInvalidationBroadcast(wir
 The inbound half **cannot** re-emit, and that is structural rather than a flag: `emit` lives on the
 private fan-out options and `receiveInvalidationBroadcast` is the only caller that passes `false`.
 A receiver that re-broadcast would be a storm bounded by nothing. Inbound, a **shared** read tier
-(one with a `fence`, as `redisTier` has) is skipped, `As of 2026-11-19`: the sender's own bust
-cleared it for every replica, and a second bust per replica deleted what readers had refilled since.
+(one with a `fence`, as `redisTier` has) is skipped, `As of 2026-11-19`, **only when the sender
+cleared the same keys**: `fn`'s second argument (`SharedTierScopes`, tier name → `CacheTier.scope`,
+the Redis namespace — per build) names what its bust cleared, the frame carries it, and
+`receiveInvalidationBroadcast(wireTags, sender)` skips a fenced tier whose `scope` equals the
+sender's. Another build's frame on a rolling deploy (`x:v1` vs `x:v2`), a frame naming no scope (an
+older pod), or a fenced tier with no `scope` is busted — a skipped bust is a stale row for the TTL.
+Within one build, a second bust per replica deleted what readers had refilled since.
 The in-process tiers and the edge are still cleared. A failed send lands in
 `report.errors` under `tier: "broadcast"` and the write that triggered the bust still succeeds.
 What happens to that bust is the sender's (`@ultimat3/cli` keeps the refused tags, bounded, and

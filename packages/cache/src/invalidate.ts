@@ -17,6 +17,8 @@ import {
 import { markAllInvalidated, markInvalidated } from './fence';
 import { dependentsOfKind, graphSnapshot } from './graph';
 import { logPartial, resetPartialLog } from './partial-log';
+import type { SharedTierScopes } from './shared-scopes';
+import { clearedBySender, sharedScopes } from './shared-scopes';
 import type { CacheTag } from './tags';
 import { assertKnownTags, knownTags, parseTag, serializeTags } from './tags';
 import type { CacheTier, TierInvalidation } from './tiers';
@@ -46,7 +48,14 @@ export const EVERY_TAG = 'every-tag';
  * on pod 3, their next request lands on pod 7, and pod 7's in-process copy serves the pre-edit
  * value for up to `defaultTtlMs`. The user watches their edit vanish and re-submits.
  */
-export type InvalidationBroadcast = (wireTags: readonly string[]) => Promise<void> | void;
+export type InvalidationBroadcast = (
+  wireTags: readonly string[],
+  /**
+   * What this process's own bust cleared in each shared tier: carry it to the peers. The fan-out
+   * always passes it; optional in the type so the 31.48 shape stays compatible.
+   */
+  sender?: SharedTierScopes,
+) => Promise<void> | void;
 
 export interface InvalidationReport {
   readonly tags: readonly string[];
@@ -159,7 +168,11 @@ export function invalidateTags(tags: readonly CacheTag[]): Promise<InvalidationR
  * pods know an entity the old ones do not, and a throw here kills the subscriber loop that
  * delivered it — which would silently end cross-instance invalidation for the whole process.
  */
-export function receiveInvalidationBroadcast(wire: readonly string[]): Promise<InvalidationReport> {
+export function receiveInvalidationBroadcast(
+  wire: readonly string[],
+  /** The sender's `SharedTierScopes`; omitted (an older pod's frame), every tier is cleared. */
+  sender?: SharedTierScopes,
+): Promise<InvalidationReport> {
   const declared = new Set(knownTags());
   const errors: { tier: string; message: string }[] = [];
   const accepted: CacheTag[] = [];
@@ -169,7 +182,13 @@ export function receiveInvalidationBroadcast(wire: readonly string[]): Promise<I
     if (declared.size === 0 || declared.has(parsed.entity)) accepted.push(parsed);
     else errors.push({ tier: 'broadcast', message: `ignored undeclared tag "${value}"` });
   }
-  return fanOut(accepted, { source: 'cache.broadcast', emit: false, validate: false, errors });
+  return fanOut(accepted, {
+    source: 'cache.broadcast',
+    emit: false,
+    validate: false,
+    errors,
+    ...(sender === undefined ? {} : { sender }),
+  });
 }
 
 interface FanOutOptions {
@@ -180,6 +199,8 @@ interface FanOutOptions {
   /** The local path throws on a typo; the inbound one has already filtered instead. */
   readonly validate: boolean;
   readonly errors: { tier: string; message: string }[];
+  /** Inbound only: the shared scopes the sender's own bust already cleared. */
+  readonly sender?: SharedTierScopes;
 }
 
 function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<InvalidationReport> {
@@ -206,13 +227,10 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     // report says every tier cleared, and the LRU is stale again before the call returns.
     // The EDGE is not one of them here: it is purged last, below (`purgeEdge`).
     const farthestFirst = [...sortTiers(registry)].reverse();
-    // Inbound, a SHARED read tier is skipped: the sender's own bust cleared it for the fleet, and
-    // a second one per replica deletes what readers refilled since and re-fences their fills. A
-    // tier is shared when it keeps a fleet fence (`CacheTier.fence`, omitted in-process) — the
-    // positive declaration, so an app tier that says nothing is still cleared. The edge is not
-    // skipped: a peer's purge after its own drop is the one that holds (`purgeEdgeAgain`).
+    // Inbound, a shared tier the sender's own bust already cleared is skipped (`clearedBySender`).
+    // The edge is not: a peer's purge after its own drop is the one that holds (`purgeEdgeAgain`).
     const readTiers = farthestFirst.filter(
-      (one) => !isEdgeTier(one) && (emit || one.fence === undefined),
+      (one) => !isEdgeTier(one) && (emit || !clearedBySender(one, options.sender)),
     );
     for (const tier of readTiers) {
       try {
@@ -259,7 +277,11 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     // to "the other pods clear on TTL" rather than failing the write that triggered the bust.
     if (emit && wire.length > 0 && broadcast !== undefined) {
       try {
-        await broadcast(wire);
+        // Only what ANSWERED: a shared tier whose bust was refused here is the peers' to clear.
+        await broadcast(
+          wire,
+          sharedScopes(farthestFirst.filter((one) => cleared.includes(one.name))),
+        );
         cleared.push('broadcast');
       } catch (error) {
         errors.push({ tier: 'broadcast', message: renderThrowable(error) });

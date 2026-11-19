@@ -7,7 +7,7 @@ import {
   MAX_STRICT_TOOLS,
   MAX_STRICT_UNIONS,
   strictSubset,
-} from './anthropic-provider';
+} from './anthropic-strict';
 import type { JsonSchema, LlmTool } from './tools';
 
 const object = (

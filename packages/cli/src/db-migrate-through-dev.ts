@@ -4,12 +4,10 @@
 
 import { renderThrowable, stringField, UltimateError } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
+import { DEV_MIGRATE_PATH } from './db-dev-wire';
 import type { DevMigrateData } from './dev-db-migrate';
 import { DevAlreadyRunningError, type DevLock } from './dev-lock';
 import { liveDevLockChecked } from './dev-lock-live';
-
-/** `dev-db-migrate.ts`'s path, restated: importing that module would load the route's graph. */
-const MIGRATE_PATH = '/_x/db/migrate';
 
 const DIFFERENCE = t.object({
   kind: t.string,
@@ -188,7 +186,7 @@ export function migrateThroughDev(
     lock,
     stateDir,
     {
-      path: MIGRATE_PATH,
+      path: DEV_MIGRATE_PATH,
       resume: ['db', 'migrate'],
       read: (data) => {
         const parsed = DATA.safeParse(data);

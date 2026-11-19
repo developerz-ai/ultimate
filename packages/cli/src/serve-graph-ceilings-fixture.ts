@@ -350,8 +350,18 @@
  * raised 995 → 997, measured 997 (2026-11-19, r9 sweep 2, metafile walk): `db/src/column-drop.ts`
  * (a column's drop and its two consents, split from `generate.ts` at its ceiling) and
  * `http/src/fault-report.ts` (what a failed request owes its observers, a late fault included).
+ * raised 997 → 1011, measured 1011 (2026-11-19, r9 verification fixes, metafile walk against HEAD):
+ * `db/src/migrate-dev-fix.ts` (the embedded-dev `fix:` line and its environment probe, taken out of
+ * `migration-errors.ts`: a probe is not a refusal — a real SRP split, worth its one module);
+ * `cache/src/shared-scopes.ts` (the sender's shared-tier namespace on a bust broadcast);
+ * `http/src/wire-dates-cap.ts` (the `x-ultimate-dates` header cap); `cli/src/runtime-jobs.ts`
+ * (`startQueue` installs `jobs.maxAttempts`/`jobs.backoff`, so every enqueueing command stamps the
+ * worker's retry); and `entity/src/adapter.ts` with the nine driver-kit modules only it reaches
+ * (`define-driver`, `driver-{counters,delete,kit-types,repo-reads,repo-writes,scope,
+ * versioned-write,write-scope}.ts`) — `action/src/tx-scope.ts` now reads `memoryTxOpen` off
+ * `@ultimat3/entity/adapter`, which evaluates the whole subpath barrel.
  */
-export const MIGRATE_CEILING = 997;
+export const MIGRATE_CEILING = 1011;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

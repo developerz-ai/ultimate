@@ -3,12 +3,7 @@
 // so the command asks the holder instead of opening `.x/pgdata` a second time. Loopback Host and
 // peer, same-origin: the `/_x/db` doors.
 
-import {
-  NotImplementedError,
-  renderFixShellArg,
-  renderThrowable,
-  UltimateError,
-} from '@ultimat3/core';
+import { NotImplementedError, renderThrowable, UltimateError } from '@ultimat3/core';
 import type { DriftDifference } from '@ultimat3/db';
 import { checkDrift, db, migrate } from '@ultimat3/db';
 import type { CatalogDescription } from '@ultimat3/db/schema-dump';
@@ -17,22 +12,17 @@ import type { Route, UltimateRequest } from '@ultimat3/http';
 import { jsonResponse } from '@ultimat3/http';
 import { loadAppConfig } from './app-config-load';
 import { acceptCreatedTables } from './db-accept-created';
+import { DEV_LEDGER_PATH, DEV_MIGRATE_PATH, DEV_ROLLBACK_PATH } from './db-dev-wire';
 import { frameworkStorageDrift } from './db-object-drift';
 import { assertSameOrigin, hostRefusal } from './dev-dashboard-guard';
 import { ledgerInDev, rollbackInDev, stepsOf } from './dev-db-rollback';
 import { ledgerMoved } from './dev-db-settled';
 import { readMigrations } from './migrations';
 import { rowSecurityDeclared } from './row-security-boot';
-
-/** The path `db-migrate-through-dev.ts` posts to, under the dashboard's own `/_x/db`. */
-export const DEV_MIGRATE_PATH = '/_x/db/migrate';
-
-/** The paths `db-rollback-pass.ts` and `db-applied-edits.ts` post to, beside it. */
-export const DEV_ROLLBACK_PATH = '/_x/db/rollback';
-export const DEV_LEDGER_PATH = '/_x/db/ledger';
+import { stopRunStartFix } from './stop-run-start';
 
 /** The command that works when this process cannot apply: the embedded database to itself. */
-export const MIGRATE_ALONE_FIX = 'x stop --json && x db migrate && x dev';
+export const MIGRATE_ALONE_FIX = stopRunStartFix(['db', 'migrate']);
 
 /** One applied pass as it crosses the wire: `runMigrations`' report, and the live catalog. */
 export interface DevMigrateData {
@@ -155,7 +145,7 @@ export function devMigrateRoutes(input: DevMigrateRouteInput): readonly Route[] 
       const steps = stepsOf(request.url.searchParams.get('steps'));
       await assertDevCanMigrate(
         root,
-        `x stop --json && x db rollback --steps ${renderFixShellArg(String(steps), '<n>')} && x dev`,
+        stopRunStartFix(['db', 'rollback', '--steps', String(steps)]),
       );
       return rollbackInDev(root, env, steps).finally(ledgerMoved);
     }),

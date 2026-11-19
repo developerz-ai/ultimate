@@ -254,6 +254,12 @@ so an inline run would be a second execution path next to the worker's — with 
 dedupe and no dead letter. Its idempotency key is the job's own, so a manual `task.enqueue()`
 and the scheduler's occurrence-scoped fire stay distinct rows on purpose.
 
+**One entry the scheduler cannot queue fails the whole occurrence** (`As of 2026-11`): a `tenant()`
+that throws or answers empty, or an empty concurrency key, on any entry of a task's `enqueue`.
+Nothing is queued and the watermark stays; `jobs.scheduler.entry-refused` (error) names the task,
+the job and the entry index. The next tick owes the same occurrence and logs it again, until the
+declaration or the data is repaired — then that tick queues every entry. Never a partial fire.
+
 With no facade installed, `enqueue` publishes straight to `jobDriver()`; with none of those
 either, it is `X_DRIVER_UNAVAILABLE` at the call, not a silently dropped job.
 
@@ -1664,12 +1670,14 @@ retrySchedule({ attempts: 5, backoff: 'exponential', delay: 1000 })
 
 **A job that declares no `retry` runs under the app's default** (`As of 2026-11`): `jobs.maxAttempts`
 and `jobs.backoff` in `app.config.ts`, which the boot installs in every role
-(`installDefaultRetry`, on `@ultimat3/jobs/adapter`). With neither key set it is `DEFAULT_RETRY`:
-3 attempts, exponential.
+(`installDefaultRetry`, on `@ultimat3/jobs/adapter`; the CLI's `startQueue`, the boot every entry
+point shares — `x tasks run`, `x jobs` and `x db backfill` included). With neither key set it is
+`DEFAULT_RETRY`: 3 attempts, exponential.
 
 | Declared | Attempts | Backoff |
 |---|---|---|
-| no `retry` — a factory's is optional (`purge()`, `backfill()`, `rollup()`, …), or `retry: DEFAULT_RETRY` | `jobs.maxAttempts` | `jobs.backoff` |
+| no `retry` — a factory's is optional (`purge()`, `backfill()`, `rollup()`, …), or `retry: undefined` on `job()` (the key is required, its value may be `undefined`) | `jobs.maxAttempts` | `jobs.backoff` |
+| `retry: { ...DEFAULT_RETRY }` — a policy, spelled out | 3 | `'exponential'` |
 | `retry: { attempts: 5 }` | 5 | `jobs.backoff` |
 | `retry: { attempts: 5, backoff: 'linear' }` | 5 | `'linear'` |
 

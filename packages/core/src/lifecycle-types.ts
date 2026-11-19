@@ -30,6 +30,14 @@ export interface ShutdownReason {
    * `waitForIdle` went on sleeping on a real `setTimeout`. `clock` still owns `uptimeMs`.
    */
   readonly deadlineAt: number;
+  /**
+   * Real monotonic ms at which the drain stops waiting for in-flight work (`beginWork()`), at or
+   * before `deadlineAt`: the rest of the budget is the `inflight`/`close` hooks' reserve. The ONE
+   * owner of that instant — a role that cuts its own work short (the jobs worker's cut-off)
+   * measures back from it, so the cut work has unwound before the wait ends. Absent on a reason
+   * built outside `drain()`: read it as `deadlineAt`.
+   */
+  readonly inflightUntil?: number | undefined;
 }
 
 export type ShutdownHook = (reason: ShutdownReason) => void | Promise<void>;

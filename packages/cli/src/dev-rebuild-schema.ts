@@ -20,8 +20,7 @@ import { resolveServices } from './runtime-bindings';
 export const SCHEMA_AHEAD_FIX = 'x db gen "describe the change" && x db migrate';
 
 /** Where this process cannot apply the pass itself: the embedded database, to the command alone. */
-export const SCHEMA_AHEAD_FIX_ALONE =
-  'x db gen "describe the change" && x stop --json && x db migrate && x dev';
+export const SCHEMA_AHEAD_FIX_ALONE = `x db gen "describe the change" && ${MIGRATE_ALONE_FIX}`;
 
 /** Whether `x db migrate` works while this `x dev` runs: any external database, or a pass it takes. */
 export async function migratesBesideDev(root: string): Promise<boolean> {

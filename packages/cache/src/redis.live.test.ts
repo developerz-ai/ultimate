@@ -15,7 +15,7 @@ import { redisClient } from '@ultimat3/core/redis';
 import { lruTier } from './lru';
 import type { RedisLike } from './redis';
 import { redisTier } from './redis';
-import { BUST_PAGE_SIZE, TAG_GRACE_MS } from './redis-buckets';
+import { BUST_PAGE_SIZE, rejoinBuckets, TAG_GRACE_MS } from './redis-buckets';
 import { tag } from './tags';
 import type { CacheTier } from './tiers';
 import { cacheStack, nowMs } from './tiers';
@@ -211,6 +211,24 @@ describe.skipIf(!hasRedis)(
 
       expect(busted).toBe(true);
       expect(await tier.get('raced')).toBeUndefined();
+    });
+
+    // `ZADD … GT` is Redis 6.2: the fake models it, this proves the server takes it — a later
+    // score is kept, and a member the bucket lost is still added back.
+    test("a refused delete's re-join never lowers a score, and still re-adds a missing member", async () => {
+      const client = raw();
+      const bucket = `${PREFIX}:t2:{post}:rejoin`;
+      await reply(client, 'ZADD', [bucket, '2000', 'refilled']);
+      const removed = new Map([[bucket, new Set(['refilled', 'gone'])]]);
+      const survivors = new Map([
+        ['refilled', '1000'],
+        ['gone', '1000'],
+      ]);
+
+      expect(await rejoinBuckets(client, removed, survivors)).toEqual([]);
+
+      expect(Number(await reply(client, 'ZSCORE', [bucket, 'refilled']))).toBe(2000);
+      expect(Number(await reply(client, 'ZSCORE', [bucket, 'gone']))).toBe(1000);
     });
 
     test('a fresh bucket comes out of the join with a lease, never immortal', async () => {

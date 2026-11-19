@@ -77,9 +77,9 @@ export const createSessionTest =
   (): string => `// createSession, run inside a real request over the app's migrated database: a wrong password is
 // refused, a right one sets the session cookie, and a second factor still owed holds the challenge.
 import { toRoute } from '@ultimat3/action';
-import { generateTotpSecret, register, saveTotpSecret } from '@ultimat3/auth';
+import { generateTotpSecret, MFA_CHALLENGE_COOKIE, register, saveTotpSecret } from '@ultimat3/auth';
 ${SHARED_IMPORTS}
-import { MFA_CHALLENGE_COOKIE, SECOND_FACTOR_PATH } from '../sign-in-challenge';
+import { SECOND_FACTOR_PATH } from '../sign-in-challenge';
 import { AFTER_SIGN_IN } from '../sign-in-flow';
 import { createSession } from './create-session';
 
@@ -146,47 +146,26 @@ unitTest('a second factor still owed holds the challenge and sets no session', a
 });
 `;
 
-/**
- * Where the test reads the sealed challenge and its cookie's name from. The password shape's own
- * module exports both; the OIDC shape's challenge is auth's cookie, so its test derives them.
- */
-export interface ChallengeAccess {
-  /** Extra names for the `@ultimat3/auth` import, already sorted into it. */
-  readonly authImports: readonly string[];
-  /** Import lines after the shared ones, and declarations after the database block. */
-  readonly imports: readonly string[];
-  readonly prelude: string;
-}
-
-const PASSWORD_CHALLENGE: ChallengeAccess = {
-  authImports: [],
-  imports: ["import { challengeOf, MFA_CHALLENGE_COOKIE } from '../sign-in-challenge';"],
-  prelude: '',
-};
-
-export const confirmSessionTest = (
-  access: ChallengeAccess = PASSWORD_CHALLENGE,
-): string => `// confirmSession, run inside a real request over the app's migrated database: with no challenge
+export const confirmSessionTest =
+  (): string => `// confirmSession, run inside a real request over the app's migrated database: with no challenge
 // held it refuses, a wrong code is refused, and the held challenge plus the right code signs in.
+// The challenge and its cookie's name are auth's, whichever shape's first leg held it.
 import { toRoute } from '@ultimat3/action';
 import {
-${[
-  ...access.authImports,
-  'generateTotpSecret',
-  'login',
-  'register',
-  'saveTotpSecret',
-  'totpCode',
-  'totpStep',
-]
-  .map((name) => `  ${name},`)
-  .join('\n')}
+  generateTotpSecret,
+  login,
+  MFA_CHALLENGE_COOKIE,
+  mfaChallengeOf,
+  register,
+  saveTotpSecret,
+  totpCode,
+  totpStep,
 } from '@ultimat3/auth';
 ${SHARED_IMPORTS}
-${[...access.imports, "import { confirmSession } from './confirm-session';"].join('\n')}
+import { confirmSession } from './confirm-session';
 
 ${DATABASE}
-${access.prelude}
+
 const target = confirmSession.named('confirmSession');
 const PASSWORD = 'a long scaffold test passphrase';
 
@@ -207,7 +186,7 @@ const challenged = async (email: string) => {
   const secret = generateTotpSecret();
   await saveTotpSecret(appAuth(), user.id, secret);
   const first = await login(appAuth(), { email, password: PASSWORD }).catch((e: unknown) => e);
-  const challenge = challengeOf(first);
+  const challenge = mfaChallengeOf(first);
   expect(challenge).not.toBeNull();
   return { secret, cookie: \`\${MFA_CHALLENGE_COOKIE}=\${challenge}\` };
 };

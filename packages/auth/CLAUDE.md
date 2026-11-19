@@ -100,7 +100,8 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 - **One sign-in route implementation** (`identity-provider-route-core.ts`) at
   `/auth/sso/:provider[/callback]` (the callback movable only by `callbackPath`); failure is coded JSON, success a 303 to `successPath`. †
 - **A built-in callback hands `X_MFA_REQUIRED` on by `mfaPath` only**: 303 + the challenge in
-  `__Host-x_mfa` (`mfa-handoff.ts`), read by `readMfaChallenge(request)`. Never a URL, body or log
+  `__Host-x_mfa` (`mfa-handoff.ts`, the ONE challenge cookie: `mfaChallengeOf`, `mfaChallengeCookie`,
+  `readMfaChallenge`, `clearMfaChallengeCookie`, `MFA_CHALLENGE_COOKIE` — all public). Never a URL, body or log
   line. No `mfaPath` → 401 with the `mfaPath` fix; a non-local path is `X_CONFIG_INVALID`.
 - Refresh is **not implemented**, so the framework **stores no provider token**: `accountFor`
   (`oauth-login.ts`) writes `accessToken: null, refreshToken: null`. The columns and `AuthAccount`

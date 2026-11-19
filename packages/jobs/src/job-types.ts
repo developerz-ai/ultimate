@@ -263,3 +263,13 @@ export interface JobHandle<I = unknown> {
 }
 
 export type AnyJobHandle = JobHandle<unknown>;
+
+/**
+ * What a factory over `job()` declares (`factoryJob`, `job.ts`): the same definition, with `retry`
+ * `undefined` meaning "declares none" — the app's default (`jobs.maxAttempts`, `jobs.backoff`),
+ * resolved when `handle.retry` is read (`retry-default.ts`). Internal: an app's `job()` states its
+ * retry, and widening `JobDefinition.retry` itself is a public-API change.
+ */
+export interface FactoryJobDefinition<I, R = unknown> extends Omit<JobDefinition<I, R>, 'retry'> {
+  readonly retry: RetryPolicy | undefined;
+}

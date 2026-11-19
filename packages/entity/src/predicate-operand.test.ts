@@ -219,6 +219,17 @@ describe('uuid(): an operand that is no uuid equals no row, in both drivers', ()
     expect(await both({ column: 'ref', op: 'in', value: ['nope', null] })).toEqual([[1], [1]]);
   });
 
+  // Memory ordered the TEXT; Postgres refused the parameter (`22P02`). A range has no "no row" to
+  // agree on — every row is above or below SOMETHING — so both drivers refuse it.
+  test.each(['gt', 'gte', 'lt', 'lte'] as const)(
+    'a range operator %s against text that is no uuid is refused by both drivers',
+    async (op) => {
+      expect(await both({ column: 'id', op, value: 'nope' })).toEqual(REFUSED);
+      expect(await both({ column: 'ref', op, value: 5 })).toEqual(REFUSED);
+      expect(await both({ column: 'id', op, value: idAt(1) })).not.toEqual(REFUSED);
+    },
+  );
+
   test('a malformed id is a row that is not there: null to findById, X_NOT_FOUND to a write', async () => {
     for (const repo of [memory, postgres]) {
       expect(await repo.findById('nope')).toBeNull();

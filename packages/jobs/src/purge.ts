@@ -18,10 +18,9 @@ import { t } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import { nowMs } from './clock';
 import type { JobHandle } from './job';
-import { job } from './job';
+import { factoryJob } from './job';
 import { entityTargets, type PurgeEntities, recordPurgeCoverage } from './purge-entities';
 import type { RetryPolicy } from './retry';
-import { DEFAULT_RETRY } from './retry';
 
 /**
  * One table's worth of expired rows, behind the narrowest possible seam.
@@ -131,7 +130,7 @@ export function purge(definition: PurgeDefinition): JobHandle<PurgeInput> {
   const clock = definition.clock;
   recordPurgeCoverage(definition.entities);
 
-  return job<PurgeInput>({
+  return factoryJob<PurgeInput>({
     ...(definition.name === undefined ? {} : { name: definition.name }),
     input: t.object({}),
     // One live sweep, forever: a second enqueue while a pass is still running is the same pass,
@@ -141,7 +140,7 @@ export function purge(definition: PurgeDefinition): JobHandle<PurgeInput> {
     // Framework tables, not an org's rows. Every statement behind a target is raw SQL over the
     // whole table, so there is no tenant-scoped read here to fail closed.
     tenant: 'none',
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     async run({ step }): Promise<PurgeReport> {

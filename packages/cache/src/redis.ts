@@ -289,6 +289,9 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
     /** The fleet-wide half of the fill fence: generations other replicas' busts move. */
     fence: (scope: FenceScope) => sampleGenerations(conn(), ns, clock, scope),
 
+    /** The namespace a bust sweeps — per build by default, so two builds are two scopes. */
+    scope: ns,
+
     /**
      * Read every bucket the tags match, a page per round trip and the buckets concurrently; `ZREM`
      * what they held; THEN `UNLINK` it, one key per command; and re-join any member whose value

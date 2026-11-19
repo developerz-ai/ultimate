@@ -175,7 +175,11 @@ An output holding a `Date` (`t.date`, an entity `timestamp()` row) names each on
 typed client hands back the `Date` the output type promises (`As of 2026-11`). The body and the
 OpenAPI document are unchanged: a client that ignores the header reads the ISO string it always
 read. Each streamed `chunk` and the `done` frame carry their instants on a `dates:` field, which an
-SSE reader that does not know it ignores.
+SSE reader that does not know it ignores. The header is capped at 4,096 bytes
+(`WIRE_DATES_MAX_BYTES`): an answer whose instants need one path each — a `string | Date` column, a
+`[label, instant]` tuple — past that is sent with no `x-ultimate-dates` (and no `dates:` line), the
+client reads those instants as ISO strings, and the operation is logged once at `warn` as
+`http.wire_dates_dropped`. `As of 2026-11-19`.
 
 ### Flight control — `clientFlight`, opt-in
 
@@ -994,9 +998,13 @@ a time, and the batch may have committed before its reply was lost. Each accepte
 record object, the same one handed to `writeMany` and to its retry, carrying the row id minted when
 it was accepted. Both inserts skip a row whose id is already stored with the same facts. A
 DIFFERENT row under that id still raises the driver's `unique_violation`, so a collision is never
-silently dropped. `memoryAuditSink` keeps an accepted record once, too. Two attempts with identical
-facts are still two records: one object written twice is two acceptances. A sink of your own keys
-an idempotent write on the record object it is handed.
+silently dropped. A retry that meets its own batch still committing draws `unique_violation` once
+(it waited on the key); `postgresAuditSink` sends that record once more, and the second statement
+sees the committed row and skips it. `memoryAuditSink` keeps an accepted record once, too. Two attempts with identical
+facts are still two records: one object written twice is two acceptances. A sink of your own reads
+the same id with `acceptedIdOf(record)` from `@ultimat3/action/adapter` (a string for every record
+`batchedAuditSink` handed it, `undefined` for one written unbatched) and keys its idempotent insert
+on it.
 
 `x_audit` carries the framework's own facts as columns — the action, the surface, the outcome,
 the actor, the correlation ids, the idempotency key — and the parsed `input` as `jsonb`, redacted

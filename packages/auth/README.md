@@ -603,6 +603,39 @@ The challenge travels in that cookie and nowhere else: never the redirect URL, a
 log line. An absent or stale cookie is `readMfaChallenge(request) === null`, and `completeMfa`
 refuses it like any other bad challenge.
 
+**One challenge cookie, both halves public, `As of 2026-11-19`.** A sign-in handler of your own
+(a password form over `login()`) carries its challenge in the same cookie the built-in callbacks
+write, so one second-factor page serves every first leg:
+
+| Export | What it is |
+|---|---|
+| `mfaChallengeOf(error)` | the sealed challenge of an `X_MFA_REQUIRED`, `null` for every other throw |
+| `mfaChallengeCookie(challenge)` | the `Set-Cookie` line that holds it: `__Host-x_mfa`, `HttpOnly; Secure; Path=/; SameSite=Lax`, `Max-Age` the challenge's own five minutes |
+| `readMfaChallenge(request)` | the held challenge, or `null` |
+| `clearMfaChallengeCookie()` | the `Set-Cookie` line that drops it, sent with the response that finishes the second leg |
+| `MFA_CHALLENGE_COOKIE` | the cookie's name, for a test that builds a `cookie:` header or asserts a `Set-Cookie` |
+
+```ts
+import { type Auth, login, mfaChallengeCookie, mfaChallengeOf } from '@ultimat3/auth';
+
+declare const auth: Auth;
+
+/** The first leg: a session, or the challenge held for `/sign-in/mfa`. */
+export async function signIn(email: string, password: string, ip: string): Promise<Response> {
+  const headers = new Headers();
+  try {
+    headers.append('set-cookie', (await login(auth, { email, password, ip })).cookie);
+    headers.set('location', '/app');
+  } catch (error) {
+    const challenge = mfaChallengeOf(error);
+    if (challenge === null) throw error;
+    headers.append('set-cookie', mfaChallengeCookie(challenge));
+    headers.set('location', '/sign-in/mfa');
+  }
+  return new Response(null, { status: 303, headers });
+}
+```
+
 | `completeMfa` is given | Answer |
 |---|---|
 | a live challenge and the current code, or an unused recovery code | `{ actor, session, token, cookie }`, `mfaSatisfied: true` |

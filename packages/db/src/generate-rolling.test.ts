@@ -230,6 +230,53 @@ describe('the printed path, end to end', () => {
     expect(at('create index "posts_legacy_idx"')).toBeGreaterThan(at('add column "legacy"'));
   });
 
+  // `drop column` takes every index that DEPENDS on the column, not only one keyed by it. Left to
+  // the removal step, its `down` was `create index … where ("legacy" …)` on a table with no
+  // `legacy` (42703), and the drop's own snapshot still recorded an index the database had lost.
+  test('a partial index whose predicate reads the dropped column is restored by the drop’s own down', () => {
+    const plain = { unique: false, order: null };
+    const before = tableOf('posts', [textColumn('legacy'), textColumn('title')], {
+      indexes: [
+        { name: 'posts_p', columns: ['title'], where: '"legacy" is not null', ...plain },
+        {
+          name: 'posts_e',
+          columns: ['legacy'],
+          expression: 'lower(legacy)',
+          where: null,
+          ...plain,
+        },
+        { name: 'posts_i', columns: ['title'], include: ['legacy'], where: null, ...plain },
+        // Kept by the entity and tied to nothing leaving: no arm may touch it. `'legacy'` here is
+        // data, never a reference.
+        { name: 'posts_k', columns: ['title'], where: "title <> 'legacy'", ...plain },
+      ],
+    });
+    const after = tableOf('posts', [textColumn('title')], {
+      indexes: [{ name: 'posts_k', columns: ['title'], where: "title <> 'legacy'", ...plain }],
+    });
+    const drop = generateMigration({
+      entities: [after],
+      current: snapshotOf([before]),
+      name: 'drop',
+      now: AT,
+      allowDestructive: true,
+      rollingUnsafe: true,
+    });
+    const down = statementsOf(drop.down);
+    const at = (needle: string): number => down.findIndex((each) => each.includes(needle));
+    for (const name of ['posts_p', 'posts_e', 'posts_i']) {
+      expect(`${name}: ${at(`create index "${name}"`) > at('add column "legacy"')}`).toBe(
+        `${name}: true`,
+      );
+      // Postgres already took it with the column: no drop beside it, here or in a follow-up.
+      expect(`${drop.up}${drop.followUp?.up ?? ''}`).not.toContain(`"${name}"`);
+      expect(drop.followUp?.down ?? '').not.toContain(`"${name}"`);
+    }
+    expect(at('add column "legacy"')).toBeGreaterThanOrEqual(0);
+    expect(`${drop.up}${drop.down}${drop.followUp?.up ?? ''}`).not.toContain('"posts_k"');
+    expect(drop.snapshot.tables[0]?.indexes.map((index) => index.name)).toEqual(['posts_k']);
+  });
+
   test('declaring a retired column again records the un-retire, or the flag would stick', () => {
     const first = generateMigration({
       entities: [retired],

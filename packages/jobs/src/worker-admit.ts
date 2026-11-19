@@ -5,6 +5,7 @@
 
 import type { Clock, Ctx } from '@ultimat3/core';
 import { logger } from '@ultimat3/core';
+import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { claimOf } from './driver';
 import type { JobExecution } from './execute-result';
@@ -19,6 +20,8 @@ export interface AdmissionOptions {
   readonly fleetSlots: FleetSlots;
   readonly workerId: string;
   readonly pollIntervalMs: number;
+  /** The claim's lease window: a job admitted past it is shed, never run (`admitted-late`). */
+  readonly visibilityTimeoutMs: number;
   readonly clock?: Clock;
   /** `WorkerOptions.context` — a refused run's `onSettled` is scoped from it. */
   readonly context: () => Ctx;
@@ -37,15 +40,17 @@ export type Admission =
 /**
  * `behind` is the rest of the claimed batch: handed back before a store failure is rethrown. A
  * thunk, read only on that failure: a slice per admitted job made a batch O(batch²) to admit.
+ * `askedAt` is when the claim was asked, on `clock` — where the lease's window starts.
  */
 export type Admit = (
   job: ClaimedJob,
   queue: string,
   behind: () => readonly ClaimedJob[],
+  askedAt: number,
 ) => Promise<Admission>;
 
 export function createAdmission(options: AdmissionOptions): Admit {
-  const { driver, limiter, fleetSlots, workerId, pollIntervalMs } = options;
+  const { driver, limiter, fleetSlots, workerId, pollIntervalMs, visibilityTimeoutMs } = options;
   const back = { delayMs: pollIntervalMs, workerId };
 
   /**
@@ -70,7 +75,24 @@ export function createAdmission(options: AdmissionOptions): Admit {
     });
   };
 
-  return async (job, queue, behind) => {
+  /**
+   * Admission (a slow store's fleet-slot writes, one per job ahead in the batch) outlasted the
+   * claim's whole window: the queue may already have handed the row on. Not a lost lease — no body
+   * started here, so `jobs.lease.lost` ("this job may now run twice") and a settle failure would
+   * both be false — but a shed: back uncounted, fenced on the claim, so a re-claimed row ignores it.
+   */
+  const late = (askedAt: number): boolean => nowMs(options.clock) - askedAt >= visibilityTimeoutMs;
+
+  return async (job, queue, behind, askedAt) => {
+    if (late(askedAt)) {
+      try {
+        await shed(job, queue, 'admitted-late');
+      } catch (error) {
+        await handBack(driver, [job, ...behind()], back);
+        throw error;
+      }
+      return { kind: 'waiting' };
+    }
     const key = { queue, ...(job.tenantId === undefined ? {} : { tenantId: job.tenantId }) };
     const lease = limiter.tryAcquire(key);
     if (lease === undefined) {
@@ -107,10 +129,24 @@ export function createAdmission(options: AdmissionOptions): Admit {
       await handBack(driver, [job, ...behind()], back);
       throw error;
     }
-    if (grant.outcome === 'granted') return { kind: 'run', lease };
-    // A key that could not be derived RUNS — into `executeJob`'s failure path, which raises the
-    // refusal before the body: it fails as an attempt, never as a round.
-    if (grant.outcome === 'undecidable') return { kind: 'run', lease, refusal: grant.error };
+    if (grant.outcome === 'granted' || grant.outcome === 'undecidable') {
+      // The slot write is where the time goes: asked again past it.
+      if (late(askedAt)) {
+        lease.abandon();
+        try {
+          await fleetSlots.release(job.id);
+          await shed(job, queue, 'admitted-late');
+        } catch (error) {
+          await handBack(driver, [job, ...behind()], back);
+          throw error;
+        }
+        return { kind: 'waiting' };
+      }
+      // A key that could not be derived RUNS — into `executeJob`'s failure path, which raises the
+      // refusal before the body: it fails as an attempt, never as a round.
+      if (grant.outcome === 'undecidable') return { kind: 'run', lease, refusal: grant.error };
+      return { kind: 'run', lease };
+    }
 
     // Over the fleet cap, so this run does not start: `abandon`, never `release`, or a tenant
     // waiting behind a full `job.concurrency` pays one `ratePerTenant` start per poll interval.

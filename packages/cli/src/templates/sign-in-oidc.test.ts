@@ -78,7 +78,11 @@ describe('unit · x g sign-in --oidc carries an MFA-enrolled user through', () =
     // The cookie is named by auth alone: no generated file spells it.
     for (const [path, contents] of files) {
       expect(`${path}: ${contents.includes('__Host-x_mfa')}`).toBe(`${path}: false`);
+      // …and none recovers the name from a serialised line, or re-reads `meta.challenge` by hand.
+      expect(`${path}: ${contents.includes(".split('=')")}`).toBe(`${path}: false`);
+      expect(`${path}: ${contents.includes("meta?.['challenge']")}`).toBe(`${path}: false`);
     }
+    expect(ofName('/actions/confirm-session.test.ts')).toContain('  MFA_CHALLENGE_COOKIE,\n');
   });
 
   test('every locale gets the second-factor copy the page renders', () => {

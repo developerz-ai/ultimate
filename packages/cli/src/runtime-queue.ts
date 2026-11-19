@@ -35,10 +35,12 @@ import {
   resetJobsFacade,
   setJobsFacade,
 } from '@ultimat3/jobs';
+import { loadAppConfig } from './app-config-load';
 import { applyLockedSchema, ensureSchema } from './framework-schema-apply';
 import { appExtensions } from './migration-extensions';
 import type { DevServices } from './runtime-bindings';
 import { databaseSslOf, withRequiredTls } from './runtime-database-ssl';
+import { installJobsRetry } from './runtime-jobs';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { QUEUE_PORT_BINDINGS } from './runtime-port-bindings-queue';
 import { installPorts, type PortRelease, suppliedOr } from './runtime-ports';
@@ -357,6 +359,10 @@ export async function startQueue(
   ) {
     throw poolerSessionRequired('a step that applies migrations');
   }
+  // Here, the boot EVERY entry point shares, and not in `startServices` alone: `x tasks run`,
+  // `x jobs` and `x db backfill` boot only this, and a row they enqueued was stamped with the
+  // framework's `max_attempts` while the worker retried by the app's (`jobs.maxAttempts`).
+  installJobsRetry(await loadAppConfig(services.root));
   const { client: db, replica } = startDb(services, env, await databaseSslOf(services));
   try {
     // Pay the Postgres boot here, so the first request is not the slow one and a broken database

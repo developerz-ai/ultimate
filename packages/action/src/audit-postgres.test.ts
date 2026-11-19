@@ -347,6 +347,35 @@ describe('the postgres audit sink writes many records in one statement', () => {
     expect(new Set(batchIds).size).toBe(2);
   });
 
+  test('groupCommit: a retry that meets its own batch mid-commit (23505) re-sends once and settles', async () => {
+    // The batch committed after its reply was lost: the retry's `not exists` ran before that
+    // commit, waited on the key, and the server answered unique_violation. Sent again, it sees the
+    // committed identical row and skips it; a second 23505 is a DIFFERENT row and still fails.
+    const uniqueViolation = { severity: 'ERROR', code: '23505', message: 'duplicate key' };
+    const singles: string[] = [];
+    const exec: PgExecutor = {
+      query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> {
+        if (sql === SQL_AUDIT_INSERT_MANY) return Promise.reject(new RangeError('reply lost'));
+        const name = String(params[2]);
+        singles.push(name);
+        const seen = singles.filter((one) => one === name).length;
+        if (name === 'clash' || seen === 1) return Promise.reject(uniqueViolation);
+        return Promise.resolve([] as unknown as readonly R[]);
+      },
+    };
+    const sink = postgresAuditSink({ executor: exec, groupCommit: { maxDelayMs: 0 } });
+    let settled: PromiseSettledResult<void>[];
+    try {
+      settled = await Promise.allSettled(
+        ['a', 'clash'].map((name) => sink.write(recordFor({ name }))),
+      );
+    } finally {
+      await sink.close();
+    }
+    expect(settled.map((one) => one.status)).toEqual(['fulfilled', 'rejected']);
+    expect(singles.toSorted()).toEqual(['a', 'a', 'clash', 'clash']);
+  });
+
   test('two records with identical facts are two ids: an attempt is never collapsed', async () => {
     const { exec, calls } = executor();
     const sink = postgresAuditSink({ executor: exec });

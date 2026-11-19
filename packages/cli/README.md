@@ -41,7 +41,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x secrets show\|init\|edit\|set\|rotate` | the committed encrypted secrets | decrypted into the `envSchema` variables of the same names |
 | `x policy list\|explain <subject>` | which clause decided a permission, and why | five packages print `x policy explain` as a denial's `fix:` |
 | `x i18n check\|add\|sync` | catalogs: gaps, a new locale, key sync | all three of i18n's own error fixes name it |
-| `x errors explain <CODE>` / `list` | the error table, programmatically | refuses an unregistered code instead of inventing one |
+| `x errors explain <CODE>` / `list` | the error table, programmatically | refuses an unregistered code instead of inventing one. An app's own `defineError()` code answers inside the app from the registry alone: title, HTTP status (`null`: off-socket) and the declaring `file:line` — no `cause`/`fix`, which only a throw has (`As of 2026-11-19`) |
 | `x repro <id> [--write] [--verify]` / `--list` / `--from` | a dead job or a captured 5xx as a red test in `repro/` | `--verify` answers `{ reproduced, code, fingerprint }`; a mismatch is `X_REPRO_NOT_REPRODUCED`, never a crash |
 | `x repro <id> --bundle` | the failure as one redacted `repro/bundle-<id>.json` for an issue | secrets masked, env values / hostnames / paths replaced; `bunx create-ultimate repro <file>` opens it |
 | `x docs "<question>"` | the framework docs and the wiki, offline | answered from the installed packages and the `wiki/` this tarball ships (`prepack`: `scripts/pack-cli-wiki.ts`), never the network; `x docs Upgrading#<anchor>` prints one whole section |
@@ -203,6 +203,8 @@ its name like any guard.
 | `parse.ts` | flags, subcommands, `--json`, `--help`, suggestions |
 | `flag-number.ts` | the one integer-flag reader — `--port`, `--workers`, `--shard` |
 | `shell-quote.ts` | the one POSIX quoter for a value pasted into a `fix:` or a reproduce line |
+| `stop-run-start.ts` | the one `x stop --json && x <command> && x dev` fix line (`stopRunStartFix`); `stop-run-start.test.ts` refuses a hand-built one |
+| `db-dev-wire.ts` | the `/_x/db` paths and the `--steps` rule, import-free, read by the dev routes and the `x db` clients; `db-dev-wire.test.ts` refuses a restated literal |
 | `output.ts` | one data shape, two renderers, the 3-line error format |
 | `registry.ts` | the one command list |
 | `generate-kinds.ts` | which generators exist, and how a command line names one |
@@ -287,6 +289,10 @@ lints and runs what both shapes leave; `e2e/sign-in.e2e.test.ts` signs in to a p
 Both shapes ship the second leg, `As of 2026-11`: `--oidc` hands `oauthLogin` `mfaPath:
 '/auth/sign-in/second-factor'` and writes that page, `actions/confirm-session.ts` and a
 `sign-in-challenge.ts` that reads auth's `__Host-x_mfa` cookie through `readMfaChallenge`.
+One challenge cookie for both shapes, `As of 2026-11-19`: `--password` holds its challenge in the
+same cookie through auth's `mfaChallengeOf` / `mfaChallengeCookie` (`templates/sign-in-challenge.ts`
+writes both shapes' module); no generated file names a cookie. An app generated before keeps its own
+`x_mfa_challenge` code — that file is the app's, and nothing in the framework reads it.
 
 ## Beside a running `x dev` (embedded database)
 

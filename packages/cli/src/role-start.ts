@@ -40,6 +40,7 @@ import {
 import { startRolePgStats } from './role-pg-stats';
 import { rolesUnderRealtime } from './role-realtime';
 import { startReplicator } from './role-replicator';
+import { rolesDeclaredForDev } from './role-select';
 import { type DeviceMount, hostDeviceSockets } from './role-start-devices';
 import type { RunningRoles, StartRolesOptions } from './role-start-types';
 import { prepareSync, type RunningSync, syncReadsChanges } from './role-sync';
@@ -58,7 +59,7 @@ import { trustedHopsFromEnv } from './trusted-hops';
 import { DEV_BINDING } from './web-binding';
 
 // `--role`'s reading, in a file of its own at the line ceiling.
-export { SELECTABLE_ROLES, selectRoles } from './role-select';
+export { rolesDeclaredForDev, SELECTABLE_ROLES, selectRoles } from './role-select';
 // The two shapes this module takes and answers, in a file of their own at the line ceiling.
 export type { RunningRoles, StartRolesOptions } from './role-start-types';
 // Declared beside the option types so `x dev`'s spec reads it without loading this module.
@@ -226,12 +227,12 @@ function assertOneJobDriver(runtime: RunningServices): void {
 }
 
 export async function startRoles(options: StartRolesOptions): Promise<RunningRoles> {
-  // `realtime.enabled` read here, before anything binds: a refusal leaves nothing to unwind.
-  const selected = rolesUnderRealtime(
-    options.roles,
-    options.runtime.realtime,
-    (options.http ?? DEV_BINDING).dev,
-  );
+  const dev = (options.http ?? DEV_BINDING).dev;
+  const config = options.root === undefined ? undefined : await loadAppConfig(options.root);
+  // `realtime.enabled` and `roles` read here, before anything binds: a refusal leaves nothing to
+  // unwind. `roles` for `x dev` only — a container's `ROLE` was refused against it at boot.
+  const realtime = rolesUnderRealtime(options.roles, options.runtime.realtime, dev);
+  const selected = dev ? rolesDeclaredForDev(realtime, config) : realtime;
   assertOneJobDriver(options.runtime);
   // Once per process, and only where a role in it can act on the line (`serve-boot-warnings.ts`):
   // `rateLimitStoreFor` is asked twice in a web boot, and a scheduler spends no limit at all.
@@ -255,7 +256,6 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // these roles takes back exactly this install, whatever else stacked over or under it.
     // Once, before any role serves: which roles core's `bootWarning` concerns, and its per-build
     // marker store (`runtime-boot-warnings.ts`). Released by the stop, like every frame here.
-    const config = options.root === undefined ? undefined : await loadAppConfig(options.root);
     const releaseWarnings = installRoleBootWarnings({
       roles: selected,
       config,

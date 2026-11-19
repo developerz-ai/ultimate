@@ -64,6 +64,23 @@ export function referencesColumn(expression: string, column: string): boolean {
   return false;
 }
 
+/**
+ * Whether `drop column` takes `index` with it: Postgres drops every index that DEPENDS on the
+ * column — keyed by it, carrying it as INCLUDE payload, or reading it in its predicate or its
+ * expression key (measured on PGlite: `posts_p on (title) where "legacy" is not null` goes with
+ * `legacy`). A catalog-read expression key sits in `columns` in parentheses, so it is read too.
+ */
+export function indexDependsOn(index: IndexDescription, column: string): boolean {
+  return (
+    index.columns.some((key) =>
+      key.startsWith('(') ? referencesColumn(key, column) : key === column,
+    ) ||
+    (index.include ?? []).includes(column) ||
+    (index.where !== null && referencesColumn(index.where, column)) ||
+    (index.expression !== undefined && referencesColumn(index.expression, column))
+  );
+}
+
 /** The recorded objects a retype of `column` cannot leave in place. */
 export interface RetypeDependents {
   /**

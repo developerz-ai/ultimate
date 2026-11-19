@@ -60,7 +60,10 @@ describe('hotkeyAction', () => {
     expect(label(hotkeyAction(key('?', { isComposing: true }), other, table))).toBeUndefined();
     expect(
       label(hotkeyAction(key('k', { ctrlKey: true, isComposing: true }), other, table)),
-    ).toBeUndefined();
+    ).toBeUndefined(); // Safari's confirming Enter arrives after `compositionend`: only keyCode 229 says so.
+    expect(label(hotkeyAction(key('?', { keyCode: 229 }), other, table))).toBeUndefined();
+    expect(label(hotkeyAction(key('Process'), other, table))).toBeUndefined();
+    expect(label(hotkeyAction(key('?', { keyCode: 191 }), other, table))).toBe('sheet');
   });
 
   test('mod+k needs the platform modifier, and fires while typing', () => {

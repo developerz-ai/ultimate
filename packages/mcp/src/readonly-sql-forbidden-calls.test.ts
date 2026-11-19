@@ -89,6 +89,10 @@ describe('a call that mutates the server, the queue or the replication stream is
       // Postgres' own synonym: the plan is executed under either spelling.
       'explain analyse select 1',
       'explain (analyse) select 1',
+      // A quoted option name is the same option: Postgres folds nothing inside quotes, and
+      // `analyze` is already lower case.
+      'explain ("analyze") select 1',
+      'explain (verbose, "analyse" true) select 1',
       "select pg_copy_logical_replication_slot('a', 'b')",
       "select pg_copy_physical_replication_slot('a', 'b')",
       'select pg_sync_replication_slots()',

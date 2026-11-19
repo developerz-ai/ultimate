@@ -77,6 +77,21 @@ describe('catalogSubset', () => {
     }
   });
 
+  test("a second subset from one translator lists the catalog's keys no second time", () => {
+    let listed = 0;
+    const counted = Object.assign((key: string) => server(key), {
+      raw: server.raw,
+      keys: (): string[] => {
+        listed += 1;
+        return server.keys();
+      },
+      locale: server.locale,
+    });
+    catalogSubset(counted, ['ui.retry']);
+    catalogSubset(counted, ['app.likes']);
+    expect(listed).toBe(1);
+  });
+
   test('a __proto__ key in the parsed subset stays a key', () => {
     const island = subsetTranslator(
       JSON.parse('{"locale":"en","catalog":{"__proto__":"x","ui.retry":"Retry"}}'),

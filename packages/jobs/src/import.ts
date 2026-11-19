@@ -20,9 +20,8 @@ import type { ExportSink } from './export-sink';
 import { importPass } from './import-pass';
 import type { ImportSource } from './import-source';
 import type { JobHandle } from './job';
-import { job } from './job';
+import { factoryJob } from './job';
 import type { RetryPolicy } from './retry';
-import { DEFAULT_RETRY } from './retry';
 import type { JobTenant } from './tenant';
 
 /** Records per `handle` call: one statement's worth. A page hands over its whole read in these. */
@@ -160,14 +159,14 @@ export function importRows<Rec, I>(definition: ImportDefinition<Rec, I>): JobHan
     pace,
   };
 
-  return job<I>({
+  return factoryJob<I>({
     name,
     input: definition.input,
     // ONE live pass per file, derived rather than declared, as an export's per prefix: two passes
     // over one file would hand every row to `handle` twice and race over every error part.
     idempotencyKey: (input) => `${name}:${definition.key(input)}`,
     tenant: definition.tenant,
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     run: (args) => importPass<Rec, I>(plan, args),

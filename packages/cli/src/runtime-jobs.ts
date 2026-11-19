@@ -77,7 +77,7 @@ export function installJobsRetry(config: AppConfig | undefined): void {
 
 /**
  * What the boot reads of `jobs.*` for the worker, once. It installs nothing: the default retry is
- * every role's, so the boot calls `installJobsRetry` itself (`runtime-services.ts`).
+ * every role's, so the boot calls `installJobsRetry` itself (`startQueue`, `runtime-queue.ts`).
  */
 export function workerConfigOf(config: AppConfig | undefined, env: Env = {}): WorkerConfig {
   const fromEnv = workerQueuesFromEnv(env);

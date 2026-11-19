@@ -346,5 +346,9 @@
  * hands an MFA-enrolled user their challenge).
  * raised 1556 → 1558, measured 1558 (2026-11-19, r9 sweep 2): the two on `MIGRATE_CEILING`,
  * `db/src/column-drop.ts` and `http/src/fault-report.ts`.
+ * raised 1558 → 1562, measured 1562 (2026-11-19, r9 verification fixes, metafile walk against HEAD):
+ * `db/src/migrate-dev-fix.ts`, `cache/src/shared-scopes.ts` and `http/src/wire-dates-cap.ts` (the
+ * three on `MIGRATE_CEILING`) and `cli/src/runtime-cache-frame.ts` (the bust frame's codec, split
+ * from `runtime-cache.ts`). `runtime-jobs.ts` and the entity driver kit were already on this graph.
  */
-export const SERVING_ROLE_CEILING = 1558;
+export const SERVING_ROLE_CEILING = 1562;

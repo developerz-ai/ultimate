@@ -86,6 +86,7 @@ export type {
   SemanticRememberOptions,
 } from './semantic';
 export { memorySemanticCache } from './semantic';
+export type { SharedTierScopes } from './shared-scopes';
 export type { CacheTag, CacheTagRegistry, TagFactory } from './tags';
 export {
   assertKnownTags,

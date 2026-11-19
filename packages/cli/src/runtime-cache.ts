@@ -42,6 +42,7 @@ import { redisClient, redisUrlSource } from '@ultimat3/core/redis';
 import type { Transport } from '@ultimat3/realtime/server';
 import type { Env } from './runtime-bindings';
 import { logCacheBus, selectCacheBus } from './runtime-cache-bus';
+import { decodeBustFrame, encodeBustFrame, isFlushAll } from './runtime-cache-frame';
 import { defaultTtlOf } from './runtime-cache-ttl';
 
 /**
@@ -251,9 +252,10 @@ function warnDefaultRedis(built: readonly CacheTier[], env: Env): void {
  * another instance's. A message this process published is delivered back to it on every real bus
  * and is applied again — deliberately, with no node-id filter — to the tiers this process OWNS
  * (the in-process rungs): there, dropping an already-dropped key is idempotent and free, while a
- * dedup table is state that can be wrong. A SHARED rung is not free and is not re-busted: the
- * sender cleared the one Redis every replica reads, so `@ultimat3/cache` applies an inbound
- * broadcast to no tier the process does not own. Re-emit is impossible by
+ * dedup table is state that can be wrong. A SHARED rung is not free: the frame names the scope
+ * (Redis namespace, per build) the sender's bust cleared, and a receiver skips its shared rung
+ * only for that same scope — another build's pod on a rolling deploy, or an older pod's frame
+ * naming none, still busts it (`runtime-cache-frame.ts`). Re-emit is impossible by
  * construction, not by a flag: `receiveInvalidationBroadcast` is the only entry point that
  * suppresses it, and `emit` is not a public parameter.
  */
@@ -320,6 +322,8 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
       return;
     }
     if (deferred.size === 0) return;
+    // Named no scope: the batch spans busts whose shared rungs may have refused, so every peer
+    // busts every rung — the cost of a missed skip is one load, of a wrong one a stale TTL.
     const batch = [...deferred];
     deferred.clear();
     try {
@@ -368,9 +372,9 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
     })();
   };
 
-  registerInvalidationBroadcast(async (wireTags) => {
+  registerInvalidationBroadcast(async (wireTags, sender) => {
     try {
-      await send(JSON.stringify(wireTags));
+      await send(encodeBustFrame(wireTags, sender));
     } catch (error) {
       defer(wireTags);
       // Still thrown: the report must say the peers have not been told YET.
@@ -467,13 +471,6 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
  */
 export const broadcastErrorText = (error: unknown): string => renderThrowable(error);
 
-/** `CACHE_FLUSH_ALL`, parsed: a peer had more refused busts than it could keep. */
-const isFlushAll = (parsed: unknown): boolean =>
-  typeof parsed === 'object' &&
-  parsed !== null &&
-  !Array.isArray(parsed) &&
-  Reflect.get(parsed, 'flush') === 'all';
-
 /**
  * A peer's wire tags, applied here. Never throws: a malformed frame or an undeclared tag must not
  * kill the subscriber loop, because that would silently end cross-instance invalidation for the
@@ -487,8 +484,8 @@ async function applyBroadcast(payload: string): Promise<void> {
       return;
     }
     if (!Array.isArray(parsed)) return;
-    const wire = parsed.filter((value): value is string => typeof value === 'string');
-    if (wire.length > 0) await receiveInvalidationBroadcast(wire);
+    const { wire, sender } = decodeBustFrame(parsed);
+    if (wire.length > 0) await receiveInvalidationBroadcast(wire, sender);
   } catch (error) {
     logger.warn('cache.broadcast.apply-failed', { error: broadcastErrorText(error) });
   }

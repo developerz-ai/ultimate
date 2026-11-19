@@ -153,9 +153,7 @@ function projectRoute(
       );
     // The same invocation, its chunks sent as they are yielded: one route, chosen by `accept`.
     if (streams && wantsEventStream(req.header('accept'))) {
-      // The route PATTERN, as the `error-map` stage names a fault this stream reports itself.
-      const operation = `${req.ctx.method} ${req.ctx.route?.path ?? path}`;
-      return streamAnswer(def, (sink) => withChunkSink(sink, call), operation);
+      return streamAnswer(def, (sink) => withChunkSink(sink, call));
     }
     // A browser's own form, to an action that declared where it lands: a 303 and a flash, the
     // refusal included. Everything above — the policy, the idempotency, the write — is the same.

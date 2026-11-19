@@ -123,6 +123,18 @@ export function assertReadOnlyQuery(sql: string): string {
       );
     }
   }
+  // `explain ("analyze")` is `explain (analyze)`: the option list names options, and a quoted
+  // name is the same option — so it is read in the form that keeps identifier content. Only the
+  // option list: a column quoted as `"analyze"` elsewhere is a column.
+  if (
+    leader === 'explain' &&
+    explainOptions(stripLiteralsAndComments(sql, 'keep')).some(ANALYZES)
+  ) {
+    throw rejected(
+      'the statement contains the mutating keyword "analyze" as a quoted EXPLAIN option',
+      'SELECT * FROM <table> LIMIT 10   -- or EXPLAIN with no ANALYZE: db.query never executes the plan it describes',
+    );
+  }
   // A family refuses a CALL, never a bare word: scanning every word rejected a column named
   // `pg_sleep_for_seconds`, and scanning the blanked form missed `"pg_advisory_lock"(1)`, which
   // is the same call wearing quotes. So this pass reads the form that keeps identifier content.
@@ -147,6 +159,14 @@ export function assertReadOnlyQuery(sql: string): string {
     );
   }
   return verbatim(sql);
+}
+
+const ANALYZES = (word: string): boolean => word === 'analyze' || word === 'analyse';
+
+/** The words of `explain ( … )`'s option list, lower-cased; none when it has no list. */
+function explainOptions(kept: string): readonly string[] {
+  const list = /^\s*explain\s*\(([^)]*)\)/i.exec(kept)?.[1] ?? '';
+  return list.toLowerCase().match(WORD) ?? [];
 }
 
 /**

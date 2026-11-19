@@ -252,4 +252,39 @@ describe('the drain deadline', () => {
     expect(drift).toBeLessThan(deadlineMs * 2);
     expect(seen).toBeGreaterThan(systemClock.monotonic());
   });
+
+  test("the reason carries where the in-flight wait ends: the deadline less the hooks' reserve", async () => {
+    configureLifecycle({ deadlineMs: 10_000 });
+    const seen: { deadlineAt: number; inflightUntil: number | undefined }[] = [];
+    onShutdown(
+      'probe',
+      (reason) => {
+        seen.push({ deadlineAt: reason.deadlineAt, inflightUntil: reason.inflightUntil });
+      },
+      { phase: 'accept' },
+    );
+    onShutdown('pool', () => undefined);
+
+    await drain('SIGTERM');
+
+    // One owner of the instant: a role that cuts its own work short measures back from it.
+    expect(seen).toHaveLength(1);
+    expect((seen[0]?.deadlineAt ?? 0) - (seen[0]?.inflightUntil ?? 0)).toBe(2_000);
+  });
+
+  test('with no inflight or close hook there is no reserve: the wait ends at the deadline', async () => {
+    configureLifecycle({ deadlineMs: 10_000 });
+    let gap: number | undefined;
+    onShutdown(
+      'probe',
+      (reason) => {
+        gap = reason.deadlineAt - (reason.inflightUntil ?? Number.NaN);
+      },
+      { phase: 'accept' },
+    );
+
+    await drain('SIGTERM');
+
+    expect(gap).toBe(0);
+  });
 });

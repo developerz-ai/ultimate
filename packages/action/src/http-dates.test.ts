@@ -3,9 +3,16 @@
 // so the typed client hands back the `Date` the output type promises. The body stays the ISO text.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { DATES_HEADER, RECORDS_HEADER, reviveWireDates, userActor } from '@ultimat3/core';
+import {
+  DATES_HEADER,
+  installLogSink,
+  RECORDS_HEADER,
+  reviveWireDates,
+  userActor,
+  wireDatePaths,
+} from '@ultimat3/core';
 import { clearRegistry, entity, timestamp, uuid } from '@ultimat3/entity';
-import { defineHttpConfig, httpServer } from '@ultimat3/http';
+import { defineHttpConfig, httpServer, WIRE_DATES_MAX_BYTES } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
@@ -132,5 +139,111 @@ describe('an action whose output holds a Date', () => {
     expect(await (await post(quiet, 'text/event-stream')).text()).toBe(
       'event: chunk\ndata: {"n":1}\n\nevent: done\ndata: {"n":2}\n\n',
     );
+  });
+});
+
+// A `string | Date` column shares one pattern between text and an instant, so no path folds — as
+// a chart's `[label, instant]` tuples do: 20,000 instants were a 648 KB response header, which a
+// default nginx answers 502.
+describe('an output whose instants cannot fold stays under the header cap', () => {
+  /** `count` instants, each beside a row whose same column is text. */
+  const points = (count: number) =>
+    Array.from({ length: count * 2 }, (_, index) => ({
+      value: index % 2 === 0 ? `label-${index}` : AT,
+    }));
+  const Points = t.array(t.object({ value: t.union(t.string, t.date) }));
+  const Series = t.object({ points: Points });
+  const logged = async (run: () => Promise<void>): Promise<readonly string[]> => {
+    const lines: string[] = [];
+    const release = installLogSink((line) => void lines.push(line));
+    try {
+      await run();
+    } finally {
+      release();
+    }
+    return lines.filter((line) => line.includes('http.wire_dates_dropped'));
+  };
+
+  test('past the cap the plain 200 carries no header, the body unchanged, one warn per action', async () => {
+    const chart = action({
+      input: t.object({}),
+      output: Series,
+      policy: allow(),
+      handle: () => ({ points: points(20_000) }),
+    }).named('chartSeries');
+    expect(wireDatePaths({ points: points(20_000) })?.length).toBeGreaterThan(500_000);
+    const lines = await logged(async () => {
+      for (let call = 0; call < 2; call += 1) {
+        const response = await post(chart);
+        expect(response.status).toBe(200);
+        expect(response.headers.get(DATES_HEADER)).toBeNull();
+        const body = (await response.json()) as { points: { value: string }[] };
+        expect(body.points).toHaveLength(40_000);
+        expect(body.points[1]).toEqual({ value: AT.toISOString() });
+      }
+      // The typed client reads the ISO strings it read before the header existed.
+      const call = chart.client({ baseUrl: 'http://dev.test', fetch: fetchOf(chart) });
+      expect((await call({})).points[1]?.value).toBe(AT.toISOString());
+    });
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({ operation: 'chartSeries', paths: 20_000 });
+  });
+
+  test('under the cap the same shape still names every instant', async () => {
+    const small = action({
+      input: t.object({}),
+      output: Series,
+      policy: allow(),
+      handle: () => ({ points: points(20) }),
+    }).named('chartSeriesSmall');
+    const header = (await post(small)).headers.get(DATES_HEADER);
+    expect(header).toBe(wireDatePaths({ points: points(20) }) ?? null);
+    expect(header?.length).toBeLessThanOrEqual(WIRE_DATES_MAX_BYTES);
+  });
+
+  test('the enveloped 200 follows the same cap and keeps x-ultimate-records', async () => {
+    const wide = action({
+      input: t.object({}),
+      output: t.object({ event: events.$schema, points: Points }),
+      policy: allow(),
+      handle: () => ({ event: { id: ID, at: AT }, points: points(2_000) }),
+    }).named('chartWithRecord');
+    const response = await post(wide);
+    expect(response.headers.get(RECORDS_HEADER)).toBe('1');
+    expect(response.headers.get(DATES_HEADER)).toBeNull();
+  });
+
+  test('a streamed chunk and the done frame past the cap carry no dates line, one warn', async () => {
+    const live = action({
+      input: t.object({}),
+      output: Series,
+      stream: Series,
+      policy: allow(),
+      async *handle() {
+        yield { points: points(2_000) };
+        yield { points: points(2_000) };
+        yield { points: points(2) };
+        return { points: points(2_000) };
+      },
+    }).named('chartStream');
+    let text = '';
+    const lines = await logged(async () => {
+      text = await (await post(live, 'text/event-stream')).text();
+    });
+    const frames = text.split('\n\n').filter((frame) => frame !== '');
+    expect(frames.map((frame) => frame.split('\n')[0])).toEqual([
+      'event: chunk',
+      'event: chunk',
+      'event: chunk',
+      'event: done',
+    ]);
+    expect(frames.map((frame) => frame.includes('\ndates: '))).toEqual([false, false, true, false]);
+    for (const frame of frames) {
+      for (const line of frame.split('\n')) {
+        if (!line.startsWith('data: ')) expect(line.length).toBeLessThan(WIRE_DATES_MAX_BYTES + 8);
+      }
+    }
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({ operation: 'chartStream', paths: 2_000 });
   });
 });

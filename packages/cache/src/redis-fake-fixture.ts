@@ -118,9 +118,13 @@ export function fakeRedis(): FakeRedis {
           return remove(key);
         case 'ZADD': {
           const zset = zsetOf(key);
-          for (let i = 1; i + 1 < args.length; i += 2) {
+          // `GT` (Redis 6.2): a held member only ever moves UP; a missing one is still added.
+          const gt = args[1] === 'GT';
+          for (let i = gt ? 2 : 1; i + 1 < args.length; i += 2) {
             const score = Number(args[i]);
             const member = String(args[i + 1]);
+            const held = zset.get(member);
+            if (gt && held !== undefined && held >= score) continue;
             // A re-scored member may have been the floor; recompute rather than guess.
             if (zset.has(member)) floors.delete(key);
             const seen = logged.get(key) ?? new Set<string>();

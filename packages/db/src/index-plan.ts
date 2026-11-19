@@ -36,6 +36,7 @@ import {
 import type { TableDescription } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
 import { LOCK_HEAVY_MARKER } from './migration-lock-lint';
+import { indexDependsOn } from './retype-dependents';
 
 /**
  * An existing table's index is built `concurrently` unless the entity says `concurrently: false`:
@@ -153,6 +154,7 @@ export function indexPlan(
  * | already in `context.moved`               | a retype dropped it ahead of the ALTER — a second drop is 42704 |
  * | over a column in `context.rebuilt`       | it went with the `drop column` half of `regenerate` — 42704 |
  * | over a column this migration DROPS       | `alter table … drop column` takes it, so a drop beside it says nothing new. The rule `foreignKeyPlan` applies to a constraint on a dropped column |
+ * | reads a dropped column (predicate, expression, INCLUDE) | the same drop takes it (`indexDependsOn`); deferred to a follow-up, its `down` rebuilt a predicate over a column not there (42703) |
  *
  * A doomed TABLE needs no arm: `generate.ts` only reaches a diff for a table an entity still
  * declares, so `drop table` and this function never meet.
@@ -164,11 +166,17 @@ function removeUndeclared(
   declared: ReadonlySet<string>,
 ): void {
   const columns = new Set(entity.columns.map((column) => column.column));
+  // `dropColumns`' own reading of "leaving": recorded, neither declared nor retired.
+  const retired = new Set(entity.retired ?? []);
+  const leaving = live.columns
+    .map((column) => column.name)
+    .filter((column) => !columns.has(column) && !retired.has(column));
   for (const recorded of live.indexes) {
     if (recorded.primary || declared.has(recorded.name)) continue;
     if (context.moved.has(recorded.name)) continue;
     if (recorded.columns.some((column) => context.rebuilt.has(column))) continue;
     if (!recorded.columns.every((column) => columns.has(column))) continue;
+    if (leaving.some((column) => indexDependsOn(recorded, column))) continue;
     removeConcurrently(live.name, recorded, context.concurrent);
   }
 }

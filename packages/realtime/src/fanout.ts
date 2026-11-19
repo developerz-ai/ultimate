@@ -184,17 +184,19 @@ export class InProcessTransport implements Transport {
     return this.#handlers.size;
   }
 
-  /** Keys `shared` holds, emptied ones included: the in-process read a leak test needs. */
-  get sharedKeys(): number {
-    return this.#set.size;
-  }
-
   #assertOpen(): void {
     if (this.#closed) {
       throw new TransportUnavailableError({ transport: this.name, reason: 'transport is closed' });
     }
   }
 }
+
+/**
+ * Keys `transport.shared` holds, emptied ones included: the in-process read a leak test needs. A
+ * module function, never a member — no caller of the public class has a use for it.
+ */
+export const inProcessKeyCount = (transport: InProcessTransport): number =>
+  transport.shared instanceof InProcessSet ? transport.shared.size : 0;
 
 // The production bus lives in `nats-transport.ts`: it needs a socket, a codec and a JetStream
 // client, none of which belong in the file that defines what a transport *is*.

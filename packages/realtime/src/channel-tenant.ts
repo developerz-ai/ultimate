@@ -8,7 +8,6 @@ import { tenantColumnOfTable, tenantIn } from './change-tenant';
 import type { Channel } from './channel-decl';
 import type { ChannelRecordsFrame } from './channel-wire';
 import { isTenancyDenial, TopicForbiddenError } from './errors';
-import type { SocketRegistry } from './socket';
 
 /**
  * A row is routed to the topic its own params name (`channel-records.ts`), so a topic keyed by the
@@ -93,12 +92,3 @@ export interface Audience {
   readonly admits: (actor: Actor | null) => boolean;
   readonly withheld: ChannelRecordsFrame;
 }
-
-/** `socket.ts`'s `deliverRecordsTo`: one records frame to a topic's members, scoped by `to`. */
-export type DeliverRecordsTo = (
-  registry: SocketRegistry,
-  topic: string,
-  epoch: string,
-  frame: ChannelRecordsFrame,
-  to: Audience,
-) => number;

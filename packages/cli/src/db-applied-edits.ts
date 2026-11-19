@@ -9,6 +9,7 @@ import type { Migration } from '@ultimat3/db';
 import { auditLedger, isLedgerMissing, pgliteDataDir, readLedger } from '@ultimat3/db';
 import { t } from '@ultimat3/schema';
 import { withOpenedDb } from './db-client-displace';
+import { DEV_LEDGER_PATH } from './db-dev-wire';
 import { askDev, type PostJson, unreadable } from './db-migrate-through-dev';
 import { liveDevLockChecked } from './dev-lock-live';
 import { readMigrations } from './migrations';
@@ -22,9 +23,6 @@ export interface AppliedRow {
   readonly id: string;
   readonly checksum: string;
 }
-
-/** `dev-db-migrate.ts`'s path, restated: importing that module would load the route's graph. */
-const LEDGER_PATH = '/_x/db/ledger';
 
 const LEDGER = t.object({
   ledger: t.array(t.object({ id: t.string, checksum: t.string })),
@@ -73,7 +71,7 @@ export async function readApplied(root: string, env: Env, post?: PostJson): Prom
         holder,
         services.stateDir,
         {
-          path: LEDGER_PATH,
+          path: DEV_LEDGER_PATH,
           resume: ['db', 'gen'],
           read: (data) => {
             const parsed = LEDGER.safeParse(data);

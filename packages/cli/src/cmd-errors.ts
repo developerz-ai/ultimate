@@ -64,7 +64,7 @@ async function explainOne(
       explainEveryErrorCode().map((entry) => entry.code),
     );
     const declared = await explainAppCode(code, cwd);
-    if (declared !== undefined) return appCodeResult(declared, reader);
+    if (declared !== undefined) return appCodeResult(declared);
     if (suggestion !== undefined) throw new ErrorCodeUnknownError({ code, suggestion });
     throw new AppCodeUnknownError({ code, inApp: findAppRoot(cwd) !== undefined });
   }
@@ -77,13 +77,21 @@ async function explainOne(
   };
 }
 
-/** An app's own code: the same three lines, and its title, status and declaring line as data. */
-const appCodeResult = (declared: AppCodeExplanation, reader?: ReaderOptions): CommandResult => ({
+/**
+ * An app's own code: what the registry holds (title, status) and the declaring line. No `cause:` or
+ * `fix:` line — the registry keeps neither for a `defineError` code, and the declaration is one open
+ * file away.
+ */
+const appCodeResult = (declared: AppCodeExplanation): CommandResult => ({
   ok: true,
   command: 'errors',
   summary: msg('cli.errors.explained', { code: declared.code, title: declared.title }),
-  lines: detailLines(declared, reader),
-  data: { ...declared, fix: fixForReader(declared.fix, reader) },
+  lines: [
+    `  status:   ${declared.status ?? 'off-socket'}`,
+    ...(declared.site === null ? [] : [`  declared: ${declared.site.at}:${declared.site.line}`]),
+    `  docs:     ${singleLine(declared.docs)}`,
+  ],
+  data: { ...declared },
 });
 
 /**

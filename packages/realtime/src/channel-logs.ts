@@ -10,7 +10,7 @@ import { renderRecords } from './channel-render';
 import { ChannelRing, type RecordsEntry } from './channel-ring';
 import { type Audience, admitsTenant, rowTenant } from './channel-tenant';
 import type { ChannelSince, ReplayGapFrame } from './channel-wire';
-import { deliverRecordsTo, type SocketRegistry, type SyncSocket } from './socket';
+import type { SocketRegistry, SyncSocket } from './socket';
 import { PROTOCOL_VERSION } from './sync-protocol';
 
 /** What a joined topic resolves to. A topic is `name.params…`, so it names both exactly. */
@@ -92,10 +92,7 @@ export class ChannelLogs {
               admits: (actor) => admitsTenant(actor, tenant),
               withheld: renderRecords(update.topic, epoch, withheld(entry)),
             };
-      frames +=
-        audience === undefined
-          ? this.#sockets.deliverRecords(update.topic, epoch, frame)
-          : deliverRecordsTo(this.#sockets, update.topic, epoch, frame, audience);
+      frames += this.#sockets.deliverRecords(update.topic, epoch, frame, audience);
     }
     return frames;
   }

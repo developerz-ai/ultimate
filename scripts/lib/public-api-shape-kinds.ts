@@ -76,6 +76,11 @@ export type ApiShape =
       readonly members: Readonly<Record<string, MemberCode>>;
       /** The one declared constructor's parameters; absent when it declares none or several. */
       readonly ctor?: readonly ParamCode[];
+      /**
+       * A single-signature method's codes with its trailing optional parameters dropped, one by one:
+       * what it was if those were added since. The tree's side only — `shapeBody` never writes it.
+       */
+      readonly shorter?: Readonly<Record<string, readonly MemberCode[]>>;
     }
   | {
       /** Anything else: judged by its own text, and by the shapes of the locals it names. */
@@ -161,6 +166,22 @@ export function constObjectOf(words: readonly string[], locals: string): ApiShap
 
 const ACCESS = new Set(['static', 'protected', 'abstract']);
 
+/** `name ( … ) : R` / `name ? < T > ( … ) : R` → the codes it has without each optional tail. */
+function withoutOptionalTail(rest: readonly string[]): MemberCode[] {
+  let open = rest[1] === '?' ? 2 : 1;
+  if (rest[open] === '<') open = closing(rest, open) + 1;
+  const close = rest[open] === '(' ? closing(rest, open) : -1;
+  if (close === -1) return [];
+  const params = splitAt(rest.slice(open + 1, close), ',');
+  const codes: MemberCode[] = [];
+  for (let keep = params.length - 1; keep >= 0; keep -= 1) {
+    if (!paramOf(params[keep] ?? []).startsWith('?')) break;
+    const kept = params.slice(0, keep).flatMap((param, at) => (at === 0 ? param : [',', ...param]));
+    codes.push(memberOf([...rest.slice(0, open + 1), ...kept, ...rest.slice(close)])[1]);
+  }
+  return codes;
+}
+
 /** `class X … { … }`: members keyed `static x` / `x`, private dropped, the constructor apart. */
 export function classOf(words: readonly string[], locals: string): ApiShape | undefined {
   const at = words[0] === 'abstract' ? 1 : 0;
@@ -169,6 +190,7 @@ export function classOf(words: readonly string[], locals: string): ApiShape | un
   if (open === -1 || closing(words, open) !== words.length - 1) return undefined;
   const members: (readonly [string, MemberCode])[] = [];
   const ctors: ParamCode[][] = [];
+  const shorter = new Map<string, MemberCode[]>();
   for (const member of splitAt(words.slice(open + 1, -1), ';')) {
     const prefix = member.filter((word, index) => index < 3 && ACCESS.has(word));
     const rest = member.slice(prefix.length);
@@ -178,13 +200,18 @@ export function classOf(words: readonly string[], locals: string): ApiShape | un
       continue;
     }
     const [key, code] = memberOf(rest);
-    members.push([prefix.includes('static') ? `static ${key}` : key, code]);
+    const name = prefix.includes('static') ? `static ${key}` : key;
+    // An overload set's code is all of its signatures: no one shorter form is what it was.
+    shorter.set(name, members.some(([one]) => one === name) ? [] : withoutOptionalTail(rest));
+    members.push([name, code]);
   }
   const [ctor] = ctors;
+  const methods = [...shorter].filter(([, codes]) => codes.length > 0);
   return {
     kind: 'class',
     head: shortDigest([words.slice(0, open).join(' '), locals].join('\n')),
     members: groupMembers(members),
     ...(ctors.length === 1 && ctor !== undefined ? { ctor } : {}),
+    ...(methods.length === 0 ? {} : { shorter: Object.fromEntries(methods) }),
   };
 }

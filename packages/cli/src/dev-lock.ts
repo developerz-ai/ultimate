@@ -30,7 +30,7 @@ import { reusedPid, startedOf } from './dev-lock-identity';
 import type { PortHolder } from './dev-lock-port-holder';
 import { stealStale } from './dev-lock-steal';
 import { freeDevPortPair } from './port-pair-free';
-import { quoteArg } from './shell-quote';
+import { stopRunStartFix } from './stop-run-start';
 
 /** Where the running dev server records itself, inside the state directory it already owns. */
 export const DEV_LOCK_FILE = 'dev.lock';
@@ -143,11 +143,10 @@ export class DevAlreadyRunningError extends UltimateError {
       code: 'X_DEV_ALREADY_RUNNING',
       cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}${input.unanswered === undefined ? '' : `; asked to do it instead, ${input.unanswered}`}`,
       // `x stop`, not `kill <pid>`: a kill returns before the drain ends and the next boot refuses.
-      // The resumed command is assembled word by word from screened words, never spliced.
       fix:
         input.resume === undefined
           ? `x stop --json   # or use the one already running at ${input.lock.url}`
-          : `${['x', 'stop', '--json', '&&', 'x', ...input.resume.map(quoteArg), '&&', 'x', 'dev'].join(' ')}   # the embedded database takes one process at a time; pass the flags you passed`,
+          : `${stopRunStartFix(input.resume)}   # the embedded database takes one process at a time; pass the flags you passed`,
       meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
     });
   }

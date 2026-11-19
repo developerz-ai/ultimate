@@ -5,7 +5,7 @@
 import { renderFixShellArg } from '@ultimat3/core';
 import { isDestructiveMigration } from './destructive';
 import { DbError } from './errors';
-import { embeddedDev, embeddedResetFix } from './migration-errors';
+import { embeddedDev, embeddedResetFix } from './migrate-dev-fix';
 import type { LedgerRow, Migration } from './migration-ledger';
 import { pendingMigrations } from './migration-ledger';
 

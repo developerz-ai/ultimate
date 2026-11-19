@@ -336,15 +336,18 @@ async function runDrain(signal: string): Promise<void> {
     const grace = readinessGraceMs();
     report('info', 'draining', { signal, deadlineMs, readinessGraceMs: grace, inflight });
     if (grace > 0) await Bun.sleep(grace);
-    const reason: ShutdownReason = { signal, deadlineAt: systemClock.monotonic() + deadlineMs };
+    // A stuck request must not starve the hooks behind it to 0 ms: the OTLP flush that carries
+    // this very incident and the pool close get a slice the in-flight wait never spends. Decided
+    // BEFORE the `accept` phase and handed to it as `inflightUntil`: a role cutting its own work
+    // short (the jobs worker) must finish before this wait ends, not race it to the same instant.
+    const reserve = laterHooksReserveMs();
+    const deadlineAt = systemClock.monotonic() + deadlineMs;
+    const reason: ShutdownReason = { signal, deadlineAt, inflightUntil: deadlineAt - reserve };
     await runPhase('accept', reason);
 
     // Real monotonic, like `deadlineAt` itself: `waitForIdle` sleeps on a real `setTimeout`, and
     // a budget read off an injected clock is a number that timer will never honour.
-    // A stuck request must not starve the hooks behind it to 0 ms: the OTLP flush that carries
-    // this very incident and the pool close get a slice the in-flight wait never spends.
-    const reserve = laterHooksReserveMs();
-    const remaining = Math.max(0, reason.deadlineAt - systemClock.monotonic() - reserve);
+    const remaining = Math.max(0, deadlineAt - reserve - systemClock.monotonic());
     const idle = await waitForIdle(remaining);
     if (!idle) {
       abandoned = true;

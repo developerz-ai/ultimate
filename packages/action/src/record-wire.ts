@@ -4,9 +4,9 @@
  * action's body is byte-identical to what it always was. Either names its instants by path.
  */
 
-import { DATES_HEADER, encodeRecordEnvelope, RECORDS_HEADER, wireDatePaths } from '@ultimat3/core';
+import { DATES_HEADER, encodeRecordEnvelope, RECORDS_HEADER } from '@ultimat3/core';
 import { hasEntityRows, rowsOf } from '@ultimat3/entity';
-import { jsonResponse } from '@ultimat3/http';
+import { cappedWireDates, jsonResponse } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 
 /** The header value that says "this body is an envelope". Presence alone is not enough. */
@@ -27,10 +27,12 @@ export function carriesRecords(output: StandardSchemaV1): boolean {
 /**
  * The output's instants — `@ultimat3/core`'s `wire-dates.ts`, the rule `@ultimat3/query`'s
  * `record-answer.ts` follows — so the typed client hands back the `Date` the output type promises.
- * A header, never the body: an old client reads the ISO string it always read.
+ * A header, never the body: an old client reads the ISO string it always read. Capped
+ * (`cappedWireDates`, 4 KB): an output needing one path per instant past that sends NO header —
+ * a proxy refuses a response whose headers outgrow its buffer — and is logged once per action.
  */
 function datesOf(result: unknown): { readonly headers: Record<string, string> } {
-  const dates = wireDatePaths(result);
+  const dates = cappedWireDates(result);
   return { headers: dates === undefined ? {} : { [DATES_HEADER]: dates } };
 }
 

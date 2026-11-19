@@ -6,14 +6,8 @@
  */
 
 import type { Ctx } from '@ultimat3/core';
-import {
-  isAnonymous,
-  reportError,
-  useContext,
-  wireDatePaths,
-  withChildContext,
-} from '@ultimat3/core';
-import { factsOf, isCallerAbort, reportLateFault, toProblem } from '@ultimat3/http';
+import { useContext, withChildContext } from '@ultimat3/core';
+import { cappedWireDates, reportLateFault, toProblem } from '@ultimat3/http';
 import type { ChunkSink } from './action-stream';
 
 export const EVENT_STREAM = 'text/event-stream';
@@ -36,7 +30,8 @@ const STARTED: unique symbol = Symbol('started');
  * One SSE frame. JSON never holds a raw newline, so `data:` is always one line. `dates` is the
  * `x-ultimate-dates` value for THIS frame's data (core's `wire-dates.ts`, URI-encoded, so one line
  * too): a field the SSE format tells every reader that does not know it to ignore, so a client from
- * before it reads the frame it always read.
+ * before it reads the frame it always read. Under the header's cap (`cappedWireDates`): a frame
+ * whose value is past it carries no `dates:` line, and its instants are read as ISO strings.
  */
 export function sseFrame(
   event: 'chunk' | 'done' | 'error',
@@ -45,27 +40,6 @@ export function sseFrame(
 ): Uint8Array {
   const named = dates === undefined ? '' : `dates: ${dates}\n`;
   return encoder.encode(`event: ${event}\n${named}data: ${JSON.stringify(data ?? null)}\n\n`);
-}
-
-/**
- * A fault after the first byte never reaches the pipeline's `error-map` stage — the 200 has gone —
- * so it is handed to the request's late-fault report (`reportLateFault`: the monitor, the app's
- * `onError`, the log line, once). With no pipeline request behind `ctx` the monitor is still told:
- * a 5xx only, the route PATTERN as operation.
- */
-function reportStreamFault(error: unknown, operation: string, ctx: Ctx): void {
-  if (reportLateFault(error, ctx)) return;
-  if (factsOf(error).status < 500) return;
-  reportError(error, {
-    source: 'http',
-    scope: {
-      requestId: ctx.requestId,
-      traceId: ctx.traceId,
-      role: ctx.role,
-      operation,
-      actorId: isAnonymous(ctx.actor) ? undefined : ctx.actor.id,
-    },
-  });
 }
 
 /** Runs the invocation with `sink` receiving its chunks; resolves the output. */
@@ -78,7 +52,6 @@ export type StreamRun = (sink: ChunkSink) => Promise<unknown>;
 export async function streamAnswer(
   owner: object,
   run: StreamRun,
-  operation: string,
   heartbeatMs: number = HEARTBEAT_MS,
 ): Promise<Response> {
   // Read here, in the request's frame: the settle below runs on a later turn.
@@ -98,9 +71,14 @@ export async function streamAnswer(
   const sink: ChunkSink = {
     owner,
     start: () => begin(),
-    push: (chunk) => send(sseFrame('chunk', chunk, wireDatePaths(chunk))),
+    push: (chunk) => send(sseFrame('chunk', chunk, cappedWireDates(chunk, ctx))),
   };
-  const settled = withChildContext({ signal: left.signal }, () => run(sink));
+  // The handler's own scope: its signal is the request's and `left`'s, composed.
+  let scope: Ctx = ctx;
+  const settled = withChildContext({ signal: left.signal }, () => {
+    scope = useContext();
+    return run(sink);
+  });
   // Settled without starting is a refusal — thrown here, before any byte — or a replayed answer,
   // which streams as a lone `done`.
   await Promise.race([started, settled]);
@@ -118,12 +96,13 @@ export async function streamAnswer(
         }
       };
       settled.then(
-        (output) => finish(sseFrame('done', output, wireDatePaths(output))),
+        (output) => finish(sseFrame('done', output, cappedWireDates(output, ctx))),
         (error: unknown) => {
-          // The reader cancelled (or the caller hung up) and the handler unwound on the abort:
-          // nobody is there to answer and nothing failed, so it is not anybody's incident.
-          const gone = isCallerAbort(error, left.signal) || isCallerAbort(error, ctx.signal);
-          if (!gone) reportStreamFault(error, operation, ctx);
+          // A fault after the first byte never reaches the pipeline's `error-map` stage — the 200
+          // has gone — so the request's late-fault report records it (the monitor, the app's
+          // `onError`, the log line, once). It tells the reader cancelling, or the caller hanging
+          // up, from a failure by `scope`'s signal, and records nothing for those.
+          reportLateFault(error, scope);
           finish(sseFrame('error', toProblem(error, { requestId })));
         },
       );

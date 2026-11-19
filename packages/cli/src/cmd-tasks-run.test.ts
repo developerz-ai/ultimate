@@ -9,6 +9,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { resolveEnvironment } from '@ultimat3/core';
+import { seedTiersFor } from '@ultimat3/entity';
 import {
   type JobDriver,
   job,
@@ -21,6 +23,7 @@ import {
 import { installJobDriver, resetJobDriver } from '@ultimat3/jobs/adapter';
 import { REQUIRED_BUN } from './app-root';
 import { tasksCommand } from './cmd-tasks';
+import { tasksRunNeedsFlag } from './cmd-tasks-run';
 import type { CommandContext } from './command';
 import { msg } from './messages';
 import type { ThrownShape } from './thrown-by-fixture';
@@ -165,5 +168,22 @@ describe('unit · x tasks run', () => {
     );
     expect(asked.ok).toBe(true);
     expect(await driver.introspect?.list({})).toHaveLength(2);
+  });
+
+  test("asks exactly where x db seed's production gate asks: one predicate, no second answer", () => {
+    for (const env of [
+      {},
+      { ULTIMATE_ENV: 'development' },
+      { ULTIMATE_ENV: 'test' },
+      { ULTIMATE_ENV: 'staging' },
+      { ULTIMATE_ENV: 'production' },
+      { NODE_ENV: 'production' },
+    ]) {
+      // `x db seed` leaves `dev` fixtures out exactly where it wants the tier named.
+      const seedAsks = !seedTiersFor(resolveEnvironment({ env })).includes('dev');
+      expect({ env, asks: tasksRunNeedsFlag(env) }).toEqual({ env, asks: seedAsks });
+    }
+    // An `ULTIMATE_ENV` that is no environment is refused by both, never read as "not production".
+    expect(() => tasksRunNeedsFlag({ ULTIMATE_ENV: 'prod' })).toThrow(/X_ENVIRONMENT_INVALID/);
   });
 });

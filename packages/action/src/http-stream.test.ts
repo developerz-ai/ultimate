@@ -21,7 +21,7 @@ import type { AnyAction } from './action';
 import { action } from './action';
 import { InputInvalidError } from './errors';
 import { toOpenApiOperation, toRoute } from './http';
-import { wantsEventStream } from './http-stream';
+import { streamAnswer, wantsEventStream } from './http-stream';
 
 const Chunk = t.object({ text: t.string });
 const Out = t.object({ total: t.number });
@@ -231,6 +231,27 @@ describe('a stream-declaring action over HTTP', () => {
     await unwound.promise;
     expect(reporter.events).toEqual([]);
     expect(seen).toEqual([]);
+  });
+
+  // `reportLateFault` is the ONE report site, and it is the pipeline request's. Every route reaches
+  // this stream through the pipeline; one driven with no request behind it is a harness, which
+  // reads the error frame it was sent — this file no longer assembles a second monitor scope.
+  test('a stream driven outside the pipeline answers the error frame and reports nowhere', async () => {
+    const reporter = memoryErrorReporter();
+    installErrorReporter(reporter);
+    const response = await direct(() =>
+      streamAnswer({}, async (sink) => {
+        sink.start();
+        // The 200 has left by the time this throws: the fault is a late one.
+        await new Promise((resolve) => setImmediate(resolve));
+        throw new InternalError({ cause: 'the store went away', fix: 'bun run x -- doctor' });
+      }),
+    );
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).toStartWith('event: error\n');
+    expect(text).toContain('X_INTERNAL');
+    expect(reporter.events).toEqual([]);
   });
 
   test("a 4xx thrown after the first chunk is the caller's and is not reported", async () => {

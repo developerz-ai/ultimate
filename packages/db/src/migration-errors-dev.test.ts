@@ -6,8 +6,8 @@
 import { describe, expect, test } from 'bun:test';
 import { recordingClient } from './fake';
 import { type LedgerRow, type Migration, migrationChecksum, rollback } from './migrate';
+import { embeddedDev, embeddedResetFix } from './migrate-dev-fix';
 import { ledgerAheadOfBuild } from './migrate-rollback';
-import { embeddedDev, embeddedResetFix } from './migration-errors';
 import { auditLedger } from './migration-ledger';
 
 const posts: Migration = {

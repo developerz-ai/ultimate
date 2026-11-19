@@ -9,13 +9,20 @@ import type { DevServices, Env } from './runtime-bindings';
  * server with no TLS, `ERR_POSTGRES_TLS_NOT_AVAILABLE`). */
 const SSL_MODE = 'sslmode';
 
+/** The two spellings of the mode, as the driver reads them: by name, whatever the case. */
+const isModeKey = (key: string): boolean => {
+  const name = key.toLowerCase();
+  return name === SSL_MODE || name === 'ssl';
+};
+
 /**
  * `url` with `sslmode=require`, unless a mode is already stated — in the URL (`sslmode`, or the
  * `ssl` spelling some dashboards hand out) or by `PGSSLMODE` in the boot's env. Never an override:
  * replacing `verify-full` with `require` would drop certificate verification, and replacing
  * `disable` would break the sidecar or loopback hop it was written for. `require` and not
  * `verify-full` because a managed Postgres seldom ships its CA into the image; an operator who
- * has one says so in the URL. A value no URL parser reads is handed on as it is: `postgresClient`
+ * has one says so in the URL. An EMPTY `sslmode=` states nothing (it would otherwise be read as
+ * plaintext under `database.ssl: true`) and is replaced. A value no URL parser reads is handed on as it is: `postgresClient`
  * refuses it by name (`X_DB_UNAVAILABLE`).
  */
 export function withRequiredTls(url: string, env: Env): string {
@@ -26,7 +33,9 @@ export function withRequiredTls(url: string, env: Env): string {
   } catch {
     return url;
   }
-  if (parsed.searchParams.has(SSL_MODE) || parsed.searchParams.has('ssl')) return url;
+  const modes = [...parsed.searchParams].filter(([key]) => isModeKey(key));
+  if (modes.some(([, value]) => value.trim() !== '')) return url;
+  for (const [key] of modes) parsed.searchParams.delete(key);
   parsed.searchParams.set(SSL_MODE, 'require');
   return parsed.toString();
 }

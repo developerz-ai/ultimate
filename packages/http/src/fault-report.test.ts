@@ -84,6 +84,40 @@ describe('reportLateFault', () => {
     expect(reporter.events).toEqual([]);
   });
 
+  // The stream's producer unwinds on the abort when its reader leaves: nobody is there to answer
+  // and nothing failed. Asked here, so a caller of this function never judges a hang-up itself.
+  test("a caller's hang-up is nobody's incident: nothing recorded, the one report unspent", () => {
+    const caller = new AbortController();
+    const ctx = request(caller.signal);
+    const seen: unknown[] = [];
+    bindLateFault(ctx, { onError: (error) => void seen.push(error) });
+    caller.abort(new DOMException('The connection was closed.', 'AbortError'));
+
+    expect(reportLateFault(caller.signal.reason, asCtx(ctx))).toBe(true);
+    expect(seen).toEqual([]);
+    expect(reporter.events).toEqual([]);
+
+    // A defect that merely happened after the hang-up is still a defect, and still reported.
+    const defect = fault();
+    expect(reportLateFault(defect, asCtx(ctx))).toBe(true);
+    expect(seen).toEqual([defect]);
+    expect(reporter.events).toHaveLength(1);
+  });
+
+  test('a hang-up on a signal a derived context added is read from that context', () => {
+    const ctx = request();
+    const seen: unknown[] = [];
+    bindLateFault(ctx, { onError: (error) => void seen.push(error) });
+    const left = new AbortController();
+    runWithContext(asCtx(ctx), () =>
+      withChildContext({ signal: left.signal }, () => {
+        left.abort();
+        expect(reportLateFault(left.signal.reason)).toBe(true);
+      }),
+    );
+    expect(seen).toEqual([]);
+  });
+
   test('a sink that throws is contained: nothing is above a late fault', () => {
     const ctx = request();
     bindLateFault(ctx, {

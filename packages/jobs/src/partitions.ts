@@ -12,9 +12,8 @@ import { t } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import { nowMs } from './clock';
 import type { JobHandle } from './job';
-import { job } from './job';
+import { factoryJob } from './job';
 import type { RetryPolicy } from './retry';
-import { DEFAULT_RETRY } from './retry';
 import type { TaskHandle } from './task';
 import { task } from './task';
 
@@ -94,7 +93,7 @@ function fromOf(name: string, from: string | undefined): Date | undefined {
 export function partitions(definition: PartitionsDefinition = {}): PartitionsJob {
   const name = definition.name ?? DEFAULT_PARTITIONS_NAME;
   const clock = definition.clock ?? liveClock;
-  const handle = job<PartitionsInput>({
+  const handle = factoryJob<PartitionsInput>({
     name,
     input: t.object({ from: t.string.optional() }),
     // Partitions are tables, not any tenant's rows.
@@ -102,7 +101,7 @@ export function partitions(definition: PartitionsDefinition = {}): PartitionsJob
     // One live pass: a second tick while one runs is the same pass, and the SQL is idempotent anyway.
     // A `from` run is a different pass: it must not fold into the schedule's.
     idempotencyKey: (input) => (input.from === undefined ? name : `${name}:from:${input.from}`),
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     async run({ input, step }): Promise<PartitionsReport> {

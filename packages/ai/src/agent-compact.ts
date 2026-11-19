@@ -280,9 +280,10 @@ function splitTurns(messages: readonly AiMessage[], keepTurns: number): Split | 
 }
 
 /**
- * The most user text one compaction carries out of the summarised turns, in characters (~2,000
- * tokens). Newest first: past it the older text is the summary's to cover, as all of it was — a
- * pasted document must not make a transcript no compaction can shorten.
+ * The most user text a compacted head carries out of summarised turns, in characters (~2,000
+ * tokens), IN TOTAL: what earlier compactions carried is charged too, newest kept first. Past it the
+ * older text is the summary's to cover, as all of it was — a pasted document, or a long
+ * `.continue()` chat, must not make a transcript no compaction can shorten.
  */
 export const KEPT_USER_CHARS = 8_000;
 
@@ -293,13 +294,28 @@ export const KEPT_USER_CHARS = 8_000;
  */
 const SUMMARY_NOTE = /^\[compacted: \d+ earlier turns? of this run were summarised to fit /;
 
+/** The clause naming how many blocks before the note are carried user text, not the prompt. */
+const CARRIED_NOTE =
+  /^\[compacted: \d+ earlier turns? of this run were summarised to fit the context window, the last (\d+) text blocks? above kept as the user wrote them\./;
+
 const isSummary = (block: AiContentBlock): boolean =>
   block.type === 'text' && SUMMARY_NOTE.test(block.text);
 
+/** How many blocks an earlier compaction carried, read off its note; 0 for a note without the count. */
+function carriedCount(blocks: readonly AiContentBlock[]): number {
+  for (const block of blocks) {
+    if (block.type !== 'text' || !isSummary(block)) continue;
+    const count = CARRIED_NOTE.exec(block.text)?.[1];
+    return count === undefined ? 0 : Number.parseInt(count, 10);
+  }
+  return 0;
+}
+
 /**
- * `head` rebuilt for `turns` summarised turns (`older`): its own blocks less an earlier summary —
- * the new one covers it — then the user's text out of `older`, then the summary. The model reads
- * the summary as its own notes, said to be so.
+ * `head` rebuilt for `turns` summarised turns (`older`): its prompt less an earlier summary — the
+ * new one covers it — then the user's text out of what earlier compactions carried and `older`,
+ * within one `KEPT_USER_CHARS`, then the summary. The model reads the summary as its own notes,
+ * said to be so; the note counts the carried blocks so the next compaction can charge them.
  */
 export function compactedHead(
   head: AiMessage,
@@ -307,37 +323,47 @@ export function compactedHead(
   turns: number,
   summary: string,
 ): AiMessage {
-  const prompt = blocksOf(head).filter((block) => !isSummary(block));
-  const note = `${COMPACTED_MARK} ${turns} earlier turn${turns === 1 ? '' : 's'} of this run were summarised to fit the context window. Your summary of everything after the task above:]\n\n${summary}`;
+  const blocks = blocksOf(head);
+  const own = blocks.filter((block) => !isSummary(block));
+  const from = Math.max(0, own.length - carriedCount(blocks));
+  const kept = userTexts([...textsOf(own.slice(from)), ...older.flatMap(saidIn)]);
+  const carried =
+    kept.length === 0
+      ? ''
+      : `, the last ${kept.length} text block${kept.length === 1 ? '' : 's'} above kept as the user wrote them`;
+  const note = `${COMPACTED_MARK} ${turns} earlier turn${turns === 1 ? '' : 's'} of this run were summarised to fit the context window${carried}. Your summary of everything after the task above:]\n\n${summary}`;
   return {
     role: 'user',
-    content: [...prompt, ...userTexts(older), { type: 'text', text: note }],
+    content: [
+      ...own.slice(0, from),
+      ...kept.map((text): AiContentBlock => ({ type: 'text', text })),
+      { type: 'text', text: note },
+    ],
   };
 }
 
+const textsOf = (blocks: readonly AiContentBlock[]): readonly string[] =>
+  blocks.flatMap((block) => (block.type === 'text' ? [block.text] : []));
+
 /**
- * What the user wrote in `older`, oldest first, within `KEPT_USER_CHARS`. A user message there
- * holds tool results and framework text too: results are never text blocks, and the loop's own
- * correction is recognised by `isRepairText`.
+ * What the user wrote in one message. A user message holds tool results and framework text too:
+ * results are never text blocks, and the loop's own correction is recognised by `isRepairText`.
  */
-function userTexts(older: readonly AiMessage[]): readonly AiContentBlock[] {
-  const said: string[] = [];
-  for (const message of older) {
-    if (message.role !== 'user') continue;
-    for (const block of blocksOf(message)) {
-      if (block.type === 'text' && block.text.trim() !== '' && !isRepairText(block.text)) {
-        said.push(block.text);
-      }
-    }
-  }
+const saidIn = (message: AiMessage): readonly string[] =>
+  message.role !== 'user'
+    ? []
+    : textsOf(blocksOf(message)).filter((text) => text.trim() !== '' && !isRepairText(text));
+
+/** `said`, oldest first, cut to the newest that fit `KEPT_USER_CHARS` together. */
+function userTexts(said: readonly string[]): readonly string[] {
   const kept: string[] = [];
   let room = KEPT_USER_CHARS;
-  for (const text of said.reverse()) {
+  for (const text of [...said].reverse()) {
     if (text.length > room) break;
     room -= text.length;
     kept.unshift(text);
   }
-  return kept.map((text) => ({ type: 'text', text }));
+  return kept;
 }
 
 /** The event's facts about the summary call's input: its form, and how far text was shortened. */

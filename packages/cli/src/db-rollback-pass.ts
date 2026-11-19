@@ -4,6 +4,7 @@
 
 import { rollback } from '@ultimat3/db';
 import { t } from '@ultimat3/schema';
+import { DEV_ROLLBACK_PATH } from './db-dev-wire';
 import { askDev, type PostJson, unreadable } from './db-migrate-through-dev';
 import { rollbackConfirm, withoutDown } from './db-rollback-consent';
 import { liveDevLockChecked } from './dev-lock-live';
@@ -12,9 +13,6 @@ import { resolveServices } from './runtime-bindings';
 import { startQueue } from './runtime-queue';
 
 type Env = Readonly<Record<string, string | undefined>>;
-
-/** `dev-db-migrate.ts`'s path, restated: importing that module would load the route's graph. */
-const ROLLBACK_PATH = '/_x/db/rollback';
 
 const REVERTED = t.object({ reverted: t.array(t.string) });
 
@@ -47,7 +45,7 @@ export async function rollbackPass(
       holder,
       services.stateDir,
       {
-        path: `${ROLLBACK_PATH}?steps=${String(steps)}`,
+        path: `${DEV_ROLLBACK_PATH}?steps=${String(steps)}`,
         resume: ['db', 'rollback', '--steps', String(steps)],
         read: (data) => {
           const parsed = REVERTED.safeParse(data);

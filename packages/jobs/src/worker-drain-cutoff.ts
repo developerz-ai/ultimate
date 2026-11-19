@@ -23,11 +23,21 @@ export interface CutoffTimes {
   readonly handBackAt: number;
 }
 
-/** The cut-off for a deadline, read against the instant it was bound. */
-export function cutoffTimes(deadlineAt: number, now: number): CutoffTimes {
-  const remaining = Math.max(0, deadlineAt - now);
+/**
+ * The cut-off for a deadline, read against the instant it was bound. Measured back from
+ * `inflightUntil` — core's `ShutdownReason.inflightUntil`, the instant its in-flight wait ends —
+ * and not from `deadlineAt`: a cancel at the very instant that wait gives up loses the race to a
+ * nack that takes one round trip, and the drain exits `X_SHUTDOWN_TIMEOUT` for a job it handed back.
+ */
+export function cutoffTimes(
+  deadlineAt: number,
+  now: number,
+  inflightUntil: number = deadlineAt,
+): CutoffTimes {
+  const end = Math.min(deadlineAt, inflightUntil);
+  const remaining = Math.max(0, end - now);
   const margin = Math.min(DRAIN_CANCEL_MARGIN_MS, remaining / 2);
-  return { cancelAt: deadlineAt - margin, handBackAt: deadlineAt - margin / 2 };
+  return { cancelAt: end - margin, handBackAt: end - margin / 2 };
 }
 
 export interface DrainCutoff {
@@ -43,6 +53,8 @@ export interface DrainCutoff {
 export function armDrainCutoff(
   budget: DrainBudget,
   steps: { readonly cancel: () => void; readonly handBack: () => Promise<void> },
+  /** How far before the deadline the drain's in-flight wait ends: `deadlineAt − inflightUntil`. */
+  reserveMs = 0,
 ): DrainCutoff {
   const timers: ReturnType<typeof setTimeout>[] = [];
   let cancelled = false;
@@ -58,7 +70,7 @@ export function armDrainCutoff(
   };
   const unwatch = budget.watch((deadlineAt) => {
     clear();
-    const times = cutoffTimes(deadlineAt, systemClock.monotonic());
+    const times = cutoffTimes(deadlineAt, systemClock.monotonic(), deadlineAt - reserveMs);
     if (!cancelled) {
       at(times.cancelAt, () => {
         cancelled = true;
@@ -96,16 +108,23 @@ export function armWorkerCutoff(input: {
   readonly signal: string;
   readonly drain: AbortController;
   readonly held: HeldRuns;
+  /** `deadlineAt − inflightUntil` of the shutdown that armed it (`cutoffTimes`). */
+  readonly reserveMs: number;
 }): DrainCutoff {
   const { workerId, held } = input;
-  return armDrainCutoff(input.budget, {
-    cancel: () => {
-      if (held.size > 0) logger.warn('jobs.worker.drain-cancelling', { workerId, held: held.size });
-      input.drain.abort(new JobDrainedError({ workerId, signal: input.signal }));
+  return armDrainCutoff(
+    input.budget,
+    {
+      cancel: () => {
+        if (held.size > 0)
+          logger.warn('jobs.worker.drain-cancelling', { workerId, held: held.size });
+        input.drain.abort(new JobDrainedError({ workerId, signal: input.signal }));
+      },
+      handBack: async () => {
+        const handed = await held.handBackAll();
+        if (handed > 0) logger.warn('jobs.worker.drain-handed-back', { workerId, handed });
+      },
     },
-    handBack: async () => {
-      const handed = await held.handBackAll();
-      if (handed > 0) logger.warn('jobs.worker.drain-handed-back', { workerId, handed });
-    },
-  });
+    input.reserveMs,
+  );
 }

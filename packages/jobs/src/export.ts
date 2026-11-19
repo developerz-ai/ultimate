@@ -30,9 +30,8 @@ import { EXPORT_FORMATS } from './export-format';
 import { exportPass } from './export-pass';
 import type { ExportSink } from './export-sink';
 import type { JobHandle } from './job';
-import { job } from './job';
+import { factoryJob } from './job';
 import type { RetryPolicy } from './retry';
-import { DEFAULT_RETRY } from './retry';
 import type { JobTenant } from './tenant';
 
 /**
@@ -187,7 +186,7 @@ export function exportRows<Row, I>(definition: ExportDefinition<Row, I>): JobHan
     sink: { put: (key, body) => definition.sink().put(key, body) },
   };
 
-  return job<I>({
+  return factoryJob<I>({
     name: definition.name,
     input: definition.input,
     // ONE live pass per artifact, derived rather than declared: two runs writing the same prefix
@@ -196,7 +195,7 @@ export function exportRows<Row, I>(definition: ExportDefinition<Row, I>): JobHan
     // second answer to the question the key exists to settle.
     idempotencyKey: (input) => `${definition.name}:${definition.prefix(input)}`,
     tenant: definition.tenant,
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     run: (args) =>

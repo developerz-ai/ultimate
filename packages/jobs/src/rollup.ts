@@ -10,8 +10,8 @@ import { t } from '@ultimat3/schema';
 import { isValidTimeZone } from '@ultimat3/time';
 import { type DurationInput, finiteDurationMs, nowMs } from './clock';
 import type { JobHandle } from './job';
-import { job } from './job';
-import { DEFAULT_RETRY, type RetryPolicy } from './retry';
+import { factoryJob } from './job';
+import type { RetryPolicy } from './retry';
 import { RollupInvalidError } from './rollup-errors';
 import type { JobTenant } from './tenant';
 
@@ -160,13 +160,13 @@ export function rollup<S, Into, W>(
     unit: definition.bucket.unit,
     timeZone: definition.bucket.timeZone,
   };
-  return job<RollupInput, RollupReport>({
+  return factoryJob<RollupInput, RollupReport>({
     name: definition.name,
     input: t.object({ orgId: t.string.optional() }),
     // One live run per window: a second enqueue while one is running is the same recomputation.
     idempotencyKey: (input) => `rollup:${definition.name}:${input.orgId ?? '*'}`,
     tenant: definition.tenant,
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     run: ({ ctx, input, step }) =>

@@ -1,10 +1,13 @@
 // Single responsibility: a memory transaction is ambient — a write inside it that names no `tx` is
 // undone when it rolls back, whichever door it came through — and a commit keeps every write.
 import { afterAll, describe, expect, test } from 'bun:test';
+import * as adapter from './adapter';
 import { text } from './columns';
 import { entity } from './entity';
-import { memoryJournal, memoryTxOpen } from './index';
+import * as barrel from './index';
+import { memoryJournal } from './index';
 import { memoryRepo, memoryTransactor } from './memory-repo';
+import { memoryTxOpen } from './memory-tx-entry';
 import { clearRegistry } from './registry';
 import type { Tx } from './repo';
 
@@ -135,7 +138,16 @@ describe('a lock taken with no tx inside a memory transaction', () => {
   });
 });
 
-describe('memoryTxOpen, through the package entry', () => {
+describe('memoryTxOpen, through its internal leaf entry', () => {
+  test('is on `/internal/memory-tx` alone: never the app barrel, never the driver kit', async () => {
+    expect(Object.keys(barrel)).not.toContain('memoryTxOpen');
+    expect(Object.keys(adapter)).not.toContain('memoryTxOpen');
+    const manifest: unknown = await Bun.file(new URL('../package.json', import.meta.url)).json();
+    expect(manifest).toMatchObject({
+      exports: { './internal/memory-tx': './src/memory-tx-entry.ts' },
+    });
+  });
+
   test('is true while the root is open and false once it commits or rolls back', async () => {
     let committed: Tx | undefined;
     let nested: Tx | undefined;

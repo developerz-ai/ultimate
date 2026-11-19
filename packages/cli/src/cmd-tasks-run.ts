@@ -2,7 +2,7 @@
 // app's queue — so a cron job is exercised in dev without waiting for its cron or editing it.
 // Through the task's own manual-run path (`TaskHandle.enqueue`), the one the admin's run-now uses.
 
-import { resolveEnvironment } from '@ultimat3/core';
+import { isProduction } from '@ultimat3/core';
 import type { TaskHandle } from '@ultimat3/jobs';
 import type { CommandContext } from './command';
 import { refuseEmbeddedWriteBesideDev } from './dev-lock-live';
@@ -14,13 +14,21 @@ import { flagBool } from './parse';
 import { quoteArg } from './shell-quote';
 
 /**
+ * Does this environment fire only when asked by name? `x db seed`'s production gate, mirrored: the
+ * same predicate (`ULTIMATE_ENV` resolved `production`; staging runs unasked, as a `dev` seed does;
+ * an `ULTIMATE_ENV` that is no environment refuses with `X_ENVIRONMENT_INVALID`), and consent is a
+ * flag naming what is asked for. Pinned against `seedTiersFor` by `cmd-tasks-run.test.ts`.
+ */
+export const tasksRunNeedsFlag = (env: Readonly<Record<string, string | undefined>>): boolean =>
+  isProduction({ env });
+
+/**
  * Production fires only by flag. Not a scheduled occurrence: the scheduler's watermark is never
  * moved, so the next real tick still fires — a manual run in production is real work twice.
  */
 function refuseUnaskedProduction(ctx: CommandContext, name: string): void {
   if (flagBool(ctx.args, 'production')) return;
-  const environment = resolveEnvironment({ env: ctx.env });
-  if (environment !== 'production') return;
+  if (!tasksRunNeedsFlag(ctx.env)) return;
   throw new BadFlagError({
     flag: 'production',
     command: 'tasks run',

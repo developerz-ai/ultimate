@@ -47,7 +47,7 @@ export const enrolMemoryScope = (scope: Tx, tx: Tx | undefined): void => {
 /**
  * Whether a memory `tx` may still take a write — its root has neither committed nor rolled back. A
  * `Tx` the memory transactor never handed out has no root here, so it answers `true`, the same pass
- * `refuseIfMemoryTxClosed` gives it.
+ * `refuseIfMemoryTxClosed` gives it. Off the barrel: `@ultimat3/entity/internal/memory-tx`.
  */
 export const memoryTxOpen = (tx: Tx): boolean =>
   (scopes.get(tx)?.outcome.value ?? 'open') === 'open';

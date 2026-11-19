@@ -15,8 +15,7 @@ import { DEFAULT_WEBHOOK_BODY_LIMIT } from '@ultimat3/http';
 import type { JsonValue } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
 import { JobTenantMismatchError } from './errors-tenant';
-import { job, registeredJobs } from './job';
-import { DEFAULT_RETRY } from './retry';
+import { factoryJob, registeredJobs } from './job';
 import type { JobTenant } from './tenant';
 import { WebhookReceiverInvalidError } from './webhook-receiver-errors';
 import { receiverRoutes } from './webhook-receiver-route';
@@ -40,13 +39,13 @@ export function webhookReceiver<P extends JsonValue = JsonValue>(
   definition: WebhookReceiverDefinition<P>,
 ): WebhookReceiver {
   const maxBytes = assertReceiver(definition);
-  const handle = job<WebhookReceiverInput>({
+  const handle = factoryJob<WebhookReceiverInput>({
     name: definition.name,
     input,
     // `eventId` alone: the namespace is already (name, tenant, key), so one vendor event is one row.
     idempotencyKey: ({ eventId }) => eventId,
     tenant: tenantOf(definition),
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     run: ({ input: row, ctx, step, attempt }) =>
       definition.handle({

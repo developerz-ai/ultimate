@@ -88,6 +88,37 @@ describe('a bust racing a write, on the wire', () => {
     expect(client.members('x:e2:{post}')).toEqual(['x:c:stuck']);
   });
 
+  // A fill lands between the sweep and the refused UNLINK, re-joining at a LATER score. Re-joined
+  // at the scanned score, the membership became prunable at the old expiry while the fill's value
+  // lived on — a live value no tag reaches until it expires.
+  test("a refused delete re-joined after a fill keeps the fill's later score", async () => {
+    const server = fakeRedis();
+    const clock = frozenClock(1_000_000);
+    let busy: (() => Promise<void>) | undefined;
+    const busting: RedisLike = {
+      get: (key) => server.get(key),
+      set: (key, value) => server.set(key, value),
+      async send(command, args) {
+        const fill = busy;
+        if (command === 'UNLINK' && fill !== undefined) {
+          busy = undefined;
+          await fill();
+        }
+        return await server.send(command, args);
+      },
+    };
+    const tier = tierFor(busting, { clock });
+    await tier.set('k', 'v1', { ttlMs: 300_000, tags: [tag('post', '1')] });
+    clock.advance(100_000);
+    server.refuseDel('x:c:k');
+    busy = () => tier.set('k', 'v2', { ttlMs: 300_000, tags: [tag('post', '1')] });
+
+    await expect(tier.invalidateTags([tag('post', '1')])).rejects.toThrow('redis refused UNLINK');
+
+    const fillScore = String(1_100_000 + 300_000 + TAG_GRACE_MS);
+    expect(await server.send('ZSCORE', ['x:t2:{post}:1', 'x:c:k'])).toBe(Number(fillScore));
+  });
+
   test("a fill that lands between a bust's delete and its sweep is still reached by the next bust of the same tag", async () => {
     // Another replica's fill (its fence sampled after the bump, so a valid fresh value) lands
     // right after this bust's UNLINK. A sweep that ran AFTER the delete removed the member the

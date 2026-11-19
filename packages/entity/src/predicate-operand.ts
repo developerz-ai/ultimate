@@ -215,6 +215,8 @@ const inList = <Row>(
   );
 };
 
+const RANGE = new Set(['gt', 'gte', 'lt', 'lte']);
+
 /**
  * The predicate with its operand in the one form both drivers read, or a refusal. Every operator
  * outside the comparing set passes through untouched — containment, NULL tests and search have
@@ -241,6 +243,16 @@ export const operandFor = <Row>(entity: EntityCore<Row>, predicate: Predicate): 
   // `eq` against a value nothing equals is the empty list both drivers already answer no row for.
   if (predicate.op === 'eq' && equalsNoValue(kind, value)) {
     return { ...predicate, op: 'in', value: [] };
+  }
+  // A range has no "no row" answer to agree on: memory ordered the text, Postgres refused the
+  // parameter (`22P02`). Refused in both, as a fraction against an integer is.
+  if (RANGE.has(predicate.op) && equalsNoValue(kind, value)) {
+    throw refused(
+      entity,
+      predicate,
+      `expected a uuid for a uuid column, ${got(value)}`,
+      `if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) return []   // check the operand before .andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, '${predicate.op}', value): a uuid column orders uuids only`,
+    );
   }
   return value === predicate.value ? predicate : { ...predicate, value };
 };

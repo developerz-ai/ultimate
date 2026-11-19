@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { topic } from './channel';
 import { readPresence } from './channel-presence';
-import { InProcessTransport, type Transport } from './fanout';
+import { InProcessTransport, inProcessKeyCount, type Transport } from './fanout';
 import { PRESENCE_KEY_PREFIX, PRESENCE_SWEEP_PREFIX, PresenceRegistry } from './presence';
 
 const room = topic('org', 'o1', 'cursors');
@@ -50,14 +50,14 @@ describe('presence', () => {
       await presence.join(topic('org', 'o1', `room-${i}`), { id: `m${i}`, actorId: 'alice' });
     }
     await presence.sweepAll();
-    expect(transport.sharedKeys).toBeGreaterThan(0);
+    expect(inProcessKeyCount(transport)).toBeGreaterThan(0);
     clock.advance(31_000);
     // The pass that announces the leaves forgets each room. Its sweep lease outlives the room by
     // one TTL — a follower reads the last roster off it — and is then gone with nobody reading it.
     expect(await presence.sweepAll()).toHaveLength(3);
     clock.advance(31_000);
     await presence.join(topic('org', 'o1', 'next'), { id: 'm9', actorId: 'bob' });
-    expect(transport.sharedKeys).toBe(1);
+    expect(inProcessKeyCount(transport)).toBe(1);
   });
 
   test('a sweep turns silent expiry into explicit leave events', async () => {

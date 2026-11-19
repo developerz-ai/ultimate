@@ -36,4 +36,23 @@ describe('unit · password sign-in keeps ?next= across the second factor', () =>
       '<input type="hidden" name={NEXT_PARAM} value={nextPath(props.query?.[NEXT_PARAM])} />',
     );
   });
+
+  // One MFA challenge cookie (auth's `__Host-x_mfa`): the scaffold neither names one of its own
+  // nor re-implements how a challenge is read off `X_MFA_REQUIRED`.
+  test('the challenge is held, read and dropped through auth, in auth’s own cookie', () => {
+    const challenge = source('sign-in-challenge.ts');
+    expect(challenge).toContain("headers.append('set-cookie', mfaChallengeCookie(challenge))");
+    expect(challenge).toContain('readMfaChallenge({ headers: useRequestHeaders() })');
+    expect(challenge).toContain("headers.append('set-cookie', clearMfaChallengeCookie())");
+    expect(source('actions/create-session.ts')).toContain('mfaChallengeOf(error)');
+    for (const file of files) {
+      if (typeof file.contents !== 'string') continue;
+      for (const own of ['x_mfa_challenge', '__Host-x_mfa', "error.meta?.['challenge']"]) {
+        expect(`${file.path}: ${file.contents.includes(own)}`).toBe(`${file.path}: false`);
+      }
+      expect(`${file.path}: ${/\bsetCookie\(|\bdeleteCookie\(/.test(file.contents)}`).toBe(
+        `${file.path}: false`,
+      );
+    }
+  });
 });

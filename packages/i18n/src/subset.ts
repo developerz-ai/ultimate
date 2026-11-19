@@ -35,6 +35,28 @@ export interface RawTranslator {
 const FAMILY = /_(?:select|ordinal)_/g;
 
 /**
+ * Each translator's family members by stem, listed once: a subset is cut per island per request,
+ * and scanning a 4,000-key catalog each time cost 0.78 ms where the lookups cost 0.006. A
+ * translator's catalog is fixed for its life (a reload builds a new one), so the index never stales.
+ */
+const families = new WeakMap<RawTranslator, ReadonlyMap<string, readonly string[]>>();
+
+function familiesOf(t: RawTranslator): ReadonlyMap<string, readonly string[]> {
+  const known = families.get(t);
+  if (known !== undefined) return known;
+  const index = new Map<string, string[]>();
+  for (const name of t.keys?.() ?? []) {
+    // Every infix, never only the first: a named key may itself spell `_select_`.
+    for (const infix of name.matchAll(FAMILY)) {
+      const stem = name.slice(0, infix.index);
+      index.set(stem, [...(index.get(stem) ?? []), name]);
+    }
+  }
+  families.set(t, index);
+  return index;
+}
+
+/**
  * The templates `keys` name in `t`'s locale, each with every plural variant and every `select` and
  * `ordinal` family member the catalog holds, so `t(key, { count, select, ordinal })` in the island
  * picks the form the server would. A key the catalog lacks is left out, and renders `⟦key⟧` in the
@@ -49,12 +71,9 @@ export function catalogSubset(t: RawTranslator, keys: readonly string[]): Catalo
   for (const key of keys) {
     for (const name of [key, ...pluralVariantsOf(key)]) copy(name);
   }
-  const wanted = new Set(keys);
-  for (const name of t.keys?.() ?? []) {
-    // Every infix, never only the first: a named key may itself spell `_select_`.
-    for (const infix of name.matchAll(FAMILY)) {
-      if (wanted.has(name.slice(0, infix.index))) copy(name);
-    }
+  const index = familiesOf(t);
+  for (const key of keys) {
+    for (const name of index.get(key) ?? []) copy(name);
   }
   return { locale: t.locale, catalog };
 }
