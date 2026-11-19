@@ -89,6 +89,7 @@ describe('unit · health-readers · every gh row spawns the command its refusal 
     'flake-hunt',
     'bench',
     'compat',
+    'next-sync',
     'private-names-secret',
     'docs-site-origin',
     'stale-bot-issues',

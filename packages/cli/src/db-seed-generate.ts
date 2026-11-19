@@ -14,6 +14,7 @@ import { loadApp } from './app-load';
 import type { CommandContext } from './command';
 import type { SeedPassRow } from './db-seed';
 import { parseSeedTierFlag, renderSeedTable, seedPassToJson } from './db-seed';
+import { refuseEmbeddedWriteBesideDev } from './dev-lock-live';
 import { readIntFlag } from './flag-number';
 import { withJobDriver } from './jobs-driver';
 import { msg } from './messages';
@@ -158,7 +159,10 @@ export async function runGeneratedSeed(ctx: CommandContext, root: string): Promi
       dryRun,
       transaction: (work) => withTransaction(() => work()),
     }).then((row) => generatedResult(row, dryRun, findings));
-  return dryRun ? write() : withJobDriver(root, ctx, write);
+  if (dryRun) return write();
+  // The second PGlite writer `x db seed` refuses to be, on the same rule (`dev-lock-live.ts`).
+  await refuseEmbeddedWriteBesideDev(root, ctx.env, ['db', 'seed', '--generate']);
+  return withJobDriver(root, ctx, write);
 }
 
 function generatedResult(

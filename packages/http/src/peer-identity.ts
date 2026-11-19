@@ -34,6 +34,10 @@ export interface PeerIdentity {
  * Raw on purpose: the element split and the pair split both run over this text, and an element
  * split that also stripped quotes left `pairsOf` splitting `O=Acme; Inc` a second time, unquoted.
  * Unescaping happens once, per value, in `unquote`.
+ *
+ * The client writes the text before the first trusted comma, so nothing there may swallow it: a
+ * backslash escapes only INSIDE quotes (outside, `\,` hid the separator), and a quote still open
+ * at the end means the client's text ran into the proxy's — no element is trustworthy, so none.
  */
 const splitRaw = (value: string, separator: string): readonly string[] => {
   const out: string[] = [];
@@ -43,7 +47,7 @@ const splitRaw = (value: string, separator: string): readonly string[] => {
   for (const char of value) {
     if (escaped) {
       escaped = false;
-    } else if (char === '\\') {
+    } else if (char === '\\' && quoted) {
       escaped = true;
     } else if (char === '"') {
       quoted = !quoted;
@@ -54,6 +58,7 @@ const splitRaw = (value: string, separator: string): readonly string[] => {
     }
     current += char;
   }
+  if (quoted) return [];
   out.push(current.trim());
   return out.filter((entry) => entry.length > 0);
 };

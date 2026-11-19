@@ -132,6 +132,19 @@ describe('unit · x db seed · discovery', () => {
     );
   });
 
+  test('a seed re-exported by a second globbed module is discovered once', async () => {
+    await withRoot(
+      {
+        'packages/db/seeds/dev.ts': seedModule('dev', 'dev'),
+        'packages/db/src/seeds.ts': "export { dev } from '../seeds/dev';\n",
+      },
+      async (root) => {
+        const discovery = await discoverSeeds(root);
+        expect(discovery.seeds.map((entry) => entry.file)).toEqual(['packages/db/seeds/dev.ts']);
+      },
+    );
+  });
+
   test('a module that will not import is a finding, never a silent absence', async () => {
     await withRoot(
       { 'packages/db/seeds/broken.ts': "import { nope } from './nowhere';\nexport { nope };\n" },

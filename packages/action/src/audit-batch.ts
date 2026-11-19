@@ -7,6 +7,7 @@
 
 import { finiteCount, MAX_TIMER_MS, onShutdown } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
+import { acceptRecord } from './audit-accepted';
 
 /** Records per batch, by default: one statement's worth, well under any driver's message limit. */
 export const DEFAULT_AUDIT_BATCH_MAX_RECORDS = 256;
@@ -126,7 +127,8 @@ export function batchedAuditSink(
 
   const write = (record: AuditRecord): Promise<void> =>
     new Promise<void>((resolve, reject) => {
-      queue.push({ record, resolve, reject });
+      // Accepted once, here: the batch and its single retry hand the sink this same object.
+      queue.push({ record: acceptRecord(record), resolve, reject });
       if (queue.length >= maxRecords) send();
       // Ref'd on purpose: a queued record is an audit row owed, and the process stays up to pay it.
       else if (timer === undefined) timer = setTimeout(send, maxDelayMs);

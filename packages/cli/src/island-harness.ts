@@ -97,8 +97,8 @@ export function harnessPage(input: HarnessPageInput): string {
       timeZone: input.target.timeZone,
     })}</script>`,
     '</head><body>',
-    `<div id="x-shot-frame"><div ${emitIslandAttributes(directive)}></div></div>`,
-    emitIslandProps(directive),
+    // The props script INSIDE the island's element, as the render walk writes it for a page.
+    `<div id="x-shot-frame"><div ${emitIslandAttributes(directive)}>${emitIslandProps(directive)}</div></div>`,
     hydrateRuntime([directive]),
     '</body></html>',
   ].join('');

@@ -5,6 +5,10 @@
 import type { NameSet } from './naming';
 import { RUNTIME_UID } from './scaffold-helm';
 
+/** The compose database: the tag and its multi-arch index digest, as `docker/*.yml` pin theirs. */
+export const POSTGRES_IMAGE =
+  'postgres:18-alpine@sha256:ff64c9e3bdf8e2120107d3559de8db314e8305f7e38c5105903c6295876738ff';
+
 /**
  * The production env file, relative to the app root. Named once because two readers must agree:
  * the compose file's \`env_file:\` (what the containers see) and \`x deploy\`'s \`--env-file\` (what
@@ -88,8 +92,10 @@ x-run-once-probe: &run-once-probe
 services:
   db:
     # Postgres 18 images keep the cluster under /var/lib/postgresql/18/docker, so the volume is the
-    # parent — mounted at .../data, as for 17, the image refuses to start.
-    image: postgres:18-alpine
+    # parent — mounted at .../data, as for 17, the image refuses to start. Pinned by digest: a tag
+    # is whatever the registry serves on the day this box pulls. To move it, read the new one with
+    # \`docker buildx imagetools inspect postgres:18-alpine\` and take a backup first.
+    image: ${POSTGRES_IMAGE}
     environment:
       POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${app.kebab}

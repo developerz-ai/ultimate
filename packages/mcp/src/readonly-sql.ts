@@ -19,11 +19,13 @@ const READ_LEADERS = new Set(['select', 'with', 'explain', 'show', 'table', 'val
 /**
  * Keywords that make a statement a write. Includes transaction control (a session the tool
  * left open is a lock held on a shared dev DB), `set`/`copy` (session mutation, file I/O),
- * and `analyze` — `EXPLAIN ANALYZE` executes the plan and `ANALYZE t` rewrites statistics,
- * so both are refused rather than special-cased. One rule, no exceptions to remember.
+ * and `analyze` (with `analyse`, the spelling Postgres also accepts) — `EXPLAIN ANALYZE` executes
+ * the plan and `ANALYZE t` rewrites statistics, so both are refused rather than special-cased. One
+ * rule, no exceptions to remember.
  */
 const WRITE_KEYWORDS = new Set([
   'alter',
+  'analyse',
   'analyze',
   'begin',
   'call',

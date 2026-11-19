@@ -331,7 +331,10 @@ is `kind: 'check'` and emits `slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`. The **same s
 places — nothing is translated — so a construct the two engines read differently is REFUSED where it
 is written, with the portable spelling in the `fix` where one exists (`\w` -> `[A-Za-z0-9_]`, `.` ->
 `[^\n\r]`) and the app-only predicate where none does (`\b` is a word boundary to `.test()` and a
-BACKSPACE to Postgres). `i` becomes `~*`; every other flag is refused.
+BACKSPACE to Postgres). `i` becomes `~*`; every other flag is refused. Also refused, because
+Postgres rejects the CHECK or answers it differently: an astral character (Bun writes `/😀/` as a
+surrogate pair `\uD83D\uDE00`), a repetition bound past 255 (`{256}`), a `-` straight after a range
+or `\d` inside a class unless it is last (`[a-z-9]`), and a quantified lookahead (`(?=a)*`).
 
 `isNull()` / `isNotNull()` are the only pair in the vocabulary TOTAL over NULL — `IS NULL` answers
 true or false for every input, and the app side reads an ABSENT key and a stored `null` as one value.
@@ -771,7 +774,7 @@ export const find = async (orgId: string, q: string) => {
 
 | Rule | Detail |
 |---|---|
-| `.search(term)` asks the installed index | built-in: the `matches` predicate in the statement (today's SQL). Any other: ids first — 10,000 (`MAX_PAGE_SIZE`) or more hits are refused with `X_INVARIANT_VIOLATED`, never truncated — then the chain reads those rows with its own tenancy, soft delete, order and cursor |
+| `.search(term)` asks the installed index | built-in: the `matches` predicate in the statement (today's SQL). Any other: ids first — 10,000 (`MAX_PAGE_SIZE`) or more hits are refused with `X_INVARIANT_VIOLATED`, never truncated — then the chain reads those rows with its own tenancy, soft delete, order and cursor. The index is asked per tenant: the chain's `eq` on the tenant column, else the actor's org — and inside `crossTenant()` each tenant of an `andWhere('<tenant>', 'in', [...])`, never the actor's alone; a `crossTenant` search naming neither is refused (`X_INVARIANT_VIOLATED`) |
 | a document has a **version** | the row's `onUpdateNow()` instant, epoch ms. A searchable entity indexed by anything declares one — `updatedAt: timestamp().defaultNow().onUpdateNow()` — or `searchDocumentOf` and `reindex()` refuse (`X_INVARIANT_VIOLATED`) |
 | the version is STRICTLY increasing per row | a write of a searchable entity — a soft delete included — stores its version no earlier than the stored one + 1 ms: Postgres `greatest($now, updated_at + interval '1 millisecond')` in the `update` and the upsert's `on conflict` set; the memory driver in its merge (`advanceVersion`); a `defineDriver` store in ITS write, atomically per row — `DriverRepo.update`'s `advance` argument, and `advanceVersion(entity, stored, merged, (p) => plan.set.includes(p))` in its own `upsert` (`entityDriverConformance` refuses a store that skips either). So two writes inside one millisecond are two versions, and the index keeps the second. The column may run ahead of the clock by a millisecond per same-ms write. Other entities' `onUpdateNow()` columns are the clock's reading, unchanged |
 | keep only newer | an index applies a document only when its version is newer than what it holds for that id: a document, or the tombstone `remove(scope, ids, version)` leaves (a delete's: past the row's last version and no earlier than its instant). Equal = replay. EXCEPT a `committed` document — the write path's, `index(docs, { committed: true })` — which replaces a tombstone whatever its version: a key deleted and written again is live at once, inside one millisecond too. `reindex`'s reads are not `committed`, so a stale read never brings a deleted row back |

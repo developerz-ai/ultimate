@@ -373,7 +373,11 @@ async function readSliceErrors(
   slice: string,
   name: 'errors.ts' | 'policy.ts' = 'errors.ts',
 ): Promise<string | undefined> {
-  if (kind !== 'action' && kind !== 'mutator') return undefined;
+  // A read imports its rule from `policy.ts` too (`can<Feature>Read`), and throws nothing of the
+  // slice's — so `query` reads the policy and never the errors.
+  const reads =
+    kind === 'action' || kind === 'mutator' || (kind === 'query' && name === 'policy.ts');
+  if (!reads) return undefined;
   const file = containedPath(root, `${slice}/${name}`);
   return existsSync(file) ? await Bun.file(file).text() : undefined;
 }

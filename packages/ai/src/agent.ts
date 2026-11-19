@@ -337,6 +337,9 @@ async function run<
         chars,
         redact,
         repeated,
+        interrupted: (partial) => {
+          at.messages = partial;
+        },
       };
       let messages: readonly AiMessage[] =
         prior === undefined ? [{ role: 'user', content: rendered }] : continued(prior, rendered);
@@ -391,6 +394,8 @@ async function run<
 
         if (requested.length > 0) {
           messages = await toolTurn(tools, turn, result, requested, answers, messages);
+          // Before anything else can throw (`onCheckpoint`): a failed run's handle holds these results.
+          at.messages = messages;
           calls += requested.length;
           rejected = undefined;
           await landed(turn, messages, result.model);
@@ -421,6 +426,7 @@ async function run<
         rejected = formatIssues(parsed.issues);
         issues = rejected.join('; ');
         messages = [...messages, assistantTurn(result), repairTurn(answers, issues)];
+        at.messages = messages;
         await landed(turn, messages, result.model);
       }
 
@@ -443,7 +449,8 @@ async function run<
         .catch((error: unknown) => {
           const failed = meter.fail(error);
           // A failed `.run()` / `.continue()` leaves a handle too: the transcript up to the request
-          // the failed turn was answering, with `turns` and `usage` counting what this call was
+          // the failed turn was answering — plus every tool result that turn completed, so a
+          // continuation never runs a tool twice — with `turns` and `usage` counting what this call was
           // billed. Without it a retry resumes from the OLD handle, which never heard of that spend
           // — six truncated continuations billed six times against a ceiling that saw none of them.
           if (session !== undefined && at.messages.length > 0) {

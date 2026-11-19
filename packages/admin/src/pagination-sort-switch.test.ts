@@ -10,10 +10,13 @@ import {
   entity,
   integer,
   memoryDriver,
+  money,
   text,
   timestamp,
   uuid,
 } from '@ultimat3/entity';
+import { AdminFilterInvalidError } from './errors';
+import { pageRequestOf } from './list-request';
 import { fetchPage, listQuery } from './pagination';
 import type { AdminSort } from './registry';
 import { adminRepoFor } from './repo-entity';
@@ -75,4 +78,18 @@ test('the same sort keeps paging: the guard compares the field, not the cursor',
   const second = await fetchPage(resource, { sort: byTitle, cursor: first.nextCursor });
   expect(second.rows.map((row) => row['title'])).toEqual(['t2', 't3']);
   expect(second.prevCursor).not.toBeNull();
+});
+
+// A money value is a pair: `orderBy` refuses the bare column and asks for `.minor` or `.currency`,
+// and ordering by `.minor` across currencies ranks 100 JPY above 99 USD. Not a sort, so no header
+// link, no manifest `sorts` row, and a hand-typed `?sort=price` is the 400 any unsortable field is.
+test('a money column is not offered as a sort', async () => {
+  const priced = entity('admin_page_sort_money', {
+    columns: { id: uuid().primaryKey(), name: text({ max: 20 }), price: money() },
+  });
+  const table = database({ priced }, { driver: memoryDriver() }).priced;
+  const resource = adminResource(priced, { repo: adminRepoFor(priced, table) });
+  expect(resource.fields.find((field) => field.name === 'price')?.sortable).toBe(false);
+  const url = new URL('http://admin.test/admin/priced?sort=price:asc');
+  expect(() => pageRequestOf(resource, url)).toThrow(AdminFilterInvalidError);
 });

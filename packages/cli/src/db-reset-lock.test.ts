@@ -49,11 +49,13 @@ describe('unit · x db reset never deletes a database a running x dev holds', ()
 // its `create table` succeeds, and the holder's next write replaces the catalog — the table the
 // migration created is gone, with no error on either side.
 describe('unit · x db migrate never applies into an embedded database a running x dev holds', () => {
-  test('a live dev lock refuses the migrate with X_DEV_ALREADY_RUNNING, before pgdata is opened', async () => {
+  // Port 1 answers nothing: a holder with no web role, or one whose listener is gone. The pass is
+  // asked of the holder first (`cmd-db-migrate-dev.test.ts`); unanswered, it is never applied here.
+  test('a holder that does not answer refuses the migrate, before pgdata is opened', async () => {
     const root = await mkdtemp(join(tmpdir(), 'x-db-migrate-lock-'));
     try {
       await Bun.write(join(root, 'app.config.ts'), "export const config = { name: 'held' };\n");
-      const lock = { pid: process.pid, port: 3000, url: 'http://localhost:3000', startedAt: '' };
+      const lock = { pid: process.pid, port: 1, url: 'http://localhost:1', startedAt: '' };
       await Bun.write(lockPath(join(root, '.x')), JSON.stringify(lock));
       const ctx: CommandContext = {
         args: parseArgs(['db', 'migrate'], SPECS),
@@ -67,7 +69,7 @@ describe('unit · x db migrate never applies into an embedded database a running
 
       expect(result.ok).toBe(false);
       expect(result.findings?.map((finding) => finding.code)).toEqual(['X_DEV_ALREADY_RUNNING']);
-      expect(result.findings?.[0]?.fix).toStartWith('x stop --json');
+      expect(result.findings?.[0]?.fix).toStartWith('x stop --json && x db migrate && x dev');
       expect(await Bun.file(join(root, '.x/pgdata/PG_VERSION')).exists()).toBe(false);
     } finally {
       await rm(root, { recursive: true, force: true });

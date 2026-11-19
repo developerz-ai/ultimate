@@ -114,7 +114,8 @@ export const createSession = action({
 });
 `;
 
-const confirmSessionSource =
+/** Both shapes' second leg: it reads the challenge through `../sign-in-challenge`, whichever holds it. */
+export const confirmSessionSource =
   (): string => `// The second leg: the six digits (or one recovery code) against the challenge the first leg held.
 // \`completeMfa()\` meters the guess against the same lockout a password guess spends.
 import { action, t } from '@ultimat3/action';
@@ -168,19 +169,24 @@ const PASSWORD_FORM: SignInForm = {
       </form>`,
 };
 
-const CATALOG: Readonly<Record<string, string>> = {
-  ...SIGN_IN_CATALOG,
-  'app.auth.signIn.email': 'Email',
-  'app.auth.signIn.password': 'Password',
-  'app.auth.signIn.submit': 'Sign in',
+/** The second-factor page's copy, for whichever shape reaches it. */
+export const SECOND_FACTOR_CATALOG: Readonly<Record<string, string>> = {
   'app.auth.secondFactor.title': 'Second factor',
   'app.auth.secondFactor.description': 'Enter the code from your authenticator app.',
   'app.auth.secondFactor.code': 'Code',
   'app.auth.secondFactor.submit': 'Continue',
 };
 
+const CATALOG: Readonly<Record<string, string>> = {
+  ...SIGN_IN_CATALOG,
+  'app.auth.signIn.email': 'Email',
+  'app.auth.signIn.password': 'Password',
+  'app.auth.signIn.submit': 'Sign in',
+  ...SECOND_FACTOR_CATALOG,
+};
+
 /** The test's expectation that the page's form posts at `action`'s derived route. */
-const POSTS_AT = (action: string): string => `\`action="\${derivePath('${action}').path}"\``;
+export const POSTS_AT = (action: string): string => `\`action="\${derivePath('${action}').path}"\``;
 
 export function passwordSignInFiles(options: SignInTemplateOptions): readonly GeneratedFile[] {
   const module = options.catalogModule;

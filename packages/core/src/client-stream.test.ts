@@ -22,14 +22,17 @@ const encoder = new TextEncoder();
 function held() {
   let push: (text: string) => void = () => undefined;
   let end: () => void = () => undefined;
+  let cut: () => void = () => undefined;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       push = (text) => controller.enqueue(encoder.encode(text));
       end = () => controller.close();
+      // What a dropped connection does to a fetch body: the next read rejects with a TypeError.
+      cut = () => controller.error(new TypeError('network error'));
     },
   });
   const response = new Response(body, { headers: { 'content-type': 'text/event-stream' } });
-  return { response, push: (text: string) => push(text), end: () => end() };
+  return { response, push: (text: string) => push(text), end: () => end(), cut: () => cut() };
 }
 
 describe('clientStream', () => {
@@ -82,6 +85,45 @@ describe('clientStream', () => {
     ).toEqual([
       { event: 'chunk', data: '1', dates: 'x' },
       { event: 'done', data: '2' },
+    ]);
+  });
+
+  test("a chunk frame's dates line revives its instants", async () => {
+    const chunk = { at: new Date('2026-01-02T03:04:05.678Z') };
+    const wire = held();
+    const stream = clientStream({ url: '/x', fetchImpl: () => Promise.resolve(wire.response) });
+    const first = stream.next();
+    wire.push(`event: chunk\ndates: ${wireDatePaths(chunk)}\ndata: ${JSON.stringify(chunk)}\n\n`);
+    const { value } = await first;
+    expect(value).toEqual(chunk);
+    expect((value as { at: unknown }).at).toBeInstanceOf(Date);
+  });
+
+  test("a stream cut after a chunk throws X_CLIENT_TRANSPORT_FAILED with failure: 'network'", async () => {
+    const wire = held();
+    const stream = clientStream({ url: '/x', fetchImpl: () => Promise.resolve(wire.response) });
+    const first = stream.next();
+    wire.push('event: chunk\ndata: {"a":1}\n\n');
+    expect(await first).toEqual({ done: false, value: { a: 1 } });
+    const second = stream.next();
+    wire.cut();
+    const error = await failure(second);
+    expect(isUltimateError(error) && [error.code, error.retry, error.meta?.['failure']]).toEqual([
+      'X_CLIENT_TRANSPORT_FAILED',
+      'terminal',
+      'network',
+    ]);
+  });
+
+  test("a chunk frame that is not JSON is X_CLIENT_TRANSPORT_FAILED with failure: 'body'", async () => {
+    const wire = held();
+    const stream = clientStream({ url: '/x', fetchImpl: () => Promise.resolve(wire.response) });
+    const first = stream.next();
+    wire.push('event: chunk\ndata: {not json\n\n');
+    const error = await failure(first);
+    expect(isUltimateError(error) && [error.code, error.meta?.['failure']]).toEqual([
+      'X_CLIENT_TRANSPORT_FAILED',
+      'body',
     ]);
   });
 

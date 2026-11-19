@@ -120,6 +120,17 @@ describe('the request body', () => {
     expect(body['tool_choice']).toEqual({ type: 'function', function: { name: 'respond' } });
     expect(body['stop']).toEqual(['STOP']);
   });
+
+  test("toolChoice: 'auto' leaves one tool unforced, so the model may answer in prose", () => {
+    const body = chatCompletionBody({
+      provider: 'openai',
+      request: request({ tools: [respond], toolChoice: 'auto' }),
+      model: MODEL,
+      stream: false,
+    });
+    expect(body['tools']).toHaveLength(1);
+    expect(body['tool_choice']).toBeUndefined();
+  });
 });
 
 describe('reasoning', () => {

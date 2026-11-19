@@ -67,6 +67,23 @@ describe('.continue() after a compaction', () => {
     expect(done.map((event) => event.compactions)).toEqual(done.map((_, index) => index + 1));
   });
 
+  test("a continuation's instruction survives its own compaction verbatim", async () => {
+    scripted(SIX_READS);
+    const write = declare({ compact: { keepTurns: 2 }, maxTurns: 30 });
+    const first = await write.run(INPUT, { ctx: ctx() });
+    const again = scripted([READ, READ, READ, READ, READ, READ, BETTER]);
+    await write.continue(
+      INPUT,
+      { transcript: first.transcript, user: 'Rewrite section 3 in French.' },
+      { ctx: ctx() },
+    );
+    expect(again.summaries.length).toBeGreaterThan(0);
+    // The instruction is older than the kept turns by now, and still in what the model is sent.
+    const last = again.loop.at(-1)?.messages ?? expect.unreachable('no last turn');
+    expect(JSON.stringify(last.slice(1))).not.toContain('Rewrite section 3 in French.');
+    expect(JSON.stringify(last[0])).toContain('Rewrite section 3 in French.');
+  });
+
   test('an edited compaction count breaks the signature', async () => {
     scripted(SIX_READS);
     const write = declare({ compact: { keepTurns: 2 } });

@@ -174,6 +174,38 @@ describe('clientTransport — only the wire is a network failure', () => {
     expect(calls).toHaveLength(1);
   });
 
+  // A gateway 5xx after the app committed: re-sent, an unkeyed write lands twice. A network drop on
+  // the same call was already one attempt; the status path is held to the same rule.
+  test("a POST with no idempotency key is dispatched once whatever the flight's retry policy", async () => {
+    const { fetchImpl, calls } = fakeFetch(() => json({ status: 504 }, { status: 504 }));
+    const error = await failure(
+      clientTransport({
+        method: 'POST',
+        url: '/a',
+        body: {},
+        flight: retrying(),
+        retry: { attempts: 3 },
+        fetchImpl,
+      }),
+    );
+    expect(isUltimateError(error) && error.code).toBe('X_CLIENT_TRANSPORT_FAILED');
+    expect(calls).toHaveLength(1);
+    // Keyed, the server replays it: the policy stands.
+    const keyed = fakeFetch(() => json({ status: 504 }, { status: 504 }));
+    await failure(
+      clientTransport({
+        method: 'POST',
+        url: '/a',
+        body: {},
+        idempotencyKey: 'k-1',
+        flight: retrying(),
+        retry: { attempts: 3 },
+        fetchImpl: keyed.fetchImpl,
+      }),
+    );
+    expect(keyed.calls).toHaveLength(3);
+  });
+
   // A stream is read once. The retry re-sent the SAME `rawBody`, whose second send can only fail —
   // as a TypeError, so as `network`, so retryable — until the attempts ran out.
   test('a streamed rawBody is one attempt, whatever retry was asked for', async () => {

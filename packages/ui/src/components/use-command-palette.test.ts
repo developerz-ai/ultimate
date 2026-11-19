@@ -117,6 +117,25 @@ describe('useCommandPalette', () => {
     expect(palette.props.open).toBe(false);
   });
 
+  test('Enter while composing does not run the active item', () => {
+    const { palette, ran } = mount();
+    palette.show();
+    for (const fields of [{ isComposing: true }, { keyCode: 229 }]) {
+      for (const key of ['Enter', 'ArrowDown', 'Escape']) {
+        const event = { ...keydown(key), ...fields };
+        palette.props.onFilterKeyDown(event as never);
+        expect(event.defaultPrevented).toBe(false);
+      }
+    }
+    palette.props.onFilterKeyDown({ ...keydown('Process') } as never);
+    expect(ran).toEqual([]);
+    expect(palette.props.open).toBe(true);
+    expect(palette.props.activeId).toBe('home');
+    // The composition over, Enter runs.
+    palette.props.onFilterKeyDown(keydown('Enter') as never);
+    expect(ran).toEqual(['home:false']);
+  });
+
   test('a key it does not own is left alone; Escape closes; hover moves; a click runs by id', () => {
     const { palette, ran } = mount();
     palette.show();

@@ -152,6 +152,17 @@ describe('unit · matchers', () => {
     }
   });
 
+  test('toBeWithinBudget refuses a non-finite limit, under .not too', () => {
+    // `received <= NaN | undefined` is false, so `.not` held for a budget key that was renamed.
+    const budgets: Readonly<Record<string, number>> = { home: 40_960 };
+    for (const limit of [budgets['renamedKey'], Number.NaN, Number.POSITIVE_INFINITY]) {
+      const asked = limit as number;
+      expect(() => expect(10_000).toBeWithinBudget(asked)).toThrow('X_TEST_NUMBER_EXPECTED');
+      expect(() => expect(10_000).not.toBeWithinBudget(asked)).toThrow('X_TEST_NUMBER_EXPECTED');
+    }
+    expect(() => expect(1).toBeWithinBudget(Number.NaN)).toThrow("the budget's limit");
+  });
+
   test('toBeWithinBudget compares against the declared limit', () => {
     expect(40_000).toBeWithinBudget(40_960);
     expect(61_000).not.toBeWithinBudget(40_960);

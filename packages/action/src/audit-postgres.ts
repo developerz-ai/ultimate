@@ -74,11 +74,33 @@ create index if not exists x_audit_actor_at_idx on x_audit (actor_id, at desc);
 `;
 
 /**
- * `id` is generated per ROW and is not an idempotency key: two identical attempts are two events
- * and an audit trail that collapsed them would be lying about how many times something was tried.
- * There is deliberately no `on conflict` — an append-only table has nothing to reconcile.
+ * `id` is minted per RECORD and is not an idempotency key: two identical attempts are two records,
+ * two ids, two events — a trail that collapsed them would lie about how many times something was
+ * tried. A record keeps its id across sends (`rowOf`), so group commit's single retry after a lost
+ * reply re-binds the id its batch already stored.
  *
- * `recorded_at` defaults to `now()` and is not a parameter: `at` is the caller's clock
+ * **Why not `on conflict (id) do nothing`**: it would also swallow a DIFFERENT record that drew a
+ * stored id, and an append-only trail must say so rather than drop it. So a row is skipped only
+ * when the stored row with its id holds the same facts (`SQL_AUDIT_UNLESS_STORED`); any other row
+ * under that id still raises the driver's `unique_violation`, exactly as before.
+ */
+const SQL_AUDIT_UNLESS_STORED = `
+where not exists (
+  select 1 from x_audit as a
+  where a.id = r.id
+    and (
+      a.at, a.action, a.mutator, a.surface, a.outcome, a.replayed, a.idempotency_key,
+      a.failure_code, a.actor_id, a.actor_kind, a.org_id, a.on_behalf_of_id, a.on_behalf_of_kind,
+      a.request_id, a.trace_id, a.locale, a.tz, a.build_id, a.role, a.input, a.primitive
+    ) is not distinct from (
+      r.at, r.action, r.mutator, r.surface, r.outcome, r.replayed, r.idempotency_key,
+      r.failure_code, r.actor_id, r.actor_kind, r.org_id, r.on_behalf_of_id, r.on_behalf_of_kind,
+      r.request_id, r.trace_id, r.locale, r.tz, r.build_id, r.role, r.input::jsonb, r.primitive
+    )
+)`;
+
+/**
+ * One record. `recorded_at` defaults to `now()` and is not a parameter: `at` is the caller's clock
  * (`ctx.now()`) and this is the database's, so the gap between them is the audit lag, and a
  * process whose clock has drifted is visible instead of invisible.
  */
@@ -87,11 +109,20 @@ insert into x_audit (
   id, at, action, mutator, surface, outcome, replayed, idempotency_key, failure_code,
   actor_id, actor_kind, org_id, on_behalf_of_id, on_behalf_of_kind,
   request_id, trace_id, locale, tz, build_id, role, input, primitive
-) values (
-  $1::uuid, $2::timestamptz, $3, $4, $5, $6, $7, $8, $9,
-  $10, $11, $12, $13, $14,
-  $15, $16, $17, $18, $19, $20, $21::jsonb, $22
 )
+select
+  id, at, action, mutator, surface, outcome, replayed, idempotency_key, failure_code,
+  actor_id, actor_kind, org_id, on_behalf_of_id, on_behalf_of_kind,
+  request_id, trace_id, locale, tz, build_id, role, input, primitive
+from (values (
+  $1::uuid, $2::timestamptz, $3::text, $4::boolean, $5::text, $6::text, $7::boolean, $8::text,
+  $9::text, $10::text, $11::text, $12::text, $13::text, $14::text,
+  $15::text, $16::text, $17::text, $18::text, $19::text, $20::text, $21::jsonb, $22::text
+)) as r (
+  id, at, action, mutator, surface, outcome, replayed, idempotency_key, failure_code,
+  actor_id, actor_kind, org_id, on_behalf_of_id, on_behalf_of_kind,
+  request_id, trace_id, locale, tz, build_id, role, input, primitive
+)${SQL_AUDIT_UNLESS_STORED}
 `;
 
 /**
@@ -117,7 +148,7 @@ from jsonb_to_recordset($1::jsonb) as r (
   actor_id text, actor_kind text, org_id text, on_behalf_of_id text, on_behalf_of_kind text,
   request_id text, trace_id text, locale text, tz text, build_id text, role text,
   input text, primitive text
-)
+)${SQL_AUDIT_UNLESS_STORED}
 `;
 
 export interface PostgresAuditSinkOptions {

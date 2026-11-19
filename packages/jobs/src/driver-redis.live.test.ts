@@ -274,8 +274,8 @@ describe.skipIf(url === '')('live · redis · the job driver', () => {
     expect(new Set(ids).size).toBe(rows);
   });
 
-  test('a done row expires with its steps; a dead one is kept', async () => {
-    const driver = redisJobDriver({ ...on, doneTtlMs: 60_000 });
+  test('a done row expires with its steps; a dead one with deadTtlMs: 0 is kept', async () => {
+    const driver = redisJobDriver({ ...on, doneTtlMs: 60_000, deadTtlMs: 0 });
     const enqueue = (key: string) =>
       driver.enqueue({
         name: 'ttl.job',

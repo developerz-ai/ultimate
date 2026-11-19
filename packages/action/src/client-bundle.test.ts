@@ -14,8 +14,14 @@ import { join } from 'node:path';
 /** Gitignored repo-wide; one directory per process so concurrent runs never delete each other. */
 const FIXTURE_DIR = join(import.meta.dir, '..', '.tmp', `client-bundle-${process.pid}`);
 
-/** Measured 2026-11-09, Bun 1.4.4: 24,473 B minified (29,972 B while it read the core barrel). */
-const RPC_MINIFIED_BYTES_MAX = 25_000;
+/**
+ * measured: 25,281 B (2026-11-19, Bun 1.4.4), 24,978 B before this change, against 25,000. why:
+ * +303 B — +272 B, core's `clientStream` revives a chunk frame's `dates:` line as the done frame's
+ * is and codes a stream cut mid-body as `X_CLIENT_TRANSPORT_FAILED`; +31 B, `clientTransport` sends
+ * a write with no Idempotency-Key once. The ceiling moves by the measured growth: 25,000 + 303.
+ * was: 24,473 B (2026-11-09), 29,972 B while it read the core barrel.
+ */
+const RPC_MINIFIED_BYTES_MAX = 25_303;
 
 /** The client module itself, and what an island writes. */
 const CLIENT_MODULE = join(import.meta.dir, 'client.ts');

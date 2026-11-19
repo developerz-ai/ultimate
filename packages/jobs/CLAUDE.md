@@ -77,7 +77,8 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
   row (`attempt = 0`) `failed`/`JOB_EXPIRED`; a requeue clears expiry and `settle_owed`;
   `backlog(queue, cap)` counts no further than `cap`, `holds` probes a key once full. Refused in any
   batch (`assertEnqueueMany`).
-- **Redis scripts go by `EVALSHA`** (`driver-redis-eval.ts`): `EVAL` only on `NOSCRIPT`.
+- **Redis scripts go by `EVALSHA`** (`driver-redis-eval.ts`): `EVAL` only on `NOSCRIPT`; the
+  server's clock (`NOW_OF`) unless injected; an ended row's keys expire (`ENDED`).
 
 ## Rules — numbers and limits
 
@@ -114,7 +115,7 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
 - **A fleet slot is HELD, not owned**: a lost one CANCELS the run (`X_JOB_SLOT_LOST`). †
 - **The run's signal is a controller this worker owns** (`run-signal.ts`).
 - **A lease is HELD, not owned** (`heartbeat.ts`): a whole window without a renewal is
-  `jobs.lease.lost`. †
+  `jobs.lease.lost`, timed from the claim's ask (`claimedAt`). †
 - **A renewal is decided against `stopped()`** (`renewal-timer.ts`, re-read after every await); the
   interval is `unref`ed; every renewal is armed through `WorkerOptions.schedule`.
 - **Settlement is not part of the retry decision**: `driver.ack` sits after the `try`.
@@ -204,7 +205,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `events-pg.ts` | `postgresEventBus` — `step.waitForEvent` across processes |
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, and `postgresLeader` |
-| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point — `JOBS_TABLE_STORAGE` (fillfactor 80), and the hot tables' autovacuum settings (`x_scheduler_state`, `x_job_workers`, `x_outbox`) as `tableStorage()` declarations in `JOBS_STORAGE`, which drift checks. Its comments carry no `;` and no `'` |
+| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` (the ONE install), `JOBS_TABLE_STORAGE` (fillfactor 80), the hot tables' autovacuum as `tableStorage()` in `JOBS_STORAGE`, drift-checked. Comments carry no `;` and no `'` |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
 | `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled`, told beside the claim pass (`burialTeller`) and started only inside its debt's grace |
 | `retry.ts` / `retry-default.ts` | the dead-letter decision over core's `backoffDelay`; the app's default (`jobs.maxAttempts`/`backoff`), resolved when `handle.retry` is READ |
@@ -232,7 +233,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `scheduler-known.ts` / `scheduler-dispatch.ts` | what the leader remembers of each watermark (an idle round reads nothing, a cold one ONE `watermarks` read); one occurrence fired |
 | `limits.ts` / `limiter*.ts` | per-process caps; `limiter()`: a named fleet budget |
 | `events.ts` / `-cursor.ts` | memory bus; the wait cursor, both buses |
-| `inspect.ts` | `--json` introspection. `operatorInput`: no registered handle gives `[redacted]` whole; otherwise `redactInput(maskSensitive(handle.input, …))` |
+| `inspect.ts` | `--json` introspection; `operatorInput`: `[redacted]` whole with no handle, else `redactInput(maskSensitive(…))` |
 | `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume, resolve-step |
 | `inspect-unsupported.ts` | `requireIntrospection`: every verb's guard, `X_JOB_INTROSPECTION_UNSUPPORTED` (redis ships no `introspect`) |
 | `introspection.ts` | `JobIntrospection`, every operator type, and the bounds |

@@ -80,6 +80,8 @@ export {
   routeNotFound,
   unauthenticated,
 } from './errors';
+/** A fault AFTER the response left (a streamed body's producer), recorded as `error-map` would. */
+export { isCallerAbort, reportLateFault } from './fault-report';
 export type { ForwardedInput, ForwardedSplit } from './forwarded';
 export { clientAddress, forwardedElement } from './forwarded';
 export type { Authenticator, AuthenticatorOptions, AuthzDecision, ServerHooks } from './hooks';

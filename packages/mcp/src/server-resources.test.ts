@@ -52,3 +52,46 @@ describe('resources/read', () => {
     expect(contents?.[0]?.text).toBe('agent_tok');
   });
 });
+
+describe('a resource source that throws', () => {
+  const broken = () =>
+    mcpServer({
+      resourceSources: [
+        {
+          // Input to the code under test: a tenant-runbook lookup whose database is down.
+          list: () => Promise.reject(new TypeError('connect ECONNREFUSED 10.0.0.7:5432')),
+        },
+      ],
+    });
+
+  test('answers -32603 on resources/list and resources/read, never a rejection', async () => {
+    const listed = await broken().handle(
+      { jsonrpc: '2.0', id: 1, method: 'resources/list' },
+      token,
+    );
+    const read = await broken().handle(readRequest, token);
+    for (const answer of [listed, read]) {
+      expect(answer?.result).toBeUndefined();
+      expect(answer?.error?.code).toBe(-32603);
+      // The source's own message names a host the caller has no business seeing.
+      expect(JSON.stringify(answer)).not.toContain('ECONNREFUSED');
+    }
+  });
+
+  test('both failures reach onAudit as failed', async () => {
+    const seen: string[] = [];
+    const server = mcpServer({
+      resourceSources: [
+        {
+          list: () => Promise.reject(new TypeError('down')),
+        },
+      ],
+      onAudit: (event) => {
+        if (event.kind === 'resource-read') seen.push(`${event.uri} ${event.outcome}`);
+      },
+    });
+    await server.handle({ jsonrpc: '2.0', id: 1, method: 'resources/list' }, token);
+    await server.handle(readRequest, token);
+    expect(seen).toEqual(['resources/list failed', 'app://whoami failed']);
+  });
+});

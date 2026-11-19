@@ -54,9 +54,9 @@ export interface LlmTool {
   readonly description: string;
   readonly input_schema: JsonSchema;
   /**
-   * Strict mode guarantees the model's `input` validates against the schema exactly.
-   * Requires `additionalProperties: false` plus `required` — which every projected action
-   * schema already has, so it is on by default.
+   * Strict mode guarantees the model's `input` validates against the schema exactly. Every
+   * projection ASKS for it; each wire grants it only where its own documented subset and caps
+   * allow (`anthropic-provider.ts`, `toOpenAiTools`), because past them the flag is a 400.
    */
   readonly strict?: boolean;
 }

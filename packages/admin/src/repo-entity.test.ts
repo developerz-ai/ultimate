@@ -269,6 +269,23 @@ describe('unit · adminRepoFor over a typed handle', () => {
     await expect(repo.update('not-a-uuid', { title: 'x' })).rejects.toThrow(/expected a uuid/);
   });
 
+  test("an integer primary key: find('7') answers the row and update('7') writes it", async () => {
+    // A route id is text; the key column wants a number — the same conversion a filter gets.
+    const counters = entity('admin_repo_counters', {
+      columns: { id: integer().primaryKey(), name: text({ max: 80 }) },
+    });
+    const own = adminRepoFor(counters, database({ counters }, { driver: memoryDriver() }).counters);
+    await own.create({ id: 7, name: 'seven' });
+    expect((await own.find('7'))?.['name']).toBe('seven');
+    expect((await own.update('7', { name: 'SEVEN' }))['name']).toBe('SEVEN');
+    expect(await own.find('8')).toBeNull();
+    // Not a number at all is still a row that does not exist on a read, and a refusal on a write.
+    expect(await own.find('seven')).toBeNull();
+    await expect(own.update('seven', { name: 'x' })).rejects.toThrow(/whole number/);
+    await own.destroy('7');
+    expect(await own.find('7')).toBeNull();
+  });
+
   test("a tenant-scoped entity never returns another org's row, and the adapter adds no predicate", async () => {
     const books = adminRepoFor(ledgers, db.books);
     const mine = await as(ORG_A, () => books.create({ orgId: ORG_A, name: 'ours' }));

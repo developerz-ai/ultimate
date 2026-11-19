@@ -269,6 +269,10 @@ const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
     if (typeof received !== 'number' || !Number.isFinite(received)) {
       throw new TestNumberExpectedError(received);
     }
+    // The limit too: a renamed budget key reads `undefined`, and `received <= undefined` is false.
+    if (typeof limit !== 'number' || !Number.isFinite(limit)) {
+      throw new TestNumberExpectedError(limit, 'limit');
+    }
     return result(
       received <= limit,
       () => `expected ${received} to be within the budget of ${limit}`,

@@ -1,13 +1,14 @@
 // `x g sign-in --oidc <provider>`: an OpenID Connect issuer, discovered when the first sign-in
-// arrives (`discoverOAuthProvider`), its two legs (`oauthLogin`) mounted on `runtime.routes`, and
-// the page that links to the first one. PKCE, the sealed handshake, the state check and the account
-// link are the framework's; which IdP group means which role stays the app's (`resolveGrants`).
+// arrives, its two legs (`oauthLogin`) mounted on `runtime.routes`, and the page linking the first.
+// PKCE, the sealed handshake and the account link are the framework's; which IdP group means which
+// role stays the app's (`resolveGrants`). The second factor's leg is `sign-in-oidc-mfa.ts`'s.
 
 // The literal the generated tests pin comes from auth itself, so the scaffold cannot drift from it.
 import { oauthStartPath } from '@ultimat3/auth';
 import { catalogJson } from './catalog-json';
 import { catalogPath } from './locales';
 import type { GeneratedFile } from './naming';
+import { OIDC_MFA_IMPORT, OIDC_MFA_OPTION, oidcSecondFactorFiles } from './sign-in-oidc-mfa';
 import {
   SIGN_IN_CATALOG,
   type SignInForm,
@@ -15,6 +16,7 @@ import {
   signInPageSource,
   signInPageTest,
 } from './sign-in-pages';
+import { SECOND_FACTOR_CATALOG } from './sign-in-password';
 import { OIDC_RUNTIME_ROUTES } from './sign-in-runtime';
 import { AUTH_DIR, sharedSignInFiles } from './sign-in-shared';
 
@@ -54,6 +56,7 @@ import {
   registerOAuthProvider,
 } from '@ultimat3/auth';
 import { appAuth } from './auth';
+${OIDC_MFA_IMPORT}
 import { AFTER_SIGN_IN } from './sign-in-flow';
 
 export const OIDC_PROVIDER = '${provider}';
@@ -89,6 +92,9 @@ export const oidcLegs = (env: Env = process.env): Promise<OAuthLoginRoutes> => {
     return oauthLogin(signInAuth(), {
       successPath: AFTER_SIGN_IN,
       callbackPath: OIDC_CALLBACK_PATH,
+      // An MFA-enrolled user finishes on this app's second-factor page; without it their
+      // callback is a 401 they can never get past.
+      ${OIDC_MFA_OPTION}
     });
   })().catch((error: unknown) => {
     legs = undefined;
@@ -192,11 +198,13 @@ export function oidcSignInFiles(
       path: `${AUTH_DIR}/sign-in/page.test.ts`,
       contents: signInPageTest(module, 'app.auth.signIn', `'href="${oauthStartPath(provider)}"'`),
     },
+    ...oidcSecondFactorFiles(module),
     ...options.locales.map((locale) => ({
       path: catalogPath(locale),
       contents: catalogJson({
         ...SIGN_IN_CATALOG,
         'app.auth.signIn.continue': `Continue with ${provider}`,
+        ...SECOND_FACTOR_CATALOG,
       }),
       merge: 'json' as const,
     })),

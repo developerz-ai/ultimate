@@ -15,6 +15,7 @@ import type {
   TriggerRecord,
   ViewDescription,
 } from './introspect';
+import { statementsOf } from './statement-split';
 
 const str = (value: unknown): value is string => typeof value === 'string';
 const bool = (value: unknown): value is boolean => typeof value === 'boolean';
@@ -47,6 +48,10 @@ function column(value: unknown): ColumnDescription | undefined {
   } = value;
   if (!str(name) || !str(dataType) || !bool(nullable) || !nullableStr(fallback)) return undefined;
   if (typeof position !== 'number') return undefined;
+  // Spliced into `down` by every arm that puts a column back (`add column "x" <dataType>`), from a
+  // file anything may edit: one statement, the screen a recorded default and a generation
+  // expression take where they are spliced. Here, not there, because there are five such arms.
+  if (statementsOf(dataType).length > 1) return undefined;
   // `generated` was recorded by `snapshotOf` and dropped HERE, silently, for as long as the field
   // has existed: the sidecar carried the expression and the parse handed back a column without it,
   // so `retypeColumn` read every generated column as newly generated and rebuilt it on every

@@ -174,7 +174,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 - **Three OTLP variables, three codes** — `X_OTLP_ENDPOINT_INVALID`, `X_OTLP_HEADERS_INVALID`,
   `X_OTLP_PROTOCOL_UNSUPPORTED`. A header KEY is in the cause/fix/meta; its VALUE never is.
 - **A cause is cut at 4 KiB in the constructor** (`boundedCause`); schema's copy is pinned by `single-line-pin.test.ts`.
-- `error-reporter.ts`: `ErrorReporter`, an `adapterSlot` (`installErrorReporter` on `./adapter`; `configureErrorReporting` keeps clock/release/environment/enabled only), no-op default, memory reporter for tests, Sentry transport (`error-reporter-sentry.ts`, optional export). Full rule: `docs/history/core.md`. `'browser'`: only cli's `client-errors-routes.ts`, one `X_CLIENT_ERROR` per report.
+- `error-reporter.ts`: `ErrorReporter`, an `adapterSlot` (`installErrorReporter` on `./adapter`; `configureErrorReporting` keeps clock/release/environment/enabled only), no-op default, memory reporter for tests, Sentry transport (`error-reporter-sentry.ts`, optional export; it reads the answer: one warn per non-2xx status, a 429 pauses for its `Retry-After` (60 s unstated), bodies cancelled; a DSN refusal never echoes its userinfo). Full rule: `docs/history/core.md`. `'browser'`: only cli's `client-errors-routes.ts`, one `X_CLIENT_ERROR` per report.
 - `METRICS_PATH` is served by `@ultimat3/cli`'s `metrics-endpoint.ts` on `METRICS_PORT` (9090), never
   the role's HTTP port; every role opens it.
 
@@ -184,6 +184,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 - **`drain()`'s memo is published BEFORE the first hook runs** — a hook may re-enter `drain()`
   (`@ultimat3/http`'s `handle.stop()`), and `settleWithin` invokes hooks synchronously.
 - **The drain deadline is enforced** (`lifecycle-deadline.ts`): a hook overrunning the whole drain's budget is abandoned and logged (`X_SHUTDOWN_TIMEOUT`); real monotonic time, never the injected `clock`. Full rule: `docs/history/core.md`.
+- **The in-flight wait leaves the hooks behind it a slice**: with an `inflight`/`close` hook, `waitForIdle` stops `min(2s, deadlineMs / 5)` early (`laterHooksReserveMs`): a stuck request never starves the OTLP flush or pool close. Total unchanged.
 - **An exit after a drain is `drainExitCode()`** — 70 when work was abandoned (`X_SHUTDOWN_TIMEOUT`), else 0. Never a literal `process.exit(0)`.
 - **`close` hooks run last-registered first; the other phases as registered** (`runPhase`). No fourth phase.
 - **Who a health endpoint tells what is ONE rule, here** (`health-disclosure.ts`): `healthBody` +

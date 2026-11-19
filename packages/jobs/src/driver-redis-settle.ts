@@ -5,6 +5,7 @@
 import type { Clock } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { JobRecord } from './driver';
+import { NOW_OF } from './driver-redis-scripts';
 import type { SettleDebt } from './driver-settle';
 
 /** How many owed ids one page of a take reads. */
@@ -25,7 +26,7 @@ return redis.call('ZREM', P .. ':owed', id)
 `.trim();
 
 /**
- * `SQL_SETTLE_TAKE_LOST`. `ARGV`: namespace, now, limit, then `name, graceMs` pairs. Oldest debts
+ * `SQL_SETTLE_TAKE_LOST`. `ARGV`: namespace, now (`NOW_OF`), limit, then `name, graceMs` pairs. Oldest debts
  * first; each one taken has its time reset to now. An id whose row expired (`doneTtlMs`) is
  * dropped, and a row requeued since — live again — is left owed and not handed out.
  *
@@ -37,8 +38,9 @@ return redis.call('ZREM', P .. ':owed', id)
  * (a grace of 0) from being handed out twice.
  */
 export const REDIS_SETTLE_TAKE_LOST = `
+${NOW_OF}
 local P = ARGV[1]
-local now = tonumber(ARGV[2])
+local now = now_of(ARGV[2])
 local limit = tonumber(ARGV[3])
 local grace = {}
 local least = nil
@@ -88,7 +90,8 @@ return out
 export interface RedisSettleDebtOptions {
   /** The driver's script runner: namespace first, then `args`. */
   readonly run: (script: string, args: readonly (string | number)[]) => Promise<unknown>;
-  readonly clock: Clock;
+  /** The injected clock; absent, the server's own (`NOW_OF`), the clock every debt was owed on. */
+  readonly clock?: Clock;
   /** One `HGETALL` reply as the record every driver hands back. */
   readonly record: (flat: readonly unknown[]) => JobRecord;
 }
@@ -102,7 +105,7 @@ export function redisSettleDebt(options: RedisSettleDebtOptions): SettleDebt {
       if (jobs.length === 0 || limit <= 0) return [];
       const pairs = jobs.flatMap((job) => [job.name, Math.round(job.graceMs)]);
       const reply = await options.run(REDIS_SETTLE_TAKE_LOST, [
-        nowMs(options.clock),
+        options.clock === undefined ? '' : nowMs(options.clock),
         limit,
         ...pairs,
       ]);

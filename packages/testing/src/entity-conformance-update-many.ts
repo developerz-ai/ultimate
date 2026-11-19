@@ -189,6 +189,31 @@ const writes: readonly EntityDriverCheck[] = [
     },
   ),
   checkOver(
+    { uniques },
+    'a batch whose end state is unique but whose order meets a stored value moves no row',
+    async (db) => {
+      await db.uniques.insertAll([
+        { id: 'a', slug: 'x' },
+        { id: 'b', slug: 'y' },
+        { id: 'c', slug: 'q' },
+      ]);
+      // `c` takes `b`'s value before `b` lets it go: Postgres checks a plain unique per row, so the
+      // one statement is refused and rolled back whole — `a`'s new value included.
+      const shift = () =>
+        db.uniques.updateMany([
+          { id: 'a', patch: { slug: 'w' } },
+          { id: 'c', patch: { slug: 'y' } },
+          { id: 'b', patch: { slug: 'z' } },
+        ]);
+      expect(await codeOf(shift)).toBe('X_DB_UNIQUE_VIOLATION');
+      expect((await db.uniques.orderBy('id').all()).map((row) => row.slug)).toEqual([
+        'x',
+        'y',
+        'q',
+      ]);
+    },
+  ),
+  checkOver(
     { broad },
     'a 200-row, 600-column updateMany past the bind ceiling lands every patch, or none of them',
     async (db) => {

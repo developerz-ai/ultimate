@@ -2,11 +2,11 @@
 // generated declaration always carries `orderBy` + `limit` and the generated test pins them:
 // an unbounded live query is a memory leak that only shows up under load.
 
-import { UltimateError } from '@ultimat3/core';
 import type { FeatureTarget } from './entity';
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
+import { assertSliceExports, QuerySliceEntityError, withoutOwnedTests } from './query-slice';
 import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
 import { foreignSliceEntity, sliceFoundation, sliceTakesScaffoldRow } from './slice-foundation';
 import { wrapImport } from './wrap';
@@ -364,21 +364,11 @@ export interface QueryOptions extends FeatureTarget {
   readonly sliceEntity?: string;
   /** The slice's `repo.ts` as it stands on disk, or absent alongside `sliceEntity`. */
   readonly sliceRepo?: string;
-}
-
-/**
- * Declared beside its one thrower, as `backfill.ts`'s twin is: the read imports the slice's own row
- * type and repo, and a slice declaring another table under its name has neither.
- */
-export class QuerySliceEntityError extends UltimateError {
-  constructor(input: { readonly path: string; readonly binding: string; readonly table: string }) {
-    super({
-      code: 'X_QUERY_SLICE_ENTITY',
-      cause: `x g query reads the slice's own scaffolded table, and its entity.ts declares ${input.binding} (${input.table}) instead — the generated read would import a row type and a repo that do not exist`,
-      fix: `x queries list --json   # then declare query({ sql: … from('${input.table}', …) }) by hand in ${input.path}, over ../entity's ${input.binding}`,
-      meta: { binding: input.binding, table: input.table },
-    });
-  }
+  /**
+   * The slice's `policy.ts` as it stands on disk, absent when the slice has none yet (and then the
+   * scaffolded one is written). The read IMPORTS `can<Feature>Read` from it — `action.ts`'s reason.
+   */
+  readonly slicePolicy?: string;
 }
 
 export function queryFiles(rawName: string, target: QueryOptions): readonly GeneratedFile[] {
@@ -390,6 +380,7 @@ export function queryFiles(rawName: string, target: QueryOptions): readonly Gene
   if (foreign !== undefined) {
     throw new QuerySliceEntityError({ path: `${dir}/${name.kebab}.ts`, ...foreign });
   }
+  assertSliceExports(target, feature, live);
   const shape: ReadShape = {
     live,
     storesRow: sliceTakesScaffoldRow(target, target.sliceEntity, target.sliceRepo),
@@ -399,7 +390,7 @@ export function queryFiles(rawName: string, target: QueryOptions): readonly Gene
     // A read declares the row type it returns (`../entity`), the rule that admits it (`../policy`)
     // and the one module allowed to query the table (`../repo`) — all three are the slice's, and
     // `--live` changes only which directory this file lands in.
-    ...sliceFoundation(target, ['entity', 'policy'], target.locales),
+    ...withoutOwnedTests(sliceFoundation(target, ['entity', 'policy'], target.locales), target),
     { path: `${dir}/${name.kebab}.ts`, contents: querySource(name, feature, live) },
     // The suffix follows the WRAPPER, which follows `--live`: a `liveTest` in a plain
     // `<name>.test.ts` runs under `unit`, so `x test live` had no files in an app full of them.

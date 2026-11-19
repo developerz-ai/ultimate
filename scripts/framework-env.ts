@@ -30,6 +30,9 @@ export interface EnvRead {
  */
 const READ = /\benv(?:\?\.)?(?:\[\s*(['"`])|\.([A-Z][A-Z0-9_]*)\b)/g;
 const NAME = /^([A-Z][A-Z0-9_]*)(['"`]|\$\{)/;
+/** `const { A, 'B': b, C = 1 } = process.env` — every key of a pattern destructured off an env. */
+const DESTRUCTURED = /\{([^{}]*)\}\s*=\s*(?:[\w$]+(?:\?\.|\.))*env\b(?!\s*(?:\.|\?\.|\[))/g;
+const KEY = /^\s*(['"]?)([A-Z][A-Z0-9_]*)\1\s*(?:[:=]|$)/;
 
 /** Fixtures and harness text are not the framework reading anything. */
 const NOT_SHIPPED = /(?:-fixture|\.d)\.tsx?$|\/fixtures?\//;
@@ -47,6 +50,18 @@ export function envReads(path: string, masked: string, stripped: string): readon
     if (named === null) continue;
     const prefix = named[2] === '${';
     if (named[1] !== undefined) reads.push({ path, line, name: named[1], prefix });
+  }
+  for (const match of masked.matchAll(DESTRUCTURED)) {
+    // The keys from the stripped text at the same offsets: a quoted key is masked in `masked`.
+    let at = match.index + 1;
+    for (const part of stripped.slice(at, at + (match[1] ?? '').length).split(',')) {
+      const key = KEY.exec(part)?.[2];
+      if (key !== undefined) {
+        const offset = at + part.indexOf(key);
+        reads.push({ path, line: lineOf(masked, offset), name: key, prefix: false });
+      }
+      at += part.length + 1;
+    }
   }
   return reads;
 }

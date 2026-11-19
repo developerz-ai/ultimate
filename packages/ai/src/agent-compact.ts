@@ -21,11 +21,18 @@ import type { SummaryInput, SummarySplit } from './agent-compact-request';
 import { blocksOf, COMPACTED_MARK, summaryCall } from './agent-compact-request';
 import { AgentContextExhaustedError } from './agent-errors';
 import type { RunDeadline } from './agent-guards';
+import { isRepairText } from './agent-transcript';
 import type { Gateway } from './gateway';
 import { reportedCall } from './llm-instrument';
 import type { ModelId } from './models';
 import { modelSpec } from './models';
-import type { AiMessage, GenerateRequest, GenerateResult, TokenUsage } from './provider';
+import type {
+  AiContentBlock,
+  AiMessage,
+  GenerateRequest,
+  GenerateResult,
+  TokenUsage,
+} from './provider';
 import { estimateInputTokens, estimateTextTokens, isTruncated } from './provider';
 import { runMeter } from './run-meter';
 
@@ -217,7 +224,7 @@ export function compactor(input: CompactorInput): Compactor {
       );
     }
     if (summary === '') return failed('the summary call answered no text', summarised, result);
-    const compacted = [compactedHead(split.head, summarised, summary), ...split.kept];
+    const compacted = [compactedHead(split.head, split.older, summarised, summary), ...split.kept];
     const after = measured({ ...base, messages: compacted });
     if (after >= before) {
       return failed('the summary was no shorter than the turns it replaced', summarised, result);
@@ -273,15 +280,64 @@ function splitTurns(messages: readonly AiMessage[], keepTurns: number): Split | 
 }
 
 /**
- * The first message, rebuilt: the prompt as it was sent (an earlier summary dropped — the new one
- * covers it), then the summary, marked. The model reads it as its own notes, said to be so.
+ * The most user text one compaction carries out of the summarised turns, in characters (~2,000
+ * tokens). Newest first: past it the older text is the summary's to cover, as all of it was — a
+ * pasted document must not make a transcript no compaction can shorten.
  */
-function compactedHead(head: AiMessage, turns: number, summary: string): AiMessage {
-  const prompt = blocksOf(head).filter(
-    (block) => !(block.type === 'text' && block.text.startsWith(COMPACTED_MARK)),
-  );
+export const KEPT_USER_CHARS = 8_000;
+
+/**
+ * How the summary block this file writes OPENS. The whole phrase, not `[compacted:` alone: a
+ * prompt whose template opens with a slot can start with anything, and a block that merely looks
+ * marked was deleted as an old summary.
+ */
+const SUMMARY_NOTE = /^\[compacted: \d+ earlier turns? of this run were summarised to fit /;
+
+const isSummary = (block: AiContentBlock): boolean =>
+  block.type === 'text' && SUMMARY_NOTE.test(block.text);
+
+/**
+ * `head` rebuilt for `turns` summarised turns (`older`): its own blocks less an earlier summary —
+ * the new one covers it — then the user's text out of `older`, then the summary. The model reads
+ * the summary as its own notes, said to be so.
+ */
+export function compactedHead(
+  head: AiMessage,
+  older: readonly AiMessage[],
+  turns: number,
+  summary: string,
+): AiMessage {
+  const prompt = blocksOf(head).filter((block) => !isSummary(block));
   const note = `${COMPACTED_MARK} ${turns} earlier turn${turns === 1 ? '' : 's'} of this run were summarised to fit the context window. Your summary of everything after the task above:]\n\n${summary}`;
-  return { role: 'user', content: [...prompt, { type: 'text', text: note }] };
+  return {
+    role: 'user',
+    content: [...prompt, ...userTexts(older), { type: 'text', text: note }],
+  };
+}
+
+/**
+ * What the user wrote in `older`, oldest first, within `KEPT_USER_CHARS`. A user message there
+ * holds tool results and framework text too: results are never text blocks, and the loop's own
+ * correction is recognised by `isRepairText`.
+ */
+function userTexts(older: readonly AiMessage[]): readonly AiContentBlock[] {
+  const said: string[] = [];
+  for (const message of older) {
+    if (message.role !== 'user') continue;
+    for (const block of blocksOf(message)) {
+      if (block.type === 'text' && block.text.trim() !== '' && !isRepairText(block.text)) {
+        said.push(block.text);
+      }
+    }
+  }
+  const kept: string[] = [];
+  let room = KEPT_USER_CHARS;
+  for (const text of said.reverse()) {
+    if (text.length > room) break;
+    room -= text.length;
+    kept.unshift(text);
+  }
+  return kept.map((text) => ({ type: 'text', text }));
 }
 
 /** The event's facts about the summary call's input: its form, and how far text was shortened. */

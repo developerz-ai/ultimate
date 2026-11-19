@@ -8,8 +8,9 @@ import { exerciseFiles } from './templates/scaffold-exercise';
 export const EXERCISE_FILE = 'apps/web/exercise.ts';
 
 /**
- * The password sign-in's two actions the pass cannot drive, by the file that declares each. One line
- * each in the app's file, inside Biome's 100 columns: `login()` refuses the drawn address and password.
+ * The sign-in actions the pass cannot drive, by the file that declares each; the second leg is both
+ * shapes'. One line each in the app's file, inside Biome's 100 columns: `login()` refuses the drawn
+ * address and password.
  */
 const SIGN_IN_OFF: ReadonlyMap<string, readonly [string, string]> = new Map([
   [
@@ -18,7 +19,7 @@ const SIGN_IN_OFF: ReadonlyMap<string, readonly [string, string]> = new Map([
   ],
   [
     'apps/web/app/auth/actions/confirm-session.ts',
-    ['confirmSession', 'answers the challenge createSession holds; the pass holds none'],
+    ['confirmSession', 'answers the challenge the first leg holds; the pass holds none'],
   ],
 ]);
 

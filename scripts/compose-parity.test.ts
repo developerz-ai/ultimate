@@ -301,6 +301,23 @@ describe('the compose files agree with the deploy plan', () => {
         ).toEqual([]);
       });
 
+      test("every realtime role ships at zero replicas, as the chart's roles do", () => {
+        // A replicator needs wal_level=logical and a REPLICATION role a stock Postgres lacks, and a
+        // sync node needs a replicator: either one ON by default is a crash loop under
+        // `restart: unless-stopped` in every app that copies this file (helm: `enabled: false`).
+        // The SPECIMENS only — the framework's file and the scaffold's: a tracked app that turned
+        // realtime on runs both roles, Postgres configured for them, on purpose.
+        if (at !== COMPOSE_FILE && !at.startsWith('x new')) return;
+        const on = Object.entries(table)
+          .filter(([, service]) => ['sync', 'replicator'].includes(roleOf(service) ?? ''))
+          .filter(([, service]) => {
+            const deploy = service['deploy'];
+            return !isRecord(deploy) || deploy['replicas'] !== 0;
+          })
+          .map(([name]) => name);
+        expect(on, `${at}: set deploy: { replicas: 0 } on ${on.join(', ')}`).toEqual([]);
+      });
+
       test('backfill overrides the entrypoint, or its command is discarded', () => {
         const backfill = table['backfill'];
         if (backfill === undefined) return; // reported by the rule above, not twice here.

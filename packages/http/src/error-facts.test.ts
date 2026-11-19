@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
-import { factsOf, renderErrorLines, toProblem } from './error-facts';
+import { callerCode, factsOf, renderErrorLines, toProblem } from './error-facts';
 import { bodyInvalid, forbidden, routeNotFound } from './errors';
 import { rateLimited } from './rate-limit-errors';
 
@@ -167,5 +167,27 @@ describe('the fix line every uncoded throwable gets', () => {
     const facts = factsOf(new TypeError('undefined is not a function'));
     expect(facts.fix).not.toContain('x logs');
     expect(facts.fix).toContain('x errors explain X_INTERNAL --json');
+  });
+});
+
+describe('the code an unclassified failure is served under', () => {
+  const driver = Object.assign(new TypeError('duplicate key value violates "users_email_key"'), {
+    code: '23505',
+  });
+
+  test('an undeclared code off a foreign throwable is X_INTERNAL on the wire outside dev', () => {
+    const doc = toProblem(driver);
+    expect(doc.code).toBe('X_INTERNAL');
+    expect(doc.type).toBe('urn:ultimate:error:X_INTERNAL');
+    expect(doc.fix).toBe('x errors explain X_INTERNAL --json');
+    expect(JSON.stringify(doc)).not.toContain('23505');
+    expect(callerCode(factsOf(driver))).toBe('X_INTERNAL');
+  });
+
+  test("dev keeps the throwable's own code, and a framework-shaped or declared code is kept", () => {
+    expect(toProblem(driver, { dev: true }).code).toBe('23505');
+    expect(toProblem({ code: 'X_APP_UNDECLARED', message: 'boom' }).code).toBe('X_APP_UNDECLARED');
+    expect(toProblem(routeNotFound('GET', '/missing')).code).toBe('X_ROUTE_NOT_FOUND');
+    expect(callerCode(factsOf(routeNotFound('GET', '/missing')))).toBe('X_ROUTE_NOT_FOUND');
   });
 });

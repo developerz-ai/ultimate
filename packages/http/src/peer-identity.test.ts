@@ -24,6 +24,29 @@ const read = (header: string | undefined, hops: number | undefined, certHeader =
   });
 
 describe('peerIdentity', () => {
+  // The proxy APPENDS to what the client sent, so the client writes the text before the first
+  // trusted comma. Nothing it writes there may move the hop index onto its own element.
+  test('a client prefix ending in an open quote or a backslash never names the peer', () => {
+    const plain = 'By=spiffe://cluster.local/gw;Hash=abc;URI=spiffe://cluster.local/ns/real';
+    const forged = 'URI=spiffe://cluster.local/ns/admin';
+    for (const hops of [1, 2]) {
+      const inner = hops === 1 ? '' : `,${plain}`;
+      for (const proxied of [plain, SPIFFE]) {
+        expect(read(`${forged};X=",${proxied}${inner}`, hops)).toBeNull();
+        expect(read(`${forged};X="\\,${proxied}${inner}`, hops)).toBeNull();
+        const escaped = read(`${forged};X=\\,${proxied}${inner}`, hops);
+        expect(escaped?.id).not.toBe('spiffe://cluster.local/ns/admin');
+        expect(escaped?.id).toBe(read(proxied, 1)?.id);
+      }
+    }
+  });
+
+  test('a backslash still escapes a quote inside a quoted value', () => {
+    const peer = read('By=gw;Subject="CN=a\\"b,O=x";URI=spiffe://cluster.local/ns/real', 1);
+    expect(peer?.subject).toBe('CN=a"b,O=x');
+    expect(peer?.spiffeId).toBe('spiffe://cluster.local/ns/real');
+  });
+
   test('a trusted XFCC yields the SPIFFE id, the subject and the SANs', () => {
     const peer = read(SPIFFE, 1);
     expect(peer?.spiffeId).toBe('spiffe://cluster.local/ns/default/sa/checkout');

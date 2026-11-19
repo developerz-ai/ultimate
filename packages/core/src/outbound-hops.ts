@@ -49,6 +49,10 @@ export function redactedPath(pathname: string): string {
 /** Where a URL points, for a cause or `meta`: origin and the redacted path, never the query. */
 export const redactedUrl = (url: URL): string => `${url.origin}${redactedPath(url.pathname)}`;
 
+/** A `Location` header, redacted as `redactedUrl`; one no parser reads is named, never echoed. */
+export const redactedLocation = (location: string, base: URL): string =>
+  URL.canParse(location, base) ? redactedUrl(new URL(location, base)) : 'an unparseable Location';
+
 interface Target {
   readonly url: string;
   readonly host?: string | undefined;
@@ -121,6 +125,10 @@ export async function sendHops(call: HopCall, signal: AbortSignal): Promise<Resp
       return response;
     }
     await discard(response);
+    // A Location no parser reads is still the vendor's answer: a redirect, never "no response".
+    if (!URL.canParse(location, url)) {
+      throw outboundRedirected(call.site, response.status, redactedLocation(location, url));
+    }
     const next = new URL(location, url);
     if (hop + 1 > OUTBOUND_MAX_REDIRECTS) {
       throw outboundRedirected(call.site, response.status, redactedUrl(next));

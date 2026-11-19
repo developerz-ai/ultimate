@@ -9,6 +9,11 @@ import type { McpRecipe } from './recipes';
 import { renderRecipe } from './recipes';
 
 const NEAREST = 3;
+/** A recipe name is a few dozen characters; a longer probe is no nearer to one for its tail. */
+const MAX_PROBE_LENGTH = 64;
+const MAX_PROBES = 16;
+/** `docs`' schema refuses a longer `q`; `words` and `closeness` stay linear below it and above. */
+export const MAX_QUERY_LENGTH = 1000;
 
 const words = (text: string): ReadonlySet<string> =>
   new Set(
@@ -54,16 +59,26 @@ function scoreOf(recipe: McpRecipe, asked: readonly string[]): number {
   return score;
 }
 
-/** The smallest edit distance from the query, or any of its words, to the name or a title word. */
+/**
+ * The smallest edit distance from the query, or any of its words, to the name or a title word.
+ * Bounded: the query is caller input and the distance is |probe| x |candidate|, so only the first
+ * `MAX_PROBES` words count, each cut to `MAX_PROBE_LENGTH`, and a pair whose lengths already differ
+ * by the best distance found is skipped — it cannot beat it.
+ */
 function closeness(recipe: McpRecipe, target: string, asked: readonly string[]): number {
-  const candidates = [recipe.name, ...words(recipe.title)];
-  const probes = [target, ...asked];
+  const candidates = [recipe.name, ...words(recipe.title)].map(clamped);
+  const probes = [target, ...asked.slice(0, MAX_PROBES)].map(clamped);
   let best = Number.POSITIVE_INFINITY;
   for (const probe of probes) {
-    for (const candidate of candidates) best = Math.min(best, distance(probe, candidate));
+    for (const candidate of candidates) {
+      if (Math.abs(probe.length - candidate.length) >= best) continue;
+      best = Math.min(best, distance(probe, candidate));
+    }
   }
   return best;
 }
+
+const clamped = (text: string): string => text.slice(0, MAX_PROBE_LENGTH);
 
 /** Levenshtein, two rows. */
 function distance(a: string, b: string): number {

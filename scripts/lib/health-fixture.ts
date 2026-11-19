@@ -48,12 +48,17 @@ export const healthyReaders = (now: string = new Date().toISOString()): HealthRe
         release: { tagName: 'v3.0.0', isDraft: false, publishedAt: '2026-01-01T00:00:00Z' },
       },
     }),
-    'tutorials-run': async () => ({ runs: [{ conclusion: 'success', status: 'completed' }] }),
+    'tutorials-run': async () => ({
+      runs: [{ conclusion: 'success', status: 'completed', event: 'push', createdAt: now }],
+    }),
     'flake-hunt': async () => ({
       runs: [{ conclusion: 'success', status: 'completed', createdAt: now }],
     }),
     bench: async () => ({ runs: [{ conclusion: 'success', status: 'completed', createdAt: now }] }),
     compat: async () => ({
+      runs: [{ conclusion: 'success', status: 'completed', createdAt: now }],
+    }),
+    'next-sync': async () => ({
       runs: [{ conclusion: 'success', status: 'completed', createdAt: now }],
     }),
     // No superseded major in an empty changelog: no window is owed a lane.

@@ -171,4 +171,62 @@ describe('mcpOAuthClient', () => {
     );
     expect(new URL(start.authorizeUrl).searchParams.get('resource')).toBe(MCP);
   });
+
+  test('a refresh answer without refresh_token keeps the one sent (RFC 6749 §6)', async () => {
+    const { handshake } = await vendor().oauth.begin(MCP);
+    const answers = [
+      { access_token: 'at-2', expires_in: 60 },
+      { access_token: 'at-3', refresh_token: 'rt-2' },
+    ];
+    const oauth = mcpOAuthClient({
+      clientId: CLIENT_ID,
+      clientName: 'Demo',
+      redirectUri: 'https://app.test/oauth/mcp/callback',
+      dial: 'named',
+      fetch: async () => Response.json(answers.shift()),
+    });
+    // The server kept `rt-1`: storing the answer must not overwrite it with nothing.
+    expect(await oauth.refresh(handshake, 'rt-1')).toEqual({
+      accessToken: 'at-2',
+      refreshToken: 'rt-1',
+      expiresIn: 60,
+    });
+    // A rotated one still wins.
+    expect((await oauth.refresh(handshake, 'rt-1')).refreshToken).toBe('rt-2');
+  });
+
+  test('begin refuses an http: server URL and an http: issuer (loopback aside)', async () => {
+    const plain = vendor();
+    await expect(plain.oauth.begin('http://mcp.vendor.test/mcp')).rejects.toMatchObject(
+      refusedCode,
+    );
+    // Refused before the metadata is asked for: whoever answers a cleartext fetch picks the issuer.
+    expect(plain.sent).toHaveLength(0);
+    const issuer = vendor({}, { authorization_servers: ['http://auth.vendor.test'] });
+    await expect(issuer.oauth.begin(MCP)).rejects.toMatchObject(refusedCode);
+    expect(issuer.sent.map((request) => request.url)).toEqual([
+      'https://mcp.vendor.test/.well-known/oauth-protected-resource/mcp',
+    ]);
+  });
+
+  test('a loopback http: server and issuer still discover, as a local MCP server needs', async () => {
+    const local = 'http://127.0.0.1:8787';
+    const oauth = mcpOAuthClient({
+      clientId: 'demo',
+      clientName: 'Demo',
+      redirectUri: 'http://127.0.0.1:3000/callback',
+      dial: 'named',
+      fetch: async (url: string) =>
+        url.includes('oauth-protected-resource')
+          ? Response.json({ authorization_servers: [local] })
+          : Response.json({
+              issuer: local,
+              authorization_endpoint: `${local}/authorize`,
+              token_endpoint: `${local}/token`,
+              code_challenge_methods_supported: ['S256'],
+            }),
+    });
+    const start = await oauth.begin(`${local}/mcp`);
+    expect(start.authorizeUrl).toStartWith(`${local}/authorize?`);
+  });
 });

@@ -63,6 +63,15 @@ function cacheControl(ttlMs: number | null, policy: IsrPolicy, ageMs: number): s
 }
 
 /**
+ * A served-stale answer is the copy the bust just withdrew. The edge was purged by surrogate key
+ * when the tag was busted and nothing purges it again when the regeneration lands, so a lease on
+ * this answer is the pre-write page for the route's whole ttl, then again under
+ * `stale-while-revalidate`. Storable (it keeps its validator and its purge keys) but never fresh
+ * in a shared cache: the edge asks again, and the next answer is the regenerated one.
+ */
+const SERVED_STALE_CACHE_CONTROL = 'public, max-age=0, s-maxage=0';
+
+/**
  * `entryTtlMs`'s reason, one field over: a store may hand back an entry with no `status`, or one
  * that JSON turned into something else, on the request path. Absent is 200 — the only value any
  * entry carried before the field existed — and anything the range refuses is 200 with a warning,
@@ -108,7 +117,10 @@ export function isrResult(entry: IsrEntry, options: IsrResultOptions): RenderRes
   }
   const headers: Record<string, string> = {
     ...staticHeaders(entry.hash, buildId),
-    'cache-control': cacheControl(entryTtlMs(entry), policy, options.ageMs),
+    'cache-control':
+      options.servedStale === true
+        ? SERVED_STALE_CACHE_CONTROL
+        : cacheControl(entryTtlMs(entry), policy, options.ageMs),
     vary,
   };
   // The keys an edge purges this document by — `@ultimat3/cache`'s list, never a second one, so

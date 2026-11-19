@@ -344,6 +344,25 @@ describe('unit · test services · every image is a tag pinned by digest', () =>
       ).toEqual([]);
     });
   }
+
+  // The deploy proof's cluster pulls its own database: a moved tag there changes what the proof
+  // measured under an unchanged commit, exactly as it would here.
+  test('docker/deploy-proof/postgres.yaml', async () => {
+    const file = 'docker/deploy-proof/postgres.yaml';
+    // Several documents (the Deployment, its Service): `Bun.YAML.parse` answers an array of them.
+    const parsed: unknown = Bun.YAML.parse(await Bun.file(`${root}/${file}`).text());
+    const docs = (Array.isArray(parsed) ? parsed : [parsed]) as readonly {
+      spec?: { template?: { spec?: { containers?: readonly { image?: string }[] } } };
+    }[];
+    const images = docs.flatMap((doc) =>
+      (doc.spec?.template?.spec?.containers ?? []).map((c) => c.image ?? ''),
+    );
+    expect(images.length).toBeGreaterThan(0);
+    expect(
+      images.filter((image) => !PINNED.test(image)),
+      `${file}: pin by digest`,
+    ).toEqual([]);
+  });
 });
 
 describe('unit · test services · a suite finds each one where it was started', () => {

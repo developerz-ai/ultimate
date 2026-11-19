@@ -31,6 +31,7 @@ import {
 import { BadFlagError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
+import { withAppTls } from './runtime-database-ssl';
 
 /** One sample's own limit: a pod that hangs is a bad sample, never the whole wait gone. */
 const SAMPLE_TIMEOUT_MS = 10_000;
@@ -276,7 +277,9 @@ export async function runDeployVerify(
   // Read off the env directly: `resolveServices` falls back to the embedded database and would grade
   // an empty one, so a CI job with no credentials would "pass" having read nothing.
   const raw = ctx.env['DATABASE_URL'];
-  const databaseUrl = raw === undefined || raw.trim() === '' ? undefined : raw;
+  // Under `database.ssl` as the roles dial it: the grade reads the database they serve from.
+  const databaseUrl =
+    raw === undefined || raw.trim() === '' ? undefined : await withAppTls(root, raw, ctx.env);
   const expected = databaseUrl === undefined ? undefined : await readExpected(root, options, deps);
   if (expected !== undefined && expected.findings.length > 0) {
     return failed(

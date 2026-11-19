@@ -362,7 +362,7 @@ under-reported.
 |---|---|
 | **Structured output is the `respond` tool**, never `response_format` | `llm()` already projects `output` into one tool and reads the answer out of the tool call; `json_schema` + `strict` would be a second structured-output path (axiom 1) and is the one feature most OpenAI-*compatible* servers do not implement |
 | `tool_choice` is forced when the request offers **exactly one** tool | one tool is nothing to choose between, and that is precisely `llm()`'s shape. A tool loop (`agent()`) is never forced — that would decide the model's next step for it |
-| `strict: true` is claimed only when the schema **can keep the promise** | on this wire `strict` is checked by the server: one optional field and the request is a 400. The flag is derived from the projected schema, never forwarded |
+| `strict: true` is claimed only when the schema **can keep the promise** | on this wire `strict` is checked by the server: one optional field — under `properties`, `items` or any `anyOf` branch — and the request is a 400. The flag is derived from the projected schema, never forwarded. The Messages wire derives its own (`anthropic-provider.ts`): there a length, numeric or array bound, a `pattern`, an object not closed with `additionalProperties: false`, or a request past 20 strict tools / 24 optional parameters / 16 union parameters is the 400, so such a tool is sent without the flag and validated on the way back |
 | `max_completion_tokens`, never `max_tokens` | the old field is rejected outright by every current reasoning model |
 | `stream_options: { include_usage: true }` on every streamed call | without it the final chunk carries no `usage`, and the budget reconciles a real call against nothing |
 | Usage absent anyway → **estimated**, never zero — output counts the text AND every tool call's arguments | a compatible server that ignores `stream_options` would otherwise refund the whole reservation, and an `llm()` answer is one `respond` call with no text |
@@ -536,7 +536,7 @@ so `billedOf(error)` reads it. A meter, not a ledger: it refuses nothing.
 
 ### Continuing a run
 
-`agent()` returns an `AgentAction`: the action, plus `.run(input, opts)` → `{ output, transcript, turns, usage }` and `.continue(input, { transcript, user }, opts)`, which appends one user turn to a stored transcript and resumes the loop. The transcript is re-sent byte for byte (the provider's prompt cache reads it back; no tool re-runs); `maxTurns` and `budget.tokensPerRun` are cumulative; the handle is signed, bound to the agent, model, tools and tenant, and screened (`X_AGENT_TRANSCRIPT_INVALID`); a failed call leaves an updated one on the error (`transcriptOf(error)`), which is the one a job stores. Full contract: [Agents → Continuing a run](https://github.com/developerz-ai/ultimate/wiki/Agents#continuing-a-run-run--continue).
+`agent()` returns an `AgentAction`: the action, plus `.run(input, opts)` → `{ output, transcript, turns, usage }` and `.continue(input, { transcript, user }, opts)`, which appends one user turn to a stored transcript and resumes the loop. The transcript is re-sent byte for byte (the provider's prompt cache reads it back; no tool re-runs); `maxTurns` and `budget.tokensPerRun` are cumulative; the handle is signed, bound to the agent, model, tools and tenant, and screened (`X_AGENT_TRANSCRIPT_INVALID`); a failed call leaves an updated one on the error (`transcriptOf(error)`), which is the one a job stores — it holds every tool result the failed turn completed, a call cut off in flight answered `Interrupted: … outcome is unknown` and one never started `Not run`, so a continuation does not run a finished tool (a charge) a second time. Full contract: [Agents → Continuing a run](https://github.com/developerz-ai/ultimate/wiki/Agents#continuing-a-run-run--continue).
 
 `onCheckpoint(event, { input, ctx })` hands the app the same signed handle **between** turns — after a
 turn's tool results (or its correction) land, before the next turn is bought, never after the answer
@@ -598,7 +598,9 @@ export const researcher = agent({
 Before each turn, the gateway's estimate of that turn's request — scaled by what the provider
 reported for the last one — is compared with the model row's `contextWindow` less `maxTokens`. Over `at` of it, ONE model call summarises every turn older than
 the last `keepTurns`; the summary joins the first user message (after the prompt, verbatim, marked
-`[compacted: …]`), the kept turns follow byte for byte, and the turn is sent.
+`[compacted: …]`), the kept turns follow byte for byte, and the turn is sent. What the **user**
+said in the summarised turns — a `.continue()` instruction — is carried into that first message
+verbatim, newest first up to `KEPT_USER_CHARS` (8,000 characters), never left to the summary alone.
 
 | Rule | Why |
 |---|---|
@@ -620,7 +622,7 @@ the last `keepTurns`; the summary joins the first user message (after the prompt
 |---|---|
 | the estimate | ~4 characters a token until the first turn reports, which is why `at` defaults below 1 |
 | the forced compaction | its summary call is the refused request less the kept turns: with a tiny `keepTurns` it may not fit either — `compact.model` with a larger window is the way out |
-| `tools: []` on the chat-completions wire | only `respond` is offered, so it is forced, the summary call answers no text and the run falls back to whole |
+| `tools: []` on the chat-completions wire | the summary call carries `toolChoice: 'auto'` (`GenerateRequest`), so the one `respond` tool is offered but not forced and the summary is prose — until 2026-11 it was forced, answered no text and never compacted |
 | per run | `compact` is the declaration's; `limits()` does not take it, `describeAgents()` does not publish it |
 
 ### Provider prompt caching
@@ -1008,7 +1010,8 @@ test('summarize holds its recorded scores', async () => {
 ```
 
 `ULTIMATE_EVAL_RECORD=1 x test eval` writes the baselines instead of gating on them, so
-accepting a new number is a reviewable diff. An eval that has never been recorded fails with
+accepting a new number is a reviewable diff (`0`, `false`, `no`, `off` and empty are off: they gate).
+`tolerance` is screened at declaration — finite and 0 or more, else `X_INVARIANT`. An eval that has never been recorded fails with
 `X_EVAL_BASELINE_MISSING` — gating on nothing is not passing — and `x verify` asks that question
 itself, so an eval no test happens to assert is still red.
 
@@ -1161,8 +1164,10 @@ search loses on exactly the queries users type: error codes, SKUs, identifiers, 
 RRF fuses by *rank*, so the two score scales never have to be reconciled.
 
 `postgresVectorStore()` is the production path: pgvector cosine (`<=>`, HNSW) and Postgres FTS
-(`websearch_to_tsquery` + `ts_rank_cd`, GIN) in **the same Postgres**, fused by `1/(k+rank)` in
-one statement. `memoryVectorStore()` is the dev twin — BM25 instead of `ts_rank_cd`, the same RRF,
+(any word of the query matches — one `phraseto_tsquery` per word, OR-ed — ranked by `ts_rank_cd`,
+GIN) in **the same Postgres**, fused by `1/(k+rank)` in one statement. The query is text, never
+syntax: quotes, `-` and `or` are not operators (until 2026-11 it was `websearch_to_tsquery`, which
+ANDs every word, so a whole question matched no chunk and hybrid ranked on the vector alone). `memoryVectorStore()` is the dev twin — BM25 instead of `ts_rank_cd`, the same RRF,
 the same envelope, the same cosine (magnitude never ranks; a zero-norm row scores `NaN` and sorts
 last, as float8 does), and fusion on the same `(tenant, id)` key, so an unscoped hybrid keeps two
 tenants' same-id rows apart.

@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { frozenClock, systemClock } from './clock';
 import {
+  beginWork,
   configureLifecycle,
   drain,
   drainDeadlineMs,
@@ -151,6 +152,37 @@ describe('the drain deadline', () => {
 
     behind.resolve();
     stuck.resolve();
+  });
+
+  test('a close hook still has time when in-flight work overran the deadline', async () => {
+    const lines: string[] = [];
+    jest.useFakeTimers();
+    configureLifecycle({
+      deadlineMs: 100,
+      logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
+    });
+    const release = beginWork(); // one request that never finishes
+    // What the OTLP flush would be given: the budget left when its hook starts. Read off the fake
+    // clock, so nothing here waits on the wall.
+    let leftAtStart = -1;
+    onShutdown(
+      'otlp',
+      (reason) => {
+        leftAtStart = reason.deadlineAt - performance.now();
+      },
+      { phase: 'close' },
+    );
+
+    const startedAt = performance.now();
+    await drainOver(drain('SIGTERM'), 200);
+    // The in-flight wait is cut short so the close hook gets its slice (100 / 5 = 20 ms); the
+    // WHOLE drain still ends inside the declared deadline.
+    expect(leftAtStart).toBeGreaterThanOrEqual(19);
+    expect(performance.now() - startedAt).toBeLessThanOrEqual(100);
+    const overran = lines.filter((line) => line.includes('X_SHUTDOWN_TIMEOUT'));
+    expect(overran).toHaveLength(1);
+    expect(overran[0]).toContain('in-flight');
+    release();
   });
 
   // The default is ENFORCED, not absent: `jobs`, `realtime` and `cli` declare no budget, and a

@@ -6,7 +6,7 @@
 // implementations it names, so `Record<StageName, StageRun>` below is the build error that catches
 // a missing one.
 
-import { BUILD_ID_HEADER, isAnonymous, reportError } from '@ultimat3/core';
+import { BUILD_ID_HEADER, isAnonymous } from '@ultimat3/core';
 import { admitRequest } from './admit-stage';
 import { signInRedirect } from './auth-redirect';
 import { authenticatedActor } from './authenticated-actor';
@@ -16,7 +16,7 @@ import { type HttpConfig, stripBasePath } from './config';
 import { elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
 import { checkCsrf, csrfBlocked, selfOrigin } from './csrf';
-import { factsOf, retryAfterOf } from './error-facts';
+import { callerCode, retryAfterOf } from './error-facts';
 import { errorPageResponse } from './error-page';
 import {
   bodyInvalid,
@@ -26,6 +26,7 @@ import {
   routeNotFound,
   unauthenticated,
 } from './errors';
+import { recordFault, UNMATCHED_ROUTE } from './fault-report';
 import type { ServerHooks } from './hooks';
 import { acceptsHtml } from './html-render';
 import { type LagSampler, processLagSampler } from './lag-shed';
@@ -41,7 +42,6 @@ import {
   spendRequestBuckets,
   spendUnauthenticated,
 } from './rate-limit-stage';
-import { refusalLogLevel } from './refusal-log';
 import type { UltimateRequest } from './request';
 import { noteHandlerTimings, requestTimings, serverTimingValue } from './request-timings';
 import { addVary, applySecurityHeaders, problem, redirect } from './response';
@@ -91,13 +91,8 @@ export interface Stage extends StageDoc {
   readonly run: StageRun;
 }
 
-/**
- * The one label a request with no matched route may carry. Every 404 and every scan of `/wp-admin`
- * would otherwise be its own rate-limit bucket and its own metric series — an attacker choosing
- * the server's cardinality is how a Prometheus dies. Exported because `pipeline.ts` labels the
- * request metric with it too, and two spellings of "unmatched" is two series.
- */
-export const UNMATCHED_ROUTE = 'unmatched';
+/** Defined beside the recording that labels with it; re-exported, the stage vocabulary's. */
+export { UNMATCHED_ROUTE };
 
 /**
  * Everything a stage may read, named one by one rather than as `PipelineDeps`: a stage body has no
@@ -305,51 +300,14 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
 
     'error-map': async (request, ctx) => {
       const error = ctx.error;
-      const facts = factsOf(error);
+      // Reported, handed to the app's `onError` and logged in `fault-report.ts`: one recording,
+      // shared with a fault that arrives after the response left (`reportLateFault`).
+      const facts = recordFault(hooks, error, ctx);
       // Every dev disclosure below — the overlay, an unclassified 5xx's own text in the problem
       // document — is for THIS machine (`callerLocality`): a LAN peer on `x dev --host`, or a relay
       // in front of a loopback socket, is answered as a production visitor is.
       const local =
         config.dev && callerLocality({ ip: ctx.ip, headers: ctx.requestHeaders }) === 'local';
-      // This package's ONE error-reporting call site, and it is the framework's own — `onError`
-      // below stays the APP's sink. 5xx only: a 404 or a 422 is the caller's mistake, the problem
-      // document already told them, and a monitor that also holds those is a log nobody reads.
-      // The `operation` is the route PATTERN for the same reason `recordRequest` uses it.
-      if (facts.status >= 500) {
-        reportError(error, {
-          source: 'http',
-          scope: {
-            requestId: ctx.requestId,
-            traceId: ctx.traceId,
-            role: ctx.role,
-            operation: `${ctx.method} ${ctx.route?.path ?? UNMATCHED_ROUTE}`,
-            actorId: isAnonymous(ctx.actor) ? undefined : ctx.actor.id,
-          },
-        });
-      }
-      hooks.onError?.(error, ctx);
-      // FIELDS, never interpolation. `logger.emit()` redacts `bound`, `contextFields` and
-      // `fields` — never `msg` — so a cause baked into the message reached the log store past
-      // every rule that exists to stop it: a rejected `{"password":"hunter2"}` was logged
-      // verbatim, at 4xx, which is logged and not reported and therefore kept for the full
-      // retention. The message is the CODE alone; everything variable is a field.
-      // The other half of this is `@ultimat3/schema`'s, and it is the load-bearing one: an issue
-      // message must stop echoing the rejected value at all. This change makes the value
-      // redactable; it does not make it absent.
-      // A refusal logged at `info` (a scanner on the login wall, a 404, a 400, a 422) is counted,
-      // and `info` once per route and code per minute — `debug` after (`refusal-log.ts`).
-      const level = refusalLogLevel({
-        status: facts.status,
-        code: facts.code,
-        error,
-        route: ctx.route?.path ?? UNMATCHED_ROUTE,
-        nowMs: performance.now(),
-      });
-      // info: only a 4xx's first line per route and code per minute; every repeat is debug
-      ctx.logger[level](facts.code, {
-        cause: facts.cause,
-        status: facts.status,
-      });
       // Before the overlay and before the problem document: a browser with no session has not
       // hit a defect to debug, it has hit a login wall, and the answer to that is the sign-in
       // page. `signInPath` is null until an app declares one, so this is off by default.
@@ -402,7 +360,8 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         return errorPageResponse(
           {
             status: facts.status,
-            code: facts.code,
+            // The production page: never a driver's own code (`callerCode`).
+            code: callerCode(facts),
             path: ctx.url.pathname,
             requestId: ctx.requestId,
             locale: ctx.locale,

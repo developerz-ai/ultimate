@@ -27,6 +27,12 @@ const services = (): Record<string, Service> =>
 const READINESS_GRACE_DEFAULT_S = 5;
 
 describe('unit · the scaffolded compose file is hardened and rotates its logs', () => {
+  // As `docker/*.yml` pin theirs: a tag alone is whatever the registry serves on the day the box
+  // pulls, and the database is the one container whose bytes must not change under a restart.
+  test('the database image is pinned by digest, tag kept for the reader', () => {
+    expect(services()['db']?.image).toMatch(/^postgres:18-alpine@sha256:[0-9a-f]{64}$/);
+  });
+
   test('every app-image service runs read-only, capability-free, bounded', () => {
     const app = Object.entries(services()).filter(([name]) => name !== 'db');
     expect(app.length).toBeGreaterThan(4);

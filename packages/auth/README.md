@@ -741,7 +741,14 @@ and gets refresh tokens only if its `grantTypes` list `refresh_token` (else refr
 `unauthorized_client`). `registerClient` — the app's own path — refuses a redirect URI, grant,
 scope or resource that is empty or holds whitespace (`X_AUTH_CLIENT_INVALID`, naming the field):
 the Postgres store keeps each list space-joined, so such a value would read back as a different
-list. Full table and the rule each test holds:
+list. `/oauth/register` (`registration: 'dynamic'`) is anonymous, so it is bounded: at most 10
+`redirect_uris` of at most 2,048 characters each (else `invalid_client_metadata`, nothing stored),
+`scope` deduplicated, and every bucket of this server keyed by network (`ipKey`: an IPv6 /64 is
+one caller), registrations and metadata fetches alike. The client it writes has a `d_` id
+(`registerClient`'s are `c_`), and `purge` deletes a `d_` client created before the refresh idle
+window that no grant, code or device code names; a `c_` client is never purged. A metadata-document client carries
+`host`, its `client_id`'s host — the one thing on the consent page its author does not choose:
+show it beside `name`. Full table and the rule each test holds:
 [wiki Auth](https://github.com/developerz-ai/ultimate/wiki/Auth#authorization-server).
 
 | File | Job |

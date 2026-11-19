@@ -16,6 +16,7 @@ import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import { asFrameworkError } from './framework-error';
 import { assertRecipeLinks, resetServedRecipes, servedRecipes } from './recipe-links';
+import { rankRecipes } from './recipe-search';
 import type { McpRecipe } from './recipes';
 import { recipeNameOf, renderRecipe } from './recipes';
 import type { McpCaller } from './registry';
@@ -188,6 +189,39 @@ describe('recipes: served', () => {
     );
     const b = JSON.stringify((await byTool('nope'))?.result).replace('nope', 'X');
     expect(a).toBe(b);
+  });
+});
+
+describe('recipes: docs({ q }) is bounded', () => {
+  const many: McpRecipe[] = Array.from({ length: 20 }, (_, index) => ({
+    ...creditNote,
+    name: `runbook-${index}`,
+    title: `Runbook number ${index} for the billing desk`,
+  }));
+  // 900 KB under the 1 MiB body cap, no word any recipe holds: the miss branch, every recipe.
+  const huge = Array.from({ length: 150_000 }, (_, index) => `zq${index % 9973}`).join(' ');
+
+  test('a 900 KB query is refused by the schema, unechoed, in well under a second', async () => {
+    const { server } = defineAppMcp({ tools, recipes: many });
+    const started = performance.now();
+    const answer = await rpc(server, 'tools/call', { name: 'docs', arguments: { q: huge } }, staff);
+    expect(performance.now() - started).toBeLessThan(1000);
+    const body = JSON.stringify(answer);
+    expect(body).toContain('X_INPUT_INVALID');
+    expect(body.length).toBeLessThan(4096);
+  });
+
+  test('the ranking itself bounds the distance work, whatever its caller hands it', () => {
+    const started = performance.now();
+    const { matches, nearest } = rankRecipes(many, huge);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(matches).toEqual([]);
+    expect(nearest).toHaveLength(3);
+  });
+
+  test('a miss still names the nearest recipe by a misspelt word', () => {
+    const { nearest } = rankRecipes([creditNote, ...many], 'how do I isue a credt nte');
+    expect(nearest[0]?.name).toBe('issue-a-credit-note');
   });
 });
 

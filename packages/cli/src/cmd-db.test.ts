@@ -350,9 +350,13 @@ describe('unit · one engine, everywhere', () => {
 
   test("migrate and reset route through the release phase's own function", async () => {
     const source = await Bun.file(join(import.meta.dir, 'cmd-db.ts')).text();
-    // Structural, because the alternative is a second migrator nobody notices: the moment this
-    // file stops importing `runMigrations`, `x db migrate` and `ROLE=migrate` are two engines again.
-    expect(source).toContain("import { runMigrations } from './serve'");
+    const pass = await Bun.file(join(import.meta.dir, 'db-migrate-pass.ts')).text();
+    // Structural, because the alternative is a second migrator nobody notices: the moment the
+    // pass stops importing `runMigrations`, `x db migrate` and `ROLE=migrate` are two engines
+    // again. Since 2026-11 the pass is its own module: beside a live embedded `x dev` it is that
+    // process which applies (`dev-db-migrate.ts`, over the same `migrate` and `checkDrift`).
+    expect(source).toContain("import { migratePass } from './db-migrate-pass'");
+    expect(pass).toContain("import { runMigrations } from './serve'");
   });
 
   test('the post-migrate check is the database one, and it is asked where the connection is', async () => {
@@ -362,7 +366,10 @@ describe('unit · one engine, everywhere', () => {
     // migrate that reported it was verifying nothing about the database it had just written.
     expect(here).not.toContain("from './drift'");
     expect(serve).toContain('checkDrift');
-    expect(here).toContain('migrated.drift');
+    expect(here).toContain('driftFindings(pass.drift)');
+    // The holder's half runs the same two calls, on the connection only it may open.
+    const dev = await Bun.file(join(import.meta.dir, 'dev-db-migrate.ts')).text();
+    expect(dev).toContain('acceptCreatedTables(await checkDrift({ migrations }), migrations)');
   });
 });
 

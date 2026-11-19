@@ -4,6 +4,7 @@
 import type {
   AuthCodeRecord,
   AuthGrantRecord,
+  AuthServerClient,
   AuthTokenRecord,
   DeviceCodeRecord,
 } from '@ultimat3/auth/adapter';
@@ -66,4 +67,16 @@ export const deviceRecord = (deviceCodeHash: string, userCodeHash: string): Devi
   lastPolledAt: null,
   createdAt: at(0),
   expiresAt: at(600),
+});
+
+export const clientRecord = (clientId: string, createdAt: Date): AuthServerClient => ({
+  clientId,
+  name: clientId,
+  secretHash: null,
+  authMethod: 'none',
+  redirectUris: ['https://app.test/cb'],
+  grantTypes: ['authorization_code', 'refresh_token'],
+  scopes: [],
+  resources: [],
+  createdAt,
 });

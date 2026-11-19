@@ -221,6 +221,21 @@ describe('unit · "all matching" is the list’s own filter, bounded per request
   });
 });
 
+describe('unit · a checked selection is never widened into "all matching"', () => {
+  test('an ids batch over the limit offers no all-matching continuation', async () => {
+    // `after` is a position in the LIST; resuming from it would run every row past the last id,
+    // not the checked ones left over. What remains of a checked set is re-checked, never inferred.
+    const ids = Array.from({ length: MAX_BATCH_ROWS + 2 }, (_, at) => `unseen-${String(at)}`);
+    const answer = await runAdminBatch({
+      resource,
+      action: activate,
+      ctx: ctx(),
+      selection: { kind: 'ids', ids },
+    });
+    expect(answer).toMatchObject({ ok: true, remaining: 2, after: null });
+  });
+});
+
 describe('unit · above the declared threshold, one job per chunk', () => {
   test('5 rows over a threshold of 2 are queued as 3 chunks, counted queued, never done', async () => {
     const ids = await Promise.all(['q1', 'q2', 'q3', 'q4', 'q5'].map((title) => insert(title)));

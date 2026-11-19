@@ -154,7 +154,10 @@ function merge(boot: CatalogBoot, resolved: McpResolvedCatalog): CatalogView {
     if (boot.tenantArg !== undefined) refused(() => assertArgFree(boot.tenantArg ?? '', tool));
   }
   const all = [...boot.tools, ...resolved.tools];
-  return { tools: new ToolRegistry().registerAll(all), meta: metaOf(boot, resolved, all) };
+  // Built with the reserved name, as the boot registry is: `params` reaches `resolve` through the
+  // meta dispatchers without passing `tenantStep`.
+  const tools = new ToolRegistry(boot.tenantArg).registerAll(all);
+  return { tools, meta: metaOf(boot, resolved, all) };
 }
 
 /** The boot groups plus the resolved ones, held to every boot check `MetaSurface.build` makes. */

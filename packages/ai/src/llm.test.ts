@@ -181,6 +181,17 @@ describe('structured output', () => {
     expect(assistant.at(-1)?.content).toBe('{"summary": 42}');
   });
 
+  test('a whitespace-only prose answer is not replayed as an assistant turn', async () => {
+    const { provider, seen } = stub('\n\n', ANSWER);
+    install(provider);
+    const summarize = declare(promptFor());
+
+    await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
+
+    const replayed = seen[1]?.messages ?? [];
+    expect(replayed.filter((message) => message.role === 'assistant')).toEqual([]);
+  });
+
   test('two bad answers throw X_LLM_OUTPUT_INVALID rather than looping', async () => {
     const { provider, seen } = stub({ summary: 42 }, { summary: 42 });
     install(provider);

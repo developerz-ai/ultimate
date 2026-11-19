@@ -148,7 +148,8 @@ describe('a throwable whose code is a name on Object.prototype', () => {
       });
       const response = await call(pipeline);
       expect(response.status, `status for ${code}`).toBe(500);
-      expect(((await response.json()) as { code: string }).code).toBe(code);
+      // Outside dev a code that is not of the framework's shape is never echoed (`callerCode`).
+      expect(((await response.json()) as { code: string }).code).toBe('X_INTERNAL');
     }
   });
 });

@@ -8,7 +8,7 @@ import type { Actor, Ctx } from '@ultimat3/core';
 import { throwIfAborted } from '@ultimat3/core';
 import type { RunDeadline } from './agent-guards';
 import type { EmitChunk } from './agent-stream';
-import { assistantTurn, toolResultTurn } from './agent-transcript';
+import { assistantTurn, settledResults, toolResultTurn } from './agent-transcript';
 import type { AiMessage, GenerateResult } from './provider';
 import type { LlmToolCall, LlmToolResult, ProjectableAction } from './tools';
 import { runLlmToolCall } from './tools';
@@ -25,6 +25,14 @@ export interface ToolBatchOptions {
   readonly discloseErrors?: boolean;
   /** Asked before EACH call starts — the run's abort and deadline checks: a throw starts nothing more. */
   readonly beforeCall?: () => void;
+  /** Written as the batch runs, so a caller whose batch THREW can still read how far it got. */
+  readonly progress?: ToolBatchProgress;
+}
+
+/** One batch, by call index: which calls started, and the result of each that completed. */
+export interface ToolBatchProgress {
+  readonly started: boolean[];
+  readonly results: (LlmToolResult | undefined)[];
 }
 
 /**
@@ -50,7 +58,10 @@ export async function runToolBatch(
       const call = calls[index];
       if (call === undefined) continue;
       options.beforeCall?.();
-      results[index] = await runLlmToolCall(tools, call, actor, disclosure);
+      if (options.progress !== undefined) options.progress.started[index] = true;
+      const done = await runLlmToolCall(tools, call, actor, disclosure);
+      results[index] = done;
+      if (options.progress !== undefined) options.progress.results[index] = done;
     }
   };
   const width = Math.max(1, Math.min(options.concurrency, calls.length));
@@ -72,6 +83,12 @@ export interface ToolRun {
   readonly chars: number;
   readonly redact: (text: string) => string;
   readonly repeated: (calls: readonly LlmToolCall[], results: readonly LlmToolResult[]) => void;
+  /**
+   * Handed the transcript of a tool turn that THREW after a tool started — the abort, the deadline,
+   * `X_AGENT_TOOL_LOOP` — so the failed run's handle holds every result that completed. Without
+   * it a continuation resumes from before the turn and runs the same tools (a charge) again.
+   */
+  readonly interrupted?: (messages: readonly AiMessage[]) => void;
 }
 
 /**
@@ -93,25 +110,8 @@ export async function toolTurn(
   };
   stop();
   for (const call of requested) emit({ type: 'tool_call', turn, id: call.id, name: call.name });
-  const results = await deadline.guard(
-    // Inside the deadline's scope, so each tool's own `ctx.signal` carries it.
-    deadline.scope(() =>
-      runToolBatch(run.tools, requested, run.actor, {
-        concurrency: run.concurrency,
-        discloseErrors: run.discloseErrors,
-        beforeCall: stop,
-      }),
-    ),
-  );
-  results.forEach((done, index) => {
-    const name = requested[index]?.name ?? '';
-    emit({ type: 'tool_result', turn, id: done.toolUseId, name, isError: done.isError === true });
-  });
-  emit({ type: 'turn', turn, maxTurns: run.maxTurns });
-  // Before the next turn is bought: the same calls with the same results cannot lead anywhere a
-  // further turn would not also lead.
-  run.repeated(requested, results);
-  return [
+  const progress: ToolBatchProgress = { started: [], results: [] };
+  const transcript = (results: readonly LlmToolResult[]): readonly AiMessage[] => [
     ...messages,
     assistantTurn(result),
     // Parallel tool use — one turn asking for a tool AND answering — is normal, and the answer is
@@ -120,4 +120,32 @@ export async function toolTurn(
     // block with no `tool_result` is a 400 and the whole run becomes `X_AI_PROVIDER_UNAVAILABLE`.
     toolResultTurn(results, run.chars, answers, run.redact),
   ];
+  try {
+    const results = await deadline.guard(
+      // Inside the deadline's scope, so each tool's own `ctx.signal` carries it.
+      deadline.scope(() =>
+        runToolBatch(run.tools, requested, run.actor, {
+          concurrency: run.concurrency,
+          discloseErrors: run.discloseErrors,
+          beforeCall: stop,
+          progress,
+        }),
+      ),
+    );
+    results.forEach((done, index) => {
+      const name = requested[index]?.name ?? '';
+      emit({ type: 'tool_result', turn, id: done.toolUseId, name, isError: done.isError === true });
+    });
+    emit({ type: 'turn', turn, maxTurns: run.maxTurns });
+    // Before the next turn is bought: the same calls with the same results cannot lead anywhere a
+    // further turn would not also lead.
+    run.repeated(requested, results);
+    return transcript(results);
+  } catch (error) {
+    // Nothing started is nothing to remember: the handle stays at the request the turn answered.
+    if (progress.started.some(Boolean)) {
+      run.interrupted?.(transcript(settledResults(requested, progress.started, progress.results)));
+    }
+    throw error;
+  }
 }

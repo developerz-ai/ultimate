@@ -82,6 +82,12 @@ export interface GenerateRequest {
   readonly effort?: Effort;
   readonly thinking?: ThinkingMode;
   readonly tools?: readonly LlmTool[];
+  /**
+   * `'auto'`: the model may answer in prose even when exactly ONE tool is offered — the shape the
+   * chat-completions wire otherwise forces (`toolChoiceFor`). A compaction's summary call sets it:
+   * it keeps the run's tools for the cached prefix and wants text. Absent is each wire's default.
+   */
+  readonly toolChoice?: 'auto';
   readonly stopSequences?: readonly string[];
   /** Sent only to a model whose row takes it (`ModelSpec.sampling`, `./sampling`). 0 to 2. */
   readonly temperature?: number;

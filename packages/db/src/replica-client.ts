@@ -141,8 +141,13 @@ export function replicatedClient(
     // Read-your-writes ACROSS requests: an earlier request's write the replica has not replayed yet.
     // Before `admit()`, never after: `admit()` spends the half-open probe, and a read then sent to
     // the primary for being behind would strand the probe until it lapsed.
-    if (scope.minPosition !== undefined && !(await replay.caughtUp(scope.minPosition))) {
-      return undefined;
+    //
+    // A PARKED replica is not asked at all: the question is a statement on the standby, so every
+    // request carrying a position paid the dead replica's whole connect or statement timeout
+    // before reaching the primary — the outage the breaker exists to keep off the request path.
+    // `state()` only reads, so the half-open probe is still there once the cooldown lapses.
+    if (scope.minPosition !== undefined) {
+      if (parked() || !(await replay.caughtUp(scope.minPosition))) return undefined;
     }
     // Last, so only a statement about to reach the replica consumes the half-open probe.
     return gate.admit();

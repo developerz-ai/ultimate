@@ -278,7 +278,7 @@ describe('the postgres audit sink writes many records in one statement', () => {
     const [row] = rowsOf(many.calls);
     const single = paramsOf(one.calls);
     expect(Object.keys(row ?? {})).toEqual([...AUDIT_COLUMNS]);
-    // `id` is minted per row, so it is the one column the two calls cannot share.
+    // `id` is minted per write unless group commit accepted the record, so the two differ here.
     expect(Object.values(row ?? {}).slice(1)).toEqual([...single.slice(1)]);
     expect(JSON.stringify(row)).not.toContain('hunter2');
   });
@@ -301,7 +301,7 @@ describe('the postgres audit sink writes many records in one statement', () => {
     expect(listed(insertList(SQL_AUDIT_INSERT))).toEqual([...AUDIT_COLUMNS]);
     expect(listed(insertList(SQL_AUDIT_INSERT_MANY))).toEqual([...AUDIT_COLUMNS]);
     const recordset = SQL_AUDIT_INSERT_MANY.slice(SQL_AUDIT_INSERT_MANY.indexOf('as r (') + 6);
-    expect(listed(recordset.slice(0, recordset.lastIndexOf(')')))).toEqual([...AUDIT_COLUMNS]);
+    expect(listed(recordset.slice(0, recordset.indexOf('\n)')))).toEqual([...AUDIT_COLUMNS]);
   });
 
   test('an empty writeMany is no statement at all', async () => {
@@ -321,6 +321,38 @@ describe('the postgres audit sink writes many records in one statement', () => {
 
     expect(calls).toHaveLength(1);
     expect(rowsOf(calls)).toHaveLength(3);
+  });
+
+  test('groupCommit: the single retry binds the id the batch bound, record for record', async () => {
+    const calls: Call[] = [];
+    const exec: PgExecutor = {
+      query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> {
+        calls.push({ sql, params });
+        // The batch's reply is lost; whether its rows landed is what the ids must not care about.
+        if (sql === SQL_AUDIT_INSERT_MANY) return Promise.reject(new RangeError('reply lost'));
+        return Promise.resolve([] as unknown as readonly R[]);
+      },
+    };
+    const sink = postgresAuditSink({ executor: exec, groupCommit: { maxDelayMs: 0 } });
+    try {
+      await Promise.all(['a', 'b'].map((name) => sink.write(recordFor({ name }))));
+    } finally {
+      await sink.close();
+    }
+
+    const batchIds = rowsOf(calls).map((row) => row['id']);
+    const retryIds = calls.slice(1).map((call) => call.params[0]);
+    expect(calls.slice(1).map((call) => call.sql)).toEqual([SQL_AUDIT_INSERT, SQL_AUDIT_INSERT]);
+    expect(retryIds).toEqual(batchIds);
+    expect(new Set(batchIds).size).toBe(2);
+  });
+
+  test('two records with identical facts are two ids: an attempt is never collapsed', async () => {
+    const { exec, calls } = executor();
+    const sink = postgresAuditSink({ executor: exec });
+    await sink.write(recordFor());
+    await sink.write(recordFor());
+    expect(calls[0]?.params[0]).not.toBe(calls[1]?.params[0]);
   });
 
   test('groupCommit: a failed statement fails every write it carried', async () => {

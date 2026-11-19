@@ -152,17 +152,29 @@ describe('the CDN is told the TTL the route declared', () => {
     expect(sMaxAge(result)).toBe('60');
   });
 
-  test('the served-stale copy keeps its own TTL and is marked stale', async () => {
+  // Behind a CDN the bust purged the edge by surrogate key, and nothing purges again when the
+  // regeneration lands: a stale answer leased for the ttl is the pre-write page for the whole ttl.
+  test('a served-stale answer is not leased to a shared cache: s-maxage=0 and no stale-while-revalidate', async () => {
     isrRoute('apps/web/site/pricing/page.tsx', [postTag], '5m');
     const controller = isrController({ routes: describePages });
 
-    await controller.serve('/pricing', () => '<p>v1</p>');
+    const fresh = await controller.serve('/pricing', () => '<p>v1</p>');
     await controller.markStale('/pricing');
 
     const stale = await controller.serve('/pricing', () => '<p>v2</p>');
     expect(stale.state).toBe('stale');
+    expect(stale.result.body).toBe('<p>v1</p>');
     expect(stale.result.headers['x-ultimate-isr']).toBe('stale');
-    expect(sMaxAge(stale.result)).toBe('300');
+    expect(stale.result.headers['cache-control']).toBe('public, max-age=0, s-maxage=0');
+    // Still purgeable by the same keys the fresh copy carried.
+    expect(stale.result.headers['surrogate-key']).toBe(fresh.result.headers['surrogate-key']);
+    expect(stale.result.headers['surrogate-key']).toBeDefined();
+
+    // The regenerated copy is leased for the route's ttl again.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const next = await controller.serve('/pricing', () => '<p>v3</p>');
+    expect(next.result.body).toBe('<p>v2</p>');
+    expect(sMaxAge(next.result)).toBe('300');
   });
 });
 

@@ -99,7 +99,46 @@ function waitOf(callee: string, args: readonly string[] | undefined): string | u
 }
 
 /** What every shape `CALL` reads spells: a file with none of it is never stripped. */
-const MAY_WAIT = /sleep|set(?:Timeout|Interval)/;
+const MAY_WAIT = /sleep|set(?:Timeout|Interval)|scheduler/;
+
+/** `import { … } from 'node:timers/promises'` (or bare `timers/promises`) and its namespace form. */
+const PROMISES_NAMED = /import\s*\{([^}]*)\}\s*from\s*['"](?:node:)?timers\/promises['"]/g;
+const PROMISES_NAMESPACE =
+  /import\s*\*\s*as\s+([\w$]+)\s+from\s*['"](?:node:)?timers\/promises['"]/g;
+
+/**
+ * The callees, as this file spells them, of the PROMISE timers — whose delay is the FIRST
+ * argument: `setTimeout(500)` there is half a second, where the global's `args[1]` is absent.
+ * `scheduler.wait` is one in any spelling. Keyed by the callee text a call site begins with.
+ */
+function promiseWaits(code: string): ReadonlySet<string> {
+  const callees = new Set(['scheduler.wait']);
+  for (const match of code.matchAll(PROMISES_NAMED)) {
+    for (const part of (match[1] ?? '').split(',')) {
+      const [imported, local] = part
+        .replace(/^\s*type\s+/, '')
+        .split(/\s+as\s+/)
+        .map((name) => name.trim());
+      const name = local ?? imported ?? '';
+      if (imported === 'setTimeout' || imported === 'setInterval') callees.add(name);
+      if (imported === 'scheduler') callees.add(`${name}.wait`);
+    }
+  }
+  for (const match of code.matchAll(PROMISES_NAMESPACE)) {
+    const ns = match[1] ?? '';
+    for (const member of ['setTimeout', 'setInterval', 'scheduler.wait']) {
+      callees.add(`${ns}.${member}`);
+    }
+  }
+  return callees;
+}
+
+/** The promise form as a reader names it, or `undefined` when its delay is only a turn. */
+function promiseWaitOf(callee: string, args: readonly string[] | undefined): string | undefined {
+  const delay = (args?.[0] ?? '').replace(/\s+/g, ' ').trim();
+  if (!callee.endsWith('setInterval') && (delay === '' || TURN.test(delay))) return undefined;
+  return `${callee}(${delay || '?'})`;
+}
 
 export function scanRealSleeps(path: string, source: string): readonly RealSleepSite[] {
   if (!MAY_WAIT.test(source)) return [];
@@ -107,15 +146,28 @@ export function scanRealSleeps(path: string, source: string): readonly RealSleep
   const code = stripComments(source);
   const literals = sourceStrings(source);
   const lines = source.split('\n');
-  const out: RealSleepSite[] = [];
+  const promised = promiseWaits(code);
+  const found: { readonly at: number; readonly call: string }[] = [];
+  const argsAt = (match: RegExpMatchArray) =>
+    callArguments(code, (match.index ?? 0) + match[0].length - 1, (pos) =>
+      insideString(literals, pos),
+    );
   for (const match of code.matchAll(CALL)) {
     const at = match.index ?? 0;
+    // A bare name the file imported from `timers/promises` is the promise form, read below.
+    if (insideString(literals, at) || promised.has(match[1] ?? '')) continue;
+    const call = waitOf(match[1] ?? '', argsAt(match));
+    if (call !== undefined) found.push({ at, call });
+  }
+  const callees = [...promised].map((name) => RegExp.escape(name)).join('|');
+  for (const match of code.matchAll(new RegExp(`(?<![\\w$.])(${callees})\\s*\\(`, 'g'))) {
+    const at = match.index ?? 0;
     if (insideString(literals, at)) continue;
-    const call = waitOf(
-      match[1] ?? '',
-      callArguments(code, at + match[0].length - 1, (pos) => insideString(literals, pos)),
-    );
-    if (call === undefined) continue;
+    const call = promiseWaitOf(match[1] ?? '', argsAt(match));
+    if (call !== undefined) found.push({ at, call });
+  }
+  const out: RealSleepSite[] = [];
+  for (const { at, call } of found.sort((a, b) => a.at - b.at)) {
     const line = source.slice(0, at).split('\n').length;
     if (REAL_CLOCK.test(lines[line - 1] ?? '') || REAL_CLOCK.test(lines[line - 2] ?? '')) continue;
     out.push({ path, line, call });

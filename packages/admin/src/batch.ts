@@ -70,7 +70,7 @@ export interface AdminBatchResult {
   readonly jobs: readonly string[];
   /** Rows the selection matched that this request did not reach. Run again from `after`. */
   readonly remaining: number;
-  /** The row to continue after, when `remaining` is not 0. */
+  /** The row to continue after, when `remaining` is not 0 — never for a checked (`ids`) selection. */
   readonly after: string | null;
   /** One line per row that was NOT done — what an operator acts on. */
   readonly rows: readonly BatchRow[];
@@ -248,9 +248,11 @@ export async function runAdminBatch(input: AdminBatchInput): Promise<AdminBatchA
   }
 
   const last = selected.ids[selected.ids.length - 1] ?? null;
+  // A checked set has no position to resume from: `after` is read as "all matching past this id",
+  // which would widen the operator's selection to every row of the list beyond it.
   const position = {
     remaining: selected.remaining,
-    after: selected.remaining === 0 ? null : last,
+    after: selected.remaining === 0 || input.selection.kind === 'ids' ? null : last,
   };
 
   if (plan !== null && selected.ids.length > plan.threshold && input.enqueue !== undefined) {

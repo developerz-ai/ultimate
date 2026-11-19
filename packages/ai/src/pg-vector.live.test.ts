@@ -249,6 +249,20 @@ describe.skipIf(!hasPostgres)('live · pgvector · PostgresVectorStore', () => {
       expect(await acme().searchText('nothing matches this', 5)).toEqual([]);
     });
 
+    test('a question sharing two of five terms with a chunk still ranks it lexically', async () => {
+      const question = 'how do I read the billing summary after the gamma migration';
+      // Any shared term matches, as the memory store's BM25 does: AND over a whole question
+      // matched nothing, and production hybrid fused the dense ranking alone.
+      const hits = await acme().searchText(question, 5);
+      expect(hits[0]?.id).toBe('d');
+      expect(sortedIds(hits)).toEqual(['c', 'd']);
+      const memory = memoryVectorStore({ dimension: DIMENSION }).scoped({ tenant: 'acme' });
+      await memory.upsert(CORPUS);
+      expect(sortedIds(await memory.searchText(question, 5))).toEqual(['c', 'd']);
+      // A quote or an operator in the question is text, never query syntax.
+      expect(ids(await acme().searchText(`"billing's" -summary & | ! ( \\`, 5))).toEqual(['d']);
+    });
+
     test('hybrid fuses in SQL exactly as fuse() does in memory — dev and prod order alike', async () => {
       const scoped = acme();
       const input = { query: 'guide x_vector_drift', vector: vec(0, 1, 0, 0), k: 4 };

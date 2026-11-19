@@ -15,6 +15,7 @@ import {
   OVERALL,
   RECORD_ENV,
   readBaseline,
+  recordingBaselines,
   regressionsAgainst,
   writeBaseline,
 } from './eval-baseline';
@@ -203,6 +204,29 @@ describe('unit · an agent eval records the same file', () => {
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('unit · ULTIMATE_EVAL_RECORD', () => {
+  afterEach(() => {
+    delete Bun.env[RECORD_ENV];
+  });
+
+  test('RECORD=0 gates', () => {
+    // A CI that says "off" out loud must not turn the gate into a recorder.
+    for (const off of ['0', 'false', 'FALSE', 'no', 'off', ' 0 ', '']) {
+      Bun.env[RECORD_ENV] = off;
+      expect(recordingBaselines()).toBe(false);
+    }
+    delete Bun.env[RECORD_ENV];
+    expect(recordingBaselines()).toBe(false);
+  });
+
+  test('1, true and any other value still record', () => {
+    for (const on of ['1', 'true', 'yes']) {
+      Bun.env[RECORD_ENV] = on;
+      expect(recordingBaselines()).toBe(true);
     }
   });
 });

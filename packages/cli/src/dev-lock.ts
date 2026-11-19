@@ -122,6 +122,13 @@ export class DevAlreadyRunningError extends UltimateError {
     readonly stateDir: string;
     /** True when this checkout's database is the embedded one. */
     readonly embeddedDb?: boolean;
+    /**
+     * The refused command's own words (`['db', 'seed', 'dev']`), for one that needs the embedded
+     * database to itself: the fix then stops the holder, runs it, and starts `x dev` again.
+     */
+    readonly resume?: readonly string[];
+    /** Why the holder could not do the work itself, when it was asked: closes the cause. */
+    readonly unanswered?: string;
   }) {
     const single =
       input.embeddedDb === true
@@ -129,9 +136,13 @@ export class DevAlreadyRunningError extends UltimateError {
         : ' — x dev runs every role in one process, so a second one on this checkout is unsupported';
     super({
       code: 'X_DEV_ALREADY_RUNNING',
-      cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}`,
+      cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}${input.unanswered === undefined ? '' : `; asked to do it instead, ${input.unanswered}`}`,
       // `x stop`, not `kill <pid>`: a kill returns before the drain ends and the next boot refuses.
-      fix: `x stop --json   # or use the one already running at ${input.lock.url}`,
+      // The resumed command is assembled word by word from screened words, never spliced.
+      fix:
+        input.resume === undefined
+          ? `x stop --json   # or use the one already running at ${input.lock.url}`
+          : `${['x', 'stop', '--json', '&&', 'x', ...input.resume.map(quoteArg), '&&', 'x', 'dev'].join(' ')}   # the embedded database takes one process at a time; pass the flags you passed`,
       meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
     });
   }

@@ -140,6 +140,30 @@ describe('the hook', () => {
     expect(script.seen.length).toBe(1);
   });
 
+  test("a throwing onCheckpoint leaves a handle holding the turn's tool results", async () => {
+    model(READ);
+    const reviewer = declare(() => {
+      throw new WorkerDied();
+    });
+    const error = await failed(reviewer.run(INPUT, { ctx: ctx() }));
+    expect(ran).toBe(1);
+    const handle = continuation.transcriptOf(error) ?? expect.unreachable('no handle');
+    // The request, the model's tool_use, and the result the tool already produced.
+    expect(handle.messages.length).toBe(3);
+    expect(JSON.stringify(handle.messages.at(-1))).toContain('page 1');
+
+    const second = model(ANSWER);
+    const resumed = await reviewer.continue(
+      INPUT,
+      { transcript: handle, user: 'go on' },
+      { ctx: ctx() },
+    );
+    expect(resumed.output).toEqual({ title: 'Tides' });
+    // The tool is not run a second time: the continuation was sent its result.
+    expect(ran).toBe(1);
+    expect(JSON.stringify(second.seen[0]?.messages)).toContain('page 1');
+  });
+
   test('is not called after the answer, and without it nothing is sealed', async () => {
     const seal = spyOn(continuation, 'sealTranscript');
     try {

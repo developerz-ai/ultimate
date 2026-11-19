@@ -184,6 +184,52 @@ describe('the printed path, end to end', () => {
     expect(second.snapshot.tables[0]?.foreignKeys).toEqual([]);
   });
 
+  test("the drop of a retired column's down restores the indexes and keys its snapshot recorded", () => {
+    const orgs = tableOf('orgs');
+    const index = { unique: false, where: null, order: null };
+    const full = tableOf(
+      'posts',
+      [uuidColumn('org_id', { notNull: false, references: 'orgs.id' }), textColumn('legacy')],
+      {
+        indexes: [
+          { name: 'posts_legacy_idx', columns: ['legacy'], ...index },
+          { name: 'posts_org_id_idx', columns: ['org_id'], ...index },
+        ],
+      },
+    );
+    const retire = generateMigration({
+      entities: [orgs, tableOf('posts', [], { retired: ['legacy', 'org_id'] })],
+      current: snapshotOf([orgs, full]),
+      name: 'retire',
+      now: AT,
+    });
+    const drop = generateMigration({
+      entities: [orgs, without],
+      current: retire.snapshot,
+      name: 'drop',
+      now: AT,
+      allowDestructive: true,
+    });
+    // Rolled back, the database must be the one the retire's snapshot describes — or `checkDrift`
+    // reports two missing indexes and a missing key, and the next `down` drops a constraint that
+    // is not there (42704).
+    const down = statementsOf(drop.down);
+    const at = (needle: string): number => down.findIndex((each) => each.includes(needle));
+    expect(at('create index "posts_legacy_idx" on "posts" ("legacy")')).toBeGreaterThanOrEqual(0);
+    expect(
+      at(
+        'alter table "posts" add constraint "posts_org_id_fkey" foreign key ("org_id") references "orgs" ("id")',
+      ),
+    ).toBeGreaterThanOrEqual(0);
+    // Every one of them after the column it is written over exists again.
+    expect(at('add column "org_id"')).toBeGreaterThanOrEqual(0);
+    expect(at('create index "posts_org_id_idx" on "posts" ("org_id")')).toBeGreaterThan(
+      at('add column "org_id"'),
+    );
+    expect(at('add constraint "posts_org_id_fkey"')).toBeGreaterThan(at('add column "org_id"'));
+    expect(at('create index "posts_legacy_idx"')).toBeGreaterThan(at('add column "legacy"'));
+  });
+
   test('declaring a retired column again records the un-retire, or the flag would stick', () => {
     const first = generateMigration({
       entities: [retired],

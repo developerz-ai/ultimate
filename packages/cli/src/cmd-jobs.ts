@@ -20,6 +20,7 @@ import { requireAppRoot } from './app-root';
 import { runResolveStep } from './cmd-jobs-resolve';
 import { jobsSpec } from './cmd-jobs-spec';
 import type { CliCommand, CommandContext } from './command';
+import { refuseEmbeddedWriteBesideDev } from './dev-lock-live';
 import { BadFlagError, JobUnknownError, MissingPositionalError } from './errors';
 import { withJobDriver } from './jobs-driver';
 import {
@@ -31,6 +32,7 @@ import {
   pausedToJson,
   workerToJson,
 } from './jobs-json';
+import { assertQueueServed } from './jobs-queue-known';
 import { listJobs, retryJob, showJob } from './jobs-report';
 import { renderJobTable } from './jobs-table';
 import { msg } from './messages';
@@ -239,8 +241,16 @@ async function runPause(
   driver: JobDriver,
   ctx: CommandContext,
   sub: 'pause' | 'resume',
+  root: string,
 ): Promise<CommandResult> {
   const queue = requireQueuePositional(ctx, sub);
+  const before = (await driver.introspect?.pausedQueues()) ?? [];
+  await assertQueueServed(
+    root,
+    sub,
+    queue,
+    before.map((one) => one.name),
+  );
   const paused = await (sub === 'pause' ? pauseQueue(driver, queue) : resumeQueue(driver, queue));
   return {
     ok: true,
@@ -253,6 +263,17 @@ async function runPause(
 /** The subcommands that answer a `JobTrace`. `list`, `delete`, `promote` and the rest read rows only. */
 const TRACE_SUBCOMMANDS: ReadonlySet<string> = new Set(['show', 'retry', 'cancel', 'resolve-step']);
 
+/** Every verb but `list` and `show`: each changes a row the workers read. */
+const WRITING_SUBCOMMANDS: ReadonlySet<string> = new Set([
+  'retry',
+  'cancel',
+  'delete',
+  'promote',
+  'resolve-step',
+  'pause',
+  'resume',
+]);
+
 export const jobsCommand: CliCommand = {
   spec: jobsSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
@@ -264,6 +285,11 @@ export const jobsCommand: CliCommand = {
     // every app. The findings are deliberately dropped: a trace is read to debug a stuck queue,
     // so an app that half-loads degrades those two fields and still answers.
     if (TRACE_SUBCOMMANDS.has(sub)) await loadApp(root);
+    // A verb that writes a queue row, through this command's own boot: beside an `x dev` holding
+    // the embedded database it is a second PGlite writer, and the holder's next write undoes it.
+    if (WRITING_SUBCOMMANDS.has(sub)) {
+      await refuseEmbeddedWriteBesideDev(root, ctx.env, ['jobs', sub, ...ctx.args.positionals]);
+    }
     return withJobDriver(root, ctx, (driver) => {
       if (sub === 'show') return runShow(driver, ctx);
       if (sub === 'retry') return runRetry(driver, ctx);
@@ -273,7 +299,7 @@ export const jobsCommand: CliCommand = {
       if (sub === 'resolve-step') {
         return runResolveStep(driver, ctx, requireIdPositional(ctx, sub, driver));
       }
-      if (sub === 'pause' || sub === 'resume') return runPause(driver, ctx, sub);
+      if (sub === 'pause' || sub === 'resume') return runPause(driver, ctx, sub, root);
       return runList(driver, ctx);
     });
   },

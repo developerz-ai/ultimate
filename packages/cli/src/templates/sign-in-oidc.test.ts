@@ -57,3 +57,31 @@ describe('unit · x g sign-in --oidc mounts the callback oauthLogin serves', () 
     expect(naming).toEqual(['oidc.ts']);
   });
 });
+
+describe('unit · x g sign-in --oidc carries an MFA-enrolled user through', () => {
+  test('oauthLogin is handed the mfaPath, and the page it names is generated', () => {
+    const oidc = ofName('/oidc.ts');
+    expect(oidc).toContain('mfaPath: SECOND_FACTOR_PATH,');
+    expect(oidc).toContain("import { SECOND_FACTOR_PATH } from './sign-in-challenge';");
+    expect(ofName('/sign-in-challenge.ts')).toContain(
+      "export const SECOND_FACTOR_PATH = '/auth/sign-in/second-factor';",
+    );
+    expect([...files.keys()]).toContain('apps/web/app/auth/sign-in/second-factor/page.tsx');
+    expect(ofName('/sign-in/second-factor/page.tsx')).toContain("derivePath('confirmSession')");
+  });
+
+  test('the second leg reads and clears the cookie the callback sealed, through auth', () => {
+    const challenge = ofName('/sign-in-challenge.ts');
+    expect(challenge).toContain('readMfaChallenge({ headers: useRequestHeaders() })');
+    expect(challenge).toContain("headers.append('set-cookie', clearMfaChallengeCookie())");
+    expect(ofName('/actions/confirm-session.ts')).toContain('completeMfa(appAuth(), challenge');
+    // The cookie is named by auth alone: no generated file spells it.
+    for (const [path, contents] of files) {
+      expect(`${path}: ${contents.includes('__Host-x_mfa')}`).toBe(`${path}: false`);
+    }
+  });
+
+  test('every locale gets the second-factor copy the page renders', () => {
+    expect(ofName('/en.json')).toContain('secondFactor');
+  });
+});

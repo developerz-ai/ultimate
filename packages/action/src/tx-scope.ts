@@ -6,7 +6,7 @@
 
 // Type-only: `idempotency-postgres.ts` imports this module, and a runtime edge would be a cycle.
 import type { PgExecutor } from '@ultimat3/core';
-import { isUltimateError, storeMode } from '@ultimat3/core';
+import { storeMode } from '@ultimat3/core';
 import {
   completeTransaction,
   currentTx,
@@ -15,7 +15,7 @@ import {
   outsideTransaction,
   withTransaction,
 } from '@ultimat3/db';
-import { memoryJournal, memoryTransactor } from '@ultimat3/entity';
+import { memoryJournal, memoryTransactor, memoryTxOpen } from '@ultimat3/entity';
 
 /** The mark a keyed run puts on the open root: its COMMIT carries the settle, abort or no abort. */
 export const carrySettleOnCommit = (): void => completeTransaction();
@@ -95,23 +95,8 @@ export function settleScope(): SettleScope | undefined {
   if (sql !== undefined) return sql;
   const memory = memoryJournal();
   const onCommit = memory?.onCommit?.bind(memory);
-  if (memory === undefined || onCommit === undefined || !memoryOpen(memory)) return undefined;
+  if (memory === undefined || onCommit === undefined || !memoryTxOpen(memory)) return undefined;
   return { onCommit, onRollback: (undo) => memory.onRollback(undo) };
-}
-
-/**
- * Whether the memory transaction is still open. `@ultimat3/entity` exports no outcome, and its
- * `onRollback` is the one call that refuses an ended scope (`X_DB_TRANSACTION_CLOSED`), so a no-op
- * undo asks it: open, the undo is kept and does nothing; ended, the refusal is the answer.
- */
-function memoryOpen(memory: { onRollback(undo: () => void): void }): boolean {
-  try {
-    memory.onRollback(() => undefined);
-    return true;
-  } catch (error) {
-    if (isUltimateError(error) && error.code === 'X_DB_TRANSACTION_CLOSED') return false;
-    throw error;
-  }
 }
 
 /**

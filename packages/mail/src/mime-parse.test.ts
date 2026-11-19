@@ -108,6 +108,25 @@ iVBORw0KGgo=
 const rawOf = (line: string): string => parseHeaderSection(line, 4096)[0]?.raw ?? '';
 
 describe('parseMime — structure is read before RFC 2047 words are decoded (§5(3))', () => {
+  test('a comment holding a colon is not a group', () => {
+    // Comments are CFWS, legal anywhere in a mailbox: `via:` named a group and left `phone) …`.
+    expect(parseAddressList('(sent via: phone) jane@x.test')).toEqual([
+      { address: 'jane@x.test', name: 'sent via: phone' },
+    ]);
+    expect(parseAddressList('Ops Team (dept: 4) <ops@x.test>')).toEqual([
+      { address: 'ops@x.test', name: 'Ops Team' },
+    ]);
+    // An escaped `)` and a nested comment do not end the comment early.
+    expect(
+      parseAddressList('(a \\) b: c) d@x.test, (x (y: z)) e@x.test').map((entry) => entry.address),
+    ).toEqual(['d@x.test', 'e@x.test']);
+    // A real group whose members carry comments is still a group.
+    expect(parseAddressList('team (ops: eu): a@x.test (A: one), b@x.test;')).toEqual([
+      { address: 'a@x.test', name: 'A: one' },
+      { address: 'b@x.test', name: undefined },
+    ]);
+  });
+
   test('a decoded comma in a display name does not split the list', () => {
     expect(parseAddressList(rawOf('From: =?UTF-8?Q?M=C3=BCller=2C_Hans?= <hans@x.test>'))).toEqual([
       { address: 'hans@x.test', name: 'Müller, Hans' },

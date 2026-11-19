@@ -13,7 +13,7 @@ import {
   wireDatePaths,
   withChildContext,
 } from '@ultimat3/core';
-import { factsOf, toProblem } from '@ultimat3/http';
+import { factsOf, isCallerAbort, reportLateFault, toProblem } from '@ultimat3/http';
 import type { ChunkSink } from './action-stream';
 
 export const EVENT_STREAM = 'text/event-stream';
@@ -49,9 +49,12 @@ export function sseFrame(
 
 /**
  * A fault after the first byte never reaches the pipeline's `error-map` stage — the 200 has gone —
- * so the stream reports it the way that stage does: a 5xx only, the route PATTERN as operation.
+ * so it is handed to the request's late-fault report (`reportLateFault`: the monitor, the app's
+ * `onError`, the log line, once). With no pipeline request behind `ctx` the monitor is still told:
+ * a 5xx only, the route PATTERN as operation.
  */
 function reportStreamFault(error: unknown, operation: string, ctx: Ctx): void {
+  if (reportLateFault(error, ctx)) return;
   if (factsOf(error).status < 500) return;
   reportError(error, {
     source: 'http',
@@ -95,7 +98,7 @@ export async function streamAnswer(
   const sink: ChunkSink = {
     owner,
     start: () => begin(),
-    push: (chunk) => send(sseFrame('chunk', chunk)),
+    push: (chunk) => send(sseFrame('chunk', chunk, wireDatePaths(chunk))),
   };
   const settled = withChildContext({ signal: left.signal }, () => run(sink));
   // Settled without starting is a refusal — thrown here, before any byte — or a replayed answer,
@@ -117,7 +120,10 @@ export async function streamAnswer(
       settled.then(
         (output) => finish(sseFrame('done', output, wireDatePaths(output))),
         (error: unknown) => {
-          reportStreamFault(error, operation, ctx);
+          // The reader cancelled (or the caller hung up) and the handler unwound on the abort:
+          // nobody is there to answer and nothing failed, so it is not anybody's incident.
+          const gone = isCallerAbort(error, left.signal) || isCallerAbort(error, ctx.signal);
+          if (!gone) reportStreamFault(error, operation, ctx);
           finish(sseFrame('error', toProblem(error, { requestId })));
         },
       );

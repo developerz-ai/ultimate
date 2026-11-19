@@ -28,6 +28,7 @@ import {
   narrowRuns,
   type RunRow,
 } from './lib/health-narrow';
+import { judgeNextSync, NEXT_SYNC_COMMAND } from './lib/health-next-sync';
 import type {
   AlarmsRead,
   DemoShippedRead,
@@ -110,6 +111,7 @@ export const ROW_COMMANDS: Readonly<Record<RowId, string>> = Object.assign(Objec
   'flake-hunt': FLAKE_HUNT_COMMAND,
   bench: BENCH_COMMAND,
   compat: COMPAT_COMMAND,
+  'next-sync': NEXT_SYNC_COMMAND,
   'maint-lane': `${MAINT_BRANCHES_COMMAND}; ${MAINT_DIST_TAGS_COMMAND}`,
   'registry-trust': TRUST_COMMAND,
   'private-names-secret': SECRET_COMMAND,
@@ -325,10 +327,11 @@ export const healthAt = async (
   );
   await judge('demo-shipped', readers['demo-shipped'], (read) => judgeDemoShipped(read, green()));
   await judge('release-exists', readers['release-exists'], judgeReleaseExists);
-  await judge('tutorials-run', readers['tutorials-run'], judgeTutorialsRun);
+  await judge('tutorials-run', readers['tutorials-run'], (read) => judgeTutorialsRun(read, nowMs));
   await judge('flake-hunt', readers['flake-hunt'], (read) => judgeFlakeHunt(read, nowMs));
   await judge('bench', readers.bench, (read) => judgeBench(read, nowMs));
   await judge('compat', readers.compat, (read) => judgeCompat(read, nowMs));
+  await judge('next-sync', readers['next-sync'], (read) => judgeNextSync(read, nowMs));
   // The maintenance windows are calendar dates in UTC, as SECURITY.md states them.
   const today = new Date(nowMs).toISOString().slice(0, 10);
   await judge('maint-lane', readers['maint-lane'], (read) => judgeMaintLane(read, today));

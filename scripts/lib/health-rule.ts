@@ -25,6 +25,7 @@ export const ROW_IDS = [
   'flake-hunt',
   'bench',
   'compat',
+  'next-sync',
   'maint-lane',
   'registry-trust',
   'private-names-secret',

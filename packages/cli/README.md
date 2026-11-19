@@ -284,6 +284,26 @@ generator (a second run is `X_GENERATE_CONFLICT`), then edits `app.config.ts`
 (`generate-sign-in-config.ts`) and, for OIDC, swaps `x new`'s authenticator only while it is
 byte-for-byte `x new`'s (`generate-sign-in.ts`). `generate-sign-in.contract.test.ts` compiles,
 lints and runs what both shapes leave; `e2e/sign-in.e2e.test.ts` signs in to a production boot.
+Both shapes ship the second leg, `As of 2026-11`: `--oidc` hands `oauthLogin` `mfaPath:
+'/auth/sign-in/second-factor'` and writes that page, `actions/confirm-session.ts` and a
+`sign-in-challenge.ts` that reads auth's `__Host-x_mfa` cookie through `readMfaChallenge`.
+
+## Beside a running `x dev` (embedded database)
+
+PGlite takes one writer and no lock: a second process's writes are replaced by the holder's next
+one, silently. `As of 2026-11`:
+
+| Command | Beside a live `x dev` holding `.x/pgdata` |
+|---|---|
+| `x db migrate` | applied BY the dev server (`POST /_x/db/migrate`: loopback Host and peer, same-origin); the report, drift and schema dump are the same. `x dev`'s own `x db gen "…" && x db migrate` fix works as printed |
+| `x db migrate`, app with `database.rowSecurity` | refused: the dev session serves as `x_app` and cannot migrate as `x_migrator`. Fix: `x stop --json && x db migrate && x dev` (what `x dev` prints for that app) |
+| `x db seed`, `x db backfill --write`, `x jobs retry\|cancel\|delete\|promote\|resolve-step\|pause\|resume`, `x auth seal-mfa` | `X_DEV_ALREADY_RUNNING`; the fix stops the holder, runs the command and starts `x dev` again |
+| `x db reset\|status\|diagnostics\|recount` | `X_DEV_ALREADY_RUNNING`, as before |
+
+With an external `DATABASE_URL` none of this applies: Postgres takes any number of writers.
+
+`x jobs pause|resume <queue>` refuses a queue the app does not serve (`X_CLI_BAD_FLAG`, the nearest
+name in the fix); `resume` of a queue that IS paused always passes, to clear a retired one.
 
 ## Errors
 

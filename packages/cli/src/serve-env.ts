@@ -13,6 +13,7 @@ import {
   isSentryErrorReporter,
   logger,
   ROLES,
+  renderFixShellArg,
   sentryErrorReporter,
   UltimateError,
 } from '@ultimat3/core';
@@ -75,11 +76,12 @@ export function roleFromEnv(env: Env): Role {
 export function assertRoleDeclared(role: Role, config: AppConfig | undefined): void {
   if (config === undefined || role === 'migrate' || config.roles.includes(role)) return;
   const declared = config.roles.map((name) => `'${name}'`);
-  // Every value below is a member of core's closed `ROLES` set (`defineConfig` refused the rest,
-  // `roleFromEnv` the env's), so none needs quoting for the shell or for TypeScript.
+  // Members of core's closed `ROLES` set (`defineConfig` refused the rest, `roleFromEnv` the
+  // env's), screened all the same: a fix is pasted, and the guard reads the call, not the proof.
+  const runnable = config.roles.find((name) => name !== 'migrate') ?? 'web';
   throw new ConfigInvalidError({
     cause: `ROLE=${role} is not a role this app declares: roles in app.config.ts lists ${config.roles.join(', ')}`,
-    fix: `ROLE=${config.roles.find((name) => name !== 'migrate') ?? 'web'} bun apps/web/server.ts   # a declared role — or declare this one in app.config.ts: roles: [${[...declared, `'${role}'`].join(', ')}]`,
+    fix: `ROLE=${renderFixShellArg(runnable, '<role>')} bun apps/web/server.ts   # a declared role — or declare this one in app.config.ts: roles: [${[...declared, `'${role}'`].join(', ')}]`,
     meta: { key: 'roles', role, declared: [...config.roles] },
   });
 }

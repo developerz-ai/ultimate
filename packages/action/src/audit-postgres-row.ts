@@ -4,6 +4,7 @@
 import type { Actor } from '@ultimat3/core';
 import { uuidV7 } from '@ultimat3/core';
 import type { AuditRecord } from './audit';
+import { acceptedIdOf } from './audit-accepted';
 import { auditableInput } from './audit-input';
 
 /**
@@ -44,7 +45,9 @@ export function rowOf(record: AuditRecord): AuditRow {
   const onBehalfOf = onBehalfOfOf(actor);
   const input = auditableInput(record.input);
   return {
-    id: uuidV7(),
+    // A record group commit accepted keeps the id it was accepted with, so its single retry
+    // re-binds the row its batch may already have stored; any other write is a new row.
+    id: acceptedIdOf(record) ?? uuidV7(),
     at: at === null ? null : at.toISOString(),
     // `name`, into the column the seam named before reads were audited: renaming it is a data
     // migration for every installed table, and the value it holds is the same.

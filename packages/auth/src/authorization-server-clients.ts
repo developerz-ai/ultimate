@@ -7,11 +7,13 @@ import { isJsonObject, logger, stringField, timingSafeEqual } from '@ultimat3/co
 import { outbound } from '@ultimat3/core/outbound';
 import type { ResolvedAuthServerConfig } from './authorization-server-config';
 import { type ClientListField, clientInvalid } from './authorization-server-errors';
-import type {
-  AuthServerClient,
-  AuthServerGrant,
-  ClientAuthMethod,
+import {
+  type AuthServerClient,
+  type AuthServerGrant,
+  type ClientAuthMethod,
+  DYNAMIC_CLIENT_PREFIX,
 } from './authorization-server-types';
+import { ipKey } from './rate-limit';
 import { randomToken, sha256Hex } from './tokens';
 
 /** A metadata document is a few hundred bytes; 5 KiB is RFC 7591 metadata with room to spare. */
@@ -58,9 +60,10 @@ function clientFromDocument(clientId: string, body: unknown, at: Date): AuthServ
   const method = body['token_endpoint_auth_method'];
   if (method !== undefined && method !== 'none') return null;
   const name = body['client_name'];
+  const host = new URL(clientId).host;
   return {
     clientId,
-    name: typeof name === 'string' && name !== '' ? name : new URL(clientId).host,
+    name: typeof name === 'string' && name !== '' ? name : host,
     secretHash: null,
     authMethod: 'none',
     redirectUris: redirects,
@@ -68,6 +71,7 @@ function clientFromDocument(clientId: string, body: unknown, at: Date): AuthServ
     scopes: [],
     resources: [],
     createdAt: at,
+    host,
   };
 }
 
@@ -75,8 +79,8 @@ export interface ClientDirectory {
   /**
    * Every metadata fetch is metered through `config.limiter`: an unauthenticated request naming
    * `https://<anyone>/<path>` would otherwise be one outbound GET per path. `callerKey` (the
-   * caller's address) is the bucket; absent, every unkeyed fetch shares ONE bucket. Rejects with
-   * `X_ACCOUNT_LOCKED` once the bucket is over the limit.
+   * caller's address) names the bucket, keyed by its network (`ipKey`); absent, every unkeyed
+   * fetch shares ONE bucket. Rejects with `X_ACCOUNT_LOCKED` once the bucket is over the limit.
    */
   find(clientId: string, callerKey?: string): Promise<AuthServerClient | null>;
 }
@@ -102,7 +106,9 @@ export function clientDirectory(config: ResolvedAuthServerConfig): ClientDirecto
     const nowMs = config.clock.now().getTime();
     const hit = cache.get(clientId);
     if (hit !== undefined && hit.untilMs > nowMs) return hit.client;
-    await config.limiter.reserve(`oauth-client-metadata:${callerKey ?? UNKEYED_CALLER}`);
+    // The caller's network, never its address: a /64 is one subscriber's (as `login` keys).
+    const bucket = callerKey === undefined ? UNKEYED_CALLER : ipKey(callerKey);
+    await config.limiter.reserve(`oauth-client-metadata:${bucket}`);
     let client: AuthServerClient | null = null;
     try {
       const answer = await outbound(
@@ -177,16 +183,20 @@ function screenLists(input: RegisterClientInput): void {
   }
 }
 
-/** Screened here, before the secret is minted or the row written, for every caller alike. */
+/**
+ * Screened here, before the secret is minted or the row written, for every caller alike. `dynamic`
+ * is the registration route's alone: its `DYNAMIC_CLIENT_PREFIX` id is what `purge` may reap.
+ */
 export async function storeClient(
   config: ResolvedAuthServerConfig,
   input: RegisterClientInput,
+  dynamic = false,
 ): Promise<RegisteredClient> {
   screenLists(input);
   const method = input.authMethod ?? 'none';
   const clientSecret = method === 'none' ? null : randomToken(32);
   const client: AuthServerClient = {
-    clientId: `c_${randomToken(16)}`,
+    clientId: `${dynamic ? DYNAMIC_CLIENT_PREFIX : 'c_'}${randomToken(16)}`,
     name: input.name,
     secretHash: clientSecret === null ? null : sha256Hex(clientSecret),
     authMethod: method,

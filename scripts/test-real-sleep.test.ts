@@ -34,6 +34,39 @@ describe('scanRealSleeps', () => {
     ]);
   });
 
+  test('setTimeout(500) from node:timers/promises is a wait', () => {
+    // The promise forms take the delay FIRST: `args[1]` is absent, which read as an event-loop turn.
+    const found = scan(
+      "import { setTimeout, setInterval as every, scheduler } from 'node:timers/promises';",
+      "import * as timers from 'timers/promises';",
+      'await setTimeout(500);',
+      'await every(20).next();',
+      'await scheduler.wait(250);',
+      'await timers.setTimeout(POLL_MS, value);',
+      'await timers.scheduler.wait(40);',
+      'await setTimeout(0);',
+      'await setTimeout();',
+      'await scheduler.wait(1);',
+    );
+    expect(found.map((site) => [site.line, site.call])).toEqual([
+      [3, 'setTimeout(500)'],
+      [4, 'every(20)'],
+      [5, 'scheduler.wait(250)'],
+      [6, 'timers.setTimeout(POLL_MS)'],
+      [7, 'timers.scheduler.wait(40)'],
+    ]);
+  });
+
+  test('a global setTimeout beside an aliased promise import keeps reading its second argument', () => {
+    const found = scan(
+      "import { setTimeout as sleep } from 'node:timers/promises';",
+      'setTimeout(resolve, 0);',
+      'setTimeout(resolve, 50);',
+      'await sleep(30);',
+    );
+    expect(found.map((site) => site.call)).toEqual(['setTimeout(…, 50)', 'sleep(30)']);
+  });
+
   test('a wait spread over several lines is one wait', () => {
     const found = scan('setTimeout(', '  () => resolve(undefined),', '  RETRY_MS * 4,', ');');
     expect(found.map((site) => site.call)).toEqual(['setTimeout(…, RETRY_MS * 4)']);

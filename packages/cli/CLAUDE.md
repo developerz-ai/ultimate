@@ -113,7 +113,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `app-artifacts.ts` | `x.manifest.json` + `openapi.json`, written together (`x g`, `x manifest`) |
 | `templates/` | every emitted file; `scaffold-*.ts` for `x new`, one per generator otherwise. See history |
 | `generate-feature-required.ts` | `x g query`/`backfill` with no slice holding an `entity.ts` is `X_FEATURE_REQUIRED` |
-| `generate-sign-in*.ts` | `x g sign-in`: one flag, no name; OIDC swaps only `x new`'s bytes |
+| `generate-sign-in*.ts` | `x g sign-in`: one flag, no name; OIDC swaps only `x new`'s bytes and ships the `mfaPath` leg |
 | `generate-invite*.ts`, `templates/invite*.ts` | `x g invite`: no name; three actions + two pages over `defineMemberInvite` |
 | `generate-format-written.ts` | the app's Biome over the TypeScript a run created, best effort; `lint` judges |
 | `templates/scaffold-mcp-{json,endpoint,admin}.ts` | `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`) and the refusing MCP endpoints ‡ |
@@ -140,7 +140,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `runtime-mfa-warning.ts` / `runtime-idempotency-scope.ts` | boot warnings: unsealed MFA secrets, a per-process idempotency store † |
 | `app-config-load.ts` | the ONE reader of `app.config.ts` (`loadAppConfig`) † |
 | `theme-brand.ts` | the ONE reader of an app's theme (`brand` in `apps/web/shared/theme.ts`) † |
-| `runtime-{jobs,realtime,notify-retention,cache,purge,replica,database-ssl}.ts` | the `app.config.ts` sections the boot obeys (`*Of(config)`); `database.ssl` adds `sslmode=require` only where the URL and `PGSSLMODE` state none † |
+| `runtime-{jobs,realtime,notify-retention,cache,purge,replica,database-ssl}.ts` | the `app.config.ts` sections the boot obeys (`*Of(config)`); `database.ssl` adds `sslmode=require` only where the URL and `PGSSLMODE` state none, on every pool (`withAppTls`) † |
 | `runtime-cache-bus.ts` | which bus carries cache/ISR invalidations across replicas; one `cache.broadcast` boot line † |
 | `runtime-jobs.ts` (queues) | `WORKER_QUEUES` = the EXACT set, else `X_WORKER_QUEUE_UNKNOWN`; `-unserved.ts`: what no worker serves † |
 | `serve-retire.ts` / `dev-restart-retire.ts` | the worker retire (SIGUSR2, before an `x dev` restart's drain) † |
@@ -163,7 +163,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `serve-prebuilt.ts` / `serve-prebuilt-paths.ts` | the image's prebuilt store; a boot that built anything logs `X_IMAGE_NOT_PREBUILT` † |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, watcher, reload, lock, port |
 | `cmd-stop.ts` / `cmd-stop-spec.ts` | `x stop`: the lock's pid only, SIGTERM, wait; a reused pid's lock is cleared, unsignalled; `X_DEV_STOP_TIMEOUT` † |
-| `dev-lock-live.ts` | `refuseBesideDev`: `x db migrate\|reset\|status\|diagnostics\|recount` never open an embedded database a live `x dev` holds |
+| `dev-lock-live.ts` / `db-migrate-pass.ts` / `dev-db-migrate.ts` | a live `x dev` holding the embedded database applies `x db migrate` itself (`POST /_x/db/migrate`); `x db reset\|status\|diagnostics\|recount\|seed`, `backfill --write`, `x jobs` writes and `x auth seal-mfa` refuse, the fix stopping it first |
 | `dev-dashboard-guard.ts` / `loopback-host.ts` | `/_x`: loopback `Host` (`X_DEV_HOST_REFUSED`) and peer (`X_DEV_PEER_REFUSED`) † |
 | `dev-host.ts` / `dev-tls*.ts` | `x dev --host` (loopback default) and `--tls`: a cached self-signed cert in `.x/tls/`, WebCrypto + hand-written DER |
 | `doctor-pooler.ts` / `runtime-statement-bound.ts` | the statement bound and a pooler's refusal, one finding, one boot line † |

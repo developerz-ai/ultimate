@@ -26,7 +26,7 @@ import type { CliCommand, CommandContext } from './command';
 import { runDiagnostics } from './db-diagnostics';
 import { stepFinding } from './db-finding';
 import { generateAppMigration, unrenderedJson, unrenderedLines } from './db-generate';
-import { liveObjectDrift } from './db-object-drift';
+import { migratePass } from './db-migrate-pass';
 import { layTemplate } from './db-reset-template';
 import { schemaDumpLines } from './db-schema-dump';
 import { afterWrittenMigration, refreshSchemaDump, schemaDumpJson } from './db-schema-refresh';
@@ -41,7 +41,7 @@ import {
   selectSeeds,
 } from './db-seed';
 import { runGeneratedSeed } from './db-seed-generate';
-import { refuseBesideDev } from './dev-lock-live';
+import { refuseBesideDev, refuseEmbeddedWriteBesideDev } from './dev-lock-live';
 import { MissingSubcommandError, UnknownCommandError } from './errors';
 import { type HeavyChild, withCheckoutLock } from './heavy';
 import { withJobDriver } from './jobs-driver';
@@ -51,7 +51,6 @@ import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import { flagBool, flagString } from './parse';
 import { resolveServices } from './runtime-bindings';
-import { runMigrations } from './serve';
 
 export { DB_SUBCOMMANDS } from './cmd-db-spec';
 
@@ -256,21 +255,16 @@ async function runMigrate(
     // and reports its own table as drift, and neither result says what happened.
     const fork = migrationFork(await readMigrations(root));
     if (fork !== undefined) throw migrationForked(fork);
-    // An `x dev` holding the embedded database: PGlite takes no lock of its own, so this would
-    // apply into a directory that process has open, and its next write drops the tables applied.
-    const services = resolveServices(root, ctx.env);
-    if (services.db.mode === 'embedded') await refuseBesideDev(services.stateDir);
-    const migrated = await runMigrations({ root, env: ctx.env });
-    const report = migrated.report;
+    // Applied here, or by the `x dev` that holds the embedded database (`db-migrate-pass.ts`).
+    const pass = await migratePass(root, ctx.env);
     // A hand-written or pulled migration reaches the dump here, with no `x db gen` in between.
     const dump = await refreshSchemaDump(root, ctx.env);
     // The half a snapshot cannot hold: a trigger, function, view, type or sequence this database
     // carries and no migration creates. Asked only when the replay produced a catalog to ask
     // against — without one there is nothing that says what the migrations create.
-    const objects =
-      dump.catalog === undefined ? [] : await liveObjectDrift(root, ctx.env, dump.catalog);
+    const objects = dump.catalog === undefined ? [] : await pass.objects(dump.catalog);
     const findings = [
-      ...driftFindings(migrated.drift),
+      ...driftFindings(pass.drift),
       ...objects.map((difference) => findingFrom(driftError(difference))),
       ...(dump.finding === undefined ? [] : [dump.finding]),
     ];
@@ -281,10 +275,10 @@ async function runMigrate(
       findings,
       lines: schemaDumpLines(dump),
       data: {
-        applied: report.applied.map((entry) => entry.id),
-        skipped: report.skipped.length,
-        appVersion: report.appVersion,
-        durationMs: report.durationMs,
+        applied: [...pass.applied],
+        skipped: pass.skipped,
+        appVersion: pass.appVersion,
+        durationMs: pass.durationMs,
         schemaDump: schemaDumpJson(dump),
       },
     };
@@ -363,6 +357,13 @@ async function runSeed(ctx: CommandContext, root: string): Promise<CommandResult
       data: seedPassToJson([]),
     };
   }
+  // A seed writes through this command's own boot: beside an `x dev` holding the embedded
+  // database that is a second PGlite writer, whose rows the holder's next write replaces.
+  await refuseEmbeddedWriteBesideDev(root, ctx.env, [
+    'db',
+    'seed',
+    ...(name === undefined ? [] : [name]),
+  ]);
   return withJobDriver(root, ctx, async () => {
     const rows = await runSeeds({
       seeds: chosen,

@@ -68,6 +68,13 @@ function oneExpression(column: string, expression: string): string {
 export const isGenerated = (column: ColumnDescriptionLike): boolean =>
   typeof column.generated === 'string';
 
+/** Plain on the record, generated in the declaration: the one move `regenerate` makes by a drop. */
+export const becomesGenerated = (
+  column: ColumnDescriptionLike,
+  recorded: ColumnDescription,
+): boolean =>
+  isGenerated(column) && (recorded.generated === undefined || recorded.generated === null);
+
 /**
  * A generated column whose TYPE or whose EXPRESSION moved, brought into line without rebuilding it.
  *
@@ -82,10 +89,11 @@ export const isGenerated = (column: ColumnDescriptionLike): boolean =>
  * a generated column"), which is exactly the statement `retypeColumn` emits for every other column
  * — and there is nothing to convert, because the expression produces the new type itself.
  *
- * Two transitions this cannot express, and both are refused rather than half-emitted:
- * plain → generated (there is no `set expression` for a column that has none) and a column whose
- * recorded expression is unknown. `drop expression` is the one that HAS a statement, and it is the
- * generated → plain direction, which keeps the values it computed.
+ * One transition `set expression` cannot make: plain → generated, since the statement needs a
+ * column that already has an expression. That one IS a drop and an add — every stored value is
+ * lost — so `admitRebuilds` (`column-drop.ts`) asks it the two consents an ordinary column drop is
+ * asked before this function is reached. `drop expression` is the generated → plain direction,
+ * which keeps the values it computed.
  *
  * **The rebuild moves the column's dependents aside first, and it is `retype-dependents.ts` that
  * says which — never a second answer written here.** The `rebuilt`

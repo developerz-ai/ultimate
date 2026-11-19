@@ -115,14 +115,20 @@ export interface SignInRoutes {
 const MAX_FORM_BYTES = 512 * 1024;
 const FRAMEWORK_CODE = /^X_[A-Z0-9_]+$/;
 
+/** The one place these routes put a line on a Response: each is a `serializeSetCookie` value. */
+function withCookies(init: Record<string, string>, cookies: readonly string[]): Headers {
+  const headers = new Headers(init);
+  for (const cookie of cookies) headers.append('set-cookie', cookie);
+  return headers;
+}
+
 function problem(policy: SignInRoutePolicy, error: unknown, cookies: readonly string[]): Response {
   const refusal = isUltimateError(error) ? error : policy.uncoded(error);
   const status = oauthRouteStatus(refusal.code);
   const fields = { code: refusal.code, status, cause: refusal.cause, fix: refusal.fix };
   if (status >= 500) logger.error(`${policy.event}.refused`, fields);
   else logger.info(`${policy.event}.refused`, fields);
-  const headers = new Headers({ 'content-type': 'application/json; charset=utf-8' });
-  for (const cookie of cookies) headers.append('set-cookie', cookie);
+  const headers = withCookies({ 'content-type': 'application/json; charset=utf-8' }, cookies);
   // An anonymous caller reads the code, its title and docs, and one fixed sentence; the authored
   // cause and fix name env vars and what an IdP answered, so they go to the log only.
   const body = {
@@ -202,8 +208,9 @@ export function signInRoutes(
       const provider = policy.resolve(startSegment(request), 'start');
       const callbackUrl = `${base}${back.pathFor(provider.id)}`;
       const redirect = await provider.begin({ callbackUrl, clock: auth.clock });
-      const headers = new Headers({ location: redirect.location });
-      headers.append('set-cookie', identityStateCookie(provider, redirect.state, seal));
+      const headers = withCookies({ location: redirect.location }, [
+        identityStateCookie(provider, redirect.state, seal),
+      ]);
       return new Response(null, { status: 302, headers });
     } catch (error) {
       return problem(policy, error, []);
@@ -243,9 +250,10 @@ export function signInRoutes(
         ip: options.clientIp?.(request) ?? null,
         userAgent: request.headers.get('user-agent'),
       });
-      const headers = new Headers({ location: options.successPath ?? '/' });
-      headers.append('set-cookie', result.cookie);
-      for (const cookie of clear) headers.append('set-cookie', cookie);
+      const headers = withCookies({ location: options.successPath ?? '/' }, [
+        result.cookie,
+        ...clear,
+      ]);
       // 303: the answer may arrive as a POST, and the destination is a GET either way.
       return new Response(null, { status: 303, headers });
     } catch (error) {
@@ -254,9 +262,7 @@ export function signInRoutes(
       const challenge = mfaChallengeOf(error);
       if (challenge === null) return problem(policy, error, clear);
       if (mfaPath === undefined) return problem(policy, mfaHandoffMissing(policy.factory), clear);
-      const headers = new Headers({ location: mfaPath });
-      headers.append('set-cookie', mfaChallengeCookie(challenge));
-      for (const cookie of clear) headers.append('set-cookie', cookie);
+      const headers = withCookies({ location: mfaPath }, [mfaChallengeCookie(challenge), ...clear]);
       return new Response(null, { status: 303, headers });
     }
   };

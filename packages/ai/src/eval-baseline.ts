@@ -36,7 +36,11 @@ export const OVERALL = 'overall';
 /** Set to re-record every baseline instead of gating on it: `ULTIMATE_EVAL_RECORD=1 x test eval`. */
 export const RECORD_ENV = 'ULTIMATE_EVAL_RECORD';
 
-export const recordingBaselines = (): boolean => (Bun.env[RECORD_ENV] ?? '') !== '';
+/** The spellings of "off". A CI that sets the variable to `0` to be explicit is gating. */
+const RECORD_OFF: ReadonlySet<string> = new Set(['', '0', 'false', 'no', 'off']);
+
+export const recordingBaselines = (): boolean =>
+  !RECORD_OFF.has((Bun.env[RECORD_ENV] ?? '').trim().toLowerCase());
 
 /**
  * Where the baseline lives. Declarations write `import.meta.resolve('./x.baseline.json')`, which

@@ -449,7 +449,14 @@ export class ChannelHub {
     bridge.sub ??= this.#transport.subscribe(channelSubject(name), (payload) => {
       this.#sockets.deliver(name, decode(payload));
     });
-    await bridge.sub;
+    const opening = bridge.sub;
+    try {
+      await opening;
+    } catch (error) {
+      // Forgotten once answered: kept, it refused every later subscriber while any seat held it.
+      if (bridge.sub === opening) bridge.sub = null;
+      throw error;
+    }
     // The hub shut down while the transport was answering. `close()` either never saw this bridge
     // or saw it with nothing to close, so this is the last reference to the subscription: it closes
     // here or never. The entry goes with it, so a second post-close subscribe opens and closes its

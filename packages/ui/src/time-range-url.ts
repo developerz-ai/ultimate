@@ -14,7 +14,7 @@ import {
   toZoned,
 } from '@ultimat3/time';
 import { invalidValueError, UI_ERROR_CODES, UiError } from './errors';
-import { listUrl } from './list-url';
+import { isCursorParam, listUrl } from './list-url';
 
 /** One window the app offers. The list and its words are the app's; none ships (axiom 8). */
 export interface TimeRangePreset {
@@ -61,7 +61,14 @@ export interface TimeRangeUrl {
   readonly action: string;
   readonly presets: readonly TimeRangePreset[];
   readonly timeZone: TimeZone;
-  /** The page under `change`, every other parameter kept, every cursor dropped. */
+  /**
+   * The page under `change`, every other parameter kept, every cursor dropped — each list's on
+   * the page, namespaced or not. A custom window is written as wall time in `timeZone`, to the
+   * second, and reads back as a window that CONTAINS the one given: exact, except an end with a
+   * fraction of a second (rounded up) and an end or a start in the second pass of a fall-back
+   * hour, which a wall time cannot name (the start reads as the first pass, the end moves past
+   * the repeat).
+   */
   href(change: TimeRangeChange): string;
 }
 
@@ -118,6 +125,37 @@ export function fromLocalDateTime(raw: string | null, zone: TimeZone): Instant |
   );
 }
 
+/** A wall time for the URL: `toLocalDateTime`, with `:ss` only when the instant has seconds. */
+function wallParam(at: Instant, zone: TimeZone): string {
+  const second = toZoned(at, zone).second;
+  const minutes = toLocalDateTime(at, zone);
+  return second === 0 ? minutes : `${minutes}:${pad(second)}`;
+}
+
+/** The instant a written wall time reads back as: earlier than `at` only when it cannot say it. */
+const readBack = (at: Instant, zone: TimeZone): number =>
+  fromLocalDateTime(wallParam(at, zone), zone)?.getTime() ?? at.getTime();
+
+/**
+ * A window's END as a wall time that reads back at or after it — the start needs no such care,
+ * because a wall time only ever reads back EARLIER (the first pass of a repeated hour, the whole
+ * second). So the window in the URL contains the one asked for, and is never shifted or empty:
+ * a fraction of a second rounds up, and an end in the second pass of a fall-back hour, whose wall
+ * time names the first pass, moves to the first minute after the repeat.
+ */
+function endParam(to: Instant, zone: TimeZone): string {
+  const end = instant(new Date(Math.ceil(to.getTime() / 1_000) * 1_000));
+  const lag = end.getTime() - readBack(end, zone);
+  if (lag === 0) return wallParam(end, zone);
+  // `end + lag` is past the repeat, so the search is bounded by the repeat's own length.
+  const last = end.getTime() + lag + 60_000;
+  for (let at = Math.ceil(end.getTime() / 60_000) * 60_000; at <= last; at += 60_000) {
+    const minute = instant(new Date(at));
+    if (readBack(minute, zone) === at) return wallParam(minute, zone);
+  }
+  return wallParam(end, zone);
+}
+
 export function timeRangeUrl(url: URL | string, options: TimeRangeUrlOptions): TimeRangeUrl {
   const zone = assertTimeZone(options.timeZone);
   const now = instant(options.now);
@@ -159,8 +197,13 @@ export function timeRangeUrl(url: URL | string, options: TimeRangeUrlOptions): T
     }
   }
 
-  // `listUrl` owns "every other parameter kept, every cursor dropped"; this only adds its own.
+  // `listUrl` owns "every other parameter kept"; the cursors are dropped here, ALL of them: a
+  // window with no `ns` above a namespaced list would keep `runs.after`, minted under the old
+  // window, where `listUrl` with no `ns` owns only the bare one.
   const base = new URL(listUrl(parsed, { sorts: [], ns: options.ns }).href({}), BASE);
+  for (const param of [...base.searchParams.keys()].filter(isCursorParam)) {
+    base.searchParams.delete(param);
+  }
   for (const param of Object.values(names)) base.searchParams.delete(param);
   const write = (edit: (next: URLSearchParams) => void): string => {
     const next = new URLSearchParams(base.searchParams);
@@ -193,8 +236,8 @@ export function timeRangeUrl(url: URL | string, options: TimeRangeUrlOptions): T
           if (change.preset !== fallback.id) next.set(names.preset, change.preset);
           return;
         }
-        next.set(names.from, toLocalDateTime(instant(change.from), zone));
-        next.set(names.to, toLocalDateTime(instant(change.to), zone));
+        next.set(names.from, wallParam(instant(change.from), zone));
+        next.set(names.to, endParam(instant(change.to), zone));
       }),
   };
 }

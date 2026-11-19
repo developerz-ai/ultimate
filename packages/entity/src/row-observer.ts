@@ -16,8 +16,10 @@
 
 import { currentWriteOrigin, type EntityRowOp, instrument, subscribed } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
+import { conflictKeyOf } from './bulk-write';
 import { copyColumns } from './copy-plan';
 import { counterEcho, type RepoOf } from './counter-observed';
+import { valueAt } from './cursor';
 import type { EntityCore } from './entity';
 import { MAX_PAGE_SIZE } from './plan';
 import { readRecorder } from './read-capture';
@@ -137,6 +139,44 @@ const beforeAllOf = async <Row>(
 };
 
 /**
+ * `beforeAllOf` for an upsert matched on a NATURAL key: the input names no id (or a fresh one), so
+ * the stored rows are read by the conflict target — an `in` per target column, paged to the end —
+ * and keyed by `conflictKeyOf`, the spelling the write itself matched on. Same floor on failure.
+ */
+const beforeByConflictOf = async <Row>(
+  entity: EntityCore<Row>,
+  repo: Repo<Row>,
+  on: readonly string[],
+  rows: readonly Row[],
+): Promise<ReadonlyMap<string, Row>> => {
+  const before = new Map<string, Row>();
+  const keyed = rows.filter((row) => conflictKeyOf(entity, on, row as RowPatch<Row>) !== undefined);
+  if (keyed.length === 0 || !readsById(entity as EntityCore<unknown>)) return before;
+  try {
+    for (let at = 0; at < keyed.length; at += MAX_PAGE_SIZE) {
+      const chunk = keyed.slice(at, at + MAX_PAGE_SIZE);
+      const where = on.map((column) => ({
+        column,
+        op: 'in' as const,
+        value: [...new Set(chunk.map((row) => valueAt(row, column)))],
+      }));
+      let cursor: string | null = null;
+      do {
+        const page = await repo.findMany({ where, limit: MAX_PAGE_SIZE, cursor });
+        for (const row of page.rows) {
+          const key = conflictKeyOf(entity, on, row as RowPatch<Row>);
+          if (key !== undefined) before.set(key, row);
+        }
+        cursor = page.nextCursor;
+      } while (cursor !== null);
+    }
+  } catch {
+    before.clear();
+  }
+  return before;
+};
+
+/**
  * Wrap one repository so its writes are reported. Applied by `database()` to every table it builds,
  * so an app opts in by subscribing to `entity.row` and never by choosing a different repository — the
  * rows under test are the rows the app reads, which is the whole reason `defaultDriver()` is
@@ -246,13 +286,18 @@ export function observedRepo<Row>(
      */
     upsertAll: async (rows: readonly Row[], args: UpsertArgs<Row>): Promise<readonly Row[]> => {
       if (!subscribed(ROW)) return await repo.upsertAll(rows, args);
-      const ids = [...new Set(rows.flatMap((row) => idOf(row) ?? []))];
-      const before = await beforeAllOf(entity, repo, ids);
+      // Matched on `id`, the row's id finds it; matched on anything else, only that target does.
+      const on: readonly string[] = args.onConflict;
+      const byId = on.length === 1 && on[0] === 'id';
+      const ids = byId ? [...new Set(rows.flatMap((row) => idOf(row) ?? []))] : [];
+      const before = byId
+        ? await beforeAllOf(entity, repo, ids)
+        : await beforeByConflictOf(entity, repo, on, rows);
       const stored = await repo.upsertAll(rows, args);
       const changes: (readonly [unknown, unknown])[] = [];
       for (const row of stored) {
-        const id = idOf(row);
-        const previous = id === undefined ? null : (before.get(id) ?? null);
+        const key = byId ? idOf(row) : conflictKeyOf(entity, on, row as RowPatch<Row>);
+        const previous = key === undefined ? null : (before.get(key) ?? null);
         emit(previous === null ? 'insert' : 'update', previous, row, args);
         changes.push([previous, row]);
       }

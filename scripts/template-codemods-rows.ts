@@ -230,4 +230,9 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.47.0',
     none: "the scaffold's prose now says CI also runs weekly; ci-weekly-schedule carries the behaviour, and an app's own docs are its to edit, so x upgrade leaves them alone",
   },
+  {
+    template: 'docker/docker-compose.prod.yml',
+    since: '31.49.0',
+    none: "the specimen's replicator now ships at replicas: 0, as sync and the chart's replicator do; x new writes no replicator service at all, and an app that runs one turned realtime on and configured Postgres for it, so rewriting its replica count would switch a working change feed off",
+  },
 ];

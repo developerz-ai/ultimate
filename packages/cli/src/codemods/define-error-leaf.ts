@@ -2,12 +2,18 @@
 // shipped `error-declared` guard refuses it from the `@ultimat3/core` barrel. A mechanical import
 // rewrite over every app source file (the rest of an import stays put), and the prose that names it.
 
-import type { Codemod, CodemodApp, CodemodResult } from './codemod';
+import type { Codemod, CodemodApp, CodemodResult, CodemodSkip } from './codemod';
 import type { SnippetEdit } from './engine-edits';
 import { editSnippets, mergeResults } from './engine-edits';
 
-const IMPORT = /^import \{([^}]*)\} from '@ultimat3\/core';$/gm;
-const LEAF = "import { defineError } from '@ultimat3/core/page';";
+// A trailing `// note` after the statement is kept where it was.
+const IMPORT = /^import \{([^}]*)\} from '@ultimat3\/core';([ \t]*\/\/[^\n]*)?$/gm;
+const leaf = (specifier: string): string => `import { ${specifier} } from '@ultimat3/core/page';`;
+/** `defineError`, or `defineError as declare`: the one specifier that moves. */
+const MOVES = /^defineError(?:\s+as\s+[A-Za-z_$][\w$]*)?$/;
+/** What the rewrite left behind: a barrel import still naming it, in a shape this does not edit. */
+const LEFT =
+  /\bimport\s*(?:type\s*)?\{[^}]*\bdefineError\b[^}]*\}\s*from\s*['"]@ultimat3\/core['"]/;
 
 /** The rows that name where `defineError` comes from, in CLAUDE.md, the server agent and /feature. */
 export const DEFINE_ERROR_PROSE: Readonly<Record<string, readonly SnippetEdit[]>> = {
@@ -34,29 +40,48 @@ export const DEFINE_ERROR_PROSE: Readonly<Record<string, readonly SnippetEdit[]>
   ],
 };
 
-/** The import with `defineError` taken out to the leaf; unchanged when it does not name it. */
-const rewrite = (whole: string, list: string): string => {
+/**
+ * The import with `defineError` taken out to the leaf; unchanged when it does not name it, or when
+ * the braces hold a comment — a line this would have to drop or misplace, so it is reported.
+ */
+const rewrite = (whole: string, list: string, trailing: string | undefined): string => {
+  if (list.includes('//') || list.includes('/*')) return whole;
   const names = list
     .split(',')
     .map((name) => name.trim())
     .filter((name) => name !== '');
-  if (!names.includes('defineError')) return whole;
-  const rest = names.filter((name) => name !== 'defineError');
-  return rest.length === 0 ? LEAF : `import { ${rest.join(', ')} } from '@ultimat3/core';\n${LEAF}`;
+  const moved = names.find((name) => MOVES.test(name));
+  if (moved === undefined) return whole;
+  const rest = names.filter((name) => name !== moved);
+  const tail = trailing ?? '';
+  return rest.length === 0
+    ? `${leaf(moved)}${tail}`
+    : `import { ${rest.join(', ')} } from '@ultimat3/core';${tail}\n${leaf(moved)}`;
 };
 
 async function sources(app: CodemodApp): Promise<CodemodResult> {
   const changed: string[] = [];
+  const skipped: CodemodSkip[] = [];
   for (const path of await app.glob('{apps,packages}/**/*.{ts,tsx}')) {
     if (path.includes('node_modules/')) continue;
     const source = (await app.read(path)) ?? '';
     if (!source.includes('defineError')) continue;
     const next = source.replace(IMPORT, rewrite);
-    if (next === source) continue;
-    await app.write(path, next);
-    changed.push(path);
+    if (next !== source) {
+      await app.write(path, next);
+      changed.push(path);
+    }
+    // Never silently kept: the shipped `error-declared` guard reds this file after the hop.
+    if (LEFT.test(next)) {
+      skipped.push({
+        path,
+        reason:
+          "imports defineError from '@ultimat3/core' in a shape this codemod does not rewrite (a comment inside the braces, a type-only import, or double quotes)",
+        diff: `- defineError (in the import from '@ultimat3/core')\n+ ${leaf('defineError')}`,
+      });
+    }
   }
-  return { changed, skipped: [] };
+  return { changed, skipped };
 }
 
 export const codemod: Codemod = {

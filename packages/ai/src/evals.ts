@@ -11,7 +11,7 @@
 // Every result is filed against a prompt's content hash, so a score is always attributable
 // to an exact prompt rather than "whatever was in main that day".
 
-import { finiteCount } from '@ultimat3/core';
+import { assert, finiteCount, finiteOption } from '@ultimat3/core';
 import type { AgentEvalInput, CaseOutcome } from './eval-agent';
 import { agentPrompt, runAgentCase } from './eval-agent';
 import type { EvalBaseline, Regression } from './eval-baseline';
@@ -132,6 +132,14 @@ const registry = new Map<string, Eval>();
 export function defineEval<V extends PromptVars>(input: PromptEvalInput<V>): Eval<V>;
 export function defineEval<I>(input: AgentEvalInput<I>): Eval;
 export function defineEval(input: DefineEvalInput): Eval {
+  // `drop > NaN` is false for every drop, so an unscreened `Number(env.X)` is a gate that cannot
+  // fail; below zero it fails a run that scored exactly its baseline.
+  const tolerance = finiteOption('defineEval', 'tolerance', input.tolerance);
+  assert(
+    tolerance >= 0,
+    `defineEval "${input.name}" tolerance is ${tolerance}, and a drop is never below zero: the gate would fail a run that scored exactly its baseline`,
+    'tolerance: 0   # the largest drop from the baseline the gate allows, 0 or more',
+  );
   const prompt = 'prompt' in input ? input.prompt : agentPrompt(input.agent, input.name);
   const evaluation: Eval = {
     name: input.name,
@@ -144,7 +152,7 @@ export function defineEval(input: DefineEvalInput): Eval {
           },
         }
       : {}),
-    tolerance: input.tolerance,
+    tolerance,
     baseline: input.baseline,
     run: (gateway) => runEval(input, prompt, gateway),
     assert: (gateway) => assertEval(input, prompt, gateway),

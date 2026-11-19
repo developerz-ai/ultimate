@@ -146,8 +146,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `readonly-role.ts` and `branch.ts` are safe only by their ordering after `identifier()`.
 - **A retype spans its default** (`retypeOverDefault`): `42804` otherwise.
 - **A retype moves its dependents aside** (`retype-dependents.ts`, `retype-keys.ts`): expressions mentioning the column and foreign keys over it; the ordinary diff puts them back, never twice. Full rule: `docs/history/db.md`.
-- **A generated column** (`generated-column.ts`): plain → generated rebuilds (`rebuilt`); the rest of
-  its rules are in `docs/history/db.md` (2026-10-31). `generate-generated-{column,rebuild}.live.test.ts`.
+- **A generated column** (`generated-column.ts`): plain → generated rebuilds (`rebuilt`), consented
+  as a drop (`column-drop.ts`); rest: `docs/history/db.md` (2026-10-31). `generate-generated-{column,rebuild}.live.test.ts`.
 - **`REPLICA IDENTITY FULL` is a PARAMETER** (`GenerateOptions.replicaIdentityFull`, from the CLI's
   `db-generate.ts`; `replica-identity.ts`): recorded `true` or absent, as a union; last in `up`; an
   undeclared name skipped; `down` reverts it unless this migration created the table.

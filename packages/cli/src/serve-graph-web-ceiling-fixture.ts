@@ -301,5 +301,7 @@
  * `SERVING_ROLE_CEILING`, `cli/src/port-pair-free.ts`.
  * raised 1748 → 1756, measured 1756 (2026-11-19, r9 sweep): the eight on `SERVING_ROLE_CEILING`.
  * Nothing web-only.
+ * raised 1756 → 1758, measured 1758 (2026-11-19, r9 sweep 2): the two on `SERVING_ROLE_CEILING`.
+ * Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1756;
+export const WEB_ROLE_CEILING = 1758;

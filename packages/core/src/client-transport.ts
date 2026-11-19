@@ -56,7 +56,12 @@ export async function clientTransport<T = unknown>(req: TransportRequest): Promi
             signal: req.signal,
             // A stream is read once, so a second attempt re-sends a body that is already spent —
             // and fails as the network would, until the attempts run out. One attempt, always.
-            retry: req.rawBody instanceof ReadableStream ? ONCE : req.retry,
+            // An unkeyed write is ONCE too: re-sent after a gateway 5xx it may land twice — `rpc`'s
+            // rule, one layer down, so a direct caller is held to it as well.
+            retry:
+              req.rawBody instanceof ReadableStream || (!read && req.idempotencyKey === undefined)
+                ? ONCE
+                : req.retry,
             run: (signal) => dispatch(req, read, issued, signal),
             // `dispatch` makes every wire failure `X_CLIENT_TRANSPORT_FAILED`; a bare throw that
             // reaches the flight is a caller hook's, never the network's.

@@ -3,7 +3,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { text } from './columns';
 import { entity } from './entity';
-import { memoryJournal } from './memory-journal';
+import { memoryJournal, memoryTxOpen } from './index';
 import { memoryRepo, memoryTransactor } from './memory-repo';
 import { clearRegistry } from './registry';
 import type { Tx } from './repo';
@@ -132,5 +132,34 @@ describe('a lock taken with no tx inside a memory transaction', () => {
     await chainB;
     expect(seen).toBe('before');
     expect(await ids(repo)).toEqual(['r:B']);
+  });
+});
+
+describe('memoryTxOpen, through the package entry', () => {
+  test('is true while the root is open and false once it commits or rolls back', async () => {
+    let committed: Tx | undefined;
+    let nested: Tx | undefined;
+    await memoryTransactor().run(async (tx) => {
+      committed = tx;
+      expect(memoryTxOpen(tx)).toBe(true);
+      await memoryTransactor().run(async (inner) => {
+        nested = inner;
+        expect(memoryTxOpen(inner)).toBe(true);
+      });
+      // The savepoint released, but it answers to the root, which is still open.
+      expect(memoryTxOpen(nested as Tx)).toBe(true);
+    });
+    expect(memoryTxOpen(committed as Tx)).toBe(false);
+    expect(memoryTxOpen(nested as Tx)).toBe(false);
+    let undone: Tx | undefined;
+    await rolledBack(async () => {
+      undone = memoryJournal();
+    });
+    expect(undone).toBeDefined();
+    expect(memoryTxOpen(undone as Tx)).toBe(false);
+  });
+
+  test('a Tx the memory transactor never handed out is not a memory scope: open', () => {
+    expect(memoryTxOpen({ id: 'hand-written', onRollback: () => undefined })).toBe(true);
   });
 });

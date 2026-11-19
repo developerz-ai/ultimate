@@ -1,8 +1,7 @@
-// The queues a `worker` serves and the slots each gets: `jobs.queues`, `jobs.concurrency`,
-// `jobs.maxInFlight` and `jobs.visibilityTimeoutMs` off the app's own `app.config.ts`, and `WORKER_QUEUES` off the
-// Deployment's env — the one per-Deployment answer, since every Deployment runs the same image and
-// the same config (issues #673, #676). And `jobs.maxAttempts` / `jobs.backoff`: the retry of a job
-// that declares none, installed for every role.
+// What the boot reads of `jobs.*` off the app's own `app.config.ts`: the queues a `worker` serves
+// and the slots each gets, `WORKER_QUEUES` off the Deployment's env (the one per-Deployment answer:
+// every Deployment runs the same image and config, issues #673, #676), and the retry of a job that
+// declares none (`jobs.maxAttempts` / `jobs.backoff`), installed for every role.
 
 import type { AppConfig, JobsConcurrency } from '@ultimat3/core';
 import {
@@ -77,11 +76,10 @@ export function installJobsRetry(config: AppConfig | undefined): void {
 }
 
 /**
- * What the boot reads of `jobs.*`, once, for whichever roles it runs — which is why the default
- * retry is installed here (`installJobsRetry`) and not at the worker's start.
+ * What the boot reads of `jobs.*` for the worker, once. It installs nothing: the default retry is
+ * every role's, so the boot calls `installJobsRetry` itself (`runtime-services.ts`).
  */
 export function workerConfigOf(config: AppConfig | undefined, env: Env = {}): WorkerConfig {
-  installJobsRetry(config);
   const fromEnv = workerQueuesFromEnv(env);
   const base =
     config === undefined

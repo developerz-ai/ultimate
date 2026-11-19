@@ -989,6 +989,15 @@ joins the caller's open transaction, as it always has. A sink of your own with a
 `writeMany(records)` gets the batching through `batchedAuditSink(sink, { maxRecords, maxDelayMs })`
 from `@ultimat3/action/adapter` — and sends outside the ambient transaction itself.
 
+**A batch whose reply is lost stores nothing twice.** A failed `writeMany` is retried one record at
+a time, and the batch may have committed before its reply was lost. Each accepted `write()` is one
+record object, the same one handed to `writeMany` and to its retry, carrying the row id minted when
+it was accepted. Both inserts skip a row whose id is already stored with the same facts. A
+DIFFERENT row under that id still raises the driver's `unique_violation`, so a collision is never
+silently dropped. `memoryAuditSink` keeps an accepted record once, too. Two attempts with identical
+facts are still two records: one object written twice is two acceptances. A sink of your own keys
+an idempotent write on the record object it is handed.
+
 `x_audit` carries the framework's own facts as columns — the action, the surface, the outcome,
 the actor, the correlation ids, the idempotency key — and the parsed `input` as `jsonb`, redacted
 through **core's own** `isRedactedKey` table, the one `defineEnv({ secret: true })` extends. So a

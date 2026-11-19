@@ -21,7 +21,7 @@ Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
 | `model-resolve.ts` | `resolveModel` / `modelForCall` — declaration → prompt → gateway `defaultModel`, none is `X_AI_MODEL_UNRESOLVED` naming all three; `describedModel` for a published fact |
 | `model-fixture.ts` | the rows this package's own suites register (`useFixtureModels()`). Not shipped |
 | `provider.ts` | `Provider` interface, the request half; re-exports the Anthropic names |
-| `anthropic-provider.ts` | `anthropicProvider()`, its stream-only rule (`requiresStreaming`) and message parse |
+| `anthropic-provider.ts` | `anthropicProvider()`, stream-only rule (`requiresStreaming`), message parse; `strict` per tool |
 | `echo-provider.ts` | `echoProvider()`, the deterministic double. A fixture that needs a tool call uses `scriptedProvider`, never a hand-rolled `Provider` |
 | `scripted-provider.ts` | `scriptedProvider()`, the scripted double that calls tools, and `X_AI_SCRIPT_EXHAUSTED`: one call past the script is refused, never answered with the last turn again |
 | `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |
@@ -69,7 +69,7 @@ Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
 | `prompt-cache.ts` / `-rows.ts` | PROVIDER prompt caching, `PROMPT_CACHE_RULES` (sources in its header); the provider-rows screen |
 | `prompt-cache-blocks.ts` | the Anthropic wire's marks (chat-completions': `openai-messages.ts`) |
 | `agent-per-run.ts` / `agent-run-limits.ts` | one run's `offerTools()`/`model()`/`limits()`, narrow only; `costPerRun` |
-| `agent-compact{,-def,-measure,-request,-text}.ts` | trigger, cut; `compact`'s option and event; the token ratio; the summary request, as text when too long |
+| `agent-compact{,-def,-measure,-request,-text}.ts` | trigger, cut; option, event; head; ratio; summary request, text if long |
 | `agent-send.ts` / `context-overflow.ts` / `agent-checkpoint.ts` | a turn sent, an overflow compacted once; `X_AI_CONTEXT_OVERFLOW`'s phrases; `onCheckpoint` |
 | `agent-continue.ts` / `agent-session.ts` / `agent-turn.ts` | the transcript handle and its screen; `.run()` / `.continue()` and their session; one turn's report and refusals |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |

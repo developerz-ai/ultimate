@@ -27,13 +27,24 @@ export class TestOpenApiExpectedError extends UltimateError {
   }
 }
 
-/** `toBeWithinBudget` handed something that is not a finite number. */
+/**
+ * `toBeWithinBudget` handed something that is not a finite number — as the measurement, or as the
+ * LIMIT: `budgets['renamedKey']` is `undefined`, and `x <= undefined` is false, so `.not` held.
+ */
 export class TestNumberExpectedError extends UltimateError {
-  constructor(received: unknown) {
-    super({
-      code: 'X_TEST_NUMBER_EXPECTED',
-      cause: `toBeWithinBudget expects a finite number to compare against the budget, and received ${describeValue(received)}`,
-      fix: 'expect(bytes).toBeWithinBudget(limit) — pass the measured number itself, e.g. (await Bun.file(path).arrayBuffer()).byteLength, never a Promise or a string',
-    });
+  constructor(received: unknown, side: 'measurement' | 'limit' = 'measurement') {
+    super(
+      side === 'limit'
+        ? {
+            code: 'X_TEST_NUMBER_EXPECTED',
+            cause: `toBeWithinBudget expects a finite number as the budget's limit, and was given ${describeValue(received)}`,
+            fix: "expect(bytes).toBeWithinBudget(budgets['<a key the table has>']) — the limit read undefined or NaN: name a key your budgets table declares",
+          }
+        : {
+            code: 'X_TEST_NUMBER_EXPECTED',
+            cause: `toBeWithinBudget expects a finite number to compare against the budget, and received ${describeValue(received)}`,
+            fix: 'expect(bytes).toBeWithinBudget(limit) — pass the measured number itself, e.g. (await Bun.file(path).arrayBuffer()).byteLength, never a Promise or a string',
+          },
+    );
   }
 }

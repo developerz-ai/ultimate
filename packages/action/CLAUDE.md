@@ -63,10 +63,10 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `meter*.ts`, `errors-meter.ts` | `meter:` — declaration (`meter.ts`), UTC window, store seam + memory + Postgres (`x_meter`), and `meter-gate.ts`, **the one place** it is drawn |
 | `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
 | `audit.ts` | the audit seam's TYPES, re-exported from `@ultimat3/core` (shared with `query`); the slot (`installAuditSink`, `@ultimat3/core/adapter`) is core's alone |
-| `audit-memory.ts` | the process default: a bounded ring that DROPS, and counts what it dropped |
-| `audit-postgres.ts` | the DURABLE sink — append-only `x_audit`; one insert per record, or per batch (`groupCommit`) |
+| `audit-memory.ts` | the process default: a bounded ring that DROPS, counting the drops |
+| `audit-postgres.ts` | the DURABLE sink — append-only `x_audit`, an insert per record or per batch |
 | `audit-postgres-row.ts` | a record as its row — the ONE projection both inserts bind |
-| `audit-batch.ts` | `batchedAuditSink`: group commit, per-write verdict, flush on drain |
+| `audit-batch.ts`, `audit-accepted.ts` | `batchedAuditSink`: group commit, per-write verdict, one id per write, flush on drain |
 | `audit-input.ts` | what may be written DOWN: an `input` redacted through core's table and made JSON-representable on every path |
 | `audit-gate.ts` | **the only** file that calls a sink, and where the two failure policies live |
 | `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |
@@ -195,9 +195,9 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `bun build --target=browser --minify`, one entry importing from `@ultimat3/action` — **the ONE
   table for these figures** (`packages/core/CLAUDE.md` points here):
 
-  | Entry | `As of 2026-11-15`, Bun 1.4.4, one entry over the working tree |
+  | Entry | `As of 2026-11-19`, Bun 1.4.4, one entry over the working tree |
   |---|---|
-  | `rpc` | 24,655 B, pinned ≤ 25,000 (`client-bundle.test.ts`); 29,972 B while it read core's barrel; 25,395 B while `@ultimat3/db` held a dynamic `import()` (Bun wraps every module of a graph holding one in lazy-init code) |
+  | `rpc` | 25,281 B, pinned ≤ 25,303 (`client-bundle.test.ts`); 29,972 B while it read core's barrel; 25,395 B while `@ultimat3/db` held a dynamic `import()` (Bun wraps every module of a graph holding one in lazy-init code) |
   | `rpc` + `clientFlight` from `@ultimat3/core/page` | 32,929 B (38,416 B from the barrel) |
 
 - `isTransientFailure`'s inversion, the client graph's import rule, `sideEffects`: still rules, in

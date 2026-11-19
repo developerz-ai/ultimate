@@ -28,7 +28,8 @@ const formTargets = (files: readonly GeneratedFile[]) =>
 
 const generators: readonly (readonly [string, readonly GeneratedFile[], number])[] = [
   ['x g sign-in --password', passwordSignInFiles({ locales: ['en'] }), 3],
-  ['x g sign-in --oidc', oidcSignInFiles('google', { locales: ['en'] }), 1],
+  // The sign-out form, and since 2026-11 the second-factor form `mfaPath` points at.
+  ['x g sign-in --oidc', oidcSignInFiles('google', { locales: ['en'] }), 2],
   ['x g invite', inviteFiles({ locales: ['en'] }), 3],
 ];
 

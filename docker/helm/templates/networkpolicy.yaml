@@ -6,8 +6,10 @@ pod, a web pod from outside the cluster through a node port nobody declared.
 `http` (web, sync) from `networkPolicy.httpFrom`, `metrics` (every role) from
 `networkPolicy.metricsFrom`, nothing else. A `from` that renders empty is omitted, which Kubernetes
 reads as "any source" — the documented meaning of `httpFrom: []`. Egress renders
-`networkPolicy.egress` verbatim: values.yaml defaults it CLOSED (DNS, the release's namespace, the
-public internet minus metadata, CGNAT and private ranges); `egress: []` turns filtering off.
+`networkPolicy.egress` verbatim: values.yaml defaults it FILTERED, closed only where it is
+dangerous — DNS, every pod in every namespace, every routable address (private ranges and CGNAT
+included, so a VPC database keeps working), never the metadata endpoint or link-local. The
+hardening recipe that narrows it is beside the value; `egress: []` turns filtering off.
 
 Serving roles only. The migrate Job is a pre-install hook: it runs before any ordinary resource of
 the release exists, so a policy here could not cover its first run, and it opens no port.

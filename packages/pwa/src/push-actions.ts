@@ -23,7 +23,9 @@ import { assertPushEndpoint } from './push-send';
 const subscribeInput = () =>
   t.object({
     endpoint: t.string.min(1).max(2048),
-    expirationTime: t.nullable(t.number),
+    // Whole milliseconds a Postgres `bigint` holds — what a browser sends. A fraction or `1e30`
+    // was an uncoded driver error at the Postgres store and a stored row at the memory one.
+    expirationTime: t.nullable(t.number.int().min(0).max(Number.MAX_SAFE_INTEGER)),
     keys: t.object({ p256dh: t.string.max(128), auth: t.string.max(64) }),
     /** BCP-47 — every notification to this device renders in it (`renderPushPayload`). */
     locale: t.locale,

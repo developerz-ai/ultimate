@@ -16,10 +16,11 @@ Weekly: the failures no issue or PR announces. No verdict is always re-run, neve
 | `dependabot-not-stuck` | `gh pr list --app dependabot --limit 5 --state open --json number,createdAt,updatedAt,statusCheckRollup` | green checks at any age; failed checks until >7 days since `updatedAt` (7 exactly is not over). Green: completed CheckRuns `SUCCESS`, `NEUTRAL`, `SKIPPED`, StatusContexts `SUCCESS`; terminal failures red. Pending, missing, malformed, unknown, mixed evidence = no verdict; so is a missing or invalid `updatedAt`, never replaced by `createdAt`. A page of `--limit` (5) is truncated: raise it, file nothing until short. A confirmed stuck PR files even beside a PR with unread evidence. |
 | `demo-shipped` | `gh run list --workflow deploy-social-demo.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt` | `success` on a `workflow_run`. Null `conclusion` = still building: read `status`. `skipped` = the `ci.yml` completion was no green push: red `main-green` files it; with it green, look for a non-push `ci.yml` run. `workflow_dispatch` = an operator's run, not a push publish; `headBranch` names the ref. Other non-success: name the guard its log's `::error::` line names. The ask carries `url`, `createdAt`, `databaseId`, `displayTitle`, `headBranch` |
 | `release-exists` | `t=$(git describe --tags --abbrev=0 --match 'v[0-9]*' origin/main)`, then `gh release view "$t" --json tagName,isDraft,publishedAt` | `isDraft` false AND `publishedAt` set; a draft is unhealthy. Missing = unhealthy: gh prints `release not found` and no JSON — the message is the signal, not the exit code. Any other unreadable answer = `cannot tell` (`X_HEALTH_ROW_UNREADABLE`) |
-| `tutorials-run` | `gh run list --workflow tutorial-run.yml --branch main --event push --limit 1 --json databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt` | `success`, or no run yet (paths-filtered). `cancelled` (superseded) = re-run. Else a tutorial diverged: the ask names `url` and `bun run scripts/tutorial-run.ts --json` (`X_DOC_TUTORIAL_DIVERGED`: page, line) |
+| `tutorials-run` | `gh run list --workflow tutorial-run.yml --branch main --limit 20 --json databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt` | newest non-`pull_request` run: as `bench`. Else diverged: the ask names `url` and `bun run scripts/tutorial-run.ts --json` |
 | `flake-hunt` | `gh run list --workflow flake-hunt.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt` | `success` under 48 h; older = unhealthy, the schedule stopped. No run or `cancelled` = re-run. Else red: open `flake-hunt` issues name test, seed, rerun |
 | `bench` | `gh run list --workflow bench.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt` | `success` under 8 days; older = the weekly schedule stopped. No run or `cancelled` = re-run. Else a figure failed to measure |
-| `compat` | `gh run list --workflow compat.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt` | `success` under 8 days; older = the schedule stopped. No run or `cancelled` = re-run. Else a cell is red: open `compat` issues name each and its replay |
+| `compat` | `gh run list --workflow compat.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt` | as `bench`. Else open `compat` issues name each red cell and its replay |
+| `next-sync` | `gh run list --workflow next-sync.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,headSha,displayTitle,url,createdAt` | as `bench`. Else `main` is not in `next`: the open issue names the merge |
 | `maint-lane` | `gh api repos/{owner}/{repo}/git/matching-refs/heads/release/ --jq .[].ref`, then `npm view @ultimat3/core dist-tags --json` | each window SECURITY.md promises: open, `release/<N>.x` on origin and `maint-<N>` a `<N>.x` version (`X_MAINT_LANE_ABSENT`); closed, no branch (`X_MAINT_LANE_EXPIRED`). `findings[]` carry each fix |
 | `registry-trust` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` | `ok: true`. No `NPM_CONFIG_OTP` = no verdict, never filed: a person with npm 2FA runs it. `X_TRUST_PUBLISHER_MISSING` = unhealthy (an expired OTP reads the same: re-run first); other codes pass through |
 | `private-names-secret` | `gh secret list --json name,updatedAt` | lists `ULTIMATE_PRIVATE_NAMES`; absent reds every push to `main` (`X_PRIVATE_NAMES_UNSET`) |
@@ -33,15 +34,15 @@ One ask per unhealthy row unless an open issue names it, titled by the signal (`
 `publish failed: <v>`, `Dependabot #<n> failed checks, inactive since <updatedAt>`), its body the
 command, its output and the failing run's URL. A red `main` first.
 
-A `Dependabot` npm-bump ask's repair: `bun run lockfile:fix` (its `bun.lock` is stale); a
-conflicted lock is never merged over: regenerate it locally first.
+A `Dependabot` npm-bump ask's repair: `bun run lockfile:fix`; a conflicted lock is regenerated
+locally, never merged over.
 
 Never re-run a publish, delete a tag, a Release or a branch, or `npm publish` from here.
 `PUBLISHING.md` owns every recovery; a fix ships as the next patch, never a moved tag.
 
 ## Machine verdicts
 
-Run `bun run scripts/health.ts --json` (the table's machine reading) first. `ok: false` = an unread row (`X_HEALTH_ROW_UNREADABLE` or a
+Run `bun run scripts/health.ts --json` first. `ok: false` = an unread row (`X_HEALTH_ROW_UNREADABLE` or a
 child's codes, naming row and command): file that, never a verdict over it. `ok: true` carries `data.rows[]`, one `RowVerdict` per row in
 table order:
 
@@ -71,6 +72,7 @@ Then `bun run finished --check --json`: one ask per `red` row, its
 - `flake-hunt`
 - `bench`
 - `compat`
+- `next-sync`
 - `maint-lane`
 - `registry-trust`
 - `private-names-secret`

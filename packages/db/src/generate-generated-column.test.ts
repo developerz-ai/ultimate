@@ -54,6 +54,9 @@ const posts = (expression: string): EntityDescriptionLike => ({
 
 const at = new Date('2026-08-24T12:00:00.000Z');
 
+const nullable = (c: ColumnDescriptionLike): ColumnDescriptionLike =>
+  c.column === 'search_tsv' ? { ...c, notNull: false } : c;
+
 const migrate = (entity: EntityDescriptionLike, current?: EntityDescriptionLike) =>
   generateMigration({
     entities: [entity],
@@ -162,17 +165,85 @@ describe('a generated column added to an existing table', () => {
 });
 
 describe('a plain column that becomes generated', () => {
+  // The one transition `set expression` cannot make: it needs a column that already has one.
+  // Reachable for real — a table created by a generator that did not yet render the clause holds
+  // exactly this column, plain and empty, which is the state this whole slice exists to end.
+  const before: EntityDescriptionLike = {
+    ...posts(TSV),
+    columns: posts(TSV).columns.map((c) =>
+      c.column === 'search_tsv' ? { ...c, generated: undefined } : c,
+    ),
+  };
+  const rebuild = (consent: { allowDestructive?: boolean; rollingUnsafe?: boolean }) =>
+    generateMigration({
+      entities: [posts(TSV)],
+      current: snapshotOf([before]),
+      name: 'search',
+      now: at,
+      ...consent,
+    });
+  const codeOf = (fn: () => unknown): string => {
+    try {
+      fn();
+    } catch (error) {
+      if (error instanceof UltimateError) return error.code;
+      throw error;
+    }
+    return expect.unreachable('expected a refusal');
+  };
+
+  test('a plain column that becomes generated is refused without allowDestructive, and marked rolling-unsafe with it', () => {
+    // `drop column` + `add column`: every stored value is gone, and a pod of the previous release
+    // still writes the column (`428C9` on a generated one). The two questions an ordinary drop is
+    // asked, in its order: the release boundary first, then the loss.
+    expect(codeOf(() => rebuild({}))).toBe('X_MIGRATION_ROLLING_UNSAFE');
+    expect(codeOf(() => rebuild({ allowDestructive: true }))).toBe('X_MIGRATION_ROLLING_UNSAFE');
+    expect(codeOf(() => rebuild({ rollingUnsafe: true }))).toBe('X_MIGRATION_IRREVERSIBLE');
+    const migration = rebuild({ allowDestructive: true, rollingUnsafe: true });
+    expect(migration.destructive).toBe(true);
+    expect(migration.rollingUnsafe).toBe(true);
+  });
+
+  test('the refusal names the column and a command that passes', () => {
+    try {
+      rebuild({});
+    } catch (error) {
+      const fix = error instanceof UltimateError ? error.fix : '';
+      expect(error instanceof UltimateError ? error.cause : '').toContain('"posts"."search_tsv"');
+      expect(fix).toContain('x db gen "search" --allow-destructive --rolling-unsafe');
+      return;
+    }
+    expect.unreachable('expected a refusal');
+  });
+
+  test('a column retired first has earned the rebuild: only the loss is still asked', () => {
+    const retired = generateMigration({
+      entities: [
+        {
+          ...before,
+          columns: before.columns.filter((c) => c.column !== 'search_tsv'),
+          indexes: [],
+          retired: ['search_tsv'],
+        },
+      ],
+      current: snapshotOf([{ ...before, columns: before.columns.map(nullable) }]),
+      name: 'retire',
+      now: at,
+    });
+    const again = (allowDestructive: boolean) =>
+      generateMigration({
+        entities: [posts(TSV)],
+        current: retired.snapshot,
+        name: 'search',
+        now: at,
+        allowDestructive,
+      });
+    expect(codeOf(() => again(false))).toBe('X_MIGRATION_IRREVERSIBLE');
+    expect(again(true).rollingUnsafe).toBeUndefined();
+  });
+
   test('is replaced, and every index over it is stated again', () => {
-    // The one transition `set expression` cannot make: it needs a column that already has one.
-    // Reachable for real — a table created by a generator that did not yet render the clause holds
-    // exactly this column, plain and empty, which is the state this whole slice exists to end.
-    const before: EntityDescriptionLike = {
-      ...posts(TSV),
-      columns: posts(TSV).columns.map((c) =>
-        c.column === 'search_tsv' ? { ...c, generated: undefined } : c,
-      ),
-    };
-    const { up, down } = migrate(posts(TSV), before);
+    const { up, down } = rebuild({ allowDestructive: true, rollingUnsafe: true });
     expect(up).toContain('alter table "posts" drop column "search_tsv";');
     expect(up).toContain(
       `alter table "posts" add column "search_tsv" tsvector generated always as (${TSV}) stored not null;`,

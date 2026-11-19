@@ -1308,7 +1308,7 @@ barrel, which carries no installer (`adapter.test.ts`).
 | `redis` | complete, `As of 2026-10` | core's `redisClient()` (`@ultimat3/core/redis`); one Lua script per operation, sent as `EVALSHA` (40 bytes, not the claim's 2.5 KB) with an `EVAL` fallback on `NOSCRIPT` (`driver-redis-eval.ts`), every key in one `{hash tag}` slot | a queue off the database; no `introspect`, `backfills` or `leases` |
 | `memory` | complete | in-process maps | `x dev`, tests |
 
-**`redisJobDriver({ client?, prefix?, clock?, doneTtlMs? })`** passes `@ultimat3/testing`'s
+**`redisJobDriver({ client?, prefix?, clock?, doneTtlMs?, deadTtlMs? })`** passes `@ultimat3/testing`'s
 `jobDriverConformance`, the suite the other two pass, and `driver-redis.live.test.ts` runs one
 script of operations on it and on the memory driver and compares every answer. Installed with
 `jobs: redisJobDriver()` in `apps/<app>/runtime.ts`, imported from its own entry
@@ -1316,7 +1316,15 @@ script of operations on it and on the memory driver and compares every answer. I
 What it does not carry: `introspect` (so `x jobs show`/`retry`/`cancel` and queue pauses answer
 for Postgres only), `backfills`, and `leases` — a job declaring `concurrency` refuses
 `jobWorker().start()` (`X_JOB_CONCURRENCY_UNENFORCEABLE`). A `done` row and its steps expire
-after `doneTtlMs` (a week; `0` keeps them); `dead` and `failed` rows are kept. The outbox still
+after `doneTtlMs` (a week; `0` keeps them); a `dead` or `failed` row (an expired one included),
+its steps and its set entry after `deadTtlMs` (default `JOBS_DEAD_RETENTION_MS_DEFAULT`, 90 days,
+pg's `jobs.deadRetentionMs`; `0` keeps them) `As of 2026-11`. A debounce fence
+(`onConflict: 'replace'`) is one `debounce:<key>` that expires with its row: a key debounced once
+holds nothing past its row's life. **One clock** `As of 2026-11`: with no `clock` injected, every
+lease, retry, settle debt and gauge is measured on the SERVER's (`TIME` in the script), never a
+pod's — two pods whose clocks disagree cannot both hold one row, as pg's `now()` guarantees; an
+injected `clock` (a test's frozen one) decides them instead. `runAt` stays the enqueuer's, as on
+pg. The outbox still
 stages in Postgres — the relay publishes committed rows onto it with their ids. The NATS stub
 deleted in 25.0.0 stays deleted.
 

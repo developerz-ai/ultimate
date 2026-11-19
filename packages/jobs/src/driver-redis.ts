@@ -12,9 +12,19 @@
 //   dead:<queue>  ZSET   dead letters, by time      failed:<queue> ZSET failed rows, by time
 //   queues        SET    every queue named          idem          HASH  live key → row id
 //   steps:<runId> HASH   step name → record JSON    owed          ZSET  onSettled debts, by time
+//   debounce:<key> STRING the row a replace last wrote, expiring with it
+//
+// ONE clock: with none injected, every script reads the server's (`TIME`, `NOW_OF`), so two pods
+// whose clocks disagree still agree on whose lease has lapsed — pg's `now()`, per statement.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteCount, finiteOption, liveClock, uuidV7 } from '@ultimat3/core';
+import {
+  finiteCount,
+  finiteOption,
+  JOBS_DEAD_RETENTION_MS_DEFAULT,
+  liveClock,
+  uuidV7,
+} from '@ultimat3/core';
 import { redisClient } from '@ultimat3/core/redis';
 import { nowMs } from './clock';
 import type {
@@ -69,13 +79,25 @@ export interface RedisJobDriverOptions {
   readonly client?: RedisSender;
   /** Key namespace, the hash tag every key carries. Default `x:jobs`. */
   readonly prefix?: string;
+  /**
+   * A test's clock (a frozen one), which then decides every instant the scripts compare. Absent,
+   * leases, retries and settle debts run on the SERVER's clock (`TIME`): a pod's own clock would let
+   * one running ahead claim a row another still holds. Enqueue stamps (`runAt`, `createdAt`) stay
+   * the caller's, as pg's do.
+   */
   readonly clock?: Clock;
   /**
    * How long a `done` row (and its steps) outlives its ack, in ms; `0` keeps it forever. Default
    * `DEFAULT_REDIS_DONE_TTL_MS`: a queue in memory that keeps every finished row is a server that
-   * runs out of memory. Dead and failed rows are kept — they are the record of what went wrong.
+   * runs out of memory.
    */
   readonly doneTtlMs?: number;
+  /**
+   * How long a `dead` or `failed` row (an expired one included) outlives its ending, in ms; `0`
+   * keeps it forever. Default `JOBS_DEAD_RETENTION_MS_DEFAULT` (90 days), the window pg's
+   * `jobs.deadRetentionMs` sweeps: long enough to read what went wrong, never the life of the box.
+   */
+  readonly deadTtlMs?: number;
 }
 
 /** A Lua reply as an array; anything else is the empty one. */
@@ -166,11 +188,19 @@ function answerOf(reply: readonly unknown[], at: number, runId: string): Enqueue
 export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
   const client = typedRefusals(options.client ?? redisClient());
   const clock = options.clock ?? liveClock;
+  // `''` asks the script for the server's clock (`NOW_OF`); an injected clock is bound instead.
+  const injected = options.clock;
+  const stamp = (): number | string => (injected === undefined ? '' : nowMs(injected));
   const ns = `{${options.prefix ?? 'x:jobs'}}`;
   const doneTtlMs = finiteCount(
     'redisJobDriver',
     'doneTtlMs',
     options.doneTtlMs ?? DEFAULT_REDIS_DONE_TTL_MS,
+  );
+  const deadTtlMs = finiteCount(
+    'redisJobDriver',
+    'deadTtlMs',
+    options.deadTtlMs ?? JOBS_DEAD_RETENTION_MS_DEFAULT,
   );
   // `KEYS[1]` routes the call to the namespace's slot; every key a script builds is in it.
   const run = (script: string, args: readonly (string | number)[]): Promise<unknown> =>
@@ -179,7 +209,11 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
   return {
     name: 'redis',
     steps: redisStepStore({ ns, run, client }),
-    settleDebt: redisSettleDebt({ run, clock, record: (flat) => toRecord(fieldsOf(flat)) }),
+    settleDebt: redisSettleDebt({
+      run,
+      ...(injected === undefined ? {} : { clock: injected }),
+      record: (flat) => toRecord(fieldsOf(flat)),
+    }),
 
     // `wait:<queue>` IS the ready and delayed rows of the queue: one `ZCARD`, capped here.
     async backlog(queue, cap): Promise<number> {
@@ -231,11 +265,12 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
       const drop = claimOptions.dropExhausted ?? [];
       const owes = claimOptions.settleOwed ?? [];
       const reply = await run(REDIS_CLAIM, [
-        nowMs(clock),
+        stamp(),
         claimOptions.limit,
         claimOptions.visibilityTimeoutMs,
         claimOptions.workerId,
         claimOptions.onEmpty === undefined ? '0' : '1',
+        deadTtlMs,
         drop.length,
         ...drop,
         owes.length,
@@ -271,33 +306,26 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
 
     async ack(jobId, by): Promise<boolean> {
       const owes = by.owesSettle === true ? '1' : '0';
-      const reply = await run(REDIS_ACK, [
-        jobId,
-        by.workerId,
-        by.claim,
-        nowMs(clock),
-        doneTtlMs,
-        owes,
-      ]);
+      const reply = await run(REDIS_ACK, [jobId, by.workerId, by.claim, stamp(), doneTtlMs, owes]);
       return Number(reply) === 1;
     },
 
     async nack(jobId, nackOptions): Promise<boolean> {
       finiteOption('the redis driver nack', 'delayMs', nackOptions.delayMs);
-      const at = nowMs(clock);
       const error = nackOptions.error;
       const reply = await run(REDIS_NACK, [
         jobId,
         nackOptions.workerId,
         nackOptions.claim,
-        at,
+        stamp(),
         nackState(nackOptions),
-        at + nackOptions.delayMs,
+        nackOptions.delayMs,
         nackOptions.countsAsAttempt === false ? '0' : '1',
         error === undefined ? '0' : '1',
         error ?? '',
         error === undefined ? '' : (nackOptions.stack ?? '').slice(0, MAX_ERROR_STACK_LENGTH),
         nackOptions.owesSettle === true ? '1' : '0',
+        deadTtlMs,
       ]);
       return Number(reply) === 1;
     },
@@ -312,16 +340,16 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
         jobId,
         heartbeatOptions.workerId ?? '',
         heartbeatOptions.claim === undefined ? '' : heartbeatOptions.claim,
-        nowMs(clock) + heartbeatOptions.visibilityTimeoutMs,
+        stamp(),
+        heartbeatOptions.visibilityTimeoutMs,
       ]);
       return Number(reply) === 1;
     },
 
     async stats(): Promise<readonly QueueStats[]> {
-      const at = nowMs(clock);
-      const rows = list(await run(REDIS_STATS, [at])).map((row): QueueStats => {
+      const rows = list(await run(REDIS_STATS, [stamp(), deadTtlMs])).map((row): QueueStats => {
         const [queue, ready, delayed, running, suspended, failed, dead, oldest] = list(row);
-        const first = Number(oldest);
+        const age = Number(oldest);
         return {
           queue: String(queue),
           ready: Number(ready),
@@ -330,7 +358,7 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
           suspended: Number(suspended),
           failed: Number(failed),
           dead: Number(dead),
-          oldestReadyMs: first < 0 ? 0 : at - first,
+          oldestReadyMs: Math.max(age, 0),
         };
       });
       // Code units, as `collate "C"` orders `SQL_STATS` — never `localeCompare`.
@@ -338,7 +366,7 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
     },
 
     async demand(): Promise<readonly QueueDemand[]> {
-      const rows = list(await run(REDIS_DEMAND, [nowMs(clock)])).map((row): QueueDemand => {
+      const rows = list(await run(REDIS_DEMAND, [stamp()])).map((row): QueueDemand => {
         const [queue, demand] = list(row);
         return { queue: String(queue), demand: Number(demand) };
       });

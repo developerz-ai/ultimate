@@ -38,7 +38,7 @@ import type { McpPrompt, McpResource, McpResourceSource } from './resources';
 import { ResourceRegistry } from './resources';
 import type { CatalogRefused, CatalogView, McpCatalogSource, PerCall } from './server-catalog';
 import { catalogRefusal, viewOf } from './server-catalog';
-import { resourcesRead } from './server-resources';
+import { resourcesList, resourcesRead } from './server-resources';
 import type { McpInstructions, McpServerVoice } from './server-voice';
 import { instructionsFor, invalidArgsResult, screenCatalogDetail } from './server-voice';
 import type { McpTenant } from './tenant';
@@ -108,7 +108,7 @@ export function mcpServer(input: McpServerInput = {}): McpServer {
   if (tenant !== undefined) assertTenant(tenant, input.tools ?? []);
   // `list_tenants` is a boot tool like any other, so every surface lists it and nothing shadows it.
   const all = [...(input.tools ?? []), ...(tenant === undefined ? [] : [listTenantsTool(tenant)])];
-  const tools = new ToolRegistry().registerAll(all);
+  const tools = new ToolRegistry(tenant?.arg).registerAll(all);
   const resources = new ResourceRegistry().registerAll(input.resources ?? []);
   for (const source of input.resourceSources ?? []) resources.addSource(source);
   const meta = MetaSurface.build({
@@ -252,14 +252,16 @@ export class McpServer {
       case 'tools/call':
         return this.toolsCall(body, caller, signal);
       case 'resources/list':
-        return resultResponse(id, { resources: await this.resources.listFor(caller) });
-      case 'resources/read':
-        return resourcesRead(
-          { resources: this.resources, audit: this.audit, audience: this.voice.errorAudience },
-          body,
-          caller,
-          era,
-        );
+      case 'resources/read': {
+        const on = {
+          resources: this.resources,
+          audit: this.audit,
+          audience: this.voice.errorAudience,
+        };
+        return body.method === 'resources/list'
+          ? resourcesList(on, body, caller)
+          : resourcesRead(on, body, caller, era);
+      }
       // MCP's keep-alive: an empty result, which clients treat as "still here".
       case 'ping':
         return resultResponse(id, {});

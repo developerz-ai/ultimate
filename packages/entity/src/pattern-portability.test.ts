@@ -129,6 +129,36 @@ describe('a construct the two engines read differently is named', () => {
     expect(verdict('^\\U0001F600$')).toBe('\\U');
   });
 
+  test('an astral literal, a bound past 255, a range chained on a range and a quantified lookaround are refused', () => {
+    // Bun writes `/^😀$/` as `^\uD83D\uDE00$`: two code UNITS JavaScript matches as a pair, two
+    // lone surrogate code POINTS to Postgres, which then matches no row the app accepts.
+    expect(/^😀$/.source).toBe('^\\uD83D\\uDE00$');
+    expect(verdict(/^😀$/.source)).toBe('\\uD83D');
+    expect(verdict('^[\\uDE00]$')).toBe('\\uDE00');
+    expect(verdict('^\\uD7FF\\uE000$')).toBe('portable');
+    // ARE's repetition bound is 255: `invalid repetition count(s)` on the server.
+    expect(verdict('^a{256}$')).toBe('{256}');
+    expect(verdict('^[a-z]{1,300}$')).toBe('{1,300}');
+    expect(verdict('^a{256,}$')).toBe('{256,}');
+    expect(verdict('^a{255}$')).toBe('portable');
+    expect(verdict('^a{0,255}$')).toBe('portable');
+    // `invalid character range`: a `-` straight after a range or a class escape, unless it is last.
+    expect(verdict('^[a-z-9]+$')).toBe('-9');
+    expect(verdict('^[\\d-z]+$')).toBe('-z');
+    expect(verdict('^[\\D-z]$')).toBe('-z');
+    expect(verdict('^[a-z--]$')).toBe('--');
+    expect(verdict('^[a-z-\\.]$')).toBe('-\\');
+    expect(verdict('^[a-z-]$')).toBe('portable');
+    expect(verdict('^[\\d-]$')).toBe('portable');
+    expect(verdict('^[\\.-z]$')).toBe('portable');
+    // `quantifier operand invalid`: Annex B lets JavaScript repeat a lookaround, ARE does not.
+    expect(verdict('^(?=a)*a$')).toBe('*');
+    expect(verdict('^(?!a){2}b$')).toBe('{2}');
+    expect(verdict('^((?=a))*a$')).toBe('portable');
+    expect(verdict('^(?=a)a*$')).toBe('portable');
+    expect(verdict('^(?:a)*$')).toBe('portable');
+  });
+
   test('the index it names is the offset of the construct in the source', () => {
     expect(unportableConstruct('^ab\\bcd$')?.at).toBe(3);
     expect(unportableConstruct('^ab.cd$')?.at).toBe(3);

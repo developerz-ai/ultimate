@@ -78,6 +78,13 @@ export function sortController<T>(
       if (item === undefined || input.canDrop === undefined) return true;
       return input.groups()[at?.group ?? -1]?.id === group || input.canDrop(item, group);
     };
+  // A lift whose item left the groups (a live update deleted the card) is no lift: its node is
+  // gone, so the `focusout` that would release it never comes, and every other handle's keys
+  // were refused against it until a reload.
+  const lifting = (): Held | null => {
+    const current = lift();
+    return current !== null && origin(current.id) !== undefined ? current : null;
+  };
   const view = (): readonly SortGroup<T>[] => {
     const groups = input.groups();
     const moving = lift() ?? held();
@@ -141,10 +148,12 @@ export function sortController<T>(
 
   return {
     view,
-    lifted: () => lift()?.id ?? null,
+    lifted: () => lifting()?.id ?? null,
     key(id, event) {
-      const current = lift();
+      const current = lifting();
       if (current === null) {
+        // Forgotten for good, so the same id coming back later is not found mid-drag.
+        if (lift() !== null) setLift(null);
         if (event.key === ' ' || event.key === 'Enter') {
           start(id);
           return true;

@@ -162,6 +162,10 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 - **Every client registration is screened in `storeClient`**, the route's and `registerClient`'s
   alike: a list value that is empty or holds whitespace is `X_AUTH_CLIENT_INVALID` (the Postgres
   store space-joins each list). The route answers RFC 7591 JSON first.
+- **An anonymous registration is bounded, and reaped**: ≤ 10 `redirect_uris` of ≤ 2,048 chars
+  (`invalid_client_metadata`), keyed by `ipKey`; `storeClient(…, true)` mints a
+  `DYNAMIC_CLIENT_PREFIX` (`d_`) id, and `purge` deletes a `d_` client older than the idle window
+  that nothing names — never an app-registered `c_` one. Both stores run `dynamicClientPurgeCase`.
 - **SAML = `samlIdentityProvider`**, no dependency: assertion signature required, one assertion,
   metadata keys only, replay via `auth.totpReplay`, `trustEmail: true` needs `emailDomains`.
 

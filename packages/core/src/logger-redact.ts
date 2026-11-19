@@ -245,7 +245,11 @@ function serialise(value: unknown, depth: number): unknown {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? INVALID_DATE : value.toISOString();
   }
-  if (isUltimateError(value)) return redactedStrings(value.toJSON());
+  if (isUltimateError(value)) {
+    // `meta` is caller data under caller keys: the same key walk as a plain field, then by value.
+    const json = value.toJSON();
+    return redactedStrings({ ...json, meta: serialiseValue(json.meta, depth + 1) });
+  }
   if (value instanceof Error) return { name: value.name, message: redactedValue(value.message) };
   if (depth >= 6) return '[depth-limit]';
   if (Array.isArray(value)) return value.map((item) => serialiseValue(item, depth + 1));

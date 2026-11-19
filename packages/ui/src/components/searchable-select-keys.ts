@@ -2,6 +2,7 @@
 // and setters it is handed, so the whole controller runs in a test with no DOM and no renderer.
 // Focus never leaves the field: the active row is `aria-activedescendant`, never a focus move.
 
+import { isComposingKey } from '../composing-key';
 import type { SearchableView } from './searchable-select-view';
 import { dropLast, firstActive, pickValue, stepActive } from './searchable-select-view';
 
@@ -22,6 +23,8 @@ export interface SearchableKeysState {
 export interface SearchableKey {
   readonly key: string;
   readonly altKey?: boolean;
+  readonly isComposing?: boolean;
+  readonly keyCode?: number;
   preventDefault(): void;
 }
 
@@ -66,6 +69,9 @@ export function searchableKeys(state: SearchableKeysState): SearchableKeys {
   };
 
   const onKeyDown = (event: SearchableKey): void => {
+    // An IME is mid-word: the Enter that confirms a candidate and the arrows that walk them are
+    // the composition's, never a pick or a move here.
+    if (isComposingKey(event)) return;
     const { key } = event;
     if (!state.open()) {
       // Home/End/PageUp/PageDown move the caret in a closed field; only the arrows open it.

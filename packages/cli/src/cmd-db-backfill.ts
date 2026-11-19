@@ -19,6 +19,7 @@ import {
   renderPlanTable,
   runBackfills,
 } from './db-backfill';
+import { refuseEmbeddedWriteBesideDev } from './dev-lock-live';
 import { BadFlagError } from './errors';
 import { withJobDriver } from './jobs-driver';
 import { backfillToJson } from './jobs-json';
@@ -219,6 +220,11 @@ async function runBackfillPass(
   const { findings: loadFindings } = await loadApp(root);
   const environment = resolveEnvironment({ env: ctx.env });
   const write = flagBool(ctx.args, 'write');
+  // `--write` enqueues through this command's own boot: a second PGlite writer beside `x dev`.
+  if (write) {
+    const named = names === 'all' ? [] : names;
+    await refuseEmbeddedWriteBesideDev(root, ctx.env, ['db', 'backfill', ...named, '--write']);
+  }
   return withJobDriver(root, ctx, async (driver) => {
     const rows = await runBackfills({
       driver,

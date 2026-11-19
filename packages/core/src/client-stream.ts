@@ -57,7 +57,7 @@ export async function* clientStream<TChunk = unknown, TOutput = unknown>(
     // `call()`'s answer, so it is settled exactly as `call()` settles it.
     if (!(response.headers.get('content-type') ?? '').startsWith('text/event-stream')) {
       const answer = {
-        text: await response.text(),
+        text: await midBody(req.url, () => response.text()),
         enveloped: response.headers.get(RECORDS_HEADER) === '1',
         dates: response.headers.get(DATES_HEADER),
       };
@@ -72,14 +72,16 @@ export async function* clientStream<TChunk = unknown, TOutput = unknown>(
     let buffer = '';
     try {
       for (;;) {
-        const { done, value } = await reader.read();
+        const { done, value } = await midBody(req.url, () => reader.read());
         buffer += decoder.decode(value, { stream: !done });
         const taken = takeFrames(done ? `${buffer}\n\n` : buffer);
         buffer = taken.rest;
         for (const frame of taken.frames) {
-          if (frame.event === 'chunk') yield JSON.parse(frame.data) as TChunk;
-          else if (frame.event === 'done')
-            return reviveWireDates(JSON.parse(frame.data), frame.dates ?? null) as TOutput;
+          // Both frames name their instants on a `dates:` line, so a chunk is revived as `done` is.
+          const parsed = (): Promise<unknown> =>
+            midBody(req.url, () => reviveWireDates(JSON.parse(frame.data), frame.dates ?? null));
+          if (frame.event === 'chunk') yield (await parsed()) as TChunk;
+          else if (frame.event === 'done') return (await parsed()) as TOutput;
           else if (frame.event === 'error') {
             const status = problemStatus(frame.data);
             throw (
@@ -101,6 +103,28 @@ export async function* clientStream<TChunk = unknown, TOutput = unknown>(
     );
   } finally {
     notifyClientWrite(req.url);
+  }
+}
+
+/**
+ * A body the network cut (`TypeError`: `failure: 'network'`) or a frame that is not JSON
+ * (`SyntaxError`: `'body'`), coded and terminal — a write may already have landed. Anything else,
+ * an abort included, passes through: the same reading as `dispatch`'s.
+ */
+async function midBody<T>(url: string, work: () => T | Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    const network = error instanceof TypeError;
+    if (!network && !(error instanceof SyntaxError)) throw error;
+    const failure = network ? 'network' : 'body';
+    throw transportFailed(
+      failure,
+      `${url}'s stream broke mid-body (${failure})`,
+      undefined,
+      { url },
+      error,
+    );
   }
 }
 

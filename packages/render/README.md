@@ -236,7 +236,8 @@ From code — an island, an app script — `navigate(url, { replace? })`, `refre
 `openModal(path)` and `closeModal()` go through the router when the page has one and fall back to
 `location.assign`/`replace`/`reload` when it does not; they import the router's type only. An
 island imports them from **`@ultimat3/render/client`**, never the barrel — see
-[Two entry points](#two-entry-points). [Navigating from code](../../wiki/Client-Navigation.md#navigating-from-code).
+[Two entry points](#two-entry-points). `navigate()` to a fragment of the page on screen (`#top`,
+same path and query) is the browser's scroll, as a click on that link is: no fetch, no swap. [Navigating from code](../../wiki/Client-Navigation.md#navigating-from-code).
 
 `refresh()` is the same page for the same visitor (`navigation-refresh.ts`): no view transition,
 focus kept on the control the visitor was in (`markFocus`/`restoreFocus` in `navigation-dom.ts`: by
@@ -744,7 +745,9 @@ a job boundary the class is gone and the `code` is what survives — match on th
   the route's `revalidate.tags` — `revalidate: { tags: [tag.post] }` answers `post e:post` — on a
   miss, a hit and a served-stale response alike. That is what lets the same `invalidates` purge
   the document at the CDN; before it, the edge held every ISR page for its whole `s-maxage`. A
-  TTL-only route carries neither header. A tag a CDN would split (whitespace, a comma) is refused
+  served-stale response is never leased to a shared cache (`public, max-age=0, s-maxage=0`, no
+  `stale-while-revalidate`): nothing purges the edge again when the regeneration lands, so a lease
+  would undo the purge for the route's whole `ttl`. A TTL-only route carries neither header. A tag a CDN would split (whitespace, a comma) is refused
   when the route registers — `X_ROUTE_MODE_INVALID`, naming the file — for file routes and
   mounted routes both.
 - **`stream`** flushes the shell first, then reveals holes in completion order with a

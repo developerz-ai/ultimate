@@ -344,5 +344,7 @@
  * (`cache.defaultTtlMs` refused under its own key), `cli/src/role-select.ts` (`--role`'s reading,
  * split from `role-start.ts` at the line ceiling) and `auth/src/mfa-handoff.ts` (an SSO callback
  * hands an MFA-enrolled user their challenge).
+ * raised 1556 → 1558, measured 1558 (2026-11-19, r9 sweep 2): the two on `MIGRATE_CEILING`,
+ * `db/src/column-drop.ts` and `http/src/fault-report.ts`.
  */
-export const SERVING_ROLE_CEILING = 1556;
+export const SERVING_ROLE_CEILING = 1558;

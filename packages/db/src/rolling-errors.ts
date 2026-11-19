@@ -4,6 +4,7 @@
 
 import { renderFixShellArg } from '@ultimat3/core';
 import { DbError } from './errors';
+import { migrationNameArg } from './primary-key';
 import type { RetireAndContract, RollingUnsafeStatement } from './rolling';
 
 const CODE = 'X_MIGRATION_ROLLING_UNSAFE';
@@ -36,6 +37,30 @@ export const columnDropNotRetired = (
     fix: `${twoReleases(entity, column)} — one instance that stops before the next starts: x db gen ${renderFixShellArg(migration, '<name>')} --allow-destructive --rolling-unsafe`,
     meta: { table, column },
   });
+
+/**
+ * `x db gen`: a plain column declared generated is dropped and added back computed
+ * (`regenerate`), with no `retired` in between. The same fact as `columnDropNotRetired` from the
+ * other side: the previous release still WRITES it. `migration` is the name as given: this one
+ * prints it back as the argument it was (`migrationNameArg`), so the command can be pasted.
+ */
+export const columnRebuildNotRetired = (
+  entity: string,
+  table: string,
+  column: string,
+  migration: string,
+): DbError => {
+  const c = renderFixShellArg(column, '<column>');
+  const gen = `x db gen ${migrationNameArg(migration)} --allow-destructive`;
+  return new DbError({
+    code: CODE,
+    cause:
+      `making "${table}"."${column}" a generated column drops it and adds it back computed, and the ` +
+      'pods still running the previous release write it: Postgres refuses a value for a generated column (428C9)',
+    fix: `entity('${renderFixShellArg(entity, '<entity>')}', { retired: ['${c}'] })   # with ${c} out of columns; then x db gen "retire ${c}", deploy, then declare it generated and ${gen} — one instance that stops before the next starts: ${gen} --rolling-unsafe`,
+    meta: { table, column },
+  });
+};
 
 /** `retired` names what no migration recorded, or a column the entity still declares. */
 export const retiredNameUnknown = (entity: string, table: string, column: string): DbError =>

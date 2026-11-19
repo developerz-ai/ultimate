@@ -14,12 +14,29 @@ const drift: Finding = {
 
 describe('schemaAheadFindings', () => {
   test('a drifted schema is X_DB_DRIFT with the gen-and-migrate instruction', async () => {
-    const [finding] = await schemaAheadFindings('/app', async () => [drift]);
+    const [finding] = await schemaAheadFindings(
+      '/app',
+      async () => [drift],
+      async () => true,
+    );
     expect(finding?.code).toBe('X_DB_DRIFT');
     expect(finding?.cause).toBe(`entities are ahead of the migrations: ${drift.cause}`);
     expect(finding?.fix).toBe('x db gen "describe the change" && x db migrate');
     expect(finding?.at).toBe('packages/db/src');
     expect(SCHEMA_AHEAD_FIX).toContain('x db migrate');
+  });
+
+  // `database.rowSecurity` on the embedded database: this process serves as `x_app` and cannot
+  // run a migration as `x_migrator`, so the printed fix is the one that works — stop, migrate, start.
+  test('where x dev cannot apply the pass itself, the fix stops it first', async () => {
+    const [finding] = await schemaAheadFindings(
+      '/app',
+      async () => [drift],
+      async () => false,
+    );
+    expect(finding?.fix).toBe(
+      'x db gen "describe the change" && x stop --json && x db migrate && x dev',
+    );
   });
 
   test('a schema the migrations recorded says nothing', async () => {

@@ -145,6 +145,28 @@ describe('x deploy verify · the queues', () => {
     expect(codes(result)).toEqual(['X_DEPLOY_UNSTABLE']);
   });
 
+  test('database.ssl: true requires TLS on the queue read, as on the pools the roles open', async () => {
+    const server = origin([[200, BUILD]]);
+    const root = appRoot();
+    await Bun.write(
+      join(root, 'app.config.ts'),
+      "export const config = { name: 'demo-app', database: { ssl: true } };\n",
+    );
+    const dialled: string[] = [];
+    const deps = queueDeps({ rows: () => [worker()] });
+    await runDeployVerify(
+      contextFor(['--url', server.url, ...held], root, DB),
+      frozen({
+        ...deps,
+        openQueue: (url, env, statementTimeoutMs) => {
+          dialled.push(url);
+          return deps.openQueue(url, env, statementTimeoutMs);
+        },
+      }),
+    );
+    expect(dialled.map((url) => new URL(url).searchParams.get('sslmode'))).toContain('require');
+  });
+
   test('a queue read that hangs ends at --timeout, and the database is told the same bound', async () => {
     const server = origin([[200, BUILD]]);
     const bounds: number[] = [];

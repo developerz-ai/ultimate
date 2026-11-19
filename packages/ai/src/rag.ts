@@ -47,7 +47,10 @@ export function chunkDocument(input: ChunkInput): readonly Chunk[] {
   const units = splitUnits(input.text, size);
   const chunks: Chunk[] = [];
   let buffer: string[] = [];
-  let tokens = 0;
+  // Measured on the JOINED text, the string a chunk is: units are joined by a space, and forty
+  // one-token sentences summed to 8 are a ten-token chunk.
+  const over = (unit: string): boolean =>
+    buffer.length > 0 && estimateChunkTokens([...buffer, unit].join(' ')) > size;
 
   const flush = (): void => {
     if (buffer.length === 0) return;
@@ -75,19 +78,14 @@ export function chunkDocument(input: ChunkInput): readonly Chunk[] {
       carriedTokens += estimateChunkTokens(unit);
     }
     buffer = carried;
-    tokens = carriedTokens;
   };
 
   for (const unit of units) {
-    const unitTokens = estimateChunkTokens(unit);
-    if (tokens + unitTokens > size && buffer.length > 0) flush();
+    if (over(unit)) flush();
     // The carried overlap yields to the unit, oldest first: a carry the unit does not fit beside
     // made a chunk past `size` — the one promise this function makes.
-    while (buffer.length > 0 && tokens + unitTokens > size) {
-      tokens -= estimateChunkTokens(buffer.shift() ?? '');
-    }
+    while (over(unit)) buffer.shift();
     buffer.push(unit);
-    tokens += unitTokens;
   }
   flush();
   // The final flush leaves the overlap tail in the buffer; it is already covered.

@@ -82,18 +82,25 @@ const unquote = (text: string): string => {
 };
 
 /**
- * Where a group's display name ends: the first colon outside quotes and encoded words, before
- * any `<` or `@` — or -1. A scan, never `(?:"[^"]*"|=\?…\?=|[^"<@:])*:`, whose overlapping
- * alternatives backtrack exponentially on a long value with no colon.
+ * Where a group's display name ends: the first colon outside quotes, comments and encoded words,
+ * before any `<` or `@` — or -1. Quotes, comments and `\` are tracked as `entries` tracks them: a
+ * comment is CFWS, so `(sent via: phone) jane@x.test` names no group. A scan, never
+ * `(?:"[^"]*"|=\?…\?=|[^"<@:])*:`, whose overlapping alternatives backtrack exponentially on a
+ * long value with no colon.
  */
 function groupColon(text: string): number {
   let quoted = false;
+  let comment = 0;
   for (let at = 0; at < text.length; at += 1) {
     const char = text.charAt(at);
-    if (char === '"') quoted = !quoted;
-    if (quoted) continue;
     const word = encodedWordAt(text, at);
     if (word !== undefined) at += word.length - 1;
+    else if (char === '\\') at += 1;
+    else if (char === '"' && comment === 0) quoted = !quoted;
+    else if (quoted) continue;
+    else if (char === '(') comment += 1;
+    else if (char === ')' && comment > 0) comment -= 1;
+    else if (comment > 0) continue;
     else if (char === ':') return at;
     else if (char === '<' || char === '@') return -1;
   }

@@ -1,10 +1,12 @@
-// Which `tsc` invocation the `typecheck` step runs: `-p` with `incremental`, never `-b`.
+// Which `tsc` invocation the `typecheck` step runs: `-p` with `incremental` for a root with no
+// project references (every scaffolded app), `-b` for one that declares them — its only walker.
 //
 // `tsc -b` decides "up to date" by mtime, and Bun installs a package as HARDLINKS out of its cache,
 // carrying the cache's old mtimes — so upgrading a dependency to a version already in the cache
 // left every input older than the buildinfo, `-b` skipped the program and reported green while a
 // cold CI went red (#450). `-p` with `incremental` re-reads every input and compares content
-// hashes, so it cannot be fooled by a date.
+// hashes, so it cannot be fooled by a date. A root WITH references still runs `-b` and keeps
+// that exposure: after a dependency upgrade there, start over with a clean build.
 
 import type { Finding } from './output';
 import { checkRootReferences } from './tsconfig-references';

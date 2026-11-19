@@ -220,11 +220,35 @@ export const safePageErrors = (
     return { ...error, message, ...(stack === undefined ? {} : { stack }) };
   });
 
-/** Every `<input …>` tag, whole, so the rewrite below never has to reason about attribute order. */
-const INPUT_TAG = /<input\b[^>]*>/gi;
+/** Where an `<input` tag opens. Its end is found by `inputTagEnd`, never by `[^>]*>`. */
+const INPUT_OPEN = /<input\b/gi;
 /** `type=password`, quoted either way or bare. */
 const PASSWORD_TYPE = /\btype\s*=\s*(?:"password"|'password'|password)(?=[\s/>])/i;
 const VALUE_ATTR = /\bvalue\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi;
+const SPACE = /\s/;
+
+/**
+ * The index just past the `>` that closes the tag whose attributes start at `from`, or
+ * `html.length` when nothing closes it. Read as HTML reads it: a quote opens a value only straight
+ * after `=`, and a `>` inside that value is the value's text — `[^>]*>` stopped there, leaving
+ * `type=password` outside the match (`<input pattern="(?=.*>)" type="password" value="…">`).
+ */
+function inputTagEnd(html: string, from: number): number {
+  let at = from;
+  while (at < html.length) {
+    const char = html.charAt(at);
+    if (char === '>') return at + 1;
+    at += 1;
+    if (char !== '=') continue;
+    while (at < html.length && SPACE.test(html.charAt(at))) at += 1;
+    const quote = html.charAt(at);
+    if (quote !== '"' && quote !== "'") continue;
+    const close = html.indexOf(quote, at + 1);
+    if (close < 0) return html.length;
+    at = close + 1;
+  }
+  return html.length;
+}
 
 /**
  * `<input type="password" value="hunter2">` -> `value=""`, whatever the value happened to be —
@@ -233,13 +257,23 @@ const VALUE_ATTR = /\bvalue\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi;
  * One regex over the whole tag required `type` to precede `value`, so `<input value="hunter2"
  * type="password">` came through untouched. Attribute order is the site's choice, and
  * `saveFailureArtifact` writes `page.html()` to object storage on every failed run: a
- * server-rendered password on a reversed-attribute form was durably persisted. So: match the TAG
- * first, then rewrite `value` inside it.
+ * server-rendered password on a reversed-attribute form was durably persisted. So: find the TAG
+ * first, then rewrite `value` inside it. One pass, each character read once: an unclosed tag runs
+ * to the end of the page and ends the scan, so a page of them cannot make it quadratic.
  */
 export function blankPasswordFields(html: string): string {
-  return html.replaceAll(INPUT_TAG, (tag) =>
-    PASSWORD_TYPE.test(tag) ? tag.replaceAll(VALUE_ATTR, 'value=""') : tag,
-  );
+  let out = '';
+  let done = 0;
+  INPUT_OPEN.lastIndex = 0;
+  for (let open = INPUT_OPEN.exec(html); open !== null; open = INPUT_OPEN.exec(html)) {
+    const end = inputTagEnd(html, INPUT_OPEN.lastIndex);
+    const tag = html.slice(open.index, end);
+    out += html.slice(done, open.index);
+    out += PASSWORD_TYPE.test(tag) ? tag.replaceAll(VALUE_ATTR, 'value=""') : tag;
+    done = end;
+    INPUT_OPEN.lastIndex = end;
+  }
+  return out + html.slice(done);
 }
 
 /** Both passes, in the order that matters: value redaction first, then the structural blank. */

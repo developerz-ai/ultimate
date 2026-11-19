@@ -110,7 +110,13 @@ const BACKREFERENCE = [
 const GROUP_OPENINGS = ['(?:', '(?=', '(?!', '(?<=', '(?<!'] as const;
 
 /** `{n}` `{n,}` `{n,m}`, the three forms both engines read the same way. */
-const QUANTIFIER = /^\{\d+(?:,\d*)?\}/;
+const QUANTIFIER = /^\{(\d+)(?:,(\d*))?\}/;
+
+/** ARE's `DUPMAX`: a larger bound is `invalid repetition count(s)` on the server, fine in JS. */
+const MAX_REPEAT = 255;
+
+/** `*` `+` `?` `{`: what JavaScript lets repeat a lookahead (Annex B) and ARE refuses outright. */
+const QUANTIFIER_STARTS = new Set(['*', '+', '?', '{']);
 
 /**
  * `\uwxyz` is EXACTLY four hex digits in ARE and exactly four in JavaScript without the `u` flag —
@@ -138,6 +144,17 @@ function escapeAt(source: string, at: number): Step {
   const divergent = DIVERGENT_ESCAPES.get(next);
   if (divergent !== undefined) return refuse(`\\${next}`, at, divergent[0], divergent[1]);
   if (next === 'u') {
+    const digits = source.slice(at + 2, at + 6);
+    // A SURROGATE is how Bun writes an astral literal (`/😀/` is `\uD83D\uDE00`): one character to
+    // JavaScript, two lone code points to Postgres, so the CHECK refuses every row the app accepts.
+    if (HEX4.test(digits) && /^[Dd][89A-Fa-f]/.test(digits)) {
+      return refuse(
+        `\\u${digits}`,
+        at,
+        'is half of a surrogate pair: JavaScript matches the pair as one astral character, Postgres reads two code points no text holds',
+        undefined,
+      );
+    }
     return HEX4.test(source.slice(at + 2))
       ? at + 6
       : refuse(
@@ -186,6 +203,9 @@ function groupAt(source: string, at: number): Step {
 const LEADING_BRACKET_WHY =
   'opens a class whose first ] Postgres reads as a MEMBER and JavaScript reads as the close of an empty class';
 
+const CHAINED_RANGE_WHY =
+  'follows a range or a class escape, which Postgres refuses as an invalid character range and JavaScript reads as a literal -';
+
 const RANGE_WHY =
   'is a range whose endpoints Postgres orders by the database COLLATION and JavaScript orders by code point';
 
@@ -196,9 +216,16 @@ function bracketAt(source: string, at: number): Step {
   if (source[cursor] === ']') return refuse('[]', at, LEADING_BRACKET_WHY, '\\]');
   /** The last member that could be the lower end of a range; `undefined` after one is consumed. */
   let previous: string | undefined;
+  /** A range or a `\d`/`\D` just ended: a `-` here, unless it is last, is ARE's syntax error. */
+  let closedSet = false;
   while (cursor < source.length) {
     const char = source[cursor] ?? '';
     if (char === ']') return cursor + 1;
+    const upper = source[cursor + 1];
+    if (char === '-' && closedSet && upper !== undefined && upper !== ']') {
+      return refuse(`-${upper}`, cursor, CHAINED_RANGE_WHY, '\\-');
+    }
+    closedSet = false;
     if (char === '\u0000') return { ...NUL, at: cursor };
     if (char === '[') {
       const kind = source[cursor + 1] ?? '';
@@ -218,16 +245,17 @@ function bracketAt(source: string, at: number): Step {
       const step = escapeAt(source, cursor);
       if (isRefusal(step)) return step;
       previous = undefined;
+      closedSet = source[cursor + 1] === 'd' || source[cursor + 1] === 'D';
       cursor = step;
       continue;
     }
-    const upper = source[cursor + 1];
     if (char === '-' && previous !== undefined && upper !== undefined && upper !== ']') {
       if (upper === '\\') {
         const step = escapeAt(source, cursor + 1);
         if (isRefusal(step)) return step;
         if (!isAscii(previous)) return refuse(`${previous}-\\`, cursor - 1, RANGE_WHY, undefined);
         previous = undefined;
+        closedSet = true;
         cursor = step;
         continue;
       }
@@ -235,6 +263,7 @@ function bracketAt(source: string, at: number): Step {
         return refuse(`${previous}-${upper}`, cursor - 1, RANGE_WHY, undefined);
       }
       previous = undefined;
+      closedSet = true;
       cursor += 2;
       continue;
     }
@@ -255,23 +284,45 @@ export function unportableConstruct(source: string): UnportablePattern | undefin
   let at = 0;
   /** Whether a `{n}` here would be a quantifier at all — it needs something to repeat. */
   let repeatable = false;
+  /** Per open group, whether it is a lookaround — closing one leaves nothing ARE will repeat. */
+  const groups: boolean[] = [];
+  let afterLookaround = false;
   while (at < source.length) {
     const char = source[at] ?? '';
     if (char === '\u0000') return { ...NUL, at };
+    if (afterLookaround && QUANTIFIER_STARTS.has(char)) {
+      const bound = char === '{' ? QUANTIFIER.exec(source.slice(at)) : null;
+      return refuse(
+        bound?.[0] ?? char,
+        at,
+        'repeats a lookaround, which JavaScript allows under Annex B and Postgres refuses as an invalid quantifier operand',
+        undefined,
+      );
+    }
     let step: Step = at + 1;
     if (char === '\\') step = escapeAt(source, at);
     else if (char === '[') step = bracketAt(source, at);
-    else if (char === '(') step = groupAt(source, at);
-    else if (char === '{') {
+    else if (char === '(') {
+      step = groupAt(source, at);
+      groups.push(source[at + 1] === '?' && source[at + 2] !== ':');
+    } else if (char === '{') {
       // `/^{2}$/` compiles in JavaScript under Annex B and is `invalid regular expression` on the
       // server, so the migration is the thing that fails. Refusing here moves it to the line that
       // wrote it — and a `{` with nothing before it is that same error, which is why the quantifier
       // has to be judged in position and not by its own shape.
       const quantifier = repeatable ? QUANTIFIER.exec(source.slice(at)) : null;
-      step =
-        quantifier === null
-          ? refuse('{', at, 'opens no quantifier Postgres can read', '\\{')
-          : at + quantifier[0].length;
+      const bounds = quantifier === null ? [] : [quantifier[1], quantifier[2]];
+      const tooLarge = bounds.some((bound) => bound !== undefined && Number(bound) > MAX_REPEAT);
+      if (quantifier === null)
+        step = refuse('{', at, 'opens no quantifier Postgres can read', '\\{');
+      else if (tooLarge) {
+        step = refuse(
+          quantifier[0],
+          at,
+          `repeats more than ${MAX_REPEAT} times, which Postgres refuses as an invalid repetition count`,
+          undefined,
+        );
+      } else step = at + quantifier[0].length;
     } else if (char === '.') {
       // `'a\nb' ~ 'a.b'` is TRUE and `/a.b/.test('a\nb')` is false: ARE's `.` matches a newline.
       step = refuse('.', at, 'matches a newline in Postgres and never in JavaScript', '[^\\n\\r]');
@@ -280,6 +331,7 @@ export function unportableConstruct(source: string): UnportablePattern | undefin
     // `^`, `$`, `|` and an opening `(` leave nothing to repeat; everything else does, including a
     // `)` that closed a group and a `]` that closed a class.
     repeatable = char !== '^' && char !== '$' && char !== '|' && char !== '(';
+    afterLookaround = char === ')' && groups.pop() === true;
     at = step;
   }
   return undefined;

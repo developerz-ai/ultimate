@@ -44,6 +44,14 @@ export const enrolMemoryScope = (scope: Tx, tx: Tx | undefined): void => {
   if (parent !== undefined) scopes.set(scope, parent);
 };
 
+/**
+ * Whether a memory `tx` may still take a write — its root has neither committed nor rolled back. A
+ * `Tx` the memory transactor never handed out has no root here, so it answers `true`, the same pass
+ * `refuseIfMemoryTxClosed` gives it.
+ */
+export const memoryTxOpen = (tx: Tx): boolean =>
+  (scopes.get(tx)?.outcome.value ?? 'open') === 'open';
+
 /** The root a memory `tx` belongs to — what a lock is held to — or `tx` itself for any other. */
 export const memoryRoot = (tx: Tx): Tx => scopes.get(tx)?.root ?? tx;
 

@@ -331,7 +331,7 @@ export interface RollbackOptions {
 
 /**
  * Reverse the `steps` most recently APPLIED migrations — by `applied_at`, not by id, so a migration
- * merged late is the first undone (`rollbackTargets`). `x db rollback`.
+ * merged late is the first undone (`rollbackTargets`). An API with no `x db` command over it.
  */
 export async function rollback(options: RollbackOptions): Promise<readonly string[]> {
   const client = options.client ?? baseClient();
@@ -369,7 +369,7 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
                 // Same reason as `auditLedger`'s: psql works where the CLI is absent. The `down` SQL
                 // only exists in the build that shipped it, so the fix reads which build that was.
                 `psql "$DATABASE_URL" -c "select id, app_version from ${renderFixShellArg(LEDGER_TABLE, '<ledger table>')} ` +
-                  `order by id desc limit 5"   # deploy the build that shipped the migration ` +
+                  `order by applied_at desc, id desc limit 5"   # deploy the build that shipped the migration ` +
                   `whose id is base64 ${Buffer.from(row.id, 'utf8').toString('base64')}, ` +
                   'and roll back there — its down SQL exists nowhere else',
               );

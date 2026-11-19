@@ -1,9 +1,10 @@
 // The ONE search path: a chain's `.search(term)` asks the INSTALLED `SearchIndex`. The built-in
 // Postgres index answers inside the statement (its `matches` predicate, today's SQL, untouched);
-// any other index is asked for ids first, and the chain then reads those rows with its own
-// tenancy, soft delete, order and cursor — so a Meilisearch hit can never widen what the chain sees.
+// any other index is asked for ids first — per tenant the chain names — and the chain then reads
+// those rows with its own tenancy, soft delete, order and cursor: a hit never widens what it sees.
 
 import { tryUseContext } from '@ultimat3/core';
+import { crossTenantReason } from './cross-tenant';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
 import { MAX_PAGE_SIZE } from './plan';
@@ -16,13 +17,28 @@ import type { Predicate } from './tenancy';
 const isMatch = (predicate: Predicate): boolean =>
   predicate.column === SEARCH_PROPERTY && predicate.op === 'matches';
 
-/** The tenant the chain is scoped to: its own `eq` on the tenant column, else the actor's. */
-const tenantOf = (entity: EntityCore<unknown>, where: readonly Predicate[]): string | null => {
+/**
+ * The tenants the index is asked for: the chain's own `eq` on the tenant column, else — under
+ * `crossTenant` only — each tenant of its `in` list, else the actor's. Never the actor's under a
+ * lifted guard: the chain reads every tenant there, and the actor's org alone is a silent sample.
+ */
+const tenantsOf = (entity: EntityCore<unknown>, where: readonly Predicate[]): (string | null)[] => {
   const column = entity.$tenantColumn;
-  if (column === null) return null;
+  if (column === null) return [null];
   const named = where.find((each) => each.column === column && each.op === 'eq');
-  if (typeof named?.value === 'string') return named.value;
-  return tryUseContext()?.actor.orgId ?? null;
+  if (typeof named?.value === 'string') return [named.value];
+  const reason = crossTenantReason();
+  if (reason === undefined) return [tryUseContext()?.actor.orgId ?? null];
+  const listed = where.find((each) => each.column === column && each.op === 'in');
+  const tenants = Array.isArray(listed?.value) ? listed.value : undefined;
+  if (tenants?.every((tenant): tenant is string => typeof tenant === 'string')) {
+    return [...new Set(tenants)];
+  }
+  throw new EntityError({
+    code: 'X_INVARIANT_VIOLATED',
+    cause: `${entity.$name}.search(<term>) ran inside crossTenant('${reason}') through an external search index, which is asked one tenant at a time — and the chain names no ${column} to ask for`,
+    fix: `${entity.$name}.andWhere('${column}', 'in', [<orgId>, …]).search('<term>')   # or installSearchIndex(postgresSearchIndex()), which matches every tenant inside the statement`,
+  });
 };
 
 /** The single key a hit's id is read back by; a composite key has no `in` an index id can name. */
@@ -58,21 +74,25 @@ const resolved = async (entity: EntityCore<unknown>, args: FindManyArgs): Promis
   const where = args.where ?? [];
   const index = searchIndex();
   if (answersInStatement(index)) return args;
-  const tenant = tenantOf(entity, where);
+  const tenants = tenantsOf(entity, where);
   const swapped: Predicate[] = [];
   for (const predicate of where) {
     if (!isMatch(predicate)) {
       swapped.push(predicate);
       continue;
     }
-    const hits = await index.query({
-      entity: entity.$name,
-      tenant,
-      term: String(predicate.value ?? ''),
-      limit: MAX_PAGE_SIZE,
-    });
-    if (hits.length >= MAX_PAGE_SIZE) throw tooManyHits(entity, index.name);
-    swapped.push({ column: keyOf(entity), op: 'in', value: hits.map((hit) => hit.id) });
+    const ids: string[] = [];
+    for (const tenant of tenants) {
+      const hits = await index.query({
+        entity: entity.$name,
+        tenant,
+        term: String(predicate.value ?? ''),
+        limit: MAX_PAGE_SIZE,
+      });
+      if (hits.length >= MAX_PAGE_SIZE) throw tooManyHits(entity, index.name);
+      ids.push(...hits.map((hit) => hit.id));
+    }
+    swapped.push({ column: keyOf(entity), op: 'in', value: ids });
   }
   return { ...args, where: swapped };
 };

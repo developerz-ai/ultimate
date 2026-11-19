@@ -94,6 +94,16 @@ const filtered = (
 ): AdminTableRead => where.reduce(predicate(typed), read);
 
 /**
+ * The two writes as the handle takes them: the KEY's value, a number for an `integer()` key. The
+ * public `AdminTable` spells `id: string`, and a method's parameter is compared both ways, so a
+ * real table is this too — the widening stays here instead of changing a published shape.
+ */
+interface KeyedWrites {
+  update(id: string | number, patch: Readonly<Record<string, unknown>>): Promise<AdminRow>;
+  delete(id: string | number): Promise<void>;
+}
+
+/**
  * One entity + its table → one `AdminRepo`.
  *
  * A row is never spread and never re-parsed here. The handle parses an insert against the entity
@@ -105,17 +115,24 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
   const idField = entity.$primaryKey[0] ?? 'id';
   const idColumn = Object.hasOwn(entity.$columns, idField) ? entity.$columns[idField] : undefined;
   const typed = typedBy(entity);
+  const writes: KeyedWrites = table;
   const columns = adminColumnsOf(entity);
   const searchOf = table.search;
   /**
    * `AdminRepo` carries `id: string` — a URL param, untyped by nature. The primary key column's
    * OWN `$parse` is what earns the crossing: `/posts/nope` is judged here, at the door, instead
-   * of reaching the driver as a comparison Postgres answers with a cast error.
+   * of reaching the driver as a comparison Postgres answers with a cast error. The text is first
+   * given the column's shape by `typed`, as a filter value is: `'7'` is `7` to an integer key.
    */
-  const idOf = (id: string): string => {
-    const parsed = idColumn?.$parse === undefined ? id : idColumn.$parse(id);
-    if (typeof parsed !== 'string') {
-      throw invariantViolated(entity.$name, idField, `expected a string id, got ${typeof parsed}`);
+  const idOf = (id: string): string | number => {
+    const given = typed(idField, id);
+    const parsed = idColumn?.$parse === undefined ? given : idColumn.$parse(given);
+    if (typeof parsed !== 'string' && typeof parsed !== 'number') {
+      throw invariantViolated(
+        entity.$name,
+        idField,
+        `expected a text or number id, got ${typeof parsed}`,
+      );
     }
     return parsed;
   };
@@ -124,7 +141,7 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
    * `/posts/nope` is the admin's 404, not `X_INVARIANT_VIOLATED` — the operator mistyped a URL and
    * violated nothing. A write keeps the throw: it is reached only after a read found the row.
    */
-  const readableId = (id: string): string | undefined => {
+  const readableId = (id: string): string | number | undefined => {
     try {
       return idOf(id);
     } catch (error) {
@@ -181,8 +198,8 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
       return key === undefined ? null : table.where({ [idField]: key }).one();
     },
     create: async (input) => table.insert(input),
-    update: async (id, patch) => table.update(idOf(id), patch),
-    destroy: async (id) => table.delete(idOf(id)),
+    update: async (id, patch) => writes.update(idOf(id), patch),
+    destroy: async (id) => writes.delete(idOf(id)),
     count: async (where) => filtered(table, where ?? [], typed).count(),
     approximateCount: async () => (await table.approximateCount?.()) ?? null,
   };

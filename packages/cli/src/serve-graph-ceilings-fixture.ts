@@ -347,8 +347,11 @@
  * pool too, and the switch was read by nothing; `entity/src/uuid-text.ts`, `entity/src/pg-sql-in.ts` and `entity/src/instant-range.ts` (a malformed
  * uuid operand and a long `in` list answered alike on both drivers) and `jobs/src/retry-default.ts`
  * (`jobs.maxAttempts`/`jobs.backoff` as the worker's default retry).
+ * raised 995 → 997, measured 997 (2026-11-19, r9 sweep 2, metafile walk): `db/src/column-drop.ts`
+ * (a column's drop and its two consents, split from `generate.ts` at its ceiling) and
+ * `http/src/fault-report.ts` (what a failed request owes its observers, a late fault included).
  */
-export const MIGRATE_CEILING = 995;
+export const MIGRATE_CEILING = 997;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

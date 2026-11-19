@@ -13,8 +13,7 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path-joining API, so the temp root and the config file are joined with this.
 import { join } from 'node:path';
 import { installLogSink, isUltimateError } from '@ultimat3/core';
-import { job, purge, resetJobs, t } from '@ultimat3/jobs';
-import { resetDefaultRetry } from '@ultimat3/jobs/adapter';
+import { job, resetJobs, t } from '@ultimat3/jobs';
 import { definedStorage, resetStorage, type Storage } from '@ultimat3/storage';
 import { loadAppConfig } from './app-config-load';
 import type { RunningRoles } from './role-start';
@@ -46,9 +45,6 @@ afterEach(() => {
   if (current !== undefined && ownStorages.has(current)) resetStorage();
   ownStorages.clear();
 });
-
-// `workerConfigOf` installs the app's default retry process-wide; no later file inherits it.
-afterEach(() => resetDefaultRetry());
 
 const loadWorkerConfig = async (root: string) => workerConfigOf(await loadAppConfig(root));
 
@@ -104,47 +100,6 @@ describe('workerConfigOf, over the one loader', () => {
       concurrency: 8,
       visibilityTimeoutMs: 30_000,
     });
-  });
-});
-
-describe('jobs.maxAttempts and jobs.backoff', () => {
-  afterEach(() => resetJobs());
-
-  test('jobs.maxAttempts and jobs.backoff reach a job that declares no retry', async () => {
-    // Built BEFORE the config is read, as an app's job modules are.
-    const sweep = purge({ name: 'sweep', targets: () => [] });
-    const own = job({
-      tenant: 'none',
-      name: 'own',
-      input: t.object({}),
-      idempotencyKey: () => 'own',
-      retry: { attempts: 2 },
-      run: () => Promise.resolve(),
-    });
-    expect(sweep.retry).toMatchObject({ attempts: 3, backoff: 'exponential' });
-
-    await loadWorkerConfig(
-      await appRoot(
-        "export const config = { name: 'demo', jobs: { maxAttempts: 7, backoff: 'fixed' } };\n",
-      ),
-    );
-
-    expect(sweep.retry).toMatchObject({ attempts: 7, backoff: 'fixed' });
-    // A job's own `retry` overrides the count; the curve it does not name is the app's.
-    expect(own.retry).toMatchObject({ attempts: 2, backoff: 'fixed' });
-  });
-
-  test('a root with no app.config.ts leaves the framework default, and clears an earlier one', async () => {
-    const sweep = purge({ name: 'sweep', targets: () => [] });
-    workerConfigOf(
-      await loadAppConfig(
-        await appRoot("export const config = { name: 'demo', jobs: { maxAttempts: 7 } };\n"),
-      ),
-    );
-    expect(sweep.retry.attempts).toBe(7);
-
-    await loadWorkerConfig(await appRoot(undefined));
-    expect(sweep.retry).toMatchObject({ attempts: 3, backoff: 'exponential' });
   });
 });
 

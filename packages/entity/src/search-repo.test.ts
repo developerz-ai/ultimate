@@ -2,9 +2,10 @@
 // predicate (so the memory driver still refuses it), any other one answers ids the chain then reads.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import { recordingClient } from '@ultimat3/db';
 import { text, timestamp, uuid } from './columns';
+import { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
@@ -122,5 +123,37 @@ describe('.search() through the installed index', () => {
     expect(client.statements.map((each) => each.values.flat().length)).toEqual([
       MAX_PAGE_SIZE - 1 + 1,
     ]);
+  });
+
+  test('a crossTenant search through an external index is refused, never answered with the actor’s org alone', async () => {
+    const index = memorySearchIndex();
+    release = installSearchIndex(index);
+    await index.index(ROWS.map((row) => searchDocumentOf(notes, row)));
+    const table = await memoryTable();
+    const actor = { ...userActor({ id: 'u' }), orgId: ORG_A, scopes: [CROSS_TENANT_SCOPE] };
+    const ids = (rows: readonly { id: string }[]) => rows.map((row) => row.id).sort();
+    await runWithContext(ctxOf({ actor }), () =>
+      crossTenant('every org’s zebras', async () => {
+        // No tenant named: the index is asked one tenant at a time, and the actor's is not "every".
+        const refused = await table
+          .search('zebra')
+          .all()
+          .then(
+            () => null,
+            (error: unknown) => error,
+          );
+        expect(isUltimateError(refused) ? [refused.code, refused.message] : refused).toEqual([
+          'X_INVARIANT_VIOLATED',
+          expect.stringContaining('crossTenant'),
+        ]);
+        expect(await codeOf(table.search('zebra').count())).toBe('X_INVARIANT_VIOLATED');
+        // An `in` list names the tenants: each is asked, and every one's matches come back.
+        const both = table.andWhere('orgId', 'in', [ORG_A, ORG_B]).search('zebra');
+        expect(ids(await both.all())).toEqual([id(1), id(3)]);
+        expect(await both.count()).toBe(2);
+        // One tenant named stays one question.
+        expect(ids(await table.where({ orgId: ORG_B }).search('zebra').all())).toEqual([id(3)]);
+      }),
+    );
   });
 });

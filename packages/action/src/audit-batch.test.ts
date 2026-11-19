@@ -15,6 +15,7 @@ import {
 import type { AuditRecord } from './audit';
 import type { BatchAuditSink, BatchedAuditSink } from './audit-batch';
 import { batchedAuditSink } from './audit-batch';
+import { memoryAuditSink } from './audit-memory';
 
 const recordNamed = (name: string): AuditRecord => ({
   at: new Date(1_700_000_000_000),
@@ -158,6 +159,33 @@ describe('batchedAuditSink groups concurrent writes into one writeMany', () => {
     expect(settled.map((each) => each.status)).toEqual(['fulfilled', 'rejected', 'fulfilled']);
     expect(settled[1]?.status === 'rejected' ? settled[1].reason : undefined).toBe(refusal);
     expect(singles.toSorted()).toEqual(['a', 'c', 'poisoned']);
+  });
+
+  test('a batch that stored its rows and then rejected settles every waiter as stored, and stores each record once', async () => {
+    const ring = memoryAuditSink();
+    const lostReply = new RangeError('connection reset after commit');
+    const sink: BatchAuditSink = {
+      write: async (record) => ring.write(record),
+      async writeMany(records) {
+        for (const record of records) ring.write(record);
+        throw lostReply;
+      },
+    };
+    const batched = open(sink, { maxDelayMs: 0 });
+    const twice = recordNamed('twice');
+
+    const settled = await Promise.allSettled(
+      [recordNamed('a'), recordNamed('b'), twice, twice].map((record) => batched.write(record)),
+    );
+
+    expect(settled.map((each) => each.status)).toEqual([
+      'fulfilled',
+      'fulfilled',
+      'fulfilled',
+      'fulfilled',
+    ]);
+    // One object written twice is two attempts — two records — and neither is stored twice.
+    expect(ring.records().map((record) => record.name)).toEqual(['a', 'b', 'twice', 'twice']);
   });
 
   test('writeMany through the wrapper splits at maxRecords and resolves when all have', async () => {

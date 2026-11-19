@@ -188,16 +188,29 @@ export const isSeed = (value: unknown): value is Seed =>
 const cellOf = (row: unknown, property: string): unknown =>
   (row as Readonly<Record<string, unknown>>)[property];
 
+/** A plain object's keys in one order: jsonb hands an object back in ITS order, not the seed's. */
+const sortedKeys = (_key: string, value: unknown): unknown => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    ),
+  );
+};
+
 /**
  * Two cells, as a replay has to compare them: a `Date` is not `===` a `Date` and money is an
- * object, so both are compared by value and everything else by identity.
+ * object, so both are compared by value — an object's keys in any order, an array's in its own —
+ * and everything else by identity.
  */
 const sameCell = (left: unknown, right: unknown): boolean => {
   if (left instanceof Date || right instanceof Date) {
     return left instanceof Date && right instanceof Date && left.getTime() === right.getTime();
   }
   if (typeof left === 'object' && left !== null && typeof right === 'object' && right !== null) {
-    return JSON.stringify(left) === JSON.stringify(right);
+    return JSON.stringify(left, sortedKeys) === JSON.stringify(right, sortedKeys);
   }
   return left === right;
 };

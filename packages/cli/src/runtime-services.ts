@@ -29,7 +29,7 @@ import type { DevServices, Env } from './runtime-bindings';
 import { installBootPorts } from './runtime-boot-ports';
 import { selectBus } from './runtime-bus';
 import { cacheTiersOf, startCacheTiers } from './runtime-cache';
-import { type WorkerConfig, workerConfigOf } from './runtime-jobs';
+import { installJobsRetry, type WorkerConfig, workerConfigOf } from './runtime-jobs';
 import { jobsRetentionTargets } from './runtime-jobs-retention';
 import { selectAppMailDriver } from './runtime-mail';
 import { inboxRetentionOf } from './runtime-notify-retention';
@@ -281,6 +281,9 @@ async function prepareServices(input: PrepareInput) {
   // Fourth: `pwa.push` and its VAPID pair (`runtime-push.ts`). Resolving the pair reads env and
   // signs one probe — a deploy with no keys, or two halves of different pairs, refuses here.
   const push = await selectWebPush(config, env);
+  // Every role, never the worker alone: the process that enqueues stamps `max_attempts` from the
+  // policy the worker retries by. Called here, by name, and not as a side effect of a reader.
+  installJobsRetry(config);
   const workerConfig = workerConfigOf(config, env);
   const bus = selectBus({ env, realtime, roles, override: overrides?.transport, dev });
   // `env`, not the ambient one: this function is HANDED the boot's environment and every other

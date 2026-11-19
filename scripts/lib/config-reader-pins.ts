@@ -25,6 +25,8 @@ export const CONFIG_PINS_FILE = 'scripts/lib/config-reader-pins.ts';
  */
 export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
   // Surfaced 2026-11-19, when a bare `.driver` stopped counting as a read (`qualifiedRead`).
+  // why: the key accepts only 'postgres' and nothing chooses by it; deleting it breaks every app
+  // that sets it, so that waits on `next` (#1162).
   'database.driver':
     "one accepted value, 'postgres', which defineConfig validates and nothing has to choose by: the boot always builds the Postgres client. Waiting on a decision for next: delete the key (an app spelling it then fails to typecheck, a break) or give it a second driver",
 };

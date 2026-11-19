@@ -5,7 +5,7 @@
 // Every renewal runs on a scheduler this file hands in and fires by hand: no interval is waited.
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { type Ctx, ctxOf, isUltimateError, logger } from '@ultimat3/core';
+import { type Ctx, ctxOf, frozenClock, isUltimateError, logger } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -97,6 +97,56 @@ describe('a fleet-slot acquire that rejects', () => {
     down = false;
     await enqueue('capped:2');
     expect((await worker.tick()).map((execution) => execution.job)).toEqual(['cappedJob']);
+  });
+});
+
+describe('a fleet-slot failure mid-round', () => {
+  test('still tells the rows that claim buried', async () => {
+    job({
+      tenant: 'none',
+      name: 'cappedTwin',
+      input: passthrough<Record<string, never>>(),
+      idempotencyKey: () => 'capped',
+      retry: { attempts: 1, jitter: 'none' },
+      concurrency: 3,
+      run: () => Promise.resolve(),
+    });
+    const leases: LeaseStore = {
+      ...memoryLeaseStore(),
+      acquire: () => Promise.reject(new TypeError('lease store down')),
+    };
+    const clock = frozenClock('2026-11-19T00:00:00.000Z');
+    const driver = memoryJobDriver({ leases, clock });
+    const enqueue = (key: string, name: string): Promise<unknown> =>
+      driver.enqueue({ name, queue: 'default', input: {}, idempotencyKey: key, maxAttempts: 1 });
+    // A final attempt whose worker died holding it: the next claim buries it.
+    await enqueue('doomed', 'orphanJob');
+    await driver.claim({
+      queues: ['default'],
+      limit: 1,
+      visibilityTimeoutMs: 1_000,
+      workerId: 'dead',
+    });
+    clock.advance(2_000);
+    await enqueue('capped:1', 'cappedTwin');
+
+    const errors = spyOn(logger, 'error');
+    const worker = jobWorker({
+      driver,
+      concurrency: 2,
+      limiter: concurrencyLimiter({}),
+      context,
+      clock,
+      drainOnShutdown: false,
+    });
+    await expect(worker.tick()).rejects.toThrow('lease store down');
+    await Promise.all([Promise.resolve(), Promise.resolve()]);
+    // The burial was committed by the claim, so telling it never waited on admission: a dead
+    // letter with no log line and no count was a job that died with nothing anywhere saying so.
+    const told = errors.mock.calls.filter(([event]) => event === 'jobs.claim.exhausted');
+    errors.mockRestore();
+    expect(told).toHaveLength(1);
+    expect((await worker.stats()).deadLettered).toBe(1);
   });
 });
 

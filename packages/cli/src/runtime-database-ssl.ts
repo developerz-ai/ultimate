@@ -1,5 +1,6 @@
-// `app.config.ts`'s `database.ssl`, obeyed where the boot opens its pool: `true` requires TLS on a
-// connection string that states no mode of its own. What the operator wrote always wins.
+// `app.config.ts`'s `database.ssl`, obeyed wherever this package opens a Postgres connection:
+// `true` requires TLS on a connection string that states no mode of its own. What the operator
+// wrote always wins.
 
 import { loadAppConfig } from './app-config-load';
 import type { DevServices, Env } from './runtime-bindings';
@@ -38,4 +39,37 @@ export function withRequiredTls(url: string, env: Env): string {
 export async function databaseSslOf(services: DevServices): Promise<boolean> {
   if (services.db.mode !== 'external') return false;
   return (await loadAppConfig(services.root))?.database.ssl === true;
+}
+
+/** The connection strings a role reads off its env rather than through `startDb`. */
+const URL_KEYS = ['DATABASE_URL', 'REPLICATION_URL'] as const;
+
+/**
+ * `withRequiredTls` for a pool that never calls `startDb` — `x doctor`'s probes, `x db branch`,
+ * `x deploy verify`'s queue read — when the app at `root` declares `database.ssl`. Only a Postgres
+ * URL is touched: the embedded database's is a directory, and has no wire to encrypt.
+ */
+export async function withAppTls<U extends string | undefined>(
+  root: string | undefined,
+  url: U,
+  env: Env,
+): Promise<U | string> {
+  if (root === undefined || url === undefined || !/^postgres(?:ql)?:\/\//i.test(url.trim())) {
+    return url;
+  }
+  if ((await loadAppConfig(root))?.database.ssl !== true) return url;
+  return withRequiredTls(url, env);
+}
+
+/**
+ * `env` as a role that dials from it must read it (the replicator's `REPLICATION_URL` session and
+ * its advisory lock): each connection string under the same rule. Untouched without the switch.
+ */
+export async function envWithAppTls(root: string, env: Env): Promise<Env> {
+  const next: Record<string, string | undefined> = { ...env };
+  for (const key of URL_KEYS) {
+    const url = env[key];
+    if (url !== undefined && url.trim() !== '') next[key] = await withAppTls(root, url, env);
+  }
+  return next;
 }

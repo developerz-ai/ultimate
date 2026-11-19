@@ -11,6 +11,13 @@ export type AuthServerGrant =
 
 export const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 
+/**
+ * The `client_id` prefix of a client that registered itself at `/oauth/register` (RFC 7591); one
+ * the app registers is `c_`. Only `storeClient` mints either, and `purge` reaps only this one —
+ * once older than the refresh idle window with no grant, code or device code naming it.
+ */
+export const DYNAMIC_CLIENT_PREFIX = 'd_';
+
 /** `none` is a public client (PKCE is its proof); the two secret methods are a confidential one. */
 export type ClientAuthMethod = 'none' | 'client_secret_basic' | 'client_secret_post';
 
@@ -29,6 +36,11 @@ export interface AuthServerClient {
   /** Resource indicators this client SERVES — what its introspection may see. */
   readonly resources: readonly string[];
   readonly createdAt: Date;
+  /**
+   * A metadata-document client's `client_id` host: the only part of what a consent page shows that
+   * the document's author does not choose. Absent for a registered client.
+   */
+  readonly host?: string | undefined;
 }
 
 /** What `readRequest` screened and `approve` re-screens: the consent page's whole input. */
