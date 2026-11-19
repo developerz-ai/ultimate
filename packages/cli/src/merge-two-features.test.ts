@@ -87,14 +87,18 @@ afterAll(async () => {
   await tree?.dispose();
 });
 
-describe('unit · two generated features, one merge', () => {
-  let first: readonly string[] = [];
+/** `theirs` merged into `ours` on a fresh branch: every registry's bytes, after a clean merge. */
+const merged = async (branch: string, ours: string, theirs: string): Promise<string[]> => {
+  git('checkout', '-q', '-B', branch, ours);
+  git('merge', '--no-edit', theirs);
+  expect(unmerged()).toBe('');
+  return Promise.all(REGISTRIES.map(read));
+};
 
+// Each test builds its own merge: the flake hunt runs them in random order (#1277).
+describe('unit · two generated features, one merge', () => {
   test('beta merges alpha with no conflict and keeps both features in every registry', async () => {
-    git('checkout', '-q', '-B', 'one', 'alpha');
-    git('merge', '--no-edit', 'beta');
-    expect(unmerged()).toBe('');
-    first = await Promise.all(REGISTRIES.map(read));
+    const first = await merged('one', 'alpha', 'beta');
     for (const [index, path] of REGISTRIES.entries()) {
       expect(first[index], path).not.toContain('<<<<<<<');
       if (path === 'apps/web/exercise.ts') continue;
@@ -107,12 +111,10 @@ describe('unit · two generated features, one merge', () => {
   }, 30_000);
 
   test('the other direction writes the same bytes', async () => {
+    const first = await merged('one', 'alpha', 'beta');
     expect(first).toHaveLength(REGISTRIES.length);
-    git('checkout', '-q', '-B', 'other', 'beta');
-    git('merge', '--no-edit', 'alpha');
-    expect(unmerged()).toBe('');
-    expect(await Promise.all(REGISTRIES.map(read))).toEqual([...first]);
-  }, 30_000);
+    expect(await merged('other', 'beta', 'alpha')).toEqual(first);
+  }, 60_000);
 
   test('the projections keep our side, for x manifest to rebuild', async () => {
     git('checkout', '-q', '-B', 'projected', 'alpha');
