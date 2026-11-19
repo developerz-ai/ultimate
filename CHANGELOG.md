@@ -234,6 +234,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `x upgrade` recognises an unedited `undeclared-env` guard copy from an earlier release again; its released-form hash had been overwritten by a later refresh.
 - scripts: the public-API lock judges an optional trailing parameter added to a class method as compatible, as it does for a function.
 - test(action, query): browser client bundle pins raised by measured growth — rpc 25,281 B (≤ 25,303), query client 16,182 B (< 16,186): `clientStream`'s chunk `dates:` revival and coded mid-body cut (+272 B), and the unkeyed-write-once rule (+31 B).
+- **examples/dummy:** six route budgets raised by their measured growth against origin/main built the same way — `/feed` `211kb` → `211.4kb`, `/posts/board` `110.5kb` → `111.3kb`, `/posts/new` and `/runs/health` `33.1kb` → `33.2kb`, `/runs` `243.6kb` → `244.3kb`, `/settings` `107kb` → `107.8kb`: the hydration runtime's own-wrapper props (+100 B), the router's fragment fixes (+45 B), `clientStream`/`clientTransport` (+31 B in the page boot, about +300 B in each island calling `rpc`), and the ui, i18n and `isRtl` fixes each island carries. The numbers per chunk are in the comment above each budget, where `bun run budget-raises` reads them.
 
 ## Releases
 

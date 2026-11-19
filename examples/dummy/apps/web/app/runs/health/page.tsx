@@ -60,7 +60,14 @@ export const config = defineRoute({
   // raised 33kb → 33.1kb. measured: 33822 B (2026-11-12; x build --target static) — why: the client
   // router grew 29,764 → 29,884 (+120 B): a stylesheet that fails to load on navigation now forces a
   // full load and keeps the old sheets, so a page is never left unstyled.
-  budget: { js: '33.1kb' },
+  // measured: 33993 B (2026-11-19; x build --target static) — why: +145 B, no island of its own:
+  // the client router +45 B (29,910 → 29,955), a soft navigation to a malformed fragment (`#50%`)
+  // still runs scripts and fires `ultimate:navigated`, and `navigate()` to a fragment of the page
+  // on screen scrolls instead of refetching and disposing its islands; the inline hydration runtime
+  // +100 B, an island boots with the props inside its own wrapper, not the first script in the
+  // document with its id (a modal's island took the page's). Against 33,848, origin/main built the
+  // same way. Raised 33.1kb → 33.2kb.
+  budget: { js: '33.2kb' },
   load: async ({ url }): Promise<RunHealthData> => {
     // The kill switch first: switched off, the page does not exist and neither read is sent.
     assertCoded(
