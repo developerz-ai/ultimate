@@ -423,7 +423,14 @@ export async function startServices(
     // and one asking for a shared tier got whatever `REDIS_URL` happened to say.
     const tiers = cacheTiersOf(config);
     started.push(
-      startCacheTiers({ env, purge, transport, tiers, supplied: overrides?.cacheTiers }),
+      startCacheTiers({
+        env,
+        purge,
+        transport,
+        tiers,
+        defaultTtlMs: config?.cache.defaultTtlMs,
+        supplied: overrides?.cacheTiers,
+      }),
     );
 
     return {

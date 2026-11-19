@@ -75,9 +75,16 @@ export interface CacheTiersOptions {
    */
   readonly tiers: readonly CacheTierName[];
   /**
+   * `config.cache.defaultTtlMs`: the lease of a value set with no `ttlMs`, on the `lru` and `redis`
+   * rungs the boot builds. Omitted, each rung keeps its own default. A supplied rung keeps whatever
+   * it was built with: the replacement is the whole rung.
+   */
+  readonly defaultTtlMs?: number | undefined;
+  /**
    * `runtime.ts`'s `cacheTiers`: each replaces the rung of its own `name`, and it is the ONE way
    * to set a rung's limits (`lruTier({ maxBytes })`, `redisTier({ maxValueBytes, jitterFraction })`):
-   * `buildTier` passes none, and a config key would be a second spelling of this replacement. A
+   * `buildTier` passes none but `defaultTtlMs`, and a config key would be a second spelling of
+   * this replacement. A
    * supplied `redis` tier holding its own `client` needs no `REDIS_URL`; one without is
    * `warnDefaultRedis`'s. A supplied tier `tiers` does not name is logged (`cache.tier.unnamed`) and
    * never registered: the declaration decides the ladder.
@@ -145,6 +152,10 @@ const lazyRedis = (url: string, client: (url: string) => RedisLike): RedisLike =
   send: (command, args) => client(url).send(command, args),
 });
 
+/** The boot's default lease, or nothing so the rung keeps its own. */
+const ttlOf = (options: CacheTiersOptions): { defaultTtlMs?: number } =>
+  options.defaultTtlMs === undefined ? {} : { defaultTtlMs: options.defaultTtlMs };
+
 /**
  * One rung, or a refusal. A process that cannot build what it was configured to build must not
  * start — `assertRateLimitScope`'s rule (`@ultimat3/http`), applied to the ladder: a fleet reading
@@ -160,7 +171,7 @@ function buildTier(name: CacheTierName, options: CacheTiersOptions): CacheTier {
     case 'request-memo':
       return memoTier();
     case 'lru':
-      return lruTier();
+      return lruTier(ttlOf(options));
     case 'redis': {
       // `REDIS_URL` then `VALKEY_URL`, out of the boot's env: core's own order (`redisUrlSource`),
       // so the URL checked here is the URL the client dials.
@@ -173,7 +184,10 @@ function buildTier(name: CacheTierName, options: CacheTiersOptions): CacheTier {
           fix: 'REDIS_URL=redis://localhost:6379   # in .env — or drop the redis tier from cache.tiers in app.config.ts',
         });
       }
-      return redisTier({ client: lazyRedis(source.url, options.redisClient ?? redisClient) });
+      return redisTier({
+        client: lazyRedis(source.url, options.redisClient ?? redisClient),
+        ...ttlOf(options),
+      });
     }
     case 'cdn':
       // A noop tier would put a `cdn` line in every invalidation report claiming keys an edge that

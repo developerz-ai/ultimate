@@ -22,6 +22,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- `cache.defaultTtlMs` now sets the lease of a value cached with no `ttlMs` on the `lru` and `redis` rungs the boot builds. It was validated and documented and read by nothing; a boot-built Redis rung held such values 300 s, now the configured 60 s by default. A rung supplied through `cacheTiers` keeps its own default (#1260).
 - A fix line that ends `then: x …` prints `bunx x …`, as does the gate's stderr pointer and `x errors explain`; a shipped guard's fix re-runs its own step (`x verify --only boundaries`), never the whole gate.
 - Fixes no longer send a worker to a whole run: `X_TEST_NO_FILES` suggests `x test --affected --dirty`, `X_TYPECHECK_FAILED` names the file to edit and `x verify --only typecheck`, and an unknown command whose nearest match runs every suite suggests its `--help`.
 - A ledger wait says to leave the command running (`bunx x heavy status`), and reads `admission in progress` while no holder is known.

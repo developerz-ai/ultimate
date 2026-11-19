@@ -226,7 +226,7 @@ its config into a variable first.
 
 | field | type | default | notes |
 |---|---|---|---|
-| `cache.defaultTtlMs` | `number` | `60000` | milliseconds, not a duration string |
+| `cache.defaultTtlMs` | `number` | `60000` | milliseconds, not a duration string. The lease of a value set with no `ttlMs`, on the `lru` and `redis` rungs the boot builds; a rung supplied in `runtime.ts`'s `cacheTiers` keeps its own |
 | `cache.tiers` | `CacheTierName[]` | `['request-memo', 'lru']` | `'request-memo' \| 'lru' \| 'redis' \| 'cdn'`; order is fixed regardless of listing order, an EMPTY list is refused (`X_CONFIG_INVALID`), and a rung the environment cannot supply refuses the boot |
 | ~~`cache.driver`~~ | — | — | **Deleted in 9.0.0.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). It was the second way to ask for Redis and the losing one: the ladder is built from `cache.tiers`, so `driver: 'redis'` beside `tiers: ['request-memo', 'lru']` asked for a rung nothing built. Name `redis` in `tiers` |
 | ~~`cache.urlEnv`~~ | — | — | **Deleted in 9.0.0** and refused at boot since 25.0.0, `database.urlEnv`'s defect verbatim: the Redis tier reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing read `MY_REDIS` |
