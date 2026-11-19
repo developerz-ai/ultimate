@@ -11,10 +11,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { REQUIRED_BUN } from './app-root';
 import { dbCommand } from './cmd-db';
+import { pairedBase } from './cmd-db-rollback';
 import type { CommandContext } from './command';
 import { exec } from './exec';
 import { msg } from './messages';
-import { MIGRATIONS_DIR } from './migrations';
+import { MIGRATIONS_DIR, parseMigrationSql } from './migrations';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 import { thrownBy } from './thrown-by-fixture';
@@ -164,20 +165,47 @@ describe('unit · x db rollback', () => {
           'create table notes (id uuid primary key);\n-- down\ndrop table notes;\n',
         );
         await Bun.write(
-          join(root, MIGRATIONS_DIR, '0004_notes_concurrently.sql'),
+          join(root, MIGRATIONS_DIR, '0003_notes_concurrently.sql'),
           '-- transaction: false\nselect 1;\n\n-- down\n',
         );
         await dbCommand.run(ctxFor(['db', 'migrate'], root));
         const half = await dbCommand.run(ctxFor(['db', 'rollback'], root));
         expect(half.findings ?? []).toEqual([]);
-        expect((half.data as { reverted: string[] }).reverted).toEqual(['0004_notes_concurrently']);
-        expect(half.lines?.join('\n')).toContain('the migration before it is still applied');
+        expect((half.data as { reverted: string[] }).reverted).toEqual(['0003_notes_concurrently']);
+        expect(half.lines?.join('\n')).toContain('0003_notes is still applied');
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
     },
     EMBEDDED_MS,
   );
+
+  test('only the `_concurrently` half of a pair x db gen wrote is announced as half', () => {
+    const notes = parseMigrationSql(
+      '0003_notes',
+      'create table notes ();\n-- down\ndrop table notes;',
+    );
+    const half = parseMigrationSql(
+      '0003_notes_concurrently',
+      '-- transaction: false\nselect 1;\n-- down\n',
+    );
+    // A diff that only builds or drops indexes is ONE non-transactional migration, no pair: one
+    // step back reversed all of it, and "roll back again" would undo an unrelated change.
+    const alone = parseMigrationSql(
+      '0004_drop_feed_idx',
+      '-- transaction: false\ndrop index concurrently if exists feed_idx;\n-- down\nselect 1;',
+    );
+    const disk = [notes, half, alone];
+    expect(pairedBase(['0003_notes_concurrently'], disk)).toBe('0003_notes');
+    expect(pairedBase(['0004_drop_feed_idx'], disk)).toBeUndefined();
+    // The base reversed in the same pass: nothing of the pair is left applied.
+    expect(pairedBase(['0003_notes_concurrently', '0003_notes'], disk)).toBeUndefined();
+    // A `_concurrently` name with no base on disk, or a transactional one, is no pair either.
+    expect(pairedBase(['0003_notes_concurrently'], [half])).toBeUndefined();
+    const named = parseMigrationSql('0005_x_concurrently', 'select 1;\n-- down\n');
+    const base = parseMigrationSql('0005_x', 'select 1;\n-- down\n');
+    expect(pairedBase(['0005_x_concurrently'], [base, named])).toBeUndefined();
+  });
 
   test('--steps takes a positive integer, and the flag belongs to rollback alone', () => {
     expect(thrownBy(() => parseArgs(['db', 'migrate', '--steps', '2'], SPECS)).code).toBe(

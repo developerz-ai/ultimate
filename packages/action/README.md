@@ -175,7 +175,7 @@ An output holding a `Date` (`t.date`, an entity `timestamp()` row) names each on
 typed client hands back the `Date` the output type promises (`As of 2026-11`). The body and the
 OpenAPI document are unchanged: a client that ignores the header reads the ISO string it always
 read. Each streamed `chunk` and the `done` frame carry their instants on a `dates:` field, which an
-SSE reader that does not know it ignores. The header is capped at 4,096 bytes
+SSE reader that does not know it ignores. The header is capped at 1,536 bytes
 (`WIRE_DATES_MAX_BYTES`): an answer whose instants need one path each — a `string | Date` column, a
 `[label, instant]` tuple — past that is sent with no `x-ultimate-dates` (and no `dates:` line), the
 client reads those instants as ISO strings, and the operation is logged once at `warn` as

@@ -312,8 +312,10 @@ describe.skipIf(url === '')('live · redis · the job driver', () => {
         await Bun.sleep(10);
       }
     };
-    // core's client, the one the driver takes when none is handed in, on a path of its own.
-    const own = redisClient(`${url}/2`);
+    // core's client, the one the driver takes when none is handed in, on a path of its own. It is
+    // memoised per URL and this test closes it, so each run names its own (`?run=`, ignored by
+    // the server): a `--rerun-each` run would otherwise be handed the closed one.
+    const own = redisClient(`${url}/2?run=${crypto.randomUUID()}`);
     try {
       const driver = redisJobDriver({ client: own, prefix: `${prefix}-outage` });
       const request = { name: 'outage.job', input: null, idempotencyKey: 'k', maxAttempts: 1 };

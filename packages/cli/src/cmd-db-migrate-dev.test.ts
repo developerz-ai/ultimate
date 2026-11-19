@@ -43,15 +43,24 @@ async function untilGeneration(done: () => boolean, what: string): Promise<void>
 
 afterAll(() => clearLock(join(dev.root, '.x')));
 
+const GADGETS_SQL =
+  'create table gadgets (id uuid primary key, label text not null);\n-- down\ndrop table gadgets;\n';
+const writeGadgets = (): Promise<number> =>
+  Bun.write(join(dev.root, 'packages/db/migrations/0001_gadgets.sql'), GADGETS_SQL);
+
+/** What `cmd-dev.ts` writes once the server reports its address; `startDev` alone does not. */
+async function writeDevLock(): Promise<void> {
+  const { server } = dev;
+  const lock = { pid: process.pid, port: Number(new URL(server.url).port), url: server.url };
+  await Bun.write(lockPath(server.services.stateDir), JSON.stringify({ ...lock, startedAt: '' }));
+}
+
 describe('unit · x db migrate beside a live embedded x dev', () => {
   test(
     'the running dev server applies the pass, and its own database holds the table',
     async () => {
-      const { root, server } = dev;
-      await Bun.write(
-        join(root, 'packages/db/migrations/0001_gadgets.sql'),
-        'create table gadgets (id uuid primary key, label text not null);\n-- down\ndrop table gadgets;\n',
-      );
+      const { server } = dev;
+      await writeGadgets();
       // `x db gen` beside a running dev leaves exactly this: a file the database has not applied.
       // The watcher's generation says so, where the banner used to stay green over a 500.
       await untilGeneration(unapplied, 'a migration on disk the ledger lacks');
@@ -61,10 +70,7 @@ describe('unit · x db migrate beside a live embedded x dev', () => {
       // A ledger behind its files is no reason for a new process: this one applies the pass, and a
       // restart here is the dead port `x db migrate` then dialled (measured, two processes).
       expect(codes()).not.toContain('X_DEV_RESTART_REQUIRED');
-      // What `cmd-dev.ts` writes once the server reports its address; `startDev` alone does not.
-      const port = Number(new URL(server.url).port);
-      const lock = { pid: process.pid, port, url: server.url, startedAt: '' };
-      await Bun.write(lockPath(server.services.stateDir), JSON.stringify(lock));
+      await writeDevLock();
 
       const result = await dbCommand.run(ctxFor(['db', 'migrate']));
 
@@ -88,6 +94,12 @@ describe('unit · x db migrate beside a live embedded x dev', () => {
   test(
     'x db rollback is run by the same dev server, and the migration is pending again',
     async () => {
+      // Its own setup, so `-t` runs it alone: applied by the holder (a no-op after the test above).
+      await writeGadgets();
+      await writeDevLock();
+      await dbCommand.run(ctxFor(['db', 'migrate']));
+      await untilGeneration(() => !unapplied(), 'the migration applied before its rollback');
+
       const result = await dbCommand.run(ctxFor(['db', 'rollback']));
 
       expect(result.findings ?? []).toEqual([]);

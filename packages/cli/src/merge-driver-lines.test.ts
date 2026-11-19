@@ -1,7 +1,7 @@
 // Which conflicts `x merge-driver` may resolve: both sides adding whole entries, and nothing else.
 
 import { describe, expect, test } from 'bun:test';
-import { conflictsLeft, resolveAdditions } from './merge-driver-lines';
+import { conflictsLeft, markerAt, resolveAdditions } from './merge-driver-lines';
 
 const conflict = (ours: string[], base: string[], theirs: string[]): string[] => [
   '<<<<<<< ours',
@@ -117,5 +117,25 @@ describe('unit · a CRLF file', () => {
     expect(conflictsLeft('a\nb\n', 0, 1)).toBe(0);
     expect(conflictsLeft(unknown, 0, 0)).toBe(0);
     expect(conflictsLeft(real.text, 1, 3)).toBe(1);
+  });
+});
+
+// Each hunk looks for its three markers from where it stands: a scan from line zero per lookup made
+// a file of many hunks quadratic. The lines before `from` are never read.
+describe('unit · markerAt', () => {
+  test('reads from `from` on and stops at the first marker', () => {
+    const lines = ['a', '=======', 'b', 'c', '=======', 'd', '=======\r', 'e'];
+    const read: number[] = [];
+    const watched = new Proxy(lines, {
+      get(target, key, receiver) {
+        if (typeof key === 'string' && /^\d+$/.test(key)) read.push(Number(key));
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    expect(markerAt(watched, '=======', 2)).toBe(4);
+    expect(read).toEqual([2, 3, 4]);
+    expect(markerAt(lines, '=======', 5)).toBe(6);
+    expect(markerAt(lines, '=======', 7)).toBe(-1);
+    expect(markerAt(lines, '=======', -1)).toBe(-1);
   });
 });

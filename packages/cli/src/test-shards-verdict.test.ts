@@ -32,7 +32,7 @@ describe('unit · x test over a run that ran nothing', () => {
     const [finding] = findingsOf(result);
     expect(finding?.code).toBe('X_TEST_FAILED');
     expect(finding?.cause).toContain('TEST_DATABASE_URL');
-    expect(finding?.fix).toContain('&& x test live   # ');
+    expect(finding?.fix).toContain('&& x test live --workers 1   # ');
   });
 
   test('a run that executed a test stays a pass, skips beside it or not', async () => {

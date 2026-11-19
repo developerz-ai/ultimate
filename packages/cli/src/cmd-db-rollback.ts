@@ -2,7 +2,7 @@
 // `-- down` half each file carries, through `@ultimat3/db`'s `rollback()` — the same lock, ledger
 // and per-migration transaction `x db migrate` uses. The files stay: deleting one is an edit.
 
-import { isNonTransactional } from '@ultimat3/db';
+import { isNonTransactional, type Migration } from '@ultimat3/db';
 import type { CommandContext } from './command';
 import { ROLLBACK_STEPS } from './db-dev-wire';
 import { stepFinding } from './db-finding';
@@ -34,12 +34,7 @@ export async function runRollbackCommand(
   const files = reverted.map((id) => `${MIGRATIONS_DIR}/${id}.sql`);
   // `x db gen` writes a change that needs a step outside the transaction as TWO migrations, and one
   // step back reverses only that second half: said, or the column is still there with no reason.
-  const oldest = reverted.at(-1);
-  const deferredHalf =
-    oldest !== undefined &&
-    (await readMigrations(root)).some(
-      (migration) => migration.id === oldest && isNonTransactional(migration.up),
-    );
+  const base = reverted.length === 0 ? undefined : pairedBase(reverted, await readMigrations(root));
   return {
     ok: true,
     command: 'db',
@@ -52,8 +47,31 @@ export async function runRollbackCommand(
     lines: [
       ...files.map((file) => `  ${file}`),
       ...(files.length === 0 ? [] : [msg('cli.db.rollback.kept')]),
-      ...(deferredHalf ? [msg('cli.db.rollback.deferredHalf', { id: oldest })] : []),
+      ...(base === undefined
+        ? []
+        : [msg('cli.db.rollback.deferredHalf', { id: `${base}${FOLLOW_UP}`, base })]),
     ],
     data: { reverted: [...reverted], steps, files },
   };
+}
+
+/** The suffix `x db gen` gives the second step of a pair (`@ultimat3/db`'s `assembleSteps`). */
+const FOLLOW_UP = '_concurrently';
+
+/**
+ * The still-applied first half, when the oldest reversed id is the `<id>_concurrently` step one
+ * `x db gen` wrote beside `<id>`. Any other non-transactional migration — a diff that only builds
+ * or drops indexes is ONE such file under the plain id — is whole: no second step back is owed.
+ */
+export function pairedBase(
+  reverted: readonly string[],
+  migrations: readonly Migration[],
+): string | undefined {
+  const oldest = reverted.at(-1);
+  if (oldest === undefined || !oldest.endsWith(FOLLOW_UP)) return undefined;
+  const base = oldest.slice(0, -FOLLOW_UP.length);
+  if (reverted.includes(base)) return undefined;
+  const half = migrations.find((migration) => migration.id === oldest);
+  if (half === undefined || !isNonTransactional(half.up)) return undefined;
+  return migrations.some((migration) => migration.id === base) ? base : undefined;
 }

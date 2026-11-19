@@ -213,7 +213,8 @@ for (const [door, { email, event, call }] of Object.entries(DOORS)) {
 describe('mfaPath is a path on this origin, or the call refuses', () => {
   const HOSTILE = ['//evil.example/mfa', 'https://evil.example/mfa', '/\\evil.example', 'mfa'];
 
-  test.each([...HOSTILE, '/a/../b', '/mfa?next=x', '/mfa#x'])('%s', (mfaPath) => {
+  // `//` and `//[` are not parseable as a URL at all: `new URL` threw a bare TypeError, uncoded.
+  test.each([...HOSTILE, '/a/../b', '/mfa?next=x', '/mfa#x', '//', '//['])('%s', (mfaPath) => {
     expect(() => oauthLogin(auth, { mfaPath })).toThrow(
       expect.objectContaining({ code: 'X_CONFIG_INVALID' }),
     );

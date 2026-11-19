@@ -63,7 +63,7 @@ export const DB_MESSAGES = {
   'cli.db.rollback.none': 'no applied migration to roll back',
   'cli.db.rollback.failed': 'rollback failed — nothing past the failing migration was reversed',
   'cli.db.rollback.deferredHalf':
-    '  {id} is the step x db gen writes beside a migration to run outside its transaction — the migration before it is still applied: x db rollback reverses it next',
+    '  {id} is the step x db gen writes beside {base} to run outside its transaction — {base} is still applied: x db rollback reverses it next',
   // The file outlives its ledger row, so the migration is pending again: both next moves, named.
   'cli.db.rollback.kept':
     '  each file is still on disk and pending — x db migrate re-applies it; to drop the change, delete the .sql with its .snapshot.json and .hash, then x db gen',

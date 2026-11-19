@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test';
+// why: Bun has no directory probe — `Bun.file().exists()` answers false for a directory.
+import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; the fixture is joined to this file's directory.
 import { join } from 'node:path';
@@ -348,7 +350,7 @@ test('a ROLE outside config.roles refuses to boot', async () => {
     expect(refused.fix).toContain("roles: ['web', 'sync', 'worker']");
     expect(refused.fix).toContain('ROLE=web bun apps/web/server.ts');
     // Refused before a single service: no state directory was created under the root.
-    expect(await Bun.file(join(root, '.x')).exists()).toBe(false);
+    expect(existsSync(join(root, '.x'))).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -364,4 +366,14 @@ test('config.roles unset declares every role, and the release phase is never a d
   // `migrate` runs once and exits (`x db migrate`, the release phase): `roles` lists what RUNS.
   assertRoleDeclared('migrate', webOnly);
   expect(thrownBy(() => assertRoleDeclared('scheduler', webOnly)).code).toBe('X_CONFIG_INVALID');
+});
+
+// `roles: ['migrate']` is a valid declaration with no process to serve: "start a declared role"
+// would name `ROLE=web`, the very role refused — the remedy is the config edit alone.
+test('with no serving role declared, the fix is the declaration, never the refused ROLE again', () => {
+  const migrateOnly = defineConfig({ name: 'roles-migrate', roles: ['migrate'] });
+  const refused = thrownBy(() => assertRoleDeclared('web', migrateOnly));
+  expect(refused.code).toBe('X_CONFIG_INVALID');
+  expect(refused.fix).not.toContain('ROLE=');
+  expect(refused.fix).toStartWith("defineConfig({ roles: ['migrate', 'web'] })   // ");
 });

@@ -3,6 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { TEST_SERVICES_START } from '@ultimat3/testing';
+import { reproduceWords } from './test-shards';
 import { allSkippedFinding, failingFiles } from './test-verdict';
 
 /** Bun 1.4's own output, `--parallel=2`, one failing file, one load error, one that only logged. */
@@ -55,12 +56,12 @@ describe('unit · allSkippedFinding', () => {
       skipped: 3,
       files: ['apps/web/a.live.test.ts'],
       env: {},
-      rerun: 'x test live --workers 1',
+      rerun: ['test', 'live', '--workers', '1'],
     });
     expect(finding.code).toBe('X_TEST_FAILED');
     expect(finding.cause).toContain('0 of 3');
     expect(finding.cause).toContain('TEST_DATABASE_URL');
-    expect(finding.fix).toStartWith(`${TEST_SERVICES_START} && x test live   # `);
+    expect(finding.fix).toStartWith(`${TEST_SERVICES_START} && x test live --workers 1   # `);
   });
 
   test('every service set: the fix shows each skip condition in the files that ran', () => {
@@ -72,7 +73,7 @@ describe('unit · allSkippedFinding', () => {
         TEST_REDIS_URL: 'redis://x',
         TEST_NATS_URL: 'nats://x',
       },
-      rerun: 'x test --workers 1',
+      rerun: ['test', '--workers', '1'],
     });
     expect(finding.cause).not.toContain('TEST_DATABASE_URL');
     expect(finding.fix.startsWith('grep -nE ')).toBe(true);
@@ -82,11 +83,34 @@ describe('unit · allSkippedFinding', () => {
 
 test('unit · an untyped, filtered run reruns its own filter once the services are up', () => {
   const finding = allSkippedFinding({
-    filter: 'apps/web/',
     skipped: 1,
     files: ['apps/web/a.test.ts'],
     env: {},
-    rerun: 'x test --filter apps/web/ --workers 1',
+    rerun: ['test', '--filter', 'apps/web/', '--workers', '1'],
   });
-  expect(finding.fix).toStartWith(`${TEST_SERVICES_START} && x test --filter apps/web/   # `);
+  expect(finding.fix).toStartWith(
+    `${TEST_SERVICES_START} && x test --filter apps/web/ --workers 1   # `,
+  );
+});
+
+// `--affected`, `--sample` and a passthrough decide which files and tests exist: a rebuilt
+// `x test <type> --filter` ran a broader suite, the real reproduction left inside the comment.
+test('unit · the rerun after the services start is the run itself, every selector kept', () => {
+  const rerun = reproduceWords({
+    type: 'live',
+    sample: 3,
+    affected: { base: 'main', dirty: false },
+    workers: 1,
+    passthrough: ['-t', 'one name'],
+  });
+  const finding = allSkippedFinding({
+    type: 'live',
+    skipped: 2,
+    files: ['a.live.test.ts'],
+    env: {},
+    rerun,
+  });
+  expect(finding.fix).toStartWith(
+    `${TEST_SERVICES_START} && x test live --sample 3 --affected --base main --workers 1 -- -t 'one name'   # `,
+  );
 });

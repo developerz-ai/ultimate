@@ -17,6 +17,7 @@ import {
   rejoinBuckets,
   sweepBuckets,
   unlinkAll,
+  writtenUnder,
 } from './redis-buckets';
 import type { DeadlinedRedis } from './redis-deadline';
 import { DEFAULT_REDIS_COMMAND_TIMEOUT_MS, withinDeadline } from './redis-deadline';
@@ -199,7 +200,8 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
   // A bust skips the park: skipped for a stall, it leaves stale rows serving until TTL.
   const bustConn = (): RedisLike => views().bust;
 
-  const { valueKey, writeBucketsFor, bustBucketsFor, sweepBucketsFor } = bucketLayout(ns);
+  const { valueKey, writeBucketsFor, bustBucketsFor, sweepBucketsFor, collectionBucketOf } =
+    bucketLayout(ns);
 
   const tier: CacheTier = {
     name: 'redis',
@@ -346,14 +348,25 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
       // held — a row in its collection's bucket would die with every other row's bust. One it only
       // swept is unknown, so it gets the member back: the entity index holds every write's member
       // by construction, and an extra member there costs a miss, where a missing one serves stale.
+      // The one other unread bucket is a collection bust's collection-tag bucket: a row-only
+      // member put there dies with every later row bust, so the value's own tags decide.
       const survivors = new Map([...scores].filter(([member]) => !deleted.has(member)));
-      const left = new Map(
-        [...swept.removed].map(([bucket, out]) => {
-          const read = held.get(bucket);
-          return [bucket, read === undefined ? out : new Set([...out].filter((m) => read.has(m)))];
-        }),
+      const unreadTag = new Map(
+        tags
+          .filter((owned) => owned.id === undefined)
+          .map((owned) => [collectionBucketOf(owned.entity), serializeTag(owned)] as const),
       );
-      const lost = await rejoinBuckets(bustConn(), left, survivors);
+      const left = new Map<string, ReadonlySet<string>>();
+      for (const [bucket, out] of swept.removed) {
+        const read = held.get(bucket);
+        const back = [...out].filter((m) => survivors.has(m) && (read?.has(m) ?? true));
+        const tag = read === undefined ? unreadTag.get(bucket) : undefined;
+        left.set(
+          bucket,
+          tag === undefined ? new Set(back) : await writtenUnder(bustConn(), new Set(back), tag),
+        );
+      }
+      const lost = await rejoinBuckets(bustConn(), left, survivors, nowMs(clock));
       const refused = [...failures, ...swept.failures, ...lost];
       if (refused.length > 0) raiseSweepFailure(refused, members.length);
       const stripped = [...deleted].map((key) => key.slice(valueKey('').length));

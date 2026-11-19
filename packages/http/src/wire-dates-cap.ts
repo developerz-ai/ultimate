@@ -1,16 +1,18 @@
 // Single responsibility: the size limit on an answer's `x-ultimate-dates` value. A header is not a
-// body: a proxy buffers it whole (nginx's default `proxy_buffer_size` is one page, 4 KB or 8 KB),
-// so an answer that needs one path per instant is sent with none rather than answered 502.
+// body: a proxy buffers the whole header block (nginx's default `proxy_buffer_size` is one page,
+// 4 KB or 8 KB), so an answer that needs one path per instant is sent with none, never a 502.
 
 import { type Ctx, logger, tryUseContext, wireDatePaths } from '@ultimat3/core';
 import { requestBehind } from './context';
 
 /**
  * The longest `x-ultimate-dates` value sent, in bytes (the value is URI-encoded, so ASCII). The
- * smallest default a reverse proxy gives an upstream's WHOLE header block, which this value shares
- * with every other header of the response.
+ * smallest default a reverse proxy gives an upstream's WHOLE header block is 4 KB, and this value
+ * shares it with the status line and every other header: the framework's own block (security
+ * headers, CSP, CORS, rate-limit, trace ids, one sealed cookie) measures ~2 KB, so 1.5 KB here
+ * leaves ~0.5 KB for an app's own (`wire-dates-cap.test.ts` measures it).
  */
-export const WIRE_DATES_MAX_BYTES = 4_096;
+export const WIRE_DATES_MAX_BYTES = 1_536;
 
 /** Operations already warned about. Bounded by the route table; the ceiling is the belt. */
 const warned = new Set<string>();

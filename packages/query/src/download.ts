@@ -12,7 +12,7 @@
  */
 
 import type { Ctx, Deprecation } from '@ultimat3/core';
-import { queryPath, useContext } from '@ultimat3/core';
+import { actorOf, fingerprint, queryPath, useContext } from '@ultimat3/core';
 import type { RequestedRange } from '@ultimat3/http';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { coerceQuery } from '@ultimat3/schema';
@@ -27,6 +27,7 @@ import {
 } from './download-token';
 import { absentArraysOf } from './input-shape';
 import type { QueryPolicy } from './policy-gate';
+import { guardQuery } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, QueryDescriptor, QueryOptions, QueryRateLimit } from './query';
 import { admittedCall, defOf, queryName, stashDef } from './read';
 import { searchOf } from './search-string';
@@ -218,7 +219,9 @@ export function readDownloadFile(
  * it was HANDED in, and the token binds what the ROUTE will parse that URL back to — never the
  * admitted value itself: a search string has no `null` and no empty list, so `{ note: null }` or
  * `{ tags: [] }` on an optional member arrives absent, and a token bound to the admitted value
- * refused every URL minted with one.
+ * refused every URL minted with one. So when the round trip CHANGES the input, the policy judges
+ * the changed one too, as this caller: the serve never re-runs it, and a token may only grant an
+ * input the policy admitted (`{ note: null }` admitted, an absent note denied: no URL).
  */
 export function mintDownloadUrl(
   target: AnyQuery,
@@ -231,6 +234,10 @@ export function mintDownloadUrl(
     const expiresAtMs = ctx.now().getTime() + ttl;
     const search = searchOf(raw);
     const granted = (await wireInputOf(target.input, search)) ?? input;
+    if (fingerprint(granted) !== fingerprint(input)) {
+      const subject = { actor: actorOf(ctx), input: granted, ctx, query: name };
+      guardQuery(defOf(target).policy, subject, options.surface ?? 'server');
+    }
     const token = await mintDownloadToken(name, granted, ctx.actor, expiresAtMs);
     const tokenParam = `${DOWNLOAD_GRANT_PARAM}=${encodeURIComponent(token)}`;
     return {

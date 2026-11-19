@@ -142,7 +142,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   Never add a per-projection `download` check.
 - **Mint and in-process call go through `admittedCall`** (`read.ts`, the front half `buildSource`
   shares). The serve re-parses through it as `unenforced` with a written reason: the token IS the
-  policy's decision. Never re-run the policy at serve — the token carries no `facts`.
+  policy's decision. Never re-run it at serve (no `facts`); a round trip that changes the input
+  is judged at mint.
 - **The token is SEALED, never signed**: it carries the actor. Seal before expiry before input —
   an expired forgery is a forgery. `X_SEAL_KEY_MISSING` stays a 500 (the server's fault).
 - **`audit: true` records the mint, `rateLimit:` spends at the mint** — a player's `Range:` GETs

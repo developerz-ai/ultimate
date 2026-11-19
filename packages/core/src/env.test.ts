@@ -92,6 +92,30 @@ describe('defineEnv', () => {
     expect(fix).toBe(STRIPE_FIX);
   });
 
+  test('every declared fix survives beside the generated line and beside another declared one', () => {
+    const STRIPE_FIX = 'x env check --json   # STRIPE_KEY: the key the Stripe dashboard shows';
+    const MAPS_FIX = 'x env check --json   # MAPS_KEY: the key the Maps console shows';
+    const declared = {
+      STRIPE_KEY: { type: 'string', fix: STRIPE_FIX },
+      MAPS_KEY: { type: 'string', fix: MAPS_FIX },
+    } as const satisfies EnvSchema;
+    const fixOf = (table: EnvSchema): string => {
+      try {
+        defineEnv(table, { env: { ROLE: 'web' }, redact: false });
+      } catch (thrown) {
+        return (thrown as UltimateError).fix;
+      }
+      return expect.unreachable('defineEnv accepted an empty table');
+    };
+    const both = fixOf(declared);
+    expect(both).toStartWith(STRIPE_FIX);
+    expect(both).toContain(`MAPS_KEY: ${MAPS_FIX}`);
+    const mixed = fixOf({ ...declared, A_KEY: { type: 'string' } });
+    expect(mixed).toStartWith("echo 'A_KEY=<value>' >> .env.development.local   # A_KEY:");
+    expect(mixed).toContain(`STRIPE_KEY: ${STRIPE_FIX}`);
+    expect(mixed).toContain(`MAPS_KEY: ${MAPS_FIX}`);
+  });
+
   test("each issue's fix is a command that finds the line, the key never spliced raw", () => {
     const fixes = checkEnv(
       { REGION: schema.REGION, 'BAD;KEY': { type: 'string' } },

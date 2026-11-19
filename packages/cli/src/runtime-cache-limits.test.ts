@@ -153,6 +153,8 @@ describe('cache.defaultTtlMs', () => {
       expect(refused.cause).toContain('cache.defaultTtlMs');
       expect(refused.fix).toContain('app.config.ts');
       expect(refused.fix).toContain('defaultTtlMs: 60_000');
+      // A call to paste into a TypeScript file: its remark is a `//` comment, never a shell `#`.
+      expect(refused.fix).toStartWith('defineConfig({ cache: { defaultTtlMs: 60_000 } })   // ');
       // Refused before any rung is registered: nothing is left in the process-global ladder.
       expect(registeredTiers()).toEqual([]);
     }

@@ -98,6 +98,8 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
   const since = new Set<Channel>();
   /** A re-proof is sent and not yet answered. */
   let reproving = false;
+  /** The re-proof last sent: a send answered after a newer one went out is nobody's. */
+  let current: object | undefined;
   /** Moved by every new session and by `stop()`: a re-proof sent before it is nobody's. */
   let session = 0;
   /** Every channel has been subscribed once: from here an `onListening` is a re-dial. */
@@ -139,40 +141,54 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
     cancelReprove = setTimer(reprove, reproveEveryMs);
   };
 
+  /** The re-proof came back short: the session stopped delivering. Un-prove it, keep asking. */
+  const lost = (): void => {
+    reproving = false;
+    if (proven.size === CHANNELS.length) {
+      proven.clear();
+      setWakeLive(false);
+      logger.warn('jobs.wake.lost', {
+        waitedMs: verifyTimeoutMs,
+        missing: CHANNELS.filter((channel) => !since.has(channel)),
+      });
+    }
+    // Keep asking: the notification that crosses next proves the session again.
+    reproveLater();
+  };
+
   /**
    * Prove a proven session AGAIN. Any notification counts, a peer's included: what is asked is
-   * whether this session still delivers. A send the pool refused is no verdict on the session.
+   * whether this session still delivers. The deadline runs from the SEND, so a slow pool buys a
+   * dead session no grace. A send the pool has not answered by then is no verdict on the SESSION:
+   * a saturated pool cannot be told from a dead listener, and un-proving a healthy wake would turn
+   * every idle loop onto that same pool at the short ceiling. So the overdue proof is void — its
+   * late answer proves nothing and is answered with a fresh proof, one in flight at a time.
    */
   function reprove(): void {
     if (stopped) return;
     const sentOn = session;
+    const proof = { answered: false, overdue: false };
     since.clear();
     reproving = true;
-    cancelReprove = undefined;
+    /** This proof is still the one asked, and nothing has answered it. */
+    const open = (): boolean => !stopped && sentOn === session && reproving && current === proof;
+    current = proof;
+    cancelReprove = setTimer(() => {
+      if (!open()) return;
+      if (proof.answered) lost();
+      else proof.overdue = true;
+    }, verifyTimeoutMs);
     void Promise.all(
       CHANNELS.map((channel) => options.executor.query(SQL_WAKE, [channel, WAKE_REPROVE_PAYLOAD])),
     )
       .then(() => {
         probeFailures.passed();
-        // Answered already (`crossed` re-armed), or a new session's own probe has taken over.
-        if (stopped || sentOn !== session || !reproving) return;
-        cancelReprove = setTimer(() => {
-          if (stopped || sentOn !== session || !reproving) return;
-          reproving = false;
-          if (proven.size === CHANNELS.length) {
-            proven.clear();
-            setWakeLive(false);
-            logger.warn('jobs.wake.lost', {
-              waitedMs: verifyTimeoutMs,
-              missing: CHANNELS.filter((channel) => !since.has(channel)),
-            });
-          }
-          // Keep asking: the notification that crosses next proves the session again.
-          reproveLater();
-        }, verifyTimeoutMs);
+        if (!open()) return;
+        proof.answered = true;
+        if (proof.overdue) reprove();
       })
       .catch((error: unknown) => {
-        if (stopped || sentOn !== session) return;
+        if (stopped || sentOn !== session || current !== proof) return;
         reproving = false;
         probeFailures.failed(error, { attempt: 1 });
         reproveLater();

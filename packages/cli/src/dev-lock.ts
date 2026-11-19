@@ -134,6 +134,12 @@ export class DevAlreadyRunningError extends UltimateError {
     readonly resume?: readonly string[];
     /** Why the holder could not do the work itself, when it was asked: closes the cause. */
     readonly unanswered?: string;
+    /**
+     * The read-only command that says whether a request the holder may have run did run (`['db',
+     * 'status']`): set when the request was sent and its answer lost, so the fix reads, never
+     * repeats — a rollback asked twice reverses two migrations.
+     */
+    readonly settle?: readonly string[];
   }) {
     const single =
       input.embeddedDb === true
@@ -144,9 +150,11 @@ export class DevAlreadyRunningError extends UltimateError {
       cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}${input.unanswered === undefined ? '' : `; asked to do it instead, ${input.unanswered}`}`,
       // `x stop`, not `kill <pid>`: a kill returns before the drain ends and the next boot refuses.
       fix:
-        input.resume === undefined
-          ? `x stop --json   # or use the one already running at ${input.lock.url}`
-          : `${stopRunStartFix(input.resume)}   # the embedded database takes one process at a time; pass the flags you passed`,
+        input.settle !== undefined
+          ? `${stopRunStartFix(input.settle)}   # the request may have run before its answer was lost: read the ledger before asking again`
+          : input.resume === undefined
+            ? `x stop --json   # or use the one already running at ${input.lock.url}`
+            : `${stopRunStartFix(input.resume)}   # the embedded database takes one process at a time; pass the flags you passed`,
       meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
     });
   }

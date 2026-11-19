@@ -22,10 +22,12 @@ import { counterEcho, type RepoOf } from './counter-observed';
 import { valueAt } from './cursor';
 import type { EntityCore } from './entity';
 import { MAX_PAGE_SIZE } from './plan';
+import { AND_PROPERTY, OR_PROPERTY } from './predicate-node';
 import { readRecorder } from './read-capture';
 import type { FilteredWriteOptions, Repo, RepoOptions, UpsertArgs } from './repo';
 import { sealedFields } from './sealed';
 import { searchMirroredRepo } from './search-mirrored-repo';
+import type { Predicate } from './tenancy';
 import type { IdOf, RowPatch } from './types';
 import { afterCommit } from './write-commit';
 
@@ -138,10 +140,33 @@ const beforeAllOf = async <Row>(
   return before;
 };
 
+/** Tuples per composite before-read: `(a = $1 and b = $2) or …` binds `on.length` per tuple. */
+const TUPLES_PER_READ = 1_000;
+
+/**
+ * The rows named by `chunk`'s conflict keys. One column is one `in`. Several are an `or` of
+ * per-tuple `and`s — never an `in` per column, whose product a diagonal batch of n pairs turns
+ * into n² stored rows read and held before the write runs.
+ */
+const conflictWhere = <Row>(on: readonly string[], chunk: readonly Row[]): Predicate[] => {
+  const [only] = on;
+  if (on.length === 1 && only !== undefined) {
+    return [
+      { column: only, op: 'in', value: [...new Set(chunk.map((row) => valueAt(row, only)))] },
+    ];
+  }
+  const tuple = (row: Row): Predicate => ({
+    column: AND_PROPERTY,
+    op: 'and',
+    value: on.map((column) => ({ column, op: 'eq', value: valueAt(row, column) })),
+  });
+  return [{ column: OR_PROPERTY, op: 'or', value: chunk.map(tuple) }];
+};
+
 /**
  * `beforeAllOf` for an upsert matched on a NATURAL key: the input names no id (or a fresh one), so
- * the stored rows are read by the conflict target — an `in` per target column, paged to the end —
- * and keyed by `conflictKeyOf`, the spelling the write itself matched on. Same floor on failure.
+ * the stored rows are read by the conflict target, paged to the end, and keyed by `conflictKeyOf`,
+ * the spelling the write itself matched on. Same floor on failure.
  */
 const beforeByConflictOf = async <Row>(
   entity: EntityCore<Row>,
@@ -152,20 +177,17 @@ const beforeByConflictOf = async <Row>(
   const before = new Map<string, Row>();
   const keyed = rows.filter((row) => conflictKeyOf(entity, on, row as RowPatch<Row>) !== undefined);
   if (keyed.length === 0 || !readsById(entity as EntityCore<unknown>)) return before;
+  const asked = new Set(keyed.map((row) => conflictKeyOf(entity, on, row as RowPatch<Row>)));
+  const size = on.length === 1 ? MAX_PAGE_SIZE : TUPLES_PER_READ;
   try {
-    for (let at = 0; at < keyed.length; at += MAX_PAGE_SIZE) {
-      const chunk = keyed.slice(at, at + MAX_PAGE_SIZE);
-      const where = on.map((column) => ({
-        column,
-        op: 'in' as const,
-        value: [...new Set(chunk.map((row) => valueAt(row, column)))],
-      }));
+    for (let at = 0; at < keyed.length; at += size) {
+      const where = conflictWhere(on, keyed.slice(at, at + size));
       let cursor: string | null = null;
       do {
         const page = await repo.findMany({ where, limit: MAX_PAGE_SIZE, cursor });
         for (const row of page.rows) {
           const key = conflictKeyOf(entity, on, row as RowPatch<Row>);
-          if (key !== undefined) before.set(key, row);
+          if (key !== undefined && asked.has(key)) before.set(key, row);
         }
         cursor = page.nextCursor;
       } while (cursor !== null);

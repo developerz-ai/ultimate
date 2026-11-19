@@ -49,6 +49,8 @@ export async function rollbackPass(
       {
         path: `${DEV_ROLLBACK_PATH}?steps=${String(steps)}`,
         resume: ['db', 'rollback', '--steps', String(steps)],
+        // Not idempotent: a lost answer is read off the ledger, never asked again.
+        settle: ['db', 'status'],
         read: (data) => {
           const parsed = REVERTED.safeParse(data);
           return parsed.issues === undefined

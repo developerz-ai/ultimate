@@ -330,7 +330,9 @@ export interface RollbackOptions {
   readonly lockRetries?: number | undefined;
   /**
    * Asked once, under the lock, with the exact rows about to be reversed and before the first
-   * `down`: throw to refuse. The caller's consent rule (`x db rollback` outside development) is
+   * `down`: throw (or reject) to refuse — an `async` callback is assignable here and its promise
+   * is AWAITED, so an async consent settles before any SQL runs (the type stays `void`: widening
+   * it is a public-API change). The caller's consent rule (`x db rollback` outside development) is
    * judged here because only the lock's own ledger read says which rows those are.
    */
   readonly confirm?: ((targets: readonly LedgerRow[]) => void) | undefined;
@@ -360,7 +362,7 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
     async (session) => {
       const ledger = await readLedger(session);
       const targets = rollbackTargets(ledger, steps);
-      options.confirm?.(targets);
+      await options.confirm?.(targets);
 
       // The same deliberate loop as `migrate`, read backwards: one transaction per `down`, most
       // recently applied first, so a `down` that fails leaves every migration applied before it

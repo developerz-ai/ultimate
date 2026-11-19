@@ -1626,7 +1626,7 @@ export const wake = startQueueWake({ listener: client, executor });
 | a notification is throttled in the statement | Postgres serialises the commit of every transaction that issued a `NOTIFY` behind one lock, held through its WAL flush. One per enqueue caps enqueuing commits at one flush at a time |
 | a woken loop passes now, then at the floor again | that pass is what finds the row its slot kept silent — so pickup is never worse than the fixed 250 ms poll |
 | the wake is PROVEN before the ceiling rises | a probe sent through the pool has to come back on the session (`jobs.wake.live`). One that does not is `jobs.wake.unverified`, once, with the fix |
-| a proven wake is proven AGAIN, every `reproveEveryMs` (10 s) | a session that stops delivering with no re-dial (half-open) announces nothing, and a loop would rest up to a minute on it. One notification per channel that wakes no loop; not back within `verifyTimeoutMs`, the wake is un-proven (`jobs.wake.lost`, warn) and the loops poll at the 2 s ceiling until one crosses again (`jobs.wake.live`) |
+| a proven wake is proven AGAIN, every `reproveEveryMs` (10 s) | a session that stops delivering with no re-dial (half-open) announces nothing, and a loop would rest up to a minute on it. One notification per channel that wakes no loop; not back within `verifyTimeoutMs` of the SEND, the wake is un-proven (`jobs.wake.lost`, warn) and the loops poll at the 2 s ceiling until one crosses again (`jobs.wake.live`). A pool that has not sent the notification by then is no verdict: a saturated pool cannot be told from a dead session, so the wake stays proven, and the proof is sent again, with its own window, once the pool answers (`queue-wake-reprove.test.ts`) |
 | the poll is the guarantee | a notification is lost with the session that would have carried it. The driver re-dials (`jobs.wake.live` again); meanwhile jobs start on the poll |
 | a transaction-pooling proxy delivers nothing | PgBouncer `pool_mode = transaction`: the `LISTEN` lands on a connection the proxy takes back. The wake stays unproven and the ceiling stays 2 s — give the `worker` role a direct or session-pooled `DATABASE_URL` |
 | the memory driver needs none | one process: `signalEnqueued` is the whole wake |
@@ -1676,7 +1676,7 @@ point shares — `x tasks run`, `x jobs` and `x db backfill` included). With nei
 
 | Declared | Attempts | Backoff |
 |---|---|---|
-| no `retry` — a factory's is optional (`purge()`, `backfill()`, `rollup()`, …), or `retry: undefined` on `job()` (the key is required, its value may be `undefined`) | `jobs.maxAttempts` | `jobs.backoff` |
+| no `retry` — a factory's only (`purge()`, `backfill()`, `rollup()`, …: omitted or `undefined`). `job()` refuses both with `X_JOB_DECLARATION_INVALID`: a plain job states its own | `jobs.maxAttempts` | `jobs.backoff` |
 | `retry: { ...DEFAULT_RETRY }` — a policy, spelled out | 3 | `'exponential'` |
 | `retry: { attempts: 5 }` | 5 | `jobs.backoff` |
 | `retry: { attempts: 5, backoff: 'linear' }` | 5 | `'linear'` |

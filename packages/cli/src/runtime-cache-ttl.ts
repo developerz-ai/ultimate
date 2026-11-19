@@ -17,7 +17,7 @@ export function defaultTtlOf(value: number | undefined): { defaultTtlMs?: number
   if (Number.isSafeInteger(value) && value > 0) return { defaultTtlMs: value };
   throw new ConfigInvalidError({
     cause: `cache.defaultTtlMs must be a whole number of milliseconds of at least 1, not ${shown(value)}`,
-    fix: 'defineConfig({ cache: { defaultTtlMs: 60_000 } })   # in app.config.ts: the lease of a cached value set with no ttlMs',
+    fix: 'defineConfig({ cache: { defaultTtlMs: 60_000 } })   // in app.config.ts: the lease of a cached value set with no ttlMs',
     meta: { key: 'cache.defaultTtlMs', value: shown(value) },
   });
 }

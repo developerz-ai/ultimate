@@ -4,104 +4,16 @@
 // `queue-wake.live.test.ts` (a server, and a killed session).
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { PgExecutor } from '@ultimat3/core';
 import { installLogSink } from '@ultimat3/core';
 import { memoryJobDriver } from './driver-memory';
-import {
-  JOBS_WAKE_CHANNEL,
-  OUTBOX_WAKE_CHANNEL,
-  SQL_WAKE,
-  WAKE_REPROVE_PAYLOAD,
-} from './driver-pg-wake-sql';
+import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD } from './driver-pg-wake-sql';
 import { onEnqueued, onStaged, setWakeLive, signalStaged, wakeIsLive } from './enqueue-signal';
 import { useFakeTime } from './fake-time-fixture';
 import { memoryOutboxStore } from './outbox';
 import { outboxRelay } from './outbox-relay';
 import type { PgListener } from './queue-wake';
 import { startQueueWake } from './queue-wake';
-
-interface Scripted {
-  readonly listener: PgListener;
-  readonly executor: PgExecutor;
-  /** Channels subscribed, in order — one entry per successful `listen`. */
-  readonly listens: string[];
-  unlistens: number;
-  /** Probes the pool was asked to send: `[channel, payload]`. */
-  readonly probes: (readonly [string, string])[];
-  /** The server delivers one notification. */
-  notify(channel: string, payload: string): void;
-  /** The driver re-dialled the session: every channel announces itself again. */
-  redial(): void;
-  /** Timers armed and not yet fired or cancelled, as their delays. */
-  pending(): readonly number[];
-  /** Fire the earliest armed timer. */
-  fire(): void;
-  readonly setTimer: (run: () => void, delayMs: number) => () => void;
-}
-
-function scripted(options: { listenFailures?: number; probeFailures?: number } = {}): Scripted {
-  let listenFailures = options.listenFailures ?? 0;
-  let probeFailures = options.probeFailures ?? 0;
-  const subscriptions = new Map<string, { notify(payload: string): void; listening?(): void }>();
-  const timers: { run(): void; delayMs: number }[] = [];
-  const script: Scripted = {
-    listens: [],
-    unlistens: 0,
-    probes: [],
-    listener: {
-      async listen(channel, onNotify, onListening) {
-        if (listenFailures > 0) {
-          listenFailures -= 1;
-          // What the driver answers with: input to the code under test, not this test's verdict.
-          return Promise.reject(new Error('connect ECONNREFUSED'));
-        }
-        script.listens.push(channel);
-        subscriptions.set(channel, {
-          notify: onNotify,
-          ...(onListening === undefined ? {} : { listening: onListening }),
-        });
-        onListening?.();
-        return {
-          unlisten: async () => {
-            script.unlistens += 1;
-            subscriptions.delete(channel);
-          },
-        };
-      },
-    },
-    executor: {
-      async query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> {
-        expect(sql).toBe(SQL_WAKE);
-        if (probeFailures > 0) {
-          probeFailures -= 1;
-          return Promise.reject(new Error('pool timeout'));
-        }
-        script.probes.push([String(params[0]), String(params[1])]);
-        return [];
-      },
-    },
-    notify: (channel, payload) => subscriptions.get(channel)?.notify(payload),
-    redial: () => {
-      for (const subscription of subscriptions.values()) subscription.listening?.();
-    },
-    pending: () => timers.map((timer) => timer.delayMs),
-    fire: () => timers.shift()?.run(),
-    setTimer: (run, delayMs) => {
-      const timer = { run, delayMs };
-      timers.push(timer);
-      return () => {
-        const at = timers.indexOf(timer);
-        if (at >= 0) timers.splice(at, 1);
-      };
-    },
-  };
-  return script;
-}
-
-/** Let the dial, and the probe behind it, run to their next await. */
-const settle = async (): Promise<void> => {
-  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
-};
+import { scripted, settle } from './queue-wake-fixture';
 
 const lines: { event: string; level: string; fix?: string; failures?: number }[] = [];
 let releaseLogSink: () => void = () => undefined;

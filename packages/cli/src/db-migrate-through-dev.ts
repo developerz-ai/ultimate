@@ -65,6 +65,11 @@ export interface DevAsk<T> {
   readonly path: string;
   /** The command as typed (`['db', 'migrate']`): what the fix runs between `x stop` and `x dev`. */
   readonly resume: readonly string[];
+  /**
+   * For a request that must not run twice (a rollback): the read-only command that says whether it
+   * ran. A request SENT whose answer was lost then refuses with that read as its fix, never `resume`.
+   */
+  readonly settle?: readonly string[];
   /** `data` as this CLI reads it, or the reason it cannot. */
   readonly read: (data: unknown) => { readonly value: T } | { readonly unreadable: string };
 }
@@ -117,13 +122,14 @@ export async function askDev<T>(
   wait: DevWait = waitFor(stateDir),
 ): Promise<T> {
   let holder = lock;
-  const alone = (unanswered: string): DevAlreadyRunningError =>
+  const alone = (unanswered: string, sent = false): DevAlreadyRunningError =>
     new DevAlreadyRunningError({
       lock: holder,
       stateDir,
       embeddedDb: true,
       resume: ask.resume,
       unanswered,
+      ...(sent && ask.settle !== undefined ? { settle: ask.settle } : {}),
     });
   const started = wait.now();
   let goneSince: number | undefined;
@@ -135,7 +141,8 @@ export async function askDev<T>(
       break;
     } catch (error) {
       const unanswered = `${url} did not answer: ${renderThrowable(error)}`;
-      if (!neverSent(error) || wait.now() - started >= BOOT_WAIT_MS) throw alone(unanswered);
+      if (!neverSent(error)) throw alone(unanswered, true);
+      if (wait.now() - started >= BOOT_WAIT_MS) throw alone(unanswered);
       const now = await wait.relock();
       if (now === undefined) {
         goneSince ??= wait.now();
@@ -161,7 +168,8 @@ export async function askDev<T>(
   if (!ok && error !== undefined) throw new UltimateError(error);
   const read = ok ? ask.read(data) : { unreadable: 'ok: false' };
   if ('unreadable' in read) {
-    throw alone(`${url} answered a pass this CLI cannot read (${read.unreadable})`);
+    // The route itself answered: whatever it did is done, so this is a sent request's verdict.
+    throw alone(`${url} answered a pass this CLI cannot read (${read.unreadable})`, true);
   }
   return read.value;
 }

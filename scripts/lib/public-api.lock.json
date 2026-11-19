@@ -3907,7 +3907,7 @@
       "ValidationOutcome": {"hash":"1ba10e135776ae5a","shape":{"kind":"declaration","keyword":"type","head":"1ba10e13"}},
       "VerifiedBody": {"hash":"05cd49c2d502ffd6","shape":{"kind":"members","head":"7e98bf6d","members":{"bytes":"c62d5aaa","text":"c380b02d"}}},
       "VerifiedWebhook": {"hash":"17cc2ddde40e2284","shape":{"kind":"members","head":"60d3d4a8","members":{"body":"1fb0a448","eventId":"1fb0a448","signedAtMs":"4e57c805","topic":"1fb0a448"}}},
-      "WIRE_DATES_MAX_BYTES": {"hash":"ded012a92486c6c3","shape":{"kind":"declaration","keyword":"const","head":"ded012a9"}},
+      "WIRE_DATES_MAX_BYTES": {"hash":"923bd0bc45613664","shape":{"kind":"declaration","keyword":"const","head":"923bd0bc"}},
       "WebSocketMount": {"hash":"d164f2b51901e3b8","shape":{"kind":"members","head":"cba7f7b3","members":{"fetch":"4b806984","path":"1fb0a448","websocket":"4e39b815"}}},
       "WebSocketOption": {"hash":"c02f0bdcbeff26e2","shape":{"kind":"declaration","keyword":"type","head":"c02f0bdc"}},
       "WebhookVerifyOptions": {"hash":"839e2538b408098c","shape":{"kind":"members","head":"d6a74f52","members":{"clock":"?5a6c9eb0","maxBytes":"?4e57c805","secret":"1fb0a448","toleranceMs":"?4e57c805"}}},

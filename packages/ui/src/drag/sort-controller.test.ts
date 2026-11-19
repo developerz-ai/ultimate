@@ -156,6 +156,21 @@ describe('a lifted item a live update removes', () => {
     expect(h.moves).toEqual([{ id: 'b', fromGroup: 'list', toGroup: 'list', toIndex: 1 }]);
   });
 
+  test('a lifted item that leaves and comes back is not lifted again', () => {
+    let groups: readonly SortGroup<string>[] = list;
+    const h = harness(list, undefined, { groups: () => groups });
+    h.controller.key('a', key(' '));
+    h.controller.key('a', key('ArrowDown'));
+    groups = [{ id: 'list', items: ['b', 'c'] }];
+    // The surface's render reads `lifted()` on every change of the groups: here, once.
+    expect(h.controller.lifted()).toBeNull();
+    groups = list;
+    expect(h.controller.lifted()).toBeNull();
+    expect(h.order()).toEqual([['a', 'b', 'c']]);
+    expect(h.controller.key('b', key(' '))).toBe(true);
+    expect(h.controller.lifted()).toBe('b');
+  });
+
   test('Alt+Arrow on another handle is a direct move again', async () => {
     let groups: readonly SortGroup<string>[] = list;
     const h = harness(list, undefined, { groups: () => groups });

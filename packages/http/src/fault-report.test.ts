@@ -84,6 +84,15 @@ describe('reportLateFault', () => {
     expect(reporter.events).toEqual([]);
   });
 
+  test('a hang-up with no pipeline request behind it is false too, as every other call is', () => {
+    // A job's or a test's context, aborted: the abort is still no fault, but there is no request
+    // for it to be a hang-up FROM, and `true` would tell the caller one was bound.
+    const left = new AbortController();
+    left.abort();
+    expect(reportLateFault(left.signal.reason, ctxOf({ signal: left.signal }))).toBe(false);
+    expect(reporter.events).toEqual([]);
+  });
+
   // The stream's producer unwinds on the abort when its reader leaves: nobody is there to answer
   // and nothing failed. Asked here, so a caller of this function never judges a hang-up itself.
   test("a caller's hang-up is nobody's incident: nothing recorded, the one report unspent", () => {

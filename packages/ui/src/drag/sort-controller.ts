@@ -80,14 +80,17 @@ export function sortController<T>(
     };
   // A lift whose item left the groups (a live update deleted the card) is no lift: its node is
   // gone, so the `focusout` that would release it never comes, and every other handle's keys
-  // were refused against it until a reload.
+  // were refused against it until a reload. Forgotten when seen gone — the surface reads this on
+  // every change of the groups — or the card coming back would be lifted again, by nobody.
   const lifting = (): Held | null => {
     const current = lift();
-    return current !== null && origin(current.id) !== undefined ? current : null;
+    if (current === null || origin(current.id) !== undefined) return current;
+    setLift(null);
+    return null;
   };
   const view = (): readonly SortGroup<T>[] => {
     const groups = input.groups();
-    const moving = lift() ?? held();
+    const moving = lifting() ?? held();
     const from = moving === null ? undefined : origin(moving.id);
     return moving === null || from === undefined ? groups : moveBetween(groups, from, moving.at);
   };
@@ -152,8 +155,6 @@ export function sortController<T>(
     key(id, event) {
       const current = lifting();
       if (current === null) {
-        // Forgotten for good, so the same id coming back later is not found mid-drag.
-        if (lift() !== null) setLift(null);
         if (event.key === ' ' || event.key === 'Enter') {
           start(id);
           return true;

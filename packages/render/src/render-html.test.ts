@@ -49,6 +49,21 @@ describe('renderToHtml', () => {
     );
   });
 
+  // `rawText` called the thunk, found an element, gave up — and the fallback walk called it again.
+  test('a script child thunk that returns an element is called once', async () => {
+    let calls = 0;
+    const once = (): unknown => {
+      calls += 1;
+      return h('b', null, String(calls));
+    };
+    const before = (): string => {
+      calls += 10;
+      return 'x';
+    };
+    expect(await renderToHtml(h('script', null, before, once))).toBe('<script>x<b>11</b></script>');
+    expect(calls).toBe(11);
+  });
+
   test('nothing renders for the empty values JSX uses as guards', async () => {
     expect(await renderToHtml([null, undefined, false, true])).toBe('');
   });

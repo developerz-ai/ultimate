@@ -187,16 +187,34 @@ const findLines = (keys: readonly string[]): string =>
 /**
  * ONE fix for the whole throw, and never `x env check`: that command prints this same error and
  * this same line. Every missing key gets the line to add, in the file this environment loads; a
- * malformed one is found where it is set. A key whose declaration carries its own `fix` keeps it.
+ * malformed one is found where it is set. A key whose declaration carries its own `fix` keeps it:
+ * the command leads (generated, else the first declared), and every other declared fix follows,
+ * named by its key, so one refusal still says how to repair every key.
  */
 function fixFor(schema: EnvSchema, issues: readonly EnvIssue[], source: EnvSource): string {
+  const declared = issues.flatMap((issue) => {
+    const fix = schema[issue.key]?.fix;
+    return fix === undefined ? [] : [{ key: issue.key, fix }];
+  });
+  const lead = generatedFix(schema, issues, source) ?? declared.shift()?.fix;
+  const head = lead ?? findLines(issues.map((issue) => issue.key));
+  if (declared.length === 0) return head;
+  const rest = declared.map(({ key, fix }) => `${key}: ${fix}`).join('; ');
+  return `${head}${head.includes('#') ? '; then' : '   # then'}, per key — ${rest}`;
+}
+
+/** The command for the keys with no declared fix, or `undefined` when every key declares one. */
+function generatedFix(
+  schema: EnvSchema,
+  issues: readonly EnvIssue[],
+  source: EnvSource,
+): string | undefined {
   const generated = issues.filter((issue) => schema[issue.key]?.fix === undefined);
   const missing = generated.filter((issue) => issue.reason === 'missing');
   const invalid = generated.filter((issue) => issue.reason === 'invalid');
   const malformed = invalid.map((issue) => `${issue.key} (${issue.expected})`).join(', ');
   if (missing.length === 0) {
-    const declared = issues.find((issue) => schema[issue.key]?.fix !== undefined);
-    if (invalid.length === 0) return declared?.fix ?? findLines(issues.map((issue) => issue.key));
+    if (invalid.length === 0) return undefined;
     return `${findLines(invalid.map((issue) => issue.key))}   # each line to correct: ${malformed}`;
   }
   const lines = missing.map((issue) => `'${keyArg(issue.key)}=<value>'`);

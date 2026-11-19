@@ -253,6 +253,26 @@ describe('a URL is minted for the input it re-parses to', () => {
     }
   });
 
+  test('the re-parsed input is judged by the policy too: one it denies mints no URL', async () => {
+    // Admits `note: null`, denies an absent note — and a search string has no null, so the URL
+    // re-parses to the absent one. Sealing that input would grant what the policy refused.
+    let handled = false;
+    const target = query({
+      input: Filtered,
+      policy: can<{ note?: string | null }>('recording:read', ({ input }) => input.note === null),
+      download: {
+        async handle() {
+          handled = true;
+          return { body: BYTES, contentType: 'video/mp4', filename: 'run.mp4' };
+        },
+      },
+    }).named('runNullNote');
+    const ctx = { ctx: ctxOf({ actor: viewer() }) };
+    expect(await codeOf(() => target.url({ runId: RUN, note: null }, ctx))).toBe('X_FORBIDDEN');
+    expect(await codeOf(() => target.url({ runId: RUN }, ctx))).toBe('X_FORBIDDEN');
+    expect(handled).toBe(false);
+  });
+
   test('the URL still binds its input: a member added to it is refused', async () => {
     const target = filtered();
     const server = httpServer({

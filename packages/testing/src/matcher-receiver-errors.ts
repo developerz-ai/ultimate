@@ -11,7 +11,7 @@ export class TestPolicyExpectedError extends UltimateError {
     super({
       code: 'X_TEST_POLICY_EXPECTED',
       cause: `toDenyPolicy expects a policy — an object with run() (@ultimat3/policy) or evaluate() — and received ${describeValue(received)}`,
-      fix: "expect(post.policy).toDenyPolicy(ctx) — pass the policy object (@ultimat3/policy's, with run() or evaluate()), never the action or its result",
+      fix: "expect(post.policy).toDenyPolicy(ctx)   // pass the policy object (@ultimat3/policy's, with run() or evaluate()), never the action or its result",
     });
   }
 }
@@ -22,7 +22,7 @@ export class TestOpenApiExpectedError extends UltimateError {
     super({
       code: 'X_TEST_OPENAPI_EXPECTED',
       cause: `toMatchOpenApi expects an OpenAPI document — an object with operations: [{ operationId, required? }] — and received ${describeValue(received)}`,
-      fix: 'expect(await app.openapi()).toMatchOpenApi(committed) — the receiver is the generated document: an object with operations: [{ operationId, required? }]',
+      fix: 'expect(await app.openapi()).toMatchOpenApi(committed)   // the receiver is the generated document: an object with operations: [{ operationId, required? }]',
     });
   }
 }
@@ -38,12 +38,12 @@ export class TestNumberExpectedError extends UltimateError {
         ? {
             code: 'X_TEST_NUMBER_EXPECTED',
             cause: `toBeWithinBudget expects a finite number as the budget's limit, and was given ${describeValue(received)}`,
-            fix: "expect(bytes).toBeWithinBudget(budgets['<a key the table has>']) — the limit read undefined or NaN: name a key your budgets table declares",
+            fix: "expect(bytes).toBeWithinBudget(budgets['<a key the table has>'])   // the limit read undefined or NaN: name a key your budgets table declares",
           }
         : {
             code: 'X_TEST_NUMBER_EXPECTED',
             cause: `toBeWithinBudget expects a finite number to compare against the budget, and received ${describeValue(received)}`,
-            fix: 'expect(bytes).toBeWithinBudget(limit) — pass the measured number itself, e.g. (await Bun.file(path).arrayBuffer()).byteLength, never a Promise or a string',
+            fix: 'expect(bytes).toBeWithinBudget(limit)   // pass the measured number itself, e.g. (await Bun.file(path).arrayBuffer()).byteLength, never a Promise or a string',
           },
     );
   }

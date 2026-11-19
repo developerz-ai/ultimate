@@ -192,4 +192,24 @@ describe('unit · rollback({ confirm })', () => {
     expect(sent).not.toContain('delete from');
     expect(sent).toContain('pg_advisory_unlock');
   });
+
+  test('an async confirm is awaited: a rejection reverses nothing, a delay runs no down early', async () => {
+    const client = applied();
+    const refusal = Object.assign(new TypeError('not named'), { code: 'X_TEST' });
+    const { code } = await fixOf(() =>
+      rollback({
+        migrations: [posts],
+        client,
+        confirm: async () => {
+          await new Promise((turn) => setImmediate(turn));
+          throw refusal;
+        },
+      }),
+    );
+    expect(code).toBe('X_TEST');
+    const sent = client.statements.map((statement) => statement.text).join('\n');
+    expect(sent).not.toContain('drop table');
+    expect(sent).not.toContain('delete from');
+    expect(sent).toContain('pg_advisory_unlock');
+  });
 });

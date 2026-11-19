@@ -25,6 +25,9 @@ const CALL: Readonly<Record<SignInFactory, string>> = {
   identityProviderRoutes: "identityProviderRoutes(auth, { providers, mfaPath: '/sign-in/mfa' })",
 };
 
+/** A stand-in origin to read `mfaPath` against: only its pathname is ever compared. */
+const ORIGIN = 'https://x.invalid';
+
 const PAGE =
   "on that page: completeMfa(auth, readMfaChallenge(request) ?? '', code), then send result.cookie and clearMfaChallengeCookie()";
 
@@ -36,9 +39,12 @@ export function mfaLandingPath(factory: SignInFactory, path: string): string {
   const local =
     typeof path === 'string' &&
     path.startsWith('/') &&
+    // `//host` is another origin — and `//` or `//[` is no URL at all: `new URL` throws, uncoded.
+    !path.startsWith('//') &&
     !/[\\?#]/.test(path) &&
-    // `//host` resolves to another origin, and its pathname is no longer the whole input.
-    new URL(path, 'https://x.invalid').pathname === path;
+    URL.canParse(path, ORIGIN) &&
+    // A `..` or `.` segment normalises away, so the pathname is no longer the whole input.
+    new URL(path, ORIGIN).pathname === path;
   if (!local) {
     throw new ConfigInvalidError({
       cause: `${factory}({ mfaPath: ${renderCauseValue(path)} }) is not a normalised absolute path on this origin, so the MFA challenge cookie would be followed by a redirect somewhere else`,

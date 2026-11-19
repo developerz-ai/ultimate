@@ -324,6 +324,20 @@ describe('usage that is not a count', () => {
     );
     expect(store.spent('actor:u1')).toBe(0);
   });
+
+  test('a negative counter offset by a positive one keeps the reservation charged', async () => {
+    const store = memoryBudgetStore();
+    const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
+    const reservation = await ledger.reserve(estimateSpend(request('hi', 4_000)));
+    const reserved = store.spent('actor:u1');
+    // The sum is 5, a count — but one of its counters is not, so the sum is not usage either.
+    await ledger.record(
+      { inputTokens: -5, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      usd(1),
+      reservation,
+    );
+    expect(store.spent('actor:u1')).toBe(reserved);
+  });
 });
 
 /**

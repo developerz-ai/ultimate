@@ -12,7 +12,11 @@ import {
 } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { asCtx, requestContext } from './context';
+import { httpPipeline } from './pipeline';
+import { jsonResponse } from './response';
 import type { Route } from './router';
+import { httpRouter } from './router';
+import { setCookie } from './set-cookie';
 import { cappedWireDates, resetWireDatesCap, WIRE_DATES_MAX_BYTES } from './wire-dates-cap';
 
 const AT = new Date('2026-03-04T05:06:07.089Z');
@@ -60,8 +64,49 @@ describe('cappedWireDates', () => {
     expect(dropped()).toEqual([]);
   });
 
-  test('the cap is a header a default proxy buffer still takes', () => {
-    expect(WIRE_DATES_MAX_BYTES).toBe(4_096);
+  test("the cap leaves room in a 4 KB proxy buffer for the framework's own header block", async () => {
+    // nginx's default `proxy_buffer_size` on a 4 KB page holds the status line and EVERY header.
+    // Measured here: a cross-origin HTTPS answer with the framework's security headers, CSP, CORS,
+    // rate-limit, trace ids and one 512-byte sealed cookie — then the dates header at the cap.
+    const pipeline = httpPipeline({
+      table: httpRouter([
+        {
+          method: 'POST',
+          path: '/chart',
+          meta: { name: 'chart', auth: 'public' },
+          handler: () => {
+            setCookie('session', 'x'.repeat(512), { maxAge: 2_592_000 });
+            const response = jsonResponse({ ok: true });
+            response.headers.set('x-ultimate-dates', 'd'.repeat(WIRE_DATES_MAX_BYTES));
+            return response;
+          },
+        },
+      ]),
+      config: defineHttpConfig({
+        rateLimit: { scope: 'process' },
+        dev: false,
+        cors: { origins: ['https://app.example.com'] },
+      }),
+    });
+    const response = await pipeline.handle(
+      new Request('https://app.test/chart', {
+        method: 'POST',
+        headers: { origin: 'https://app.example.com' },
+      }),
+      { role: 'web', ip: '203.0.113.9' },
+    );
+    let bytes = 'HTTP/1.1 200 OK\r\n'.length + '\r\n'.length;
+    for (const [name, value] of response.headers) {
+      if (name !== 'set-cookie') bytes += name.length + value.length + 4;
+    }
+    for (const line of response.headers.getSetCookie())
+      bytes += 'set-cookie'.length + line.length + 4;
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-ultimate-dates')).toHaveLength(WIRE_DATES_MAX_BYTES);
+    expect(response.headers.getSetCookie()).toHaveLength(1);
+    // Measured ~2 KB without the dates header (As of 2026-11-19); half a KB stays free for an
+    // app's own headers (a longer CSP, a `link`, a second cookie).
+    expect(bytes).toBeLessThanOrEqual(4_096 - 512);
   });
 
   test('an answer whose instants cannot fold stays under the cap: past it, no value at all', () => {

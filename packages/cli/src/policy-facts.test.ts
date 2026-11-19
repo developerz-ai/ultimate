@@ -245,6 +245,24 @@ describe('unit · x policy · explainPolicy · policies that read request input'
     expect(declaration?.label).toBe('post:publish');
   });
 
+  // `Array.isArray`, `=== null`, `typeof`: whole-value checks reach no trap of the stand-in, so
+  // reading alone cannot tell them from an actor-only predicate. A verdict that moves when the
+  // stand-in's shape does is a verdict about the input.
+  test.each([
+    ['Array.isArray', (input: unknown) => Array.isArray(input)],
+    ['=== null', (input: unknown) => input === null],
+    ['typeof', (input: unknown) => typeof input === 'string'],
+  ])('a whole-value check on input (%s) needs input too', (_name, check) => {
+    seedPermission();
+    registerPublishPost(can<PostInput>('post:publish', ({ input }) => check(input)));
+    expect(
+      explainPolicy('publishPost')?.declarations[0]?.rows.map((r) => [r.actor, r.verdict]),
+    ).toEqual([
+      ['anonymous', 'deny'],
+      ['admin', 'needs-input'],
+    ]);
+  });
+
   test('an input the policy throws on is undecidable — no rows, never half a matrix', () => {
     seedPermission();
     registerPublishPost(can<PostInput>('post:publish', ({ input }) => input.post.id === 'post_1'));

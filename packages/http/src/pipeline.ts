@@ -229,9 +229,13 @@ export const httpPipeline = (deps: PipelineDeps): Pipeline => {
           // process here closed the pool under it.
           if (!settled) {
             const done = beginWork();
+            const sent = ctx.response;
             // Nobody will read the orphan's answer; a stream it built is cancelled, not leaked.
+            // Never the answer that WAS sent: an orphan whose later stage finds the slot filled
+            // (`runStages` returns `ctx.response`) hands back the 504 the caller is still reading.
             const drop = (answer?: Response): void => {
               done();
+              if (answer === sent || answer === ctx.response) return;
               void answer?.body?.cancel().catch(() => undefined);
             };
             void work.then(drop, () => drop());

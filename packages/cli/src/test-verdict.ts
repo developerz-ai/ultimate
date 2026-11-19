@@ -51,14 +51,12 @@ const SHOWN_FILES = 3;
  */
 export function allSkippedFinding(input: {
   readonly type?: string;
-  /** The run's `--filter`, carried into the rerun after the services start. */
-  readonly filter?: string;
   readonly skipped: number;
   readonly files: readonly string[];
   /** The environment the `bun test` children saw. */
   readonly env: Env;
-  /** The command that reruns this selection. */
-  readonly rerun: string;
+  /** `reproduceWords`: the selection's words after `x`, every selector kept, quoted here. */
+  readonly rerun: readonly string[];
 }): Finding {
   const missing = unsetServices(input.env);
   const label = input.type ?? 'test';
@@ -66,20 +64,16 @@ export function allSkippedFinding(input: {
     missing.length === 0
       ? 'each skip is its own condition in the file (a skipIf, a test.skip, a needs: whose service is unset)'
       : `the run's environment leaves ${missing.join(', ')} unset, and a test that needs that service skips without it`;
-  // The selection after the services start, one word list so every value in it is quoted.
-  const words = [
-    'test',
-    ...(input.type === undefined ? [] : [input.type]),
-    ...(input.filter === undefined ? [] : ['--filter', input.filter]),
-  ];
   const shown = input.files.slice(0, SHOWN_FILES).map(quoteArg).join(' ');
   return {
     code: 'X_TEST_FAILED',
     cause: `${label} run executed 0 of ${input.skipped} test(s): every one skipped itself, so nothing was checked — ${why}`,
     fix:
       missing.length === 0
-        ? `grep -nE 'skip|needs:' ${shown}   # set what each skip waits for, then: ${input.rerun}`
-        : `${TEST_SERVICES_START} && x ${quoteArg(words)}   # this selection, now with the services: ${input.rerun}`,
+        ? `grep -nE 'skip|needs:' ${shown}   # set what each skip waits for, then: x ${quoteArg(input.rerun)}`
+        : // The reproduce line, whole: `--affected`, `--sample` and a passthrough decide the
+          // selection, and a rebuilt `x test <type> --filter` reran a broader one.
+          `${TEST_SERVICES_START} && x ${quoteArg(input.rerun)}   # this selection, now with the services`,
     docs: ERROR_DOCS_URL,
   };
 }

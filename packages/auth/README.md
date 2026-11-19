@@ -600,8 +600,9 @@ export async function finishSso(request: Request, code: string): Promise<Respons
 | not one normalised absolute path on this origin (`//host`, a scheme, `?`, `#`, `\`, `..`) | `X_CONFIG_INVALID`, at the call |
 
 The challenge travels in that cookie and nowhere else: never the redirect URL, a response body or a
-log line. An absent or stale cookie is `readMfaChallenge(request) === null`, and `completeMfa`
-refuses it like any other bad challenge.
+log line. Only an absent cookie is `readMfaChallenge(request) === null`: the reader opens nothing,
+so an expired or tampered challenge comes back as the string it is, and `completeMfa` refuses it
+(and `null ?? ''`) like any other bad challenge.
 
 **One challenge cookie, both halves public, `As of 2026-11-19`.** A sign-in handler of your own
 (a password form over `login()`) carries its challenge in the same cookie the built-in callbacks
@@ -611,7 +612,7 @@ write, so one second-factor page serves every first leg:
 |---|---|
 | `mfaChallengeOf(error)` | the sealed challenge of an `X_MFA_REQUIRED`, `null` for every other throw |
 | `mfaChallengeCookie(challenge)` | the `Set-Cookie` line that holds it: `__Host-x_mfa`, `HttpOnly; Secure; Path=/; SameSite=Lax`, `Max-Age` the challenge's own five minutes |
-| `readMfaChallenge(request)` | the held challenge, or `null` |
+| `readMfaChallenge(request)` | the held challenge as sent, unverified (expiry is `completeMfa`'s), or `null` when no cookie came |
 | `clearMfaChallengeCookie()` | the `Set-Cookie` line that drops it, sent with the response that finishes the second leg |
 | `MFA_CHALLENGE_COOKIE` | the cookie's name, for a test that builds a `cookie:` header or asserts a `Set-Cookie` |
 

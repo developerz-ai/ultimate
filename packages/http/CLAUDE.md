@@ -238,7 +238,7 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `correlation.ts` | the inbound request id and trace, read before the context and the span exist |
 | `forwarded.ts` | one hop-indexed reader for every header a trusted proxy writes |
 | `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule, read from the right |
-| `wire-dates-cap.ts` | `cappedWireDates`: `x-ultimate-dates` or none past 4 KB, one warn per route |
+| `wire-dates-cap.ts` | `cappedWireDates`: `x-ultimate-dates` or none past 1.5 KB, one warn per route |
 | `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
 | `csrf.ts` | the origin proof an unsafe method from a browser must carry, signed in or not |
 | `webhook-verify.ts` | the INBOUND webhook: canonical string, constant-time mac, replay window. Outbound is `@ultimat3/jobs`' `webhook()` |

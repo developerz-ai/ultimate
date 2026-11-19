@@ -113,16 +113,19 @@ export const bindLateFault = (ctx: RequestContext, hooks: ServerHooks): void => 
  *
  * The caller's hang-up (`isCallerAbort` on `ctx.signal`, which carries every signal a context it
  * was derived inside brought) is not a fault: nobody is there to answer and nothing failed, so it
- * records nothing and leaves the request's one report unspent. Never throws: nothing is above it.
+ * records nothing and leaves the request's one report unspent — and is `false`, like any other
+ * call, with no pipeline request behind it. Never throws: nothing is above it.
  */
 export const reportLateFault = (
   error: unknown,
   ctx: Ctx | undefined = tryUseContext(),
 ): boolean => {
-  if (ctx !== undefined && isCallerAbort(error, ctx.signal)) return true;
+  const abandoned = ctx !== undefined && isCallerAbort(error, ctx.signal);
   for (let scope = ctx; scope !== undefined; scope = parentContext(scope)) {
     const record = late.get(scope);
     if (record === undefined) continue;
+    // A request IS behind it, so `true` — but a hang-up spends nothing and records nothing.
+    if (abandoned) return true;
     late.set(scope, SPENT);
     try {
       record(error);

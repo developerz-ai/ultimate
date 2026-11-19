@@ -225,10 +225,34 @@ describe.skipIf(!hasRedis)(
         ['gone', '1000'],
       ]);
 
-      expect(await rejoinBuckets(client, removed, survivors)).toEqual([]);
+      expect(await rejoinBuckets(client, removed, survivors, 0)).toEqual([]);
 
       expect(Number(await reply(client, 'ZSCORE', [bucket, 'refilled']))).toBe(2000);
       expect(Number(await reply(client, 'ZSCORE', [bucket, 'gone']))).toBe(1000);
+    });
+
+    test('a bucket a refused delete re-creates is leased again, never immortal', async () => {
+      // The sweep empties the row's bucket (Redis drops an empty sorted set), the UNLINK is
+      // refused, and the re-join's ZADD creates the key afresh — with no TTL unless it is leased.
+      const client = raw();
+      const refusing: RedisLike = {
+        get: (key) => client.get(key),
+        set: (key, value) => client.set(key, value),
+        send: (command, args) =>
+          command === 'UNLINK'
+            ? Promise.reject(new TypeError('UNLINK refused'))
+            : client.send(command, args),
+      };
+      const tier = tierOn(refusing);
+      await tier.set('stuck', 'v', { ttlMs: 60_000, tags: [tag('rejoined', '1')] });
+
+      await expect(tier.invalidateTags([tag('rejoined', '1')])).rejects.toBeDefined();
+
+      const bucket = `${PREFIX}:t2:{rejoined}:1`;
+      expect(await count(client, 'ZCARD', bucket)).toBe(1);
+      const ttl = await count(client, 'TTL', bucket);
+      expect(ttl).toBeGreaterThan(0);
+      expect(ttl).toBeLessThanOrEqual(120);
     });
 
     test('a fresh bucket comes out of the join with a lease, never immortal', async () => {
@@ -375,8 +399,10 @@ describe.skipIf(!hasRedis)(
       test('CLIENT KILL: the read is its load inside 50 ms, recorded, and the next one hits', async () => {
         const failures: CacheTierFailureEvent[] = [];
         const off = subscribe('cache.tier_failure', (event) => void failures.push(event.payload));
-        // core's client, the one the tier takes when none is handed in, on a path of its own.
-        const client = redisClient(`${url ?? ''}/1`);
+        // core's client, the one the tier takes when none is handed in, on a path of its own. It is
+        // memoised per URL and this test closes it, so each run names its own (`?run=`, ignored by
+        // the server): a `--rerun-each` run would otherwise be handed the closed one.
+        const client = redisClient(`${url ?? ''}/1?run=${crypto.randomUUID()}`);
         try {
           const tier = tierOn(client);
           await until(() => client.connected, 2_000);

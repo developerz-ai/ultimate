@@ -49,7 +49,10 @@ function familiesOf(t: RawTranslator): ReadonlyMap<string, readonly string[]> {
     // Every infix, never only the first: a named key may itself spell `_select_`.
     for (const infix of name.matchAll(FAMILY)) {
       const stem = name.slice(0, infix.index);
-      index.set(stem, [...(index.get(stem) ?? []), name]);
+      // In place: a copy per member made one family of n members cost n²/2.
+      const members = index.get(stem);
+      if (members === undefined) index.set(stem, [name]);
+      else members.push(name);
     }
   }
   families.set(t, index);

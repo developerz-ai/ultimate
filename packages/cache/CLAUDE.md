@@ -132,7 +132,7 @@ Tier 1. Tagged caching + THE invalidation graph.
   `ZSCAN` keeps exactly that guarantee and nothing stronger). **Sweep BEFORE delete** (`As of
   2026-11-19`): `sweepBuckets` `ZREM`s what was read (8 in flight, settled), then `unlinkAll`
   `UNLINK`s one key per command, then `rejoinBuckets` `ZADD … GT`s back (never lowering a fill's later score; Redis ≥ 6.2), at its read score, every member
-  whose `UNLINK` was refused — into a READ bucket only if it held it. Delete-then-sweep orphaned a
+  whose `UNLINK` was refused — into a READ bucket only if it held it, into a collection bust's unread collection-tag bucket only if the value's own stored tags name it (`writtenUnder`); 1,000 members per `ZADD`, 8 in flight, each followed by the lease script so a re-created bucket is never immortal (`redis-rejoin.test.ts`, `redis.live.test.ts`). Delete-then-sweep orphaned a
   fill landing between the two (`redis-ordering.test.ts`). 10k members ≤ 100 sequential round trips
   (`roundTrips` in the fixture counts them).
 - **A `set` joins its buckets BEFORE it writes the value, and re-checks membership after**; only a

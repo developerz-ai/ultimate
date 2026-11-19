@@ -92,8 +92,13 @@ const isMarker = (line: string | undefined, marker: string): boolean =>
   line === marker || line === `${marker}\r`;
 
 /** The first `marker` line at or after `from`; -1 when there is none, or no `from` to start at. */
-const markerAt = (lines: readonly string[], marker: string, from: number): number =>
-  from < 0 ? -1 : lines.findIndex((line, at) => at >= from && isMarker(line, marker));
+export const markerAt = (lines: readonly string[], marker: string, from: number): number => {
+  if (from < 0) return -1;
+  for (let at = from; at < lines.length; at += 1) {
+    if (isMarker(lines[at], marker)) return at;
+  }
+  return -1;
+};
 
 /** `text` — `git merge-file --diff3 -L ours -L base -L theirs` output — with additions resolved. */
 export function resolveAdditions(text: string): LineMerge {

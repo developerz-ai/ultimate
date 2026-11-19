@@ -87,10 +87,15 @@ export function assertRoleDeclared(role: Role, config: AppConfig | undefined): v
   const declared = config.roles.map((name) => `'${name}'`);
   // Members of core's closed `ROLES` set (`defineConfig` refused the rest, `roleFromEnv` the
   // env's), screened all the same: a fix is pasted, and the guard reads the call, not the proof.
-  const runnable = config.roles.find((name) => name !== 'migrate') ?? 'web';
+  const runnable = config.roles.find((name) => name !== 'migrate');
+  const roles = `roles: [${[...declared, `'${role}'`].join(', ')}]`;
   throw new ConfigInvalidError({
     cause: `ROLE=${role} is not a role this app declares: roles in app.config.ts lists ${config.roles.join(', ')}`,
-    fix: `ROLE=${renderFixShellArg(runnable, '<role>')} bun apps/web/server.ts   # a declared role — or declare this one in app.config.ts: roles: [${[...declared, `'${role}'`].join(', ')}]`,
+    // `roles: ['migrate']` declares no process to serve: the edit is then the only remedy.
+    fix:
+      runnable === undefined
+        ? `defineConfig({ ${roles} })   // in app.config.ts: migrate is the release phase, never a serving process`
+        : `ROLE=${renderFixShellArg(runnable, '<role>')} bun apps/web/server.ts   # a declared role — or declare this one in app.config.ts: ${roles}`,
     meta: { key: 'roles', role, declared: [...config.roles] },
   });
 }

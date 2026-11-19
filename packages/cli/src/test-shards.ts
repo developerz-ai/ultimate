@@ -153,27 +153,30 @@ export interface ReproduceOptions {
  * and the command still runs, over a different file set, which reproduces nothing.
  */
 export function reproduceFor(options: ReproduceOptions): string {
+  return `x ${quoteArg(reproduceWords(options))}`;
+}
+
+/** `reproduceFor`'s words after `x`, unquoted: each is quoted on its own (`quoteArg`) where pasted. */
+export function reproduceWords(options: ReproduceOptions): readonly string[] {
   return [
-    'x test',
-    ...(options.type === undefined ? [] : [quoteArg(options.type)]),
-    ...(options.filter === undefined ? [] : ['--filter', quoteArg(options.filter)]),
+    'test',
+    ...(options.type === undefined ? [] : [options.type]),
+    ...(options.filter === undefined ? [] : ['--filter', options.filter]),
     ...(options.sample === undefined ? [] : ['--sample', String(options.sample)]),
     // `--base` is emitted always rather than only when non-default: the default is `main`, and a
     // rerun days later against a moved `main` is a different diff wearing the same flag.
-    ...(options.affected === undefined
-      ? []
-      : ['--affected', '--base', quoteArg(options.affected.base)]),
+    ...(options.affected === undefined ? [] : ['--affected', '--base', options.affected.base]),
     ...(options.affected?.dirty === true ? ['--dirty'] : []),
     '--workers',
     String(options.workers),
     ...(options.isolate === true ? ['--isolate'] : []),
     ...(options.seed === undefined ? [] : ['--seed', String(options.seed)]),
     // Last, and after a `--` of its own, because that is where the caller typed it and where the
-    // parser will find it again. Quoted for `shell-quote.ts`'s reason: a reproduce line is pasted.
+    // parser will find it again.
     ...(options.passthrough === undefined || options.passthrough.length === 0
       ? []
-      : ['--', ...options.passthrough.map(quoteArg)]),
-  ].join(' ');
+      : ['--', ...options.passthrough]),
+  ];
 }
 
 export interface RunShardsOptions {
@@ -425,8 +428,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       skipped: counts.skipped,
       files: options.files.map((file) => file.path),
       env: childEnv(options.env ?? Bun.env, envOverrides),
-      ...(options.filter === undefined ? {} : { filter: options.filter }),
-      rerun: reproduceFor(plan),
+      rerun: reproduceWords(plan),
     });
     timedSteps = timedSteps.map((step) => ({
       ...step,

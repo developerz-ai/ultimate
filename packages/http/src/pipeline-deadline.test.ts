@@ -96,6 +96,30 @@ describe('the request deadline', () => {
     await cancelled.promise;
   });
 
+  test('a hook that resolves after the 504 never cancels the 504 the caller is still reading', async () => {
+    const late = Promise.withResolvers<null>();
+    const resolved = Promise.withResolvers<void>();
+    const pipeline = pipelineFor(async () => jsonResponse({ reached: true }), {
+      authenticate: async () => {
+        const actor = await late.promise;
+        resolved.resolve();
+        return actor;
+      },
+    });
+
+    const response = await pipeline.handle(new Request('http://app.test/slow'), {
+      role: 'web',
+      ip: REMOTE,
+    });
+    expect(response.status).toBe(504);
+    // The hook finishes now, before the caller reads a byte: the orphan's run ends on the slot
+    // the 504 already holds, and that answer is the one on the wire, not an orphan's.
+    late.resolve(null);
+    await resolved.promise;
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((next) => setImmediate(next));
+    expect(((await response.json()) as { code: string }).code).toBe('X_TIMEOUT');
+  });
+
   test('a caller that goes away mid-handler is a 499, never reported', async () => {
     const seen: unknown[] = [];
     const entered = Promise.withResolvers<void>();

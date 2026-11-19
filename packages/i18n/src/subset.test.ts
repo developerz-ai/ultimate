@@ -92,6 +92,39 @@ describe('catalogSubset', () => {
     expect(listed).toBe(1);
   });
 
+  // The first subset builds the family index. Copying a stem's member list per member made one
+  // family of n members cost n²/2 element steps; counted, not timed, so load cannot flake it.
+  test('one select family of n members is indexed in steps linear in n', () => {
+    const stepsFor = (n: number): number => {
+      const names = Array.from({ length: n }, (_, at) => `app.pick_select_v${at}`);
+      const family = { raw: (): string => 'x', keys: (): string[] => names, locale: server.locale };
+      const original = Array.prototype[Symbol.iterator];
+      let steps = 0;
+      // Every array walk the index build makes — `for…of`, a spread — goes through this iterator.
+      Reflect.set(Array.prototype, Symbol.iterator, function counted(this: unknown[]) {
+        const walk = original.call(this);
+        return {
+          next: () => {
+            steps += 1;
+            return walk.next();
+          },
+          [Symbol.iterator]() {
+            return this;
+          },
+        };
+      });
+      try {
+        catalogSubset(family, []);
+      } finally {
+        Reflect.set(Array.prototype, Symbol.iterator, original);
+      }
+      return steps;
+    };
+    const small = stepsFor(1_000);
+    expect(small).toBeGreaterThan(1_000);
+    expect(stepsFor(2_000)).toBeLessThan(3 * small);
+  });
+
   test('a __proto__ key in the parsed subset stays a key', () => {
     const island = subsetTranslator(
       JSON.parse('{"locale":"en","catalog":{"__proto__":"x","ui.retry":"Retry"}}'),

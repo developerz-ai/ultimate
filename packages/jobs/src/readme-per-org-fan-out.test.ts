@@ -2,7 +2,7 @@
 // driver, so the example an agent copies is the one proved — the cron job lists orgs across tenants
 // without `X_TENANCY_CROSS_DENIED`, and every child is queued under, and runs as, its own org.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as core from '@ultimat3/core';
 import * as entity from '@ultimat3/entity';
 import { installJobDriver, resetJobDriver } from './adapter';
@@ -58,6 +58,12 @@ async function readmeSample(stubs: Stubs): Promise<Sample> {
 
 const ORG_A = '018f3b5e-0000-7000-8000-00000000000a';
 const ORG_B = '018f3b5e-0000-7000-8000-00000000000b';
+const MEMBER = '018f3b5e-0000-7000-8000-00000000010';
+/** The tenant-scoped table the org list is read from. */
+const MEMBERS = entity.entity('readme_fan_out_members', {
+  columns: { id: entity.uuid(), orgId: entity.uuid().tenant() },
+  primaryKey: ['id'],
+});
 // 2026-07-26T06:00:00Z.
 const OCCURRENCE = Date.UTC(2026, 6, 26, 6, 0, 0);
 
@@ -72,19 +78,27 @@ afterEach(() => {
   resetJobDriver();
   resetJobsFacade();
 });
+afterAll(() => {
+  entity.clearRegistry();
+});
 
 describe("the README's per-org fan-out from a schedule", () => {
   test('lists orgs across tenants, then queues and runs one job per org AS that org', async () => {
     const driver = memoryJobDriver();
     installJobDriver(driver);
+    const { members } = entity.database({ members: MEMBERS }, { driver: entity.memoryDriver() });
+    for (const [n, orgId] of [ORG_A, ORG_B].entries()) {
+      await members.insert({ id: `${MEMBER}${n}`, orgId }, { orgId });
+    }
     const listedBy: string[] = [];
     const sentAs: (readonly [string, string | undefined])[] = [];
     const { orgDigest, orgDigests } = await readmeSample({
-      // The stand-in for a tenant-scoped read: it spans orgs only inside a PROVEN `crossTenant()`.
+      // A REAL tenant-scoped read, opening no scope of its own: outside the README's
+      // `crossTenant()` it names no org, and the tenancy guard refuses it (`X_TENANCY_UNSCOPED`).
       listOrgIds: async () => {
-        entity.crossTenant('the stub read re-proves the scope the README opened', () => undefined);
         listedBy.push(core.useContext().actor.id);
-        return [ORG_A, ORG_B];
+        const rows = await members.orderBy('id').all();
+        return [...new Set(rows.map((row) => row.orgId))];
       },
       sendDigest: async (orgId) => {
         sentAs.push([orgId, core.useContext().actor.orgId]);
