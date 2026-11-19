@@ -121,13 +121,12 @@ TS
       ["import * as health from \x27./health\x27;",
        "import * as enqueueHold from \x27../app/proof/enqueue-hold\x27;\nimport * as holdJob from \x27../app/proof/hold-job\x27;\nimport * as proofAttempts from \x27../app/proof/proof-attempts\x27;"],
     ]);
+    // One entry per line (x merge-driver): each module goes in as the first entry of its list.
     let api = await Bun.file("apps/web/api/index.ts").text();
-    api = api
-      .replace("actions: [health,", "actions: [enqueueHold, health,")
-      .replace("queries: [postList]", "queries: [postList, proofAttempts]")
-      .replace("jobs: [reindexPost]", "jobs: [holdJob, reindexPost]");
-    for (const name of ["enqueueHold, health", "postList, proofAttempts", "holdJob, reindexPost"]) {
-      if (!api.includes(name)) throw new TypeError(`apps/web/api/index.ts: defineApi no longer reads "${name}"`);
+    for (const [list, name] of [["actions", "enqueueHold"], ["queries", "proofAttempts"], ["jobs", "holdJob"]]) {
+      const opening = new RegExp(`(\\n  ${list}: \\[\\n(?:    //[^\\n]*\\n)?)`);
+      if (!opening.test(api)) throw new TypeError(`apps/web/api/index.ts: defineApi no longer opens "${list}: [" on its own line`);
+      api = api.replace(opening, `$1    ${name},\n`);
     }
     await Bun.write("apps/web/api/index.ts", api);
   ') || refuse "the held job could not be added to the scaffold. fix: read add_held_job in docker/deploy-proof/held-job.sh against packages/cli/src/templates (x new's db client and api/index.ts)"

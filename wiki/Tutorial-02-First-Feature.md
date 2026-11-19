@@ -249,7 +249,7 @@ bunx x db gen "add todos"
 ```
 
 ```text
-✓ migration …_add_todos generated
+✓ migration …_add_todos generated — tables: todos
 ```
 
 The 1.1.0 workaround this step used to carry (a hand-written `db-gen.ts` script, and two manual
