@@ -1,7 +1,7 @@
 // What `x g query` asks of a slice somebody wrote before it plans a file: the table its
 // `entity.ts` declares and the rule its `policy.ts` exports. Split from `query.ts` at the ceiling.
 
-import { UltimateError } from '@ultimat3/core';
+import { stripComments, UltimateError } from '@ultimat3/core';
 import { SlicePolicyIncompleteError } from '../generate-slice-policy';
 import type { FeatureTarget } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
@@ -48,6 +48,26 @@ export function assertSliceExports(target: SliceOnDisk, feature: NameSet, live: 
     missing,
     kind: 'query',
   });
+}
+
+/** The columns the read orders by, so its in-memory half can apply the order to what it answers. */
+const ORDER_COLUMNS = ['id', 'title', 'createdAt'] as const;
+
+/**
+ * Whether the read may answer through the slice's `<Feature>View`: this run writes the scaffolded
+ * entity (absent), or the one on disk declares the view over every column the read orders by — a
+ * view without `createdAt` is a sort the projected rows cannot answer (X_QUERY_COLUMN_UNSELECTED).
+ * Otherwise the read answers the row, as it did before the view existed: never an import of a
+ * name the author's `entity.ts` does not export.
+ */
+export function readsThroughView(feature: NameSet, sliceEntity: string | undefined): boolean {
+  if (sliceEntity === undefined) return true;
+  const code = stripComments(sliceEntity);
+  const declared = new RegExp(
+    `\\bexport\\s+const\\s+${feature.pascal}View\\s*=\\s*\\w+\\.\\$view\\(\\[([^\\]]*)\\]`,
+  ).exec(code);
+  const keys = declared?.[1];
+  return keys !== undefined && ORDER_COLUMNS.every((column) => keys.includes(`'${column}'`));
 }
 
 /** A foundation test asserts the scaffold's shape: never planted beside a module the author wrote. */

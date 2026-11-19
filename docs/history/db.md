@@ -850,6 +850,18 @@ restore either. `regenerate` therefore takes `live` and `moved` and calls `moveD
 which drops each explicitly, restores it in `down`, and puts the name where the ordinary diff will
 CREATE it. `generate-generated-rebuild.live.test.ts` applies it both ways.
 
+**The rebuild is asked for as a drop, `As of 2026-11-19`.** It drops the stored values, and until
+then `x db gen` wrote it unasked: a plain column newly declared `generated` lost every value it held
+with no flag. `column-drop.ts` (split from `generate.ts`) now puts the rebuild through the same two
+consents an ordinary drop meets, in the same order: `X_MIGRATION_ROLLING_UNSAFE`
+(`columnRebuildNotRetired`, worded for a rebuild — the previous release's pods still write the
+column, and Postgres refuses a value for a generated one, `428C9`) unless the column was retired
+first or `--rolling-unsafe` is passed, then `X_MIGRATION_IRREVERSIBLE` unless `--allow-destructive`.
+A rebuild of a never-retired column writes `-- rolling-unsafe: true`. The same release made every
+column drop's `down` re-create the indexes and foreign keys the previous snapshot recorded over
+the column (`restoreDependents`); NOT NULL and the default are not restored, since the rows come
+back empty. `generate-generated-column.test.ts`, `generate-rolling.test.ts`.
+
 **A generated column's own `alter … type` deliberately does NOT move them, and the reason is
 measured.** It trips the same `42883` (`operator does not exist: text > integer`, on a generated
 `integer` column under `where (doubled > 0)`) — but moving the index aside only relocates the
@@ -1956,3 +1968,18 @@ Verbatim from [`packages/db/CLAUDE.md`](../../packages/db/CLAUDE.md), which keep
   on `up` that governs `down`): a concurrent statement bare and unbounded, any other in its own tx; an
   INVALID index holding a concurrent build's name is dropped first. A concurrent statement in a
   transactional migration is `X_MIGRATION_CONCURRENT_IN_TRANSACTION`, before `BEGIN`.
+
+## Embedded development fixes and rollback consent (2026-11-19)
+
+- **`embeddedDev()`** (`migration-errors.ts`) is the environment resolving `development` (`ULTIMATE_ENV`,
+  else `NODE_ENV`, else the default — so unset counts) with no `DATABASE_URL`. There `psql "$DATABASE_URL"` has nothing to dial and no newer image exists to
+  `x deploy`, so `X_MIGRATION_CONFLICT` (both `auditLedger` sites, and `rollback()`'s unknown `down`)
+  and `X_MIGRATION_ROLLBACK_DESTRUCTIVE` lead with `embeddedResetFix(why)`: `x stop --json && x db
+  reset`, which works pasted whether a dev server runs or not, and says the rows are lost. The
+  restore (`git status`, or `git log` for an edited file) stays in the line. `test` and an external
+  development database keep the shipped lines. Kept in `migration-errors.ts`, not a module of its
+  own: a new file put `ROLE=migrate`'s graph over its serve-graph ceiling.
+- **`rollback({ confirm })`** is called once under the advisory lock, with the rows `rollbackTargets`
+  chose, before the first `down`; a throw reverses nothing. The CLI's consent rule
+  (`ROLLBACK_ALLOW_DESTRUCTIVE` naming every id outside development and test) needs the lock's own
+  ledger read, which only `rollback()` holds.

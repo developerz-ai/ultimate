@@ -252,11 +252,13 @@ describe('unit · parseArgs', () => {
     expect(thrownBy(() => parseArgs(['verifyy'], SPECS)).fix).toStartWith('x verify --help');
   });
 
-  test('a subcommand that resembles nothing is refused with no suggestion either', () => {
+  // No invented lead, but the command's OWN page, never the top-level one: the command was right,
+  // and `x help db` lists exactly the subcommands it has — `x help` sent an agent through forty.
+  test('a subcommand that resembles nothing leads to its command’s page, not a guess', () => {
     const failure = thrownBy(() => parseArgs(['db', 'zzzzzzzzzz'], SPECS));
     expect(failure.code).toBe('X_CLI_UNKNOWN_COMMAND');
     expect(failure.cause).toBe('"x db zzzzzzzzzz" is not a command (known: gen, migrate, branch)');
-    expect(failure.fix).toBe('x help');
+    expect(failure.fix).toBe('x help db');
     // and the near-miss arm names the command AND the subcommand, never the subcommand alone.
     expect(thrownBy(() => parseArgs(['db', 'migrat'], SPECS)).fix).toBe('x db migrate');
   });

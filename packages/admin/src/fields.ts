@@ -220,12 +220,11 @@ export function filterKindFor(
 /**
  * Sortable means "usable as the keyset cursor", so it is deliberately narrow: an ordered
  * scalar, or a text column with an index behind it. Sorting on an unindexed column would
- * turn every page of the admin into a sort of the whole table. `money` is a (minor, currency)
- * pair with no order of its own — `orderBy` refuses the bare column, and `.minor` across currencies
- * ranks 100 JPY above 99 USD — so it is never one.
+ * turn every page of the admin into a sort of the whole table. A `money` sort is (currency,
+ * minor): amounts compare only within a currency (`repo-entity.ts`, `keyset-seek.ts`).
  */
 export function sortable(type: AdminFieldType, column: AdminColumnFacts): boolean {
-  if (type === 'number' || type === 'date' || type === 'timestamptz') {
+  if (type === 'number' || type === 'money' || type === 'date' || type === 'timestamptz') {
     return true;
   }
   if (type !== 'text') return false;

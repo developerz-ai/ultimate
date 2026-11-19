@@ -145,19 +145,29 @@ describe('unit · pushSubscribe / pushUnsubscribe', () => {
   });
 
   // `expiration_time` is a Postgres `bigint`: a value it cannot hold raised an uncoded driver
-  // error (a 500) there while the memory store kept it. Refused at the boundary, so both agree.
-  test('a fractional or out-of-range expirationTime is X_INPUT_INVALID in both stores', async () => {
+  // error (a 500) there while the memory store kept it. The published input stays `number | null`
+  // (narrowing it is a contract break), so the value is read where it is USED: one that is not a
+  // whole number of milliseconds states no expiry, before either store sees it.
+  test('a fractional or out-of-range expirationTime is stored as no expiry in both stores', async () => {
     const { store, subscribe } = await surface();
     const good = await body();
     for (const expirationTime of [1_700_000_000_000.5, 1e30, -1, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(await subscribe.as(ana, { ...good, expirationTime })).toEqual({
+        endpoint: good.endpoint,
+      });
+      expect((await store.listFor('ana')).map((row) => row.expirationTime)).toEqual([null]);
+    }
+    // Not a number at all never reached the handler: `t.number` already refuses it, as on main.
+    for (const expirationTime of [Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(await refusal(() => subscribe.as(ana, { ...good, expirationTime }))).toBe(
         'X_INPUT_INVALID',
       );
     }
-    expect(await store.listFor('ana')).toEqual([]);
     // What a browser sends: a whole number of milliseconds, or null.
     await subscribe.as(ana, { ...good, expirationTime: 1_900_000_000_000 });
     expect(await store.listFor('ana')).toMatchObject([{ expirationTime: 1_900_000_000_000 }]);
+    await subscribe.as(ana, { ...good, expirationTime: 0 });
+    expect(await store.listFor('ana')).toMatchObject([{ expirationTime: 0 }]);
   });
 
   test('unsubscribe removes the caller’s own device and never another person’s', async () => {

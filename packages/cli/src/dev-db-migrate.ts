@@ -1,8 +1,14 @@
-// `POST /_x/db/migrate`: `x db migrate` beside a live `x dev`, applied BY the process that holds
-// the embedded database. PGlite takes one writer, so the command asks the holder instead of
-// opening `.x/pgdata` a second time. Loopback Host and peer, same-origin: the `/_x/db` doors.
+// `POST /_x/db/migrate|rollback|ledger`: `x db migrate`, `rollback` and `gen`'s ledger read beside
+// a live `x dev`, done BY the process that holds the embedded database. PGlite takes one writer,
+// so the command asks the holder instead of opening `.x/pgdata` a second time. Loopback Host and
+// peer, same-origin: the `/_x/db` doors.
 
-import { NotImplementedError, renderThrowable, UltimateError } from '@ultimat3/core';
+import {
+  NotImplementedError,
+  renderFixShellArg,
+  renderThrowable,
+  UltimateError,
+} from '@ultimat3/core';
 import type { DriftDifference } from '@ultimat3/db';
 import { checkDrift, db, migrate } from '@ultimat3/db';
 import type { CatalogDescription } from '@ultimat3/db/schema-dump';
@@ -13,11 +19,17 @@ import { loadAppConfig } from './app-config-load';
 import { acceptCreatedTables } from './db-accept-created';
 import { frameworkStorageDrift } from './db-object-drift';
 import { assertSameOrigin, hostRefusal } from './dev-dashboard-guard';
+import { ledgerInDev, rollbackInDev, stepsOf } from './dev-db-rollback';
+import { ledgerMoved } from './dev-db-settled';
 import { readMigrations } from './migrations';
 import { rowSecurityDeclared } from './row-security-boot';
 
 /** The path `db-migrate-through-dev.ts` posts to, under the dashboard's own `/_x/db`. */
 export const DEV_MIGRATE_PATH = '/_x/db/migrate';
+
+/** The paths `db-rollback-pass.ts` and `db-applied-edits.ts` post to, beside it. */
+export const DEV_ROLLBACK_PATH = '/_x/db/rollback';
+export const DEV_LEDGER_PATH = '/_x/db/ledger';
 
 /** The command that works when this process cannot apply: the embedded database to itself. */
 export const MIGRATE_ALONE_FIX = 'x stop --json && x db migrate && x dev';
@@ -44,18 +56,22 @@ export async function devCanMigrate(root: string): Promise<boolean> {
   return !rowSecurityDeclared(await loadAppConfig(root));
 }
 
+/** Refused where this process serves as `x_app`; `fix` is the command run alone, start to start. */
+async function assertDevCanMigrate(root: string, fix: string): Promise<void> {
+  if (await devCanMigrate(root)) return;
+  throw new NotImplementedError({
+    cause:
+      'this x dev serves the embedded database as x_app (database.rowSecurity), and migrations run as x_migrator — one embedded session cannot hold both',
+    fix,
+  });
+}
+
 /**
  * `serve.ts`'s `runMigrations` over the client this process already holds: the same file list,
  * the same ledger, the same post-condition. No boot and no `stop()` — the database is `x dev`'s.
  */
 export async function migrateInDev(root: string, env: Env): Promise<DevMigrateData> {
-  if (!(await devCanMigrate(root))) {
-    throw new NotImplementedError({
-      cause:
-        'this x dev serves the embedded database as x_app (database.rowSecurity), and migrations run as x_migrator — one embedded session cannot hold both',
-      fix: MIGRATE_ALONE_FIX,
-    });
-  }
+  await assertDevCanMigrate(root, MIGRATE_ALONE_FIX);
   const migrations = await readMigrations(root);
   const report = await migrate({
     migrations,
@@ -98,25 +114,52 @@ export interface DevMigrateRouteInput {
 }
 
 /**
- * One POST. A failed pass answers 200 with `ok: false` and the error's own three fields, never the
- * pipeline's rendered page: the caller is a CLI that re-throws them under the same code.
+ * One POST per path. A failed pass answers 200 with `ok: false` and the error's own three fields,
+ * never the pipeline's rendered page: the caller is a CLI that re-throws them under the same code.
+ */
+function door(
+  input: DevMigrateRouteInput,
+  path: string,
+  name: string,
+  run: (request: UltimateRequest) => Promise<unknown>,
+): Route {
+  return {
+    method: 'POST',
+    path,
+    meta: { name, auth: 'public', tags: ['_x'] },
+    handler: async (request: UltimateRequest): Promise<Response> => {
+      const refused = hostRefusal(request, input.devUrl());
+      if (refused !== undefined) return refused;
+      assertSameOrigin(request);
+      try {
+        return jsonResponse({ ok: true, data: await run(request) });
+      } catch (error) {
+        return jsonResponse({ ok: false, error: refusalOf(error) });
+      }
+    },
+  };
+}
+
+/**
+ * A pass that moved the ledger ends in a generation (`dev-db-settled.ts`), so this process's
+ * findings stop saying what the ledger said before it — in the `finally`: a pass that failed
+ * halfway moved it too.
  */
 export function devMigrateRoutes(input: DevMigrateRouteInput): readonly Route[] {
+  const { root, env } = input;
   return [
-    {
-      method: 'POST',
-      path: DEV_MIGRATE_PATH,
-      meta: { name: 'dev._x.db.migrate', auth: 'public', tags: ['_x'] },
-      handler: async (request: UltimateRequest): Promise<Response> => {
-        const refused = hostRefusal(request, input.devUrl());
-        if (refused !== undefined) return refused;
-        assertSameOrigin(request);
-        try {
-          return jsonResponse({ ok: true, data: await migrateInDev(input.root, input.env) });
-        } catch (error) {
-          return jsonResponse({ ok: false, error: refusalOf(error) });
-        }
-      },
-    },
+    door(input, DEV_MIGRATE_PATH, 'dev._x.db.migrate', () =>
+      migrateInDev(root, env).finally(ledgerMoved),
+    ),
+    door(input, DEV_ROLLBACK_PATH, 'dev._x.db.rollback', async (request) => {
+      const steps = stepsOf(request.url.searchParams.get('steps'));
+      await assertDevCanMigrate(
+        root,
+        `x stop --json && x db rollback --steps ${renderFixShellArg(String(steps), '<n>')} && x dev`,
+      );
+      return rollbackInDev(root, env, steps).finally(ledgerMoved);
+    }),
+    // A read, behind the same doors and the same verb: nothing under `/_x/db` answers a GET.
+    door(input, DEV_LEDGER_PATH, 'dev._x.db.ledger', () => ledgerInDev()),
   ];
 }

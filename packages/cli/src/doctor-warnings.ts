@@ -37,6 +37,8 @@ export async function doctorWarnings(probe: DoctorProbe): Promise<readonly Findi
     ...((await probe.mergeDriverUnset?.()) === true ? [MERGE_DRIVER_UNSET] : []),
     // A port another checkout's dev server holds: nothing is wrong with this environment.
     ...(await portWarnings(probe)),
+    // Served by the scan, so never refused: an action or query the typed client cannot see.
+    ...((await probe.unlistedPrimitives?.()) ?? []),
   ];
 }
 

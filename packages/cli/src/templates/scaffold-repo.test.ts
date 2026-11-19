@@ -265,6 +265,16 @@ describe('unit · the first commands a scaffold tells its author to run exist on
     expect(scaffolded.dependencies?.['solid-js']).toBe(root.devDependencies?.['solid-js'] ?? '');
   });
 
+  // The app's CLAUDE.md prescribes `useQuery` and `channel()` from `@ultimat3/realtime`; an isolated
+  // install resolves only what the app declares, so importing it was a bare TS2307, and the
+  // `bun add` an agent reached for wrote a range `x doctor` then refused (X_FRAMEWORK_PIN_RANGE).
+  test('the scaffold declares @ultimat3/realtime, at the exact framework pin', () => {
+    const scaffolded = JSON.parse(emitted('package.json')) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(scaffolded.dependencies?.['@ultimat3/realtime']).toBe('1.0.0');
+  });
+
   test('the scaffold lints with the Biome this repository itself runs', async () => {
     // Exact, where the TypeScript pin above compares majors: a formatter is a build input, and a
     // patch apart is already visible — the repo sat on 2.5.5 under a `^2.4.15` range while the

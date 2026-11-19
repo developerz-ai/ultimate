@@ -171,8 +171,10 @@ describe('unit · x i18n check', () => {
     expect(finding?.cause).toContain('farewell');
     expect(finding?.cause).toContain('extra');
     expect(finding?.cause).toContain('nav.about');
+    // True for every locale: `es` here is not the default, and its sync writes ⟦<the en string>⟧,
+    // never the ⟦key⟧ the comment promised for all of them.
     expect(finding?.fix).toBe(
-      'x i18n sync es   # writes each key above as ⟦key⟧ — replace every one with the real string',
+      'x i18n sync es   # writes each key above as a placeholder to replace with the real string: ⟦key⟧ in the default locale, ⟦the default locale’s string⟧ in any other',
     );
     expect(result.summary).toBe(msg('cli.i18n.gaps', { missing: 3, locales: 1 }));
   });

@@ -9,6 +9,7 @@ import {
   TEST_PORT_SPREAD,
   TEST_PORTS,
   testPorts,
+  testProjectName,
   testServicesFiles,
 } from './scaffold-test-services';
 
@@ -115,5 +116,35 @@ describe('unit · the scaffolded test stack is fast and silent', () => {
         expect(ports[key] - TEST_PORTS[key]).toBeLessThan(TEST_PORT_SPREAD);
       }
     }
+  });
+});
+
+// Two scaffolds of one name on one machine shared `<name>-test`: the second one's gate met the
+// first one's stack, stopped or not. A scaffold that knows its root names its stack for it.
+describe('unit · a scaffold that knows its root owns its compose project and ports', () => {
+  const composeOf = (root?: string) => {
+    const file = testServicesFiles(names('shop'), root).find((f) => f.path === TEST_COMPOSE_PATH);
+    return (Bun.YAML.parse(String(file?.contents)) as { name: string }).name;
+  };
+
+  test('the project name carries a hash of the root, stable, and differs per root', () => {
+    expect(composeOf('/home/a/shop')).toBe(testProjectName(names('shop'), '/home/a/shop'));
+    expect(composeOf('/home/a/shop')).toMatch(/^shop-test-[0-9a-f]{8}$/);
+    expect(composeOf('/home/a/shop')).toBe(composeOf('/home/a/shop'));
+    expect(composeOf('/home/a/shop')).not.toBe(composeOf('/tmp/b/shop'));
+  });
+
+  test('two roots get different ports, and the env file names the ones published', () => {
+    const one = testPorts(names('shop'), '/home/a/shop');
+    expect(one).not.toEqual(testPorts(names('shop'), '/tmp/b/shop'));
+    const env = testServicesFiles(names('shop'), '/home/a/shop').find(
+      (f) => f.path === TEST_ENV_PATH,
+    );
+    expect(String(env?.contents)).toContain(`127.0.0.1:${one.postgres}/`);
+  });
+
+  test('without a root, the bytes are exactly what every earlier scaffold wrote', () => {
+    expect(composeOf()).toBe('shop-test');
+    expect(testPorts(names('shop'), undefined)).toEqual(testPorts(names('shop')));
   });
 });

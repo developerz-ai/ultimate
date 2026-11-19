@@ -98,6 +98,23 @@ describe('unit · x doctor · warnings beside the verdict', () => {
     expect(result.data).toMatchObject({ warnings: [{ code: 'X_PORT_IN_USE' }] });
   });
 
+  // Served by the scan, so never refused: an app that upgrades keeps a green doctor, and is told
+  // the import line that lists the action — the one X_JOB_UNREGISTERED prints for a job.
+  test('an action no defineApi() lists is a warning, never a finding', async () => {
+    const unlisted = {
+      code: 'X_ACTION_UNREGISTERED',
+      cause: 'refundTicket declared in apps/web/app/ticket/actions/refund-ticket.ts is an action',
+      fix: "import * as refundTicket from '../app/ticket/actions/refund-ticket';",
+      at: 'apps/web/app/ticket/actions/refund-ticket.ts',
+    };
+    const result = await reportDoctor(
+      probe({ root: appRoot(), unlistedPrimitives: async () => [unlisted] }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.findings).toEqual([]);
+    expect(result.data).toMatchObject({ warnings: [{ code: 'X_ACTION_UNREGISTERED' }] });
+  });
+
   test('a real finding still reds the doctor, with the warnings beside it', async () => {
     const result = await reportDoctor({ ...ranged(), exists: () => false });
     expect(result.ok).toBe(false);

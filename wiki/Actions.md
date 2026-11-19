@@ -135,12 +135,12 @@ An action that answers in pieces declares `stream: <chunk schema>` and writes `h
 
 | Caller | Gets |
 |---|---|
-| `accept: text/event-stream` on its route | `event: chunk` per yield (parsed by `stream` first), then one `event: done` (output; its instants named by path on a `dates:` field, which a reader that does not know it ignores) or `event: error` (problem document; a 5xx after the first chunk is sent to the error reporter, as the JSON path's is); `x-accel-buffering: no`, a `: keep-alive` every 15 s |
+| `accept: text/event-stream` on its route | `event: chunk` per yield (parsed by `stream` first), then one `event: done` (output) or `event: error` (problem document). Each `chunk` and the `done` frame carry their instants on a `dates:` field, which a reader that does not know it ignores. A fault after the first chunk is recorded as the JSON path's is — monitor (5xx), `hooks.onError`, log line — once (`reportLateFault`, `@ultimat3/http`); a reader's cancel is not a fault; `x-accel-buffering: no`, a `: keep-alive` every 15 s |
 | anything else — JSON, MCP, `.job()`, `.as()`, a direct call | the generator drained, the output alone: one contract |
 | refused before the handler starts (policy, input, rate limit) | the ordinary problem response, never a stream |
 | the client leaves mid-stream | `ctx.signal` aborts inside the handler |
 | a browser | `clientStream({ url, body })` from `@ultimat3/core`: `fetch`, never `EventSource` |
-| a `Date` in the output | a `Date` again in `clientStream` and the typed client: the server names each instant's path (`x-ultimate-dates` on the plain and the enveloped 200, `dates:` on the `done` frame) and the client revives it. The body and OpenAPI are unchanged; a client ignoring the header reads the ISO string. `As of 2026-11` (`packages/action/src/record-wire.ts`) |
+| a `Date` in the output | a `Date` again in `clientStream` and the typed client: the server names each instant's path (`x-ultimate-dates` on the plain and the enveloped 200, `dates:` on each `chunk` and the `done` frame) and the client revives it. The body and OpenAPI are unchanged; a client ignoring the header reads the ISO string. `As of 2026-11-19` (`packages/action/src/record-wire.ts`, `packages/action/src/http-stream.ts`) |
 
 A chunk its schema refuses, or `stream:` beside a handle that is not a generator, is `X_ACTION_STREAM_INVALID`. The OpenAPI 200 lists `text/event-stream` beside `application/json` for a streaming action only. `agent()` streams this way.
 

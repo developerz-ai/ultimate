@@ -23,15 +23,21 @@ import { assertPushEndpoint } from './push-send';
 const subscribeInput = () =>
   t.object({
     endpoint: t.string.min(1).max(2048),
-    // Whole milliseconds a Postgres `bigint` holds — what a browser sends. A fraction or `1e30`
-    // was an uncoded driver error at the Postgres store and a stored row at the memory one.
-    expirationTime: t.nullable(t.number.int().min(0).max(Number.MAX_SAFE_INTEGER)),
+    expirationTime: t.nullable(t.number),
     keys: t.object({ p256dh: t.string.max(128), auth: t.string.max(64) }),
     /** BCP-47 — every notification to this device renders in it (`renderPushPayload`). */
     locale: t.locale,
     /** IANA — the zone a notification formatting a date would need. */
     timeZone: t.timezone,
   });
+
+/**
+ * `expiration_time` is a Postgres `bigint`: a fraction or `1e30` was an uncoded driver error there
+ * and a stored row in memory. The input stays `number | null` — narrowing a published schema is a
+ * contract break — so a value that is not whole milliseconds states no expiry, for both stores.
+ */
+const storableExpiry = (at: number | null): number | null =>
+  at !== null && Number.isSafeInteger(at) && at >= 0 ? at : null;
 
 const subscribeOutput = () => t.object({ endpoint: t.string });
 const unsubscribeInput = () => t.object({ endpoint: t.string.min(1).max(2048) });
@@ -82,7 +88,7 @@ export function pushSubscribe(
         timeZone: input.timeZone,
         actorId: ctx.actor.id,
         createdAt: ctx.now().getTime(),
-        expirationTime: input.expirationTime,
+        expirationTime: storableExpiry(input.expirationTime),
       });
       return { endpoint: input.endpoint };
     },

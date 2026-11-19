@@ -101,7 +101,7 @@ The `live` step prints one line on stderr for the stack it got:
 | `services: reused <project>` | they were already up, from this checkout |
 | `services: shared <project> with <dir>` | another checkout of this app started them (same first commit, or same `origin`), or `ULTIMATE_TEST_SERVICES_SHARED=1` says the share is intended |
 
-The compose project and its ports come from the app's name, so two different apps with one name land on the same stack. That is refused: the step warns with `X_TEST_SERVICES_UNAVAILABLE` naming the other directory, compose is not run, and the live suites run without the stack. Checkouts git cannot tie together count as different apps.
+The compose project is the `name:` in `docker/docker-compose.test.yml`. An app `x new` wrote before 31.49.0 states `<app>-test`, so two different apps with one name land on the same stack; from 31.49.0 `x new` writes `<app>-test-<hash of the scaffold directory>` and picks the ports from both, so they do not (`As of 2026-11-19`). A shared name is refused: the step reports `X_TEST_SERVICES_UNAVAILABLE` naming the other directory — a stack that is stopped is said to be stopped, its fix `docker compose -p <project> down --volumes` — compose is not run, and the live suites run without the stack (red when the floor holds `live` and nothing ran). Checkouts git cannot tie together count as different apps. For good: give the app its own `name:` and ports, in the compose file and `docker/test-services.env`.
 
 `x clean --services` stops this checkout's stack, keeps one another living checkout started, and lists every other test stack on the machine with its stop command, marking those whose checkout is gone. It stops nothing else.
 

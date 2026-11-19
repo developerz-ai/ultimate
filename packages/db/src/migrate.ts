@@ -15,8 +15,14 @@ import { baseClient, type DbClient, type DbConnection, isReservable } from './cl
 import { expectedQueryLoop } from './expected-loop';
 import { MIGRATION_LOCK_RETRIES } from './migrate-lock-retry';
 import { destructiveBit, ledgerAheadOfBuild } from './migrate-rollback';
-import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './migration-errors';
-import type { Migration } from './migration-ledger';
+import {
+  embeddedDev,
+  embeddedResetFix,
+  migrateConcurrent,
+  migrationConflict,
+  rollbackStepsInvalid,
+} from './migration-errors';
+import type { LedgerRow, Migration } from './migration-ledger';
 import {
   auditLedger,
   ensureLedger,
@@ -327,11 +333,17 @@ export interface RollbackOptions {
   readonly lockTimeoutMs?: number | undefined;
   /** Attempts past the first when `lock_timeout` fires. Defaults to 5, as `migrate`'s does. */
   readonly lockRetries?: number | undefined;
+  /**
+   * Asked once, under the lock, with the exact rows about to be reversed and before the first
+   * `down`: throw to refuse. The caller's consent rule (`x db rollback` outside development) is
+   * judged here because only the lock's own ledger read says which rows those are.
+   */
+  readonly confirm?: ((targets: readonly LedgerRow[]) => void) | undefined;
 }
 
 /**
  * Reverse the `steps` most recently APPLIED migrations — by `applied_at`, not by id, so a migration
- * merged late is the first undone (`rollbackTargets`). An API with no `x db` command over it.
+ * merged late is the first undone (`rollbackTargets`). `x db rollback` is the command over it.
  */
 export async function rollback(options: RollbackOptions): Promise<readonly string[]> {
   const client = options.client ?? baseClient();
@@ -353,6 +365,7 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
     async (session) => {
       const ledger = await readLedger(session);
       const targets = rollbackTargets(ledger, steps);
+      options.confirm?.(targets);
 
       // The same deliberate loop as `migrate`, read backwards: one transaction per `down`, most
       // recently applied first, so a `down` that fails leaves every migration applied before it
@@ -368,10 +381,15 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
                 `migration "${row.id}" is in the ledger but not in this build, so its down SQL is unknown`,
                 // Same reason as `auditLedger`'s: psql works where the CLI is absent. The `down` SQL
                 // only exists in the build that shipped it, so the fix reads which build that was.
-                `psql "$DATABASE_URL" -c "select id, app_version from ${renderFixShellArg(LEDGER_TABLE, '<ledger table>')} ` +
-                  `order by applied_at desc, id desc limit 5"   # deploy the build that shipped the migration ` +
-                  `whose id is base64 ${Buffer.from(row.id, 'utf8').toString('base64')}, ` +
-                  'and roll back there — its down SQL exists nowhere else',
+                // On the embedded database no other build exists and psql has no URL to dial.
+                embeddedDev()
+                  ? embeddedResetFix(
+                      'the file holding this migration and its down SQL is gone from the checkout; to keep the rows, restore it (git status --short -- packages/db/migrations) and run x db rollback',
+                    )
+                  : `psql "$DATABASE_URL" -c "select id, app_version from ${renderFixShellArg(LEDGER_TABLE, '<ledger table>')} ` +
+                      `order by applied_at desc, id desc limit 5"   # deploy the build that shipped the migration ` +
+                      `whose id is base64 ${Buffer.from(row.id, 'utf8').toString('base64')}, ` +
+                      'and roll back there — its down SQL exists nowhere else',
               );
             }
             // The marker on `up` governs `down` too: the reversal of a concurrent build is a

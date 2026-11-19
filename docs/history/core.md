@@ -451,6 +451,12 @@ Three rules follow and none is optional. **The budget is the WHOLE drain's**, re
 bounded, not each phase separately, which is what `terminationGracePeriodSeconds` means. A budget
 already spent still lets a *synchronous* hook finish (a resolved promise settles on a microtask,
 the 0ms timer on a macrotask), so closing a pool costs nothing it does not already have.
+**The in-flight wait leaves the later hooks a slice, `As of 2026-11-19`.** With a stuck request and
+any `inflight`/`close` hook registered, `waitForIdle` gets the remaining budget less
+`laterHooksReserveMs()` = min(2 s, `deadlineMs` / 5): a request that overran used to spend the whole
+budget, and the OTLP flush and the pool close then started with 0 ms left. The total still ends
+within `deadlineMs`, the timeout cause names the reserve, and with no such hook the wait keeps the
+whole budget as before (`lifecycle-deadline.test.ts`).
 **`DEFAULT_DEADLINE_MS` (25s) applies whether or not an app sets one** — an opt-in deadline would
 have left `worker`, `scheduler` and `sync` unbounded, i.e. a mechanism claiming more than it
 enforces; abandoned at 25s a worker exits clean, its row's visibility lease lapses and another

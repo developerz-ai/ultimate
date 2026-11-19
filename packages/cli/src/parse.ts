@@ -380,11 +380,13 @@ function readSubcommand(spec: CommandSpec, positionals: readonly string[]): Reso
   if (spec.defaultSubcommandTakesPositional === true && suggestion === undefined) {
     return { name: spec.defaultSubcommand, consumed: false };
   }
-  throw new UnknownCommandError(
-    suggestion === undefined
-      ? { path: `${spec.name} ${token}`, known: allowed }
-      : { path: `${spec.name} ${token}`, known: allowed, suggestion: `${spec.name} ${suggestion}` },
-  );
+  // Near nothing: the command's own page, which lists the subcommands it REGISTERS — the command
+  // was right, so the top-level `x help` sent the reader back through every other one.
+  throw new UnknownCommandError({
+    path: `${spec.name} ${token}`,
+    known: allowed,
+    suggestion: suggestion === undefined ? `help ${spec.name}` : `${spec.name} ${suggestion}`,
+  });
 }
 
 function blank(command: string, specs: readonly CommandSpec[], json: boolean): ParsedArgs {

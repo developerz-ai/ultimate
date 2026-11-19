@@ -147,13 +147,26 @@ const foreignFinding = (url: string): Finding => ({
   at: TEST_ENV_PATH,
 });
 
-/** Another app under this project name: refused before `up` can touch its containers. */
-const collisionFinding = (project: string, other: string): Finding => ({
-  code: 'X_TEST_SERVICES_UNAVAILABLE',
-  cause: `compose project ${project} is already running from ${other}, which is not a checkout of this app — the two share a name, so the live suites are not run against it`,
-  fix: `grep -n '^name:' ${TEST_COMPOSE_PATH}   # give this app its own name: there, and its own ports there and in ${TEST_ENV_PATH}; if sharing is intended: ${SHARED_ENV}=1 bunx x verify --only live`,
-  at: TEST_COMPOSE_PATH,
-});
+/**
+ * Another app under this project name: refused before `up` can touch its containers. A stopped
+ * one is said to be stopped — `ps --all` lists exited containers too, and calling them "running"
+ * sent a reader looking for a server that was not there — and its fix removes it by name: it held
+ * its data in RAM, so nothing is lost, and the other checkout's next `up` starts it again.
+ */
+const collisionFinding = (project: string, other: string, running: boolean): Finding =>
+  running
+    ? {
+        code: 'X_TEST_SERVICES_UNAVAILABLE',
+        cause: `compose project ${project} is already running from ${other}, which is not a checkout of this app — the two share a name, so the live suites are not run against it`,
+        fix: `grep -n '^name:' ${TEST_COMPOSE_PATH}   # give this app its own name: there, and its own ports there and in ${TEST_ENV_PATH}; if sharing is intended: ${SHARED_ENV}=1 bunx x verify --only live`,
+        at: TEST_COMPOSE_PATH,
+      }
+    : {
+        code: 'X_TEST_SERVICES_UNAVAILABLE',
+        cause: `compose project ${project} is stopped, and its containers belong to ${other}, which is not a checkout of this app — the two share a name, so this run does not take them over`,
+        fix: `docker compose -p ${quoteArg(project)} down --volumes   # removes the stopped stack (its data was in RAM), then: x verify --only live; for good, give this app its own name: in ${TEST_COMPOSE_PATH}`,
+        at: TEST_COMPOSE_PATH,
+      };
 
 /** The stack the suites got, for the one line the gate prints about it. */
 export interface StackReport {
@@ -249,7 +262,11 @@ export async function ensureTestServices(input: ServicesInput): Promise<Services
     found?.relation.kind === 'collision'
       ? {
           kind: 'unavailable',
-          finding: collisionFinding(found.stack.project, found.relation.with),
+          finding: collisionFinding(
+            found.stack.project,
+            found.relation.with,
+            found.relation.running,
+          ),
         }
       : undefined;
   const existing = await relate();

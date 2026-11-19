@@ -12,9 +12,10 @@ import type { AppManifest } from './app-manifest';
 import { appManifest } from './app-manifest';
 import type { StalePin } from './app-reload-graph';
 import { takeStalePins } from './app-reload-graph';
+import { onLedgerMoved } from './dev-db-settled';
 import { clearIsrForRebuild } from './dev-rebuild-isr';
 import { remountFinding, remountLine, remountReason } from './dev-rebuild-remount';
-import { schemaAheadFindings } from './dev-rebuild-schema';
+import { isSchemaFinding, schemaAheadFindings } from './dev-rebuild-schema';
 import type { ReloadTrigger } from './dev-reload';
 import { coalesceReloads } from './dev-reload';
 import { restartFinding, restartReason } from './dev-supervisor';
@@ -127,7 +128,12 @@ export function devRebuilder(
 ): ReloadTrigger {
   // What the route table was built from: the boot's generation, for the life of this process. Each
   // save is compared with IT, not with the save before — a route added two saves ago is still a 404.
-  const mounted = { manifest: state.manifest, findings: state.appFindings };
+  // The LOAD findings only: a schema finding (entities ahead, the ledger behind) appears and clears
+  // with no module or route moving, and a restart for one is a dead port for the `x db migrate`
+  // that clears it — measured with two processes, a 30 s boot refused the pass it was waiting for.
+  const loaded = (findings: readonly Finding[]): readonly Finding[] =>
+    findings.filter((finding) => !isSchemaFinding(finding));
+  const mounted = { manifest: state.manifest, findings: loaded(state.appFindings) };
   // What this process still holds stale, for the life of it — the same rule as `mounted`. A pinned
   // module keeps the old instance until a new process, so a LATER rebuild that changed nothing
   // (the watcher's second event for one write, a no-op save) is still a restart: it reported
@@ -141,12 +147,12 @@ export function devRebuilder(
   };
   // One rebuild at a time, and the last save wins: a tick arriving mid-build coalesces into ONE
   // trailing rebuild instead of racing the one in flight for `state.manifest` and `state.islands`.
-  return coalesceReloads(
+  const trigger = coalesceReloads(
     async (file) => {
       const started = performance.now();
       beginDeviceSocketGeneration();
       const { manifest, findings, islands } = await buildGeneration(options.root, build);
-      const remount = remountReason(mounted, { manifest, findings });
+      const remount = remountReason(mounted, { manifest, findings: loaded(findings) });
       state.manifest = manifest;
       state.appFindings = findings;
       state.islands = islands;
@@ -189,4 +195,7 @@ export function devRebuilder(
       state.reloadFinding = { ...findingFrom(error), at: file };
     },
   );
+  // A migrate or rollback applied through `/_x/db` changes no file: it asks for its generation here.
+  onLedgerMoved(trigger);
+  return trigger;
 }

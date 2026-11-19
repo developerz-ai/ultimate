@@ -167,6 +167,26 @@ export const unanswered = (catalog: Catalog, keys: readonly string[]): readonly 
   keys.filter((key) => !Object.hasOwn(catalog, key) || isLoudMiss(catalog[key]));
 
 /**
+ * What `x i18n sync <locale>` writes for a key source names, per locale (`cmd-i18n.ts`'s
+ * `runSync`). The code's own comment said "as ⟦key⟧" of every locale and every key: a non-default
+ * locale gets the default's string marked, and an admin key in the default locale gets a real
+ * label — a reader who went looking for the ⟦ it promised found none.
+ */
+const SOURCE_KEYS_WRITTEN =
+  'writes each key above as a placeholder to replace with the real string: ⟦key⟧ in the default locale, ⟦the default locale’s string⟧ in any other';
+
+/** The same, for a key a mounted admin derives (`adminCatalog`, `adminKeyLabel`). */
+const ADMIN_KEYS_WRITTEN =
+  'writes each key above: in the default locale the label x g resource --admin generates, a real string to keep or reword; in any other locale that label inside ⟦…⟧, to translate';
+
+/** The finding with the code's own COMMAND and a comment that is true of what it writes. */
+function missingKeysFinding(locale: Locale, missing: readonly string[], written: string): Finding {
+  const finding = findingFrom(catalogMissingKeys(locale, missing));
+  const [command = finding.fix] = finding.fix.split('   #');
+  return { ...finding, fix: `${command}   # ${written}` };
+}
+
+/**
  * `X_CATALOG_MISSING_KEYS` — the same fact, a catalog without keys it is asked for — with the
  * cause naming who asks. The fix stays the code's own, `x i18n sync <locale>`: it writes these keys
  * too (`cmd-i18n.ts`), nested. The hand edit this used to name was a dotted key, which
@@ -177,7 +197,7 @@ function adminKeysFinding(locale: Locale, missing: readonly string[]): Finding {
   const shown = missing.slice(0, 12).map((key) => `"${key}"`);
   const more = missing.length > shown.length ? `, +${missing.length - shown.length} more` : '';
   return {
-    ...findingFrom(catalogMissingKeys(locale, missing)),
+    ...missingKeysFinding(locale, missing, ADMIN_KEYS_WRITTEN),
     cause: `${path} is missing ${missing.length} key(s) the mounted admin renders (defineAdmin derives them, so no source file names one): ${shown.join(', ')}${more}`,
     at: path,
   };
@@ -289,7 +309,7 @@ export function missingKeyFindings(report: ExtractReport): readonly Finding[] {
   const missing = report.locales
     .filter((audit) => audit.missing.length > 0)
     .map((audit) => ({
-      ...findingFrom(catalogMissingKeys(audit.locale, audit.missing)),
+      ...missingKeysFinding(audit.locale, audit.missing, SOURCE_KEYS_WRITTEN),
       at: catalogPath(audit.locale),
     }));
   // A select or ordinal family with no `_other` renders `⟦key⟧` for every value it does not name:

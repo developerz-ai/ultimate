@@ -84,18 +84,35 @@ describe('unit · a generated statements assertion fails when its handler gains 
     const clean = await suite(test);
     expect(clean.ok, clean.output).toBe(true);
 
-    await edit(
-      source,
-      '() => repo.list(limit, sort, dir))',
-      `async () => {
-        const rows = await repo.list(limit, sort, dir);
-        for (const row of rows) await repo.byId(row.id);
-        return rows;
-      })`,
-    );
+    const read = 'const rows = await repo.list(limit, sort, dir);';
+    await edit(source, read, `${read}\n      for (const row of rows) await repo.byId(row.id);`);
     const looped = await suite(test);
     expect(looped.ok).toBe(false);
     expect(looped.output).toContain('(fail) unit · the read is one statement, however many rows');
+  }, 60_000);
+
+  // The read answers the slice's view. A projection that lets the row through — the tenant column,
+  // or a column added to the entity — is the drift the emitted wire-shape assertion exists to catch.
+  test('x g query: a row past the view fails the emitted test', async () => {
+    const entitySource = await landEntity();
+    await land(
+      generate({
+        kind: 'query',
+        name: 'invoice-leak',
+        feature: 'invoice',
+        dbModule: dbModule(),
+        sliceEntity: entitySource,
+      }),
+    );
+    const source = 'apps/web/app/invoice/queries/invoice-leak.ts';
+    const test = 'apps/web/app/invoice/queries/invoice-leak.test.ts';
+    const clean = await suite(test);
+    expect(clean.ok, clean.output).toBe(true);
+
+    await edit(source, 'return rows.map(viewOf);', 'return rows;');
+    const leaked = await suite(test);
+    expect(leaked.ok).toBe(false);
+    expect(leaked.output).toContain('(fail) unit · stored rows read back newest first, bounded');
   }, 60_000);
 
   for (const [kind, file, handler] of [

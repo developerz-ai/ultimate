@@ -9,7 +9,7 @@ import { keyOf } from './batch-read';
 import { columnFor } from './column';
 import { valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
-import { EntityError, invariantViolated } from './errors';
+import { crossTenantUpsert, EntityError, invariantViolated } from './errors';
 import { allColumns, columnsOf } from './pg-row';
 import type { RowPatch } from './types';
 import { uniqueConstraints } from './unique-constraints';
@@ -132,24 +132,6 @@ const unevenBatch = (entityName: string, position: number, missing: string): Ent
     code: 'X_INVARIANT_VIOLATED',
     cause: `${entityName}.upsertAll() row ${position + 1} does not name "${missing}", which other rows of the batch do — under onMatch: 'update' a column one row omits would be overwritten with that column's default, not left alone`,
     fix: `${entityName}.upsertAll(rows.map((row) => ({ ...row, ${missing}: <value> })), args)   # every row of an updating batch names the same columns`,
-  });
-
-/**
- * A cross-tenant upsert is not a batching mistake, it is a write into another tenant's row, so it
- * gets tenancy's own code. `X_TENANCY_UNSCOPED`'s own factory sends the reader to the request
- * context the tenant is derived from, which is not what repairs this: an upsert builds no read
- * plan, so nothing derives anything onto it — the scope has to be part of the constraint the
- * collision is judged against, or the row that comes back was never in scope to begin with.
- */
-const crossTenantUpsert = (
-  entityName: string,
-  tenant: string,
-  on: readonly string[],
-): EntityError =>
-  new EntityError({
-    code: 'X_TENANCY_UNSCOPED',
-    cause: `${entityName}.upsertAll() resolves a collision on (${on.join(', ')}), which does not include the tenant column "${tenant}" — a row stored by another tenant would match and be overwritten`,
-    fix: `${entityName}.upsertAll(rows, { onConflict: ['${tenant}', '${on.join("', '")}'] })   # or onMatch: 'nothing', which writes nothing to a row it does not own`,
   });
 
 /**

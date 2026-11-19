@@ -316,6 +316,24 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
     every projection; on this wire the server CHECKS it, and one optional field (a key in
     `properties` absent from `required`) is a 400. `satisfiesStrictMode` is the gate, recursive
     because the server's check is.
+    `As of 2026-11-19` it walks every `anyOf` branch too: a nullable object with an optional key
+    was claimed strict and refused.
+  - **The Anthropic wire claims `strict` per request, `As of 2026-11-19`** (`anthropicTools` /
+    `strictSubset`, `anthropic-provider.ts`): only for a tool that asked, whose schema is inside the
+    Messages API's strict subset (no `minLength`/`maxLength`, numeric bounds, `minItems` > 1,
+    `maxItems`, `pattern`, open object, `anyOf` beside `type`), and while the request stays under 20
+    strict tools, 24 optional parameters and 16 union parameters, granted in request order —
+    otherwise the tool is sent whole without the flag. A plain `t.string` projects `minLength: 1`,
+    so most tools now go without it; they were 400s with it. Rewriting the schema the way the
+    provider SDKs do (bounds moved into the description) was rejected: a second schema document
+    per tool. The output schema still validates, with the repair turn.
+  - **A failed handle holds every tool result its last turn completed, `As of 2026-11-19`**
+    (`agent.ts`, `agent-tools.ts`, `settledResults` in `agent-transcript.ts`): `at.messages` advances
+    right after the tool turn and the repair turn, and a throw inside the tool batch (a throwing
+    `onCheckpoint`, `X_AGENT_TOOL_LOOP`, the deadline, an abort) hands over a partial transcript. A
+    completed call keeps its result; one in flight answers `Interrupted: … its outcome is unknown`
+    — a third state, because "not run" for a call already sent invites a double charge; one never
+    started answers `Not run`. Both `is_error`. Nothing started: the handle stays at the request.
   - `max_completion_tokens`, never `max_tokens`: the old field is rejected outright by every
     current reasoning model. No `temperature`/`top_p`, same rule as the Anthropic body.
   - **`stream_options: { include_usage: true }` on every streamed request, and an ESTIMATE when

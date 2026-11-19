@@ -1,5 +1,6 @@
-// `x tasks [list|show <name>]` — introspect scheduled cron tasks: cadence, timezone, enqueued
-// jobs, last dispatch and real next occurrences. CLI wiring only (`tasks-facts.ts`).
+// `x tasks [list|show <name>|run <name>]` — introspect scheduled cron tasks: cadence, timezone,
+// enqueued jobs, last dispatch and real next occurrences; `run` fires one now (`cmd-tasks-run.ts`).
+// CLI wiring only (`tasks-facts.ts`).
 //
 // The last dispatch is read off the queue's own record, and the next occurrences are real instants
 // from `@ultimat3/time`'s cron math instead of an agent reading `0 3 * * *` and guessing. The
@@ -12,6 +13,7 @@ import type { CronPhrases } from '@ultimat3/time';
 import { fromEpochMs, isoInZone } from '@ultimat3/time';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
+import { runTask } from './cmd-tasks-run';
 import { tasksSpec } from './cmd-tasks-spec';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, DeclarationUnknownError } from './errors';
@@ -125,15 +127,15 @@ function runList(
   };
 }
 
-/** Resolves the `show <name>` positional to a handle, or throws — the two failure paths named
- * in the brief: no positional at all, and a positional that names no registered task. */
+/** Resolves the `show|run <name>` positional to a handle, or throws — the two failure paths: no
+ * positional at all, and a positional that names no registered task. */
 function requireHandle(ctx: CommandContext): TaskHandle {
   const name = ctx.args.positionals[0];
   if (name === undefined) {
     throw new BadFlagError({
       flag: 'name',
       command: 'tasks',
-      reason: 'x tasks show <name> needs a task name',
+      reason: `x tasks ${ctx.args.subcommand ?? 'show'} <name> needs a task name`,
       fix: 'x tasks list --json',
     });
   }
@@ -194,6 +196,7 @@ export const tasksCommand: CliCommand = {
     const root = requireAppRoot('tasks', ctx.cwd).dir;
     const { findings } = await loadApp(root);
     const nowMs = systemClock.now().getTime();
+    if (ctx.args.subcommand === 'run') return runTask(root, ctx, requireHandle(ctx), findings);
     // Everything argv can get wrong is refused BEFORE the queue is opened: a typo in a task name
     // must not cost a database boot to be told about.
     const shown =

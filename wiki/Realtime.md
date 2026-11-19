@@ -155,7 +155,7 @@ adapter, its sync URL and its `LiveClient`: the page's one socket is the framewo
 
 | Step | Where | What |
 |---|---|---|
-| 1. the dependency | root `package.json` | `bun add @ultimat3/realtime`. `x new` installs `@ultimat3/query` and **not** `@ultimat3/realtime` |
+| 1. the dependency | root `package.json` | `x new` declares `@ultimat3/realtime` beside `@ultimat3/query`, at the framework's exact version (`As of 2026-11-19`). An app scaffolded before 31.49.0 adds it once, at the version its `@ultimat3/core` pin names: `bun add --exact @ultimat3/realtime@$(bun -p "require('./package.json').dependencies['@ultimat3/core']")` — a bare `bun add` writes a range `x doctor` refuses (`X_FRAMEWORK_PIN_RANGE`). Missing, the import is `TS2307: Cannot find module '@ultimat3/realtime'` |
 | 2. the query | `app/<feature>/live.ts` | `query({ …, live: true, subscribes: ['posts'] })`, bounded and ordered; `x g query <name> --feature <slice> --live` writes it |
 | 3. the ref | the island | `{ name: 'liveFeed', live: true }`, the query's registered **name**, never the query value: importing that drags its whole read path into the island. `live` is stated beside the name, not derived (see below) |
 | 4. the install | nothing to write | `x build` builds every island whose own import graph reaches `@ultimat3/realtime` from an entry that calls `installRealtime({ signal: createSignal, cleanup: onCleanup })` first, for about 100 B — `cleanup` releases every hook with the component that called it (31.14.0), so an island writes no `onCleanup(() => h.release())`. An island not reaching realtime pays nothing. The sync target is read from the document's `<meta name="ultimate-sync">` ([Configuration](Configuration), `SYNC_URL`) |

@@ -1,8 +1,7 @@
 // Single responsibility: one `ErrorReporter` that speaks the Sentry ENVELOPE wire format. A
-// serialisation, not a vendor (axiom 7, exactly as `metrics-text.ts` is to Prometheus): the format
-// is documented and several self-hostable monitors ingest it. Nothing here names a host, a project
-// or an organisation — the DSN is the app's own typed env, passed in at wiring time. It READS the
-// monitor's answer: a refusal is said once per status, a 429's pause honoured, every body released.
+// serialisation, not a vendor (axiom 7, as `metrics-text.ts` is to Prometheus): several
+// self-hostable monitors ingest it. Nothing here names a host, a project or an organisation — the
+// DSN is the app's own typed env, passed in at wiring time.
 
 import { retryAfterSecondsOf } from './client-retry-after';
 import { systemClock } from './clock';
@@ -245,6 +244,9 @@ export function localErrorSink<R extends ErrorReporter>(reporter: R): R {
 export function isLocalErrorSink(reporter: ErrorReporter): boolean {
   return local.has(reporter);
 }
+
+// Delivery READS the monitor's answer: a refusal said once per status (a revoked key is a monitor
+// never connected), a 429's pause honoured so an error storm does not hammer it, every body released.
 
 /** A 429 that states no delay: the pause Sentry's own SDKs take. */
 const UNSTATED_PAUSE_SECONDS = 60;

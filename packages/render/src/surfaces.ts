@@ -275,8 +275,16 @@ function classify(i: ClassifyInput): BoundaryViolation | null {
   const chainText = i.chain.join(' → ');
   const base = { entry: i.entry, importer: i.importer, imported: i.imported, chain: i.chain };
 
-  // Transitive, from the ENTRY: a site page reaching app/ through any number of hops.
-  if (i.entrySurface === 'site' && i.importedSurface === 'app' && !i.typeOnly) {
+  // Transitive, from the ENTRY: a site page reaching app/ through any number of hops. The finding
+  // is the edge that CROSSES — the first one in the chain to land on app/. Every edge below it is
+  // app/ importing app/, which is legal, and reporting those told the author to delete a query's
+  // own policy and repo imports ahead of the one import that was wrong.
+  if (
+    i.entrySurface === 'site' &&
+    i.importedSurface === 'app' &&
+    !i.typeOnly &&
+    !i.chain.slice(0, -1).some((file) => surfaceOf(file) === 'app')
+  ) {
     return {
       ...base,
       rule: 'site-imports-app',

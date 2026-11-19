@@ -6,8 +6,16 @@ import type { CommandSpec } from './parse';
 export const policySpec: CommandSpec = {
   name: 'policy',
   summary: 'which clause decided a permission, and why',
-  usage: 'x policy [list|explain <subject>] [--json]',
+  usage: "x policy [list|explain <subject> [--input '<json>']] [--json]",
   requiresApp: true,
   subcommands: ['list', 'explain'],
   defaultSubcommand: 'list',
+  flags: [
+    {
+      name: 'input',
+      type: 'string',
+      summary: "the request's input as JSON — what a predicate that reads input is decided on",
+      subcommands: ['explain'],
+    },
+  ],
 };

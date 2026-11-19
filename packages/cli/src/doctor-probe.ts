@@ -11,6 +11,7 @@ import { findAppRoot } from './app-root';
 import { checkMigrationSnapshots } from './db-snapshot';
 import type { PortOwner } from './dev-lock-holder-dir';
 import { portOwner } from './dev-lock-holder-dir';
+import { unlistedPrimitiveFindings } from './doctor-api-listing';
 import { type AuthStorageFact, authStorageProbe } from './doctor-auth';
 import type { EmbeddedDatabase } from './doctor-database';
 import { externalUrl, installedAbove, probeDatabase } from './doctor-database';
@@ -129,6 +130,8 @@ export interface DoctorProbe {
   readonly mergeState?: () => Promise<readonly Finding[]>;
   /** Whether `.gitattributes` names a merge driver this clone has not installed. Absent: no. */
   readonly mergeDriverUnset?: () => Promise<boolean>;
+  /** Actions and queries no `defineApi()` lists (`doctor-api-listing.ts`). Absent: none. */
+  readonly unlistedPrimitives?: () => Promise<readonly Finding[]>;
 }
 
 export function probeFor(
@@ -186,6 +189,7 @@ export function probeFor(
         ? []
         : [...(await unmergedFindings(root)), ...(await catalogFileFindings(root))],
     mergeDriverUnset: async () => (root === undefined ? false : driverUnset(root, exec)),
+    unlistedPrimitives: async () => (root === undefined ? [] : unlistedPrimitiveFindings(root)),
   };
 }
 

@@ -94,6 +94,21 @@ describe('readKind', () => {
     expect(readPermission(undefined, 'admin:page')).toBeUndefined();
   });
 
+  // `x g acton foo` answered `x g action publish-post --feature post`: in a scaffold with a `post`
+  // slice, pasting that writes an action nobody asked for. The name the caller typed is the lead.
+  test('a near-miss keeps the name and the slice the caller typed', () => {
+    expect(thrownBy(() => readKind('acton', { name: 'foo' })).fix).toBe('x g action foo');
+    expect(thrownBy(() => readKind('acton', { name: 'foo', feature: 'ticket' })).fix).toBe(
+      'x g action foo --feature ticket',
+    );
+    expect(thrownBy(() => readKind('rout', { name: 'tickets' })).fix).toBe('x g route tickets');
+    // A name that would not paste as one word keeps the generator's own runnable example.
+    expect(thrownBy(() => readKind('rout', { name: 'a b' })).fix).toBe('x g route posts');
+    expect(thrownBy(() => readKind('acton', { name: 'foo', feature: '../x' })).fix).toBe(
+      'x g action foo',
+    );
+  });
+
   test('a word near nothing gets the page, never an invented lead', () => {
     expect(thrownBy(() => readKind('zzzzzzzzzz')).fix).toBe('x help g');
   });

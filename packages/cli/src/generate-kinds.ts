@@ -83,6 +83,26 @@ export function assertLiveSupported(kind: Generator, live: boolean, name: string
   });
 }
 
+/** What the caller typed after the generator: its `<name>` and `--feature`, when given. */
+export interface TypedRest {
+  readonly name?: string | undefined;
+  readonly feature?: string | undefined;
+}
+
+/** One shell word, unquoted: a name or slice that would need quoting is not reused as typed. */
+const ONE_WORD = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/**
+ * The rest of the near-miss's line: the caller's own name (and slice) when they paste as one word,
+ * else the generator's example. `x g acton foo` answered `x g action publish-post --feature post`,
+ * which in a scaffold holding `post` writes an action nobody asked for.
+ */
+const retyped = (kind: Generator, typed: TypedRest): string => {
+  if (typed.name === undefined || !ONE_WORD.test(typed.name)) return exampleName(kind);
+  const feature = typed.feature !== undefined && ONE_WORD.test(typed.feature);
+  return feature ? `${typed.name} --feature ${typed.feature}` : typed.name;
+};
+
 /**
  * The generator a spelling reaches, or a refusal that leads with the one it is nearest.
  *
@@ -91,8 +111,9 @@ export function assertLiveSupported(kind: Generator, live: boolean, name: string
  * because it carries no `<name>`. `nearestName` is what `parse.ts` already does with a mistyped
  * command, over this file's own list.
  *
- * Two rules hold the fix line to a command that runs. A near miss is completed with that
- * generator's own `EXAMPLE_NAME`, because `x g route <name>` pasted into a shell is a redirect.
+ * Two rules hold the fix line to a command that runs. A near miss is completed with the name the
+ * caller typed (`retyped`), else that generator's own `EXAMPLE_NAME` — never a `<name>`, because
+ * `x g route <name>` pasted into a shell is a redirect.
  * A word near NOTHING gets `x help g` rather than an invented lead — the same rule `parse.test.ts`
  * pins for a command that resembles nothing, and the reason `nearestName` is never asked about an
  * ABSENT kind: the empty string is within the cutoff of `job`, so `x g` would "suggest" a
@@ -101,7 +122,7 @@ export function assertLiveSupported(kind: Generator, live: boolean, name: string
  * And a THIRD rule, for the word that is not there at all: no generator is a missing subcommand,
  * never an unknown command — see the branch below.
  */
-export function readKind(raw: string | undefined): Generator {
+export function readKind(raw: string | undefined, typed: TypedRest = {}): Generator {
   const kinds: readonly string[] = GENERATORS;
   if (raw !== undefined && kinds.includes(raw)) return raw as Generator;
   // A MISSING generator is not an unknown command. `x g --json` answered `X_CLI_UNKNOWN_COMMAND:
@@ -119,7 +140,8 @@ export function readKind(raw: string | undefined): Generator {
   throw new UnknownCommandError({
     path: `g ${raw}`.trim(),
     known: GENERATORS,
-    suggestion: suggestion === undefined ? 'help g' : `g ${suggestion} ${EXAMPLE_NAME[suggestion]}`,
+    suggestion:
+      suggestion === undefined ? 'help g' : `g ${suggestion} ${retyped(suggestion, typed)}`,
     ...(decided === undefined
       ? {}
       : { why: `${decided.factory}() has no generator: ${decided.none}` }),
@@ -273,8 +295,10 @@ function refuseBadIdentifier(raw: string, kind: Generator): void {
  * a `Record` object literal answers an `Object.prototype` member for a key nobody declared, and
  * this string is pasted into a shell. Two callers, one read.
  */
-const exampleFor = (kind: Generator): string =>
-  `x g ${kind} ${Object.hasOwn(EXAMPLE_NAME, kind) ? EXAMPLE_NAME[kind] : '<name>'}`;
+const exampleName = (kind: Generator): string =>
+  Object.hasOwn(EXAMPLE_NAME, kind) ? EXAMPLE_NAME[kind] : '<name>';
+
+const exampleFor = (kind: Generator): string => `x g ${kind} ${exampleName(kind)}`;
 
 /**
  * `resource:verb`, or nothing is written. `--permission` reaches the generated page in three

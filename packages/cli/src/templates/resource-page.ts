@@ -98,7 +98,7 @@ ${sortedImports([
   "import { defineRoute, Hole, island } from '@ultimat3/render';",
   "import {\n  DataTable,\n  type ListUrl,\n  listUrl,\n  Money,\n  PageHeader,\n  Section,\n  Skeleton,\n} from '@ultimat3/ui';",
 ])}
-${options.shell ? "import { Shell } from '../../shared/shell';\n" : ''}import type { ${feature.pascal} } from '../${feature.kebab}/entity';
+${options.shell ? "import { Shell } from '../../shared/shell';\n" : ''}import type { ${feature.pascal}View } from '../${feature.kebab}/entity';
 ${wrapImport([list, `${list}Sorts`], `../${feature.kebab}/live/${feature.kebab}-list`)}
 import styles from './page.module.scss';
 
@@ -108,7 +108,8 @@ const PAGE_ROWS = 50;
 /** The currency a price is typed in; the form sends integer minor units of it. */
 const CURRENCY = 'USD';
 
-type Row = ${feature.pascal};
+/** What the slice's list query answers: its view, never the whole row (no tenant column). */
+type Row = ${feature.pascal}View;
 
 /** The read's outcome as DATA, so the table renders each of its states. */
 export type PageData = AsyncState<RowPage<Row>>;

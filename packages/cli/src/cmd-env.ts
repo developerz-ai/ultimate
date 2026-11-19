@@ -7,15 +7,19 @@ import { join } from 'node:path';
 import {
   checkEnv,
   ENV_EXAMPLE_PATH,
+  ENVIRONMENT_KEY,
   ERROR_DOCS_URL,
   maskedEnvValues,
+  tryResolveEnvironment,
   UltimateError,
 } from '@ultimat3/core';
 import { appSecretFacts, envExampleFor, loadEnvSchema } from './app-env';
 import { requireAppRoot } from './app-root';
 import { envSpec } from './cmd-env-spec';
 import type { CliCommand, CommandContext } from './command';
+import { needsDevEnvironmentDeclaration } from './dev-environment';
 import { frameworkSecretFindings, namesNoEnvironment } from './framework-env';
+import { isCi } from './heavy-env';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 
@@ -68,24 +72,38 @@ async function writeExample(ctx: CommandContext): Promise<CommandResult> {
 }
 
 /**
+ * Does this table get `x dev`'s answer? Only where `x dev` itself would declare `development` —
+ * neither `ULTIMATE_ENV` nor `NODE_ENV` set (`needsDevEnvironmentDeclaration`, its one rule) — and
+ * not under `CI`, where an unnamed table is a deploy's and stays fail-closed. It was production
+ * everywhere, so `x env check` exited 1 on a pristine scaffold whose `x dev` ran clean.
+ */
+const checkedAsDev = (env: CommandContext['env']): boolean =>
+  needsDevEnvironmentDeclaration(env) && !isCi(env);
+
+/**
  * The values are read from the environment the command was handed (`ctx.env`, the process's own
  * in `bin.ts`) — one table for the app's keys and the framework's — and only ever printed through
  * `maskedEnvValues`: `checkEnv().values` holds the actual secrets because `defineEnv()` has to
  * return them, and a `--json` report is the last place a DSN should appear in full.
  *
  * The framework's deploy-required secrets (`framework-env.ts`) are asked exactly where the boot
- * refuses them — outside development/test, and where no environment is named at all — so `ULTIMATE_ENV=production x env check` answers what
+ * refuses them — outside development/test — so `ULTIMATE_ENV=production x env check` answers what
  * the first deployed boot would, instead of each role crash-looping on one key at a time (#679).
+ *
+ * WHICH environment, when the table names none (`checkedAsDev`): `x dev`'s own rule on a developer's
+ * shell, the boot's fail-closed one under `CI`. A named environment is always checked as named.
  */
 async function checkProcessEnv(ctx: CommandContext): Promise<CommandResult> {
   const { root, schema } = await requireSchema(ctx.cwd, 'check');
-  const report = checkEnv(schema, { env: ctx.env });
+  const asDev = checkedAsDev(ctx.env);
+  const env = asDev ? { ...ctx.env, [ENVIRONMENT_KEY]: 'development' } : ctx.env;
+  const report = checkEnv(schema, { env });
   const total = Object.keys(schema).length;
   // A key the app's own declaration already reported is one finding, not two.
   const reported = new Set(report.issues.map((issue) => issue.key));
-  // Gated by `deployed()` inside — the boot's own rule, so a table naming no environment is
-  // checked as the production process it boots as.
-  const framework = frameworkSecretFindings(ctx.env, reported, await appSecretFacts(root));
+  // Gated by `deployed()` inside — the boot's own rule, so under CI a table naming no environment
+  // is checked as the production process it boots as.
+  const framework = frameworkSecretFindings(env, reported, await appSecretFacts(root));
   const findings: readonly Finding[] = [
     ...report.issues.map((issue) => ({
       code: 'X_ENV_MISSING',
@@ -112,12 +130,16 @@ async function checkProcessEnv(ctx: CommandContext): Promise<CommandResult> {
     command: 'env',
     // `x doctor` asks about this machine and stays quiet on the same shell, so an exit 1 here over
     // a table that named nothing reads as a contradiction until this line says which question ran.
-    summary: namesNoEnvironment(ctx.env)
-      ? `${verdict} — ${msg('cli.env.checkedAsProduction')}`
-      : verdict,
+    summary: asDev
+      ? `${verdict} — ${msg('cli.env.checkedAsDevelopment')}`
+      : namesNoEnvironment(env)
+        ? `${verdict} — ${msg('cli.env.checkedAsProduction')}`
+        : verdict,
     findings,
     data: {
       variables: total,
+      // The environment the answer is for; an unnamed table under CI is the boot's: production.
+      environment: tryResolveEnvironment({ env, fallback: 'production' }) ?? null,
       values: maskedEnvValues(schema, report.values) as JsonValue,
     },
     exitCode: ok ? 0 : 1,

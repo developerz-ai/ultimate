@@ -5,7 +5,7 @@
 import { isUltimateError } from '@ultimat3/core';
 import { getEntity, invariantViolated } from '@ultimat3/entity';
 import { adminColumnsOf } from './entity-columns';
-import { seekPage } from './keyset-seek';
+import { moneyCursorParts, seekPage } from './keyset-seek';
 import type {
   AdminDb,
   AdminEntity,
@@ -94,6 +94,37 @@ const filtered = (
 ): AdminTableRead => where.reduce(predicate(typed), read);
 
 /**
+ * A money sort's two keys: amounts compare only within a currency, so the currency groups first.
+ * The handle refuses the bare property (`orderBy` names `<p>.minor` or `<p>.currency`).
+ */
+const moneyParts = (field: string): readonly [string, string] => [
+  `${field}.currency`,
+  `${field}.minor`,
+];
+
+const orderedBy = (
+  read: AdminTableRead,
+  keys: readonly string[],
+  direction: 'asc' | 'desc',
+): AdminTableRead => keys.reduce((chain, key) => chain.orderBy(key, direction), read);
+
+/**
+ * A money cursor's `<currency>:<minor>` back to the pair the seek compares. A cursor is signed by
+ * `pagination.ts`, so text that is not one was never issued for this sort: refused, never guessed.
+ */
+const moneyBound = (
+  entity: AdminEntity,
+  field: string,
+  value: string,
+): readonly [string, number] => {
+  const pair = moneyCursorParts(value);
+  if (pair === undefined) {
+    throw invariantViolated(entity.$name, field, 'a money cursor is <currency>:<minor>');
+  }
+  return pair;
+};
+
+/**
  * The two writes as the handle takes them: the KEY's value, a number for an `integer()` key. The
  * public `AdminTable` spells `id: string`, and a method's parameter is compared both ways, so a
  * real table is this too — the widening stays here instead of changing a published shape.
@@ -155,6 +186,7 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
       const base = filtered(table, query.where ?? [], typed);
       const sortField = query.sort.field;
       const facts = columns.find((column) => column.name === sortField);
+      const parts = facts?.kind === 'money' ? moneyParts(sortField) : undefined;
       return seekPage(
         query,
         {
@@ -162,7 +194,9 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
           idField,
           nullable: facts?.nullable ?? true,
           instant: facts?.kind === 'timestamptz',
-          typed: (value) => typed(sortField, value),
+          typed: (value) =>
+            parts === undefined ? typed(sortField, value) : moneyBound(entity, sortField, value),
+          ...(parts === undefined ? {} : { parts }),
         },
         async (where, order, limit) => {
           const read = where.reduce(
@@ -173,7 +207,8 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
             base,
           );
           // The tie-break, always: a page boundary on a partial order repeats or drops a row.
-          const sorted = order.by === 'pair' ? read.orderBy(sortField, order.direction) : read;
+          const sorted =
+            order.by === 'pair' ? orderedBy(read, parts ?? [sortField], order.direction) : read;
           return [...(await sorted.orderBy(idField, order.direction).limit(limit).all())];
         },
       );
@@ -187,7 +222,11 @@ export function adminRepoFor(entity: AdminEntity, table: AdminTable): AdminRepo<
             const { field, direction } = query.sort;
             const read = filtered(searchOf.call(table, query.term), query.where, typed);
             // The id breaks ties, as on a list page; named once when it IS the sort.
-            const sorted = field === idField ? read : read.orderBy(field, direction);
+            const money = columns.find((column) => column.name === field)?.kind === 'money';
+            const sorted =
+              field === idField
+                ? read
+                : orderedBy(read, money ? moneyParts(field) : [field], direction);
             return [...(await sorted.orderBy(idField, direction).limit(query.limit).all())];
           },
         }),

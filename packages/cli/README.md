@@ -25,7 +25,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x exercise [<name>] [--seed n\|random] [--shard i/n]` | every action, query, job and route `load` run once on generated rows, no test written | a scratch database; `.x/exercise.json`; an `unreached` primitive is `X_CONTRACT_EXERCISE_UNREACHED` with the override to paste into `apps/web/exercise.ts` — the gate's `exercise` step. `x.verify.json` `exercise: { unprovenMax, statementsMax }` turns unproven proofs and over-ceiling calls red; absent, warning lines. Route loads land in `routes` beside `records`, their loops and seq scans as warning lines; a load's own typed-client reads are answered in process, and `defineExercise(…, { routes })` gives a page its params, query, actor or `empty` reason. A sent push is a `push` effect. `--shard i/n` runs one of n disjoint slices into `.x/exercise.<i>-of-<n>.json` |
 | `x drill [<name>] [--list] [--budget-ms n]` | the app's roles as real processes on real services, each fault played through a proxy or a signal, judged on framework contracts only | a scratch database per drill; load = anonymous site pages plus every action an anonymous POST reaches (`data.skippedWrites` names the rest and why); `X_DRILL_FAILED` per property that did not hold, `X_DRILL_SERVICE_MISSING` before anything starts. Not a gate step — CI's `fault-drills` job runs three on `examples/dummy` |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
-| `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. The schema browser is `/_x`'s db panel (`x dev`); `studio` left the registry ([Known gaps](../../wiki/Known-Gaps.md#open-by-decision)) |
+| `x db gen\|migrate\|rollback\|reset\|branch\|backfill` | everything DB | `rollback [--steps n]` (default 1) runs the `-- down` half of the most recently applied migration(s) and leaves the files on disk; `gen` refuses an applied migration edited since (`X_MIGRATION_CONFLICT`) before it writes; `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. The schema browser is `/_x`'s db panel (`x dev`); `studio` left the registry ([Known gaps](../../wiki/Known-Gaps.md#open-by-decision)) |
 | `x mcp serve` | `@ultimat3/mcp`'s 19 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
 | `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the gate; an `AGENTS.md` byte-identical to `CLAUDE.md` becomes a symlink to it, a different one is reported in `data.agentsMd` and left | the `--json` report names the wiki section, the guards that differ and what the gate still says ([fields](../../wiki/CLI-Reference.md#x-upgrade)); `bunx @ultimat3/cli@latest upgrade` in an app that predates it; pins with no `app.config.ts` still hop, and `data.proof` says what checked them |
 | `x doctor` | environment, ports, drift, PWA prerequisites, `APP_URL` | every finding carries a fix command; probes the port `x dev` binds ([which one](../../wiki/CLI-Reference.md#x-doctor)); the framework's deploy secrets only where the machine names `staging`/`production` |
@@ -295,12 +295,31 @@ one, silently. `As of 2026-11`:
 
 | Command | Beside a live `x dev` holding `.x/pgdata` |
 |---|---|
-| `x db migrate` | applied BY the dev server (`POST /_x/db/migrate`: loopback Host and peer, same-origin); the report, drift and schema dump are the same. `x dev`'s own `x db gen "…" && x db migrate` fix works as printed |
+| `x db migrate` | applied BY the dev server (`POST /_x/db/migrate`: loopback Host and peer, same-origin — the command sends `Sec-Fetch-Site: same-origin`, so an app's CSRF check lets it through); the report, drift and schema dump are the same. `x dev`'s own `x db gen "…" && x db migrate` fix works as printed. A holder that is still booting (its lock claimed inside the last 120 s, or a new child) is waited for, up to 120 s, on a refused connection only |
 | `x db migrate`, app with `database.rowSecurity` | refused: the dev session serves as `x_app` and cannot migrate as `x_migrator`. Fix: `x stop --json && x db migrate && x dev` (what `x dev` prints for that app) |
+| `x db rollback [--steps n]` | run BY the dev server (`POST /_x/db/rollback`, the same doors); with `database.rowSecurity` refused the same way, fix `x stop --json && x db rollback --steps n && x dev` |
+| `x db gen` | reads the ledger's checksums from the dev server (`POST /_x/db/ledger`) for its edited-migration check; one that does not answer is a printed line, never a refusal |
 | `x db seed`, `x db backfill --write`, `x jobs retry\|cancel\|delete\|promote\|resolve-step\|pause\|resume`, `x auth seal-mfa` | `X_DEV_ALREADY_RUNNING`; the fix stops the holder, runs the command and starts `x dev` again |
 | `x db reset\|status\|diagnostics\|recount` | `X_DEV_ALREADY_RUNNING`, as before |
 
 With an external `DATABASE_URL` none of this applies: Postgres takes any number of writers.
+
+`x dev` is not green while its database is behind the files (`As of 2026-11-19`): a migration on
+disk the ledger lacks is `X_APP_MIGRATIONS_UNAPPLIED` (fix `x db migrate`) on the banner and `/_x`,
+an applied one edited since is `X_MIGRATION_CONFLICT`. A migrate or rollback applied through the
+dev server ends in a generation, so the finding clears with no save. A schema finding appearing
+or clearing never restarts the dev server: the process that answered the 500 answers the 200.
+
+## `x db rollback`
+
+| | |
+|---|---|
+| What runs | `@ultimat3/db`'s `rollback()`: the migrate lock, one transaction per `down`, most recently **applied** first (not highest id). `--json`: `data` = `{ reverted, steps, files }` |
+| Afterwards | the files are still on disk, so each is pending: `x db migrate` re-applies it; delete the `.sql`, `.snapshot.json` and `.hash` to drop the change |
+| No `-- down` half | `X_MIGRATION_IRREVERSIBLE`, nothing reversed — a ledger row is never deleted over SQL that was not undone. An empty down UNDER the marker is a reversal that needs no statement, and is reversed |
+| A change `x db gen` wrote as two migrations (`<id>`, `<id>_concurrently`) | one step reverses the second half only, and the output says the first is still applied; `--steps 2` reverses both |
+| File gone | `X_MIGRATION_CONFLICT`; on the embedded dev database its fix is `x stop --json && x db reset` |
+| Outside `development`/`test` | refused `X_MIGRATION_ROLLBACK_DESTRUCTIVE` until `ROLLBACK_ALLOW_DESTRUCTIVE` names **every** migration it would reverse — the migrate role's own override, checked under the lock against the exact rows. An unreadable `ULTIMATE_ENV` counts as production |
 
 `x jobs pause|resume <queue>` refuses a queue the app does not serve (`X_CLI_BAD_FLAG`, the nearest
 name in the fix); `resume` of a queue that IS paused always passes, to clear a retired one.

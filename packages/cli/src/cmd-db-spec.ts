@@ -7,6 +7,7 @@ import type { CommandSpec } from './parse';
 export const DB_SUBCOMMANDS = [
   'gen',
   'migrate',
+  'rollback',
   'reset',
   'seed',
   'branch',
@@ -18,9 +19,9 @@ export const DB_SUBCOMMANDS = [
 
 export const dbSpec: CommandSpec = {
   name: 'db',
-  summary: 'gen, migrate, reset, seed, branch, backfill, diagnostics, recount, status',
+  summary: 'gen, migrate, rollback, reset, seed, branch, backfill, diagnostics, recount, status',
   usage:
-    'x db gen "add publish_at" [--drop-redundant] [--merge-fork] | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | seed --generate [--rows n] [--seed n] [--dry-run] | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n] | recount <entity>.<column> [--write] | status',
+    'x db gen "add publish_at" [--drop-redundant] [--merge-fork] | migrate | rollback [--steps n] | reset | seed [<name>] [--tier reference|dev] [--dry-run] | seed --generate [--rows n] [--seed n] [--dry-run] | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n] | diagnostics [--limit n] | recount <entity>.<column> [--write] | status',
   requiresApp: true,
   subcommands: DB_SUBCOMMANDS,
   // Declared from the constant `runBranchCommand` validates against, never a second literal: it
@@ -110,6 +111,13 @@ export const dbSpec: CommandSpec = {
       summary:
         'backfill, diagnostics: max ledger rows, or rows per diagnostics section (default 20)',
       subcommands: ['backfill', 'diagnostics'],
+    },
+    {
+      name: 'steps',
+      type: 'string',
+      summary:
+        'rollback: how many applied migrations to reverse, most recently applied first (default 1)',
+      subcommands: ['rollback'],
     },
     // Declared because `X_MIGRATION_IRREVERSIBLE`'s own fix line names it. A `fix:` is copied
     // and run verbatim, so a flag the parser refuses would make the error unfollowable.

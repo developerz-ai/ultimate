@@ -32,6 +32,26 @@ describe('unit · planBoundaryCuts', () => {
     );
   });
 
+  test('one crossing is one cut: the legal app/ -> app/ imports below it are never listed', () => {
+    const graph = importGraph({
+      'apps/web/site/promo/page.tsx': ['apps/web/app/ticket/live/ticket-list.ts'],
+      'apps/web/app/ticket/live/ticket-list.ts': [
+        'apps/web/app/ticket/policy.ts',
+        'apps/web/app/ticket/repo.ts',
+      ],
+      'apps/web/app/ticket/policy.ts': [],
+      'apps/web/app/ticket/repo.ts': [],
+    });
+    const cuts = planBoundaryCuts('apps/web/site/promo/page.tsx', graph);
+    expect(cuts.map((cut) => cut.edit)).toEqual([
+      'delete the import of apps/web/app/ticket/live/ticket-list.ts in apps/web/site/promo/page.tsx',
+    ]);
+    expect(cuts[0]?.at).toBe('apps/web/site/promo/page.tsx');
+    // Asking about the query itself finds the same one crossing, never an edit inside app/.
+    const below = planBoundaryCuts('apps/web/app/ticket/live/ticket-list.ts', graph);
+    expect(below.map((cut) => cut.at)).toEqual(['apps/web/site/promo/page.tsx']);
+  });
+
   test('a violation whose chain never touches the target is not returned', () => {
     const graph = importGraph({
       'apps/web/site/page.tsx': ['apps/web/app/widget.ts'],

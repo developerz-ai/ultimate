@@ -15,7 +15,6 @@ import {
   timestamp,
   uuid,
 } from '@ultimat3/entity';
-import { AdminFilterInvalidError } from './errors';
 import { pageRequestOf } from './list-request';
 import { fetchPage, listQuery } from './pagination';
 import type { AdminSort } from './registry';
@@ -80,16 +79,30 @@ test('the same sort keeps paging: the guard compares the field, not the cursor',
   expect(second.prevCursor).not.toBeNull();
 });
 
-// A money value is a pair: `orderBy` refuses the bare column and asks for `.minor` or `.currency`,
-// and ordering by `.minor` across currencies ranks 100 JPY above 99 USD. Not a sort, so no header
-// link, no manifest `sorts` row, and a hand-typed `?sort=price` is the 400 any unsortable field is.
-test('a money column is not offered as a sort', async () => {
+// A money sort is the pair (currency, minor), and its cursor carries both — a cursor issued under
+// another sort is page one of it, as for any column, and a hand-typed `?sort=price` is a sort.
+test('a money column is a sort: the URL names it, and a foreign cursor is its page one', async () => {
   const priced = entity('admin_page_sort_money', {
     columns: { id: uuid().primaryKey(), name: text({ max: 20 }), price: money() },
   });
   const table = database({ priced }, { driver: memoryDriver() }).priced;
-  const resource = adminResource(priced, { repo: adminRepoFor(priced, table) });
-  expect(resource.fields.find((field) => field.name === 'price')?.sortable).toBe(false);
+  const repo = adminRepoFor(priced, table);
+  for (const [name, minor] of [
+    ['a', 300],
+    ['b', 100],
+    ['c', 200],
+  ] as const) {
+    await repo.create({ name, price: { currency: 'EUR', minor } });
+  }
+  const resource = adminResource(priced, { pageSize: 2, repo });
   const url = new URL('http://admin.test/admin/priced?sort=price:asc');
-  expect(() => pageRequestOf(resource, url)).toThrow(AdminFilterInvalidError);
+  const sort = pageRequestOf(resource, url).sort;
+  expect(sort).toEqual({ field: 'price', direction: 'asc' });
+  if (sort === undefined) return expect.unreachable('the URL named a sort');
+  const byName = await fetchPage(resource, { sort: { field: 'name', direction: 'asc' } });
+  const page = await fetchPage(resource, { sort, cursor: byName.nextCursor });
+  expect(page.rows.map((row) => row['name'])).toEqual(['b', 'c']);
+  expect(page.prevCursor).toBeNull();
+  const next = await fetchPage(resource, { sort, cursor: page.nextCursor });
+  expect(next.rows.map((row) => row['name'])).toEqual(['a']);
 });

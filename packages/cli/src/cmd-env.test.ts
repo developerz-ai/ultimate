@@ -166,12 +166,42 @@ describe('unit · x env check', () => {
     expect(result.findings).toEqual([]);
   });
 
-  // The boot FAILS CLOSED: no ULTIMATE_ENV and no NODE_ENV is production there, so it is here —
-  // otherwise this answered green for exactly the process the boot refuses (#679 review).
-  test('an environment that names none is checked as the boot reads it: deployed', async () => {
-    const root = await appRoot('check-unnamed');
+  // `x dev` in the same directory declares `development` when neither key is set, so a pristine
+  // scaffold was red here and running one command over: the check answers for the process the
+  // developer actually starts, and says which question it asked.
+  test('a shell that names no environment is checked as x dev runs there: development', async () => {
+    const root = await appRoot('check-unnamed-dev');
     const result = await envCommand.run(
       context(['env', 'check'], root, { DATABASE_URL: 'postgres://db/app' }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect(result.findings).toEqual([]);
+    expect(result.summary).toContain('checked as development');
+    expect(result.summary).toContain('ULTIMATE_ENV=production x env check');
+    expect(record(result.data)['environment']).toBe('development');
+  });
+
+  test('NODE_ENV names the environment too: production there is checked as production', async () => {
+    const root = await appRoot('check-node-env');
+    const result = await envCommand.run(
+      context(['env', 'check'], root, {
+        DATABASE_URL: 'postgres://db/app',
+        NODE_ENV: 'production',
+      }),
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.summary).not.toContain('checked as');
+    expect(record(result.data)['environment']).toBe('production');
+  });
+
+  // CI is where a deploy's table is checked, and the boot FAILS CLOSED: no ULTIMATE_ENV and no
+  // NODE_ENV is production there, so under CI it is here — otherwise this answered green for
+  // exactly the process the boot refuses (#679 review).
+  test('under CI an environment that names none is checked as the boot reads it: deployed', async () => {
+    const root = await appRoot('check-unnamed');
+    const result = await envCommand.run(
+      context(['env', 'check'], root, { DATABASE_URL: 'postgres://db/app', CI: 'true' }),
     );
     expect(result.exitCode).toBe(1);
     expect(result.findings?.map((finding) => finding.code)).toEqual([
@@ -222,6 +252,7 @@ describe('unit · x env check', () => {
     const root = await appRoot('check-unnamed-clean');
     const result = await envCommand.run(
       context(['env', 'check'], root, {
+        CI: '1',
         DATABASE_URL: 'postgres://db/app',
         ULTIMATE_CURSOR_SECRET: 'c'.repeat(64),
         S3_ENDPOINT: 'https://s3.example.com',

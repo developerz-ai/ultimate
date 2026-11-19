@@ -9,6 +9,7 @@ import {
   enumerated,
   integer,
   memoryDriver,
+  money,
   text,
   uuid,
 } from '@ultimat3/entity';
@@ -23,6 +24,9 @@ const zebras = entity('admin_desc_zebras', {
     name: text({ max: 80 }),
     stripes: integer(),
     mood: enumerated(['calm', 'wild']).default('calm'),
+    // A money column is a sort, as it has been since the manifest first recorded one: dropping it
+    // from `sorts` is a breaking contract change (`diff-admin.ts`) on every app that has one.
+    price: money(),
   },
 });
 const ants = entity('admin_desc_ants', {
@@ -117,7 +121,7 @@ describe('unit · AdminApp.describe()', () => {
         entity: 'admin_desc_zebras',
         path: '/zebras',
         filters: ['name', 'id', 'mood'],
-        sorts: ['id', 'stripes'],
+        sorts: ['id', 'stripes', 'price'],
         scopes: [
           { name: 'wild', default: false, count: true },
           { name: 'calm', default: true, count: false },
@@ -131,9 +135,11 @@ describe('unit · AdminApp.describe()', () => {
     const zebra = described.resources.find((one) => one.entity === 'admin_desc_zebras');
     expect(zebra?.sections).toEqual([
       { title: 'admin.zebras.section.look', fields: ['stripes'] },
-      { title: 'admin.section.other', fields: ['id', 'name', 'mood'] },
+      { title: 'admin.section.other', fields: ['id', 'name', 'mood', 'price'] },
     ]);
-    expect(zebra?.formGroups).toEqual([{ title: null, fields: ['name', 'stripes', 'mood'] }]);
+    expect(zebra?.formGroups).toEqual([
+      { title: null, fields: ['name', 'stripes', 'mood', 'price'] },
+    ]);
     expect(zebra?.related).toEqual(['admin_desc_ants']);
     const flags = { destructive: false, input: false, when: false, threshold: null };
     expect(zebra?.actions).toEqual([

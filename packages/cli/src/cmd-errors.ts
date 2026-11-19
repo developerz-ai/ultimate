@@ -4,6 +4,8 @@
 
 import { nearestName, singleLine } from '@ultimat3/core';
 import type { ErrorExplanation } from '@ultimat3/mcp';
+import { findAppRoot } from './app-root';
+import { type AppCodeExplanation, AppCodeUnknownError, explainAppCode } from './cmd-errors-app';
 import { explainGuardCode } from './cmd-errors-guards';
 import { withRecent } from './cmd-errors-recent';
 import { errorsSpec } from './cmd-errors-spec';
@@ -56,11 +58,15 @@ async function explainOne(
 ): Promise<CommandResult> {
   const explanation = explainErrorCode(code) ?? (await explainGuardCode(code, cwd));
   if (explanation === undefined) {
+    // Before the app loads, so the near miss is a framework code the caller mistyped.
     const suggestion = nearestName(
       code,
       explainEveryErrorCode().map((entry) => entry.code),
     );
-    throw new ErrorCodeUnknownError(suggestion === undefined ? { code } : { code, suggestion });
+    const declared = await explainAppCode(code, cwd);
+    if (declared !== undefined) return appCodeResult(declared, reader);
+    if (suggestion !== undefined) throw new ErrorCodeUnknownError({ code, suggestion });
+    throw new AppCodeUnknownError({ code, inApp: findAppRoot(cwd) !== undefined });
   }
   return {
     ok: true,
@@ -70,6 +76,15 @@ async function explainOne(
     data: asJson(explanation, reader),
   };
 }
+
+/** An app's own code: the same three lines, and its title, status and declaring line as data. */
+const appCodeResult = (declared: AppCodeExplanation, reader?: ReaderOptions): CommandResult => ({
+  ok: true,
+  command: 'errors',
+  summary: msg('cli.errors.explained', { code: declared.code, title: declared.title }),
+  lines: detailLines(declared, reader),
+  data: { ...declared, fix: fixForReader(declared.fix, reader) },
+});
 
 /**
  * A package that resolved and then threw is a defect, not a host gap: its codes are missing from

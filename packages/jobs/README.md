@@ -147,6 +147,70 @@ export const pollFleet = task({
 `webhook()` below is this pattern shipped as a factory; a fleet poll, a per-tenant digest and a
 per-subscriber notification are the same three files with different names.
 
+### One job per org, from a schedule
+
+The per-tenant form of the same fan-out, and the three things it has to say that the untenanted one
+does not: the schedule belongs to **no** org, listing the orgs is a read **across** tenants, and
+each child runs **as** its org.
+
+```ts
+import { serviceActor, withChildContext } from '@ultimat3/core';
+import { CROSS_TENANT_SCOPE, crossTenant } from '@ultimat3/entity';
+import { cronJob, job, t } from '@ultimat3/jobs';
+
+// A read over a tenant-scoped table — `db.orgs.orderBy('id').inBatches(500)`, collected to ids.
+declare const listOrgIds: () => Promise<readonly string[]>;
+declare const sendDigest: (orgId: string) => Promise<void>;
+
+// The scheduler is no org's actor, so it names itself and holds the one scope `crossTenant()` asks.
+const digestScheduler = serviceActor({ id: 'digest-scheduler', scopes: [CROSS_TENANT_SCOPE] });
+
+// jobs/org-digest.ts — the unit of retry: one org, and the run acts AS that org
+export const orgDigest = job({
+  input: t.object({ orgId: t.uuid, occurrenceMs: t.number.int() }),
+  idempotencyKey: ({ orgId, occurrenceMs }) => `org-digest:${orgId}:${occurrenceMs}`,
+  tenant: ({ orgId }) => orgId,
+  retry: { attempts: 3, backoff: 'exponential' },
+  async run({ input }) {
+    await sendDigest(input.orgId);
+  },
+});
+
+// jobs/org-digests.ts — the schedule and the fan-out, one declaration
+export const orgDigests = cronJob({
+  name: 'orgDigests',
+  cron: '0 6 * * *',
+  tz: 'UTC',
+  input: t.object({ occurrenceMs: t.number.int() }),
+  payload: (occurrenceMs) => ({ occurrenceMs }),
+  idempotencyKey: ({ occurrenceMs }) => `org-digests:${occurrenceMs}`,
+  tenant: 'none',
+  retry: { attempts: 3, backoff: 'exponential' },
+  async run({ input, step }) {
+    const orgIds = await step.run('list', () =>
+      withChildContext({ actor: digestScheduler }, () =>
+        crossTenant('the daily digest queues one job per org, so listing them spans every org', () =>
+          listOrgIds(),
+        ),
+      ),
+    );
+    for (const orgId of orgIds) {
+      await step.run(`enqueue:${orgId}`, () =>
+        orgDigest.enqueue({ orgId, occurrenceMs: input.occurrenceMs }),
+      );
+    }
+  },
+});
+```
+
+| Piece | Why it is this piece |
+|---|---|
+| `tenant: 'none'` on the cron job | a schedule has no org; its body carries none, so a tenant-scoped read in it is `X_TENANCY_ACTOR_ORG_REQUIRED` until it says it spans tenants |
+| `serviceActor({ scopes: [CROSS_TENANT_SCOPE] })` | `crossTenant()` proves `tenancy:cross` on the actor in scope and a job's own actor does not hold it (`X_TENANCY_CROSS_DENIED`). The sweep names itself, once, at module scope |
+| `withChildContext`, not a new context | the run's `requestId` and trace carry through, so the one cross-tenant read is auditable back to the occurrence that asked for it |
+| `crossTenant()` around the LIST only | the enqueues need none: the cron job's actor has no org, so there is nothing for the payload's org to contradict |
+| `tenant: ({ orgId }) => orgId` on the child | each row is queued under the org its payload names and `executeJob` installs that org's actor: every read and write in `sendDigest` is scoped to it, and two orgs' identical keys are two jobs |
+
 ## The export name is the job's name
 
 ```ts

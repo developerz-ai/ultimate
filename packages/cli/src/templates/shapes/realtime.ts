@@ -132,16 +132,12 @@ import * as recentPosts from '../app/post/queries/recent-posts';
     find: '  },\n});\n',
     replace: `  },\n${exerciseEntry('renamePost', 'post:write')}${exerciseEntry('recentPosts', 'post:read')}});\n`,
   },
-  // The room and the notifier import both; an isolated install resolves only what the app declares.
+  // The notifier imports `@ultimat3/notify`; an isolated install resolves only what the app declares
+  // (`@ultimat3/realtime` is every scaffold's own dependency).
   {
     path: 'package.json',
     find: '    "@ultimat3/policy": ',
     replace: `    "@ultimat3/notify": "${loadVersion()}",\n    "@ultimat3/policy": `,
-  },
-  {
-    path: 'package.json',
-    find: '    "@ultimat3/render": ',
-    replace: `    "@ultimat3/realtime": "${loadVersion()}",\n    "@ultimat3/render": `,
   },
   ...shapeLines(
     'realtime',

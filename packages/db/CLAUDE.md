@@ -124,6 +124,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`migration-lock-lint.ts`** — `X_MIGRATION_LOCK_HEAVY`: `set not null` with no prior validate,
   non-concurrent `create index` on an existing table; `-- lock-heavy: true` admits; ids > `LOCK_HEAVY_SINCE`.
 - **The ledger audit asks one question**: `auditLedger`'s `foreign` is `!known.has(row.id)`.
+- **Embedded dev's fix is `embeddedResetFix()`** at every `X_MIGRATION_CONFLICT` / `_ROLLBACK_DESTRUCTIVE` site when `embeddedDev()`. `rollback({ confirm })`: under the lock, before any `down`. Why: `docs/history/db.md` (2026-11-19).
 - **`refuseDependentViews(tx, script)`** (`dependent-view.ts`) runs before each migration's first statement. Full rule: `docs/history/db.md`.
 
 ## Generation (`x db gen`)
@@ -145,7 +146,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   every migration on disk stays byte-identical (`generate-default.live.test.ts`, `sql.test.ts`).
   `readonly-role.ts` and `branch.ts` are safe only by their ordering after `identifier()`.
 - **A retype spans its default** (`retypeOverDefault`): `42804` otherwise.
-- **A retype moves its dependents aside** (`retype-dependents.ts`, `retype-keys.ts`): expressions mentioning the column and foreign keys over it; the ordinary diff puts them back, never twice. Full rule: `docs/history/db.md`.
+- **A retype moves its dependents aside** (`retype-dependents.ts`, `retype-keys.ts`): the ordinary diff puts them back, never twice. Full rule: `docs/history/db.md`.
 - **A generated column** (`generated-column.ts`): plain → generated rebuilds (`rebuilt`), consented
   as a drop (`column-drop.ts`); rest: `docs/history/db.md` (2026-10-31). `generate-generated-{column,rebuild}.live.test.ts`.
 - **`REPLICA IDENTITY FULL` is a PARAMETER** (`GenerateOptions.replicaIdentityFull`, from the CLI's
@@ -154,8 +155,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`appendOnly: true` is a trigger** (`generate-append-only.ts`, `ultimate_append_only`); drift is
   `X_APPEND_ONLY_TRIGGER_MISSING` (`drift-append-only.ts`). Full rule: `docs/history/db.md`.
 - **A foreign key is `alter table … add constraint`** after every table statement (`foreign-key-plan.ts`); a table drop's bucket runs first, children-first (`drop-order.ts`). Full rule: `docs/history/db.md`.
-- **`same-tenant.ts`**: `sameTenant` is `foreignKeysOf`'s composite; `withSameTenantIndexes` opens `generateMigration` and `snapshotOf`, idempotent. `set null (a)` is the rule's spelling everywhere (`introspectSchema()` off `pg_get_constraintdef`, never `confdelsetcols`). `foreign-key-plan.test.ts`. Why: `docs/history/db.md` (2026-11-02).
-- **The deferred step holds keys too** (`concurrent-plan.ts`, phases in `stepStatements`: index builds, `keys`, `validate`, `contractKeys`, `contract`; `down` reversed: restore old key, drop new key, drop index). Full rule: `docs/history/db.md`.
+- **`same-tenant.ts`**: `sameTenant` is `foreignKeysOf`'s composite; `withSameTenantIndexes` opens `generateMigration` and `snapshotOf`, idempotent; `set null (a)` is one spelling. `foreign-key-plan.test.ts`. Why: `docs/history/db.md` (2026-11-02).
+- **The deferred step holds keys too** (`concurrent-plan.ts`, phases in `stepStatements`; `down` reversed). Full rule: `docs/history/db.md`.
 - **Lifecycle triggers are one list per table** (`generate-triggers.ts`: `declaredTriggers`,
   `triggerPlan`, `recordTriggers`): `history` → `ultimate_history` + `ultimate_history_guard`
   (`generate-history.ts`), each `countedIn` → `ultimate_count_<crc32>` on the CHILD

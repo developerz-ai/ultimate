@@ -62,16 +62,42 @@ export const tenancyUnscoped = (
   operation: string,
   actorOrg?: string,
 ): EntityError =>
+  // Two constructions, never one with a ternary in its `fix:`. `x errors explain` quotes the first
+  // throw site whose fix is ONE literal, and a ternary is none: it skipped this factory and
+  // answered a read's question with the upsert's fix below. The no-context branch is first because
+  // it is the code's general cause — its registered title, "a tenant-scoped query has no org
+  // predicate" — and both other fixes are narrower than that.
+  actorOrg === undefined
+    ? new EntityError({
+        code: 'X_TENANCY_UNSCOPED',
+        cause: `${entityName}.${operation}() was built without an org predicate but the entity has an orgId column, and no request context carried an actor to take the tenant from`,
+        fix: `runWithContext(ctxOf({ actor: userActor({ id, orgId }) }), fn)   // the actor's org scopes the plan — or name the tenant: ${entityName}.${operation}({ orgId }), which orgScoped(plan, orgId) is the plan-level form of`,
+      })
+    : new EntityError({
+        code: 'X_TENANCY_UNSCOPED',
+        cause: `${entityName}.${operation}() was checked against a plan with no org predicate, though the acting actor's tenant is ${renderValue(actorOrg)} — a plan is verified here, never rewritten, so the tenant had to be on it already`,
+        fix: `scopedPlan('${entityName}', tenantColumn, '${operation}', plan)   // applies the actor's tenant — or add the predicate first: orgScoped(plan, ${asLiteral(actorOrg, "'<org>'")})`,
+      });
+
+/**
+ * A cross-tenant upsert is not a batching mistake, it is a write into another tenant's row, so it
+ * gets tenancy's own code. `tenancyUnscoped` sends the reader to the request context the tenant is
+ * derived from, which is not what repairs this: an upsert builds no read plan, so nothing derives
+ * anything onto it — the scope has to be part of the constraint the collision is judged against,
+ * or the row that comes back was never in scope to begin with.
+ *
+ * Declared HERE, below the general factory, and not beside its one caller in `bulk-write.ts`:
+ * that file sorts first, so its fix was the one `x errors explain X_TENANCY_UNSCOPED` printed.
+ */
+export const crossTenantUpsert = (
+  entityName: string,
+  tenant: string,
+  on: readonly string[],
+): EntityError =>
   new EntityError({
     code: 'X_TENANCY_UNSCOPED',
-    cause:
-      actorOrg === undefined
-        ? `${entityName}.${operation}() was built without an org predicate but the entity has an orgId column, and no request context carried an actor to take the tenant from`
-        : `${entityName}.${operation}() was checked against a plan with no org predicate, though the acting actor's tenant is ${renderValue(actorOrg)} — a plan is verified here, never rewritten, so the tenant had to be on it already`,
-    fix:
-      actorOrg === undefined
-        ? `runWithContext(ctxOf({ actor: userActor({ id, orgId }) }), fn)   // the actor's org scopes the plan — or name the tenant: ${entityName}.${operation}({ orgId }), which orgScoped(plan, orgId) is the plan-level form of`
-        : `scopedPlan('${entityName}', tenantColumn, '${operation}', plan)   // applies the actor's tenant — or add the predicate first: orgScoped(plan, ${asLiteral(actorOrg, "'<org>'")})`,
+    cause: `${entityName}.upsertAll() resolves a collision on (${on.join(', ')}), which does not include the tenant column "${tenant}" — a row stored by another tenant would match and be overwritten`,
+    fix: `${entityName}.upsertAll(rows, { onConflict: ['${tenant}', '${on.join("', '")}'] })   # or onMatch: 'nothing', which writes nothing to a row it does not own`,
   });
 
 /**

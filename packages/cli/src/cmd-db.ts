@@ -1,7 +1,7 @@
-// `x db gen|migrate|reset|seed|studio|branch|backfill|diagnostics|recount|status` — everything that touches the
+// `x db gen|migrate|rollback|reset|seed|studio|branch|backfill|diagnostics|recount|status` — everything that touches the
 // database. One subcommand per line and no fall-through: a word this file does not know is refused,
 // never re-read as an argument to the last branch. `branch` is `cmd-db-branch.ts`, `diagnostics`
-// is `db-diagnostics.ts`, `status` is `cmd-db-status.ts`.
+// is `db-diagnostics.ts`, `status` is `cmd-db-status.ts`, `rollback` is `cmd-db-rollback.ts`.
 //
 // Every subcommand here runs `@ultimat3/db`'s own engine, which is the engine `ROLE=migrate` runs
 // (`serve.ts`): one `x_migrations` ledger, one checksum rule, one advisory lock, from a laptop to
@@ -20,9 +20,11 @@ import { requireAppRoot } from './app-root';
 import { runBackfillCommand } from './cmd-db-backfill';
 import { runBranchCommand } from './cmd-db-branch';
 import { runRecountCommand } from './cmd-db-recount';
+import { runRollbackCommand } from './cmd-db-rollback';
 import { DB_SUBCOMMANDS, dbSpec } from './cmd-db-spec';
 import { runDbStatus } from './cmd-db-status';
 import type { CliCommand, CommandContext } from './command';
+import { refuseAppliedEdits } from './db-applied-edits';
 import { runDiagnostics } from './db-diagnostics';
 import { stepFinding } from './db-finding';
 import { generateAppMigration, unrenderedJson, unrenderedLines } from './db-generate';
@@ -68,6 +70,7 @@ export const dbCommand: CliCommand = {
 
     if (sub === 'gen') return runGen(ctx, root, argument ?? 'change');
     if (sub === 'migrate') return runMigrate(ctx, root, msg('cli.db.migrate.applied'));
+    if (sub === 'rollback') return runRollbackCommand(ctx, root);
     if (sub === 'reset') return runReset(ctx, root);
     if (sub === 'seed') return runSeed(ctx, root);
     if (sub === 'backfill') return runBackfillCommand(ctx, root);
@@ -118,7 +121,11 @@ async function generateLocked(
   name: string,
 ): Promise<CommandResult> {
   let generated: Awaited<ReturnType<typeof generateAppMigration>>;
+  let unchecked: string | undefined;
   try {
+    // First, and before any file is written: over an applied migration edited since, this command
+    // rewrote the schema dump to match the edit and exited 0 (`db-applied-edits.ts`).
+    unchecked = await refuseAppliedEdits(root, ctx.env);
     generated = await generateAppMigration(root, {
       name,
       allowDestructive: flagBool(ctx.args, 'allow-destructive'),
@@ -139,7 +146,10 @@ async function generateLocked(
   // this build cannot project would make every one of those instructions unfollowable — the
   // `x i18n add fr` failure, repeated. The count is the verdict; the gate's own `drift` step is
   // where a red belongs, and it reads the same list to decide that `x db gen` is not the fix.
-  const lost = unrenderedLines(generated.unrendered);
+  const lost = [
+    ...unrenderedLines(generated.unrendered),
+    ...(unchecked === undefined ? [] : [msg('cli.db.gen.editsUnchecked', { reason: unchecked })]),
+  ];
   // After the migration, from the migrations alone: the dump is what replaying them produces, so
   // it is rewritten on all three outcomes — `unchanged` included, which is what makes this
   // command the `fix:` on `X_SCHEMA_DUMP_DRIFT` when a framework table or a hand edit moved it.
@@ -197,15 +207,29 @@ async function generateLocked(
     };
   }
   const tables = generated.tables ?? [];
+  // Every migration written, never the first alone: the follow-up is a file to apply too.
+  const followUp = migration.followUp?.id;
+  const written = (): string =>
+    followUp === undefined
+      ? tables.length === 0
+        ? msg('cli.db.gen.written', { id: migration.id })
+        : msg('cli.db.gen.writtenTables', { id: migration.id, tables: tables.join(', ') })
+      : tables.length === 0
+        ? msg('cli.db.gen.writtenPair', { id: migration.id, followUp })
+        : msg('cli.db.gen.writtenPairTables', {
+            id: migration.id,
+            followUp,
+            tables: tables.join(', '),
+          });
   return {
     ok: dumpFindings.length === 0,
     command: 'db',
     summary:
       dumpFindings.length > 0
-        ? msg('cli.db.gen.writtenDumpFailed', { id: migration.id })
-        : tables.length === 0
-          ? msg('cli.db.gen.written', { id: migration.id })
-          : msg('cli.db.gen.writtenTables', { id: migration.id, tables: tables.join(', ') }),
+        ? msg('cli.db.gen.writtenDumpFailed', {
+            id: followUp === undefined ? migration.id : `${migration.id} and ${followUp}`,
+          })
+        : written(),
     // Exit 1 with a migration on disk: the finding has to say so, or the next move is a duplicate.
     findings: dumpFindings.map((finding) => afterWrittenMigration(finding, migration.id)),
     lines: [...generated.files.map((file) => `  ${file}`), ...schemaDumpLines(dump), ...lost],

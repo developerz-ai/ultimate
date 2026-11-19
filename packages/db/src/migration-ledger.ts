@@ -6,7 +6,7 @@
 import { isFixShellSafe } from '@ultimat3/core';
 import type { DbClient } from './client';
 import type { SchemaDescription } from './introspect';
-import { migrationConflict } from './migration-errors';
+import { embeddedDev, embeddedResetFix, migrationConflict } from './migration-errors';
 import { raw, sql } from './sql';
 import { SQLSTATE, sqlState } from './sqlstate';
 
@@ -157,7 +157,15 @@ export function auditLedger(
 const editedMigrationFix = (id: string, checksum: string): string => {
   const path = isFixShellSafe(id) ? `${APP_MIGRATIONS_DIR}/${id}.sql` : APP_MIGRATIONS_DIR;
   const applied = isFixShellSafe(checksum) ? `checksum ${checksum}` : 'the checksum in the cause';
-  return `git log --format='%h %ad %s' --date=short -- ${path}   # restore the revision applied with ${applied}: git checkout <rev> -- ${path} and never edit an applied migration; then x db gen "<change>"`;
+  const restore = `git log --format='%h %ad %s' --date=short -- ${path}   # restore the revision applied with ${applied}: git checkout <rev> -- ${path} and never edit an applied migration; then x db gen "<change>"`;
+  // A migration written this session has no revision to list, and the embedded database is the
+  // only one that applied it: re-applying the file on disk IS the repair. The restore stays in
+  // the line for the migration some other database applied too.
+  return embeddedDev()
+    ? embeddedResetFix(
+        `the edited migration is re-applied as it now reads. If it is committed or another database applied it, restore it instead: ${restore.replace('   # ', ' — ')}`,
+      )
+    : restore;
 };
 
 /**
@@ -181,6 +189,13 @@ const editedMigrationFix = (id: string, checksum: string): string => {
  * which migration this is, `fix:` is where they paste. `psql` echoes the row count it deleted.
  */
 function conflictFix(row: LedgerRow): string {
+  // `DATABASE_URL` is empty on the embedded database, so psql has nothing to dial; and the row is
+  // there because this checkout dropped the file, not because another build is deployed.
+  if (embeddedDev()) {
+    return embeddedResetFix(
+      'the ledger records a migration whose file this checkout no longer holds; to keep the rows, restore the file (git status --short -- packages/db/migrations)',
+    );
+  }
   const encodedId = Buffer.from(row.id, 'utf8').toString('base64');
   return (
     'deploy the app version this error names — or, if that build is gone, drop its row: ' +

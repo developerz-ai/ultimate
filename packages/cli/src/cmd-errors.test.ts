@@ -69,6 +69,16 @@ describe('unit · x errors explain', () => {
     ]);
   });
 
+  // The code's title is "a tenant-scoped query has no org predicate", and the answer was the
+  // upsert's fix: of the code's throw sites the one that sorted first was a write's, and the
+  // general one was a ternary the scan cannot read.
+  test("a code with several throw sites answers with its GENERAL cause's fix", async () => {
+    const data = record((await run(['errors', 'explain', 'X_TENANCY_UNSCOPED'])).data);
+    expect(String(data['fix'])).toStartWith('runWithContext(ctxOf({ actor: userActor(');
+    expect(String(data['fix']).split('#')[0]).not.toContain('upsertAll');
+    expect(record(data['site'])['at']).toBe('@ultimat3/entity/src/errors.ts');
+  });
+
   test('explain prints the fix its reader can run, in the lines and the data', async () => {
     const result = await errorsCommand.run({
       ...ctxFor(['errors', 'explain', 'X_DB_DRIFT']),

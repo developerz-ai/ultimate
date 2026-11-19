@@ -507,7 +507,7 @@ shape already is, written down once so two apps do not invent two layouts. `x g 
 | field type + widget | `$meta.kind`, refined by `values` (select) and `references` (reference) |
 | one line vs prose | `text({ max })` has a length; `text()` does not |
 | read-only | a **generated** default (`uuid()`, `defaultNow()`, `onUpdateNow()`) or a key column |
-| filters, sort | `$meta.index` / `unique` / `primaryKey` — never an unindexed column, except the label (the list's search box); a `money()` column is never a sort (a (minor, currency) pair has no order) |
+| filters, sort | `$meta.index` / `unique` / `primaryKey` — never an unindexed column, except the label (the list's search box); a `money()` column sorts by currency, then minor (amounts compare only within a currency) |
 | row address | `$primaryKey[0]`, composite keys included |
 | validation | `$schema`, the entity's own Standard Schema |
 | write-only | `.sealed()` — in `secretFields`, and in no list a reader iterates |

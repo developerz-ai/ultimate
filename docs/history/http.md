@@ -182,10 +182,22 @@ a current fact: the rules that still hold are in that file, and where the two di
   the abort is what cooperative code unwinds on, and the race in `execute` is what answers the
   socket when a handler never looked at the signal. `X_TIMEOUT` is borrowed (core's concept) and
   already mapped to 504. **`ctx.signal` is the deadline OR the caller going away**, `As of
-  2026-08`: `pipeline.ts` hands `startDeadline` the inbound `Request.signal` and the two are joined
-  with `AbortSignal.any`, which is what `context.ts` had documented and nothing wired — a closed
-  tab held its handler, its pool slot and its vendor connection for the whole 30s. `expired` stays
-  the timer's alone: it answers the SOCKET, and a caller that hung up has no socket to answer.
+  2026-08`: `pipeline.ts` hands `startDeadline` the inbound `Request.signal`, which is what
+  `context.ts` had documented and nothing wired — a closed tab held its handler, its pool slot and
+  its vendor connection for the whole 30s. First joined with `AbortSignal.any`; since then the
+  caller's abort is FORWARDED into the one controller, because `any` built a third signal per
+  request (~3 µs, the deadline's largest cost) for the same answer: the first abort wins, with its
+  own reason. `expired` stays the timer's alone: it answers the SOCKET, and a caller that hung up
+  has no socket to answer.
+  **Three rules added 2026-11-19** (sweep r9-2, `pipeline-deadline.test.ts`): (1) the response slot
+  is written from the deadline race's WINNER only — an orphan handler that settled a microtask after
+  the abort used to replace the 504 with its own answer, leaving without security headers, request
+  id or cookies; a stream such an orphan built is cancelled. (2) A caller that hangs up is answered
+  `X_ABORTED` (499), logged at `info`, never sent to the monitor or counted as a 5xx; only a throw
+  that IS the signal's uncoded reason, or is named `AbortError`, while the signal was aborted with
+  an uncoded reason qualifies — a library's wrapped abort stays a reported 500. (3) The deadline
+  bounds TIME-TO-HEADERS: `deadline.clear()` runs when the headers leave, so a streamed body (SSE,
+  an agent's answer) outlives it and only the caller going away ends it.
   **And it leaves this process on the next hop's headers, `As of 2026-08-24`**:
   `Deadline.deadlineAt` is published as core's `ctx.deadlineAt`, and `traceHeaders()` (tier 0, the
   one thing both typed clients spread before the caller's own headers) sends what is LEFT as
@@ -858,8 +870,9 @@ Verbatim from [`packages/http/CLAUDE.md`](../../packages/http/CLAUDE.md), which 
 
 - **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` off; Bun's
   `idleTimeout` derives from it, `idle-timeout.ts`), shortened by `x-request-timeout-ms`, never
-  lengthened. `ctx.signal` is the deadline OR the caller going away (`AbortSignal.any` with
-  `Request.signal`); `expired` is the timer's alone. `deadlineAt` is published as core's
+  lengthened. `ctx.signal` is the deadline OR the caller going away (`Request.signal`'s abort
+  forwarded into the one controller); `expired` is the timer's alone. To headers only; the 504 is
+  final (race winner only); a hang-up is `X_ABORTED` (499). `deadlineAt` is published as core's
   `ctx.deadlineAt` (`traceHeaders()` sends it on). `deadline.clear()` in the `finally`. **A handler
   outliving its 504 is held in core's in-flight count** (`beginWork()`, `pipeline-inflight.test.ts`).
 

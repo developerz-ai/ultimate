@@ -13,7 +13,7 @@ import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { resetAppLoad } from './app-load';
 import { OPENAPI_FILE } from './app-openapi';
 import { REQUIRED_BUN } from './app-root';
-import { GENERATORS, generateCommand, writeFiles } from './cmd-generate';
+import { GENERATORS, generateCommand, nextSteps, writeFiles } from './cmd-generate';
 import type { CommandContext } from './command';
 import { exec } from './exec';
 import { parseArgs } from './parse';
@@ -425,5 +425,18 @@ describe('unit · the command surface an agent reads', () => {
     expect(result.summary).not.toContain('wrote');
     expect(result.summary).toContain('would write');
     expect(result.summary).toContain('nothing written');
+  });
+});
+
+// `x g cron-job` printed no next step, and nothing fired a schedule short of its cron: the agent
+// that wrote one had no way to see it run. The step it owes is the one that fires it now.
+describe('unit · x g cron-job names the command that fires its schedule now', () => {
+  test('its schedule, by the name cronJob() pins, fired through x tasks run', () => {
+    const written = ['apps/web/app/ops/jobs/nightly-report.ts'];
+    expect(nextSteps(written, [], 'ops', 'nightly-report.schedule')).toEqual([
+      'bunx x tasks run nightly-report.schedule',
+    ]);
+    // Any other generator that declares no table owes nothing.
+    expect(nextSteps(written, [], 'ops')).toEqual([]);
   });
 });
