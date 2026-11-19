@@ -18,6 +18,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - `x heavy run --max-wait <seconds>` gives up with `X_HEAVY_WAIT_EXPIRED` (exit 75); `x heavy status` names each run's wrapper and command pids (`wrapperAlive`, `childPids` in `--json`), and a heavy run also waits while the CPU is saturated and another run is admitted.
 - `x clean --services` stops this app's test service stack, and the gate prints one line saying whether it started, reused or shared one.
 - `x dev`'s port refusal names the directory of the process holding the port.
+- `x upgrade --only <step>[,<step>â€¦]` runs the hop's `x verify` on those steps alone, so `unit`, `live` and `e2e` can be left to CI on a loaded machine. The report never reads as a full gate: `proof: "verify-only"`, `verify.notRun[]`, a `NOT THE FULL GATE` summary and a `then` naming `x verify --only <the rest>`. A bare `x upgrade` still runs the full gate ([Upgrading](wiki/Upgrading.md)).
 
 ### Changed
 

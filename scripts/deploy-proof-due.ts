@@ -2,7 +2,8 @@
 // Is ci.yml's `deploy-proof` due on this push to main? It may skip only when no file that decides
 // the rolling upgrade moved since a commit whose proof PASSED. Diffing against `github.event.before`
 // alone let a red proof on A be hidden by a B that touched no deciding path, and release.yml then
-// published from B (plan 101 K15). Unknown is never a skip: every doubt runs the proof.
+// published from B (plan 101 K15). On a pull request: due when its diff touches a deciding path, so
+// a break lands red before the merge, not on main. Unknown is never a skip: every doubt runs it.
 //
 //   bun run scripts/deploy-proof-due.ts [--json]     (ci.yml; writes run= to $GITHUB_OUTPUT)
 
@@ -50,7 +51,10 @@ export interface DeployProofInput {
   /** This commit's subject line. */
   readonly subject: string;
   readonly predecessor: Predecessor | undefined;
-  /** Files changed between the predecessor's commit and this one; undefined when unreadable. */
+  /**
+   * Files changed between the predecessor's commit and this one — on a pull request, between its
+   * base tip and its merge commit; undefined when unreadable.
+   */
   readonly changed: readonly string[] | undefined;
 }
 
@@ -71,6 +75,7 @@ export const touchesVerdict = (changed: readonly string[]): string | undefined =
  * deciding files equal a commit whose proof was performed and green.
  */
 export function deployProofDue(input: DeployProofInput): DeployProofDecision {
+  if (input.event === 'pull_request') return pullRequestDue(input.changed);
   if (input.event !== 'push') return { run: true, reason: `a ${input.event} run always proves` };
   if (RELEASE_SUBJECT.test(input.subject)) {
     return { run: true, reason: 'a release commit is proved on itself, never by inheritance' };
@@ -97,6 +102,20 @@ export function deployProofDue(input: DeployProofInput): DeployProofDecision {
     reason: `no file that decides the proof moved since ${predecessor.headSha}, whose proof passed (run ${String(predecessor.runId)})`,
     base: predecessor.headSha,
   };
+}
+
+/**
+ * A pull request inherits nothing — its skip is no verdict, and the push to main after the merge
+ * still decides by the rule above. An empty or unreadable diff is unknown, and unknown runs.
+ */
+function pullRequestDue(changed: readonly string[] | undefined): DeployProofDecision {
+  if (changed === undefined || changed.length === 0) {
+    return { run: true, reason: "the pull request's diff could not be read" };
+  }
+  const moved = touchesVerdict(changed);
+  return moved === undefined
+    ? { run: false, reason: 'no file that decides the proof is in this pull request' }
+    : { run: true, reason: `this pull request changes ${moved}` };
 }
 
 /**
@@ -222,6 +241,15 @@ async function changedSince(base: string, cwd: string): Promise<readonly string[
   return diff.ok ? diff.output.split('\n').filter((line) => line !== '') : undefined;
 }
 
+/**
+ * A pull request's files: its merge commit against its first parent, the base tip it was made on
+ * — ci.yml checks this job out at depth 2, as `changes` is. Undefined on failure.
+ */
+async function pullRequestFiles(cwd: string): Promise<readonly string[] | undefined> {
+  const diff = await run(['git', 'diff', '--no-renames', '--name-only', 'HEAD^1', 'HEAD'], { cwd });
+  return diff.ok ? diff.output.split('\n').filter((line) => line !== '') : undefined;
+}
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const cwd = repoRoot();
@@ -235,9 +263,11 @@ if (import.meta.main) {
         const asks = event === 'push' && !(subject.ok && RELEASE_SUBJECT.test(subject.output));
         const predecessor = asks ? await readPredecessor(cwd) : undefined;
         const changed =
-          predecessor?.conclusion === 'success'
-            ? await changedSince(predecessor.headSha, cwd)
-            : undefined;
+          event === 'pull_request'
+            ? await pullRequestFiles(cwd)
+            : predecessor?.conclusion === 'success'
+              ? await changedSince(predecessor.headSha, cwd)
+              : undefined;
         return { event, subject: subject.ok ? subject.output : '', predecessor, changed };
       },
       async (candidate) => {

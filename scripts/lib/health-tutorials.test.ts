@@ -34,6 +34,11 @@ describe('row 10 · the tutorials run as written', () => {
     expect(verdict({ runs: { message: 'HTTP 502' } })).toBe('X_HEALTH_ROW_UNREADABLE');
   });
 
+  // A pull request runs the workflow too, and its red is that pull request's, never main's.
+  test('the row reads main alone', () => {
+    expect(TUTORIALS_RUN_COMMAND).toContain(' --branch main ');
+  });
+
   test('the reader asks gh exactly what the row command says', async () => {
     const asked: string[] = [];
     const gh = async (args: readonly string[]): Promise<RunResult> => {

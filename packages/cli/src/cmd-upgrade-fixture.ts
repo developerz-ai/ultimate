@@ -289,6 +289,10 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
         if ((script.generateCode ?? 0) !== 0) return answer(command, '', script.generateCode);
         return answer(command, await generated(options.cwd, args[3] ?? ''));
       default:
+        // `x upgrade --only <steps>`: the installed verify, narrowed to the list the hop was given.
+        if (label.startsWith('x verify --only ')) {
+          return answer(command, script.verify ?? VERIFY_GREEN, script.verifyCode ?? 0);
+        }
         return expect.unreachable(`an unscripted spawn: ${label}`);
     }
   };
@@ -349,6 +353,8 @@ interface Output {
       readonly ok: boolean;
       readonly summary: string;
       readonly failed: readonly string[];
+      readonly only?: readonly string[];
+      readonly notRun?: readonly string[];
       readonly findings: readonly {
         step?: string;
         code: string;

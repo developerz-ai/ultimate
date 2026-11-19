@@ -35,6 +35,8 @@ import { publishedVersions, releaseBunRange } from './upgrade-registry';
 import type { PlannedWrites } from './upgrade-report';
 import { humanLines, NO_WRITES, report, thenLine } from './upgrade-report';
 import { findUpgradeRoot } from './upgrade-root';
+import type { GateScope } from './upgrade-scope';
+import { readScope } from './upgrade-scope';
 import { stopChildrenOnSignal, tagRunner, upgradeTag } from './upgrade-signals';
 import type { UnfinishedHop } from './upgrade-unfinished';
 import { clearUnfinished, readUnfinished, writeUnfinished } from './upgrade-unfinished';
@@ -170,6 +172,7 @@ export const createUpgradeCommand = (
     root: string,
     app: boolean,
     to: string | undefined,
+    scope: GateScope | undefined,
   ): Promise<CommandResult> {
     const dryRun = flagBool(ctx.args, 'dry-run');
     const unfinished = await readUnfinished(root);
@@ -321,6 +324,7 @@ export const createUpgradeCommand = (
         onStage: stageReached,
         codemods: { from: resume === undefined ? hop.from : EVERY_RELEASE, to: hop.to },
         ...(bunMoved === undefined ? {} : { bunMoved }),
+        ...(scope === undefined ? {} : { only: scope }),
       });
       return { gate: hopGate, scripts: [] };
     });
@@ -339,6 +343,15 @@ export const createUpgradeCommand = (
     };
     const span = { from: hop.from, to: hop.to };
     if (gate !== undefined) {
+      const notRun = gate.verify.notRun ?? [];
+      if (done && notRun.length > 0) {
+        const scoped = {
+          ...span,
+          only: (gate.verify.only ?? []).join(','),
+          notRun: notRun.join(','),
+        };
+        return ok('upgrade', msg('cli.upgrade.doneScoped', scoped), extra);
+      }
       return done
         ? ok('upgrade', msg('cli.upgrade.done', span), extra)
         : failed(
@@ -363,6 +376,7 @@ export const createUpgradeCommand = (
       if (ctx.args.subcommand === 'codemods') return runUpgradeCodemods(ctx);
       const { dir: root, app } = await findUpgradeRoot(ctx.cwd);
       const to = readTarget(ctx);
+      const scope = readScope(ctx, app);
       // One hop per app at a time, and a stopped hop stops its children: every spawn below is
       // tagged, and SIGINT/SIGTERM kill that tree and release the lock before the signal lands.
       const release = await acquireUpgradeLock(root);
@@ -371,7 +385,7 @@ export const createUpgradeCommand = (
       const undoSignals = stopChildrenOnSignal({ tag, pids, cleanup: release });
       try {
         const runner = tagRunner(ctx.runner, tag, ctx.env, pids);
-        return await runHop({ ...ctx, runner }, root, app, to);
+        return await runHop({ ...ctx, runner }, root, app, to, scope);
       } finally {
         undoSignals();
         release();

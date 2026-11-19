@@ -70,7 +70,7 @@ servers a `services:` block cannot start.
 | `scaffold-smoke` | 5 | one scaffold per runner: default, `--no-example`, and one per `x new --shape` (`api`, `blog`, `dashboard` since 2026-11-06), held to `NEW_SHAPES` by `scripts/ci-workflow-shape.test.ts` |
 | `packages` | 4 + 1 | each unit tested and covered alone; `cli` cut into two weight-band parts on two shards, the other 31 units on two more; `packages (merge)` folds the parts and judges `cli` (2026-11-17, below) |
 | `container` | 1 | unchanged |
-| `deploy-proof` | 1 | unchanged, `main` only |
+| `deploy-proof` | 1 | `main`, and a pull request whose diff touches a deciding path (2026-11-19, below) |
 | `fault-drills` | 1 | `x drill` on `examples/dummy` against one Postgres: `pg-blackhole`, `worker-sigkill`, `web-sigterm` — added 2026-11-06, below |
 | `release-rehearsal` | 1 | pull requests only: on a diff touching `scripts/`, the CLI's templates, codemods or upgrade, or any `package.json`, `release.ts --bump minor --rehearse` stamps the next minor in the runner's checkout (never committed) and the version-sensitive suites run against it — a test that bakes the current version breaks here, not on the release PR (added 2026-11-15) |
 | `windows` | 1 | native Windows in PowerShell: lint, typecheck, a path-heavy unit subset, a scaffold smoke — added 2026-10-05, below |
@@ -103,6 +103,7 @@ services where it starts any (22 s + 8 s before this change, for two servers by 
 | a part starts only the services it exports URLs for | `scripts/test-services-shape.test.ts` |
 | a suite that needs a service URL is run by a part that exports it | `scripts/test-services-shape.test.ts` |
 | `windows` is the one non-Ubuntu runner, pwsh on every step, ≤ 25 min | `scripts/ci-workflow-shape.test.ts` |
+| no check runs on `main` alone: a workflow a push to `main` starts runs on a pull request over the same paths, unless it publishes; no `ci.yml` job a push runs is skipped on a pull request | `scripts/ci-workflow-main-only.test.ts` |
 
 ## Trade
 
@@ -344,6 +345,25 @@ more under coverage than its weights say, ~0.4 s of isolation per file. Expected
 install and a fold of two ~150 KB documents. The first run's `packages` logs are the proof; the
 next lever is a per-file overhead in `planParts`' cost, so the bands balance at ~210 s each.
 
+## Nothing checks `main` alone, 2026-11-19
+
+Two jobs ran only on a push to `main`, and both went red on the merge of a green pull request
+(#1272): `deploy-proof` (`docker/deploy-proof/held-job.sh` edited a registry shape `x new` no
+longer wrote) and `tutorial-run` (Tutorial 2's `x db gen` line gained its tables). Each now runs on
+a pull request too, over the paths it already depended on:
+
+| Job | On a pull request | Cost |
+|---|---|---|
+| `deploy-proof` | when `scripts/deploy-proof-due.ts` finds a `VERDICT_PATHS` file in the diff (merge commit against its first parent, depth 2); none: the job runs its decision step and skips the rest. It inherits nothing — `main` still decides by the predecessor rule | ≤ 8 min, beside the gate, off the critical path |
+| `tutorial-run.yml` | `pull_request.paths` equal to `push.paths`; the list gained `cmd-new*`, `cmd-db*`, `db-*` and `messages*`, where the tutorial output it diverged on lives | ~2.5 min, its own workflow |
+
+`verify` is still the one verdict: neither job is in its `needs`, neither is required, and a
+path-filtered workflow never leaves a check pending — a red one is a red check on the pull request.
+`scripts/lib/health-tutorials.ts` reads `--branch main` alone, so a pull request's red is never
+main's health. `scripts/ci-workflow-main-only.test.ts` holds the rule: a workflow pushed on `main`
+with no `pull_request` trigger, or with different paths, fails unless it is a named publisher
+(`wiki.yml`, `scorecard.yml`); a `ci.yml` job whose `if` admits a push and not a pull request fails.
+
 ## Fault drills, 2026-11-06
 
 `fault-drills` asks one question no other job can: does the reference app keep the framework's
@@ -387,7 +407,7 @@ when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `nex
 | `deploy-social-demo.yml` | green `ci` on `main` → the demo image |
 | `deploy-docs-site.yml` | green `ci` on `main` → `dummy/docs-site`'s static build on GitHub Pages; **inert** — every job skipped — until the owner sets the `DOCS_SITE_ORIGIN` repository variable (`scripts/ci-workflow-shape-docs.test.ts`) |
 | `wiki.yml` | push to `main` → the wiki |
-| `tutorial-run.yml` | push to `main` touching a tutorial or a generator → tutorials 1–4 fence by fence, `X_DOC_TUTORIAL_DIVERGED`; never on a PR, never in `ci` |
+| `tutorial-run.yml` | push to `main` or a PR touching a tutorial, a generator, `x new`, `x db` or the CLI's messages → tutorials 1–4 fence by fence, `X_DOC_TUTORIAL_DIVERGED`; never in `ci`, never required; one concurrency group per ref (on PRs since 2026-11-19, below) |
 | `bench.yml` | weekly + dispatch → re-measured first-hour/http-hello JSON as one PR on `bench/re-measured`, replaced by the next run; never in `ci`. No `release` trigger: a Release `release-tag.yml` creates with `GITHUB_TOKEN` starts no run, so it never fired. Needs Actions allowed to create pull requests (repository and organisation Actions settings); the cost is that required reviews must come from CODEOWNERS, which the bot cannot satisfy. Both 2026-11 runs were refused the PR; a refusal now says so and prints the `gh pr create` that opens it by hand, never the approve switch as the remedy |
 | `workflow-lint.yml` | push or PR touching `.github/**` → zizmor 1.32.0 at `medium` and above, online audits (impostor commits, advisories) included; a deliberate finding is suppressed in place with its reason. Its own workflow so a path filter can gate it; not a required check, so the filter never leaves one pending (added 2026-11-09) |
 | `scorecard.yml` | push to `main`, weekly, a change to `main`'s rules → the OpenSSF Scorecard run, published to the Scorecard API the README badge reads (`publish_results: true`); never gates a merge (added 2026-11-10) |

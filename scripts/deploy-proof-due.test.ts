@@ -77,6 +77,38 @@ describe('unit · deploy-proof-due · the decision', () => {
   });
 });
 
+// A proof run on main alone broke main twice after green pull requests (#1272: held-job.sh edited a
+// registry shape `x new` no longer wrote). A pull request whose diff touches a deciding path now
+// runs it before the merge; one that touches none has nothing the proof could answer.
+describe('unit · deploy-proof-due · a pull request', () => {
+  const pr = (changed: readonly string[] | undefined): DeployProofInput => ({
+    event: 'pull_request',
+    subject: 'Merge abc into def',
+    predecessor: undefined,
+    changed,
+  });
+
+  test('a pull request touching a deciding path runs the proof, naming the file', () => {
+    const decision = deployProofDue(pr(['wiki/Home.md', 'docker/deploy-proof/held-job.sh']));
+    expect(decision).toEqual({
+      run: true,
+      reason: 'this pull request changes docker/deploy-proof/held-job.sh',
+    });
+  });
+
+  test('a pull request touching none skips, inheriting nothing — main still proves on the merge', () => {
+    const decision = deployProofDue(pr(['wiki/Home.md', 'packages/money/src/format.ts']));
+    expect(decision.run).toBe(false);
+    expect(decision.base).toBeUndefined();
+    expect(decision.reason).toContain('no file that decides the proof');
+  });
+
+  test('a pull request whose diff could not be read runs it: unknown is never a skip', () => {
+    expect(deployProofDue(pr(undefined)).run).toBe(true);
+    expect(deployProofDue(pr([])).run).toBe(true);
+  });
+});
+
 describe('unit · deploy-proof-due · the paths that decide the verdict', () => {
   test('the chart, the image, the deploy command and the serving path decide it', () => {
     for (const file of [

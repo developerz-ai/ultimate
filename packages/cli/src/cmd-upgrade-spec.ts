@@ -11,7 +11,7 @@ export const upgradeSpec: CommandSpec = {
   summary:
     'move every @ultimat3/* one major in lockstep, raise the Bun floor, install, apply codemods, gate — and name the section to read',
   usage:
-    'x upgrade [--to <version>] [--dry-run] [--json] · x upgrade codemods --from <version> [--to <version>] [--dry-run] [--json]',
+    'x upgrade [--to <version>] [--only <step>[,<step>…]] [--dry-run] [--json] · x upgrade codemods --from <version> [--to <version>] [--dry-run] [--json]',
   // The one command a repository with pins and no `app.config.ts` can still use: `upgrade-root.ts`
   // finds its root, and its report says which check it could run. `codemods` needs the app.
   subcommands: UPGRADE_SUBCOMMANDS,
@@ -29,6 +29,13 @@ export const upgradeSpec: CommandSpec = {
       subcommands: ['codemods'],
       summary:
         'the release the app came from: the codemods whose version lies after it, up to --to, run',
+    },
+    {
+      name: 'only',
+      type: 'string',
+      subcommands: ['run'],
+      summary:
+        "the hop's x verify runs only the named step(s), comma-separated, as x verify --only does — NOT THE FULL GATE: data.verify.notRun names the rest, for CI to run (default: the full gate)",
     },
     {
       name: 'dry-run',

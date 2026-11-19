@@ -145,6 +145,10 @@ export interface HopGate {
     /** The steps that went red, whether or not they carried a finding. */
     readonly failed: readonly string[];
     readonly findings: readonly GateFinding[];
+    /** `x upgrade --only`'s list, as run; absent when the hop ran the full gate. */
+    readonly only?: readonly string[];
+    /** The gate's steps this hop did NOT run, owed elsewhere (CI); absent beside a full gate. */
+    readonly notRun?: readonly string[];
   };
 }
 
@@ -254,6 +258,8 @@ export async function runHopGate(input: {
   readonly bunMoved?: CoverageRebaseline;
   /** The span whose codemods run first, so every later stage judges the carried-across tree. */
   readonly codemods?: { readonly from: string; readonly to: string };
+  /** `x upgrade --only`: verify narrowed to these steps, a strict subset of the gate's. */
+  readonly only?: { readonly steps: readonly string[]; readonly notRun: readonly string[] };
 }): Promise<HopGate> {
   const { runner, root, onStage } = input;
   const installed = (args: readonly string[]): Promise<ExecResult> =>
@@ -294,7 +300,15 @@ export async function runHopGate(input: {
   // Before `verify`, from the report that exercise just wrote: the gate judges the figures it holds.
   const exerciseFloor = await ratchetExerciseFloor(root, stamp);
   onStage('verify');
-  const verify = readVerify(await installed(['verify', '--json']));
+  const { only } = input;
+  const verify =
+    only === undefined
+      ? readVerify(await installed(['verify', '--json']))
+      : {
+          ...readVerify(await installed(['verify', '--only', only.steps.join(','), '--json'])),
+          only: only.steps,
+          notRun: only.notRun,
+        };
   return {
     codemods,
     superseded,

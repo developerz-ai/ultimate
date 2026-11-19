@@ -1761,7 +1761,7 @@ Every test leftover the framework knows of, cleared (`As of 27.3.0`): the migrat
 ## x upgrade
 
 ```bash
-x upgrade [--to <version>] [--dry-run] [--json]
+x upgrade [--to <version>] [--only <step>[,<step>…]] [--dry-run] [--json]
 x upgrade codemods --from <version> [--to <version>] [--dry-run] [--json]
 ```
 
@@ -1780,6 +1780,8 @@ One major per run, so each hop's gate attributes its red to that hop. `As of 30.
 
 A dry run refuses exactly what the real run would, then stops before step 4 — after previewing this CLI's codemods for the span, written nowhere. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
 
+`--only <step>[,<step>…]` (`As of 2026-11-19`): the last stage runs `x verify --only <steps> --json` in place of `x verify --json` — the list `x verify --only` takes, in the gate's order, refused the same way (`X_CLI_BAD_FLAG`, `fix:` the corrected `x upgrade --only …`), and refused with no `app.config.ts`, where no `x verify` runs. **Not the full gate**: `proof` is `verify-only`, `verify.notRun[]` names every step left out, the summary says `NOT THE FULL GATE` and `then` names `x verify --only <notRun> --json` for CI. Every step named is the full gate, reported as one. Default: the full gate. The stages before it (codemods, manifest, doctor, guards, a Bun-floor hop's coverage rebaseline, exercise) run either way: each writes what the hop leaves.
+
 `--to`: an exact release in the next major. Over a mixed set a run moves the LOWEST pins one major: `^19` beside `^29` is told `--to 20.x.y`, that hop rewrites only the pins at or below it (a pin above is never moved backwards) and names its walkthrough, `next` names the following hop, and the last one levels the set. A straggler jump straight to the highest major is `X_UPGRADE_HOP_TOO_WIDE`: it skipped every walkthrough between.
 
 | `data` field | Meaning |
@@ -1789,7 +1791,7 @@ A dry run refuses exactly what the real run would, then stops before step 4 — 
 | `done` | verify's verdict, and the exit code follows it. `true` when already there, `false` on a dry run |
 | `dryRun` | nothing written, no gate run |
 | `app` | whether the root holds `app.config.ts` |
-| `proof` | what `done` rests on: `verify`, `scripts` or `none` |
+| `proof` | what `done` rests on: `verify` (the full gate), `verify-only` (`--only`: some steps, the rest in `verify.notRun`), `scripts` or `none` |
 | `section` | `{ title, url, local }` in [Upgrading](Upgrading); `local` is the same section as an `x docs` topic, printed whole offline; `null` when no major is crossed |
 | `pins[]` | `{ file, name, from, to }` |
 | `bun` | `{ from, to, edited[], manual[] }`. `manual[]`: `{ path, line, text, why }`, a site only you can move, listed on every run |
@@ -1800,7 +1802,7 @@ A dry run refuses exactly what the real run would, then stops before step 4 — 
 | `exerciseFloor` | `{ file, written }`: the `exercise` keys (`unprovenMax`, `statementsMax` ≥ 100) the hop's own `x exercise` measured, written into an `x.verify.json` that stated none, so the hop stays green and the floor only falls. A key the app already wrote is never touched; `null` when nothing was written |
 | `manifest` | `{ ok, findings[] }`. A failure does not stop the gate |
 | `exercise` | `{ reported, ok, findings[] }` from the hop's own `x exercise --json`, listed (and printed) before the gate's findings; each `fix` pastes as written. `reported: false`: the hop's CLI answered no exercise document — unknown, never a finding |
-| `verify` | `{ ok, summary, failed[], findings[] }`, each finding `{ step?, code, cause, fix, at? }` |
+| `verify` | `{ ok, summary, failed[], findings[], only?, notRun? }`, each finding `{ step?, code, cause, fix, at? }`. `only[]` and `notRun[]` only under `--only`: the steps run, and the gate's steps this hop did not run |
 | `codemods` | `As of 2026-11-15`: `{ from, to, dryRun, source, applied[] }`, each `applied[]` a codemod that ran: `{ id, since, summary, changed[], skipped[] }`; a `skipped[]` entry is `{ path, reason, diff? }`, a file the codemod would not overwrite (the app edited it), with the template's change as a unified diff to make by hand. `source: installed` — the hop's own CLI applied its list; `driver` — that CLI predates codemods, so this one applied its own. `reinstalled: true` — a `package.json` differs after the codemods (read byte for byte, never off a codemod's report), so the hop ran `bun install` again before any gate stage; `x upgrade codemods` does the same by hand. `failure: { code, cause, fix }` — the installed CLI's codemods run failed for a reason other than lacking the subcommand: nothing applied, this CLI does not stand in, and the hop is not done. `null`: no app, or already at the target, where no codemod runs (`As of 2026-11-18`; `x upgrade codemods --from 0.0.0 --json` carries an app still holding an old template's copy) |
 | `superseded[]` | `As of 2026-11-15`: a workaround the hop's framework made unnecessary, read after the codemods — `{ code: X_SUPERSEDED_WORKAROUND, cause, fix, at }`. A warning, never the verdict |
 | `then` | the next thing to do, in a sentence naming the commands |
