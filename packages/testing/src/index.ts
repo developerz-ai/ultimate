@@ -89,8 +89,15 @@ export type { DrillBudgets, DrillEvidence, DrillFailure, DrillProperty } from '.
 export { judgeDrill } from './drill-verdict';
 export type { DrillWrites } from './drill-writes';
 export { drillWriteTargets } from './drill-writes';
-export type { Drill, DrillName, DrillRole, DrillService } from './drills';
-export { DRILL_NAMES, DRILLS, drillNamed, drillRoles } from './drills';
+export type {
+  Drill,
+  DrillName,
+  DrillRole,
+  DrillRoleFacts,
+  DrillRoleNotPlayed,
+  DrillService,
+} from './drills';
+export { DRILL_NAMES, DRILLS, drillNamed, drillRoles, drillRolesNotPlayed } from './drills';
 export type { A11yFinding, A11yRule } from './e2e-a11y';
 export { auditTree, NAMED_ROLES } from './e2e-a11y';
 export type { A11yAllow, A11yOptions } from './e2e-a11y-run';

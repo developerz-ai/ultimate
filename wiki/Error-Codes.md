@@ -39,7 +39,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/ai` | [Error-Codes-ai](Error-Codes-ai) | 36 |
 | `@ultimat3/auth` | [Error-Codes-auth](Error-Codes-auth) | 30 |
 | `@ultimat3/cache` | [Error-Codes-cache](Error-Codes-cache) | 8 |
-| `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 220 |
+| `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 223 |
 | `@ultimat3/core` | [Error-Codes-core](Error-Codes-core) | 76 |
 | `@ultimat3/db` | [Error-Codes-db](Error-Codes-db) | 41 |
 | `@ultimat3/entity` | [Error-Codes-entity](Error-Codes-entity) | 44 |
@@ -567,6 +567,9 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_GUARD_OVER_BASELINE | [cli](Error-Codes-cli) |
 | X_GUARD_VENDORED | [cli](Error-Codes-cli) |
 | X_HEALTH_ROW_UNREADABLE | [scripts](Error-Codes-scripts) |
+| X_HEAVY_COMMAND_NOT_FOUND | [cli](Error-Codes-cli) |
+| X_HEAVY_LEDGER_UNAVAILABLE | [cli](Error-Codes-cli) |
+| X_HEAVY_MEMORY_INVALID | [cli](Error-Codes-cli) |
 | X_HELPER_COPY | [scripts](Error-Codes-scripts) |
 | X_HIVE_EMPTY | [ai](Error-Codes-ai) |
 | X_HTTP_PATH_INPUT_CONFLICT | [core](Error-Codes-core) |

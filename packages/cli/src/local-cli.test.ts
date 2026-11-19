@@ -55,6 +55,17 @@ describe('resolveLocalCli, x upgrade', () => {
     ).toBeUndefined();
   });
 
+  test('x heavy also outlives an older app CLI: it is run from any directory', () => {
+    const dir = app();
+    const local = join(dir, LOCAL_CLI_BIN);
+    expect(
+      resolveLocalCli(
+        { cwd: dir, selfPath: self, env: {}, command: 'heavy' },
+        withVersions(local, '19.4.0', '30.0.0'),
+      ),
+    ).toBeUndefined();
+  });
+
   test('an equal or newer app CLI answers it, as it answers everything', () => {
     const dir = app();
     const local = join(dir, LOCAL_CLI_BIN);

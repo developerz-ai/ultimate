@@ -25,6 +25,8 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { finiteOption, renderFixShellArg } from '@ultimat3/core';
 import { BadFlagError } from '../packages/cli/src/errors';
+import { withHeavy } from '../packages/cli/src/heavy';
+import { TEST_RUN_BASE_MB, TEST_WORKER_PEAK_MB } from '../packages/cli/src/heavy-weights';
 import { quoteArg } from '../packages/cli/src/shell-quote';
 import { E2E_PATH_GLOBS } from '../packages/cli/src/verify-tests';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
@@ -271,11 +273,24 @@ async function measure(
   // Both pipes are read: under GitHub Actions Bun reports a failing test as an `::error`
   // annotation on stdout, so stderr alone named three failures as "3 tests failed:" and nothing
   // else. `run()` owns the deadline: a suite that hangs is killed and reported, never waited on.
-  const ran = await run(testCommand(unit, dir, workers, item.part?.files), {
-    cwd: root,
-    env: unitEnv(Bun.env, serviceKeys(root)),
-    timeoutMs,
-  });
+  // One reservation per unit suite, its whole width, and the deadline starts once it is admitted.
+  const ran = await withHeavy(
+    {
+      label: `coverage ${item.name}`,
+      cwd: root,
+      env: Bun.env,
+      unitMb: TEST_WORKER_PEAK_MB,
+      baseMb: TEST_RUN_BASE_MB,
+      units: workers,
+    },
+    (child) =>
+      run(testCommand(unit, dir, workers, item.part?.files), {
+        cwd: root,
+        env: { ...unitEnv(Bun.env, serviceKeys(root)), ...child.env },
+        inheritFds: child.fds,
+        timeoutMs,
+      }),
+  );
   const files = item.part?.files ?? testFilesOf(root, unit);
   const failure = unitFailure(item.unit, ran, timeoutMs, files);
   if (failure !== undefined) throw new ScriptError(failure);

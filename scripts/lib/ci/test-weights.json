@@ -4011,7 +4011,6 @@
     "scripts/lib/doc-link-targets.test.ts": 339,
     "scripts/lib/error-code-pages.test.ts": 373,
     "scripts/lib/export-all.test.ts": 233,
-    "scripts/lib/file-lock.test.ts": 282,
     "scripts/lib/fix-shape.test.ts": 318,
     "scripts/lib/fix-shell-arg-sinks.test.ts": 302,
     "scripts/lib/framework-manifest.test.ts": 234,

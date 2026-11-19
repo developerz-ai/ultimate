@@ -266,6 +266,10 @@ describe('LruCache refuses a byte budget that is not a budget', () => {
     expect((caught as UltimateError).cause).toContain('NaN');
     expect((caught as UltimateError).fix).toStartWith('{ maxBytes: 10_000 }');
     expect((caught as UltimateError).fix).toContain('lruTier(...)');
+    // The rung a boot builds has no call of the app's to edit: the fix names where one goes.
+    expect((caught as UltimateError).fix).toContain(
+      'cacheTiers: [lruTier({ maxBytes: 10_000 })] in apps/web/runtime.ts',
+    );
     expect((caught as UltimateError).fix).not.toContain('lru.maxBytes in app.config.ts');
   });
 

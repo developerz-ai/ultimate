@@ -9,10 +9,11 @@ import type { FaultMode } from './fault-proxy';
 export type DrillService = 'postgres' | 'redis' | 'nats';
 
 /**
- * A role the fleet runs as its own process (`ROLE`, `apps/web/server.ts`); `sync` only for a drill
- * whose sync client needs a node to dial, `scheduler` only for the rollout-order drill.
+ * A role the fleet runs as its own process (`ROLE`, `apps/web/server.ts`); `sync` for a drill whose
+ * sync client needs a node to dial and for the rollout order, `scheduler` and `replicator` for the
+ * rollout order alone.
  */
-export type DrillRole = 'web' | 'worker' | 'sync' | 'scheduler';
+export type DrillRole = 'web' | 'worker' | 'sync' | 'scheduler' | 'replicator';
 
 export type DrillName =
   | 'pg-blackhole'
@@ -111,14 +112,59 @@ export const DRILL_NAMES: readonly DrillName[] = DRILLS.map((drill) => drill.nam
 export const drillNamed = (name: string): Drill | undefined =>
   DRILLS.find((drill) => drill.name === name);
 
+/** What this run can start beyond the roles Postgres alone serves. */
+export interface DrillRoleFacts {
+  /** A NATS server: `sync` needs a bus. */
+  readonly bus: boolean;
+  /** The scratch database sits on a `wal_level=logical` server: the replicator streams from it. */
+  readonly logicalPostgres: boolean;
+  /** The app declares an entity on a table: with none, the replicator refuses to boot. */
+  readonly publishable: boolean;
+}
+
+/** A role the rollout order did not start, and what would have let it. */
+export interface DrillRoleNotPlayed {
+  readonly role: DrillRole;
+  readonly needs: string;
+}
+
+const POSTGRES_ONLY: DrillRoleFacts = { bus: false, logicalPostgres: false, publishable: false };
+
+/** The rollout order's roles beyond `web`, `worker` and `scheduler`, each with its gap if any. */
+const rolloutExtras = (
+  found: DrillRoleFacts,
+): readonly (DrillRoleNotPlayed & { gap: boolean })[] => [
+  { role: 'sync', needs: 'TEST_NATS_URL', gap: !found.bus },
+  found.publishable
+    ? { role: 'replicator', needs: 'TEST_REPLICATION_URL', gap: !found.logicalPostgres }
+    : { role: 'replicator', needs: 'an entity on a table', gap: true },
+];
+
 /**
  * The roles a drill's fleet runs: a sync client needs the sync node it dials; the rollout order is
- * played on every role Postgres alone serves (`replicator` needs a logical server, `sync` a bus).
+ * played on every role this run can start, since each one meets the same behind schema.
  */
-export const drillRoles = (drill: Drill): readonly DrillRole[] => {
-  if (drill.fault.kind === 'order') return ['web', 'worker', 'scheduler'];
+export const drillRoles = (
+  drill: Drill,
+  found: DrillRoleFacts = POSTGRES_ONLY,
+): readonly DrillRole[] => {
+  if (drill.fault.kind === 'order') {
+    const extras = rolloutExtras(found).filter((extra) => !extra.gap);
+    return ['web', 'worker', 'scheduler', ...extras.map((extra) => extra.role)];
+  }
   return drill.holds.includes('sync-resumes') ? ['web', 'worker', 'sync'] : ['web', 'worker'];
 };
+
+/** The rollout-order roles this run leaves out: stated in the report, never dropped silently. */
+export const drillRolesNotPlayed = (
+  drill: Drill,
+  found: DrillRoleFacts,
+): readonly DrillRoleNotPlayed[] =>
+  drill.fault.kind === 'order'
+    ? rolloutExtras(found)
+        .filter((extra) => extra.gap)
+        .map(({ role, needs }) => ({ role, needs }))
+    : [];
 
 /** The service a drill needs running, when it needs one beyond Postgres. */
 export const drillService = (drill: Drill): DrillService | undefined =>

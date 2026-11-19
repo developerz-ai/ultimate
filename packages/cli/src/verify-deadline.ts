@@ -5,6 +5,7 @@
 import { TEST_TYPES } from '@ultimat3/testing';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
+import { heavyWaitClock } from './heavy';
 import type { VerifyStepName } from './verify-step';
 
 /** The `x.verify.json` key: `{ "stepTimeoutMs": { "unit": 900000 } }`. */
@@ -462,14 +463,29 @@ export async function killTagged(
   return [...killed.values()];
 }
 
-/** `work`, or `{ timedOut: true }` once `ms` passes. The abandoned promise is never unhandled. */
+/**
+ * `work`, or `{ timedOut: true }` once `ms` of its own time passes. Time queued for the machine
+ * (`waited`, a monotonic clock) is not the step's: a gate behind another gate is not a hung one. The
+ * abandoned promise is never unhandled.
+ */
 export async function raceDeadline<T>(
   work: Promise<T>,
   ms: number,
+  waited: () => number = heavyWaitClock,
 ): Promise<{ readonly timedOut: false; readonly value: T } | { readonly timedOut: true }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const started = performance.now();
+  const waitedAtStart = waited();
   const expired = new Promise<{ readonly timedOut: true }>((resolve) => {
-    timer = setTimeout(() => resolve({ timedOut: true }), ms);
+    const arm = (delay: number): void => {
+      timer = setTimeout(() => {
+        const due = started + ms + (waited() - waitedAtStart);
+        const left = due - performance.now();
+        if (left > 0) arm(left);
+        else resolve({ timedOut: true });
+      }, delay);
+    };
+    arm(ms);
   });
   try {
     const raced = await Promise.race([

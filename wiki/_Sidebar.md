@@ -42,6 +42,7 @@
 - [Client navigation](Client-Navigation)
 - [MCP and AI](MCP-And-AI)
 - [Agents](Agents)
+- [Working with many agents](Many-Agents)
 - [Admin dashboard](Admin-Dashboard)
 - [Scraping](Scraping)
 - [Auth](Auth)

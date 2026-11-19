@@ -27,6 +27,7 @@ import { explainSpec } from './cmd-explain-spec';
 import { fixSpec } from './cmd-fix-spec';
 import { generateSpec } from './cmd-generate-spec';
 import { graphSpec } from './cmd-graph-spec';
+import { heavySpec } from './cmd-heavy-spec';
 import { profileSpec } from './cmd-profile-spec';
 // Registered here, not by whichever command body happens to load: `dispatch` renders a CLI code's
 // title for a refusal raised before any body is imported.
@@ -138,6 +139,7 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(explainSpec, async () => (await import('./cmd-explain')).explainCommand),
   lazy(profileSpec, async () => (await import('./cmd-profile')).profileCommand),
   lazy(statusSpec, async () => (await import('./cmd-status')).statusCommand),
+  lazy(heavySpec, async () => (await import('./cmd-heavy')).heavyCommand),
 ];
 
 export const COMMANDS: readonly CliCommand[] = [

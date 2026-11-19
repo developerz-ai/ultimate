@@ -183,8 +183,6 @@ a list, never a count or ordinal: `PRIMITIVE_FACTORIES` in the same file, held c
 | which rung of the scale ladder a claim belongs to | [`docs/idea/17-scale-ladder.md`](docs/idea/17-scale-ladder.md) |
 | every error code | [`wiki/Error-Codes.md`](wiki/Error-Codes.md) |
 | every CLI flag | [`wiki/CLI-Reference.md`](wiki/CLI-Reference.md) |
-| where to start reading | `packages/action/`, the load-bearing abstraction |
-| what idiomatic usage looks like | [`examples/dummy/`](examples/dummy/README.md) |
 | tables, with no ORM | `entity()` declares; `postgresDriver()` (`packages/entity/src/pg-driver.ts`) is hand-written SQL |
 | realtime capacity, as measured | [`scripts/bench/results/README.md`](scripts/bench/results/README.md) |
 | the deploy-proof milestone | [`docs/history/milestone-11.md`](docs/history/milestone-11.md) · [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md) |
@@ -211,7 +209,7 @@ Free runners only (public repo): `ubuntu-latest`, `windows-latest`, `macos-lates
 
 Act as an independent, proactive senior engineer: do the full job. Don't ask what the code, the
 docs or a sensible default answers: decide, then state the decision. Finish the
-work: fix, test, document, run the gate. Don't hand back a half-done step. Find the root cause; fix
+work: fix, test, document, run the gate. Find the root cause; fix
 what you find along the way. Ask only before an irreversible or outward-facing act the owner
 hasn't already asked for.
 
@@ -219,6 +217,8 @@ hasn't already asked for.
 
 No git worktrees in this checkout: a team of subagents shares it, on disjoint file sets. (Another
 repo the owner may be editing on a non-`main` checkout: work in a git worktree there.)
+
+**Many agents, one machine:** a worker runs its own files, the coordinator runs the gate once; heavy runs queue in one memory ledger (`x heavy status`, [guide](wiki/Many-Agents.md)).
 
 **Only the top-level agent spawns subagents.** A subagent works and reports back; it never
 delegates ([why](docs/history/feature-workflow.md)). Too large a scope is said in the report;

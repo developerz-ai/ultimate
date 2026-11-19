@@ -19,6 +19,7 @@ import { ok } from './command';
 import { BadFlagError, NoTestFilesError } from './errors';
 import type { Runner } from './exec';
 import { readIntFlag } from './flag-number';
+import { FREE_RUN_FILES } from './heavy-weights';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import type { ParsedArgs } from './parse';
@@ -245,9 +246,18 @@ export const testCommand: CliCommand = {
       workers,
       ...(isolate ? { isolate } : {}),
       ...(seed === undefined ? {} : { seed }),
-      // A default-width run leases its workers from the machine pool, so a second `x test` or
-      // gate on the same box runs narrower instead of doubling its memory.
-      ...(plan === undefined ? {} : withLease(machineLease(plan.workers, ctx.env))),
+      // Every run but a worker's own few files enters the machine ledger, so a second `x test` or
+      // gate on the same box narrows or queues instead of doubling its memory.
+      ...(files.length <= FREE_RUN_FILES
+        ? {}
+        : withLease(
+            machineLease(ctx.env, {
+              cwd: ctx.cwd,
+              label: type === undefined ? 'x test' : `x test ${type}`,
+              ...(type === undefined ? {} : { type }),
+              ...(plan === undefined ? { exact: true } : {}),
+            }),
+          )),
       ...(filter === undefined ? {} : { filter }),
       ...(type === undefined ? {} : { type }),
       // `kept` is the corpus the run saw. `selected`, not `discovered`: with `--affected` the sample was taken from the narrowed

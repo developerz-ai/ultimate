@@ -611,7 +611,10 @@ a job boundary the class is gone and the `code` is what survives — match on th
 (`CacheDriverUnavailableError`, `CachePurgeFailedError`). An app hands its own to the boot in
 `apps/web/runtime.ts` — `cacheTiers: [myRedisTier]` replaces the rung of that name (`cache.tiers`
 still decides which rungs exist; a supplied rung it does not name is logged `cache.tier.unnamed`
-and unused), `purge: myPurgeDriver` replaces the `CLOUDFLARE_*`/`FASTLY_*` selection. The
+and unused). It is also the one way to set a built-in rung's limits: `cacheTiers: [lruTier({
+maxBytes })]`, never an `app.config.ts` key. A `redisTier` with no `client` and no `REDIS_URL` or
+`VALKEY_URL` dials the local server, and the boot logs `cache.tier.default-redis`
+(`usesDefaultRedisClient`). `purge: myPurgeDriver` replaces the `CLOUDFLARE_*`/`FASTLY_*` selection. The
 conformance suites are `@ultimat3/testing/conformance`'s `cacheTierConformance` and
 `purgeDriverConformance`.
 

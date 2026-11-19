@@ -1381,25 +1381,27 @@ jobs:
         run: mkdir -p "$WORK" && bash docker/deploy-proof/run.sh
 
   # Does the reference app keep the framework's declared behaviour while a dependency fails? `x
-  # drill` boots `examples/dummy`'s web and worker roles as separate processes on a scratch database,
+  # drill` boots `examples/dummy`'s roles as separate processes on a scratch database,
   # each dialling Postgres through a fault proxy, plays one fault under load (anonymous page reads,
   # and `contactSales` POSTs that enqueue a job each) and is red on any stated property that did not
   # hold: a coded answer, a bounded request, recovery with no restart, every job terminal, none run
-  # twice, a signalled role gone within its drain. The verdict is evidence, never a chart to read.
+  # twice, a signalled role gone within its drain, and — `roll-before-migrate`, the rollout order — every
+  # role started ahead of migrate waiting, then serving. The verdict is evidence, never a chart to read.
   #
   # Not a gate step: it needs a real Postgres, and `x verify` needs nothing (docs/idea/21-the-range.md).
-  # THREE of the eight, chosen for the 5-minute budget — measured locally 2026-11-06: `pg-blackhole`
+  # FOUR of the nine, chosen for the 5-minute budget — measured locally 2026-11-06: `pg-blackhole`
   # 67 s (plan 29's unanswered-statement bound; `drill-pg-blackhole.live.test.ts` proves it red with
   # the bound off), `worker-sigkill` 49 s (a reclaimed run, 1,012 jobs, none stuck or doubled),
-  # `web-sigterm` 6 s. `pg-slow` and `pg-restart` cost a minute each more and run by hand;
+  # `web-sigterm` 6 s. `pg-slow`, `pg-restart` and `worker-sigterm` run by hand;
   # `redis-down` and `nats-down` fault services this app does not declare, so they are refused
-  # (`X_DRILL_SERVICE_MISSING`), never run green. Postgres only, so only Postgres is started.
+  # (`X_DRILL_SERVICE_MISSING`), never run green. `roll-before-migrate` plays all five roles, so the bus and the logical Postgres
+  # (`postgres-tls`, `wal_level=logical`) start beside Postgres; a role it left out is red here.
   fault-drills:
     needs: [tested, changes]
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' && needs.changes.outputs.heavy != 'false' }}
     runs-on: ubuntu-latest
     # A runaway kill-switch, not a budget: four drills plus setup is about three and a half
-    # minutes (roll-before-migrate measured 10 s locally, 2026-11-15).
+    # minutes (roll-before-migrate measured 10 s locally on three roles, 2026-11-15; five add two boots).
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1407,7 +1409,7 @@ jobs:
           persist-credentials: false
       - name: test services, in RAM — started
         run: |
-          nohup bash -c 'docker compose -f docker/docker-compose.test.yml up -d --wait postgres; echo $? > "$RUNNER_TEMP/services.exit"' \
+          nohup bash -c 'docker compose -f docker/docker-compose.test.yml up -d --wait postgres postgres-tls nats; echo $? > "$RUNNER_TEMP/services.exit"' \
             > "$RUNNER_TEMP/services.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/services.pid"
       - uses: ./.github/actions/setup
@@ -1417,7 +1419,7 @@ jobs:
           cat "$RUNNER_TEMP/services.log"
           [ "$(cat "$RUNNER_TEMP/services.exit" 2>/dev/null)" = 0 ] \
             || { docker compose -f docker/docker-compose.test.yml ps -a; exit 1; }
-          grep -E '^TEST_DATABASE_URL=' docker/test-services.env >> "$GITHUB_ENV"
+          grep -E '^TEST_(DATABASE|REPLICATION|NATS)_URL=' docker/test-services.env >> "$GITHUB_ENV"
       # roll-before-migrate: the serving roles started on a database whose framework stamp is an
       # older build's, then ROLE=migrate — each must wait, say so once, and serve, never crash-loop.
       - name: x drill pg-blackhole, worker-sigkill, web-sigterm, roll-before-migrate on examples/dummy
@@ -1428,6 +1430,8 @@ jobs:
             bun run x -- drill "$drill" --cwd examples/dummy --json > "$doc" || status=1
             jq -r '.summary, (.findings[]? | "  \(.code)\n    cause: \(.cause)\n    fix:   \(.fix)")' "$doc" \
               || { echo "x drill $drill wrote no document"; status=1; }
+            missing="$(jq -r '.data.rolesNotPlayed[]? | "\(.role), needs \(.needs)"' "$doc" 2>/dev/null || true)"
+            [ -z "$missing" ] || { echo "x drill $drill left roles out: $missing"; status=1; }
           done
           exit "$status"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

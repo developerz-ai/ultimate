@@ -16,13 +16,14 @@ import { TEST_TYPES } from '@ultimat3/testing';
 import { narrowToApp } from './affected-tests';
 import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';
 import { judgeCoverage } from './coverage-floor';
+import { withHeavy } from './heavy';
 import { msg } from './messages';
 import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
 import type { TestFile } from './test-select';
 import { discoverTests } from './test-select';
 import { TEST_TIMINGS_FILE } from './test-shards';
-import { machineLease } from './test-slots';
+import { machineLease, suiteWeight } from './test-slots';
 import type { WorkerPlan } from './test-workers';
 import { availableCpus, SERIAL_TYPES, totalMemory, workerPlan } from './test-workers';
 import { runCovered } from './verify-coverage-run';
@@ -126,25 +127,26 @@ const runSerial = async (
         // the slice: `bun test` reads a positional as a path filter either way.
         [...whole.filter((arg, at) => at < 2 || arg.startsWith('--')), ...[...files].sort()];
   const envOverrides = { ...testEnvOverrides(ctx.root, ctx.env ?? Bun.env), ...paceEnv(ctx.pace) };
-  const exec = (e2e: { command: readonly string[]; env: typeof envOverrides }) =>
-    ctx.runner(e2e.command, {
-      cwd: ctx.root,
-      ...(Object.keys(e2e.env).length === 0 ? {} : { env: e2e.env }),
-    });
+  // One serial suite is one reservation for its whole length, the app it boots included.
+  const execWith =
+    (fds: readonly number[]) => (e2e: { command: readonly string[]; env: typeof envOverrides }) =>
+      ctx.runner(e2e.command, {
+        cwd: ctx.root,
+        ...(Object.keys(e2e.env).length === 0 ? {} : { env: e2e.env }),
+        ...(fds.length === 0 ? {} : { inheritFds: fds }),
+      });
+  const hostEnv = ctx.env ?? Bun.env;
   // The e2e step drives a real browser against the app it spawns, when this machine has one.
-  const result =
-    type === 'e2e'
-      ? await withE2eApp(
-          {
-            root: ctx.root,
-            isApp: isApp(ctx.root),
-            command,
-            env: envOverrides,
-            hostEnv: ctx.env ?? Bun.env,
-          },
-          exec,
-        )
-      : await exec({ command, env: envOverrides });
+  const result = await withHeavy(
+    { label: `verify ${type}`, cwd: ctx.root, env: hostEnv, ...suiteWeight(type) },
+    (child) => {
+      const env = { ...envOverrides, ...child.env };
+      const exec = execWith(child.fds);
+      return type === 'e2e'
+        ? withE2eApp({ root: ctx.root, isApp: isApp(ctx.root), command, env, hostEnv }, exec)
+        : exec({ command, env });
+    },
+  );
   const outcome: StepOutcome = {
     ...fromExec(result, {
       code: 'X_TEST_FAILED',
@@ -220,7 +222,12 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
   const plan =
     ctx.workers === undefined ? workerPlan(availableCpus(), totalMemory(), env) : undefined;
   const workers = ctx.workers ?? (plan as WorkerPlan).workers;
-  const lease = plan === undefined ? undefined : machineLease(plan.workers, env);
+  const lease = machineLease(env, {
+    cwd: ctx.root,
+    label: `verify ${type}`,
+    type,
+    ...(plan === undefined ? { exact: true } : {}),
+  });
   const widthReason =
     plan === undefined
       ? `${String(Math.min(workers, files.length))} workers (--workers)`

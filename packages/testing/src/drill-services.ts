@@ -22,7 +22,17 @@ export interface DrillDeclarations {
   readonly nats: { readonly env: string } | undefined;
 }
 
+/** The `wal_level=logical` server `docker/test-services.env` publishes: the replicator's. */
+const LOGICAL_POSTGRES_ENV = 'TEST_REPLICATION_URL';
+/** Where the rollout order hands a bus the app itself does not declare. */
+const DEFAULT_BUS_ENV = 'NATS_URL';
+
 type Env = Readonly<Record<string, string | undefined>>;
+
+const present = (env: Env, name: string): string | undefined => {
+  const value = env[name]?.trim();
+  return value === undefined || value === '' ? undefined : value;
+};
 
 const read = (env: Env, name: string, drill: Drill): string => {
   const value = env[name]?.trim();
@@ -60,8 +70,24 @@ export function drillServices(
       },
     });
   }
-  const postgres = read(env, DRILL_SERVICE_ENV.postgres, drill);
   const redis = declared.redis ? read(env, DRILL_SERVICE_ENV.redis, drill) : undefined;
+  if (drill.fault.kind === 'order') {
+    // Every role that can start is played, so the bus and the logical server are taken when the
+    // run has them; without them the drill still plays what Postgres alone serves, and says so.
+    const logical = present(env, LOGICAL_POSTGRES_ENV);
+    const bus =
+      declared.nats === undefined
+        ? present(env, DRILL_SERVICE_ENV.nats)
+        : read(env, DRILL_SERVICE_ENV.nats, drill);
+    return {
+      postgres: logical ?? read(env, DRILL_SERVICE_ENV.postgres, drill),
+      logicalPostgres: logical !== undefined,
+      redis,
+      nats:
+        bus === undefined ? undefined : { url: bus, env: declared.nats?.env ?? DEFAULT_BUS_ENV },
+    };
+  }
+  const postgres = read(env, DRILL_SERVICE_ENV.postgres, drill);
   const nats =
     declared.nats === undefined
       ? undefined

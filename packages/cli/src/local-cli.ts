@@ -45,12 +45,13 @@ const nodeIo: LocalCliIo = {
 };
 
 /**
- * The one command the app's own CLI must not answer when it is the older of the two: an app with no
+ * The commands the app's own CLI must not answer when it is the older of the two. An app with no
  * `x upgrade` yet is told `bunx @ultimat3/cli@latest upgrade`, and handing that to the app's CLI
- * answers `X_NOT_IMPLEMENTED` from the very version it exists to move off. It is safe because of what
- * it does not do: it loads no app, so there is no second registry — the gate is the installed CLI's.
+ * answers `X_NOT_IMPLEMENTED` from the very version it exists to move off; `x heavy` is run from any
+ * directory on the machine, an app pinned before it included. Safe because of what they do not do:
+ * neither loads an app, so there is no second registry.
  */
-const OUTLIVES_THE_APP_CLI = 'upgrade';
+const OUTLIVES_THE_APP_CLI: readonly (string | undefined)[] = ['upgrade', 'heavy'];
 
 const versionOfBin = (bin: string, io: LocalCliIo): string | undefined => {
   const parsed: unknown = JSON.parse(io.read(join(dirname(dirname(bin)), 'package.json')));
@@ -93,7 +94,7 @@ export function resolveLocalCli(
   if (!io.exists(local)) return undefined;
   try {
     if (io.realpath(local) === io.realpath(input.selfPath)) return undefined;
-    if (input.command === OUTLIVES_THE_APP_CLI && appCliIsOlder(local, input.selfPath, io)) {
+    if (OUTLIVES_THE_APP_CLI.includes(input.command) && appCliIsOlder(local, input.selfPath, io)) {
       return undefined;
     }
     return local;

@@ -51,6 +51,7 @@ import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import { quoteArg } from './shell-quote';
 import { testEnvOverrides } from './test-dotenv';
+import type { MachineLease } from './test-slots';
 
 /** Bun's per-file durations, cached under the run's root and refreshed by every parallel run. */
 export const TEST_TIMINGS_FILE = '.x/test-timings.json';
@@ -201,7 +202,7 @@ export interface RunShardsOptions {
   /** `--seed`: handed to the children by the caller's runner, printed back in the reproduce. */
   readonly seed?: number;
   /** The machine-pool lease (`test-slots.ts`), for a default-width run. */
-  readonly lease?: (want: number) => Promise<{ readonly count: number; release(): void }>;
+  readonly lease?: MachineLease;
 }
 
 const isolatedRun = (options: RunShardsOptions): boolean => {
@@ -297,8 +298,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       batches,
       stopOnFailure: bailing,
       workers: pass.workers,
-      // A serial pass is one worker: only a default-width parallel pass leases from the pool.
-      ...(pass.workers > 1 && options.lease !== undefined ? { lease: options.lease } : {}),
+      ...(options.lease === undefined ? {} : { lease: options.lease }),
       argsFor: (batch, width) =>
         testArgs({
           files: batch,

@@ -1,93 +1,93 @@
-// The machine-wide slot pool: a second run on the same box gets what the first left, never double.
+// A test run's lease, against a real ledger: the width it is given and what its children inherit.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-// why: Bun ships no temp-directory API; mkdtemp/rm own the fixture directory.
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-// why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
+// why: a temp ledger per test; Bun ships no mkdtemp.
+import { mkdtempSync, rmSync } from 'node:fs';
+// why: the test's scratch root.
 import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-import { acquireSlots, slotsDir, slotsEnabled } from './test-slots';
+import { HEAVY_HOLD_ENV } from './heavy-env';
+import { E2E_LANE_PEAK_MB, TEST_RUN_BASE_MB, TEST_WORKER_PEAK_MB } from './heavy-weights';
+import { machineLease, suiteWeight } from './test-slots';
 
+// flock(2) does not exist on Windows, where admission is off (`heavy-flock.ts`).
+const NO_FLOCK = process.platform === 'win32';
 const dirs: string[] = [];
-const fresh = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), 'x-slots-'));
-  dirs.push(dir);
-  return dir;
-};
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-const noSleep = async (): Promise<void> => undefined;
+const ledger = (workers: number) => {
+  const dir = mkdtempSync(join(tmpdir(), 'test-slots-'));
+  dirs.push(dir);
+  return {
+    NODE_ENV: 'development',
+    ULTIMATE_HEAVY_DIR: dir,
+    ULTIMATE_HEAVY_MEMORY: `${String(2 * TEST_RUN_BASE_MB + workers * TEST_WORKER_PEAK_MB)}m`,
+    ULTIMATE_HEAVY_CORES: '16',
+  };
+};
 
-describe('unit · machine test slots', () => {
-  test('a second run while the first holds every slot does NOT get its own full width', async () => {
-    const dir = fresh();
-    const first = await acquireSlots({ dir, want: 4, capacity: 4, pid: 101, alive: () => true });
-    expect(first.held).toBe(4);
-    let clock = 0;
-    const second = await acquireSlots({
-      dir,
-      want: 4,
-      capacity: 4,
-      pid: 202,
-      alive: () => true,
-      waitMs: 1000,
-      sleep: async (ms) => {
-        clock += ms;
-      },
-      now: () => clock,
-    });
-    // It waited the whole window, then ran ONE worker unleased — never four beside four.
-    expect(second.held).toBe(0);
-    expect(second.count).toBe(1);
-    expect(second.waitedMs).toBeGreaterThanOrEqual(1000);
-    first.release();
-  });
+const lease = (env: Record<string, string>, exact = false) => {
+  const take = machineLease(env, { cwd: '/app', label: 'test', ...(exact ? { exact } : {}) });
+  if (take === undefined) expect.unreachable('the lease is on');
+  return take;
+};
 
-  test('two runs split the capacity: the second runs narrower', async () => {
-    const dir = fresh();
-    const first = await acquireSlots({ dir, want: 3, capacity: 4, pid: 101, alive: () => true });
-    const second = await acquireSlots({ dir, want: 4, capacity: 4, pid: 202, alive: () => true });
-    expect(first.count).toBe(3);
+describe.skipIf(NO_FLOCK)('machineLease', () => {
+  test('a run narrows to the workers the ledger has room for, and hands its children the hold', async () => {
+    const take = lease(ledger(3));
+    const first = await take(2);
+    expect(first.count).toBe(2);
+    expect(first.env?.[HEAVY_HOLD_ENV]).toContain('/holds/');
+    expect(first.fds).toHaveLength(1);
+    const second = await take(4);
     expect(second.count).toBe(1);
     first.release();
     second.release();
-    expect(readdirSync(dir)).toEqual([]);
   });
 
-  test('a dead holder’s slot is taken over', async () => {
-    const dir = fresh();
-    writeFileSync(join(dir, 'slot-0'), '999999');
-    writeFileSync(join(dir, 'slot-1'), '101');
-    const lease = await acquireSlots({
-      dir,
-      want: 2,
-      capacity: 2,
-      pid: 202,
-      alive: (pid) => pid === 101,
-      sleep: noSleep,
+  test('the core cap narrows a default run', async () => {
+    const take = lease({ ...ledger(8), ULTIMATE_HEAVY_CORES: '2' });
+    const held = await take(6);
+    expect(held.count).toBe(2);
+    held.release();
+  });
+
+  test('an explicit width is neither capped nor narrowed', async () => {
+    const take = lease({ ...ledger(8), ULTIMATE_HEAVY_CORES: '2' }, true);
+    const held = await take(6);
+    expect(held.count).toBe(6);
+    held.release();
+  });
+
+  test('a released lease is room for the next run', async () => {
+    const take = lease(ledger(1));
+    (await take(1)).release();
+    const again = await take(1);
+    expect(again.count).toBe(1);
+    again.release();
+  });
+
+  test('inside a test run nothing is reserved and the ask stands', async () => {
+    const take = machineLease({ NODE_ENV: 'test' }, { cwd: '/app', label: 'test' });
+    const held = await take?.(5);
+    expect(held?.count).toBe(5);
+    expect(held?.env).toEqual({});
+  });
+
+  test('ULTIMATE_TEST_SLOTS=0 still turns the lease off', () => {
+    expect(
+      machineLease({ ULTIMATE_TEST_SLOTS: '0' }, { cwd: '/app', label: 'test' }),
+    ).toBeUndefined();
+  });
+
+  test('an e2e lane reserves a browser, not a test worker', () => {
+    expect(suiteWeight('e2e')).toEqual({ unitMb: E2E_LANE_PEAK_MB, baseMb: 0 });
+    expect(suiteWeight('unit')).toEqual({
+      unitMb: TEST_WORKER_PEAK_MB,
+      baseMb: TEST_RUN_BASE_MB,
     });
-    expect(lease.held).toBe(1);
-    lease.release();
-    // Only its own slot is released; the live holder's file is untouched.
-    expect(readdirSync(dir)).toEqual(['slot-1']);
-  });
-
-  test('release is idempotent and a lease is never wider than asked', async () => {
-    const dir = fresh();
-    const lease = await acquireSlots({ dir, want: 2, capacity: 8, pid: 7, alive: () => true });
-    expect(lease.count).toBe(2);
-    lease.release();
-    lease.release();
-    expect(readdirSync(dir)).toEqual([]);
-  });
-
-  test('the directory and the off switch read from the environment', () => {
-    expect(slotsDir({ ULTIMATE_TEST_SLOTS_DIR: '/x/y' })).toBe('/x/y');
-    expect(slotsEnabled({ ULTIMATE_TEST_SLOTS: '0' })).toBe(false);
-    expect(slotsEnabled({ ULTIMATE_TEST_SLOT_HELD: '1' })).toBe(false);
-    if (Bun.env['ULTIMATE_TEST_SLOT_HELD'] !== '1') expect(slotsEnabled({})).toBe(true);
   });
 });

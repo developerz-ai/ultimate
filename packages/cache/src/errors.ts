@@ -67,11 +67,17 @@ export class CacheTagUnknownError extends UltimateError {
   }
 }
 
+/**
+ * Where an app tunes a rung. The boot builds `lru` and `redis` with their defaults and takes a
+ * replacement from `runtime.ts`'s `cacheTiers`: the one way, so every fix below names it. Limits
+ * are not `app.config.ts` keys — they would be a second spelling of that same replacement.
+ */
+const RUNG_FILE = 'apps/web/runtime.ts';
+
 /** A single entry cannot fit the tier's byte budget, so caching it would evict everything. */
 export class CacheTooLargeError extends UltimateError {
   constructor(input: { key: string; bytes: number; maxBytes: number; tier: string }) {
     const bytes = String(input.bytes);
-    // The cap is a constructor option on every tier, never an `app.config.ts` key.
     const raise =
       input.tier === 'redis'
         ? `redisTier({ maxValueBytes: ${bytes} })`
@@ -79,7 +85,7 @@ export class CacheTooLargeError extends UltimateError {
     super({
       code: 'X_CACHE_TOO_LARGE',
       cause: `entry "${input.key}" is ${input.bytes}B, over the ${input.tier} budget of ${input.maxBytes}B`,
-      fix: `${raise} where the tier is built, or cache a projection instead of the row`,
+      fix: `cacheTiers: [${raise}]   // in ${RUNG_FILE}, replacing the rung the boot builds — or cache a projection instead of the row`,
     });
   }
 }
@@ -128,10 +134,7 @@ const limitEffect = (value: number): string =>
     ? ', and every comparison against NaN is false, so the limit stops being enforced rather than being enforced wrongly — NaN is what Number(process.env.…) answers for an unset variable, and it is not nullish, so `??` does not catch it'
     : ', and it is applied as given, so the tier is bounded at a value nobody chose';
 
-/**
- * The factory each scope's limits are constructor options of — the fix names where the corrected
- * option goes. None is an `app.config.ts` key: the runtime builds every tier with defaults.
- */
+/** The factory each scope's limits are constructor options of: where the corrected one goes. */
 const LIMIT_OWNER: Readonly<Record<string, string>> = {
   lru: 'lruTier',
   redis: 'redisTier',
@@ -140,6 +143,20 @@ const LIMIT_OWNER: Readonly<Record<string, string>> = {
   cloudflare: 'cloudflarePurgeDriver',
   ladder: 'cacheStack',
 };
+
+/**
+ * Where a corrected tier option goes. `lru` and `redis` are the rungs a boot builds, so theirs also
+ * names the `cacheTiers` line: an app on the defaults has no `lruTier(...)` call of its own to edit.
+ */
+function optionHome(tier: string, option: string, example: string): string {
+  // `hasOwn`: `tier` is a caller's string, and `constructor` must not read the prototype.
+  const owner = Object.hasOwn(LIMIT_OWNER, tier) ? LIMIT_OWNER[tier] : tier;
+  const rung =
+    tier === 'lru' || tier === 'redis'
+      ? `; for the rung a boot builds, cacheTiers: [${owner}({ ${option}: ${example} })] in ${RUNG_FILE}`
+      : '';
+  return `${owner}(...)${rung} — a constructor option, never an app.config.ts key`;
+}
 
 export class CacheLimitInvalidError extends UltimateError {
   constructor(input: {
@@ -155,9 +172,7 @@ export class CacheLimitInvalidError extends UltimateError {
      */
     source?: string | undefined;
   }) {
-    const where =
-      input.source ??
-      `${LIMIT_OWNER[input.tier] ?? input.tier}(...) — a constructor option, never an app.config.ts key`;
+    const where = input.source ?? optionHome(input.tier, input.option, input.example);
     super({
       code: 'X_CACHE_LIMIT_INVALID',
       cause: `the ${input.tier} tier was given ${input.option}=${String(input.value)}; it must be ${input.expected}${limitEffect(input.value)}`,
@@ -205,9 +220,7 @@ export class CacheJitterInvalidError extends UltimateError {
       cause: `the ${input.tier} tier was configured with jitterFraction=${String(
         input.jitterFraction,
       )}; a jitter fraction is a finite number in [0, 1)`,
-      // A constructor option of the tier, never an `app.config.ts` key: the runtime builds both
-      // tiers with none (`runtime-cache.ts`), so the config path this used to name did not exist.
-      fix: `{ jitterFraction: 0.05 }   // in the ${input.tier} tier's lruTier({ ... }) or redisTier({ ... }): a value in [0, 1) — 0.05 is the default, 0 disables jitter`,
+      fix: `{ jitterFraction: 0.05 }   // a value in [0, 1) — 0.05 is the default, 0 disables jitter — in ${optionHome(input.tier, 'jitterFraction', '0.05')}`,
       meta: { tier: input.tier, jitterFraction: input.jitterFraction },
     });
   }

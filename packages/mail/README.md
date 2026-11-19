@@ -101,7 +101,7 @@ the app changes between environments; the credential does.
 |---|---|
 | *(nothing set)*, `development` / `test` | `memoryMailDriver()` — caught, never sent |
 | *(nothing set)*, `staging` / `production` | `unconfiguredMailDriver(...)` — every send is `X_MAIL_CREDENTIAL_MISSING` |
-| `SMTP_URL` + `MAIL_FROM` | `smtpMailDriver(...)`, `MAIL_POOL_SIZE` optional |
+| `SMTP_URL` + `MAIL_FROM` | `smtpMailDriver(...)`, `MAIL_POOL_SIZE` and `MAIL_TIMEOUT_MS` (read/write deadline, default `30000`) optional |
 | `RESEND_API_KEY` + `MAIL_FROM` | `resendMailDriver(...)` |
 | `SES_REGION` + `SES_ACCESS_KEY_ID` + `SES_SECRET_ACCESS_KEY` + `MAIL_FROM` | `sesMailDriver(...)`; `SES_SESSION_TOKEN`, `SES_ENDPOINT`, `SES_CONFIGURATION_SET` optional |
 

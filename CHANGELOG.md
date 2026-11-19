@@ -10,7 +10,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+- **Many agents on one machine:** `x verify`, `x test`, every lane and `bun run coverage` reserve their measured memory in one flock-backed ledger per machine, first come first served, at most 4 cores locally; `x heavy status` and `x heavy run` expose it, and a new app's `CLAUDE.md` says a worker runs its own files and the coordinator runs the gate once ([Working with many agents](wiki/Many-Agents.md)).
 
 ## Releases
 

@@ -30,7 +30,13 @@ import type {
   TierInvalidation,
   TtlJitter,
 } from './tiers';
-import { assertFiniteCapacity, assertFiniteDurationMs, assertTtl, nowMs } from './tiers';
+import {
+  assertFiniteCapacity,
+  assertFiniteDurationMs,
+  assertJitterFraction,
+  assertTtl,
+  nowMs,
+} from './tiers';
 import { decodeCacheValue, encodeCacheValue } from './value-codec';
 
 /** The slice of Bun's Redis client this tier uses. Narrow on purpose: easy to fake in tests. */
@@ -144,6 +150,16 @@ function raiseSweepFailure(failures: readonly unknown[], attempted: number): nev
   });
 }
 
+/** The tiers `redisTier` built with no `client`: the ones core's `redisClient()` will dial for. */
+const onDefaultClient = new WeakSet<CacheTier>();
+
+/**
+ * Whether `tier` is a `redisTier` left to core's default client, which reads `REDIS_URL`, then
+ * `VALKEY_URL`, then the local server. A tier's options are closed over, so the boot asks here: a
+ * rung it did not build still owes an operator a word when no URL is set (`runtime-cache.ts`).
+ */
+export const usesDefaultRedisClient = (tier: CacheTier): boolean => onDefaultClient.has(tier);
+
 export function redisTier(options: RedisTierOptions = {}): CacheTier {
   const ns = namespaceFor(options.prefix ?? 'x', options.buildId);
   const defaultTtlMs = assertFiniteDurationMs(
@@ -157,6 +173,9 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
     'maxValueBytes',
     options.maxValueBytes ?? DEFAULT_REDIS_MAX_VALUE_BYTES,
   );
+  if (options.jitterFraction !== undefined) {
+    assertJitterFraction('redis', options.jitterFraction);
+  }
   const jitter: TtlJitter = {
     ...(options.jitterFraction === undefined ? {} : { jitterFraction: options.jitterFraction }),
     ...(options.rng === undefined ? {} : { rng: options.rng }),
@@ -185,7 +204,7 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
 
   const { valueKey, writeBucketsFor, bustBucketsFor, sweepBucketsFor } = bucketLayout(ns);
 
-  return {
+  const tier: CacheTier = {
     name: 'redis',
 
     /**
@@ -315,4 +334,6 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
       return { tier: 'redis', keys: stripped };
     },
   };
+  if (options.client === undefined) onDefaultClient.add(tier);
+  return tier;
 }

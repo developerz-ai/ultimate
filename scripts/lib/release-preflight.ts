@@ -22,6 +22,13 @@ export const dirtyPaths = (porcelain: string): readonly string[] =>
     .map((line) => line.replace(/^[ MTADRCU?!]{1,2}\s+/, ''));
 
 /**
+ * The one file a release may find edited: its `## [Unreleased]` notes are what the bump promotes,
+ * and a session whose runner makes the only commit (`.dz/briefs/release-due.md`) cannot commit them
+ * first.
+ */
+export const RELEASE_NOTES_PATH = 'CHANGELOG.md';
+
+/**
  * A release rewrites 47 files and commits them as one. Over a dirty tree that commit carries
  * whatever else was in flight, and the edit it mixes with is the one nobody reviewed as a release.
  * `undefined` is a `git status` that could not run: fail closed, because a tree this could not
@@ -42,7 +49,7 @@ export function treeDirtyFindings(
       },
     ];
   }
-  const paths = dirtyPaths(porcelain);
+  const paths = dirtyPaths(porcelain).filter((path) => path !== RELEASE_NOTES_PATH);
   if (paths.length === 0) return [];
   const shown = paths.slice(0, DIRTY_PATHS_SHOWN).join(', ');
   const more = paths.length - DIRTY_PATHS_SHOWN;

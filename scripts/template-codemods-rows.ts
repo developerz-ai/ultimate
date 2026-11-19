@@ -12,6 +12,13 @@ export type TemplateCodemodRow =
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
   {
+    template: 'packages/cli/src/templates/scaffold-docs.ts',
+    since: '31.48.0',
+    codemod: 'docs-many-agents',
+  },
+  { template: 'CLAUDE.md', since: '31.48.0', codemod: 'docs-many-agents' },
+  { template: 'AGENTS.md', since: '31.48.0', codemod: 'docs-many-agents' },
+  {
     template: 'packages/cli/src/templates/github/ci.yml.ts',
     since: '31.47.0',
     codemod: 'ci-weekly-schedule',

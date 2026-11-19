@@ -164,7 +164,7 @@ class Conversation {
             stage,
             detail: `the server sent nothing for ${timeoutMs}ms, so the read deadline expired`,
             retryable: true,
-            fix: 'smtpMailDriver({ url, from, timeoutMs: 60_000 })   // where the driver is built',
+            fix: 'MAIL_TIMEOUT_MS=60000   # in .env.production — or smtpMailDriver({ url, from, timeoutMs: 60_000 })',
           }),
         );
       }, timeoutMs);

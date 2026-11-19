@@ -223,8 +223,8 @@ myapp/
 │   └── ui/                  app components on semantic tokens
 ├── docker/                  Dockerfile, .dockerignore, dev + prod compose, helm/
 ├── guards/                  one rule per file, run by `x verify`'s boundaries step.
-│                            Every name in SHIPPED_GUARD_NAMES ships; `x doctor`
-│                            lists any missing. Delete one by deleting its file
+│                            Shipped ones run from the framework; shipped.json
+│                            sets each one's severity (`off` turns it off)
 ├── bin/                     setup.ts — `bun run setup`; `dev` and `verify` are x's own
 └── CLAUDE.md  AGENTS.md     what an agent reads first: one file, AGENTS.md a symlink
 ```

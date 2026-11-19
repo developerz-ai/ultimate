@@ -18,6 +18,7 @@ import { codemod as docsCiParts } from './docs-ci-parts';
 import { codemod as docsEnvGuard } from './docs-env-guard';
 import { codemod as docsGateProse } from './docs-gate-prose';
 import { codemod as docsIslandRows } from './docs-island-rows';
+import { codemod as docsManyAgents } from './docs-many-agents';
 import { codemod as docsShippedGuards } from './docs-shipped-guards';
 import { codemod as docsTestServices } from './docs-test-services';
 import { codemod as e2eSuiteFloor } from './e2e-suite-floor';
@@ -71,4 +72,5 @@ export const CODEMODS: readonly Codemod[] = [
   ciArtifactRetention,
   ciWeeklySchedule,
   e2eSuiteFloor,
+  docsManyAgents,
 ];

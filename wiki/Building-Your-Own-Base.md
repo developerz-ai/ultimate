@@ -191,14 +191,16 @@ an operator then proves who they are with a short PIN, and that browser's sessio
 | the operator's PIN | the app's own entity (`operators`: `userId`, `pinHash`), never `x_users.password_hash` — a PIN is weaker than the password policy allows (`X_PASSWORD_WEAK`) | `hashPassword(pin)` on enrolment |
 | the lockout | **before** the KDF, keyed per operator and per device: a 4-digit PIN is 10 000 guesses, so the budget is the whole defence | `appAuth().limiter.reserve('pin:<operatorId>:<deviceId>')` — `X_ACCOUNT_LOCKED` refuses; `recordSuccess` on a match |
 | the check | constant cost whether or not the operator exists | `verifyPassword({ hash: row?.pinHash ?? null, password: pin })` |
-| the switch | a session for the operator, capped at the device session's ceiling, set as that browser's cookie; signing the operator out lands on the device sign-in again | `createSession(appAuth().sessions, { userId: operator.userId, absoluteExpiresAt: device.absoluteExpiresAt })`, then `sessionCookie(issued.token, appAuth().sessions.policy)` on the response |
+| the switch | a session for the operator, capped at the device session's ceiling, set as that browser's cookie; signing the operator out lands on the device sign-in again | `createSession(appAuth().sessions, { userId: operator.userId, absoluteExpiresAt: device.absoluteExpiresAt })`, then `setCookie(sessionCookie(issued.token, appAuth().sessions.policy))` from the action |
 | who may switch | the app's policy on its own `switchOperator` action: the caller holds the `device` role | `can('operator:switch', …)` |
 
 The action is the app's (`apps/web/app/operators/actions/switch-operator.ts`), so it projects like
 any other — route, typed client, MCP tool, contract test. Nothing in the framework learns that a PIN
 exists, which is the point: the next app's PIN rules (length, rotation, which devices) are its own.
 
-The check itself, one file the action calls with the operator row it loaded:
+The check itself, one file the action calls with the operator row it loaded. `switchOperator` knows
+nothing of HTTP, so a job or a test can run it; the action's `handle` calls
+`switchOperatorOnResponse`, and no route carries the cookie:
 
 ```ts
 // apps/web/shared/base/operator-pin.ts
@@ -212,6 +214,7 @@ import {
   sessionCookie,
   verifyPassword,
 } from '@ultimat3/auth';
+import { setCookie } from '@ultimat3/http';
 
 /** The app's `operators` row: whose PIN, and its hash. Never `x_users.password_hash`. */
 export interface OperatorRow {
@@ -252,6 +255,16 @@ export async function switchOperator(
     absoluteExpiresAt: input.device.absoluteExpiresAt,
   });
   return { issued, cookie: sessionCookie(issued.token, auth.sessions.policy) };
+}
+
+/** The action's half: the same switch, its cookie set on the response to this request. */
+export async function switchOperatorOnResponse(
+  auth: Auth,
+  input: OperatorSwitch,
+): Promise<IssuedSession> {
+  const { issued, cookie } = await switchOperator(auth, input);
+  setCookie(cookie);
+  return issued;
 }
 ```
 

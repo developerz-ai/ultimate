@@ -30,7 +30,7 @@ import { catalogFindings } from './i18n-registration';
 import { isrQueryAdvice } from './isr-query-advice';
 import { readJobBudgetFindings } from './job-budget';
 import { unregisteredJobFindings } from './job-registration';
-import { LINT_ARGV, lintOutcome } from './lint-findings';
+import { lintOutcome } from './lint-findings';
 import { liveRouteFindings } from './live-routes';
 import { blockedByLoad, withLoadFindings } from './load-findings';
 import {
@@ -60,6 +60,7 @@ import { contractDiffStep } from './verify-contract-diff';
 import { nestedAppRootFindings } from './verify-drift-owner';
 import { exerciseStep } from './verify-exercise';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
+import { runLint, runTypecheck } from './verify-heavy-steps';
 import { mcpMountFindings } from './verify-mcp-mount';
 import { nativeFormWarnings } from './verify-native-form';
 import { roleLoadFindings } from './verify-role-load';
@@ -90,7 +91,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     async run(ctx) {
       const floor = await readVerifyFloor(ctx.root);
       const argv = await typecheckArgs(ctx.root, floor?.typecheckBin ?? 'tsc');
-      const result = await ctx.runner(['bunx', ...argv], { cwd: ctx.root });
+      const result = await runTypecheck(ctx, argv);
       return fromExec(result, {
         code: 'X_TYPECHECK_FAILED',
         cause: 'the project does not typecheck',
@@ -107,7 +108,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // the colour rule is `packages/ui/src/tokens/tokens.test.ts`, and rides on the `unit` step.
     summary: 'biome: format, no any, no default exports, no unused imports',
     async run(ctx) {
-      return lintOutcome(await ctx.runner(LINT_ARGV, { cwd: ctx.root }));
+      return lintOutcome(await runLint(ctx));
     },
   },
   {

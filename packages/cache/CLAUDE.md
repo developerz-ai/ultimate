@@ -82,7 +82,11 @@ Tier 1. Tagged caching + THE invalidation graph.
   included (scope `'semantic'`, `jitterFraction: 0`). `X_CACHE_TTL_INVALID`, never a resolution.
 - **`assertTtl` also SPREADS the lease it validated.** `rng` is injected (`LruOptions.rng`,
   `RedisTierOptions.rng`) — never `Math.random()` at a call site; `rng: () => 0` is the full lease.
-  `jitterFraction` outside `[0, 1)` is `X_CACHE_JITTER_INVALID`, refused, not clamped.
+  `jitterFraction` outside `[0, 1)` is `X_CACHE_JITTER_INVALID`, refused, not clamped, when the
+  tier is built (`assertJitterFraction`) and again at each write.
+- **A rung's limits are constructor options, set through `runtime.ts`'s `cacheTiers`** (`As of
+  2026-11`, #1178). The boot builds `lru` and `redis` with defaults; no `app.config.ts` key exists,
+  because it would be a second spelling of that replacement. Every limit `fix:` names the line.
 - **`cacheStack` is the production read path, and `@ultimat3/query`'s `readThrough` is its
   caller** — it is what makes an action's `cache.invalidates` reach a `cache:` query.
 - **`cacheStack` shares one in-flight `load()` per key** through `@ultimat3/core`'s

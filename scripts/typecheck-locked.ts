@@ -1,47 +1,39 @@
 #!/usr/bin/env bun
-// `bun run typecheck:locked`: `tsc -b` under one repo-wide lock. Agents share one checkout, and two
-// unserialised `tsc -b` runs write the same `.tsbuildinfo` and `dist/` and report errors that
-// belong to neither. Portable where `flock(1)` was Linux-only (`scripts/lib/file-lock.ts`).
+// `bun run typecheck:locked`: `tsc -b` with its measured memory reserved in the machine ledger and
+// this checkout's one-compiler lock held. Agents share one checkout, and two unserialised `tsc -b`
+// runs write the same `.tsbuildinfo` and `dist/` and report errors that belong to neither.
 //
 //   bun run typecheck:locked
 
-// why: one lock-file path under the repo root; Bun ships no path API.
-import { join } from 'node:path';
-import { acquireLock, pidAlive } from './lib/file-lock';
+import { withCheckoutLock, withHeavy } from '../packages/cli/src/heavy';
+import { TYPECHECK_BUILD_PEAK_MB } from '../packages/cli/src/heavy-weights';
+import { handOff } from '../packages/cli/src/local-cli-handoff';
 import { localBin } from './lib/local-bin';
 import { repoRoot } from './lib/run';
 
-/** Under `node_modules/.cache`: ignored by git, and gone with the install it guards. */
-export const TSC_LOCK = join('node_modules', '.cache', 'tsc.lock');
-
-/** A full `tsc -b` from cold is minutes; a run past this has hung, and its lock must not wedge. */
+/** A full `tsc -b` from cold is minutes; a run past this has hung. */
 const TSC_TIMEOUT_MS = 30 * 60_000;
 
 if (import.meta.main) {
   const root = repoRoot();
-  const path = join(root, TSC_LOCK);
-  await Bun.write(join(root, 'node_modules', '.cache', '.keep'), '');
-  const release = await acquireLock(path, {
-    pid: process.pid,
-    isAlive: pidAlive,
-    sleep: (ms) => Bun.sleep(ms),
-    onWait: (holder) => console.error(`typecheck:locked: waiting on pid ${holder} (${TSC_LOCK})`),
-  });
-  // An interrupted run gives the lock back rather than leaving the next one to prove it dead.
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(signal, () => {
-      release();
-      process.exit(130);
-    });
-  }
-  try {
-    const child = Bun.spawn([localBin(root, 'tsc'), '-b', '--pretty'], {
-      cwd: root,
-      stdio: ['inherit', 'inherit', 'inherit'],
-      timeout: TSC_TIMEOUT_MS,
-    });
-    process.exitCode = await child.exited;
-  } finally {
-    release();
-  }
+  const env = Bun.env;
+  process.exitCode = await withHeavy(
+    { label: 'typecheck:locked', cwd: root, env, unitMb: TYPECHECK_BUILD_PEAK_MB },
+    (held) =>
+      withCheckoutLock({ name: 'typecheck', root, env }, held, (child) =>
+        handOff(
+          [localBin(root, 'tsc'), '-b', '--pretty'],
+          { ...env, ...child.env },
+          {
+            spawn: (command, childProcessEnv) =>
+              Bun.spawn([...command], {
+                cwd: root,
+                env: childProcessEnv,
+                stdio: ['inherit', 'inherit', 'inherit', ...child.fds],
+                timeout: TSC_TIMEOUT_MS,
+              }),
+          },
+        ),
+      ),
+  );
 }

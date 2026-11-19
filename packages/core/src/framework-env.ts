@@ -81,7 +81,7 @@ export const FRAMEWORK_ENV: readonly FrameworkEnvName[] = [
   ...contract('db', 'DATABASE_REPLICA_URL', 'DB_RETRY'),
   ...internal('db', 'ROLLBACK_ALLOW_DESTRUCTIVE'),
   ...host('jobs', 'HOSTNAME'),
-  ...contract('mail', 'MAIL_FROM', 'MAIL_POOL_SIZE'),
+  ...contract('mail', 'MAIL_FROM', 'MAIL_POOL_SIZE', 'MAIL_TIMEOUT_MS'),
   ...contract('mail', 'RESEND_API_KEY', 'RESEND_WEBHOOK_SECRET', 'SMTP_URL'),
   ...contract('mail', 'SES_ACCESS_KEY_ID', 'SES_SECRET_ACCESS_KEY', 'SES_SESSION_TOKEN'),
   ...contract('mail', 'SES_REGION', 'SES_ENDPOINT', 'SES_CONFIGURATION_SET'),

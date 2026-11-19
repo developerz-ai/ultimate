@@ -1,8 +1,8 @@
-// The X_* codes of the app tooling commands — `x client`, `x graph` / `x impact`, `x repro` and
-// `x explain` — split out of `error-codes.ts` at its 500-line ceiling, as `error-codes-shot.ts`
+// The X_* codes of the tooling commands — `x client`, `x graph` / `x impact`, `x repro`, `x explain`
+// and `x heavy` — split out of `error-codes.ts` at its 500-line ceiling, as `error-codes-shot.ts`
 // was. That file folds these into the CLI's one owned union and registers them in its one call.
 
-/** Codes `x client`, `x graph`, `x impact`, `x repro` and `x explain` declare and own. */
+/** Codes `x client`, `x graph`, `x impact`, `x repro`, `x explain` and `x heavy` own. */
 export const CLI_TOOLING_ERROR_CODES = [
   'X_CLIENT_SPEC_UNSUPPORTED',
   'X_CLIENT_STALE',
@@ -13,6 +13,9 @@ export const CLI_TOOLING_ERROR_CODES = [
   'X_REPRO_NOT_REPRODUCED',
   'X_REPRO_CAPTURE_OFF',
   'X_EXPLAIN_PRODUCTION_DATABASE',
+  'X_HEAVY_LEDGER_UNAVAILABLE',
+  'X_HEAVY_MEMORY_INVALID',
+  'X_HEAVY_COMMAND_NOT_FOUND',
 ] as const;
 
 export type CliToolingErrorCode = (typeof CLI_TOOLING_ERROR_CODES)[number];
@@ -28,4 +31,7 @@ export const CLI_TOOLING_ERROR_TITLES: Readonly<Record<CliToolingErrorCode, stri
   X_REPRO_NOT_REPRODUCED: 'a written repro test did not fail the way the original did',
   X_REPRO_CAPTURE_OFF: 'x repro was given a request id while failure capture is off',
   X_EXPLAIN_PRODUCTION_DATABASE: 'x explain refused to run on a production database',
+  X_HEAVY_LEDGER_UNAVAILABLE: 'the machine memory ledger cannot be used here',
+  X_HEAVY_MEMORY_INVALID: 'ULTIMATE_HEAVY_MEMORY is not a size',
+  X_HEAVY_COMMAND_NOT_FOUND: 'x heavy run was given a command that is not on PATH',
 };

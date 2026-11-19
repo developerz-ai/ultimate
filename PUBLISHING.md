@@ -492,8 +492,9 @@ up (`X_MAINT_LANE_EXPIRED`).
 
 ### When a release is due
 
-The maintainer bot judges it weekly (`.dz/briefs/release-due.md`), reading what would ship; a merge
-alone never cuts a release, and a maintainer can still cut one by hand. A fix for a security advisory
+The maintainer bot judges it weekly (`.dz/briefs/release-due.md`), reading what would ship, and when
+one is needed that same run opens the `chore: release X.Y.Z` PR; a merge alone never cuts a release,
+and a maintainer can still cut one by hand. A fix for a security advisory
 a first-tier source confirms is the one off-cycle release (`.dz/briefs/security-release.md`).
 `bun run scripts/release-due.ts --json` gathers the facts for that judgement, fetching `origin/main`'s
 tip when the checkout lacks it. The window is every commit since the highest `v*` tag HEAD contains,
