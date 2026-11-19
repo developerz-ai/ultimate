@@ -1,6 +1,7 @@
 // The repair half of a dropped `records` frame: the per-socket mark is `SyncSocket.gaps`, and this
 // is what answers it — one `replay-gap` per (socket, topic), sent once the socket takes frames
-// again, counted in `channel_replay_gaps_total` beside `channel_frames_dropped_total`.
+// again, counted in `channel_replay_gaps_total` beside `channel_frames_dropped_total` (declared
+// here too; `socket.ts` counts the drops).
 
 import { type Counter, counter } from '@ultimat3/core';
 import type { ReplayGapFrame } from './channel-wire';
@@ -14,6 +15,23 @@ import { PROTOCOL_VERSION } from './sync-protocol';
 const channelReplayGaps: Counter = counter('channel_replay_gaps_total', {
   unit: '{gap}',
   description: 'replay-gap frames delivered to a socket that lost a channel records frame',
+});
+
+/**
+ * Channel frames this process dropped under backpressure. A dropped `records` frame is now marked
+ * and REPAIRED — the socket is sent `replay-gap` once it drains and re-reads the channel's catch-up
+ * query (`channel_replay_gaps_total` counts those) — while a dropped `events` frame is ephemeral
+ * by definition and is only counted. The two series side by side are the whole delivery story.
+ *
+ * Declared here rather than in `@ultimat3/core`'s `runtime-metrics.ts` because that file is the
+ * series EVERY Ultimate process emits and the deploy chart scales on; this one exists only where
+ * channels do. **No attributes**: a topic is client-chosen (`topic()` admits any
+ * `[A-Za-z0-9_-]+` segment), so a per-topic label is an unbounded series count one socket can mint
+ * — the topic goes in the log line, where cardinality is somebody else's index.
+ */
+export const channelFramesDropped: Counter = counter('channel_frames_dropped_total', {
+  unit: '{frame}',
+  description: 'Channel frames dropped by socket backpressure',
 });
 
 export class GapRepairs {

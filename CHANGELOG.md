@@ -19,6 +19,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `x clean --services` stops this app's test service stack, and the gate prints one line saying whether it started, reused or shared one.
 - `x dev`'s port refusal names the directory of the process holding the port.
 - `x upgrade --only <step>[,<step>…]` runs the hop's `x verify` on those steps alone, so `unit`, `live` and `e2e` can be left to CI on a loaded machine. The report never reads as a full gate: `proof: "verify-only"`, `verify.notRun[]`, a `NOT THE FULL GATE` summary and a `then` naming `x verify --only <the rest>`. A bare `x upgrade` still runs the full gate ([Upgrading](wiki/Upgrading.md)).
+- auth: `oauthLogin(auth, { mfaPath })` and `identityProviderRoutes(auth, { providers, mfaPath })` let an MFA-enrolled user finish SSO through the built-in routes: the callback answers 303 to the app's second-factor page with the sealed challenge in an `HttpOnly` `__Host-x_mfa` cookie. On that page, `completeMfa(auth, readMfaChallenge(request) ?? '', code)`, then send `clearMfaChallengeCookie()` — both new exports of `@ultimat3/auth`. An `mfaPath` that is not one absolute path on this origin is `X_CONFIG_INVALID` at the call. Without `mfaPath` the callback is the same 401 `X_MFA_REQUIRED`, and its logged fix now names the option.
+- jobs: `startQueueWake({ reproveEveryMs })` (default 10 s) re-proves a proven cross-process wake; `installDefaultRetry` / `resetDefaultRetry` / `DefaultRetry` on `@ultimat3/jobs/adapter` install the retry of a job that declares none (the boot does it from `jobs.maxAttempts` / `jobs.backoff`).
 
 ### Changed
 
@@ -32,6 +34,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `x db gen` runs one at a time per checkout; its success line names the tables, and "no migration needed" names the migration that already records them.
 - The test step line reads `ran 2 at once (peak), planned 3`, or `1 worker, one per file (plan: …)`, in place of `2 of 4 of 6 workers`.
 - A doctor probe that throws is an `X_DOCTOR_PROBE_FAILED` finding, never a crash whose fix is the doctor itself.
+- `jobs.maxAttempts` and `jobs.backoff` are read: the attempts of a job that declares no `retry` (a factory's whose `retry` was omitted: `purge()`, `backfill()`, `rollup()`, …), and the curve of any `retry` naming no `backoff`. Installed by the boot in every role, so the enqueuing process stamps the same `max_attempts` the worker retries by. `jobs.maxAttempts` now defaults to `3`, not the documented `5`: the key was read by nothing, and 3 is the retry such a job always had. With neither key set nothing moves. **Upgrading:** an app that set either key gets it applied now — `grep -n 'maxAttempts\|backoff' app.config.ts` and keep the value only if it is the retry you want for every job declaring none.
+- `cache.defaultTtlMs: 0` is refused by `defineConfig` (`X_CONFIG_INVALID`) instead of crashing the boot; the minimum is 1, and a value that is not a whole number ≥ 1 refuses the boot naming `cache.defaultTtlMs`. **Upgrading:** an app writing `0` sets a positive lease.
+- core: `directionOf` / `isRtl` read an explicit script subtag first (`az-Arab` is `rtl`, `ks-Deva` `ltr`), and bare `ku` is now `ltr` (Kurmanji, Latin script). **Upgrading:** an app serving Kurdish in Arabic script under `ku` renames the locale `ku-Arab` or `ckb`, or its pages render `dir="ltr"`.
+- `database.ssl: true` now requires TLS (`sslmode=require`) on the pool every boot opens — serving roles, `x dev`, the migrate step, `x db status`/`recount`/`diagnostics`, primary and replica — unless the URL (`sslmode` or `ssl`) or `PGSSLMODE` states a mode. It was validated and read by nothing. Not yet applied to the replicator's `REPLICATION_URL`, `x doctor`'s probes or `x db branch`. **Upgrading:** an app with `ssl: true` whose `DATABASE_URL` states no mode, against a Postgres without TLS, no longer connects: set `database: { ssl: false }`, or put `?sslmode=disable` in that URL.
+- A `ROLE` not listed in `roles` in `app.config.ts` refuses to boot with `X_CONFIG_INVALID` (`meta.key: 'roles'`); `ROLE=migrate` is exempt. The list was read by nothing. **Upgrading:** an app declaring `roles` checks every `ROLE` its deploy starts (compose services, Helm values, the platform's processes) is in it, or drops the key.
+- `x db migrate` refuses (`X_DEV_ALREADY_RUNNING`) beside an `x dev` holding the embedded database: PGlite takes no lock, and the holder's next write dropped the tables the second process applied. **Upgrading:** against the embedded database, `x stop`, then `x db migrate`, then `x dev`. `x dev`'s own schema-ahead hint still prints `x db migrate` beside the running server.
+- realtime: a records channel keyed by a param that is not the tenant column (a `roomId` topic) delivers a tenanted row only to members of that row's tenant, live and on replay after `since`; every other member receives the seq alone. **Upgrading:** an app whose channel intentionally fanned one tenant's rows out to members of other orgs sees those rows stop; that feed needs its own untenanted table or a channel keyed by the tenant column.
 
 ### Fixed
 
@@ -40,6 +49,59 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `x upgrade`'s `docs-many-agents` codemod no longer reports `changed: [], skipped: []` when the app reworded its conventions table: it finds the table in `AGENTS.md` too, and otherwise reports the file as skipped with the row to add. It also checks the brief's byte budget (`agentsMdMaxBytes`, 12,000 by default) before writing, and skips with the byte count instead of pushing `CLAUDE.md` over it into `X_AGENTS_MD_TOO_LARGE`. `docs-worker-commands` does the same.
 - `x upgrade` installs the merge drivers a hop's `.gitattributes` names, as `bun run setup` does, so an upgraded clone has no `X_MERGE_DRIVER_UNSET` left to fix by hand.
 - A live suite no longer joins another app's test stack that shares its compose project name: it is refused with `X_TEST_SERVICES_UNAVAILABLE`.
+- auth: a retired refresh token presented by a client other than the one it was issued to no longer revokes the grant; it is refused as another client's token.
+- mcp: `mcpClient` cancels a legacy-server call by its own request id, never a sibling's, and only when the request was sent.
+- mcp: a 429, 408 or 403 on the first call no longer switches `mcpClient` to the legacy protocol for good (only a 400/404/405, an era JSON-RPC code or a body that is no answer does); a failed handshake decides nothing; concurrent first calls share one handshake.
+- mcp: `listTools` refuses a cursor that never ends (`X_MCP_REMOTE_REFUSED`, `meta.failure: 'malformed'`, past 50 pages) instead of returning a truncated list.
+- mail: the SMTP connect is bounded by `timeoutMs` (stage `connect`, retryable), so a dead host no longer holds a pool slot.
+- mail: the SES driver sends 7-bit envelope addresses: an encoded-word `From` display name and bare-mailbox destinations.
+- scraping: a CDP command the transport refuses to send fails at once with `X_CDP_CALL_FAILED` and leaves no pending entry, and a `null` frame is dropped instead of throwing.
+- i18n: `catalogSubset` carries a key's `_select_*` and `_ordinal_*` families, so an island no longer renders `⟦key⟧` where the server renders the message.
+- i18n: `t.has(key)` is true for a select or ordinal family defined only in plural forms; a mail's `has()`-guarded preheader and footer no longer drop copy `t()` renders.
+- money: a hand-built `Money` with a non-integer `minor` is `X_MONEY_NOT_INTEGER` from every arithmetic, rescale and format entry — never a bare `RangeError`, `$NaN` or `12..5`.
+- money: `parseAmount` reads the half-width `¥` in `ja-JP`.
+- schema: `sampleGaps` reports a formatted string (`t.email.min(30)`) whose sample cannot meet its length bounds, and `describeSampleGap` names the bound.
+- schema: a `.default()` holding a `Date` is published to JSON Schema / OpenAPI / MCP as its ISO string; a default with no JSON form (`Map`, `Set`, `bigint`, a cycle) is omitted. Runtime defaults are unchanged.
+- manifest: a non-JSON schema default no longer yields a manifest failing its own `buildId`.
+- realtime: the in-process transport expires shared-set keys nobody reads again; a presence room no longer stays in memory after it empties.
+- realtime: a live query's policy gets the subscriber's context, so `ctx.actor` is the subscriber, as over HTTP.
+- jobs: a scheduled task's jobs are queued under the tenant each declares — a per-org fan-out with one key is one row per org, on the memory and Postgres schedulers.
+- jobs: a job fired by the Postgres scheduler carries its `traceparent` (and `enqueued_by`), so its run is a child of the fire's producer span.
+- jobs: a proven cross-process wake is re-proven every 10 s (`reproveEveryMs`); a session that stops delivering is un-proven (`jobs.wake.lost`, warn) and the loops return to the 2 s poll until a notification crosses again (`jobs.wake.live`).
+- render: an island boots with the props inside its own wrapper (a modal's island took the page's); the hydration runtime is +100 B per strategy.
+- render: text in a JSX `<style>` / `<script>` is no longer HTML-escaped; `</script` still cannot close it.
+- render: `X_ASSET_MISSING`'s fix names a path `asset()` accepts (`asset('assets/logo.svg')`).
+- ui: deeply nested `![` no longer overflows the Markdown parser.
+- ui: Escape in a `Popover` or `Menu` no longer also closes the enclosing `Dialog`.
+- pwa: a precached or warmed page fetched through a redirect is served offline instead of a network error.
+- action: an action's `Date` output reaches the typed client as a `Date`: `x-ultimate-dates` on the plain and the enveloped 200, and a `dates:` field on the streamed `done` frame, which `clientStream` revives. The body and OpenAPI are unchanged; an older server's frame is read as before.
+- action: a 5xx thrown after a streamed action's first chunk is now sent to the error reporter, as the JSON path's is.
+- action: `X_ACTION_STREAM_INVALID` names a stream action registered by `registerAction`, not `""`.
+- action: the memory idempotency store no longer records a success inside a rolled-back memory transaction.
+- action: a keyed action whose output is `undefined` replays from the Postgres store instead of failing with `X_OUTPUT_INVALID`.
+- query: a download URL minted with a `null` or `[]` optional input member no longer fails with `X_QUERY_DOWNLOAD_TOKEN_INVALID`.
+- query: a deprecated download query's mint is counted in `deprecated_calls_total`.
+- db: `rollback()` reverses the most recently applied migration (`applied_at`), not the highest id; a branch merged late is undone first instead of the previous release's migration.
+- cache: Redis tier: a fill landing mid-bust could be left in no tag bucket and serve stale for its whole TTL; a bust now sweeps buckets before deleting values, and re-joins any member whose `UNLINK` was refused.
+- cache: an inbound invalidation broadcast no longer re-busts the shared Redis tier on every replica, which deleted freshly refilled values and cost an extra load per mutation.
+- cache: `memorySemanticCache` hits are no longer the writer's live object.
+- cache: the `X_CACHE_LIMIT_INVALID` fix for `defaultTtlMs` names `cache.defaultTtlMs` in `app.config.ts`.
+- entity: a malformed uuid in `eq`/`neq`/`in`, `findById`, `update` or `delete` is "no such row" on Postgres as on memory, never `22P02`; every uuid spelling Postgres parses is one value in both drivers. An app test that asserts the Postgres driver's SQL text through a fake client with non-uuid ids on uuid columns now sees `1 = 0`.
+- entity: one id the server refuses no longer fails the other point lookups batched with it.
+- entity: an `in` list of 32,768+ values binds as one array, so a list past 65,535 answers on Postgres.
+- entity: `like` on a uuid, boolean, timestamp, date, json or array column is `X_INVARIANT_VIOLATED` in both drivers (Postgres already failed with `42883`).
+- entity: a `timestamp()` value outside years 0001–9999 is refused on write and as an operand in both drivers; existing rows still read.
+- entity: `avg()` and `aggregate({ fn: 'avg' })` keep six exact decimals at any magnitude on Postgres.
+- Unknown-command fixes name the intended command (`x migrate` → `x db migrate`), never a top-level `migrate`, `start` or `check` that does not exist.
+- `x merge-driver` resolves CRLF files and never exits 0 over a conflict marker.
+- A dev lock naming a reused pid no longer blocks `x db reset|status|diagnostics|recount`; `x stop` clears it.
+- `X_NOT_IN_APP`'s fix keeps the subcommand and arguments (`x db migrate`, not `x db`).
+- `x dev --role ,` is `X_CLI_BAD_FLAG`, not a dev server running no role.
+- ci: workflows that push a branch with the job token (security-channel, bench) dispatch `ci.yml` on it, so their pull requests get a verify check.
+- ci: `release.yml` makes up to three attempts at a failed npm publish, re-asking `npm view` before each.
+- ci: `next-sync` files its tracking issue when the merge job fails, not only on conflicts.
+- ci: `release-tag`'s queue moved onto the cut job, so a non-release CI completion can no longer cancel a pending release.
+- scripts: `config-readers` counts only a qualified read, not a bare property name.
 
 ## Releases
 

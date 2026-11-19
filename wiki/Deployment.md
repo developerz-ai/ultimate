@@ -419,7 +419,7 @@ Then reopen the pooler's server connections: a role setting applies at login.
 | Role | Under `DATABASE_POOLER=transaction` |
 |---|---|
 | `web`, `sync`, `scheduler` | runs |
-| `worker` | runs on the poll: no wake, pickup within `idlePollMaxMs`, `jobs.wake.unverified` once. For the wake, a direct or session-pooled `DATABASE_URL` and `DATABASE_POOLER` unset or `session` for that role |
+| `worker` | runs on the poll: no wake, pickup within `idlePollMaxMs`, `jobs.wake.unverified` once. For the wake, a direct or session-pooled `DATABASE_URL` and `DATABASE_POOLER` unset or `session` for that role. A proven wake is re-proven every 10 s (`reproveEveryMs`): a session that stops delivering logs `jobs.wake.lost` and the worker returns to the 2 s poll |
 | `migrate`, `replicator`, `x db migrate` | `X_DB_POOLER_SESSION_REQUIRED`, before a socket: point `DATABASE_URL` at the server's own port and unset the switch for that role |
 
 `x doctor --json` reports the bound as the session reads it (`data.statementBound`). A bound that

@@ -16,11 +16,10 @@ import {
   systemClock,
   uuidV7,
 } from '@ultimat3/core';
-import { GapRepairs } from './channel-gaps';
+import { channelFramesDropped, GapRepairs } from './channel-gaps';
 import type { Audience, DeliverRecordsTo } from './channel-tenant';
 import type { ChannelRecordsFrame } from './channel-wire';
 import { CLOSE } from './close-codes';
-import { channelFramesDropped } from './socket-channel-drops';
 import { DropWindow } from './socket-drops';
 import { DEFAULT_IDLE_TIMEOUT_MS } from './socket-idle';
 import { encode, type Frame } from './sync-protocol';
