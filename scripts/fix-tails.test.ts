@@ -4,10 +4,10 @@
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { fixTailFindings, fixTailProblem, fixTailSites } from './fix-tails';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
-// A walk of every shipped source file, on a machine other agents are loading.
-setDefaultTimeout(60_000);
+// A walk of every shipped source file: the repo-scan backstop, as every whole-tree test.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 describe('fixTailProblem', () => {
   test.each([

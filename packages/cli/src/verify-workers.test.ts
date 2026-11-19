@@ -2,7 +2,7 @@
 // drives the step engine and this drives one flag reader — and the engine's file is at the line
 // ceiling, so a third bound assertion could not have landed beside it.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no `Bun.*` equivalent for either: `mkdtemp`/`rm` own a throwaway root's lifetime.
 import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -60,6 +60,11 @@ describe('unit · x verify --workers', () => {
     expect(summary).toContain(`min ${WORKER_FLOOR}`);
     expect(summary).toContain(`max ${WORKER_CEILING}`);
   });
+});
+
+// A skipped suite still evaluates this module: the reset runs at file scope either way.
+afterAll(() => {
+  resetTestDiscovery();
 });
 
 describe('unit · the width a step names', () => {

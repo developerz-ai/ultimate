@@ -1,7 +1,7 @@
 // The whole forked-chain path at command altitude: two branches' migrations on one disk, the
 // refusal from every reader, its printed fix followed as printed, then a real replay and `drift`.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 // why: `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
 import { mkdtempSync, readdirSync, renameSync, rmSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
@@ -45,6 +45,11 @@ async function appRoot(): Promise<string> {
   await Bun.write(join(dir, 'packages/db/src/schema.ts'), 'export const schema = 1;\n');
   return dir;
 }
+
+// A skipped suite still evaluates this module: the reset runs at file scope either way.
+afterAll(() => {
+  clearRegistry();
+});
 
 const declare = (...tables: readonly string[]): void => {
   clearRegistry();

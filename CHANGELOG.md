@@ -35,6 +35,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - `bun run preflight` and `bun run coverage` stopped by a signal kill the suites they started, so no orphan keeps its ledger reservation.
 - In-process test fixtures no longer join the real ledger queue and leave frozen tickets at its head.
+- `x upgrade`'s `docs-many-agents` codemod no longer reports `changed: [], skipped: []` when the app reworded its conventions table: it finds the table in `AGENTS.md` too, and otherwise reports the file as skipped with the row to add. It also checks the brief's byte budget (`agentsMdMaxBytes`, 12,000 by default) before writing, and skips with the byte count instead of pushing `CLAUDE.md` over it into `X_AGENTS_MD_TOO_LARGE`. `docs-worker-commands` does the same.
+- `x upgrade` installs the merge drivers a hop's `.gitattributes` names, as `bun run setup` does, so an upgraded clone has no `X_MERGE_DRIVER_UNSET` left to fix by hand.
 - A live suite no longer joins another app's test stack that shares its compose project name: it is refused with `X_TEST_SERVICES_UNAVAILABLE`.
 
 ## Releases

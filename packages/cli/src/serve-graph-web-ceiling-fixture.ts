@@ -298,6 +298,6 @@
  * raised 1745 → 1747, measured 1747 (2026-11-18, a queued write's binding): `core/src/client-scope-id.ts`
  * and `action/src/replay-scope.ts`, the scope id and the check that compares it.
  * raised 1747 → 1748, measured 1748 (2026-11-19, multi-agent DX): the one on
- * `SERVING_ROLE_CEILING`, `cli/src/dev-lock-free-port.ts`.
+ * `SERVING_ROLE_CEILING`, `cli/src/port-pair-free.ts`.
  */
 export const WEB_ROLE_CEILING = 1748;

@@ -20,11 +20,11 @@
 import { linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';
-import { freeDevPortPair } from './dev-lock-free-port';
 import { ownerText, type PortOwner, portOwner } from './dev-lock-holder-dir';
 import { reusedPid, startedOf } from './dev-lock-identity';
 import type { PortHolder } from './dev-lock-port-holder';
 import { stealStale } from './dev-lock-steal';
+import { freeDevPortPair } from './port-pair-free';
 import { quoteArg } from './shell-quote';
 
 /** Where the running dev server records itself, inside the state directory it already owns. */

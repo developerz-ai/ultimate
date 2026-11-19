@@ -252,7 +252,7 @@ describe('unit · the gate refuses to run while recording', () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?.code).toBe('X_EVAL_RECORDING');
     expect(findings[0]?.cause).toContain(RECORD_ENV);
-    expect(findings[0]?.fix).toBe(`env -u ${RECORD_ENV} x verify`);
+    expect(findings[0]?.fix).toBe(`env -u ${RECORD_ENV} x verify --only eval`);
   });
 
   test('the step fails and never runs the suite, so no baseline is rewritten', async () => {

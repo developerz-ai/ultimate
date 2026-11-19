@@ -6,7 +6,6 @@ import { realpathSync } from 'node:fs';
 // why: Bun ships no path-separator primitive.
 import { sep } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
-import { freeDevPortPair } from './dev-lock-free-port';
 import type { PortOwner } from './dev-lock-holder-dir';
 import { ownerText, portOwner } from './dev-lock-holder-dir';
 import type { DoctorProbe } from './doctor-probe';
@@ -14,6 +13,7 @@ import { PORT_RANGE, readIntFlag } from './flag-number';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
+import { freeDevPortPair } from './port-pair-free';
 import { portFree } from './port-probe';
 import { syncPortFor } from './role-sync';
 import { portFromEnv } from './serve-env';

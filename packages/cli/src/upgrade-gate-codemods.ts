@@ -15,6 +15,7 @@ import { LOCAL_CLI_BIN } from './local-cli';
 import type { Finding } from './output';
 import { documentIn } from './upgrade-document';
 import { manifestSnapshot, reinstallIfMoved } from './upgrade-gate-codemods-install';
+import { installMergeDrivers } from './upgrade-merge-drivers';
 import type { HopCodemods } from './upgrade-report-codemods';
 
 const SKIP = t.object({ path: t.string, reason: t.string, diff: t.optional(t.string) });
@@ -106,9 +107,10 @@ export async function applyHopCodemods(input: {
           })),
           source: 'driver',
         };
-  return (await reinstallIfMoved({ runner, root, to, before }))
-    ? { ...report, reinstalled: true }
-    : report;
+  const reinstalled = await reinstallIfMoved({ runner, root, to, before });
+  // After the install: the driver command runs the app's own `node_modules/.bin/x`.
+  await installMergeDrivers(runner, root);
+  return reinstalled ? { ...report, reinstalled: true } : report;
 }
 
 /**

@@ -188,7 +188,6 @@ export {
   migrationSnapshotMissing,
   rollbackStepsInvalid,
 } from './migration-errors';
-export type { MigrationFork } from './migration-fork';
 export type { LockHeavyKind, LockHeavyStatement } from './migration-lock-lint';
 export {
   LOCK_HEAVY_MARKER,

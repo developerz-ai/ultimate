@@ -1,8 +1,8 @@
 // The port a refusal suggests: free for both roles `x dev` binds, or the fix fails a second time.
 
 import { describe, expect, test } from 'bun:test';
-import { freeDevPortPair } from './dev-lock-free-port';
 import { PORT_RANGE } from './flag-number';
+import { freeDevPortPair } from './port-pair-free';
 
 const freeExcept =
   (...taken: readonly number[]) =>

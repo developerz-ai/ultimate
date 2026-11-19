@@ -63,7 +63,9 @@ describe('unit · x new --shape saas', () => {
     expect(source).toContain('tenant: (event) => event.orgId,');
     expect(source).toContain('repo.applyPlan({ orgId: org,');
     expect(source).not.toContain("tenant: 'none'");
-    expect(textAt('apps/web/api/index.ts')).toContain('jobs: [reindexPost, billingEvents],');
+    expect(textAt('apps/web/api/index.ts')).toContain(
+      '  jobs: [\n    // One entry per line: branches that each add one merge cleanly (x merge-driver).\n    reindexPost,\n    billingEvents,\n  ],',
+    );
     // The exercise entry names an org: the job's tenant is read from it.
     expect(textAt('apps/web/exercise.ts')).toContain("'billing-events': {");
   });

@@ -3032,7 +3032,6 @@
       "MIGRATOR_ROLE": {"hash":"227ce8261bbb0801","shape":{"kind":"declaration","keyword":"const","head":"227ce826"}},
       "MigrateOptions": {"hash":"f04d3716c8dda31a","shape":{"kind":"members","head":"f193f726","members":{"appVersion":"?6c665e22","client":"?aaed5a91","lock":"?f4af6dab","lockRetries":"?5d7469a7","lockRetryRandom":"?4b1f0e77","lockRetrySleep":"?8f142133","lockTimeoutMs":"?5d7469a7","lockWaitMs":"?5d7469a7","migrations":"94d28db6","production":"?f4af6dab"}}},
       "Migration": {"hash":"ea43b23d7c328ac2","shape":{"kind":"members","head":"eea1d0f6","members":{"checksum":"?6c665e22","down":"1fb0a448","id":"1fb0a448","name":"1fb0a448","snapshot":"?45eaa066","up":"1fb0a448"}}},
-      "MigrationFork": {"hash":"dfd7c687cf548455","shape":{"kind":"members","head":"5e2d85e1","members":{"collisions":"a6bb21bd","lost":"70b8245f","merged":"0c90e234","newest":"1fb0a448","stale":"cf704971"}}},
       "MigrationReport": {"hash":"8270e5643d2cb9ec","shape":{"kind":"members","head":"291c8206","members":{"ahead":"f8639a23","appVersion":"1fb0a448","applied":"987daf93","durationMs":"4e57c805","skipped":"f8639a23"}}},
       "NO_TRANSACTION_MARKER": {"hash":"c13d1e95b8052e7c","shape":{"kind":"declaration","keyword":"const","head":"c13d1e95"}},
       "PARTITION_INTERVALS": {"hash":"6d0af7e4101a9b57","shape":{"kind":"literals","head":"49e90106","values":["051a9620","181d9082","2992f9ab","ff6bd46e"]}},

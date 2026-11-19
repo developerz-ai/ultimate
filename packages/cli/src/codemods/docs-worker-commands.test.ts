@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { AGENTS_MD_MAX_BYTES } from '@ultimat3/manifest';
 import { names } from '../templates/naming';
 import { docsFiles } from '../templates/scaffold-docs';
 import { memoryCodemodApp } from './codemod';
@@ -13,9 +14,22 @@ describe('docs-worker-commands', () => {
     expect((await codemod.run(app)).changed).toEqual([]);
   });
 
-  test('leaves a reworded row alone', async () => {
+  test('a reworded row is left as written and reported, with the row to use', async () => {
     const app = memoryCodemodApp({ 'CLAUDE.md': '| Many agents | ours | review |\n' });
-    expect(await codemod.run(app)).toEqual({ changed: [], skipped: [] });
+    const result = await codemod.run(app);
+    expect(result.changed).toEqual([]);
+    expect(result.skipped[0]?.reason).toContain(WORKER_COMMANDS_ROW);
+    expect(app.files['CLAUDE.md']).toBe('| Many agents | ours | review |\n');
+  });
+
+  test('a row that would take the file over its byte budget is skipped with the count', async () => {
+    const tail = `\n${MANY_AGENTS_ROW}\n`;
+    const full = `${'x'.repeat(AGENTS_MD_MAX_BYTES - tail.length - 5)}${tail}`;
+    const app = memoryCodemodApp({ 'CLAUDE.md': full });
+    const result = await codemod.run(app);
+    expect(result.changed).toEqual([]);
+    expect(result.skipped[0]?.reason).toContain(String(AGENTS_MD_MAX_BYTES));
+    expect(app.files['CLAUDE.md']).toBe(full);
   });
 
   test('lands on what a new app is scaffolded with', () => {

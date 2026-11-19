@@ -23,8 +23,8 @@ import {
   SocketRegistry,
   syncNode,
 } from '@ultimat3/realtime/server';
-import { freeDevPortPair } from './dev-lock-free-port';
 import { syncPortFor } from './flag-number';
+import { freeDevPortPair } from './port-pair-free';
 import { portFree } from './port-probe';
 import type { StartRolesOptions } from './role-start';
 import { startOrWaitForBus } from './role-sync-bus-wait';

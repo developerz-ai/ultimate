@@ -103,7 +103,9 @@ describe('unit · x new --shape', () => {
     expect(textAt(files, 'apps/web/app/posts/page.tsx')).toContain(
       '<a href={`/posts/$' + '{row.id}`}>',
     );
-    expect(textAt(files, 'apps/web/api/index.ts')).toContain('queries: [postList, postById]');
+    expect(textAt(files, 'apps/web/api/index.ts')).toContain(
+      '  queries: [\n    // One entry per line: branches that each add one merge cleanly (x merge-driver).\n    postList,\n    postById,\n  ],',
+    );
     // Sign-in is the generator's own output, never re-spelled in the overlay.
     expect(SHAPE_OVERLAYS.dashboard.generate).toEqual([['sign-in', '--password']]);
     expect(paths.filter((path) => path.includes('/auth/sign-in/'))).toEqual([]);
