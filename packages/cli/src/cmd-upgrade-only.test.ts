@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   fixture,
   fixtureWithoutApp,
+  planDocument,
   recording,
   removeFixtures,
   run,
@@ -23,7 +24,7 @@ describe('unit · x upgrade --only, a scoped gate', () => {
     const { runner, spawned } = recording();
     // Typed out of order: the list is the gate's declared order, as `x verify --only` keeps it.
     const { code, output } = await run(dir, runner, ['--only', 'lint,typecheck']);
-    expect(spawned.at(-1)).toBe('x verify --only typecheck,lint');
+    expect(spawned.slice(-2)).toEqual(['x verify plan', 'x verify --only typecheck,lint']);
     expect(spawned).not.toContain('x verify');
     expect(code).toBe(0);
     expect(output.data?.proof).toBe('verify-only');
@@ -31,6 +32,28 @@ describe('unit · x upgrade --only, a scoped gate', () => {
     expect(output.summary).toContain('NOT THE FULL GATE');
     expect(output.summary).not.toContain('the gate is green');
     expect(output.data?.then).toContain(`x verify --only ${NOT_RUN.join(',')} --json`);
+  });
+
+  // The follow-up runs on the INSTALLED CLI, which may be majors older than this one: a step it
+  // never had is no step CI can be told to run.
+  test('the steps not run are the installed release`s, never this CLI`s', async () => {
+    const dir = await fixture();
+    const older = ['typecheck', 'lint', 'unit', 'live', 'e2e'];
+    const { output } = await run(dir, recording({ plan: planDocument(older) }).runner, [
+      '--only',
+      'typecheck,lint',
+    ]);
+    expect(output.data?.verify?.notRun).toEqual(['unit', 'live', 'e2e']);
+    expect(output.data?.then).toContain('x verify --only unit,live,e2e --json');
+  });
+
+  test('an installed CLI with no plan to ask: this CLI`s list stands in', async () => {
+    const dir = await fixture();
+    const { output } = await run(dir, recording({ plan: 'error: unknown command' }).runner, [
+      '--only',
+      'typecheck,lint',
+    ]);
+    expect(output.data?.verify?.notRun).toEqual(NOT_RUN);
   });
 
   test('the terminal names the steps not run and the command that runs them', async () => {

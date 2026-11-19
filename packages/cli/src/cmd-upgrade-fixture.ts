@@ -14,6 +14,7 @@ import { REQUIRED_BUN } from './app-root';
 import { dispatch } from './dispatch';
 import type { ExecResult, Runner } from './exec';
 import { exec } from './exec';
+import { VERIFY_STEP_NAMES } from './verify-step';
 
 const trees: TempTree[] = [];
 /**
@@ -178,6 +179,8 @@ interface Script {
   readonly generateCode?: number;
   /** `x verify --only unit`'s stdout. */
   readonly unit?: string;
+  /** `x verify plan --parts 1 --json`'s stdout: the installed CLI's step list (default: this CLI's). */
+  readonly plan?: string;
   /** The installed `x upgrade codemods`' stdout and exit code; default: none ran. */
   readonly codemods?: string;
   readonly codemodsCode?: number;
@@ -194,6 +197,14 @@ export const codemodsDocument = (
     ok: true,
     command: 'upgrade',
     data: { codemods: { ...span, dryRun: false, applied } },
+  });
+
+/** `x verify plan --parts 1 --json`, as a CLI whose gate is `steps` answers it. */
+export const planDocument = (steps: readonly string[]): string =>
+  JSON.stringify({
+    ok: true,
+    command: 'verify plan',
+    data: { parts: 1, matrix: { include: [{ part: 'gate', only: steps.join(',') }] } },
   });
 
 /** `boundaries`, as the installed CLI reports it: one finding per break of each guard on disk. */
@@ -230,7 +241,8 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
       return exec(command, { ...options, env: { ...options.env, ...TEMP_TREE_GIT_ENV } });
     expect(command[0]).toBe(process.execPath);
     const args = command.slice(1);
-    const only = args[2] === '--only' ? ` --only ${args[3] ?? ''}` : '';
+    const only =
+      args[2] === '--only' ? ` --only ${args[3] ?? ''}` : args[2] === 'plan' ? ' plan' : '';
     const label = args[0]?.endsWith('bin.ts') ? `x ${args[1]}${only}` : args.slice(0, 2).join(' ');
     spawned.push(label);
     if (args[0] === 'update') {
@@ -285,6 +297,8 @@ export const recording = (script: Script = {}): { runner: Runner; spawned: strin
         );
       case 'x verify --only unit':
         return answer(command, script.unit ?? VERIFY_GREEN);
+      case 'x verify plan':
+        return answer(command, script.plan ?? planDocument(VERIFY_STEP_NAMES));
       case 'x g':
         if ((script.generateCode ?? 0) !== 0) return answer(command, '', script.generateCode);
         return answer(command, await generated(options.cwd, args[3] ?? ''));

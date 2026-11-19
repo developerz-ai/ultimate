@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdir } from 'node:fs/promises'; // why: Bun has no directory listing primitive.
 import { jobOf, readWorkflow, text } from './lib/ci-workflow-read';
 import { repoRoot } from './lib/run';
+import { evaluateIf } from './lib/workflow-if';
 
 /** Push-only on purpose: each publishes what the gate already checked, and answers no diff. */
 const PUBLISHERS: Readonly<Record<string, string>> = {
@@ -56,12 +57,21 @@ describe('unit · workflows · nothing checks main alone', () => {
     }
   });
 
-  test('no ci.yml job a push runs is skipped on a pull request', async () => {
+  // Evaluated, never matched: a substring test passed an `if` that named `pull_request` inside a
+  // main-ref guard and so skipped every pull request (`scripts/lib/workflow-if.test.ts`).
+  test('no ci.yml job a push to main runs is skipped on a pull request', async () => {
     const ci = await readWorkflow('ci.yml');
-    const pushOnly = Object.entries(ci.jobs ?? {})
-      .filter(([, job]) => /github\.event_name == 'push'|refs\/heads\/main/.test(text(job.if)))
-      .filter(([, job]) => !text(job.if).includes("github.event_name == 'pull_request'"))
-      .map(([name]) => name);
+    const pushMain = { 'github.event_name': 'push', 'github.ref': 'refs/heads/main' };
+    const pull = { 'github.event_name': 'pull_request', 'github.ref': 'refs/pull/1/merge' };
+    const unreadable: string[] = [];
+    const pushOnly: string[] = [];
+    for (const [name, job] of Object.entries(ci.jobs ?? {})) {
+      const onPush = evaluateIf(text(job.if), pushMain);
+      const onPull = evaluateIf(text(job.if), pull);
+      if (onPush === undefined || onPull === undefined) unreadable.push(name);
+      else if (onPush && !onPull) pushOnly.push(name);
+    }
+    expect(unreadable, 'extend scripts/lib/workflow-if.ts to read these').toEqual([]);
     expect(pushOnly).toEqual([]);
   });
 

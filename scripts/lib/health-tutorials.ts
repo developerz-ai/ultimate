@@ -1,6 +1,7 @@
 // Row 10's read, judge and command: whether the newest `tutorial-run.yml` run on `main` — tutorials
 // 1–4 run fence by fence on a scaffold of it — ended green. That workflow runs outside `ci`, so
-// nothing else announces main's red; a pull request's run is that pull request's, never read here.
+// nothing else announces main's red. A pull request's run — a fork's branch may be named `main` too
+// — is that pull request's: `--event push` keeps it out.
 
 import type { RunRow } from './health-narrow';
 import { jsonDocument, narrowRuns } from './health-narrow';
@@ -17,6 +18,8 @@ const ARGS = [
   'tutorial-run.yml',
   '--branch',
   'main',
+  '--event',
+  'push',
   '--limit',
   '1',
   '--json',

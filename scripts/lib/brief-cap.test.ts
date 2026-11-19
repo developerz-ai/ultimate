@@ -13,6 +13,13 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 /** The scheduled-checkup platform's ceiling, in characters (the refusal counts them, not bytes). */
 const BRIEF_CAP = 10_000;
 
+/**
+ * The header the platform prepends before it counts: a 9,984-character `health.md` was measured at
+ * 10,065 with it (PR #1274's review, 2026-11-19), so a brief that fits the bare cap could still be
+ * refused on every tick. 100 holds that 81 with room.
+ */
+const HEADER_RESERVE = 100;
+
 const MAINTAINER = '.dz/maintainer/maintainer.yml';
 
 const scheduledBriefs = async (): Promise<readonly string[]> =>
@@ -31,14 +38,16 @@ describe('unit · a scheduled brief fits the platform cap', () => {
     expect(briefs).toContain('.dz/briefs/release-due.md');
   });
 
-  // was: "the brief fits the platform cap"
-  test('every one is at most BRIEF_CAP characters', async () => {
+  // was: "every one is at most BRIEF_CAP characters" — the platform's header counts too.
+  test('every one is at most BRIEF_CAP characters, its header included', async () => {
     const over: string[] = [];
     for (const path of await scheduledBriefs()) {
       // Characters, as the refusal counts them: a byte length overcounts every non-ASCII dash.
       const length = [...(await Bun.file(join(repoRoot(), path)).text())].length;
-      if (length > BRIEF_CAP)
-        over.push(`${path}: ${String(length)} characters, cap ${String(BRIEF_CAP)}`);
+      if (length > BRIEF_CAP - HEADER_RESERVE)
+        over.push(
+          `${path}: ${String(length)} characters, cap ${String(BRIEF_CAP - HEADER_RESERVE)} before the platform's header`,
+        );
     }
     expect(over).toEqual([]);
   });

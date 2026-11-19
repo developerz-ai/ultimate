@@ -362,7 +362,9 @@ path-filtered workflow never leaves a check pending — a red one is a red check
 `scripts/lib/health-tutorials.ts` reads `--branch main` alone, so a pull request's red is never
 main's health. `scripts/ci-workflow-main-only.test.ts` holds the rule: a workflow pushed on `main`
 with no `pull_request` trigger, or with different paths, fails unless it is a named publisher
-(`wiki.yml`, `scorecard.yml`); a `ci.yml` job whose `if` admits a push and not a pull request fails.
+(`wiki.yml`, `scorecard.yml`); a `ci.yml` job whose `if` runs on a push to `main` and not on a pull
+request fails — each `if` evaluated for both events (`scripts/lib/workflow-if.ts`), never matched
+as a substring.
 
 ## Fault drills, 2026-11-06
 

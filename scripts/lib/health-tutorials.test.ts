@@ -34,9 +34,10 @@ describe('row 10 · the tutorials run as written', () => {
     expect(verdict({ runs: { message: 'HTTP 502' } })).toBe('X_HEALTH_ROW_UNREADABLE');
   });
 
-  // A pull request runs the workflow too, and its red is that pull request's, never main's.
-  test('the row reads main alone', () => {
-    expect(TUTORIALS_RUN_COMMAND).toContain(' --branch main ');
+  // A pull request runs the workflow too, and its red is that pull request's, never main's — a
+  // fork's PR from a branch named `main` included, which `--branch` alone would let through.
+  test('the row reads pushes to main alone', () => {
+    expect(TUTORIALS_RUN_COMMAND).toContain(' --branch main --event push ');
   });
 
   test('the reader asks gh exactly what the row command says', async () => {

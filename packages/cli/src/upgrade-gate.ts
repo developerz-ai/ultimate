@@ -21,6 +21,7 @@ import type { BaselinedGuard, WithheldGuard } from './upgrade-guards';
 import { installMissingGuards } from './upgrade-guards';
 import { parseJson } from './upgrade-registry';
 import type { HopCodemods } from './upgrade-report-codemods';
+import { installedNotRun } from './upgrade-scope';
 
 // Where it always was: `verify-exercise.ts` and `verify-budgets-build.ts` read it from here.
 export { documentIn } from './upgrade-document';
@@ -301,13 +302,15 @@ export async function runHopGate(input: {
   const exerciseFloor = await ratchetExerciseFloor(root, stamp);
   onStage('verify');
   const { only } = input;
+  // The installed gate's own list first: the steps owed to CI are steps that CLI has.
+  const notRun = only === undefined ? undefined : await installedNotRun(installed, only);
   const verify =
-    only === undefined
+    only === undefined || notRun === undefined
       ? readVerify(await installed(['verify', '--json']))
       : {
           ...readVerify(await installed(['verify', '--only', only.steps.join(','), '--json'])),
           only: only.steps,
-          notRun: only.notRun,
+          notRun,
         };
   return {
     codemods,
