@@ -21,11 +21,11 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { FETCH_MAIN } from './lib/base-ref';
+import { FETCH_MAIN, type GitRunner } from './lib/base-ref';
 import { git as gitIn } from './lib/release-due-git';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import type { TagProbe } from './registry-audit';
-import { decideAt, lastReleaseTag, readWindow } from './release-due';
+import { decideAt, lastReleaseTag, readWindow, refreshTags } from './release-due';
 
 // Each test spawns a dozen git processes.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -443,3 +443,28 @@ function decideAtCalls(source: string): readonly string[] {
   }
   return found;
 }
+
+describe('unit · release-due · refreshTags', () => {
+  const answering =
+    (ok: boolean, calls: string[][]): GitRunner =>
+    async (command) => {
+      calls.push([...command]);
+      const result = { command, durationMs: 1, timedOut: false };
+      if (command.includes('--is-shallow-repository')) {
+        return { ...result, code: 0, ok: true, output: 'false' };
+      }
+      return { ...result, code: ok ? 0 : 1, ok, output: ok ? '' : 'could not read from remote' };
+    };
+
+  test('fetches every tag from origin and has nothing to report', async () => {
+    const calls: string[][] = [];
+    expect(await refreshTags('/repo', answering(true, calls))).toBeUndefined();
+    expect(calls.at(-1)).toEqual(['git', 'fetch', '--quiet', '--tags', 'origin']);
+  });
+
+  test('a fetch that failed refuses: stale tags would read as awaiting_tag', async () => {
+    const finding = await refreshTags('/repo', answering(false, []));
+    expect(finding?.code).toBe('X_RELEASE_WINDOW_UNREADABLE');
+    expect(finding?.cause).toContain('could not read from remote');
+  });
+});

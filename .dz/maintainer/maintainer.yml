@@ -130,9 +130,12 @@ escalate:
 schedules:
   # Weekly and judged, so a merge never cuts a release (owner, 2026-11-01: "no auto, not dependabot,
   # us developerz.ai AI decides if needed"). One weekday per repo, so the fleet is not hit at once.
+  # `mode: devops`: the run needs a shell (the facts come from `scripts/release-due.ts`, the bump from
+  # `scripts/release.ts`) and delivers the bump PR itself. A read-only checkup could do neither.
   - name: release-due
     days: [tue]
     hours_utc: [3]
+    mode: devops
     brief_file: .dz/briefs/release-due.md
   # The one exception, so a confirmed security fix does not wait up to a week for Tuesday.
   - name: security-release

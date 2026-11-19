@@ -11,6 +11,7 @@
 import { flagString, parseScriptArgs } from './lib/args';
 import { BASE_REF, baseRef, FETCH_MAIN, type GitRunner } from './lib/base-ref';
 import { loadChangelog } from './lib/changelog-store';
+import { fetchFromOrigin } from './lib/git-fetch';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { nextMajorWindow } from './lib/major-window';
@@ -28,7 +29,7 @@ import {
 } from './lib/release-due-rule';
 import { packageFiles, shippingPackage } from './lib/release-due-ships';
 import { askIssueArgs } from './lib/release-subject';
-import { repoRoot } from './lib/run';
+import { repoRoot, run } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { listWorkspaces, publishFloorFindings, publishOrder } from './lib/workspaces';
 import type { TagProbe } from './registry-audit';
@@ -399,11 +400,28 @@ export function nextLaneLines(lane: NextLaneDecision): readonly string[] {
   ];
 }
 
+/**
+ * Bring the release tags up to date before anything reads them. A maintainer session's checkout
+ * fetches branches with `--no-tags` and may not run `git fetch` itself, and a stale tag list reads
+ * the tree as stamped past its last tag: `awaiting_tag`, a release that is not coming.
+ */
+export async function refreshTags(
+  root: string,
+  runner: GitRunner = run,
+): Promise<Finding | undefined> {
+  const fetched = await fetchFromOrigin(root, ['--quiet', '--tags', 'origin'], runner);
+  return fetched.ok ? undefined : gitUnreadable('git fetch --tags origin', fetched.output);
+}
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const settle = settleHoursOf(flagString(args, 'settle-hours'));
   if (typeof settle !== 'number') {
     report({ ok: false, script: SCRIPT, summary: 'refused', findings: [settle] }, args.json);
+  }
+  const stale = await refreshTags(repoRoot());
+  if (stale !== undefined) {
+    report({ ok: false, script: SCRIPT, summary: 'cannot tell', findings: [stale] }, args.json);
   }
   const read = await decideAt(repoRoot(), settle, Date.now());
   if (!('decision' in read)) {
