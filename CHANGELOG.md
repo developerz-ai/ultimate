@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- **Many agents, one machine:** heavy commands reserve their measured memory in one machine-wide ledger and share a local core cap, so parallel agents queue instead of swamping the box. `x heavy status` shows who runs and who waits.
+- **Session cookies from an action:** `setCookie(line)` sends what `@ultimat3/auth` returns.
+- **Safer operations:** the replicator no longer crash-loops on an app with a view entity, and `x upgrade` refreshes transitive packages held under an advisory floor.
+
 ### Added
 
 - **Many agents on one machine:** `x verify`, `x test`, every lane and `bun run coverage` reserve their measured memory in one flock-backed ledger per machine, first come first served, at most 4 cores locally; `x heavy status` and `x heavy run` expose it, and a new app's `CLAUDE.md` says a worker runs its own files and the coordinator runs the gate once ([Working with many agents](wiki/Many-Agents.md)).
