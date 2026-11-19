@@ -1,10 +1,11 @@
-// Every brief `.dz/maintainer/maintainer.yml` schedules fits the platform's cap: a brief over it is
-// refused at every due firing, so its checkup runs nothing (#1170). `health.md` alone was held to
-// it, and `release-due.md` drifted to 10,574 characters unseen.
+// Every brief `.dz/maintainer/maintainer.yml` schedules is one the platform can run: it fits the
+// cap with the header the platform prepends (an over-cap brief is refused at every due firing,
+// #1170), and a scout brief declares `## Rows` (a rowless one fires and can file nothing).
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun ships no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
+import { briefRowsOf, headedBrief } from './brief-rows';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
 // Reads the maintainer schedule and every brief it names from the tree.
@@ -13,42 +14,58 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 /** The scheduled-checkup platform's ceiling, in characters (the refusal counts them, not bytes). */
 const BRIEF_CAP = 10_000;
 
-/**
- * The header the platform prepends before it counts: a 9,984-character `health.md` was measured at
- * 10,065 with it (PR #1274's review, 2026-11-19), so a brief that fits the bare cap could still be
- * refused on every tick. 100 holds that 81 with room.
- */
-const HEADER_RESERVE = 100;
+/** Room under the cap for an edit that does not re-run this test, or a longer header. */
+const SPARE = 100;
+
+/** The repository the header line names: the one whose policy holds the schedules. */
+const REPO = 'developerz-ai/ultimate';
 
 const MAINTAINER = '.dz/maintainer/maintainer.yml';
 
-const scheduledBriefs = async (): Promise<readonly string[]> =>
-  [
-    ...(await Bun.file(join(repoRoot(), MAINTAINER)).text()).matchAll(
-      /^\s*brief_file:\s*(\S+)\s*$/gm,
-    ),
-  ]
-    .map((match) => match[1] ?? '')
-    .sort();
+interface Schedule {
+  readonly name: string;
+  readonly brief_file: string;
+  /** Absent = a scout checkup; `devops` files through its own PR and owes no rows. */
+  readonly mode?: string;
+}
 
-describe('unit · a scheduled brief fits the platform cap', () => {
-  test('the schedule names its briefs, so the rule has subjects', async () => {
-    const briefs = await scheduledBriefs();
-    expect(briefs).toContain('.dz/briefs/health.md');
-    expect(briefs).toContain('.dz/briefs/release-due.md');
+const schedules = async (): Promise<readonly Schedule[]> => {
+  const policy = Bun.YAML.parse(await Bun.file(join(repoRoot(), MAINTAINER)).text()) as {
+    readonly schedules?: readonly Schedule[];
+  };
+  return policy.schedules ?? [];
+};
+
+const brief = (path: string): Promise<string> => Bun.file(join(repoRoot(), path)).text();
+
+describe('unit · a scheduled brief is one the platform can run', () => {
+  test('the schedule names its briefs, so the rules have subjects', async () => {
+    const files = (await schedules()).map((schedule) => schedule.brief_file);
+    expect(files).toContain('.dz/briefs/health.md');
+    expect(files).toContain('.dz/briefs/release-due.md');
   });
 
-  // was: "every one is at most BRIEF_CAP characters" — the platform's header counts too.
-  test('every one is at most BRIEF_CAP characters, its header included', async () => {
+  // was: a flat 100-character header reserve; the header carries every row id, ~380 for health.
+  test('every one is at most BRIEF_CAP - SPARE characters, its header included', async () => {
     const over: string[] = [];
-    for (const path of await scheduledBriefs()) {
+    for (const { brief_file: path } of await schedules()) {
       // Characters, as the refusal counts them: a byte length overcounts every non-ASCII dash.
-      const length = [...(await Bun.file(join(repoRoot(), path)).text())].length;
-      if (length > BRIEF_CAP - HEADER_RESERVE)
+      const length = [...headedBrief(REPO, path, await brief(path))].length;
+      if (length > BRIEF_CAP - SPARE)
         over.push(
-          `${path}: ${String(length)} characters, cap ${String(BRIEF_CAP - HEADER_RESERVE)} before the platform's header`,
+          `${path}: ${String(length)} characters with its header, cap ${String(BRIEF_CAP - SPARE)}`,
         );
     }
     expect(over).toEqual([]);
+  });
+
+  test('every scout brief declares `## Rows`', async () => {
+    const rowless: string[] = [];
+    for (const schedule of await schedules()) {
+      if (schedule.mode === 'devops') continue;
+      if (briefRowsOf(await brief(schedule.brief_file)).length === 0)
+        rowless.push(`${schedule.name}: ${schedule.brief_file}`);
+    }
+    expect(rowless).toEqual([]);
   });
 });
