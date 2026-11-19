@@ -79,7 +79,7 @@ Run everything from the repo root.
 | a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket) [--browser \| --server-only]` — registration + `wiki/Error-Codes-<pkg>.md` row + HTTP status. Tier ≤ 4: one of pair 1, tier 5 none; realtime: one of pair 2. A script's code: `--script scripts/<f>.ts`, no `--package` (never-ships list + row) |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | regenerate manifest | `bun run manifest` |
-| both tracked apps' schema dumps | `bun run schema-dumps` regenerates `packages/db/schema/` in each · `--check` only reports |
+| every tracked app's schema dump | `bun run schema-dumps` regenerates `packages/db/schema/` in each · `--check` only reports |
 | stale `@ultimat3/*` ranges in `bun.lock` | `bun run lockfile` reports, `bun run lockfile:fix` edits |
 | the CLI, in-repo | `bun run x -- <args>`; an app command takes `--cwd examples/dummy` (at the root: `X_NOT_IN_APP`) |
 | dev MCP server | `bun run x -- mcp serve --cwd examples/dummy` — routes, schema, policies, tests, logs, read-only SQL: ask it before grepping |
