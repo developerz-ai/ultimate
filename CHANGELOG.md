@@ -10,28 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-### Added
-
-- **Many agents on one machine:** `x verify`, `x test`, every lane and `bun run coverage` reserve their measured memory in one flock-backed ledger per machine, first come first served, at most 4 cores locally; `x heavy status` and `x heavy run` expose it, and a new app's `CLAUDE.md` says a worker runs its own files and the coordinator runs the gate once ([Working with many agents](wiki/Many-Agents.md)).
-- `setCookie(line)` in `@ultimat3/http` sets a line `@ultimat3/auth` returned, so an action can issue a session cookie.
-- `MAIL_TIMEOUT_MS` sets the SMTP read/write deadline for an env-selected driver.
-- `usesDefaultRedisClient`, and the `cache.tier.default-redis` boot warning.
-- `x drill roll-before-migrate` plays sync and replicator when their services are set.
-
-### Changed
-
-- `lruTier` and `redisTier` refuse a bad `jitterFraction` at construction; cache limit fixes name `cacheTiers` in `runtime.ts`.
-- A scaffolded agent brief runs `bunx x verify --only typecheck`, which queues in the machine ledger, in place of a raw `bun run typecheck`.
-
-### Fixed
-
-- The replicator no longer crash-loops on an app that declares a view entity.
-- `x upgrade` runs `bun update` for a transitive package `bun.lock` holds under an advisory floor, so an upgraded app no longer keeps the vulnerable version until someone acts on `x doctor`'s warning.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.48.0](docs/changelog/31.48.0.md) | 2026-11-19 | **Many agents, one machine:** heavy commands reserve their measured memory in one machine-wide ledger and share a local core cap, so parallel agents queue instead of swamping the box. `x heavy status` shows who runs and who waits. |
 | [31.47.1](docs/changelog/31.47.1.md) | 2026-11-18 | **`x upgrade` leaves an old app green:** an app with pages but no `site/page.tsx` gets a working e2e suite or a stated skip, `test-ports` moves both files or neither, old scaffold guard copies are recognised, and re-running at the target version changes nothing. |
 | [31.47.0](docs/changelog/31.47.0.md) | 2026-11-18 | **The finish sweep (plan 101):** a replayed offline write is bound to the principal that queued it, the gate's `exercise` step gives the same verdict for the same code, scaffolded apps run their full CI weekly and open one issue on a scheduled failure, and every known gap, stub and exemption now carries a decision or is gone. |
 | [31.46.0](docs/changelog/31.46.0.md) | 2026-11-18 | **One redirect path for a browser's form (D10):** the sign-in and invite actions `x g sign-in` and `x g invite` write answer a native form post through `native:` alone, and the hand-written `landAt()` helper is gone. The generated tests now post a real form through the HTTP pipeline. A fresh saas app gates green with no `X_NATIVE_FORM_UNANSWERED`. |
