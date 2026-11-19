@@ -122,7 +122,8 @@ describe('the committed tutorials', () => {
 });
 
 describe('.github/workflows/tutorial-run.yml', () => {
-  test('runs on a push to main touching a tutorial or a generator, never on a PR, never in ci', async () => {
+  // On a pull request too since 2026-11-19: main-only, it went red on a green PR's merge (#1272).
+  test('runs on a push to main and a PR touching a tutorial or a generator, never in ci', async () => {
     const text = await Bun.file(`${repoRoot()}/.github/workflows/tutorial-run.yml`).text();
     const doc = Bun.YAML.parse(text) as {
       readonly on: {
@@ -130,19 +131,22 @@ describe('.github/workflows/tutorial-run.yml', () => {
           readonly branches?: readonly string[];
           readonly paths?: readonly string[];
         };
-        readonly pull_request?: unknown;
+        readonly pull_request?: { readonly paths?: readonly string[] };
       };
       readonly jobs: Readonly<
         Record<string, { readonly steps: readonly { readonly run?: string }[] }>
       >;
     };
     expect(doc.on.push?.branches).toEqual(['main']);
-    expect(doc.on.pull_request).toBeUndefined();
+    expect(doc.on.pull_request?.paths).toEqual(doc.on.push?.paths);
     expect(doc.on.push?.paths).toEqual(
       expect.arrayContaining([
         'wiki/Tutorial-0[1-4]*',
         'packages/cli/src/templates/**',
         'packages/cli/src/cmd-generate*',
+        'packages/cli/src/cmd-db*',
+        'packages/cli/src/db-*',
+        'packages/cli/src/messages*',
         'packages/cli/src/verify-*',
       ]),
     );

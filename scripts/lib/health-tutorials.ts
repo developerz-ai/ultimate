@@ -1,6 +1,7 @@
-// Row 10's read, judge and command: whether the newest `tutorial-run.yml` run — tutorials 1–4 run
-// fence by fence on a scaffold of `main` — ended green. That workflow runs outside `ci` and on no
-// PR, so nothing else announces its red; this row is where the daily checkup reads it.
+// Row 10's read, judge and command: whether the newest `tutorial-run.yml` run on `main` — tutorials
+// 1–4 run fence by fence on a scaffold of it — ended green. That workflow runs outside `ci`, so
+// nothing else announces main's red. A pull request's run — a fork's branch may be named `main` too
+// — is that pull request's: `--event push` keeps it out.
 
 import type { RunRow } from './health-narrow';
 import { jsonDocument, narrowRuns } from './health-narrow';
@@ -10,7 +11,20 @@ import { gh } from './release-due-gh';
 import type { RunResult } from './run';
 
 const FIELDS = 'databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt';
-const ARGS = ['run', 'list', '--workflow', 'tutorial-run.yml', '--limit', '1', '--json', FIELDS];
+const ARGS = [
+  'run',
+  'list',
+  '--workflow',
+  'tutorial-run.yml',
+  '--branch',
+  'main',
+  '--event',
+  'push',
+  '--limit',
+  '1',
+  '--json',
+  FIELDS,
+];
 
 // Exported for the test that pins it against the argv the reader spawns: a re-run is the same query.
 export const TUTORIALS_RUN_COMMAND = `gh ${ARGS.join(' ')}`;

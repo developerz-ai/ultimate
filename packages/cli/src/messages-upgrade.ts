@@ -29,6 +29,12 @@ export const UPGRADE_MESSAGES = {
   'cli.upgrade.typescript':
     'typescript, by hand: {file} declares {from}, below the {to} the framework is checked with — run: {fix}',
   'cli.upgrade.done': '{from} -> {to}: the gate is green',
+  'cli.upgrade.doneScoped':
+    '{from} -> {to}: green on {only} only — NOT THE FULL GATE; not run: {notRun}',
+  'cli.upgrade.notRun':
+    'not run by this hop, so not proven yet — CI, or this machine, owes: x verify --only {steps} --json',
+  'cli.upgrade.then.scoped':
+    'review the diff and commit this hop to {to}; it is done only once x verify --only {steps} --json (or a bare x verify) is green on it, in CI or here, then re-run x upgrade --json for the next one',
   'cli.upgrade.dryRun': '{from} -> {to}: nothing written, no gate run',
   'cli.upgrade.guard': 'guard, yours to take or leave: {fix}',
   'cli.upgrade.doctorWarning': 'doctor warning: {code}, red on the next major — fix: {fix}',

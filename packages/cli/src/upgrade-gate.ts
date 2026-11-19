@@ -21,6 +21,7 @@ import type { BaselinedGuard, WithheldGuard } from './upgrade-guards';
 import { installMissingGuards } from './upgrade-guards';
 import { parseJson } from './upgrade-registry';
 import type { HopCodemods } from './upgrade-report-codemods';
+import { installedNotRun } from './upgrade-scope';
 
 // Where it always was: `verify-exercise.ts` and `verify-budgets-build.ts` read it from here.
 export { documentIn } from './upgrade-document';
@@ -145,6 +146,10 @@ export interface HopGate {
     /** The steps that went red, whether or not they carried a finding. */
     readonly failed: readonly string[];
     readonly findings: readonly GateFinding[];
+    /** `x upgrade --only`'s list, as run; absent when the hop ran the full gate. */
+    readonly only?: readonly string[];
+    /** The gate's steps this hop did NOT run, owed elsewhere (CI); absent beside a full gate. */
+    readonly notRun?: readonly string[];
   };
 }
 
@@ -254,6 +259,8 @@ export async function runHopGate(input: {
   readonly bunMoved?: CoverageRebaseline;
   /** The span whose codemods run first, so every later stage judges the carried-across tree. */
   readonly codemods?: { readonly from: string; readonly to: string };
+  /** `x upgrade --only`: verify narrowed to these steps, a strict subset of the gate's. */
+  readonly only?: { readonly steps: readonly string[]; readonly notRun: readonly string[] };
 }): Promise<HopGate> {
   const { runner, root, onStage } = input;
   const installed = (args: readonly string[]): Promise<ExecResult> =>
@@ -294,7 +301,18 @@ export async function runHopGate(input: {
   // Before `verify`, from the report that exercise just wrote: the gate judges the figures it holds.
   const exerciseFloor = await ratchetExerciseFloor(root, stamp);
   onStage('verify');
-  const verify = readVerify(await installed(['verify', '--json']));
+  const { only } = input;
+  // The installed gate's own list first: the steps owed to CI are steps that CLI has. None owed
+  // (every one of its steps named) is that CLI's full gate, run and reported as one.
+  const notRun = only === undefined ? undefined : await installedNotRun(installed, only);
+  const verify =
+    only === undefined || notRun === undefined || notRun.length === 0
+      ? readVerify(await installed(['verify', '--json']))
+      : {
+          ...readVerify(await installed(['verify', '--only', only.steps.join(','), '--json'])),
+          only: only.steps,
+          notRun,
+        };
   return {
     codemods,
     superseded,

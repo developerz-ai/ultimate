@@ -10,11 +10,10 @@
 
 // why: Bun ships no path-joining primitive: `join`/`isAbsolute` resolve a part path against the cwd.
 import { isAbsolute, join } from 'node:path';
-import { nearestName, renderFixShellArg } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import { verifySpec } from './cmd-verify-spec';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, MissingPositionalError } from './errors';
+import { MissingPositionalError } from './errors';
 import { readIntFlag } from './flag-number';
 import type { CommandResult, JsonValue } from './output';
 import type { ParsedArgs } from './parse';
@@ -25,6 +24,7 @@ import { VERIFY_STEPS } from './verify-checks';
 import { readVerifyFloor } from './verify-floor';
 import type { VerifyPart } from './verify-merge';
 import { coverageRiders, mergeParts, parsePart, VerifyMergeInputError } from './verify-merge';
+import { readStepList } from './verify-only';
 import { measurePace } from './verify-pace';
 import { verifyPlanCommand } from './verify-plan';
 import { withVerifyProgress } from './verify-progress';
@@ -157,44 +157,9 @@ async function mergeCommand(
   });
 }
 
-/**
- * The steps `--only` names, or nothing: one step (`--only lint`) or a comma-separated list
- * (`--only typecheck,lint,boundaries`) run in ONE process, in the gate's declared order whatever
- * order they were typed in. Refused against `VERIFY_STEP_NAMES` — the same constant the runner's
- * list is built from — so a typo can never be read as "narrow to no steps at all", which is a run
- * that passes by checking nothing. An empty item (`lint,,drift`, a trailing comma) is refused for
- * the same reason.
- *
- * A near miss leads with the list as it would be with each typo corrected; an item near NOTHING
- * gets the gate itself rather than an invented lead, which is the rule `parse.ts` already follows
- * for a command that resembles none. Both arms are commands that run.
- */
-export const readOnlySteps = (args: ParsedArgs): readonly VerifyStepName[] | undefined => {
-  const raw = flagString(args, 'only');
-  if (raw === undefined) return undefined;
-  const items = raw.split(',').map((item) => item.trim());
-  const unknown = items.filter((item) => !isStepName(item));
-  if (unknown.length === 0) {
-    return VERIFY_STEP_NAMES.filter((name) => items.includes(name));
-  }
-  // An empty item corrects to nothing — never to whichever step is nearest to ''.
-  const corrected = items.map((item) =>
-    isStepName(item) ? item : item === '' ? undefined : nearestName(item, VERIFY_STEP_NAMES),
-  );
-  const fix = corrected.every((item) => item !== undefined)
-    ? `x verify --only ${renderFixShellArg([...new Set(corrected)].join(','), '<step,step>')} --json`
-    : 'x verify --json';
-  const named = unknown.map((item) => (item === '' ? '(empty)' : `"${item}"`)).join(', ');
-  throw new BadFlagError({
-    flag: 'only',
-    command: 'verify',
-    reason: `${named} ${unknown.length === 1 ? 'is not a gate step' : 'are not gate steps'} (${VERIFY_STEP_NAMES.join(', ')})`,
-    fix,
-  });
-};
-
-const isStepName = (raw: string): raw is VerifyStepName =>
-  (VERIFY_STEP_NAMES as readonly string[]).includes(raw);
+/** `--only`'s list, read by `verify-only.ts` — the one reader `x upgrade --only` shares. */
+export const readOnlySteps = (args: ParsedArgs): readonly VerifyStepName[] | undefined =>
+  readStepList(args, 'verify');
 
 /**
  * Both bounds are the constants the flag summary already names, so `x help verify` and the reader

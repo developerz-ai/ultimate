@@ -61,6 +61,15 @@ Each entry changes a surface the table below covers.
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
 
+**A hop's gate, handed to CI in part.** `As of 2026-11-19`. A bare `x upgrade --json` runs the full `x verify` and is the default. On a loaded machine, `x upgrade --only <step>[,<step>…] --json` runs the hop's `x verify` on those steps alone — the list `x verify --only` takes, refused the same way — and every other stage of the hop unchanged. It is **not the full gate**, and the report says so: `proof: "verify-only"`, `verify.only[]` the steps run, `verify.notRun[]` the rest, a summary reading `NOT THE FULL GATE`, and `then` naming `x verify --only <the rest> --json`. Commit the hop on a branch and let CI run the rest; the hop is proven when that is green.
+
+```sh
+x upgrade --only typecheck,lint --json   # here: two steps, and the hop
+# then, in CI on the hop's commit: x verify --only <data.verify.notRun, comma-joined> --json
+```
+
+To leave only `unit`, `live` and `e2e` to CI, name every other step: `x help verify` lists them in the gate's order.
+
 ## 30.x → 31.0.0, entry by entry
 
 `As of 2026-11-10`, released: the 74 breaking entries of `CHANGELOG.md`'s `## 31.0.0` section, in their order. No legacy path, no codemod, no shim. v31 is the stable line — the next major waits for its window ([Stability](Stability)).

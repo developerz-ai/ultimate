@@ -34,11 +34,18 @@ export interface PlannedWrites {
   readonly manual: readonly BunManual[];
 }
 
-/** The strongest check a hop had: the verdict `done` rests on, stated rather than implied. */
-export type HopProof = 'verify' | 'scripts' | 'none';
+/**
+ * The strongest check a hop had: the verdict `done` rests on, stated rather than implied.
+ * `verify-only` is `x upgrade --only`'s: green on some steps, the rest in `verify.notRun`.
+ */
+export type HopProof = 'verify' | 'verify-only' | 'scripts' | 'none';
 
-export const proofOf = (gate: HopGate | undefined, scripts: readonly RepoScript[]): HopProof =>
-  gate !== undefined ? 'verify' : scripts.length > 0 ? 'scripts' : 'none';
+const notRunOf = (gate: HopGate | undefined): readonly string[] => gate?.verify.notRun ?? [];
+
+export const proofOf = (gate: HopGate | undefined, scripts: readonly RepoScript[]): HopProof => {
+  if (gate !== undefined) return notRunOf(gate).length > 0 ? 'verify-only' : 'verify';
+  return scripts.length > 0 ? 'scripts' : 'none';
+};
 
 /** What the agent does next, as a sentence naming the commands. */
 export const thenLine = (input: {
@@ -68,6 +75,10 @@ export const thenLine = (input: {
       : msg('cli.upgrade.then.scriptsRed', { to: hop.to });
   }
   if (gate?.verify.ok !== true) return msg('cli.upgrade.then.red', { to: hop.to });
+  const notRun = notRunOf(gate);
+  if (notRun.length > 0) {
+    return msg('cli.upgrade.then.scoped', { to: hop.to, steps: notRun.join(',') });
+  }
   return hop.next === null
     ? msg('cli.upgrade.then.last', { to: hop.to })
     : msg('cli.upgrade.then.walk', { to: hop.to, next: hop.next });
@@ -154,6 +165,9 @@ export const humanLines = (
     ...scripts
       .filter((script) => script.ok === false)
       .map((script) => msg('cli.upgrade.scriptRed', { name: script.name })),
+    ...(notRunOf(gate).length === 0
+      ? []
+      : [msg('cli.upgrade.notRun', { steps: notRunOf(gate).join(',') })]),
     msg('cli.upgrade.then', { then }),
   ];
 };
