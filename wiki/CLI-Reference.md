@@ -1763,7 +1763,7 @@ One major per run, so each hop's gate attributes its red to that hop. `As of 30.
 | 2 | read every workspace's `@ultimat3/*` pins, `overrides` and `resolutions` included | `X_UPGRADE_PIN_UNREADABLE`, `X_UPGRADE_MIXED_PINS` |
 | 3 | `bun pm view @ultimat3/cli versions`: the next major's newest; the last major's newest when no later major exists | `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_BUN_VERSION` |
 | 4 | write exact pins, raise the Bun floor | — |
-| 5 | `bun install` | `X_UPGRADE_INSTALL_FAILED`, `fix:` carries the undo |
+| 5 | `bun install`, then `bun update <names>` for each transitive package `bun.lock` holds under an advisory floor (`X_ADVISORY_FLOOR_UNMET`) | `X_UPGRADE_INSTALL_FAILED`, `fix:` carries the undo |
 | 6 | the installed CLI: `x upgrade codemods --from <from> --to <to>` (below), then `x manifest`, `x doctor --json`, each guard that doctor reports missing (only a hop landing before 31.28: `x g guard <name>`, kept when `x verify --only boundaries` finds nothing more), a Bun-floor hop's `x verify --only unit` coverage rebaseline, `x exercise --json` and its `exercise` floor figures, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
 
 A dry run refuses exactly what the real run would, then stops before step 4 — after previewing this CLI's codemods for the span, written nowhere. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
