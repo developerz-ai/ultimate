@@ -178,8 +178,12 @@ describe('unit · x doctor · the command', () => {
         codes: readonly string[];
         warnings?: readonly { code: string; cause: string }[];
       };
-      const warned = (data.warnings ?? []).filter((warning) => warning.code === 'X_PORT_IN_USE');
-      const failed = data.codes.filter((code) => code === 'X_PORT_IN_USE');
+      // About THIS port only: the sync port beside a kernel-picked one is whatever the machine has
+      // there, and another suite's server may hold it.
+      const about = (one: { code: string; cause: string }): boolean =>
+        one.code === 'X_PORT_IN_USE' && one.cause.startsWith(`port ${server.port} `);
+      const warned = (data.warnings ?? []).filter(about);
+      const failed = (result.findings ?? []).filter(about);
       expect(warned.length + failed.length).toBe(1);
       if (warned[0] !== undefined)
         expect(warned[0].cause).toContain(`port ${server.port} is held by`);

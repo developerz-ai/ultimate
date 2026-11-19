@@ -1,7 +1,7 @@
 // What every test starts from, put back by the preload before each one — the per-TEST half of
-// isolation, beside `file-boundary.ts`'s per-file half: the jobs event bus, which STORES what it is
-// handed (an answer one test published resumed the next test's waiting run), and the installed
-// rate-limit store, read per request (a bucket one test drained was the next test's 429).
+// isolation, beside `file-boundary.ts`'s per-file half: the jobs event bus (it STORES what it is
+// handed), the installed rate-limit store (a drained bucket was the next test's 429) and the
+// once-per-operation wire-dates warn (a rerun in one process never saw its warn).
 
 import { beforeEach } from 'bun:test';
 import type { clearDefaultRateLimitBuckets } from '@ultimat3/http/adapter';
@@ -42,9 +42,9 @@ function resolvedFrom(pkg: string): string | null {
 const paths = new Map<string, string | null>();
 
 /**
- * Before each test: a fresh DEFAULT event bus and the DEFAULT rate-limit buckets emptied — each
- * only when its package is loaded. Already evaluated, so each import answers from the registry, the
- * same instance. Only the defaults: a bus or store installed for the file (`beforeAll`, a booted
+ * Before each test: a fresh DEFAULT event bus, the DEFAULT rate-limit buckets emptied and the
+ * wire-dates warn forgotten — each only when its package is loaded. Already evaluated, so each
+ * import answers from the registry, the same instance. Only the defaults: a bus or store installed for the file (`beforeAll`, a booted
  * app's) stays installed, and carries across that file's tests as it would in production.
  */
 export async function resetPerTestState(): Promise<void> {
@@ -61,6 +61,13 @@ export async function resetPerTestState(): Promise<void> {
       readonly clearDefaultRateLimitBuckets: typeof clearDefaultRateLimitBuckets;
     };
     http.clearDefaultRateLimitBuckets();
+  }
+  const wireDates = loaded('@ultimat3/http', 'wire-dates-cap.ts');
+  if (wireDates !== undefined) {
+    // An internal seam, off the package's API on purpose: an app forgets nothing it warned about.
+    // Its name is held by `per-test-reset.test.ts`, which reds if this stops resetting the set.
+    const http = (await import(wireDates)) as { readonly resetWireDatesCap: () => void };
+    http.resetWireDatesCap();
   }
 }
 

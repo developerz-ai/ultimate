@@ -50,7 +50,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - Fixes no longer send a worker to a whole run: `X_TEST_NO_FILES` suggests `x test --affected --dirty`, `X_TYPECHECK_FAILED` names the file to edit and `x verify --only typecheck`, and an unknown command whose nearest match runs every suite suggests its `--help`.
 - A ledger wait says to leave the command running (`bunx x heavy status`), and reads `admission in progress` while no holder is known.
 - A new app's `CLAUDE.md` lists a worker's commands, its `/feature` and `/verify` skip the gate for a worker given a file set, and `.claude/settings.json` allows `bunx x heavy` and `bunx x stop` in place of the raw typecheck and lint scripts (the `docs-worker-commands` codemod updates `CLAUDE.md` on `x upgrade`).
-- `x doctor`: a port another checkout's dev server holds is a warning, not a failure; the suggested port pair is free when asked, and so is the sync role's.
+- `x doctor`: a port another checkout's dev server holds is a warning, not a failure; the suggested port pair is free when asked, and so is the sync role's; each taken port is reported once, as a warning or a failure, never both.
 - `X_JOB_UNREGISTERED` names the job's file and prints the whole import line.
 - `x db gen` runs one at a time per checkout; its success line names the tables, and "no migration needed" names the migration that already records them.
 - The test step line reads `ran 2 at once (peak), planned 3`, or `1 worker, one per file (plan: â€¦)`, in place of `2 of 4 of 6 workers`.

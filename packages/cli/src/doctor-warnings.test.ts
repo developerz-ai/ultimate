@@ -98,6 +98,25 @@ describe('unit · x doctor · warnings beside the verdict', () => {
     expect(result.data).toMatchObject({ warnings: [{ code: 'X_PORT_IN_USE' }] });
   });
 
+  // The verdict and the warnings each asked the OS who held the port. On a loaded CI runner the
+  // first `ss` named nobody (a finding) and the second named another checkout (a warning): one
+  // taken port, reported twice. One report per run, so the two halves read the same answer.
+  test('a taken port is looked up once, so it is a finding or a warning, never both', async () => {
+    const root = appRoot();
+    let asked = 0;
+    const result = await reportDoctor(
+      probe({
+        root,
+        portFree: async (port) => port !== 3000,
+        portOwner: async () => (++asked === 1 ? {} : { pid: 41, cwd: `${root}-other` }),
+      }),
+    );
+    const warned = ((result.data as { warnings?: readonly { code: string }[] }).warnings ?? [])
+      .length;
+    const failed = (result.findings ?? []).filter((one) => one.code === 'X_PORT_IN_USE').length;
+    expect({ asked, reported: warned + failed }).toEqual({ asked: 1, reported: 1 });
+  });
+
   // Served by the scan, so never refused: an app that upgrades keeps a green doctor, and is told
   // the import line that lists the action — the one X_JOB_UNREGISTERED prints for a job.
   test('an action no defineApi() lists is a warning, never a finding', async () => {

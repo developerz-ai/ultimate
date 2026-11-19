@@ -83,14 +83,14 @@ bunx x policy explain todo:write
 
 ```text
   action archiveTodo — policy todo:write
-  actor      verdict  deciding    reason
-  anonymous  deny     todo:write  no actor for todo:write
-  admin      deny     todo:write  todo:write predicate returned false
-  member     deny     todo:write  actor lacks todo:write
+  actor      verdict      deciding    reason
+  anonymous  deny         todo:write  no actor for todo:write
+  admin      needs input  todo:write  not denied — every actor-only clause passes, and todo:write has a predicate that reads the request input
+  member     deny         todo:write  actor lacks todo:write
     evaluated with no request input and no row — a rule reading either decides again on the real request
   action createTodo — policy todo:write
   …
-✓ todo:write — allowed for 0 of 6 actor evaluation(s)
+✓ todo:write — allowed for 0 of 6 actor evaluation(s); 1 not denied, decided by a predicate that reads the request input — x policy explain todo:write --input '<the request input as JSON>'
 ```
 
 Read the `reason` column, not the verdict:
@@ -98,7 +98,8 @@ Read the `reason` column, not the verdict:
 | Reason | Means |
 |---|---|
 | `actor lacks todo:write` | the grant is missing — a role problem, fix it in `defineRoles` |
-| `predicate returned false` | the grant is held, the predicate said no. Here that is tenancy, with no `input.orgId` to compare against outside a request |
+| `predicate returned false` | the grant is held, the predicate said no |
+| `needs input` | the grant is held and every clause that reads only the actor passes; the rest reads the request input — here archive's tenancy rule, `input.orgId`. Not a denial: run the summary's own command with the input a request sends, `x policy explain todo:write --input '{"orgId":"…"}'` |
 | `no actor for …` | anonymous. Every surface agrees on this one |
 
 `<subject>` resolves against a permission, an action name, a query name, then an action's HTTP path — so the `fix:` line an `X_FORBIDDEN` prints is runnable whichever of the four the throwing surface had. Verdicts come from `policyMatrix()` over the app's real `Policy` objects, never a second evaluation.

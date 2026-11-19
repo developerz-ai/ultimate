@@ -16,6 +16,13 @@ export const POSTGRES_IMAGE =
  */
 export const PROD_ENV_FILE = '.env.production';
 
+/**
+ * A compose interpolation, `${expr}` in the written file: one `$`, which compose reads (its `$$` is
+ * a literal `$`). Never `\${` in the template below: CodeQL reads that escape as a regex one
+ * (js/useless-regexp-character-escape), and the bytes are the same.
+ */
+const composeVar = (expr: string): string => `${'$'}{${expr}}`;
+
 /** The production topology `x new` writes at `docker/docker-compose.prod.yml`. */
 export const composeProdFile = (
   app: NameSet,
@@ -26,7 +33,7 @@ export const composeProdFile = (
 #
 # ${PROD_ENV_FILE} first: \`x env init --production\` writes every value below with fresh secrets.
 #
-# By hand, always with \`--env-file ${PROD_ENV_FILE}\`: Compose fills \`\${VAR:?…}\` below from the shell
+# By hand, always with \`--env-file ${PROD_ENV_FILE}\`: Compose fills \`${composeVar('VAR:?…')}\` below from the shell
 # and \`--env-file\` only, NEVER from \`env_file:\`, so without it a value set only in that file is
 # "missing" and the parse fails. \`x deploy\` passes it on every step.
 #
@@ -51,7 +58,7 @@ x-logging: &logging
   options: { max-size: 10m, max-file: '3' }
 
 x-image: &image
-  image: \${IMAGE:-${app.kebab}:dev}
+  image: ${composeVar(`IMAGE:-${app.kebab}:dev`)}
   env_file: [../${PROD_ENV_FILE}]
   restart: unless-stopped
   logging: *logging
@@ -97,7 +104,7 @@ services:
     # \`docker buildx imagetools inspect postgres:18-alpine\` and take a backup first.
     image: ${POSTGRES_IMAGE}
     environment:
-      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${composeVar('POSTGRES_PASSWORD:?set POSTGRES_PASSWORD')}
       POSTGRES_DB: ${app.kebab}
     volumes: ['pgdata:/var/lib/postgresql']
     healthcheck:
@@ -139,7 +146,7 @@ services:
     <<: *image
     # The page dials SYNC_URL; unset, it dials /_x/sync on :3000, which web does not serve here.
     # Set it in ${PROD_ENV_FILE}: \`--env-file\` (header) is what lets this line read it there.
-    environment: [ROLE=web, 'SYNC_URL=\${SYNC_URL:?set SYNC_URL=ws://<host>:3001/_x/sync, see wiki/Deployment.md}']
+    environment: [ROLE=web, 'SYNC_URL=${composeVar('SYNC_URL:?set SYNC_URL=ws://<host>:3001/_x/sync, see wiki/Deployment.md')}']
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
@@ -152,7 +159,7 @@ services:
     # APP_URL's origin and no other once declared (scheme, host and port, exactly); undeclared, from
     # the origin it was reached on. Unset, every websocket is 403 X_SOCKET_ORIGIN_REFUSED, so it is
     # required: the same value web builds its links from.
-    environment: [ROLE=sync, 'APP_URL=\${APP_URL:?set APP_URL=http://<host>:3000 — the origin the pages are served on, see wiki/Deployment.md}']
+    environment: [ROLE=sync, 'APP_URL=${composeVar('APP_URL:?set APP_URL=http://<host>:3000 — the origin the pages are served on, see wiki/Deployment.md')}']
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }

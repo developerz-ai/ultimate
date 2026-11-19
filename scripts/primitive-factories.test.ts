@@ -144,7 +144,7 @@ export const importable = (
   entries: readonly Entry[],
 ): boolean => {
   const pkg = found.at.split('/')[1];
-  const named = new RegExp(`\\b${found.factory.replace(/\$/g, '\\$')}\\b`);
+  const named = new RegExp(`\\b${RegExp.escape(found.factory)}\\b`);
   return entries.some(
     (entry) =>
       entry.path.split('/')[1] === pkg && (entry.path === found.at || named.test(entry.source)),

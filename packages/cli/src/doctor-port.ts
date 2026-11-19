@@ -50,6 +50,24 @@ function inAnotherCheckout(owner: PortOwner, root: string | undefined): boolean 
 const ownerLookup = (probe: PortProbe): ((port: number) => Promise<PortOwner>) =>
   probe.portOwner ?? (probe.portFree === portFree ? (port) => portOwner(port) : async () => ({}));
 
+/**
+ * The probe's owner lookup, asked at most once per port for this run. The verdict and the warnings
+ * each read the report, and each asked the OS: on a loaded CI runner the first `ss` named nobody (a
+ * finding) and the second another checkout (a warning) — one taken port, reported twice. Pinned,
+ * the two halves partition one answer. Per run, never per process: a port's holder changes.
+ */
+export function ownerAskedOnce(probe: PortProbe): (port: number) => Promise<PortOwner> {
+  const lookup = ownerLookup(probe);
+  const asked = new Map<number, Promise<PortOwner>>();
+  return (port) => {
+    const known = asked.get(port);
+    if (known !== undefined) return known;
+    const owner = lookup(port);
+    asked.set(port, owner);
+    return owner;
+  };
+}
+
 interface PortReport {
   readonly findings: readonly Finding[];
   readonly warnings: readonly Finding[];

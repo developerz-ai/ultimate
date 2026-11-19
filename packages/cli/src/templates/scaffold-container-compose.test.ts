@@ -109,6 +109,25 @@ describe('unit · the scaffolded compose file hands the page origin to sync', ()
     );
   });
 
+  // Compose reads `${VAR}` and `${VAR:?msg}`, and `$$` as a literal `$`: every interpolation the
+  // file holds is written as exactly one `$` before its brace, and no backslash survives the template.
+  test('every compose interpolation is written as compose reads it, one $ and no backslash', () => {
+    const compose = composeProdFile(names('shop'));
+    expect(compose).not.toContain('\\$');
+    expect(compose).not.toContain('$$');
+    expect(compose.match(/\$\{[A-Z_]+[:?-]/g)).toEqual([
+      '${VAR:',
+      '${IMAGE:',
+      '${POSTGRES_PASSWORD:',
+      '${SYNC_URL:',
+      '${APP_URL:',
+    ]);
+    expect(compose).toMatch(
+      /\n {6}POSTGRES_PASSWORD: \$\{POSTGRES_PASSWORD:\?set POSTGRES_PASSWORD\}\n/,
+    );
+    expect(compose).toMatch(/\n {2}image: \$\{IMAGE:-shop:dev\}\n/);
+  });
+
   test('the header names both variables the env file must carry', () => {
     const header = composeProdFile(names('shop')).split('\nservices:')[0] ?? '';
     expect(header).toContain('APP_URL');

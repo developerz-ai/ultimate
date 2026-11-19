@@ -3,6 +3,7 @@
 // invented should come back refused: "no such code", never a plausible-sounding explanation.
 
 import { nearestName, singleLine } from '@ultimat3/core';
+import { definedErrorStatus } from '@ultimat3/core/internal/error-status';
 import type { ErrorExplanation } from '@ultimat3/mcp';
 import { findAppRoot } from './app-root';
 import { type AppCodeExplanation, AppCodeUnknownError, explainAppCode } from './cmd-errors-app';
@@ -56,7 +57,13 @@ async function explainOne(
   cwd: string,
   reader?: ReaderOptions,
 ): Promise<CommandResult> {
-  const explanation = explainErrorCode(code) ?? (await explainGuardCode(code, cwd));
+  // A `defineError()` code is an app's, even once this process has loaded the app (`x mcp serve`, a
+  // test rerun): the registry then knows it, and it was answered as a framework code with no throw
+  // site in the installed framework, never from the app that declares it.
+  const appDeclared = definedErrorStatus(code) !== undefined;
+  const explanation = appDeclared
+    ? undefined
+    : (explainErrorCode(code) ?? (await explainGuardCode(code, cwd)));
   if (explanation === undefined) {
     // Before the app loads, so the near miss is a framework code the caller mistyped.
     const suggestion = nearestName(
