@@ -32,7 +32,7 @@ describe('docs-worker-commands', () => {
     expect(app.files['CLAUDE.md']).toBe(full);
   });
 
-  test('lands on what a new app is scaffolded with', () => {
+  test('says what a new app is scaffolded with', () => {
     const written = docsFiles(names('shop')).find((file) => file.path === 'CLAUDE.md');
     expect(written?.contents).toContain(WORKER_COMMANDS_ROW);
     expect(written?.contents).not.toContain(MANY_AGENTS_ROW);

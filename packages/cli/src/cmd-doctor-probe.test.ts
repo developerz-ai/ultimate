@@ -165,7 +165,7 @@ describe('unit · x doctor · the command', () => {
   // The server is this test process, whose directory is not the app's: another checkout's port. The
   // real owner lookup files it beside the verdict where the OS names the holder's directory, and in
   // it where the OS will not — reported once either way, never dropped.
-  test('a taken port is X_PORT_IN_USE once, and --json lists the codes', async () => {
+  test('a port that is taken is reported as X_PORT_IN_USE, and --json lists the codes', async () => {
     const server = Bun.serve({ port: 0, fetch: () => new Response('') });
     const root = doctorAppRoot();
     try {

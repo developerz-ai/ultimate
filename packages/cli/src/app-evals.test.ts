@@ -17,9 +17,19 @@ import { TEST_STEPS } from './verify-tests';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve through the same tsconfig
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
-const COVERED = processRoot(join(import.meta.dir, '..', '.eval-covered-fixture'));
-const BARE = processRoot(join(import.meta.dir, '..', '.eval-bare-fixture'));
-const AGENT = processRoot(join(import.meta.dir, '..', '.eval-agent-fixture'));
+const BASES = {
+  covered: processRoot(join(import.meta.dir, '..', '.eval-covered-fixture')),
+  bare: processRoot(join(import.meta.dir, '..', '.eval-bare-fixture')),
+  agent: processRoot(join(import.meta.dir, '..', '.eval-agent-fixture')),
+};
+// A fresh directory per pass: `bun test --rerun-each` re-runs this file but keeps the module cache,
+// so a second pass over the same paths imported nothing, registered no prompt, and every coverage
+// case read an empty app. Random, because a counter here restarts with the file.
+let COVERED = '';
+let BARE = '';
+let AGENT = '';
+/** The baseline the COVERED fixture's eval declares — written and removed by the tests below. */
+let COVERED_BASELINE = '';
 
 /** An `agent()` on an unevaluated prompt: its fix must name the agent arm, not the prompt arm. */
 const agentModule = `import { t } from '@ultimat3/action';
@@ -62,7 +72,7 @@ export const summarizeEval = defineEval({
 
 const APP_CONFIG = "export const config = { name: 'fixture' };\n";
 
-const FIXTURES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+const fixtures = (): Readonly<Record<string, Readonly<Record<string, string>>>> => ({
   [COVERED]: {
     'app.config.ts': APP_CONFIG,
     'apps/web/app/posts/prompts/summarize.ts': promptModule('posts.summarize'),
@@ -76,10 +86,7 @@ const FIXTURES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     'app.config.ts': APP_CONFIG,
     'apps/web/app/support/agent.ts': agentModule,
   },
-};
-
-/** The baseline the COVERED fixture's eval declares — written and removed by the tests below. */
-const COVERED_BASELINE = join(COVERED, 'apps/web/app/posts/prompts/summarize.baseline.json');
+});
 
 const RECORDED = `${JSON.stringify(
   { eval: 'summarize', prompt: 'posts.summarize@3', promptHash: 'abc123', score: 1, cases: {} },
@@ -94,7 +101,12 @@ const reset = (): void => {
 };
 
 beforeAll(async () => {
-  for (const [root, files] of Object.entries(FIXTURES)) {
+  const pass = `pass-${crypto.randomUUID().slice(0, 8)}`;
+  COVERED = join(BASES.covered, pass);
+  BARE = join(BASES.bare, pass);
+  AGENT = join(BASES.agent, pass);
+  COVERED_BASELINE = join(COVERED, 'apps/web/app/posts/prompts/summarize.baseline.json');
+  for (const [root, files] of Object.entries(fixtures())) {
     await rm(root, { recursive: true, force: true });
     for (const [path, contents] of Object.entries(files)) {
       await Bun.write(join(root, path), contents);
@@ -104,7 +116,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const root of Object.keys(FIXTURES)) await rm(root, { recursive: true, force: true });
+  for (const root of Object.values(BASES)) await rm(root, { recursive: true, force: true });
   reset();
 });
 

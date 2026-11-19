@@ -95,7 +95,9 @@ describe('unit · x new --shape', () => {
       expect(files).toContain('apps/web/app/posts/[id]/page.tsx');
       const api = await Bun.file(join(parent, 'ops', 'apps/web/api/index.ts')).text();
       expect(api).toContain('createSession');
-      expect(api).toContain('queries: [postList, postById]');
+      expect(api).toContain(
+        '  queries: [\n    // One entry per line: branches that each add one merge cleanly (x merge-driver).\n    postList,\n    postById,\n  ],',
+      );
       const dry = await newCommand.run(
         contextFor(['new', 'ops2', '--shape', 'dashboard', '--dry-run'], parent),
       );

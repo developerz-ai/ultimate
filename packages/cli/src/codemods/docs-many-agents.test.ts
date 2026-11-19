@@ -15,7 +15,7 @@ describe('docs-many-agents', () => {
   });
 
   // 4 of 5 real apps reported `changed: [], skipped: []` here: the row was owed and nobody was told.
-  test('a reworded table is reported as skipped, with the row to add by hand', async () => {
+  test('leaves an app that reworded the table alone', async () => {
     const app = memoryCodemodApp({ 'CLAUDE.md': '| Rules | mine |\n' });
     const result = await codemod.run(app);
     expect(result.changed).toEqual([]);
