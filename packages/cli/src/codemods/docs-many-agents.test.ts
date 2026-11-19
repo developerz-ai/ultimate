@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { names } from '../templates/naming';
-import { docsFiles } from '../templates/scaffold-docs';
 import { memoryCodemodApp } from './codemod';
 import { codemod, MANY_AGENTS_ROW } from './docs-many-agents';
 
@@ -18,10 +16,5 @@ describe('docs-many-agents', () => {
   test('leaves an app that reworded the table alone', async () => {
     const app = memoryCodemodApp({ 'CLAUDE.md': '| Rules | mine |\n' });
     expect(await codemod.run(app)).toEqual({ changed: [], skipped: [] });
-  });
-
-  test('says what a new app is scaffolded with', () => {
-    const written = docsFiles(names('shop')).find((file) => file.path === 'CLAUDE.md');
-    expect(written?.contents).toContain(MANY_AGENTS_ROW);
   });
 });

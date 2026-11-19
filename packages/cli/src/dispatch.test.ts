@@ -2,13 +2,15 @@
 // because that is the one an agent hits by accident — a typo'd flag, a typo'd command — and it is
 // the one branch that has no `ParsedArgs` to read `--json` off.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 import { currentLogStream, setLogStream } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
 import { dispatch, sinkFor } from './dispatch';
+import { loadErrorCatalog } from './error-catalog';
+import { loadCodeFixes } from './error-fixes';
 import type { CommandResult } from './output';
 import { SPECS } from './registry';
 
@@ -219,5 +221,27 @@ describe('unit · the dispatcher owns fd 1', () => {
     } finally {
       setLogStream('stdout');
     }
+  });
+});
+
+// `x errors explain` prints its fix outside any finding, so the reader has to reach the command.
+describe('unit · a command learns who reads its fix lines', () => {
+  // What `x errors explain` loads first, loaded once here: both are cached for the process.
+  beforeAll(() => Promise.all([loadErrorCatalog(), loadCodeFixes()]), 60_000);
+
+  test('where the app has its own x, explain names bunx x', async () => {
+    const root = made(mkdtempSync(`${tmpdir()}/x-reader-`));
+    await Bun.write(`${root}/node_modules/.bin/x`, '');
+    const { out } = await run(['errors', 'explain', 'X_MANIFEST_STALE'], root);
+    expect(out).toContain('bunx x manifest');
+  });
+
+  test('with no local x the line stays as thrown', async () => {
+    const { out } = await run(
+      ['errors', 'explain', 'X_MANIFEST_STALE'],
+      made(mkdtempSync(`${tmpdir()}/x-reader-`)),
+    );
+    expect(out).not.toContain('bunx x manifest');
+    expect(out).toContain('x manifest');
   });
 });

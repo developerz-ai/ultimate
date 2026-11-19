@@ -51,7 +51,6 @@ import {
 } from './schema-dump-drift';
 import { cardRouteFindings } from './seo-cards';
 import { scanSiteMeta } from './seo-meta';
-import { quoteArg } from './shell-quote';
 import { loadSiteSettings } from './site-config';
 import { readStaticReport } from './static-report';
 import { unknownToolGateFindings } from './tool-gate-names';
@@ -67,7 +66,7 @@ import { roleLoadFindings } from './verify-role-load';
 import type { VerifyStep } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
-import { typecheckArgs } from './verify-typecheck';
+import { typecheckArgs, typecheckFinding } from './verify-typecheck';
 import { checkPackageShape, fileSizeReport, hasWorkspacePackages } from './workspace-checks';
 import { checkExternalDependencies } from './workspace-external-deps';
 import { checkWorkspaceDependencies } from './workspace-graph';
@@ -92,12 +91,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       const floor = await readVerifyFloor(ctx.root);
       const argv = await typecheckArgs(ctx.root, floor?.typecheckBin ?? 'tsc');
       const result = await runTypecheck(ctx, argv);
-      return fromExec(result, {
-        code: 'X_TYPECHECK_FAILED',
-        cause: 'the project does not typecheck',
-        // Joined, never spliced: `typecheckBin` is a value from the app's `x.verify.json`.
-        fix: ['bunx', ...argv.map(quoteArg)].join(' '),
-      });
+      return fromExec(result, typecheckFinding(result.stdout));
     },
   },
   {

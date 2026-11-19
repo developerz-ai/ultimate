@@ -97,7 +97,7 @@ export function rawBreakpoints(files: readonly StyleFile[]): readonly Finding[] 
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} defines its own \${match[1]} — @ultimat3/ui/tokens ships one, and a local definition silently shadows it, so the app has two breakpoint ladders\`,
-        fix: \`delete @mixin \${match[1]} from \${file.path}:\${line} and write @include \${ns}.\${match[1]}(…), then: x verify\`,
+        fix: \`delete @mixin \${match[1]} from \${file.path}:\${line} and write @include \${ns}.\${match[1]}(…), then: x verify --only boundaries\`,
         at: \`\${file.path}:\${line}\`,
       });
     }
@@ -111,7 +111,7 @@ export function rawBreakpoints(files: readonly StyleFile[]): readonly Finding[] 
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} writes \\\`@media\${prelude.trimEnd()}\\\` — a viewport width of its own, off the breakpoint ladder every other sheet shares\`,
-        fix: \`\${include} — at \${file.path}:\${line}, then: x verify\`,
+        fix: \`\${include} — at \${file.path}:\${line}, then: x verify --only boundaries\`,
         at: \`\${file.path}:\${line}\`,
       });
     }

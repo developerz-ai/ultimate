@@ -15,7 +15,11 @@ import type { TestFile } from './test-select';
 import { failureOf, TEST_TIMINGS_FILE, testArgs } from './test-shards';
 import type { MachineLease } from './test-slots';
 import { loadTimings, slowestOf } from './test-timings';
-import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
+import {
+  BATCH_FILES_PER_WORKER,
+  reachedWidth,
+  SHARED_BATCH_FILES_PER_WORKER,
+} from './test-workers';
 import type { MachinePace } from './verify-pace';
 import { defaultTimeoutArgs, paceEnv } from './verify-pace';
 import type { StepOutcome } from './verify-step';
@@ -108,18 +112,13 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
   // The width the run REACHED: a batch the machine pool narrowed ran narrower than planned, and a
   // step line that printed the plan would name a width that never ran.
   const reached = Math.max(1, ...result.widths);
-  const narrowed = reached < workers;
   return {
     ok: findings.length === 0,
     findings,
     workers: reached,
     ...(options.widthReason === undefined
       ? {}
-      : {
-          widthReason: narrowed
-            ? `${String(reached)} of ${options.widthReason} — machine slots held by another run`
-            : options.widthReason,
-        }),
+      : { widthReason: reachedWidth(reached, workers, options.widthReason) }),
     // Per batch: each process printed its own summary, and one parse of the joined text would
     // read only the last one.
     tests: countsOf(result.results),

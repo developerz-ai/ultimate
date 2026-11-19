@@ -89,7 +89,7 @@ export function rawZIndexes(files: readonly StyleFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} writes \\\`z-index: \${value}\\\` — a number only this file knows, on no ladder another layer can be placed against\`,
-        fix: \`z-index: \${written} — at \${file.path}:\${line} (layers: \${LAYERS.map(([name]) => name).join(' ')}), then: x verify\`,
+        fix: \`z-index: \${written} — at \${file.path}:\${line} (layers: \${LAYERS.map(([name]) => name).join(' ')}), then: x verify --only boundaries\`,
         at: \`\${file.path}:\${line}\`,
       });
     }

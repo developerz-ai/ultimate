@@ -124,7 +124,7 @@ const failed = (path: string, cause: string): Finding => ({
 const invalid = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_INVALID',
   cause,
-  fix: `export a \`guard\` object — { summary, check } — from ${path}, then: x verify`,
+  fix: `export a \`guard\` object — { summary, check } — from ${path}, then: x verify --only boundaries --json`,
   docs: ERROR_DOCS_URL,
   at: path,
 });
@@ -157,7 +157,7 @@ const notADirectory: Finding = {
 const findingInvalid = (path: string, cause: string): Finding => ({
   code: 'X_GUARD_FINDING_INVALID',
   cause: `${path} returned a finding that is not one: ${cause}`,
-  fix: `{ code: 'X_<YOURS>', cause: '<what is wrong>', fix: '<a command or a file>' }   // what ${path} returns, then: x verify`,
+  fix: `{ code: 'X_<YOURS>', cause: '<what is wrong>', fix: '<a command or a file>' }   // what ${path} returns, then: x verify --only boundaries --json`,
   docs: ERROR_DOCS_URL,
   at: path,
 });

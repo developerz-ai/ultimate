@@ -38,7 +38,7 @@ describe('unit · the script catalogue', () => {
     );
     const unpin = does('bun run scripts/reference-app-gate.ts --unpin <app>:<step>');
     expect(unpin).toContain('retained for future pins');
-    expect(unpin).toContain('neither tracked app currently has a pin to remove');
+    expect(unpin).toContain('no tracked app currently has a pin to remove');
   });
 
   test('every entry names a distinct command and says what it does', () => {

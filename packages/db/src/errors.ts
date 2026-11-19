@@ -60,6 +60,7 @@ export const DB_OWNED_ERROR_CODES = [
   'X_LIFECYCLE_TRIGGER_MISSING',
   'X_MIGRATION_PARTITION_CHANGE',
   'X_MIGRATION_LOCK_HEAVY',
+  'X_MIGRATION_FORKED',
 ] as const;
 
 /**
@@ -135,6 +136,7 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
     'a history or counter trigger the migrations created is missing from the database',
   X_MIGRATION_PARTITION_CHANGE: 'an existing table gained or lost entity({ partitionBy })',
   X_MIGRATION_LOCK_HEAVY: 'this migration holds a live table still for a full scan',
+  X_MIGRATION_FORKED: 'two branches forked the migration chain',
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails

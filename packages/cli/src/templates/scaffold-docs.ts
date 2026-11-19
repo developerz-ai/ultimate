@@ -40,7 +40,7 @@ queries, jobs, MCP tools, published operations and tests it touches, each with p
 |---|---|---|
 | One gate | \`bun run verify\` — \`bunx x verify\`, which builds what its \`budgets\` step weighs. Green means shippable; never merge red. CI runs the same gate, cut into parts: \`bun run verify plan --json\` names them, each runner runs \`bun run setup && bun run verify --only <steps>\`, and \`bun run verify merge\` is the verdict | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
 | Coverage | the unit suite covers 95% of the lines and functions of this app's own source — every file under \`apps/\` and \`packages/\`, one no test loads counted at 0%. A floor, not the goal: a test added to raise it is proven by mutation — break the source, watch it go red, restore | \`X_COVERAGE_BELOW_FLOOR\` on the \`unit\` step; \`coverage\` in \`x.verify.json\` states the floor, and it only rises |
-| Many agents | a worker runs its own files; the coordinator runs the gate once | \`bunx x heavy status\` |
+| Many agents | a worker: \`bun test ./<file>\`, \`bunx x test --filter <path>\`; the coordinator: the gate, once | review |
 | One way | generators, not hand-rolled files: \`bunx x g resource\`, \`bunx x g action\`, \`bunx x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
 | Data | routes call actions and queries; only \`repo.ts\` touches the database | \`X_BOUNDARY_ROUTE_TO_DB\` |
@@ -169,6 +169,10 @@ bun run verify
 \`packages/db/migrations\` starts empty and \`x db gen\` is its only writer — \`bun run setup\` runs
 \`x db gen "initial"\` for you on a fresh clone. Until it has, \`x verify\`'s \`drift\` step is red
 with \`X_DB_DRIFT\`, and that is the fix it names.
+
+**Merging two features:** two branches' \`x g\` output merges with no hand edit once \`bun run setup\`
+has run (\`x merge-driver install\`). After the merge run \`bunx x manifest\`. A conflict that remains
+(\`git diff --name-only --diff-filter=U\`) is a real one: both branches changed the same existing line.
 
 ## 🗺 Layout
 

@@ -55,6 +55,19 @@ Every migration applies inside its own transaction, recorded into `x_migrations`
 
 Its two remedies, in the order they are safe to run: `git checkout -- packages/db/migrations/<id>.snapshot.json`, or, when the file was never written, `rm packages/db/migrations/<id>.* && x db gen "<name>"`. The delete comes first because `x db gen` against the migration that is still there raises this same code. Until 2026-08 the `fix:` said "restore … from version control" alone while `x db migrate`'s `unknown-schema` difference answered `x db gen "snapshot <name>"` — each naming the command that raises the other, with nothing to restore in an app whose sidecar was never written.
 
+### Two branches, one chain — `X_MIGRATION_FORKED`
+
+Two branches that each run `x db gen` from one parent leave valid SQL and a wrong sidecar: the newest `.snapshot.json` has never heard of the other branch's work. `As of 2026-11` every reader refuses that chain before acting on it: `x db gen`, `x db migrate`, `x db reset`, the `drift` step and `x doctor`.
+
+| The chain holds | Fix | What it touches |
+|---|---|---|
+| an object the newest sidecar omits, or one it still records after another migration dropped it | `x db gen --merge-fork` | the newest `.snapshot.json`, then the `.hash` and the schema dump. No `.sql`, so no checksum moves, and it is safe after either migration was applied |
+| two unguarded creates of one table or column, so a replay stops at `42P07` / `42701` | `x db status --json` on **every** database first | remove a migration only if `data.pending` lists it on all of them, then `x db gen --merge-fork`. A migration any database applied stays |
+
+The detector folds the chain: each sidecar adds what it records, each `up` removes what it drops, and what survives is what a replay builds (tables, columns, indexes, foreign keys, checks, views). A migration with no sidecar was written by hand and ends what earlier sidecars can claim. Never answer a fork with a new migration: `create table` for a table the chain already builds is the statement that cannot replay.
+
+`x db gen` also runs one at a time per checkout, `As of 2026-11`: two overlapping runs diffed one sidecar and each wrote every new table. The entities are one registry, so the first run's migration carries a second agent's table too: its summary names the tables, and the later run's names the newest migration. The lock is the machine ledger's, so it is off under `CI`, on Windows and with `ULTIMATE_HEAVY_MEMORY=0`; there, a collision is what `X_MIGRATION_FORKED` reports afterwards.
+
 ### Foreign keys are their own statement
 
 Every foreign key is `alter table … add constraint`, emitted **after** every table statement, and
@@ -568,6 +581,7 @@ Scaffolds a working pair, never a stub: `x g backfill <name> --feature <slice>` 
 | `X_MIGRATION_CONFLICT` | the ledger disagrees with this build — a foreign app-version row that is not a rollback (rows all newer than the build are accepted), or an applied migration whose checksum moved | deploy the version `cause` names, or `x db gen "fix <migration>"` — never edit an applied migration |
 | `X_MIGRATION_IRREVERSIBLE` | a generated plan drops a column or table and its `down` cannot restore the rows | `x db gen "<name>" --allow-destructive`, or put the column back in `columns` and keep it |
 | `X_MIGRATION_DESTRUCTIVE` | a committed migration's `up` destroys data with no `-- destructive: true` line | add the marker, or regenerate with `--allow-destructive` — before the migration is applied |
+| `X_MIGRATION_FORKED` | two branches generated from one parent and were merged, so the newest sidecar is wrong or two migrations create one object | `x db gen --merge-fork`, which changes no SQL and deletes nothing. A collision: `x db status --json` on every database first, and never delete a migration any of them applied |
 | `X_MIGRATION_SNAPSHOT_MISSING` | the newest migration on disk carries no `.snapshot.json` sidecar to diff against | `git checkout -- packages/db/migrations/<id>.snapshot.json` — or, when it was never written, `rm packages/db/migrations/<id>.* && x db gen "<name>"`, the delete first |
 | `X_MIGRATION_CONCURRENT_IN_TRANSACTION` | a migration without `-- transaction: false` holds a concurrent index statement, which Postgres refuses inside a transaction block (`25001`) | `sed -i '1i -- transaction: false' packages/db/migrations/<id>.sql` before it is applied, or move the statement into a migration of its own. Refused before `BEGIN`, so nothing is applied |
 | `X_MIGRATION_VIEW_DEPENDS` | a view is compiled against a column this migration retypes — Postgres answers `0A000` and rolls the whole migration back | `drop view "<v>";` then `x db migrate`, then re-create it from the `create view` the `fix` line carries verbatim. Caught by a **preflight** inside the migration's own transaction, before its first statement, so nothing partial is applied |

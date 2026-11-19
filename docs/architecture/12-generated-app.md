@@ -21,7 +21,7 @@ myapp/
     i18n/                 # app catalogs (en, es, ...)
     ui/                   # app-specific Solid components on top of @ultimat3/ui
     mcp/                  # the app's own MCP tools (its dashboards are AI-first too)
-  bin/                    # setup.ts (six steps); the gate is `bun run verify` (x verify), no file
+  bin/                    # setup.ts (seven steps); the gate is `bun run verify` (x verify), no file
   .github/workflows/      # ci.yml — bun run setup then bun run verify, on push and pull request
   docker/                 # compose (dev) + per-role compose (prod) + Dockerfile
   app.config.ts           # the one config file

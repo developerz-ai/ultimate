@@ -21,10 +21,12 @@ import { codemod as docsIslandRows } from './docs-island-rows';
 import { codemod as docsManyAgents } from './docs-many-agents';
 import { codemod as docsShippedGuards } from './docs-shipped-guards';
 import { codemod as docsTestServices } from './docs-test-services';
+import { codemod as docsWorkerCommands } from './docs-worker-commands';
 import { codemod as e2eSuiteFloor } from './e2e-suite-floor';
 import { codemod as formatEditedHook } from './format-edited-hook';
 import { codemod as helmAlertsDeploy } from './helm-alerts-deploy';
 import { codemod as helmAlertsObjective } from './helm-alerts-objective';
+import { codemod as mergeDrivers } from './merge-drivers';
 import { codemod as metricsProbeHealthz } from './metrics-probe-healthz';
 import { codemod as migrateJobOrdered } from './migrate-job-ordered';
 import { codemod as reproGitignore } from './repro-gitignore';
@@ -73,4 +75,6 @@ export const CODEMODS: readonly Codemod[] = [
   ciWeeklySchedule,
   e2eSuiteFloor,
   docsManyAgents,
+  docsWorkerCommands,
+  mergeDrivers,
 ];

@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Migration } from '@ultimat3/db';
-import { ungeneratableStatements } from '@ultimat3/db';
+import { migrationFork, ungeneratableStatements } from '@ultimat3/db';
 import type { SchemaDumpDifference, SchemaDumpFile } from '@ultimat3/db/schema-dump';
 import { compareSchemaDump, schemaDumpDrift } from '@ultimat3/db/schema-dump';
 import {
@@ -128,6 +128,9 @@ export async function checkSchemaDump(
 ): Promise<readonly Finding[]> {
   if (!existsSync(join(root, DB_PACKAGE))) return [];
   const migrations = await readMigrations(root);
+  // `X_MIGRATION_FORKED` owns this chain, in the same step. A replay of it may fail, and that
+  // finding's `x db migrate` fix would only lead back to the refusal.
+  if (migrationFork(migrations) !== undefined) return [];
   if (!hasSchemaDump(root)) return migrations.length === 0 ? [] : [dumpNeverGenerated()];
   const committed = await readSchemaDump(root);
   const columns = dumpColumnFindings(migrations, committed);

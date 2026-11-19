@@ -82,7 +82,10 @@ export const verifyCommand: CliCommand = {
           ...progress,
         }),
       // A line per step a person reads, JSON only for the `--json` reader that parses stderr.
-      { render: ctx.args.json ? 'json' : 'human' },
+      {
+        render: ctx.args.json ? 'json' : 'human',
+        ...(ctx.reader === undefined ? {} : { reader: ctx.reader }),
+      },
     );
     const sharded = shard === undefined ? result : withShardData(result, shard);
     return changed === undefined ? sharded : withChangedData(sharded, changed);

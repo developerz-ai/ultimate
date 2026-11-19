@@ -80,7 +80,7 @@ export function unboundedFanouts(files: readonly SourceFile[]): readonly Finding
       findings.push({
         code: CODE,
         cause: \`\${at} starts a database call for every element of \${list} at once — as many statements in flight as the list is long, queued on a pool a fraction of that size\`,
-        fix: \`mapBounded(\${list}, <the same async callback>, { width: 8 }) — from @ultimat3/core, in place of the Promise.all at \${at}, the width what the pool can take — or a // why: comment on that line naming the list's bound — then: x verify\`,
+        fix: \`mapBounded(\${list}, <the same async callback>, { width: 8 }) — from @ultimat3/core, in place of the Promise.all at \${at}, the width what the pool can take — or a // why: comment on that line naming the list's bound — then: x verify --only boundaries\`,
         at,
       });
     }

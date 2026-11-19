@@ -139,8 +139,9 @@ schedules:
     brief_file: .dz/briefs/release-due.md
   # The one exception, so a confirmed security fix does not wait up to a week for Tuesday.
   - name: security-release
-    days: [mon, wed, thu, fri, sat, sun]
+    days: [thu, sun]
     hours_utc: [4]
+    mode: devops
     brief_file: .dz/briefs/security-release.md
   # The failures nothing announces: a red `main`, a publish that did not land, npm drift, a stuck
   # Dependabot PR. Bot-authored alarm issues never pass intake, so this is how they reach the bot.

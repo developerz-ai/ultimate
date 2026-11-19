@@ -6,11 +6,13 @@ import {
   availableCpus,
   BUDGET_RULE,
   defaultWorkers,
+  fileBoundWidth,
   GATE_BUDGET_SHARE,
   MAX_WORKERS_ENV,
   MEMORY_BUDGET_ENV,
   memoryBudget,
   parseBytes,
+  reachedWidth,
   sharedWorkers,
   TestBudgetInvalidError,
   totalMemory,
@@ -147,5 +149,27 @@ describe('unit · the default width', () => {
     const workers = defaultWorkers(availableCpus(), totalMemory(), NO_ENV);
     expect(workers).toBeGreaterThanOrEqual(1);
     expect(workers).toBeLessThanOrEqual(availableCpus());
+  });
+});
+
+describe('unit · the width a step line prints', () => {
+  test('a run at its plan keeps the plan as the whole story', () => {
+    expect(reachedWidth(4, 4, '4 workers (budget 7.8 GB)')).toBe('4 workers (budget 7.8 GB)');
+  });
+
+  test('a narrowed run says what ran at once and what was planned, once each', () => {
+    const line = reachedWidth(2, 4, '4 workers (budget 7.8 GB)');
+    expect(line).toContain('ran 2 at once (peak), planned 4');
+    expect(line).toContain('bunx x heavy status');
+    expect(line).not.toContain('2 of 4');
+    // The cap may be this machine's core limit with nobody else running.
+    expect(line).not.toContain('another run');
+  });
+
+  test('fewer files than the plan is one worker per file, not "4 of 6"', () => {
+    expect(fileBoundWidth(4, '6 workers (budget 7.8 GB)')).toBe(
+      '4 workers, one per file (plan: 6 workers (budget 7.8 GB))',
+    );
+    expect(fileBoundWidth(1, '6 workers (budget 7.8 GB)')).toStartWith('1 worker, one per file');
   });
 });

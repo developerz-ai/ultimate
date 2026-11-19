@@ -46,6 +46,9 @@ export const probe = (over: Partial<DoctorReportProbe> = {}): DoctorReportProbe 
   pins: async () => ({ pins: [], installed: new Map() }),
   // Every step that applies is floored.
   unflooredSteps: async () => [],
+  // No merge in progress, and the drivers `bun run setup` installs are there.
+  mergeState: async () => [],
+  mergeDriverUnset: async () => false,
   // Nothing to list: this machine's Chrome is never started under a unit test's clock.
   browser: async () => undefined,
   ...over,

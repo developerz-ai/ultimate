@@ -28,6 +28,30 @@ const ctx: VerifyContext = {
 };
 
 describe('unit · x verify · typecheckBin', () => {
+  // The errors are printed under the finding: the fix is to edit them and re-run the ledgered step,
+  // never a raw `tsc` that repeats them outside the machine's memory accounting.
+  test('a red typecheck names the edit and the step, not raw tsc', async () => {
+    const step = VERIFY_STEPS.find((candidate) => candidate.name === 'typecheck');
+    const root = await mkdtemp(join(tmpdir(), 'x-typecheck-fix-'));
+    try {
+      const runner: Runner = async (command) => ({
+        command,
+        code: 2,
+        ok: false,
+        stdout: 'a.ts(1,1): error TS1: no',
+        stderr: '',
+        durationMs: 0,
+      });
+      const outcome = await step?.run({ ...ctx, root, runner });
+      const fix = outcome?.findings[0]?.fix ?? '';
+      expect(fix).toStartWith('edit a.ts:1 — ');
+      expect(fix).toEndWith('then: x verify --only typecheck');
+      expect(fix).not.toContain('tsc -');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   // `x.verify.json`'s `typecheckBin` swaps the binary `bunx` invokes and nothing else — same
   // mode, same step, same finding either way. Absent means `tsc`, unchanged.
   test("the typecheck step runs the floor's typecheckBin, and tsc without one", async () => {

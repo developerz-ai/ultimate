@@ -92,7 +92,7 @@ export async function undefinedStyleClasses(
         findings.push({
           code: CODE,
           cause: \`\${at} imports \${sheet}, which does not compile\${said} — no class read off \${binding} was checked, and each may render as nothing\`,
-          fix: \`repair the Sass in \${sheet}\${said === '' ? " (x build --target static prints the compiler's error)" : ' at the error the cause quotes'}, or correct the import at \${at}, then: x verify\`,
+          fix: \`repair the Sass in \${sheet}\${said === '' ? " (x build --target static prints the compiler's error)" : ' at the error the cause quotes'}, or correct the import at \${at}, then: x verify --only boundaries\`,
           at,
         });
         continue;
@@ -116,8 +116,8 @@ export async function undefinedStyleClasses(
           cause: \`\${file.path}:\${line} reads \${binding}.\${name}, and \${sheet} compiles no class \\\`\${name}\\\` — the element renders with no class, and nothing says so\`,
           fix:
             meant === undefined
-              ? \`add \\\`.\${name} { … }\\\` to \${sheet}, or delete the read at \${file.path}:\${line}, then: x verify\`
-              : \`\${binding}\${/^[A-Za-z_$][\\w$]*$/.test(meant) ? \`.\${meant}\` : \`['\${meant}']\`} — at \${file.path}:\${line}; \${sheet} declares \\\`.\${meant}\\\`, then: x verify\`,
+              ? \`add \\\`.\${name} { … }\\\` to \${sheet}, or delete the read at \${file.path}:\${line}, then: x verify --only boundaries\`
+              : \`\${binding}\${/^[A-Za-z_$][\\w$]*$/.test(meant) ? \`.\${meant}\` : \`['\${meant}']\`} — at \${file.path}:\${line}; \${sheet} declares \\\`.\${meant}\\\`, then: x verify --only boundaries\`,
           at: \`\${file.path}:\${line}\`,
         });
       }

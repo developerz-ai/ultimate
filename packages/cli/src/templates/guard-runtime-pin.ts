@@ -69,7 +69,7 @@ const imageFor = (version: string, variant: string, rest: string): string =>
 const finding = (at: string, cause: string, write: string): Finding => ({
   code: CODE,
   cause,
-  fix: \`edit \${at} — \${write} — then: x verify\`,
+  fix: \`edit \${at} — \${write} — then: x verify --only boundaries\`,
   at,
 });
 

@@ -26,7 +26,10 @@ import { rowSecurityOffProbe, rowSecurityProbe } from './doctor-row-security';
 import type { SealedKeysFact } from './doctor-sealed';
 import { sealedKeysProbe } from './doctor-sealed';
 import { typescriptProbe } from './doctor-typescript';
+import { exec } from './exec';
 import { machineSecretFindings } from './framework-env';
+import { driverUnset } from './merge-driver-config';
+import { catalogFileFindings, unmergedFindings } from './merge-state';
 import type { Finding } from './output';
 import { portFree } from './port-probe';
 import { checkMigrationDrift } from './schema-drift';
@@ -113,6 +116,10 @@ export interface DoctorProbe {
   pins(): Promise<PinFact>;
   /** The gate steps that apply here and `x.verify.json` does not floor (`doctor-floor.ts`). */
   unflooredSteps(): Promise<readonly VerifyStepName[]>;
+  /** What a merge left: unmerged paths, catalogs that do not parse (`merge-state.ts`). */
+  mergeState(): Promise<readonly Finding[]>;
+  /** Whether `.gitattributes` names a merge driver this clone has not installed. */
+  mergeDriverUnset(): Promise<boolean>;
 }
 
 export function probeFor(
@@ -160,6 +167,11 @@ export function probeFor(
     envNames: async () => (root === undefined ? NO_APP_ENV_NAMES : appEnvNamesProbe(root, env)),
     pins: async () => (root === undefined ? { pins: [], installed: new Map() } : pinProbe(root)),
     unflooredSteps: async () => (root === undefined ? [] : unflooredStepsProbe(root)),
+    mergeState: async () =>
+      root === undefined
+        ? []
+        : [...(await unmergedFindings(root)), ...(await catalogFileFindings(root))],
+    mergeDriverUnset: async () => (root === undefined ? false : driverUnset(root, exec)),
   };
 }
 

@@ -92,7 +92,7 @@ export function rawFetches(files: readonly SourceFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${at} calls fetch with no signal in its own options, so the call outlives the request that made it: a stalled vendor holds the handler, the drain and a socket\`,
-        fix: \`call outbound({ url, vendor, dial: 'public', deadlineMs: 10_000 }) from @ultimat3/core/outbound in place of the fetch at \${at}, or pass { signal: ctx.signal } in its options — then: x verify\`,
+        fix: \`call outbound({ url, vendor, dial: 'public', deadlineMs: 10_000 }) from @ultimat3/core/outbound in place of the fetch at \${at}, or pass { signal: ctx.signal } in its options — then: x verify --only boundaries\`,
         at,
       });
     }

@@ -22,7 +22,7 @@ export const codemod: Codemod = {
   since: '31.48.0',
   summary: "CLAUDE.md's table says a worker runs its own files and the coordinator runs the gate",
   async run(app) {
-    if (((await app.read(CLAUDE)) ?? '').includes('x heavy status')) {
+    if (((await app.read(CLAUDE)) ?? '').includes('| Many agents |')) {
       return { changed: [], skipped: [] };
     }
     return editSnippets(app, CLAUDE, DOCS_MANY_AGENTS_EDITS);

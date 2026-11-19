@@ -177,7 +177,7 @@ export function unboundedReads(files: readonly RepoFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${where} reads \${read} with .all() and no .limit(n) — .all() answers its first page, 50 rows, and drops the cursor to the rest, so the caller holds neither every row nor a page it chose\`,
-        fix: \`\${read}….limit(<the most rows this caller needs>).all() at \${where} — or .inBatches(size) to walk every row, .page() to hand a cursor on, or a // why: comment on that line naming the bound — then: x verify\`,
+        fix: \`\${read}….limit(<the most rows this caller needs>).all() at \${where} — or .inBatches(size) to walk every row, .page() to hand a cursor on, or a // why: comment on that line naming the bound — then: x verify --only boundaries\`,
         at: where,
       });
     }

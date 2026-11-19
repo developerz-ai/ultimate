@@ -500,7 +500,7 @@ a first-tier source confirms is the one off-cycle release (`.dz/briefs/security-
 tip when the checkout lacks it. The window is every commit since the highest `v*` tag HEAD contains,
 release commits excluded. A commit **ships** when it changes a path a published tarball packs —
 each package's `files` field, plus its `package.json` — minus `*.md`, tests and fixtures. Root
-tooling, `bun.lock`, `.github/`, docs, the wiki and both tracked apps ship nothing.
+tooling, `bun.lock`, `.github/`, docs, the wiki and the tracked apps ship nothing.
 
 | `.data.reason` | Not due because |
 |---|---|

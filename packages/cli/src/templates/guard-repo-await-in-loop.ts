@@ -186,7 +186,7 @@ export function awaitsInLoops(files: readonly RepoFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${where} awaits inside the \${inner.kind} at \${loopLine} — one round trip per element, so the statements a call sends grow with the rows it is handed\`,
-        fix: \`db.<table>.andWhere('id', 'in', ids).limit(ids.length).all() (or insertAll / updateWhere / deleteWhere) — one statement for the set in place of the \${inner.kind} at \${loopLine}, or expectedQueryLoop('<why one per element is optimal>', fn) from @ultimat3/db around it — then: x verify\`,
+        fix: \`db.<table>.andWhere('id', 'in', ids).limit(ids.length).all() (or insertAll / updateWhere / deleteWhere) — one statement for the set in place of the \${inner.kind} at \${loopLine}, or expectedQueryLoop('<why one per element is optimal>', fn) from @ultimat3/db around it — then: x verify --only boundaries\`,
         at: where,
       });
     }

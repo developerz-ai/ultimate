@@ -104,7 +104,7 @@ Something narrower than the default dashboard? Start from a shape: `--shape api`
 
 Or look first: **[the live demo](https://social-media.ultimate.demo.developerz.ai)**, a social network built on Ultimate, deployed from `main` on every green push. Fabricated data, every row decided by a policy. Source: [`dummy/social-media-clone/`](dummy/social-media-clone/).
 
-No Docker, no env hunt: embedded Postgres, in-process NATS, storage in a local directory, a seeded database and a dev dashboard at `/_x`. `bun run setup` is required: `x new` installs nothing, and the app's own README names the six steps. → [Getting started](wiki/Getting-Started.md)
+No Docker, no env hunt: embedded Postgres, in-process NATS, storage in a local directory, a seeded database and a dev dashboard at `/_x`. `bun run setup` is required: `x new` installs nothing, and the app's own README names the seven steps. → [Getting started](wiki/Getting-Started.md)
 
 ## Why pick it
 

@@ -70,11 +70,12 @@ describe('unit · parseArgs', () => {
   // and it has no read-only sibling to default to — the count it would report is `x doctor`'s.
   // `x token` joined them in 31.x: `create` mints a credential, `revoke` ends one, and a bare
   // `x token` reaching either by default is a mistyped word with a side effect nobody asked for.
+  // `x merge-driver` too: `install` writes git config, and `run` is git's to call with its files.
   test('exactly the commands whose bare form is dangerous refuse it', () => {
     const refusing = SPECS_SHIPPED.filter(
       (spec) => (spec.subcommands ?? []).length > 0 && spec.defaultSubcommand === undefined,
     ).map((spec) => spec.name);
-    expect(refusing.sort()).toEqual(['auth', 'client', 'db', 'mcp', 'pr', 'token']);
+    expect(refusing.sort()).toEqual(['auth', 'client', 'db', 'mcp', 'merge-driver', 'pr', 'token']);
   });
 
   // `--json` is axiom 4: every command and every error answers in machine-readable form, so
@@ -177,7 +178,7 @@ describe('unit · parseArgs', () => {
     expect(() => parseArgs(['verfy'], SPECS)).toThrow(UnknownCommandError);
     const failure = thrownBy(() => parseArgs(['verfy'], SPECS));
     expect(failure.code).toBe('X_CLI_UNKNOWN_COMMAND');
-    expect(failure.fix).toBe('x verify');
+    expect(failure.fix).toStartWith('x verify --help');
   });
 
   test('an unknown subcommand names the command path, not just the token', () => {
@@ -209,7 +210,7 @@ describe('unit · parseArgs', () => {
     );
     expect(failure.fix).toBe('x help');
     // and the near-miss arm still suggests.
-    expect(thrownBy(() => parseArgs(['verifyy'], SPECS)).fix).toBe('x verify');
+    expect(thrownBy(() => parseArgs(['verifyy'], SPECS)).fix).toStartWith('x verify --help');
   });
 
   test('a subcommand that resembles nothing is refused with no suggestion either', () => {

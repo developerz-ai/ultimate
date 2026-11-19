@@ -4,6 +4,7 @@
 
 import type { Runner } from './exec';
 import type { CommandResult } from './output';
+import type { ReaderOptions } from './output-findings';
 import type { CommandSpec, ParsedArgs } from './parse';
 
 export interface CommandContext {
@@ -21,6 +22,8 @@ export interface CommandContext {
    * follow. Absent means the default below — a caller that builds a context by hand owes nothing.
    */
   readonly invocation?: string;
+  /** Who reads this run's fix lines, for one printed outside a finding. `dispatch` decides. */
+  readonly reader?: ReaderOptions;
 }
 
 /** What `ctx.invocation` means when nobody said: the binary, then the subcommand they typed. */

@@ -40,6 +40,7 @@ import { logsSpec } from './cmd-logs-spec';
 import { mailSpec } from './cmd-mail-spec';
 import { manifestSpec } from './cmd-manifest-spec';
 import { mcpSpec } from './cmd-mcp-spec';
+import { mergeDriverSpec } from './cmd-merge-driver-spec';
 import { newSpec } from './cmd-new-spec';
 import { policySpec } from './cmd-policy-spec';
 import { prSpec } from './cmd-pr-spec';
@@ -133,6 +134,7 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(graphSpec, async () => (await import('./cmd-graph')).graphCommand),
   lazy(impactSpec, async () => (await import('./cmd-impact')).impactCommand),
   lazy(tokenSpec, async () => (await import('./cmd-token')).tokenCommand),
+  lazy(mergeDriverSpec, async () => (await import('./cmd-merge-driver')).mergeDriverCommand),
   lazy(configSpec, async () => (await import('./cmd-config')).configCommand),
   lazy(logsSpec, async () => (await import('./cmd-logs')).logsCommand),
   lazy(cacheSpec, async () => (await import('./cmd-cache')).cacheCommand),

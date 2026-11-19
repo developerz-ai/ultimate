@@ -55,7 +55,7 @@ x version              # CLI version
 | `x i18n` | add, sync, check catalogs | shipped |
 | `x mail preview <id>` | render a mail's declared `preview` in every locale, nothing sent | shipped |
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
-| `x clean [--dry-run]` | remove what test runs leave behind: migrated test templates, `.x/cache`, stray `.x` folders, stale probe databases | shipped |
+| `x clean [--dry-run] [--services]` | remove what test runs leave behind: migrated test templates, `.x/cache`, stray `.x` folders, stale probe databases; `--services` stops this checkout's test stack and lists the machine's others | shipped |
 | `x affected` | the workspaces a diff can have broken, transitively | shipped |
 | `x graph [--from <a> --to <b>]` · `x impact <file\|primitive\|entity>` | the app as one typed graph, each edge `declared`, `import` or `observed` · what an edit reaches | shipped |
 | `x client vendor <name>` · `x client customer --out <dir>` | one OpenAPI compiler, two clients: a third party's document into `apps/web/clients/<name>/` (`outbound()` + `t` schemas), or the app's own published document into a client with no framework import | shipped |
@@ -72,7 +72,8 @@ x version              # CLI version
 | `x cache graph\|bust <tag>\|clear` | the tag graph off the manifest (what each write evicts), a bust of one tag or every declared tag through the app's own tiers and bus · `stats` was removed `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x explain <query> [--input <json>] [--org <id>]` | one declared query run once on the dev database, every statement it sent planned by the `exercise` step's oracle | shipped |
 | `x profile <route> [--runs 20] [--top 10]` | a CPU profile of rendering one route in this process: the hottest functions, file and line | shipped |
-| `x heavy [status]` · `x heavy run [--label s] [--mb n] -- <command…>` | the machine's shared memory ledger: who runs, who is queued, load and memory; any command run inside one reservation, its exit code passed through | shipped |
+| `x merge-driver install` · `x merge-driver run <base> <ours> <theirs> <path>` | installs the git merge drivers for this clone (a step of `bun run setup`); `run` is what git calls for a registry both branches changed. [Merging two features](Many-Agents#merging-two-features) | shipped |
+| `x heavy [status]` · `x heavy run [--label s] [--mb n] [--max-wait s] -- <command…>` | the machine's shared memory ledger: who runs, who is queued, load and memory; any command run inside one reservation, its exit code passed through | shipped |
 | `x status [--url <origin>] [--samples n]` | the build each live worker runs (`x_job_workers`), and the build, status and role each sampled origin's `/readyz` answers | shipped |
 
 ## x new
@@ -295,7 +296,7 @@ replicator takes a slot on a shared database. With `DATABASE_URL` unset the embe
 serves no logical replication, so the role is refused, but `X_CLI_BAD_FLAG` now names the fix: set
 `DATABASE_URL` to a Postgres with `wal_level=logical`. With `DATABASE_URL` set, the role starts for
 real: advisory lock → `postgresChangeFeed()` → `changeFeedReplicator` → publish to the transport.
-Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`, `X_ENV_MISSING`, `X_DB_DRIFT`.
+Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE` (names the holder's pid and directory; its fix names a port pair that is free when asked), `X_ENV_MISSING`, `X_DB_DRIFT`.
 
 ## x stop
 
@@ -476,7 +477,7 @@ The synopsis above is `GENERATORS` in `packages/cli/src/cmd-generate.ts`, which 
 ## x db
 
 ```bash
-x db gen "add publish_at" | migrate | reset
+x db gen "add publish_at" [--merge-fork] | migrate | reset
      | seed [<name>] [--tier reference|dev] [--dry-run] [--json]
      | branch list | branch create <name> | branch delete <name>
      | backfill --list [--name n] [--status s] [--limit n] [--json]
@@ -488,7 +489,7 @@ x db gen "add publish_at" | migrate | reset
 
 | Subcommand | Does | Notes |
 |---|---|---|
-| `gen ["<name>"]` | diff the app's entities against what the migrations declare, write the next migration, then rewrite the schema dump | the message becomes the id's slug; left out it is `change`. **Opens no database of yours** — the diff reads the previous migration's snapshot, and the dump is replayed on a scratch database it boots and discards: the embedded one, restored from a snapshot under `.x/cache` after its first boot, or a real Postgres when a migration creates an extension PGlite cannot link ([the engine rule](Migrations-And-Backfills#extensions-and-the-scratch-database)). **Exit 1 with a migration written** is possible: the dump failed after the migration was generated, the summary and the finding both say so, and the next move is a bare `x db gen`, never the same message again. A bare `x db gen` with nothing to generate rewrites `packages/db/schema/` alone, which makes it `X_SCHEMA_DUMP_DRIFT`'s whole fix. When the app does not load, nothing is compared and the summary says so — *nothing was compared — the app did not load (N finding(s)); fix them, then run x db gen again* — never "no migration needed". `--json`: `data.schemaDump` = `{ directory, status, files, written, removed }`, `status` one of `written`, `unchanged`, `skipped` (no migration yet), `failed`. `--allow-destructive` lets it emit a drop whose `down` cannot restore the rows; `--rolling-unsafe` lets it drop a column never retired, for an app that stops before it starts → [A column drop takes two releases](Migrations-And-Backfills#a-column-drop-takes-two-releases) |
+| `gen ["<name>"]` | diff the app's entities against what the migrations declare, write the next migration, then rewrite the schema dump | One run at a time per checkout, `As of 2026-11`. The summary names the tables the migration touches (`data.tables`); a run with nothing to write names the newest migration (`data.newest`), which a concurrent run may have written. A forked chain is refused first (`X_MIGRATION_FORKED`). the message becomes the id's slug; left out it is `change`. **Opens no database of yours** — the diff reads the previous migration's snapshot, and the dump is replayed on a scratch database it boots and discards: the embedded one, restored from a snapshot under `.x/cache` after its first boot, or a real Postgres when a migration creates an extension PGlite cannot link ([the engine rule](Migrations-And-Backfills#extensions-and-the-scratch-database)). **Exit 1 with a migration written** is possible: the dump failed after the migration was generated, the summary and the finding both say so, and the next move is a bare `x db gen`, never the same message again. A bare `x db gen` with nothing to generate rewrites `packages/db/schema/` alone, which makes it `X_SCHEMA_DUMP_DRIFT`'s whole fix. When the app does not load, nothing is compared and the summary says so — *nothing was compared — the app did not load (N finding(s)); fix them, then run x db gen again* — never "no migration needed". `--json`: `data.schemaDump` = `{ directory, status, files, written, removed }`, `status` one of `written`, `unchanged`, `skipped` (no migration yet), `failed`. `--allow-destructive` lets it emit a drop whose `down` cannot restore the rows; `--rolling-unsafe` lets it drop a column never retired, for an app that stops before it starts → [A column drop takes two releases](Migrations-And-Backfills#a-column-drop-takes-two-releases) |
 | `migrate` | apply pending migrations, verify the result, then rewrite the schema dump | literally `ROLE=migrate`'s own `runMigrations` — which ends by diffing the live schema against the ledger it just wrote, on the connection it already holds. A difference is `X_DB_DRIFT` and a non-zero exit. Then, `x db migrate` only: the dump is regenerated as `gen` does, and the database is reopened to report any trigger, function, view, type or sequence no migration creates (`unexpected-object`, also `X_DB_DRIFT`). `--json` carries the same `data.schemaDump` |
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `seed [<name>]` | apply the app's seeds — every one this environment takes, or the one named | **replayable**: a second run writes nothing and raises nothing, on Postgres as well as in memory. One transaction per seed, so one bad fixture graph cannot roll back the seeds that already landed. `--dry-run` reports what each would write and writes nothing |
@@ -546,6 +547,7 @@ Two more facts about the set, both `As of 2026-08`:
 | `--name` | string | — | migration or branch name, or the backfill to filter the ledger by. Under `backfill --list` it is the **only** spelling of that filter: a positional there is a pass target in every other shape and is refused with `X_CLI_BAD_FLAG` rather than silently dropped |
 | `--allow-destructive` | boolean | `false` | let `gen` emit a DROP whose `down` cannot restore the rows. `X_MIGRATION_IRREVERSIBLE`'s own `fix:` line names it |
 | `--drop-redundant` | boolean | `false` | `gen`: leave out of the diff each implicit index (a column's own, from `.references()` or `.index()`) that another index, the primary key or a unique invariant already leads with, so the migration drops it `concurrently` in a non-transactional step you review. Never a default; once dropped, a plain `x db gen` does not rebuild it. A table with no migration yet keeps every index. `x doctor` lists what it would drop (`data.redundantIndexes`), `As of 2026-11-14` |
+| `--merge-fork` | boolean | `false` | `gen`: the fix `X_MIGRATION_FORKED` prints. Rewrites the newest `.snapshot.json` to what the merged chain builds, then continues as any `gen`. Changes no SQL and deletes no migration. `--json`: `data.outcome` is `fork-merged` when no migration was needed, `data.forkRepairs` the objects corrected. Two migrations creating one object are still refused ([Two branches, one chain](Migrations-And-Backfills#two-branches-one-chain--x_migration_forked)) |
 | `--list` | boolean | `false` | `backfill`: print the ledger |
 | `--pending` | boolean | `false` | `backfill`: declared minus completed, judged in this `ULTIMATE_ENV`. Non-zero exit when anything is unswept |
 | `--all` | boolean | `false` | `backfill`: every pending sweep, isolated per name |
@@ -630,7 +632,7 @@ pre-1.2.0 layout, and reading it as one would drop every table the pair exists t
 
 Errors, seed: `X_DECLARATION_UNKNOWN` (no seed of that name — the cause lists the ones there are), `X_CLI_BAD_FLAG` (an unknown `--tier`, one name declared twice, or a `dev` seed reached under `production` with no consent), and whatever the seed itself threw, reported per seed with the file it came from.
 
-Errors, schema: `X_DB_DRIFT`, `X_SCHEMA_DUMP_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATION_VIEW_DEPENDS`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `studio` left `x db` `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)).
+Errors, schema: `X_DB_DRIFT`, `X_SCHEMA_DUMP_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_FORKED`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATION_VIEW_DEPENDS`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `studio` left `x db` `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)).
 
 Errors, backfill: `X_BACKFILL_PENDING` (`--pending`, and the only one that is not a refusal — the sweep simply has not run), `X_BACKFILL_UNKNOWN`, `X_BACKFILL_ENVIRONMENT`, `X_BACKFILL_MIGRATION_PENDING`, `X_BACKFILL_APPLIED`, `X_BACKFILL_RUNNING`. All six are `@ultimat3/jobs`', carry a one-line runnable `fix:`, and are what a non-zero exit from these shapes means — full wording in [Error codes → `@ultimat3/jobs`](Error-Codes-jobs). `X_BACKFILL_STALLED` is the seventh and never reaches this command: it is raised by the pass, on a worker, so it surfaces through `x jobs show <id>`.
 
@@ -759,7 +761,13 @@ running** (RAM only; the next run reuses it) and the step's warning says so, wit
 database answering: a warning carrying `X_TEST_SERVICES_UNAVAILABLE` and the start command as its
 fix, and the suites run exactly as before — a floor whose every live test then skipped is still
 `X_VERIFY_SUITE_VANISHED`.
-`packages/cli/src/verify-live.ts` decides when; `verify-services.ts` probes and starts.
+One stderr line names the stack: `services: started|reused <project>`, or `services: shared <project>
+with <dir>` for another checkout of this app (same first commit or `origin`). A stack under this
+project name started by a different app is refused before compose runs:
+`X_TEST_SERVICES_UNAVAILABLE`, unless `ULTIMATE_TEST_SERVICES_SHARED=1` says the share is intended.
+`x clean --services` stops the stack.
+`packages/cli/src/verify-live.ts` decides when; `verify-services.ts` probes and starts;
+`verify-services-stack.ts` reads whose stack it is.
 
 `--workers` widens the test steps only. `unit`, `contract`, `job` and `eval` run as
 `bun test --parallel=N`, each worker with its own database; `live` and `e2e` are serial by
@@ -1287,6 +1295,8 @@ A tool this caller may not see is absent from `tools/list` and answers ToolNotFo
 x doctor [--port 3000] [--json]
 ```
 
+A taken port is judged by who holds it (`As of 2026-11-18`): from this checkout, or by a process the OS will not name, it is an `X_PORT_IN_USE` finding; from another checkout it is the same code as a warning in `data.warnings[]`, naming that directory, and the exit stays 0. Either way the fix names a port pair that is free when asked.
+
 Checks Bun version, env completeness, source drift, **the newest migration's `.snapshot.json`**, port availability, PWA prerequisites and **embedded-Postgres readiness** — each failing check carries its own fix command.
 
 It also lists the copies of shipped guards the app's `guards/` still holds, each with `X_GUARD_VENDORED` beside the verdict in `data.warnings[]`: shipped guards run from the installed framework, so a copy runs in place of the shipped one and never receives a fix. `As of 31.28`. No shipped guard is ever missing, so `data.guards.missing` is always `[]`.
@@ -1741,10 +1751,12 @@ The type rule is `x verify`'s, not a second one — so `x test contract` runs ex
 ## x clean
 
 ```bash
-x clean [--dry-run] [--json]
+x clean [--dry-run] [--services] [--json]
 ```
 
 Every test leftover the framework knows of, cleared (`As of 27.3.0`): the migrated test-database templates under `.x/test-db`, the whole `.x/cache`, any `.x` folder below the app root, and — with `TEST_DATABASE_URL` set — every probe database whose run is over. `--dry-run` names them and removes nothing; `--json` carries `data.paths` and `data.databases`. Never touched: `.x/pgdata` (the dev database), `.x/storage`, the build output. The test runner sweeps the same set before every run, keeping the newest two of each cache, so `x clean` is for reclaiming the rest by hand. [Testing](Testing#database-state-and-what-a-run-leaves-behind) has the table.
+
+**`--services`** (`As of 2026-11-18`) also runs `docker compose -f docker/docker-compose.test.yml down --volumes` for this checkout's stack. A stack another existing checkout started is kept, with the line that stops it. Every other test stack on the machine is listed, never touched. `--dry-run` stops nothing. `--json`: `data.services` with `action` (`stopped`, `would-stop`, `kept`, `none`, `failed`), `project`, `services`, `owner`, and `others[]` (`project`, `status`, `root`, `gone`). Docker failing is `X_TEST_SERVICES_UNAVAILABLE`, exit 1.
 
 ## x upgrade
 
@@ -2167,14 +2179,23 @@ For each violation involving the file it reports the offending edge, the full ch
 
 Every flag is read before the database opens: a refusal costs no boot.
 
+## x merge-driver
+
+`As of 2026-11-19`. `x merge-driver install [--json]` · `x merge-driver run <base> <ours> <theirs> <path>` — how two branches that each generated a feature merge with no hand edit. The rules and what stays a conflict: [Merging two features](Many-Agents#merging-two-features).
+
+| Form | Does |
+|---|---|
+| `x merge-driver install` | writes `merge.x-registry.*` and `merge.x-generated.*` into `.git/config`; `data.installed: false` outside a git checkout. `bun run setup` runs it; `x doctor` warns `X_MERGE_DRIVER_UNSET` where it never ran |
+| `x merge-driver run` | what git invokes, with its temporary files. Exit 0 merged; exit 1 left the markers in the file and reports `X_MERGE_UNRESOLVED` |
+
 ## x heavy
 
-`As of 2026-11-18`. `x heavy [status] [--json]` · `x heavy run [--label s] [--mb n] [--json] -- <command…>` — the machine ledger every heavy run on this machine reserves its measured memory in, from any directory, in any repository. The rules, the weights and what stays outside: [Working with many agents](Many-Agents).
+`As of 2026-11-18`. `x heavy [status] [--json]` · `x heavy run [--label s] [--mb n] [--max-wait s] [--json] -- <command…>` — the machine ledger every heavy run on this machine reserves its measured memory in, from any directory, in any repository. The rules, the weights and what stays outside: [Working with many agents](Many-Agents).
 
 | Form | Answers |
 |---|---|
-| `x heavy` / `x heavy status` | `data.holds` and `data.queue` (label, directory, MB, pid, age), `data.capacityMb`, `data.usedMb`, `data.coreCap`, `data.machine` (load, runnable tasks, available and usable memory); `data.enabled: false` with `data.off` naming why (`ci`, `test-run`, `disabled`, `unsupported`) |
-| `x heavy run -- <command…>` | runs it inside one reservation of `--mb` (default: a monorepo typecheck). Exit code passed through, `128 + n` for a signal, 127 and `X_HEAVY_COMMAND_NOT_FOUND` for no such program. SIGTERM and SIGHUP are forwarded. Its summary goes to stderr, so stdout stays the command's; with `--json` the one document is on stdout and the command's stdout moves to stderr |
+| `x heavy` / `x heavy status` | `data.holds` and `data.queue` (label, directory, MB, pid, age; a hold adds `wrapperAlive` and `childPids`, the processes keeping it after its wrapper is gone), `data.capacityMb`, `data.usedMb`, `data.coreCap`, `data.cpuGate` (whether CPU pressure holds new runs back here), `data.machine` (load, runnable tasks, available and usable memory, `cpu`: `source` `psi`/`runnable`, `value`, `limit`, `busy`); `data.enabled: false` with `data.off` naming why (`ci`, `test-run`, `disabled`, `unsupported`) |
+| `x heavy run -- <command…>` | runs it inside one reservation of `--mb` (default: a monorepo typecheck). Exit code passed through, `128 + n` for a signal, 127 and `X_HEAVY_COMMAND_NOT_FOUND` for no such program. SIGTERM and SIGHUP are forwarded. Its summary goes to stderr, so stdout stays the command's; with `--json` the one document is on stdout and the command's stdout moves to stderr. `--max-wait <seconds>` (`0` to `604800`) bounds the queue: past it the command never starts, `X_HEAVY_WAIT_EXPIRED`, exit 75, `data.started: false` |
 
 ## x status
 

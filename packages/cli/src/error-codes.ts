@@ -241,6 +241,11 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_REPRO_BUNDLE_INVALID',
   'X_UPGRADE_LOCKED',
   'X_APP_MIGRATIONS_UNAPPLIED',
+  'X_HEAVY_WAIT_EXPIRED',
+  'X_MERGE_UNRESOLVED',
+  'X_MERGE_DRIVER_UNSET',
+  'X_CATALOG_UNPARSEABLE',
+  'X_DOCTOR_PROBE_FAILED',
 ] as const;
 
 /**
@@ -471,6 +476,11 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_UPGRADE_LOCKED: 'another x upgrade holds this app',
   X_APP_MIGRATIONS_UNAPPLIED:
     'a serving role booted over a database missing migrations this build ships',
+  X_HEAVY_WAIT_EXPIRED: 'x heavy run stopped waiting for the machine ledger',
+  X_MERGE_UNRESOLVED: 'a merge left conflicts in the app',
+  X_MERGE_DRIVER_UNSET: 'the merge drivers .gitattributes names are not configured',
+  X_CATALOG_UNPARSEABLE: 'an i18n catalog is not valid JSON',
+  X_DOCTOR_PROBE_FAILED: 'one x doctor check could not run',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

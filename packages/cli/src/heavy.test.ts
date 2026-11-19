@@ -42,6 +42,13 @@ describe.skipIf(NO_FLOCK)('heavyState', () => {
     expect(on.on).toBe(true);
   });
 
+  // A fixture hands the code under test its own small env. Without this, every such test joined the
+  // real machine queue, and one that timed out left a ticket ahead of every agent on the machine.
+  test('inside a test process a narrowed env is off too: fixtures never join the real queue', async () => {
+    expect(await heavyState({})).toMatchObject({ on: false, off: 'test-run' });
+    expect((await heavyState(envFor(scratch()))).on).toBe(true);
+  });
+
   test('ULTIMATE_HEAVY_MEMORY=0 is off', async () => {
     const state = await heavyState({ ...envFor(scratch()), ULTIMATE_HEAVY_MEMORY: '0' });
     expect(state).toMatchObject({ on: false, off: 'disabled' });

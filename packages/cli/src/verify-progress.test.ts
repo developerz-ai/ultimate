@@ -237,3 +237,11 @@ test('render: human writes the human line, and the default stays the JSON one', 
   );
   expect(json).toEqual([stepLine(step)]);
 });
+
+test('the pointer on a red step runs where `x` is not on PATH, and only there', () => {
+  const red = { name: 'boundaries', ok: false, durationMs: 1_250, findings: [] } as const;
+  expect(humanStepLine(red, { bunxRunner: true })).toBe(
+    '✗ boundaries 1.3s → bunx x verify --only boundaries --json',
+  );
+  expect(humanStepLine(red)).toBe('✗ boundaries 1.3s → x verify --only boundaries --json');
+});

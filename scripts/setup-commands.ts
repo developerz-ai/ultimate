@@ -79,7 +79,7 @@ const stepId = (name: string, args: readonly string[]): string => {
   if (name === 'x') {
     const words: string[] = [];
     for (const arg of args) {
-      if (!/^[a-z]+$/.test(arg) || words.length === 2) break;
+      if (!/^[a-z][a-z-]*$/.test(arg) || words.length === 2) break;
       words.push(arg);
     }
     return ['x', ...words].join(' ');

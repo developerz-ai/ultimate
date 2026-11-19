@@ -55,6 +55,8 @@ const hasMigration = (): boolean => {
 };
 
 await bun('install');
+// Merge drivers live in .git/config, which no clone inherits. Outside a git checkout this is a no-op.
+await x('merge-driver', 'install');
 ensureFile('.env.development.local', PER_BOX);
 if (!hasMigration()) await x('db', 'gen', 'initial');
 await x('db', 'migrate', ...process.argv.slice(2));

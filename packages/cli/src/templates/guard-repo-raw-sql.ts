@@ -294,7 +294,7 @@ const KEYSET_CALL =
 const truncatedFinding = (at: string): Finding => ({
   code: CODE,
   cause: \`\${at} orders by date_trunc('milliseconds', …), the workaround for a Date losing microseconds — and the index cannot serve that expression: measured on 300,000 rows, an Index Only Scan (0.2 ms) became a Parallel Seq Scan and a sort (100 ms)\`,
-  fix: \`\${KEYSET_CALL} — from @ultimat3/db, its select, where, orderBy and limit spliced in place of the date_trunc order at \${at}, then: x verify\`,
+  fix: \`\${KEYSET_CALL} — from @ultimat3/db, its select, where, orderBy and limit spliced in place of the date_trunc order at \${at}, then: x verify --only boundaries\`,
   at,
 });
 
@@ -328,7 +328,7 @@ const ANY_STATEMENT: readonly {
     finding: (at) => ({
       code: CODE,
       cause: \`\${at} pages with a hand row comparison, (a, b) < (?, ?) — the seek keyset() writes with its tie-break, its direction and its cursor codec, each one a detail a hand copy gets wrong when a key column changes\`,
-      fix: \`\${KEYSET_CALL} — from @ultimat3/db, its keys the columns of the row comparison at \${at}, then: x verify\`,
+      fix: \`\${KEYSET_CALL} — from @ultimat3/db, its keys the columns of the row comparison at \${at}, then: x verify --only boundaries\`,
       at,
     }),
   },
@@ -337,7 +337,7 @@ const ANY_STATEMENT: readonly {
     finding: (at) => ({
       code: CODE,
       cause: \`\${at} takes pg_advisory_xact_lock by hand — a key hashed where nothing else can see it, and two keys taken in whatever order two callers reach them, which is a deadlock\`,
-      fix: \`db.<table>.lockKeys([key], async (tx) => …) — the typed handle of the table the lock guards, sorted keys in one transaction, in place of the sql literal at \${at}, then: x verify\`,
+      fix: \`db.<table>.lockKeys([key], async (tx) => …) — the typed handle of the table the lock guards, sorted keys in one transaction, in place of the sql literal at \${at}, then: x verify --only boundaries\`,
       at,
     }),
   },
@@ -359,7 +359,7 @@ export function rawRepoSql(files: readonly RepoFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${at} sends a statement the typed handle expresses as hand-written SQL — no tenant guard on it, no codec for money or a sealed column, and no compile error when a column is renamed\`,
-        fix: \`\${call} — in place of the sql literal at \${at}, with db imported from this app's db package, then: x verify\`,
+        fix: \`\${call} — in place of the sql literal at \${at}, with db imported from this app's db package, then: x verify --only boundaries\`,
         at,
       });
     }

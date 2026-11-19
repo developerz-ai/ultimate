@@ -260,6 +260,7 @@ describe('runCovered', () => {
         files: ['apps/web/site/loads.test.ts', 'apps/web/app/math.test.ts'],
         workers: 2,
         sliceFiles: 1,
+        widthReason: '2 workers (test)',
         lease: async (want) => {
           expect(want).toBe(2);
           return {
@@ -273,6 +274,7 @@ describe('runCovered', () => {
       });
       expect(run.ok).toBe(true);
       expect(run.workers).toBe(1);
+      expect(run.widthReason).toContain('ran 1 at once (peak), planned 2');
       expect(held).toEqual(['/ledger/holds/this-run', '/ledger/holds/this-run']);
       expect(released).toBe(1);
     } finally {

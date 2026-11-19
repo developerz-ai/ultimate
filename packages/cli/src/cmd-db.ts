@@ -13,7 +13,13 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { NotImplementedError, resolveEnvironment } from '@ultimat3/core';
-import { type DriftReport, driftError, withTransaction } from '@ultimat3/db';
+import {
+  type DriftReport,
+  driftError,
+  migrationFork,
+  migrationForked,
+  withTransaction,
+} from '@ultimat3/db';
 import { postgresDriver } from '@ultimat3/entity';
 import { requireAppRoot } from './app-root';
 import { runBackfillCommand } from './cmd-db-backfill';
@@ -42,8 +48,10 @@ import {
 import { runGeneratedSeed } from './db-seed-generate';
 import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
 import { MissingSubcommandError, UnknownCommandError } from './errors';
+import { type HeavyChild, withCheckoutLock } from './heavy';
 import { withJobDriver } from './jobs-driver';
 import { msg } from './messages';
+import { readMigrations } from './migrations';
 import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import { flagBool, flagString } from './parse';
@@ -99,6 +107,22 @@ export const dbCommand: CliCommand = {
  * exists when none does, or that nothing was written when the sidecar was.
  */
 async function runGen(ctx: CommandContext, root: string, name: string): Promise<CommandResult> {
+  // One at a time per checkout, from reading the newest sidecar to writing the dump. Two overlapping
+  // runs each diffed the same sidecar and each wrote `create table` for every new entity: a chain
+  // that cannot replay. The kernel drops the lock when its holder dies, so no stale file can wedge it.
+  return withCheckoutLock({ name: 'db-gen', root, env: ctx.env }, NO_CHILD, () =>
+    generateLocked(ctx, root, name),
+  );
+}
+
+/** `x db gen` starts no process under the lock, so there is nothing to hand one. */
+const NO_CHILD: HeavyChild = { env: {}, fds: [] };
+
+async function generateLocked(
+  ctx: CommandContext,
+  root: string,
+  name: string,
+): Promise<CommandResult> {
   let generated: Awaited<ReturnType<typeof generateAppMigration>>;
   try {
     generated = await generateAppMigration(root, {
@@ -106,6 +130,7 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
       allowDestructive: flagBool(ctx.args, 'allow-destructive'),
       rollingUnsafe: flagBool(ctx.args, 'rolling-unsafe'),
       dropRedundant: flagBool(ctx.args, 'drop-redundant'),
+      mergeFork: flagBool(ctx.args, 'merge-fork'),
     });
   } catch (error) {
     return {
@@ -127,7 +152,12 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
   const dump = await refreshSchemaDump(root, ctx.env);
   const dumpFindings = dump.finding === undefined ? [] : [dump.finding];
   const migration = generated.migration;
+  const newest = generated.newest;
   if (migration === undefined) {
+    const newestLine =
+      newest === undefined || generated.outcome === 'blocked'
+        ? []
+        : [msg('cli.db.gen.newest', { id: newest })];
     return {
       ok: generated.findings.length === 0 && dumpFindings.length === 0,
       command: 'db',
@@ -139,17 +169,32 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
       summary:
         generated.outcome === 'blocked'
           ? msg('cli.db.gen.blocked', { count: generated.findings.length })
-          : generated.outcome === 'hash-recorded'
-            ? msg('cli.db.gen.recorded', { file: generated.files[0] ?? '' })
-            : dump.status === 'written'
-              ? msg('cli.db.gen.dumped', { count: dump.written.length + dump.removed.length })
-              : msg('cli.db.gen.unchanged'),
+          : generated.outcome === 'fork-merged'
+            ? msg('cli.db.gen.forkMerged', {
+                count: generated.forkRepairs ?? 0,
+                id: newest ?? '',
+              })
+            : generated.outcome === 'hash-recorded'
+              ? msg('cli.db.gen.recorded', { file: generated.files[0] ?? '' })
+              : dump.status === 'written'
+                ? msg('cli.db.gen.dumped', {
+                    count: dump.written.length + dump.removed.length,
+                    newest: newest ?? msg('cli.db.status.none'),
+                  })
+                : msg('cli.db.gen.unchanged'),
       findings: [...generated.findings, ...dumpFindings],
       // `files` is what this command WROTE, so the empty array here was a false claim.
-      lines: [...generated.files.map((file) => `  ${file}`), ...schemaDumpLines(dump), ...lost],
+      lines: [
+        ...generated.files.map((file) => `  ${file}`),
+        ...schemaDumpLines(dump),
+        ...newestLine,
+        ...lost,
+      ],
       data: {
         outcome: generated.outcome,
         migration: null,
+        newest: newest ?? null,
+        forkRepairs: generated.forkRepairs ?? 0,
         files: [...generated.files],
         schemaHash: generated.schemaHash ?? null,
         unrendered: unrenderedJson(generated.unrendered),
@@ -157,13 +202,16 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
       },
     };
   }
+  const tables = generated.tables ?? [];
   return {
     ok: dumpFindings.length === 0,
     command: 'db',
     summary:
-      dumpFindings.length === 0
-        ? msg('cli.db.gen.written', { id: migration.id })
-        : msg('cli.db.gen.writtenDumpFailed', { id: migration.id }),
+      dumpFindings.length > 0
+        ? msg('cli.db.gen.writtenDumpFailed', { id: migration.id })
+        : tables.length === 0
+          ? msg('cli.db.gen.written', { id: migration.id })
+          : msg('cli.db.gen.writtenTables', { id: migration.id, tables: tables.join(', ') }),
     // Exit 1 with a migration on disk: the finding has to say so, or the next move is a duplicate.
     findings: dumpFindings.map((finding) => afterWrittenMigration(finding, migration.id)),
     lines: [...generated.files.map((file) => `  ${file}`), ...schemaDumpLines(dump), ...lost],
@@ -173,6 +221,9 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
       // The `-- transaction: false` step written beside it, when the diff needed one.
       followUp: migration.followUp?.id ?? null,
       name: migration.name,
+      tables: [...tables],
+      newest: newest ?? migration.id,
+      forkRepairs: generated.forkRepairs ?? 0,
       files: [...generated.files],
       schemaHash: generated.schemaHash ?? null,
       unrendered: unrenderedJson(generated.unrendered),
@@ -206,6 +257,10 @@ async function runMigrate(
   summary: string,
 ): Promise<CommandResult> {
   try {
+    // Before anything is applied: a forked chain either stops halfway through a replay or finishes
+    // and reports its own table as drift, and neither result says what happened.
+    const fork = migrationFork(await readMigrations(root));
+    if (fork !== undefined) throw migrationForked(fork);
     const migrated = await runMigrations({ root, env: ctx.env });
     const report = migrated.report;
     // A hand-written or pulled migration reaches the dump here, with no `x db gen` in between.

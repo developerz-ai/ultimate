@@ -6,6 +6,7 @@
 // cold CI went red (#450). `-p` with `incremental` re-reads every input and compares content
 // hashes, so it cannot be fooled by a date.
 
+import type { Finding } from './output';
 import { checkRootReferences } from './tsconfig-references';
 
 /**
@@ -27,4 +28,24 @@ export const usesProjectReferences = async (root: string): Promise<boolean> =>
 export async function typecheckArgs(root: string, bin: string): Promise<readonly string[]> {
   const mode = (await usesProjectReferences(root)) ? ['-b'] : ['-p', '.'];
   return [bin, ...mode, '--pretty', 'false'];
+}
+
+/** `apps/web/a.ts(3,7): error TS2322: …`, the first line of `tsc --pretty false` that names a place. */
+const FIRST_ERROR = /^(.+?)\((\d+),\d+\): error TS/m;
+
+/**
+ * The step's red finding. The errors are already printed under it, so the fix opens at the first of
+ * them and re-runs the step: a raw `tsc` repeats the list outside the machine ledger and this
+ * checkout's compiler lock.
+ */
+export function typecheckFinding(output: string): Omit<Finding, 'docs'> {
+  const first = FIRST_ERROR.exec(output);
+  return {
+    code: 'X_TYPECHECK_FAILED',
+    cause: 'the project does not typecheck',
+    fix:
+      first === null
+        ? 'x verify --only typecheck --json   # its output carries what tsc printed'
+        : `edit ${first[1]}:${first[2]} — and each other file(line) tsc listed under this finding, then: x verify --only typecheck`,
+  };
 }

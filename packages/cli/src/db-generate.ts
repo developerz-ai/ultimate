@@ -4,11 +4,18 @@
 
 // why: `node:path` — Bun ships no path joiner of its own, and these paths are built, not opened.
 import { join } from 'node:path';
-import type { GeneratedMigration, UnrenderedDeclaration } from '@ultimat3/db';
+import type {
+  GeneratedMigration,
+  Migration,
+  SchemaDescription,
+  UnrenderedDeclaration,
+} from '@ultimat3/db';
 import {
   DESTRUCTIVE_MARKER,
   declaredSchema,
   generateMigration,
+  migrationFork,
+  migrationForked,
   migrationSnapshotMissing,
   ROLLING_UNSAFE_MARKER,
   snapshotJson,
@@ -35,16 +42,27 @@ export interface GenerateMigrationOptions {
    * concurrently. Never a default; once dropped, a plain run does not rebuild it.
    */
   readonly dropRedundant?: boolean | undefined;
+  /**
+   * `x db gen --merge-fork`, the fix `X_MIGRATION_FORKED` prints. Rewrites the newest sidecar to what
+   * the merged chain builds, and goes on as any run does from there. No `.sql` is touched.
+   */
+  readonly mergeFork?: boolean | undefined;
   /** `database.rowSecurity` and the tenant columns. The app's own unless a test injects one. */
   readonly rowSecurity?: RowSecurityWanted | undefined;
 }
 
 /**
- * What this run actually did — four different things, and `--json` has to tell them apart. A
+ * What this run actually did — five different things, and `--json` has to tell them apart. A
  * `hash-recorded` run wrote a file and generated no migration; reporting it as `generated` would
  * claim a migration nobody can apply, and reporting it as `unchanged` would hide the one write.
+ * `fork-merged` is the same honesty for `--merge-fork`: a sidecar moved and no migration exists.
  */
-export type GenerateOutcome = 'generated' | 'hash-recorded' | 'unchanged' | 'blocked';
+export type GenerateOutcome =
+  | 'generated'
+  | 'hash-recorded'
+  | 'fork-merged'
+  | 'unchanged'
+  | 'blocked';
 
 export interface GeneratedFiles {
   readonly outcome: GenerateOutcome;
@@ -52,6 +70,12 @@ export interface GeneratedFiles {
   readonly migration?: GeneratedMigration | undefined;
   /** App-root-relative paths written, in write order. Empty when there was nothing to write. */
   readonly files: readonly string[];
+  /** The tables `migration` creates, changes or drops, so a shared checkout can see whose they are. */
+  readonly tables?: readonly string[] | undefined;
+  /** The newest migration on disk once this run ended: what an empty diff was measured against. */
+  readonly newest?: string | undefined;
+  /** How many objects `--merge-fork` put right in the newest sidecar. Absent when it merged none. */
+  readonly forkRepairs?: number | undefined;
   /** What the source hashes to, whenever this run was in a position to record it. */
   readonly schemaHash?: string | undefined;
   /**
@@ -91,6 +115,47 @@ export function migrationSql(migration: GeneratedMigration): string {
   ].join('\n');
 }
 
+/** Every table whose recorded shape differs between two snapshots, in name order. */
+function tablesBetween(before: SchemaDescription, after: SchemaDescription): readonly string[] {
+  const shape = (schema: SchemaDescription): Map<string, string> =>
+    new Map(schema.tables.map((table) => [table.name, JSON.stringify(table)]));
+  const was = shape(before);
+  const now = shape(after);
+  return [...new Set([...was.keys(), ...now.keys()])]
+    .filter((name) => was.get(name) !== now.get(name))
+    .sort();
+}
+
+interface SettledChain {
+  readonly migrations: readonly Migration[];
+  readonly files: readonly string[];
+  readonly repairs: number;
+}
+
+/**
+ * Before any diff: against a forked chain the diff is wrong in both directions, asking for a second
+ * `create table` the replay refuses. Merging only rewrites a sidecar, which no checksum covers; a
+ * collision has no such repair, so it is refused even under `--merge-fork`.
+ */
+async function settleFork(
+  root: string,
+  migrations: readonly Migration[],
+  mergeFork: boolean,
+): Promise<SettledChain> {
+  const fork = migrationFork(migrations);
+  if (fork === undefined) return { migrations, files: [], repairs: 0 };
+  if (!mergeFork || fork.collisions.length > 0) throw migrationForked(fork);
+  const file = `${MIGRATIONS_DIR}/${snapshotFileName(fork.newest)}`;
+  await Bun.write(join(root, file), snapshotJson(fork.merged));
+  return {
+    migrations: migrations.map((migration) =>
+      migration.id === fork.newest ? { ...migration, snapshot: fork.merged } : migration,
+    ),
+    files: [file],
+    repairs: fork.lost.length + fork.stale.length,
+  };
+}
+
 /**
  * Generation reads source and writes files; it never opens a database. The previous migration's
  * snapshot is what it diffs against (`declaredSchema`), so `x db gen` answers the same in CI, on a
@@ -109,7 +174,10 @@ export async function generateAppMigration(
     return { outcome: 'blocked', files: [], findings: app.findings, unrendered: [] };
   }
 
-  const migrations = await readMigrations(root);
+  const onDisk = await readMigrations(root);
+  const settled = await settleFork(root, onDisk, options.mergeFork === true);
+  const migrations = settled.migrations;
+  const forkFields = settled.repairs === 0 ? {} : { forkRepairs: settled.repairs };
   const current = declaredSchema(migrations);
   // Refused, never defaulted to the empty schema: with nothing to diff against, every table the
   // database already holds looks new and the generated `up` is `create table` for all of them.
@@ -166,10 +234,14 @@ export async function generateAppMigration(
       return { outcome: 'unchanged', files: [], findings: [], unrendered: migration.unrendered };
     }
     const reconciled = await reconcileSchemaHash(root, newest.id);
+    const hashFiles = reconciled.written ? [`${MIGRATIONS_DIR}/${hashFileName(newest.id)}`] : [];
+    const quietOutcome = reconciled.written ? 'hash-recorded' : 'unchanged';
     return {
-      outcome: reconciled.written ? 'hash-recorded' : 'unchanged',
+      outcome: settled.repairs > 0 ? 'fork-merged' : quietOutcome,
       schemaHash: reconciled.hash,
-      files: reconciled.written ? [`${MIGRATIONS_DIR}/${hashFileName(newest.id)}`] : [],
+      files: [...settled.files, ...hashFiles],
+      newest: newest.id,
+      ...forkFields,
       findings: [],
       unrendered: migration.unrendered,
     };
@@ -180,7 +252,7 @@ export async function generateAppMigration(
   // after this one. Each file is a ledger row of its own; see `@ultimat3/db`'s `generate-steps.ts`.
   const steps = [migration, ...(migration.followUp === undefined ? [] : [migration.followUp])];
   const dir = join(root, MIGRATIONS_DIR);
-  const files: string[] = [];
+  const files: string[] = [...settled.files];
   let schemaHash = '';
   for (const step of steps) {
     const sql = `${step.id}.sql`;
@@ -200,6 +272,9 @@ export async function generateAppMigration(
     migration,
     schemaHash,
     files,
+    tables: tablesBetween(current, steps[steps.length - 1]?.snapshot ?? migration.snapshot),
+    newest: steps[steps.length - 1]?.id ?? migration.id,
+    ...forkFields,
     findings: [],
     unrendered: migration.unrendered,
   };

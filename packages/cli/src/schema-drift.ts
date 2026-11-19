@@ -15,7 +15,14 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { EntityDescriptionLike, UnrenderedDeclaration } from '@ultimat3/db';
-import { declaredSchema, recordRetired, snapshotOf, unrenderedOf } from '@ultimat3/db';
+import {
+  declaredSchema,
+  migrationFork,
+  migrationForked,
+  recordRetired,
+  snapshotOf,
+  unrenderedOf,
+} from '@ultimat3/db';
 import { registeredEntities } from '@ultimat3/entity';
 import { loadApp } from './app-load';
 import { checkSourceDrift, DB_PACKAGE } from './drift';
@@ -26,6 +33,7 @@ import {
 } from './drift-replica-identity';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 import type { Finding } from './output';
+import { findingFrom } from './output';
 import { settledDescriptions } from './redundant-indexes';
 import { appRowSecurity, type RowSecurityWanted, rowSecurityFindings } from './row-security-wanted';
 import { diffDeclaredSchema, type SchemaDifference } from './schema-diff';
@@ -137,6 +145,8 @@ function findingFor(difference: SchemaDifference, repair: Repair): Finding {
  * One finding per difference, never one per table: each names one declaration and one edit, and a
  * grouped finding would hand a reader nine constraint names under one instruction.
  *
+ * A forked chain answers first and alone (`X_MIGRATION_FORKED`).
+ *
  * Three conditions are deliberately left to their own reporters, because each already has a code
  * and a remedy: an app with no `packages/db`, an app whose first migration has not been generated
  * (`checkSourceDrift`, `x db gen "initial"`), and a newest migration carrying no sidecar
@@ -149,9 +159,16 @@ export async function checkSnapshotDrift(
   rowSecurity: RowSecurityWanted = appRowSecurity,
 ): Promise<readonly Finding[]> {
   if (!existsSync(join(root, DB_PACKAGE))) return [];
+  const migrations = await readMigrations(root);
+  // Ahead of the entities, and the only finding: the newest sidecar is the thing a fork makes wrong,
+  // so every difference below would be measured against it and `x db gen 'record …'` would write
+  // the second `create table` a replay refuses. It needs no entity, so a load failure hides nothing.
+  const fork = migrationFork(migrations);
+  if (fork !== undefined) {
+    return [{ ...findingFrom(migrationForked(fork)), docs: ERROR_DOCS_URL, at: MIGRATIONS_DIR }];
+  }
   const entities = await declared(root);
   if (entities === undefined) return [];
-  const migrations = await readMigrations(root);
   if (migrations.length === 0) return [];
   const recorded = declaredSchema(migrations);
   if (recorded === undefined) return [];

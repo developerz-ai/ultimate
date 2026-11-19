@@ -230,7 +230,7 @@ export function notImplementedDriver(
 ): NotImplementedError {
   return new NotImplementedError({
     cause: `the ${driver} image driver does not implement ${capability} yet`,
-    fix: `builtinImageDriver({ read })   // swap the driver for this one (png and jpeg, no dependencies) — or implement ${capability} in ${at}; then x verify --json`,
+    fix: `builtinImageDriver({ read })   // swap the driver for this one (png and jpeg, no dependencies) — or implement ${capability} in ${at}; then x build --json`,
     meta: { driver, capability, at },
   });
 }

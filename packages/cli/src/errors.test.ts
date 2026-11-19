@@ -14,7 +14,26 @@ import {
   UnknownCommandError,
   VerifyFailedError,
 } from './errors';
+import { NoTestFilesError } from './errors-suite';
 import { thrownBy } from './thrown-by-fixture';
+
+describe('unit · a fix never starts a whole suite by accident', () => {
+  test.each(['test', 'verify'])('a typo nearest x %s gets its help, not a run', (name) => {
+    const { fix } = new UnknownCommandError({ path: 'tset', known: [name], suggestion: name });
+    expect(fix).toStartWith(`x ${name} --help`);
+  });
+
+  test('any other nearest command is still the command', () => {
+    expect(new UnknownCommandError({ path: 'rotes', known: [], suggestion: 'routes' }).fix).toBe(
+      'x routes',
+    );
+  });
+
+  test('a selection that matched nothing points at the tests the edits reach', () => {
+    const { fix } = new NoTestFilesError({ root: '/app', filter: 'nosuchfile' });
+    expect(fix).toStartWith('x test --affected --dirty');
+  });
+});
 
 describe('VerifyFailedError', () => {
   test('counts the failed steps and names every one of them', () => {

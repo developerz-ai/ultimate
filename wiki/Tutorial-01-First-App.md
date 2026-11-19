@@ -40,7 +40,7 @@ cd myapp && bun run setup
 setup complete — next: bun run dev
 ```
 
-`bun run setup` is `bun install`, an `.env.development.local` touch, `x db gen "initial"`, `x db migrate`, `x db seed`, then `x manifest` — so the database is migrated and `x.manifest.json` exists before the gate asks for either. `x new` installs nothing, so this is not optional.
+`bun run setup` is `bun install`, `x merge-driver install`, an `.env.development.local` touch, `x db gen "initial"`, `x db migrate`, `x db seed`, then `x manifest` — so the database is migrated and `x.manifest.json` exists before the gate asks for either. `x new` installs nothing, so this is not optional.
 
 `x` is a workspace dependency, not a global install. `bunx x <command>` resolves `node_modules/.bin/x`; the `package.json` scripts (`bun run verify`, `bun run dev`) resolve the same binary. A globally installed `x` (`bun link`, `bun add -g`) run inside the app **hands over** to that same file, `As of 2026-09-05`, and says so on stderr: a global copy carries its own `@ultimat3/entity` with an empty registry, and it wrote a zero-entity manifest under a green exit code before it did. `ULTIMATE_KEEP_GLOBAL_CLI=1` is the opt-out — [`@ultimat3/cli`'s README](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/README.md) has the measurement.
 
@@ -240,7 +240,7 @@ bunx x db gen "initial"    # entities → <id>.sql, <id>.snapshot.json, <id>.has
 bunx x db migrate          # applies them, then diffs the live schema against the ledger it wrote
 ```
 
-`bun run setup` runs both — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when the directory holds no `.sql`, `x db migrate`, `x db seed`, then `x manifest`. `x db migrate` is `@ultimat3/db`'s own migrator, the one `ROLE=migrate` runs, so nothing extra has to be installed.
+`bun run setup` runs both — `bun install`, `x merge-driver install`, an `.env.development.local` touch, `x db gen "initial"` when the directory holds no `.sql`, `x db migrate`, `x db seed`, then `x manifest`. `x db migrate` is `@ultimat3/db`'s own migrator, the one `ROLE=migrate` runs, so nothing extra has to be installed.
 
 Until the generate has run, `x verify` is **red on its `drift` step** — correct behaviour with a runnable fix, not a defect:
 

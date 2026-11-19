@@ -5,6 +5,15 @@ import { UltimateError } from '@ultimat3/core';
 import type { Finding } from './output';
 import { quoteArg } from './shell-quote';
 
+/** Commands whose bare form runs everything. */
+const WHOLE_RUN: ReadonlySet<string> = new Set(['test', 'verify']);
+
+/** The nearest real command as a fix: its help when running it bare would start a whole suite. */
+const suggestedCommandFix = (suggestion: string): string =>
+  WHOLE_RUN.has(suggestion)
+    ? `x ${suggestion} --help   # the nearest command; bare, it runs every suite`
+    : `x ${quoteArg(suggestion.split(' '))}`;
+
 /** An unknown command or subcommand. Carries a suggestion so the retry is one keystroke away. */
 export class UnknownCommandError extends UltimateError {
   /** `why`: the decision behind a name that is deliberately not a command, said after the list. */
@@ -17,7 +26,7 @@ export class UnknownCommandError extends UltimateError {
     super({
       code: 'X_CLI_UNKNOWN_COMMAND',
       cause: `"x ${input.path}" is not a command (known: ${input.known.join(', ')})${input.why === undefined ? '' : ` — ${input.why}`}`,
-      fix: input.suggestion === undefined ? 'x help' : `x ${quoteArg(input.suggestion.split(' '))}`,
+      fix: input.suggestion === undefined ? 'x help' : suggestedCommandFix(input.suggestion),
     });
   }
 }
@@ -174,26 +183,6 @@ export class BunVersionError extends UltimateError {
       code: 'X_BUN_VERSION',
       cause: `Bun ${input.found} is older than the required ${input.required}`,
       fix: 'bun upgrade',
-    });
-  }
-}
-
-/**
- * `x test` discovered nothing. A green run over zero files is the most expensive false pass, so
- * the selection that found nothing is named in full — a caller that cannot see whether the type
- * or the filter emptied the set has to guess which one to drop.
- */
-export class NoTestFilesError extends UltimateError {
-  constructor(input: { root: string; type?: string; filter?: string }) {
-    const parts = [
-      input.type === undefined ? undefined : `of type ${input.type}`,
-      input.filter === undefined ? undefined : `matching "${input.filter}"`,
-    ].filter((part): part is string => part !== undefined);
-    const where = parts.length === 0 ? '' : ` ${parts.join(' ')}`;
-    super({
-      code: 'X_TEST_NO_FILES',
-      cause: `no *.test.ts files${where} under ${input.root}`,
-      fix: parts.length === 0 ? 'x test --json   # run it from the repo root' : 'x test',
     });
   }
 }

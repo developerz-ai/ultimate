@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: temp directories and an append-only event log; Bun ships neither primitive.
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 // why: the test's scratch root.
 import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
@@ -41,19 +41,24 @@ interface ChildPlan {
   readonly label: string;
   /** Runs once admitted, as source text; the child then prints `held` and awaits it. */
   readonly body?: string;
+  /** The CPU reads busy for as long as this file exists. */
+  readonly busyWhile?: string;
 }
 
 function reserver(plan: ChildPlan) {
   const source = `
     import { flockBinding } from ${JSON.stringify(FLOCK)};
     import { reserve } from ${JSON.stringify(LEDGER)};
-    import { appendFileSync } from 'node:fs';
+    import { appendFileSync, existsSync } from 'node:fs';
+    const busyWhile = ${JSON.stringify(plan.busyWhile ?? null)};
+    const cpu = busyWhile === null ? {} : { cpu: () => ({ source: 'psi', value: 99, limit: 80,
+      busy: existsSync(busyWhile) }) };
     const { tryLock } = await flockBinding();
     const log = (line) => appendFileSync(${JSON.stringify(join(plan.dir, 'events'))}, line + '\\n');
     console.log('joining');
     const held = await reserve({ dir: ${JSON.stringify(plan.dir)}, capacityMb: ${plan.capacityMb},
       unitMb: ${plan.mb}, units: 1, label: ${JSON.stringify(plan.label)}, cwd: '/w', tryLock,
-      pollMs: 5, onWait: () => console.log('waiting') });
+      pollMs: 5, ...cpu, onWait: (w) => console.log(w.cpu === undefined ? 'waiting' : 'waiting cpu') });
     log('+ ${plan.mb} ${plan.label}');
     console.log('held');
     ${plan.body ?? 'await new Promise(() => {});'}
@@ -203,6 +208,26 @@ describe.skipIf(NO_FLOCK)('reserve', () => {
     expect(readLedger(dir, lock).holds.map((entry) => entry.label)).toEqual(['holder']);
     process.kill(pid, 'SIGKILL');
     while (readLedger(dir, lock).holds.length > 0) await new Promise(setImmediate);
+  }, 30_000);
+
+  test('a busy CPU holds back a run that fits, until it calms; alone, a run goes anyway', async () => {
+    const dir = scratch();
+    const busyWhile = join(dir, 'busy');
+    writeFileSync(busyWhile, '');
+    // Nothing admitted: pressure from outside the ledger must not stop the first run.
+    const first = reserver({ dir, capacityMb: 100, mb: 10, label: 'first', busyWhile });
+    await first.until('held');
+    const second = reserver({ dir, capacityMb: 100, mb: 10, label: 'second', busyWhile });
+    await second.until('waiting cpu');
+    // Behind the head, memory to spare: the line names the CPU, not a holder that is not the cause.
+    const third = reserver({ dir, capacityMb: 100, mb: 10, label: 'third', busyWhile });
+    await third.until('waiting cpu');
+    expect(events(dir)).toEqual(['+ 10 first']);
+    rmSync(busyWhile);
+    await third.until('held');
+    expect(events(dir)).toEqual(['+ 10 first', '+ 10 second', '+ 10 third']);
+    for (const one of [first, second, third]) one.child.kill('SIGKILL');
+    await Promise.all([first.child.exited, second.child.exited, third.child.exited]);
   }, 30_000);
 
   test('a request over the capacity runs alone instead of being refused', async () => {

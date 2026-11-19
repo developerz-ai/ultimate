@@ -8,7 +8,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { NoTestFilesError } from './errors';
+import { NoTestFilesError } from './errors-suite';
 import type { CommandSpec, ParsedArgs } from './parse';
 import { parseArgs } from './parse';
 import type { TestFile } from './test-select';

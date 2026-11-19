@@ -111,7 +111,7 @@ export function rawShadows(files: readonly StyleFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} writes \\\`\${property}: \${value}\\\` — a shadow with the hand-written length \${literal}, which no theme restates: dark mode keeps the light theme's elevation\`,
-        fix: \`\${written} — at \${file.path}:\${line}, then: x verify\`,
+        fix: \`\${written} — at \${file.path}:\${line}, then: x verify --only boundaries\`,
         at: \`\${file.path}:\${line}\`,
       });
     }

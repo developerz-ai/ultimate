@@ -10,7 +10,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { decodeImage, probeImage } from '@ultimat3/core';
+import { decodeImage, probeImage, stripComments } from '@ultimat3/core';
 import type { NestedCatalog } from '@ultimat3/i18n';
 import { catalogKeys, defineCatalogs, loadCatalog } from '@ultimat3/i18n';
 import { BuiltinImagePipeline } from '@ultimat3/pwa';
@@ -344,7 +344,8 @@ describe('unit · x new · the API surface registers the app own primitives by n
     for (const job of jobs) expect([job, imported.includes(job)]).toEqual([job, true]);
     // Handed over as JOBS: `actions: [reindexPost]` would register nothing and read as correct.
     const list = /jobs: \[(?<names>[^\]]*)\]/.exec(apiIndex(true))?.groups?.['names'] ?? '';
-    expect(list.split(',').map((entry) => entry.trim())).toContain('reindexPost');
+    const entries = stripComments(list).split(',');
+    expect(entries.map((entry) => entry.trim())).toContain('reindexPost');
   });
 });
 

@@ -13,14 +13,48 @@ describe('runnableFix', () => {
     ['bun install && x db migrate', 'bun install && bunx x db migrate'],
     ['x db gen "a" && x db migrate', 'bunx x db gen "a" && bunx x db migrate'],
     ['METRICS_PORT=9091 x dev --json', 'METRICS_PORT=9091 bunx x dev --json'],
+    // The tail of a line is an instruction as much as its head: `x` is on nobody's PATH there either.
+    [
+      'replace #f00 in a.scss, then: x verify --only boundaries',
+      'replace #f00 in a.scss, then: bunx x verify --only boundaries',
+    ],
+    ['edit a.ts, then x db migrate', 'edit a.ts, then bunx x db migrate'],
+    ['edit a.ts — re-run: x upgrade', 'edit a.ts — re-run: bunx x upgrade'],
+    [
+      'bunx biome check a.ts   # then x verify --only lint',
+      'bunx biome check a.ts   # then bunx x verify --only lint',
+    ],
+    [
+      'grants: []   // in a.ts, then: x db gen <name>',
+      'grants: []   // in a.ts, then: bunx x db gen <name>',
+    ],
+    ['env -u DATABASE_URL x db migrate', 'env -u DATABASE_URL bunx x db migrate'],
+    ['start it with `x dev`', 'start it with `bunx x dev`'],
+    // An apostrophe opens no quote, or everything up to the next one would pass as an argument.
+    [
+      "add to its roles' grants, then x verify --only policy, in 'a.ts'",
+      "add to its roles' grants, then bunx x verify --only policy, in 'a.ts'",
+    ],
+    [
+      "add to its roles' grants, then x verify --only policy",
+      "add to its roles' grants, then bunx x verify --only policy",
+    ],
+    [
+      `in action "a"'s declaration, then x verify --only manifest`,
+      `in action "a"'s declaration, then bunx x verify --only manifest`,
+    ],
+    [
+      "tokens.role('fg'), then: x verify --only boundaries",
+      "tokens.role('fg'), then: bunx x verify --only boundaries",
+    ],
   ])('%s', (fix, runnable) => {
     expect(runnableFix(fix)).toBe(runnable);
   });
 
   test.each([
-    // A comment is not run, and quoted text is an argument.
-    ['bunx biome check a.ts   # then x verify'],
-    ['bun add mail   # && x db migrate'],
+    // Quoted text is an argument, and the repo's own spelling already runs.
+    ['git commit -m "before x upgrade"'],
+    ['bun run x -- verify'],
     ['echo "x y && x z"'],
     ["echo 'a && x b'"],
     // Already runnable, and every other word.
@@ -34,8 +68,8 @@ describe('runnableFix', () => {
   });
 
   test('applied once it is a no-op: a report read back and rendered again does not grow', () => {
-    expect(runnableFix(runnableFix('x verify && x db migrate'))).toBe(
-      'bunx x verify && bunx x db migrate',
+    expect(runnableFix(runnableFix('x verify && x db migrate, then: x doctor'))).toBe(
+      'bunx x verify && bunx x db migrate, then: bunx x doctor',
     );
   });
 });
