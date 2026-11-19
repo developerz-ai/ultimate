@@ -13,6 +13,8 @@ import type { Finding } from './output';
 import { quoteArg } from './shell-quote';
 import { TEST_COMPOSE_PATH, TEST_ENV_PATH } from './templates/scaffold-test-services';
 import { parseDotenvValues } from './test-dotenv';
+import type { StackRelation, TestStack } from './verify-services-stack';
+import { readStack, relationTo, SHARED_ENV } from './verify-services-stack';
 
 /** The URL every live suite reads first; the one this file probes. */
 export const TEST_DATABASE_KEY = 'TEST_DATABASE_URL';
@@ -145,6 +147,34 @@ const foreignFinding = (url: string): Finding => ({
   at: TEST_ENV_PATH,
 });
 
+/** Another app under this project name: refused before `up` can touch its containers. */
+const collisionFinding = (project: string, other: string): Finding => ({
+  code: 'X_TEST_SERVICES_UNAVAILABLE',
+  cause: `compose project ${project} is already running from ${other}, which is not a checkout of this app — the two share a name, so the live suites are not run against it`,
+  fix: `grep -n '^name:' ${TEST_COMPOSE_PATH}   # give this app its own name: there, and its own ports there and in ${TEST_ENV_PATH}; if sharing is intended: ${SHARED_ENV}=1 bunx x verify --only live`,
+  at: TEST_COMPOSE_PATH,
+});
+
+/** The stack the suites got, for the one line the gate prints about it. */
+export interface StackReport {
+  readonly project: string;
+  readonly state: 'started' | 'reused' | 'shared';
+  readonly with?: string;
+  readonly why?: 'same-app' | 'declared';
+}
+
+const reportOf = (
+  stack: TestStack,
+  relation: StackRelation,
+  startedServices: readonly string[],
+): StackReport => {
+  if (relation.kind === 'shared') {
+    const { with: other, why } = relation;
+    return { project: stack.project, state: 'shared', with: other, why };
+  }
+  return { project: stack.project, state: startedServices.length > 0 ? 'started' : 'reused' };
+};
+
 /** What `ensureTestServices` found: the env to hand the suites, and what happened on the way. */
 export type ServicesVerdict =
   /** Nothing to do: the caller's own URL, or a repo with no test stack to start. */
@@ -158,12 +188,14 @@ export type ServicesVerdict =
       readonly env: Readonly<Record<string, string>>;
       /** What this run's `up` started — compose's answer, never inferred from Postgres. */
       readonly startedServices: readonly string[];
+      readonly stack?: StackReport;
     }
   /** This run started it, and left it running. */
   | {
       readonly kind: 'started';
       readonly env: Readonly<Record<string, string>>;
       readonly startedServices: readonly string[];
+      readonly stack?: StackReport;
     }
   /** It could not be started: the suites run as they would have, and this says why. */
   | { readonly kind: 'unavailable'; readonly finding: Finding };
@@ -206,6 +238,23 @@ export async function ensureTestServices(input: ServicesInput): Promise<Services
     probe(declared).then((up) => (up ? (input.login ?? postgresLogin)(declared) : 'down'));
   const before = await login();
   if (before === 'refused') return { kind: 'unavailable', finding: foreignFinding(declared) };
+  // Same name, same credentials: only the containers' own labels tell the apps apart.
+  const relate = async () => {
+    const read = await readStack(input.root, input.runner);
+    if (!read.answered || read.stack === undefined) return undefined;
+    const { stack } = read;
+    return { stack, relation: await relationTo(stack, input.root, input.runner, input.env) };
+  };
+  const collided = (found: Awaited<ReturnType<typeof relate>>): ServicesVerdict | undefined =>
+    found?.relation.kind === 'collision'
+      ? {
+          kind: 'unavailable',
+          finding: collisionFinding(found.stack.project, found.relation.with),
+        }
+      : undefined;
+  const existing = await relate();
+  const refusedByName = collided(existing);
+  if (refusedByName !== undefined) return refusedByName;
   // Always the idempotent `up`, even with Postgres answering: it may still be starting (`unknown`),
   // and the env file names Redis, NATS and S3 too — a key handed on must have a service behind it.
   const running = await runningServices(input);
@@ -213,13 +262,29 @@ export async function ensureTestServices(input: ServicesInput): Promise<Services
   if (refused === undefined) {
     const now = (await runningServices(input)) ?? new Set<string>();
     const startedServices = [...now].filter((name) => running?.has(name) !== true).sort();
-    return { kind: before === 'down' ? 'started' : 'reachable', env, startedServices };
+    // Asked again: on a cold start another app's `up` can have won the name since the first look.
+    const found = await relate();
+    const lostTheName = collided(found);
+    if (lostTheName !== undefined) return lostTheName;
+    return {
+      kind: before === 'down' ? 'started' : 'reachable',
+      env,
+      startedServices,
+      ...(found === undefined
+        ? {}
+        : { stack: reportOf(found.stack, found.relation, startedServices) }),
+    };
   }
   // A failed `up` may be a concurrent run's container-name conflict: ask the database again.
   const after = await login();
   if (after === 'refused') return { kind: 'unavailable', finding: foreignFinding(declared) };
   if (after !== 'ok') return { kind: 'unavailable', finding: refused };
-  return { kind: 'reachable', env: await answering(env, probe), startedServices: [] };
+  return {
+    kind: 'reachable',
+    env: await answering(env, probe),
+    startedServices: [],
+    ...(existing === undefined ? {} : { stack: reportOf(existing.stack, existing.relation, []) }),
+  };
 }
 
 /**

@@ -47,16 +47,17 @@ TypeScript that Bun executes, no bash and no WSL — and `bun run dev` and `bun 
 
 **`bun run setup` is not optional.** `x new` writes files and installs nothing, so `cd myapp && x dev`
 stops on `X_BUILD_FAILED` naming `bun install` (measured `As of 2026-08-23`; this page said
-otherwise until then). `bun run setup` is six steps, idempotent and safe to re-run:
+otherwise until then). `bun run setup` is seven steps, idempotent and safe to re-run:
 
 | # | Step | Why it is in the script |
 |---|---|---|
 | 1 | `bun install` | `x new` writes files and installs nothing |
-| 2 | touch `.env.development.local` | per-box secrets, gitignored, wins over the committed `.env.development` |
-| 3 | `x db gen "initial"` | skipped when `packages/db/migrations` already holds a `.sql` — `x db gen` is that directory's only writer |
-| 4 | `x db migrate` | applies them, then diffs the live schema against the ledger |
-| 5 | `x db seed` | run through the CLI, never `bun run`: the CLI owns the connection, so it reaches the same embedded database the migration just wrote to |
-| 6 | `x manifest` | `x.manifest.json` is a projection of the loaded app, so `x new` cannot write it. Nothing else ever ran the command, and `x verify`'s `manifest` step now refuses its absence with `X_MANIFEST_MISSING` |
+| 2 | `x merge-driver install` | git keeps merge drivers in `.git/config`, which no clone inherits: [Merging two features](Many-Agents#merging-two-features) |
+| 3 | touch `.env.development.local` | per-box secrets, gitignored, wins over the committed `.env.development` |
+| 4 | `x db gen "initial"` | skipped when `packages/db/migrations` already holds a `.sql` — `x db gen` is that directory's only writer |
+| 5 | `x db migrate` | applies them, then diffs the live schema against the ledger |
+| 6 | `x db seed` | run through the CLI, never `bun run`: the CLI owns the connection, so it reaches the same embedded database the migration just wrote to |
+| 7 | `x manifest` | `x.manifest.json` is a projection of the loaded app, so `x new` cannot write it. Nothing else ever ran the command, and `x verify`'s `manifest` step now refuses its absence with `X_MANIFEST_MISSING` |
 
 Every flag, from the registry — `bun run x -- help new`, or `x help new` in an app. There are six,
 each with a default, so **`x new` asks nothing**: an agent cannot answer a prompt and is never given

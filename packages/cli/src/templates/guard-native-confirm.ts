@@ -64,7 +64,7 @@ export function nativeConfirms(files: readonly SourceFile[]): readonly Finding[]
       findings.push({
         code: CODE,
         cause: \`\${at} asks with confirm(), whose OK holds focus — a stray Enter confirms — and which cannot be translated or refused\`,
-        fix: \`replace the confirm() at \${at} with <ConfirmDialog> from '@ultimat3/ui' (action= for a native post, onConfirm= in an island) — or add a // why: comment on that line naming why it is not a destructive question — then: x verify\`,
+        fix: \`replace the confirm() at \${at} with <ConfirmDialog> from '@ultimat3/ui' (action= for a native post, onConfirm= in an island) — or add a // why: comment on that line naming why it is not a destructive question — then: x verify --only boundaries\`,
         at,
       });
     }

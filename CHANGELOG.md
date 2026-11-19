@@ -10,7 +10,34 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Merging two features:** `x merge-driver install`, run by `bun run setup`, lets two branches that each ran `x g resource` merge with no hand edit: registries keep what both sides added, catalogs merge by key, `x.manifest.json` and `openapi.json` are rebuilt by `x manifest`. New apps write one registry entry per line, and `x upgrade` applies it (the `merge-drivers` codemod). `x doctor` warns `X_MERGE_DRIVER_UNSET` on a clone without the drivers ([Many agents → Merging two features](wiki/Many-Agents.md#merging-two-features)).
+- `X_MIGRATION_FORKED`: `x db gen`, `x db migrate` and the gate's `drift` step refuse a migration chain two merged branches forked, before suggesting a `record …` migration that could never replay. `x db gen --merge-fork` corrects the newest snapshot, changes no SQL and deletes nothing.
+- `X_MERGE_UNRESOLVED` names the files a merge left unresolved, and `X_CATALOG_UNPARSEABLE` names an i18n catalog that does not parse, in place of a parse error blamed on every module that imports it.
+- `x heavy run --max-wait <seconds>` gives up with `X_HEAVY_WAIT_EXPIRED` (exit 75); `x heavy status` names each run's wrapper and command pids (`wrapperAlive`, `childPids` in `--json`), and a heavy run also waits while the CPU is saturated and another run is admitted.
+- `x clean --services` stops this app's test service stack, and the gate prints one line saying whether it started, reused or shared one.
+- `x dev`'s port refusal names the directory of the process holding the port.
+
+### Changed
+
+- A fix line that ends `then: x …` prints `bunx x …`, as does the gate's stderr pointer and `x errors explain`; a shipped guard's fix re-runs its own step (`x verify --only boundaries`), never the whole gate.
+- Fixes no longer send a worker to a whole run: `X_TEST_NO_FILES` suggests `x test --affected --dirty`, `X_TYPECHECK_FAILED` names the file to edit and `x verify --only typecheck`, and an unknown command whose nearest match runs every suite suggests its `--help`.
+- A ledger wait says to leave the command running (`bunx x heavy status`), and reads `admission in progress` while no holder is known.
+- A new app's `CLAUDE.md` lists a worker's commands, its `/feature` and `/verify` skip the gate for a worker given a file set, and `.claude/settings.json` allows `bunx x heavy` and `bunx x stop` in place of the raw typecheck and lint scripts (the `docs-worker-commands` codemod updates `CLAUDE.md` on `x upgrade`).
+- `x doctor`: a port another checkout's dev server holds is a warning, not a failure; the suggested port pair is free when asked, and so is the sync role's.
+- `X_JOB_UNREGISTERED` names the job's file and prints the whole import line.
+- `x db gen` runs one at a time per checkout; its success line names the tables, and "no migration needed" names the migration that already records them.
+- The test step line reads `ran 2 at once (peak), planned 3`, or `1 worker, one per file (plan: …)`, in place of `2 of 4 of 6 workers`.
+- A doctor probe that throws is an `X_DOCTOR_PROBE_FAILED` finding, never a crash whose fix is the doctor itself.
+
+### Fixed
+
+- `bun run preflight` and `bun run coverage` stopped by a signal kill the suites they started, so no orphan keeps its ledger reservation.
+- In-process test fixtures no longer join the real ledger queue and leave frozen tickets at its head.
+- `x upgrade`'s `docs-many-agents` codemod no longer reports `changed: [], skipped: []` when the app reworded its conventions table: it finds the table in `AGENTS.md` too, and otherwise reports the file as skipped with the row to add. It also checks the brief's byte budget (`agentsMdMaxBytes`, 12,000 by default) before writing, and skips with the byte count instead of pushing `CLAUDE.md` over it into `X_AGENTS_MD_TOO_LARGE`. `docs-worker-commands` does the same.
+- `x upgrade` installs the merge drivers a hop's `.gitattributes` names, as `bun run setup` does, so an upgraded clone has no `X_MERGE_DRIVER_UNSET` left to fix by hand.
+- A live suite no longer joins another app's test stack that shares its compose project name: it is refused with `X_TEST_SERVICES_UNAVAILABLE`.
 
 ## Releases
 

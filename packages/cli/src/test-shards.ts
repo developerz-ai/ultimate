@@ -280,6 +280,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   const steps: StepResult[] = [];
   const spent: JsonValue[] = [];
   let batchCount = 0;
+  let peak = 1;
   let ok = true;
   let exitCode = 0;
   for (const pass of passes) {
@@ -314,7 +315,13 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     });
     batchCount += batches.length;
     const plan = planOf(options, pass);
-    const label = `${pass.workers} worker(s)`;
+    // What ran, not what was asked: the machine lease may hold every batch below the plan.
+    const reached = Math.max(1, ...result.widths);
+    peak = Math.max(peak, reached);
+    const narrowed = reached < pass.workers;
+    const label = narrowed
+      ? msg('cli.test.narrowed', { peak: reached, planned: pass.workers })
+      : `${pass.workers} worker(s)`;
     steps.push({
       name: `${pass.type === undefined ? label : `${pass.type} · ${label}`} · ${files.length} files${
         batches.length > 1 ? msg('cli.test.batches', { batches: batches.length }) : ''
@@ -323,7 +330,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       durationMs: result.durationMs,
       // `output.ts` documents this field as absent for a NON-test step, so omitting it here made
       // `renderJson` describe the test step as one — recoverable only by parsing `name`.
-      workers: pass.workers,
+      workers: reached,
       findings: result.ok ? [] : [failureOf(result.code, files.length, plan)],
       output: result.output,
     });
@@ -331,6 +338,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       ...(pass.type === undefined ? {} : { type: pass.type }),
       files: files.length,
       workers: pass.workers,
+      ...(narrowed ? { peakWorkers: reached } : {}),
       ...(batches.length > 1 ? { batches: batches.length } : {}),
       ok: result.ok,
       exitCode: result.code,
@@ -368,6 +376,8 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   const data: JsonValue = {
     ...typeParam,
     workers,
+    // Only when the machine held the run below `workers`, which stays the width to reproduce with.
+    ...(peak < workers ? { peakWorkers: peak } : {}),
     files: fileCount,
     durationMs,
     ...(options.filter === undefined ? {} : { filter: options.filter }),
@@ -390,7 +400,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       ? msg(type === undefined ? 'cli.test.pass' : 'cli.test.type.pass', {
           ...typeParam,
           files: fileCount,
-          workers,
+          workers: Math.min(peak, workers),
           ms: durationMs,
         })
       : msg(type === undefined ? 'cli.test.fail' : 'cli.test.type.fail', {

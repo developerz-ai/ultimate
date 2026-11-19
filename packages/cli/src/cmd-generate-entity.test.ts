@@ -143,7 +143,9 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
     ]);
     const handle = await read(HANDLE_FILE);
     expect(handle).toContain("import { widget } from '@gen/web/app/widget/entity';");
-    expect(handle).toContain('const entities = {\n  widgets: widget,\n};');
+    expect(handle).toContain(
+      'const entities = {\n  // One entry per line: branches that each add one merge cleanly (x merge-driver).\n  widgets: widget,\n};',
+    );
     // The edges the two new imports are: db reads the entity, the slice reads the handle.
     expect(await read('packages/db/package.json')).toContain('"@gen/web": "0.0.0"');
     expect(await read('apps/web/package.json')).toContain('"@gen/db": "0.0.0"');
@@ -198,7 +200,7 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
     const result = await generateCommand.run(contextFor('gadget'));
     expect(result.ok).toBe(true);
     expect(await read(HANDLE_FILE)).toContain(
-      'const entities = {\n  gadgets: gadget,\n  widgets: widget,\n};',
+      'const entities = {\n  // One entry per line: branches that each add one merge cleanly (x merge-driver).\n  gadgets: gadget,\n  widgets: widget,\n};',
     );
     expect(nextOf(result.data)).toEqual(['bunx x db gen "create gadgets"', 'bunx x db migrate']);
   });

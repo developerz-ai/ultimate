@@ -23,6 +23,7 @@ import { runShapeGenerators } from './new-shapes-generate';
 import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
 import { posixRelative } from './posix-path';
+import { withRegistryLines } from './registry-lines';
 import { quoteArg } from './shell-quote';
 import type { GeneratedFile } from './templates';
 import { appFiles, names, repoFiles, resourceFiles } from './templates';
@@ -141,11 +142,23 @@ const cdTarget = (cwd: string, target: string): string => quoteArg(displayPath(c
 const shapeGenerateLines = (shape: NewShape): readonly string[] =>
   (SHAPE_OVERLAYS[shape].generate ?? []).map((argv) => ['x', 'g', ...argv].join(' '));
 
-/** Pure: the complete file list for a new app, so `--dry-run` and the test see the same thing. */
+/**
+ * Pure: the complete file list for a new app, so `--dry-run` and the test see the same thing. The
+ * registries take their one-entry-per-line shape last: a shape's overlay edits the lists as the
+ * templates print them.
+ */
 export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
+  return planFiles(options).map((file) =>
+    typeof file.contents === 'string' && file.merge === undefined
+      ? { ...file, contents: withRegistryLines(file.path, file.contents) }
+      : file,
+  );
+}
+
+function planFiles(options: NewAppOptions): readonly GeneratedFile[] {
   if (options.shape !== undefined) {
     const overlay = SHAPE_OVERLAYS[options.shape];
-    const base = planNewApp({ name: options.name, example: overlay.example });
+    const base = planFiles({ name: options.name, example: overlay.example });
     // Merge-aware, as below: a shape's catalog keys land in the one catalog the base wrote.
     return withDeclaredExercises(dedupe(applyOverlay(base, overlay, names(options.name))));
   }

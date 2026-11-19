@@ -162,7 +162,7 @@ export function animatedLayoutProperties(files: readonly StyleFile[]): readonly 
           findings.push({
             code: CODE,
             cause: \`\${at} transitions every property of this element — \${animated === undefined ? \`\\\`\${property}: \${value}\\\` names none, and an omitted property is \\\`all\\\`\` : 'written out as \`all\`'} — so it animates properties nobody chose, the ones that cost a layout pass included, and no part of it can be composited\`,
-            fix: \`name the properties in \${at} — \\\`transition: transform tokens.duration('fast') tokens.easing('out')\\\` — then: x verify\`,
+            fix: \`name the properties in \${at} — \\\`transition: transform tokens.duration('fast') tokens.easing('out')\\\` — then: x verify --only boundaries\`,
             at: file.path,
           });
           continue;
@@ -180,7 +180,7 @@ function layoutFinding(path: string, at: string, property: string, where: string
   return {
     code: CODE,
     cause: \`\${at} animates \${property} in \${where} — only transform and opacity are compositor-only, so every frame of this costs a full layout or paint pass on the same main thread the app runs on, and a moving box feeds the layout-shift metric while it does it\`,
-    fix: \`animate \${instead} instead of \${property} at \${at}, then: x verify\`,
+    fix: \`animate \${instead} instead of \${property} at \${at}, then: x verify --only boundaries\`,
     at: path,
   };
 }

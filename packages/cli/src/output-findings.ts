@@ -21,14 +21,32 @@ const commandWordAt = (fix: string, from: number): number => {
 const isBareX = (fix: string, at: number): boolean =>
   fix[at] === 'x' && (at + 1 === fix.length || fix[at + 1] === ' ');
 
+/** What may stand before a quote that opens one: after a letter or a `"` it is an apostrophe. */
+const BEFORE_QUOTE = /[\s([{=,:]/;
+/** What may stand before a cited `x`: `apps/web/x.ts` and `max y` cite nothing. */
+const BEFORE_CITATION = /[\s(`]/;
+/** A runner already in front of this `x`. `then run x verify` has none: `run` alone is prose. */
+const RUNNER_BEFORE = /(?:^|\s)(?:bunx|npx|bun|bun run|--bun)\s+$/;
+
+const opensQuote = (fix: string, at: number): boolean =>
+  (fix[at] === "'" || fix[at] === '"') && (at === 0 || BEFORE_QUOTE.test(fix[at - 1] ?? ''));
+
+/** `x <command>` anywhere in the line: a `then: x verify` tail is followed as literally as a head. */
+const citesX = (fix: string, at: number): boolean =>
+  fix[at] === 'x' &&
+  fix[at + 1] === ' ' &&
+  /[a-z<]/.test(fix[at + 2] ?? '') &&
+  (at === 0 || BEFORE_CITATION.test(fix[at - 1] ?? '')) &&
+  !RUNNER_BEFORE.test(fix.slice(0, at));
+
 /**
- * A leading `x ` becomes `bunx x `, and after `&&`, `||` and `;`. Quoted text is an argument and a
- * `#` tail is never run, so both are copied as they are. `bunx x` itself does not match, so a report
- * read back by `x verify merge` and rendered again does not grow.
+ * Every `x` the line tells its reader to run becomes `bunx x`: the head of each `&&`, `||` and `;`
+ * segment, and a citation anywhere after it, a `#` or `//` tail included, because a reader follows
+ * `# then: x verify` too. A quoted span is an argument and is copied. `bunx x` itself does not
+ * match, so a report read back by `x verify merge` and rendered again does not grow.
  */
 export function runnableFix(fix: string): string {
   let out = '';
-  let quote: string | undefined;
   let at = 0;
   let segmentStart = true;
   while (at < fix.length) {
@@ -36,27 +54,32 @@ export function runnableFix(fix: string): string {
       const word = commandWordAt(fix, at);
       out += fix.slice(at, word);
       at = word;
-      if (isBareX(fix, at)) out += 'bunx ';
       segmentStart = false;
+      if (isBareX(fix, at)) {
+        out += 'bunx x';
+        at += 1;
+      }
       continue;
     }
-    const char = fix[at] ?? '';
-    if (quote !== undefined) {
-      if (char === quote) quote = undefined;
-    } else if (char === "'" || char === '"') {
-      quote = char;
-    } else if (char === '#' && (at === 0 || fix[at - 1] === ' ')) {
-      return out + fix.slice(at);
-    } else {
-      const end = SEGMENT_END.exec(fix.slice(at));
-      if (end !== null) {
-        out += end[0];
-        at += end[0].length;
-        segmentStart = true;
-        continue;
-      }
+    const close = opensQuote(fix, at) ? fix.indexOf(fix[at] ?? '', at + 1) : -1;
+    if (close !== -1) {
+      out += fix.slice(at, close + 1);
+      at = close + 1;
+      continue;
     }
-    out += char;
+    const end = SEGMENT_END.exec(fix.slice(at));
+    if (end !== null) {
+      out += end[0];
+      at += end[0].length;
+      segmentStart = true;
+      continue;
+    }
+    if (citesX(fix, at)) {
+      out += 'bunx x';
+      at += 1;
+      continue;
+    }
+    out += fix[at] ?? '';
     at += 1;
   }
   return out;
@@ -105,6 +128,10 @@ export interface ReaderOptions {
   /** `x` is not this reader's command: its fixes name `bunx x`. `dispatch` decides. */
   readonly bunxRunner?: boolean;
 }
+
+/** One fix line outside a finding: a pointer on stderr, or `x errors explain`'s answer. */
+export const fixForReader = (fix: string, reader: ReaderOptions = {}): string =>
+  reader.bunxRunner === true ? runnableFix(fix) : fix;
 
 /** A finding read out of a CI log is fenced text and is never turned into an instruction. */
 const withRunnableFix = (finding: Finding): Finding => {

@@ -156,7 +156,7 @@ export function rawColours(files: readonly StyleFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${lineOf(scss, index)} sets \${property} to the raw colour \${literal} — a value no theme can restate, so dark theme renders it unchanged\`,
-        fix: \`replace \${literal} in \${file.path} with tokens.role('fg'), tokens.role('bg') or the role this element means, then: x verify\`,
+        fix: \`replace \${literal} in \${file.path} with tokens.role('fg'), tokens.role('bg') or the role this element means, then: x verify --only boundaries\`,
         at: file.path,
       });
     }
@@ -197,7 +197,7 @@ export function inlineColours(
         findings.push({
           code: CODE,
           cause: \`\${file.path}:\${lineOf(text, attribute.index)} sets \${property} to the raw colour \${literal} in an inline style — a value no theme can restate, so dark theme renders it unchanged\`,
-          fix: \`replace \${literal} in \${file.path} with rgb(var(--color-fg)), rgb(var(--color-bg)) or the role this element means — or a class whose stylesheet sets tokens.role('fg') — then: x verify\`,
+          fix: \`replace \${literal} in \${file.path} with rgb(var(--color-fg)), rgb(var(--color-bg)) or the role this element means — or a class whose stylesheet sets tokens.role('fg') — then: x verify --only boundaries\`,
           at: file.path,
         });
       }

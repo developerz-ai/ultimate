@@ -332,7 +332,12 @@ export async function loadApp(root: string): Promise<LoadedApp> {
   // reach is a finding here, owned by `manifest` like every other load finding. Imported here, not
   // at the top: a container boots through `scanAppModules` and never asks (`serve-graph.test.ts`).
   const { unscannedAdminFindings } = await import('./unscanned-admin');
-  const findings = [...scan.findings, ...(await unscannedAdminFindings(root))];
+  const scanned = [...scan.findings, ...(await unscannedAdminFindings(root))];
+  // Only a load that failed asks why: the merge's leftovers explain it better than each importer.
+  const findings =
+    scanned.length === 0
+      ? scanned
+      : [...(await (await import('./merge-state')).withMergeCauses(root, scanned))];
   await trackStylesheets(root);
   // An app that imported NOTHING and reported nothing is a registry every later step reads as
   // empty-and-fine. With an `app.config.ts` beside it, that is never what the author meant.

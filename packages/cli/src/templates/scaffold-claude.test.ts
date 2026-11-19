@@ -11,6 +11,7 @@ import { SPECS } from '../registry';
 import { LINE_CEILING } from '../workspace-checks';
 import { names } from './naming';
 import { claudeFiles } from './scaffold-claude';
+import { claudeCommandFiles } from './scaffold-claude-commands';
 import { docsFiles } from './scaffold-docs';
 import { mcpJsonFile } from './scaffold-mcp-json';
 
@@ -302,4 +303,32 @@ describe("unit · what the bundle says about `x verify`'s flags is true", () => 
     // And the one narrowing is named for what it is: feedback, never the verdict.
     expect(text).toContain('NOT A GATE RUN');
   });
+});
+
+// `wiki/Many-Agents.md`: a worker runs its own files and the coordinator runs the gate, once. The
+// harness allowed the two scripts that skip the machine ledger and not the ledger's own command.
+describe('unit · the agent harness agrees with the many-agents rules', () => {
+  const commands = claudeCommandFiles(app);
+  const command = (path: string): string =>
+    String(commands.find((file) => file.path === path)?.contents ?? '');
+
+  test('it allows the ledger and not the scripts that skip it', () => {
+    const { allow } = parseSettings().permissions;
+    expect(allow).toEqual(expect.arrayContaining(['Bash(bunx x heavy:*)', 'Bash(bunx x stop:*)']));
+    expect(allow).not.toContain('Bash(bun run typecheck)');
+    expect(allow).not.toContain('Bash(bun run lint)');
+  });
+
+  test('the README never recommends a whole-project typecheck per edit', () => {
+    expect(fileAt('.claude/README.md')).not.toContain('types on every edit');
+  });
+
+  test.each(['.claude/commands/feature.md', '.claude/commands/verify.md'])(
+    '%s tells a worker with a file set to leave the gate to the coordinator',
+    (path) => {
+      expect(command(path)).toContain('Given a file set');
+      expect(command(path)).toContain('the coordinator runs');
+      expect(command(path)).toContain('bun test ./<file>');
+    },
+  );
 });

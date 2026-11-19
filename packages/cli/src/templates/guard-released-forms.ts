@@ -6,6 +6,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
   Record<string, readonly (readonly [string, 'error' | 'warning'])[]>
 > = {
   'animated-layout-property': [
+    ['21sfece05i0e3', 'error'],
     ['2hqr04589t23q', 'error'],
     ['2z9j3sd8e7lgl', 'error'],
   ],
@@ -15,22 +16,29 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['1ot9kwydyzd0j', 'error'],
     ['2aaavkemg4qee', 'error'],
     ['2s43pcjqyhmfi', 'error'],
+    ['n9w3ww2famyi', 'error'],
   ],
   'error-declared': [
     ['1rlzex7nalpiw', 'error'],
     ['2tfw2hq80msju', 'error'],
+    ['3drdb0cke61iw', 'error'],
     ['3kqd7d8pzpcnn', 'error'],
   ],
   'focus-visible': [
     ['3i4t0gznxyytf', 'error'],
     ['4c2nf0mpzn0z', 'error'],
+    ['wndpmcuvl3o6', 'error'],
   ],
   'image-dimensions': [
     ['1cfzth883qzt5', 'error'],
     ['1upoweaclyd8', 'error'],
+    ['1yk40qifcror', 'error'],
     ['33uv2ua4a9zcf', 'error'],
   ],
-  'island-mount-clears': [['1v09h5ptzqvs2', 'error']],
+  'island-mount-clears': [
+    ['1v09h5ptzqvs2', 'error'],
+    ['2buinh3zw0lqs', 'error'],
+  ],
   'island-without-states': [
     ['2os1f5fb6aass', 'error'],
     ['31gjhz3nyf0gz', 'error'],
@@ -39,53 +47,84 @@ export const RELEASED_GUARD_FORMS: Readonly<
     ['1f7eh34hj085a', 'error'],
     ['2b134wpkoaqso', 'error'],
     ['2eb7ld3hg0tpb', 'error'],
+    ['3sabhehzp5i6g', 'error'],
   ],
-  'raw-breakpoint': [['wdo3lsqmvsya', 'error']],
+  'raw-breakpoint': [
+    ['21j2j5t89cmax', 'error'],
+    ['wdo3lsqmvsya', 'error'],
+  ],
   'raw-colour': [
     ['17jw6r17ah3dq', 'error'],
     ['1e2pkqnmrjt44', 'error'],
+    ['2ml4gr1ou95vp', 'error'],
     ['3onnbx54g9zmd', 'error'],
     ['mdo7f20dnyof', 'error'],
   ],
   'raw-fetch': [
     ['17xdeprvzx5v2', 'error'],
     ['1hgdwthi7j353', 'error'],
+    ['21v2jbczhqz8k', 'error'],
     ['mazudnz7t6iy', 'error'],
   ],
   'raw-interval': [
     ['1o6p0fmjhzdhw', 'error'],
     ['2xrqszz066coc', 'error'],
     ['3qipy7ijjnz7r', 'error'],
+    ['3qu74px1wei5s', 'error'],
     ['ll7h7zpr075u', 'error'],
   ],
-  'raw-length': [['2vfl0ssvkqvua', 'error']],
+  'raw-length': [
+    ['19by09okc9bse', 'error'],
+    ['2vfl0ssvkqvua', 'error'],
+  ],
   'raw-motion': [
     ['14c1bs20ysc1u', 'error'],
+    ['u6julhh0et2k', 'error'],
     ['w8aw0q20tfsz', 'error'],
   ],
-  'raw-shadow': [['1vhy6xulc5cs5', 'error']],
-  'raw-z-index': [['2nnuj62o3qvvr', 'error']],
-  'repo-await-in-loop': [['3a3v6vvmbf8q2', 'warning']],
+  'raw-shadow': [
+    ['13t0n8kesciv6', 'error'],
+    ['1vhy6xulc5cs5', 'error'],
+  ],
+  'raw-z-index': [
+    ['2fae6nsqzvylo', 'error'],
+    ['2nnuj62o3qvvr', 'error'],
+  ],
+  'repo-await-in-loop': [
+    ['2453q2b7xpeu3', 'warning'],
+    ['3a3v6vvmbf8q2', 'warning'],
+  ],
   'repo-raw-sql': [
     ['12qj02j416sib', 'error'],
     ['2kr7gbv7j2m0v', 'error'],
     ['2m5sh5923zcdx', 'error'],
+    ['2od9gruczoiim', 'error'],
     ['3nmlelym16o78', 'error'],
   ],
   'repo-unbounded': [
+    ['1p97kt8y158hu', 'error'],
     ['2yjuyaj4n8dqq', 'error'],
+    ['3btoad27s4eai', 'warning'],
     ['ae4czielms3c', 'warning'],
   ],
-  'runtime-pin': [['28ffbpwy4q2ji', 'error']],
+  'runtime-pin': [
+    ['28ffbpwy4q2ji', 'error'],
+    ['2xr2x2hjhyo1n', 'error'],
+  ],
   'semantic-interactive': [
+    ['24ry4tuzqa82q', 'error'],
     ['29pfa4ea628cv', 'error'],
     ['2m280ivq01zs2', 'error'],
     ['d4ncwu39wtrk', 'error'],
   ],
-  'unbounded-fanout': [['xk4dv9vsq8gg', 'error']],
+  'unbounded-fanout': [
+    ['27m870avd47et', 'error'],
+    ['xk4dv9vsq8gg', 'error'],
+  ],
   'undeclared-custom-property': [
     ['2xnl4zuy9xv6f', 'error'],
     ['3b0u9i8hze00x', 'error'],
+    ['5q7i306j0imi', 'error'],
   ],
   'undeclared-env': [
     ['16pof11n1trhg', 'error'],
@@ -96,6 +135,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
   ],
   'undefined-style-class': [
     ['3food9t4vrzv8', 'error'],
+    ['ps08370p9qlg', 'error'],
     ['w7as1ib1ido8', 'error'],
   ],
   'untranslated-string': [
@@ -108,6 +148,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
   ],
   'unzoned-date': [
     ['14sc1shft1opi', 'error'],
+    ['1ljvva96m9b9z', 'error'],
     ['38jqi2md5adsi', 'error'],
     ['3caz4m0vn66dz', 'error'],
     ['8apjndc5ybvm', 'error'],

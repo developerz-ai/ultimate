@@ -62,6 +62,7 @@ import { report } from './lib/log';
 import type { RunResult } from './lib/run';
 import { repoRoot, run } from './lib/run';
 import { ScriptError } from './lib/script-error';
+import { stopTreeOnSignal } from './lib/stop-tree';
 import { README_FACTS_FIX, README_FILE } from './readme-facts';
 
 /**
@@ -334,6 +335,8 @@ function foldAll(
 }
 
 if (import.meta.main) {
+  // Stopped, it stops the suites it started: an orphan kept the ledger reservation it inherited.
+  stopTreeOnSignal('coverage-gate');
   const args = parseScriptArgs(Bun.argv.slice(2));
   const json = flagBool(args, 'json');
   const root = repoRoot();

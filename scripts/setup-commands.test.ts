@@ -37,6 +37,7 @@ const ensureFile = (path: string, contents: string): void => {
 const PER_BOX = '# per-box secrets, gitignored, wins over .env.development\\\\n';
 
 await bun('install');
+await x('merge-driver', 'install');
 ensureFile('.env.development.local', PER_BOX);
 if (!hasMigration()) await x('db', 'gen', 'initial');
 await x('db', 'migrate', ...process.argv.slice(2));
@@ -54,22 +55,24 @@ const ROWS = [
   '| # | Step | Why |',
   '|---|---|---|',
   '| 1 | `bun install` | writes files and installs nothing |',
-  '| 2 | touch `.env.development.local` | per-box secrets |',
-  '| 3 | `x db gen "initial"` | the only writer of that directory |',
-  '| 4 | `x db migrate` | applies them |',
-  '| 5 | `x db seed` | through the CLI, never bun run |',
-  '| 6 | `x manifest` | a projection of the loaded app |',
+  '| 2 | `x merge-driver install` | git config no clone inherits |',
+  '| 3 | touch `.env.development.local` | per-box secrets |',
+  '| 4 | `x db gen "initial"` | the only writer of that directory |',
+  '| 5 | `x db migrate` | applies them |',
+  '| 6 | `x db seed` | through the CLI, never bun run |',
+  '| 7 | `x manifest` | a projection of the loaded app |',
 ];
 
 const tablePage = (
   rows: readonly string[] = ROWS,
-  lead = '`bun run setup` is six steps:',
+  lead = '`bun run setup` is seven steps:',
 ): MarkdownFile => page('wiki/Installation.md', [lead, '', ...rows].join('\n'));
 
 describe('unit · setupSteps reads the script, never a list kept here', () => {
   test('derives the sequence in script order, by the name a page writes', () => {
     expect(STEPS.map((step) => step.id)).toEqual([
       'bun install',
+      'x merge-driver install',
       '.env.development.local',
       'x db gen',
       'x db migrate',
@@ -81,7 +84,7 @@ describe('unit · setupSteps reads the script, never a list kept here', () => {
   /**
    * The guard is not a step: `if (!hasMigration()) await x('db', 'gen', 'initial');` is the
    * `x db gen` step and the guard is why re-running the script is safe. Counting it — or a helper's
-   * indented body, or the closing `console.log` — would make the documented six a number no page
+   * indented body, or the closing `console.log` — would make the documented seven a number no page
    * has ever written.
    */
   test('a guarded call is one step, and helpers and the closing log are none', () => {
@@ -90,13 +93,13 @@ describe('unit · setupSteps reads the script, never a list kept here', () => {
     for (const helper of ['process', 'run', 'console', 'if', 'Bun', 'existsSync']) {
       expect(ids).not.toContain(helper);
     }
-    expect(STEPS).toHaveLength(6);
+    expect(STEPS).toHaveLength(7);
   });
 
   // The env step writes the per-box file; the committed one is named inside the comment body the
   // file is seeded with, and that must never be the id.
   test('the env step is the file it writes, not the file its comment mentions', () => {
-    expect(STEPS[1]?.id).toBe('.env.development.local');
+    expect(STEPS[2]?.id).toBe('.env.development.local');
   });
 
   // Biome breaks the arrow onto its own line once the declaration passes 100 columns — the shape
@@ -126,7 +129,7 @@ describe('unit · the count rule', () => {
       steps: STEPS,
     });
     expect(gaps.map((gap) => gap.kind)).toEqual(['count']);
-    expect(gaps[0]?.detail).toBe('says bun run setup is 5 steps and the script runs 6');
+    expect(gaps[0]?.detail).toBe('says bun run setup is 5 steps and the script runs 7');
     expect(gaps[0]?.at).toBe('wiki/Installation.md:1');
   });
 
@@ -172,7 +175,7 @@ describe('unit · the list rule', () => {
   test('a sentence paraphrasing the steps is not judged as a list', () => {
     const prose = page(
       'wiki/FAQ.md',
-      '`bun run setup` is six steps — `bun install`, an `.env.development.local` touch, the first migration generated and applied, the seed, and `x manifest`.',
+      '`bun run setup` is seven steps — `bun install`, `x merge-driver install`, an `.env.development.local` touch, the first migration generated and applied, the seed, and `x manifest`.',
     );
     expect(checkSetupCommands({ pages: [prose, tablePage()], steps: STEPS })).toEqual([]);
   });
@@ -181,6 +184,24 @@ describe('unit · the list rule', () => {
     const two = ROWS.filter((row) => /`bun install`|`x manifest`|#|---/.test(row));
     expect(stepRows(two, STEPS)).toHaveLength(2);
     expect(ENUMERATION_MIN).toBeGreaterThan(2);
+  });
+
+  // wiki/Troubleshooting.md: one row of a symptom table says `bun run setup` does two of its steps,
+  // and three later rows each cite `x db gen` about other symptoms. Those rows answer other
+  // questions; a mention inside a row owns that row, never the table below it.
+  test('a mention inside a table row is not the head of the rows below it', () => {
+    const table = page(
+      'wiki/Troubleshooting.md',
+      [
+        '| Symptom | Fix |',
+        '|---|---|',
+        '| a new app drifts | `x db gen "initial"` then `x db migrate` — `bun run setup` does both |',
+        '| an entity was deleted | `x db gen "drop t"` |',
+        '| two branches forked | `x db gen --merge-fork` |',
+        '| a column was retyped | `x db gen "retype"` |',
+      ].join('\n'),
+    );
+    expect(checkSetupCommands({ pages: [table, tablePage()], steps: STEPS })).toEqual([]);
   });
 
   test('CONTRIBUTING.md documents this repo’s own bun run setup and is left alone', () => {
@@ -196,7 +217,7 @@ describe('unit · the list rule', () => {
 describe('unit · neither half may go vacuous', () => {
   test('no row-led list anywhere is a finding', () => {
     const gaps = checkSetupCommands({
-      pages: [page('wiki/FAQ.md', '`bun run setup` is six steps.')],
+      pages: [page('wiki/FAQ.md', '`bun run setup` is seven steps.')],
       steps: STEPS,
     });
     expect(gaps.map((gap) => gap.kind)).toEqual(['unscanned']);

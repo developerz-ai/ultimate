@@ -51,7 +51,7 @@ async function statusOf(env: Record<string, string | undefined>) {
   return JSON.parse(out).data as {
     enabled: boolean;
     capacityMb: number;
-    holds: { label: string }[];
+    holds: { label: string; pid: number; wrapperAlive: boolean; childPids: number[] }[];
     queue: { label: string }[];
   };
 }
@@ -129,10 +129,67 @@ describe.skipIf(NO_FLOCK)('x heavy run', () => {
     const workload = Number(new TextDecoder().decode(value).trim());
     holder.kill('SIGKILL');
     await holder.exited;
-    expect((await statusOf(env)).holds.map((hold) => hold.label)).toEqual(['doomed']);
+    const [hold] = (await statusOf(env)).holds;
+    expect(hold?.label).toBe('doomed');
+    // The pid that can still free the memory, beside the one that can no longer.
+    expect(hold?.pid).toBe(holder.pid);
+    expect(hold?.wrapperAlive).toBe(false);
+    expect(hold?.childPids).toEqual([workload]);
     process.kill(workload, 'SIGKILL');
     // Each read is a whole process, so this loop paces itself.
     while ((await statusOf(env)).holds.length > 0);
+  }, 30_000);
+
+  test('status names a live wrapper and the command it started', async () => {
+    const env = ledgerEnv();
+    const holder = x(
+      ['heavy', 'run', '--mb', '100', '--', 'sh', '-c', 'echo $$; exec sleep 60'],
+      env,
+    );
+    const { value } = await holder.stdout.getReader().read();
+    const workload = Number(new TextDecoder().decode(value).trim());
+    const [hold] = (await statusOf(env)).holds;
+    expect(hold?.wrapperAlive).toBe(true);
+    expect(hold?.childPids).toEqual([workload]);
+    const { out } = await finished(x(['heavy', 'status'], env));
+    expect(out).toContain(`command pid ${String(workload)}`);
+    process.kill(workload, 'SIGKILL');
+  }, 30_000);
+
+  test('--max-wait gives up with its own code and exit, and the command never starts', async () => {
+    const env = ledgerEnv();
+    const holder = await holding(env, 'first');
+    const run = await finished(
+      x(
+        // biome-ignore format: one argv
+        ['heavy', 'run', '--json', '--label', 'late', '--max-wait', '0', '--mb', '100', '--', 'sh', '-c', 'echo workload-output'],
+        env,
+      ),
+    );
+    expect(run.code).toBe(75);
+    const document = JSON.parse(run.out);
+    expect(document.findings[0].code).toBe('X_HEAVY_WAIT_EXPIRED');
+    expect(document.findings[0].cause).toContain('first');
+    expect(document.data).toMatchObject({ exitCode: 75, started: false });
+    expect(run.err).not.toContain('workload-output');
+    expect((await statusOf(env)).queue).toEqual([]);
+    holder.kill('SIGKILL');
+    await holder.exited;
+  }, 30_000);
+
+  test('--max-wait with room to run changes nothing', async () => {
+    const run = await finished(
+      x(['heavy', 'run', '--max-wait', '30', '--mb', '1', '--', 'sh', '-c', 'exit 7'], ledgerEnv()),
+    );
+    expect(run.code).toBe(7);
+  }, 30_000);
+
+  test('a --max-wait that is no number is refused', async () => {
+    const run = await finished(
+      x(['heavy', 'run', '--json', '--max-wait', 'soon', '--', 'true'], ledgerEnv()),
+    );
+    expect(run.code).toBe(1);
+    expect(JSON.parse(run.out).findings[0].code).toBe('X_CLI_BAD_FLAG');
   }, 30_000);
 
   test('a command that does not exist is 127 with a coded finding', async () => {
@@ -155,6 +212,20 @@ describe.skipIf(NO_FLOCK)('x heavy status', () => {
     const data = await statusOf(ledgerEnv('2g'));
     expect(data.enabled).toBe(true);
     expect(data.capacityMb).toBe(2048);
+  }, 30_000);
+
+  test('outside a test run it reports the CPU reading the queue is judged by', async () => {
+    const env = { ...ledgerEnv('2g'), NODE_ENV: 'production' };
+    const { out } = await finished(x(['heavy', 'status', '--json'], env));
+    const document = JSON.parse(out);
+    expect(document.data.cpuGate).toBe(true);
+    expect(['psi', 'runnable']).toContain(document.data.machine.cpu.source);
+    const text = await finished(x(['heavy', 'status'], env));
+    expect(text.out).toContain('cpu: ');
+  }, 30_000);
+
+  test('inside a test run the CPU gate is off, and says so in --json', async () => {
+    expect(((await statusOf(ledgerEnv())) as unknown as { cpuGate: boolean }).cpuGate).toBe(false);
   }, 30_000);
 
   test('says why admission is off under CI', async () => {

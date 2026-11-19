@@ -15,7 +15,7 @@ bun run verify
 |---|---|
 | `bunx create-ultimate demo --no-git` | bun, and a network the npm registry answers on. `--no-git` skips `git init`, which is the form an automated provisioner uses; without it the scaffold is committed, and that is git's only job here |
 | `cd demo` | — |
-| `bun run setup` | bun. Six steps: `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` |
+| `bun run setup` | bun. Seven steps: `bun install`, `x merge-driver install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` |
 | `bun run verify` | bun. `x verify`, the whole gate: its `budgets` step runs `x build --target static` itself, because `.x/build-stats.json` does not exist yet on a fresh box (`As of 30.0`) |
 
 `x new` installs nothing, so `bun run setup` is not optional and `cd demo && bun run verify` stops on

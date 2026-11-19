@@ -32,13 +32,78 @@ Every entry is an `flock(2)`, and a holder hands the locked descriptor to the co
 x heavy status            # who runs, who waits, load, memory
 x heavy status --json
 x heavy run --label suite --mb 4096 -- bun run test   # any command, in any repository
+x heavy run --max-wait 300 -- bun run test            # give up after 5 minutes in the queue
 ```
 
-A waiter prints one line on stderr saying its position and who holds the memory, and again only when that changes, so `--json` output stays one document. `x heavy run` passes the exit code through and forwards stop signals. A process started inside a reservation inherits it (`ULTIMATE_HEAVY_HOLD`) and never queues behind its own parent. Time spent queued does not count against an `x verify` step's deadline.
+**A waiter needs nothing from you: leave it running, it starts by itself.** It prints one line on stderr saying its position, who holds the memory and that, and again only when that changes, so `--json` output stays one document. Killing a waiter loses its place, so a harness with a short command timeout should run the command in the background. To bound the wait, `x heavy run --max-wait <seconds>` stops with `X_HEAVY_WAIT_EXPIRED` and exit 75, without starting the command; `0` is one attempt.
+
+`x heavy status` names each reservation's processes. After `kill -9` of a wrapper it reads `wrapper pid N exited, command pid M`: M is what still holds the memory, and `--json` carries the same as `wrapperAlive` and `childPids`.
+
+`x heavy run` passes the exit code through and forwards stop signals. A process started inside a reservation inherits it (`ULTIMATE_HEAVY_HOLD`) and never queues behind its own parent. Time spent queued does not count against an `x verify` step's deadline.
+
+## Merging two features
+
+**Two branches that each ran `x g resource` merge with no hand edit.** `bun run setup` installs the drivers (`x merge-driver install`); `.gitattributes` says which file takes which. `As of 2026-11-19`.
+
+| Files | On a merge | After it |
+|---|---|---|
+| `apps/web/api/index.ts`, `apps/web/exercise.ts`, `apps/web/shared/roles.ts`, `packages/db/src/client.ts` | what both sides **added** is kept, sorted, so either merge direction writes the same bytes | nothing |
+| `packages/i18n/catalogs/*.json` | three-way by key | nothing |
+| `x.manifest.json`, `openapi.json` | our copy is kept | `bunx x manifest`, then commit |
+
+```sh
+git merge feature-b
+bunx x manifest
+bunx x verify
+```
+
+**What stays a conflict, on purpose:**
+
+| Both branches | Why a person decides |
+|---|---|
+| changed or removed one existing line | `merge=union` would keep both, so a revoked grant in `roles.ts` would come back |
+| declared one key, or one import name, differently | either could be the right one |
+| gave one catalog key two wordings | which text ships is a decision |
+
+`X_MERGE_UNRESOLVED` lists what is left: `git diff --name-only --diff-filter=U`. Resolve each, `git add` it, finish the merge.
+
+- **Why one entry per line.** Registries are written that way (`x new`, and the `merge-drivers` codemod on `x upgrade`), because a list on one line is one line both sides changed. Keep the comment inside the list: it is what stops Biome joining the list back up.
+- **Where the drivers do not run.** A hosted merge button and a clone that never ran setup use git's plain text merge, so the same files conflict there and nothing is lost. Merge locally. `x doctor` warns `X_MERGE_DRIVER_UNSET` on such a clone.
+- **Migrations: `bunx x db gen --merge-fork`.** Two branches that each ran `x db gen` fork the chain: the newest snapshot lacks the other branch's table. `x db gen`, `x db migrate` and the gate's `drift` step refuse it as `X_MIGRATION_FORKED`, before any `record …` migration is suggested. `--merge-fork` corrects the newest `.snapshot.json` only: no SQL changes and nothing is deleted, so it is safe after either migration was applied. Two creates of one table are the exception: run `bunx x db status --json` on every database first, and remove a migration only if `data.pending` lists it on all of them ([Migrations](Migrations-And-Backfills)).
+- **One `x db gen` at a time per checkout.** A second run waits on the checkout's `db-gen` lock instead of diffing the same sidecar and writing a second `create table`. With several agents in one checkout, one run's migration can still record another agent's new entity: the success line names the migration and its tables, and "no migration needed" names the migration that already records them.
+
+## CPU pressure
+
+Memory alone does not bound a machine: at 14.3 of 15.9 GB reserved, an 8-core box sat at load 74 with 69 runnable tasks and `cpu some avg10` at 95.8 (`As of 2026-11-18`). So the queue's head also waits while the CPU is saturated **and** another heavy run is admitted:
+
+| Signal | Waits at |
+|---|---|
+| PSI `cpu some avg10` (`/proc/pressure/cpu`) | 80% |
+| without PSI: runnable tasks per core | 2 |
+
+First come, first served still holds: only the head is judged. With nothing admitted one run always starts, whatever the pressure and wherever it comes from, and a head held back by CPU alone goes anyway after 5 minutes, so a long holder cannot starve the queue. The wait line then reads `waits for CPU … CPU pressure 96% (new runs wait at 80%)`; `x heavy status` prints the reading as `cpu:`, and `--json` carries `data.machine.cpu` and `data.cpuGate`. Off in CI, inside a test run, and with `ULTIMATE_HEAVY_CPU=0`. The figures and the reasoning: `packages/cli/src/heavy-pressure.ts`.
 
 ## Cores
 
-Locally a run takes **at most 4 cores**, fewer when other sessions' runnable tasks already fill the machine, and never below 2. Test workers are capped per batch, so a run narrows and widens as the machine changes; `tsc` and `biome` get the cap as `GOMAXPROCS` and `RAYON_NUM_THREADS`. `--workers N` is taken as written. CI takes every core.
+Locally a run takes **at most 4 cores**, fewer when other sessions' runnable tasks already fill the machine, and never below 2. Test workers are capped per batch, so a run narrows and widens as the machine changes; `tsc` and `biome` get the cap as `GOMAXPROCS` and `RAYON_NUM_THREADS`. `--workers N` is taken as written. CI takes every core. A run held below its plan says `ran 2 at once (peak), planned 4`; `x test --json` carries it as `data.peakWorkers`.
+
+## Neighbouring dev servers
+
+`x dev` on a taken port refuses with `X_PORT_IN_USE`, naming the holder's pid and directory, and its fix names a pair of ports that is free when asked. `x doctor` reports a port held from **another checkout** as a warning, because nothing is wrong with this environment. A port held from this checkout, or by a process the OS will not name, stays a finding.
+
+## Test service stacks
+
+The `live` step prints one line on stderr for the stack it got:
+
+| Line | Meaning |
+|---|---|
+| `services: started <project>` | this run started containers, and leaves them running for the next |
+| `services: reused <project>` | they were already up, from this checkout |
+| `services: shared <project> with <dir>` | another checkout of this app started them (same first commit, or same `origin`), or `ULTIMATE_TEST_SERVICES_SHARED=1` says the share is intended |
+
+The compose project and its ports come from the app's name, so two different apps with one name land on the same stack. That is refused: the step warns with `X_TEST_SERVICES_UNAVAILABLE` naming the other directory, compose is not run, and the live suites run without the stack. Checkouts git cannot tie together count as different apps.
+
+`x clean --services` stops this checkout's stack, keeps one another living checkout started, and lists every other test stack on the machine with its stop command, marking those whose checkout is gone. It stops nothing else.
 
 ## Switches
 
@@ -46,8 +111,10 @@ Locally a run takes **at most 4 cores**, fewer when other sessions' runnable tas
 |---|---|
 | `ULTIMATE_HEAVY_MEMORY=8g` | what the ledger admits; `0` turns it off |
 | `ULTIMATE_HEAVY_CORES=6` | the local core ceiling |
+| `ULTIMATE_HEAVY_CPU=0` | no waiting on CPU pressure; memory still applies |
 | `ULTIMATE_HEAVY_DIR=<path>` | another ledger; also opts a test run in |
 | `ULTIMATE_TEST_SLOTS=0` | test workers skip the ledger |
+| `ULTIMATE_TEST_SERVICES_SHARED=1` | another app's test stack under this app's project name is shared on purpose |
 
 Admission is off under `CI`, inside `bun test` (a fixture's `x test` must not queue behind real work), and on **Windows**, which has no `flock`: the core cap still applies there and `x heavy status` says why admission is off. A ledger that cannot work is reported as `X_HEAVY_LEDGER_UNAVAILABLE` and the command goes ahead; it never fails a run.
 

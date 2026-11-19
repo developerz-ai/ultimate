@@ -305,6 +305,25 @@ describe('unit · x test execution', () => {
     expect(result.steps?.[0]?.name).toContain('3 worker(s) · 9 files');
   });
 
+  test('a run the machine narrowed reports the peak it reached beside the plan', async () => {
+    const { runner } = recorder();
+    const result = await runShards({
+      root: '/repo',
+      runner,
+      files: corpus(9),
+      workers: 4,
+      lease: async () => ({ count: 2, release: () => undefined }),
+    });
+    expect(result.summary).toContain('2 worker(s)');
+    expect(result.steps?.[0]?.name).toContain('ran 2 at once (peak), planned 4');
+    expect(result.steps?.[0]?.workers).toBe(2);
+    const data = result.data as Record<string, unknown>;
+    expect(data['peakWorkers']).toBe(2);
+    // The plan is what a failure reproduces with, so it stays.
+    expect(data['workers']).toBe(4);
+    expect(data['reproduce']).toBe('x test --workers 4');
+  });
+
   test('a typed run uses the .type. summary keys and names its type in data', async () => {
     const { runner } = recorder();
     const result = await runShards({

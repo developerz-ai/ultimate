@@ -8,6 +8,8 @@ import { systemClock } from '@ultimat3/core';
 import { TEST_TYPES } from '@ultimat3/testing';
 import { msg } from './messages';
 import type { StepResult } from './output';
+import type { ReaderOptions } from './output-findings';
+import { fixForReader } from './output-findings';
 import { quoteArg } from './shell-quote';
 import { isTest } from './source-files';
 import type { VerifyStepName } from './verify-step';
@@ -56,10 +58,10 @@ export function narrowestRerun(step: StepResult): string {
 }
 
 /** `✓ lint 22.0s`, `○ seo 0.0s` (did not apply), `✗ unit 3.1s → x test unit --filter … --json`. */
-export function humanStepLine(step: StepResult): string {
+export function humanStepLine(step: StepResult, reader: ReaderOptions = {}): string {
   const mark = step.skipped === true ? '○' : step.ok ? '✓' : '✗';
   const line = `${mark} ${step.name} ${(step.durationMs / 1000).toFixed(1)}s`;
-  return step.ok ? line : `${line} → ${narrowestRerun(step)}`;
+  return step.ok ? line : `${line} → ${fixForReader(narrowestRerun(step), reader)}`;
 }
 
 /** `12m 3s`, `45s`: a person reading a CI log, not a parser — the step lines carry exact ms. */
@@ -89,6 +91,8 @@ export interface VerifyProgressOptions {
    * for a person — `x verify` and `scripts/verify.ts` pass it when `--json` is unset.
    */
   readonly render?: 'json' | 'human';
+  /** Who reads the human line's pointer: `x` is not every reader's command. */
+  readonly reader?: ReaderOptions;
 }
 
 /**
@@ -120,7 +124,7 @@ export async function withVerifyProgress<T>(
       },
       onStep: (step) => {
         running.delete(step.name);
-        write(options.render === 'human' ? humanStepLine(step) : stepLine(step));
+        write(options.render === 'human' ? humanStepLine(step, options.reader) : stepLine(step));
       },
     });
   } finally {

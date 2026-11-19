@@ -162,6 +162,9 @@ describe('unit · x doctor · the command', () => {
     bunVersion: REQUIRED_BUN,
   });
 
+  // The server is this test process, whose directory is not the app's: another checkout's port. The
+  // real owner lookup files it beside the verdict where the OS names the holder's directory, and in
+  // it where the OS will not — reported once either way, never dropped.
   test('a port that is taken is reported as X_PORT_IN_USE, and --json lists the codes', async () => {
     const server = Bun.serve({ port: 0, fetch: () => new Response('') });
     const root = doctorAppRoot();
@@ -169,10 +172,17 @@ describe('unit · x doctor · the command', () => {
       const result = await doctorCommand.run(
         doctorContext(['doctor', '--port', String(server.port), '--json'], root),
       );
-      expect(result.ok).toBe(false);
       expect(result.command).toBe('doctor');
-      const data = result.data as { count: number; codes: readonly string[] };
-      expect(data.codes).toContain('X_PORT_IN_USE');
+      const data = result.data as {
+        count: number;
+        codes: readonly string[];
+        warnings?: readonly { code: string; cause: string }[];
+      };
+      const warned = (data.warnings ?? []).filter((warning) => warning.code === 'X_PORT_IN_USE');
+      const failed = data.codes.filter((code) => code === 'X_PORT_IN_USE');
+      expect(warned.length + failed.length).toBe(1);
+      if (warned[0] !== undefined)
+        expect(warned[0].cause).toContain(`port ${server.port} is held by`);
       expect(data.count).toBe((result.findings ?? []).length);
       // Every finding the report counted is a finding the report carries.
       expect(data.codes).toEqual((result.findings ?? []).map((finding) => finding.code));

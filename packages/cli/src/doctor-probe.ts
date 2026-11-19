@@ -9,6 +9,8 @@ import { loadApp } from './app-load';
 import { IMPORT_UNRESOLVED } from './app-load-unresolved';
 import { findAppRoot } from './app-root';
 import { checkMigrationSnapshots } from './db-snapshot';
+import type { PortOwner } from './dev-lock-holder-dir';
+import { portOwner } from './dev-lock-holder-dir';
 import { type AuthStorageFact, authStorageProbe } from './doctor-auth';
 import type { EmbeddedDatabase } from './doctor-database';
 import { externalUrl, installedAbove, probeDatabase } from './doctor-database';
@@ -26,7 +28,10 @@ import { rowSecurityOffProbe, rowSecurityProbe } from './doctor-row-security';
 import type { SealedKeysFact } from './doctor-sealed';
 import { sealedKeysProbe } from './doctor-sealed';
 import { typescriptProbe } from './doctor-typescript';
+import { exec } from './exec';
 import { machineSecretFindings } from './framework-env';
+import { driverUnset } from './merge-driver-config';
+import { catalogFileFindings, unmergedFindings } from './merge-state';
 import type { Finding } from './output';
 import { portFree } from './port-probe';
 import { checkMigrationDrift } from './schema-drift';
@@ -55,6 +60,12 @@ export interface DoctorProbe {
   readonly frameworkFindings: readonly Finding[];
   exists(relativePath: string): boolean;
   portFree(port: number): Promise<boolean>;
+  /**
+   * Who holds a taken port: another checkout's server is a warning, this one's a finding. This and
+   * the two merge facts below are optional against the rule above: the type is exported, and the
+   * public-API lock reads a required member added on `main` as a break. Absent asks the OS.
+   */
+  readonly portOwner?: (port: number) => Promise<PortOwner>;
   /**
    * Is the configured database reachable, and what refused? `null` is "reachable, or there is
    * nothing external to reach" — an unset `DATABASE_URL` is embedded PGlite, which `x dev` owns
@@ -113,6 +124,10 @@ export interface DoctorProbe {
   pins(): Promise<PinFact>;
   /** The gate steps that apply here and `x.verify.json` does not floor (`doctor-floor.ts`). */
   unflooredSteps(): Promise<readonly VerifyStepName[]>;
+  /** What a merge left: unmerged paths, catalogs that do not parse (`merge-state.ts`). Absent: none. */
+  readonly mergeState?: () => Promise<readonly Finding[]>;
+  /** Whether `.gitattributes` names a merge driver this clone has not installed. Absent: no. */
+  readonly mergeDriverUnset?: () => Promise<boolean>;
 }
 
 export function probeFor(
@@ -131,6 +146,7 @@ export function probeFor(
     frameworkFindings: machineSecretFindings(env),
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
+    portOwner,
     database: () => probeDatabase(process.env['DATABASE_URL'], env),
     // `root ?? cwd` because the walk needs a directory that exists; outside an app `runDoctor`
     // returns on `X_NOT_IN_APP` before this is ever asked, so the value only has to be honest.
@@ -160,6 +176,11 @@ export function probeFor(
     envNames: async () => (root === undefined ? NO_APP_ENV_NAMES : appEnvNamesProbe(root, env)),
     pins: async () => (root === undefined ? { pins: [], installed: new Map() } : pinProbe(root)),
     unflooredSteps: async () => (root === undefined ? [] : unflooredStepsProbe(root)),
+    mergeState: async () =>
+      root === undefined
+        ? []
+        : [...(await unmergedFindings(root)), ...(await catalogFileFindings(root))],
+    mergeDriverUnset: async () => (root === undefined ? false : driverUnset(root, exec)),
   };
 }
 

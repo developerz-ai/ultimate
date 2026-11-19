@@ -10,12 +10,13 @@ import { isUltimateError } from '@ultimat3/core';
 import { coreCap, nativeToolEnv } from './heavy-cores';
 import type { HeavyEnv } from './heavy-env';
 import { HEAVY_DIR_ENV, HEAVY_HOLD_ENV, isCi } from './heavy-env';
-import { HeavyLedgerUnavailableError } from './heavy-errors';
+import { HeavyLedgerUnavailableError, HeavyWaitExpiredError } from './heavy-errors';
 import type { TryLock } from './heavy-flock';
 import { flockBinding } from './heavy-flock';
 import type { Held, LedgerEntry, LedgerWait, Reservation } from './heavy-ledger';
 import { isHeld, lockPath, prepareLedger, reserve } from './heavy-ledger';
 import { ledgerCapacityMb } from './heavy-memory';
+import { cpuGateOn, cpuText, readCpuPressure } from './heavy-pressure';
 import { msg } from './messages';
 import { writeErrorLine } from './write-line';
 
@@ -61,9 +62,11 @@ export async function heavyState(env: HeavyEnv): Promise<HeavyState> {
   if (isCi(env)) return { on: false, off: 'ci' };
   const explicitDir = env[HEAVY_DIR_ENV];
   // A fixture's `x test` runs inside `bun test`, whose NODE_ENV every child inherits: queueing it
-  // behind real work would turn a test's timeout into a machine-load verdict.
-  if (env['NODE_ENV'] === 'test' && explicitDir === undefined)
-    return { on: false, off: 'test-run' };
+  // behind real work would turn a test's timeout into a machine-load verdict. `Bun.env` as well: a
+  // fixture calling in-process with its own small env is just as much inside the test run, and a
+  // timed-out one left its ticket at the head of the machine's queue until the worker exited.
+  const inTestRun = env['NODE_ENV'] === 'test' || Bun.env['NODE_ENV'] === 'test';
+  if (inTestRun && explicitDir === undefined) return { on: false, off: 'test-run' };
   const capacityMb = ledgerCapacityMb(env);
   if (capacityMb === 0) return { on: false, off: 'disabled' };
   const binding = await flockBinding();
@@ -105,15 +108,24 @@ export const describeEntry = (entry: LedgerEntry, now: number): string =>
 
 /** The waiter's one line. Stderr always: stdout may be a `--json` document. */
 export const waitLine = (label: string, wait: LedgerWait, now: number = Date.now()): string =>
-  msg('cli.heavy.waiting', {
-    label: printable(label),
-    need: wait.needMb,
-    position: wait.position,
-    queued: wait.queued,
-    used: wait.usedMb,
-    capacity: wait.capacityMb,
-    holders: wait.holds.map((entry) => describeEntry(entry, now)).join('; ') || '-',
-  });
+  // No holder to name is the instant between two admissions, not a mystery owner.
+  msg(
+    wait.cpu !== undefined
+      ? 'cli.heavy.waitingCpu'
+      : wait.holds.length === 0
+        ? 'cli.heavy.waitingAdmission'
+        : 'cli.heavy.waiting',
+    {
+      label: printable(label),
+      need: wait.needMb,
+      position: wait.position,
+      queued: wait.queued,
+      used: wait.usedMb,
+      capacity: wait.capacityMb,
+      holders: wait.holds.map((entry) => describeEntry(entry, now)).join('; '),
+      cpu: wait.cpu === undefined ? '' : cpuText(wait.cpu),
+    },
+  );
 
 // Time this process has spent queued, so a gate step's deadline can stop counting it.
 let finishedWaitMs = 0;
@@ -145,6 +157,8 @@ export interface HeavyRequest {
   readonly baseMb?: number;
   readonly units?: number;
   readonly minUnits?: number;
+  /** Give up after this long in the queue (`x heavy run --max-wait`). */
+  readonly maxWaitMs?: number;
 }
 
 /** A reservation, or nothing when admission does not apply or could not work. */
@@ -160,12 +174,16 @@ async function enter(request: HeavyRequest, state: HeavyState): Promise<Reservat
         ...(request.baseMb === undefined ? {} : { baseMb: request.baseMb }),
         units: request.units ?? 1,
         minUnits: request.minUnits ?? request.units ?? 1,
+        ...(request.maxWaitMs === undefined ? {} : { maxWaitMs: request.maxWaitMs }),
+        ...(cpuGateOn(request.env) ? { cpu: () => readCpuPressure() } : {}),
         label: request.label,
         cwd: request.cwd,
         onWait: (wait) => writeErrorLine(waitLine(request.label, wait)),
       }),
     );
   } catch (error) {
+    // The caller set this bound: running anyway, unadmitted, is what it asked not to happen.
+    if (error instanceof HeavyWaitExpiredError) throw error;
     warnOnce(describe(error));
     return undefined;
   }

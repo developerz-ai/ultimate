@@ -153,7 +153,7 @@ export function unreplacedFocusRings(files: readonly StyleFile[]): readonly Find
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${lineOf(scss, match.index)} removes the focus ring with \${property}: \${value} and nothing in the rule or beside it paints one back — a keyboard user loses every trace of where they are, and WCAG 2.2 asks for an indicator at least 2px around the control at 3:1 against what is behind it\`,
-        fix: \`add \\\`@include tokens.focus-ring;\\\` to the rule at \${file.path}:\${lineOf(scss, match.index)}, or a sibling \\\`:focus-visible\\\` rule with a box-shadow — which follows the border radius where an outline does not — then: x verify\`,
+        fix: \`add \\\`@include tokens.focus-ring;\\\` to the rule at \${file.path}:\${lineOf(scss, match.index)}, or a sibling \\\`:focus-visible\\\` rule with a box-shadow — which follows the border radius where an outline does not — then: x verify --only boundaries\`,
         at: file.path,
       });
     }

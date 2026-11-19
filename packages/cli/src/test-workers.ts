@@ -9,6 +9,7 @@
 import { cpus, totalmem } from 'node:os';
 import { UltimateError } from '@ultimat3/core';
 import type { TestType } from '@ultimat3/testing';
+import { msg } from './messages';
 
 /**
  * `ULTIMATE_TEST_MEMORY_BUDGET` or `ULTIMATE_TEST_MAX_WORKERS` set to something that does not
@@ -226,6 +227,20 @@ export function workerPlan(
         : `budget ${gb(budgetBytes)} GB`;
   return { workers, budgetBytes, boundBy, reason: `${String(workers)} ${noun} (${why})` };
 }
+
+/**
+ * A plan cut short by the selection: one worker per file. It read `4 of 6 workers`, and a run the
+ * machine then narrowed read `2 of 4 of 6 workers`.
+ */
+export const fileBoundWidth = (files: number, reason: string): string =>
+  `${String(files)} ${files === 1 ? 'worker' : 'workers'}, one per file (plan: ${reason})`;
+
+/**
+ * The step line's width: the plan when the run reached it, else the widest batch beside the plan.
+ * Never "held by another run": the core cap narrows a run on a machine with nobody else on it.
+ */
+export const reachedWidth = (peak: number, planned: number, reason: string): string =>
+  peak < planned ? msg('cli.test.narrowedWhy', { peak, planned, reason }) : reason;
 
 /** The width alone — `workerPlan(...).workers`. */
 export const defaultWorkers = (

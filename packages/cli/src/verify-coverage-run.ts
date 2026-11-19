@@ -41,6 +41,7 @@ import {
   recordTimings,
   slowestOf,
 } from './test-timings';
+import { reachedWidth } from './test-workers';
 import type { MachinePace } from './verify-pace';
 import { defaultTimeoutArgs, paceEnv } from './verify-pace';
 import type { StepOutcome } from './verify-step';
@@ -238,7 +239,9 @@ export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun
             }),
           ],
     workers: width,
-    ...(options.widthReason === undefined ? {} : { widthReason: options.widthReason }),
+    ...(options.widthReason === undefined
+      ? {}
+      : { widthReason: reachedWidth(width, want, options.widthReason) }),
     tests: countsOf(results),
     ...(first === undefined ? {} : { output }),
     ...(Object.keys(measured).length === 0 ? {} : { slowest: slowestOf(measured, options.files) }),

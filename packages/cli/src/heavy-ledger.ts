@@ -24,8 +24,10 @@ import {
 } from 'node:fs';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-import { HeavyLedgerUnavailableError } from './heavy-errors';
+import { HeavyLedgerUnavailableError, HeavyWaitExpiredError } from './heavy-errors';
 import type { TryLock } from './heavy-flock';
+import type { CpuReading } from './heavy-pressure';
+import { cpuAdmission } from './heavy-pressure';
 
 export const LEDGER_POLL_MS = 100;
 /** A temp file this old lost its creator: creating one takes microseconds. */
@@ -39,8 +41,13 @@ export interface LedgerEntry {
   readonly at: number;
 }
 
+/** An admitted reservation, and the file whose lock it is. */
+export interface LedgerHold extends LedgerEntry {
+  readonly file: string;
+}
+
 export interface LedgerView {
-  readonly holds: readonly LedgerEntry[];
+  readonly holds: readonly LedgerHold[];
   /** Oldest first: index 0 is the next admission. */
   readonly queue: readonly LedgerEntry[];
 }
@@ -72,6 +79,10 @@ export interface ReserveInput {
   readonly cwd: string;
   readonly tryLock: TryLock;
   readonly pollMs?: number;
+  /** Give up after this long in the queue. `0` is one attempt; unset waits for as long as it takes. */
+  readonly maxWaitMs?: number;
+  /** The CPU reading the head is judged by (`heavy-pressure.ts`); absent, CPU never holds it. */
+  readonly cpu?: () => CpuReading;
   readonly onWait?: (wait: LedgerWait) => void;
 }
 
@@ -82,6 +93,8 @@ export interface LedgerWait {
   readonly position: number;
   readonly queued: number;
   readonly holds: readonly LedgerEntry[];
+  /** Set when memory fits and the CPU is what holds the head back. */
+  readonly cpu?: CpuReading;
 }
 
 const codeOf = (error: unknown): unknown =>
@@ -164,7 +177,10 @@ function liveEntries(dir: string, tryLock: TryLock, sweep: boolean): Live[] {
 }
 
 export const readLedger = (dir: string, tryLock: TryLock): LedgerView => ({
-  holds: liveEntries(join(dir, 'holds'), tryLock, false).map((one) => one.entry),
+  holds: liveEntries(join(dir, 'holds'), tryLock, false).map((one) => ({
+    ...one.entry,
+    file: join(dir, 'holds', one.name),
+  })),
   queue: liveEntries(join(dir, 'queue'), tryLock, false).map((one) => one.entry),
 });
 
@@ -298,8 +314,11 @@ export async function reserve(input: ReserveInput): Promise<Reservation> {
   if (ticket === undefined) throw new HeavyLedgerUnavailableError('a new queue file was locked');
   const minUnits = input.minUnits ?? 1;
   let said = '';
+  /** When the head started waiting on CPU alone: `CPU_WAIT_LIMIT_MS` is counted from here. */
+  let cpuBlockedAt: number | undefined;
   try {
     for (;;) {
+      let cpu: CpuReading | undefined;
       const queue = liveEntries(join(dir, 'queue'), tryLock, true);
       const position = queue.findIndex((one) => one.name === name);
       if (position === -1) throw new HeavyLedgerUnavailableError(`${dir} was removed mid-wait`);
@@ -313,7 +332,18 @@ export async function reserve(input: ReserveInput): Promise<Reservation> {
             holds = liveEntries(join(dir, 'holds'), tryLock, true);
             const usedMb = holds.reduce((sum, one) => sum + one.entry.mb, 0);
             const granted = unitsThatFit({ capacityMb, usedMb, unitMb, units, minUnits, baseMb });
-            if (granted > 0) {
+            const reading = granted > 0 ? input.cpu?.() : undefined;
+            const now = performance.now();
+            const verdict = cpuAdmission({
+              reading,
+              running: holds.length,
+              blockedMs: cpuBlockedAt === undefined ? 0 : now - cpuBlockedAt,
+            });
+            if (granted > 0 && verdict === 'wait') {
+              cpuBlockedAt ??= now;
+              cpu = reading;
+            } else cpuBlockedAt = undefined;
+            if (granted > 0 && verdict === 'admit') {
               const mb = baseMb + granted * unitMb;
               const hold = createEntry(
                 dir,
@@ -338,19 +368,31 @@ export async function reserve(input: ReserveInput): Promise<Reservation> {
         }
       }
       const usedMb = holds.reduce((sum, one) => sum + one.entry.mb, 0);
-      const key = `${String(position)}|${holds.map((one) => one.name).join(',')}`;
+      // Behind the head, the queue is held by whatever holds the head: say CPU when that is it.
+      if (cpu === undefined && position > 0 && holds.length > 0) {
+        const reading = input.cpu?.();
+        if (reading?.busy === true) cpu = reading;
+      }
+      const wait: LedgerWait = {
+        needMb: Math.min(baseMb + units * unitMb, capacityMb),
+        usedMb,
+        capacityMb,
+        position: position + 1,
+        queued: queue.length,
+        holds: holds.map((one) => one.entry),
+        ...(cpu === undefined ? {} : { cpu }),
+      };
+      const key = `${String(position)}|${cpu === undefined ? '' : 'cpu'}|${holds.map((one) => one.name).join(',')}`;
       if (key !== said) {
         said = key;
-        input.onWait?.({
-          needMb: Math.min(baseMb + units * unitMb, capacityMb),
-          usedMb,
-          capacityMb,
-          position: position + 1,
-          queued: queue.length,
-          holds: holds.map((one) => one.entry),
-        });
+        input.onWait?.(wait);
       }
-      await Bun.sleep(pollMs);
+      const { maxWaitMs } = input;
+      const left = (maxWaitMs ?? Number.POSITIVE_INFINITY) - (performance.now() - started);
+      if (maxWaitMs !== undefined && left <= 0) {
+        throw new HeavyWaitExpiredError({ label: input.label, maxWaitMs, wait });
+      }
+      await Bun.sleep(Math.min(pollMs, left));
     }
   } finally {
     ticket.release();

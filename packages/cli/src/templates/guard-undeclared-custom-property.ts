@@ -95,7 +95,7 @@ export function undeclaredCustomProperties(
     return broken.map((sheet) => ({
       code: CODE,
       cause: \`\${sheet.path} does not compile\${sheet.error === undefined ? '' : \`: \${sheet.error}\`} — so the custom properties it declares are unknown and no var() read in this app was checked\`,
-      fix: \`repair the Sass in \${sheet.path}\${sheet.error === undefined ? " — x build --target static prints the compiler's error for a sheet a page uses —" : ' at the error the cause quotes,'} then: x verify\`,
+      fix: \`repair the Sass in \${sheet.path}\${sheet.error === undefined ? " — x build --target static prints the compiler's error for a sheet a page uses —" : ' at the error the cause quotes,'} then: x verify --only boundaries\`,
       at: sheet.path,
     }));
   }
@@ -121,8 +121,8 @@ export function undeclaredCustomProperties(
         cause: \`\${sheet.path}:\${line} reads var(\${name}), and nothing in this app declares \${name} — the declaration it sits in computes to nothing, silently\`,
         fix:
           offered.length > 0
-            ? \`\${offered.join(' | ')} — the steps \${stem}* has; write one in place of \\\`\${name.slice(stem.length)}\\\` at \${sheet.path}:\${line}, then: x verify\`
-            : \`declare \${name} where it is set — on the element, in the app's global.scss, or for a colour, radius or font through defineTheme() — or correct the name at \${sheet.path}:\${line}, then: x verify\`,
+            ? \`\${offered.join(' | ')} — the steps \${stem}* has; write one in place of \\\`\${name.slice(stem.length)}\\\` at \${sheet.path}:\${line}, then: x verify --only boundaries\`
+            : \`declare \${name} where it is set — on the element, in the app's global.scss, or for a colour, radius or font through defineTheme() — or correct the name at \${sheet.path}:\${line}, then: x verify --only boundaries\`,
         at: \`\${sheet.path}:\${line}\`,
       });
     }

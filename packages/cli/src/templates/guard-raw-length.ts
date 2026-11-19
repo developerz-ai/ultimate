@@ -164,7 +164,7 @@ export function rawLengths(files: readonly StyleFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} defines its own \${match[1]}() — @ultimat3/ui/tokens ships one, and a local definition silently shadows it, so two sheets can disagree about what a px is\`,
-        fix: \`delete @function \${match[1]} from \${file.path}:\${line} and call \${ns}.\${match[1]}(), then: x verify\`,
+        fix: \`delete @function \${match[1]} from \${file.path}:\${line} and call \${ns}.\${match[1]}(), then: x verify --only boundaries\`,
         at: \`\${file.path}:\${line}\`,
       });
     }
@@ -196,7 +196,7 @@ export function rawLengths(files: readonly StyleFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} writes \\\`\${statement}\\\` — a px length off the scale: it does not grow with the reader's text size, and no token names it\`,
-        fix: \`\${rewritten} — at \${file.path}:\${line}, then: x verify\`,
+        fix: \`\${rewritten} — at \${file.path}:\${line}, then: x verify --only boundaries\`,
         at: \`\${file.path}:\${line}\`,
       });
     }
@@ -223,7 +223,7 @@ export function rawInlineLengths(files: readonly MarkupFile[]): readonly Finding
         findings.push({
           code: CODE,
           cause: \`\${file.path}:\${line} sets \${px}px in an inline style — a length off the scale, in the one stylesheet nothing else reads\`,
-          fix: \`\${written} in place of \${px}px — at \${file.path}:\${line}; better, move the declaration into the element's .module.scss, then: x verify\`,
+          fix: \`\${written} in place of \${px}px — at \${file.path}:\${line}; better, move the declaration into the element's .module.scss, then: x verify --only boundaries\`,
           at: \`\${file.path}:\${line}\`,
         });
       }

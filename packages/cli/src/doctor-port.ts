@@ -1,12 +1,20 @@
 // `x doctor`'s port checks: both ports `x dev` binds, probed by role, and the one reading of which
 // port that is (`--port`, then `PORT`, then 3000).
 
+// why: Bun ships no realpath primitive.
+import { realpathSync } from 'node:fs';
+// why: Bun ships no path-separator primitive.
+import { sep } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import type { PortOwner } from './dev-lock-holder-dir';
+import { ownerText, portOwner } from './dev-lock-holder-dir';
 import type { DoctorProbe } from './doctor-probe';
-import { PORT_RANGE, portPairAfter, readIntFlag } from './flag-number';
+import { PORT_RANGE, readIntFlag } from './flag-number';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
+import { freeDevPortPair } from './port-pair-free';
+import { portFree } from './port-probe';
 import { syncPortFor } from './role-sync';
 import { portFromEnv } from './serve-env';
 import { quoteArg } from './shell-quote';
@@ -17,6 +25,35 @@ const finding = (code: string, cause: string, fix: string): Finding => ({
   fix,
   docs: ERROR_DOCS_URL,
 });
+
+export type PortProbe = Pick<DoctorProbe, 'port' | 'portFree' | 'root'> & {
+  /** Who holds a port. Absent: the OS is asked, unless `portFree` is a test's stand-in. */
+  readonly portOwner?: (port: number) => Promise<PortOwner>;
+};
+
+const real = (path: string): string => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
+
+/** Only a directory the OS named and that lies outside this app: unknown is never "not yours". */
+function inAnotherCheckout(owner: PortOwner, root: string | undefined): boolean {
+  if (owner.cwd === undefined || root === undefined) return false;
+  const [dir, app] = [real(owner.cwd), real(root)];
+  return dir !== app && !dir.startsWith(`${app}${sep}`);
+}
+
+/** A stand-in `portFree` describes an imagined machine; the real one has no say about it. */
+const ownerLookup = (probe: PortProbe): ((port: number) => Promise<PortOwner>) =>
+  probe.portOwner ?? (probe.portFree === portFree ? (port) => portOwner(port) : async () => ({}));
+
+interface PortReport {
+  readonly findings: readonly Finding[];
+  readonly warnings: readonly Finding[];
+}
 
 /**
  * Both ports `x dev` binds, each labelled with the role that wants it. `x dev --port 3999` printed
@@ -29,8 +66,11 @@ const finding = (code: string, cause: string, fix: string): Finding => ({
  * The suggested port moves BOTH: `x dev --port N` occupies N and N+1, so a free N beside a taken
  * N+1 is still not a runnable command. It did not move both until 2026-09 — the line was
  * `neighbouringPort(probe.port)`, which for the sync finding IS the port the finding is about, and
- * a docblock claiming otherwise is how it survived. `portPairAfter` is the one reader of that rule
- * and `role-sync.ts`'s own refusal shares it.
+ * a docblock claiming otherwise is how it survived. `freeDevPortPair` also asks that the pair is free:
+ * beside two dev servers the next pair was often the second one's.
+ *
+ * A port held from ANOTHER checkout is a warning: a neighbour's dev server says nothing about this
+ * environment, and it turned `x doctor` red in every other app on the machine.
  *
  * The sync port is `syncPortFor`, never `neighbouringPort` again: that helper answers 65534 for a
  * web port of 65535 — BELOW the web port, and a port `x dev` never binds — where the boot refuses
@@ -39,34 +79,49 @@ const finding = (code: string, cause: string, fix: string): Finding => ({
  * reported instead of a probe. Alone, and ahead of the web port: there is no runnable `x dev` at
  * this port whatever the other one answers, and a second finding about it is noise over the cause.
  */
-export async function portFindings(
-  probe: Pick<DoctorProbe, 'port' | 'portFree'>,
-): Promise<readonly Finding[]> {
+async function portReport(probe: PortProbe): Promise<PortReport> {
   let syncPort: number;
   try {
     syncPort = syncPortFor(probe.port);
   } catch (error) {
     // The boot's own error, carried whole — `findingFrom` reads its code, cause and fix off the
     // value rather than rendering it, which is what `scripts/catch-render.ts` requires.
-    return [findingFrom(error)];
+    return { findings: [findingFrom(error)], warnings: [] };
   }
   const wanted = [
     { port: probe.port, role: 'web' },
     { port: syncPort, role: 'sync' },
   ] as const;
+  const taken = [];
+  for (const entry of wanted) if (!(await probe.portFree(entry.port))) taken.push(entry);
+  if (taken.length === 0) return { findings: [], warnings: [] };
+  const fix = `x dev --port ${quoteArg(String(await freeDevPortPair(probe.port, probe.portFree)))}`;
+  const lookup = ownerLookup(probe);
   const findings: Finding[] = [];
-  for (const entry of wanted) {
-    if (await probe.portFree(entry.port)) continue;
-    findings.push(
-      finding(
-        'X_PORT_IN_USE',
-        `port ${entry.port} is already listening, and \`x dev --port ${probe.port}\` binds it for the ${entry.role} role`,
-        `x dev --port ${quoteArg(String(portPairAfter(probe.port)))}`,
-      ),
-    );
+  const warnings: Finding[] = [];
+  for (const entry of taken) {
+    const owner = await lookup(entry.port);
+    const named = ownerText(owner);
+    const need = `\`x dev --port ${probe.port}\` binds it for the ${entry.role} role`;
+    if (inAnotherCheckout(owner, probe.root)) {
+      const cause = `port ${entry.port} is held by ${named ?? 'another process'}, another checkout, and ${need} — nothing is wrong with this environment`;
+      warnings.push(finding('X_PORT_IN_USE', cause, fix));
+    } else {
+      const held = named === undefined ? '' : ` (${named})`;
+      const cause = `port ${entry.port} is already listening${held}, and ${need}`;
+      findings.push(finding('X_PORT_IN_USE', cause, fix));
+    }
   }
-  return findings;
+  return { findings, warnings };
 }
+
+/** The taken ports that are this environment's problem: `x doctor`'s verdict. */
+export const portFindings = async (probe: PortProbe): Promise<readonly Finding[]> =>
+  (await portReport(probe)).findings;
+
+/** The taken ports another checkout holds: reported beside the verdict. */
+export const portWarnings = async (probe: PortProbe): Promise<readonly Finding[]> =>
+  (await portReport(probe)).warnings;
 
 /**
  * The port to TEST, and the one place `x doctor` reads it: `devPortFor`'s order — `--port`, then

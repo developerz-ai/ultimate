@@ -66,7 +66,9 @@ export function apiEntriesFor(written: readonly string[]): readonly ApiEntry[] {
  * comment between two entries ends nothing. (The list was closed at the first `]` in the raw text
  * and split at every comma — a commented list was rewritten with its comment as an entry.)
  */
-const listsOf = (source: string): ((key: string) => SourceList | undefined) | undefined => {
+export const apiListsOf = (
+  source: string,
+): ((key: string) => SourceList | undefined) | undefined => {
   const masked = maskOf(source);
   const call = /\bdefineApi\(\s*\{/.exec(masked);
   if (call === null) return undefined;
@@ -78,6 +80,28 @@ const listsOf = (source: string): ((key: string) => SourceList | undefined) | un
       : readList(source, masked, property.value);
   };
 };
+
+/**
+ * `source` with `key: value,` added as a property, on its own row: in the order `x new` writes —
+ * actions, queries, jobs, tasks — so after the nearest list before it the call already holds, which
+ * is `actions` at the least. `undefined` when the row would not land inside the call: an earlier
+ * list sharing its row with the call's own `});` puts "the row after it" outside.
+ */
+export function insertApiList(
+  source: string,
+  key: ApiEntry['key'],
+  value: string,
+): string | undefined {
+  const listOf = apiListsOf(source);
+  const actions = listOf?.('actions');
+  if (listOf === undefined || actions === undefined) return undefined;
+  const earlier = LIST_ORDER.slice(0, LIST_ORDER.indexOf(key))
+    .map((name) => listOf(name))
+    .findLast((found) => found !== undefined);
+  const after = source.indexOf('\n', (earlier ?? actions).close);
+  const candidate = `${source.slice(0, after + 1)}  ${key}: ${value},\n${source.slice(after + 1)}`;
+  return apiListsOf(candidate)?.(key) === undefined ? undefined : candidate;
+}
 
 /**
  * `source` with each entry imported and listed. The import joins the `import * as` block in sorted
@@ -94,7 +118,7 @@ export function insertApiEntries(
   const skipped: ApiEntry[] = [];
   for (const entry of entries) {
     const importLine = `import * as ${entry.binding} from '${entry.specifier}';`;
-    const listOf = listsOf(next);
+    const listOf = apiListsOf(next);
     const actions = listOf?.('actions');
     if (listOf === undefined || actions === undefined) {
       skipped.push(entry);
@@ -103,18 +127,8 @@ export function insertApiEntries(
     const list = listOf(entry.key);
     if (list?.entries.some((one) => one.text === entry.binding) === true) continue;
     if (list === undefined) {
-      // In the order `x new` writes — actions, queries, jobs, tasks: after the nearest list
-      // before it that the call already holds, which is `actions` at the least.
-      const earlier = LIST_ORDER.slice(0, LIST_ORDER.indexOf(entry.key))
-        .map((key) => listOf(key))
-        .findLast((found) => found !== undefined);
-      const after = next.indexOf('\n', (earlier ?? actions).close);
-      const line = `  ${entry.key}: [${entry.binding}],`;
-      const candidate = `${next.slice(0, after + 1)}${line}\n${next.slice(after + 1)}`;
-      // Read back, as every other edit here is: when the earlier list shares its row with the
-      // call's own `});`, "the row after it" is OUTSIDE the call — a property of nothing.
-      const landed = listsOf(candidate)?.(entry.key);
-      if (landed?.entries.some((one) => one.text === entry.binding) !== true) {
+      const candidate = insertApiList(next, entry.key, `[${entry.binding}]`);
+      if (candidate === undefined) {
         skipped.push(entry);
         continue;
       }

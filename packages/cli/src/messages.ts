@@ -318,16 +318,52 @@ const CATALOG = {
   ...FLOOR_MESSAGES,
   ...STATUS_MESSAGES,
   'cli.heavy.waiting':
-    'heavy: {label} waits for {need} MB, position {position} of {queued}; {used} of {capacity} MB held by {holders}',
-  'cli.heavy.lockWait': 'heavy: waiting for this checkout’s {name} lock, held by {holder}',
+    'heavy: {label} waits for {need} MB, position {position} of {queued}; {used} of {capacity} MB held by {holders} — leave it running; it starts by itself (bunx x heavy status)',
+  'cli.heavy.waitingAdmission':
+    'heavy: {label} waits for {need} MB, position {position} of {queued}; admission in progress — leave it running; it starts by itself (bunx x heavy status)',
+  'cli.heavy.waitingCpu':
+    'heavy: {label} waits for CPU, position {position} of {queued}: {cpu}; running: {holders} — leave it running; it starts by itself (bunx x heavy status)',
+  'cli.heavy.cpu.psi': 'CPU pressure {value}% (new runs wait at {limit}%)',
+  'cli.heavy.cpu.runnable': '{value} runnable tasks per core (new runs wait at {limit})',
+  'cli.heavy.status.cpu': 'cpu: {cpu} — a new heavy run waits while another is running',
+  'cli.heavy.status.cpuOff': 'cpu: {cpu} — not gating here ({reason})',
+  'cli.heavy.lockWait':
+    'heavy: waiting for this checkout’s {name} lock, held by {holder} — leave it running; it starts by itself',
   'cli.heavy.status.summary':
     '{used} of {capacity} MB reserved, {holds} running, {queued} queued; {cores} core(s) per run',
   'cli.heavy.status.off': 'admission is off here ({reason}); {cores} core(s) per run',
   'cli.heavy.status.machine':
     'machine: load {load} on {cpus} cores, {runnable} runnable, {free} GB of {total} GB available',
-  'cli.heavy.status.hold': 'running: {entry}',
+  'cli.heavy.status.hold': 'running: {entry}; {pids}',
+  'cli.heavy.status.wrapper': 'wrapper pid {pid}',
+  'cli.heavy.status.wrapperGone': 'wrapper pid {pid} exited',
+  'cli.heavy.status.command': 'command pid {pids}',
   'cli.heavy.status.queued': 'queued {position}: {entry}',
   'cli.heavy.run.done': '{command} exited {code} after {ran}, {waited} in the queue',
+  // `test-workers.ts`: a step line for a run the machine held below its plan.
+  'cli.test.narrowed': 'ran {peak} at once (peak), planned {planned}',
+  'cli.test.narrowedWhy':
+    'ran {peak} at once (peak), planned {planned} — the machine allowed no more (bunx x heavy status); plan: {reason}',
+  // `verify-live.ts`: which test stack the suites got, one line on stderr.
+  'cli.verify.services.line.started':
+    'services: started {project} ({services}) — bunx x clean --services stops it',
+  'cli.verify.services.line.reused':
+    'services: reused {project} — bunx x clean --services stops it',
+  'cli.verify.services.line.shared':
+    'services: shared {project} with {other} ({why}) — it stays up for that checkout too',
+  'cli.verify.services.why.same-app': 'another checkout of this app',
+  'cli.verify.services.why.declared': 'ULTIMATE_TEST_SERVICES_SHARED=1',
+  // `clean-services.ts`: what `x clean --services` did to the stack, and the ones it left alone.
+  'cli.clean.services.stopped': 'stopped test stack {project} ({services})',
+  'cli.clean.services.would-stop':
+    'would stop test stack {project} ({services}) — --dry-run stopped nothing',
+  'cli.clean.services.kept':
+    'kept test stack {project}: {owner} started it and may be using it — stop it from there, or: docker compose -p {project} down --volumes',
+  'cli.clean.services.none': 'no test stack is running for this app',
+  'cli.clean.services.other':
+    'other test stack {project} ({status}) from {root} — left alone; stop it with: docker compose -p {project} down --volumes',
+  'cli.clean.services.otherGone':
+    'other test stack {project} ({status}) from {root}, a checkout that no longer exists — left alone; stop it with: docker compose -p {project} down --volumes',
 } as const;
 
 export type MessageKey = keyof typeof CATALOG;

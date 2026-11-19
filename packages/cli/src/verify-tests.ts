@@ -25,7 +25,13 @@ import { discoverTests } from './test-select';
 import { TEST_TIMINGS_FILE } from './test-shards';
 import { machineLease, suiteWeight } from './test-slots';
 import type { WorkerPlan } from './test-workers';
-import { availableCpus, SERIAL_TYPES, totalMemory, workerPlan } from './test-workers';
+import {
+  availableCpus,
+  fileBoundWidth,
+  SERIAL_TYPES,
+  totalMemory,
+  workerPlan,
+} from './test-workers';
 import { runCovered } from './verify-coverage-run';
 import { judgeE2eBrowser, withE2eApp } from './verify-e2e';
 import { factoryFindings } from './verify-factories';
@@ -232,7 +238,7 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
     plan === undefined
       ? `${String(Math.min(workers, files.length))} workers (--workers)`
       : files.length < plan.workers
-        ? `${String(files.length)} of ${plan.reason}`
+        ? fileBoundWidth(files.length, plan.reason)
         : plan.reason;
   // A subset cannot hold the whole tree's coverage floor: only a full unit run is judged.
   if (type === 'unit' && isApp(ctx.root) && selected === undefined) {

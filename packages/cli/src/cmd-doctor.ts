@@ -15,6 +15,7 @@ import { browserProbe, browserWarnings, withBrowserReport } from './doctor-brows
 import { chartAlertsProbe, NOTHING_MISSING, withChartAlertsListing } from './doctor-chart-alerts';
 import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { embeddedDatabaseFinding } from './doctor-database';
+import { guardedCheck, guardedListing } from './doctor-guarded';
 import { shippedGuardsProbe, vendoredGuardWarnings, withGuardListing } from './doctor-guards';
 import { offlineFallbackFinding } from './doctor-offline';
 import { NO_POOLER_FACT, poolerFindings, withPoolerReport } from './doctor-pooler';
@@ -70,9 +71,18 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
     );
     return findings;
   }
+  // Every check below through `check`: one that throws is that check's finding, not the report's end.
+  const check = (name: string, run: () => Promise<void>): Promise<void> =>
+    guardedCheck(name, findings, run);
+  // First of the app's checks: an unfinished merge explains most of what any later one reports.
+  await check('merge state', async () => {
+    findings.push(...((await probe.mergeState?.()) ?? []));
+  });
   // Right after the runtime and for its reason: a compiler a major behind reds typecheck and build
   // on the framework's own files, and every finding below is read through a gate that cannot pass.
-  findings.push(...typescriptFindings(await probe.typescript()));
+  await check('typescript', async () => {
+    findings.push(...typescriptFindings(await probe.typescript()));
+  });
   if (!probe.exists(ENV_DEVELOPMENT)) {
     findings.push(
       finding(
@@ -93,7 +103,9 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   // Silent in development and on a shell naming no environment; reported where this machine names
   // a deploy. One list, one wording (`framework-env.ts`, #679).
   findings.push(...probe.frameworkFindings);
-  findings.push(...(await portFindings(probe)));
+  await check('port', async () => {
+    findings.push(...(await portFindings(probe)));
+  });
   findings.push(...appUrlFindings(probe.appUrl, probe.port));
   // `@ultimat3/pwa`'s own codes, not CLI twins of them. `X_PWA_NO_ICON_SOURCE` and
   // `X_PWA_NO_FALLBACK` used to be declared here for the same two conditions the package already
@@ -116,29 +128,41 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   // `apps/web/app/offline.tsx`, which is not a route file at all (`assertRouteFilename` refuses
   // it), so no app could clear the finding and its own `fix:` did not either. `doctor-offline.ts`
   // holds the rule and the reasons.
-  const offline = offlineFallbackFinding(await probe.offlineFallback());
-  if (offline !== undefined) findings.push(offline);
-  const pooler = await probe.pooler();
-  findings.push(...poolerFindings(pooler));
-  // A pooler's refusal is every other database probe's answer too, and its fix is the true one: this
-  // one's says "set DATABASE_URL" to an operator whose URL is right.
-  const database = pooler.refused === undefined ? await probe.database() : null;
-  if (database !== null) findings.push(database);
-  // The other half of the same question, and the half a bare VM lands on: `database()` is silent
-  // where there is no `DATABASE_URL`, and that silence IS the bare-VM configuration.
-  const embedded = embeddedDatabaseFinding(await probe.embeddedDatabase());
-  if (embedded !== undefined) findings.push(embedded);
-  // Asked only of a database that answered: an unreachable one is already the finding above.
-  const reachable = pooler.refused === undefined && database === null;
-  if (reachable) findings.push(...((await probe.rowSecurity?.()) ?? []));
-  findings.push(...(await probe.drift()));
+  await check('offline fallback', async () => {
+    const offline = offlineFallbackFinding(await probe.offlineFallback());
+    if (offline !== undefined) findings.push(offline);
+  });
+  await check('database', async () => {
+    const pooler = await probe.pooler();
+    findings.push(...poolerFindings(pooler));
+    // A pooler's refusal is every other database probe's answer too, and its fix is the true one:
+    // this one's says "set DATABASE_URL" to an operator whose URL is right.
+    const database = pooler.refused === undefined ? await probe.database() : null;
+    if (database !== null) findings.push(database);
+    // The other half of the same question, and the half a bare VM lands on: `database()` is silent
+    // where there is no `DATABASE_URL`, and that silence IS the bare-VM configuration.
+    const embedded = embeddedDatabaseFinding(await probe.embeddedDatabase());
+    if (embedded !== undefined) findings.push(embedded);
+    // Asked only of a database that answered: an unreachable one is already the finding above.
+    const reachable = pooler.refused === undefined && database === null;
+    if (reachable) findings.push(...((await probe.rowSecurity?.()) ?? []));
+  });
+  await check('migration drift', async () => {
+    findings.push(...(await probe.drift()));
+  });
   // Last, and it is why `X_CLI_UNEXPECTED`'s `fix: x doctor --json` is not a dead end on the path an
   // author reaches it from: `x db gen` throwing `X_MIGRATION_SNAPSHOT_MISSING` used to be a
   // condition this diagnostic could not see at all, so the fix line ran clean over a broken app.
-  findings.push(...(await probe.snapshots()));
+  await check('migration snapshots', async () => {
+    findings.push(...(await probe.snapshots()));
+  });
   // Sealed columns against the key ring: no key at all, or a rotation whose re-seal is pending.
-  findings.push(...sealedKeyFindings(await probe.sealedKeys()));
-  findings.push(...authStorageFindings(await probe.authStorage()));
+  await check('sealed keys', async () => {
+    findings.push(...sealedKeyFindings(await probe.sealedKeys()));
+  });
+  await check('auth storage', async () => {
+    findings.push(...authStorageFindings(await probe.authStorage()));
+  });
   // `X_FRAMEWORK_PIN_RANGE`, `X_ENV_NAME_RESERVED`, `X_DB_ROW_SECURITY_OFF` and
   // `X_VERIFY_STEP_UNFLOORED` are not here: on `main` they warn beside the verdict
   // (`doctor-warnings.ts`), so an upgrade with no change keeps this green.
@@ -156,10 +180,18 @@ export interface DoctorReportProbe extends DoctorProbe {
 
 /** The whole report over one probe: the verdict, then the listings and warnings beside it. */
 export async function reportDoctor(probe: DoctorReportProbe): Promise<CommandResult> {
+  // A listing that throws costs that listing, reported beside the rest (`doctor-guarded.ts`).
+  const failed: Finding[] = [];
+  const inApp = <T>(name: string, read: (root: string) => Promise<T>, none: T): Promise<T> => {
+    const { root } = probe;
+    return root === undefined
+      ? Promise.resolve(none)
+      : guardedListing(name, failed, () => read(root), none);
+  };
   // Asked once: `runDoctor` reads the verdict and the report beside it reads the numbers.
-  const pooler = probe.root === undefined ? NO_POOLER_FACT : await probe.pooler();
+  const pooler = await inApp('pooler', () => probe.pooler(), NO_POOLER_FACT);
   const findings = await runDoctor({ ...probe, pooler: async () => pooler });
-  const guardEntries = probe.root === undefined ? [] : await shippedGuardsProbe(probe.root);
+  const guardEntries = await inApp('shipped guards', shippedGuardsProbe, []);
   const listed = withGuardListing(
     {
       ok: findings.length === 0,
@@ -177,37 +209,43 @@ export async function reportDoctor(probe: DoctorReportProbe): Promise<CommandRes
   // The second listing: what the coverage floor does not see (`doctor-coverage.ts`).
   const covered = withCoverageExcludes(
     listed,
-    probe.root === undefined ? [] : await coverageExcludesProbe(probe.root),
+    await inApp('coverage excludes', coverageExcludesProbe, []),
   );
   // The third: the monitoring templates and dashboard the chart predates (`doctor-chart-alerts.ts`).
   const charted = withChartAlertsListing(
     covered,
-    probe.root === undefined ? NOTHING_MISSING : chartAlertsProbe(probe.root),
+    await inApp('chart alerts', async (root) => chartAlertsProbe(root), NOTHING_MISSING),
   );
   // The fourth: implicit indexes another already serves (`doctor-redundant-indexes.ts`).
   const indexed = withRedundantIndexes(
     charted,
-    probe.root === undefined ? undefined : await redundantIndexesProbe(probe.root),
+    await inApp('redundant indexes', redundantIndexesProbe, undefined),
   );
   // A reminder, not a finding: the rolling rail is off until this is set (`doctor-rolling.ts`).
   const reminded = withPoolerReport(
-    withRollingReminder(
-      indexed,
-      probe.root === undefined ? undefined : await rollingSinceProbe(probe.root),
-    ),
+    withRollingReminder(indexed, await inApp('rolling deploys', rollingSinceProbe, undefined)),
     pooler,
   );
   // Last, and beside the verdict on `main`: the 31.16.0 checks (`doctor-warnings.ts`).
   // A copy of a shipped guard among them (`X_GUARD_VENDORED`): a warning, so exit stays.
-  const browser = await probe.browser();
+  const browser = await guardedListing('browser', failed, () => probe.browser(), undefined);
+  const warnings = await guardedListing('warnings', failed, () => doctorWarnings(probe), []);
+  const superseded = await inApp('superseded workarounds', supersededFindings, []);
+  const floors = await inApp('advisory floors', advisoryFloorFindings, []);
+  // An `x upgrade` driven by a CLI older than the codemod engine left files it owed.
+  const codemods = await inApp(
+    'pending codemods',
+    (root) => pendingCodemodFindings(root, cliVersion()),
+    [],
+  );
   return withDoctorWarnings(withBrowserReport(reminded, browser), [
-    ...(await doctorWarnings(probe)),
+    ...warnings,
     ...vendoredGuardWarnings(guardEntries),
     ...browserWarnings(browser),
-    ...(probe.root === undefined ? [] : await supersededFindings(probe.root)),
-    ...(probe.root === undefined ? [] : await advisoryFloorFindings(probe.root)),
-    // An `x upgrade` driven by a CLI older than the codemod engine left files it owed.
-    ...(probe.root === undefined ? [] : await pendingCodemodFindings(probe.root, cliVersion())),
+    ...superseded,
+    ...floors,
+    ...codemods,
+    ...failed,
   ]);
 }
 

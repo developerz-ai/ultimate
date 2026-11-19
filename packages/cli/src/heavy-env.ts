@@ -9,6 +9,8 @@ export const HEAVY_DIR_ENV = 'ULTIMATE_HEAVY_DIR';
 export const HEAVY_MEMORY_ENV = 'ULTIMATE_HEAVY_MEMORY';
 /** The local core ceiling, replacing `LOCAL_CORE_CAP`. */
 export const HEAVY_CORES_ENV = 'ULTIMATE_HEAVY_CORES';
+/** `0` turns the CPU half of admission off (`heavy-pressure.ts`); memory still applies. */
+export const HEAVY_CPU_ENV = 'ULTIMATE_HEAVY_CPU';
 /** Set on a holder's children: the reservation file they run inside. A protocol, not a knob. */
 export const HEAVY_HOLD_ENV = 'ULTIMATE_HEAVY_HOLD';
 

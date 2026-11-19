@@ -127,7 +127,7 @@ export function rawMotion(files: readonly StyleFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} writes \\\`\${property}: \${value}\\\` — \${literals.join(' and ')} off the motion scale, a tempo of this file's own\`,
-        fix: \`\${property}: \${written} — at \${file.path}:\${line} (durations: \${DURATIONS.map(([name]) => name).join(' ')}; a longer one is calc(#{\${ns}.duration(slower)} * 2)), then: x verify\`,
+        fix: \`\${property}: \${written} — at \${file.path}:\${line} (durations: \${DURATIONS.map(([name]) => name).join(' ')}; a longer one is calc(#{\${ns}.duration(slower)} * 2)), then: x verify --only boundaries\`,
         at: \`\${file.path}:\${line}\`,
       });
     }

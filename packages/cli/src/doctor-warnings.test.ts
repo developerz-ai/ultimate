@@ -83,6 +83,21 @@ describe('unit · x doctor · warnings beside the verdict', () => {
     expect(result.data).not.toHaveProperty('warnings');
   });
 
+  // A neighbour's dev server is a warning (`doctor-port.ts`); it was computed and never reported,
+  // so another checkout's port vanished from `x doctor` instead of moving beside the verdict.
+  test("another checkout's port is a warning beside a green verdict", async () => {
+    const root = appRoot();
+    const result = await reportDoctor(
+      probe({
+        root,
+        portFree: async (port) => port !== 3000,
+        portOwner: async () => ({ pid: 41, cwd: `${root}-other` }),
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({ warnings: [{ code: 'X_PORT_IN_USE' }] });
+  });
+
   test('a real finding still reds the doctor, with the warnings beside it', async () => {
     const result = await reportDoctor({ ...ranged(), exists: () => false });
     expect(result.ok).toBe(false);

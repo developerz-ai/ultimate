@@ -30,9 +30,15 @@ describe('unit · x new --shape realtime', () => {
 
   test('every new primitive is registered, and createPost announces what it wrote', () => {
     const api = textAt('apps/web/api/index.ts');
-    expect(api).toContain('actions: [health, createPost, archivePost, renamePost]');
-    expect(api).toContain('queries: [postList, recentPosts]');
-    expect(api).toContain('jobs: [reindexPost, postCreated]');
+    expect(api).toContain(
+      '  actions: [\n    // One entry per line: branches that each add one merge cleanly (x merge-driver).\n    health,\n    createPost,\n    archivePost,\n    renamePost,\n  ],',
+    );
+    expect(api).toContain(
+      '  queries: [\n    // One entry per line: branches that each add one merge cleanly (x merge-driver).\n    postList,\n    recentPosts,\n  ],',
+    );
+    expect(api).toContain(
+      '  jobs: [\n    // One entry per line: branches that each add one merge cleanly (x merge-driver).\n    reindexPost,\n    postCreated,\n  ],',
+    );
     expect(textAt('apps/web/app/post/actions/create-post.ts')).toContain(
       'await postCreated.enqueue({ params: { id: row.id, orgId: row.orgId } });',
     );

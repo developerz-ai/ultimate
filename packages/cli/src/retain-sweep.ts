@@ -11,7 +11,7 @@ export function retainUnsweptFinding(entity: string): Finding {
   return {
     code: 'X_ENTITY_RETAIN_UNSWEPT',
     cause: `entity "${entity}" declares retain, and no purge() registered in this app sweeps it — rows past its window are kept forever`,
-    fix: "export const retention = purge({ entities: 'declared' }) — in a jobs module named in jobs: [...] in apps/web/api/index.ts, then x verify",
+    fix: "export const retention = purge({ entities: 'declared' }) — in a jobs module named in jobs: [...] in apps/web/api/index.ts, then x manifest",
     at: 'apps/web/api/index.ts',
   };
 }

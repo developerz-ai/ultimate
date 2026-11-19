@@ -1,7 +1,7 @@
 // `@ultimat3/db/schema-dump`: the whole schema as files, and the drift checks over them. Its own
 // entry because only three callers ever run it — `x db gen`, `x db migrate` and the gate's `drift`
-// step — while `@ultimat3/db` is imported by every role of every app: on the barrel these ten
-// modules were evaluated by every web, worker and scheduler pod to serve nothing.
+// step — while `@ultimat3/db` is imported by every role of every app: on the barrel these modules
+// were evaluated by every web, worker and scheduler pod to serve nothing. The fork check too.
 
 export type {
   CatalogColumn,
@@ -32,6 +32,14 @@ export {
 } from './dump-drift';
 export type { IntrospectCatalogOptions } from './introspect-catalog';
 export { introspectCatalog } from './introspect-catalog';
+export type {
+  ForkCollision,
+  ForkLoss,
+  ForkObjectKind,
+  ForkStale,
+  MigrationFork,
+} from './migration-fork';
+export { migrationFork } from './migration-fork';
 export { unexpectedObjects } from './object-drift';
 export type { SchemaDumpFile } from './schema-dump';
 export { renderSchemaDump } from './schema-dump';

@@ -4,9 +4,11 @@
 import { describe, expect, test } from 'bun:test';
 // why: Bun ships no path-join primitive; the framework's own .gitattributes is read by repo path.
 import { join } from 'node:path';
+import { REGISTRY_FILES } from '../registry-lines';
 import {
   BINARY_EXTENSIONS,
   LINE_ENDING_ATTRIBUTES,
+  MERGE_ATTRIBUTES,
   ROOT_GITATTRIBUTES_PATH,
   rootGitattributesFile,
 } from './scaffold-gitattributes';
@@ -48,6 +50,20 @@ describe('unit · the root .gitattributes x new writes', () => {
 
   test('no binary extension is listed twice', () => {
     expect(new Set(BINARY_EXTENSIONS).size).toBe(BINARY_EXTENSIONS.length);
+  });
+});
+
+describe('unit · the merge rules', () => {
+  test('every registry a generator edits takes the registry driver', () => {
+    const lines = rules(rootGitattributesFile().contents);
+    for (const path of REGISTRY_FILES) expect(lines).toContain(`${path} merge=x-registry`);
+    expect(lines).toContain('packages/i18n/catalogs/*.json merge=x-registry');
+  });
+
+  test('the two projections x manifest rebuilds keep our side', () => {
+    const lines = rules(MERGE_ATTRIBUTES);
+    expect(lines).toContain('x.manifest.json merge=x-generated');
+    expect(lines).toContain('openapi.json merge=x-generated');
   });
 });
 

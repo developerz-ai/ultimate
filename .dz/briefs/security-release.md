@@ -1,14 +1,17 @@
 # Brief: does a confirmed security fix need a release today?
 
-Daily checkup on the days `release-due` does not run, fired by `schedules: security-release` in
+Devops session on Thursdays and Sundays, so a confirmed fix waits at most three days with the Tuesday `release-due`, fired by `schedules: security-release` in
 `.dz/maintainer/maintainer.yml`. This is the one off-cycle release. Everything else waits for
 Tuesday's `.dz/briefs/release-due.md`, and a person can still cut by hand.
 
 ## Run
 
 ```bash
-git fetch --tags origin && bun run scripts/release-due.ts --json
+bun run scripts/release-due.ts --json
 ```
+
+You have a shell, no `git` writes and no `gh`; the runner ships what you leave in the tree. A refusal
+(`ok:false`): report its `cause` and stop.
 
 Read `data.shipping` for what merged since the last tag, then look for a commit that fixes a security
 advisory.
@@ -27,10 +30,6 @@ such advisory does not qualify: it waits for Tuesday unless a person cuts it.
 
 ## When it qualifies
 
-File one ask, **Release `<data.next>`**, opening with the advisory's id and source URL, then
-following `.dz/briefs/release-due.md` § The ask. Its dedupes and refusals apply, and a major stays a
-maintainer's. Otherwise file nothing and end your run summary with `no release: <reason>`.
-
-## Rows
-
-- `security-fix-unreleased` — A commit in `data.shipping` fixes an advisory a first-tier source confirms, naming something these packages ship, and no release carries it yet.
+Follow `.dz/briefs/release-due.md` § Cut the release, opening `PR.md` and the `### Highlights` with the
+advisory's id and source URL. A major stays a maintainer's. Otherwise change no file and end
+`REPORT.md` with `no release: <reason>`.

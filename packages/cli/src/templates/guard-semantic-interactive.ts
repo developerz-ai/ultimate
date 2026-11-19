@@ -153,7 +153,7 @@ export function semanticInteractive(files: readonly SourceFile[]): readonly Find
         findings.push({
           code: CODE,
           cause: \`\${at} puts role="\${role}" on <\${tag.name}> — a role is a promise, and this one obliges the element to answer Space, Enter, focus and disabled, which the native element already does\`,
-          fix: \`replace <\${tag.name} role="\${role}"> in \${file.path} with \${native.write}, then: x verify\`,
+          fix: \`replace <\${tag.name} role="\${role}"> in \${file.path} with \${native.write}, then: x verify --only boundaries\`,
           at: file.path,
         });
         continue;
@@ -163,7 +163,7 @@ export function semanticInteractive(files: readonly SourceFile[]): readonly Find
       findings.push({
         code: CODE,
         cause: \`\${at} hangs \${handler} on <\${tag.name}>, which takes no focus and answers no key — a keyboard, a screen reader and a switch reach a mouse handler on an inert element in exactly one way, which is not at all\`,
-        fix: \`write <button type="button"> — or the native control this element means — in place of <\${tag.name}> at \${at}, then: x verify\`,
+        fix: \`write <button type="button"> — or the native control this element means — in place of <\${tag.name}> at \${at}, then: x verify --only boundaries\`,
         at: file.path,
       });
     }

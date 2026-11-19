@@ -38,8 +38,16 @@ export const DB_MESSAGES = {
   // The fourth: no DDL and no sidecar moved, but `packages/db/schema/` did — a hand edit repaired,
   // or a framework table that changed under an upgrade. `unchanged` would deny a write the lines
   // below it list, and this command is `X_SCHEMA_DUMP_DRIFT`'s whole `fix:`.
-  'cli.db.gen.dumped': 'no migration needed — schema dump rewritten ({count} file(s))',
+  // Names the migration, because in a shared checkout another agent's concurrent `x db gen` may be
+  // what recorded this run's table: the entities are one registry, so its migration carries them.
+  'cli.db.gen.dumped':
+    'no migration needed — {newest} already records every entity (a concurrent x db gen may have written it); schema dump rewritten ({count} file(s))',
+  // A sidecar moved and no migration exists: `written` would name one nobody can apply.
+  'cli.db.gen.forkMerged':
+    'forked migrations merged — {count} object(s) corrected in {id}.snapshot.json; no SQL changed, no migration deleted',
+  'cli.db.gen.newest': '  newest migration: {id}',
   'cli.db.gen.written': 'migration {id} generated',
+  'cli.db.gen.writtenTables': 'migration {id} generated — tables: {tables}',
   // Exit 1 and a migration on disk at once: the summary carries the half the exit code hides.
   'cli.db.gen.writtenDumpFailed':
     'migration {id} generated and written — the schema dump was not; do not generate it again',

@@ -124,7 +124,7 @@ export function unsizedImages(files: readonly SourceFile[]): readonly Finding[] 
         findings.push({
           code: CODE,
           cause: \`\${at} renders <\${tag.name}> with no width and height pair and no aspect-ratio — the browser reserves no box for it, so every element under it jumps the moment the bytes land\`,
-          fix: \`add width and height to the <\${tag.name}> at \${at} — the intrinsic pixel size, since CSS still decides what it is drawn at — or an aspect-ratio, then: x verify\`,
+          fix: \`add width and height to the <\${tag.name}> at \${at} — the intrinsic pixel size, since CSS still decides what it is drawn at — or an aspect-ratio, then: x verify --only boundaries\`,
           at: file.path,
         });
       }
@@ -134,7 +134,7 @@ export function unsizedImages(files: readonly SourceFile[]): readonly Finding[] 
       findings.push({
         code: CODE,
         cause: \`\${at} marks <\${tag.name}> as the priority image AND loading="lazy" — a lazy image is fetched after layout, and this is the one the page's largest paint is measured on, so the attribute delays the metric it is the subject of\`,
-        fix: \`delete loading="lazy" from the <\${tag.name}> at \${at}, then: x verify\`,
+        fix: \`delete loading="lazy" from the <\${tag.name}> at \${at}, then: x verify --only boundaries\`,
         at: file.path,
       });
     }

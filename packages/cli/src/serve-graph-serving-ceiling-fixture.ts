@@ -336,5 +336,8 @@
  * `time/src/plain-date.ts`, `db/src/not-null-contract.ts`.
  * raised 1545 → 1547, measured 1547 (2026-11-18, a queued write's binding): `core/src/client-scope-id.ts`
  * and `action/src/replay-scope.ts`, the scope id and the check that compares it.
+ * raised 1547 → 1548, measured 1548 (2026-11-19, multi-agent DX): `cli/src/port-pair-free.ts`, so
+ * the sync role's `X_PORT_IN_USE` names a pair that is free when asked, as `x doctor`'s fix does.
+ * The fork check that also arrived (three modules) went to `@ultimat3/db/schema-dump` instead.
  */
-export const SERVING_ROLE_CEILING = 1547;
+export const SERVING_ROLE_CEILING = 1548;

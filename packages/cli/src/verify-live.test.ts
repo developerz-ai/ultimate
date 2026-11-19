@@ -12,6 +12,8 @@ import { join } from 'node:path';
 import type { ExecOptions, ExecResult, Runner } from './exec';
 import { withTestServices } from './verify-live';
 import { SERVICES_UP } from './verify-services';
+import { psLine } from './verify-services-fixture';
+import { SERVICES_LIST } from './verify-services-stack';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import { bareTestStep, resetTestDiscovery, TEST_STEPS } from './verify-tests';
 
@@ -154,4 +156,48 @@ test('the gate itself wires the live step through the wrap', () => {
   expect(wired).toBeDefined();
   expect(wired).not.toBe(bareTestStep('live'));
   expect(wired?.run.toString()).not.toBe(bareTestStep('live').run.toString());
+});
+
+describe('one line says which stack the suites got', () => {
+  async function run(state: 'up' | 'cold') {
+    const root = await fixtureApp(['live']);
+    let started = state === 'up';
+    const runner: Runner = async (command) => {
+      const line = command.join(' ');
+      if (line === SERVICES_UP.join(' ')) started = true;
+      const listed = line === SERVICES_LIST.join(' ');
+      const running = command.includes('--status') && started;
+      return {
+        command,
+        ok: true,
+        code: 0,
+        stdout:
+          listed && started ? psLine('shop-test', 'postgres', root) : running ? 'postgres\n' : '',
+        stderr: '',
+        durationMs: 0,
+      };
+    };
+    const said: string[] = [];
+    const step = withTestServices(
+      bareTestStep('live'),
+      async () => state === 'up',
+      async () => 'ok',
+      (line) => said.push(line),
+    );
+    await step.run(ctxOf(root, runner));
+    return said;
+  }
+
+  test('a stack already up is reported as reused, with how to stop it', async () => {
+    const said = await run('up');
+    expect(said).toHaveLength(1);
+    expect(said[0]).toStartWith('services: reused shop-test');
+    expect(said[0]).toContain('x clean --services');
+  });
+
+  test('a cold start is reported as started', async () => {
+    const said = await run('cold');
+    expect(said).toHaveLength(1);
+    expect(said[0]).toStartWith('services: started shop-test');
+  });
 });

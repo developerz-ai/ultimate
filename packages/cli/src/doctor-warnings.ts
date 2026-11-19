@@ -2,13 +2,24 @@
 // never in it. On `main` an app that upgrades with no change keeps a green doctor
 // (`X_BREAKING_ON_MAIN`); on `next` these move into `runDoctor`'s findings and the verdict.
 
+import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { reservedEnvFindings } from './doctor-env-reserved';
 import { unflooredStepFindings } from './doctor-floor';
 import { pinRangeFindings } from './doctor-pins';
+import { portWarnings } from './doctor-port';
 import type { DoctorProbe } from './doctor-probe';
 import { rowSecurityOffFindings } from './doctor-row-security';
+import { REGISTRY_DRIVER } from './merge-driver-config';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
+
+const MERGE_DRIVER_UNSET: Finding = {
+  code: 'X_MERGE_DRIVER_UNSET',
+  cause: `.gitattributes names merge=${REGISTRY_DRIVER}, and this clone has no such driver, so two branches' generated features conflict`,
+  fix: 'bunx x merge-driver install',
+  docs: ERROR_DOCS_URL,
+  at: '.gitattributes',
+};
 
 /** The probes that only warn on `main`. Asked inside an app only; outside one there is no app. */
 export async function doctorWarnings(probe: DoctorProbe): Promise<readonly Finding[]> {
@@ -22,6 +33,10 @@ export async function doctorWarnings(probe: DoctorProbe): Promise<readonly Findi
     ...rowSecurityOffFindings(await probe.rowSecurityOff()),
     // A floor gap is the gate's blind spot, never a reason anything else is red.
     ...unflooredStepFindings(await probe.unflooredSteps()),
+    // A clone that merges by hand what its drivers would have merged: slower, never wrong.
+    ...((await probe.mergeDriverUnset?.()) === true ? [MERGE_DRIVER_UNSET] : []),
+    // A port another checkout's dev server holds: nothing is wrong with this environment.
+    ...(await portWarnings(probe)),
   ];
 }
 

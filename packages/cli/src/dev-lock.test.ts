@@ -301,6 +301,24 @@ describe('preflight', () => {
     }
   });
 
+  test('the suggested port is really free, and the holder is named with its directory', async () => {
+    const dir = scratch();
+    try {
+      const thrown = (await preflight({
+        stateDir: dir,
+        port: 3000,
+        hostname: 'localhost',
+        // A neighbour already sits on the pair the plain suggestion would name.
+        portBound: (port) => port < 3004,
+        holder: async () => ({ pid: 99, command: 'bun', cwd: '/work/other-app' }),
+      }).catch((error: unknown) => error)) as DevPortInUseError;
+      expect(thrown.fix).toContain('x dev --port 3004');
+      expect(thrown.cause).toContain('pid 99 (bun) in /work/other-app');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('an unidentifiable holder still gets a refusal with a remedy — root-owned ports are common', async () => {
     const dir = scratch();
     try {

@@ -7,8 +7,8 @@ bunx create-ultimate myapp && cd myapp && bun run setup && bun run dev
 Building a blog or an API rather than a dashboard? Add `--shape blog` or `--shape api` to the
 first command: [Shapes](Shapes) says what each writes and leaves out.
 
-**Four commands, and `bun run setup` is one of them.** It is the scaffold's own script, six steps —
-`bun install`, an `.env.development.local` touch, `x db gen "initial"` when
+**Four commands, and `bun run setup` is one of them.** It is the scaffold's own script, seven steps —
+`bun install`, `x merge-driver install`, an `.env.development.local` touch, `x db gen "initial"` when
 `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` — idempotent, so
 re-running it after a pull is safe. The last step is not optional either: `x.manifest.json` is a
 projection of the loaded app, nothing else ever runs the command, and `x verify`'s `manifest` step

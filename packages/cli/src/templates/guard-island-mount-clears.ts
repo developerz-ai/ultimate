@@ -75,7 +75,7 @@ export function islandMountClears(files: readonly SourceFile[]): readonly Findin
       findings.push({
         code: CODE,
         cause: \`\${at} empties the island's server markup outside mountOver, so a render that throws leaves a blank box where the server's HTML was, and the visitor sees nothing to retry\`,
-        fix: \`edit \${at} — delete the clear and end mount() with return mountOver(el, (root) => render(() => <Island {...props} />, root)), adding mountOver to the island's imports from '@ultimat3/render/client' — then: x verify\`,
+        fix: \`edit \${at} — delete the clear and end mount() with return mountOver(el, (root) => render(() => <Island {...props} />, root)), adding mountOver to the island's imports from '@ultimat3/render/client' — then: x verify --only boundaries\`,
         at,
       });
     }

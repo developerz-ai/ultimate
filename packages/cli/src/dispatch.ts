@@ -155,6 +155,7 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     env,
     bunVersion: options.bunVersion,
     ...(options.invocation === undefined ? {} : { invocation: options.invocation }),
+    reader,
   };
 
   // Put back in the `finally`: the stream is process-wide, so a dispatch that left `stderr` behind

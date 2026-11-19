@@ -173,7 +173,7 @@ describe('notImplementedDriver', () => {
   test('names the driver source and ends in a command an agent can run', () => {
     const error = notImplementedDriver('cloudflare', 'transform()', 'app/cdn-image.ts');
     expect(error.fix).toContain('app/cdn-image.ts');
-    expect(error.fix).toContain('x verify --json');
+    expect(error.fix).toContain('x build --json');
     expect(error.meta).toEqual({
       driver: 'cloudflare',
       capability: 'transform()',

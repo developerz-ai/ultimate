@@ -12,8 +12,41 @@ export type TemplateCodemodRow =
 const BRIEF_TYPECHECK_WHY =
   "an agent brief now names bunx x verify --only typecheck, which queues in the machine ledger; an existing app's brief still names bun run typecheck, which keeps working, and its .claude files are the app's to edit, so x upgrade leaves them alone";
 
+const WORKER_BRIEF_WHY =
+  "the agent briefs now tell a worker with a file set to skip the gate and stop allowing the raw typecheck and lint scripts; an existing app's .claude files are the app's to edit and keep working, so x upgrade leaves them alone";
+
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
+  ...[
+    'packages/cli/src/templates/scaffold-gitattributes.ts',
+    'packages/cli/src/templates/scaffold-bin.ts',
+    '.gitattributes',
+    'bin/setup.ts',
+    'apps/web/api/index.ts',
+    'apps/web/exercise.ts',
+    'apps/web/shared/roles.ts',
+    'packages/db/src/client.ts',
+  ].map((template) => ({ template, since: '31.49.0', codemod: 'merge-drivers' })),
+  {
+    template: 'packages/cli/src/templates/scaffold-docs.ts',
+    since: '31.49.0',
+    codemod: 'docs-worker-commands',
+  },
+  { template: 'CLAUDE.md', since: '31.49.0', codemod: 'docs-worker-commands' },
+  { template: 'AGENTS.md', since: '31.49.0', codemod: 'docs-worker-commands' },
+  ...[
+    'packages/cli/src/templates/scaffold-claude.ts',
+    'packages/cli/src/templates/scaffold-claude-commands.ts',
+    '.claude/README.md',
+    '.claude/settings.json',
+    '.claude/commands/feature.md',
+    '.claude/commands/verify.md',
+  ].map((template) => ({ template, since: '31.49.0', none: WORKER_BRIEF_WHY })),
+  {
+    template: 'README.md',
+    since: '31.49.0',
+    none: "README.md gains a paragraph on merging two features' generated files; a README is the app's own prose, and an existing app reads the same rule on the wiki's Many-Agents page, so x upgrade leaves it alone",
+  },
   {
     template: 'packages/cli/src/templates/scaffold-docs.ts',
     since: '31.48.0',

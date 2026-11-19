@@ -6,9 +6,10 @@
 // `TEST_DATABASE_URL` set — the probe databases whose run is over. The test runner sweeps the same
 // set before every run, keeping the newest two of each cache (`test-housekeeping.ts`); this is the
 // same sweep, keeping none. Never touched: `.x/pgdata` (the dev database), `.x/storage`, the build
-// output.
+// output. `--services` adds this checkout's test stack (`clean-services.ts`).
 
 import { requireAppRoot } from './app-root';
+import { cleanServices } from './clean-services';
 import { cleanSpec } from './cmd-clean-spec';
 import type { CliCommand, CommandContext } from './command';
 import { msg } from './messages';
@@ -23,17 +24,30 @@ export const cleanCommand: CliCommand = {
     const dryRun = flagBool(ctx.args, 'dry-run');
     const report = await tidyTestState({ root, mode: 'all', env: ctx.env, dryRun });
     const count = report.paths.length + report.databases.length;
+    const services = flagBool(ctx.args, 'services')
+      ? await cleanServices({ root, runner: ctx.runner, dryRun })
+      : undefined;
+    const finding = services?.finding;
     return {
-      ok: true,
+      ok: finding === undefined,
       command: 'clean',
       summary:
-        count === 0
-          ? msg('cli.clean.nothing')
-          : msg(dryRun ? 'cli.clean.would' : 'cli.clean.removed', {
-              paths: report.paths.length,
-              databases: report.databases.length,
-            }),
-      data: { dryRun, paths: [...report.paths], databases: [...report.databases] },
+        finding !== undefined
+          ? finding.cause
+          : count === 0
+            ? msg('cli.clean.nothing')
+            : msg(dryRun ? 'cli.clean.would' : 'cli.clean.removed', {
+                paths: report.paths.length,
+                databases: report.databases.length,
+              }),
+      ...(finding === undefined ? {} : { findings: [finding] }),
+      ...(services === undefined ? {} : { lines: [...services.lines] }),
+      data: {
+        dryRun,
+        paths: [...report.paths],
+        databases: [...report.databases],
+        ...(services === undefined ? {} : { services: services.data }),
+      },
     };
   },
 };

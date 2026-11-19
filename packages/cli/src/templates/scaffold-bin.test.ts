@@ -122,7 +122,13 @@ describe.skipIf(process.platform === 'win32')('unit · bin/setup.ts, executed', 
     expect(run.code).toBe(0);
     expect(existsSync(join(root, 'installed.txt'))).toBe(true);
     expect(Bun.file(join(root, '.env.development.local')).size).toBeGreaterThan(0);
-    expect(run.calls).toEqual(['db gen initial', 'db migrate --yes', 'db seed', 'manifest']);
+    expect(run.calls).toEqual([
+      'merge-driver install',
+      'db gen initial',
+      'db migrate --yes',
+      'db seed',
+      'manifest',
+    ]);
   });
 
   test('idempotent: an existing migration and env file are left alone', () => {
@@ -132,7 +138,7 @@ describe.skipIf(process.platform === 'win32')('unit · bin/setup.ts, executed', 
     writeFileSync(join(root, '.env.development.local'), 'SECRET=mine\n');
     const run = runScript(root, BIN_SCRIPTS.setup);
     expect(run.code).toBe(0);
-    expect(run.calls).toEqual(['db migrate', 'db seed', 'manifest']);
+    expect(run.calls).toEqual(['merge-driver install', 'db migrate', 'db seed', 'manifest']);
     expect(readFileSync(join(root, '.env.development.local'), 'utf8')).toBe('SECRET=mine\n');
   });
 
@@ -140,6 +146,6 @@ describe.skipIf(process.platform === 'win32')('unit · bin/setup.ts, executed', 
     const root = appRoot();
     const run = runScript(root, BIN_SCRIPTS.setup, [], { X_FAIL_ON: 'db', X_EXIT: '5' });
     expect(run.code).toBe(5);
-    expect(run.calls).toEqual(['db gen initial']);
+    expect(run.calls).toEqual(['merge-driver install', 'db gen initial']);
   });
 });

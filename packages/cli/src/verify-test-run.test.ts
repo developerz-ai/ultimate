@@ -220,3 +220,26 @@ describe('runParallel', () => {
     expect(outcome.tests?.ran).toBe(2);
   });
 });
+
+describe('the width a narrowed step reports', () => {
+  test('the peak the machine allowed, beside the plan, with one count of each', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-width-'));
+    try {
+      const { runner } = testRunner(false);
+      const outcome = await runParallel({
+        root,
+        runner,
+        files: files(4),
+        workers: 4,
+        type: 'unit',
+        widthReason: '4 workers (budget 7.8 GB)',
+        lease: async () => ({ count: 2, release: () => undefined }),
+      });
+      expect(outcome.workers).toBe(2);
+      expect(outcome.widthReason).toContain('ran 2 at once (peak), planned 4');
+      expect(outcome.widthReason).not.toContain('2 of 4');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

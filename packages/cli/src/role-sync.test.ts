@@ -76,6 +76,14 @@ describe('unit · the sync node cannot bind, and says which port', () => {
     expect(fixProblem(refusal?.fix ?? '')).toBeUndefined();
   });
 
+  // Beside two dev servers the next pair was often the second one's: the fix walks to a pair that
+  // is free when asked, as `x doctor`'s does (`freeDevPortPair`).
+  test('the suggested pair skips a pair another server holds', async () => {
+    const taken = new Set([4000, 4001, 4002]);
+    const refusal = await syncBindRefusal(3999, 4000, async (port) => !taken.has(port));
+    expect(refusal?.fix).toContain('x dev --port 4003');
+  });
+
   test('the suggested pair clears the taken port at the top of the range too', async () => {
     const webPort = PORT_RANGE.max - 2;
     const refusal = await syncBindRefusal(webPort, PORT_RANGE.max - 1, async () => false);

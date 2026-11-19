@@ -119,7 +119,7 @@ export class EvalRecordingError extends UltimateError {
     super({
       code: 'X_EVAL_RECORDING',
       cause: `${input.env} is set, so every eval would re-record its baseline instead of gating on it`,
-      fix: `env -u ${input.env} x verify`,
+      fix: `env -u ${input.env} x verify --only eval`,
     });
   }
 }

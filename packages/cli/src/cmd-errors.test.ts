@@ -69,6 +69,15 @@ describe('unit · x errors explain', () => {
     ]);
   });
 
+  test('explain prints the fix its reader can run, in the lines and the data', async () => {
+    const result = await errorsCommand.run({
+      ...ctxFor(['errors', 'explain', 'X_DB_DRIFT']),
+      reader: { bunxRunner: true },
+    });
+    expect(String(record(result.data)['fix'])).toStartWith('bunx x db gen ');
+    expect(result.lines?.[1]).toStartWith('  fix:   bunx x db gen ');
+  });
+
   test("a CLI code answers with the CLI's own fix, not the generic gate", async () => {
     const result = await run(['errors', 'explain', 'X_BUN_VERSION']);
     expect(record(result.data)['fix']).toBe('bun upgrade');

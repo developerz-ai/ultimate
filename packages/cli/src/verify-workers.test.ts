@@ -2,11 +2,19 @@
 // drives the step engine and this drives one flag reader — and the engine's file is at the line
 // ceiling, so a third bound assertion could not have landed beside it.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+// why: Bun ships no `Bun.*` equivalent for either: `mkdtemp`/`rm` own a throwaway root's lifetime.
+import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive.
+import { join } from 'node:path';
 import { readWorkers, verifyCommand } from './cmd-verify';
+import type { Runner } from './exec';
 import type { ParsedArgs } from './parse';
 import { parseArgs } from './parse';
-import { WORKER_CEILING, WORKER_FLOOR } from './test-workers';
+import { availableCpus, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
+import { bareTestStep, resetTestDiscovery } from './verify-tests';
 
 const args = (value: string): ParsedArgs =>
   parseArgs(['verify', '--workers', value], [verifyCommand.spec]);
@@ -51,5 +59,38 @@ describe('unit · x verify --workers', () => {
     expect(summary).not.toContain('CPUs - 1');
     expect(summary).toContain(`min ${WORKER_FLOOR}`);
     expect(summary).toContain(`max ${WORKER_CEILING}`);
+  });
+});
+
+// A skipped suite still evaluates this module: the reset runs at file scope either way.
+afterAll(() => {
+  resetTestDiscovery();
+});
+
+describe('unit · the width a step names', () => {
+  // A plan of several workers over one file: `1 of 6 workers` read like a machine limit.
+  test.skipIf(availableCpus() < 2)('fewer files than the plan is one worker per file', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-verify-width-'));
+    try {
+      resetTestDiscovery();
+      await Bun.write(join(root, 'packages/db/src/orders.contract.test.ts'), '');
+      const runner: Runner = async (command) => ({
+        command,
+        ok: true,
+        code: 0,
+        stdout: '',
+        stderr: '',
+        durationMs: 0,
+      });
+      const outcome = await bareTestStep('contract').run({
+        root,
+        runner,
+        env: { ULTIMATE_TEST_MEMORY_BUDGET: '8g', ULTIMATE_TEST_SLOTS: '0' },
+      });
+      expect(outcome.widthReason).toStartWith('1 worker, one per file (plan: ');
+    } finally {
+      resetTestDiscovery();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

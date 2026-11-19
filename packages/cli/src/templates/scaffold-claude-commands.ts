@@ -19,6 +19,9 @@ anything — it is the short form of every rule below, and it wins where the two
 **Done means \`bun run verify\` green.** A passing unit test is not done. A working \`bunx x dev\` is not done.
 Report what you actually ran, never what you assume passed.
 
+**Given a file set, you are a worker:** skip the gate, the coordinator runs it once. Run
+\`bun test ./<file>\`, \`bunx x test --filter <path>\`, and \`bunx x verify --only typecheck\` once at the end.
+
 ## Request
 $ARGUMENTS
 
@@ -205,6 +208,9 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 # /verify
 
 Run \`bun run verify\`.
+
+**Given a file set, do not:** the coordinator runs the gate once. Run your own files
+(\`bun test ./<file>\`, \`bunx x test --filter <path>\`) and report.
 
 It is \`bunx x verify\`, and it is THE gate — the one CI runs (\`.github/workflows/ci.yml\`) and the
 one \`README.md\` names. Its \`budgets\` step builds what it weighs, so nothing runs before it.

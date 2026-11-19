@@ -21,6 +21,7 @@ import { renderFinding, report } from './lib/log';
 import type { RunResult } from './lib/run';
 import { DEFAULT_RUN_TIMEOUT_MS, LONG_RUN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { ScriptError } from './lib/script-error';
+import { stopTreeOnSignal } from './lib/stop-tree';
 import type { PreflightStep } from './preflight-plan';
 import { isOurs, movedSource, preflightSteps, touchedUnits } from './preflight-plan';
 
@@ -191,6 +192,8 @@ export async function preflight(
 const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
 
 if (import.meta.main) {
+  // Stopped, it stops the suites it started: an orphan kept the ledger reservation it inherited.
+  stopTreeOnSignal('preflight');
   const args = parseScriptArgs(Bun.argv.slice(2), {
     names: [],
     refuse: (unknown) =>

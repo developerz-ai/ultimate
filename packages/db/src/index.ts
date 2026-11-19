@@ -183,6 +183,7 @@ export { ledgerAheadOfBuild, ROLLBACK_ALLOW_DESTRUCTIVE_ENV } from './migrate-ro
 export {
   migrationConcurrentPartitioned,
   migrationDestructive,
+  migrationForked,
   migrationIrreversible,
   migrationSnapshotMissing,
   rollbackStepsInvalid,

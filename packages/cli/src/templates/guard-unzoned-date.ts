@@ -114,10 +114,10 @@ export function unzonedDates(files: readonly SourceFile[]): readonly Finding[] {
         cause: \`\${file.path}:\${line} calls \${match[0].trim()}) with no timeZone — it formats in whatever zone the process happens to run in, so one row reads as two different days across two containers\`,
         fix:
           zoned !== undefined
-            ? \`\${called}() has no zone option — in \${file.path} call \${zoned}(locale, { timeZone: 'UTC' }) instead — then: x verify\`
+            ? \`\${called}() has no zone option — in \${file.path} call \${zoned}(locale, { timeZone: 'UTC' }) instead — then: x verify --only boundaries\`
             : bare
-              ? \`in \${file.path}: a Date → pass an explicit IANA zone, at.toLocaleString(locale, { timeZone: 'UTC' }); a NUMBER → new Intl.NumberFormat(locale).format(n) instead — then: x verify\`
-              : \`pass an explicit IANA zone in \${file.path} — toLocaleDateString(locale, { timeZone: 'UTC' }) — then: x verify\`,
+              ? \`in \${file.path}: a Date → pass an explicit IANA zone, at.toLocaleString(locale, { timeZone: 'UTC' }); a NUMBER → new Intl.NumberFormat(locale).format(n) instead — then: x verify --only boundaries\`
+              : \`pass an explicit IANA zone in \${file.path} — toLocaleDateString(locale, { timeZone: 'UTC' }) — then: x verify --only boundaries\`,
         at: file.path,
       });
     }

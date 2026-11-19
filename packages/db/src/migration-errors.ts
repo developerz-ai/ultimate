@@ -9,6 +9,7 @@
 import { renderFixShellArg } from '@ultimat3/core';
 import { DESTRUCTIVE_CAUSE, DESTRUCTIVE_MARKER, type DestructiveStatement } from './destructive';
 import { DbError } from './errors';
+import type { MigrationFork } from './migration-fork';
 import { statementExcerpt } from './statement-excerpt';
 
 /**
@@ -131,6 +132,72 @@ export const migrationSnapshotMissing = (id: string, file: string): DbError => {
         `rm ${renderFixShellArg(snapshotStem(file), '')}.* && x db gen "${renderFixShellArg(migrationNameOf(id), '')}"`
       : `git status --short -- "*.snapshot.json"   # shows the sidecar that is gone: restore the .snapshot.json committed beside this migration, or delete every file that migration owns and rerun x db gen with its description — the file named in this error's cause carries a backtick, a dollar sign, a quote, a backslash or whitespace, so no command here can spell it`,
     meta: { id, file },
+  });
+};
+
+/** A refusal stays readable however far the branches diverged; `meta` carries the counts. */
+const FORK_CAUSES_SHOWN = 3;
+
+function forkCauses(fork: MigrationFork): readonly string[] {
+  const label = (kind: string, table: string, name: string): string =>
+    kind === 'table' || kind === 'view' ? `${kind} "${name}"` : `${kind} "${table}"."${name}"`;
+  return [
+    ...fork.collisions.map(
+      (entry) =>
+        `${entry.again} creates ${label(entry.kind, entry.table, entry.name)} again after ${entry.first}, so the chain cannot replay`,
+    ),
+    ...fork.lost.map(
+      (entry) =>
+        `${fork.newest}.snapshot.json omits ${label(entry.kind, entry.table, entry.name)}, which ${entry.recordedBy} recorded and no migration removes`,
+    ),
+    ...fork.stale.map(
+      (entry) =>
+        `${fork.newest}.snapshot.json still records ${label(entry.kind, entry.table, entry.name)}, which ${entry.droppedBy} removed`,
+    ),
+  ];
+}
+
+/**
+ * The status check comes first because no file says whether a migration ran, and a migration some
+ * database applied must never be deleted. Prose after the command, as `migrationSnapshotMissing`
+ * degrades: an id a shell would read stays out of the line entirely.
+ */
+function forkCollisionFix(first: string, again: string): string {
+  const named = shellSpellable(first) && shellSpellable(again);
+  const later = named ? again : 'the later migration named in this error';
+  const earlier = named ? first : 'the earlier one';
+  return (
+    `x db status --json   # on every database this app runs against: ${later} repeats what ${earlier} created. ` +
+    `Only if data.pending lists ${later} on all of them was it never applied: remove its .sql, .snapshot.json and .hash from packages/db/migrations, then run x db gen --merge-fork. ` +
+    `If any database applied it, keep all three files and make the same check for ${earlier}; if each was applied somewhere, keep both, those databases disagree and need a hand-written reconciliation`
+  );
+}
+
+/**
+ * Two branches generated from one parent and were merged. Merging repairs the sidecar and touches
+ * no SQL, so it is the fix whether or not either migration was applied: the checksum covers `up`
+ * alone. Only a collision needs a migration gone, and only one no database has applied.
+ */
+export const migrationForked = (fork: MigrationFork): DbError => {
+  const causes = forkCauses(fork);
+  const hidden = causes.length - FORK_CAUSES_SHOWN;
+  const collision = fork.collisions[0];
+  return new DbError({
+    code: 'X_MIGRATION_FORKED',
+    cause:
+      'two branches generated migrations from one parent and were merged: ' +
+      causes.slice(0, FORK_CAUSES_SHOWN).join('; ') +
+      (hidden > 0 ? `; and ${hidden} more` : ''),
+    fix:
+      collision === undefined
+        ? 'x db gen --merge-fork   # records in the newest .snapshot.json what the merged migrations really build; no SQL changes and no migration is deleted, so it is safe after either was applied'
+        : forkCollisionFix(collision.first, collision.again),
+    meta: {
+      newest: fork.newest,
+      lost: fork.lost.length,
+      stale: fork.stale.length,
+      collisions: fork.collisions.length,
+    },
   });
 };
 

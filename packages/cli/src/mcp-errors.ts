@@ -7,6 +7,7 @@ import type { ErrorExplanation } from '@ultimat3/mcp';
 import type { CliErrorCode } from './error-codes';
 import { CLI_ERROR_CODES } from './error-codes';
 import { codeFixes, codeFixScan } from './error-fixes';
+import { AGENTS_FIXES } from './mcp-errors-agents';
 import { SHOT_FIXES } from './mcp-errors-shot';
 import { VERIFY_FIXES } from './mcp-errors-verify';
 
@@ -61,6 +62,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_PACKAGE_DUPLICATED:
     'x i18n check --json   # the finding names both copies and the package.json to pin',
   // `x shot` and the `ui.*` tools: their own family, in `mcp-errors-shot.ts`.
+  ...AGENTS_FIXES,
   ...SHOT_FIXES,
   // The gate's floor, run and split: their own family, in `mcp-errors-verify.ts`.
   ...VERIFY_FIXES,
@@ -77,8 +79,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --json   # the finding names the file, the line and the name it could not resolve',
   X_ERROR_CODE_UNTHROWN: 'x errors explain X_ERROR_CODE_UNTHROWN --json',
   X_CLI_UNEXPECTED: 'x doctor --json',
-  // `-p .`: an app root has no `references`, so the gate's own step runs this form (#450).
-  X_TYPECHECK_FAILED: 'bunx tsc -p . --pretty false',
+  // The step and not raw `tsc`: it queues in the machine ledger and takes the compiler lock.
+  X_TYPECHECK_FAILED: 'x verify --only typecheck --json',
   X_LINT_FAILED: 'bunx @biomejs/biome check .',
   X_TEST_FAILED: 'x test --json   # the finding carries the exact bun test invocation that failed',
   X_FILE_TOO_LONG: 'x verify --json   # the finding names the file to split',
@@ -137,12 +139,6 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x new my-app --json   # a name with letters or digits; it becomes the directory',
   X_APP_EMPTY:
     'x doctor --json   # then check the app root: no module under apps/ or packages/ loaded',
-  X_PORT_IN_USE: 'x dev --port 3001 --json',
-  X_DEV_ALREADY_RUNNING:
-    'x dev --json   # after stopping the x dev that already owns this checkout',
-  // The path, not `x dev`: the boot has already refused and rerunning it refuses again. The
-  // error's own `fix:` carries the resolved `.x/dev.lock`; this table cannot know the state dir.
-  X_DEV_LOCK_UNREADABLE: 'rm .x/dev.lock   # then: x dev --json',
   // `x doctor`, not `x db status`: generation failing is a reachability question, and `x db status`
   // reads the migration ledger only. `x doctor` is already this table's answer for
   // X_DB_STUDIO_FAILED.
@@ -327,7 +323,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_REPRO_CAPTURE_OFF:
     'x jobs list --json   # a job id replays with capture off; for requests set failureCapture: { enabled: true } in app.config.ts',
   X_ENTITY_RETAIN_UNSWEPT:
-    "add export const retention = purge({ entities: 'declared' }) to a jobs module named in jobs: [...] in apps/web/api/index.ts, then x verify",
+    "add export const retention = purge({ entities: 'declared' }) to a jobs module named in jobs: [...] in apps/web/api/index.ts, then x manifest",
   X_NEW_SHAPE_UNKNOWN: 'bunx @ultimat3/cli help new',
   X_NEW_SHAPE_CONFLICT: 'bunx @ultimat3/cli new myapp --shape blog',
   X_SEO_CARD_ROUTE_UNKNOWN:
@@ -402,7 +398,6 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x repro --json   # lists the failing jobs and error groups; then run it again with one id and --bundle, and attach the file it writes',
   X_ADVISORY_FLOOR_UNMET: 'bun update source-map-js immutable',
   X_UPGRADE_CODEMODS_PENDING: 'x upgrade codemods --from 0.0.0 --json',
-  X_UPGRADE_LOCKED: 'cat .x/upgrade.lock',
   X_APP_MIGRATIONS_UNAPPLIED: 'x db migrate --json',
   X_HEAVY_LEDGER_UNAVAILABLE: 'x heavy status --json',
   X_HEAVY_MEMORY_INVALID: 'export ULTIMATE_HEAVY_MEMORY=8g',

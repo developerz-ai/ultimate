@@ -14,6 +14,9 @@ import type { CommandContext } from './command';
 import type { ExecResult } from './exec';
 import type { JsonValue } from './output';
 import { parseArgs } from './parse';
+import { TEST_COMPOSE_PATH } from './templates/scaffold-test-services';
+import { psLine } from './verify-services-fixture';
+import { SERVICES_LIST, SERVICES_STOP, STACKS_LIST } from './verify-services-stack';
 
 const scratch = mkdtempSync(join(tmpdir(), 'x-cmd-clean-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -87,5 +90,114 @@ describe('x clean', () => {
     const result = await cleanCommand.run(context(['clean'], root));
     expect(result.ok).toBe(true);
     expect(data(result.data)['paths']).toEqual([]);
+  });
+});
+
+describe('x clean --services', () => {
+  /** An app with a test stack, over a fake docker that records what it was told. */
+  function stacked(
+    name: string,
+    answers: { ps?: string; ls?: string; stop?: number; psCode?: number },
+  ) {
+    const root = app(name);
+    put(join(root, TEST_COMPOSE_PATH));
+    const calls: string[] = [];
+    const docker: CommandContext['runner'] = async (command) => {
+      const line = command.join(' ');
+      calls.push(line);
+      const reply = (stdout: string, code = 0): ExecResult => ({
+        command,
+        ok: code === 0,
+        code,
+        stdout,
+        stderr: code === 0 ? '' : 'docker said no',
+        durationMs: 0,
+      });
+      if (line === SERVICES_LIST.join(' ')) return reply(answers.ps ?? '', answers.psCode ?? 0);
+      if (line === STACKS_LIST.join(' ')) return reply(answers.ls ?? '[]');
+      if (line === SERVICES_STOP.join(' ')) return reply('', answers.stop ?? 0);
+      return reply('');
+    };
+    return {
+      root,
+      calls,
+      ctx: (argv: readonly string[]) => ({ ...context(argv, root), runner: docker }),
+    };
+  }
+
+  const services = (value: JsonValue | undefined) => data(data(value)['services']);
+
+  test('without the flag docker is never asked', async () => {
+    const { calls, ctx } = stacked('untouched', {});
+    await cleanCommand.run(ctx(['clean']));
+    expect(calls).toEqual([]);
+  });
+
+  test("stops this checkout's stack and says so", async () => {
+    const root = join(scratch, 'stops');
+    const { calls, ctx } = stacked('stops', { ps: psLine('shop-test', 'postgres', root) });
+    const result = await cleanCommand.run(ctx(['clean', '--services']));
+    expect(result.ok).toBe(true);
+    expect(services(result.data)).toMatchObject({ project: 'shop-test', action: 'stopped' });
+    expect(calls).toContain(SERVICES_STOP.join(' '));
+  });
+
+  test('--dry-run names the stack and stops nothing', async () => {
+    const root = join(scratch, 'dry-stack');
+    const { calls, ctx } = stacked('dry-stack', { ps: psLine('shop-test', 'redis', root) });
+    const result = await cleanCommand.run(ctx(['clean', '--services', '--dry-run']));
+    expect(services(result.data)).toMatchObject({ project: 'shop-test', action: 'would-stop' });
+    expect(calls).not.toContain(SERVICES_STOP.join(' '));
+  });
+
+  test('a stack a live sibling started is kept, with the line that would stop it', async () => {
+    const sibling = app('sibling');
+    const { calls, ctx } = stacked('kept', { ps: psLine('shop-test', 'redis', sibling) });
+    const result = await cleanCommand.run(ctx(['clean', '--services']));
+    expect(result.ok).toBe(true);
+    expect(services(result.data)).toMatchObject({ action: 'kept', owner: sibling });
+    expect(result.lines?.join('\n')).toContain('docker compose -p shop-test down');
+    expect(calls).not.toContain(SERVICES_STOP.join(' '));
+  });
+
+  test("other apps' stacks are listed, flagged when their checkout is gone, and left alone", async () => {
+    const other = app('other-app');
+    const ls = JSON.stringify([
+      { Name: 'a-test', Status: 'running(4)', ConfigFiles: join(other, TEST_COMPOSE_PATH) },
+      { Name: 'b-test', Status: 'running(1)', ConfigFiles: `/gone/${TEST_COMPOSE_PATH}` },
+      { Name: 'prod', Status: 'running(9)', ConfigFiles: '/srv/prod/compose.yml' },
+      // This checkout's own, stopped: it is not an "other".
+      { Name: 'own', Status: 'exited(1)', ConfigFiles: join(scratch, 'lister', TEST_COMPOSE_PATH) },
+    ]);
+    const { calls, ctx } = stacked('lister', { ls });
+    const result = await cleanCommand.run(ctx(['clean', '--services', '--dry-run']));
+    expect(services(result.data)['others']).toEqual([
+      { project: 'a-test', status: 'running(4)', root: other, gone: false },
+      { project: 'b-test', status: 'running(1)', root: '/gone', gone: true },
+    ]);
+    expect(result.lines?.join('\n')).toContain('docker compose -p b-test down');
+    expect(calls.some((line) => line.includes('-p a-test'))).toBe(false);
+  });
+
+  test('docker failing is a coded refusal, not a clean bill of health', async () => {
+    const { ctx } = stacked('no-docker', { psCode: 1 });
+    const result = await cleanCommand.run(ctx(['clean', '--services']));
+    expect(result.ok).toBe(false);
+    expect(result.findings?.[0]?.code).toBe('X_TEST_SERVICES_UNAVAILABLE');
+  });
+
+  test('a stop docker refuses is a coded refusal', async () => {
+    const root = join(scratch, 'stuck');
+    const { ctx } = stacked('stuck', { ps: psLine('shop-test', 'redis', root), stop: 1 });
+    const result = await cleanCommand.run(ctx(['clean', '--services']));
+    expect(result.ok).toBe(false);
+    expect(result.findings?.[0]?.cause).toContain('docker said no');
+  });
+
+  test('an app with no test stack has nothing to stop', async () => {
+    const root = app('stackless');
+    const result = await cleanCommand.run(context(['clean', '--services'], root));
+    expect(result.ok).toBe(true);
+    expect(services(result.data)).toMatchObject({ action: 'none' });
   });
 });

@@ -58,8 +58,12 @@ describe('unit · x new --shape agent', () => {
     expect(agent).toContain('expose: true');
     expect(textAt(files, `${DIR}/actions/post-titles.ts`)).toContain('expose: true');
     const api = textAt(files, 'apps/web/api/index.ts');
-    expect(api).toContain('postTitles, suggestTitle, draftPost, queueDraft],');
-    expect(api).toContain('jobs: [reindexPost, draftPostLater],');
+    expect(api).toContain(
+      '    postTitles,\n    suggestTitle,\n    draftPost,\n    queueDraft,\n  ],',
+    );
+    expect(api).toContain(
+      '  jobs: [\n    // One entry per line: branches that each add one merge cleanly (x merge-driver).\n    reindexPost,\n    draftPostLater,\n  ],',
+    );
   });
 
   test('the long run is an agentJob acting as a role the app declares', () => {

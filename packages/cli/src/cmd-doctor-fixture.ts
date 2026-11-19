@@ -18,6 +18,8 @@ export const probe = (over: Partial<DoctorReportProbe> = {}): DoctorReportProbe 
   frameworkFindings: [],
   exists: () => true,
   portFree: async () => true,
+  // Nobody the OS will name: a taken port stays this environment's finding.
+  portOwner: async () => ({}),
   // Reachable, or embedded — the probe's own `null`. A test that opened a pool would be asking
   // about the box it runs on rather than about `runDoctor`.
   database: async () => null,
@@ -46,6 +48,9 @@ export const probe = (over: Partial<DoctorReportProbe> = {}): DoctorReportProbe 
   pins: async () => ({ pins: [], installed: new Map() }),
   // Every step that applies is floored.
   unflooredSteps: async () => [],
+  // No merge in progress, and the drivers `bun run setup` installs are there.
+  mergeState: async () => [],
+  mergeDriverUnset: async () => false,
   // Nothing to list: this machine's Chrome is never started under a unit test's clock.
   browser: async () => undefined,
   ...over,

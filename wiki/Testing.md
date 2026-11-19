@@ -1384,7 +1384,9 @@ gates at once — and it is held to a **memory budget**, not to whatever looks f
 
 - **Width.** `max(2.75 GiB, 25% of total RAM)` divided by 1.25 GiB a worker, clamped to `1..cores`:
   3 workers on a 16 GB box, 12 on a 62 GB 16-core one, 2 on an 8 GB one (the 2.75 GiB floor). Never more workers than cores. The step line says
-  what it chose and why — `3 workers (budget 4.0 GB)`. `ULTIMATE_TEST_MEMORY_BUDGET=3g` replaces
+  what it chose and why — `3 workers (budget 4.0 GB)`; fewer files than that read
+  `1 worker, one per file (plan: …)`, and a run the machine held narrower reads
+  `ran 2 at once (peak), planned 3 — …`. `ULTIMATE_TEST_MEMORY_BUDGET=3g` replaces
   the budget, `ULTIMATE_TEST_MAX_WORKERS=2` caps the width, `--workers N` wins over both. Total RAM,
   never "free": page cache counts as free, and two gates each planning on it took a 45 GB box down.
 - **One budget per machine.** Each batch of workers reserves its measured memory in the

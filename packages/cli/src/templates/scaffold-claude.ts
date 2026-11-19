@@ -26,12 +26,12 @@ const settings = (): string => `{
     "allow": [
       "Bash(bun install)",
       "Bash(bun test:*)",
-      "Bash(bun run typecheck)",
-      "Bash(bun run lint)",
       "Bash(bun run verify:*)",
       "Bash(bunx @biomejs/biome check:*)",
       "Bash(bunx x verify:*)",
       "Bash(bunx x test:*)",
+      "Bash(bunx x heavy:*)",
+      "Bash(bunx x stop:*)",
       "Bash(bunx x doctor:*)",
       "Bash(bunx x g:*)",
       "Bash(bunx x routes:*)",
@@ -133,8 +133,8 @@ with the command that re-checks the file, instead of surfacing later as a red \`
 
 It is not a typecheck, because a *scoped* one does not exist: \`tsc\` needs the project, and even
 \`bunx x verify --only typecheck\` checks the whole tree — and says \`NOT A GATE RUN\`, because green
-means the run with no flag. There is no \`--skip\`. If you want types on every edit, \`bun run typecheck\`
-is the whole project and you are choosing to pay for it.
+means the run with no flag. There is no \`--skip\`. Run it once, when the work is otherwise done: it
+queues for the machine's memory, which \`bun run typecheck\` does not.
 
 ## Where the rules live
 

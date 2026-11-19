@@ -30,7 +30,7 @@ Measured on a scaffold written by this checkout, `As of 2026-08-23`. Re-derive:
 | files you write before the first page | **0 of 151** — re-derived `As of 2026-09-11`; `scripts/generator-counts.ts` turns a stale count red on the commit that moves it |
 | commands from nothing to a running app | **4** |
 | packages installed | **104**, in the one `bun install` `bun run setup` runs |
-| `bun run setup` wall time, warm cache | **6,802ms** for all six steps, `As of 2026-09-11` — install, the env file, generate the first migration, apply it, seed, write the manifest. A **cold** first install takes it to 12.0s ([Bare VM](../../wiki/Bare-VM.md)) |
+| `bun run setup` wall time, warm cache | **6,802ms** for the script as it stood `As of 2026-09-11` — install, the env file, generate the first migration, apply it, seed, write the manifest. A **cold** first install takes it to 12.0s ([Bare VM](../../wiki/Bare-VM.md)) |
 | what `x dev` starts | 4 roles in one process (`web` `sync` `worker` `scheduler`), 11 `/_x` panels, `db=embedded events=embedded storage=embedded mail=embedded` |
 
 The four commands, and they are the whole of it:

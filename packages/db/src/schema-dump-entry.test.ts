@@ -37,6 +37,7 @@ describe('unit · @ultimat3/db/schema-dump', () => {
       'emptyCatalog',
       'introspectCatalog',
       'loadSchemaDump',
+      'migrationFork',
       'reloadDifferences',
       'renderSchemaDump',
       'schemaDumpDifferenceOf',

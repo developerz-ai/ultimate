@@ -20,10 +20,11 @@
 import { linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';
+import { ownerText, type PortOwner, portOwner } from './dev-lock-holder-dir';
 import { reusedPid, startedOf } from './dev-lock-identity';
-import { type PortHolder, portHolder } from './dev-lock-port-holder';
+import type { PortHolder } from './dev-lock-port-holder';
 import { stealStale } from './dev-lock-steal';
-import { portPairAfter } from './flag-number';
+import { freeDevPortPair } from './port-pair-free';
 import { quoteArg } from './shell-quote';
 
 /** Where the running dev server records itself, inside the state directory it already owns. */
@@ -191,13 +192,10 @@ export class DevPortInUseError extends UltimateError {
   constructor(input: {
     readonly port: number;
     readonly suggestion: number;
-    readonly holder?: PortHolder;
+    readonly holder?: PortOwner;
   }) {
     const holder = input.holder ?? {};
-    const named =
-      holder.pid === undefined
-        ? 'another process'
-        : `pid ${holder.pid}${holder.command === undefined ? '' : ` (${holder.command})`}`;
+    const named = ownerText(holder) ?? 'another process';
     super({
       code: 'X_PORT_IN_USE',
       cause: `:${input.port} is already bound by ${named}, so the web role cannot listen — on a machine running several projects this is usually another one's dev server, not a stale copy of this one`,
@@ -320,7 +318,7 @@ export interface PreflightInput {
   /** Injected by the test; `isPortBound` in production. */
   readonly portBound?: (port: number, hostname: string) => boolean;
   readonly alive?: (pid: number) => boolean;
-  readonly holder?: (port: number) => Promise<PortHolder>;
+  readonly holder?: (port: number) => Promise<PortOwner>;
   /** Injected by the test; `node:fs` in production. */
   readonly files?: ClaimFiles;
 }
@@ -435,10 +433,11 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
     release();
     throw new DevPortInUseError({
       port: input.port,
-      // `portPairAfter`, never `port + 1`: `x dev` binds a PAIR, so the holder is most often
-      // another `x dev` whose sync role already sits on `port + 1`.
-      suggestion: portPairAfter(input.port),
-      holder: await (input.holder ?? portHolder)(input.port),
+      // A pair, never `port + 1`: `x dev` binds two ports, so the holder is most often another
+      // `x dev` whose sync role already sits on `port + 1`. Asked, because a third may sit on the
+      // next pair, and a fix naming it fails again.
+      suggestion: await freeDevPortPair(input.port, (port) => !bound(port, input.hostname)),
+      holder: await (input.holder ?? portOwner)(input.port),
     });
   }
   return { clearedStale, release };

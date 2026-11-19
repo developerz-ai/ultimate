@@ -15,6 +15,8 @@ import { ErrorCodeUnknownError, MissingPositionalError } from './errors';
 import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
+import type { ReaderOptions } from './output-findings';
+import { fixForReader } from './output-findings';
 import { flagBool } from './parse';
 
 export { ERRORS_SUBCOMMANDS } from './cmd-errors-spec';
@@ -25,21 +27,21 @@ export { ERRORS_SUBCOMMANDS } from './cmd-errors-spec';
  * caller that has to regex `packages/x/src/y.ts:80` back out of an English sentence is a caller the
  * machine-readable surface failed. `null` when the installed framework raises the code nowhere.
  */
-const asJson = (explanation: ErrorExplanation): JsonValue => {
+const asJson = (explanation: ErrorExplanation, reader?: ReaderOptions): JsonValue => {
   const site = codeFixes().get(explanation.code)?.[0];
   return {
     code: explanation.code,
     cause: explanation.cause,
-    fix: explanation.fix,
+    fix: fixForReader(explanation.fix, reader),
     docs: explanation.docs,
     site: site === undefined ? null : { at: site.at, line: site.line },
   };
 };
 
 /** The 3-line contract format, minus the leading blank code line `renderFinding` would add. */
-const detailLines = (explanation: ErrorExplanation): readonly string[] => [
+const detailLines = (explanation: ErrorExplanation, reader?: ReaderOptions): readonly string[] => [
   `  cause: ${singleLine(explanation.cause)}`,
-  `  fix:   ${singleLine(explanation.fix)}`,
+  `  fix:   ${singleLine(fixForReader(explanation.fix, reader))}`,
   `  docs:  ${singleLine(explanation.docs)}`,
 ];
 
@@ -47,7 +49,11 @@ const detailLines = (explanation: ErrorExplanation): readonly string[] => [
  * A registered code, else a guard's — a shipped guard's or this app's own (`cmd-errors-guards.ts`):
  * the gate prints both, and the app's `CLAUDE.md` sends every printed code here.
  */
-async function explainOne(code: string, cwd: string): Promise<CommandResult> {
+async function explainOne(
+  code: string,
+  cwd: string,
+  reader?: ReaderOptions,
+): Promise<CommandResult> {
   const explanation = explainErrorCode(code) ?? (await explainGuardCode(code, cwd));
   if (explanation === undefined) {
     const suggestion = nearestName(
@@ -60,8 +66,8 @@ async function explainOne(code: string, cwd: string): Promise<CommandResult> {
     ok: true,
     command: 'errors',
     summary: msg('cli.errors.explained', { code: explanation.code, title: explanation.cause }),
-    lines: detailLines(explanation),
-    data: asJson(explanation),
+    lines: detailLines(explanation, reader),
+    data: asJson(explanation, reader),
   };
 }
 
@@ -70,7 +76,7 @@ async function explainOne(code: string, cwd: string): Promise<CommandResult> {
  * this answer and something is broken that a `fix:` can address. Reported as findings — and `ok`
  * goes false — so the incomplete catalog cannot read as a complete one.
  */
-function listAll(catalog: ErrorCatalog): CommandResult {
+function listAll(catalog: ErrorCatalog, reader?: ReaderOptions): CommandResult {
   const all = explainEveryErrorCode();
   return {
     ok: catalog.failed.length === 0,
@@ -79,7 +85,7 @@ function listAll(catalog: ErrorCatalog): CommandResult {
     lines: all.map((entry) => `  ${entry.code.padEnd(30)} ${singleLine(entry.cause)}`),
     findings: catalog.failed,
     data: {
-      codes: all.map(asJson),
+      codes: all.map((entry) => asJson(entry, reader)),
       unavailable: [...catalog.unavailable],
       failed: catalog.failed.map((finding) => ({
         code: finding.code,
@@ -100,7 +106,7 @@ export const errorsCommand: CliCommand = {
     // and the fix index is what each one instructs. `x errors list` answering 397 codes with the
     // fallback line would be a complete-looking table of shrugs.
     const [catalog] = await Promise.all([loadErrorCatalog(), loadCodeFixes()]);
-    if (ctx.args.subcommand === 'list') return listAll(catalog);
+    if (ctx.args.subcommand === 'list') return listAll(catalog, ctx.reader);
     const code = ctx.args.positionals[0];
     if (code === undefined) {
       // Not a `BadFlagError`: naming `--code` invented a flag that does not exist, so an agent
@@ -114,8 +120,8 @@ export const errorsCommand: CliCommand = {
     }
     // `--recent`: what THIS app has seen of the code — groups and the bundles `x repro` replays.
     if (flagBool(ctx.args, 'recent')) {
-      return withRecent(ctx, code, await explainOne(code, ctx.cwd));
+      return withRecent(ctx, code, await explainOne(code, ctx.cwd, ctx.reader));
     }
-    return explainOne(code, ctx.cwd);
+    return explainOne(code, ctx.cwd, ctx.reader);
   },
 };

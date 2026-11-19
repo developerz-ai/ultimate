@@ -155,7 +155,7 @@ export function insertGrants(
 }
 
 /** Every `definePermissions([` in the masked text: the index of each call's opening `[`. */
-const declarationLists = (masked: string): readonly number[] =>
+export const declarationLists = (masked: string): readonly number[] =>
   [...masked.matchAll(/\bdefinePermissions\(\s*\[/g)].map(
     (found) => found.index + found[0].length - 1,
   );

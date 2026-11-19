@@ -146,7 +146,7 @@ const finding = (file: SourceFile, line: number, what: string, declared: Declare
   return {
     code: CODE,
     cause: \`\${file.path}:\${line} \${what} — the title, the HTTP status and the class are then declared apart, and a code with no status answers 500 and hides its cause\`,
-    fix: \`rewrite it in \${file.path} as one call per class, from @ultimat3/core/page: export const \${name} = defineError({ code: \${code}, title, status, cause, fix, problemMeta: ['<meta key>'] }) — it replaces the class and its registerErrorStatus / registerProblemMeta rows (offSocket: true instead of status for a code no response carries; publicCause: true for a 5xx whose cause a caller may read; drop problemMeta when its meta stays operator-only), then: x verify\`,
+    fix: \`rewrite it in \${file.path} as one call per class, from @ultimat3/core/page: export const \${name} = defineError({ code: \${code}, title, status, cause, fix, problemMeta: ['<meta key>'] }) — it replaces the class and its registerErrorStatus / registerProblemMeta rows (offSocket: true instead of status for a code no response carries; publicCause: true for a 5xx whose cause a caller may read; drop problemMeta when its meta stays operator-only), then: x verify --only boundaries\`,
     at: file.path,
   };
 };
@@ -154,7 +154,7 @@ const finding = (file: SourceFile, line: number, what: string, declared: Declare
 const barrelFinding = (file: SourceFile, line: number): Finding => ({
   code: CODE,
   cause: \`\${file.path}:\${line} takes defineError from the @ultimat3/core barrel — every island that throws the code then carries the framework's titles table, ~5.5 kB it never reads\`,
-  fix: \`import { defineError } from '@ultimat3/core/page' in \${file.path} — the same function, without the table — then: x verify\`,
+  fix: \`import { defineError } from '@ultimat3/core/page' in \${file.path} — the same function, without the table — then: x verify --only boundaries\`,
   at: file.path,
 });
 
