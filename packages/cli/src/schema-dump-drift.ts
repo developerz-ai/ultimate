@@ -9,9 +9,9 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Migration } from '@ultimat3/db';
-import { migrationFork, ungeneratableStatements } from '@ultimat3/db';
+import { ungeneratableStatements } from '@ultimat3/db';
 import type { SchemaDumpDifference, SchemaDumpFile } from '@ultimat3/db/schema-dump';
-import { compareSchemaDump, schemaDumpDrift } from '@ultimat3/db/schema-dump';
+import { compareSchemaDump, migrationFork, schemaDumpDrift } from '@ultimat3/db/schema-dump';
 import {
   hasSchemaDump,
   type ReplayedSchema,

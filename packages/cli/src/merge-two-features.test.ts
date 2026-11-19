@@ -2,10 +2,12 @@
 // `x g resource`, and the merge needs no hand edit. Only a genuine disagreement stays a conflict.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// why: Bun has no temp-directory, symlink or recursive-remove API.
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+// why: Bun has no directory or symlink API.
+import { mkdirSync, symlinkSync } from 'node:fs';
+// why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import type { TempTree } from '@ultimat3/testing';
+import { tempTree } from '@ultimat3/testing';
 
 const BIN = join(import.meta.dir, 'bin.ts');
 const REGISTRIES = [
@@ -17,12 +19,14 @@ const REGISTRIES = [
 ];
 const PROJECTIONS = ['x.manifest.json', 'openapi.json'];
 
-let parent = '';
+let tree: TempTree | undefined;
 let app = '';
 
 const run = (argv: readonly string[]): { code: number; out: string } => {
   const done = Bun.spawnSync([...argv], {
     cwd: app,
+    // git discovery stops at the tree, and its background maintenance stays off.
+    env: { ...Bun.env, ...tree?.gitEnv },
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: 60_000,
@@ -56,8 +60,10 @@ const feature = async (name: string): Promise<void> => {
 };
 
 beforeAll(async () => {
-  parent = mkdtempSync(join(tmpdir(), 'merge-features-'));
+  tree = tempTree('merge-features-');
+  const parent = tree.path;
   const created = Bun.spawnSync([process.execPath, BIN, 'new', 'demo', '--dir', parent], {
+    env: { ...Bun.env, ...tree.gitEnv },
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: 60_000,
@@ -77,7 +83,9 @@ beforeAll(async () => {
   await feature('beta');
 }, 120_000);
 
-afterAll(() => rmSync(parent, { recursive: true, force: true }));
+afterAll(async () => {
+  await tree?.dispose();
+});
 
 describe('unit · two generated features, one merge', () => {
   let first: readonly string[] = [];
@@ -103,7 +111,7 @@ describe('unit · two generated features, one merge', () => {
     git('checkout', '-q', '-B', 'other', 'beta');
     git('merge', '--no-edit', 'alpha');
     expect(unmerged()).toBe('');
-    expect(await Promise.all(REGISTRIES.map(read))).toEqual(first);
+    expect(await Promise.all(REGISTRIES.map(read))).toEqual([...first]);
   }, 30_000);
 
   test('the projections keep our side, for x manifest to rebuild', async () => {

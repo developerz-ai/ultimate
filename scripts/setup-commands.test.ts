@@ -186,6 +186,24 @@ describe('unit · the list rule', () => {
     expect(ENUMERATION_MIN).toBeGreaterThan(2);
   });
 
+  // wiki/Troubleshooting.md: one row of a symptom table says `bun run setup` does two of its steps,
+  // and three later rows each cite `x db gen` about other symptoms. Those rows answer other
+  // questions; a mention inside a row owns that row, never the table below it.
+  test('a mention inside a table row is not the head of the rows below it', () => {
+    const table = page(
+      'wiki/Troubleshooting.md',
+      [
+        '| Symptom | Fix |',
+        '|---|---|',
+        '| a new app drifts | `x db gen "initial"` then `x db migrate` — `bun run setup` does both |',
+        '| an entity was deleted | `x db gen "drop t"` |',
+        '| two branches forked | `x db gen --merge-fork` |',
+        '| a column was retyped | `x db gen "retype"` |',
+      ].join('\n'),
+    );
+    expect(checkSetupCommands({ pages: [table, tablePage()], steps: STEPS })).toEqual([]);
+  });
+
   test('CONTRIBUTING.md documents this repo’s own bun run setup and is left alone', () => {
     expect(skipSetupPath('CONTRIBUTING.md')).toBe(true);
     expect(skipSetupPath('wiki/Installation.md')).toBe(false);

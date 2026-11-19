@@ -14,12 +14,12 @@ import {
   DESTRUCTIVE_MARKER,
   declaredSchema,
   generateMigration,
-  migrationFork,
   migrationForked,
   migrationSnapshotMissing,
   ROLLING_UNSAFE_MARKER,
   snapshotJson,
 } from '@ultimat3/db';
+import { migrationFork } from '@ultimat3/db/schema-dump';
 import { registeredEntities } from '@ultimat3/entity';
 import { describeQueries } from '@ultimat3/query';
 import { loadApp } from './app-load';

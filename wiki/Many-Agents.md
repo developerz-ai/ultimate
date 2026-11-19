@@ -69,7 +69,8 @@ bunx x verify
 
 - **Why one entry per line.** Registries are written that way (`x new`, and the `merge-drivers` codemod on `x upgrade`), because a list on one line is one line both sides changed. Keep the comment inside the list: it is what stops Biome joining the list back up.
 - **Where the drivers do not run.** A hosted merge button and a clone that never ran setup use git's plain text merge, so the same files conflict there and nothing is lost. Merge locally. `x doctor` warns `X_MERGE_DRIVER_UNSET` on such a clone.
-- **Migrations are not merged by this.** Two `x db gen` runs on two branches fork the chain: each snapshot lacks the other's table. Keep the earlier branch's migration, delete the later one's `.sql`, `.snapshot.json` and `.hash` if it was never applied, and regenerate it after the merge.
+- **Migrations: `bunx x db gen --merge-fork`.** Two branches that each ran `x db gen` fork the chain: the newest snapshot lacks the other branch's table. `x db gen`, `x db migrate` and the gate's `drift` step refuse it as `X_MIGRATION_FORKED`, before any `record …` migration is suggested. `--merge-fork` corrects the newest `.snapshot.json` only: no SQL changes and nothing is deleted, so it is safe after either migration was applied. Two creates of one table are the exception: run `bunx x db status --json` on every database first, and remove a migration only if `data.pending` lists it on all of them ([Migrations](Migrations-And-Backfills)).
+- **One `x db gen` at a time per checkout.** A second run waits on the checkout's `db-gen` lock instead of diffing the same sidecar and writing a second `create table`. With several agents in one checkout, one run's migration can still record another agent's new entity: the success line names the migration and its tables, and "no migration needed" names the migration that already records them.
 
 ## CPU pressure
 

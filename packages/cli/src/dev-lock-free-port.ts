@@ -1,5 +1,6 @@
 // The port a "port in use" fix names. On a machine running several dev servers the next pair is
-// often taken as well, and a fix that fails the same way is not a fix.
+// often taken as well, and a fix that fails the same way is not a fix. Not `@ultimat3/testing`'s
+// `freePortPair`, which binds; this one only asks.
 
 import { PORT_RANGE, portPairAfter } from './flag-number';
 
@@ -11,7 +12,7 @@ const PAIRS_TRIED = 64;
  * the top of the range). `x dev --port N` binds N and N + 1, so both are asked. The answer is true
  * when asked: another process can still take it.
  */
-export async function freePortPair(
+export async function freeDevPortPair(
   port: number,
   isFree: (port: number) => boolean | Promise<boolean>,
 ): Promise<number> {

@@ -2,6 +2,10 @@
 // two rules that keep the queue moving whatever the machine is doing.
 
 import { describe, expect, test } from 'bun:test';
+// why: the same synchronous read `heavy-pressure.ts` makes of `/proc/pressure/cpu`.
+import { readFileSync } from 'node:fs';
+// why: Bun exposes no path-join primitive.
+import { join } from 'node:path';
 import {
   CPU_SOME_BUSY_PERCENT,
   CPU_WAIT_LIMIT_MS,
@@ -15,9 +19,8 @@ import {
 
 const PSI = (avg10: number) =>
   `some avg10=${avg10.toFixed(2)} avg60=1.00 avg300=1.00 total=5\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n`;
-const noPsi = (): string => {
-  throw new TypeError('no such file');
-};
+/** A kernel with no PSI: the real read of a file that is not there, as `/proc/pressure/cpu` is. */
+const noPsi = (): string => readFileSync(join(import.meta.dir, 'no-such-pressure', 'cpu'), 'utf8');
 
 describe('reading the pressure', () => {
   test('PSI `cpu some` avg10 is the signal where the kernel has it', () => {

@@ -151,7 +151,7 @@ const foreignFinding = (url: string): Finding => ({
 const collisionFinding = (project: string, other: string): Finding => ({
   code: 'X_TEST_SERVICES_UNAVAILABLE',
   cause: `compose project ${project} is already running from ${other}, which is not a checkout of this app — the two share a name, so the live suites are not run against it`,
-  fix: `edit name: and the ports in ${TEST_COMPOSE_PATH} and ${TEST_ENV_PATH} to give this app its own stack; if sharing is intended: ${SHARED_ENV}=1 bunx x verify --only live`,
+  fix: `grep -n '^name:' ${TEST_COMPOSE_PATH}   # give this app its own name: there, and its own ports there and in ${TEST_ENV_PATH}; if sharing is intended: ${SHARED_ENV}=1 bunx x verify --only live`,
   at: TEST_COMPOSE_PATH,
 });
 

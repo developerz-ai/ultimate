@@ -80,7 +80,7 @@ describe('readStack', () => {
     const root = await checkout();
     const line = JSON.parse(psLine('shop-test', 'redis', root)) as unknown;
     const { runner } = machine({ stack: () => JSON.stringify([line]) });
-    expect((await readStack(root, runner)).stack?.project).toBe('shop-test');
+    expect(await readStack(root, runner)).toMatchObject({ stack: { project: 'shop-test' } });
   });
 
   test('no container is an answer; docker failing is not', async () => {

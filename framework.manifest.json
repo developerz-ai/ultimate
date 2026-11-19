@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "adb973a579d8f916a3a2da2dac2d7b01007bcc3e79b8a9dc57b20597b91fc8f4",
+  "buildId": "93058c71c6f55c6e741a0ae67486ab19331d2b5c440e61062f9694a10d07fc75",
   "tiers": {
     "0": [
       "core",
@@ -1005,6 +1005,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_CATALOG_UNPARSEABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-agents.ts"
+    },
+    {
       "code": "X_CATALOG_UNREGISTERED",
       "owner": "i18n",
       "at": "packages/i18n/src/errors.ts"
@@ -1647,7 +1652,7 @@
     {
       "code": "X_DEV_ALREADY_RUNNING",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-agents.ts"
     },
     {
       "code": "X_DEV_DASHBOARD_IN_PROD",
@@ -1667,7 +1672,7 @@
     {
       "code": "X_DEV_LOCK_UNREADABLE",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-agents.ts"
     },
     {
       "code": "X_DEV_LOG_ABSENT",
@@ -1928,6 +1933,11 @@
       "code": "X_DOCKERFILE_DEPS_DRIFT",
       "owner": "scripts",
       "at": "scripts/dockerfile-template.ts"
+    },
+    {
+      "code": "X_DOCTOR_PROBE_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-agents.ts"
     },
     {
       "code": "X_DRAINING",
@@ -2485,6 +2495,16 @@
       "at": "scripts/fix-shell-arg.ts"
     },
     {
+      "code": "X_FIX_TAIL_BARE",
+      "owner": "scripts",
+      "at": "scripts/fix-tails.ts"
+    },
+    {
+      "code": "X_FIX_TAIL_WHOLE_RUN",
+      "owner": "scripts",
+      "at": "scripts/fix-tails.ts"
+    },
+    {
       "code": "X_FIX_TARGET_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2733,6 +2753,11 @@
       "code": "X_HEAVY_MEMORY_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-tooling.ts"
+    },
+    {
+      "code": "X_HEAVY_WAIT_EXPIRED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-agents.ts"
     },
     {
       "code": "X_HELPER_COPY",
@@ -3755,6 +3780,16 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MERGE_DRIVER_UNSET",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-agents.ts"
+    },
+    {
+      "code": "X_MERGE_UNRESOLVED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-agents.ts"
+    },
+    {
       "code": "X_METER_EXCEEDED",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
@@ -3826,6 +3861,11 @@
     },
     {
       "code": "X_MIGRATION_DESTRUCTIVE",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_MIGRATION_FORKED",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },
@@ -4357,7 +4397,7 @@
     {
       "code": "X_PORT_IN_USE",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-agents.ts"
     },
     {
       "code": "X_PORT_INVALID",
@@ -6847,7 +6887,7 @@
     {
       "code": "X_UPGRADE_LOCKED",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-agents.ts"
     },
     {
       "code": "X_UPGRADE_MIXED_PINS",

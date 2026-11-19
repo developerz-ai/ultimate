@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: "sebi"              # executor fills with their git user.name
 owner: sebi
-percent: 88
-current_focus: "31.47.0 released and on every adopter. Two finished rows remain, both waiting on time or the platform: seven green flake-hunt nights, and the maintainer app opening a release PR."
+percent: 90
+current_focus: "31.48.0 released (many-agent ledger); the multi-agent DX round (12 audit findings) is on its way to main, released by the maintainer app on its own. Two finished rows remain, both waiting on time or the platform: seven green flake-hunt nights, and the maintainer app opening a release PR."
 slices:
   - file: 01-production-hotfixes.md
     tier: 3
@@ -68,13 +68,13 @@ slices:
     sweep: "8"
     status: in_progress
     percent: 95
-    note: "Pin burn-down done: every pin table row is paid off or reasoned. Closes when the maintainer app opens a release PR itself (slice 31, P8)."
+    note: "Pin burn-down done: every pin table row is paid off or reasoned. The platform side of P8 merged (#9507 there); closes when the maintainer app opens a release PR itself, the first due after 31.48.0."
   - file: 13-shapes-and-declaration.md
     tier: 5
     sweep: "9"
     status: in_progress
     percent: 90
-    note: "scripts/finished.ts: 8 of 10 rows green on main at 31.47.0. Left: tests-deterministic (seven nights) and loop-closed (maintainer app); then state maintenance mode in README and wiki/Stability.md."
+    note: "scripts/finished.ts: 8 of 10 rows green on main at 31.48.0. Left: tests-deterministic (seven nights) and loop-closed (maintainer app); then state maintenance mode in README and wiki/Stability.md."
   - file: 20-audit-rounds.md
     tier: 0
     sweep: "A"
@@ -83,13 +83,15 @@ slices:
   - file: 30-infra.md
     tier: 5
     sweep: "R"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 50
+    note: "7 of 13 rows done in the infrastructure repository: I5 (#2466), I7 (#2457), I8 (#2456), I9 (#2455), the alert split (#2464); I6, I11, I13 merged there with their live check owed. I1-I4, I10 and I12 wait on the owner (sign-off, hCaptcha keys or an app decision)."
   - file: 31-maintainer-platform.md
     tier: 5
     sweep: "R"
     status: in_progress
-    percent: 30
+    percent: 65
+    note: "Every row has a PR in the platform repository. Merged: P1 #9511, P2 #9520, P4 #9519, P7 #9499, P8 #9507, P9 #9500, P10 #9512. Open: P3 #9528, P5 #9522, P6 #9529. Left: those three, a re-measure of each row once deployed, and the staged drill per loop."
   - file: 40-adopter-a.md
     tier: 5
     sweep: "R"
@@ -141,6 +143,7 @@ slices:
     status: complete
     percent: 100
 evidence:
+  - "multi-agent DX round (2026-11-19, at 31.48.0): one read-only auditor used the framework as parallel agents would (two clones, merged branches, a shared machine) and found 12 problems: 1 critical (a merged fork's fix wrote a migration that cannot replay), 6 high, 3 medium, 2 low. Four workers fixed all 12, each with a test that failed first; integrated in one PR (feat(cli): multi-agent developer experience)."
   - "finish sweep (2026-11-18): #1238 merged, released as 31.47.0 (#1255), registry-audit 31/31 attested. scripts/finished.ts went from 3 to 8 of 10 rows green: no-stub, gate-whole, no-exemption-debt, one-ledger, range-tested joined the green rows. Also: replayed offline writes bound to their principal, x exercise reproducible by default, weekly CI in the scaffold. Every adopter is on 31.47.0, CI green on each main, production apps deployed healthy after a verified backup."
   - "audit round 1 (2026-11-16, at 31.38.0): 4 read-only auditors (bug-hunter tiers 0–2, tiers 3–5 + scripts; concurrency; security authz + tenancy) + production evidence (demo pods/logs via ../infrastructure verbs) + open issues. Confirmed: P0 1 — live-query cross-tenant read on a tenant column not named orgId (realtime; #1188, reviewed CLOSED twice); P1 2 — parseAmount refused formatMoney output (de-AT, fr-CH, mr-IN, en-ZA code); release-due brief over the 10,000-char cap (#1170); P2 6 — robots non-ASCII Disallow; outbox staged row 60 s; sub-250 ms worker floor 60 s; repeatable-read stage (found in fix review); demo storage on emptyDir (→ 30 I13); CodeQL 7 real of 85 (78 dismissed with reasons). Not converged (P0+P1 > 0)."
   - "audit round 1 read ledger — READ: money, flags, time, i18n (part), cache (lru, codec, tags), storage (range, path, list, s3 listUploads), http (byte-range, forwarded, router, cookie, object-response, cache-policy), core (cookie, cursor, ids), schema (json-schema, url), entity (memory match, like, pg-sql predicates, arrays), db (statement-split, sql-scan, url), seo (xml, robots, feeds), auth (cbor, base64url, member-invite); jobs (wake, outbox, worker loop, webhook, cron, scheduler); realtime (tenancy, matcher-bridge, pg-replication row, live-replicator, record-publisher, offline-queue, client channels); action (meters, idempotency memory); query (matcher, download-token, read/cache); admin (gates, jobs resources, screen-system); mcp (exposed, tenant, server head); cli (shapes saas/realtime/api-keys/invite, sign-in, serve-retire/drain, runtime-jobs, schema wait, schema-diff); mail mime; ai cost; scraping robots/cookies; pwa route-rules; notify digest. UNREAD for round 2: policy; db migrate/pool/drift/generate/keyset/replica/row-security; entity pg-driver/write/upsert/history/partition; http pipeline/server/rate-limit/compress/csrf/cors; storage s3 body/upload/image/signed-url; cache tiers/redis-pubsub/invalidate/memo/semantic/cdn; core (rest); schema validators/coerce; auth sessions/OIDC/api keys/passkeys; cli dev/verify/deploy/upgrade/role-*/prerender/islands; testing; ui; manifest; scripts (most); jobs drivers/steps; realtime server/sync node/presence; admin (rest); mcp app-tool/transport-http; shapes content/blog/agent."
@@ -158,4 +161,4 @@ evidence:
   - "sweep 0: #1138 merged; 31.23.0 released (#1139) — registry-audit: 31/31 publishable packages are on npm at 31.23.0, every one attested; demo /readyz 200, /llms.txt 200 (2026-11-14)"
   - "sweep 0 corrections: H3 premise false (sweep used the partial index; cost was dead index entries); H7 failures already fixed on main (#1036, #1060); bench release trigger never fired (GITHUB_TOKEN); released as a minor (additive API)" 
 notes: "Written 2026-11-14 at 31.22.3 from four read-only passes: residual work in this tree, ten adopter repositories, 7–14 days of production evidence from two deployed apps, and a trace of the maintenance loop. Carries every open row of the 2026/11/02 and 2026/11/11 plans (12 step 1 marks them superseded). 90-owner-decisions.md is not a slice. Audit rounds (20) record per-round P0/P1/P2 counts and the read ledger here. Adopter letter mapping is off-tree with the owner."
-last_updated: 2026-11-18
+last_updated: 2026-11-19

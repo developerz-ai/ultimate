@@ -17,12 +17,12 @@ import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { EntityDescriptionLike, UnrenderedDeclaration } from '@ultimat3/db';
 import {
   declaredSchema,
-  migrationFork,
   migrationForked,
   recordRetired,
   snapshotOf,
   unrenderedOf,
 } from '@ultimat3/db';
+import { migrationFork } from '@ultimat3/db/schema-dump';
 import { registeredEntities } from '@ultimat3/entity';
 import { loadApp } from './app-load';
 import { checkSourceDrift, DB_PACKAGE } from './drift';

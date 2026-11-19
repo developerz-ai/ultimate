@@ -24,6 +24,9 @@ import type { CommandResult, JsonValue } from './output';
 import { findingFrom } from './output';
 import { flagString } from './parse';
 
+/** Read through `readIntFlag`, which refuses `5m`, `NaN` and a fraction with the flag's name. */
+const MAX_WAIT_FLAG = 'max-wait';
+
 const gb = (bytes: number): string => (bytes / 2 ** 30).toFixed(1);
 const MAX_RUN_MB = 1024 * 1024;
 const MAX_WAIT_SECONDS = 7 * 24 * 60 * 60;
@@ -165,7 +168,7 @@ async function run(ctx: CommandContext): Promise<CommandResult> {
     example: 'x heavy run --mb 4096 -- bun test',
   });
   const maxWait = readIntFlag(ctx.args, {
-    name: 'max-wait',
+    name: MAX_WAIT_FLAG,
     command: 'heavy',
     min: 0,
     max: MAX_WAIT_SECONDS,

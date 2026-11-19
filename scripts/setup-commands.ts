@@ -121,6 +121,9 @@ const CONTINUES = /^\s*(\||[-*+]\s|\d+[.)]\s)/;
  * no count — two half-claims, neither checkable.
  */
 export function blockAt(lines: readonly string[], start: number): readonly string[] {
+  // A mention inside a table row owns that row alone: the rows after it answer their own
+  // questions (a symptom table whose later rows each cite `x db gen` is not a setup list).
+  if (/^\s*\|/.test(lines[start] ?? '')) return [lines[start] ?? ''];
   const block: string[] = [];
   let index = start;
   while (index < lines.length && block.length < MAX_BLOCK_LINES) {

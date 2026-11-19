@@ -13,13 +13,8 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { NotImplementedError, resolveEnvironment } from '@ultimat3/core';
-import {
-  type DriftReport,
-  driftError,
-  migrationFork,
-  migrationForked,
-  withTransaction,
-} from '@ultimat3/db';
+import { type DriftReport, driftError, migrationForked, withTransaction } from '@ultimat3/db';
+import { migrationFork } from '@ultimat3/db/schema-dump';
 import { postgresDriver } from '@ultimat3/entity';
 import { requireAppRoot } from './app-root';
 import { runBackfillCommand } from './cmd-db-backfill';

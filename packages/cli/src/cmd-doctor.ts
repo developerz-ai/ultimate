@@ -76,7 +76,7 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
     guardedCheck(name, findings, run);
   // First of the app's checks: an unfinished merge explains most of what any later one reports.
   await check('merge state', async () => {
-    findings.push(...(await probe.mergeState()));
+    findings.push(...((await probe.mergeState?.()) ?? []));
   });
   // Right after the runtime and for its reason: a compiler a major behind reds typecheck and build
   // on the framework's own files, and every finding below is read through a gate that cannot pass.

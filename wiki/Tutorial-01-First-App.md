@@ -79,7 +79,7 @@ The default scaffold, after `bun run setup`, with no `.x/build-stats.json` befor
   ✓ unit               2790ms  3 workers (budget 4.0 GB)
   ✓ contract           1233ms  3 workers (budget 4.0 GB)
   ✓ live               840ms  serial
-  ✓ job                345ms  1 of 3 workers (budget 4.0 GB)
+  ✓ job                345ms  1 worker, one per file (plan: 3 workers (budget 4.0 GB))
   ✓ exercise           1952ms
   ✓ e2e                12124ms  serial
   ✓ eval               91ms

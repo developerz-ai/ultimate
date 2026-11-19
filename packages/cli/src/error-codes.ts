@@ -3,6 +3,8 @@
 // the CLI is the surface an agent reads first — a failure here has to be actionable without a doc
 // lookup or a second round-trip. The classes that throw these codes live in `./errors`.
 import { registerErrorCodes } from '@ultimat3/core';
+import type { CliAgentsErrorCode } from './error-codes-agents';
+import { CLI_AGENTS_ERROR_CODES, CLI_AGENTS_ERROR_TITLES } from './error-codes-agents';
 import type { CliBoundaryErrorCode } from './error-codes-boundary';
 import { CLI_BOUNDARY_ERROR_CODES, CLI_BOUNDARY_ERROR_TITLES } from './error-codes-boundary';
 import type { CliDoctorErrorCode } from './error-codes-doctor';
@@ -82,11 +84,6 @@ export const CLI_OWNED_ERROR_CODES = [
   // its health check with nothing in the log that names the cause.
   'X_ROLE_UNKNOWN',
   'X_PORT_INVALID',
-  'X_DEV_ALREADY_RUNNING',
-  // The OTHER thing the preflight can find, and it was reported as the one above: an unreadable
-  // lock this process could not remove made `DevAlreadyRunningError` name THIS pid as the holder,
-  // so the remedy printed was `kill <self>` — unrunnable, and a cause that was simply untrue.
-  'X_DEV_LOCK_UNREADABLE',
   // The boot's own consistency check. `startServices` captures the drivers it built, and
   // `loadApp` runs AFTER it — so an app module calling `installJobDriver(theirs)` moved the ambient
   // slot and left the captured object alone: every `handle.enqueue()` went to their queue while
@@ -94,7 +91,6 @@ export const CLI_OWNED_ERROR_CODES = [
   // the enqueue side. Nothing failed. Refused here rather than documented, per axiom 3.
   'X_RUNTIME_DRIVER_SPLIT',
   'X_GENERATE_CONFLICT',
-  'X_PORT_IN_USE',
   'X_DB_GEN_FAILED',
   // The two directions of the drift a hash cannot see, and they are two repairs. The `drift` step
   // compared a schema-source HASH to a `.hash` sidecar and never read what the migration recorded,
@@ -239,13 +235,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_ROWS_SLICE_ENTITY',
   'X_GUARD_BUILT_IN',
   'X_REPRO_BUNDLE_INVALID',
-  'X_UPGRADE_LOCKED',
   'X_APP_MIGRATIONS_UNAPPLIED',
-  'X_HEAVY_WAIT_EXPIRED',
-  'X_MERGE_UNRESOLVED',
-  'X_MERGE_DRIVER_UNSET',
-  'X_CATALOG_UNPARSEABLE',
-  'X_DOCTOR_PROBE_FAILED',
 ] as const;
 
 /**
@@ -281,6 +271,7 @@ export const CLI_BORROWED_ERROR_CODES = [
 /** Every code the CLI can throw: the ones it owns plus the one it borrows. */
 export const CLI_ERROR_CODES = [
   ...CLI_OWNED_ERROR_CODES,
+  ...CLI_AGENTS_ERROR_CODES,
   ...CLI_BOUNDARY_ERROR_CODES,
   ...CLI_DOCTOR_ERROR_CODES,
   ...CLI_PACKAGE_ERROR_CODES,
@@ -294,6 +285,7 @@ export const CLI_ERROR_CODES = [
 type CliListedErrorCode = (typeof CLI_OWNED_ERROR_CODES)[number];
 export type CliOwnedErrorCode =
   | CliListedErrorCode
+  | CliAgentsErrorCode
   | CliBoundaryErrorCode
   | CliDoctorErrorCode
   | CliPackageErrorCode
@@ -345,11 +337,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_DEPLOY_FAILED: 'a deploy step failed',
   X_ROLE_UNKNOWN: 'ROLE names something that is not a role',
   X_PORT_INVALID: 'PORT is not a TCP port number',
-  X_DEV_ALREADY_RUNNING: 'another x dev already owns this checkout',
-  X_DEV_LOCK_UNREADABLE: 'the dev lock file cannot be read or removed',
   X_RUNTIME_DRIVER_SPLIT: 'the ambient driver is not the one this process serves',
   X_GENERATE_CONFLICT: 'a generator would overwrite a file',
-  X_PORT_IN_USE: 'the dev port is taken',
   X_DB_GEN_FAILED: 'x db gen failed',
   X_DB_SCHEMA_UNMIGRATED: 'an entity declaration no migration recorded',
   X_DB_SCHEMA_UNDECLARED: 'a migration records schema no entity declares',
@@ -473,14 +462,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_ROWS_SLICE_ENTITY: "the slice's entity is not the scaffolded table",
   X_GUARD_BUILT_IN: 'x g guard named a shipped guard',
   X_REPRO_BUNDLE_INVALID: 'the file is not a repro bundle this version can open',
-  X_UPGRADE_LOCKED: 'another x upgrade holds this app',
   X_APP_MIGRATIONS_UNAPPLIED:
     'a serving role booted over a database missing migrations this build ships',
-  X_HEAVY_WAIT_EXPIRED: 'x heavy run stopped waiting for the machine ledger',
-  X_MERGE_UNRESOLVED: 'a merge left conflicts in the app',
-  X_MERGE_DRIVER_UNSET: 'the merge drivers .gitattributes names are not configured',
-  X_CATALOG_UNPARSEABLE: 'an i18n catalog is not valid JSON',
-  X_DOCTOR_PROBE_FAILED: 'one x doctor check could not run',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws
@@ -489,6 +472,7 @@ registerErrorCodes(
   Object.fromEntries(
     Object.entries({
       ...CLI_ERROR_TITLES,
+      ...CLI_AGENTS_ERROR_TITLES,
       ...CLI_BOUNDARY_ERROR_TITLES,
       ...CLI_DOCTOR_ERROR_TITLES,
       ...CLI_PACKAGE_ERROR_TITLES,

@@ -23,7 +23,8 @@ import {
   SocketRegistry,
   syncNode,
 } from '@ultimat3/realtime/server';
-import { portPairAfter, syncPortFor } from './flag-number';
+import { freeDevPortPair } from './dev-lock-free-port';
+import { syncPortFor } from './flag-number';
 import { portFree } from './port-probe';
 import type { StartRolesOptions } from './role-start';
 import { startOrWaitForBus } from './role-sync-bus-wait';
@@ -48,15 +49,15 @@ import { DEV_BINDING } from './web-binding';
  * "no findings — environment is shippable" when run (#F5).
  */
 class SyncPortInUseError extends UltimateError {
-  constructor(input: { port: number; webPort: number }) {
+  constructor(input: { port: number; webPort: number; suggested: number }) {
     super({
       code: 'X_PORT_IN_USE',
       cause: `the sync role binds PORT + 1, so \`x dev --port ${input.webPort}\` needs port ${input.port} and something is already listening on it`,
-      // `portPairAfter`, never `neighbouringPort`: `x dev` binds a PAIR, so the neighbour of the
+      // `freeDevPortPair`, never `neighbouringPort`: `x dev` binds a PAIR, so the neighbour of the
       // web port IS the sync port this refusal is about — the fix said `x dev --port 4000` for a
       // run that had just died on 4000, and a test named "its fix is a command that ends the
       // failure" pinned it.
-      fix: `x dev --port ${quoteArg(String(portPairAfter(input.webPort)))}   # or free port ${input.port}: lsof -nP -iTCP:${input.port} -sTCP:LISTEN`,
+      fix: `x dev --port ${quoteArg(String(input.suggested))}   # or free port ${input.port}: lsof -nP -iTCP:${input.port} -sTCP:LISTEN`,
       meta: { port: input.port, webPort: input.webPort },
     });
   }
@@ -77,7 +78,11 @@ export async function syncBindRefusal(
   probe: (value: number) => Promise<boolean> = portFree,
 ): Promise<UltimateError | undefined> {
   if (await probe(port)) return undefined;
-  return new SyncPortInUseError({ port, webPort });
+  return new SyncPortInUseError({
+    port,
+    webPort,
+    suggested: await freeDevPortPair(webPort, probe),
+  });
 }
 
 // Its rule lives in `flag-number.ts`, where the scrape port's reservation reads it too (`rolePorts`).

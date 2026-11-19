@@ -20,7 +20,7 @@
 import { linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';
-import { freePortPair } from './dev-lock-free-port';
+import { freeDevPortPair } from './dev-lock-free-port';
 import { ownerText, type PortOwner, portOwner } from './dev-lock-holder-dir';
 import { reusedPid, startedOf } from './dev-lock-identity';
 import type { PortHolder } from './dev-lock-port-holder';
@@ -436,7 +436,7 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
       // A pair, never `port + 1`: `x dev` binds two ports, so the holder is most often another
       // `x dev` whose sync role already sits on `port + 1`. Asked, because a third may sit on the
       // next pair, and a fix naming it fails again.
-      suggestion: await freePortPair(input.port, (port) => !bound(port, input.hostname)),
+      suggestion: await freeDevPortPair(input.port, (port) => !bound(port, input.hostname)),
       holder: await (input.holder ?? portOwner)(input.port),
     });
   }

@@ -6,6 +6,7 @@ import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { reservedEnvFindings } from './doctor-env-reserved';
 import { unflooredStepFindings } from './doctor-floor';
 import { pinRangeFindings } from './doctor-pins';
+import { portWarnings } from './doctor-port';
 import type { DoctorProbe } from './doctor-probe';
 import { rowSecurityOffFindings } from './doctor-row-security';
 import { REGISTRY_DRIVER } from './merge-driver-config';
@@ -33,7 +34,9 @@ export async function doctorWarnings(probe: DoctorProbe): Promise<readonly Findi
     // A floor gap is the gate's blind spot, never a reason anything else is red.
     ...unflooredStepFindings(await probe.unflooredSteps()),
     // A clone that merges by hand what its drivers would have merged: slower, never wrong.
-    ...((await probe.mergeDriverUnset()) ? [MERGE_DRIVER_UNSET] : []),
+    ...((await probe.mergeDriverUnset?.()) === true ? [MERGE_DRIVER_UNSET] : []),
+    // A port another checkout's dev server holds: nothing is wrong with this environment.
+    ...(await portWarnings(probe)),
   ];
 }
 

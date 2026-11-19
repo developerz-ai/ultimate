@@ -7,6 +7,7 @@ import type { ErrorExplanation } from '@ultimat3/mcp';
 import type { CliErrorCode } from './error-codes';
 import { CLI_ERROR_CODES } from './error-codes';
 import { codeFixes, codeFixScan } from './error-fixes';
+import { AGENTS_FIXES } from './mcp-errors-agents';
 import { SHOT_FIXES } from './mcp-errors-shot';
 import { VERIFY_FIXES } from './mcp-errors-verify';
 
@@ -61,6 +62,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_PACKAGE_DUPLICATED:
     'x i18n check --json   # the finding names both copies and the package.json to pin',
   // `x shot` and the `ui.*` tools: their own family, in `mcp-errors-shot.ts`.
+  ...AGENTS_FIXES,
   ...SHOT_FIXES,
   // The gate's floor, run and split: their own family, in `mcp-errors-verify.ts`.
   ...VERIFY_FIXES,
@@ -137,12 +139,6 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x new my-app --json   # a name with letters or digits; it becomes the directory',
   X_APP_EMPTY:
     'x doctor --json   # then check the app root: no module under apps/ or packages/ loaded',
-  X_PORT_IN_USE: 'x dev --port 3001 --json',
-  X_DEV_ALREADY_RUNNING:
-    'x dev --json   # after stopping the x dev that already owns this checkout',
-  // The path, not `x dev`: the boot has already refused and rerunning it refuses again. The
-  // error's own `fix:` carries the resolved `.x/dev.lock`; this table cannot know the state dir.
-  X_DEV_LOCK_UNREADABLE: 'rm .x/dev.lock   # then: x dev --json',
   // `x doctor`, not `x db status`: generation failing is a reachability question, and `x db status`
   // reads the migration ledger only. `x doctor` is already this table's answer for
   // X_DB_STUDIO_FAILED.
@@ -402,16 +398,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x repro --json   # lists the failing jobs and error groups; then run it again with one id and --bundle, and attach the file it writes',
   X_ADVISORY_FLOOR_UNMET: 'bun update source-map-js immutable',
   X_UPGRADE_CODEMODS_PENDING: 'x upgrade codemods --from 0.0.0 --json',
-  X_UPGRADE_LOCKED: 'cat .x/upgrade.lock',
   X_APP_MIGRATIONS_UNAPPLIED: 'x db migrate --json',
   X_HEAVY_LEDGER_UNAVAILABLE: 'x heavy status --json',
   X_HEAVY_MEMORY_INVALID: 'export ULTIMATE_HEAVY_MEMORY=8g',
   X_HEAVY_COMMAND_NOT_FOUND: 'x heavy run --json -- bun test',
-  X_HEAVY_WAIT_EXPIRED: 'x heavy status --json',
-  X_MERGE_UNRESOLVED: 'git diff --name-only --diff-filter=U',
-  X_MERGE_DRIVER_UNSET: 'bunx x merge-driver install',
-  X_CATALOG_UNPARSEABLE: 'bunx biome check packages/i18n/catalogs',
-  X_DOCTOR_PROBE_FAILED: 'bunx x manifest --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

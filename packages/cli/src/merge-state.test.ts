@@ -92,7 +92,7 @@ describe('unit · withMergeCauses', () => {
     fix: 'x doctor --json',
     at,
   });
-  const other: Finding = { code: 'X_OTHER', cause: 'unrelated', fix: 'x y', at: 'z.ts' };
+  const other: Finding = { code: 'X_OTHER', cause: 'unrelated', fix: 'x help', at: 'z.ts' };
 
   test('a broken catalog replaces the parse errors of its importers, and nothing else', async () => {
     catalog('<<<<<<< HEAD\n');

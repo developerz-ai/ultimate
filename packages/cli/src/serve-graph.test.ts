@@ -56,6 +56,9 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
     'the schema-dump family',
     /packages\/db\/src\/(?:catalog(?:-fold|-objects|-relations)?|dump-drift|introspect-catalog|object-drift|schema-dump(?:-table|-entry)?|schema-load)\.ts$/,
   ],
+  // The fork check `x db gen`, `x db migrate` and `drift` run over the migrations folder: three
+  // modules that landed on the barrel and raised every role's count by three.
+  ['the migration-fork family', /packages\/db\/src\/migration-fork(?:-fold|-sql)?\.ts$/],
   // Five modules only `x db diagnostics` calls, on `@ultimat3/db/diagnostics` from the day they
   // landed: on the barrel every role evaluated them to serve nothing.
   [

@@ -6,7 +6,7 @@ import { realpathSync } from 'node:fs';
 // why: Bun ships no path-separator primitive.
 import { sep } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
-import { freePortPair } from './dev-lock-free-port';
+import { freeDevPortPair } from './dev-lock-free-port';
 import type { PortOwner } from './dev-lock-holder-dir';
 import { ownerText, portOwner } from './dev-lock-holder-dir';
 import type { DoctorProbe } from './doctor-probe';
@@ -66,7 +66,7 @@ interface PortReport {
  * The suggested port moves BOTH: `x dev --port N` occupies N and N+1, so a free N beside a taken
  * N+1 is still not a runnable command. It did not move both until 2026-09 — the line was
  * `neighbouringPort(probe.port)`, which for the sync finding IS the port the finding is about, and
- * a docblock claiming otherwise is how it survived. `freePortPair` also asks that the pair is free:
+ * a docblock claiming otherwise is how it survived. `freeDevPortPair` also asks that the pair is free:
  * beside two dev servers the next pair was often the second one's.
  *
  * A port held from ANOTHER checkout is a warning: a neighbour's dev server says nothing about this
@@ -95,7 +95,7 @@ async function portReport(probe: PortProbe): Promise<PortReport> {
   const taken = [];
   for (const entry of wanted) if (!(await probe.portFree(entry.port))) taken.push(entry);
   if (taken.length === 0) return { findings: [], warnings: [] };
-  const fix = `x dev --port ${quoteArg(String(await freePortPair(probe.port, probe.portFree)))}`;
+  const fix = `x dev --port ${quoteArg(String(await freeDevPortPair(probe.port, probe.portFree)))}`;
   const lookup = ownerLookup(probe);
   const findings: Finding[] = [];
   const warnings: Finding[] = [];
