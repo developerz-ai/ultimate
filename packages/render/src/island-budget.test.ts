@@ -40,8 +40,11 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
      * 1,784 -> 1,843 on 2026-10-05 (+59 B in the shared `catchUp`): a capture listener lets go on
      * the first event after a mount something else made — a held island (`island-hold.ts`) is
      * booted by the hold, so its first click after the reveal was replayed into it, running twice.
+     * 1,843 -> 1,943 on 2026-11-19 (+100 B in the shared prelude, every strategy): `boot` reads the
+     * props script inside its own wrapper, and one by id only when it sits in no other island's — a
+     * modal's island otherwise booted with the props of the page under it, the same id per render.
      */
-    hydrateRuntimeIdle: 1_843,
+    hydrateRuntimeIdle: 1_943,
     /**
      * `DEFAULT_ISLAND_HYDRATE` is `'interaction'` (`route.ts:33`), so THIS is the runtime an island
      * route declaring no `hydrate` actually ships. The budget derivation used `idle` and understated
@@ -69,8 +72,10 @@ describe('DEFAULT_ISLAND_JS_BYTES', () => {
      *
      * Moved 1,669 -> 1,728 on 2026-10-05: `catchUp`'s `on` detaches once the island is mounted
      * (+59 B, the same bytes as `idle`'s) — the held-island double run, above.
+     *
+     * Moved 1,728 -> 1,828 on 2026-11-19: the prelude's wrapper-first props lookup (+100 B), above.
      */
-    hydrateRuntimeDefault: 1_728,
+    hydrateRuntimeDefault: 1_828,
   } as const;
 
   /** What the allowance has to clear: the costlier of the two runtimes an island gets unasked. */

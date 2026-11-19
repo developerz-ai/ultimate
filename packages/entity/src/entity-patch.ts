@@ -3,6 +3,7 @@
 // would rewrite every column it did not name.
 
 import { invariantViolated } from './errors';
+import { assertInstantsCross } from './instant-range';
 import { holdsJsonNull } from './json-null';
 import { copyRow } from './sealed';
 import type { AnyColumn } from './types';
@@ -40,5 +41,7 @@ export const parseEntityPatch = <Patch>(
       configurable: true,
     });
   }
+  // A patch is a write: an instant Postgres would refuse is refused here, for both drivers.
+  assertInstantsCross(columns, parsed);
   return parsed as Patch;
 };

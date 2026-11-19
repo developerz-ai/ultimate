@@ -64,6 +64,9 @@ export interface Translator<TCatalog = Catalog> {
   readonly locale: Locale;
 }
 
+/** What every `pluralKeyCandidates` chain ends on, as suffixes of a stem. */
+const CHAIN_ENDS = ['', '_other', '_plural', '_one'] as const;
+
 export function catalogTranslator(catalog: Catalog, locale: Locale = DEFAULT_LOCALE): Translator {
   const hasExact = (key: string): boolean => Object.hasOwn(catalog, key);
 
@@ -84,13 +87,12 @@ export function catalogTranslator(catalog: Catalog, locale: Locale = DEFAULT_LOC
   };
 
   return Object.assign(translate, {
+    // The stems `selectMessageKey` falls back to, each with the four forms every plural chain ends
+    // on: a family authored only in plural forms (`invite_select_other_one`) renders, so it is had.
     has: (key: string): boolean =>
-      hasExact(key) ||
-      hasExact(`${key}_other`) ||
-      hasExact(`${key}_plural`) ||
-      hasExact(`${key}_one`) ||
-      hasExact(`${key}_select_other`) ||
-      hasExact(`${key}_ordinal_other`),
+      [key, `${key}_select_other`, `${key}_ordinal_other`].some((stem) =>
+        CHAIN_ENDS.some((end) => hasExact(stem + end)),
+      ),
     raw: (key: string): string | undefined => (hasExact(key) ? catalog[key] : undefined),
     keys: (): string[] => Object.keys(catalog).sort(),
     locale,

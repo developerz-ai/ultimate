@@ -1,5 +1,5 @@
-// One ring entry → the `records` frame every member of its topic receives. The same frame for all
-// of them: a channel's scope is its params, decided once at subscribe, never re-decided per row.
+// One ring entry → the `records` frame its topic's members receive. The same frame for all of them,
+// but for an entry holding another tenant's rows (`RecordsEntry.tenant`): that member gets its seq.
 
 import type { Row } from '@ultimat3/core/page';
 import type { RecordsEntry } from './channel-ring';

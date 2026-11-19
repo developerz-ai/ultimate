@@ -11,6 +11,7 @@ import {
   outsideWindowResult,
   recordedException,
   securityLines,
+  WINDOW_OPENS_AT_MAJOR,
   withSecurityException,
 } from './major-window';
 
@@ -224,5 +225,22 @@ describe('unit · major-window · a major is the first release of a new major li
   test('the next window counts from the first release of the newest line', () => {
     const v31_1 = '## 31.1.0 - 2026-11-20\n\n### Highlights\n\n- minor\n';
     expect(nextMajorWindow(changelog(v31_1, V31_5))?.after).toBe('31.0.0');
+  });
+});
+
+// CLAUDE.md and the release-due brief said "from v30" for weeks after the 2026-11-09 ruling moved
+// the clock to v31: every page that states the opening major is held to the constant.
+describe('unit · every page stating where the window opens names WINDOW_OPENS_AT_MAJOR', () => {
+  const PAGES = ['CLAUDE.md', '.dz/briefs/release-due.md', 'wiki/Stability.md'] as const;
+  const OPENS = /from v(\d+)[,:]? (?:at most )?one major/gi;
+
+  test('each page states it, and states the constant', async () => {
+    const { repoRoot } = await import('./run');
+    for (const page of PAGES) {
+      const body = await Bun.file(`${repoRoot()}/${page}`).text();
+      const stated = [...body.matchAll(OPENS)].map((match) => Number(match[1]));
+      expect({ page, stated: stated.length > 0 }).toEqual({ page, stated: true });
+      expect({ page, stated }).toEqual({ page, stated: stated.map(() => WINDOW_OPENS_AT_MAJOR) });
+    }
   });
 });

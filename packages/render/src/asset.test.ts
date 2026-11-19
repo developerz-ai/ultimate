@@ -31,6 +31,20 @@ describe('asset()', () => {
     expect(asked).toBe(0);
   });
 
+  test('the path quoted in the fix passes assetPathProblem', () => {
+    let fix = '';
+    try {
+      asset('logo.svg' as AssetPath);
+      expect.unreachable('a path outside assets/ was accepted');
+    } catch (error) {
+      if (!(error instanceof AssetMissingError)) throw error;
+      fix = error.fix;
+    }
+    const quoted = /^asset\('([^']+)'\)/.exec(fix)?.[1];
+    expect(quoted).toBeDefined();
+    expect(assetPathProblem(quoted ?? '')).toBeUndefined();
+  });
+
   test('an installed table is the answer, and its refusal passes through untouched', () => {
     setAssetResolver((path) => {
       if (path === 'assets/hero.avif') return '/assets/hero.0123abcd.avif';

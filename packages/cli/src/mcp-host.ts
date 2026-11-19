@@ -40,7 +40,7 @@ import { appManifest, policyFacts } from './app-manifest';
 import { loadAppRuntime } from './app-runtime';
 import { loadAppGraph, resolveNode } from './cmd-graph-load';
 import { declareDevEnvironment, needsDevEnvironmentDeclaration } from './dev-environment';
-import { liveDevLock } from './dev-lock';
+import { liveDevLockChecked } from './dev-lock-live';
 import { loadCodeFixes } from './error-fixes';
 import type { Runner } from './exec';
 import { assertExplainTarget, devNotRunning, narrowVerify, searchDocs } from './mcp-agent-host';
@@ -253,7 +253,7 @@ function capabilities(
 
     async requestStatements(ask) {
       // The lock `x dev` writes names its URL; a missing or stale one is no server to ask.
-      const lock = liveDevLock(lazy.services.stateDir);
+      const lock = await liveDevLockChecked(lazy.services.stateDir);
       if (lock === undefined) throw devNotRunning();
       return requestStatements({ devUrl: lock.url, ...ask });
     },

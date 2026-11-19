@@ -277,7 +277,8 @@ export function parseInline(src: string): readonly MarkdownInline[] {
             out.push({
               kind: 'image',
               src: tail.href,
-              alt: plainText(walk(open + 1, close, depth + 1)),
+              // The link branch's guard: unbounded, 20,000 nested `![` overflowed the stack.
+              alt: nest ? plainText(walk(open + 1, close, depth + 1)) : src.slice(open + 1, close),
             });
           else
             out.push({

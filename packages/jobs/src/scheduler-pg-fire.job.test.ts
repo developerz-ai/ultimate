@@ -50,4 +50,43 @@ describe('a pg fire reports each job by the row it inserted', () => {
     expect(results?.map((result) => result.id)).toEqual([idOf('digest'), idOf('cleanup')]);
     expect(new Set(results?.map((result) => result.runId) ?? []).size).toBe(2);
   });
+
+  test('a fire queues each job under its declared tenant: two orgs with one key are two rows', async () => {
+    const driver = postgresJobDriver({ executor: pg.executor });
+    const state = postgresSchedulerState(pg.executor);
+
+    const results = await state.fire(driver, {
+      task: 'nightly',
+      occurrenceMs: T0,
+      jobs: [
+        { ...job('digest'), tenantId: 'A' },
+        { ...job('digest'), tenantId: 'B' },
+      ],
+    });
+
+    expect(results?.map((result) => result.deduped)).toEqual([false, false]);
+    const rows = (await driver.introspect?.list()) ?? [];
+    expect(rows.map((row) => row.tenantId).sort()).toEqual(['A', 'B']);
+  });
+
+  test("a fired row carries the producer span's traceparent, and who it is attributed to", async () => {
+    const driver = postgresJobDriver({ executor: pg.executor });
+    const state = postgresSchedulerState(pg.executor);
+    const trace = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+
+    await state.fire(driver, {
+      task: 'nightly',
+      occurrenceMs: T0,
+      jobs: [{ ...job('digest'), traceparent: trace, enqueuedBy: 'scheduler' }, job('cleanup')],
+    });
+
+    const rows = (await driver.introspect?.list()) ?? [];
+    const digest = rows.find((row) => row.name === 'digest');
+    const cleanup = rows.find((row) => row.name === 'cleanup');
+    expect(digest?.traceparent).toBe(trace);
+    expect(digest?.enqueuedBy).toBe('scheduler');
+    // Absent stays absent: a request with no trace opens a root, as it did.
+    expect(cleanup?.traceparent).toBeUndefined();
+    expect(cleanup?.tenantId).toBeUndefined();
+  });
 });

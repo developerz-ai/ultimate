@@ -61,9 +61,9 @@ axiom 6). Never `cli` (upward).
 | A byte count in a message | `formatBytes` from `@ultimat3/core`, never a local one. |
 | Island bytes | **not this package's**: `@ultimat3/cli`'s `packages/cli/src/budgets.ts` measures the EMITTED document and is the gate. What stays here is the budget grammar (`parseByteBudget`) and `defaultIslandBudget`. |
 | The hydration runtime's CSP | `HYDRATE_RUNTIME_BODIES` — every inline body `hydrateRuntime` can emit, hashed by `@ultimat3/cli`'s `script-csp.ts`; `runtimeBody` is the one string served and hashed † |
-| Island markup | the props `<script>` is emitted INSIDE the wrapper by `render-walk.ts`; an assembler only adds `hydrateRuntime(directives)`. |
+| Island markup | the props `<script>` is emitted INSIDE the wrapper by `render-walk.ts`; an assembler only adds `hydrateRuntime(directives)`. `boot` reads `:scope>script[data-x-props]` first — an id repeats per render (page under a modal) — and by id only a script in no island's wrapper. |
 | Island boot | `el.__x` holds the boot PROMISE, never a boolean. |
-| Island mount markers | `data-x-mounted=""` when `mount()` resolved, `data-x-failed="<message>"` when it rejected — set by the runtime, never by `emitIslandAttributes`. The rejection handler RETHROWS. Prelude sizes `As of 2026-10-05`: `idle` 1,843, `visible` 886, `interaction` 1,728 B (what `DEFAULT_ISLAND_JS_BYTES` derives from). |
+| Island mount markers | `data-x-mounted=""` when `mount()` resolved, `data-x-failed="<message>"` when it rejected — set by the runtime, never by `emitIslandAttributes`. The rejection handler RETHROWS. Prelude sizes `As of 2026-11-19`: `idle` 1,943, `visible` 986, `interaction` 1,828 B (what `DEFAULT_ISLAND_JS_BYTES` derives from). |
 | A runtime that calls `boot` | TERMINATES the chain: `idle`/`visible` end in `.catch(hush)`, `interaction` passes `off` as the rejection arm. `hydrate-runtime.test.ts` reds on an unhandled rejection. |
 | `idle` replays too | `idle` and `interaction` share ONE `catchUp(el)` in `hydrate.ts` (capture listeners for `data-x-events`, default `click`; a queue; `aim`; one flush). A caught event wakes an `idle` island early; each event replays once. `hydrate-replay.test.ts`. |
 | Where `interaction` replays | `aim(el, ev)`, never `ev.target` (`mount` detaches the pressed node). Fallback order: `docs/history/render.md`. `hydrate-replay.test.ts`. |

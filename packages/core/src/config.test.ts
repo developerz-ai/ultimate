@@ -42,8 +42,8 @@ describe('defineConfig', () => {
     );
 
     expect(config.jobs.concurrency).toBe(32);
-    // untouched keys still come from defaults
-    expect(config.jobs.maxAttempts).toBe(5);
+    // untouched keys still come from defaults — 3, the retry a job declaring none has always had
+    expect(config.jobs.maxAttempts).toBe(3);
     expect(config.realtime.maxSocketsPerActor).toBe(4);
     expect(config.roles).toEqual(['web', 'worker']);
   });

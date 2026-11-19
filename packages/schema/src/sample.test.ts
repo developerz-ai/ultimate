@@ -193,6 +193,22 @@ describe('sampleGaps', () => {
     expect(accepts(schema)).toBe(true);
   });
 
+  test('a formatted string whose length bounds its fixed sample misses is a gap that names the bound', () => {
+    // A format value is never padded or cut (that would break the format), so `t.email.min(30)`
+    // sampled a 19-character address the schema refuses, and no gap said why.
+    const schema = t.object({
+      contact: t.email.min(30),
+      site: t.url.max(10),
+      id: t.uuid.min(36).max(36),
+      plain: t.string.min(40),
+    });
+    expect(accepts(schema)).toBe(false);
+    expect(sampleGaps(schema)).toEqual(['contact', 'site']);
+    expect(describeSampleGap(schema, 'contact')).toBe('contact (needs at least 30 characters)');
+    expect(describeSampleGap(schema, 'site')).toBe('site (needs at most 10 characters)');
+    expect(describeSampleGap(schema, 'id')).toBe('id');
+  });
+
   test('a schema with no IR owes nothing — there is nothing to be missing', () => {
     const foreign = {
       '~standard': { version: 1 as const, vendor: 'other', validate: () => ({ value: 1 }) },

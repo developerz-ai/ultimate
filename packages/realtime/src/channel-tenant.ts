@@ -1,12 +1,14 @@
-// The tenant half of a channel subscribe: a param that names a records entity's tenant column must
-// be the subscriber's own org. Decided by `@ultimat3/entity`'s own guard (`assertScoped`), so a
-// socket is held to the rule an HTTP read is — never a second copy of it, and never left to a policy.
+// The tenant half of a channel: a param that names a records entity's tenant column must be the
+// subscriber's own org, decided at subscribe by `@ultimat3/entity`'s own guard (`assertScoped`); a
+// tenanted row on a topic NOT keyed by its tenant column reaches only that tenant's members.
 
 import { type Actor, type Ctx, isUltimateError, runWithContext } from '@ultimat3/core';
 import { assertScoped, type QueryPlan } from '@ultimat3/entity';
-import { tenantColumnOfTable } from './change-tenant';
+import { tenantColumnOfTable, tenantIn } from './change-tenant';
 import type { Channel } from './channel-decl';
+import type { ChannelRecordsFrame } from './channel-wire';
 import { isTenancyDenial, TopicForbiddenError } from './errors';
+import type { SocketRegistry } from './socket';
 
 /**
  * A row is routed to the topic its own params name (`channel-records.ts`), so a topic keyed by the
@@ -53,3 +55,50 @@ export function assertChannelTenant(
     }
   }
 }
+
+/**
+ * Who may read one change's rows on `channel`: `undefined` for everyone on the topic — an untenanted
+ * table, or a channel keyed by the tenant column, whose subscribe already proved the tenant
+ * (`assertChannelTenant`) — else the tenant `row` names, `null` when it names none (no member).
+ *
+ * A topic keyed by `roomId` carries every org's rows that name that room, and its policy decided a
+ * permission, not a tenant: `can('message:read')` admitted org A to org B's room. The subscribe
+ * cannot decide this (the rows are not known yet), so delivery and ring replay do, per row.
+ */
+export function rowTenant(
+  channel: Channel,
+  table: string,
+  row: Readonly<Record<string, unknown>>,
+): string | null | undefined {
+  const column = tenantColumnOfTable(table);
+  if (column === null || channel.params.includes(column)) return undefined;
+  return tenantIn(column, row);
+}
+
+/**
+ * `assertScoped`'s verdict for a plan naming `tenant`, without a context to run it in: the actor's
+ * own org, and nothing else. A `crossTenant()` scope is never open around a delivery — it is a
+ * change, not a call — so there is no proof of one to honour here.
+ */
+export function admitsTenant(actor: Actor | null, tenant: string | null | undefined): boolean {
+  if (tenant === undefined) return true;
+  return tenant !== null && actor !== null && actor.orgId !== undefined && actor.orgId === tenant;
+}
+
+/**
+ * A records frame's audience when it carries one tenant's rows (`rowTenant`): a member `admits`
+ * takes gets the frame, every other member `withheld` — the same seq, carrying nothing.
+ */
+export interface Audience {
+  readonly admits: (actor: Actor | null) => boolean;
+  readonly withheld: ChannelRecordsFrame;
+}
+
+/** `socket.ts`'s `deliverRecordsTo`: one records frame to a topic's members, scoped by `to`. */
+export type DeliverRecordsTo = (
+  registry: SocketRegistry,
+  topic: string,
+  epoch: string,
+  frame: ChannelRecordsFrame,
+  to: Audience,
+) => number;

@@ -99,8 +99,8 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
 - **One enqueue implementation**: `jobsFacade()` owns `enqueue` AND `enqueueMany`, over
   `enqueue-record.ts`'s row builders; the only other `driver.enqueue` sites are the outbox relay and
   the scheduler. `handle.as(actor, input)` QUEUES; `executeJob` is the one execution path.
-- The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`); `task.enqueue()` uses the
-  job's plain key.
+- The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`), its row under
+  `tenantFor(input)`; `task.enqueue()` uses the job's plain key.
 - **TWO shutdown hooks per worker, one per PHASE**: `accept` is `stopAccepting()` (flip state, clear
   the poll timer, arm the cut-off; aborts nothing); `close` is the teardown. `stop()` releases both
   in a `finally`; `start()` refuses while draining.
@@ -204,10 +204,10 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `events-pg.ts` | `postgresEventBus` — `step.waitForEvent` across processes |
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, and `postgresLeader` |
-| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point — `JOBS_TABLE_STORAGE` (fillfactor 80, exported for the framework schema's drift check), and the hot tables' autovacuum settings (`x_scheduler_state`, `x_job_workers`, `x_outbox`) as `tableStorage()` declarations in `JOBS_STORAGE`, which drift checks. Its comments carry no `;` and no `'` |
+| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point — `JOBS_TABLE_STORAGE` (fillfactor 80), and the hot tables' autovacuum settings (`x_scheduler_state`, `x_job_workers`, `x_outbox`) as `tableStorage()` declarations in `JOBS_STORAGE`, which drift checks. Its comments carry no `;` and no `'` |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
-| `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled`, told beside the claim pass (`burialTeller`, awaited by `tick()` and the drain) and started only inside its debt's grace (else left owed) |
-| `retry.ts` | the dead-letter decision; this package's option names over core's `backoffDelay`, no curve |
+| `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled`, told beside the claim pass (`burialTeller`) and started only inside its debt's grace |
+| `retry.ts` / `retry-default.ts` | the dead-letter decision over core's `backoffDelay`; the app's default (`jobs.maxAttempts`/`backoff`), resolved when `handle.retry` is READ |
 | `retry-classification.ts` | the other half: what the thrown error says, and the stop reason |
 | `retry-jitter.ts` | `retry.jitter` refused at `job()` unless a `JitterMode` (a v30 boolean names its mapping) |
 | `execute-unwind.ts` / `execute-ctx.ts` | a saga failed for good; caller ctx |
@@ -244,7 +244,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `scheduler-state.ts` | `SchedulerState`, `fire`, `readWatermarks` (one read a round), the memory watermark |
 | `scheduler-leader.ts` / `scheduler-occurrences.ts` | `LeaderElection` + `soleLeader`; which occurrences fall in a window |
 | `idle-backoff.ts` / `enqueue-signal.ts` | the wait both polling loops share, and the rest (`restAfter`); the two wake signals and `wakeIsLive` |
-| `queue-wake.ts` / `driver-pg-wake-sql.ts` | the `LISTEN` session and its proof; which statement notifies |
+| `queue-wake.ts` / `driver-pg-wake-sql.ts` | the `LISTEN` session, its proof and re-proof; which statement notifies |
 | `worker-loop.ts` | the claim loop's timer: wake, `again`, the kicks, its heartbeat stamps |
 | `loop-heartbeat.ts` | a long-running loop's heartbeat (`loopHeartbeat`, `staleLoops`): the bound the cli's `/healthz` on `METRICS_PORT` answers 503 past |
 | `errors-operator.ts` / `errors-requeue.ts` | the operator verbs' refusals; `requeue`'s |

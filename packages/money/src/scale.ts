@@ -6,7 +6,7 @@
 
 import { isMoneyScale } from '@ultimat3/schema';
 import { exponentOf } from './currency';
-import { scaleInvalid, scaleNotWidening, scaleOverflow } from './errors';
+import { moneyNotInteger, scaleInvalid, scaleNotWidening, scaleOverflow } from './errors';
 import type { Money } from './money';
 
 /**
@@ -26,6 +26,16 @@ export function assertScale(scale: number): number {
 }
 
 /**
+ * `amount.minor` as the bigint every exact operation works in, screened as `fromMinor()` screens
+ * it. `Money` is a type, not a check: a hand-built `{ minor: 12.5 }` reached `BigInt()` as a bare
+ * `RangeError`, and `NaN` reached a page as `$NaN`.
+ */
+export function minorOf(amount: Money): bigint {
+  if (!Number.isSafeInteger(amount.minor)) throw moneyNotInteger(amount.minor, amount.currency);
+  return BigInt(amount.minor);
+}
+
+/**
  * `amount.minor` restated at `scale`, exactly, as a bigint.
  *
  * A bigint because widening is what a comparison does first, and a comparison must not throw:
@@ -39,7 +49,7 @@ export function minorAt(amount: Money, scale: number): bigint {
   assertScale(scale);
   const from = moneyScale(amount);
   if (scale < from) throw scaleNotWidening(from, scale);
-  return BigInt(amount.minor) * 10n ** BigInt(scale - from);
+  return minorOf(amount) * 10n ** BigInt(scale - from);
 }
 
 /** The finer of two scales: where two values have to meet before they can be one number. */

@@ -219,6 +219,30 @@ describe('a declared live query is subscribable, per subscriber', () => {
     expect(allowed.frame.type).toBe('snapshot');
   });
 
+  test("a live policy's ctx.actor is the subscriber", async () => {
+    // Written against `ctx`, as an HTTP rule may be: there `ctx.actor` IS the caller. Handed the
+    // node's context it read the node's actor — anonymous here, a system actor on a real node.
+    const seen: string[] = [];
+    const byCtx: QueryPolicy = {
+      ...ownRowsOnly,
+      run: ({ ctx, row }) => {
+        seen.push(`${row === null ? 'subscribe' : 'row'}:${String(ctx?.actor.id)}`);
+        return ctx?.actor.id === 'alice'
+          ? { allowed: true }
+          : { allowed: false, reason: 'not alice', code: 'X_FORBIDDEN' };
+      },
+    };
+    const registry = registryFor(byCtx);
+    const alice = socketFor('s-alice', userActor({ id: 'alice', orgId: 'o1' }));
+    const answer = await registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input: INPUT,
+    });
+    expect(answer.frame.type).toBe('snapshot');
+    expect(new Set(seen)).toEqual(new Set(['subscribe:alice', 'row:alice']));
+  });
+
   test('a patch reaches only the subscriber whose policy admits the row', async () => {
     const registry = registryFor();
     const alice = socketFor('s-alice', userActor({ id: 'alice', orgId: 'o1' }));

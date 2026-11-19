@@ -273,6 +273,22 @@ describe('LruCache refuses a byte budget that is not a budget', () => {
     expect((caught as UltimateError).fix).not.toContain('lru.maxBytes in app.config.ts');
   });
 
+  // `defaultTtlMs` is the one limit with a second home: the boot passes `config.cache.defaultTtlMs`
+  // into the rungs it builds, so a fix calling it "never an app.config.ts key" sent the operator
+  // away from the line that set it.
+  test('a refused defaultTtlMs names app.config.ts too, where the boot read it from', () => {
+    let caught: unknown;
+    try {
+      new LruCache({ defaultTtlMs: Number.NaN });
+    } catch (thrown) {
+      caught = thrown;
+    }
+    const fix = (caught as UltimateError).fix;
+    expect((caught as UltimateError).code).toBe('X_CACHE_LIMIT_INVALID');
+    expect(fix).toContain('cache.defaultTtlMs in app.config.ts');
+    expect(fix).not.toContain('never an app.config.ts key');
+  });
+
   test('the default and an ordinary budget still construct', () => {
     expect(() => new LruCache()).not.toThrow();
     expect(new LruCache({ maxBytes: 1 }).stats().maxBytes).toBe(1);

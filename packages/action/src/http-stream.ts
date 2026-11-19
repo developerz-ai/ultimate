@@ -5,8 +5,15 @@
  * handler starts — the policy, the input, the rate limit — is the ordinary problem response.
  */
 
-import { useContext, withChildContext } from '@ultimat3/core';
-import { toProblem } from '@ultimat3/http';
+import type { Ctx } from '@ultimat3/core';
+import {
+  isAnonymous,
+  reportError,
+  useContext,
+  wireDatePaths,
+  withChildContext,
+} from '@ultimat3/core';
+import { factsOf, toProblem } from '@ultimat3/http';
 import type { ChunkSink } from './action-stream';
 
 export const EVENT_STREAM = 'text/event-stream';
@@ -25,9 +32,37 @@ export function wantsEventStream(accept: string | null): boolean {
 const encoder = new TextEncoder();
 const STARTED: unique symbol = Symbol('started');
 
-/** One SSE frame. JSON never holds a raw newline, so `data:` is always one line. */
-export function sseFrame(event: 'chunk' | 'done' | 'error', data: unknown): Uint8Array {
-  return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data ?? null)}\n\n`);
+/**
+ * One SSE frame. JSON never holds a raw newline, so `data:` is always one line. `dates` is the
+ * `x-ultimate-dates` value for THIS frame's data (core's `wire-dates.ts`, URI-encoded, so one line
+ * too): a field the SSE format tells every reader that does not know it to ignore, so a client from
+ * before it reads the frame it always read.
+ */
+export function sseFrame(
+  event: 'chunk' | 'done' | 'error',
+  data: unknown,
+  dates?: string,
+): Uint8Array {
+  const named = dates === undefined ? '' : `dates: ${dates}\n`;
+  return encoder.encode(`event: ${event}\n${named}data: ${JSON.stringify(data ?? null)}\n\n`);
+}
+
+/**
+ * A fault after the first byte never reaches the pipeline's `error-map` stage — the 200 has gone —
+ * so the stream reports it the way that stage does: a 5xx only, the route PATTERN as operation.
+ */
+function reportStreamFault(error: unknown, operation: string, ctx: Ctx): void {
+  if (factsOf(error).status < 500) return;
+  reportError(error, {
+    source: 'http',
+    scope: {
+      requestId: ctx.requestId,
+      traceId: ctx.traceId,
+      role: ctx.role,
+      operation,
+      actorId: isAnonymous(ctx.actor) ? undefined : ctx.actor.id,
+    },
+  });
 }
 
 /** Runs the invocation with `sink` receiving its chunks; resolves the output. */
@@ -40,9 +75,12 @@ export type StreamRun = (sink: ChunkSink) => Promise<unknown>;
 export async function streamAnswer(
   owner: object,
   run: StreamRun,
+  operation: string,
   heartbeatMs: number = HEARTBEAT_MS,
 ): Promise<Response> {
-  const requestId = useContext().requestId;
+  // Read here, in the request's frame: the settle below runs on a later turn.
+  const ctx = useContext();
+  const requestId = ctx.requestId;
   // The client leaving cancels the body; that aborts this signal, added to the request's own.
   const left = new AbortController();
   let out: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -77,8 +115,11 @@ export async function streamAnswer(
         }
       };
       settled.then(
-        (output) => finish(sseFrame('done', output)),
-        (error: unknown) => finish(sseFrame('error', toProblem(error, { requestId }))),
+        (output) => finish(sseFrame('done', output, wireDatePaths(output))),
+        (error: unknown) => {
+          reportStreamFault(error, operation, ctx);
+          finish(sseFrame('error', toProblem(error, { requestId })));
+        },
       );
     },
     cancel() {

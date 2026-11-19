@@ -62,6 +62,21 @@ export function escapeJsonContent(json: string): string {
 }
 
 /**
+ * `application/ld+json`, `application/json`, any `…+json`: the body is data, not code.
+ *
+ * The MIME parameter is cut before the suffix test, because a real document writes
+ * `type="application/ld+json; charset=utf-8"` and that does not end in `json` — so the block built
+ * from route data, which is the path attacker text takes, silently took the raw-text escaper
+ * instead of the total one. `</` is escaped either way, so this was a weakened boundary rather than
+ * a break-out; the JSON rule is total on purpose, and a `charset` is not a reason to leave it.
+ */
+export function carriesJson(declared: unknown): boolean {
+  if (typeof declared !== 'string') return false;
+  const [type = ''] = declared.split(';');
+  return type.trim().toLowerCase().endsWith('json');
+}
+
+/**
  * JSX prop name → attribute name. Solid authors write the HTML spelling (`class`, `for`), but the
  * React spellings compile too, and an author who writes one and gets no attribute has a bug with
  * no error message.

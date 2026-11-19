@@ -3,7 +3,7 @@
 // the policy at mint, an expired, forged or re-pointed token at serve — answers its own status.
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, frozenClock, open, seal, userActor } from '@ultimat3/core';
+import { collectMetrics, ctxOf, frozenClock, open, seal, userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
@@ -352,5 +352,38 @@ describe('the token', () => {
       expect([url.slice(0, 60), response.status]).toEqual([url.slice(0, 60), 403]);
       expect((await json(response))['code']).toBe('X_QUERY_DOWNLOAD_TOKEN_INVALID');
     }
+  });
+});
+
+describe('a deprecated download', () => {
+  const calls = (): number =>
+    collectMetrics()
+      .metrics.find((entry) => entry.descriptor.name === 'deprecated_calls_total')
+      ?.points.find(
+        (point) =>
+          point.attributes['primitive'] === 'query' && point.attributes['name'] === 'oldRecording',
+      )?.value ?? 0;
+
+  test("a deprecated download's mint is counted once", async () => {
+    const old = query({
+      input: Input,
+      policy: can('recording:read'),
+      deprecated: { since: '2026-08-01T00:00:00Z', sunset: '2027-01-01T00:00:00Z' },
+      download: {
+        async handle() {
+          return { body: VIDEO, contentType: 'video/mp4', filename: 'old.mp4' };
+        },
+      },
+    }).named('oldRecording');
+    const server = serve(old, viewer);
+    const before = calls();
+    const minted = await get(server, `/_x/query/old-recording?runId=${RUN}`);
+    expect(minted.status).toBe(200);
+    expect(minted.headers.get('deprecation')).not.toBeNull();
+    expect(calls()).toBe(before + 1);
+    // The serve is the player's fetch of a URL the counted mint handed out — never a second call.
+    const { url } = (await minted.json()) as { url: string };
+    expect((await get(server, url)).status).toBe(200);
+    expect(calls()).toBe(before + 1);
   });
 });

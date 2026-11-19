@@ -159,9 +159,10 @@ export const sumDecimalText = (values: readonly string[]): string | null => {
 };
 
 /**
- * `sum / count`, rounded half away from zero at `AVG_SCALE` — which is what Postgres' `round()`
- * does to a `numeric`, and the reason the statement asks for `round(avg(...), 6)` rather than the
- * server's own default scale: two drivers rounding at different places answer two numbers.
+ * `sum / count`, rounded half away from zero at `AVG_SCALE`. The statement spells the same integer
+ * arithmetic (`averageSql`, `pg-sql-aggregate.ts`) rather than taking the server's own scale: two
+ * drivers rounding at different places answer two numbers, and `avg(bigint)` past sixteen digits
+ * rounds at none.
  */
 export const averageDecimalText = (total: string | null, count: number): string | null => {
   if (total === null || count === 0) return null;

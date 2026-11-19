@@ -71,6 +71,7 @@ export function identityProviderRoutes(
     },
     unknown: identityProviderUnknown,
     event: 'auth.sso',
+    factory: 'identityProviderRoutes',
     names: { start: 'auth.sso.start', callback: 'auth.sso.callback', acs: 'auth.sso.acs' },
     uncoded,
     grants: (identity) => options.resolveGrants?.(identity),

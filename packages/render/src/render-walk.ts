@@ -9,7 +9,13 @@ import { JSX_NODE } from '@ultimat3/core/render-node';
 import { PrerenderFailedError } from './errors';
 import type { HoleNode } from './hole';
 import { isHoleNode } from './hole';
-import { renderAttributes, VOID_ELEMENTS } from './html';
+import {
+  carriesJson,
+  escapeJsonContent,
+  escapeRawTextContent,
+  renderAttributes,
+  VOID_ELEMENTS,
+} from './html';
 import { emitIslandAttributes, emitIslandProps } from './hydrate';
 import type { IslandNode } from './island';
 import { isIslandNode } from './island';
@@ -183,9 +189,37 @@ function emitNode(node: JsxNode, depth: number, walk: RenderHtmlOptions, out: Bu
   if (VOID_ELEMENTS.has(type)) return;
   const raw = (props as { innerHTML?: unknown }).innerHTML;
   if (raw === undefined || raw === null) {
-    emit((props as { children?: unknown }).children, depth + 1, walk, out);
+    const children = (props as { children?: unknown }).children;
+    const text = type === 'script' || type === 'style' ? rawText(children, depth + 1) : undefined;
+    if (text === undefined) emit(children, depth + 1, walk, out);
+    else {
+      const json = type === 'script' && carriesJson((props as { type?: unknown }).type);
+      write(out, json ? escapeJsonContent(text) : escapeRawTextContent(text));
+    }
   } else write(out, String(raw));
   write(out, `</${type}>`);
+}
+
+/**
+ * The text a `<script>` or `<style>` holds, unescaped — the two raw text elements, where a
+ * character reference is never decoded, so `&gt;` in a selector or `&amp;&amp;` in a condition
+ * reaches the parser as written and breaks it. `undefined` when a child is anything but text (an
+ * element, a promise): the caller then walks it as any other children, escaped.
+ */
+function rawText(value: unknown, depth: number): string | undefined {
+  assertDepth(depth);
+  if (value === null || value === undefined || value === false || value === true) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'bigint') return String(value);
+  if (typeof value === 'function') return rawText((value as () => unknown)(), depth + 1);
+  if (!Array.isArray(value) || isIslandNode(value) || isHoleNode(value)) return undefined;
+  let text = '';
+  for (const item of value) {
+    const piece = rawText(item, depth + 1);
+    if (piece === undefined) return undefined;
+    text += piece;
+  }
+  return text;
 }
 
 /**

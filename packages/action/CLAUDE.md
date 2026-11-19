@@ -31,10 +31,10 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `errors-http.ts` | the three HTTP-declaration refusals |
 | `error-titles.ts` | every code's title, the one `registerErrorCodes` |
 | `client.ts` | typed RPC client (browser-safe: no server imports) — dispatches through core's `clientTransport` |
-| `record-wire.ts` | the record envelope on the HTTP projection: `carriesRecords` (from the output schema), the enveloped 200, and its OpenAPI shape. Server-only — `client.ts` never imports it |
+| `record-wire.ts` | the action's 200 on the HTTP projection: `carriesRecords` (from the output schema), either body + `x-ultimate-dates`. Server-only — `client.ts` never imports it |
 | `wire-issues.ts` | the ONE reader of a problem document's `issues` member — an untrusted array back into `@ultimat3/schema`'s `ValidationIssue` shape |
 | `action-stream.ts` | `streamingDef`: a `stream`-declaring `handle` (an async generator) DRAINED, each chunk parsed by `stream` (`X_ACTION_STREAM_INVALID`, `errors-stream.ts`); `chunksRead()` |
-| `http-stream.ts` | `accept: text/event-stream` → `event: chunk`… then ONE `done` or `error`; a refusal before the handler is the ordinary problem response |
+| `http-stream.ts` | `accept: text/event-stream` → `event: chunk`… then ONE `done` (+ `dates:`) or `error` (a 5xx reported); a refusal before the handler is the plain problem |
 | `audit-subject-target.ts` | `auditSubjectTarget()`: `x_audit` as a subject-erase target — overwrites who acted and the input, never deletes the row |
 | `transition.ts` | `transition()`: a MUTATOR factory over one entity column's state machine. Declares no error code — entity's three propagate |
 | `upload-flow.ts` | `uploadFlow()`: an ACTION factory, `{ request, confirm }` over storage's `grantUpload` (pending only) and `promoteAttachment`. No code of its own |

@@ -9,7 +9,12 @@
 
 import type { PgExecutor, Random } from '@ultimat3/core';
 import { backoffDelay, failureStreak, finiteOption, logger } from '@ultimat3/core';
-import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
+import {
+  JOBS_WAKE_CHANNEL,
+  OUTBOX_WAKE_CHANNEL,
+  SQL_WAKE,
+  WAKE_REPROVE_PAYLOAD,
+} from './driver-pg-wake-sql';
 import { setWakeLive, signalEnqueued, signalStaged } from './enqueue-signal';
 
 /**
@@ -32,6 +37,14 @@ export interface QueueWakeOptions {
   readonly executor: PgExecutor;
   /** How long a probe may take to come back before the wake is reported unproven. Default 5 s. */
   readonly verifyTimeoutMs?: number;
+  /**
+   * How often a PROVEN wake is proven again. A session that dies is un-proven by the driver's
+   * re-dial (`onListening`) — but one that stops delivering with no re-dial (half-open, a re-dial
+   * refused before its cue) says nothing, and the loops would rest on it. Each period one
+   * notification per channel is sent that wakes no loop; not back within `verifyTimeoutMs`, the
+   * wake is un-proven and the loops poll. Default 10 s: six statements a minute, none on a table.
+   */
+  readonly reproveEveryMs?: number;
   /** First and longest gap between attempts to subscribe or probe. Default 1 s doubling to 30 s. */
   readonly retryBaseMs?: number;
   readonly retryMaxMs?: number;
@@ -69,6 +82,7 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
   );
   const retryBaseMs = finiteOption(subject, 'retryBaseMs', options.retryBaseMs ?? 1_000);
   const retryMaxMs = finiteOption(subject, 'retryMaxMs', options.retryMaxMs ?? 30_000);
+  const reproveEveryMs = finiteOption(subject, 'reproveEveryMs', options.reproveEveryMs ?? 10_000);
   const setTimer = options.setTimer ?? armTimer;
 
   let stopped = false;
@@ -78,6 +92,14 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
   const proven = new Set<Channel>();
   let cancelTimer: (() => void) | undefined;
   let cancelVerdict: (() => void) | undefined;
+  /** The re-proof's one armed timer: the wait for the next one, or the verdict on the one sent. */
+  let cancelReprove: (() => void) | undefined;
+  /** Channels a notification has crossed since the last re-proof was sent. */
+  const since = new Set<Channel>();
+  /** A re-proof is sent and not yet answered. */
+  let reproving = false;
+  /** Moved by every new session and by `stop()`: a re-proof sent before it is nobody's. */
+  let session = 0;
   /** Every channel has been subscribed once: from here an `onListening` is a re-dial. */
   let subscribed = false;
   let probing = false;
@@ -111,7 +133,58 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
     );
   };
 
+  /** Arm the next re-proof, in place of whichever of its timers is armed. */
+  const reproveLater = (): void => {
+    cancelReprove?.();
+    cancelReprove = setTimer(reprove, reproveEveryMs);
+  };
+
+  /**
+   * Prove a proven session AGAIN. Any notification counts, a peer's included: what is asked is
+   * whether this session still delivers. A send the pool refused is no verdict on the session.
+   */
+  function reprove(): void {
+    if (stopped) return;
+    const sentOn = session;
+    since.clear();
+    reproving = true;
+    cancelReprove = undefined;
+    void Promise.all(
+      CHANNELS.map((channel) => options.executor.query(SQL_WAKE, [channel, WAKE_REPROVE_PAYLOAD])),
+    )
+      .then(() => {
+        probeFailures.passed();
+        // Answered already (`crossed` re-armed), or a new session's own probe has taken over.
+        if (stopped || sentOn !== session || !reproving) return;
+        cancelReprove = setTimer(() => {
+          if (stopped || sentOn !== session || !reproving) return;
+          reproving = false;
+          if (proven.size === CHANNELS.length) {
+            proven.clear();
+            setWakeLive(false);
+            logger.warn('jobs.wake.lost', {
+              waitedMs: verifyTimeoutMs,
+              missing: CHANNELS.filter((channel) => !since.has(channel)),
+            });
+          }
+          // Keep asking: the notification that crosses next proves the session again.
+          reproveLater();
+        }, verifyTimeoutMs);
+      })
+      .catch((error: unknown) => {
+        if (stopped || sentOn !== session) return;
+        reproving = false;
+        probeFailures.failed(error, { attempt: 1 });
+        reproveLater();
+      });
+  }
+
   const crossed = (channel: Channel): void => {
+    since.add(channel);
+    if (reproving && since.size === CHANNELS.length) {
+      reproving = false;
+      if (!stopped) reproveLater();
+    }
     if (proven.has(channel)) return;
     proven.add(channel);
     if (proven.size < CHANNELS.length || stopped) return;
@@ -119,6 +192,7 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
     cancelVerdict = undefined;
     setWakeLive(true);
     logger.info('jobs.wake.live', { channels: CHANNELS });
+    if (!reproving) reproveLater();
   };
 
   /**
@@ -163,6 +237,10 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
     if (stopped) return;
     proven.clear();
     setWakeLive(false);
+    session += 1;
+    reproving = false;
+    cancelReprove?.();
+    cancelReprove = undefined;
     // Not before every channel is subscribed: a probe sent ahead of a `LISTEN` proves nothing.
     if (!subscribed) return;
     if (probing) reprobe = true;
@@ -175,14 +253,15 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
       JOBS_WAKE_CHANNEL,
       (payload) => {
         crossed(JOBS_WAKE_CHANNEL);
-        signalEnqueued(payload === '' ? undefined : payload);
+        // A re-proof — this pod's or a peer's — announces no work: it must not end a rest.
+        if (payload !== WAKE_REPROVE_PAYLOAD) signalEnqueued(payload === '' ? undefined : payload);
       },
     ],
     [
       OUTBOX_WAKE_CHANNEL,
-      () => {
+      (payload) => {
         crossed(OUTBOX_WAKE_CHANNEL);
-        signalStaged(true);
+        if (payload !== WAKE_REPROVE_PAYLOAD) signalStaged(true);
       },
     ],
   ];
@@ -223,8 +302,10 @@ export function startQueueWake(options: QueueWakeOptions): QueueWake {
     stop() {
       stopping ??= (async () => {
         stopped = true;
+        session += 1;
         cancelTimer?.();
         cancelVerdict?.();
+        cancelReprove?.();
         setWakeLive(false);
         await release();
       })();

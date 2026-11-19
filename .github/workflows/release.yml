@@ -306,25 +306,40 @@ jobs:
             # then died `E401 … token is invalid` on schema 71 s later while the registry was slow
             # to stage — and every re-run lost the rest of its tier the same way.
             for name in $names; do
-              held="$(npm view "${name}@${VERSION}" version 2>/dev/null || true)"
-              if [ "$held" = "$VERSION" ]; then
-                echo "::notice::skipping ${name}@${VERSION} — npm already holds it, published by an earlier attempt of this release"
-                continue
-              fi
-              echo "::group::npm publish — tier $tier: $name"
-              if ! out="$(npm publish -w "$name" --tag "$DIST_TAG" 2>&1)"; then
+              # BOUNDED RETRY: the weekly bot release has nobody on call, and a transient failure — a
+              # Sigstore TLOG 409, an E401 from a slow token exchange, a registry 5xx — killed the
+              # whole run. Three attempts, a pause between, and npm asked AGAIN before each one: an
+              # attempt that died after the registry took the tarball is this release's, never a
+              # re-publish into E403. Provenance is untouched: each attempt is the same command.
+              attempt=1
+              while :; do
+                held="$(npm view "${name}@${VERSION}" version 2>/dev/null || true)"
+                if [ "$held" = "$VERSION" ]; then
+                  echo "::notice::skipping ${name}@${VERSION} — npm already holds it, published by an earlier attempt of this release"
+                  break
+                fi
+                echo "::group::npm publish — tier $tier: $name (attempt $attempt)"
+                if out="$(npm publish -w "$name" --tag "$DIST_TAG" 2>&1)"; then
+                  echo "$out"
+                  echo "::endgroup::"
+                  break
+                fi
                 echo "$out"
+                echo "::endgroup::"
                 # npm STAGES a publish before `npm view` can see it, so an attempt that raced a
                 # previous one meets its own staged copy. That version is already this release's.
                 if printf '%s' "$out" | grep -q 'previously staged version'; then
                   echo "::notice::${name}@${VERSION} is staged by an earlier attempt — npm will publish it"
-                  echo "::endgroup::"
-                  continue
+                  break
                 fi
-                exit 1
-              fi
-              echo "$out"
-              echo "::endgroup::"
+                if [ "$attempt" -ge 3 ]; then
+                  echo "::error::npm publish of ${name}@${VERSION} failed 3 times — read the npm error above. The run resumes where it stopped: gh workflow run release.yml --ref v${VERSION} -f version=${VERSION}"
+                  exit 1
+                fi
+                echo "::warning::npm publish of ${name}@${VERSION} failed (attempt ${attempt} of 3) — asking npm again in $((attempt * 30)) s"
+                sleep "$((attempt * 30))"
+                attempt=$((attempt + 1))
+              done
             done
           done <<< "$plan"
 

@@ -73,6 +73,11 @@ class FakeElement {
     this.attributes.set(name, value);
   }
 
+  /** No test here hands an island props, so the wrapper holds no props script. */
+  querySelector(): null {
+    return null;
+  }
+
   appendChild(child: FakeElement): void {
     child.parentNode = this;
     this.childNodes.push(child);

@@ -67,8 +67,12 @@ export function Menu(props: MenuProps): JSX.Element {
     const onPointerDown = (event: Event): void => {
       if (root !== undefined && !root.contains(event.target as Node)) props.onOpenChange(false);
     };
+    // Cancelled, so the press is this layer's alone: an Escape nobody cancelled is also the
+    // platform's close request, and a `<dialog>` holding this overlay closed on the same press.
     const onEscape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') props.onOpenChange(false);
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      props.onOpenChange(false);
     };
     document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('keydown', onEscape);

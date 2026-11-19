@@ -342,8 +342,13 @@
  * `db/src/not-null-contract.ts` (a required column's NOT NULL contract step).
  * raised 987 → 989, measured 989 (2026-11-18, a queued write's binding): `core/src/client-scope-id.ts`
  * (the scope id auth renders and action judges, one key) and `action/src/replay-scope.ts` (the check).
+ * raised 989 → 995, measured 995 (2026-11-19, r9 sweep, metafile walk): `cli/src/runtime-database-ssl.ts`
+ * and the `cli/src/app-config-load.ts` it reads `database.ssl` through — the migrate step opens the
+ * pool too, and the switch was read by nothing; `entity/src/uuid-text.ts`, `entity/src/pg-sql-in.ts` and `entity/src/instant-range.ts` (a malformed
+ * uuid operand and a long `in` list answered alike on both drivers) and `jobs/src/retry-default.ts`
+ * (`jobs.maxAttempts`/`jobs.backoff` as the worker's default retry).
  */
-export const MIGRATE_CEILING = 989;
+export const MIGRATE_CEILING = 995;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

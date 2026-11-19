@@ -23,6 +23,13 @@ import {
   readIdentityState,
 } from './identity-provider-cookie';
 import { oauthRouteStatus } from './identity-provider-status';
+import {
+  mfaChallengeCookie,
+  mfaChallengeOf,
+  mfaHandoffMissing,
+  mfaLandingPath,
+  type SignInFactory,
+} from './mfa-handoff';
 import { oauthStateInvalid } from './oauth-errors';
 import type { OAuthGrants } from './oauth-login';
 import { OAUTH_START_ROUTE_PATH } from './oauth-paths';
@@ -66,6 +73,14 @@ export interface SignInRouteOptions {
   readonly secret?: string | undefined;
   /** A fixed landing path, never `?next=`: `nextAfterSignIn` in `@ultimat3/http` is the one check. */
   readonly successPath?: string | undefined;
+  /**
+   * The app's own second-factor page. A user with TOTP enrolled is sent there (303) instead of to
+   * `successPath`, with the sealed challenge in the `__Host-x_mfa` cookie — HttpOnly, and living
+   * `MFA_CHALLENGE_TTL_MS`: `completeMfa(auth, readMfaChallenge(request) ?? '', code)` finishes.
+   * Omit it and that user's callback is refused `X_MFA_REQUIRED` (401): they cannot finish here.
+   * One absolute path on this origin, or `X_CONFIG_INVALID` at the call.
+   */
+  readonly mfaPath?: string | undefined;
   /** The client address recorded on the session; `@ultimat3/http` knows the proxy chain. */
   readonly clientIp?: ((request: Request) => string | null | undefined) | undefined;
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
@@ -79,6 +94,8 @@ export interface SignInRoutePolicy {
   unknown(segment: string): UltimateError;
   /** `auth.sso` / `auth.oauth`: the log event prefix (`<prefix>.refused`). */
   readonly event: string;
+  /** The call an operator edits: what a `fix:` line about these routes' options names. */
+  readonly factory: SignInFactory;
   readonly names: { readonly start: string; readonly callback: string; readonly acs: string };
   /** A throw with no code, logged and turned into the refusal served. Its text never is. */
   uncoded(error: unknown): UltimateError;
@@ -170,6 +187,8 @@ export function signInRoutes(
   policy: SignInRoutePolicy,
 ): SignInRoutes {
   const back = policy.callbackPath ?? callbackPath();
+  const mfaPath =
+    options.mfaPath === undefined ? undefined : mfaLandingPath(policy.factory, options.mfaPath);
   const seal = {
     clock: auth.clock,
     ...(options.secret === undefined ? {} : { secret: options.secret }),
@@ -230,7 +249,15 @@ export function signInRoutes(
       // 303: the answer may arrive as a POST, and the destination is a GET either way.
       return new Response(null, { status: 303, headers });
     } catch (error) {
-      return problem(policy, error, clear);
+      // Identity proven, second factor owed. The challenge goes to the app's page in a cookie
+      // only this origin's server reads — never the URL, a body or the log line `problem` writes.
+      const challenge = mfaChallengeOf(error);
+      if (challenge === null) return problem(policy, error, clear);
+      if (mfaPath === undefined) return problem(policy, mfaHandoffMissing(policy.factory), clear);
+      const headers = new Headers({ location: mfaPath });
+      headers.append('set-cookie', mfaChallengeCookie(challenge));
+      for (const cookie of clear) headers.append('set-cookie', cookie);
+      return new Response(null, { status: 303, headers });
     }
   };
 

@@ -126,6 +126,31 @@ describe('the manifest is deterministic', () => {
     expect(verifyBuildId(buildManifest(sources))).toBe(true);
   });
 
+  // A schema default reaches a fact verbatim (`sources.ts`'s `asJson` is a cast), so a `Date`, a
+  // sparse array or an `undefined` member is hashed as itself and WRITTEN as what JSON makes of it.
+  test('a fact holding a Date round-trips: verifyBuildId(JSON.parse(manifestJson(m))) is true', () => {
+    const sparse: unknown[] = ['a'];
+    sparse[2] = 'c';
+    const input = {
+      type: 'object',
+      properties: {
+        at: { type: 'string', default: new Date('2026-01-02T03:04:05.000Z') },
+        tags: { type: 'array', default: sparse },
+        note: { type: 'string', default: undefined },
+      },
+    } as unknown as JsonValue;
+    const manifest = buildManifest({
+      ...sources,
+      actions: [{ ...(sources.actions?.[0] as ActionFact), input }],
+    });
+
+    const onDisk = JSON.parse(manifestJson(manifest)) as Manifest;
+    expect(verifyBuildId(onDisk)).toBe(true);
+    expect(onDisk.buildId).toBe(manifest.buildId);
+    // The manifest in memory is the one the file holds, so a drift check compares like with like.
+    expect(canonicalJson(manifest.actions)).toBe(canonicalJson(onDisk.actions));
+  });
+
   // Every buildId ever stamped into an app's `x.manifest.json` was SHA-256/16 over canonicalJson;
   // that is core's `fingerprint`, so the copy was deleted rather than the value changed.
   // 25.0.0 (plan 101, M3): `contentHash` was `fingerprint` under a second name, exported from here

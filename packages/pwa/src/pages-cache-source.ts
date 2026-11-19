@@ -46,7 +46,7 @@ function isPrivate(r){
 }
 // Every cache but the pages cache is GUARDED in both modes: a private response is never stored there.
 // A pages cache (\`bounded\`) is capped at PAGES_MAX documents, oldest WRITTEN out first.
-function guarded(c,bounded){return{match:(req)=>c.match(req),put:async(req,r)=>{if(!isPrivate(r))return bounded?putPage(c,req,r):c.put(req,r)}}}
+function guarded(c,bounded){return{match:(req)=>c.match(req),put:async(req,r)=>{if(!isPrivate(r))return bounded?putPage(c,req,r):c.put(req,plain(r))}}}
 // keys() is insertion order and a put re-appends, so the head is the page least recently stored.
 // One write at a time: a trim reads keys() and deletes by URL, so a refresh landing between the two
 // re-appended a page the trim then deleted — the page just written gone, an older one kept.
@@ -54,7 +54,8 @@ const PAGES_MAX=${String(PAGES_CACHE_MAX)};
 let paging=Promise.resolve();
 function putPage(c,req,r){const run=paging.then(()=>putTrim(c,req,r));paging=run.catch(()=>{});return run}
 async function putTrim(c,req,r){
-  await c.put(req,r);
+  // plain (the install block's): a redirected copy is a network error to a later navigation.
+  await c.put(req,plain(r));
   const keys=await c.keys();
   if(keys.length>PAGES_MAX)await Promise.all(keys.slice(0,keys.length-PAGES_MAX).map((k)=>c.delete(k)));
 }

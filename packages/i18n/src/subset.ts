@@ -23,20 +23,37 @@ export type CatalogSubset = {
 /** The two members of a translator a subset is read through — any app's typed `t` has them. */
 export interface RawTranslator {
   raw(key: string): string | undefined;
+  /**
+   * Every key of the catalog. A `select` family's values are an open set, so its members can only
+   * be found by listing: a translator without `keys()` yields a subset with no families.
+   */
+  keys?(): string[];
   readonly locale: Locale;
 }
 
+/** The infix of a family member: `<key>_select_<value>`, `<key>_ordinal_<category>`. */
+const FAMILY = /_(?:select|ordinal)_/g;
+
 /**
- * The templates `keys` name in `t`'s locale, each with every plural variant the catalog holds, so
- * `t(key, { count })` in the island picks the form the server would. A key the catalog lacks is
- * left out, and renders `⟦key⟧` in the island exactly as it would on the server.
+ * The templates `keys` name in `t`'s locale, each with every plural variant and every `select` and
+ * `ordinal` family member the catalog holds, so `t(key, { count, select, ordinal })` in the island
+ * picks the form the server would. A key the catalog lacks is left out, and renders `⟦key⟧` in the
+ * island exactly as it would on the server.
  */
 export function catalogSubset(t: RawTranslator, keys: readonly string[]): CatalogSubset {
   const catalog: Record<string, string> = Object.create(null) as Record<string, string>;
+  const copy = (name: string): void => {
+    const template = t.raw(name);
+    if (template !== undefined) catalog[name] = template;
+  };
   for (const key of keys) {
-    for (const name of [key, ...pluralVariantsOf(key)]) {
-      const template = t.raw(name);
-      if (template !== undefined) catalog[name] = template;
+    for (const name of [key, ...pluralVariantsOf(key)]) copy(name);
+  }
+  const wanted = new Set(keys);
+  for (const name of t.keys?.() ?? []) {
+    // Every infix, never only the first: a named key may itself spell `_select_`.
+    for (const infix of name.matchAll(FAMILY)) {
+      if (wanted.has(name.slice(0, infix.index))) copy(name);
     }
   }
   return { locale: t.locale, catalog };

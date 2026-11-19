@@ -11,7 +11,7 @@ import { settleAnswer } from './client-transport';
 import { notifyClientWrite } from './client-writes';
 import { RECORDS_HEADER } from './record-envelope';
 import { pageClient } from './record-sink';
-import { DATES_HEADER } from './wire-dates';
+import { DATES_HEADER, reviveWireDates } from './wire-dates';
 
 /** What `clientStream` reads: a write's request, never a raw body or a flight. */
 export type StreamRequest = StreamDispatch;
@@ -19,6 +19,8 @@ export type StreamRequest = StreamDispatch;
 interface Frame {
   readonly event: string;
   readonly data: string;
+  /** The `x-ultimate-dates` value for this frame's data, when the server named any. */
+  readonly dates?: string;
 }
 
 /** Splits a growing buffer into complete frames; the incomplete tail is handed back. */
@@ -28,14 +30,19 @@ export function takeFrames(buffer: string): { readonly frames: Frame[]; readonly
   const rest = blocks.pop() ?? '';
   for (const block of blocks) {
     let event = 'message';
+    let dates: string | undefined;
     const data: string[] = [];
     for (const line of block.split(/\r?\n/)) {
       // A `:` line is a comment — the server's keep-alive.
       if (line.startsWith(':')) continue;
       if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('dates:')) dates = line.slice(6).trim();
       else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
     }
-    if (data.length > 0) frames.push({ event, data: data.join('\n') });
+    if (data.length > 0) {
+      const text = data.join('\n');
+      frames.push(dates === undefined ? { event, data: text } : { event, data: text, dates });
+    }
   }
   return { frames, rest };
 }
@@ -71,7 +78,8 @@ export async function* clientStream<TChunk = unknown, TOutput = unknown>(
         buffer = taken.rest;
         for (const frame of taken.frames) {
           if (frame.event === 'chunk') yield JSON.parse(frame.data) as TChunk;
-          else if (frame.event === 'done') return JSON.parse(frame.data) as TOutput;
+          else if (frame.event === 'done')
+            return reviveWireDates(JSON.parse(frame.data), frame.dates ?? null) as TOutput;
           else if (frame.event === 'error') {
             const status = problemStatus(frame.data);
             throw (

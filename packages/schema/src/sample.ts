@@ -11,6 +11,7 @@ import type { Draw } from './sample-draw';
 import {
   BY_FORMAT,
   formatValue,
+  lengthMiss,
   minimalDraw,
   owedItems,
   SAMPLE_STRING,
@@ -115,9 +116,9 @@ export function arbitrary(schema: StandardSchemaV1, options: ArbitraryOptions): 
 const ROOT_PATH = '(the input)';
 
 /**
- * Dotted paths of every sampled field whose own `pattern` the minimal value cannot satisfy — what
- * this schema needs that the framework cannot invent. It walks the SAMPLED shape, so an optional
- * key, which the minimal sample omits, owes nothing.
+ * Dotted paths of every sampled field whose own `pattern` or length bounds the minimal value
+ * cannot satisfy — what this schema needs that the framework cannot invent. It walks the SAMPLED
+ * shape, so an optional key, which the minimal sample omits, owes nothing.
  */
 export function sampleGaps(schema: StandardSchemaV1): readonly string[] {
   const node = tryIntrospect(schema);
@@ -136,7 +137,10 @@ function gapsIn(node: SchemaNode, path: string): string[] {
     return out;
   }
   const unbuildable = node.kind === 'array' && owedItems(node) === undefined;
-  if (!unbuildable && satisfiesPattern(node, sampleFor(node, minimalDraw))) return [];
+  if (!unbuildable) {
+    const sample = sampleFor(node, minimalDraw);
+    if (satisfiesPattern(node, sample) && lengthMiss(node, sample) === undefined) return [];
+  }
   return [path === '' ? ROOT_PATH : path];
 }
 
@@ -146,6 +150,9 @@ export function describeSampleGap(schema: StandardSchemaV1, path: string): strin
   if (node?.kind === 'array' && node.minItems !== undefined && owedItems(node) === undefined) {
     return `${path} (needs at least ${node.minItems} items)`;
   }
+  const miss = node === undefined ? undefined : lengthMiss(node, sampleFor(node, minimalDraw));
+  if (miss === 'min') return `${path} (needs at least ${node?.minLength} characters)`;
+  if (miss === 'max') return `${path} (needs at most ${node?.maxLength} characters)`;
   const pattern = node?.pattern;
   return pattern === undefined ? path : `${path} (must match ${pattern})`;
 }

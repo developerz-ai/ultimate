@@ -2,8 +2,8 @@
 // Keyed by embedding, matched by cosine similarity above a threshold — exact string keys miss on
 // "list my orders" vs "show me my orders", which is most of the traffic.
 //
-// The in-memory default is correct but O(n); pgvector is the production backing (an ivfflat index
-// over `x_semantic_cache.embedding`), which is why the interface is a driver.
+// The in-memory default is correct but O(n), and as of 2026-11 it is the only implementation: no
+// Postgres/pgvector-backed one exists. The interface is a driver so an app can supply one.
 
 import type { Clock } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core';
@@ -16,6 +16,7 @@ import {
   assertTtl,
   nowMs,
 } from './tiers';
+import { decodeCacheValue, encodeCacheValue } from './value-codec';
 
 export type Embedding = readonly number[];
 
@@ -85,7 +86,11 @@ export function cosineSimilarity(a: Embedding, b: Embedding): number {
 interface SemanticRecord {
   readonly key: string;
   readonly embedding: Embedding;
-  readonly value: unknown;
+  /**
+   * `{ v }` as `value-codec.ts` text, as the LRU tier holds it — never the caller's object, or a
+   * hit is the writer's live object and one reader's edit is every later reader's answer.
+   */
+  readonly text: string;
   readonly expiresAt: number;
   readonly tags: readonly CacheTag[];
 }
@@ -128,7 +133,7 @@ export function memorySemanticCache(options: SemanticCacheOptions = {}): Semanti
               override,
               'the override argument to lookup(embedding, override)',
             );
-      let best: SemanticHit<T> | undefined;
+      let best: { readonly record: SemanticRecord; readonly similarity: number } | undefined;
       for (const record of live()) {
         const similarity = cosineSimilarity(embedding, record.embedding);
         // A similarity that is not a number is not a match. Every comparison against `NaN` is
@@ -138,10 +143,13 @@ export function memorySemanticCache(options: SemanticCacheOptions = {}): Semanti
         if (!Number.isFinite(similarity)) continue;
         if (similarity < floor) continue;
         if (best === undefined || similarity > best.similarity) {
-          best = { value: record.value as T, similarity, key: record.key };
+          best = { record, similarity };
         }
       }
-      return Promise.resolve(best);
+      if (best === undefined) return Promise.resolve(undefined);
+      // Decoded once, for the winner only: a fresh object per hit.
+      const { v } = decodeCacheValue(best.record.text) as { readonly v: T };
+      return Promise.resolve({ value: v, similarity: best.similarity, key: best.record.key });
     },
 
     remember<T>(
@@ -157,11 +165,12 @@ export function memorySemanticCache(options: SemanticCacheOptions = {}): Semanti
       const ttlMs = assertTtl(key, rememberOptions?.ttlMs ?? defaultTtlMs, 'semantic', {
         jitterFraction: 0,
       });
+      const text = encodeCacheValue({ v: value }, { key, tier: 'semantic' });
       records.delete(key);
       records.set(key, {
         key,
         embedding,
-        value,
+        text,
         expiresAt: nowMs(clock) + ttlMs,
         tags: rememberOptions?.tags ?? [],
       });

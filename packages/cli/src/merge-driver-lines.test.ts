@@ -1,7 +1,7 @@
 // Which conflicts `x merge-driver` may resolve: both sides adding whole entries, and nothing else.
 
 import { describe, expect, test } from 'bun:test';
-import { resolveAdditions } from './merge-driver-lines';
+import { conflictsLeft, resolveAdditions } from './merge-driver-lines';
 
 const conflict = (ours: string[], base: string[], theirs: string[]): string[] => [
   '<<<<<<< ours',
@@ -84,5 +84,38 @@ describe('unit · a real conflict stays one, markers and all', () => {
 
   test('text with no conflict passes through byte for byte', () => {
     expect(resolveAdditions('a\nb\n')).toEqual({ text: 'a\nb\n', conflicts: 0 });
+  });
+});
+
+// `git merge-file` ends its markers the way the file ends its lines: on a CRLF checkout each is
+// `<<<<<<< ours\r`. Compared whole, none was a marker — the text passed through with every marker
+// in it, reported as 0 conflicts, and the driver exited 0: git recorded a clean merge.
+describe('unit · a CRLF file', () => {
+  const crlf = (lines: string[]): string => lines.map((line) => `${line}\r\n`).join('');
+
+  test("CRLF input: both sides' additions merge, and an unrecognised marker is never reported as 0 conflicts", () => {
+    const text = crlf(['before', ...conflict(['  beta,'], [], ['  alpha,']), 'after']);
+    // Merged, and every line still ends as the file's lines do.
+    expect(resolveAdditions(text)).toEqual({
+      text: 'before\r\n  alpha,\r\n  beta,\r\nafter\r\n',
+      conflicts: 0,
+    });
+
+    // A real conflict stays one, counted, with its markers as git wrote them.
+    const real = resolveAdditions(
+      crlf(['before', ...conflict(['  a: 1,'], [], ['  a: 2,']), 'after']),
+    );
+    expect(real.conflicts).toBe(1);
+    expect(real.text).toContain('<<<<<<< ours\r\n');
+
+    // The backstop: git said it left conflicts and the text still opens one, whatever the
+    // resolver counted — a marker spelling it does not know must not become exit 0.
+    const unknown = 'a\n<<<<<<< ours\u2028\nb\n';
+    expect(resolveAdditions(unknown).conflicts).toBe(0);
+    expect(conflictsLeft(unknown, 0, 2)).toBe(2);
+    // Nothing invented where there is nothing left, or where git reported none.
+    expect(conflictsLeft('a\nb\n', 0, 1)).toBe(0);
+    expect(conflictsLeft(unknown, 0, 0)).toBe(0);
+    expect(conflictsLeft(real.text, 1, 3)).toBe(1);
   });
 });

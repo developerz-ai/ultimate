@@ -400,6 +400,15 @@ org's value is `X_TOPIC_FORBIDDEN` (cause `X_TENANCY_ACTOR_MISMATCH`), an actor 
 is enough: the policy decides the permission, the mechanism decides the tenant — the same split an
 HTTP read has.
 
+`As of 2026-11-19`. A channel keyed by any other param — `room-feed.<roomId>` on `records: [messages]` — carries every
+org's rows that name that room, and its subscribe cannot know which. So the mechanism decides per
+row: a tenanted row reaches only the members whose org is the row's tenant, live and on a `since`
+replay alike; every other member receives that frame's `seq` alone, carrying no record, key or
+`write`, so its cursor stays whole. A row naming no tenant reaches no member; an untenanted entity's
+rows, and every row on a topic keyed by the tenant column, reach every member as before
+(`channel-tenant.ts`, `rowTenant`). The catch-up read is a query, tenant-scoped by
+`@ultimat3/entity` like every other.
+
 ## A channel event re-reads the page
 
 `As of 30.0.0`. For a server-rendered page with nothing to push but "this changed": the channel

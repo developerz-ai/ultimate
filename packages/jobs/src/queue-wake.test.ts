@@ -7,7 +7,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { installLogSink } from '@ultimat3/core';
 import { memoryJobDriver } from './driver-memory';
-import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
+import {
+  JOBS_WAKE_CHANNEL,
+  OUTBOX_WAKE_CHANNEL,
+  SQL_WAKE,
+  WAKE_REPROVE_PAYLOAD,
+} from './driver-pg-wake-sql';
 import { onEnqueued, onStaged, setWakeLive, signalStaged, wakeIsLive } from './enqueue-signal';
 import { useFakeTime } from './fake-time-fixture';
 import { memoryOutboxStore } from './outbox';
@@ -148,8 +153,8 @@ describe('the cross-process wake', () => {
     expect(wake.live()).toBe(true);
     expect(wakeIsLive()).toBe(true);
     expect(logged('jobs.wake.live')).toHaveLength(1);
-    // The verdict timer went with the proof.
-    expect(script.pending()).toEqual([]);
+    // The verdict timer went with the proof; what is armed is the next one (the 10 s default).
+    expect(script.pending()).toEqual([10_000]);
     await wake.stop();
   });
 
@@ -348,6 +353,82 @@ describe('the cross-process wake', () => {
     expect(script.unlistens).toBe(1);
     expect(script.probes).toEqual([]);
     expect(wakeIsLive()).toBe(false);
+  });
+
+  test('a session that stops delivering is un-proven within one verify window without an onListening', async () => {
+    const script = scripted();
+    const wake = startQueueWake({ ...script, verifyTimeoutMs: 5_000, reproveEveryMs: 10_000 });
+    await settle();
+    script.notify(JOBS_WAKE_CHANNEL, '');
+    script.notify(OUTBOX_WAKE_CHANNEL, '');
+    expect(wakeIsLive()).toBe(true);
+    const woken: (string | undefined)[] = [];
+    const stopHearing = onEnqueued((queue) => woken.push(queue));
+    const stagedSeen: unknown[] = [];
+    const stopStaged = onStaged((committed) => stagedSeen.push(committed));
+
+    // Proven is not for ever: the next proof is armed, and it is sent through the pool.
+    expect(script.pending()).toEqual([10_000]);
+    script.fire();
+    await settle();
+    expect(script.probes.slice(2)).toEqual([
+      [JOBS_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD],
+      [OUTBOX_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD],
+    ]);
+    // It comes back: still live, the next one armed — and no loop was woken to find nothing.
+    script.notify(JOBS_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD);
+    script.notify(OUTBOX_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD);
+    expect(wakeIsLive()).toBe(true);
+    expect(woken).toEqual([]);
+    expect(stagedSeen).toEqual([]);
+    expect(script.pending()).toEqual([10_000]);
+
+    // The session goes half-open: no re-dial, no `onListening`, and nothing is delivered.
+    script.fire();
+    await settle();
+    expect(script.pending()).toEqual([5_000]);
+    expect(wakeIsLive()).toBe(true);
+    script.fire();
+    expect(wake.live()).toBe(false);
+    expect(wakeIsLive()).toBe(false);
+    expect(logged('jobs.wake.lost')).toEqual([{ event: 'jobs.wake.lost', level: 'warn' }]);
+
+    // Still asking, and silent while it stays lost; the proof that crosses makes it live again.
+    expect(script.pending()).toEqual([10_000]);
+    script.fire();
+    await settle();
+    script.fire();
+    expect(logged('jobs.wake.lost')).toHaveLength(1);
+    script.fire();
+    await settle();
+    script.notify(JOBS_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD);
+    script.notify(OUTBOX_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD);
+    expect(wakeIsLive()).toBe(true);
+    expect(script.pending()).toEqual([10_000]);
+
+    stopHearing();
+    stopStaged();
+    await wake.stop();
+    expect(script.pending()).toEqual([]);
+  });
+
+  test('a re-dial ends the re-proof in flight: the new session is proven by its own probe', async () => {
+    const script = scripted();
+    const wake = startQueueWake({ ...script, verifyTimeoutMs: 5_000, reproveEveryMs: 10_000 });
+    await settle();
+    script.notify(JOBS_WAKE_CHANNEL, '');
+    script.notify(OUTBOX_WAKE_CHANNEL, '');
+    script.fire();
+    await settle();
+    expect(script.pending()).toEqual([5_000]);
+
+    script.redial();
+    await settle();
+    // Only the new session's own verdict is armed; the old re-proof says nothing about it.
+    expect(script.pending()).toEqual([5_000]);
+    script.fire();
+    expect(logged('jobs.wake.lost')).toEqual([]);
+    await wake.stop();
   });
 
   test('a non-finite knob is refused, not read as zero', () => {

@@ -9,11 +9,12 @@ import {
 } from '@ultimat3/db/diagnostics';
 import type { CommandContext } from './command';
 import { withOpenedDb } from './db-client-displace';
-import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
+import { refuseBesideDev } from './dev-lock-live';
 import { readIntFlag } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { resolveServices } from './runtime-bindings';
+import { databaseSslOf } from './runtime-database-ssl';
 import { startDb } from './runtime-queue';
 import { renderTable } from './table';
 
@@ -80,20 +81,14 @@ export async function runDiagnostics(ctx: CommandContext, root: string): Promise
   if (services.db.mode === 'embedded') {
     // Check-then-open, as `x db reset` does: an `x dev` starting between this read and `startDb`
     // below is not seen. Narrow, and the same window every embedded `x db` subcommand has.
-    const holder = liveDevLock(services.stateDir);
-    if (holder !== undefined) {
-      throw new DevAlreadyRunningError({
-        lock: holder,
-        stateDir: services.stateDir,
-        embeddedDb: true,
-      });
-    }
+    await refuseBesideDev(services.stateDir);
   }
+  const ssl = await databaseSslOf(services);
   // `startDb` installs its client as the process's `db()`; `withOpenedDb` puts back what was there
   // (closing a lazy default it dropped) and closes both pools, or every later `db()` in an
   // embedding process reaches a dead pool.
   return withOpenedDb(
-    () => startDb(services, ctx.env),
+    () => startDb(services, ctx.env, ssl),
     async (client) => {
       // Embedded, the probe IS the boot — a WASM compile and an initdb, 12.6 s cold under coverage —
       // so the 3 s probe wait answered a healthy database X_DB_UNAVAILABLE. A server keeps the default.

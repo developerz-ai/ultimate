@@ -8,6 +8,7 @@ import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { mcpClient } from './remote-client';
 import { writeToolsLock } from './remote-lock';
 import { mcpTools } from './remote-tools';
+import { MCP_MODERN_VERSIONS } from './wire';
 
 const URL = 'http://remote.test/mcp';
 type Answer = (body: { id?: number; method: string }) => Response | Promise<Response>;
@@ -312,5 +313,155 @@ describe('the call itself', () => {
     // Best effort and unawaited: let the notice's own request settle.
     for (let turn = 0; turn < 10 && notices.length === 0; turn += 1) await Promise.resolve();
     expect(notices).toEqual([{ requestId: 4 }]);
+  });
+});
+
+describe('era negotiation and request ids', () => {
+  /** A 2025-era server that counts its handshakes; `onCall` decides each session-bound call. */
+  const legacyPeer = (onCall?: (id: number, method: string) => Promise<Response> | undefined) => {
+    const seen = { initialize: 0, notices: [] as unknown[] };
+    const fetch = async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as {
+        id?: number;
+        method: string;
+        params?: unknown;
+      };
+      if (body.method === 'notifications/cancelled') seen.notices.push(body.params);
+      if (body.method === 'initialize') {
+        seen.initialize += 1;
+        return Response.json(
+          { jsonrpc: '2.0', id: body.id, result: { protocolVersion: '2025-06-18' } },
+          { headers: { 'mcp-session-id': 'sess-1' } },
+        );
+      }
+      if (body.id === undefined) return new Response(null, { status: 202 });
+      if (new Headers(init.headers).get('mcp-session-id') === null) {
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          error: { code: -32022, message: 'v' },
+        });
+      }
+      return onCall?.(body.id, body.method) ?? rpcResult(body.id, { tools: [], content: [] });
+    };
+    return { fetch, seen };
+  };
+
+  test('a cancelled call names its own requestId while a sibling call is in flight', async () => {
+    const controller = new AbortController();
+    const ids = new Map<string, number>();
+    let releaseSibling!: () => void;
+    const siblingHeld = new Promise<void>((resolve) => {
+      releaseSibling = resolve;
+    });
+    let siblingPosted!: () => void;
+    const siblingSent = new Promise<void>((resolve) => {
+      siblingPosted = resolve;
+    });
+    const { fetch, seen } = legacyPeer((id, method) => {
+      if (method !== 'tools/call') return undefined;
+      if (ids.size === 0) {
+        ids.set('slow', id);
+        // The slow call is aborted only once its sibling has taken the next id.
+        return siblingSent.then(() => {
+          controller.abort();
+          return Promise.reject(controller.signal.reason);
+        });
+      }
+      ids.set('sibling', id);
+      siblingPosted();
+      return siblingHeld.then(() => rpcResult(id, { content: [] }));
+    });
+    const peer = mcpClient({ name: 'old', url: URL, dial: 'named', fetch });
+    await peer.listTools();
+    const slow = failureOf(peer.callTool('slow', {}, { signal: controller.signal }));
+    await Promise.resolve();
+    const sibling = peer.callTool('sibling', {});
+    await slow;
+    releaseSibling();
+    await sibling;
+    for (let turn = 0; turn < 10 && seen.notices.length === 0; turn += 1) await Promise.resolve();
+    expect(seen.notices).toEqual([{ requestId: ids.get('slow') }]);
+  });
+
+  test('a call that finished before its signal aborted sends no cancellation', async () => {
+    const controller = new AbortController();
+    const { fetch, seen } = legacyPeer();
+    const peer = mcpClient({ name: 'old', url: URL, dial: 'named', fetch });
+    await peer.listTools();
+    await peer.callTool('quick', {}, { signal: controller.signal });
+    controller.abort();
+    for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+    expect(seen.notices).toEqual([]);
+  });
+
+  test('a 429 on the first request is retried as modern, never latches legacy', async () => {
+    let first = true;
+    const methods: string[] = [];
+    const peer = client((body) => {
+      methods.push(body.method);
+      if (first) {
+        first = false;
+        return new Response('slow down', { status: 429 });
+      }
+      if (body.method === 'initialize') {
+        return Response.json({
+          jsonrpc: '2.0',
+          id: body.id,
+          error: { code: -32601, message: 'm' },
+        });
+      }
+      return rpcResult(body.id, { content: [{ type: 'text', text: 'ok' }] });
+    });
+    const failure = await failureOf(peer.callTool('t', {}));
+    expect(failure.meta).toMatchObject({ failure: 'status', status: 429 });
+    expect(await peer.callTool('t', {})).toEqual({ isError: false, text: 'ok' });
+    expect(methods).toEqual(['tools/call', 'tools/call']);
+  });
+
+  test('a failed handshake leaves the era undecided: the next call tries modern again', async () => {
+    let down = true;
+    const sent: string[] = [];
+    const peer = mcpClient({
+      name: 'peer',
+      url: URL,
+      dial: 'named',
+      fetch: async (_url, init) => {
+        const body = JSON.parse(String(init.body)) as { id?: number; method: string };
+        const era = new Headers(init.headers).get('mcp-protocol-version');
+        sent.push(`${body.method}@${String(era)}`);
+        if (down) {
+          if (body.method === 'initialize') down = false;
+          return new Response('no', { status: 404 });
+        }
+        return rpcResult(body.id, { content: [{ type: 'text', text: 'ok' }] });
+      },
+    });
+    await failureOf(peer.callTool('t', {}));
+    expect(await peer.callTool('t', {})).toEqual({ isError: false, text: 'ok' });
+    const modern = `tools/call@${MCP_MODERN_VERSIONS[0]}`;
+    expect(sent).toEqual([modern, 'initialize@null', modern]);
+  });
+
+  test('two concurrent first calls to a legacy server open one session', async () => {
+    const { fetch, seen } = legacyPeer();
+    const peer = mcpClient({ name: 'old', url: URL, dial: 'named', fetch });
+    await Promise.all([peer.listTools(), peer.listTools(), peer.callTool('t', {})]);
+    expect(seen.initialize).toBe(1);
+  });
+
+  test('a cursor that never ends is refused, not truncated', async () => {
+    let pages = 0;
+    const failure = await failureOf(
+      client((body) => {
+        pages += 1;
+        return rpcResult(body.id, {
+          tools: [{ name: `t${String(pages)}` }],
+          nextCursor: 'again',
+        });
+      }).listTools(),
+    );
+    expect(failure.code).toBe('X_MCP_REMOTE_REFUSED');
+    expect(failure.meta?.['failure']).toBe('malformed');
   });
 });

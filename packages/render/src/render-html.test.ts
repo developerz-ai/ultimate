@@ -17,6 +17,38 @@ describe('renderToHtml', () => {
     expect(await renderToHtml(h('p', null, '<script>'))).toBe('<p>&lt;script&gt;</p>');
   });
 
+  // `<style>` and `<script>` are raw text elements: a character reference in them is NOT decoded,
+  // so `&gt;` is a CSS syntax error and `&amp;&amp;` a JS one. What must not survive is the close.
+  test('a style or script element\'s text child is raw text: >, & and " survive, </script cannot close it', async () => {
+    expect(await renderToHtml(h('style', null, 'a > b::after { content: "&" }'))).toBe(
+      '<style>a > b::after { content: "&" }</style>',
+    );
+    expect(await renderToHtml(h('script', null, 'if (a && b > 1) x("</script><!--")'))).toBe(
+      '<script>if (a && b > 1) x("<\\/script><\\!--")</script>',
+    );
+    // A thunk and an array of pieces are text too — what `{css()}` and `{a}{b}` compile to.
+    expect(await renderToHtml(h('style', null, () => 'a > b{}', ['c > d{}', 1]))).toBe(
+      '<style>a > b{}c > d{}1</style>',
+    );
+  });
+
+  test('a script whose type ends in json takes the total JSON rule, and still parses', async () => {
+    const data = { name: 'a < b & "c" </script>' };
+    const html = await renderToHtml(
+      h('script', { type: 'application/ld+json; charset=utf-8' }, JSON.stringify(data)),
+    );
+    const body = html.slice(html.indexOf('>') + 1, html.lastIndexOf('</script>'));
+    expect(body).not.toContain('<');
+    expect(body).not.toContain('&');
+    expect(JSON.parse(body)).toEqual(data);
+  });
+
+  test('an element inside a script is still an element, and its text is still escaped', async () => {
+    expect(await renderToHtml(h('script', null, h('b', null, '<')))).toBe(
+      '<script><b>&lt;</b></script>',
+    );
+  });
+
   test('nothing renders for the empty values JSX uses as guards', async () => {
     expect(await renderToHtml([null, undefined, false, true])).toBe('');
   });

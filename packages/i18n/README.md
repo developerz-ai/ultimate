@@ -106,7 +106,8 @@ app renders into your own catalog — that is the one path, and it is the same m
 ## A catalog slice for an island
 
 A translator is a function and cannot be an island's prop. `catalogSubset(t, keys)` resolves the
-templates `keys` name — every plural variant included — into `{ locale, catalog }`, plain JSON;
+templates `keys` name — every plural variant and every `_select_`/`_ordinal_` family member
+included (found through `t.keys()`) — into `{ locale, catalog }`, plain JSON;
 the island builds `subsetTranslator(subset)` over it: the same lookup, interpolation, CLDR plural
 pick and loud `⟦key⟧` miss as the server's. Both are on `@ultimat3/i18n/subset`, an entry that
 installs no framework catalog (the barrel does), so an island chunk can import it.

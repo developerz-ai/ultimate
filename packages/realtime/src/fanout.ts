@@ -69,15 +69,32 @@ export interface InProcessTransportOptions {
 class InProcessSet implements TransportSet {
   readonly #keys = new Map<string, Map<string, TransportSetEntry>>();
   readonly #clock: Clock;
+  #prunedAt = 0;
 
   constructor(clock: Clock) {
     this.#clock = clock;
   }
 
   async put(key: string, member: string, value: string, ttlMs: number): Promise<void> {
+    const now = this.#clock.now().getTime();
+    if (now >= this.#prunedAt + ttlMs) this.#prune(now);
     const bucket = this.#keys.get(key) ?? new Map<string, TransportSetEntry>();
-    bucket.set(member, { member, value, expiresAt: this.#clock.now().getTime() + ttlMs });
+    bucket.set(member, { member, value, expiresAt: now + ttlMs });
     this.#keys.set(key, bucket);
+  }
+
+  /**
+   * Expiry on the store's own clock, as the KV's server does it (`nats-kv.ts`). Read-time expiry
+   * alone kept every key nobody reads again — a forgotten room's sweep lease, which must outlive
+   * the room by one TTL so a follower reads its last roster — for the life of the process. A full
+   * pass at most once per TTL, the interval `sweepAll` already walks every room on.
+   */
+  #prune(now: number): void {
+    this.#prunedAt = now;
+    for (const [key, bucket] of this.#keys) {
+      for (const entry of bucket.values()) if (entry.expiresAt <= now) bucket.delete(entry.member);
+      if (bucket.size === 0) this.#keys.delete(key);
+    }
   }
 
   async touch(key: string, member: string, ttlMs: number): Promise<boolean> {
@@ -104,18 +121,24 @@ class InProcessSet implements TransportSet {
     }
     return live;
   }
+
+  get size(): number {
+    return this.#keys.size;
+  }
 }
 
 /** Single-node default: `x dev`, tests, and small deployments that have not earned a bus yet. */
 export class InProcessTransport implements Transport {
   readonly name = 'in-process';
   readonly shared: TransportSet;
+  readonly #set: InProcessSet;
   readonly #handlers = new Map<string, Set<TransportHandler>>();
   readonly #onError: (error: unknown, subject: string) => void;
   #closed = false;
 
   constructor(options: InProcessTransportOptions = {}) {
-    this.shared = new InProcessSet(options.clock ?? systemClock);
+    this.#set = new InProcessSet(options.clock ?? systemClock);
+    this.shared = this.#set;
     this.#onError = options.onError ?? (() => undefined);
   }
 
@@ -159,6 +182,11 @@ export class InProcessTransport implements Transport {
 
   get subjectCount(): number {
     return this.#handlers.size;
+  }
+
+  /** Keys `shared` holds, emptied ones included: the in-process read a leak test needs. */
+  get sharedKeys(): number {
+    return this.#set.size;
   }
 
   #assertOpen(): void {

@@ -42,8 +42,9 @@ let live = false;
 
 /**
  * Whether work committed by ANOTHER process reaches the two signals above — a `LISTEN` is held
- * and a notification has crossed it (`queue-wake.ts`). The idle loops read it to choose their
- * ceiling: with no wake, the poll is the only thing bounding a job's start.
+ * and a notification has crossed it, and keeps crossing it: a proven session is proven again on
+ * a timer and un-proven when it stops delivering (`queue-wake.ts`). The idle loops read it to
+ * choose their ceiling: with no wake, the poll is the only thing bounding a job's start.
  */
 export const wakeIsLive = (): boolean => live;
 

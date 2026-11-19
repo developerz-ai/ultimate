@@ -72,8 +72,8 @@ export interface ChannelServerInit {
    * Evaluated on subscribe: the params are the input, and `row` is what the loader below answered
    * (`null` without one). REQUIRED, as on an `action` and a `query`: it was optional, and an omitted
    * one let any socket — anonymous included — join with any param and receive every committed row.
-   * A public channel says so with `allow('public')`. Records are NOT gated per row — the topic's
-   * params are the scope, so a channel that must hide rows is declared narrower.
+   * A public channel says so with `allow('public')`. Records are NOT gated per row by the policy —
+   * the topic's params are its scope; only a row's TENANT is checked per member (`rowTenant`).
    */
   readonly policy: QueryPolicy;
   /**

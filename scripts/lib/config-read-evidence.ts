@@ -1,7 +1,8 @@
-// What counts as EVIDENCE that a config leaf is read: the bare read, the qualified
-// `<section>.<key>`, the package a section belongs to, and the point past which a bare-name match
-// stops being evidence (`ambiguityOf`). `scripts/config-readers.ts` is the ratchet built on them.
+// What counts as EVIDENCE that a config leaf is read: a qualified read (`qualifiedRead`, the only
+// one the ratchet counts), the bare name it is built on, the package a section belongs to, and the
+// point past which bare-name matches are noise (`ambiguityOf`). `scripts/config-readers.ts` uses them.
 
+import { ROOT_INTERFACE } from './config-leaves';
 import { ALL_PACKAGES } from './tiers';
 
 /**
@@ -19,18 +20,51 @@ export const readPattern = (leaf: string): RegExp => {
  * the only conclusive evidence text can offer. Undefined for a top-level leaf, which has no section
  * to qualify it with.
  *
- * Measured 2026-08-23 across all 28 leaves: this pattern matches in ZERO files for 19 of them,
- * `database.driver` and `jobs.concurrency` included — a package takes `CacheConfig` as a parameter
- * and reads `cfg.driver`, so demanding this form would report nineteen live keys as dead. It is
- * therefore a POSITIVE signal only: a match silences the ambiguity rule below, and a miss says
- * nothing on its own.
+ * Measured 2026-08-23 across all 28 leaves: this pattern matches in ZERO files for 19 of them —
+ * a package takes `CacheConfig` as a parameter and reads `cfg.driver` — so on its own a miss says
+ * nothing; `qualifiedRead` adds the typed and aliased shapes that make it the whole rule.
  */
 export const qualifiedPattern = (leaf: string): RegExp | undefined => {
   const parts = leaf.split('.');
   if (parts.length < 2) return undefined;
   const [section, key] = parts.slice(-2) as [string, string];
-  return new RegExp(`(?<![\\w$])${section}\\s*\\.\\s*${key}(?![\\w$])`);
+  return new RegExp(
+    `(?<![\\w$])${section}\\s*(?:\\??\\.\\s*${key}(?![\\w$])|(?:\\?\\.)?\\[\\s*['"]${key}['"]\\s*\\])`,
+  );
 };
+
+/** A binding that holds a config: `config`, `appConfig`, `cfg` — what a section is read off. */
+const CONFIG_BINDING = '(?<![\\w$])(?:\\w*[cC]onfig|cfg)\\s*\\??\\.\\s*';
+
+/**
+ * Whether `text` READS `leaf` — the only evidence `scripts/config-readers.ts` counts since
+ * 2026-11-19. A bare `.maxAttempts` is not one: `jobs.maxAttempts`, `jobs.backoff`, `database.ssl`
+ * and `roles` were read by nothing and passed on `retry.maxAttempts`, `pg.ssl` and a boot input's
+ * own `roles`. Three shapes are, each naming the section the key belongs to:
+ *
+ * - qualified: `jobs.maxAttempts`, `jobs?.maxAttempts`, `pwa['categories']`; a top-level leaf only
+ *   off a config binding (`config.roles`), since it has no section;
+ * - typed: the file names the declaring interface (`ClientErrorsConfig`) and reads the bare key —
+ *   a package taking its section as a typed parameter;
+ * - aliased: the file reads the section off a config (`config?.failureCapture`) and the bare key.
+ *
+ * `ROOT_INTERFACE` is never typed evidence: nearly every boot file names `AppConfig`.
+ */
+export function qualifiedRead(leaf: string, text: string, sectionType?: string): boolean {
+  const parts = leaf.split('.');
+  const key = parts.at(-1) as string;
+  if (parts.length < 2) return new RegExp(`${CONFIG_BINDING}${key}(?![\\w$])`).test(text);
+  if ((qualifiedPattern(leaf) as RegExp).test(text)) return true;
+  if (!readPattern(leaf).test(text)) return false;
+  if (
+    sectionType !== undefined &&
+    sectionType !== ROOT_INTERFACE &&
+    new RegExp(`(?<![\\w$])${sectionType}(?![\\w$])`).test(text)
+  ) {
+    return true;
+  }
+  return new RegExp(`${CONFIG_BINDING}${parts.at(-2) as string}(?![\\w$])`).test(text);
+}
 
 /**
  * The package a section's keys belong to, where the two names differ. Two rows, and both are

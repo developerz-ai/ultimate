@@ -46,7 +46,9 @@ export function configDefaults(): Omit<AppConfig, Sectioned> {
     jobs: {
       queues: ['default'],
       concurrency: JOBS_CONCURRENCY_DEFAULT,
-      maxAttempts: 5,
+      // 3 is `@ultimat3/jobs`' own default retry: the key is the worker's default for a job that
+      // declares none, so the default moves no app that never set it.
+      maxAttempts: 3,
       backoff: 'exponential',
       visibilityTimeoutMs: 30_000,
       doneRetentionMs: JOBS_DONE_RETENTION_MS_DEFAULT,

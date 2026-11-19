@@ -164,7 +164,11 @@ describe('unit · next-sync.yml · the merge step, run', () => {
 
 describe('unit · next-sync.yml · the report step, run', () => {
   const TITLE = 'next-sync: main is not merged into next';
-  const report = async (blocked: '' | 'conflict' | 'workflows', issues: readonly object[]) => {
+  const report = async (
+    blocked: '' | 'conflict' | 'workflows',
+    issues: readonly object[],
+    result: 'success' | 'failure' = 'success',
+  ) => {
     const dir = await scratch();
     const bin = await ghStub(dir);
     const env = {
@@ -172,6 +176,7 @@ describe('unit · next-sync.yml · the report step, run', () => {
       GH_CALLS: join(dir, 'calls'),
       GH_ISSUES: JSON.stringify(issues),
       BLOCKED: blocked,
+      MERGE_RESULT: result,
       FILES: 'a.txt',
       RUN_URL: 'https://example.test/run/1',
       RUNNER_TEMP: dir,
@@ -206,6 +211,19 @@ describe('unit · next-sync.yml · the report step, run', () => {
     expect(got.calls).toEqual([
       'issue close 7 --comment main merged cleanly into next: https://example.test/run/1',
     ]);
+  });
+
+  test('a merge job that failed files the issue with the run, never closes it, and is red', async () => {
+    const opened = await report('', [], 'failure');
+    expect(opened.ok).toBe(false);
+    expect(opened.calls).toHaveLength(1);
+    expect(opened.calls[0]).toStartWith(`issue create --title ${TITLE} --body-file `);
+    expect(opened.body).toContain('https://example.test/run/1');
+    expect(opened.body).toContain('gh workflow run next-sync.yml');
+    const twin = await report('', [{ number: 7, title: TITLE }], 'failure');
+    expect(twin.ok).toBe(false);
+    expect(twin.calls).toHaveLength(1);
+    expect(twin.calls[0]).toStartWith('issue comment 7 --body-file ');
   });
 
   test('a clean week with nothing open does nothing', async () => {

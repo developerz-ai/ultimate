@@ -327,6 +327,39 @@ describe('the anchored overlays', () => {
     }
   });
 
+  // An Escape nobody cancelled is also the platform's close request: the `<dialog>` this overlay
+  // sits in raises `cancel` on the same key press, and one press closed both layers.
+  for (const [name, role] of [
+    ['Popover', 'dialog'],
+    ['Menu', 'menu'],
+  ] as const) {
+    test(`${name}: Escape while open is defaultPrevented, and no other key is`, () => {
+      const rt = runtime();
+      const closes: boolean[] = [];
+      const nodes =
+        name === 'Popover'
+          ? renderNodes(Popover, popoverProps(closes))
+          : renderNodes(
+              Menu,
+              menuProps(closes, [{ id: 'edit', label: 'Edit', onSelect: (): void => undefined }]),
+            );
+      const w = wire(rt, nodes, role, 'div', closes);
+      try {
+        const other = keydown('a');
+        w.dom.document.dispatch('keydown', other);
+        expect(other.defaultPrevented).toBe(false);
+
+        const pressed = keydown('Escape');
+        w.dom.document.dispatch('keydown', pressed);
+        expect(pressed.defaultPrevented).toBe(true);
+        expect(closes).toEqual([false]);
+      } finally {
+        w.dom.restore();
+        rt.restore();
+      }
+    });
+  }
+
   test('Popover detaches both document listeners on cleanup', () => {
     const rt = runtime();
     const closes: boolean[] = [];

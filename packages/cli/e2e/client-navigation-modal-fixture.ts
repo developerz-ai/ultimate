@@ -27,23 +27,32 @@ if (script === undefined) expect.unreachable('the client router did not build');
 const BUILD = 'm1';
 const SURFACE = 'web:app';
 
-/** Mounts by writing its name; its disposer records it — what "the page beneath stayed live" reads. */
+/**
+ * Mounts by adding its name; its disposer records it — what "the page beneath stayed live" reads.
+ * It ADDS to the server markup, as a takeover island and Solid's `render()` do, so the props script
+ * the wrapper carries is still in the document when a modal brings a second one with the same id.
+ */
 const ISLAND = `export function mount(el, props) {
   (window.__mounts = window.__mounts || []).push(props.name);
-  el.textContent = 'mounted:' + props.name;
+  el.append(' mounted:' + props.name);
   return () => (window.__disposed = window.__disposed || []).push(props.name);
 }`;
 
-const island = (name: string): { html: string; directive: IslandDirective } => {
+/**
+ * One island module, so the id is the collector's `<moduleId>-<instance>` PER DOCUMENT: the page
+ * and the modal over it both hold `island-1`, and only the props tell the two apart.
+ */
+const island = (name: string, index: number): { html: string; directive: IslandDirective } => {
   const directive: IslandDirective = {
-    islandId: `island-${name}`,
+    islandId: `island-${String(index + 1)}`,
+    moduleId: 'island',
     strategy: 'idle',
     entry: '/island.js',
     props: { name },
   };
   return {
     directive,
-    html: `<div ${emitIslandAttributes(directive)}>${emitIslandProps(directive)}server:${name}</div>`,
+    html: `<div ${emitIslandAttributes(directive)}>server:${name}${emitIslandProps(directive)}</div>`,
   };
 };
 

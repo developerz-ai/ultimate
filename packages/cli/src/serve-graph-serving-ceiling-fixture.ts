@@ -339,5 +339,10 @@
  * raised 1547 → 1548, measured 1548 (2026-11-19, multi-agent DX): `cli/src/port-pair-free.ts`, so
  * the sync role's `X_PORT_IN_USE` names a pair that is free when asked, as `x doctor`'s fix does.
  * The fork check that also arrived (three modules) went to `@ultimat3/db/schema-dump` instead.
+ * raised 1548 → 1556, measured 1556 (2026-11-19, r9 sweep, metafile walk): the five new on
+ * `MIGRATE_CEILING` (`app-config-load.ts` was already here), `cli/src/runtime-cache-ttl.ts`
+ * (`cache.defaultTtlMs` refused under its own key), `cli/src/role-select.ts` (`--role`'s reading,
+ * split from `role-start.ts` at the line ceiling) and `auth/src/mfa-handoff.ts` (an SSO callback
+ * hands an MFA-enrolled user their challenge).
  */
-export const SERVING_ROLE_CEILING = 1548;
+export const SERVING_ROLE_CEILING = 1556;

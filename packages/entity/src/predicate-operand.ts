@@ -9,20 +9,67 @@ import { got } from './column-values';
 import { kindOf } from './cursor';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
-import { instantMicros } from './instant';
+import { instantCrosses, instantMicros } from './instant';
 import { isNullish as isNull } from './is-null';
 import type { Predicate } from './tenancy';
 import type { ColumnKind } from './types';
+import { canonicalUuid } from './uuid-text';
 
 /** The operators whose operand is compared to the column's value as a value of its kind. */
 const COMPARING: ReadonlySet<string> = new Set(['eq', 'neq', 'in', 'gt', 'gte', 'lt', 'lte']);
 
-/** Postgres has no `like` for these: `integer ~~ unknown` is "operator does not exist". */
+/**
+ * Postgres has no `like` for these: `integer ~~ unknown`, `uuid ~~ unknown`, `boolean ~~ unknown`
+ * are each "operator does not exist" (`42883`), where memory matched the value's text. `bytea` is
+ * NOT here: the server has a `bytea ~~ bytea`, so that call answers today and stays answered.
+ */
+const NO_LIKE_KINDS: ReadonlySet<ColumnKind | undefined> = new Set<ColumnKind | undefined>([
+  'integer',
+  'bigint',
+  'numeric',
+  'uuid',
+  'boolean',
+  'timestamptz',
+  'date',
+  'jsonb',
+  'array',
+]);
+
 const NUMERIC_KINDS: ReadonlySet<ColumnKind | undefined> = new Set<ColumnKind | undefined>([
   'integer',
   'bigint',
   'numeric',
 ]);
+
+/** Postgres binds at most this many parameters in one statement (`bulk-write.ts` holds the same). */
+const MAX_BINDS = 65_535;
+
+/**
+ * An `in` list longer than this crosses as ONE array parameter (`pg-sql-in.ts`). Half the bind
+ * budget: every list a statement could carry before still compiles to the `in (…)` it always did,
+ * and one past the budget — `08P01`, or a dropped connection — now answers.
+ */
+export const IN_LIST_AS_ARRAY_FROM = 32_768;
+
+/**
+ * The kinds whose `in` list has an array form: each element's text is what the same value bound
+ * alone parses to (proved per kind, `predicate-operand.test.ts`). `bytea`, `jsonb` and an array
+ * column have no element literal (`arrayElement`, `pg-row.ts`).
+ */
+const ARRAY_BOUND_KINDS: ReadonlySet<ColumnKind | undefined> = new Set<ColumnKind | undefined>([
+  'uuid',
+  'text',
+  'char',
+  'boolean',
+  'integer',
+  'bigint',
+  'numeric',
+  'timestamptz',
+  'date',
+]);
+
+export const bindsAsArray = (kind: ColumnKind | undefined, length: number): boolean =>
+  length >= IN_LIST_AS_ARRAY_FROM && ARRAY_BOUND_KINDS.has(kind);
 
 /** What an `int4`/`int8` parameter parses: digits with a sign, surrounding blanks allowed. */
 const INTEGER_TEXT = /^\s*[+-]?\d+\s*$/;
@@ -57,8 +104,9 @@ const instantOperand = <Row>(
   predicate: Predicate,
   value: unknown,
 ): unknown => {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
-  if (typeof value === 'string' && !DIGITS.test(value)) {
+  if (value instanceof Date && instantCrosses(value)) return value;
+  // Year 0000 is no year to Postgres (`22008`), whatever the offset beside it.
+  if (typeof value === 'string' && !DIGITS.test(value) && !value.trim().startsWith('0000-')) {
     const text = value.trim();
     // A calendar date is its midnight; a wall time without seconds gains `:00`: the instant
     // reader asks for both.
@@ -70,7 +118,7 @@ const instantOperand = <Row>(
   throw refused(
     entity,
     predicate,
-    `expected an instant — a Date or ISO-8601 text — ${got(value)}`,
+    `expected an instant — a Date or ISO-8601 text, in years 0001–9999 — ${got(value)}`,
     `.andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, '${predicate.op}', new Date('2026-01-01T00:00:00Z'))   // ISO text without a zone is read as UTC; a calendar date is a date() column`,
   );
 };
@@ -133,7 +181,38 @@ const scalarOperand = <Row>(
   if (kind === 'timestamptz') return instantOperand(entity, predicate, value);
   if (kind === 'date') return dateOperand(entity, predicate, value);
   if (kind === 'integer' || kind === 'bigint') return integerOperand(entity, predicate, value);
+  // Every spelling Postgres parses to the same sixteen bytes is ONE operand: memory compared the
+  // text, so a braced or unhyphenated id matched there and nowhere else. Text that is no uuid is
+  // left as written — `operandFor` decides what it means for the operators that have an answer.
+  if (kind === 'uuid') return canonicalUuid(value) ?? value;
   return value;
+};
+
+/**
+ * A non-null operand no value of the column's kind can EQUAL: text that is not a uuid, against a
+ * `uuid()` column. Postgres refused the parameter itself (`22P02`, a 500 for an id out of a URL)
+ * where memory answered "no such row"; both now give memory's answer. `pg-sql.ts` asks this for
+ * `neq`, the one operator the rewrite below cannot spell.
+ */
+export const equalsNoValue = (kind: ColumnKind | undefined, value: unknown): boolean =>
+  kind === 'uuid' && !isNull(value) && canonicalUuid(value) === undefined;
+
+const inList = <Row>(
+  entity: EntityCore<Row>,
+  predicate: Predicate,
+  kind: ColumnKind | undefined,
+  list: readonly unknown[],
+): readonly unknown[] => {
+  const operands = list
+    .map((each: unknown) => scalarOperand(entity, predicate, kind, each))
+    .filter((each) => !equalsNoValue(kind, each));
+  if (operands.length <= MAX_BINDS || ARRAY_BOUND_KINDS.has(kind)) return operands;
+  throw refused(
+    entity,
+    predicate,
+    `${String(operands.length)} values is more than one statement binds (${String(MAX_BINDS)}), and a ${String(kind)} column has no array form to send them as`,
+    `for (let at = 0; at < values.length; at += 10_000) await ${entity.$name}.andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, 'in', values.slice(at, at + 10_000)).all()   // one statement per slice`,
+  );
 };
 
 /**
@@ -143,18 +222,25 @@ const scalarOperand = <Row>(
  */
 export const operandFor = <Row>(entity: EntityCore<Row>, predicate: Predicate): Predicate => {
   const kind = kindOf(entity, predicate.column);
-  if (predicate.op === 'like' && NUMERIC_KINDS.has(kind)) {
+  if (predicate.op === 'like' && NO_LIKE_KINDS.has(kind)) {
+    const column = renderFixLiteral(predicate.column, "'<column>'");
     throw refused(
       entity,
       predicate,
       `like matches text, and this column is ${String(kind)}`,
-      `.andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, 'gte', 100).andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, 'lt', 200)   // a number is matched by range, never by pattern`,
+      NUMERIC_KINDS.has(kind)
+        ? `.andWhere(${column}, 'gte', 100).andWhere(${column}, 'lt', 200)   // a number is matched by range, never by pattern`
+        : `.andWhere(${column}, 'eq', value)   // like reads a text() or char() column; a ${String(kind)} is compared as a value — eq, in, or a gte/lt range`,
     );
   }
   if (!COMPARING.has(predicate.op)) return predicate;
-  const value =
-    predicate.op === 'in' && Array.isArray(predicate.value)
-      ? predicate.value.map((each: unknown) => scalarOperand(entity, predicate, kind, each))
-      : scalarOperand(entity, predicate, kind, predicate.value);
+  if (predicate.op === 'in' && Array.isArray(predicate.value)) {
+    return { ...predicate, value: inList(entity, predicate, kind, predicate.value) };
+  }
+  const value = scalarOperand(entity, predicate, kind, predicate.value);
+  // `eq` against a value nothing equals is the empty list both drivers already answer no row for.
+  if (predicate.op === 'eq' && equalsNoValue(kind, value)) {
+    return { ...predicate, op: 'in', value: [] };
+  }
   return value === predicate.value ? predicate : { ...predicate, value };
 };

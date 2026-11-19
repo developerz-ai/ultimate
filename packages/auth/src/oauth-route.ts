@@ -70,6 +70,14 @@ export interface OAuthLoginOptions {
   readonly timeoutMs?: number | undefined;
   /** Where a signed-in browser lands. A fixed path — never read from the request. See below. */
   readonly successPath?: string | undefined;
+  /**
+   * The app's own second-factor page. A user with TOTP enrolled is sent there (303) instead of to
+   * `successPath`, with the sealed challenge in the `__Host-x_mfa` cookie — HttpOnly, and living
+   * `MFA_CHALLENGE_TTL_MS`: `completeMfa(auth, readMfaChallenge(request) ?? '', code)` finishes.
+   * Omit it and that user's callback is refused `X_MFA_REQUIRED` (401): they cannot finish here.
+   * One absolute path on this origin, or `X_CONFIG_INVALID` at the call.
+   */
+  readonly mfaPath?: string | undefined;
   /** Narrower scopes than the provider's defaults, when the app wants less. */
   readonly scopes?: readonly string[] | undefined;
   /**
@@ -197,6 +205,7 @@ export function oauthLogin(auth: Auth, options: OAuthLoginOptions = {}): OAuthLo
     },
     unknown,
     event: 'auth.oauth',
+    factory: 'oauthLogin',
     names: { start: 'auth.oauth.start', callback: 'auth.oauth.callback', acs: 'auth.oauth.acs' },
     uncoded,
     grants(identity) {

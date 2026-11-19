@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { catalogSubset, subsetTranslator } from './subset';
-import { catalogTranslator } from './translator';
+import { catalogTranslator, isMiss } from './translator';
 
 const server = catalogTranslator(
   {
@@ -41,6 +41,40 @@ describe('catalogSubset', () => {
     }
     expect(island('app.unsent')).toBe('⟦app.unsent⟧');
     expect(island.locale).toBe('en');
+  });
+
+  test("a subset carries a key's select and ordinal families, composed with plurals, and the island renders what the server does", () => {
+    const families = catalogTranslator(
+      {
+        'app.invite_select_female': 'She invited you',
+        'app.invite_select_other_one': 'They sent {count} invite',
+        'app.invite_select_other_other': 'They sent {count} invites',
+        'app.place_ordinal_one': '{ordinal}st',
+        'app.place_ordinal_other': '{ordinal}th',
+        'app.invited': 'not a member of app.invite',
+        'app.other_select_a': 'another key entirely',
+      },
+      'en',
+    );
+    const subset = catalogSubset(families, ['app.invite', 'app.place']);
+    expect(Object.keys(subset.catalog).sort()).toEqual([
+      'app.invite_select_female',
+      'app.invite_select_other_one',
+      'app.invite_select_other_other',
+      'app.place_ordinal_one',
+      'app.place_ordinal_other',
+    ]);
+    const island = subsetTranslator(JSON.parse(JSON.stringify(subset)));
+    for (const [key, vars] of [
+      ['app.invite', { select: 'female' }],
+      ['app.invite', { select: 'male', count: 1 }],
+      ['app.invite', { select: 'male', count: 4 }],
+      ['app.place', { ordinal: 1 }],
+      ['app.place', { ordinal: 4 }],
+    ] as const) {
+      expect(island(key, vars)).toBe(families(key, vars));
+      expect(isMiss(island(key, vars))).toBe(false);
+    }
   });
 
   test('a __proto__ key in the parsed subset stays a key', () => {

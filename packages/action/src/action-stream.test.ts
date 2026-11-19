@@ -7,7 +7,7 @@ import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
-import { action } from './action';
+import { action, nameAction } from './action';
 import { chunksRead } from './action-stream';
 import { toRoute } from './http';
 
@@ -76,5 +76,34 @@ describe('chunksRead', () => {
 
   test('false outside any handler', () => {
     expect(chunksRead()).toBe(false);
+  });
+});
+
+describe('the name a stream refusal carries', () => {
+  test('a stream action named by registerAction names itself in X_ACTION_STREAM_INVALID', async () => {
+    // Unnamed at declaration, named in place — `registerAction`'s path (`nameAction`).
+    const broken = nameAction(
+      action({
+        input: t.object({}),
+        output: t.object({ ok: t.boolean }),
+        stream: Chunk,
+        policy: allow('probe:broken'),
+        async *handle() {
+          yield { read: 'no' } as unknown as { read: boolean };
+          return { ok: true };
+        },
+      }),
+      'brokenProbe',
+    );
+    const refused = await runWithContext(ctxOf({ actor: userActor({ id: 'u1' }) }), () =>
+      broken({}).then(
+        () => undefined,
+        (error: unknown) => error,
+      ),
+    );
+    expect(refused).toMatchObject({
+      code: 'X_ACTION_STREAM_INVALID',
+      meta: { action: 'brokenProbe' },
+    });
   });
 });

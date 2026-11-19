@@ -13,7 +13,7 @@ import { BudgetExceededError } from './errors';
 // The raw-text escapers are `html.ts`'s and the text/attribute table is core's `escapeHtml` — a
 // second one is how a character ends up missing.
 import { headAttributes } from './head-attributes';
-import { escapeJsonContent, escapeRawTextContent } from './html';
+import { carriesJson, escapeJsonContent, escapeRawTextContent } from './html';
 
 export type HeadTagKind = 'title' | 'base' | 'meta' | 'link' | 'script' | 'style';
 
@@ -132,23 +132,7 @@ function renderTag(tag: HeadTag): string {
  */
 function contentOf(tag: HeadTag, raw: string): string {
   if (tag.kind !== 'script' && tag.kind !== 'style') return escapeHtml(raw);
-  return carriesJson(tag) ? escapeJsonContent(raw) : escapeRawTextContent(raw);
-}
-
-/**
- * `application/ld+json`, `application/json`, any `…+json`: the body is data, not code.
- *
- * The MIME parameter is cut before the suffix test, because a real document writes
- * `type="application/ld+json; charset=utf-8"` and that does not end in `json` — so the block built
- * from route data, which is the path attacker text takes, silently took the raw-text escaper
- * instead of the total one. `</` is escaped either way, so this was a weakened boundary rather than
- * a break-out; the JSON rule is total on purpose, and a `charset` is not a reason to leave it.
- */
-function carriesJson(tag: HeadTag): boolean {
-  const declared = tag.attrs?.['type'];
-  if (typeof declared !== 'string') return false;
-  const [type = ''] = declared.split(';');
-  return type.trim().toLowerCase().endsWith('json');
+  return carriesJson(tag.attrs?.['type']) ? escapeJsonContent(raw) : escapeRawTextContent(raw);
 }
 
 export type ThemeFallback = 'light' | 'dark' | 'system';

@@ -25,7 +25,7 @@ import { resultFor } from './driver';
 import type { MailFetch } from './driver-resend';
 import { sendFailed } from './errors';
 import { mailMessageIdToken } from './idempotency';
-import { addressDomain, buildMimeMessage } from './mime';
+import { addressDomain, addressSpec, buildMimeMessage, encodeAddressPhrase } from './mime';
 import { type RetainMimeOptions, resolveRetainMime, withRetainedMime } from './retain-mime';
 import { sesFailure } from './ses-failure';
 
@@ -104,15 +104,17 @@ function requireFrom(from: string): string {
 
 /**
  * `Destination` is the envelope, and it is sent even though the raw message holds `To:` and `Cc:`
- * — `Bcc` is never a header (`mime.ts`), so without it the blind list would receive nothing.
+ * — `Bcc` is never a header (`mime.ts`), so without it the blind list would receive nothing. SES
+ * takes envelope addresses as 7-bit ASCII only (its raw-email guide, "MIME Encoding"): the
+ * destinations go as bare mailboxes, and the friendly-from name as an RFC 2047 encoded word.
  */
 function bodyFor(message: MailMessage, from: string, raw: string, set: string | undefined): string {
   return JSON.stringify({
-    FromEmailAddress: from,
+    FromEmailAddress: encodeAddressPhrase(from),
     Destination: {
-      ToAddresses: message.to,
-      ...(message.cc === undefined ? {} : { CcAddresses: message.cc }),
-      ...(message.bcc === undefined ? {} : { BccAddresses: message.bcc }),
+      ToAddresses: message.to.map(addressSpec),
+      ...(message.cc === undefined ? {} : { CcAddresses: message.cc.map(addressSpec) }),
+      ...(message.bcc === undefined ? {} : { BccAddresses: message.bcc.map(addressSpec) }),
     },
     Content: { Raw: { Data: base64Utf8(raw) } },
     ...(set === undefined ? {} : { ConfigurationSetName: set }),

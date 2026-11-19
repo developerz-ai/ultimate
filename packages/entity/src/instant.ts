@@ -131,6 +131,20 @@ const isoInstantMicros = (text: string): bigint | undefined => {
   return local - offset * MICROS_PER_MINUTE;
 };
 
+/** The first and last milliseconds `toISOString()` writes with a four-digit year, 0001 to 9999. */
+const FIRST_INSTANT_MS = -62_135_596_800_000;
+const LAST_INSTANT_MS = 253_402_300_799_999;
+
+/**
+ * Whether a `Date` crosses to Postgres. It is bound as its ISO text, and outside years 0001–9999
+ * that text is one the server refuses (`22008` for year 0000, `22007`/`22009` for a signed year)
+ * while memory stored and compared the value: a row only one driver could hold.
+ */
+export const instantCrosses = (value: Date): boolean => {
+  const ms = value.getTime();
+  return ms >= FIRST_INSTANT_MS && ms <= LAST_INSTANT_MS;
+};
+
 /**
  * The microsecond epoch of whatever a sort key or an operand is holding: a decoded row's `Date`
  * (milliseconds, so the last three digits are zero), a value already counted in microseconds, the

@@ -189,6 +189,26 @@ function conflictFix(row: LedgerRow): string {
   );
 }
 
+/**
+ * The `steps` rows a rollback reverses: the most recently APPLIED first, never the highest id. A
+ * branch merged late applies an older id after a newer one, and reversing by id then undoes the
+ * previous release's migration while the one just shipped stays applied. Rows sharing an
+ * `applied_at` (one run on a coarse clock, a restored dump) fall back to id descending, which is
+ * one run read backwards: a run applies in id order. Every ledger any release wrote has the column
+ * (`not null default now()`); a value no driver could parse ties rather than guessing an order.
+ */
+export function rollbackTargets(ledger: readonly LedgerRow[], steps: number): readonly LedgerRow[] {
+  // `applied_at` is typed as text but a driver hands back a `Date`: both construct one.
+  const at = (row: LedgerRow): number => new Date(row.applied_at).getTime();
+  return [...ledger]
+    .sort((a, b) => {
+      const later = at(b) - at(a);
+      if (later > 0 || later < 0) return later;
+      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+    })
+    .slice(0, steps);
+}
+
 export function pendingMigrations(
   ledger: readonly LedgerRow[],
   migrations: readonly Migration[],

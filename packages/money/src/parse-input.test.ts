@@ -24,6 +24,9 @@ describe('parseAmount', () => {
     ['١٬٢٣٤٫٥٦', 'ar-EG', 'EGP', 123_456],
     ['1,200', 'ja-JP', 'JPY', 1_200],
     ['￥1200', 'ja-JP', 'JPY', 1_200],
+    // `ja-JP` writes the full-width ￥ (U+FFE5); a keyboard types the half-width ¥ (U+00A5).
+    ['¥1200', 'ja-JP', 'JPY', 1_200],
+    ['1,200¥', 'ja-JP', 'JPY', 1_200],
   ])('%s in %s as %s', (text, locale, currency, minor) => {
     expect(read(text, locale, currency)).toEqual({ minor, currency });
   });

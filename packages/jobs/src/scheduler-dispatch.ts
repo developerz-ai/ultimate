@@ -40,6 +40,9 @@ export async function dispatchOccurrence(
   const requests = handle.entries(occurrenceMs).map(([handleForJob, input]) => {
     // The facade's refusal, at the one enqueue that does not go through it: an empty key.
     handleForJob.concurrencyKeyFor(input);
+    // The org the payload names, as the facade queues it (`enqueue-record.ts`): the key's
+    // namespace is `(name, tenant, key)`, so a fan-out per org queued for nobody is ONE row.
+    const tenantId = handleForJob.tenantFor(input);
     return {
       name: handleForJob.name,
       queue: handleForJob.queue,
@@ -49,6 +52,7 @@ export async function dispatchOccurrence(
       idempotencyKey: `${handle.name}:${occurrenceMs}:${handleForJob.idempotencyKeyFor(input)}`,
       maxAttempts: enqueuedAttempts(handleForJob.retry, handleForJob.compensates),
       runAt: occurrenceMs,
+      ...(tenantId === undefined ? {} : { tenantId }),
     };
   });
   target.firing(handle.name);

@@ -8,11 +8,16 @@ import { quoteArg } from './shell-quote';
 /** Commands whose bare form runs everything. */
 const WHOLE_RUN: ReadonlySet<string> = new Set(['test', 'verify']);
 
-/** The nearest real command as a fix: its help when running it bare would start a whole suite. */
+/** Commands that act when run bare (stop, delete, roll out, rewrite, re-pin, inject a fault). */
+const ACTS_BARE = new Set('stop clean deploy fix upgrade drill'.split(' '));
+
+/** The suggested command as a fix: its help when bare it starts a whole suite or changes state. */
 const suggestedCommandFix = (suggestion: string): string =>
   WHOLE_RUN.has(suggestion)
     ? `x ${suggestion} --help   # the nearest command; bare, it runs every suite`
-    : `x ${quoteArg(suggestion.split(' '))}`;
+    : ACTS_BARE.has(suggestion)
+      ? `x ${suggestion} --help   # the nearest command; bare, it acts at once`
+      : `x ${quoteArg(suggestion.split(' '))}`;
 
 /** An unknown command or subcommand. Carries a suggestion so the retry is one keystroke away. */
 export class UnknownCommandError extends UltimateError {
@@ -147,12 +152,14 @@ export class NotInAppError extends UltimateError {
     adopter?: boolean;
     /** `from`'s `package.json` has an `x` script (the framework repo): `bun run x -- … --cwd`. */
     xScript?: boolean;
+    /** The words as typed — subcommand, positionals, flags — less the two the fix writes itself. */
+    typed?: readonly string[];
   }) {
     const [first] = input.below ?? [];
     const found = (input.below ?? []).join(', ');
     // Word by word: `'vapid create'` pasted as one quoted token is a command `x` does not have.
     // Assembled from arrays of screened words, so no value is spliced where a shell runs it.
-    const argv = input.command.split(' ').map(quoteArg);
+    const argv = (input.typed ?? input.command.split(' ')).map(quoteArg);
     const words = argv.join(' ');
     super({
       code: 'X_NOT_IN_APP',

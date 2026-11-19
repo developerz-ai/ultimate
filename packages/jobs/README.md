@@ -1548,6 +1548,7 @@ export const wake = startQueueWake({ listener: client, executor });
 | a notification is throttled in the statement | Postgres serialises the commit of every transaction that issued a `NOTIFY` behind one lock, held through its WAL flush. One per enqueue caps enqueuing commits at one flush at a time |
 | a woken loop passes now, then at the floor again | that pass is what finds the row its slot kept silent — so pickup is never worse than the fixed 250 ms poll |
 | the wake is PROVEN before the ceiling rises | a probe sent through the pool has to come back on the session (`jobs.wake.live`). One that does not is `jobs.wake.unverified`, once, with the fix |
+| a proven wake is proven AGAIN, every `reproveEveryMs` (10 s) | a session that stops delivering with no re-dial (half-open) announces nothing, and a loop would rest up to a minute on it. One notification per channel that wakes no loop; not back within `verifyTimeoutMs`, the wake is un-proven (`jobs.wake.lost`, warn) and the loops poll at the 2 s ceiling until one crosses again (`jobs.wake.live`) |
 | the poll is the guarantee | a notification is lost with the session that would have carried it. The driver re-dials (`jobs.wake.live` again); meanwhile jobs start on the poll |
 | a transaction-pooling proxy delivers nothing | PgBouncer `pool_mode = transaction`: the `LISTEN` lands on a connection the proxy takes back. The wake stays unproven and the ceiling stays 2 s — give the `worker` role a direct or session-pooled `DATABASE_URL` |
 | the memory driver needs none | one process: `signalEnqueued` is the whole wake |
@@ -1588,6 +1589,20 @@ running job used to run it twice), and one whose idempotency key a live job now 
 retrySchedule({ attempts: 5, backoff: 'exponential', delay: 1000 })
 // => [1000, 2000, 4000, 8000]
 ```
+
+**A job that declares no `retry` runs under the app's default** (`As of 2026-11`): `jobs.maxAttempts`
+and `jobs.backoff` in `app.config.ts`, which the boot installs in every role
+(`installDefaultRetry`, on `@ultimat3/jobs/adapter`). With neither key set it is `DEFAULT_RETRY`:
+3 attempts, exponential.
+
+| Declared | Attempts | Backoff |
+|---|---|---|
+| no `retry` — a factory's is optional (`purge()`, `backfill()`, `rollup()`, …), or `retry: DEFAULT_RETRY` | `jobs.maxAttempts` | `jobs.backoff` |
+| `retry: { attempts: 5 }` | 5 | `jobs.backoff` |
+| `retry: { attempts: 5, backoff: 'linear' }` | 5 | `'linear'` |
+
+`job()` itself requires `retry.attempts`, so a plain job's count is always its own. `handle.retry`
+is read when used, never frozen at declaration: the handle exists before the config is loaded.
 
 **The error decides too, not only the attempt count** (`As of 2026-08`). `executeJob` reads the
 thrown error's retry classification — `@ultimat3/core`'s `registerErrorRetry`, the same table

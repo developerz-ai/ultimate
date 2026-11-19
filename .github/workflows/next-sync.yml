@@ -105,8 +105,9 @@ jobs:
 
   report:
     needs: merge
-    # On the merge's answer only: a red `merge` job filed nothing to report.
-    if: ${{ !cancelled() && needs.merge.result == 'success' }}
+    # On the merge's answer AND on its failure: a red `merge` job (no `next`, a refused push, a merge
+    # that failed with no conflict) is a week `next` fell behind, and it files the same issue.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -117,6 +118,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BLOCKED: ${{ needs.merge.outputs.blocked }}
+          MERGE_RESULT: ${{ needs.merge.result }}
           FILES: ${{ needs.merge.outputs.files }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
@@ -127,6 +129,10 @@ jobs:
           # Only this workflow's own issue: anyone may open one with the same title.
           open="$(gh issue list --state open --author 'app/github-actions' --search "$TITLE in:title" \
             --json number,title | jq -r --arg t "$TITLE" 'map(select(.title == $t)) | .[0].number // empty')"
+          # A merge job that went red handed nothing on: never read as a clean week, never closing.
+          if [ "$MERGE_RESULT" != 'success' ]; then
+            BLOCKED='failed'
+          fi
           if [ -z "$BLOCKED" ]; then
             if [ -n "$open" ]; then
               gh issue close "$open" --comment "main merged cleanly into next: $RUN_URL"
@@ -134,7 +140,17 @@ jobs:
             exit 0
           fi
           body="$RUNNER_TEMP/next-sync.md"
-          if [ "$BLOCKED" = 'workflows' ]; then
+          if [ "$BLOCKED" = 'failed' ]; then
+            {
+              echo "The weekly merge of \`main\` into \`next\` failed (merge job: $MERGE_RESULT), so \`next\` may be behind \`main\`: $RUN_URL"
+              echo
+              echo 'The merge job log at that run names the cause on its ::error:: line. Fix it, then re-run; the next clean run closes this issue:'
+              echo
+              echo '```bash'
+              echo 'gh workflow run next-sync.yml'
+              echo '```'
+            } > "$body"
+          elif [ "$BLOCKED" = 'workflows' ]; then
             {
               echo "The weekly merge of \`main\` into \`next\` is clean but changes workflow files, which the job token may not push, so it was not pushed: $RUN_URL"
               echo

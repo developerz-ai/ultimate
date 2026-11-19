@@ -24,6 +24,7 @@ import {
   migrationChecksum,
   pendingMigrations,
   readLedger,
+  rollbackTargets,
 } from './migration-ledger';
 import { applyMigrationStep } from './migration-step';
 import { poolProfileFor } from './pool-profile';
@@ -310,7 +311,10 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
 export interface RollbackOptions {
   readonly migrations: readonly Migration[];
   readonly client?: DbClient | undefined;
-  /** How many applied migrations to reverse, newest first. A positive integer; defaults to 1. */
+  /**
+   * How many applied migrations to reverse, most recently applied first (not highest id). A
+   * positive integer; defaults to 1.
+   */
   readonly steps?: number | undefined;
   /**
    * Skip the advisory lock, for a database only this process can reach — a branch, a test. No
@@ -325,7 +329,10 @@ export interface RollbackOptions {
   readonly lockRetries?: number | undefined;
 }
 
-/** Reverse the newest `steps` applied migrations. `x db rollback`. */
+/**
+ * Reverse the `steps` most recently APPLIED migrations — by `applied_at`, not by id, so a migration
+ * merged late is the first undone (`rollbackTargets`). `x db rollback`.
+ */
 export async function rollback(options: RollbackOptions): Promise<readonly string[]> {
   const client = options.client ?? baseClient();
   const steps = options.steps ?? 1;
@@ -345,10 +352,11 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
     finiteCount('migrate', 'lockWaitMs', options.lockWaitMs ?? MIGRATION_LOCK_WAIT_MS, 0),
     async (session) => {
       const ledger = await readLedger(session);
-      const targets = [...ledger].reverse().slice(0, steps);
+      const targets = rollbackTargets(ledger, steps);
 
-      // The same deliberate loop as `migrate`, read backwards: one transaction per `down`, newest
-      // first, so a `down` that fails leaves every migration before it still applied and recorded.
+      // The same deliberate loop as `migrate`, read backwards: one transaction per `down`, most
+      // recently applied first, so a `down` that fails leaves every migration applied before it
+      // still applied and recorded.
       return expectedQueryLoop(
         'each migration reverses in its own transaction, newest first, so a failure stops exactly there',
         async () => {

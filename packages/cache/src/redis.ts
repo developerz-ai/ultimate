@@ -14,6 +14,7 @@ import {
   joinBuckets,
   lostMembership,
   readBucket,
+  rejoinBuckets,
   sweepBuckets,
   unlinkAll,
 } from './redis-buckets';
@@ -137,16 +138,17 @@ function leaseFrom(reply: unknown): Lease {
  * the operator sees which key the store refused rather than a count.
  *
  * The `fix:` is the call, not a command: there is no `x cache` in this build, and the retry is one
- * line of the app's own code. It is safe to repeat because every key the store refused kept its
- * tag membership — the bust `ZREM`s only what it deleted.
+ * line of the app's own code. It is safe to repeat because every key the store refused to delete
+ * is re-joined to the buckets the sweep took it out of (`rejoinBuckets`), and a refused `ZREM` left
+ * its members where they were.
  */
 function raiseSweepFailure(failures: readonly unknown[], attempted: number): never {
   const first = failures[0];
   if (first instanceof Error) throw first;
   throw new CacheDriverUnavailableError({
     driver: 'redis',
-    cause: `${String(failures.length)} of ${String(attempted)} value keys could not be deleted`,
-    fix: "await invalidateTags(tags) again once redis answers — from '@ultimat3/cache', with the same tags; every key it refused kept its bucket membership, so the retry reaches it",
+    cause: `redis refused ${String(failures.length)} command(s) of a bust over ${String(attempted)} value keys`,
+    fix: "await invalidateTags(tags) again once redis answers — from '@ultimat3/cache', with the same tags; every key it could not delete was put back in its buckets, so the retry reaches it",
   });
 }
 
@@ -288,9 +290,16 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
     fence: (scope: FenceScope) => sampleGenerations(conn(), ns, clock, scope),
 
     /**
-     * Read every bucket the tags match, a page per round trip and the buckets concurrently;
-     * `UNLINK` what they held, one key per command; then `ZREM` exactly what died. Every command
-     * names one key, so a bust is slot-local on Redis Cluster whatever tags it carries.
+     * Read every bucket the tags match, a page per round trip and the buckets concurrently; `ZREM`
+     * what they held; THEN `UNLINK` it, one key per command; and re-join any member whose value
+     * the store refused to delete. Every command names one key, so a bust is slot-local on Redis
+     * Cluster whatever tags it carries.
+     *
+     * Sweep before delete, never after: another replica's fill can land between the two. After a
+     * delete, its `ZADD` re-joins a member the later sweep then removes — a live value no tag
+     * reaches, missed by every later bust and stale for the whole TTL. Before it, the fill's
+     * membership either lands after the sweep (and survives, reachable) or before it, where its
+     * own `ZSCORE` re-check finds it gone and deletes the value (`set`).
      */
     async invalidateTags(tags: readonly CacheTag[]): Promise<TierInvalidation> {
       const claimed = new Set<string>();
@@ -309,27 +318,46 @@ export function redisTier(options: RedisTierOptions = {}): CacheTier {
       await bumpGenerations(bustConn(), ns, tags);
       const buckets = [...claimed];
       const pages = await Promise.all(buckets.map((bucket) => readBucket(bustConn(), bucket)));
-      const held = new Map(buckets.map((bucket, i) => [bucket, pages[i] ?? []]));
+      const held = new Map(buckets.map((bucket, i) => [bucket, pages[i] ?? new Map()]));
       // A member may sit in two buckets; deleting it twice is harmless but reporting it twice
-      // makes the `/_x` panel overstate what cleared.
-      const members = [...new Set(pages.flat())];
-      const { deleted, failures } = await unlinkAll(bustConn(), members);
+      // makes the `/_x` panel overstate what cleared. Its highest score is the one it re-joins at.
+      const scores = new Map<string, string>();
+      for (const page of pages) {
+        for (const [member, score] of page) {
+          const seen = scores.get(member);
+          if (seen === undefined || Number(score) > Number(seen)) scores.set(member, score);
+        }
+      }
+      const members = [...scores.keys()];
 
-      // Only what actually died leaves its buckets. A member the store refused to delete keeps its
-      // membership, so the retry `report.errors` asks for still finds it.
       const gone = new Map<string, Set<string>>();
       for (const { read, sweep } of perTag) {
-        const died = read.flatMap((bucket) => held.get(bucket) ?? []).filter((m) => deleted.has(m));
-        if (died.length === 0) continue;
+        const found = read.flatMap((bucket) => [...(held.get(bucket)?.keys() ?? [])]);
+        if (found.length === 0) continue;
         for (const bucket of sweep) {
           const into = gone.get(bucket) ?? new Set<string>();
-          for (const member of died) into.add(member);
+          for (const member of found) into.add(member);
           gone.set(bucket, into);
         }
       }
-      await sweepBuckets(bustConn(), gone);
+      const swept = await sweepBuckets(bustConn(), gone);
+      const { deleted, failures } = await unlinkAll(bustConn(), members);
 
-      if (failures.length > 0) raiseSweepFailure(failures, members.length);
+      // A member the store refused to delete goes back into the buckets it left, so the retry
+      // `report.errors` asks for still finds it. A bucket this bust READ gets back only what it
+      // held — a row in its collection's bucket would die with every other row's bust. One it only
+      // swept is unknown, so it gets the member back: the entity index holds every write's member
+      // by construction, and an extra member there costs a miss, where a missing one serves stale.
+      const survivors = new Map([...scores].filter(([member]) => !deleted.has(member)));
+      const left = new Map(
+        [...swept.removed].map(([bucket, out]) => {
+          const read = held.get(bucket);
+          return [bucket, read === undefined ? out : new Set([...out].filter((m) => read.has(m)))];
+        }),
+      );
+      const lost = await rejoinBuckets(bustConn(), left, survivors);
+      const refused = [...failures, ...swept.failures, ...lost];
+      if (refused.length > 0) raiseSweepFailure(refused, members.length);
       const stripped = [...deleted].map((key) => key.slice(valueKey('').length));
       return { tier: 'redis', keys: stripped };
     },

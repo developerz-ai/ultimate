@@ -75,6 +75,8 @@ describe('every numeric key is screened', () => {
     ['jobs.maxAttempts', { jobs: { maxAttempts: 0 } }, 0],
     ['jobs.visibilityTimeoutMs', { jobs: { visibilityTimeoutMs: Number.NaN } }, Number.NaN],
     ['jobs.visibilityTimeoutMs', { jobs: { visibilityTimeoutMs: 0 } }, 0],
+    // 0 passed here and crashed the boot: the cache rungs refuse a lease of no length.
+    ['cache.defaultTtlMs', { cache: { defaultTtlMs: 0 } }, 0],
     ['cache.defaultTtlMs', { cache: { defaultTtlMs: -1 } }, -1],
     ['cache.defaultTtlMs', { cache: { defaultTtlMs: 1.5 } }, 1.5],
     ['cache.defaultTtlMs', { cache: { defaultTtlMs: '60s' } }, '60s'],
@@ -89,7 +91,7 @@ describe('every numeric key is screened', () => {
       defineConfig({
         name: 'app',
         jobs: { concurrency: 1, maxAttempts: 1, visibilityTimeoutMs: 1 },
-        cache: { defaultTtlMs: 0 },
+        cache: { defaultTtlMs: 1 },
       }),
     ).not.toThrow();
   });

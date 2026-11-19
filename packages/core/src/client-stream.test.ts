@@ -56,6 +56,35 @@ describe('clientStream', () => {
     expect(() => wire.end()).toThrow();
   });
 
+  test('a done frame with a dates: line returns a Date; one without returns the string unchanged', async () => {
+    const at = '2026-01-02T03:04:05.678Z';
+    const answer = { at: new Date(at), note: at };
+    const read = async (frame: string): Promise<unknown> => {
+      const wire = held();
+      const stream = clientStream({
+        url: '/api/words/say',
+        body: {},
+        fetchImpl: () => Promise.resolve(wire.response),
+      });
+      const done = stream.next();
+      wire.push(frame);
+      return (await done).value;
+    };
+    const data = JSON.stringify(answer);
+    const marked = await read(`event: done\ndates: ${wireDatePaths(answer)}\ndata: ${data}\n\n`);
+    expect(marked).toEqual(answer);
+    expect((marked as { at: unknown }).at).toBeInstanceOf(Date);
+    // New client, old server: no marker, so nothing is guessed from the look of a string.
+    expect(await read(`event: done\ndata: ${data}\n\n`)).toEqual({ at, note: at });
+    // A marker belongs to its own frame: a chunk's never reaches the done frame after it.
+    expect(
+      takeFrames('event: chunk\ndates: x\ndata: 1\n\nevent: done\ndata: 2\n\n').frames,
+    ).toEqual([
+      { event: 'chunk', data: '1', dates: 'x' },
+      { event: 'done', data: '2' },
+    ]);
+  });
+
   test('an error frame is thrown as the coded problem it carries', async () => {
     const wire = held();
     const stream = clientStream({ url: '/x', fetchImpl: () => Promise.resolve(wire.response) });

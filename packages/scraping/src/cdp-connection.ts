@@ -3,7 +3,7 @@
 // Chrome's pipe (`cdp-pipe.ts`) or a remote browser's WebSocket (`cdpConnect`). It knows neither
 // the launch (`cdp-launch.ts`) nor a page surface (testing's `cdp-e2e-page.ts`, `pdf-render.ts`).
 
-import { assert, stringField } from '@ultimat3/core';
+import { assert, isJsonObject, stringField } from '@ultimat3/core';
 import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
 import { wireWatch } from './cdp-wire-watch';
 
@@ -201,16 +201,21 @@ export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpC
   };
 
   const message = (raw: string): void => {
-    let frame: Record<string, unknown>;
+    let parsed: unknown;
     try {
-      frame = JSON.parse(raw) as Record<string, unknown>;
+      parsed = JSON.parse(raw);
     } catch {
-      // An unparseable frame is the browser's, not ours, and there is no call to fail with it:
-      // correlation is by `id`, and a frame we cannot read has none. COUNTED, though: the call
-      // whose reply it was waits out its deadline, and its timeout says frames were dropped.
+      parsed = undefined;
+    }
+    // An unparseable frame — or valid JSON that is no object (`null`, a number) — is the browser's,
+    // not ours, and there is no call to fail with it: correlation is by `id`, and such a frame has
+    // none. COUNTED, though: the call whose reply it was waits out its deadline, and its timeout
+    // says frames were dropped.
+    if (!isJsonObject(parsed)) {
       watch.drop();
       return;
     }
+    const frame = parsed;
     watch.frame(frame);
     const id = frame['id'];
     if (typeof id !== 'number') {
@@ -264,9 +269,26 @@ export function cdpConnectOver(transport: CdpTransport, timeoutMs: number): CdpC
           reject(new CdpTimeoutError({ method, timeoutMs: deadlineMs, observed }));
         }, deadlineMs);
         pending.set(id, { resolve, reject, timer });
-        transport.send(
-          JSON.stringify({ id, method, params, ...(sessionId === undefined ? {} : { sessionId }) }),
-        );
+        try {
+          transport.send(
+            JSON.stringify({
+              id,
+              method,
+              params,
+              ...(sessionId === undefined ? {} : { sessionId }),
+            }),
+          );
+        } catch (error) {
+          // A frame that never left can never be answered: the entry and its deadline go now.
+          pending.delete(id);
+          clearTimeout(timer);
+          reject(
+            new CdpCallFailedError({
+              method,
+              detail: failure(error, 'the transport refused the frame'),
+            }),
+          );
+        }
       });
     },
     once(method, sessionId, timeoutMs): Promise<boolean> {

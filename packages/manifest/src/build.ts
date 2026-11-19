@@ -101,7 +101,7 @@ export function buildManifest(sources: ManifestSources): Manifest {
     ...channels.flatMap((c) => c.permissions),
   ]);
 
-  const body = {
+  const declared = {
     manifestVersion: MANIFEST_VERSION,
     app: sources.app,
     routes,
@@ -125,7 +125,11 @@ export function buildManifest(sources: ManifestSources): Manifest {
   };
 
   // Before the hash: a fact the written file cannot hold must never get a buildId at all.
-  assertFiniteFacts(body, '');
+  assertFiniteFacts(declared, '');
+  // What the FILE will hold, and so what is hashed: a schema default reaches a fact verbatim, and
+  // `JSON.stringify` writes a `Date` as a string, a sparse slot as `null` and drops an `undefined`
+  // member — hashed as declared, a freshly written manifest failed its own buildId on read-back.
+  const body: typeof declared = JSON.parse(JSON.stringify(declared));
   // The build id is `@ultimat3/core`'s `fingerprint` of the body — SHA-256/16 over the same
   // INJECTIVE `canonicalJson` the diff compares on, so a fact that changed cannot hash the same as
   // the fact it replaced — and deliberately excludes `buildId` itself. A HASH, never the published

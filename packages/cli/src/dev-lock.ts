@@ -308,6 +308,30 @@ const readLock = async (path: string): Promise<DevLock | null> => {
   return raw === null ? null : parseLock(raw);
 };
 
+/**
+ * Remove the lock `judged` was read from, for a caller that found its pid reused (`x stop`). Under
+ * the same guard a boot's steal holds, and only while the file still holds those bytes: a claim
+ * made since is another `x dev`'s, and is never deleted.
+ */
+export function clearStaleLock(stateDir: string, judged: DevLock): void {
+  const path = lockPath(stateDir);
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf-8');
+  } catch {
+    return;
+  }
+  const now = parseLock(raw);
+  if (now === null || now.pid !== judged.pid || now.started !== judged.started) return;
+  const mine: DevLock = { pid: process.pid, port: 0, url: '', startedAt: new Date().toISOString() };
+  stealStale({
+    path,
+    judged: raw,
+    claim: (guard) => claimExclusive(stateDir, guard, mine),
+    alive: isProcessAlive,
+  });
+}
+
 export interface PreflightInput {
   readonly stateDir: string;
   readonly port: number;

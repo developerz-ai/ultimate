@@ -3,7 +3,7 @@
 // becomes a coded refusal, and that a close settles everything still in flight at once.
 
 import { afterEach, describe, expect, jest, test } from 'bun:test';
-import { cdpConnect } from './cdp-connection';
+import { type CdpTransport, cdpConnect, cdpConnectOver } from './cdp-connection';
 
 /** One frame, as the browser would send it. */
 interface Frame {
@@ -299,5 +299,47 @@ describe('cdpConnect', () => {
 
     const thrown = await call.catch((error: unknown) => error);
     expect((thrown as { cause?: string }).cause).toContain('the CDP connection failed');
+  });
+
+  test('a throwing transport.send leaves no pending entry', async () => {
+    let deliver!: (text: string) => void;
+    let refuse = true;
+    const transport: CdpTransport = {
+      send: (text) => {
+        if (refuse) throw new DOMException('the socket is not open', 'InvalidStateError');
+        const { id } = parsed(text);
+        queueMicrotask(() => deliver(JSON.stringify({ id, result: { later: true } })));
+      },
+      close: () => {},
+      listen: (handlers) => {
+        deliver = handlers.message;
+      },
+    };
+    jest.useFakeTimers();
+    try {
+      const connection = cdpConnectOver(transport, 600_000);
+      const thrown = await connection.send('Page.enable').catch((error: unknown) => error);
+      // Coded, at once, and its deadline gone with it — not a raw DOMException and a timer
+      // holding the entry for ten minutes.
+      expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');
+      expect((thrown as { cause?: string }).cause).toContain('the socket is not open');
+      expect(jest.getTimerCount()).toBe(0);
+      refuse = false;
+      expect((await connection.send('Page.enable')).result).toEqual({ later: true });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a null frame is dropped', async () => {
+    install();
+    const connection = await cdpConnect({ endpoint: 'ws://x/1', timeoutMs: 1000 });
+    const call = connection.send('Page.enable');
+
+    for (const data of ['null', '42', '"text"', '[1]']) socket().raw(data);
+    socket().reply({ id: 1, result: { ok: true } });
+
+    expect((await call).result).toEqual({ ok: true });
+    connection.close();
   });
 });

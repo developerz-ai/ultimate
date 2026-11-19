@@ -519,7 +519,7 @@ visibility, never its page.
 |---|---|
 | Never a float | `sum`/`avg` answer decimal **text** whatever the column was (the sum of a million `integer` rows is not an `integer`, and `Number()` past 2^53 loses digits); money answers `MoneyValue` in integer minor units; `min`/`max` answer the row's own type |
 | Empty set | `null` in every function, which is what SQL answers — a `0` would claim rows were seen. `count()` is `0`, and that is the distinction |
-| `avg` | one fixed scale (6 digits), rounded half away from zero from the exact rational, so both drivers land on one number |
+| `avg` | one fixed scale (6 digits), rounded half away from zero from the exact rational, so both drivers land on one number — at any magnitude: Postgres' own `avg(bigint)` keeps about sixteen significant digits, so the statement does the integer arithmetic itself (`averageSql`, `As of 2026-11`) |
 | Refused | `min`/`max` on `text` (ordering is the database's collation there and JS code-unit order here); `avg` over money (every answer would be a silent rounding of a fraction of a minor unit — `sum()` and `count()` instead, dividing where the rounding is a decision); an amount covering more than one currency **or scale**; a money total past ±2^53 minor units |
 | `approximateCount()` | `reltuples` out of `pg_class`, constant time, because `count(*)` walks every visible row and no index can make it cheaper. The whole **table** — a filtered chain, every tenant-scoped entity and every soft-deleting one (`reltuples` counts the deleted rows) are `X_APPROXIMATE_COUNT_FILTERED`, and `null` means the table has never been analysed |
 
@@ -540,9 +540,13 @@ An operand is read by the column's kind, once for both drivers (`predicate-opera
 | `timestamp()` | a `Date` or ISO text with `Z`/an offset | compared as that instant |
 | `timestamp()` | zoneless ISO text (`'2026-01-01'`, `'2026-01-01T10:00'`) | read as UTC in both drivers, never the server's `TimeZone` |
 | `timestamp()` | a number | `X_INVARIANT_VIOLATED` — epoch milliseconds are no instant Postgres parses |
+| `timestamp()` | a `Date` outside years 0001–9999, or text in year `0000` | `X_INVARIANT_VIOLATED` — Postgres reads an instant as ISO text with a four-digit year. A write is refused the same way, at its entry; a row the server already holds outside the range still reads (`As of 2026-11`) |
 | `date()` | a `Date` | its UTC calendar date (`plainDateUtc`), as `$parse` writes one |
 | `integer()` / `bigint()` | a fraction (`1.5`, `'1.5'`, `'1e1'`) | `X_INVARIANT_VIOLATED` — round it to the bound you mean |
-| `integer()` / `bigint()` / `decimal()` | any `like` | `X_INVARIANT_VIOLATED` — a number is matched by range |
+| every kind but `text()` / `char()` / `bytes()` | any `like` | `X_INVARIANT_VIOLATED` — a pattern matches text; a number is matched by range, a `uuid`, `boolean`, instant, date, `jsonb` or array by value (`As of 2026-11`) |
+| `uuid()` | any spelling Postgres parses — upper case, no hyphens, `{braces}` | the one value it names, in `eq`/`neq`/`in`, `findById` and a batched lookup |
+| `uuid()` | text that is no uuid, under `eq`/`neq`/`in` | a value no row equals: `eq`/`in` match nothing, `neq` every row; `findById` is `null`, `update`/`delete` are `X_NOT_FOUND` — never `22P02`. It is not bound, so the statement reads `1 = 0` (`As of 2026-11`) |
+| any | an `in` list of 32,768 values or more | one array parameter (`= any($1)`) on Postgres, so a list past the 65,535-bind limit answers. `bytes()`, `json()` and `arrayOf()` have no array form: past 65,535 values they are `X_INVARIANT_VIOLATED` in both drivers (`As of 2026-11`) |
 | `arrayOf()` | a list, under `eq`/`neq`/`in` | element by element, in order (`array_eq`) |
 
 ## A predicate tree: `andWhereNode`

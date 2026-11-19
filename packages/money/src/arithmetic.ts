@@ -7,7 +7,7 @@ import { allocationInvalid, currencyMismatch, currencyRequired } from './errors'
 import { factorFraction } from './factor';
 import { fromMinor, type Money } from './money';
 import { DEFAULT_ROUNDING, type RoundingMode, roundRatio } from './rounding';
-import { commonScale, minorAt, toMinor } from './scale';
+import { commonScale, minorAt, minorOf, toMinor } from './scale';
 
 /** Throws `X_CURRENCY_MISMATCH` unless both operands carry the same currency. */
 export function assertSameCurrency(left: Money, right: Money): string {
@@ -74,7 +74,7 @@ export function multiply(
   const ratio = factorFraction(factor);
   // Scale-preserving: a fee on a micro-priced amount stays a micro-priced amount.
   return fromMinor(
-    roundRatio(BigInt(amount.minor) * ratio.numerator, ratio.denominator, mode),
+    roundRatio(minorOf(amount) * ratio.numerator, ratio.denominator, mode),
     amount.currency,
     amount.scale,
   );
@@ -95,7 +95,7 @@ export function divide(
   }
   const ratio = factorFraction(divisor);
   return fromMinor(
-    roundRatio(BigInt(amount.minor) * ratio.denominator, ratio.numerator, mode),
+    roundRatio(minorOf(amount) * ratio.denominator, ratio.numerator, mode),
     amount.currency,
     amount.scale,
   );

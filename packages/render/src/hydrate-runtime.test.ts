@@ -91,6 +91,8 @@ describe('the interaction runtime, executed', () => {
         name === 'data-x-entry' ? Bun.pathToFileURL(island).href : null,
       // Every real element has one, and `boot` marks the mount outcome through it.
       setAttribute: (): void => undefined,
+      // No props script inside the wrapper either.
+      querySelector: (): unknown => null,
       // This element is both the island root and every event's target, and it has no children — so
       // containment reduces to identity here. `hydrate-replay.test.ts` is where the two are
       // different nodes, which is the case this harness cannot express and the defect it hid.
@@ -227,6 +229,8 @@ describe('the mount markers, executed', () => {
     // to it. No event is fired in this block; the markers are the whole subject.
     addEventListener(name: string, fn: unknown): void;
     removeEventListener(name: string, fn: unknown): void;
+    /** Where `boot` looks for the props script first: inside the wrapper. */
+    querySelector(selector: string): unknown;
   }
 
   interface MountHarness {
@@ -282,6 +286,7 @@ describe('the mount markers, executed', () => {
       setAttribute: (name, value) => {
         attributes.set(name, value);
       },
+      querySelector: () => null,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
     };
@@ -433,6 +438,7 @@ describe('the visible runtime, executed', () => {
       setAttribute: (name: string, value: string): void => {
         attributes.set(name, value);
       },
+      querySelector: (): unknown => null,
     };
     globals['document'] = {
       querySelectorAll: (selector: string): unknown[] =>
@@ -474,5 +480,134 @@ describe('the visible runtime, executed', () => {
       globals['__xTestMount'] = undefined;
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// Whose props an island boots with. An island id is `<moduleId>-<instance>` PER RENDER, so the
+// page under a modal and the modal's own document both carry `like-1` — and a document-wide
+// lookup hands the modal's island the page's props, the first match in tree order.
+describe('the props an island boots with, executed', () => {
+  interface PropsScript {
+    readonly textContent: string;
+    /** The island wrapper this script was emitted inside, `null` for one loose in the document. */
+    closest(selector: string): unknown;
+  }
+  interface Wrapper {
+    __x?: Promise<unknown>;
+    getAttribute(name: string): string | null;
+    setAttribute(name: string, value: string): void;
+    querySelector(selector: string): PropsScript | null;
+    addEventListener(): void;
+    removeEventListener(): void;
+  }
+
+  /** Boots the real `idle` runtime over these wrappers and answers the props each mounted with. */
+  async function bootWith(
+    build: (entry: string) => {
+      readonly wrappers: readonly Wrapper[];
+      readonly documentScripts: readonly { readonly id: string; readonly script: PropsScript }[];
+    },
+  ): Promise<readonly unknown[]> {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-props-'));
+    const globals = globalThis as unknown as Record<string, unknown>;
+    const island = join(dir, 'island.mjs');
+    await writeFile(
+      island,
+      'export function mount(el,props){return globalThis.__xTestMount(el,props)}\n',
+      'utf8',
+    );
+    const { wrappers, documentScripts } = build(Bun.pathToFileURL(island).href);
+    const got = new Map<unknown, unknown>();
+    globals['__xTestMount'] = (el: unknown, props: unknown): void => {
+      got.set(el, props);
+    };
+    globals['document'] = {
+      querySelectorAll: (selector: string): unknown[] =>
+        selector.includes('idle') ? [...wrappers] : [],
+      // Tree order, as a browser answers: the FIRST script carrying the id.
+      querySelector: (selector: string): unknown =>
+        documentScripts.find(({ id }) => selector === `script[data-x-props="${id}"]`)?.script ??
+        null,
+    };
+    globals['window'] = {};
+    try {
+      const runtime = join(dir, 'runtime.mjs');
+      const source = hydrateRuntime([directive({ strategy: 'idle' })])
+        .replace('<script type="module">', '')
+        .replace('</script>', '');
+      await writeFile(runtime, source, 'utf8');
+      await import(Bun.pathToFileURL(runtime).href);
+      for (let i = 0; i < 1_000 && wrappers.some((el) => el.__x === undefined); i += 1) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 1);
+        });
+      }
+      await Promise.all(wrappers.map((el) => el.__x));
+      return wrappers.map((el) => got.get(el));
+    } finally {
+      globals['document'] = undefined;
+      globals['window'] = undefined;
+      globals['__xTestMount'] = undefined;
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  const wrapper = (entry: string, id: string, own: PropsScript | null): Wrapper => {
+    const attributes = new Map<string, string>([
+      ['data-x-entry', entry],
+      ['data-x-island', id],
+    ]);
+    return {
+      getAttribute: (name) => attributes.get(name) ?? null,
+      setAttribute: (name, value) => {
+        attributes.set(name, value);
+      },
+      querySelector: (selector) => (selector === ':scope>script[data-x-props]' ? own : null),
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    };
+  };
+
+  const script = (props: object, inside: object | null): PropsScript => ({
+    textContent: JSON.stringify(props),
+    closest: (selector) => (selector === '[data-x-island]' ? inside : null),
+  });
+
+  test('two wrappers with one island id each boot with the props script inside themselves', async () => {
+    const props = await bootWith((entry) => {
+      const pageScript = script({ post: 'page' }, {});
+      const modalScript = script({ post: 'modal' }, {});
+      return {
+        wrappers: [wrapper(entry, 'like-1', pageScript), wrapper(entry, 'like-1', modalScript)],
+        documentScripts: [
+          { id: 'like-1', script: pageScript },
+          { id: 'like-1', script: modalScript },
+        ],
+      };
+    });
+
+    expect(props).toEqual([{ post: 'page' }, { post: 'modal' }]);
+  });
+
+  test('a wrapper carrying no props script never takes the one inside another wrapper', async () => {
+    const props = await bootWith((entry) => {
+      const pageScript = script({ post: 'page' }, {});
+      return {
+        wrappers: [wrapper(entry, 'like-1', pageScript), wrapper(entry, 'like-1', null)],
+        documentScripts: [{ id: 'like-1', script: pageScript }],
+      };
+    });
+
+    expect(props).toEqual([{ post: 'page' }, {}]);
+  });
+
+  // A hand-assembled document (`emitIslandProps` is public) may put the script beside the wrapper.
+  test('a props script loose in the document still reaches the wrapper that has none', async () => {
+    const props = await bootWith((entry) => ({
+      wrappers: [wrapper(entry, 'settings', null)],
+      documentScripts: [{ id: 'settings', script: script({ tab: 'profile' }, null) }],
+    }));
+
+    expect(props).toEqual([{ tab: 'profile' }]);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { UnknownCommandError } from './errors';
 import type { CommandSpec } from './parse';
-import { flagBool, flagString, parseArgs } from './parse';
+import { COMMAND_INTENTS, flagBool, flagString, intentFor, parseArgs } from './parse';
 import { SPECS as SPECS_SHIPPED } from './registry';
 import { thrownBy } from './thrown-by-fixture';
 
@@ -179,6 +179,45 @@ describe('unit · parseArgs', () => {
     const failure = thrownBy(() => parseArgs(['verfy'], SPECS));
     expect(failure.code).toBe('X_CLI_UNKNOWN_COMMAND');
     expect(failure.fix).toStartWith('x verify --help');
+  });
+
+  // Edit distance alone answered `x migrate` with `x upgrade`, `x start` with `x stop` and
+  // `x check` with `x clean`: a paste-and-run fix that changes state the caller never named.
+  test('no unknown-command fix is a bare state-changing command (migrate, start, check)', () => {
+    const fixFor = (word: string): string =>
+      String(thrownBy(() => parseArgs([word], SPECS_SHIPPED)).fix);
+    // What the word means in every other toolchain, said in `x`'s own spelling.
+    expect(fixFor('migrate')).toBe('x db migrate');
+    expect(fixFor('seed')).toBe('x db seed');
+    for (const word of ['start', 'serve', 'server']) expect(fixFor(word)).toBe('x dev');
+    expect(fixFor('lint')).toBe('x verify --only lint');
+    for (const word of ['typecheck', 'tsc']) expect(fixFor(word)).toBe('x verify --only typecheck');
+    expect(fixFor('check')).toStartWith('x verify --help');
+    // A near miss of a command that acts when run bare is its help, never the command.
+    expect(fixFor('upgrad')).toStartWith('x upgrade --help');
+    expect(fixFor('stopp')).toStartWith('x stop --help');
+    expect(fixFor('clear')).toStartWith('x clean --help');
+    expect(fixFor('deply')).toStartWith('x deploy --help');
+    expect(fixFor('fixx')).toStartWith('x fix --help');
+    const acting = ['x upgrade', 'x stop', 'x clean', 'x deploy', 'x fix', 'x drill'];
+    const words = ['migrate', 'start', 'check', 'update', 'cleanup', 'create', 'destroy', 'fmt'];
+    for (const word of [...words, 'kill', 'restart', 'rollback', 'reset', 'run', 'install']) {
+      expect(acting).not.toContain(fixFor(word));
+    }
+    // A read-only near miss still pastes straight back.
+    expect(fixFor('route')).toBe('x routes');
+  });
+
+  test('every intent names a command the shipped CLI parses', () => {
+    expect(Object.keys(COMMAND_INTENTS).length).toBeGreaterThan(0);
+    for (const [word, argv] of Object.entries(COMMAND_INTENTS)) {
+      // The word itself is not a command, or the entry is dead.
+      expect(SPECS_SHIPPED.some((spec) => spec.name === word)).toBe(false);
+      const args = parseArgs([...argv], SPECS_SHIPPED);
+      expect(args.command).toBe(argv[0] ?? expect.unreachable(`${word} names no command`));
+    }
+    // Asked only of a table that has the command: a fixture without `dev` falls back to the guess.
+    expect(intentFor('start', ['verify', 'db'])).toBeUndefined();
   });
 
   test('an unknown subcommand names the command path, not just the token', () => {

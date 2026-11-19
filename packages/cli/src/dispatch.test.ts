@@ -3,15 +3,16 @@
 // the one branch that has no `ParsedArgs` to read `--json` off.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp.
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 import { currentLogStream, setLogStream } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
-import { dispatch, sinkFor } from './dispatch';
+import { dispatch, sinkFor, typedWords } from './dispatch';
 import { loadErrorCatalog } from './error-catalog';
 import { loadCodeFixes } from './error-fixes';
 import type { CommandResult } from './output';
+import { parseArgs } from './parse';
 import { SPECS } from './registry';
 
 /** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
@@ -77,6 +78,33 @@ describe('unit · the dispatcher is what enforces requiresApp', () => {
         'X_NOT_IN_APP',
       ]);
     }
+  });
+
+  // The fix was rebuilt from the command's NAME alone: `x db migrate` came back as
+  // `… @ultimat3/cli db --json`, which is X_CLI_BAD_FLAG (no subcommand) the moment it is pasted.
+  test("X_NOT_IN_APP's fix for `x db migrate` parses and names migrate", async () => {
+    const dir = made(realpathSync(mkdtempSync(`${tmpdir()}/x-below-app-`)));
+    await Bun.write(`${dir}/apps/game/app.config.ts`, '');
+    const fixOf = async (argv: readonly string[]): Promise<string> => {
+      const out = JSON.parse((await run(argv, dir)).out) as { findings?: { fix: string }[] };
+      return out.findings?.[0]?.fix ?? expect.unreachable('no X_NOT_IN_APP finding');
+    };
+    const prefix = 'cd apps/game && bunx @ultimat3/cli ';
+
+    const fix = await fixOf(['db', 'migrate', '--json']);
+    expect(fix).toBe(`${prefix}db migrate --json`);
+    const pasted = parseArgs(fix.slice(prefix.length).split(' '), SPECS);
+    expect([pasted.command, pasted.subcommand]).toEqual(['db', 'migrate']);
+
+    // Positionals and flags travel too; `--cwd` and the JSON switch are the fix's own to write.
+    expect(await fixOf(['db', 'seed', 'demo', '--tier', 'dev', '-j', '--cwd', dir])).toBe(
+      `${prefix}db seed demo --tier dev --json`,
+    );
+    expect(await fixOf(['db', 'seed', `--cwd=${dir}`, '--json', '--name', 'two words'])).toBe(
+      `${prefix}db seed --name 'two words' --json`,
+    );
+    // A passthrough tail is the other tool's: `--json` appended behind it would be too.
+    expect(typedWords(['test', '--json', '--', '-t', 'name'])).toEqual(['test']);
   });
 
   // The exemption, pinned: usage has to be readable from anywhere, and `--help` swaps the target

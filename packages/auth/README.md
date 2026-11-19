@@ -566,6 +566,43 @@ export const secondFactor = (challenge: string, code: string, ip: string) =>
   completeMfa(auth, challenge, code, { ip });   // what `login()` answers: actor, session, cookie
 ```
 
+**The built-in sign-in routes carry it for you: `mfaPath`, `As of 2026-11`.** `oauthLogin(auth)`
+and `identityProviderRoutes(auth, …)` own the callback, so there is no handler of yours to catch
+`X_MFA_REQUIRED` in. Give them the path of your second-factor page:
+
+```ts
+import {
+  type Auth,
+  clearMfaChallengeCookie,
+  completeMfa,
+  oauthLogin,
+  readMfaChallenge,
+} from '@ultimat3/auth';
+
+declare const auth: Auth;
+
+export const sso = oauthLogin(auth, { successPath: '/app', mfaPath: '/sign-in/mfa' });
+
+/** The POST behind `/sign-in/mfa`: the challenge arrives in the cookie the callback set. */
+export async function finishSso(request: Request, code: string): Promise<Response> {
+  const result = await completeMfa(auth, readMfaChallenge(request) ?? '', code);
+  const headers = new Headers({ location: '/app' });
+  headers.append('set-cookie', result.cookie);
+  headers.append('set-cookie', clearMfaChallengeCookie());
+  return new Response(null, { status: 303, headers });
+}
+```
+
+| `mfaPath` | An enrolled user's callback (OIDC redirect or SAML ACS) answers |
+|---|---|
+| set | `303` to `mfaPath`, `Set-Cookie: __Host-x_mfa=<sealed challenge>` — `HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=300` — and the state cookie cleared. No session yet |
+| omitted | `401 X_MFA_REQUIRED`, no challenge anywhere; the `auth.<oauth\|sso>.refused` log line's `fix` is the `mfaPath` call above. That user cannot finish through these routes |
+| not one normalised absolute path on this origin (`//host`, a scheme, `?`, `#`, `\`, `..`) | `X_CONFIG_INVALID`, at the call |
+
+The challenge travels in that cookie and nowhere else: never the redirect URL, a response body or a
+log line. An absent or stale cookie is `readMfaChallenge(request) === null`, and `completeMfa`
+refuses it like any other bad challenge.
+
 | `completeMfa` is given | Answer |
 |---|---|
 | a live challenge and the current code, or an unused recovery code | `{ actor, session, token, cookie }`, `mfaSatisfied: true` |
@@ -927,6 +964,7 @@ export const runtime: NonNullable<ServeOptions['runtime']> = {
 |---|---|---|
 | path | `/auth/sso/:provider` | `/auth/sso/:provider/callback` |
 | success | `302` to the provider, `Set-Cookie: __Host-x_sso_<provider>` | `303` to `successPath`, `Set-Cookie: __Host-x_session` **and** the handshake cleared |
+| second factor owed | — | `303` to `mfaPath`, `Set-Cookie: __Host-x_mfa`, handshake cleared; with no `mfaPath`, `401 X_MFA_REQUIRED` ([MFA](#mfa--totp-and-recovery-codes)) |
 | failure | coded JSON, status per code: `code` + `title` + `docs`, one fixed `cause`, `fix: x errors explain <CODE> --json` | the same, handshake cleared either way |
 
 A **descriptor**, never a mounted handler — the same category as `mcpHttpRoute()`. `@ultimat3/http`

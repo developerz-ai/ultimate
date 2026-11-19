@@ -132,8 +132,8 @@ describe.skipIf(!hasPostgres)('live · postgres · aggregates', () => {
 
   test('avg rounds at one fixed scale in both drivers', async () => {
     // 4/3 likes and 3.3/3 rate: repeating decimals, so the two drivers only agree if they round in
-    // the same place — which is why the statement says `round(avg(...), 6)` rather than taking the
-    // server's own numeric scale.
+    // the same place — which is why the statement rounds once itself (`averageSql`) rather than
+    // taking the server's own numeric scale.
     await agrees((repo) => repo.aggregate('avg', 'likeCount'), '1.333333');
     await agrees((repo) => repo.aggregate('avg', 'rate'), '1.100000');
   });

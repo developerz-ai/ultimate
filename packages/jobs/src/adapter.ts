@@ -1,6 +1,6 @@
 // `@ultimat3/jobs/adapter` — what a queue, an event bus or a durable store is built and installed
 // from: the port interfaces (outbox, step and lease stores too), a driver's errors, the installers
-// and their resets. Never the `.` barrel: an app swaps a backend in `apps/<app>/runtime.ts`, so
+// and their resets — the app's default retry among them. Never the `.` barrel: an app swaps a backend in `apps/<app>/runtime.ts`, so
 // the callers here are the cli boot, `@ultimat3/testing` and a driver's own author.
 
 export type {
@@ -33,5 +33,7 @@ export type { EventBus, JobEvent, PublishOptions } from './events';
 export { freshDefaultEventBus, installEventBus, resetEventBus } from './events';
 export type { LeaseStore } from './leases';
 export type { OutboxRecord, OutboxStore } from './outbox';
+export type { DefaultRetry } from './retry-default';
+export { installDefaultRetry, resetDefaultRetry } from './retry-default';
 export { fireThroughDriver } from './scheduler-state';
 export type { StepStore } from './steps-store';

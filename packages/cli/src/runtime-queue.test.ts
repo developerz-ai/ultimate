@@ -212,11 +212,11 @@ describe('unit · which environment the boot builds its client from', () => {
     const services = resolveServices(ROOT, EXTERNAL);
     // The dangerous direction first: the process says there is a standby and the boot's own env
     // does not, which is what a `x jobs` run inside a shell with a stale variable looks like.
-    const ignored = withProcessReplica(STANDBY, () => startDb(services, { ...EXTERNAL }));
+    const ignored = withProcessReplica(STANDBY, () => startDb(services, { ...EXTERNAL }, false));
     expect(ignored.replica).toBeUndefined();
 
     const attached = withProcessReplica(undefined, () =>
-      startDb(services, { ...EXTERNAL, [REPLICA_URL_ENV]: STANDBY }),
+      startDb(services, { ...EXTERNAL, [REPLICA_URL_ENV]: STANDBY }, false),
     );
     expect(attached.replica).toBeDefined();
     // And the ambient client is the PAIR, which is the object a repository reads through.
@@ -228,11 +228,11 @@ describe('unit · which environment the boot builds its client from', () => {
   // `53300 too many connections for role`.
   test('DATABASE_POOL_MAX from the boot env caps the primary and the standby', () => {
     const services = resolveServices(ROOT, EXTERNAL);
-    const started = startDb(services, {
-      ...EXTERNAL,
-      [POOL_MAX_ENV]: '4',
-      [REPLICA_URL_ENV]: STANDBY,
-    });
+    const started = startDb(
+      services,
+      { ...EXTERNAL, [POOL_MAX_ENV]: '4', [REPLICA_URL_ENV]: STANDBY },
+      false,
+    );
     expect('profile' in started.client && started.client.profile.max).toBe(4);
     expect(started.replica?.profile.max).toBe(4);
   });
@@ -254,7 +254,7 @@ describe('unit · which environment the boot builds its client from', () => {
       };
       throw failure;
     };
-    expect(() => startDb(services, { ...EXTERNAL }, attach)).toThrow(failure);
+    expect(() => startDb(services, { ...EXTERNAL }, false, attach)).toThrow(failure);
     expect(closing).toBeDefined();
     await closing;
     expect(dbClientInstalled()).toBe(false);
@@ -262,7 +262,7 @@ describe('unit · which environment the boot builds its client from', () => {
 
   test('an unset DATABASE_POOL_MAX keeps the role default', () => {
     const services = resolveServices(ROOT, EXTERNAL);
-    const started = startDb(services, { ...EXTERNAL });
+    const started = startDb(services, { ...EXTERNAL }, false);
     expect('profile' in started.client && started.client.profile.max).toBeGreaterThan(4);
   });
 });

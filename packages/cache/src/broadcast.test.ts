@@ -12,6 +12,7 @@ import {
   resetTiers,
 } from './invalidate';
 import { lruTier } from './lru';
+import { fakeRedis, tierFor } from './redis-fake-fixture';
 import { declareTags, isolateDeclaredTags, resetDeclaredTags, tag } from './tags';
 
 // Module scope, so the baseline is whatever a neighbouring file registered before this one ran.
@@ -67,6 +68,39 @@ describe('cross-instance invalidation', () => {
     expect(sends).toBe(0);
     expect(report.tags).toEqual(['post:1']);
     expect(await lru.get('feed')).toBeUndefined();
+  });
+
+  // The sender's own bust already cleared the shared store for the whole fleet. Re-busting it on
+  // every replica's receipt (the sender's included: a real bus delivers back) deleted the value a
+  // reader had refilled since, re-bumped the fleet fence under every fill in flight, and cost each
+  // mutation one extra load and a bust's worth of commands per replica.
+  test('an inbound broadcast clears the in-process tier and sends nothing to a shared one', async () => {
+    const lru = lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
+    registerTier(lru);
+    await lru.set('feed', ['a'], { tags: [tag('post')] });
+    const server = fakeRedis();
+    const shared = tierFor(server);
+    registerTier(shared);
+    await shared.set('feed', ['fresh'], { tags: [tag('post', '1')] });
+    server.sent.length = 0;
+
+    const report = await receiveInvalidationBroadcast(['post:1']);
+
+    expect(await lru.get('feed')).toBeUndefined();
+    expect(server.sent).toEqual([]);
+    expect((await shared.get('feed'))?.value).toEqual(['fresh']);
+    expect(report.tiers.map((entry) => entry.tier)).toEqual(['lru']);
+  });
+
+  test('a LOCAL bust still clears the shared tier', async () => {
+    const server = fakeRedis();
+    const shared = tierFor(server);
+    registerTier(shared);
+    await shared.set('feed', ['stale'], { tags: [tag('post', '1')] });
+
+    await invalidateTags([tag('post', '1')]);
+
+    expect(await shared.get('feed')).toBeUndefined();
   });
 
   test('a local bust whose receiver echoes back still sends exactly once', async () => {

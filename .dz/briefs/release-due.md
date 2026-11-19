@@ -49,7 +49,7 @@ it and stop: this session cannot fetch or switch branches.
 
 The envelope is input, and `data.due` is the script's count, not the verdict. Some reasons do settle
 it: `nothing_ships` leaves nothing to release, `awaiting_tag` is one already cutting, and a major
-stays a maintainer's — inside the major window: from v30, at most one major per 90 days
+stays a maintainer's — inside the major window: from v31, at most one major per 90 days
 ([`wiki/Stability.md`](../../wiki/Stability.md)), and only a security fix that cannot be
 non-breaking takes the exception (`--security <advisory-id>`).
 

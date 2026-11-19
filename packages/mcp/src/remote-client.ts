@@ -76,12 +76,15 @@ const DEFAULT_DEADLINE_MS = 30_000;
 const DEFAULT_LISTEN_MS = 300_000;
 const MODERN = MCP_MODERN_VERSIONS[0];
 const LEGACY = MCP_LEGACY_VERSIONS[0];
+const MAX_TOOL_PAGES = 50;
 
 export function mcpClient(options: McpClientOptions): McpClient {
   const state: { era?: 'modern' | 'legacy'; session?: string | null; next: number } = { next: 1 };
   const listenMs = finiteCount('mcpClient', 'listenMs', options.listenMs ?? DEFAULT_LISTEN_MS, 1);
   /** The open `GET` stream; `'unsupported'` once the server answered it 405, `'closed'` after close(). */
   let listener: Listener | 'unsupported' | 'closed' | undefined;
+  /** The one handshake in flight: concurrent calls that need a session share it, never race two. */
+  let negotiating: Promise<void> | undefined;
   const refused = (
     reason: string,
     failure: McpRemoteFailure,
@@ -157,8 +160,10 @@ export function mcpClient(options: McpClientOptions): McpClient {
     method: string,
     params: Record<string, unknown>,
     signal: AbortSignal | undefined,
+    sent?: { id?: number },
   ): Promise<Record<string, unknown>> => {
     const id = state.next++;
+    if (sent !== undefined) sent.id = id;
     let body: Record<string, unknown>;
     let headers: Record<string, string>;
     if (state.era === 'legacy') {
@@ -192,9 +197,8 @@ export function mcpClient(options: McpClientOptions): McpClient {
     return message['result'];
   };
 
+  /** The legacy handshake. The era is decided only once it succeeds: a failure leaves it open. */
   const initialize = async (signal: AbortSignal | undefined): Promise<void> => {
-    state.era = 'legacy';
-    state.session = null;
     const id = state.next++;
     const answer = await post(
       {
@@ -217,10 +221,32 @@ export function mcpClient(options: McpClientOptions): McpClient {
         'malformed',
       );
     }
-    state.session = answer.headers.get('mcp-session-id');
+    const opened = answer.headers.get('mcp-session-id');
     const notify = { jsonrpc: '2.0', method: 'notifications/initialized' };
-    const session = state.session === null ? {} : { 'mcp-session-id': state.session };
+    const session = opened === null ? {} : { 'mcp-session-id': opened };
     await post(notify, { 'mcp-protocol-version': LEGACY, ...session }, signal);
+    state.era = 'legacy';
+    state.session = opened;
+  };
+
+  /**
+   * Joins the handshake in flight, or starts one. A handshake another caller's abort ended is
+   * started again under this caller's own signal — someone else's abort is never this call's.
+   */
+  const negotiate = async (signal: AbortSignal | undefined): Promise<void> => {
+    for (;;) {
+      negotiating ??= initialize(signal).finally(() => {
+        negotiating = undefined;
+      });
+      const shared = negotiating;
+      try {
+        await shared;
+        return;
+      } catch (error) {
+        const theirs = isUltimateError(error) && error.code === 'X_ABORTED';
+        if (!theirs || signal?.aborted === true) throw error;
+      }
+    }
   };
 
   /**
@@ -265,21 +291,26 @@ export function mcpClient(options: McpClientOptions): McpClient {
     method: string,
     params: Record<string, unknown>,
     signal: AbortSignal | undefined,
+    sent?: { id?: number },
   ): Promise<Record<string, unknown>> => {
     listen();
-    if (state.era === undefined) {
+    if (state.era === undefined && negotiating === undefined) {
       try {
-        const result = await rpc(method, params, signal);
+        const result = await rpc(method, params, signal, sent);
         state.era = 'modern';
         return result;
       } catch (error) {
         if (!(error instanceof McpRemoteRefusedError) || !eraRefusal(error)) throw error;
-        await initialize(signal);
-        listen();
+        // A sibling's first call settled the era while this one was out: its answer stands.
+        if (state.era === 'modern') throw error;
       }
     }
+    if (state.era === undefined) {
+      await negotiate(signal);
+      listen();
+    }
     try {
-      return await rpc(method, params, signal);
+      return await rpc(method, params, signal, sent);
     } catch (error) {
       // A legacy session the server forgot (404) is re-opened ONCE, as the transport spec says.
       if (!(error instanceof McpRemoteRefusedError) || error.meta?.['status'] !== 404) throw error;
@@ -289,9 +320,9 @@ export function mcpClient(options: McpClientOptions): McpClient {
         listener.close();
         listener = undefined;
       }
-      await initialize(signal);
+      await negotiate(signal);
       listen();
-      return rpc(method, params, signal);
+      return rpc(method, params, signal, sent);
     }
   };
 
@@ -301,8 +332,9 @@ export function mcpClient(options: McpClientOptions): McpClient {
     async listTools(listOptions = {}) {
       const tools: RemoteTool[] = [];
       let cursor: string | undefined;
-      // Paged; bounded so a server that loops its cursor cannot hold the boot forever.
-      for (let page = 0; page < 50; page += 1) {
+      // Paged; bounded so a server that loops its cursor cannot hold the boot forever — and a list
+      // still unfinished at the bound is refused, never handed back as if it were whole.
+      for (let page = 0; page < MAX_TOOL_PAGES; page += 1) {
         const result = await call(
           'tools/list',
           cursor === undefined ? {} : { cursor },
@@ -312,9 +344,12 @@ export function mcpClient(options: McpClientOptions): McpClient {
           if (isJsonObject(tool) && typeof tool['name'] === 'string') tools.push(remoteTool(tool));
         }
         cursor = typeof result['nextCursor'] === 'string' ? result['nextCursor'] : undefined;
-        if (cursor === undefined) break;
+        if (cursor === undefined) return tools;
       }
-      return tools;
+      throw refused(
+        `paged past ${String(MAX_TOOL_PAGES)} tools/list pages without an end`,
+        'malformed',
+      );
     },
     close() {
       if (typeof listener === 'object') listener.close();
@@ -322,23 +357,28 @@ export function mcpClient(options: McpClientOptions): McpClient {
     },
     async callTool(tool, args, callOptions = {}) {
       const { signal } = callOptions;
+      const sent: { id?: number } = {};
       try {
-        const result = await call('tools/call', { name: tool, arguments: args }, signal);
+        const result = await call('tools/call', { name: tool, arguments: args }, signal, sent);
         return { isError: result['isError'] === true, text: resultText(result) };
-      } finally {
-        if (signal?.aborted === true && state.era === 'legacy') cancelled(tool);
+      } catch (error) {
+        // Only an abort that interrupted a request already sent is news to the server.
+        if (signal?.aborted === true && state.era === 'legacy' && sent.id !== undefined) {
+          cancelled(tool, sent.id);
+        }
+        throw error;
       }
     },
   };
 
   /** Legacy servers hear a cancellation as a notification; best effort, and said so in the log. */
-  function cancelled(tool: string): void {
+  function cancelled(tool: string, requestId: number): void {
     const headers: Record<string, string> = { 'mcp-protocol-version': LEGACY };
     if (typeof state.session === 'string') headers['mcp-session-id'] = state.session;
     const notice = {
       jsonrpc: '2.0',
       method: 'notifications/cancelled',
-      params: { requestId: state.next - 1 },
+      params: { requestId },
     };
     post(notice, headers, undefined).catch((error: unknown) => {
       tryUseContext()?.logger.warn('mcp.remote.cancel_unsent', {
@@ -361,18 +401,19 @@ function remoteTool(raw: Record<string, unknown>): RemoteTool {
 }
 
 /**
- * Whether a first modern request was refused for its ERA — a 4xx a legacy server gives an unknown
- * shape, a body that is no answer, or the codes for an unknown version, method or request — rather
- * than for its content. Only then is the legacy handshake tried; a modern server's own failure
- * (`-32603`, a 503) is that failure.
+ * Whether a first modern request was refused for its ERA — the 400/404/405 a legacy server gives an
+ * unknown shape, a body that is no answer, or the codes for an unknown version, method or request —
+ * rather than for its content. Only then is the legacy handshake tried; a modern server's own
+ * failure (`-32603`, a 503) and a refusal of the moment (429, 408, 403) are that failure.
  */
 const ERA_RPC_CODES: ReadonlySet<number> = new Set([-32022, -32601, -32600, -32602]);
+const ERA_STATUSES: ReadonlySet<number> = new Set([400, 404, 405]);
 
 function eraRefusal(error: McpRemoteRefusedError): boolean {
   const failure = error.meta?.['failure'];
   const status = error.meta?.['status'];
   const code = error.meta?.['rpcCode'];
   if (failure === 'malformed') return true;
-  if (failure === 'status') return typeof status === 'number' && status >= 400 && status < 500;
+  if (failure === 'status') return typeof status === 'number' && ERA_STATUSES.has(status);
   return failure === 'rpc' && typeof code === 'number' && ERA_RPC_CODES.has(code);
 }

@@ -6,7 +6,7 @@
 
 // Type-only: `idempotency-postgres.ts` imports this module, and a runtime edge would be a cycle.
 import type { PgExecutor } from '@ultimat3/core';
-import { storeMode } from '@ultimat3/core';
+import { isUltimateError, storeMode } from '@ultimat3/core';
 import {
   completeTransaction,
   currentTx,
@@ -80,6 +80,38 @@ export function liveTransaction(): LiveTransaction | undefined {
       query: <R>(text: string, values: readonly unknown[]) => tx.query<R>({ text, values }),
     },
   };
+}
+
+/** The half of an open transaction a settle bound to it needs: its commit and its rollback. */
+export type SettleScope = Pick<LiveTransaction, 'onCommit' | 'onRollback'>;
+
+/**
+ * The OPEN transaction a settle rides — the SQL one (`liveTransaction`), else the open MEMORY one,
+ * the answer `openCommitScope` gives the bust. `undefined` outside both and for an ended scope, so
+ * a settle the body forgot to await is its own unit of work on either store, never a dropped one.
+ */
+export function settleScope(): SettleScope | undefined {
+  const sql = liveTransaction();
+  if (sql !== undefined) return sql;
+  const memory = memoryJournal();
+  const onCommit = memory?.onCommit?.bind(memory);
+  if (memory === undefined || onCommit === undefined || !memoryOpen(memory)) return undefined;
+  return { onCommit, onRollback: (undo) => memory.onRollback(undo) };
+}
+
+/**
+ * Whether the memory transaction is still open. `@ultimat3/entity` exports no outcome, and its
+ * `onRollback` is the one call that refuses an ended scope (`X_DB_TRANSACTION_CLOSED`), so a no-op
+ * undo asks it: open, the undo is kept and does nothing; ended, the refusal is the answer.
+ */
+function memoryOpen(memory: { onRollback(undo: () => void): void }): boolean {
+  try {
+    memory.onRollback(() => undefined);
+    return true;
+  } catch (error) {
+    if (isUltimateError(error) && error.code === 'X_DB_TRANSACTION_CLOSED') return false;
+    throw error;
+  }
 }
 
 /**

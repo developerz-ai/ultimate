@@ -275,13 +275,17 @@ self.addEventListener('install',(event)=>{
           const r=await fetch(new Request(e.url+(e.url.indexOf('?')<0?'?':'&')+'v='+e.revision,{cache:'reload'}));
           // Mid-rollout an OLD pod may answer: its document is not this build's offline copy.
           const b=r.headers.get(BUILD_HEADER);
-          if(r.ok&&(b===null||b===BUILD_ID))await cache.put(new Request(e.url),r);
+          if(r.ok&&(b===null||b===BUILD_ID))await cache.put(new Request(e.url),plain(r));
         }catch(err){}
       }
     };
     await Promise.all(Array.from({length:${PRECACHE_CONCURRENCY}},next));
   })());
-});`.trim();
+});
+// A response that followed a redirect answers a \`follow\` request only, and a navigation's mode is
+// \`manual\`: stored as fetched, a precached or warmed document was a network error to the tab that
+// navigated to it offline. Stored as a response of its own, with the same body, status and headers.
+function plain(r){return r.redirected?new Response(r.body,{status:r.status,statusText:r.statusText,headers:r.headers}):r}`.trim();
 
 function activateBlock(): string {
   return `

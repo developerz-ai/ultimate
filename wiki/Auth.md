@@ -129,8 +129,14 @@ export const sso = identityProviderRoutes(auth, {
     oidcIdentityProvider({ provider: 'github' }),
   ],
   successPath: '/app',
+  mfaPath: '/sign-in/mfa', // where a user with TOTP enrolled finishes; omitted, their callback is 401
 });
 ```
+
+A user with a second factor is sent to `mfaPath` (303) with the sealed challenge in the
+`__Host-x_mfa` cookie; that page finishes with
+`completeMfa(auth, readMfaChallenge(request) ?? '', code)`. `oauthLogin(auth, { mfaPath })` is the
+same option.
 
 `defineAuth({ providers })` lists both ids; an unknown or not-enabled id is `X_IDENTITY_PROVIDER_UNKNOWN` (404).
 

@@ -11,7 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { DevStopDeniedError, DevStopTimeoutError, stopDev } from './cmd-stop';
-import { lockPath, parseLock, writeLock } from './dev-lock';
+import { clearStaleLock, liveDevLock, lockPath, parseLock, writeLock } from './dev-lock';
+import { liveDevLockChecked, refuseBesideDev } from './dev-lock-live';
 
 const dirs: string[] = [];
 const children: Bun.Subprocess[] = [];
@@ -157,7 +158,44 @@ describe('unit · x stop never signals a process the lock does not identify', ()
     expect(result).toEqual({ stopped: false, stale: true });
     expect(signalled).toEqual([]);
     expect(stranger.exitCode).toBeNull();
-    expect(await Bun.file(lockPath(dir)).exists()).toBe(true);
+  });
+
+  // The lock a kill -9 left, on a pid the kernel handed to a stranger: `liveDevLock` reads the
+  // stranger as the holder, so `x db reset|status|diagnostics|recount` refused
+  // X_DEV_ALREADY_RUNNING with `fix: x stop`, and `x stop` answered "stale" and left it there.
+  test('a lock whose pid was reused is cleared, and liveDevLock then answers undefined', async () => {
+    const dir = stateDir();
+    const stranger = await holder(dir, true);
+    const reused = { pid: stranger.pid, port: 4123, url: 'http://localhost:4123', started: '1' };
+    await Bun.write(lockPath(dir), JSON.stringify(reused));
+    // Before any `x stop`: the commands that refuse beside a live `x dev` already see no holder.
+    expect(liveDevLock(dir)?.pid).toBe(stranger.pid);
+    expect(await liveDevLockChecked(dir)).toBeUndefined();
+    await refuseBesideDev(dir);
+
+    await stopDev({ stateDir: dir, timeoutMs: 1_000, kill: () => undefined });
+    expect(await Bun.file(lockPath(dir)).exists()).toBe(false);
+    expect(await Bun.file(`${lockPath(dir)}.steal`).exists()).toBe(false);
+    expect(liveDevLock(dir)).toBeUndefined();
+    expect(stranger.exitCode).toBeNull();
+  });
+
+  test('the x dev that wrote the lock is still the holder those commands refuse beside', async () => {
+    const dir = stateDir();
+    const child = await holder(dir, true);
+    expect((await liveDevLockChecked(dir))?.pid).toBe(child.pid);
+    const refusal = await refuseBesideDev(dir).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(UltimateError);
+    expect((refusal as UltimateError).code).toBe('X_DEV_ALREADY_RUNNING');
+  });
+
+  test('a lock that changed hands since it was judged stale is never deleted', async () => {
+    const dir = stateDir();
+    const child = await holder(dir, true);
+    const before = await Bun.file(lockPath(dir)).text();
+    // Judged from an older read of the file: same pid, another start time.
+    clearStaleLock(dir, { pid: child.pid, port: 4123, url: '', startedAt: '', started: '1' });
+    expect(await Bun.file(lockPath(dir)).text()).toBe(before);
   });
 
   test('a pid another user owns is X_DEV_STOP_DENIED, never a raw EPERM', async () => {

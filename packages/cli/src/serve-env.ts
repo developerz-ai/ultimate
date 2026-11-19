@@ -1,8 +1,9 @@
-// What a container's environment decides about a boot: which role, which port, which interface,
-// and where errors are reported. Split from `serve.ts`, which re-exports every name here.
+// What a container's environment decides about a boot: which role (and whether the app declares
+// it), which port, which interface, and where errors are reported. Split from `serve.ts`, which re-exports every name here.
 
-import type { ErrorReporter, Role } from '@ultimat3/core';
+import type { AppConfig, ErrorReporter, Role } from '@ultimat3/core';
 import {
+  ConfigInvalidError,
   chainErrorReporters,
   configureErrorReporting,
   errorReportersOf,
@@ -62,6 +63,25 @@ export function roleFromEnv(env: Env): Role {
   const role = raw === undefined || raw.length === 0 ? 'web' : raw;
   if (!isRole(role)) throw new RoleUnknownError({ role, known: ROLES });
   return role;
+}
+
+/**
+ * Throws `X_CONFIG_INVALID` when `role` is absent from `config.roles`. Unset, `roles` is every
+ * role (core's default), so an app that never wrote the key boots each one as it always did; so
+ * does a root with no `app.config.ts`. `migrate` is never refused: it is the release phase — run
+ * once, then exit — not a process the app "runs", and an app listing `['web', 'worker']` still has
+ * migrations to apply.
+ */
+export function assertRoleDeclared(role: Role, config: AppConfig | undefined): void {
+  if (config === undefined || role === 'migrate' || config.roles.includes(role)) return;
+  const declared = config.roles.map((name) => `'${name}'`);
+  // Every value below is a member of core's closed `ROLES` set (`defineConfig` refused the rest,
+  // `roleFromEnv` the env's), so none needs quoting for the shell or for TypeScript.
+  throw new ConfigInvalidError({
+    cause: `ROLE=${role} is not a role this app declares: roles in app.config.ts lists ${config.roles.join(', ')}`,
+    fix: `ROLE=${config.roles.find((name) => name !== 'migrate') ?? 'web'} bun apps/web/server.ts   # a declared role — or declare this one in app.config.ts: roles: [${[...declared, `'${role}'`].join(', ')}]`,
+    meta: { key: 'roles', role, declared: [...config.roles] },
+  });
 }
 
 /**

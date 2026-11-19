@@ -19,13 +19,14 @@ import { loadApp } from './app-load';
 import { loadAppRuntime } from './app-runtime';
 import type { CommandContext } from './command';
 import { withOpenedDb } from './db-client-displace';
-import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
+import { refuseBesideDev } from './dev-lock-live';
 import { BadFlagError } from './errors';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagBool } from './parse';
 import { resolveServices } from './runtime-bindings';
 import { installBootPorts } from './runtime-boot-ports';
+import { databaseSslOf } from './runtime-database-ssl';
 import { startDb } from './runtime-queue';
 import { quoteArg } from './shell-quote';
 
@@ -144,20 +145,12 @@ async function recount(ctx: CommandContext, root: string): Promise<CommandResult
   const { parent, counter } = counterNamed(target);
   const write = flagBool(ctx.args, 'write');
   const services = resolveServices(root, ctx.env);
-  if (services.db.mode === 'embedded') {
-    const holder = liveDevLock(services.stateDir);
-    if (holder !== undefined) {
-      throw new DevAlreadyRunningError({
-        lock: holder,
-        stateDir: services.stateDir,
-        embeddedDb: true,
-      });
-    }
-  }
+  if (services.db.mode === 'embedded') await refuseBesideDev(services.stateDir);
+  const ssl = await databaseSslOf(services);
   // `startDb` installs its client as the process's `db()`; `withOpenedDb` puts back what was there
   // (closing a lazy default it dropped) and closes both pools, as `db-diagnostics.ts` does.
   return withOpenedDb(
-    () => startDb(services, ctx.env),
+    () => startDb(services, ctx.env, ssl),
     async (client) => {
       const report = await recountInBatches(client, parent.$table, counter, { write });
       const drift = report.rows;

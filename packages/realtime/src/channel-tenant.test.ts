@@ -11,8 +11,10 @@ import { ChannelHub } from './channel';
 import { channel } from './channel-decl';
 import { presenceEvent } from './channel-presence';
 import { clearChannels } from './channel-registry';
+import type { ChannelRecordsFrame } from './channel-wire';
 import { TopicForbiddenError } from './errors';
 import { InProcessTransport } from './fanout';
+import type { LiveRow } from './json';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 
 const ORG_A = '00000000-0000-4000-8000-00000000000a';
@@ -20,6 +22,14 @@ const ORG_B = '00000000-0000-4000-8000-00000000000b';
 
 const posts = entity('channel_tenant_posts', {
   columns: { id: uuid().primaryKey(), orgId: uuid(), title: text() },
+});
+/** Tenanted rows routed by a param that is NOT the tenant column: one room, any org's rows. */
+const messages = entity('channel_tenant_messages', {
+  columns: { id: uuid().primaryKey(), orgId: uuid(), roomId: text(), body: text() },
+});
+/** An untenanted table: no org column, so nothing about its rows is any tenant's. */
+const notes = entity('channel_tenant_notes', {
+  columns: { id: uuid().primaryKey(), roomId: text(), body: text() },
 });
 
 afterAll(() => {
@@ -54,6 +64,14 @@ const room = channel('tenant-room', {
   events: true,
 });
 
+/** Keyed by `roomId`, so the subscribe decides nothing about the rows' tenant. */
+const roomFeed = channel('tenant-room-feed', {
+  params: ['roomId'],
+  catchUp: { name: 'tenantRoomFeed' },
+  policy: anyReader,
+  records: [messages, notes],
+});
+
 type Wire = { readonly type: string } & Record<string, unknown>;
 
 class FakeWs implements WsLike {
@@ -78,7 +96,11 @@ let hub: ChannelHub;
 
 beforeEach(() => {
   sockets = new SocketRegistry();
-  hub = new ChannelHub({ transport: new InProcessTransport(), sockets, channels: [orgFeed, room] });
+  hub = new ChannelHub({
+    transport: new InProcessTransport(),
+    sockets,
+    channels: [orgFeed, room, roomFeed],
+  });
 });
 
 function connect(actor: Actor): { socket: SyncSocket; ws: FakeWs } {
@@ -163,5 +185,96 @@ describe('a channel with no tenant param', () => {
     });
     await hub.publishEvent(room, { roomId: 'lobby' }, { wave: true });
     expect(orphan.ws.of('events')).toHaveLength(1);
+  });
+});
+
+const MESSAGE_ID = '00000000-0000-4000-8000-0000000000b1';
+const message = (orgId: string): LiveRow => ({
+  id: MESSAGE_ID,
+  orgId,
+  roomId: 'lobby',
+  body: 'org B payroll',
+});
+const change = (
+  table: string,
+  op: 'insert' | 'delete',
+  row: LiveRow,
+  lsn: string,
+  orgId: string | null = null,
+): ChangeEvent => ({
+  table,
+  op,
+  before: op === 'delete' ? row : null,
+  after: op === 'delete' ? null : row,
+  lsn,
+  txid: lsn,
+  orgId,
+  at: 0,
+  write: 'w-1',
+});
+const joinRoom = (socket: SyncSocket, since?: { epoch: string; seq: number }) =>
+  hub.subscribeChannel(socket, {
+    kind: 'channel',
+    channel: 'tenant-room-feed',
+    params: { roomId: 'lobby' },
+    ...(since === undefined ? {} : { since }),
+  });
+const isRecords = (frame: Wire): frame is Wire & ChannelRecordsFrame => frame.type === 'records';
+/** The `records` frames a socket received, typed as the wire declares them. */
+const recordsOf = (ws: FakeWs): ChannelRecordsFrame[] => ws.frames.filter(isRecords);
+/** Every record key a socket was handed, adopted or removed, across its `records` frames. */
+const keysSeen = (ws: FakeWs): string[] =>
+  recordsOf(ws).flatMap((frame) => [
+    ...Object.values(frame.adopt ?? {}).flatMap((byKey) => Object.keys(byKey)),
+    ...Object.values(frame.remove ?? {}).flat(),
+  ]);
+
+describe('a records channel keyed by a non-tenant param', () => {
+  test("a records channel keyed by a non-tenant param carries no other tenant's rows", async () => {
+    const alice = connect(userActor({ id: 'alice', orgId: ORG_A }));
+    const bob = connect(userActor({ id: 'bob', orgId: ORG_B }));
+    await joinRoom(alice.socket);
+    await joinRoom(bob.socket);
+
+    hub.deliverChange(change('channel_tenant_messages', 'insert', message(ORG_B), '1', ORG_B));
+    hub.deliverChange(change('channel_tenant_messages', 'delete', message(ORG_B), '2', ORG_B));
+
+    // Org B's member is handed both: the witness that the traffic was real.
+    expect(keysSeen(bob.ws)).toEqual([MESSAGE_ID, MESSAGE_ID]);
+    // Org A's member sees the seq advance and nothing else: no row, no key, no write id.
+    expect(keysSeen(alice.ws)).toEqual([]);
+    const withheld = recordsOf(alice.ws);
+    expect(withheld.map((frame) => frame.seq)).toEqual([1, 2]);
+    expect(withheld.some((frame) => 'write' in frame)).toBe(false);
+
+    // A later org-A joiner resuming from before both changes is replayed the same nothing.
+    const epoch = withheld[0]?.epoch ?? '';
+    const carol = connect(userActor({ id: 'carol', orgId: ORG_A }));
+    await joinRoom(carol.socket, { epoch, seq: 0 });
+    expect(recordsOf(carol.ws).map((frame) => frame.seq)).toEqual([1, 2]);
+    expect(keysSeen(carol.ws)).toEqual([]);
+    // ...while an org-B joiner resuming the same way is replayed both.
+    const dave = connect(userActor({ id: 'dave', orgId: ORG_B }));
+    await joinRoom(dave.socket, { epoch, seq: 0 });
+    expect(keysSeen(dave.ws)).toEqual([MESSAGE_ID, MESSAGE_ID]);
+  });
+
+  test("an untenanted table's rows reach every member, org or none, exactly as before", async () => {
+    const alice = connect(userActor({ id: 'alice', orgId: ORG_A }));
+    const orphan = connect(userActor({ id: 'orphan' }));
+    await joinRoom(alice.socket);
+    await joinRoom(orphan.socket);
+    const note = { id: MESSAGE_ID, roomId: 'lobby', body: 'hello' };
+    hub.deliverChange(change('channel_tenant_notes', 'insert', note, '1'));
+    expect(keysSeen(alice.ws)).toEqual([MESSAGE_ID]);
+    expect(keysSeen(orphan.ws)).toEqual([MESSAGE_ID]);
+    expect(recordsOf(alice.ws)[0]?.write).toBe('w-1');
+  });
+
+  test('a member with no org is handed no tenanted row', async () => {
+    const orphan = connect(userActor({ id: 'orphan' }));
+    await joinRoom(orphan.socket);
+    hub.deliverChange(change('channel_tenant_messages', 'insert', message(ORG_B), '1', ORG_B));
+    expect(keysSeen(orphan.ws)).toEqual([]);
   });
 });

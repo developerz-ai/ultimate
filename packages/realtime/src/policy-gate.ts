@@ -6,8 +6,9 @@
 // policy is dropped, never sent. That is the rule from the live-query pipeline, implemented once.
 // A *denial* only — a gate that could not reach a decision raises, because "denied" and "the
 // database is down" are different facts and one of them has to page someone.
+// Both gates decide in the SUBSCRIBER's context: `ctx.actor` is who asked, as it is over HTTP.
 
-import type { Actor, Ctx } from '@ultimat3/core';
+import { type Actor, anonymousActor, type Ctx, ctxOf } from '@ultimat3/core';
 import { guardQuery, QueryDeniedError, type QueryPolicy, type QuerySubject } from '@ultimat3/query';
 import type { JsonValue, LiveRow } from './json';
 
@@ -60,5 +61,39 @@ function subjectOf(
   input: unknown,
   row: unknown,
 ): QuerySubject {
-  return { actor, input, row, ctx: options.ctx, query: options.query };
+  // Anonymous is the anonymous actor, as over HTTP — never the node's own, which may be a system one.
+  const ctx =
+    actor === null ? subscriberContext(options.ctx, anonymousActor()) : ctxFor(options.ctx, actor);
+  return { actor, input, row, ctx, query: options.query };
+}
+
+/**
+ * Keyed by the actor OBJECT a socket holds — a re-auth puts a new one there — so no other actor
+ * can be answered from it; a row gate runs per subscriber per row, and `ctxOf` builds services.
+ */
+const contexts = new WeakMap<Ctx, WeakMap<Actor, Ctx>>();
+
+function ctxFor(node: Ctx, actor: Actor): Ctx {
+  let byActor = contexts.get(node);
+  if (byActor === undefined) {
+    byActor = new WeakMap();
+    contexts.set(node, byActor);
+  }
+  const known = byActor.get(actor);
+  if (known !== undefined) return known;
+  const made = subscriberContext(node, actor);
+  byActor.set(actor, made);
+  return made;
+}
+
+/** The node's context, re-made for one subscriber: same deploy, role and clock, their actor. */
+export function subscriberContext(node: Ctx, actor: Actor): Ctx {
+  return ctxOf({
+    actor,
+    role: node.role,
+    buildId: node.buildId,
+    clock: node.clock,
+    locale: node.locale,
+    tz: node.tz,
+  });
 }

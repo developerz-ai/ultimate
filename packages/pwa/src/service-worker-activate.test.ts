@@ -2,7 +2,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { generateServiceWorker } from './service-worker';
-import { config, SW_ORIGIN, swHarness } from './service-worker-harness-fixture';
+import type { StubCache } from './service-worker-harness-fixture';
+import { config, redirectedResponse, SW_ORIGIN, swHarness } from './service-worker-harness-fixture';
 import type { PwaRoute } from './strategies';
 
 /** One macrotask. The harness runs on promises alone, so a turn lets every pending step run. */
@@ -46,6 +47,21 @@ describe('the emitted activate block, executed', () => {
     sw.goOffline();
     const response = await sw.request('/feed');
     expect(await response.text()).toBe('bytes for /feed');
+  });
+
+  // The warm-up's request is the worker's own (`follow`), unlike the navigation it stands in for.
+  test('a warmed page that answered through a redirect is stored as a non-redirected response', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(runtimeRoutes, config, 'build-1').source);
+    sw.answerWith(() => redirectedResponse('the feed'));
+    sw.openWindows(`${SW_ORIGIN}/feed`);
+    await sw.activate();
+    const holding = (): StubCache | undefined =>
+      [...sw.caches.values()].find((cache) => cache.entries.has(`${SW_ORIGIN}/feed`));
+    for (let turn = 0; turn < 50 && holding() === undefined; turn += 1) await settle();
+
+    expect(await (await holding()?.match('/feed'))?.text()).toBe('the feed');
+    expect([...(holding()?.redirected ?? [])]).toEqual([]);
   });
 
   test('a network-only route, another origin and a window with no URL are left alone', async () => {

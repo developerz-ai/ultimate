@@ -91,6 +91,26 @@ describe.skipIf(noBrowser)('client navigation · route-presented modals', () => 
     TIMEOUT_MS,
   );
 
+  // An island id is per document (`island-1` on the page and again in the modal), so a lookup of
+  // the props by id across the whole tab hands the modal's island the page's — the first in order.
+  test(
+    'an island in a modal boots with its own props when the page beneath holds the same island id',
+    async () => {
+      await start();
+      await read('window.__mounts = []');
+      await read('document.getElementById("new").click()');
+      await opened('New run');
+      const ISLANDS = 'document.querySelectorAll("[data-x-island=island-1]")';
+      expect(await read(`${ISLANDS}.length`)).toBe(2);
+      await waitFor(
+        `${DIALOG}.querySelector("[data-x-mounted]") !== null`,
+        "the modal's island mounted",
+      );
+      expect(await read('JSON.stringify(window.__mounts)')).toBe('["form"]');
+    },
+    TIMEOUT_MS,
+  );
+
   test(
     'the click opens the frame in its own task; the answer fills it when it arrives',
     async () => {

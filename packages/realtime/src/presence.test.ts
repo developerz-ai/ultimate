@@ -42,6 +42,24 @@ describe('presence', () => {
     expect((await presence.list(room))[0]?.meta).toEqual({ x: 9 });
   });
 
+  test('a room whose members all expired leaves no key in the in-process set after it is forgotten', async () => {
+    const clock = frozenClock(0);
+    const transport = new InProcessTransport({ clock });
+    const presence = new PresenceRegistry({ transport, clock, ttlMs: 30_000 });
+    for (let i = 0; i < 3; i += 1) {
+      await presence.join(topic('org', 'o1', `room-${i}`), { id: `m${i}`, actorId: 'alice' });
+    }
+    await presence.sweepAll();
+    expect(transport.sharedKeys).toBeGreaterThan(0);
+    clock.advance(31_000);
+    // The pass that announces the leaves forgets each room. Its sweep lease outlives the room by
+    // one TTL — a follower reads the last roster off it — and is then gone with nobody reading it.
+    expect(await presence.sweepAll()).toHaveLength(3);
+    clock.advance(31_000);
+    await presence.join(topic('org', 'o1', 'next'), { id: 'm9', actorId: 'bob' });
+    expect(transport.sharedKeys).toBe(1);
+  });
+
   test('a sweep turns silent expiry into explicit leave events', async () => {
     const { presence, tick } = harness();
     await presence.join(room, { id: 'm1', actorId: 'alice' });

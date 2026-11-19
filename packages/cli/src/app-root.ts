@@ -54,7 +54,12 @@ export function findAppRoot(from: string): AppRoot | undefined {
     : { dir, configPath: join(dir, APP_CONFIG_FILE), manifestPath: join(dir, MANIFEST_FILE) };
 }
 
-export function requireAppRoot(command: string, from: string): AppRoot {
+export function requireAppRoot(
+  command: string,
+  from: string,
+  /** What was typed after `x`, for the refusal's fix to hand back whole (`dispatch.ts`). */
+  typed?: readonly string[],
+): AppRoot {
   const root = findAppRoot(from);
   if (root === undefined) {
     const dir = resolve(from);
@@ -64,6 +69,7 @@ export function requireAppRoot(command: string, from: string): AppRoot {
       below: appDirsBelow(dir),
       adopter: dependsOnFramework(dir),
       xScript: hasXScript(dir),
+      ...(typed === undefined ? {} : { typed }),
     });
   }
   return root;

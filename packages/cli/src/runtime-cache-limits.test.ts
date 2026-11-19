@@ -17,6 +17,7 @@ import { logger } from '@ultimat3/core';
 import { InProcessTransport } from '@ultimat3/realtime/server';
 import type { Env } from './runtime-bindings';
 import { startCacheTiers } from './runtime-cache';
+import { thrownBy } from './thrown-by-fixture';
 
 const warnings: { line: string; meta: unknown }[] = [];
 const printWarning = logger.warn;
@@ -133,6 +134,42 @@ describe('cache.defaultTtlMs', () => {
     // The tier's own default is 60 s; jitter shaves at most 5 % off 5 s.
     expect(lease).toBeLessThanOrEqual(5_000 + 50);
     expect(lease).toBeGreaterThan(4_000);
+  });
+
+  // `defineConfig` let 0 through, and the first reader was `lruTier`: X_CACHE_LIMIT_INVALID about
+  // an option "lru.defaultTtlMs" the app never wrote, its fix pointing at `runtime.ts`.
+  test('a lease that is not a whole number of milliseconds above zero refuses the boot, naming the config key', () => {
+    for (const defaultTtlMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const refused = thrownBy(() =>
+        startCacheTiers({
+          env: {},
+          purge: noopPurgeDriver(),
+          transport: new InProcessTransport(),
+          tiers: ['request-memo', 'lru'],
+          defaultTtlMs,
+        }),
+      );
+      expect(refused.code).toBe('X_CONFIG_INVALID');
+      expect(refused.cause).toContain('cache.defaultTtlMs');
+      expect(refused.fix).toContain('app.config.ts');
+      expect(refused.fix).toContain('defaultTtlMs: 60_000');
+      // Refused before any rung is registered: nothing is left in the process-global ladder.
+      expect(registeredTiers()).toEqual([]);
+    }
+  });
+
+  // Even where no rung reads it: the key is wrong in the file, whatever this ladder builds.
+  test('and it is refused on a ladder with no rung that takes a lease', () => {
+    const refused = thrownBy(() =>
+      startCacheTiers({
+        env: {},
+        purge: noopPurgeDriver(),
+        transport: new InProcessTransport(),
+        tiers: ['request-memo'],
+        defaultTtlMs: 0,
+      }),
+    );
+    expect(refused.code).toBe('X_CONFIG_INVALID');
   });
 
   test('leaves a supplied rung with the lease it was built with', async () => {

@@ -8,7 +8,7 @@ import { OUTBOX_DRAIN_MESSAGE } from '@ultimat3/core';
 import { PAGES_CACHE_MAX } from './pages-cache-source';
 import type { ServiceWorkerConfig } from './service-worker';
 import { generateServiceWorker } from './service-worker';
-import { config, swHarness } from './service-worker-harness-fixture';
+import { config, redirectedResponse, swHarness } from './service-worker-harness-fixture';
 import type { PwaRoute } from './strategies';
 import { cacheNamespace } from './version-skew';
 
@@ -93,6 +93,22 @@ describe('the emitted install block, executed', () => {
     expect(keys).toContain('https://app.test/pricing');
     // A static host stamps nothing: there is no other build to tell it from.
     expect(keys).toContain('https://app.test/offline');
+  });
+
+  // Fetch's rule: a response whose URL list is longer than one answers a request with redirect
+  // mode `follow` only, and a navigation's is `manual` — so `/offline` precached through a
+  // trailing-slash or locale redirect was a network error exactly when it was needed.
+  test('a precache entry that answered through a redirect is stored as a non-redirected response', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(precached, config, 'build-1').source);
+    sw.answerWith((request) =>
+      new URL(request.url).pathname === '/offline' ? redirectedResponse('offline page') : undefined,
+    );
+    await sw.install();
+
+    const cache = sw.caches.get(cacheNamespace('build-1', 'precache'));
+    expect(await (await cache?.match('/offline'))?.text()).toBe('offline page');
+    expect([...(cache?.redirected ?? [])]).toEqual([]);
   });
 
   test('fetches each entry revision-addressed, so a deploy re-downloads only what changed', async () => {

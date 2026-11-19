@@ -244,7 +244,7 @@ its name like any guard.
 | `workspace-checks.ts` | file-size ceiling and package contract files |
 | `drift.ts` `budgets.ts` | the checks `x verify` composes |
 | `budgets-freshness.ts` `verify-budgets-build.ts` | whether `budgets` may read the stats on disk, and the build it runs when not |
-| `cmd-stop.ts` | `x stop`: SIGTERM to the lock's pid, the wait, the Windows lock clear |
+| `cmd-stop.ts` | `x stop`: SIGTERM to the lock's pid, the wait, the Windows lock clear; a lock whose pid the kernel reused is cleared with nothing signalled |
 
 The CLI describes an app by **loading** it, never by parsing it: `action()`, `entity()`,
 `job()` and `defineRoute()` register themselves, and `x manifest`, `x routes` and `x verify`

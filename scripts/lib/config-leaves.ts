@@ -64,11 +64,22 @@ const NAMED_TYPE = /^(?:[A-Za-z_$][\w$]*\.)?([A-Z]\w*)(?:\s*\|\s*undefined)?$/;
  * Every leaf key of `AppConfig`, dotted. Derived from the declaration's own text rather than typed
  * out here: a hand list is the defect this check exists to catch, one level up.
  */
-export function configLeaves(source: string, root = ROOT_INTERFACE): readonly string[] {
+export const configLeaves = (source: string, root = ROOT_INTERFACE): readonly string[] =>
+  Object.keys(configLeafTypes(source, root));
+
+/**
+ * Every leaf, mapped to the interface that declares it (`jobs.maxAttempts` -> `JobsConfig`). The
+ * type is read evidence of its own: a file that names `ClientErrorsConfig` and reads `.anonymous`
+ * reads the leaf through a typed parameter (`config-read-evidence.ts`, `qualifiedRead`).
+ */
+export function configLeafTypes(
+  source: string,
+  root = ROOT_INTERFACE,
+): Readonly<Record<string, string>> {
   const bodies = new Map<string, string>();
   for (const match of source.matchAll(INTERFACE))
     bodies.set((match[1] ?? match[2]) as string, match[3] as string);
-  const leaves: string[] = [];
+  const leaves: Record<string, string> = {};
   const walk = (name: string, prefix: string, seen: readonly string[]): void => {
     const body = bodies.get(name);
     // A cycle would recurse forever, and a self-referential config is not a thing this repo has —
@@ -80,7 +91,7 @@ export function configLeaves(source: string, root = ROOT_INTERFACE): readonly st
       const target = NAMED_TYPE.exec(type)?.[1];
       if (target !== undefined && bodies.has(target))
         walk(target, `${prefix}${key}.`, [...seen, name]);
-      else leaves.push(`${prefix}${key}`);
+      else leaves[`${prefix}${key}`] = name;
     }
   };
   walk(root, '', []);

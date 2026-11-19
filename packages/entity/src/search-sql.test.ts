@@ -28,7 +28,7 @@ const plain = entity('sql_search_plain', {
 const planFor = (term: string): QueryPlan => ({
   entity: posts.$name,
   where: [
-    { column: 'orgId', op: 'eq', value: 'org-1' },
+    { column: 'orgId', op: 'eq', value: '00000000-0000-7000-8000-0000000000a1' },
     { column: SEARCH_PROPERTY, op: 'matches', value: term },
   ],
   orderBy: [{ column: 'id', direction: 'asc' }],
@@ -40,7 +40,7 @@ describe('predicateSql · matches', () => {
     const fragment = conditions(posts, planFor('cats & dogs'), { includeDeleted: false });
     expect(fragment.text).toContain('"search_tsv" @@ websearch_to_tsquery(\'english\', $2)');
     expect(fragment.text).not.toContain('cats');
-    expect(fragment.values).toEqual(['org-1', 'cats & dogs']);
+    expect(fragment.values).toEqual(['00000000-0000-7000-8000-0000000000a1', 'cats & dogs']);
   });
 
   test('the tenant predicate is still in the statement beside the match', () => {

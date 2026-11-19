@@ -118,17 +118,25 @@ export async function lostMembership(
 }
 
 /** `[cursor, [member, score, …]]` — flat in RESP2 and RESP3 alike; `[member, score]` pairs read too. */
-function scanPage(reply: unknown, bucket: string): { readonly cursor: string; members: string[] } {
+function scanPage(
+  reply: unknown,
+  bucket: string,
+): { readonly cursor: string; entries: [string, string][] } {
   if (!Array.isArray(reply) || reply.length !== 2 || !Array.isArray(reply[1])) {
     throw unreadable(bucket);
   }
-  const [cursor, entries] = reply as [unknown, unknown[]];
+  const [cursor, flat] = reply as [unknown, unknown[]];
   if (typeof cursor !== 'string' && typeof cursor !== 'number') throw unreadable(bucket);
-  const members = entries.every(Array.isArray)
-    ? (entries as unknown[][]).map(([member]) => member)
-    : entries.filter((_, i) => i % 2 === 0);
-  if (!members.every((member) => typeof member === 'string')) throw unreadable(bucket);
-  return { cursor: String(cursor), members: members as string[] };
+  const pairs = flat.every(Array.isArray)
+    ? (flat as unknown[][]).map(([member, score]) => [member, score])
+    : flat.flatMap((member, i) => (i % 2 === 0 ? [[member, flat[i + 1]]] : []));
+  // RESP3 answers a score as a double, RESP2 as text: either is kept as the text `ZADD` takes.
+  const entries = pairs.map(([member, score]) => {
+    if (typeof member !== 'string') throw unreadable(bucket);
+    if (typeof score !== 'string' && typeof score !== 'number') throw unreadable(bucket);
+    return [member, String(score)] as [string, string];
+  });
+  return { cursor: String(cursor), entries };
 }
 
 const unreadable = (bucket: string): CacheDriverUnavailableError =>
@@ -139,23 +147,23 @@ const unreadable = (bucket: string): CacheDriverUnavailableError =>
   });
 
 /**
- * Every member of one bucket, `ZSCAN … COUNT BUST_PAGE_SIZE` per round trip. `ZSCAN`, never a
+ * Every member of one bucket with its score, `ZSCAN … COUNT BUST_PAGE_SIZE` per round trip. `ZSCAN`, never a
  * score cursor: Redis guarantees a scan returns every member present from its first call to its
  * last, whatever is added, removed or re-scored meanwhile. A `(score, offset)` cursor broke on
  * exactly those — a concurrent prune of a read page of tied dead members, or a re-write moving a
  * read tie member up, shifted the offset past live keys, which served stale until TTL. A scan
- * may return a member twice; the set dedupes.
+ * may return a member twice; the map dedupes. The score is what a refused delete is re-joined at.
  */
-export async function readBucket(client: RedisLike, bucket: string): Promise<string[]> {
-  const members = new Set<string>();
+export async function readBucket(client: RedisLike, bucket: string): Promise<Map<string, string>> {
+  const members = new Map<string, string>();
   let cursor = '0';
   do {
     const reply = await client.send('ZSCAN', [bucket, cursor, 'COUNT', String(BUST_PAGE_SIZE)]);
     const page = scanPage(reply, bucket);
-    for (const member of page.members) members.add(member);
+    for (const [member, score] of page.entries) members.set(member, score);
     cursor = page.cursor;
   } while (cursor !== '0');
-  return [...members];
+  return members;
 }
 
 /** `UNLINK` each key on its own (slot-local), pipelined per batch; which ones died is the answer. */
@@ -178,17 +186,40 @@ export async function unlinkAll(
   return { deleted, failures };
 }
 
-/** `ZREM` what died from every bucket that held it, `SWEEP_CONCURRENCY` commands in flight. */
+/** Which members each bucket really lost, and every `ZREM` the store refused. */
+export interface SweepResult {
+  readonly removed: Map<string, Set<string>>;
+  readonly failures: unknown[];
+}
+
+/**
+ * `ZREM` the members from every bucket named, `SWEEP_CONCURRENCY` commands in flight. Settled, never
+ * rejected: a refused chunk leaves its members where they were, which is a bucket still reaching
+ * them, and the caller must still delete the values the chunks that WERE removed point at.
+ */
 export async function sweepBuckets(
   client: RedisLike,
   gone: ReadonlyMap<string, ReadonlySet<string>>,
-): Promise<void> {
-  const work: (() => Promise<unknown>)[] = [];
+): Promise<SweepResult> {
+  const removed = new Map<string, Set<string>>();
+  const failures: unknown[] = [];
+  const work: (() => Promise<void>)[] = [];
   for (const [bucket, members] of gone) {
     const list = [...members];
     for (let start = 0; start < list.length; start += SWEEP_CHUNK) {
       const chunk = list.slice(start, start + SWEEP_CHUNK);
-      work.push(() => client.send('ZREM', [bucket, ...chunk]));
+      work.push(() =>
+        client.send('ZREM', [bucket, ...chunk]).then(
+          () => {
+            const into = removed.get(bucket) ?? new Set<string>();
+            for (const member of chunk) into.add(member);
+            removed.set(bucket, into);
+          },
+          (reason: unknown) => {
+            failures.push(reason);
+          },
+        ),
+      );
     }
   }
   let next = 0;
@@ -200,4 +231,27 @@ export async function sweepBuckets(
     }
   };
   await Promise.all(Array.from({ length: Math.min(SWEEP_CONCURRENCY, work.length) }, worker));
+  return { removed, failures };
+}
+
+/**
+ * Put back every member whose value key the store refused to delete, in each bucket the sweep took
+ * it out of, at the score its bucket read gave it — so the retry the error asks for still reaches
+ * it. Settled: what the store refuses here is reported, never thrown past the rest.
+ */
+export async function rejoinBuckets(
+  client: RedisLike,
+  removed: ReadonlyMap<string, ReadonlySet<string>>,
+  survivors: ReadonlyMap<string, string>,
+): Promise<unknown[]> {
+  if (survivors.size === 0) return [];
+  const sends: Promise<unknown>[] = [];
+  for (const [bucket, members] of removed) {
+    for (const member of members) {
+      const score = survivors.get(member);
+      if (score !== undefined) sends.push(client.send('ZADD', [bucket, score, member]));
+    }
+  }
+  const settled = await Promise.allSettled(sends);
+  return settled.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
 }

@@ -7,6 +7,7 @@ import { ctxOf, runWithContext, serviceActor, userActor, withChildContext } from
 import { type DbClient, type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { MAX_IDS_PER_STATEMENT } from './batch-read';
 import { money, text, timestamp, uuid } from './columns';
+import { bigint } from './columns-data';
 import { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 import { entity } from './entity';
 import { postgresRepo } from './pg-driver';
@@ -202,9 +203,66 @@ describe('findById coalescing', () => {
     );
     // One bind: Postgres compares a uuid as a value and would have matched either spelling, so
     // the two spellings must not become two lookups — or the answer would depend on the batch.
-    expect(client.statements[0]?.values).toEqual([mixed.toUpperCase(), ORG, 1]);
+    expect(client.statements[0]?.values).toEqual([mixed, ORG, 1]);
     expect(upper?.id).toBe(mixed);
     expect(lower).toBe(upper);
+  });
+
+  test('one malformed id does not fail the other lookups in its batch', async () => {
+    // Text that is no uuid never reaches the statement: it is the row that is not there.
+    client.on('select', { rows: [physical(idAt(10))] });
+    const [bad, good] = await inRequest(() =>
+      Promise.all([
+        repo().findById('not-a-uuid', { orgId: ORG }),
+        repo().findById(idAt(10), { orgId: ORG }),
+      ]),
+    );
+    expect(client.statements).toHaveLength(1);
+    expect(client.statements[0]?.values).toEqual([idAt(10), ORG, 2]);
+    expect(bad).toBeNull();
+    expect(good?.id).toBe(idAt(10));
+  });
+
+  test('an id the server refuses fails its own caller, and the rest are read again', async () => {
+    // A key no pre-check knows is bad (`bigint` text the column cannot hold): the statement is
+    // refused whole with a class 22 state, so the ids are re-sent in halves until the one stands
+    // alone. Every other caller gets its row, as the single statement it did not share would have.
+    const counters = entity('coalesce_test_counters', {
+      columns: { id: bigint().primaryKey(), label: text({ max: 8 }) },
+    });
+    const sent: (readonly unknown[])[] = [];
+    const query = (statement: { readonly values: readonly unknown[] }): Promise<unknown[]> => {
+      const ids = statement.values.slice(0, -1);
+      sent.push(ids);
+      return ids.includes('abc')
+        ? Promise.reject(
+            Object.assign(new RangeError('22P02'), { code: '22P02', severity: 'ERROR' }),
+          )
+        : Promise.resolve(ids.map((id) => ({ id: String(id), label: `n${String(id)}` })));
+    };
+    const unreached = (): Promise<never> => Promise.reject(new Error('a point read sends query'));
+    const refusing = { query, one: unreached, execute: unreached } as unknown as DbClient;
+    const pinned = postgresRepo(counters, { client: refusing });
+    const ids = ['1', '2', 'abc', '4', '5'];
+    const settled = await runWithContext(ctxOf({}), () =>
+      settledWithin(
+        ids.map((id) => pinned.findById(id)),
+        20,
+      ),
+    );
+    expect(settled.map((result) => result.status)).toEqual([
+      'fulfilled',
+      'fulfilled',
+      'rejected',
+      'fulfilled',
+      'fulfilled',
+    ]);
+    expect(
+      settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value?.id] : [])),
+    ).toEqual(['1', '2', '4', '5']);
+    expect((settled[2] as PromiseRejectedResult).reason).toMatchObject({ code: '22P02' });
+    // Halves, never one statement per id: five ids are five statements at most.
+    expect(sent.length).toBeLessThanOrEqual(5);
   });
 
   test('a row that no longer decodes fails its own caller, not the batch', async () => {

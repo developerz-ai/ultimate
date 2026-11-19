@@ -100,7 +100,7 @@ export function asset(path: AssetPath): string {
   if (problem !== undefined) {
     throw new AssetMissingError(
       `asset(${renderCauseValue(path)}): ${problem}`,
-      `asset('logo.svg')   // a file under apps/web/site/${ASSET_DIR}/ with one of: ${ASSET_EXTENSIONS.join(', ')}`,
+      `asset('${ASSET_DIR}/logo.svg')   // a file under apps/web/site/${ASSET_DIR}/ with one of: ${ASSET_EXTENSIONS.join(', ')}`,
     );
   }
   const resolver = holder[RESOLVER_SLOT];

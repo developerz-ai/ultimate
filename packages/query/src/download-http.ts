@@ -5,7 +5,7 @@
  * `content-disposition`, one `Range:` window, and `no-store` — the bytes are one actor's.
  */
 
-import { assert, queryPath, useContext } from '@ultimat3/core';
+import { assert, queryPath, recordDeprecatedCall, useContext } from '@ultimat3/core';
 import type { RateLimitDecision, Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 import {
   byteWindow,
@@ -46,6 +46,9 @@ export function toDownloadRoute(
     }
     const input = absentArraysOf(target.input, coerceQuery(target.input, rest));
     if (token === undefined) {
+      // The MINT is the call a caller makes; a serve is a player's fetch, often many `Range:`
+      // windows, of a URL this already counted — so only the mint counts, as a rows read does.
+      if (sunsetting !== undefined) recordDeprecatedCall('query', name);
       const minted = await mintDownloadUrl(target, input, {
         surface: 'http',
         clientAddress: request.ctx.ip,

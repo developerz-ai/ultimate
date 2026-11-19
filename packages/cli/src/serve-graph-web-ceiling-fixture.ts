@@ -299,5 +299,7 @@
  * and `action/src/replay-scope.ts`, the scope id and the check that compares it.
  * raised 1747 → 1748, measured 1748 (2026-11-19, multi-agent DX): the one on
  * `SERVING_ROLE_CEILING`, `cli/src/port-pair-free.ts`.
+ * raised 1748 → 1756, measured 1756 (2026-11-19, r9 sweep): the eight on `SERVING_ROLE_CEILING`.
+ * Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1748;
+export const WEB_ROLE_CEILING = 1756;

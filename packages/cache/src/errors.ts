@@ -70,7 +70,8 @@ export class CacheTagUnknownError extends UltimateError {
 /**
  * Where an app tunes a rung. The boot builds `lru` and `redis` with their defaults and takes a
  * replacement from `runtime.ts`'s `cacheTiers`: the one way, so every fix below names it. Limits
- * are not `app.config.ts` keys — they would be a second spelling of that same replacement.
+ * are not `app.config.ts` keys — they would be a second spelling of that same replacement — save
+ * `cache.defaultTtlMs`, which the boot passes into the rungs it builds (`optionHome` says so).
  */
 const RUNG_FILE = 'apps/web/runtime.ts';
 
@@ -151,10 +152,14 @@ const LIMIT_OWNER: Readonly<Record<string, string>> = {
 function optionHome(tier: string, option: string, example: string): string {
   // `hasOwn`: `tier` is a caller's string, and `constructor` must not read the prototype.
   const owner = Object.hasOwn(LIMIT_OWNER, tier) ? LIMIT_OWNER[tier] : tier;
-  const rung =
-    tier === 'lru' || tier === 'redis'
-      ? `; for the rung a boot builds, cacheTiers: [${owner}({ ${option}: ${example} })] in ${RUNG_FILE}`
-      : '';
+  const built = tier === 'lru' || tier === 'redis';
+  const rung = built
+    ? `; for the rung a boot builds, cacheTiers: [${owner}({ ${option}: ${example} })] in ${RUNG_FILE}`
+    : '';
+  // The one limit the boot also reads from config: it hands `cache.defaultTtlMs` to both rungs.
+  if (built && option === 'defaultTtlMs') {
+    return `${owner}(...)${rung}, or cache.defaultTtlMs in app.config.ts, which the boot passes to the lru and redis rungs it builds`;
+  }
   return `${owner}(...)${rung} — a constructor option, never an app.config.ts key`;
 }
 

@@ -4,7 +4,18 @@
 
 import { expect } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import { decimal, entity, integer, json, money, t, text, timestamp, uuid } from '@ultimat3/entity';
+import {
+  bigint,
+  decimal,
+  entity,
+  integer,
+  json,
+  money,
+  t,
+  text,
+  timestamp,
+  uuid,
+} from '@ultimat3/entity';
 import { remember } from './entity-conformance-entities';
 import { checkOver, idAt } from './entity-conformance-support';
 import type { EntityDriverCheck } from './entity-driver-conformance';
@@ -47,6 +58,10 @@ const rates = remember(
   entity('ec_a_rates', {
     columns: { id: uuid().primaryKey(), rate: decimal({ precision: 8, scale: 2 }) },
   }),
+);
+
+const totals = remember(
+  entity('ec_a_totals', { columns: { id: uuid().primaryKey(), n: bigint() } }),
 );
 
 const ORG = idAt('a1');
@@ -207,4 +222,31 @@ const extremes: readonly EntityDriverCheck[] = [
   ),
 ];
 
-export const AGGREGATE_CHECKS: readonly EntityDriverCheck[] = [...countBy, ...extremes];
+/** Nineteen digits: past it Postgres' own `avg(bigint)` has no fraction digits left to answer in. */
+const NINETEEN = 9_000_000_000_000_000_000n;
+
+const means: readonly EntityDriverCheck[] = [
+  checkOver(
+    { totals },
+    'avg over 19-digit bigints keeps six decimals',
+    async (db) => {
+      // Ten rows of N and one of N + 5: the mean is N + 5/11 = N.454545(45…), which rounds DOWN
+      // at six places — and up, wrongly, in a division that rounded once at seven first.
+      for (let index = 0; index < 11; index += 1) {
+        const n = (index === 10 ? NINETEEN + 5n : NINETEEN).toString();
+        await db.totals.insert({ id: idAt(index + 1), n });
+      }
+      expect(await db.totals.avg('n')).toBe('9000000000000000000.454545');
+      expect(await db.totals.aggregate({ mean: { fn: 'avg', column: 'n' } })).toEqual({
+        mean: '9000000000000000000.454545',
+      });
+      // Two rows one apart: the half the server's own scale dropped.
+      const pair = db.totals.andWhere('id', 'in', [idAt(10), idAt(11)]);
+      expect(await pair.avg('n')).toBe('9000000000000000002.500000');
+      expect(await db.totals.andWhere('n', 'lt', 0).avg('n')).toBeNull();
+    },
+    ['aggregate:avg'],
+  ),
+];
+
+export const AGGREGATE_CHECKS: readonly EntityDriverCheck[] = [...countBy, ...extremes, ...means];

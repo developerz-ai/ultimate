@@ -131,8 +131,10 @@ function buildNotation(tag: string, code: string): AmountNotation {
   let parenthesised = false;
   for (const { parts } of candidates) {
     for (const each of parts) {
-      if (each.type === 'currency') marks.add(each.value);
-      else if (each.type === 'minusSign') minus.add(each.value);
+      if (each.type === 'currency') {
+        // And its compatibility form: `ja-JP` writes the full-width ￥, a keyboard types ¥.
+        marks.add(each.value).add(each.value.normalize('NFKC'));
+      } else if (each.type === 'minusSign') minus.add(each.value);
       else if (each.type === 'literal' && each.value.includes('(')) parenthesised = true;
     }
   }

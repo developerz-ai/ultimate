@@ -168,6 +168,15 @@ returned none, so one operation has one wire shape. Every other action's body is
 what it was before the envelope existed, and its OpenAPI operation is unchanged; an enveloped one
 documents `data`, `records` and `removed`, and the header, generated from the declaration.
 
+### Instants — a `Date` output is a `Date` on the client
+
+An output holding a `Date` (`t.date`, an entity `timestamp()` row) names each one by path in
+`x-ultimate-dates`, on the plain and the enveloped 200 alike — `@ultimat3/query`'s rule — and the
+typed client hands back the `Date` the output type promises (`As of 2026-11`). The body and the
+OpenAPI document are unchanged: a client that ignores the header reads the ISO string it always
+read. A streamed `done` frame carries the same paths on a `dates:` field, which an SSE reader that
+does not know it ignores.
+
 ### Flight control — `clientFlight`, opt-in
 
 Same object as `@ultimat3/query`'s, installed the same way (`rpc({ baseUrl, flight })`), and the
@@ -208,7 +217,7 @@ An action may answer in pieces before it answers. `stream: <chunk schema>` besid
 
 | Caller | Gets |
 |---|---|
-| `accept: text/event-stream` on its route | `event: chunk` per yield (each parsed by `stream` first), then one `done` (the output) or `error` (the problem document); `x-accel-buffering: no`, never compressed |
+| `accept: text/event-stream` on its route | `event: chunk` per yield (each parsed by `stream` first), then one `done` (the output, its instants on a `dates:` field) or `error` (the problem document; a 5xx is reported as the JSON path's is); `x-accel-buffering: no`, never compressed |
 | JSON, MCP, `.job()`, `.as()`, a direct call | the generator drained: the output alone, one contract |
 | the typed client | `api.sayWords.stream(input)` — an `AsyncGenerator` of chunks whose return is the output, through core's `clientStream` (POST, the page's credentials, the same problem decode). Typed on a stream-declaring method only (`StreamClientMethod`); never retried |
 | the handler itself | `chunksRead()` — `true` only while a caller reads the chunks; `llm()` streams its one-attempt turn then, and is the repairing call otherwise |

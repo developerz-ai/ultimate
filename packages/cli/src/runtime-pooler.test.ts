@@ -40,7 +40,7 @@ const recordPools = (): { readonly urls: string[] } => {
 describe('startDb', () => {
   test('hands the boot its own DATABASE_POOLER', async () => {
     const pools = recordPools();
-    const { client } = startDb(external, { DATABASE_POOLER: 'transaction' });
+    const { client } = startDb(external, { DATABASE_POOLER: 'transaction' }, false);
 
     await client.ping();
 
@@ -49,10 +49,14 @@ describe('startDb', () => {
 
   test('and the replica the same answer', async () => {
     const pools = recordPools();
-    const { replica } = startDb(external, {
-      DATABASE_POOLER: 'transaction',
-      DATABASE_REPLICA_URL: 'postgres://reader@replica:5432/app',
-    });
+    const { replica } = startDb(
+      external,
+      {
+        DATABASE_POOLER: 'transaction',
+        DATABASE_REPLICA_URL: 'postgres://reader@replica:5432/app',
+      },
+      false,
+    );
 
     await replica?.ping();
 
@@ -63,7 +67,7 @@ describe('startDb', () => {
 
   test('unset sends the bounds', async () => {
     const pools = recordPools();
-    const { client } = startDb(external, {});
+    const { client } = startDb(external, {}, false);
 
     await client.ping();
 
@@ -71,7 +75,7 @@ describe('startDb', () => {
   });
 
   test('a typo refuses the boot', () => {
-    expect(() => startDb(external, { DATABASE_POOLER: 'txn' })).toThrow('X_ENV_MISSING');
+    expect(() => startDb(external, { DATABASE_POOLER: 'txn' }, false)).toThrow('X_ENV_MISSING');
   });
 });
 

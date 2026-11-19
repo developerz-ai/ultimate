@@ -25,7 +25,7 @@ import { limiterGateFor } from './limiter-gate';
 import { NO_TENANT, tenantKeyFrom } from './limits';
 import type { EnqueueOptions } from './outbox';
 import { jobsFacade } from './outbox';
-import { DEFAULT_RETRY } from './retry';
+import { resolvedRetry } from './retry-default';
 import { assertRetryJitter } from './retry-jitter';
 import type { JobSettled } from './settled';
 import { ON_SETTLED_TIMEOUT_MS } from './settled';
@@ -166,7 +166,10 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     kind: 'job',
     name,
     queue: definition.queue ?? DEFAULT_QUEUE,
-    retry: { ...DEFAULT_RETRY, ...definition.retry },
+    // A getter: the app's default is installed by the boot, after this handle was built.
+    get retry() {
+      return resolvedRetry(definition.retry);
+    },
     concurrency: concurrency.limit,
     whenBusy: concurrency.whenBusy,
     limiter: definition.limiter,

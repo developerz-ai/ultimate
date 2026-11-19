@@ -206,7 +206,15 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     // report says every tier cleared, and the LRU is stale again before the call returns.
     // The EDGE is not one of them here: it is purged last, below (`purgeEdge`).
     const farthestFirst = [...sortTiers(registry)].reverse();
-    for (const tier of farthestFirst.filter((one) => !isEdgeTier(one))) {
+    // Inbound, a SHARED read tier is skipped: the sender's own bust cleared it for the fleet, and
+    // a second one per replica deletes what readers refilled since and re-fences their fills. A
+    // tier is shared when it keeps a fleet fence (`CacheTier.fence`, omitted in-process) — the
+    // positive declaration, so an app tier that says nothing is still cleared. The edge is not
+    // skipped: a peer's purge after its own drop is the one that holds (`purgeEdgeAgain`).
+    const readTiers = farthestFirst.filter(
+      (one) => !isEdgeTier(one) && (emit || one.fence === undefined),
+    );
+    for (const tier of readTiers) {
       try {
         tiers.push(await tier.invalidateTags(tags));
         cleared.push(tier.name);

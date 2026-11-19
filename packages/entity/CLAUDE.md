@@ -34,6 +34,11 @@ A rule marked `†` has its full text in [`docs/history/entity-rules.md`](../../
 - **A numeric key has one spelling** (`keyOf`): batches, conflict targets and memory's uniques. **A null test on a whole money property reads `<p>.minor`; any other predicate on it, or an unknown operator, is refused at plan time (`predicate-screen.ts`).** Why: `docs/history/entity.md` (31.0.0).
 - **A PREDICATE's meaning is decided by the column's KIND** (`memory-match.ts`; `compareByKind` /
   `sameValueOfKind` exported for query); ONE numeric comparison, `numericOrder`; `LIKE` never a regex. †
+- **An operand Postgres would refuse is decided in `operandFor`, never bound** (`As of 2026-11`): text
+  that is no uuid equals no row (`equalsNoValue`, `uuid-text.ts`); `like` is text/char/bytea only; an
+  instant crosses in years 0001–9999 (writes too, `instant-range.ts` — never on read); an `in` list
+  ≥ `IN_LIST_AS_ARRAY_FROM` is one array bind (`pg-sql-in.ts`). `readByIds` isolates a class-22 id.
+- **`avg` is `averageSql`** — `averageDecimalText`'s integer arithmetic; never `round(avg())`.
 - **The Postgres driver is proved against a real Postgres** (`pg-driver.live.test.ts`, skipped without
   `TEST_DATABASE_URL`). A new operator, kind or write path is not done until it round-trips.
 - **A repository call rejects, never throws synchronously** (`tableFor`'s writes are `async`).

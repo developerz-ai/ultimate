@@ -10,8 +10,6 @@
 import {
   type Actor,
   type Clock,
-  type Counter,
-  counter,
   finiteOption,
   logger,
   recordConnection,
@@ -19,8 +17,10 @@ import {
   uuidV7,
 } from '@ultimat3/core';
 import { GapRepairs } from './channel-gaps';
+import type { Audience, DeliverRecordsTo } from './channel-tenant';
 import type { ChannelRecordsFrame } from './channel-wire';
 import { CLOSE } from './close-codes';
+import { channelFramesDropped } from './socket-channel-drops';
 import { DropWindow } from './socket-drops';
 import { DEFAULT_IDLE_TIMEOUT_MS } from './socket-idle';
 import { encode, type Frame } from './sync-protocol';
@@ -80,21 +80,10 @@ import {
 } from './socket-defaults';
 
 /**
- * Channel frames this process dropped under backpressure. A dropped `records` frame is now marked
- * and REPAIRED — the socket is sent `replay-gap` once it drains and re-reads the channel's catch-up
- * query (`channel_replay_gaps_total` counts those) — while a dropped `events` frame is ephemeral
- * by definition and is only counted. The two series side by side are the whole delivery story.
- *
- * Declared here rather than in `@ultimat3/core`'s `runtime-metrics.ts` because that file is the
- * series EVERY Ultimate process emits and the deploy chart scales on; this one exists only where
- * channels do. **No attributes**: a topic is client-chosen (`topic()` admits any
- * `[A-Za-z0-9_-]+` segment), so a per-topic label is an unbounded series count one socket can mint
- * — the topic goes in the log line, where cardinality is somebody else's index.
+ * `deliverRecords` to an `Audience`. A function rather than a parameter: `SocketRegistry` is public
+ * API, and a changed member signature is a break (`scripts/public-api.ts`). Set by the class below.
  */
-const channelFramesDropped: Counter = counter('channel_frames_dropped_total', {
-  unit: '{frame}',
-  description: 'Channel frames dropped by socket backpressure',
-});
+export let deliverRecordsTo: DeliverRecordsTo;
 
 export function actorIdOf(actor: Actor | null): string | null {
   return actor === null ? null : actor.id;
@@ -431,9 +420,20 @@ export class SocketRegistry {
    * marked for the next one. `deliver`'s twin, because only a records stream can be repaired.
    */
   deliverRecords(topic: string, epoch: string, frame: ChannelRecordsFrame): number {
+    return this.#records(topic, epoch, frame, undefined);
+  }
+
+  static {
+    deliverRecordsTo = (registry, topic, epoch, frame, to) =>
+      registry.#records(topic, epoch, frame, to);
+  }
+
+  /** A member `to` does not admit is sent `to.withheld` instead (`channel-tenant.ts`). */
+  #records(topic: string, epoch: string, frame: ChannelRecordsFrame, to?: Audience): number {
     const members = this.#byTopic.get(topic);
     if (!members) return 0;
     const text = encode(frame);
+    const other = to === undefined ? text : encode(to.withheld);
     let sent = 0;
     let dropped = 0;
     for (const socket of members) {
@@ -442,7 +442,7 @@ export class SocketRegistry {
         continue;
       }
       this.gapRepairs.repair(socket, topic);
-      if (socket.sendEncoded(text)) {
+      if (socket.sendEncoded(to === undefined || to.admits(socket.actor) ? text : other)) {
         sent += 1;
         continue;
       }

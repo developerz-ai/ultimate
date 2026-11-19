@@ -174,6 +174,23 @@ function jsonNote(node: SchemaNode): string | undefined {
     : undefined;
 }
 
+/**
+ * A default in the form the wire carries it: a `Date` as its ISO string, a sparse slot as `null`.
+ * Emitted verbatim it put a live object into a document every consumer serialises (OpenAPI, the
+ * MCP tool schema, the manifest, whose hash then disagreed with its own file). A value JSON cannot
+ * say at all (a `Map`, a `Set`, a bigint, a cycle) is left out: the field is still optional, and
+ * what `parse()` fills in is the declared value, untouched.
+ */
+function jsonDefault(value: unknown): { default?: unknown } {
+  if (value instanceof Map || value instanceof Set) return {};
+  try {
+    const text: string | undefined = JSON.stringify(value);
+    return text === undefined ? {} : { default: JSON.parse(text) };
+  } catch {
+    return {};
+  }
+}
+
 function convert(node: SchemaNode): JsonSchema {
   const refinements = node.refinements ?? [];
   const notes = [
@@ -186,7 +203,7 @@ function convert(node: SchemaNode): JsonSchema {
 
   const annotations: JsonSchema = {
     ...(described === undefined ? {} : { description: described }),
-    ...(node.hasDefault === true ? { default: node.default } : {}),
+    ...(node.hasDefault === true ? jsonDefault(node.default) : {}),
     ...(node.sensitive === true ? { writeOnly: true as const } : {}),
     ...(refinements.length === 0 ? {} : { 'x-ultimate-refinements': refinements }),
   };

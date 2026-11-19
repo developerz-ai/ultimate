@@ -42,6 +42,7 @@ import { redisClient, redisUrlSource } from '@ultimat3/core/redis';
 import type { Transport } from '@ultimat3/realtime/server';
 import type { Env } from './runtime-bindings';
 import { logCacheBus, selectCacheBus } from './runtime-cache-bus';
+import { defaultTtlOf } from './runtime-cache-ttl';
 
 /**
  * The subject every replica of every app publishes tag invalidations on. One subject and not one
@@ -154,7 +155,7 @@ const lazyRedis = (url: string, client: (url: string) => RedisLike): RedisLike =
 
 /** The boot's default lease, or nothing so the rung keeps its own. */
 const ttlOf = (options: CacheTiersOptions): { defaultTtlMs?: number } =>
-  options.defaultTtlMs === undefined ? {} : { defaultTtlMs: options.defaultTtlMs };
+  defaultTtlOf(options.defaultTtlMs);
 
 /**
  * One rung, or a refusal. A process that cannot build what it was configured to build must not
@@ -248,8 +249,11 @@ function warnDefaultRedis(built: readonly CacheTier[], env: Env): void {
  *
  * The outbound half publishes the wire tags this process just dropped; the inbound half applies
  * another instance's. A message this process published is delivered back to it on every real bus
- * and is applied again — deliberately, with no node-id filter: dropping an already-dropped key is
- * idempotent and free, while a dedup table is state that can be wrong. Re-emit is impossible by
+ * and is applied again — deliberately, with no node-id filter — to the tiers this process OWNS
+ * (the in-process rungs): there, dropping an already-dropped key is idempotent and free, while a
+ * dedup table is state that can be wrong. A SHARED rung is not free and is not re-busted: the
+ * sender cleared the one Redis every replica reads, so `@ultimat3/cache` applies an inbound
+ * broadcast to no tier the process does not own. Re-emit is impossible by
  * construction, not by a flag: `receiveInvalidationBroadcast` is the only entry point that
  * suppresses it, and `emit` is not a public parameter.
  */
@@ -261,6 +265,8 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
     'firstDialGraceMs',
     options.firstDialGraceMs ?? FIRST_DIAL_GRACE_MS,
   );
+  // Whatever the ladder builds: the key is wrong in `app.config.ts`, and is named as that key.
+  defaultTtlOf(options.defaultTtlMs);
   // Built before ANY of them is registered: a refusal halfway through a list would leave the
   // process-global registry holding the rungs that came first, with no release returned to drop
   // them. Registration order does not decide read order — `sortTiers` does, by `CACHE_TIERS`.

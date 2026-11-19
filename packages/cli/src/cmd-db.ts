@@ -41,7 +41,7 @@ import {
   selectSeeds,
 } from './db-seed';
 import { runGeneratedSeed } from './db-seed-generate';
-import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
+import { refuseBesideDev } from './dev-lock-live';
 import { MissingSubcommandError, UnknownCommandError } from './errors';
 import { type HeavyChild, withCheckoutLock } from './heavy';
 import { withJobDriver } from './jobs-driver';
@@ -256,6 +256,10 @@ async function runMigrate(
     // and reports its own table as drift, and neither result says what happened.
     const fork = migrationFork(await readMigrations(root));
     if (fork !== undefined) throw migrationForked(fork);
+    // An `x dev` holding the embedded database: PGlite takes no lock of its own, so this would
+    // apply into a directory that process has open, and its next write drops the tables applied.
+    const services = resolveServices(root, ctx.env);
+    if (services.db.mode === 'embedded') await refuseBesideDev(services.stateDir);
     const migrated = await runMigrations({ root, env: ctx.env });
     const report = migrated.report;
     // A hand-written or pulled migration reaches the dump here, with no `x db gen` in between.
@@ -313,14 +317,7 @@ async function runReset(ctx: CommandContext, root: string): Promise<CommandResul
   }
   // A running `x dev` has this directory open: deleting it under a live embedded Postgres is data
   // loss mid-write, not a reset. The dev lock is the one fact that says someone holds it.
-  const holder = liveDevLock(services.stateDir);
-  if (holder !== undefined) {
-    throw new DevAlreadyRunningError({
-      lock: holder,
-      stateDir: services.stateDir,
-      embeddedDb: true,
-    });
-  }
+  await refuseBesideDev(services.stateDir);
   const dataDir = join(services.stateDir, 'pgdata');
   await rm(dataDir, { recursive: true, force: true });
   // From the migrated template when it can be had (`db-reset-template.ts`); the migrate below runs

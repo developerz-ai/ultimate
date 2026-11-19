@@ -10,7 +10,7 @@ import type { PostgresClient } from '@ultimat3/db';
 import { dbExecutor, postgresClient, raw, sql } from '@ultimat3/db';
 import { postgresJobDriver } from './driver-pg';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
-import { JOBS_WAKE_CHANNEL } from './driver-pg-wake-sql';
+import { JOBS_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD } from './driver-pg-wake-sql';
 import { onEnqueued, setWakeLive, wakeIsLive } from './enqueue-signal';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
@@ -24,6 +24,8 @@ const LISTENER_APP = 'x-wake-live-worker';
 /** How long a job gets to start: a small part of the rest its worker is first seen taking. */
 const START_BUDGET_MS = 3_000;
 const IDLE_REST_MS = 60_000;
+/** How often the event loop's lag is sampled; a stall shows as a sample this much late. */
+const LAG_SAMPLE_MS = 20;
 
 const probeUrl = (): string => {
   const parsed = new URL(url ?? 'postgres://localhost/postgres');
@@ -97,12 +99,27 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
   test('a web pod enqueues, an idle worker pod starts the job; the listener is killed, and it does so again', async () => {
     // Issue #1167's two vantage points, read only on a miss: a second session, which says whether
     // Postgres delivered the notification at all, and the signal the worker's loop subscribes to.
+    // Each stamped `<queue>@<ms after its enqueue began>`, beside the worst stall of
+    // this process's event loop: a notification that arrived on time and was read late is a
+    // starved loop, which no bound on the wake can tell from a lost one.
+    let enqueuedAt = performance.now();
+    const stamp = (queue: string): string =>
+      `${queue === WAKE_REPROVE_PAYLOAD ? '<re-proof>' : queue}@${Math.round(performance.now() - enqueuedAt)}ms`;
     const witnessed: string[] = [];
-    const witness = await webPod.listen(JOBS_WAKE_CHANNEL, (queue) => witnessed.push(queue));
+    const witness = await webPod.listen(JOBS_WAKE_CHANNEL, (queue) => witnessed.push(stamp(queue)));
     cleanups.push(() => witness.unlisten());
     const heard: string[] = [];
-    const stopHearing = onEnqueued((queue) => heard.push(queue ?? '<any queue>'));
+    const stopHearing = onEnqueued((queue) => heard.push(stamp(queue ?? '<any queue>')));
     cleanups.push(() => Promise.resolve(stopHearing()));
+    let lagTick = performance.now();
+    let worstLagMs = 0;
+    // real-clock: samples the real event loop's stalls, which a fake timer cannot have.
+    const lagSampler = setInterval(() => {
+      const now = performance.now();
+      worstLagMs = Math.max(worstLagMs, now - lagTick - LAG_SAMPLE_MS);
+      lagTick = now;
+    }, LAG_SAMPLE_MS);
+    cleanups.push(() => Promise.resolve(clearInterval(lagSampler)));
 
     const wake = startQueueWake({ listener: workerPod, executor: executorFor(workerPod) });
     cleanups.push(() => wake.stop());
@@ -130,6 +147,10 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
     // No bound on how fast — a loaded machine broke that one (3 of 60 runs past 200 ms at load 85).
     const enqueueFromWeb = async (item: string): Promise<void> => {
       await until(async () => (await worker.stats()).pollDelayMs === IDLE_REST_MS);
+      witnessed.length = 0;
+      heard.length = 0;
+      worstLagMs = 0;
+      enqueuedAt = performance.now();
       await web.enqueue({
         name: handle.name,
         queue: 'default',
@@ -154,6 +175,8 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
             ),
             witnessed,
             heard,
+            gaveUpAtMs: Math.round(performance.now() - enqueuedAt),
+            worstEventLoopLagMs: Math.round(worstLagMs),
             wakeIsLive: wakeIsLive(),
             wakeLive: wake.live(),
             worker: await worker.stats(),

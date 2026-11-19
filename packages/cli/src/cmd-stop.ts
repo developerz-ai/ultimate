@@ -7,7 +7,15 @@ import { parseDuration } from '@ultimat3/time';
 import { requireAppRoot } from './app-root';
 import { stopSpec } from './cmd-stop-spec';
 import type { CliCommand, CommandContext } from './command';
-import { clearLock, isProcessAlive, liveDevLock, lockPath, parseLock, reusedPid } from './dev-lock';
+import {
+  clearLock,
+  clearStaleLock,
+  isProcessAlive,
+  liveDevLock,
+  lockPath,
+  parseLock,
+  reusedPid,
+} from './dev-lock';
 import { BadFlagError } from './errors';
 import { MIN_RELEASE_MS } from './hold';
 import { msg } from './messages';
@@ -96,15 +104,21 @@ const lockNames = async (stateDir: string, pid: number): Promise<boolean> => {
  * Signal the lock's holder and wait for both facts the next boot reads: the pid gone and the lock
  * no longer naming it. A dead pid whose lock survived was terminated without a drain (Windows, or a
  * crash mid-drain), and its lock is cleared here so `x stop` returning means `x dev` boots.
- * No live holder is not a failure: a stale lock is left for `preflight`, which owns that clear.
+ * No live holder is not a failure: a lock naming a dead pid is left for `preflight`'s clear, and
+ * one naming a pid the kernel reused is cleared here, with nothing signalled.
  */
 export async function stopDev(input: StopInput): Promise<StopResult> {
   const alive = input.alive ?? isProcessAlive;
   const lock = liveDevLock(input.stateDir);
   if (lock === undefined || !alive(lock.pid)) return { stopped: false };
   // A pid alone is not the holder: a kill -9 leaves the lock and the kernel reuses the number.
-  // Nothing is signalled and nothing cleared; the next `x dev`'s preflight clears it (`reusedPid`).
-  if (await reusedPid(lock)) return { stopped: false, stale: true };
+  // Nothing is signalled. The lock is cleared, under `preflight`'s own guard and only while it
+  // still holds the bytes judged here (`stealStale`): `x stop` returning means nothing holds the
+  // directory, and a lock left behind kept answering "stale" until the next `x dev`.
+  if (await reusedPid(lock)) {
+    clearStaleLock(input.stateDir, lock);
+    return { stopped: false, stale: true };
+  }
   const windows = (input.platform ?? process.platform) === 'win32';
   const started = performance.now();
   signal(lock.pid, input.kill ?? ((pid: number) => process.kill(pid, 'SIGTERM')));

@@ -123,7 +123,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 
 | File | Job |
 |---|---|
-| `serve.ts` / `serve-boot.ts` / `serve-entry.ts` / `serve-env.ts` | the production entry: `ROLE`, env bindings, `ROLE=migrate`; `X_APP_MODULE_LOAD_FAILED` † |
+| `serve.ts` / `serve-boot.ts` / `serve-entry.ts` / `serve-env.ts` | the production entry: `ROLE` (outside `config.roles`: `X_CONFIG_INVALID`; `migrate` exempt), env bindings, `ROLE=migrate`; `X_APP_MODULE_LOAD_FAILED` † |
 | `app-load-batch.ts` / `app-load-register.ts` | one hook module per app module, registered in order; registration state † |
 | `app-load-prebuilt.ts` / `build-registry.ts` / `build-registry-background.ts` | every serving role boots from the prebuilt registry (`x build`); stale → scan † |
 | `generate-refresh.ts` | `x g` refreshes the manifest only when a written file needs it |
@@ -140,7 +140,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `runtime-mfa-warning.ts` / `runtime-idempotency-scope.ts` | boot warnings: unsealed MFA secrets, a per-process idempotency store † |
 | `app-config-load.ts` | the ONE reader of `app.config.ts` (`loadAppConfig`) † |
 | `theme-brand.ts` | the ONE reader of an app's theme (`brand` in `apps/web/shared/theme.ts`) † |
-| `runtime-{jobs,realtime,notify-retention,cache,purge,replica}.ts` | the `app.config.ts` sections the boot obeys (`*Of(config)`) † |
+| `runtime-{jobs,realtime,notify-retention,cache,purge,replica,database-ssl}.ts` | the `app.config.ts` sections the boot obeys (`*Of(config)`); `database.ssl` adds `sslmode=require` only where the URL and `PGSSLMODE` state none † |
 | `runtime-cache-bus.ts` | which bus carries cache/ISR invalidations across replicas; one `cache.broadcast` boot line † |
 | `runtime-jobs.ts` (queues) | `WORKER_QUEUES` = the EXACT set, else `X_WORKER_QUEUE_UNKNOWN`; `-unserved.ts`: what no worker serves † |
 | `serve-retire.ts` / `dev-restart-retire.ts` | the worker retire (SIGUSR2, before an `x dev` restart's drain) † |
@@ -162,7 +162,8 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `local-cli.ts` / `local-cli-handoff.ts` | a global `x` hands over to the app's own CLI † |
 | `serve-prebuilt.ts` / `serve-prebuilt-paths.ts` | the image's prebuilt store; a boot that built anything logs `X_IMAGE_NOT_PREBUILT` † |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, watcher, reload, lock, port |
-| `cmd-stop.ts` / `cmd-stop-spec.ts` | `x stop`: the lock's pid only, SIGTERM, wait; `X_DEV_STOP_TIMEOUT` † |
+| `cmd-stop.ts` / `cmd-stop-spec.ts` | `x stop`: the lock's pid only, SIGTERM, wait; a reused pid's lock is cleared, unsignalled; `X_DEV_STOP_TIMEOUT` † |
+| `dev-lock-live.ts` | `refuseBesideDev`: `x db migrate\|reset\|status\|diagnostics\|recount` never open an embedded database a live `x dev` holds |
 | `dev-dashboard-guard.ts` / `loopback-host.ts` | `/_x`: loopback `Host` (`X_DEV_HOST_REFUSED`) and peer (`X_DEV_PEER_REFUSED`) † |
 | `dev-host.ts` / `dev-tls*.ts` | `x dev --host` (loopback default) and `--tls`: a cached self-signed cert in `.x/tls/`, WebCrypto + hand-written DER |
 | `doctor-pooler.ts` / `runtime-statement-bound.ts` | the statement bound and a pooler's refusal, one finding, one boot line † |

@@ -1,14 +1,24 @@
 // The streamed projection over the real pipeline: frames in order, a refusal before the handler is
 // the plain problem, a cancelled body aborts `ctx.signal`, a refused chunk is ONE error frame.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import { ctxOf, runWithContext, useContext, userActor } from '@ultimat3/core';
+import {
+  ctxOf,
+  InternalError,
+  memoryErrorReporter,
+  resetErrorReporting,
+  runWithContext,
+  useContext,
+  userActor,
+} from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
 import { action } from './action';
+import { InputInvalidError } from './errors';
 import { toOpenApiOperation, toRoute } from './http';
 import { wantsEventStream } from './http-stream';
 
@@ -49,6 +59,10 @@ const sayWords = () =>
   }).named('sayWords');
 
 describe('a stream-declaring action over HTTP', () => {
+  afterEach(() => {
+    resetErrorReporting();
+  });
+
   test('accept: text/event-stream answers chunk frames, then one done frame', async () => {
     const response = await call(serve(sayWords()), 'text/event-stream');
     expect(response.status).toBe(200);
@@ -103,6 +117,54 @@ describe('a stream-declaring action over HTTP', () => {
     expect(frames[0]).toBe('event: chunk\ndata: {"text":"fine"}');
     expect(frames[1]).toStartWith('event: error\n');
     expect(frames[1]).toContain('X_ACTION_STREAM_INVALID');
+  });
+
+  test('a handler that throws after its first chunk is reported once, like the JSON path', async () => {
+    const reporter = memoryErrorReporter();
+    installErrorReporter(reporter);
+    const fault = () =>
+      action({
+        input: t.object({ n: t.number }),
+        output: Out,
+        stream: Chunk,
+        policy: allow('words:say'),
+        async *handle() {
+          yield { text: 'first' };
+          throw new InternalError({ cause: 'the store went away', fix: 'bun run x -- doctor' });
+        },
+      }).named('sayWords');
+    const json = await call(serve(fault()), 'application/json');
+    expect(json.status).toBe(500);
+    expect(reporter.events).toHaveLength(1);
+    const viaJson = reporter.events[0];
+    reporter.reset();
+
+    const text = await (await call(serve(fault()), 'text/event-stream')).text();
+    expect(text).toContain('event: error\n');
+    expect(reporter.events).toHaveLength(1);
+    const viaStream = reporter.events[0];
+    expect(viaStream?.source).toBe('http');
+    expect(viaStream?.code).toBe(viaJson?.code);
+    expect(viaStream?.scope.operation).toBe(viaJson?.scope.operation);
+    expect(viaStream?.scope.requestId).not.toBeUndefined();
+  });
+
+  test("a 4xx thrown after the first chunk is the caller's and is not reported", async () => {
+    const reporter = memoryErrorReporter();
+    installErrorReporter(reporter);
+    const broken = action({
+      input: t.object({ n: t.number }),
+      output: Out,
+      stream: Chunk,
+      policy: allow('words:say'),
+      async *handle() {
+        yield { text: 'first' };
+        throw new InputInvalidError('sayWords', 'n ran past the words there are');
+      },
+    }).named('sayWords');
+    const text = await (await call(serve(broken), 'text/event-stream')).text();
+    expect(text).toContain('X_INPUT_INVALID');
+    expect(reporter.events).toEqual([]);
   });
 
   test('cancelling the body aborts ctx.signal inside the handler', async () => {

@@ -23,7 +23,11 @@ export const CONFIG_PINS_FILE = 'scripts/lib/config-reader-pins.ts';
  * decision the row was waiting for. `realtime.urlEnv` was the same defect and 22.0.0 spent it the
  * other way — by WIRING it: `@ultimat3/realtime`'s `selectTransport` dials the variable it names.
  */
-export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {};
+export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {
+  // Surfaced 2026-11-19, when a bare `.driver` stopped counting as a read (`qualifiedRead`).
+  'database.driver':
+    "one accepted value, 'postgres', which defineConfig validates and nothing has to choose by: the boot always builds the Postgres client. Waiting on a decision for next: delete the key (an app spelling it then fails to typecheck, a break) or give it a second driver",
+};
 
 /**
  * The SECOND table: leaf keys whose "readers" are a bare-name collision and not evidence at all.
