@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
 import { ROW_COMMANDS } from '../health';
+import { briefRowsOf } from './brief-rows';
 import { ROW_IDS, type RowId } from './health-rule';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
@@ -91,6 +92,10 @@ function replaceOnce(text: string, from: string, to: string): string {
 describe('unit · health-doc · the brief matches the ordered machine definitions', () => {
   test('every signal identity and full command agrees, in order', () => {
     assertBrief(brief);
+  });
+
+  test('its `## Rows` declares every table signal, in order, then § Finished', () => {
+    expect(briefRowsOf(brief)).toEqual([...ROW_IDS, 'finished']);
   });
 
   test.each([
