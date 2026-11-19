@@ -101,10 +101,20 @@ describe.skipIf(NO_FLOCK)('reserve', () => {
         body: `while (!(await Bun.file(${JSON.stringify(go)}).exists())) await Bun.sleep(5);`,
       }),
     );
-    const said = await Promise.all(children.map((one) => one.untilAny(['held', 'waiting'])));
-    expect(said.filter((word) => word === 'held')).toHaveLength(2);
+    await Promise.all(children.map((one) => one.untilAny(['held', 'waiting'])));
+    // A child that said `waiting` may be admitted a moment later, so the two holders are awaited
+    // rather than read off each child's first word. Each logs its admission before saying `held`.
+    const { promise: twoHeld, resolve } = Promise.withResolvers<void>();
+    let admitted = 0;
+    const allHeld = children.map(async (one) => {
+      await one.until('held');
+      admitted += 1;
+      if (admitted === 2) resolve();
+    });
+    await twoHeld;
+    expect(events(dir)).toHaveLength(2);
     await Bun.write(go, '');
-    await Promise.all(children.map((one) => one.child.exited));
+    await Promise.all([...allHeld, ...children.map((one) => one.child.exited)]);
     let used = 0;
     let peak = 0;
     for (const line of events(dir)) {
