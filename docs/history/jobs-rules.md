@@ -23,6 +23,22 @@ as it stood, verbatim; the package file keeps a one-line rule marked `†`. Wher
   barrel) is one Lua script per operation: a semantic change lands in memory, pg AND the scripts.
   Its client is core's `redisClient()`, never `Bun.redis`; `ERR_REDIS_CONNECTION_CLOSED` is
   `X_DRIVER_UNAVAILABLE` at once (`typedRefusals`), never a wait.
+- **Redis instants are the SERVER's, `As of 2026-11-19`.** With no `clock` injected, the driver binds
+  `''` as "now" and the scripts' `NOW_OF` reads `redis.call('TIME')` — claim, heartbeat (it adds the
+  visibility to the server's now), ack, nack (runAt = server now + delay, as pg's `now() + $4`),
+  stats, demand, settle take. Each pod's own clock decided leases before, so two pods skewed past
+  the renewal slack both held one row. An injected `clock` is still the one clock (the test seam);
+  enqueue `runAt` / `expiresAt` stay the caller's, as on pg. `driver-redis-clock.live.test.ts`.
+- **Redis ended rows EXPIRE, `As of 2026-11-19`**: `deadTtlMs` (default
+  `JOBS_DEAD_RETENTION_MS_DEFAULT`, 90 days, pg's `jobs.deadRetentionMs`; `0` keeps forever) is the
+  PEXPIRE on a failed/dead/expired row's hash, steps and fence; `failed:`/`dead:` set members past
+  it are trimmed lazily, on the next burial into that set and on `stats()` — no sweeper. A debounce
+  fence is one STRING key per debounced key (`{ns}:debounce:<key>`), since a HASH field cannot
+  expire and the old `:debounce` hash grew one field per key forever; the old hash is still read and
+  a field moves out when its row ends. `driver-redis-retention.live.test.ts`.
+- **The heartbeat's window starts at the CLAIM, not at the run** (`heartbeat.ts`'s `claimedAt`,
+  stamped before `driver.claim`): a job admitted an interval late renews at once; one admitted past
+  its whole window throws the lease loss before `started` and never runs its body.
 
 ## Settlement is fenced
 
@@ -136,3 +152,10 @@ as it stood, verbatim; the package file keeps a one-line rule marked `†`. Wher
 | `driver-pg-operator-sql.ts` / `driver-pg-settle-sql.ts` | their statements; `SQL_ACK` / `SQL_NACK` (no counter since 31.13.0) and `SQL_COUNTER_FLUSH`, the batch `counter-batch.ts` writes |
 | `driver-pg-outbox-sql.ts` | the `x_outbox` statements |
 | `driver-pg-demand-sql.ts` | `QUEUE_DEMAND_ROWS` and `SQL_QUEUE_DEMAND`; the scaler fixture's `SQL_SCALER_DEMAND` reads the same predicate |
+
+## Files rows merged: `onSettled` (2026-11-19)
+
+| File | Owns |
+|---|---|
+| `settled-types.ts` / `driver-settle.ts` / `settle-redrive.ts` / `scheduler-upkeep.ts` | what `onSettled` is handed; the settle fence and the `onSettled` debt contract; the leader's re-drive of lost debts; the leader's cadence (counter fold, re-drive) |
+| `driver-memory-settle.ts` / `driver-pg-settle-debt.ts` / `driver-redis-settle.ts` | the `onSettled` debt per driver: a map, `x_jobs.settle_owed`, the `owed` ZSET — held equal by `@ultimat3/testing`'s `SETTLE_DEBT_CHECKS` |

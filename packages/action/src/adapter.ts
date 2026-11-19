@@ -3,6 +3,7 @@
 // and group commit for a sink author's own `writeMany`. Never the `.` barrel: an app swaps a store
 // in `apps/<app>/runtime.ts`, so the callers here are the cli boot, `@ultimat3/testing` and authors.
 
+export { acceptedIdOf } from './audit-accepted';
 export type { BatchAuditSink, BatchedAuditSink, BatchedAuditSinkOptions } from './audit-batch';
 export {
   batchedAuditSink,

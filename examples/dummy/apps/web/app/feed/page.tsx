@@ -237,7 +237,18 @@ export const config = defineRoute({
   // not the queue's holding the write queued), and the action client's title for
   // `X_REPLAY_PRINCIPAL_MISMATCH`, the refusal of an offline write replayed under another session.
   // Raised 210.6kb → 211kb.
-  budget: { js: '211kb' },
+  // measured: 216404 B (2026-11-19; x build --target static) — why: +436 B, the feed island +260 B
+  // (96,473 → 96,733): `isRtl` reading a script subtag (`az-Arab` rtl), `t.has` true for a select
+  // or ordinal family authored only in plural forms, `navigate()`'s same-page fragment and the
+  // hotkey layer ignoring Enter while an IME composes (`keyCode 229`); the page boot +31 B (85,230
+  // → 85,261), `clientTransport` sending a write with no idempotency key once; the client router
+  // +45 B (29,910 → 29,955), a soft navigation to a malformed fragment (`#50%`) still runs scripts
+  // and fires `ultimate:navigated`, and `navigate()` to a fragment of the page on screen scrolls
+  // instead of refetching and disposing its islands; the inline hydration runtime +100 B, an island
+  // boots with the props inside its own wrapper, not the first script in the document with its id
+  // (a modal's island took the page's). Against 215,968, origin/main built the same way. Raised
+  // 211kb → 211.4kb.
+  budget: { js: '211.4kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

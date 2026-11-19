@@ -267,7 +267,15 @@ describe('WORKER_QUEUES — the exact queues this worker serves', () => {
 
   test('set, it replaces jobs.queues for this process and marks the set exact', () => {
     const config = workerConfigOf(
-      { jobs: { queues: ['bank-default'], concurrency: 4, visibilityTimeoutMs: 30_000 } } as never,
+      {
+        jobs: {
+          queues: ['bank-default'],
+          concurrency: 4,
+          visibilityTimeoutMs: 30_000,
+          maxAttempts: 3,
+          backoff: 'exponential',
+        },
+      } as never,
       { [WORKER_QUEUES_ENV]: 'banks' },
     );
     expect(config).toEqual({

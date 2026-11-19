@@ -331,7 +331,10 @@ is `kind: 'check'` and emits `slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`. The **same s
 places — nothing is translated — so a construct the two engines read differently is REFUSED where it
 is written, with the portable spelling in the `fix` where one exists (`\w` -> `[A-Za-z0-9_]`, `.` ->
 `[^\n\r]`) and the app-only predicate where none does (`\b` is a word boundary to `.test()` and a
-BACKSPACE to Postgres). `i` becomes `~*`; every other flag is refused.
+BACKSPACE to Postgres). `i` becomes `~*`; every other flag is refused. Also refused, because
+Postgres rejects the CHECK or answers it differently: an astral character (Bun writes `/😀/` as a
+surrogate pair `\uD83D\uDE00`), a repetition bound past 255 (`{256}`), a `-` straight after a range
+or `\d` inside a class unless it is last (`[a-z-9]`), and a quantified lookahead (`(?=a)*`).
 
 `isNull()` / `isNotNull()` are the only pair in the vocabulary TOTAL over NULL — `IS NULL` answers
 true or false for every input, and the app side reads an ABSENT key and a stored `null` as one value.
@@ -519,7 +522,7 @@ visibility, never its page.
 |---|---|
 | Never a float | `sum`/`avg` answer decimal **text** whatever the column was (the sum of a million `integer` rows is not an `integer`, and `Number()` past 2^53 loses digits); money answers `MoneyValue` in integer minor units; `min`/`max` answer the row's own type |
 | Empty set | `null` in every function, which is what SQL answers — a `0` would claim rows were seen. `count()` is `0`, and that is the distinction |
-| `avg` | one fixed scale (6 digits), rounded half away from zero from the exact rational, so both drivers land on one number |
+| `avg` | one fixed scale (6 digits), rounded half away from zero from the exact rational, so both drivers land on one number — at any magnitude: Postgres' own `avg(bigint)` keeps about sixteen significant digits, so the statement does the integer arithmetic itself (`averageSql`, `As of 2026-11`) |
 | Refused | `min`/`max` on `text` (ordering is the database's collation there and JS code-unit order here); `avg` over money (every answer would be a silent rounding of a fraction of a minor unit — `sum()` and `count()` instead, dividing where the rounding is a decision); an amount covering more than one currency **or scale**; a money total past ±2^53 minor units |
 | `approximateCount()` | `reltuples` out of `pg_class`, constant time, because `count(*)` walks every visible row and no index can make it cheaper. The whole **table** — a filtered chain, every tenant-scoped entity and every soft-deleting one (`reltuples` counts the deleted rows) are `X_APPROXIMATE_COUNT_FILTERED`, and `null` means the table has never been analysed |
 
@@ -540,9 +543,13 @@ An operand is read by the column's kind, once for both drivers (`predicate-opera
 | `timestamp()` | a `Date` or ISO text with `Z`/an offset | compared as that instant |
 | `timestamp()` | zoneless ISO text (`'2026-01-01'`, `'2026-01-01T10:00'`) | read as UTC in both drivers, never the server's `TimeZone` |
 | `timestamp()` | a number | `X_INVARIANT_VIOLATED` — epoch milliseconds are no instant Postgres parses |
+| `timestamp()` | a `Date` outside years 0001–9999, or text in year `0000` | `X_INVARIANT_VIOLATED` — Postgres reads an instant as ISO text with a four-digit year. A write is refused the same way, at its entry; a row the server already holds outside the range still reads (`As of 2026-11`) |
 | `date()` | a `Date` | its UTC calendar date (`plainDateUtc`), as `$parse` writes one |
 | `integer()` / `bigint()` | a fraction (`1.5`, `'1.5'`, `'1e1'`) | `X_INVARIANT_VIOLATED` — round it to the bound you mean |
-| `integer()` / `bigint()` / `decimal()` | any `like` | `X_INVARIANT_VIOLATED` — a number is matched by range |
+| every kind but `text()` / `char()` / `bytes()` | any `like` | `X_INVARIANT_VIOLATED` — a pattern matches text; a number is matched by range, a `uuid`, `boolean`, instant, date, `jsonb` or array by value (`As of 2026-11`) |
+| `uuid()` | any spelling Postgres parses — upper case, no hyphens, `{braces}` | the one value it names, in `eq`/`neq`/`in`, `findById` and a batched lookup |
+| `uuid()` | text that is no uuid, under `eq`/`neq`/`in` | a value no row equals: `eq`/`in` match nothing, `neq` every row; `findById` is `null`, `update`/`delete` are `X_NOT_FOUND` — never `22P02`. It is not bound, so the statement reads `1 = 0` (`As of 2026-11`) |
+| any | an `in` list of 32,768 values or more | one array parameter (`= any($1)`) on Postgres, so a list past the 65,535-bind limit answers. `bytes()`, `json()` and `arrayOf()` have no array form: past 65,535 values they are `X_INVARIANT_VIOLATED` in both drivers (`As of 2026-11`) |
 | `arrayOf()` | a list, under `eq`/`neq`/`in` | element by element, in order (`array_eq`) |
 
 ## A predicate tree: `andWhereNode`
@@ -767,7 +774,7 @@ export const find = async (orgId: string, q: string) => {
 
 | Rule | Detail |
 |---|---|
-| `.search(term)` asks the installed index | built-in: the `matches` predicate in the statement (today's SQL). Any other: ids first — 10,000 (`MAX_PAGE_SIZE`) or more hits are refused with `X_INVARIANT_VIOLATED`, never truncated — then the chain reads those rows with its own tenancy, soft delete, order and cursor |
+| `.search(term)` asks the installed index | built-in: the `matches` predicate in the statement (today's SQL). Any other: ids first — 10,000 (`MAX_PAGE_SIZE`) or more hits are refused with `X_INVARIANT_VIOLATED`, never truncated — then the chain reads those rows with its own tenancy, soft delete, order and cursor. The index is asked per tenant: the chain's `eq` on the tenant column, else the actor's org — and inside `crossTenant()` each tenant of an `andWhere('<tenant>', 'in', [...])`, never the actor's alone; a `crossTenant` search naming neither is refused (`X_INVARIANT_VIOLATED`) |
 | a document has a **version** | the row's `onUpdateNow()` instant, epoch ms. A searchable entity indexed by anything declares one — `updatedAt: timestamp().defaultNow().onUpdateNow()` — or `searchDocumentOf` and `reindex()` refuse (`X_INVARIANT_VIOLATED`) |
 | the version is STRICTLY increasing per row | a write of a searchable entity — a soft delete included — stores its version no earlier than the stored one + 1 ms: Postgres `greatest($now, updated_at + interval '1 millisecond')` in the `update` and the upsert's `on conflict` set; the memory driver in its merge (`advanceVersion`); a `defineDriver` store in ITS write, atomically per row — `DriverRepo.update`'s `advance` argument, and `advanceVersion(entity, stored, merged, (p) => plan.set.includes(p))` in its own `upsert` (`entityDriverConformance` refuses a store that skips either). So two writes inside one millisecond are two versions, and the index keeps the second. The column may run ahead of the clock by a millisecond per same-ms write. Other entities' `onUpdateNow()` columns are the clock's reading, unchanged |
 | keep only newer | an index applies a document only when its version is newer than what it holds for that id: a document, or the tombstone `remove(scope, ids, version)` leaves (a delete's: past the row's last version and no earlier than its instant). Equal = replay. EXCEPT a `committed` document — the write path's, `index(docs, { committed: true })` — which replaces a tombstone whatever its version: a key deleted and written again is live at once, inside one millisecond too. `reindex`'s reads are not `committed`, so a stale read never brings a deleted row back |

@@ -11,6 +11,7 @@ import { requireAppRoot } from './app-root';
 import { authSpec } from './cmd-auth-spec';
 import type { CliCommand, CommandContext } from './command';
 import { ok } from './command';
+import { refuseEmbeddedWriteBesideDev } from './dev-lock-live';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { openAppQueue } from './runtime-boot-ports';
@@ -25,6 +26,8 @@ export interface OpenAuthStore extends MfaSecretStore {
  * exits holding the PGlite lock breaks the next command run against this app.
  */
 async function openAppAuthStore(root: string, ctx: CommandContext): Promise<OpenAuthStore> {
+  // Sealing rewrites `x_users` rows through this boot: never as a second PGlite writer.
+  await refuseEmbeddedWriteBesideDev(root, ctx.env, ['auth', 'seal-mfa']);
   // `runtime.ts` read: sealing asks the master key, and a KMS app's key is its `secretSource`'s.
   const queue = await openAppQueue(root, ctx.env);
   return { adapter: postgresAuthAdapter(queue.db), close: () => queue.stop() };

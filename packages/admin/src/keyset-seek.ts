@@ -27,6 +27,29 @@ export interface SeekColumn {
   readonly instant: boolean;
   /** The bound's text back to what the handle compares: a `Date` for an instant. */
   readonly typed: (value: string) => unknown;
+  /**
+   * A sort over TWO physical parts, compared in order — a `money()` column is `[<p>.currency,
+   * <p>.minor]`, since amounts compare only within a currency. Its bound is `typed` to the pair
+   * `[currency, minor]`; `field` stays the property, which answers the NULL tests whole.
+   */
+  readonly parts?: readonly [string, string];
+}
+
+/** A money value as a cursor carries it: `<currency>:<minor>`. A currency is three letters. */
+export function moneyCursorText(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  if (!('currency' in value) || !('minor' in value)) return undefined;
+  const { currency, minor } = value;
+  if (typeof currency !== 'string') return undefined;
+  if (typeof minor !== 'number' && typeof minor !== 'bigint') return undefined;
+  return `${currency}:${String(minor)}`;
+}
+
+/** `moneyCursorText` read back, or `undefined` when the text is not one. */
+export function moneyCursorParts(text: string): readonly [string, number] | undefined {
+  const match = /^([^:]*):(-?\d+)$/.exec(text);
+  const minor = Number(match?.[2]);
+  return match === null || !Number.isSafeInteger(minor) ? undefined : [match[1] ?? '', minor];
 }
 
 const flip = (direction: Direction): Direction => (direction === 'asc' ? 'desc' : 'asc');
@@ -47,9 +70,22 @@ interface Segments {
   readonly walk: Direction;
 }
 
+/** A pair bound's two halves; a single column's bound is not one. */
+const pairOf = (column: SeekColumn, value: unknown): readonly [unknown, unknown] | undefined =>
+  column.parts !== undefined && Array.isArray(value) && value.length === 2
+    ? [value[0], value[1]]
+    : undefined;
+
 /** The terms that hold the boundary's class: equal, the same millisecond, or NULL. */
 const classOf = (column: SeekColumn, value: unknown): readonly SeekTerm[] => {
   if (value === null) return [{ field: column.field, op: 'is-null' }];
+  const pair = pairOf(column, value);
+  if (pair !== undefined && column.parts !== undefined) {
+    return [
+      { field: column.parts[0], op: 'eq', value: pair[0] },
+      { field: column.parts[1], op: 'eq', value: pair[1] },
+    ];
+  }
   if (column.instant && value instanceof Date) {
     return [
       { field: column.field, op: 'gte', value },
@@ -59,7 +95,27 @@ const classOf = (column: SeekColumn, value: unknown): readonly SeekTerm[] => {
   return [{ field: column.field, op: 'eq', value }];
 };
 
-/** Strictly past the class of a present `value`, in the walk's direction. NULLs never match. */
+/**
+ * Strictly past the class of a present `value`, in the walk's direction, as conjunctions read in
+ * order. NULLs never match. A pair is two: the rest of its first part, then every first part past.
+ */
+const pastClasses = (
+  column: SeekColumn,
+  value: unknown,
+  walk: Direction,
+): readonly (readonly SeekTerm[])[] => {
+  const pair = pairOf(column, value);
+  if (pair === undefined || column.parts === undefined) return [pastClass(column, value, walk)];
+  const op = walk === 'asc' ? 'gt' : 'lt';
+  return [
+    [
+      { field: column.parts[0], op: 'eq', value: pair[0] },
+      { field: column.parts[1], op, value: pair[1] },
+    ],
+    [{ field: column.parts[0], op, value: pair[0] }],
+  ];
+};
+
 const pastClass = (column: SeekColumn, value: unknown, walk: Direction): readonly SeekTerm[] => {
   if (walk === 'desc') return [{ field: column.field, op: 'lt', value }];
   if (column.instant && value instanceof Date) {
@@ -181,7 +237,9 @@ export async function seekPage(
     if (column.field !== column.idField) {
       out.push(...(await classRows(at, classOf(column, value), bound.id, room())));
     }
-    out.push(...(await valueRows(at, pastClass(column, value, walk), room())));
+    for (const past of pastClasses(column, value, walk)) {
+      out.push(...(await valueRows(at, past, room())));
+    }
     if (walk === 'asc') out.push(...(await nulls()));
   }
   const page = out.slice(0, query.limit);

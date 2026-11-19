@@ -48,12 +48,25 @@ export const DB_MESSAGES = {
   'cli.db.gen.newest': '  newest migration: {id}',
   'cli.db.gen.written': 'migration {id} generated',
   'cli.db.gen.writtenTables': 'migration {id} generated — tables: {tables}',
+  // A diff that needs a step outside the transaction writes TWO: a line naming one hid the other.
+  'cli.db.gen.writtenPair': 'migrations {id} and {followUp} generated',
+  'cli.db.gen.writtenPairTables': 'migrations {id} and {followUp} generated — tables: {tables}',
+  'cli.db.gen.editsUnchecked':
+    '  applied migrations were not compared with the ledger ({reason}) — x db status --json reports an edited one',
   // Exit 1 and a migration on disk at once: the summary carries the half the exit code hides.
   'cli.db.gen.writtenDumpFailed':
     'migration {id} generated and written — the schema dump was not; do not generate it again',
   'cli.db.migrate.applied': 'migrations applied',
   'cli.db.migrate.failed': 'migration failed',
   'cli.db.reset.done': 'database reset and migrated',
+  'cli.db.rollback.done': 'rolled back {count} migration(s): {ids}',
+  'cli.db.rollback.none': 'no applied migration to roll back',
+  'cli.db.rollback.failed': 'rollback failed — nothing past the failing migration was reversed',
+  'cli.db.rollback.deferredHalf':
+    '  {id} is the step x db gen writes beside {base} to run outside its transaction — {base} is still applied: x db rollback reverses it next',
+  // The file outlives its ledger row, so the migration is pending again: both next moves, named.
+  'cli.db.rollback.kept':
+    '  each file is still on disk and pending — x db migrate re-applies it; to drop the change, delete the .sql with its .snapshot.json and .hash, then x db gen',
   // Every seed counted per outcome, exactly as the backfill summary is: a replayed seed writes
   // nothing and skips everything, and a total that hid that would make the second run look idle.
   'cli.db.seed.done':

@@ -139,6 +139,49 @@ describe('keyboard', () => {
   });
 });
 
+describe('a lifted item a live update removes', () => {
+  test('a lifted item that leaves the groups is released: the next Space lifts another', async () => {
+    let groups: readonly SortGroup<string>[] = list;
+    const h = harness(list, undefined, { groups: () => groups });
+    expect(h.controller.key('a', key(' '))).toBe(true);
+    expect(h.controller.lifted()).toBe('a');
+    // Another user deleted the card: its node is gone, so no `focusout` ever releases it.
+    groups = [{ id: 'list', items: ['b', 'c'] }];
+    expect(h.controller.lifted()).toBeNull();
+    expect(h.controller.key('b', key(' '))).toBe(true);
+    expect(h.controller.lifted()).toBe('b');
+    h.controller.key('b', key('ArrowDown'));
+    h.controller.key('b', key(' '));
+    await settle();
+    expect(h.moves).toEqual([{ id: 'b', fromGroup: 'list', toGroup: 'list', toIndex: 1 }]);
+  });
+
+  test('a lifted item that leaves and comes back is not lifted again', () => {
+    let groups: readonly SortGroup<string>[] = list;
+    const h = harness(list, undefined, { groups: () => groups });
+    h.controller.key('a', key(' '));
+    h.controller.key('a', key('ArrowDown'));
+    groups = [{ id: 'list', items: ['b', 'c'] }];
+    // The surface's render reads `lifted()` on every change of the groups: here, once.
+    expect(h.controller.lifted()).toBeNull();
+    groups = list;
+    expect(h.controller.lifted()).toBeNull();
+    expect(h.order()).toEqual([['a', 'b', 'c']]);
+    expect(h.controller.key('b', key(' '))).toBe(true);
+    expect(h.controller.lifted()).toBe('b');
+  });
+
+  test('Alt+Arrow on another handle is a direct move again', async () => {
+    let groups: readonly SortGroup<string>[] = list;
+    const h = harness(list, undefined, { groups: () => groups });
+    h.controller.key('a', key(' '));
+    groups = [{ id: 'list', items: ['b', 'c'] }];
+    expect(h.controller.key('b', { key: 'ArrowDown', altKey: true })).toBe(true);
+    await settle();
+    expect(h.moves).toEqual([{ id: 'b', fromGroup: 'list', toGroup: 'list', toIndex: 1 }]);
+  });
+});
+
 describe('pointer', () => {
   test('the measured rows decide the index; the drop requests it once', async () => {
     const h = harness(list);

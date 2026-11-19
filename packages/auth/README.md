@@ -566,6 +566,77 @@ export const secondFactor = (challenge: string, code: string, ip: string) =>
   completeMfa(auth, challenge, code, { ip });   // what `login()` answers: actor, session, cookie
 ```
 
+**The built-in sign-in routes carry it for you: `mfaPath`, `As of 2026-11`.** `oauthLogin(auth)`
+and `identityProviderRoutes(auth, …)` own the callback, so there is no handler of yours to catch
+`X_MFA_REQUIRED` in. Give them the path of your second-factor page:
+
+```ts
+import {
+  type Auth,
+  clearMfaChallengeCookie,
+  completeMfa,
+  oauthLogin,
+  readMfaChallenge,
+} from '@ultimat3/auth';
+
+declare const auth: Auth;
+
+export const sso = oauthLogin(auth, { successPath: '/app', mfaPath: '/sign-in/mfa' });
+
+/** The POST behind `/sign-in/mfa`: the challenge arrives in the cookie the callback set. */
+export async function finishSso(request: Request, code: string): Promise<Response> {
+  const result = await completeMfa(auth, readMfaChallenge(request) ?? '', code);
+  const headers = new Headers({ location: '/app' });
+  headers.append('set-cookie', result.cookie);
+  headers.append('set-cookie', clearMfaChallengeCookie());
+  return new Response(null, { status: 303, headers });
+}
+```
+
+| `mfaPath` | An enrolled user's callback (OIDC redirect or SAML ACS) answers |
+|---|---|
+| set | `303` to `mfaPath`, `Set-Cookie: __Host-x_mfa=<sealed challenge>` — `HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=300` — and the state cookie cleared. No session yet |
+| omitted | `401 X_MFA_REQUIRED`, no challenge anywhere; the `auth.<oauth\|sso>.refused` log line's `fix` is the `mfaPath` call above. That user cannot finish through these routes |
+| not one normalised absolute path on this origin (`//host`, a scheme, `?`, `#`, `\`, `..`) | `X_CONFIG_INVALID`, at the call |
+
+The challenge travels in that cookie and nowhere else: never the redirect URL, a response body or a
+log line. Only an absent cookie is `readMfaChallenge(request) === null`: the reader opens nothing,
+so an expired or tampered challenge comes back as the string it is, and `completeMfa` refuses it
+(and `null ?? ''`) like any other bad challenge.
+
+**One challenge cookie, both halves public, `As of 2026-11-19`.** A sign-in handler of your own
+(a password form over `login()`) carries its challenge in the same cookie the built-in callbacks
+write, so one second-factor page serves every first leg:
+
+| Export | What it is |
+|---|---|
+| `mfaChallengeOf(error)` | the sealed challenge of an `X_MFA_REQUIRED`, `null` for every other throw |
+| `mfaChallengeCookie(challenge)` | the `Set-Cookie` line that holds it: `__Host-x_mfa`, `HttpOnly; Secure; Path=/; SameSite=Lax`, `Max-Age` the challenge's own five minutes |
+| `readMfaChallenge(request)` | the held challenge as sent, unverified (expiry is `completeMfa`'s), or `null` when no cookie came |
+| `clearMfaChallengeCookie()` | the `Set-Cookie` line that drops it, sent with the response that finishes the second leg |
+| `MFA_CHALLENGE_COOKIE` | the cookie's name, for a test that builds a `cookie:` header or asserts a `Set-Cookie` |
+
+```ts
+import { type Auth, login, mfaChallengeCookie, mfaChallengeOf } from '@ultimat3/auth';
+
+declare const auth: Auth;
+
+/** The first leg: a session, or the challenge held for `/sign-in/mfa`. */
+export async function signIn(email: string, password: string, ip: string): Promise<Response> {
+  const headers = new Headers();
+  try {
+    headers.append('set-cookie', (await login(auth, { email, password, ip })).cookie);
+    headers.set('location', '/app');
+  } catch (error) {
+    const challenge = mfaChallengeOf(error);
+    if (challenge === null) throw error;
+    headers.append('set-cookie', mfaChallengeCookie(challenge));
+    headers.set('location', '/sign-in/mfa');
+  }
+  return new Response(null, { status: 303, headers });
+}
+```
+
 | `completeMfa` is given | Answer |
 |---|---|
 | a live challenge and the current code, or an unused recovery code | `{ actor, session, token, cookie }`, `mfaSatisfied: true` |
@@ -704,7 +775,14 @@ and gets refresh tokens only if its `grantTypes` list `refresh_token` (else refr
 `unauthorized_client`). `registerClient` — the app's own path — refuses a redirect URI, grant,
 scope or resource that is empty or holds whitespace (`X_AUTH_CLIENT_INVALID`, naming the field):
 the Postgres store keeps each list space-joined, so such a value would read back as a different
-list. Full table and the rule each test holds:
+list. `/oauth/register` (`registration: 'dynamic'`) is anonymous, so it is bounded: at most 10
+`redirect_uris` of at most 2,048 characters each (else `invalid_client_metadata`, nothing stored),
+`scope` deduplicated, and every bucket of this server keyed by network (`ipKey`: an IPv6 /64 is
+one caller), registrations and metadata fetches alike. The client it writes has a `d_` id
+(`registerClient`'s are `c_`), and `purge` deletes a `d_` client created before the refresh idle
+window that no grant, code or device code names; a `c_` client is never purged. A metadata-document client carries
+`host`, its `client_id`'s host — the one thing on the consent page its author does not choose:
+show it beside `name`. Full table and the rule each test holds:
 [wiki Auth](https://github.com/developerz-ai/ultimate/wiki/Auth#authorization-server).
 
 | File | Job |
@@ -927,6 +1005,7 @@ export const runtime: NonNullable<ServeOptions['runtime']> = {
 |---|---|---|
 | path | `/auth/sso/:provider` | `/auth/sso/:provider/callback` |
 | success | `302` to the provider, `Set-Cookie: __Host-x_sso_<provider>` | `303` to `successPath`, `Set-Cookie: __Host-x_session` **and** the handshake cleared |
+| second factor owed | — | `303` to `mfaPath`, `Set-Cookie: __Host-x_mfa`, handshake cleared; with no `mfaPath`, `401 X_MFA_REQUIRED` ([MFA](#mfa--totp-and-recovery-codes)) |
 | failure | coded JSON, status per code: `code` + `title` + `docs`, one fixed `cause`, `fix: x errors explain <CODE> --json` | the same, handshake cleared either way |
 
 A **descriptor**, never a mounted handler — the same category as `mcpHttpRoute()`. `@ultimat3/http`

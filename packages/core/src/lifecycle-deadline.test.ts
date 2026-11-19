@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
 import { frozenClock, systemClock } from './clock';
 import {
+  beginWork,
   configureLifecycle,
   drain,
   drainDeadlineMs,
@@ -153,6 +154,37 @@ describe('the drain deadline', () => {
     stuck.resolve();
   });
 
+  test('a close hook still has time when in-flight work overran the deadline', async () => {
+    const lines: string[] = [];
+    jest.useFakeTimers();
+    configureLifecycle({
+      deadlineMs: 100,
+      logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
+    });
+    const release = beginWork(); // one request that never finishes
+    // What the OTLP flush would be given: the budget left when its hook starts. Read off the fake
+    // clock, so nothing here waits on the wall.
+    let leftAtStart = -1;
+    onShutdown(
+      'otlp',
+      (reason) => {
+        leftAtStart = reason.deadlineAt - performance.now();
+      },
+      { phase: 'close' },
+    );
+
+    const startedAt = performance.now();
+    await drainOver(drain('SIGTERM'), 200);
+    // The in-flight wait is cut short so the close hook gets its slice (100 / 5 = 20 ms); the
+    // WHOLE drain still ends inside the declared deadline.
+    expect(leftAtStart).toBeGreaterThanOrEqual(19);
+    expect(performance.now() - startedAt).toBeLessThanOrEqual(100);
+    const overran = lines.filter((line) => line.includes('X_SHUTDOWN_TIMEOUT'));
+    expect(overran).toHaveLength(1);
+    expect(overran[0]).toContain('in-flight');
+    release();
+  });
+
   // The default is ENFORCED, not absent: `jobs`, `realtime` and `cli` declare no budget, and a
   // deadline that bounded only the packages that happened to ask would be a mechanism claiming
   // more than it enforces — the worker pod the finding proved would still be SIGKILLed.
@@ -219,5 +251,40 @@ describe('the drain deadline', () => {
     expect(drift).toBeGreaterThan(0);
     expect(drift).toBeLessThan(deadlineMs * 2);
     expect(seen).toBeGreaterThan(systemClock.monotonic());
+  });
+
+  test("the reason carries where the in-flight wait ends: the deadline less the hooks' reserve", async () => {
+    configureLifecycle({ deadlineMs: 10_000 });
+    const seen: { deadlineAt: number; inflightUntil: number | undefined }[] = [];
+    onShutdown(
+      'probe',
+      (reason) => {
+        seen.push({ deadlineAt: reason.deadlineAt, inflightUntil: reason.inflightUntil });
+      },
+      { phase: 'accept' },
+    );
+    onShutdown('pool', () => undefined);
+
+    await drain('SIGTERM');
+
+    // One owner of the instant: a role that cuts its own work short measures back from it.
+    expect(seen).toHaveLength(1);
+    expect((seen[0]?.deadlineAt ?? 0) - (seen[0]?.inflightUntil ?? 0)).toBe(2_000);
+  });
+
+  test('with no inflight or close hook there is no reserve: the wait ends at the deadline', async () => {
+    configureLifecycle({ deadlineMs: 10_000 });
+    let gap: number | undefined;
+    onShutdown(
+      'probe',
+      (reason) => {
+        gap = reason.deadlineAt - (reason.inflightUntil ?? Number.NaN);
+      },
+      { phase: 'accept' },
+    );
+
+    await drain('SIGTERM');
+
+    expect(gap).toBe(0);
   });
 });

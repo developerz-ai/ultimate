@@ -2,6 +2,7 @@
 // never with a modifier, a two-key chord inside one window, and `mod+` that fires anywhere. Pure,
 // so `useHotkeys` and `ShortcutSheet` read ONE table and the binding and its legend cannot drift.
 
+import { isComposingKey } from './composing-key';
 import { invalidValueError } from './errors';
 
 /** One shortcut: the bindings that run it, its already-translated legend line, and the work. */
@@ -27,6 +28,8 @@ export interface HotkeyKeyEvent {
   readonly metaKey: boolean;
   readonly altKey: boolean;
   readonly isComposing: boolean;
+  /** Legacy `keyCode`: Safari's IME-confirming Enter says 229 and nothing else (`composing-key.ts`). */
+  readonly keyCode?: number;
   readonly editable: boolean;
   /** `event.timeStamp` — monotonic, which is all the chord window compares. */
   readonly at: number;
@@ -108,7 +111,7 @@ export function hotkeyAction(
   table: CompiledHotkeys,
 ): HotkeyAnswer {
   // An IME is mid-word: every key belongs to the composition, not the page.
-  if (event.isComposing || event.key === 'Process') return { row: undefined, state };
+  if (isComposingKey(event)) return { row: undefined, state };
   const mod = state.mac ? event.metaKey : event.ctrlKey;
   const otherMod = state.mac ? event.ctrlKey : event.metaKey;
   if (mod && !otherMod && !event.altKey) {

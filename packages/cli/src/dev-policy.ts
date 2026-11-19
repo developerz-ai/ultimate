@@ -6,8 +6,9 @@
 import { listActions } from '@ultimat3/action';
 import type { PolicyFact } from '@ultimat3/admin/dev';
 import type { NamedActor, Policy } from '@ultimat3/policy';
-import { policyMatrix, roleDefinitions, testActor } from '@ultimat3/policy';
+import { roleDefinitions, testActor } from '@ultimat3/policy';
 import { listQueries } from '@ultimat3/query';
+import { rowWithoutInput } from './policy-row';
 
 /**
  * One capability and the policy that decides it. A primitive's `capability` IS its policy's own
@@ -56,21 +57,23 @@ export function devPolicyGates(): readonly PolicyGate[] {
 /**
  * The matrix, actor by actor and capability by capability.
  *
- * Evaluated with no row on purpose: `/_x` asks whether an actor may reach a capability at all, and
- * there is no row to hand a row-level rule outside a real request. A rule that needs one therefore
- * shows its no-row verdict, and the trace says so rather than letting the cell read as a flat deny.
+ * Evaluated with no row and no input on purpose: `/_x` asks whether an actor may reach a
+ * capability at all, and outside a real request there is neither. A row-level rule shows its
+ * no-row verdict and the trace says so; a predicate that reads the input is `needs input` — the
+ * row `x policy explain` draws (`policy-row.ts`), never the deny `input: {}` used to produce.
  */
 export function devPolicyMatrix(): readonly PolicyFact[] {
   const actors = devActors();
   return devPolicyGates().flatMap((gate) => {
-    const matrix = policyMatrix(gate.policy, { actors, input: {} });
-    return matrix.rows.map(
+    const rows = actors.map((actor) => rowWithoutInput(gate.policy, actor));
+    return rows.map(
       (row): PolicyFact => ({
         permission: gate.permission,
         actorId: row.actor,
-        allowed: row.allowed,
+        allowed: row.allowed === true,
+        verdict: row.verdict,
         trace: [
-          `${gate.policy.label}: ${row.allowed ? 'allow' : 'deny'}`,
+          `${gate.policy.label}: ${row.verdict === 'needs-input' ? 'needs input' : row.verdict}`,
           ...(row.deciding === null ? [] : [`deciding rule: ${row.deciding}`]),
           ...(row.reason === null ? [] : [`reason: ${row.reason}`]),
           `enforced in: ${gate.usedBy.join(', ')}`,

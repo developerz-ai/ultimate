@@ -47,7 +47,7 @@ reads only the catalog still knows what it is holding.
 | 3. Parse | one statement, a read leader, no mutating keyword at statement level, no lock — clause **or** `pg_advisory_*` call — and no call into a banned function family, matched by prefix of the called name — quoted and schema-qualified spellings included — so a new spelling is refused by default and a column sharing a prefix is not; on a form with literals and comments blanked | `readonly-sql.ts` |
 | 4. Limits | `SET LOCAL statement_timeout`, a hard 1000-row ceiling (`limit` clamps into it, never past it) and a 256 KiB byte cap | `query-limits.ts` |
 
-**Banned function families** — each is a ban already made elsewhere in another spelling: `pg_notify` (= `NOTIFY`, a write keyword); server control (`pg_cancel_backend`, `pg_terminate_backend`, `pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote`, `pg_wal_replay_*`); replication (`pg_logical_*`, `pg_create_*`, `pg_drop_*`, `pg_replication_*` — advancing a slot is a write no `ROLLBACK` undoes); `pg_file_*`; `txid_current` / `pg_current_xact_id`; `pg_import_*`; SQL run from a string (`*_to_xml*`, `ts_stat`, `ts_rewrite`). `U&"…"` is refused, never decoded; a keyword is a whole identifier (`set2` is a column). Catalog VIEWS (`pg_replication_slots`) are read `from`, never called.
+**Banned function families** — each is a ban already made elsewhere in another spelling: `pg_notify` (= `NOTIFY`, a write keyword); server control (`pg_cancel_backend`, `pg_terminate_backend`, `pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote`, `pg_wal_replay_*`); replication (`pg_logical_*`, `pg_create_*`, `pg_drop_*`, `pg_replication_*`, `pg_copy_*`, `pg_sync_replication_*` — advancing a slot is a write no `ROLLBACK` undoes); base backups (`pg_backup_*`, `pg_start_backup`, `pg_stop_backup`); `pg_file_*`; `txid_current` / `pg_current_xact_id`; catalog writes (`pg_import_*`, `pg_restore_*`, `pg_clear_*`); `EXPLAIN ANALYSE` as `EXPLAIN ANALYZE`; SQL run from a string (`*_to_xml*`, `ts_stat`, `ts_rewrite`). `U&"…"` is refused, never decoded; a keyword is a whole identifier (`set2` is a column). Catalog VIEWS (`pg_replication_slots`) are read `from`, never called.
 
 Banned SQL functions are matched as a **prefix of a CALLED function name** — add a family, never a name (`pg_sleep_for` passed an exact `pg_sleep` ban). The unit is the call (`name(`), so a column `pg_sleep_for_seconds` is fine; the call scan keeps quoted-identifier content (`"pg_advisory_lock"(1)` is a call), the keyword scan blanks it. `pg_advisory_*` (a session lock survives layer 2's `ROLLBACK`; `packages/testing/src/db-integration.test.ts`), `pg_sleep*` (the one ban that holds on PGlite), `nextval`/`setval` (a consumed id is not rolled back).
 
@@ -407,6 +407,10 @@ tool the agent reads after `list_tenants` (`docs`, `list_resources`).
 
 So the app's `resolve` may narrow, and is the one place that does. Held by
 `tenant-semantics.test.ts`.
+
+**`tenant.arg` is reserved at every depth a tool reads.** `manage_resource` / `write_resource` /
+`delete_resource` strip it from `params` too, so a tool whose schema is open to extra keys never
+receives a second, different tenant beside the one it runs in.
 
 **Only `tools/call` names a tenant.** `resources/read`, `resources/list`, `prompts/*` and
 `tools/list` run as the PERSON: a `tenant.arg` sent in their params is ignored, `resolve` is never
@@ -775,11 +779,12 @@ A driver without `introspect` is `X_MCP_JOB_TOOL_INVALID`.
 |---|---|
 | `recipes: [{ name, title, description, steps: [{ tool, why, example? }], notes? }]` | each served as `docs://recipes/<name>` (`text/markdown`) and through a read-only `docs` tool. Every step's tool must be in the catalog (`X_MCP_RECIPE_TOOL_UNKNOWN`), every example must pass its input (`X_MCP_RECIPE_EXAMPLE_INVALID`), at boot, all offenders at once |
 | `recipes: await markdownRecipes({ dir })` | one `*.md` per recipe, body served verbatim. Name = file name; `---` `title:` / `description:` frontmatter, else the first `# ` heading and paragraph. A ```` ```call ```` fence — `tool {"arg": "value"}` — is a step, checked like one; a whole `"<name>"` value is a placeholder, any value at boot. A `docs://recipes/` link in the text that names no recipe is `X_MCP_RECIPE_LINK_DANGLING` |
-| `extraRecipes: (caller) => recipes` | the caller's own (a tenant's runbooks), asked per request: on `docs` as `source: 'caller'`, on `resources/list` and `resources/read` to that caller alone. Not boot-checked; one naming a tool the caller cannot call is not shown |
+| `extraRecipes: (caller) => recipes` | the caller's own (a tenant's runbooks), asked per request: on `docs` as `source: 'caller'`, on `resources/list` and `resources/read` to that caller alone (a throw is `-32603` on all three, audited `failed`). Not boot-checked; one naming a tool the caller cannot call is not shown |
 
 `docs({})` lists what this caller can follow; `docs({ name })` / `docs({ uri })` reads one;
 `docs({ q })` inlines the best match (3 points a word in name or title, 2 in description, 1 in the
-body) and names the nearest names on a miss — never an empty answer while a recipe is visible. A
+body) and names the nearest names on a miss — never an empty answer while a recipe is visible. `q`
+is at most 1000 characters (`X_INPUT_INVALID` beyond); a miss compares its first 16 words. A
 recipe is visible only when every step's tool is visible to the caller and its scope is on the
 token; hidden and unknown are the same not-found. An `UltimateError`'s `docs://recipes/<name>` is
 checked at load (`X_MCP_RECIPE_UNKNOWN`). In a contract test, `replayRecipes(server, recipes, {
@@ -799,8 +804,8 @@ lists resources per caller — what `extraRecipes` is built on.
 | output | `{ untrusted, isError }`: the remote's text inside `<untrusted source="mcp:<name>/<tool>">`, middle cut past `maxResultChars`; invisible format characters (`\p{Cf}`) stripped, then every `<` (and full-width `＜`, small `﹤`) written `&lt;` — no tag-shaped pattern left to bypass |
 | `expose` | default `false`: the actions are this app's, not its `/mcp`'s — `include: 'exposed'` leaves them out, while an in-app `agent()` is still offered them (`agents: true`). `expose: true` opts one remote server in, making this app's `/mcp` answer for a third party's tools |
 | `reverifyMs` | default 3,600,000: one verdict against the live server stands this long (read on `clock`, default `systemClock`), then the next call re-lists and holds it to the lock again — a remote that changes and announces nothing is caught within the hour |
-| `mcpClient({ name, url, dial, deadlineMs, auth })` | over core's `outbound()`; modern era first, the legacy handshake when the server refuses it for its era. A text-only result is a success. `X_MCP_REMOTE_REFUSED`'s `meta.failure` tells `transport` / `status` / `rpc` / `malformed` apart; a tool's own `isError` is a result. A 401 is `X_MCP_REMOTE_AUTH_REQUIRED` with `meta.resourceMetadata` |
-| `mcpOAuthClient({ clientId, clientName, redirectUri, scopes? })` | the upstream's OAuth: `begin(serverUrl)` reads RFC 9728 then RFC 8414 metadata and answers `{ authorizeUrl, handshake }` (PKCE S256 from `@ultimat3/auth`, `resource` per RFC 8707); `exchange(handshake, { code, state })` and `refresh(handshake, token)` answer `{ accessToken, refreshToken, expiresIn }`. `clientId` is the HTTPS URL this app serves `metadata()` at (a client ID metadata document). Keep the handshake server-side; return the token from `auth` |
+| `mcpClient({ name, url, dial, deadlineMs, auth })` | over core's `outbound()`; modern era first, the legacy handshake when the server refuses it for its era (a 400/404/405, an unknown-version/method/request JSON-RPC code, a body that is no answer — never a 429, 408 or 403; one handshake shared by concurrent first calls, and a failed one decides nothing). A `tools/list` whose cursor outlasts 50 pages is `malformed`, never a truncated list. A text-only result is a success. `X_MCP_REMOTE_REFUSED`'s `meta.failure` tells `transport` / `status` / `rpc` / `malformed` apart; a tool's own `isError` is a result. A 401 is `X_MCP_REMOTE_AUTH_REQUIRED` with `meta.resourceMetadata` |
+| `mcpOAuthClient({ clientId, clientName, redirectUri, scopes? })` | the upstream's OAuth: `begin(serverUrl)` reads RFC 9728 then RFC 8414 metadata and answers `{ authorizeUrl, handshake }` (PKCE S256 from `@ultimat3/auth`, `resource` per RFC 8707); `exchange(handshake, { code, state })` and `refresh(handshake, token)` answer `{ accessToken, refreshToken, expiresIn }`. When the server's refresh answer carries no `refresh_token`, `refresh` answers the one it was passed (RFC 6749 §6: the old one stays valid), so storing the answer never loses it; `null` only from `exchange`. `begin` refuses a server URL or an issuer that is not `https:` (loopback `http:` aside), before fetching its metadata. `clientId` is the HTTPS URL this app serves `metadata()` at (a client ID metadata document). Keep the handshake server-side; return the token from `auth` |
 
 ## Errors
 

@@ -155,7 +155,7 @@ services:
       start_period: 30s
       retries: 3
     # OFF by default (zero replicas). A sync node on this database hears committed changes only
-    # from a replicator it can reach, and this file runs none: booted anyway it is refused
+    # from a replicator it can reach, and this file runs none (the replicator below is at zero too): booted anyway it is refused
     # (X_REALTIME_TOPOLOGY). To turn live queries and channels on: declare realtime: { enabled:
     # true, transport: 'nats', urlEnv: 'NATS_URL' } in app.config.ts, add a NATS service and set the
     # SAME NATS_URL for web, sync and a replicator service (ROLE=replicator, exactly one), start
@@ -185,11 +185,14 @@ services:
     deploy:
       replicas: 1
 
-  # One per database: logical replication into the change feed.
+  # One per database: logical replication into the change feed. OFF by default (zero replicas),
+  # like sync and the chart's `replicator.enabled: false`: it needs wal_level=logical and a
+  # REPLICATION role a stock Postgres lacks, so ON here it crash-loops. Turn it on with sync (the
+  # steps above): set replicas: 1, never more.
   replicator:
     <<: *common
     environment: { ROLE: replicator }
     depends_on: { migrate: { condition: service_completed_successfully } }
     healthcheck: *metrics-probe
     deploy:
-      replicas: 1
+      replicas: 0

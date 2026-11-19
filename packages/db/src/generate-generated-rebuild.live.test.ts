@@ -123,6 +123,9 @@ describe.skipIf(!hasPostgres)('live · postgres · a column that becomes generat
       current: snapshotOf([docs(undefined)]),
       name: 'slug becomes generated',
       now: at,
+      // A rebuild is a drop: asked the two consents an ordinary column drop is asked.
+      allowDestructive: true,
+      rollingUnsafe: true,
     });
 
   test('the dependents are dropped BEFORE the column, never left to drop silently with it', () => {

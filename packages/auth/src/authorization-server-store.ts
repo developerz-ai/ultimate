@@ -11,6 +11,7 @@ import type {
   AuthTokenRecord,
   DeviceCodeRecord,
 } from './authorization-server-types';
+import { DYNAMIC_CLIENT_PREFIX } from './authorization-server-types';
 
 export type RefreshRotation =
   | { readonly outcome: 'rotated'; readonly grantId: string }
@@ -67,8 +68,11 @@ export interface AuthServerStore {
   /** Approved → consumed. `false` when another poll took it first. */
   consumeDevice(deviceCodeHash: string, at: Date): Promise<boolean>;
   /**
-   * Deletes codes, tokens and device codes expired before `before`, grants revoked before it, and
-   * grants last refreshed before `idleBefore` (past the idle window, so unrefreshable).
+   * Deletes codes, tokens and device codes expired before `before`, grants revoked before it,
+   * grants last refreshed before `idleBefore` (past the idle window, so unrefreshable), and every
+   * self-registered client (`DYNAMIC_CLIENT_PREFIX`) created before `idleBefore` that no grant,
+   * code or device code names — judged before this run deletes any of those, so such a client goes
+   * on the next run. A client the app registered is never deleted.
    */
   purge(before: Date, idleBefore: Date): Promise<number>;
 }
@@ -184,6 +188,17 @@ export function memoryAuthServerStore(): AuthServerStore {
           purged += 1;
         }
       };
+      // First, against the rows as they stand: the Postgres statement's CTEs share one snapshot.
+      const named = new Set<string>(
+        [...grants.values(), ...codes.values(), ...devices.values()].map((row) => row.clientId),
+      );
+      sweep(
+        clients,
+        (row) =>
+          row.clientId.startsWith(DYNAMIC_CLIENT_PREFIX) &&
+          row.createdAt.getTime() < idleBefore.getTime() &&
+          !named.has(row.clientId),
+      );
       sweep(codes, (row) => expired(row, before));
       sweep(tokens, (row) => expired(row, before));
       sweep(devices, (row) => expired(row, before));

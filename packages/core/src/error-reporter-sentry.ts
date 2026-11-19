@@ -1,10 +1,12 @@
 // Single responsibility: one `ErrorReporter` that speaks the Sentry ENVELOPE wire format. A
-// serialisation, not a vendor (axiom 7, exactly as `metrics-text.ts` is to Prometheus): the format
-// is documented and several self-hostable monitors ingest it. Nothing here names a host, a project
-// or an organisation — the DSN is the app's own typed env, passed in at wiring time.
+// serialisation, not a vendor (axiom 7, as `metrics-text.ts` is to Prometheus): several
+// self-hostable monitors ingest it. Nothing here names a host, a project or an organisation — the
+// DSN is the app's own typed env, passed in at wiring time.
 
+import { retryAfterSecondsOf } from './client-retry-after';
+import { systemClock } from './clock';
 import { monitorFingerprint } from './error-fingerprint';
-import { renderThrowable } from './error-render';
+import { describeValue, renderThrowable } from './error-render';
 import type { ErrorReport, ErrorReporter, ErrorSeverity } from './error-reporter';
 import {
   admitted,
@@ -50,10 +52,11 @@ export function parseSentryDsn(dsn: string): SentryDsn {
   try {
     url = new URL(dsn);
   } catch {
+    // Never echoed: a legacy `public:secret@` DSN carries a credential, as an OTLP header does.
     throw new ErrorReporterDsnInvalidError({
-      cause: `"${dsn}" is not a URL`,
+      cause: `the DSN (${describeValue(dsn)}) is not a URL`,
       fix: DSN_FIX,
-      meta: { dsn },
+      meta: { dsn: describeValue(dsn) },
     });
   }
   const segments = url.pathname.split('/').filter((part) => part.length > 0);
@@ -63,10 +66,15 @@ export function parseSentryDsn(dsn: string): SentryDsn {
     url.username === '' ||
     projectId === undefined
   ) {
+    // The userinfo dropped, as in the cause: the key and any legacy secret stay out of `meta`.
+    // Only an HTTP URL HAS a userinfo to drop: a scheme-less `key:secret@host/1` parses as scheme
+    // `key:` over an opaque path `secret@host/1`, so it is described, never spelled.
+    const http = url.protocol === 'https:' || url.protocol === 'http:';
+    const where = http ? `${url.protocol}//${url.host}${url.pathname}` : describeValue(dsn);
     throw new ErrorReporterDsnInvalidError({
-      cause: `"${url.protocol}//${url.host}${url.pathname}" has no publicKey, no projectId or a non-HTTP scheme`,
+      cause: `"${where}" has no publicKey, no projectId or a non-HTTP scheme`,
       fix: DSN_FIX,
-      meta: { dsn },
+      meta: { dsn: where },
     });
   }
   const prefix = segments.length === 0 ? '' : `/${segments.join('/')}`;
@@ -240,6 +248,59 @@ export function isLocalErrorSink(reporter: ErrorReporter): boolean {
   return local.has(reporter);
 }
 
+// Delivery READS the monitor's answer: a refusal said once per status (a revoked key is a monitor
+// never connected), a 429's pause honoured so an error storm does not hammer it, every body released.
+
+/** A 429 that states no delay: the pause Sentry's own SDKs take. */
+const UNSTATED_PAUSE_SECONDS = 60;
+
+/** One envelope POST, fire-and-forget: never awaited, never thrown. */
+type EnvelopeSend = (init: RequestInit) => void;
+
+/**
+ * `url` is the envelope endpoint `parseSentryDsn` derived — origin, path and project id, never the
+ * key — so it is safe in a log line. The pause reads real monotonic time: it is a wait, not a date.
+ */
+function envelopeSender(send: typeof globalThis.fetch, url: string): EnvelopeSend {
+  const warned = new Set<number>();
+  let pausedUntil = Number.NEGATIVE_INFINITY;
+  const answered = (answer: unknown): void => {
+    // A real `fetch` resolves a `Response`; anything else is a stub with nothing to read.
+    if (!(answer instanceof Response)) return;
+    void answer.body?.cancel().catch(() => undefined);
+    if (answer.ok) return;
+    let retryAfterSeconds: number | undefined;
+    if (answer.status === 429) {
+      const headers = answer.headers;
+      retryAfterSeconds =
+        retryAfterSecondsOf(headers.get('retry-after'), headers.get('date')) ??
+        UNSTATED_PAUSE_SECONDS;
+      pausedUntil = systemClock.monotonic() + retryAfterSeconds * 1000;
+    }
+    if (warned.has(answer.status)) return;
+    warned.add(answer.status);
+    logger.warn('error reporter delivery refused; events are being dropped', {
+      url,
+      status: answer.status,
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    });
+  };
+  return (init) => {
+    if (systemClock.monotonic() < pausedUntil) return;
+    // `.catch` after `.then`: a throw reading the answer is logged too, never an unhandled rejection.
+    void send(url, init)
+      .then(answered)
+      .catch((failure: unknown) => {
+        logger.warn('error reporter delivery failed', {
+          url,
+          // `renderThrowable`: this is the handler that keeps a monitor outage from becoming a
+          // second failure, so rendering the rejection may not raise one of its own.
+          error: renderThrowable(failure),
+        });
+      });
+  };
+}
+
 /**
  * Fire-and-forget on purpose. A report is not the request, and awaiting the monitor would add its
  * latency — and its outages — to every failure the app already knows how to answer.
@@ -247,7 +308,7 @@ export function isLocalErrorSink(reporter: ErrorReporter): boolean {
 export function sentryErrorReporter(options: SentryReporterOptions): ErrorReporter {
   const dsn = parseSentryDsn(options.dsn);
   const rate = screenSampleRate(options.sampleRate);
-  const send = options.fetch ?? globalThis.fetch;
+  const deliver = envelopeSender(options.fetch ?? globalThis.fetch, dsn.envelopeUrl);
   const client = options.clientName ?? 'ultimate';
   const auth = `Sentry sentry_version=7, sentry_client=${client}, sentry_key=${dsn.publicKey}`;
   const reporter: ErrorReporter = {
@@ -273,17 +334,10 @@ export function sentryErrorReporter(options: SentryReporterOptions): ErrorReport
         });
         return;
       }
-      void send(dsn.envelopeUrl, {
+      deliver({
         method: 'POST',
         headers: { 'content-type': 'application/x-sentry-envelope', 'x-sentry-auth': auth },
         body,
-      }).catch((failure: unknown) => {
-        logger.warn('error reporter delivery failed', {
-          url: dsn.envelopeUrl,
-          // `renderThrowable`: this is the `.catch` that keeps a monitor outage from becoming a
-          // second failure, so rendering the rejection may not raise one of its own.
-          error: renderThrowable(failure),
-        });
       });
     },
   };

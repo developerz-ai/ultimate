@@ -28,7 +28,7 @@ describe('unit · the sign-in generator’s exercise entries', () => {
       [
         'export const exercise = defineExercise({',
         "  createSession: { off: 'needs a real password; the pass draws one no account holds' },",
-        "  confirmSession: { off: 'answers the challenge createSession holds; the pass holds none' },",
+        "  confirmSession: { off: 'answers the challenge the first leg holds; the pass holds none' },",
         '});',
         '',
       ].join('\n'),

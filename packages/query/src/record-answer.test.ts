@@ -4,20 +4,23 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import {
+  DATES_HEADER,
   decodeRecordEnvelope,
+  installLogSink,
   RECORDS_HEADER,
   RECORDS_OPENAPI_HEADER,
   recordEnvelopeSchema,
+  wireDatePaths,
 } from '@ultimat3/core';
 import { clearRegistry, entity, integer, text, uuid } from '@ultimat3/entity';
-import { defineHttpConfig, httpServer } from '@ultimat3/http';
+import { defineHttpConfig, httpServer, WIRE_DATES_MAX_BYTES } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t, toWireOutputSchema } from '@ultimat3/schema';
 import { toQueryRoute } from './http';
 import { toQueryOpenApiOperation } from './openapi';
 import type { AnyQuery } from './query';
 import { query } from './query';
-import { recordAnswerFor } from './record-answer';
+import { recordAnswerFor, recordRowAnswerFor } from './record-answer';
 import { from } from './source';
 
 const ORG = '00000000-0000-4000-8000-000000000001';
@@ -185,5 +188,71 @@ describe('the record envelope in the OpenAPI document', () => {
       expect(armsOf(ok)).toHaveLength(2);
       expect(ok['headers']).toBeUndefined();
     }
+  });
+});
+
+// A `string | Date` column shares one pattern between text and an instant, so no path folds: one
+// exact path per instant made the header as long as the answer, and a default nginx refuses a
+// response whose headers outgrow its buffer. Past the cap there is no header at all.
+describe('x-ultimate-dates stays under the header cap', () => {
+  const AT = new Date('2026-03-04T05:06:07.089Z');
+  type Mixed = { readonly orgId: string; readonly id: string; readonly value: string | Date };
+  const mixed = (instants: number): readonly Mixed[] =>
+    Array.from({ length: instants * 2 }, (_, index) => ({
+      orgId: ORG,
+      id: String(index).padStart(6, '0'),
+      value: index % 2 === 0 ? `label-${index}` : AT,
+    }));
+  const series = (rows: readonly Mixed[]): AnyQuery =>
+    query({
+      input: Input,
+      policy: allow('public'),
+      sql: ({ orgId }) => from<Mixed>('points', rows).where({ orgId }).orderBy('id'),
+    }).named('recordFeed');
+  const logged = async (run: () => Promise<void>): Promise<readonly string[]> => {
+    const lines: string[] = [];
+    const release = installLogSink((line) => void lines.push(line));
+    try {
+      await run();
+    } finally {
+      release();
+    }
+    return lines.filter((line) => line.includes('http.wire_dates_dropped'));
+  };
+
+  test('past the cap a read carries no header, the body unchanged, one warn per query', async () => {
+    const rows = mixed(2_000);
+    expect(wireDatePaths(rows)?.length).toBeGreaterThan(WIRE_DATES_MAX_BYTES);
+    const lines = await logged(async () => {
+      for (let call = 0; call < 2; call += 1) {
+        const response = await read(series(rows));
+        expect(response.status).toBe(200);
+        expect(response.headers.get(DATES_HEADER)).toBeNull();
+        expect(await response.text()).toBe(JSON.stringify(rows));
+      }
+    });
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({ operation: 'recordFeed', paths: 2_000 });
+  });
+
+  test('under the cap the same shape names every instant', async () => {
+    const rows = mixed(10);
+    const header = (await read(series(rows))).headers.get(DATES_HEADER);
+    expect(header).toBe(wireDatePaths(rows) ?? null);
+    expect(header?.length).toBeLessThanOrEqual(WIRE_DATES_MAX_BYTES);
+  });
+
+  test('the envelope and the single row follow the same cap', () => {
+    const wide = { ...ROW_A, points: mixed(2_000) };
+    for (const response of [
+      recordAnswerFor(Post.$schema)([wide]),
+      recordRowAnswerFor(Post.$schema)(wide),
+      recordRowAnswerFor(undefined)(wide),
+    ]) {
+      expect(response.headers.get(DATES_HEADER)).toBeNull();
+    }
+    expect(recordAnswerFor(Post.$schema)([wide]).headers.get(RECORDS_HEADER)).toBe('1');
+    const small = { ...ROW_A, at: AT };
+    expect(recordRowAnswerFor(Post.$schema)(small).headers.get(DATES_HEADER)).not.toBeNull();
   });
 });

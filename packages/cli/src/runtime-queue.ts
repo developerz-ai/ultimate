@@ -35,9 +35,12 @@ import {
   resetJobsFacade,
   setJobsFacade,
 } from '@ultimat3/jobs';
+import { loadAppConfig } from './app-config-load';
 import { applyLockedSchema, ensureSchema } from './framework-schema-apply';
 import { appExtensions } from './migration-extensions';
 import type { DevServices } from './runtime-bindings';
+import { databaseSslOf, withRequiredTls } from './runtime-database-ssl';
+import { installJobsRetry } from './runtime-jobs';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { QUEUE_PORT_BINDINGS } from './runtime-port-bindings-queue';
 import { installPorts, type PortRelease, suppliedOr } from './runtime-ports';
@@ -97,10 +100,17 @@ export interface RunningQueue {
 export function startDb(
   services: DevServices,
   env: ReplicaEnv,
+  /**
+   * `database.ssl` (`databaseSslOf`). REQUIRED for `env`'s reason: defaulted, the switch was
+   * validated, documented and read by nothing, and a pool to a managed Postgres went out in clear.
+   */
+  ssl: boolean,
   // A seam for the one failure after the primary exists: the standby refused at construction.
   attach: typeof attachReplica = attachReplica,
 ): StartedDb {
   const binding = services.db;
+  // The primary and the standby alike, and never over a mode the URL states (`withRequiredTls`).
+  const tls = (url: string): string => (ssl ? withRequiredTls(url, env) : url);
   // `DATABASE_POOL_MAX` from the env the boot was HANDED, for `env`'s reason below. Installing a
   // client here means `defaultClient()` — the only other reader — never runs in a served role, so
   // without this the operator's cap reached no booted process and every role ran its
@@ -118,10 +128,11 @@ export function startDb(
           dataDir: pgliteDataDir(binding.url),
           extensions: () => appExtensions(services.root),
         })
-      : postgresClient({ url: binding.url, profile, env });
+      : postgresClient({ url: tls(binding.url), profile, env });
   let attached: ReturnType<typeof attachReplica>;
   try {
-    attached = attach(client, replicaUrlFor(binding, env), profile);
+    const standby = replicaUrlFor(binding, env);
+    attached = attach(client, standby === undefined ? undefined : tls(standby), profile);
   } catch (error) {
     // The primary is built and nothing will hold it: close it here, and say so if that fails too,
     // without letting the close's answer replace the error the caller is handed.
@@ -348,7 +359,11 @@ export async function startQueue(
   ) {
     throw poolerSessionRequired('a step that applies migrations');
   }
-  const { client: db, replica } = startDb(services, env);
+  // Here, the boot EVERY entry point shares, and not in `startServices` alone: `x tasks run`,
+  // `x jobs` and `x db backfill` boot only this, and a row they enqueued was stamped with the
+  // framework's `max_attempts` while the worker retried by the app's (`jobs.maxAttempts`).
+  installJobsRetry(await loadAppConfig(services.root));
+  const { client: db, replica } = startDb(services, env, await databaseSslOf(services));
   try {
     // Pay the Postgres boot here, so the first request is not the slow one and a broken database
     // fails at boot rather than on some later query.

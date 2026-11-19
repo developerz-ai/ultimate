@@ -223,8 +223,8 @@ export class MessageStream {
       toolCalls: [...this.toolCalls],
       malformed: [...this.malformed],
       // A refusal detail is a refusal whatever the stop reason says. `parseStopReason` answers
-      // `end_turn` for a spelling this build has never seen, and every consumer branches on the
-      // REASON, so the pair would read as a complete answer that happens to be empty.
+      // `max_tokens` for a spelling this build has never seen, and every consumer branches on the
+      // REASON, so the pair would read as a cut-off answer to continue rather than a refusal.
       stopReason: this.stopDetails === undefined ? this.stopReason : 'refusal',
       stopDetails: this.stopDetails,
       usage: this.usage,

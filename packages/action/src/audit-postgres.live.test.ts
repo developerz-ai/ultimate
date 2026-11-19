@@ -4,12 +4,19 @@
 // fails its own call alone. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { PgExecutor } from '@ultimat3/core';
 import { ctxOf, probeDatabaseName, sweepProbeDatabases, userActor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { dbExecutor, postgresClient, raw } from '@ultimat3/db';
 import type { AuditRecord } from './audit';
 import { UNREPRESENTABLE } from './audit-input';
-import { postgresAuditSink, SQL_AUDIT_TABLE } from './audit-postgres';
+import {
+  postgresAuditSink,
+  SQL_AUDIT_INSERT,
+  SQL_AUDIT_INSERT_MANY,
+  SQL_AUDIT_TABLE,
+} from './audit-postgres';
+import { rowOf } from './audit-postgres-row';
 import { executorFor } from './idempotency-tx-fixture';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -140,6 +147,52 @@ describe.skipIf(!hasPostgres)(
       );
       expect(rows.map((row) => row.action)).toEqual(['nulA', 'nulC', 'nulInput']);
       expect(rows[2]?.input).toEqual({ title: UNREPRESENTABLE, lone: UNREPRESENTABLE });
+    });
+
+    test('a batch that stored its rows and then rejected settles every waiter as stored, and stores each record once', async () => {
+      const real = executorFor(client);
+      const lostReply = new RangeError('connection reset after commit');
+      // The batch statement commits, then its reply is lost: the single retry follows.
+      const lossy: PgExecutor = {
+        async query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> {
+          const rows = await real.query<R>(sql, params);
+          if (sql === SQL_AUDIT_INSERT_MANY) throw lostReply;
+          return rows;
+        },
+      };
+      const sink = postgresAuditSink({ executor: lossy, groupCommit: true });
+      try {
+        const settled = await Promise.allSettled(
+          ['lostA', 'lostB', 'lostC'].map((name) => sink.write(recordNamed(name))),
+        );
+        expect(settled.map((each) => each.status)).toEqual(['fulfilled', 'fulfilled', 'fulfilled']);
+      } finally {
+        await sink.close();
+      }
+      const rows = await client.query<{ action: string }>(
+        raw(`select action from x_audit where action like 'lost%' order by action`),
+      );
+      expect(rows).toEqual([{ action: 'lostA' }, { action: 'lostB' }, { action: 'lostC' }]);
+    });
+
+    test('a DIFFERENT record under a stored id still fails: a collision is never swallowed', async () => {
+      const exec = executorFor(client);
+      const first = rowOf(recordNamed('collideFirst'));
+      await exec.query(SQL_AUDIT_INSERT, Object.values(first));
+      const other = { ...rowOf(recordNamed('collideOther')), id: first.id };
+
+      await expect(exec.query(SQL_AUDIT_INSERT, Object.values(other))).rejects.toThrow(
+        /duplicate key|unique/,
+      );
+      await expect(exec.query(SQL_AUDIT_INSERT_MANY, [JSON.stringify([other])])).rejects.toThrow(
+        /duplicate key|unique/,
+      );
+      // The same row again is no error and no second row.
+      await exec.query(SQL_AUDIT_INSERT, Object.values(first));
+      const rows = await client.query<{ action: string }>(
+        raw(`select action from x_audit where action like 'collide%'`),
+      );
+      expect(rows).toEqual([{ action: 'collideFirst' }]);
     });
 
     test('the DDL is idempotent: applying it again over the migrated table changes nothing', async () => {

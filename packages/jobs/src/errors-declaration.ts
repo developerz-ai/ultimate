@@ -34,14 +34,19 @@ export class JobDeclarationInvalidError extends UltimateError {
   }
 }
 
-/** The required fields a definition lacks, in declaration order. Read off the value, not the type. */
-export function missingJobFields(definition: object): string[] {
+/**
+ * The required fields a definition lacks, in declaration order. Read off the value, not the type.
+ * `factory`: a factory over `job()` may pass `retry: undefined`, "declares none" (`factoryJob`).
+ */
+export function missingJobFields(definition: object, factory = false): string[] {
   const loose = definition as unknown as Readonly<Record<string, unknown>>;
   const missing: string[] = [];
   if (typeof loose['input'] !== 'object' || loose['input'] === null) missing.push('input');
   if (typeof loose['idempotencyKey'] !== 'function') missing.push('idempotencyKey');
   if (loose['tenant'] === undefined) missing.push('tenant');
-  if (typeof loose['retry'] !== 'object' || loose['retry'] === null) missing.push('retry');
+  const retry = loose['retry'];
+  const declaresNone = factory && retry === undefined;
+  if (!declaresNone && (typeof retry !== 'object' || retry === null)) missing.push('retry');
   if (typeof loose['run'] !== 'function') missing.push('run');
   return missing;
 }

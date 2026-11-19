@@ -15,6 +15,39 @@ import { JOB_EXPIRED, LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
 const LIVE = `local LIVE = { ready = true, delayed = true, running = true, suspended = true }`;
 
 /**
+ * "Now" for a script: the instant the driver bound, or `''` for the SERVER's own (`TIME`) — what
+ * every pod reads alike, as pg's `now()` is. A lease measured on each pod's clock let a pod running
+ * ahead claim a row another still held. Bound only when a clock was injected (a test's frozen one).
+ */
+export const NOW_OF = `
+local function now_of(arg)
+  if arg ~= '' then return tonumber(arg) end
+  local t = redis.call('TIME')
+  return tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+end
+`;
+
+/**
+ * A row that ended: its hash, its steps and its debounce fence expire together after `ttl` ms
+ * (`0`: kept), and an ended set (`dead:<queue>`/`failed:<queue>`, by time) sheds members older
+ * than that — the window pg's `jobs-retention.ts` sweeps. `set` is `nil` for `done`, which has none.
+ */
+const ENDED = `
+local function ended(P, id, nk, runId, ttl, set, now)
+  if ttl <= 0 then return end
+  redis.call('PEXPIRE', P .. ':job:' .. id, ttl)
+  redis.call('PEXPIRE', P .. ':steps:' .. runId, ttl)
+  local fence = P .. ':debounce:' .. nk
+  if redis.call('GET', fence) == id then redis.call('PEXPIRE', fence, ttl) end
+  if redis.call('HGET', P .. ':debounce', nk) == id then
+    redis.call('HDEL', P .. ':debounce', nk)
+    redis.call('SET', fence, id, 'PX', ttl)
+  end
+  if set then redis.call('ZREMRANGEBYSCORE', set, '-inf', '(' .. (now - ttl)) end
+end
+`;
+
+/**
  * The claim fence `SQL_ACK` carries: the row is `running`, held by this worker, under this claim.
  * `ARGV[1]` namespace, `ARGV[2]` id, `ARGV[3]` worker, `ARGV[4]` claim ordinal.
  */
@@ -39,9 +72,11 @@ redis.call('ZREM', P .. ':run:' .. queue, id)
  * holds the key otherwise, `created` otherwise.
  *
  * The debounce fence is `SQL_ENQUEUE_REPLACE`'s: a job hash's `debounced` field is the id of the
- * request whose input it holds, and `:debounce` maps a key to the last row a replace wrote — kept
- * past the run, so a replace published again after its holder finished meets it. An entry whose row
- * expired (`doneTtlMs`) is dropped where it is found, as `newer` stops matching a pruned pg row.
+ * request whose input it holds, and `:debounce:<key>` names the last row a replace wrote — kept
+ * past the run, so a replace published again after its holder finished meets it, and expiring WITH
+ * that row (`ended`): one key per distinct key ever debounced, kept forever, was the leak. An entry
+ * whose row is gone is dropped where it is found, as `newer` stops matching a pruned pg row. A
+ * field of the `:debounce` HASH is the same fence as written before 31.x, read until it is moved.
  */
 const ENQUEUE_ONE = `
 ${LIVE}
@@ -56,11 +91,14 @@ local function enqueue_one(P, a, o)
   end
   local nk = a[o + 12]
   local replace = a[o + 14] == '1'
+  local fence = P .. ':debounce:' .. nk
   if replace then
-    local last = redis.call('HGET', P .. ':debounce', nk)
+    local last = redis.call('GET', fence) or redis.call('HGET', P .. ':debounce', nk)
     if last then
       local row = redis.call('HMGET', P .. ':job:' .. last, 'debounced', 'runId')
-      if not row[1] then redis.call('HDEL', P .. ':debounce', nk)
+      if not row[1] then
+        redis.call('DEL', fence)
+        redis.call('HDEL', P .. ':debounce', nk)
       elseif row[1] >= id then return { 'deduped', last, row[2] } end
     end
   end
@@ -79,7 +117,8 @@ local function enqueue_one(P, a, o)
         if a[o + 13] ~= '' then redis.call('HSET', held, 'expiresAt', a[o + 13])
         else redis.call('HDEL', held, 'expiresAt') end
         redis.call('ZADD', P .. ':wait:' .. row[3], runAt, holder)
-        redis.call('HSET', P .. ':debounce', nk, holder)
+        redis.call('SET', fence, holder)
+        redis.call('HDEL', P .. ':debounce', nk)
         return { 'replaced', holder, row[2] }
       end
       return { 'deduped', holder, row[2] }
@@ -96,7 +135,8 @@ local function enqueue_one(P, a, o)
   if a[o + 13] ~= '' then redis.call('HSET', job, 'expiresAt', a[o + 13]) end
   if replace then
     redis.call('HSET', job, 'debounced', id)
-    redis.call('HSET', P .. ':debounce', nk, id)
+    redis.call('SET', fence, id)
+    redis.call('HDEL', P .. ':debounce', nk)
   end
   redis.call('ZADD', P .. ':wait:' .. queue, runAt, id)
   redis.call('SADD', P .. ':queues', queue)
@@ -147,9 +187,9 @@ return out
 `.trim();
 
 /**
- * `SQL_CLAIM`. `ARGV`: namespace, now, limit, visibility ms, worker, `'1'` to answer the horizon
- * (`SQL_CLAIM_IDLE`), the count of `dropExhausted` names, those names, the count of `settleOwed`
- * names, those names, then the queues.
+ * `SQL_CLAIM`. `ARGV`: namespace, now (`NOW_OF`), limit, visibility ms, worker, `'1'` to answer the
+ * horizon (`SQL_CLAIM_IDLE`), an ended row's time to live (`ENDED`), the count of `dropExhausted`
+ * names, those names, the count of `settleOwed` names, those names, then the queues.
  * Candidates are every due row of each queue — ready, delayed, suspended, or running past its
  * lease — at most `limit` from each source, ordered by `runAt` and cut at `limit`. A running row
  * on its final attempt is BURIED (`dead`, or `failed` for a dropped name) and never handed out;
@@ -161,22 +201,26 @@ return out
  * held lease's visibleAt }`, `{ 'h' }` when no row waits or is held.
  */
 export const REDIS_CLAIM = `
+${NOW_OF}
+${ENDED}
 local P = ARGV[1]
-local now = tonumber(ARGV[2])
+local now = now_of(ARGV[2])
 local limit = tonumber(ARGV[3])
 local visibility = tonumber(ARGV[4])
 local worker = ARGV[5]
 local horizon = ARGV[6] == '1'
-local dropCount = tonumber(ARGV[7])
+local endedTtl = tonumber(ARGV[7])
+local dropCount = tonumber(ARGV[8])
 local drop = {}
-for i = 1, dropCount do drop[ARGV[7 + i]] = true end
-local owesCount = tonumber(ARGV[8 + dropCount])
+for i = 1, dropCount do drop[ARGV[8 + i]] = true end
+local owesCount = tonumber(ARGV[9 + dropCount])
 local owes = {}
-for i = 1, owesCount do owes[ARGV[8 + dropCount + i]] = true end
-local first = 9 + dropCount + owesCount
-local function bury(id, name)
+for i = 1, owesCount do owes[ARGV[9 + dropCount + i]] = true end
+local first = 10 + dropCount + owesCount
+local function bury(id, name, nk, runId, set)
   if owes[name] then redis.call('ZADD', P .. ':owed', now, id)
   else redis.call('ZREM', P .. ':owed', id) end
+  ended(P, id, nk, runId, endedTtl, set, now)
 end
 local candidates = {}
 if limit > 0 then
@@ -211,10 +255,10 @@ for i = 1, math.min(limit, #candidates) do
   if (state == 'ready' or state == 'delayed') and attempt == 0 and expiresAt and expiresAt <= now then
     redis.call('ZREM', P .. ':wait:' .. queue, id)
     redis.call('HDEL', job, 'lastErrorStack')
-    redis.call('HSET', job, 'state', 'failed', 'lastError', '${JOB_EXPIRED}', 'updatedAt', ARGV[2])
+    redis.call('HSET', job, 'state', 'failed', 'lastError', '${JOB_EXPIRED}', 'updatedAt', now)
     redis.call('ZADD', P .. ':failed:' .. queue, now, id)
     redis.call('HDEL', P .. ':idem', row[7])
-    bury(id, name)
+    bury(id, name, row[7], row[8], P .. ':failed:' .. queue)
     table.insert(out, { 'b', redis.call('HGETALL', job) })
   elseif state == 'running' and attempt >= maxAttempts then
     local final = 'dead'
@@ -222,18 +266,18 @@ for i = 1, math.min(limit, #candidates) do
     redis.call('ZREM', P .. ':run:' .. queue, id)
     redis.call('HDEL', job, 'visibleAt', 'claimedBy', 'lastErrorStack')
     redis.call('HSET', job, 'state', final, 'lastError', '${LEASE_LAPSED_FINAL_ATTEMPT}',
-      'updatedAt', ARGV[2])
+      'updatedAt', now)
     redis.call('ZADD', P .. ':' .. final .. ':' .. queue, now, id)
     redis.call('HDEL', P .. ':idem', row[7])
-    bury(id, name)
+    bury(id, name, row[7], row[8], P .. ':' .. final .. ':' .. queue)
     table.insert(out, { 'b', redis.call('HGETALL', job) })
   else
     redis.call('ZREM', P .. ':wait:' .. queue, id)
     redis.call('ZREM', P .. ':park:' .. queue, id)
     local visibleAt = now + visibility
     redis.call('HSET', job, 'state', 'running', 'attempt', attempt + 1,
-      'claim', tonumber(row[6]) + 1, 'claimedBy', worker, 'claimedAt', ARGV[2],
-      'visibleAt', visibleAt, 'updatedAt', ARGV[2])
+      'claim', tonumber(row[6]) + 1, 'claimedBy', worker, 'claimedAt', now,
+      'visibleAt', visibleAt, 'updatedAt', now)
     redis.call('ZADD', P .. ':run:' .. queue, visibleAt, id)
     table.insert(out, { 'c', redis.call('HGETALL', job), redis.call('HVALS', P .. ':steps:' .. row[8]) })
   end
@@ -254,58 +298,65 @@ return out
 `.trim();
 
 /**
- * `SQL_ACK`. `ARGV`: the fence's four, then now, the done row's time to live (0: none), `1` when
- * the job declares `onSettled` — its debt, in `owed` by time (`driver-redis-settle.ts`).
+ * `SQL_ACK`. `ARGV`: the fence's four, then now (`NOW_OF`), the done row's time to live (0: none),
+ * `1` when the job declares `onSettled` — its debt, in `owed` by time (`driver-redis-settle.ts`).
  */
 export const REDIS_ACK = `
+${NOW_OF}
+${ENDED}
 ${FENCE}
-redis.call('HSET', job, 'state', 'done', 'updatedAt', ARGV[5])
-if ARGV[7] == '1' then redis.call('ZADD', P .. ':owed', ARGV[5], id)
+local now = now_of(ARGV[5])
+redis.call('HSET', job, 'state', 'done', 'updatedAt', now)
+if ARGV[7] == '1' then redis.call('ZADD', P .. ':owed', now, id)
 else redis.call('ZREM', P .. ':owed', id) end
 redis.call('HDEL', P .. ':idem', held[5])
-local ttl = tonumber(ARGV[6])
-if ttl > 0 then
-  redis.call('PEXPIRE', job, ttl)
-  redis.call('PEXPIRE', P .. ':steps:' .. held[6], ttl)
-end
+ended(P, id, held[5], held[6], tonumber(ARGV[6]), nil, now)
 return 1
 `.trim();
 
 /**
- * `SQL_NACK`. `ARGV`: the fence's four, then now, the state `nackState` chose, runAt, `1` when the
- * attempt counts, `1` when an error is bound, the error, the stack (`''` for none), `1` when the
- * job declares `onSettled` — owed only by an ending state, as `SQL_NACK` reads it.
+ * `SQL_NACK`. `ARGV`: the fence's four, then now (`NOW_OF`), the state `nackState` chose, the delay
+ * ms (runAt is now plus it, `SQL_NACK`'s `now() + $4`), `1` when the attempt counts, `1` when an
+ * error is bound, the error, the stack (`''` for none), `1` when the job declares `onSettled` —
+ * owed only by an ending state, as `SQL_NACK` reads it — then an ended row's time to live.
  */
 export const REDIS_NACK = `
+${NOW_OF}
+${ENDED}
 ${FENCE}
+local now = now_of(ARGV[5])
+local runAt = now + tonumber(ARGV[7])
 local state = ARGV[6]
 local attempt = tonumber(redis.call('HGET', job, 'attempt'))
 if ARGV[8] ~= '1' then attempt = math.max(0, attempt - 1) end
-redis.call('HSET', job, 'state', state, 'runAt', ARGV[7], 'attempt', attempt, 'updatedAt', ARGV[5])
+redis.call('HSET', job, 'state', state, 'runAt', runAt, 'attempt', attempt, 'updatedAt', now)
 if ARGV[9] == '1' then
   redis.call('HSET', job, 'lastError', ARGV[10])
   if ARGV[11] == '' then redis.call('HDEL', job, 'lastErrorStack')
   else redis.call('HSET', job, 'lastErrorStack', ARGV[11]) end
 end
 if state == 'ready' then
-  redis.call('ZADD', P .. ':wait:' .. queue, ARGV[7], id)
+  redis.call('ZADD', P .. ':wait:' .. queue, runAt, id)
 elseif state == 'suspended' then
-  redis.call('ZADD', P .. ':park:' .. queue, ARGV[7], id)
+  redis.call('ZADD', P .. ':park:' .. queue, runAt, id)
 else
-  redis.call('ZADD', P .. ':' .. state .. ':' .. queue, ARGV[5], id)
+  local set = P .. ':' .. state .. ':' .. queue
+  redis.call('ZADD', set, now, id)
   redis.call('HDEL', P .. ':idem', held[5])
+  ended(P, id, held[5], held[6], tonumber(ARGV[13]), set, now)
 end
 if ARGV[12] == '1' and state ~= 'ready' and state ~= 'suspended' then
-  redis.call('ZADD', P .. ':owed', ARGV[5], id)
+  redis.call('ZADD', P .. ':owed', now, id)
 else redis.call('ZREM', P .. ':owed', id) end
 return 1
 `.trim();
 
 /**
- * `SQL_HEARTBEAT`. `ARGV`: namespace, id, worker (`''`: any), claim (`''`: any), the new lease's
- * end. Answers 1 when the lease moved.
+ * `SQL_HEARTBEAT`. `ARGV`: namespace, id, worker (`''`: any), claim (`''`: any), now (`NOW_OF`),
+ * the visibility ms the lease runs from now. Answers 1 when the lease moved.
  */
 export const REDIS_HEARTBEAT = `
+${NOW_OF}
 local P = ARGV[1]
 local id = ARGV[2]
 local job = P .. ':job:' .. id
@@ -313,27 +364,37 @@ local held = redis.call('HMGET', job, 'state', 'claimedBy', 'claim', 'queue')
 if held[1] ~= 'running' then return 0 end
 if ARGV[3] ~= '' and held[2] ~= ARGV[3] then return 0 end
 if ARGV[4] ~= '' and held[3] ~= ARGV[4] then return 0 end
-redis.call('HSET', job, 'visibleAt', ARGV[5])
-redis.call('ZADD', P .. ':run:' .. held[4], ARGV[5], id)
+local visibleAt = now_of(ARGV[5]) + tonumber(ARGV[6])
+redis.call('HSET', job, 'visibleAt', visibleAt)
+redis.call('ZADD', P .. ':run:' .. held[4], visibleAt, id)
 return 1
 `.trim();
 
 /**
- * `SQL_STATS`, one consistent read. `ARGV`: namespace, now. Answers one row per queue:
- * `{ queue, ready, delayed, running, suspended, failed, dead, oldest runAt or -1 }` — due is due
+ * `SQL_STATS`, one consistent read. `ARGV`: namespace, now (`NOW_OF`), an ended row's time to live:
+ * an ended set's members past it are shed first, so the count is what retention keeps. Answers one
+ * row per queue: `{ queue, ready, delayed, running, suspended, failed, dead, the oldest due row's
+ * age in ms or -1 }` — due is due
  * whatever state the row was WRITTEN in, the split `SQL_STATS` makes. A queue all six counts leave
  * at zero is not answered: `SQL_STATS` reads only the states it counts, so a queue holding only
  * finished jobs is absent there and in the memory driver, and `:queues` never forgets a name.
  */
 export const REDIS_STATS = `
+${NOW_OF}
 local P = ARGV[1]
-local now = tonumber(ARGV[2])
+local now = now_of(ARGV[2])
+local ttl = tonumber(ARGV[3])
 local out = {}
 for _, queue in ipairs(redis.call('SMEMBERS', P .. ':queues')) do
   local wait = P .. ':wait:' .. queue
+  if ttl > 0 then
+    for _, set in ipairs({ 'failed', 'dead' }) do
+      redis.call('ZREMRANGEBYSCORE', P .. ':' .. set .. ':' .. queue, '-inf', '(' .. (now - ttl))
+    end
+  end
   local oldest = redis.call('ZRANGE', wait, 0, 0, 'WITHSCORES')
   local first = -1
-  if oldest[2] and tonumber(oldest[2]) <= now then first = oldest[2] end
+  if oldest[2] and tonumber(oldest[2]) <= now then first = now - tonumber(oldest[2]) end
   local row = {
     queue,
     redis.call('ZCOUNT', wait, '-inf', now),
@@ -350,14 +411,15 @@ return out
 `.trim();
 
 /**
- * `SQL_QUEUE_DEMAND`, one consistent read. `ARGV`: namespace, now. Answers `{ queue, demand }` per
+ * `SQL_QUEUE_DEMAND`, one consistent read. `ARGV`: namespace, now (`NOW_OF`). Answers `{ queue, demand }` per
  * queue with some: every running row plus every due wait or park row. This driver keeps no worker
  * registry and no pause, so no claimer is known to drain and no queue is paused: the rule
  * `SQL_QUEUE_DEMAND` applies to a claimer with no live row, which counts.
  */
 export const REDIS_DEMAND = `
+${NOW_OF}
 local P = ARGV[1]
-local now = tonumber(ARGV[2])
+local now = now_of(ARGV[2])
 local out = {}
 for _, queue in ipairs(redis.call('SMEMBERS', P .. ':queues')) do
   local demand = redis.call('ZCARD', P .. ':run:' .. queue)

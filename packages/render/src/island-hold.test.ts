@@ -150,6 +150,7 @@ describe('held islands, executed', () => {
           styles.delete(name);
         },
       },
+      querySelector: (): unknown => null,
       addEventListener: (): void => undefined,
       removeEventListener: (): void => undefined,
     } as Held;

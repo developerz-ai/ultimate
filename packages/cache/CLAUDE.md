@@ -11,7 +11,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 ## Rules
 
 - **A tier's own LIMIT is screened where `app.config.ts` names it** — `assertFiniteCapacity`,
-  `assertFiniteDurationMs`, `assertFiniteSimilarityFloor`, beside `assertTtl` in `tiers.ts`, all
+  `assertFiniteDurationMs`, `assertFiniteSimilarityFloor` (`tier-bounds.ts`; `assertTtl` is in `tiers.ts`), all
   raising `X_CACHE_LIMIT_INVALID`. A `NaN` limit makes every comparison false, so the guard switches
   itself off (no eviction, no similarity floor). Never `Math.max(1, x)` in front: a clamp is not a
   validator. **The `Finite` in the names is load-bearing** — `bun run finite-bounds` recognises a
@@ -86,7 +86,8 @@ Tier 1. Tagged caching + THE invalidation graph.
   tier is built (`assertJitterFraction`) and again at each write.
 - **A rung's limits are constructor options, set through `runtime.ts`'s `cacheTiers`** (`As of
   2026-11`, #1178). The boot builds `lru` and `redis` with defaults; no `app.config.ts` key exists,
-  because it would be a second spelling of that replacement. Every limit `fix:` names the line.
+  because it would be a second spelling of that replacement — save `cache.defaultTtlMs`, which the
+  boot passes into both rungs, so that one limit's `fix:` names it too. Every limit `fix:` names the line.
 - **`cacheStack` is the production read path, and `@ultimat3/query`'s `readThrough` is its
   caller** — it is what makes an action's `cache.invalidates` reach a `cache:` query.
 - **`cacheStack` shares one in-flight `load()` per key** through `@ultimat3/core`'s
@@ -128,9 +129,12 @@ Tier 1. Tagged caching + THE invalidation graph.
 - **A bust has no script.** `readBucket` pages `ZSCAN … COUNT 1000` — never a score/offset
   cursor: a concurrent prune of a read tie group, or a re-write re-scoring a read tie member, shifts
   an offset past live keys. `ZSCAN` returns every member present for the whole scan (the fake's
-  `ZSCAN` keeps exactly that guarantee and nothing stronger); `unlinkAll` `UNLINK`s one key per command; `sweepBuckets` `ZREM`s only what
-  `Promise.allSettled` says died, 8 commands in flight, so a refused `UNLINK` stays findable for the
-  retry. 10k members ≤ 100 sequential round trips (`roundTrips` in the fixture counts them).
+  `ZSCAN` keeps exactly that guarantee and nothing stronger). **Sweep BEFORE delete** (`As of
+  2026-11-19`): `sweepBuckets` `ZREM`s what was read (8 in flight, settled), then `unlinkAll`
+  `UNLINK`s one key per command, then `rejoinBuckets` `ZADD … GT`s back (never lowering a fill's later score; Redis ≥ 6.2), at its read score, every member
+  whose `UNLINK` was refused — into a READ bucket only if it held it, into a collection bust's unread collection-tag bucket only if the value's own stored tags name it (`writtenUnder`); 1,000 members per `ZADD`, 8 in flight, each followed by the lease script so a re-created bucket is never immortal (`redis-rejoin.test.ts`, `redis.live.test.ts`). Delete-then-sweep orphaned a
+  fill landing between the two (`redis-ordering.test.ts`). 10k members ≤ 100 sequential round trips
+  (`roundTrips` in the fixture counts them).
 - **A `set` joins its buckets BEFORE it writes the value, and re-checks membership after**; only a
   literal `null` from `ZSCORE` counts as busted-in-the-air (`lostMembership`).
 - **Every command the tier sends names ONE key** (the lease `EVAL` included), and bucket keys carry
@@ -156,7 +160,10 @@ Tier 1. Tagged caching + THE invalidation graph.
   `receiveInvalidationBroadcast`; `cli` CHOOSES the bus (`runtime-cache-bus.ts`). The subscriber is
   its own connection, and every connect unsubscribes before it subscribes (Bun keeps the old
   listener: a bare re-subscribe delivers twice) — `redis-pubsub.test.ts`. The inbound half cannot
-  re-emit (only it passes `emit: false`). An undeclared inbound tag goes to `report.errors`, never a
+  re-emit (only it passes `emit: false`), and **skips a shared read tier only for the sender's own
+  scope** (`shared-scopes.ts`): a fenced tier whose `CacheTier.scope` (redis: its namespace, per
+  build) equals what the frame's `SharedTierScopes` names. No scope on either side, or another
+  build's, is a bust — a rolling deploy's two namespaces each need theirs (`broadcast.test.ts`). The edge is still purged. An undeclared inbound tag goes to `report.errors`, never a
   throw.
 - **A `cdn` tier holding `noopPurgeDriver()` reports `skipped`, never keys** (`isNoopPurgeDriver`,
   in `cdn.ts`). **`report.cdn` is what depends; `report.tiers` is what cleared** — `busted` is built
@@ -198,6 +205,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `tags.ts` | `tag` factory, wire form, match semantics, `tagKeys`, declared-tag registry |
 | `graph.ts` | tag → dependents (cache keys, ISR routes, CDN paths, live queries) |
 | `tiers.ts` | `CacheTier`, `TierLabel`, `assertTtl`, read-through stack |
+| `tier-bounds.ts` | `assertFiniteCapacity` / `assertFiniteDurationMs` / `assertFiniteSimilarityFloor`: a tier's other screened knobs |
 | `fence.ts` | the invalidation fence a fill (here or in `query`) checks before it publishes |
 | `tier-leading.ts` | which fence each in-flight load holds, and whether a reader may join it |
 | `tier-fence.ts` | `TierFence`/`FenceVerdict`, and how a fill samples and asks a shared tier's fence |
@@ -222,6 +230,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `purge-cloudflare.ts` | `cloudflarePurgeDriver`: cache-tag purge, `purge_everything` |
 | `purge-env.ts` | `selectPurgeDriver`: which edge an environment purges, and nothing else |
 | `invalidate.ts` | the single entry point, `InvalidationReport`, and the `cache.invalidate` event |
+| `shared-scopes.ts` | which shared tiers a broadcast names as cleared (`SharedTierScopes`), and which a receiver may skip |
 | `cache-events-fixture.ts` | tests only: `recordCacheEvents()`, the `cache.*` events a test caused |
 | `semantic.ts` | embedding cache for LLM calls |
 

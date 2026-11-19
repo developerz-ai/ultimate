@@ -93,7 +93,18 @@ export const config = defineRoute({
   // measured: 113106 B (2026-11-18; x build --target static, against 112,991) — why: +115 B, the
   // action client's title for `X_REPLAY_PRINCIPAL_MISMATCH`, the refusal of an offline write
   // replayed under another session. Raised 110.4kb → 110.5kb.
-  budget: { js: '110.5kb' },
+  // measured: 113869 B (2026-11-19; x build --target static) — why: +763 B, the board island +618 B
+  // (79,258 → 79,876): `clientStream` reviving a chunk frame's `dates:` and coding a mid-body cut
+  // as `X_CLIENT_TRANSPORT_FAILED`, `clientTransport` sending a write with no idempotency key once,
+  // `isRtl` reading a script subtag (`az-Arab` rtl), `t.has` true for a select or ordinal family
+  // authored only in plural forms, and a sortable item deleted by a live update while lifted no
+  // longer blocking keyboard sorting; the client router +45 B (29,910 → 29,955), a soft navigation
+  // to a malformed fragment (`#50%`) still runs scripts and fires `ultimate:navigated`, and
+  // `navigate()` to a fragment of the page on screen scrolls instead of refetching and disposing
+  // its islands; the inline hydration runtime +100 B, an island boots with the props inside its own
+  // wrapper, not the first script in the document with its id (a modal's island took the page's).
+  // Against 113,106, origin/main built the same way. Raised 110.5kb → 111.3kb.
+  budget: { js: '111.3kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

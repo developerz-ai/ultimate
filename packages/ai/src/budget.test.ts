@@ -290,6 +290,56 @@ describe('the ceiling holds under parallelism', () => {
   });
 });
 
+describe('usage that is not a count', () => {
+  test('record with a NaN counter leaves the store finite', async () => {
+    const store = memoryBudgetStore();
+    const limits = { actor: 10_000, request: 10_000 };
+    const ledger = new BudgetLedger({ limits, actorKey: 'actor:u1', store });
+    const spend = estimateSpend(request('hi', 4_000));
+    const reservation = await ledger.reserve(spend);
+    const reserved = store.spent('actor:u1');
+    // An app-written `Provider` answered a counter that is not a number. The estimate stands.
+    await ledger.record(
+      { inputTokens: Number.NaN, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      usd(1),
+      reservation,
+    );
+    expect(store.spent('actor:u1')).toBe(reserved);
+    // The ceiling still holds for this actor, on this ledger and on the next one.
+    const next = new BudgetLedger({ limits, actorKey: 'actor:u1', store });
+    const over = { ...spend, tokens: 9_999_999 };
+    for (const one of [ledger, next]) {
+      expect(await one.reserve(over).catch((error: unknown) => error)).toMatchObject({
+        code: 'X_AI_BUDGET_EXCEEDED',
+      });
+    }
+  });
+
+  test('a negative counter is not a refund', async () => {
+    const store = memoryBudgetStore();
+    const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
+    await ledger.record(
+      { inputTokens: -50_000, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      usd(1),
+    );
+    expect(store.spent('actor:u1')).toBe(0);
+  });
+
+  test('a negative counter offset by a positive one keeps the reservation charged', async () => {
+    const store = memoryBudgetStore();
+    const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
+    const reservation = await ledger.reserve(estimateSpend(request('hi', 4_000)));
+    const reserved = store.spent('actor:u1');
+    // The sum is 5, a count — but one of its counters is not, so the sum is not usage either.
+    await ledger.record(
+      { inputTokens: -5, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      usd(1),
+      reservation,
+    );
+    expect(store.spent('actor:u1')).toBe(reserved);
+  });
+});
+
 /**
  * A ceiling that is not a number does not become a wrong ceiling — it stops being one.
  *

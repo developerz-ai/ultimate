@@ -255,7 +255,7 @@ export const suspendUser: AdminAction = {
 |---|---|
 | `input` | the button links to `<row>?action=<name>`; the form posts `input.<field>`, labelled `admin.input.<name>.<field>`; a refusal is a 422 with each issue on its field |
 | `when(row)` | hides the button where it answers false and is asked again before the handler: `X_ADMIN_ACTION_NOT_APPLICABLE`, a 409. The row carries no sealed column |
-| `batch` | the list's batch bar — checked rows, or every row the list's URL matches — each row through the button's gate and on the audit log, answered with `done` / `refused` / `failed` / `queued` / `remaining`. 200 rows inline per request (`MAX_BATCH_ROWS`), 1,000 queued (`MAX_BATCH_QUEUED_ROWS`); "all matching" continues from where it stopped |
+| `batch` | the list's batch bar — checked rows, or every row the list's URL matches — each row through the button's gate and on the audit log, answered with `done` / `refused` / `failed` / `queued` / `remaining`. 200 rows inline per request (`MAX_BATCH_ROWS`), 1,000 queued (`MAX_BATCH_QUEUED_ROWS`); "all matching" continues from where it stopped; checked rows past the bound answer `after: null` — re-check the rest, never widened to all |
 | `matching` | "all matching" as ONE set-based call: handed the list's `where` (row scope, scope, filters), it answers `{ affected, remaining }` — a store's bounded bulk verb. Decided and audited once (`admin.batch.matching`); a destructive one types `<entity>:all matching`. Checked rows still run row by row. Requires `batch` |
 | `batch.threshold` | past it, one `admin.batch` job per `chunk` (default: the threshold), run by a worker as the operator who queued it. The worker must load the module calling `defineAdmin` (`X_ADMIN_MOUNT_MISSING`) |
 | `readonly` | the action changes nothing (an export, a verification): its admin-level gate is `admin:read`, not `admin:write`, so a read-only staff role and an `admin:read` MCP token may run it. `destructive` (`admin:destroy`) and `matching` (`admin:write`) win over it |
@@ -507,7 +507,7 @@ shape already is, written down once so two apps do not invent two layouts. `x g 
 | field type + widget | `$meta.kind`, refined by `values` (select) and `references` (reference) |
 | one line vs prose | `text({ max })` has a length; `text()` does not |
 | read-only | a **generated** default (`uuid()`, `defaultNow()`, `onUpdateNow()`) or a key column |
-| filters, sort | `$meta.index` / `unique` / `primaryKey` — never an unindexed column, except the label (the list's search box) |
+| filters, sort | `$meta.index` / `unique` / `primaryKey` — never an unindexed column, except the label (the list's search box); a `money()` column sorts by currency, then minor (amounts compare only within a currency) |
 | row address | `$primaryKey[0]`, composite keys included |
 | validation | `$schema`, the entity's own Standard Schema |
 | write-only | `.sealed()` — in `secretFields`, and in no list a reader iterates |

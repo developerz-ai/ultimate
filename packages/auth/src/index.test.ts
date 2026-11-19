@@ -3,11 +3,25 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as auth from './index';
+import * as handoff from './mfa-handoff';
 import { BUILTIN_OAUTH_PROVIDER_IDS as declared } from './oauth-builtins';
 
 describe('@ultimat3/auth public surface', () => {
   test('re-exports `BUILTIN_OAUTH_PROVIDER_IDS`, the list README.md tells an app to read', () => {
     expect(auth.BUILTIN_OAUTH_PROVIDER_IDS).toBe(declared);
+  });
+
+  // One MFA challenge cookie: an app's own first leg (a password form) writes the cookie the
+  // built-in callbacks write, so the write half is public beside the read half.
+  test('re-exports the whole MFA challenge cookie set: name, of, write, read, clear', () => {
+    expect(auth.MFA_CHALLENGE_COOKIE).toBe(handoff.MFA_CHALLENGE_COOKIE);
+    expect(auth.mfaChallengeOf).toBe(handoff.mfaChallengeOf);
+    expect(auth.mfaChallengeCookie).toBe(handoff.mfaChallengeCookie);
+    expect(auth.readMfaChallenge).toBe(handoff.readMfaChallenge);
+    expect(auth.clearMfaChallengeCookie).toBe(handoff.clearMfaChallengeCookie);
+    const cookie = auth.mfaChallengeCookie('sealed').split(';')[0] ?? '';
+    const request = new Request('https://app.test/', { headers: { cookie } });
+    expect(auth.readMfaChallenge(request)).toBe('sealed');
   });
 
   // Apple left the built-ins in 26.0.0 (#709): it POSTs its callback, and both callback routes are

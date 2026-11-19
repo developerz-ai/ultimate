@@ -103,6 +103,7 @@ export async function discoverSeeds(root: string): Promise<SeedDiscovery> {
   const seeds: DiscoveredSeed[] = [];
   const findings: Finding[] = [];
   const seen = new Set<string>();
+  const declared = new Set<unknown>();
   for (const pattern of SEED_GLOBS) {
     for await (const absolute of new Bun.Glob(pattern).scan({ cwd: root, absolute: true })) {
       const file = posixRelative(root, absolute);
@@ -118,7 +119,12 @@ export async function discoverSeeds(root: string): Promise<SeedDiscovery> {
         continue;
       }
       for (const value of Object.values(module)) {
-        if (isSeed(value)) seeds.push({ seed: value, file });
+        // One seed, however many modules export it: a `seeds.ts` barrel re-exporting `dev` is the
+        // same object, and counted twice it ran twice — or `x db seed dev` named two seeds. The
+        // `seeds/` glob is walked first, so the declaring file is the one kept.
+        if (!isSeed(value) || declared.has(value)) continue;
+        declared.add(value);
+        seeds.push({ seed: value, file });
       }
     }
   }

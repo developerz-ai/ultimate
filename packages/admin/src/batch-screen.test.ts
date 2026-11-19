@@ -72,6 +72,16 @@ beforeAll(() => {
         },
       },
       {
+        name: 'ticket.sweep',
+        permission: 'admin_bscreen_tickets:write',
+        entity: 'admin_bscreen_tickets',
+        batch: true,
+        matching: async () => ({ affected: 0, remaining: 0 }),
+        handle: async ({ input }) => {
+          ran.push(`sweep:${String(input['id'])}`);
+        },
+      },
+      {
         name: 'ticket.drop',
         permission: 'admin_bscreen_tickets:delete',
         entity: 'admin_bscreen_tickets',
@@ -192,6 +202,22 @@ describe('unit · the batch bar works with scripting off', () => {
       selection: 'all',
     });
     expect([...ran].sort()).toEqual([`close:${ids[0]}`, `close:${ids[1]}`].sort());
+  });
+
+  test('checked rows over the limit offer no "all matching" continuation, set-based or not', async () => {
+    // The rest of a CHECKED set is not "every row this list matches": a continue button posting
+    // `selection=all` would run the action over rows the operator never ticked.
+    for (const name of ['ticket.close', 'ticket.sweep']) {
+      const checked = Array.from({ length: 202 }, (_, at) => `unseen-${String(at)}`);
+      const answer = await ask(OPERATOR, BASE, {
+        _operation: 'batch',
+        name,
+        selection: 'checked',
+        ids: checked,
+      });
+      expect(answer.status).toBe(200);
+      expect(answer.html).not.toContain('name="selection" value="all"');
+    }
   });
 
   test('an action with input answers with its form first, then runs with what was typed', async () => {

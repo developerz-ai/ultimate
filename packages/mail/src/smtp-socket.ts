@@ -213,12 +213,18 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
   // Registered on the TLS socket at `upgradeTLS`; every event on it is real, so no guard.
   const tlsHandlers = makeHandlers(() => true);
 
-  const opening = runtime.connect({
-    hostname: target.host,
-    port: target.port,
-    tls: target.tls,
-    socket: handlers,
-  });
+  const opening = connectWithin(
+    runtime.connect({
+      hostname: target.host,
+      port: target.port,
+      tls: target.tls,
+      socket: handlers,
+    }),
+    target,
+    target.tls
+      ? `openssl s_client -connect ${endpoint}`
+      : `openssl s_client -starttls smtp -connect ${endpoint}`,
+  );
 
   return opening.then((opened): SmtpStream => {
     let socket = opened;
@@ -300,5 +306,43 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
         socket.end();
       },
     };
+  });
+}
+
+/**
+ * The dial, bounded by the same deadline as every read and write: a host that swallows the SYN
+ * would otherwise hold the pool slot for the kernel's own timeout. A socket that lands after the
+ * deadline is closed at once — nobody holds it.
+ */
+function connectWithin(
+  dialing: Promise<SocketLike>,
+  target: SmtpTarget,
+  fix: string,
+): Promise<SocketLike> {
+  return new Promise((resolve, reject) => {
+    let late = false;
+    const timer = setTimeout(() => {
+      late = true;
+      reject(
+        sendFailed({
+          driver: 'smtp',
+          stage: 'connect',
+          detail: `${target.host}:${String(target.port)} did not accept a connection within ${String(target.timeoutMs)}ms`,
+          retryable: true,
+          fix,
+        }),
+      );
+    }, target.timeoutMs);
+    dialing.then(
+      (socket) => {
+        clearTimeout(timer);
+        if (late) socket.end();
+        else resolve(socket);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
   });
 }

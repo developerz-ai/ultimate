@@ -351,6 +351,17 @@ const INTERNAL_CAUSE =
 const isUnclassifiedFailure = (code: string, status: number): boolean =>
   status >= 500 && (code === 'X_INTERNAL' || declaredStatusFor(code) === undefined);
 
+/**
+ * The code a caller OUTSIDE dev is told. An unclassified failure's `code` is a string field off a
+ * value nobody here built — a driver's SQLSTATE (`23505`, a unique-violation oracle), `ENOENT`,
+ * `ECONNREFUSED` — and the opacity rule that blanks its title and cause served it in `code` and
+ * `type`. Only a code of the framework's SHAPE survives: it is a name somebody chose to throw.
+ */
+export const callerCode = (facts: Pick<ErrorFacts, 'code' | 'status'>): string =>
+  isUnclassifiedFailure(facts.code, facts.status) && !FRAMEWORK_CODE.test(facts.code)
+    ? 'X_INTERNAL'
+    : facts.code;
+
 export const toProblem = (
   error: unknown,
   meta: { instance?: string; requestId?: string; dev?: boolean } = {},
@@ -372,13 +383,14 @@ export const toProblem = (
   // The same condition, for the same reason: a code nobody classified cannot have declared any
   // key either, so this is the belt on `registerProblemMeta`'s "both registrations are needed".
   const carried = opaque ? undefined : metaOf(error, facts.code);
+  const code = meta.dev === true ? facts.code : callerCode(facts);
   return {
-    type: problemTypeFor(facts.code),
+    type: problemTypeFor(code),
     title: opaque ? INTERNAL_TITLE : facts.title,
     status: facts.status,
     detail: hidden ? INTERNAL_CAUSE : facts.cause,
     instance: meta.instance,
-    code: facts.code,
+    code,
     cause: hidden ? INTERNAL_CAUSE : facts.cause,
     // The CALLER's fix outside dev: a production client cannot run `x policy explain`, and the
     // developer's line stays in the log this request wrote. Dev keeps the developer's, because the
@@ -388,9 +400,7 @@ export const toProblem = (
     // under a blanked cause put back what the blanking took out. A declared `callerFix` is
     // authored FOR the caller and still goes; otherwise the line names the code and nothing else.
     fix:
-      meta.dev === true
-        ? facts.fix
-        : (facts.callerFix ?? (hidden ? explainFix(facts.code) : facts.fix)),
+      meta.dev === true ? facts.fix : (facts.callerFix ?? (hidden ? explainFix(code) : facts.fix)),
     docs: facts.docs,
     retry: retryOf(error),
     requestId: meta.requestId,

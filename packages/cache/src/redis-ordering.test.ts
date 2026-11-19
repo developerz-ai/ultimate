@@ -77,15 +77,79 @@ describe('a bust racing a write, on the wire', () => {
 
     await expect(tier.invalidateTags([tag('post', '1')])).rejects.toThrow('redis refused UNLINK');
 
-    const removed = client.sent
-      .filter((entry) => entry[0] === 'ZREM')
-      .map((entry) => entry.slice(2));
-    // Only what actually died leaves the bucket. `x:c:stuck` is still a member, still tagged,
-    // and the retry the error asks for — `invalidateTags([tag('post', '1')])` — reaches it.
-    // Three buckets: the row's, the collection's, and the entity index the row bust never reads.
-    expect(removed).toEqual([['x:c:gone'], ['x:c:gone'], ['x:c:gone']]);
+    // The sweep runs before the delete (the next test says why), so what the store refused to
+    // delete is put back: `x:c:stuck` is a member again, at the score it was read with, and the
+    // retry the error asks for — `invalidateTags([tag('post', '1')])` — reaches it. Three
+    // buckets: the row's, the collection's, and the entity index the row bust never reads.
+    // A bucket the bust READ gets back only what it held: `x:t2:{post}` (the collection's) never
+    // held this row, and a member there would die with every other post's row bust.
     expect(client.members('x:t2:{post}:1')).toEqual(['x:c:stuck']);
+    expect(client.members('x:t2:{post}')).toEqual([]);
     expect(client.members('x:e2:{post}')).toEqual(['x:c:stuck']);
+  });
+
+  // A fill lands between the sweep and the refused UNLINK, re-joining at a LATER score. Re-joined
+  // at the scanned score, the membership became prunable at the old expiry while the fill's value
+  // lived on — a live value no tag reaches until it expires.
+  test("a refused delete re-joined after a fill keeps the fill's later score", async () => {
+    const server = fakeRedis();
+    const clock = frozenClock(1_000_000);
+    let busy: (() => Promise<void>) | undefined;
+    const busting: RedisLike = {
+      get: (key) => server.get(key),
+      set: (key, value) => server.set(key, value),
+      async send(command, args) {
+        const fill = busy;
+        if (command === 'UNLINK' && fill !== undefined) {
+          busy = undefined;
+          await fill();
+        }
+        return await server.send(command, args);
+      },
+    };
+    const tier = tierFor(busting, { clock });
+    await tier.set('k', 'v1', { ttlMs: 300_000, tags: [tag('post', '1')] });
+    clock.advance(100_000);
+    server.refuseDel('x:c:k');
+    busy = () => tier.set('k', 'v2', { ttlMs: 300_000, tags: [tag('post', '1')] });
+
+    await expect(tier.invalidateTags([tag('post', '1')])).rejects.toThrow('redis refused UNLINK');
+
+    const fillScore = String(1_100_000 + 300_000 + TAG_GRACE_MS);
+    expect(await server.send('ZSCORE', ['x:t2:{post}:1', 'x:c:k'])).toBe(Number(fillScore));
+  });
+
+  test("a fill that lands between a bust's delete and its sweep is still reached by the next bust of the same tag", async () => {
+    // Another replica's fill (its fence sampled after the bump, so a valid fresh value) lands
+    // right after this bust's UNLINK. A sweep that ran AFTER the delete removed the member the
+    // fill had just re-joined: a live value no tag reaches, which the next mutation's bust missed
+    // and which served stale for the whole TTL.
+    const server = fakeRedis();
+    const replica = tierFor(server);
+    let fill: Promise<void> | undefined;
+    const busting: RedisLike = {
+      get: (key) => server.get(key),
+      set: (key, value) => server.set(key, value),
+      async send(command, args) {
+        const reply = await server.send(command, args);
+        if (command === 'UNLINK' && args[0] === 'x:c:feed' && fill === undefined) {
+          fill = replica.set('feed', 'fresh', { ttlMs: 60_000, tags: [tag('post', '1')] });
+          await fill;
+        }
+        return reply;
+      },
+    };
+    const tier = tierFor(busting);
+    await tier.set('feed', 'old', { ttlMs: 60_000, tags: [tag('post', '1')] });
+
+    await tier.invalidateTags([tag('post', '1')]);
+    expect(fill).toBeDefined();
+    expect((await tier.get('feed'))?.value).toBe('fresh');
+
+    const next = await tier.invalidateTags([tag('post', '1')]);
+
+    expect(next.keys).toEqual(['feed']);
+    expect(await tier.get('feed')).toBeUndefined();
   });
 
   test('a bust that succeeded empties the buckets it read, member by member', async () => {

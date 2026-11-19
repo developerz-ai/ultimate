@@ -27,6 +27,12 @@ const services = (): Record<string, Service> =>
 const READINESS_GRACE_DEFAULT_S = 5;
 
 describe('unit · the scaffolded compose file is hardened and rotates its logs', () => {
+  // As `docker/*.yml` pin theirs: a tag alone is whatever the registry serves on the day the box
+  // pulls, and the database is the one container whose bytes must not change under a restart.
+  test('the database image is pinned by digest, tag kept for the reader', () => {
+    expect(services()['db']?.image).toMatch(/^postgres:18-alpine@sha256:[0-9a-f]{64}$/);
+  });
+
   test('every app-image service runs read-only, capability-free, bounded', () => {
     const app = Object.entries(services()).filter(([name]) => name !== 'db');
     expect(app.length).toBeGreaterThan(4);
@@ -101,6 +107,25 @@ describe('unit · the scaffolded compose file hands the page origin to sync', ()
     expect(environment('web').some((entry) => entry.startsWith('SYNC_URL=${SYNC_URL:?'))).toBe(
       true,
     );
+  });
+
+  // Compose reads `${VAR}` and `${VAR:?msg}`, and `$$` as a literal `$`: every interpolation the
+  // file holds is written as exactly one `$` before its brace, and no backslash survives the template.
+  test('every compose interpolation is written as compose reads it, one $ and no backslash', () => {
+    const compose = composeProdFile(names('shop'));
+    expect(compose).not.toContain('\\$');
+    expect(compose).not.toContain('$$');
+    expect(compose.match(/\$\{[A-Z_]+[:?-]/g)).toEqual([
+      '${VAR:',
+      '${IMAGE:',
+      '${POSTGRES_PASSWORD:',
+      '${SYNC_URL:',
+      '${APP_URL:',
+    ]);
+    expect(compose).toMatch(
+      /\n {6}POSTGRES_PASSWORD: \$\{POSTGRES_PASSWORD:\?set POSTGRES_PASSWORD\}\n/,
+    );
+    expect(compose).toMatch(/\n {2}image: \$\{IMAGE:-shop:dev\}\n/);
   });
 
   test('the header names both variables the env file must carry', () => {

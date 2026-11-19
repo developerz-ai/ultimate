@@ -6,7 +6,6 @@
 // structurally (notify cannot import this package: same tier), so `notify(user, …)` reaches every
 // subscription that user holds with no glue in the app.
 
-import type { UltimateError } from '@ultimat3/core';
 import { isUltimateError, logger } from '@ultimat3/core';
 import type { PushPayload } from './push';
 import { renderPushPayload, serializePushMessage, subscriptionState } from './push';
@@ -80,12 +79,13 @@ export async function pushToActor(
       if (!isUltimateError(error)) throw error;
       refused += 1;
       // A stored subscription no send will ever reach is deleted, so the next notification does
-      // not pay for it again: a malformed key, or a 401/403 — made with a VAPID key this server no
-      // longer signs with. That browser re-subscribes under the new key the next time it asks.
+      // not pay for it again: a malformed key, a host this app does not send to. A 401/403 is NOT
+      // one: it is what a push service answers a fault in OUR token (a `subject` it refuses, a
+      // skewed clock) as well as a rotated key, and deleting on it unsubscribed every device a
+      // send reached. Kept; a browser under an old key replaces its own (`subscribeToPush`).
       if (
         error.code === 'X_PWA_PUSH_SUBSCRIPTION_INVALID' ||
-        error.code === 'X_PWA_PUSH_HOST_UNLISTED' ||
-        unreachableUnderThisKey(error)
+        error.code === 'X_PWA_PUSH_HOST_UNLISTED'
       ) {
         await runtime.store.remove(subscription.endpoint);
       }
@@ -95,12 +95,6 @@ export async function pushToActor(
   if (retry !== undefined) throw retry;
   return { delivered, removed, refused };
 }
-
-/** A push service's 401/403: the subscription belongs to another VAPID key, for good. */
-const unreachableUnderThisKey = (error: UltimateError): boolean => {
-  const status = (error.meta as { readonly status?: unknown } | undefined)?.status;
-  return error.code === 'X_PWA_PUSH_REJECTED' && (status === 401 || status === 403);
-};
 
 /** The structural shape `@ultimat3/notify`'s `Pusher` declares. */
 export interface WebPusher {

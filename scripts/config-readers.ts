@@ -10,13 +10,13 @@
 // `database.schema` — 4.0.0. `pwa.installPrompt`, `auth.afterSignInPath`, `ai.modelEnv` — 2026-08.
 // Twelve keys, four releases, one rule that existed only as a sentence.
 //
-// WHAT COUNTS AS A READ: the key as a property access (`config.cache.driver`, `cfg.driver`) or as a
-// destructured binding (`const { driver } = cache`), in any shipped file of any package except the
-// declaration itself. Deliberately loose about WHOSE property it is — a package takes `CacheConfig`
-// as a parameter and reads `cfg.driver`, so demanding the fully qualified path would report
-// nineteen of the twenty-eight leaf keys as dead. Measured, not guessed at.
+// WHAT COUNTS AS A READ, `As of 2026-11-19`: a QUALIFIED one (`qualifiedRead`) — `<section>.<key>`,
+// a file naming the section's interface and reading the key (a typed parameter, `cfg.driver` with
+// `cfg: CacheConfig`), or a section aliased off a config and its key read. A bare property name was
+// enough until then, and `jobs.maxAttempts`, `jobs.backoff`, `database.ssl` and `roles` were read by
+// nothing and passed on `retry.maxAttempts`, `pg.ssl` and a boot input's own `roles` field.
 //
-// AND THAT LOOSENESS IS THE THIRTEENTH INSTANCE OF THE DEFECT ABOVE. This header used to argue the
+// THAT LOOSENESS WAS THE THIRTEENTH INSTANCE OF THE DEFECT ABOVE, the first time too. This header used to argue the
 // looseness was safe because it "only ever HIDES a dead key whose name collides with an unrelated
 // property" — which is the whole defect, conceded in a comment. `realtime.tier` is read by nothing
 // (a type, a field, a default and a scaffold template, and no reader anywhere) and NINETEEN files
@@ -49,11 +49,12 @@ import {
   CONFIG_FILE,
   CONFIG_FILES,
   configDeclaration,
+  configLeafTypes,
   configLeaves,
   ROOT_INTERFACE,
 } from './lib/config-leaves';
 import type { ConfigSource } from './lib/config-read-evidence';
-import { ambiguityOf, owningPackage, readPattern } from './lib/config-read-evidence';
+import { ambiguityOf, owningPackage, qualifiedRead, readPattern } from './lib/config-read-evidence';
 import {
   applyConfigReaderUnpin,
   CONFIG_AMBIGUOUS_PINS,
@@ -74,6 +75,7 @@ export {
   CONFIG_FILE,
   CONFIG_FILES,
   configDeclaration,
+  configLeafTypes,
   configLeaves,
   ROOT_INTERFACE,
 } from './lib/config-leaves';
@@ -83,6 +85,7 @@ export {
   ambiguityOf,
   owningPackage,
   qualifiedPattern,
+  qualifiedRead,
   readPattern,
   SECTION_PACKAGE,
 } from './lib/config-read-evidence';
@@ -126,6 +129,8 @@ export interface ConfigReaderInput {
   readonly ambiguousPins?: Readonly<Record<string, string>>;
   /** Both tracked apps' source — what a pin naming APP code as the reader is held to. */
   readonly appFiles?: readonly AppSource[];
+  /** Each leaf's declaring interface (`configLeafTypes`): a typed parameter is a qualified read. */
+  readonly leafTypes?: Readonly<Record<string, string>>;
 }
 
 /** The ratchet: an unread leaf must be pinned with a reason, and a pin that gained a reader must go. */
@@ -146,8 +151,8 @@ export function checkConfigReaders(input: ConfigReaderInput): readonly ConfigRea
     { readonly readers: number; readonly colliding: readonly string[] }
   >();
   for (const leaf of input.leaves) {
-    const pattern = readPattern(leaf);
-    if (input.files.some((file) => pattern.test(file.text))) read.add(leaf);
+    const type = input.leafTypes?.[leaf];
+    if (input.files.some((file) => qualifiedRead(leaf, file.text, type))) read.add(leaf);
     const doubt = ambiguityOf(leaf, input.files);
     if (doubt !== undefined) ambiguous.set(leaf, doubt);
   }
@@ -286,6 +291,7 @@ export async function configReaderInput(root: string): Promise<ConfigReaderInput
     .map((file) => ({ path: file.path, text: file.source }));
   return {
     leaves: configLeaves(declaration),
+    leafTypes: configLeafTypes(declaration),
     files,
     pins: CONFIG_READER_PINS,
     ambiguousPins: CONFIG_AMBIGUOUS_PINS,

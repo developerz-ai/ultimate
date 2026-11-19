@@ -151,6 +151,39 @@ describe('live · x docs against the installed framework', () => {
     expect(matchesOf(result)[0]?.['topic']).toBe('wiki.Upgrading#28x--2900-entry-by-entry');
   });
 
+  // A terminal search printed titles only, and the id it listed, handed back, was read as one more
+  // search: the body existed only under `--json`, cut at 1,200 characters.
+  test('a package guide topic the search lists, handed back, prints that whole section', async () => {
+    const topic = 'jobs.README#fan-out-per-row-is-a-job-not-a-task';
+    const listed = await run(['docs', 'fan-out per row is a job']);
+    expect(matchesOf(listed).map((match) => match['topic'])).toContain(topic);
+    // Quoted: an unquoted `#` is a comment to some shells.
+    expect((listed.lines ?? []).join('\n')).toContain(
+      `x docs '${matchesOf(listed)[0]?.['topic']}'   # `,
+    );
+
+    const result = await run(['docs', topic]);
+    expect(result.ok).toBe(true);
+    expect(matchesOf(result)).toHaveLength(1);
+    expect(matchesOf(result)[0]?.['topic']).toBe(topic);
+    const text = String(matchesOf(result)[0]?.['text']);
+    expect(text).toStartWith('## Fan-out per row is a job, not a task');
+    expect(text).not.toEndWith('…');
+    expect(text).toContain('```ts');
+    // The section, and not one line of the next one.
+    expect(text.split('\n').filter((line) => line.startsWith('## '))).toHaveLength(1);
+    expect((result.lines ?? []).join('\n')).toContain('```ts');
+  });
+
+  test('a module topic prints its header comment, its exports and the file', async () => {
+    const result = await run(['docs', 'jobs.retry']);
+    expect(matchesOf(result)).toHaveLength(1);
+    const rendered = (result.lines ?? []).join('\n');
+    expect(rendered).toContain('@ultimat3/jobs/src/retry.ts');
+    expect(rendered).toContain('renders `retrySchedule()` verbatim');
+    expect(rendered).toContain('retrySchedule');
+  });
+
   test('an anchor the page does not carry falls back to a search, never the whole page', async () => {
     const result = await run(['docs', 'Upgrading#no-such-section-anywhere']);
     expect(matchesOf(result).every((match) => String(match['text']).length < 2_000)).toBe(true);

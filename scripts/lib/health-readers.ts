@@ -17,6 +17,8 @@ import type { FlakeHuntRead } from './health-flake-hunt';
 import { flakeHuntReader } from './health-flake-hunt';
 import type { MaintLaneRead } from './health-maint';
 import { maintLaneReader } from './health-maint';
+import type { NextSyncRead } from './health-next-sync';
+import { nextSyncReader } from './health-next-sync';
 import type { ReleaseExistsRead } from './health-release';
 import { releaseExistsReader } from './health-release';
 import type { SecretRead } from './health-secret';
@@ -147,6 +149,7 @@ export interface HealthReaders {
   readonly 'flake-hunt': () => Promise<FlakeHuntRead>;
   readonly bench: () => Promise<BenchRead>;
   readonly compat: () => Promise<CompatRead>;
+  readonly 'next-sync': () => Promise<NextSyncRead>;
   readonly 'maint-lane': () => Promise<MaintLaneRead>;
   readonly 'registry-trust': () => Promise<TrustRead>;
   readonly 'private-names-secret': () => Promise<SecretRead>;
@@ -279,6 +282,7 @@ export const defaultReaders = (root: string, ghRunner: GhRunner = gh): HealthRea
   'flake-hunt': () => flakeHuntReader(root, ghRunner),
   bench: () => benchReader(root, ghRunner),
   compat: () => compatReader(root, ghRunner),
+  'next-sync': () => nextSyncReader(root, ghRunner),
   'maint-lane': () => maintLaneReader(root, { gh: ghRunner }),
   'registry-trust': () => trustReader(root),
   'private-names-secret': () => secretReader(root, ghRunner),

@@ -3,7 +3,7 @@
 // which compiles the row reads they share their predicates with — `conditions()` is imported, never
 // restated, so an aggregate counts exactly the rows the matching read would return.
 
-import { identifier, type SqlFragment, sql } from '@ultimat3/db';
+import { identifier, raw, type SqlFragment, sql } from '@ultimat3/db';
 import type { AggregateFn } from './aggregate';
 import { AVG_SCALE } from './aggregate';
 import { kindOf } from './cursor';
@@ -57,10 +57,32 @@ export const countByStatement = <Row>(
  * - `agg_count` — how many non-null values went in, which is what tells `null` ("no rows") from a
  *   legitimate zero, and what `avg` divides by.
  *
- * `avg` is `round(avg(...), AVG_SCALE)` rather than the server's own scale, because the in-memory
- * driver has to reach the same digits and "whatever numeric division gives you" is not a rule two
+ * `avg` is `averageSql` rather than the server's own scale, because the in-memory driver has to
+ * reach the same digits and "whatever numeric division gives you" is not a rule two
  * implementations can share.
  */
+/** `10^AVG_SCALE` and its inverse, as literals: the scale is a compile-time constant. */
+const AVG_UNITS = raw(`1${'0'.repeat(AVG_SCALE)}`);
+const AVG_UNIT = raw(`0.${'0'.repeat(AVG_SCALE - 1)}1`);
+
+/**
+ * The mean at `AVG_SCALE`, rounded ONCE, half away from zero — `averageDecimalText`'s arithmetic
+ * (`aggregate.ts`) written in SQL: `floor((2·|sum|·10^6 + count) / (2·count))`, sign restored, and
+ * scaled back by a MULTIPLICATION, which `numeric` does exactly.
+ *
+ * Not `round(avg(col), 6)`: a `numeric` quotient is computed to about sixteen SIGNIFICANT digits,
+ * so nineteen-digit `bigint`s left `avg` no fraction at all and it answered `…001.000000` for a
+ * mean of `…000.5`. Forcing a wider division scale only moves the defect — a quotient rounded at
+ * seven places and again at six rounds `.4545454…` up. `div` never rounds, so there is one rounding
+ * and it is this expression's. An empty set divides by NULL and answers NULL, as `avg` did.
+ */
+export const averageSql = (target: SqlFragment, filter: SqlFragment = sql``): SqlFragment => {
+  // `::numeric`: `sum(integer)` is an `int8`, and doubling it a million times over is past one.
+  const sum = sql`(sum(${target})${filter})::numeric`;
+  const count = sql`nullif(count(${target})${filter}, 0)`;
+  return sql`(sign(${sum}) * div(2 * abs(${sum}) * ${AVG_UNITS} + ${count}, 2 * ${count}) * ${AVG_UNIT})`;
+};
+
 export const aggregateStatement = <Row>(
   entity: EntityCore<Row>,
   plan: QueryPlan,
@@ -74,7 +96,7 @@ export const aggregateStatement = <Row>(
     fn === 'sum'
       ? sql`sum(${target})`
       : fn === 'avg'
-        ? sql`round(avg(${target}), ${AVG_SCALE})`
+        ? averageSql(target)
         : // An instant crosses as EPOCH MILLISECONDS, never as the session's own text: `::text`
           // prints in the session's zone, and `new Date` on that answered NaN for an offset with
           // seconds (a pre-1937 LMT) and 1999 for year 0099. Not `at time zone 'UTC'` either —

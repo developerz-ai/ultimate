@@ -195,6 +195,44 @@ describe('toJsonSchema', () => {
     });
   });
 
+  test('a default is published in its JSON form: a Date as the ISO string the wire carries', () => {
+    // Emitted verbatim, a `Date` default reached OpenAPI, the MCP tool schema and the manifest as
+    // a live object: the document no longer equalled its own serialisation.
+    const at = new Date('2026-01-02T03:04:05.678Z');
+    const schema = t.object({
+      at: t.date.default(at),
+      tags: t.array(t.string).default(['a']),
+      n: t.number.default(3),
+    });
+    const json = toJsonSchema(schema, { includeDialect: false });
+    expect(json.properties?.['at']).toEqual({
+      type: 'string',
+      format: 'date-time',
+      default: '2026-01-02T03:04:05.678Z',
+    });
+    expect(json.properties?.['tags']?.default).toEqual(['a']);
+    expect(json.properties?.['n']?.default).toBe(3);
+    expect(JSON.parse(JSON.stringify(json))).toEqual(json);
+    // What `parse()` defaults to is untouched: still the Date.
+    const parsed = schema['~standard'].validate({});
+    expect('value' in parsed && parsed.value.at).toEqual(at);
+    expect(json.required).toEqual([]);
+  });
+
+  test('a default with no JSON form is left out, and the field stays optional', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+    for (const fallback of [new Map([['a', 1]]), new Set([1]), 10n, cyclic]) {
+      const node: SchemaNode = {
+        kind: 'object',
+        properties: { v: { kind: 'unknown', hasDefault: true, default: fallback } },
+      };
+      const json = nodeToJsonSchema(node);
+      expect(json.properties?.['v']).toEqual({});
+      expect(json.required).toEqual([]);
+    }
+  });
+
   test('an unrefined schema gains no new keys — nothing already generated moves', () => {
     const json = toJsonSchema(t.object({ id: t.uuid }), { includeDialect: false });
     expect('x-ultimate-refinements' in json).toBe(false);

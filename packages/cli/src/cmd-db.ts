@@ -1,7 +1,7 @@
-// `x db gen|migrate|reset|seed|studio|branch|backfill|diagnostics|recount|status` — everything that touches the
+// `x db gen|migrate|rollback|reset|seed|studio|branch|backfill|diagnostics|recount|status` — everything that touches the
 // database. One subcommand per line and no fall-through: a word this file does not know is refused,
 // never re-read as an argument to the last branch. `branch` is `cmd-db-branch.ts`, `diagnostics`
-// is `db-diagnostics.ts`, `status` is `cmd-db-status.ts`.
+// is `db-diagnostics.ts`, `status` is `cmd-db-status.ts`, `rollback` is `cmd-db-rollback.ts`.
 //
 // Every subcommand here runs `@ultimat3/db`'s own engine, which is the engine `ROLE=migrate` runs
 // (`serve.ts`): one `x_migrations` ledger, one checksum rule, one advisory lock, from a laptop to
@@ -20,13 +20,15 @@ import { requireAppRoot } from './app-root';
 import { runBackfillCommand } from './cmd-db-backfill';
 import { runBranchCommand } from './cmd-db-branch';
 import { runRecountCommand } from './cmd-db-recount';
+import { runRollbackCommand } from './cmd-db-rollback';
 import { DB_SUBCOMMANDS, dbSpec } from './cmd-db-spec';
 import { runDbStatus } from './cmd-db-status';
 import type { CliCommand, CommandContext } from './command';
+import { refuseAppliedEdits } from './db-applied-edits';
 import { runDiagnostics } from './db-diagnostics';
 import { stepFinding } from './db-finding';
 import { generateAppMigration, unrenderedJson, unrenderedLines } from './db-generate';
-import { liveObjectDrift } from './db-object-drift';
+import { migratePass } from './db-migrate-pass';
 import { layTemplate } from './db-reset-template';
 import { schemaDumpLines } from './db-schema-dump';
 import { afterWrittenMigration, refreshSchemaDump, schemaDumpJson } from './db-schema-refresh';
@@ -41,7 +43,7 @@ import {
   selectSeeds,
 } from './db-seed';
 import { runGeneratedSeed } from './db-seed-generate';
-import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
+import { refuseBesideDev, refuseEmbeddedWriteBesideDev } from './dev-lock-live';
 import { MissingSubcommandError, UnknownCommandError } from './errors';
 import { type HeavyChild, withCheckoutLock } from './heavy';
 import { withJobDriver } from './jobs-driver';
@@ -51,7 +53,6 @@ import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import { flagBool, flagString } from './parse';
 import { resolveServices } from './runtime-bindings';
-import { runMigrations } from './serve';
 
 export { DB_SUBCOMMANDS } from './cmd-db-spec';
 
@@ -69,6 +70,7 @@ export const dbCommand: CliCommand = {
 
     if (sub === 'gen') return runGen(ctx, root, argument ?? 'change');
     if (sub === 'migrate') return runMigrate(ctx, root, msg('cli.db.migrate.applied'));
+    if (sub === 'rollback') return runRollbackCommand(ctx, root);
     if (sub === 'reset') return runReset(ctx, root);
     if (sub === 'seed') return runSeed(ctx, root);
     if (sub === 'backfill') return runBackfillCommand(ctx, root);
@@ -119,7 +121,11 @@ async function generateLocked(
   name: string,
 ): Promise<CommandResult> {
   let generated: Awaited<ReturnType<typeof generateAppMigration>>;
+  let unchecked: string | undefined;
   try {
+    // First, and before any file is written: over an applied migration edited since, this command
+    // rewrote the schema dump to match the edit and exited 0 (`db-applied-edits.ts`).
+    unchecked = await refuseAppliedEdits(root, ctx.env);
     generated = await generateAppMigration(root, {
       name,
       allowDestructive: flagBool(ctx.args, 'allow-destructive'),
@@ -140,7 +146,10 @@ async function generateLocked(
   // this build cannot project would make every one of those instructions unfollowable — the
   // `x i18n add fr` failure, repeated. The count is the verdict; the gate's own `drift` step is
   // where a red belongs, and it reads the same list to decide that `x db gen` is not the fix.
-  const lost = unrenderedLines(generated.unrendered);
+  const lost = [
+    ...unrenderedLines(generated.unrendered),
+    ...(unchecked === undefined ? [] : [msg('cli.db.gen.editsUnchecked', { reason: unchecked })]),
+  ];
   // After the migration, from the migrations alone: the dump is what replaying them produces, so
   // it is rewritten on all three outcomes — `unchanged` included, which is what makes this
   // command the `fix:` on `X_SCHEMA_DUMP_DRIFT` when a framework table or a hand edit moved it.
@@ -198,15 +207,29 @@ async function generateLocked(
     };
   }
   const tables = generated.tables ?? [];
+  // Every migration written, never the first alone: the follow-up is a file to apply too.
+  const followUp = migration.followUp?.id;
+  const written = (): string =>
+    followUp === undefined
+      ? tables.length === 0
+        ? msg('cli.db.gen.written', { id: migration.id })
+        : msg('cli.db.gen.writtenTables', { id: migration.id, tables: tables.join(', ') })
+      : tables.length === 0
+        ? msg('cli.db.gen.writtenPair', { id: migration.id, followUp })
+        : msg('cli.db.gen.writtenPairTables', {
+            id: migration.id,
+            followUp,
+            tables: tables.join(', '),
+          });
   return {
     ok: dumpFindings.length === 0,
     command: 'db',
     summary:
       dumpFindings.length > 0
-        ? msg('cli.db.gen.writtenDumpFailed', { id: migration.id })
-        : tables.length === 0
-          ? msg('cli.db.gen.written', { id: migration.id })
-          : msg('cli.db.gen.writtenTables', { id: migration.id, tables: tables.join(', ') }),
+        ? msg('cli.db.gen.writtenDumpFailed', {
+            id: followUp === undefined ? migration.id : `${migration.id} and ${followUp}`,
+          })
+        : written(),
     // Exit 1 with a migration on disk: the finding has to say so, or the next move is a duplicate.
     findings: dumpFindings.map((finding) => afterWrittenMigration(finding, migration.id)),
     lines: [...generated.files.map((file) => `  ${file}`), ...schemaDumpLines(dump), ...lost],
@@ -256,17 +279,16 @@ async function runMigrate(
     // and reports its own table as drift, and neither result says what happened.
     const fork = migrationFork(await readMigrations(root));
     if (fork !== undefined) throw migrationForked(fork);
-    const migrated = await runMigrations({ root, env: ctx.env });
-    const report = migrated.report;
+    // Applied here, or by the `x dev` that holds the embedded database (`db-migrate-pass.ts`).
+    const pass = await migratePass(root, ctx.env);
     // A hand-written or pulled migration reaches the dump here, with no `x db gen` in between.
     const dump = await refreshSchemaDump(root, ctx.env);
     // The half a snapshot cannot hold: a trigger, function, view, type or sequence this database
     // carries and no migration creates. Asked only when the replay produced a catalog to ask
     // against — without one there is nothing that says what the migrations create.
-    const objects =
-      dump.catalog === undefined ? [] : await liveObjectDrift(root, ctx.env, dump.catalog);
+    const objects = dump.catalog === undefined ? [] : await pass.objects(dump.catalog);
     const findings = [
-      ...driftFindings(migrated.drift),
+      ...driftFindings(pass.drift),
       ...objects.map((difference) => findingFrom(driftError(difference))),
       ...(dump.finding === undefined ? [] : [dump.finding]),
     ];
@@ -277,10 +299,10 @@ async function runMigrate(
       findings,
       lines: schemaDumpLines(dump),
       data: {
-        applied: report.applied.map((entry) => entry.id),
-        skipped: report.skipped.length,
-        appVersion: report.appVersion,
-        durationMs: report.durationMs,
+        applied: [...pass.applied],
+        skipped: pass.skipped,
+        appVersion: pass.appVersion,
+        durationMs: pass.durationMs,
         schemaDump: schemaDumpJson(dump),
       },
     };
@@ -313,14 +335,7 @@ async function runReset(ctx: CommandContext, root: string): Promise<CommandResul
   }
   // A running `x dev` has this directory open: deleting it under a live embedded Postgres is data
   // loss mid-write, not a reset. The dev lock is the one fact that says someone holds it.
-  const holder = liveDevLock(services.stateDir);
-  if (holder !== undefined) {
-    throw new DevAlreadyRunningError({
-      lock: holder,
-      stateDir: services.stateDir,
-      embeddedDb: true,
-    });
-  }
+  await refuseBesideDev(services.stateDir);
   const dataDir = join(services.stateDir, 'pgdata');
   await rm(dataDir, { recursive: true, force: true });
   // From the migrated template when it can be had (`db-reset-template.ts`); the migrate below runs
@@ -366,6 +381,13 @@ async function runSeed(ctx: CommandContext, root: string): Promise<CommandResult
       data: seedPassToJson([]),
     };
   }
+  // A seed writes through this command's own boot: beside an `x dev` holding the embedded
+  // database that is a second PGlite writer, whose rows the holder's next write replaces.
+  await refuseEmbeddedWriteBesideDev(root, ctx.env, [
+    'db',
+    'seed',
+    ...(name === undefined ? [] : [name]),
+  ]);
   return withJobDriver(root, ctx, async () => {
     const rows = await runSeeds({
       seeds: chosen,

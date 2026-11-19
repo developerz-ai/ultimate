@@ -191,23 +191,45 @@ describe('unit · x policy · explainPolicy · policies that read request input'
     });
   }
 
-  test('a predicate that READS input still decides — every actor, marked decidable', () => {
+  // The admin had just closed a ticket over HTTP, and `x policy explain` — the fix printed on the
+  // X_FORBIDDEN beside it — said "allowed for 0 of 3 … predicate returned false": the predicate had
+  // compared the request's org with `undefined`. Not evaluable is not denied.
+  test('a predicate that READS input is never reported as a deny when no input was given', () => {
     seedPermission();
     registerPublishPost(can<PostInput>('post:publish', ({ input }) => input.postId === 'post_1'));
 
     const declaration = explainPolicy('publishPost')?.declarations[0];
     expect(declaration?.decidable).toBe(true);
-    expect(declaration?.rows.map((r) => r.actor)).toEqual(['anonymous', 'admin']);
-    // admin holds the grant and is denied anyway, because `undefined !== 'post_1'` outside a
-    // request. That false deny is the whole reason the rendered table carries `cli.policy.noInput`.
-    expect(declaration?.rows.find((r) => r.actor === 'admin')).toMatchObject({
-      allowed: false,
-      deciding: 'post:publish',
-      reason: 'post:publish predicate returned false',
-    });
+    expect(declaration?.rows.map((r) => [r.actor, r.verdict, r.allowed])).toEqual([
+      // No actor: refused before any predicate runs, whatever the input is.
+      ['anonymous', 'deny', false],
+      ['admin', 'needs-input', null],
+    ]);
+    const admin = declaration?.rows.find((r) => r.actor === 'admin');
+    expect(admin?.deciding).toBe('post:publish');
+    expect(admin?.reason).toContain('not denied');
+    expect(admin?.reason).toContain('post:publish has a predicate that reads the request input');
   });
 
-  test('a predicate that DEREFERENCES nested input is undecidable — no rows, and no throw', () => {
+  test('with the input given, the same predicate decides — allow and deny both real', () => {
+    seedPermission();
+    registerPublishPost(can<PostInput>('post:publish', ({ input }) => input.postId === 'post_1'));
+
+    const verdicts = (postId: string) =>
+      explainPolicy('publishPost', { input: { value: { postId } } })?.declarations[0]?.rows.map(
+        (r) => [r.actor, r.verdict, r.allowed],
+      );
+    expect(verdicts('post_1')).toEqual([
+      ['anonymous', 'deny', false],
+      ['admin', 'allow', true],
+    ]);
+    expect(verdicts('post_2')).toEqual([
+      ['anonymous', 'deny', false],
+      ['admin', 'deny', false],
+    ]);
+  });
+
+  test('a predicate that DEREFERENCES nested input needs input too — no throw, no deny', () => {
     seedPermission();
     registerPublishPost(can<PostInput>('post:publish', ({ input }) => input.post.id === 'post_1'));
 
@@ -215,11 +237,52 @@ describe('unit · x policy · explainPolicy · policies that read request input'
     // through `policyMatrix` — which used to escape `x policy explain` and kill the command.
     expect(() => explainPolicy('publishPost')).not.toThrow();
     const declaration = explainPolicy('publishPost')?.declarations[0];
+    expect(declaration?.decidable).toBe(true);
+    expect(declaration?.rows.map((r) => [r.actor, r.verdict])).toEqual([
+      ['anonymous', 'deny'],
+      ['admin', 'needs-input'],
+    ]);
+    expect(declaration?.label).toBe('post:publish');
+  });
+
+  // `Array.isArray`, `=== null`, `typeof`: whole-value checks reach no trap of the stand-in, so
+  // reading alone cannot tell them from an actor-only predicate. A verdict that moves when the
+  // stand-in's shape does is a verdict about the input.
+  test.each([
+    ['Array.isArray', (input: unknown) => Array.isArray(input)],
+    ['=== null', (input: unknown) => input === null],
+    ['typeof', (input: unknown) => typeof input === 'string'],
+  ])('a whole-value check on input (%s) needs input too', (_name, check) => {
+    seedPermission();
+    registerPublishPost(can<PostInput>('post:publish', ({ input }) => check(input)));
+    expect(
+      explainPolicy('publishPost')?.declarations[0]?.rows.map((r) => [r.actor, r.verdict]),
+    ).toEqual([
+      ['anonymous', 'deny'],
+      ['admin', 'needs-input'],
+    ]);
+  });
+
+  test('an input the policy throws on is undecidable — no rows, never half a matrix', () => {
+    seedPermission();
+    registerPublishPost(can<PostInput>('post:publish', ({ input }) => input.post.id === 'post_1'));
+    const declaration = explainPolicy('publishPost', { input: { value: { postId: 'p' } } })
+      ?.declarations[0];
     expect(declaration?.decidable).toBe(false);
     // Not even the anonymous row that was decided before the throwing actor: a partial matrix
     // reads as a verdict on the actors it omits.
     expect(declaration?.rows).toEqual([]);
-    expect(declaration?.label).toBe('post:publish');
+  });
+
+  test('a predicate that reads only the ACTOR still decides with no input', () => {
+    registerPolicyFixture();
+    const rows = explainPolicy('archivePost')?.declarations[0]?.rows ?? [];
+    expect(rows.map((r) => [r.actor, r.verdict])).toEqual([
+      ['anonymous', 'deny'],
+      ['admin', 'allow'],
+      ['editor', 'deny'],
+      ['reader', 'deny'],
+    ]);
   });
 });
 

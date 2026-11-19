@@ -51,6 +51,11 @@ export class NavigationRequest extends SwRequest {
 /** Keyed by absolute URL, exactly as `Cache` is with `ignoreSearch` at its default `false`. */
 export class StubCache {
   readonly entries = new Map<string, Response>();
+  /**
+   * Keys stored from a response that was `redirected`. A browser refuses such an entry as the
+   * answer to a navigation (redirect mode `manual`): the tab gets a network error, not the page.
+   */
+  readonly redirected = new Set<string>();
   #fetch: (request: Request) => Promise<Response>;
 
   constructor(fetcher: (request: Request) => Promise<Response>) {
@@ -72,6 +77,8 @@ export class StubCache {
     // Delete, then set: the real `put` drops the matching entry and appends the new one, so a
     // re-stored URL moves to the END of `keys()` — the order the pages cache's eviction reads.
     this.entries.delete(this.#key(request));
+    if (response.redirected) this.redirected.add(this.#key(request));
+    else this.redirected.delete(this.#key(request));
     this.entries.set(
       this.#key(request),
       new Response(bytes, { status: response.status, headers: response.headers }),
@@ -96,6 +103,19 @@ export class StubCache {
       if (request !== undefined) this.entries.set(request.url, response);
     });
   }
+}
+
+/** What `fetch` answers after following a redirect: the target's bytes, flagged `redirected`. */
+export function redirectedResponse(body: string): Response {
+  return flagRedirected(new Response(body, { status: 200 }));
+}
+
+/** A clone of a redirected response is redirected too, as a browser's is. */
+function flagRedirected(response: Response): Response {
+  const clone = response.clone.bind(response);
+  Object.defineProperty(response, 'redirected', { value: true });
+  Object.defineProperty(response, 'clone', { value: () => flagRedirected(clone()) });
+  return response;
 }
 
 export function swHarness() {

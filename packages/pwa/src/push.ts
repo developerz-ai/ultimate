@@ -239,14 +239,29 @@ self.addEventListener('notificationclick',(event)=>{
 });`.trim();
 }
 
-/** Client-side subscribe. The locale travels with the subscription, by design. */
+/**
+ * Client-side subscribe. The locale travels with the subscription, by design. An existing
+ * subscription is reused UNLESS it was made with another server key (a VAPID rotation): no message
+ * signed with this one reaches it, so it is unsubscribed and replaced — `subscribeToPush`'s rule
+ * (`push-client.ts`), emitted here because this source is a module of its own with no import.
+ */
 export function subscribeSource(vapid: VapidConfig): string {
   return `
+function madeWith(sub,key){
+  const held=sub.options&&sub.options.applicationServerKey;
+  if(!held)return true;
+  const s=key.replace(/-/g,'+').replace(/_/g,'/'),bin=atob(s.padEnd(s.length+(4-s.length%4)%4,'='));
+  const b=new Uint8Array(held);
+  if(b.length!==bin.length)return false;
+  for(let i=0;i<b.length;i++)if(b[i]!==bin.charCodeAt(i))return false;
+  return true
+}
 export async function subscribePush(registration,locale,timeZone){
-  const existing=await registration.pushManager.getSubscription();
+  const key=${JSON.stringify(vapid.publicKey)};
+  let existing=await registration.pushManager.getSubscription();
+  if(existing&&!madeWith(existing,key)){await existing.unsubscribe();existing=null}
   if(existing)return {subscription:existing.toJSON(),locale,timeZone};
-  const sub=await registration.pushManager.subscribe({userVisibleOnly:true,
-    applicationServerKey:${JSON.stringify(vapid.publicKey)}});
+  const sub=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
   return {subscription:sub.toJSON(),locale,timeZone}
 }`.trim();
 }

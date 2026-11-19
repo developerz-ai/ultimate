@@ -37,9 +37,83 @@ describe('defineEnv', () => {
     );
     expect(error.cause).not.toContain('not-a-port');
     expect(error.cause).not.toContain('"qa"');
+    // The line to add and the file this environment loads — never `x env check`, which printed
+    // this same error and this same fix, and never `.env`, which the scaffold does not write.
     expect(error.fix).toBe(
-      'x env check   # each key to add to .env (copy .env.example): DATABASE_URL PORT REGION',
+      "echo 'DATABASE_URL=<value>' >> .env.development.local   # DATABASE_URL: an absolute URL; also malformed, where grep -n -e '^PORT=' -e '^REGION=' .env* finds them: PORT (an integer port 1-65535), REGION (one of us | eu)",
     );
+    expect(error.fix).not.toContain('x env check');
+  });
+
+  test('the fix names the file the environment loads: one line per missing key', () => {
+    const two = { A_KEY: { type: 'string' }, B_URL: { type: 'url' } } as const satisfies EnvSchema;
+    const fixOf = (env: Record<string, string>): string => {
+      try {
+        defineEnv(two, { env: { ROLE: 'web', ...env }, redact: false });
+      } catch (thrown) {
+        return (thrown as UltimateError).fix;
+      }
+      return expect.unreachable('defineEnv accepted an empty table');
+    };
+    expect(fixOf({})).toBe(
+      "printf '%s\\n' 'A_KEY=<value>' 'B_URL=<value>' >> .env.development.local   # A_KEY: a non-empty string; B_URL: an absolute URL",
+    );
+    expect(fixOf({ NODE_ENV: 'test' })).toContain('>> .env.test.local');
+    // A deploy reads the file `x env init --production` writes, never a per-box development one.
+    expect(fixOf({ ULTIMATE_ENV: 'production' })).toContain('>> .env.production ');
+    expect(fixOf({ ULTIMATE_ENV: 'staging' })).toContain('>> .env.production ');
+  });
+
+  test('only malformed keys: the fix finds each line, in whichever dotenv file sets it', () => {
+    let fix = '';
+    try {
+      defineEnv({ REGION: schema.REGION }, { env: { REGION: 'qa', ROLE: 'web' } });
+    } catch (thrown) {
+      fix = (thrown as UltimateError).fix;
+    }
+    expect(fix).toBe(
+      "grep -n -e '^REGION=' .env*   # each line to correct: REGION (one of us | eu)",
+    );
+  });
+
+  test('a key with a declared fix is never given a generated line', () => {
+    // A command this build ships: the `errors` step runs every fix line a test cites.
+    const STRIPE_FIX =
+      'x env check --json   # STRIPE_KEY: the secret key the Stripe dashboard shows';
+    let fix = '';
+    try {
+      defineEnv(
+        { STRIPE_KEY: { type: 'string', fix: STRIPE_FIX } },
+        { env: { ROLE: 'web' }, redact: false },
+      );
+    } catch (thrown) {
+      fix = (thrown as UltimateError).fix;
+    }
+    expect(fix).toBe(STRIPE_FIX);
+  });
+
+  test('every declared fix survives beside the generated line and beside another declared one', () => {
+    const STRIPE_FIX = 'x env check --json   # STRIPE_KEY: the key the Stripe dashboard shows';
+    const MAPS_FIX = 'x env check --json   # MAPS_KEY: the key the Maps console shows';
+    const declared = {
+      STRIPE_KEY: { type: 'string', fix: STRIPE_FIX },
+      MAPS_KEY: { type: 'string', fix: MAPS_FIX },
+    } as const satisfies EnvSchema;
+    const fixOf = (table: EnvSchema): string => {
+      try {
+        defineEnv(table, { env: { ROLE: 'web' }, redact: false });
+      } catch (thrown) {
+        return (thrown as UltimateError).fix;
+      }
+      return expect.unreachable('defineEnv accepted an empty table');
+    };
+    const both = fixOf(declared);
+    expect(both).toStartWith(STRIPE_FIX);
+    expect(both).toContain(`MAPS_KEY: ${MAPS_FIX}`);
+    const mixed = fixOf({ ...declared, A_KEY: { type: 'string' } });
+    expect(mixed).toStartWith("echo 'A_KEY=<value>' >> .env.development.local   # A_KEY:");
+    expect(mixed).toContain(`STRIPE_KEY: ${STRIPE_FIX}`);
+    expect(mixed).toContain(`MAPS_KEY: ${MAPS_FIX}`);
   });
 
   test("each issue's fix is a command that finds the line, the key never spliced raw", () => {
@@ -48,8 +122,8 @@ describe('defineEnv', () => {
       { env: { REGION: 'qa', ROLE: 'web' } },
     ).issues.map((issue) => issue.fix);
     expect(fixes).toEqual([
-      "grep -n '^REGION=' .env   # the line to set to one of us | eu",
-      "grep '^<KEY>=' .env.example >> .env   # then give it a non-empty string",
+      "grep -n -e '^REGION=' .env*   # the line to set to one of us | eu",
+      "echo '<KEY>=<value>' >> .env.development.local   # <value>: a non-empty string",
     ]);
   });
 

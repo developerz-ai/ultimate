@@ -4,99 +4,16 @@
 // `queue-wake.live.test.ts` (a server, and a killed session).
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { PgExecutor } from '@ultimat3/core';
 import { installLogSink } from '@ultimat3/core';
 import { memoryJobDriver } from './driver-memory';
-import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, SQL_WAKE } from './driver-pg-wake-sql';
+import { JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD } from './driver-pg-wake-sql';
 import { onEnqueued, onStaged, setWakeLive, signalStaged, wakeIsLive } from './enqueue-signal';
 import { useFakeTime } from './fake-time-fixture';
 import { memoryOutboxStore } from './outbox';
 import { outboxRelay } from './outbox-relay';
 import type { PgListener } from './queue-wake';
 import { startQueueWake } from './queue-wake';
-
-interface Scripted {
-  readonly listener: PgListener;
-  readonly executor: PgExecutor;
-  /** Channels subscribed, in order — one entry per successful `listen`. */
-  readonly listens: string[];
-  unlistens: number;
-  /** Probes the pool was asked to send: `[channel, payload]`. */
-  readonly probes: (readonly [string, string])[];
-  /** The server delivers one notification. */
-  notify(channel: string, payload: string): void;
-  /** The driver re-dialled the session: every channel announces itself again. */
-  redial(): void;
-  /** Timers armed and not yet fired or cancelled, as their delays. */
-  pending(): readonly number[];
-  /** Fire the earliest armed timer. */
-  fire(): void;
-  readonly setTimer: (run: () => void, delayMs: number) => () => void;
-}
-
-function scripted(options: { listenFailures?: number; probeFailures?: number } = {}): Scripted {
-  let listenFailures = options.listenFailures ?? 0;
-  let probeFailures = options.probeFailures ?? 0;
-  const subscriptions = new Map<string, { notify(payload: string): void; listening?(): void }>();
-  const timers: { run(): void; delayMs: number }[] = [];
-  const script: Scripted = {
-    listens: [],
-    unlistens: 0,
-    probes: [],
-    listener: {
-      async listen(channel, onNotify, onListening) {
-        if (listenFailures > 0) {
-          listenFailures -= 1;
-          // What the driver answers with: input to the code under test, not this test's verdict.
-          return Promise.reject(new Error('connect ECONNREFUSED'));
-        }
-        script.listens.push(channel);
-        subscriptions.set(channel, {
-          notify: onNotify,
-          ...(onListening === undefined ? {} : { listening: onListening }),
-        });
-        onListening?.();
-        return {
-          unlisten: async () => {
-            script.unlistens += 1;
-            subscriptions.delete(channel);
-          },
-        };
-      },
-    },
-    executor: {
-      async query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> {
-        expect(sql).toBe(SQL_WAKE);
-        if (probeFailures > 0) {
-          probeFailures -= 1;
-          return Promise.reject(new Error('pool timeout'));
-        }
-        script.probes.push([String(params[0]), String(params[1])]);
-        return [];
-      },
-    },
-    notify: (channel, payload) => subscriptions.get(channel)?.notify(payload),
-    redial: () => {
-      for (const subscription of subscriptions.values()) subscription.listening?.();
-    },
-    pending: () => timers.map((timer) => timer.delayMs),
-    fire: () => timers.shift()?.run(),
-    setTimer: (run, delayMs) => {
-      const timer = { run, delayMs };
-      timers.push(timer);
-      return () => {
-        const at = timers.indexOf(timer);
-        if (at >= 0) timers.splice(at, 1);
-      };
-    },
-  };
-  return script;
-}
-
-/** Let the dial, and the probe behind it, run to their next await. */
-const settle = async (): Promise<void> => {
-  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
-};
+import { scripted, settle } from './queue-wake-fixture';
 
 const lines: { event: string; level: string; fix?: string; failures?: number }[] = [];
 let releaseLogSink: () => void = () => undefined;
@@ -148,8 +65,8 @@ describe('the cross-process wake', () => {
     expect(wake.live()).toBe(true);
     expect(wakeIsLive()).toBe(true);
     expect(logged('jobs.wake.live')).toHaveLength(1);
-    // The verdict timer went with the proof.
-    expect(script.pending()).toEqual([]);
+    // The verdict timer went with the proof; what is armed is the next one (the 10 s default).
+    expect(script.pending()).toEqual([10_000]);
     await wake.stop();
   });
 
@@ -348,6 +265,82 @@ describe('the cross-process wake', () => {
     expect(script.unlistens).toBe(1);
     expect(script.probes).toEqual([]);
     expect(wakeIsLive()).toBe(false);
+  });
+
+  test('a session that stops delivering is un-proven within one verify window without an onListening', async () => {
+    const script = scripted();
+    const wake = startQueueWake({ ...script, verifyTimeoutMs: 5_000, reproveEveryMs: 10_000 });
+    await settle();
+    script.notify(JOBS_WAKE_CHANNEL, '');
+    script.notify(OUTBOX_WAKE_CHANNEL, '');
+    expect(wakeIsLive()).toBe(true);
+    const woken: (string | undefined)[] = [];
+    const stopHearing = onEnqueued((queue) => woken.push(queue));
+    const stagedSeen: unknown[] = [];
+    const stopStaged = onStaged((committed) => stagedSeen.push(committed));
+
+    // Proven is not for ever: the next proof is armed, and it is sent through the pool.
+    expect(script.pending()).toEqual([10_000]);
+    script.fire();
+    await settle();
+    expect(script.probes.slice(2)).toEqual([
+      [JOBS_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD],
+      [OUTBOX_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD],
+    ]);
+    // It comes back: still live, the next one armed — and no loop was woken to find nothing.
+    script.notify(JOBS_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD);
+    script.notify(OUTBOX_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD);
+    expect(wakeIsLive()).toBe(true);
+    expect(woken).toEqual([]);
+    expect(stagedSeen).toEqual([]);
+    expect(script.pending()).toEqual([10_000]);
+
+    // The session goes half-open: no re-dial, no `onListening`, and nothing is delivered.
+    script.fire();
+    await settle();
+    expect(script.pending()).toEqual([5_000]);
+    expect(wakeIsLive()).toBe(true);
+    script.fire();
+    expect(wake.live()).toBe(false);
+    expect(wakeIsLive()).toBe(false);
+    expect(logged('jobs.wake.lost')).toEqual([{ event: 'jobs.wake.lost', level: 'warn' }]);
+
+    // Still asking, and silent while it stays lost; the proof that crosses makes it live again.
+    expect(script.pending()).toEqual([10_000]);
+    script.fire();
+    await settle();
+    script.fire();
+    expect(logged('jobs.wake.lost')).toHaveLength(1);
+    script.fire();
+    await settle();
+    script.notify(JOBS_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD);
+    script.notify(OUTBOX_WAKE_CHANNEL, WAKE_REPROVE_PAYLOAD);
+    expect(wakeIsLive()).toBe(true);
+    expect(script.pending()).toEqual([10_000]);
+
+    stopHearing();
+    stopStaged();
+    await wake.stop();
+    expect(script.pending()).toEqual([]);
+  });
+
+  test('a re-dial ends the re-proof in flight: the new session is proven by its own probe', async () => {
+    const script = scripted();
+    const wake = startQueueWake({ ...script, verifyTimeoutMs: 5_000, reproveEveryMs: 10_000 });
+    await settle();
+    script.notify(JOBS_WAKE_CHANNEL, '');
+    script.notify(OUTBOX_WAKE_CHANNEL, '');
+    script.fire();
+    await settle();
+    expect(script.pending()).toEqual([5_000]);
+
+    script.redial();
+    await settle();
+    // Only the new session's own verdict is armed; the old re-proof says nothing about it.
+    expect(script.pending()).toEqual([5_000]);
+    script.fire();
+    expect(logged('jobs.wake.lost')).toEqual([]);
+    await wake.stop();
   });
 
   test('a non-finite knob is refused, not read as zero', () => {

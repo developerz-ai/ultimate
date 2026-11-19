@@ -4,7 +4,7 @@
 // are `ls`, `show`, `retry`, `cancel`, `drain`.
 
 import type { BackoffCurve, JitterMode, Random } from '@ultimat3/core';
-import { backoffDelay } from '@ultimat3/core';
+import { backoffDelay, JOBS_MAX_ATTEMPTS_DEFAULT } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { finiteDurationMs } from './clock';
 
@@ -44,7 +44,7 @@ export interface RetryPolicy {
 export type RetryReport = 'dead-letter' | 'every-attempt';
 
 export const DEFAULT_RETRY = {
-  attempts: 3,
+  attempts: JOBS_MAX_ATTEMPTS_DEFAULT,
   backoff: 'exponential',
   delay: 1_000,
   maxDelay: 3_600_000,

@@ -420,7 +420,7 @@ island that drops markup holding other islands (`As of 2026-10`, [Client data](C
 
 | Call | With the router | Without it (a `site/` page, a `'document'` page, the router's script blocked) |
 |---|---|---|
-| `navigate(url, { replace? })` | the router's own navigation: the server's gate and the answer decide swap, modal or full load. Another origin: a document load | `location.assign` / `location.replace` |
+| `navigate(url, { replace? })` | the router's own navigation: the server's gate and the answer decide swap, modal or full load. Another origin: a document load. A fragment of the page on screen (same path and query, `#…`): the browser's own fragment navigation — it scrolls, fires `hashchange`, and no `ultimate:navigate` / `ultimate:navigated` (`As of 2026-11-19`; it refetched and swapped the page, disposing its islands) | `location.assign` / `location.replace` |
 | `refresh()` | the page fetched again (never from the prefetch cache) and swapped in with no history entry, at the visitor's scroll — for the same visitor: [below](#refresh-is-the-same-page). Under an open modal: nothing | `location.reload()` |
 | `scheduleRefresh()` | a `refresh()` once the visitor is idle, coalesced: [below](#scheduling-a-refresh) | nothing — a reload under a reader is the failure it prevents |
 | `openModal(path)` | `#<path>` over the page, pushed, so Back closes it. A path that is not a modal of this tab opens nothing, as a stale hash | `location.assign(path)`: the modal route's whole page |

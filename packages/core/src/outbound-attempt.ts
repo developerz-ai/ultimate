@@ -21,7 +21,7 @@ import {
   outboundUnreachable,
 } from './outbound-errors';
 import type { HopCall } from './outbound-hops';
-import { redactedUrl, sendHops } from './outbound-hops';
+import { redactedLocation, sendHops } from './outbound-hops';
 import type { WatchedFailure } from './outbound-read';
 import { watchedBody } from './outbound-read';
 import { readWithinLimit } from './read-capped';
@@ -107,7 +107,7 @@ async function refusalOf(
   if (status >= 300 && status < 400) {
     await body.cancel().catch(() => undefined);
     const location = headers.get('location');
-    const where = location === null ? 'nowhere' : redactedUrl(new URL(location, url));
+    const where = location === null ? 'nowhere' : redactedLocation(location, url);
     return outboundRedirected(site, status, where);
   }
   if (isRetryableStatus(status)) {

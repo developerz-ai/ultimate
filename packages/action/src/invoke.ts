@@ -50,7 +50,12 @@ import { idempotencyKeyFor } from './idempotency-key';
 import { drawMeter } from './meter-gate';
 import { guardAction, guardActionBeforeInput } from './policy-gate';
 import { spendActionLimit, withCallerAddress, withJobFrame } from './rate-limit-gate';
-import { parseActionInput, parsedOrNothing, validateOutput } from './validate';
+import {
+  parseActionInput,
+  parsedOrNothing,
+  validateOutput,
+  validateReplayedOutput,
+} from './validate';
 
 /**
  * Private on purpose. `@ultimat3/action` exports no way to read this back, which
@@ -403,8 +408,11 @@ async function perform(
     trace.replayed = outcome.replayed;
     // A replay is parsed like a first call. The memory store hands back the live value and the
     // postgres store `JSON.parse(JSON.stringify(v))` — a `Date` on the first call and a `string`
-    // on every retry served from Postgres — so the output schema is the one answer to its shape.
-    return outcome.replayed ? validateOutput(def.output, outcome.value, name) : outcome.value;
+    // on every retry served from Postgres — so the output schema is the one answer to its shape,
+    // and a stored `null` it refuses is the `undefined` JSON could not keep.
+    return outcome.replayed
+      ? validateReplayedOutput(def.output, outcome.value, name)
+      : outcome.value;
   } finally {
     // Only for a handler that actually started, and only through the gate. A replay ran no handler
     // and changed nothing the first call had not already busted — re-busting per retry re-purges

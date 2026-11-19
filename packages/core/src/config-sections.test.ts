@@ -75,6 +75,8 @@ describe('every numeric key is screened', () => {
     ['jobs.maxAttempts', { jobs: { maxAttempts: 0 } }, 0],
     ['jobs.visibilityTimeoutMs', { jobs: { visibilityTimeoutMs: Number.NaN } }, Number.NaN],
     ['jobs.visibilityTimeoutMs', { jobs: { visibilityTimeoutMs: 0 } }, 0],
+    // 0 passed here and crashed the boot: the cache rungs refuse a lease of no length.
+    ['cache.defaultTtlMs', { cache: { defaultTtlMs: 0 } }, 0],
     ['cache.defaultTtlMs', { cache: { defaultTtlMs: -1 } }, -1],
     ['cache.defaultTtlMs', { cache: { defaultTtlMs: 1.5 } }, 1.5],
     ['cache.defaultTtlMs', { cache: { defaultTtlMs: '60s' } }, '60s'],
@@ -89,7 +91,7 @@ describe('every numeric key is screened', () => {
       defineConfig({
         name: 'app',
         jobs: { concurrency: 1, maxAttempts: 1, visibilityTimeoutMs: 1 },
-        cache: { defaultTtlMs: 0 },
+        cache: { defaultTtlMs: 1 },
       }),
     ).not.toThrow();
   });
@@ -200,4 +202,51 @@ describe('drain.deadlineMs', () => {
       expect(cause).toContain('drain.deadlineMs');
     },
   );
+});
+
+describe('pwa switches and manifest lists are read by type, never by truthiness', () => {
+  const installable = {
+    enabled: true,
+    name: 'App',
+    offline: { fallback: '/offline' },
+    colors: {
+      light: { themeColor: '#111111', backgroundColor: '#ffffff' },
+      dark: { themeColor: '#111111', backgroundColor: '#000000' },
+    },
+  };
+  // An untyped `app.config.ts` is the boundary: these values arrive as `unknown` in practice.
+  const config = (input: Record<string, unknown>) =>
+    defineConfig({ name: 'app', ...input } as Parameters<typeof defineConfig>[0]);
+
+  test("pwa.enabled 'false' is X_CONFIG_INVALID, never on", () => {
+    expect(refusal(() => config({ pwa: { ...installable, enabled: 'false' } }))).toContain(
+      'pwa.enabled must be true or false',
+    );
+    for (const key of ['backgroundSync', 'push'] as const) {
+      expect(refusal(() => config({ pwa: { ...installable, [key]: 'false' } }))).toContain(
+        `pwa.${key} must be true or false`,
+      );
+    }
+  });
+
+  test('site.favicon and pwa.shortcuts of the wrong kind are X_CONFIG_INVALID, never a TypeError', () => {
+    for (const favicon of [42, null, [], {}]) {
+      expect(refusal(() => config({ site: { favicon } }))).toContain('site.favicon');
+    }
+    expect(refusal(() => config({ pwa: { ...installable, shortcuts: 'x' } }))).toContain(
+      'pwa.shortcuts must be a list',
+    );
+    expect(refusal(() => config({ pwa: { ...installable, screenshots: {} } }))).toContain(
+      'pwa.screenshots must be a list',
+    );
+    expect(refusal(() => config({ pwa: { ...installable, categories: 42 } }))).toContain(
+      'pwa.categories must be a list of strings',
+    );
+    const offline = { fallback: '/offline', neverCache: [42, null] };
+    expect(refusal(() => config({ pwa: { ...installable, offline } }))).toContain(
+      'pwa.offline.neverCache must list path strings',
+    );
+    // The well-formed block still passes.
+    expect(config({ pwa: installable }).pwa.enabled).toBe(true);
+  });
 });

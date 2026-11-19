@@ -1,7 +1,7 @@
 // `x g policy` / `x g resource` grant what they declare. A generated `policy.ts` declares
 // `<feature>:read` and `<feature>:write`; nothing granted them, so every generated endpoint
-// answered 403 to every actor a role mints. The edit lands in the scaffold's one role map,
-// `apps/web/shared/roles.ts`: `:read` to `member`, `:write` to `admin` (which inherits member).
+// answered 403 to every actor a role mints. The edit lands in the app's one role map
+// (`generate-roles-file.ts`): `:read` to `member`, `:write` to `admin` (which inherits member).
 //
 // And a generated ENTITY is a screen at `/admin/<table>`, behind `<table>:read|write|delete` —
 // three permissions `defineAdmin()` derives from the table's own name. They are declared in the
@@ -9,7 +9,7 @@
 
 import type { GenerateDisk } from './generate-disk';
 import { appDisk } from './generate-disk';
-import { ROLES_FILE } from './permission-grants';
+import { rolesFileOf } from './generate-roles-file';
 import { absentFrom, appendToList, maskOf, readList, readProperties } from './source-list-edit';
 import { isEntityModule } from './templates/entity-module';
 
@@ -216,8 +216,9 @@ export async function grantGeneratedPermissions(
 ): Promise<readonly string[]> {
   const admin = (await writtenTables(root, written, disk)).flatMap(adminGrantsFor);
   const grants = [...(await policyGrantsFor(root, written, disk)), ...admin];
-  const before = grants.length === 0 ? undefined : await disk.read(ROLES_FILE);
-  if (before === undefined) return [];
+  const file = grants.length === 0 ? undefined : await rolesFileOf(root, disk);
+  const before = file === undefined ? undefined : await disk.read(file);
+  if (file === undefined || before === undefined) return [];
   const unplaced = insertGrants(before, grants).skipped;
   const placeable = grants.filter((grant) => !unplaced.includes(grant));
   const declared = insertPermissions(
@@ -228,6 +229,6 @@ export async function grantGeneratedPermissions(
   const grantable = placeable.filter((grant) => !declared.skipped.includes(grant.permission));
   const { source } = insertGrants(declared.source, grantable);
   if (source === before) return [];
-  await disk.write(ROLES_FILE, source);
-  return [ROLES_FILE];
+  await disk.write(file, source);
+  return [file];
 }

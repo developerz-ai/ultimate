@@ -4,11 +4,13 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ctxOf, frozenClock, isUltimateError, userActor } from '@ultimat3/core';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { DownloadQuery, DownloadQueryDef } from './download';
 import { serveDownloadFile } from './download';
+import { toQueryRoute } from './http';
 import { query, sourceFor } from './query';
 import { describeSql } from './sql';
 
@@ -211,5 +213,78 @@ describe('what a token binds', () => {
     expect(decodeURIComponent(url)).not.toContain('secret-user');
     expect(tokenOf(url)).not.toContain('recording');
     expect(tokenOf(url)).toMatch(/^x1\.[0-9a-f]{16}\./);
+  });
+});
+
+describe('a URL is minted for the input it re-parses to', () => {
+  const Filtered = t.object({
+    runId: t.uuid,
+    note: t.string.nullable().optional(),
+    tags: t.array(t.string).optional(),
+  });
+  const filtered = () =>
+    query({
+      input: Filtered,
+      policy: can('recording:read'),
+      download: {
+        async handle() {
+          return { body: BYTES, contentType: 'video/mp4', filename: 'run.mp4' };
+        },
+      },
+    }).named('runFiltered');
+
+  test('a URL minted with a null or empty-array optional member serves', async () => {
+    const target = filtered();
+    const server = httpServer({
+      routes: [toQueryRoute(target)],
+      config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
+      hooks: { authenticate: () => null },
+    });
+    const ctx = { ctx: ctxOf({ actor: viewer() }) };
+    for (const input of [
+      { runId: RUN, note: null },
+      { runId: RUN, tags: [] },
+      { runId: RUN, note: null, tags: [] },
+      { runId: RUN, tags: ['a', 'b'] },
+    ]) {
+      const { url } = await target.url(input, ctx);
+      const response = await server.fetch(new Request(`http://dev.test${url}`));
+      expect([input, response.status]).toEqual([input, 200]);
+    }
+  });
+
+  test('the re-parsed input is judged by the policy too: one it denies mints no URL', async () => {
+    // Admits `note: null`, denies an absent note — and a search string has no null, so the URL
+    // re-parses to the absent one. Sealing that input would grant what the policy refused.
+    let handled = false;
+    const target = query({
+      input: Filtered,
+      policy: can<{ note?: string | null }>('recording:read', ({ input }) => input.note === null),
+      download: {
+        async handle() {
+          handled = true;
+          return { body: BYTES, contentType: 'video/mp4', filename: 'run.mp4' };
+        },
+      },
+    }).named('runNullNote');
+    const ctx = { ctx: ctxOf({ actor: viewer() }) };
+    expect(await codeOf(() => target.url({ runId: RUN, note: null }, ctx))).toBe('X_FORBIDDEN');
+    expect(await codeOf(() => target.url({ runId: RUN }, ctx))).toBe('X_FORBIDDEN');
+    expect(handled).toBe(false);
+  });
+
+  test('the URL still binds its input: a member added to it is refused', async () => {
+    const target = filtered();
+    const server = httpServer({
+      routes: [toQueryRoute(target)],
+      config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
+      hooks: { authenticate: () => null },
+    });
+    const { url } = await target.url({ runId: RUN, tags: [] }, { ctx: ctxOf({ actor: viewer() }) });
+    const response = await server.fetch(new Request(`http://dev.test${url}&tags=x`));
+    expect(response.status).toBe(403);
+    expect(((await response.json()) as { code: string }).code).toBe(
+      'X_QUERY_DOWNLOAD_TOKEN_INVALID',
+    );
   });
 });

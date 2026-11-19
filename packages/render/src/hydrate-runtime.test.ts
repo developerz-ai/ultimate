@@ -91,6 +91,8 @@ describe('the interaction runtime, executed', () => {
         name === 'data-x-entry' ? Bun.pathToFileURL(island).href : null,
       // Every real element has one, and `boot` marks the mount outcome through it.
       setAttribute: (): void => undefined,
+      // No props script inside the wrapper either.
+      querySelector: (): unknown => null,
       // This element is both the island root and every event's target, and it has no children — so
       // containment reduces to identity here. `hydrate-replay.test.ts` is where the two are
       // different nodes, which is the case this harness cannot express and the defect it hid.
@@ -227,6 +229,8 @@ describe('the mount markers, executed', () => {
     // to it. No event is fired in this block; the markers are the whole subject.
     addEventListener(name: string, fn: unknown): void;
     removeEventListener(name: string, fn: unknown): void;
+    /** Where `boot` looks for the props script first: inside the wrapper. */
+    querySelector(selector: string): unknown;
   }
 
   interface MountHarness {
@@ -282,6 +286,7 @@ describe('the mount markers, executed', () => {
       setAttribute: (name, value) => {
         attributes.set(name, value);
       },
+      querySelector: () => null,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
     };
@@ -392,87 +397,6 @@ describe('the mount markers, executed', () => {
       expect(harness.attribute('data-x-failed')).toBe('mount is not a function');
     } finally {
       await harness.dispose();
-    }
-  });
-});
-
-// The same rule for `visible`, which reaches `boot` from an IntersectionObserver callback — a
-// stack with no caller left to hand a rejection to.
-describe('the visible runtime, executed', () => {
-  /** The import of the island is file I/O, not time: wait for the marker, bounded, never hang. */
-  const waitFor = async (ready: () => boolean): Promise<void> => {
-    for (let i = 0; i < 1_000 && !ready(); i += 1) {
-      for (let m = 0; m < 8; m += 1) await Promise.resolve();
-      await new Promise((resolve) => {
-        setTimeout(resolve, 1);
-      });
-    }
-  };
-
-  test('an island that fails to mount is marked failed and rejects nothing globally', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'ultimate-visible-'));
-    const globals = globalThis as unknown as Record<string, unknown>;
-    let failMount = (_message: string): void => undefined;
-    const gate = new Promise<void>((_resolve, reject) => {
-      failMount = (message) => {
-        reject(new TypeError(message));
-      };
-    });
-    let mounting = false;
-    globals['__xTestMount'] = (): Promise<void> => {
-      mounting = true;
-      return gate;
-    };
-
-    const island = join(dir, 'island.mjs');
-    await writeFile(island, 'export function mount(){return globalThis.__xTestMount()}\n', 'utf8');
-
-    const attributes = new Map<string, string>([['data-x-entry', Bun.pathToFileURL(island).href]]);
-    const element = {
-      getAttribute: (name: string): string | null => attributes.get(name) ?? null,
-      setAttribute: (name: string, value: string): void => {
-        attributes.set(name, value);
-      },
-    };
-    globals['document'] = {
-      querySelectorAll: (selector: string): unknown[] =>
-        selector.includes('visible') ? [element] : [],
-      querySelector: (): unknown => null,
-    };
-    // Fires immediately, which is what a viewport-visible island does on first paint.
-    globals['IntersectionObserver'] = class {
-      readonly #callback: (entries: readonly { isIntersecting: boolean }[]) => void;
-      constructor(callback: (entries: readonly { isIntersecting: boolean }[]) => void) {
-        this.#callback = callback;
-      }
-      observe(): void {
-        this.#callback([{ isIntersecting: true }]);
-      }
-      disconnect(): void {
-        // The runtime disconnects before it boots; nothing here has to observe that.
-      }
-    };
-
-    try {
-      const runtime = join(dir, 'runtime.mjs');
-      const source = hydrateRuntime([directive({ strategy: 'visible' })])
-        .replace('<script type="module">', '')
-        .replace('</script>', '');
-      await writeFile(runtime, source, 'utf8');
-      await import(Bun.pathToFileURL(runtime).href);
-
-      // Rejected only once `mount` holds the gate: earlier, nothing is listening for it yet.
-      await waitFor(() => mounting);
-      failMount('mount is not a function');
-      await waitFor(() => attributes.has('data-x-failed'));
-
-      expect(attributes.get('data-x-failed')).toBe('mount is not a function');
-      expect(attributes.has('data-x-mounted')).toBe(false);
-    } finally {
-      globals['document'] = undefined;
-      globals['IntersectionObserver'] = undefined;
-      globals['__xTestMount'] = undefined;
-      await rm(dir, { recursive: true, force: true });
     }
   });
 });

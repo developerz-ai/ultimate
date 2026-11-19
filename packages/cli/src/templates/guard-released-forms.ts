@@ -129,9 +129,14 @@ export const RELEASED_GUARD_FORMS: Readonly<
   'undeclared-env': [
     ['16pof11n1trhg', 'error'],
     ['1f8kizielequo', 'error'],
+    ['1fc7m95vm6k3g', 'error'],
+    ['20rw6oj7g0bz3', 'error'],
     ['2jb32jms80mge', 'error'],
     ['2t3qtexnpfnyq', 'error'],
+    ['2x7h5rxf4hv0g', 'error'],
     ['3gsoj050vbe69', 'error'],
+    ['3mtci6brks9i6', 'error'],
+    ['3rmwdbc6jgv5q', 'error'],
   ],
   'undefined-style-class': [
     ['3food9t4vrzv8', 'error'],

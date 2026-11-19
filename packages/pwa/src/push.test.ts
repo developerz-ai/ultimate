@@ -212,10 +212,18 @@ describe('subscribeSource, executed', () => {
     readonly applicationServerKey: string;
   }
 
-  function subscriber(existing: string | null) {
+  const KEY = 'BKd-vapid-public-key';
+  /** The bytes a browser reports for a subscription made with `key` (base64url). */
+  const keyBuffer = (key: string): ArrayBuffer => {
+    const binary = atob(key.replaceAll('-', '+').replaceAll('_', '/'));
+    return Uint8Array.from(binary, (char) => char.charCodeAt(0)).buffer;
+  };
+
+  function subscriber(existing: string | null, madeWith?: ArrayBuffer | null) {
     const calls: SubscribeCall[] = [];
+    const unsubscribed: string[] = [];
     const source = subscribeSource({
-      publicKey: 'BKd-vapid-public-key',
+      publicKey: KEY,
       subject: 'mailto:ops@app.test',
     });
     const run = new Function(
@@ -233,7 +241,13 @@ return subscribePush(registration,locale,timeZone);`,
     const registration = {
       pushManager: {
         getSubscription: async (): Promise<unknown> =>
-          existing === null ? null : { toJSON: () => ({ endpoint: existing }) },
+          existing === null
+            ? null
+            : {
+                toJSON: () => ({ endpoint: existing }),
+                ...(madeWith === undefined ? {} : { options: { applicationServerKey: madeWith } }),
+                unsubscribe: async (): Promise<boolean> => unsubscribed.push(existing) > 0,
+              },
         subscribe: async (options: SubscribeCall): Promise<unknown> => {
           calls.push(options);
           return { toJSON: () => ({ endpoint: 'https://push.test/new' }) };
@@ -243,6 +257,7 @@ return subscribePush(registration,locale,timeZone);`,
 
     return {
       calls,
+      unsubscribed,
       subscribe: () => run(registration, 'de-DE', 'Europe/Berlin'),
     };
   }
@@ -266,5 +281,26 @@ return subscribePush(registration,locale,timeZone);`,
     ]);
     expect(result.subscription).toEqual({ endpoint: 'https://push.test/new' });
     expect(result.locale).toBe('de-DE');
+  });
+
+  // `subscribeToPush`'s rule (`push-client.ts`), held here too: after a VAPID rotation no message
+  // signed with the new key reaches the old subscription, and re-saving it looks like success.
+  test('an existing subscription made with another server key is unsubscribed and replaced', async () => {
+    const client = subscriber('https://push.test/old', keyBuffer('BOld-vapid-public-key0'));
+    const result = await client.subscribe();
+
+    expect(client.unsubscribed).toEqual(['https://push.test/old']);
+    expect(client.calls).toEqual([{ userVisibleOnly: true, applicationServerKey: KEY }]);
+    expect(result.subscription).toEqual({ endpoint: 'https://push.test/new' });
+  });
+
+  test('one made with this key, or one that does not say, is reused', async () => {
+    for (const made of [keyBuffer(KEY), null]) {
+      const client = subscriber('https://push.test/old', made);
+      const result = await client.subscribe();
+      expect(client.unsubscribed).toEqual([]);
+      expect(client.calls).toEqual([]);
+      expect(result.subscription).toEqual({ endpoint: 'https://push.test/old' });
+    }
   });
 });

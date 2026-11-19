@@ -1,7 +1,7 @@
-// The queues a `worker` serves and the slots each gets: `jobs.queues`, `jobs.concurrency`,
-// `jobs.maxInFlight` and `jobs.visibilityTimeoutMs` off the app's own `app.config.ts`, and `WORKER_QUEUES` off the
-// Deployment's env — the one per-Deployment answer, since every Deployment runs the same image and
-// the same config (issues #673, #676).
+// What the boot reads of `jobs.*` off the app's own `app.config.ts`: the queues a `worker` serves
+// and the slots each gets, `WORKER_QUEUES` off the Deployment's env (the one per-Deployment answer:
+// every Deployment runs the same image and config, issues #673, #676), and the retry of a job that
+// declares none (`jobs.maxAttempts` / `jobs.backoff`), installed for every role.
 
 import type { AppConfig, JobsConcurrency } from '@ultimat3/core';
 import {
@@ -11,6 +11,7 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import { registeredJobs, type WorkerOptions } from '@ultimat3/jobs';
+import { installDefaultRetry, resetDefaultRetry } from '@ultimat3/jobs/adapter';
 import type { Env } from './runtime-bindings';
 
 /** The env key a worker Deployment names its queues with: `WORKER_QUEUES=banks,banks-long`. */
@@ -64,6 +65,20 @@ export function workerQueuesFromEnv(env: Env): readonly string[] | undefined {
   });
 }
 
+/**
+ * `jobs.maxAttempts` and `jobs.backoff`, installed as the retry of a job that declares none. In
+ * EVERY role, never the worker alone: the process that enqueues stamps the row's `max_attempts`
+ * from the policy the worker retries by. No config is the framework's own default again.
+ */
+export function installJobsRetry(config: AppConfig | undefined): void {
+  if (config === undefined) resetDefaultRetry();
+  else installDefaultRetry({ attempts: config.jobs.maxAttempts, backoff: config.jobs.backoff });
+}
+
+/**
+ * What the boot reads of `jobs.*` for the worker, once. It installs nothing: the default retry is
+ * every role's, so the boot calls `installJobsRetry` itself (`startQueue`, `runtime-queue.ts`).
+ */
 export function workerConfigOf(config: AppConfig | undefined, env: Env = {}): WorkerConfig {
   const fromEnv = workerQueuesFromEnv(env);
   const base =

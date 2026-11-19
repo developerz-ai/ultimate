@@ -339,17 +339,28 @@ export const assertInRequest = (member: string, ctx = ambientContext()): Request
 };
 
 /**
+ * The HTTP request behind `from` (the ambient context by default): the context itself, or the
+ * nearest one it was derived inside (`parentContext`). `undefined` for a job, a task, the build's
+ * `llms.txt` pass. For a reader of what the PIPELINE set — the matched route — which a derived
+ * child does not carry. Not on the barrel: app code reads a header or a cookie, never the proof.
+ */
+export const requestBehind = (
+  from: Ctx | undefined = tryUseContext(),
+): RequestContext | undefined => {
+  for (let ctx = from; ctx !== undefined; ctx = parentContext(ctx)) {
+    // The inverse of `asCtx`, proven by the one field only the pipeline sets (`assertInRequest`).
+    if (Reflect.get(ctx, 'requestHeaders') !== undefined) return ctx as unknown as RequestContext;
+  }
+  return undefined;
+};
+
+/**
  * Whether an HTTP request is behind the ambient context: the context itself, or any it was derived
  * inside (`parentContext`). A child does not carry the request's headers, so a reader still
  * refuses there (`X_NO_REQUEST`); this only tells "no request at all" (a job, a task, the build's
  * `llms.txt` pass) from "a request this scope cannot read", for a reader whose answer is `null`.
  */
-export const hasRequest = (): boolean => {
-  for (let ctx = tryUseContext(); ctx !== undefined; ctx = parentContext(ctx)) {
-    if (Reflect.get(ctx, 'requestHeaders') !== undefined) return true;
-  }
-  return false;
-};
+export const hasRequest = (): boolean => requestBehind() !== undefined;
 
 /**
  * Read the ambient request context. Throws outside a request via core's ALS — and, since a job, a

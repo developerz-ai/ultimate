@@ -30,10 +30,15 @@
  *  - CONTROL THE SERVER (`pg_reload_*`, `pg_rotate_*`, `pg_switch_*`, `pg_promote`,
  *    `pg_wal_replay_*`) — the family `pg_cancel_backend`/`pg_terminate_backend` established;
  *  - CONSUME THE REPLICATION STREAM (`pg_create_*`, `pg_drop_*`, `pg_replication_*`,
- *    `pg_logical_*`) — `pg_logical_slot_get_changes` advances a slot's confirmed position. The
- *    catalog VIEWS beside them (`pg_replication_slots`) are read `from`, never called;
+ *    `pg_logical_*`, `pg_copy_*`, `pg_sync_replication_*`) — `pg_logical_slot_get_changes` advances
+ *    a slot's confirmed position, and copying or syncing a slot creates one outside the
+ *    transaction. The catalog VIEWS beside them (`pg_replication_slots`) are read `from`, never
+ *    called;
+ *  - RUN A BASE BACKUP (`pg_backup_*`, and `pg_start_backup`/`pg_stop_backup` before 15) — server
+ *    control again, forcing a checkpoint;
  *  - WRITE A FILE (`pg_file_*`) — the other half of `pg_read_*`;
- *  - WRITE THE CATALOG (`pg_import_*`) — `pg_import_system_collations` inserts `pg_collation` rows;
+ *  - WRITE THE CATALOG (`pg_import_*`, `pg_restore_*`, `pg_clear_*`) — `pg_import_system_collations`
+ *    inserts `pg_collation` rows; 18's `pg_restore_relation_stats` rewrites `pg_class`;
  *  - RUN A QUERY HANDED TO IT AS TEXT (`query_to_xml*`, `cursor_to_xml*`, `table_to_xml*`,
  *    `schema_to_xml*`, `database_to_xml*`, `ts_stat`, `ts_rewrite`) — the statement is a string
  *    literal, which every pass of the scan blanks by design, so whatever it calls is invisible.
@@ -50,7 +55,10 @@ const FORBIDDEN_FUNCTIONS = [
   'lo_',
   'nextval',
   'pg_advisory_',
+  'pg_backup_',
   'pg_cancel_backend',
+  'pg_clear_',
+  'pg_copy_',
   'pg_create_',
   'pg_current_xact_id',
   'pg_drop_',
@@ -63,14 +71,18 @@ const FORBIDDEN_FUNCTIONS = [
   'pg_read_',
   'pg_reload_',
   'pg_replication_',
+  'pg_restore_',
   'pg_rotate_',
   'pg_sleep',
+  'pg_start_backup',
   'pg_stat_file',
   'pg_stat_reset',
   // Not reachable from `pg_stat_reset`: the extension spells the same reset with the statistics
   // view's name in the middle, so a prefix of one is not a prefix of the other.
   'pg_stat_statements_reset',
+  'pg_stop_backup',
   'pg_switch_',
+  'pg_sync_replication_',
   'pg_terminate_backend',
   'pg_try_advisory_',
   'pg_wal_replay_',

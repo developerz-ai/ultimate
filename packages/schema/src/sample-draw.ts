@@ -141,6 +141,17 @@ export function satisfiesPattern(node: SchemaNode, value: unknown): boolean {
 }
 
 /**
+ * Which length bound of the node `value` misses, if any. Only a format value can miss one — it is
+ * never padded or cut, since that would break the format — so `t.email.min(30)` is a gap, not a guess.
+ */
+export function lengthMiss(node: SchemaNode, value: unknown): 'min' | 'max' | undefined {
+  if (typeof value !== 'string') return undefined;
+  const length = charCount(value);
+  if (length < (node.minLength ?? 0)) return 'min';
+  return node.maxLength !== undefined && length > node.maxLength ? 'max' : undefined;
+}
+
+/**
  * The smallest value each choice allows: `null` where nullable, no optional key, the fewest
  * items, the first member. The policy assertion's sample, byte for byte what it always was.
  */

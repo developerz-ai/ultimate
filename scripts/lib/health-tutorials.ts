@@ -1,7 +1,7 @@
 // Row 10's read, judge and command: whether the newest `tutorial-run.yml` run on `main` — tutorials
-// 1–4 run fence by fence on a scaffold of it — ended green. That workflow runs outside `ci`, so
-// nothing else announces main's red. A pull request's run — a fork's branch may be named `main` too
-// — is that pull request's: `--event push` keeps it out.
+// 1–4 run fence by fence on a scaffold of it, on a path-filtered push and weekly — ended green, and
+// whether it ran this week at all. Outside `ci`, nothing else announces main's red. A pull
+// request's run — a fork's branch may be named `main` too — is that pull request's: skipped.
 
 import type { RunRow } from './health-narrow';
 import { jsonDocument, narrowRuns } from './health-narrow';
@@ -18,10 +18,8 @@ const ARGS = [
   'tutorial-run.yml',
   '--branch',
   'main',
-  '--event',
-  'push',
   '--limit',
-  '1',
+  '20',
   '--json',
   FIELDS,
 ];
@@ -38,6 +36,15 @@ export const tutorialsRunReader = async (
   ghRunner: (args: readonly string[], cwd: string) => Promise<RunResult> = gh,
 ): Promise<TutorialsRunRead> => ({ runs: jsonDocument((await ghRunner(ARGS, root)).output) });
 
+/** The events that are main's own state: a merge, the weekly schedule, a dispatch on main. */
+const MAIN_EVENTS: ReadonlySet<string> = new Set(['push', 'schedule', 'workflow_dispatch']);
+
+/** A week and a day: the schedule fires weekly, and GitHub stops a schedule on its own. */
+export const TUTORIALS_STALE_MS = 8 * 24 * 60 * 60 * 1000;
+
+const RESTART =
+  'gh workflow enable tutorial-run.yml && gh workflow run tutorial-run.yml --ref main';
+
 const fieldsOf = (run: RunRow): Partial<RowVerdict> => ({
   conclusion: run.conclusion,
   status: run.status,
@@ -50,11 +57,12 @@ const fieldsOf = (run: RunRow): Partial<RowVerdict> => ({
 });
 
 /**
- * No run at all is HEALTHY, not a re-run: the workflow is paths-filtered, so until a push touches
- * a tutorial or a generator there is nothing to have diverged, and re-running the query cannot
- * make a run exist. A cancelled newest run was superseded (`cancel-in-progress`): no verdict.
+ * No run at all is NO VERDICT: the weekly schedule makes one, and a green answered over a workflow
+ * that never ran is the silent green the checkup refuses. A newest run older than a week and a day
+ * is stale — every path filter can miss the change that moved a printed line. A cancelled newest
+ * run was superseded (`cancel-in-progress`): no verdict.
  */
-export const judgeTutorialsRun = (read: TutorialsRunRead): RowVerdict | Finding => {
+export const judgeTutorialsRun = (read: TutorialsRunRead, nowMs: number): RowVerdict | Finding => {
   const base = { row: 'tutorials-run' as const };
   if (!Array.isArray(read.runs) || narrowRuns(read.runs).length < read.runs.length) {
     return {
@@ -64,13 +72,12 @@ export const judgeTutorialsRun = (read: TutorialsRunRead): RowVerdict | Finding 
       at: 'scripts/health.ts',
     };
   }
-  const run = narrowRuns(read.runs)[0];
+  const run = narrowRuns(read.runs).find((each) => MAIN_EVENTS.has(each.event ?? ''));
   if (run === undefined) {
     return {
       ...base,
-      verdict: 'healthy',
-      reason:
-        'tutorial-run.yml has no run yet: no push to main has touched a tutorial or a generator',
+      verdict: 'unverdicted',
+      reason: `tutorial-run.yml has no push, scheduled or dispatched run on main yet — ${RESTART}`,
     };
   }
   const fields = fieldsOf(run);
@@ -80,6 +87,16 @@ export const judgeTutorialsRun = (read: TutorialsRunRead): RowVerdict | Finding 
       verdict: 'unverdicted',
       ...fields,
       reason: `the newest tutorial run is ${run.conclusion ?? run.status ?? 'running'} — re-run before filing`,
+    };
+  }
+  const age = nowMs - Date.parse(run.createdAt ?? '');
+  if (!(age <= TUTORIALS_STALE_MS)) {
+    return {
+      ...base,
+      verdict: 'unhealthy',
+      ...fields,
+      reason: `no tutorial run on main in eight days: the weekly schedule stopped — ${RESTART}`,
+      fix: RESTART,
     };
   }
   if (run.conclusion === 'success') {

@@ -20,6 +20,7 @@ import {
 } from '@ultimat3/realtime/server';
 import { BadFlagError } from './errors';
 import type { DevServices, Env } from './runtime-bindings';
+import { envWithAppTls } from './runtime-database-ssl';
 
 export interface StartReplicatorOptions {
   readonly services: DevServices;
@@ -181,7 +182,9 @@ export async function startReplicator(options: StartReplicatorOptions): Promise<
   const entities = replicatedRelations();
   if (entities.length === 0) throw noEntitiesRefusal(options.dev);
 
-  const selection = selectChangeFeed(options.env, { entities });
+  // `database.ssl` reaches this session too: it dials from the env, never through `startDb`.
+  const env = await envWithAppTls(options.services.root, options.env);
+  const selection = selectChangeFeed(env, { entities });
   const slot = selection.slot ?? '';
   const key = replicatorLockKey(slot);
   const heartbeat = loopHeartbeat('realtime.replicator', {

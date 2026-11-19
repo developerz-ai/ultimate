@@ -3,11 +3,11 @@
 
 import { TEST_COMPOSE_PATH } from './templates/scaffold-test-services';
 
-export const psLine = (project: string, service: string, root: string): string =>
+export const psLine = (project: string, service: string, root: string, state = 'running'): string =>
   JSON.stringify({
     Project: project,
     Service: service,
-    State: 'running',
+    State: state,
     Labels: [
       'org.opencontainers.image.title=A Server',
       `com.docker.compose.project=${project}`,

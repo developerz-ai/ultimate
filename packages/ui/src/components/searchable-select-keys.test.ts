@@ -122,3 +122,48 @@ describe('searchableKeys, single', () => {
     expect(many.open()).toBe(false);
   });
 });
+
+// The Enter that confirms an IME candidate, and the arrows that walk the candidates, are the
+// composition's: Chrome and Safari on macOS report them as `Enter`/`ArrowDown` with `isComposing`.
+describe('searchableKeys, during IME composition', () => {
+  const KANA: readonly SearchableOption[] = [
+    { value: 'tokyo', label: 'とうきょう' },
+    { value: 'tokushima', label: 'とくしま' },
+  ];
+  const composing = (select: ReturnType<typeof controller>, fields: Partial<SearchableKey>) => {
+    let prevented = false;
+    select.keys.onKeyDown({
+      key: 'Enter',
+      preventDefault: () => {
+        prevented = true;
+      },
+      ...fields,
+    });
+    return prevented;
+  };
+
+  test('Enter and arrows during composition pick and move nothing', () => {
+    const select = controller(false, KANA);
+    select.keys.typed('と');
+    expect(select.activeValue()).toBe('tokyo');
+    expect(composing(select, { key: 'ArrowDown', isComposing: true })).toBe(false);
+    expect(select.activeValue()).toBe('tokyo');
+    expect(composing(select, { key: 'Enter', isComposing: true })).toBe(false);
+    // Firefox and older engines: the key is `Process`, or only the legacy code says so.
+    expect(composing(select, { key: 'Process' })).toBe(false);
+    expect(composing(select, { key: 'Enter', keyCode: 229 })).toBe(false);
+    expect(composing(select, { key: 'Escape', isComposing: true })).toBe(false);
+    expect(select.chosen()).toEqual([]);
+    expect(select.open()).toBe(true);
+    expect(select.query()).toBe('と');
+    // The composition over, Enter is the pick again.
+    select.press('Enter');
+    expect(select.chosen()).toEqual(['tokyo']);
+  });
+
+  test('a closed field does not open on a composition arrow', () => {
+    const select = controller(false, KANA);
+    expect(composing(select, { key: 'ArrowDown', isComposing: true })).toBe(false);
+    expect(select.open()).toBe(false);
+  });
+});

@@ -31,6 +31,8 @@ export interface TestStack {
   readonly services: readonly string[];
   /** The checkouts whose compose file started these containers. */
   readonly roots: readonly string[];
+  /** Whether any container is up: `ps --all` lists exited ones too, and those hold no server. */
+  readonly running: boolean;
 }
 
 export type StackRead =
@@ -40,7 +42,7 @@ export type StackRead =
 export type StackRelation =
   | { readonly kind: 'own' }
   | { readonly kind: 'shared'; readonly with: string; readonly why: 'same-app' | 'declared' }
-  | { readonly kind: 'collision'; readonly with: string };
+  | { readonly kind: 'collision'; readonly with: string; readonly running: boolean };
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -72,6 +74,9 @@ export function jsonRows(stdout: string): readonly Record<string, unknown>[] {
 
 const stringOf = (value: unknown): string => (typeof value === 'string' ? value : '');
 
+/** Compose's states for a container that still holds its ports; `exited`/`created`/`dead` do not. */
+const LIVE_STATES: ReadonlySet<string> = new Set(['running', 'restarting', 'paused']);
+
 export function parseStack(stdout: string): TestStack | undefined {
   const rows = jsonRows(stdout).filter((row) => stringOf(row['Project']) !== '');
   const project = stringOf(rows[0]?.['Project']);
@@ -85,6 +90,7 @@ export function parseStack(stdout: string): TestStack | undefined {
     project,
     services: [...new Set(rows.map((row) => stringOf(row['Service'])))].sort(),
     roots: [...new Set(roots)],
+    running: rows.some((row) => LIVE_STATES.has(stringOf(row['State']))),
   };
 }
 
@@ -153,7 +159,7 @@ export async function relationTo(
     if (await sameApp(root, other, runner))
       shared = { kind: 'shared', with: other, why: 'same-app' };
     else if (env[SHARED_ENV] === '1') shared = { kind: 'shared', with: other, why: 'declared' };
-    else return { kind: 'collision', with: other };
+    else return { kind: 'collision', with: other, running: stack.running };
   }
   return shared;
 }

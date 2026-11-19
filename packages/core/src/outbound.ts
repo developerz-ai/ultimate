@@ -176,7 +176,9 @@ export async function outbound(
         deps.sleep ?? (request.signal === undefined ? undefined : signalledSleep(request.signal)),
       now: call.now,
       random: deps.random,
-      admitRetry: budget?.spend,
+      // A caller that cancelled wants no retry: refusing it ends the loop with that caller's own
+      // reason, and spends no token a real vendor failure on this key will need.
+      admitRetry: () => request.signal?.aborted !== true && (budget?.spend() ?? true),
     });
   };
   const answer = await instrumentedCall(

@@ -38,8 +38,13 @@ describe('unit · bench.yml fires on triggers that can fire', () => {
     expect(Object.keys(workflow.on ?? {})).toEqual(['schedule', 'workflow_dispatch']);
   });
 
-  test('the job token writes only the branch and the pull request', () => {
-    expect(workflow.permissions).toEqual({ contents: 'write', 'pull-requests': 'write' });
+  // was: "the job token writes only the branch and the pull request"
+  test('the job token writes the branch, the pull request, and the dispatch that gives it CI', () => {
+    expect(workflow.permissions).toEqual({
+      actions: 'write',
+      contents: 'write',
+      'pull-requests': 'write',
+    });
   });
 });
 

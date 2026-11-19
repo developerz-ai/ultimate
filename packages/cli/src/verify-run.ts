@@ -2,7 +2,7 @@
 // `cmd-verify.ts` because `x build` and the MCP host run the gate without going through the
 // command: what a run means — never bail early, count what actually ran — belongs to neither.
 
-import { ERROR_DOCS_URL, renderThrowable } from '@ultimat3/core';
+import { ERROR_DOCS_URL, isUltimateError, renderThrowable, stringField } from '@ultimat3/core';
 import type { CoverageMap } from './coverage-lcov';
 import { encodeCoverage } from './coverage-lcov';
 import { msg } from './messages';
@@ -323,7 +323,11 @@ async function runStep(
   // A step the floor requires whose suite executed nothing is the same vanished suite as a step
   // with no files at all — the run just had to finish before it could be seen. Appended to the
   // step's own findings so `data.failed`, the counts and every gate reading this table carry it.
-  const vanished = nothingRan && required ? [skippedSuiteFinding(step.name, tests.skipped)] : [];
+  // Unless the step already said why: a `live` step whose services could not start carries that
+  // finding itself, and a second one here would bury the cause under its symptom.
+  const explained = outcome.services === 'unavailable' && outcome.findings.length > 0;
+  const vanished =
+    nothingRan && required && !explained ? [skippedSuiteFinding(step.name, tests.skipped)] : [];
   const unrun = nothingRan ? ranNothingReason(tests) : undefined;
   const strict = unrun === undefined ? [] : judgeUnrun(floor, step.name, unrun, required, command);
   // A `skip` why over a suite that RAN tests is stale: said on the step, never red. Only on counts
@@ -389,6 +393,20 @@ async function expired(
 }
 
 function findingOf(error: unknown, step: string, command: string): Finding {
+  // A coded throw already carries its instruction: print its code and its fix, never the gate's
+  // own rerun, which only repeats the step that just threw (an `X_ENV_MISSING` under `manifest`).
+  // `stringField` because the read may fight back, like `renderThrowable` below.
+  if (isUltimateError(error)) {
+    const [code, cause, fix] = ['code', 'cause', 'fix'].map((key) => stringField(error, key));
+    if (code !== undefined && cause !== undefined && fix !== undefined && fix !== '') {
+      return {
+        code: 'X_VERIFY_FAILED',
+        cause: `step "${step}" threw ${code}: ${cause}`,
+        fix,
+        docs: ERROR_DOCS_URL,
+      };
+    }
+  }
   // A step may throw anything, including an Error that fights being read: `instanceof` runs a
   // Proxy's `getPrototypeOf` trap and `.message` runs a getter, so a hostile throw would take the
   // gate's own report down with it — the one message that may never be lost.

@@ -1,8 +1,9 @@
-// What a container's environment decides about a boot: which role, which port, which interface,
-// and where errors are reported. Split from `serve.ts`, which re-exports every name here.
+// What a container's environment decides about a boot: which role (and whether the app declares
+// it), which port, which interface, and where errors are reported. Split from `serve.ts`, which re-exports every name here.
 
-import type { ErrorReporter, Role } from '@ultimat3/core';
+import type { AppConfig, ErrorReporter, Role } from '@ultimat3/core';
 import {
+  ConfigInvalidError,
   chainErrorReporters,
   configureErrorReporting,
   errorReportersOf,
@@ -12,6 +13,7 @@ import {
   isSentryErrorReporter,
   logger,
   ROLES,
+  renderFixShellArg,
   sentryErrorReporter,
   UltimateError,
 } from '@ultimat3/core';
@@ -62,6 +64,40 @@ export function roleFromEnv(env: Env): Role {
   const role = raw === undefined || raw.length === 0 ? 'web' : raw;
   if (!isRole(role)) throw new RoleUnknownError({ role, known: ROLES });
   return role;
+}
+
+/**
+ * May this app run `role`? The ONE answer the container's `ROLE` (`assertRoleDeclared`) and
+ * `x dev`'s selection (`rolesDeclaredForDev`, `role-select.ts`) both ask, by the rule below.
+ */
+export function roleDeclared(role: Role, config: AppConfig | undefined): boolean {
+  return config === undefined || role === 'migrate' || config.roles.includes(role);
+}
+
+/**
+ * Throws `X_CONFIG_INVALID` when `role` is absent from `config.roles`. Unset, `roles` is every
+ * role (core's default), so an app that never wrote the key boots each one as it always did; so
+ * does a root with no `app.config.ts`. `migrate` is never refused: it is the release phase — run
+ * once, then exit — not a process the app "runs", and an app listing `['web', 'worker']` still has
+ * migrations to apply.
+ */
+export function assertRoleDeclared(role: Role, config: AppConfig | undefined): void {
+  if (roleDeclared(role, config)) return;
+  if (config === undefined) return;
+  const declared = config.roles.map((name) => `'${name}'`);
+  // Members of core's closed `ROLES` set (`defineConfig` refused the rest, `roleFromEnv` the
+  // env's), screened all the same: a fix is pasted, and the guard reads the call, not the proof.
+  const runnable = config.roles.find((name) => name !== 'migrate');
+  const roles = `roles: [${[...declared, `'${role}'`].join(', ')}]`;
+  throw new ConfigInvalidError({
+    cause: `ROLE=${role} is not a role this app declares: roles in app.config.ts lists ${config.roles.join(', ')}`,
+    // `roles: ['migrate']` declares no process to serve: the edit is then the only remedy.
+    fix:
+      runnable === undefined
+        ? `defineConfig({ ${roles} })   // in app.config.ts: migrate is the release phase, never a serving process`
+        : `ROLE=${renderFixShellArg(runnable, '<role>')} bun apps/web/server.ts   # a declared role — or declare this one in app.config.ts: ${roles}`,
+    meta: { key: 'roles', role, declared: [...config.roles] },
+  });
 }
 
 /**

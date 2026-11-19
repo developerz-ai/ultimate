@@ -94,14 +94,27 @@ where device_code_hash = $1 and status = 'approved'
 returning 1
 `;
 
-/** Four deletes in one statement; the count is everything that went. */
+/**
+ * Five deletes in one statement; the count is everything that went. Every CTE reads the same
+ * snapshot, so a client whose last grant goes in this run still holds it here: it goes next run.
+ * Only a self-registered client (`DYNAMIC_CLIENT_PREFIX`, `d_`) is reaped, and only with nothing
+ * pointing at it.
+ */
 export const SQL_OAUTH_PURGE = `
-with codes as (delete from x_oauth_codes where expires_at < $1 returning 1),
+with clients as (
+  delete from x_oauth_clients c
+  where left(c.client_id, 2) = 'd_' and c.created_at < $2
+    and not exists (select 1 from x_oauth_grants g where g.client_id = c.client_id)
+    and not exists (select 1 from x_oauth_codes o where o.client_id = c.client_id)
+    and not exists (select 1 from x_oauth_devices d where d.client_id = c.client_id)
+  returning 1
+),
+codes as (delete from x_oauth_codes where expires_at < $1 returning 1),
 tokens as (delete from x_oauth_tokens where expires_at < $1 returning 1),
 devices as (delete from x_oauth_devices where expires_at < $1 returning 1),
 grants as (
   delete from x_oauth_grants where revoked_at < $1 or refreshed_at < $2 returning 1
 )
-select ((select count(*) from codes) + (select count(*) from tokens)
+select ((select count(*) from clients) + (select count(*) from codes) + (select count(*) from tokens)
   + (select count(*) from devices) + (select count(*) from grants))::int as n
 `;

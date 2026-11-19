@@ -4,7 +4,7 @@
 // them, and no expression spliced into shell. Reads the REAL workflow.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { type Job, readWorkflow, type Step } from './lib/ci-workflow-read';
+import { expr, type Job, readWorkflow, type Step } from './lib/ci-workflow-read';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -72,9 +72,14 @@ describe('unit · next-sync.yml merges main into next and gates the result', () 
 });
 
 describe('unit · next-sync.yml files one issue per blocked week, closed by its own clean run', () => {
-  test('the report runs after the merge and only on its answer', () => {
+  // It ran on `success` only, so a red merge job (no `next`, a refused push, a merge that failed
+  // with no conflict) filed nothing: `next` fell behind with only a red run nobody reads to say so.
+  test('the report runs after the merge, on its failure too, and is told which', () => {
     expect(report?.needs).toBe('merge');
-    expect(report?.if).toContain("needs.merge.result == 'success'");
+    expect(report?.if).toBe(expr('!cancelled()'));
+    const step = report?.steps?.find((one) => one.run);
+    expect(step?.env?.['MERGE_RESULT']).toBe(expr('needs.merge.result'));
+    expect(runOf(report)).toContain(`if [ "$MERGE_RESULT" != 'success' ]; then`);
   });
 
   test('found by its exact title, then commented on, created once, or closed', () => {

@@ -130,6 +130,22 @@ describe('remember + lookup', () => {
     expect(newHit?.value).toBe('second');
     expect(newHit?.key).toBe('k');
   });
+
+  // Held by reference, a hit WAS the writer's object: a caller that appended to the completion it
+  // got back rewrote the answer every later near-duplicate prompt received — the shape the LRU
+  // tier stopped storing for the same reason.
+  test("a hit is not the writer's live object", async () => {
+    const cache = memorySemanticCache();
+    const answer = { text: 'original', at: new Date('2026-11-19T00:00:00.000Z') };
+    await cache.remember('k', [1, 0], answer);
+    answer.text = 'the writer changed it';
+
+    const first = await cache.lookup<typeof answer>([1, 0]);
+    expect(first?.value).toEqual({ text: 'original', at: new Date('2026-11-19T00:00:00.000Z') });
+    if (first !== undefined) first.value.text = 'a reader changed it';
+
+    expect((await cache.lookup<typeof answer>([1, 0]))?.value.text).toBe('original');
+  });
 });
 
 describe('maxEntries eviction', () => {

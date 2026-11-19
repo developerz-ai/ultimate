@@ -6,6 +6,7 @@ import {
   JOBS_CONCURRENCY_DEFAULT,
   JOBS_DEAD_RETENTION_MS_DEFAULT,
   JOBS_DONE_RETENTION_MS_DEFAULT,
+  JOBS_MAX_ATTEMPTS_DEFAULT,
   JOBS_OUTBOX_RETENTION_MS_DEFAULT,
 } from './config-jobs';
 import { DRAIN_DEADLINE_DEFAULT_MS, WORKER_RETIRE_DEFAULT_MS } from './drain-deadline';
@@ -46,7 +47,9 @@ export function configDefaults(): Omit<AppConfig, Sectioned> {
     jobs: {
       queues: ['default'],
       concurrency: JOBS_CONCURRENCY_DEFAULT,
-      maxAttempts: 5,
+      // `@ultimat3/jobs`' own default retry reads the same constant: the key is the worker's default
+      // for a job that declares none, so the default moves no app that never set it.
+      maxAttempts: JOBS_MAX_ATTEMPTS_DEFAULT,
       backoff: 'exponential',
       visibilityTimeoutMs: 30_000,
       doneRetentionMs: JOBS_DONE_RETENTION_MS_DEFAULT,

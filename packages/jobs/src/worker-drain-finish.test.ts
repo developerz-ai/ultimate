@@ -12,6 +12,8 @@ import {
   configureLifecycle,
   ctxOf,
   drain,
+  drainExitCode,
+  installLogSink,
   isUltimateError,
   resetLifecycle,
   systemClock,
@@ -255,6 +257,54 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
     expect(rec.queueAtClose()?.ready).toBe(1);
     expect(rec.queueAtClose()?.dead).toBe(0);
     expect((await worker.stats()).interrupted).toBe(1);
+  });
+
+  test('a job cut at the drain cut-off with a driver that takes a round trip drains with exit code 0 and no X_SHUTDOWN_TIMEOUT', async () => {
+    // 10 s: core keeps its full 2 s reserve, the size at which the in-flight wait used to end at
+    // the very instant the cut-off fired, and a nack that needs one round trip lost the race.
+    configureLifecycle({ deadlineMs: 10_000 });
+    const lines: string[] = [];
+    const release = installLogSink((line) => {
+      lines.push(line);
+    });
+    const base = memoryJobDriver();
+    let atClose: QueueStats | undefined;
+    const driver: JobDriver = {
+      ...base,
+      async nack(jobId: string, options: NackOptions): Promise<boolean> {
+        await time.sleep(5);
+        return base.nack(jobId, options);
+      },
+      async close(): Promise<void> {
+        [atClose] = await base.stats();
+      },
+    };
+    const started = latch();
+    job<{ n: number }>({
+      tenant: 'none',
+      name: 'roundTrip',
+      input: passthrough<{ n: number }>(),
+      idempotencyKey: ({ n }) => `roundTrip:${n}`,
+      retry: { attempts: 1, jitter: 'none' },
+      run: async ({ ctx }) => {
+        started.arrive();
+        await sleepUnless(60_000, ctx.signal);
+      },
+    });
+    await enqueueOne(driver, 'roundTrip');
+    const worker = jobWorker({ driver, context, pollIntervalMs: 1 });
+    worker.start();
+    try {
+      await time.settles(started.reached, 100);
+      await time.settles(drain('SIGTERM'), 12_000, 50);
+    } finally {
+      release();
+    }
+
+    expect(lines.filter((line) => line.includes('X_SHUTDOWN_TIMEOUT'))).toEqual([]);
+    expect(drainExitCode()).toBe(0);
+    expect((await worker.stats()).interrupted).toBe(1);
+    expect(atClose?.ready).toBe(1);
   });
 });
 

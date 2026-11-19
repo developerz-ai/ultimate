@@ -46,6 +46,11 @@ describe('unit · the harness rides the seam the framework already has', () => {
     expect(html).toContain('data-x-island="settings"');
     expect(html).toContain('data-x-entry="/islands/settings-abc.js"');
     expect(html).toContain('<script type="application/json" data-x-props="settings">');
+    // INSIDE the island's own element, where the render walk writes it for a page: the runtime
+    // reads the props off the wrapper it mounts, and a sibling script is another element's.
+    expect(html).toMatch(
+      /<div id="x-shot-frame"><div [^>]*><script type="application\/json" data-x-props="settings">[^<]*<\/script><\/div><\/div>/,
+    );
     // The runtime that reads both. Without it the page renders the server shell and nothing else,
     // and the picture is of markup no browser ever hydrated.
     expect(html).toContain('m.mount(el,props)');

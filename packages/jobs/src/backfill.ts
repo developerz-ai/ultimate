@@ -27,8 +27,7 @@ import { stampBackfill } from './backfill-registry';
 import type { AnyBackfill } from './backfill-source';
 import { assertBackfillSource, ledgerNameFor, scopedPayload } from './backfill-source';
 import type { JobHandle } from './job';
-import { job } from './job';
-import { DEFAULT_RETRY } from './retry';
+import { factoryJob } from './job';
 import type { JobTenant } from './tenant';
 
 /**
@@ -100,7 +99,7 @@ export function backfill<Row, I>(
           });
 
   const scope = definition.scope;
-  const handle = job<BackfillInput & { readonly input?: unknown }>({
+  const handle = factoryJob<BackfillInput & { readonly input?: unknown }>({
     name: definition.name,
     // Unscoped: byte-identical to before scopes existed. Scoped: the force flag and the input.
     input:
@@ -114,7 +113,7 @@ export function backfill<Row, I>(
     // Forwarded verbatim, like every other job field this factory carries: a backfill that
     // declared its tenant and then ran under somebody else's would be a factory deciding authz.
     tenant: definition.tenant as JobTenant<BackfillInput & { readonly input?: unknown }>,
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     run: (args) =>

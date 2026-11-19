@@ -39,6 +39,64 @@ describe('unit · x g query has one source of tenancy, the actor', () => {
   }
 });
 
+// The read answered the whole row — the tenant column, and any column added later, on the wire with
+// no edit — while the action beside it answered the slice's `…View`, whose comment says the tenant
+// column is not in it. One wire shape per slice: the read answers the view too.
+describe('unit · x g query answers the slice’s view, never the whole row', () => {
+  for (const live of [false, true]) {
+    test(`${live ? 'live' : 'one-shot'}: the rows are projected through InvoiceView`, () => {
+      const dir = live ? 'live' : 'queries';
+      const files = queryFiles('invoice-search', { ...target, live });
+      const query = textAt(files, `/${dir}/invoice-search.ts`);
+      expect(query).toContain("import { type Invoice, InvoiceView } from '../entity';");
+      expect(query).toContain('const viewOf = (row: Invoice): InvoiceView => {');
+      expect(query).toContain('const keys = InvoiceView.$keys;');
+      expect(query).toContain("from<InvoiceView>('invoices', async () => {");
+      expect(query).toContain('return rows.map(viewOf);');
+      expect(query).not.toContain('from<Invoice>(');
+      // The order the SQL names is over columns the view still carries, so the in-memory half of
+      // the read can apply it: a sort key the projection dropped is X_QUERY_COLUMN_UNSELECTED.
+      const view = textAt(entityFiles('invoice', target), '/entity.ts');
+      for (const column of ['id', 'title', 'createdAt']) expect(view).toContain(`'${column}'`);
+    });
+  }
+
+  // Never an import of a name the author's entity.ts does not export, nor a sort the projected rows
+  // cannot answer: such a slice keeps the row, as every read did before the view.
+  test('a slice with no view, or one without the sorted columns, answers the row', () => {
+    const noView = SCAFFOLD_ENTITY.slice(0, SCAFFOLD_ENTITY.indexOf('// What leaves the server'));
+    const narrow = SCAFFOLD_ENTITY.replace("'createdAt']);", ']);').replace(", 'createdAt',", ',');
+    expect(noView).not.toContain('InvoiceView');
+    expect(narrow).not.toBe(SCAFFOLD_ENTITY);
+    for (const sliceEntity of [noView, narrow]) {
+      const query = textAt(
+        queryFiles('invoice-search', { ...target, sliceEntity }),
+        '/queries/invoice-search.ts',
+      );
+      expect(query).toContain("import type { Invoice } from '../entity';");
+      expect(query).toContain("from<Invoice>('invoices', () => repo.list(limit, sort, dir))");
+      expect(query).not.toContain('InvoiceView');
+    }
+    // The scaffold's own entity, handed over as if on disk, reads through its view.
+    const scaffolded = textAt(
+      queryFiles('invoice-search', { ...target, sliceEntity: SCAFFOLD_ENTITY }),
+      '/queries/invoice-search.ts',
+    );
+    expect(scaffolded).toContain("from<InvoiceView>('invoices'");
+  });
+
+  test('the emitted test pins the wire shape: the view’s keys, and no org', () => {
+    const spec = textAt(
+      queryFiles('invoice-search', { ...target, sliceEntity: SCAFFOLD_ENTITY }),
+      '/queries/invoice-search.test.ts',
+    );
+    expect(spec).toContain(
+      'expect(Object.keys(row).sort()).toEqual([...InvoiceView.$keys].sort());',
+    );
+    expect(spec).toContain("expect(row).not.toHaveProperty('orgId');");
+  });
+});
+
 describe('unit · x g query orders its SQL and its in-memory read the same way', () => {
   for (const live of [false, true]) {
     test(`${live ? 'live' : 'one-shot'}: the first sort key and its direction are the repo's own`, () => {
@@ -50,7 +108,7 @@ describe('unit · x g query orders its SQL and its in-memory read the same way',
       const repo = textAt(entityFiles('invoice', target), '/repo.ts');
       // The thunk IS `repo.list`, handed the same sort, so the SQL's order starts where the repo's
       // does — the same two names, in both files, and the same defaults behind them.
-      expect(query).toContain('() => repo.list(limit, sort, dir)');
+      expect(query).toContain('await repo.list(limit, sort, dir);');
       expect(repo).toContain('.orderBy(sort, dir)');
       expect(query).toContain('.orderBy(sort, dir)');
       expect(repo).toContain("sort: ListSort = 'createdAt',");

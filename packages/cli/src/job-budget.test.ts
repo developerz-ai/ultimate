@@ -22,11 +22,14 @@ describe('the worker budget', () => {
   });
 
   test('retire off: the worker budget, else the one every role drains on', () => {
-    // Less the cut-off's margin: the drain cancels a held job 2 s before its deadline.
-    expect(workerBudgetMs({ ...on, workerRetireMs: 0 })).toBe(23_000);
+    // Less core's reserve for the later hooks (a fifth, at most 2 s: the in-flight wait ends
+    // there, `ShutdownReason.inflightUntil`) and the cut-off's 2 s margin before that instant.
+    expect(workerBudgetMs({ ...on, workerRetireMs: 0 })).toBe(21_000);
     expect(workerBudgetMs({ ...on, workerRetireMs: 0, workerDeadlineMs: 2 * HOUR })).toBe(
-      2 * HOUR - 2_000,
+      2 * HOUR - 4_000,
     );
+    // A short budget: the reserve is a fifth (1 s of 5 s), the margin half of what is left.
+    expect(workerBudgetMs({ ...on, workerRetireMs: 0, workerDeadlineMs: 5_000 })).toBe(2_000);
   });
 
   test('nothing declared is core’s defaults, the retire on', () => {
@@ -68,9 +71,10 @@ describe('X_JOB_OUTLASTS_DRAIN', () => {
 
   test('retire off grades against the drain budget', () => {
     const off = { ...on, workerRetireMs: 0 };
-    expect(jobBudgetFindings([job('a', 23_000)], off)).toEqual([]);
-    // '24s' under a 25 s budget: every deploy cancels it at 23 s.
-    expect(jobBudgetFindings([job('b', 24_000)], off).map((one) => one.code)).toEqual([
+    expect(jobBudgetFindings([job('a', 21_000)], off)).toEqual([]);
+    // '22s' under a 25 s budget: every deploy cancels it at 21 s, 2 s before the in-flight wait
+    // ends at 23 s.
+    expect(jobBudgetFindings([job('b', 22_000)], off).map((one) => one.code)).toEqual([
       'X_JOB_OUTLASTS_DRAIN',
     ]);
   });

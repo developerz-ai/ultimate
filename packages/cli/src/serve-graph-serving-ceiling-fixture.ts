@@ -339,5 +339,25 @@
  * raised 1547 → 1548, measured 1548 (2026-11-19, multi-agent DX): `cli/src/port-pair-free.ts`, so
  * the sync role's `X_PORT_IN_USE` names a pair that is free when asked, as `x doctor`'s fix does.
  * The fork check that also arrived (three modules) went to `@ultimat3/db/schema-dump` instead.
+ * raised 1548 → 1556, measured 1556 (2026-11-19, r9 sweep, metafile walk): the five new on
+ * `MIGRATE_CEILING` (`app-config-load.ts` was already here), `cli/src/runtime-cache-ttl.ts`
+ * (`cache.defaultTtlMs` refused under its own key), `cli/src/role-select.ts` (`--role`'s reading,
+ * split from `role-start.ts` at the line ceiling) and `auth/src/mfa-handoff.ts` (an SSO callback
+ * hands an MFA-enrolled user their challenge).
+ * raised 1556 → 1558, measured 1558 (2026-11-19, r9 sweep 2): the two on `MIGRATE_CEILING`,
+ * `db/src/column-drop.ts` and `http/src/fault-report.ts`.
+ * raised 1558 → 1562, measured 1562 (2026-11-19, r9 verification fixes, metafile walk against HEAD):
+ * `db/src/migrate-dev-fix.ts`, `cache/src/shared-scopes.ts` and `http/src/wire-dates-cap.ts` (the
+ * three on `MIGRATE_CEILING`) and `cli/src/runtime-cache-frame.ts` (the bust frame's codec, split
+ * from `runtime-cache.ts`). `runtime-jobs.ts` and the entity driver kit were already on this graph.
+ * raised 1562 → 1564, measured 1564 (2026-11-19, r9 final integration, metafile walk against
+ * origin/main's 1548): `entity/src/memory-tx-entry.ts` (`memoryTxOpen`'s one-export leaf, v-arch
+ * F13: off the barrel, and off `/adapter`, whose driver kit is ten modules) and
+ * `cache/src/tier-bounds.ts` (`tiers.ts` split at its 500-line ceiling). The 16 modules on this
+ * graph since origin/main, every one named: `auth/src/mfa-handoff.ts`, `cache/src/{shared-scopes,
+ * tier-bounds}.ts`, `cli/src/{role-select,runtime-cache-frame,runtime-cache-ttl,
+ * runtime-database-ssl}.ts`, `db/src/{column-drop,migrate-dev-fix}.ts`, `entity/src/{instant-range,
+ * memory-tx-entry,pg-sql-in,uuid-text}.ts`, `http/src/{fault-report,wire-dates-cap}.ts`,
+ * `jobs/src/retry-default.ts`.
  */
-export const SERVING_ROLE_CEILING = 1548;
+export const SERVING_ROLE_CEILING = 1564;

@@ -32,8 +32,9 @@ export const deployed = (env: EnvTable): boolean => devSecretsRefused({ env });
 /**
  * Does `env` NAME a deployed environment — `ULTIMATE_ENV`, else `NODE_ENV`, resolving to
  * `staging` or `production`? `x doctor`'s gate, and deliberately not `deployed`: the two commands
- * answer different questions. `x env check` asks what a deployed boot does with a table, and the
- * boot fails closed, so an unnamed table is a deploy there. `x doctor` asks about THIS machine,
+ * answer different questions. `x env check` asks what a boot does with a table: an unnamed one is
+ * checked as `x dev` runs it (development), except under `CI`, where the boot fails closed and it
+ * is a deploy (`cmd-env.ts`'s `checkedAsDev`). `x doctor` asks about THIS machine,
  * and a developer shell that names nothing is not a deploy — reporting the shipped keys there would
  * put two findings in front of every developer on day one. An unknown `ULTIMATE_ENV` names
  * nothing (`tryResolveEnvironment`): the boot refuses it first, and doctor must not crash on it.
@@ -43,7 +44,10 @@ export const namedDeployed = (env: EnvTable): boolean => {
   return environment === 'staging' || environment === 'production';
 };
 
-/** Does `env` name no environment? The boot then reads it as production, and `x env check` says so. */
+/**
+ * Does `env` name no environment? The boot then reads it as production; `x env check` checks it so
+ * under `CI` only, and as development elsewhere — and says which.
+ */
 export const namesNoEnvironment = (env: EnvTable): boolean =>
   // Core's reading, twice: only a table that names nothing answers with whichever fallback it got.
   tryResolveEnvironment({ env, fallback: 'production' }) !==

@@ -181,7 +181,18 @@ export const config = defineRoute({
   // measured: 109549 B (2026-11-18; x build --target static, against 109,434) — why: +115 B, the
   // action client's title for `X_REPLAY_PRINCIPAL_MISMATCH`, the refusal of an offline write
   // replayed under another session. Raised 106.9kb → 107kb.
-  budget: { js: '107kb' },
+  // measured: 110322 B (2026-11-19; x build --target static) — why: +773 B, the settings island
+  // +628 B (75,701 → 76,329): `clientStream` reviving a chunk frame's `dates:` and coding a
+  // mid-body cut as `X_CLIENT_TRANSPORT_FAILED`, `clientTransport` sending a write with no
+  // idempotency key once, `isRtl` reading a script subtag (`az-Arab` rtl), `t.has` true for a
+  // select or ordinal family authored only in plural forms, and `SearchableSelect` ignoring Enter,
+  // Escape and the arrows while an IME composes; the client router +45 B (29,910 → 29,955), a soft
+  // navigation to a malformed fragment (`#50%`) still runs scripts and fires `ultimate:navigated`,
+  // and `navigate()` to a fragment of the page on screen scrolls instead of refetching and
+  // disposing its islands; the inline hydration runtime +100 B, an island boots with the props
+  // inside its own wrapper, not the first script in the document with its id (a modal's island took
+  // the page's). Against 109,549, origin/main built the same way. Raised 107kb → 107.8kb.
+  budget: { js: '107.8kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

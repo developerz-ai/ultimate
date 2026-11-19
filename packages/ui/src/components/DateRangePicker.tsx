@@ -66,14 +66,22 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
     props.onChange?.(next);
   };
 
+  // `writeInputDate` dispatches `change` synchronously into the inputs' own handler below, which
+  // would commit one end against the range not yet updated: a range nobody chose, reported first.
+  let picking = false;
   const pick = (date: PlainDate): void => {
     const next = pickRange(range(), date);
-    if (fromInput !== undefined && next.range.from !== undefined) {
-      writeInputDate(fromInput, next.range.from);
-    }
-    if (toInput !== undefined) {
-      if (next.range.to === undefined) toInput.value = '';
-      else writeInputDate(toInput, next.range.to);
+    picking = true;
+    try {
+      if (fromInput !== undefined && next.range.from !== undefined) {
+        writeInputDate(fromInput, next.range.from);
+      }
+      if (toInput !== undefined) {
+        if (next.range.to === undefined) toInput.value = '';
+        else writeInputDate(toInput, next.range.to);
+      }
+    } finally {
+      picking = false;
     }
     commit(next.range);
     if (next.complete) setOpen(false);
@@ -105,6 +113,7 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
           max={props.max}
           onKeyDown={onKeyDown}
           onChange={(event: Event) => {
+            if (picking) return;
             const date = inputDate((event.currentTarget as HTMLInputElement).value);
             commit(orderedRange({ ...range(), [end]: date }));
           }}

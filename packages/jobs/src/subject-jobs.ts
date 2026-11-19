@@ -13,9 +13,8 @@ import type { ExportSink } from './export-sink';
 import { auditedErase } from './gdpr-audit';
 import { unerasedPersonalData } from './gdpr-coverage';
 import type { JobHandle } from './job';
-import { job } from './job';
+import { factoryJob } from './job';
 import type { RetryPolicy } from './retry';
-import { DEFAULT_RETRY } from './retry';
 import type { StepApi } from './steps-api';
 import type { Subject } from './subject';
 import type { SubjectEraseReport } from './subject-erase-pass';
@@ -73,14 +72,14 @@ const common = <I>(definition: SubjectJobDefinition<I>) => ({
   name: definition.name,
   input: definition.input,
   tenant: definition.tenant,
-  retry: definition.retry ?? DEFAULT_RETRY,
+  retry: definition.retry,
   ...(definition.queue === undefined ? {} : { queue: definition.queue }),
   ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
 });
 
 export function subjectErase<I>(definition: SubjectJobDefinition<I>): JobHandle<I> {
   const { subject } = definition;
-  return job<I>({
+  return factoryJob<I>({
     ...common(definition),
     // One live erase per person: a second request while one runs is the same run.
     idempotencyKey: (input) => `${definition.name}:${subject.init.key(input)}`,
@@ -94,7 +93,7 @@ export function subjectErase<I>(definition: SubjectJobDefinition<I>): JobHandle<
 export function subjectExport<I>(definition: SubjectExportDefinition<I>): JobHandle<I> {
   const { subject } = definition;
   const clock = definition.clock ?? liveClock;
-  return job<I>({
+  return factoryJob<I>({
     ...common(definition),
     // One live pass per artifact, derived as `exportRows()` derives it.
     idempotencyKey: (input) => `${definition.name}:${definition.prefix(input)}`,

@@ -3,6 +3,7 @@
 // ./provider's; ./models owns the per-model rules and ./wire the streamed response half.
 
 import { readAnswerBody } from './answer-body';
+import { anthropicTools } from './anthropic-strict';
 import { billedCall } from './billed';
 import { assertMediaContent } from './content-blocks';
 import { providerFailure } from './context-overflow';
@@ -210,7 +211,10 @@ export class AnthropicProvider implements Provider {
       ...providerOptionsBody('anthropic', request.providerOptions),
     };
     if (prompt.system !== undefined) body['system'] = prompt.system;
-    if (request.tools !== undefined && request.tools.length > 0) body['tools'] = request.tools;
+    if (request.tools !== undefined && request.tools.length > 0) {
+      // `strict` is derived for this wire, never forwarded: outside the subset it is a 400.
+      body['tools'] = anthropicTools(request.tools);
+    }
     if (request.stopSequences !== undefined) body['stop_sequences'] = request.stopSequences;
     return body;
   }

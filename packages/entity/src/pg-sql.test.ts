@@ -160,7 +160,11 @@ describe('predicateSql, via selectStatement', () => {
   });
 
   test('a property is resolved through the entity to its physical, snake_case column', () => {
-    const stmt = where({ column: 'orgId', op: 'eq', value: '1' });
+    const stmt = where({
+      column: 'orgId',
+      op: 'eq',
+      value: '00000000-0000-7000-8000-000000000001',
+    });
     expect(stmt.text).toContain('"org_id"');
     expect(stmt.text).not.toContain('"orgId"');
   });
@@ -408,7 +412,9 @@ describe('updateStatement', () => {
   test('sets every named column and returns the row, scoped by the same conditions as a read', () => {
     const stmt = updateStatement(
       posts,
-      planOf({ where: [{ column: 'id', op: 'eq', value: 'p1' }] }),
+      planOf({
+        where: [{ column: 'id', op: 'eq', value: '00000000-0000-7000-8000-000000000001' }],
+      }),
       new Map<string, unknown>([['title', 't2']]),
       SHAPE,
       true,
@@ -416,7 +422,7 @@ describe('updateStatement', () => {
     expect(stmt.text).toContain('update "pgsql_posts" set "title" = $1');
     expect(stmt.text).toContain('where "id" = $2 and "deleted_at" is null');
     expect(stmt.text).toContain('returning *');
-    expect(stmt.values).toEqual(['t2', 'p1']);
+    expect(stmt.values).toEqual(['t2', '00000000-0000-7000-8000-000000000001']);
   });
 
   // The failure case first: a caller that reads a COUNT must not be handed the rows anyway. A
@@ -441,7 +447,9 @@ describe('deleteStatement', () => {
   test('always includes soft-deleted rows in its own scope — there is no filter left to apply', () => {
     const stmt = deleteStatement(
       posts,
-      planOf({ where: [{ column: 'id', op: 'eq', value: 'p1' }] }),
+      planOf({
+        where: [{ column: 'id', op: 'eq', value: '00000000-0000-7000-8000-000000000001' }],
+      }),
     );
     expect(stmt.text).toContain('delete from "pgsql_posts" where "id" = $1');
     expect(stmt.text).not.toContain('deleted_at');
@@ -450,7 +458,7 @@ describe('deleteStatement', () => {
   test('an entity with no soft-delete column needs no special-casing here either', () => {
     const stmt = deleteStatement(tags, {
       entity: tags.$name,
-      where: [{ column: 'id', op: 'eq', value: 't1' }],
+      where: [{ column: 'id', op: 'eq', value: '00000000-0000-7000-8000-000000000001' }],
       orderBy: [],
       limit: 1,
     });

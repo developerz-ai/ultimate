@@ -26,6 +26,31 @@ describe('Anthropic request body', () => {
     expect(JSON.stringify(body)).not.toContain('budget_tokens');
   });
 
+  test('the Anthropic body claims strict only for a schema the strict subset accepts', () => {
+    const tool = (name: string, title: Record<string, unknown>) => ({
+      name,
+      description: name,
+      input_schema: {
+        type: 'object' as const,
+        properties: { title },
+        required: ['title'],
+        additionalProperties: false,
+      },
+      strict: true,
+    });
+    const body = provider.body({
+      model: FIXTURE_MODEL,
+      messages: [{ role: 'user', content: 'hi' }],
+      maxTokens: 1_000,
+      tools: [tool('plain', { type: 'string' }), tool('bounded', { type: 'string', minLength: 1 })],
+    });
+    const [plain, bounded] = body['tools'] as readonly Record<string, unknown>[];
+    expect(plain?.['strict']).toBe(true);
+    // A length bound under `strict: true` is a documented 400; the schema itself still travels.
+    expect(bounded).not.toHaveProperty('strict');
+    expect(JSON.stringify(bounded?.['input_schema'])).toContain('minLength');
+  });
+
   test('effort lives inside output_config, and a control nobody asked for is omitted', () => {
     const body = provider.body({
       model: FIXTURE_MODEL,

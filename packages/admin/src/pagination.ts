@@ -5,6 +5,7 @@
 
 import type { Page } from '@ultimat3/core';
 import { decodeCursor, encodeCursor, isUltimateError, pageOf } from '@ultimat3/core';
+import { moneyCursorText } from './keyset-seek';
 import type { AdminFilter, AdminListQuery, AdminRow, AdminSort } from './registry';
 import { rowId } from './registry';
 import { type AdminResource, repoOf } from './resource';
@@ -119,12 +120,13 @@ export function listQuery<Row extends AdminRow>(
 /**
  * The boundary's sort value as the cursor carries it. A NULL stays `null` — JSON holds one — and
  * is never `''`: an empty string is a text value of its own, and the seek past a NULL boundary
- * reads the NULL rows, which a seek past `''` never reaches.
+ * reads the NULL rows, which a seek past `''` never reaches. A money value is `<currency>:<minor>`.
  */
 const cursorValue = (row: AdminRow, field: string): string | null => {
   const value = row[field];
   if (value instanceof Date) return value.toISOString();
-  return value === null || value === undefined ? null : String(value);
+  // A money sort is (currency, minor): the cursor carries both, or the next page cannot resume.
+  return value === null || value === undefined ? null : (moneyCursorText(value) ?? String(value));
 };
 
 /**

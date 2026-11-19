@@ -55,10 +55,12 @@ describe('a hidden 5xx carries no fix off the throwable', () => {
     expect(JSON.stringify(document)).not.toContain('ada@example.com');
   });
 
-  test('an unclassified 5xx does the same, and a code that is not one gets the listing', () => {
+  test('an unclassified 5xx does the same, and a code that is not one is never pasted', () => {
     expect(JSON.stringify(toProblem(leaky('X_APP_NOBODY_DECLARED')))).not.toContain('ada@');
+    // Served as `X_INTERNAL` (`callerCode`), so the line explains that and the text never leaves.
     const foreign = toProblem(leaky('X_$(reboot)'));
-    expect(foreign.fix).toBe('x errors list --json');
+    expect(foreign.fix).toBe('x errors explain X_INTERNAL --json');
+    expect(JSON.stringify(foreign)).not.toContain('reboot');
   });
 
   test('a declared callerFix is the caller’s own line and still goes out', () => {

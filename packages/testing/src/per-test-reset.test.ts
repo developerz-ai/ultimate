@@ -3,7 +3,8 @@
 // test answered resumed the next test's waiting run.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { installedRateLimitStore, memoryRateLimitStore } from '@ultimat3/http';
+import { installLogSink } from '@ultimat3/core';
+import { cappedWireDates, installedRateLimitStore, memoryRateLimitStore } from '@ultimat3/http';
 import { installRateLimitStore } from '@ultimat3/http/adapter';
 import { eventBus, memoryEventBus, publishEvent } from '@ultimat3/jobs';
 import { installEventBus } from '@ultimat3/jobs/adapter';
@@ -85,6 +86,34 @@ describe(testName('unit', 'a bus installed for the file survives every test'), (
 
   test('the second test still reads it', () => {
     expect(eventBus()).toBe(mine);
+  });
+});
+
+// `cappedWireDates` warns ONCE per operation per process. Under `--rerun-each` every run of a test
+// is one process, so the run after the first logged nothing and `http-dates.test.ts` went red on
+// the flaky rerun. Each test below expects the warn its own call earns.
+describe(testName('unit', 'the once-per-operation wire-dates warn is the test’s own'), () => {
+  const AT = new Date('2026-03-04T05:06:07.089Z');
+  const unfoldable = {
+    points: Array.from({ length: 2_000 }, (_, index) => [`series-${index % 3}`, AT] as const),
+  };
+  const warnsOnCap = (): number => {
+    const lines: string[] = [];
+    const release = installLogSink((line) => void lines.push(line));
+    try {
+      expect(cappedWireDates(unfoldable, undefined)).toBeUndefined();
+    } finally {
+      release();
+    }
+    return lines.filter((line) => line.includes('http.wire_dates_dropped')).length;
+  };
+
+  test('a test past the cap is warned', () => {
+    expect(warnsOnCap()).toBe(1);
+  });
+
+  test('the next test past the cap is warned again', () => {
+    expect(warnsOnCap()).toBe(1);
   });
 });
 

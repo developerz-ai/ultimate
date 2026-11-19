@@ -1,6 +1,7 @@
 // Single responsibility: RFC 7591 dynamic client registration, for the MCP clients that still use
 // it — on only under `registration: 'dynamic'`, counted per address. Never a machine client: an
-// open endpoint handing out `client_credentials` would let anyone mint itself a scope.
+// open endpoint handing out `client_credentials` would let anyone mint itself a scope. Bounded:
+// a capped redirect list, counted per network, and reaped by `purge` once idle and grantless.
 
 import { isJsonObject } from '@ultimat3/core';
 import { isRedirectUri, storeClient } from './authorization-server-clients';
@@ -9,6 +10,14 @@ import type { AuthServerGrant, ClientAuthMethod } from './authorization-server-t
 import { DEVICE_GRANT } from './authorization-server-types';
 import type { AuthServerHttpContext, AuthServerHttpRequest } from './authorization-server-wire';
 import { jsonAnswer, throttledAnswer } from './authorization-server-wire';
+import { ipKey } from './rate-limit';
+
+/**
+ * An anonymous caller writes this row, so it is bounded: an MCP client registers one to three
+ * loopback or https callbacks, and a URL past 2 KiB is past what browsers reliably carry.
+ */
+const REGISTER_MAX_REDIRECT_URIS = 10;
+const REGISTER_MAX_REDIRECT_URI_LENGTH = 2_048;
 
 const SELF_SERVICE_GRANTS: ReadonlySet<string> = new Set<AuthServerGrant>([
   'authorization_code',
@@ -33,7 +42,8 @@ export async function registerHandler(
   ctx: AuthServerHttpContext,
 ): Promise<Response> {
   try {
-    await config.limiter.reserve(`oauth-register:${ctx.ip ?? 'unknown'}`);
+    // The network, never the address: a /64 is one subscriber's, so one bucket (as `login` keys).
+    await config.limiter.reserve(`oauth-register:${ipKey(ctx.ip ?? 'unknown')}`);
   } catch (error) {
     const answer = throttledAnswer(error, 'too many registrations');
     if (answer === null) throw error;
@@ -58,6 +68,16 @@ export async function registerHandler(
     );
   }
   const redirects = stringList(body['redirect_uris'] ?? []);
+  if (
+    redirects !== null &&
+    (redirects.length > REGISTER_MAX_REDIRECT_URIS ||
+      redirects.some((uri) => uri.length > REGISTER_MAX_REDIRECT_URI_LENGTH))
+  ) {
+    return metadataError(
+      'invalid_client_metadata',
+      `redirect_uris holds at most ${REGISTER_MAX_REDIRECT_URIS} URIs of at most ${REGISTER_MAX_REDIRECT_URI_LENGTH} characters each`,
+    );
+  }
   const needsRedirect = grants.includes('authorization_code');
   if (
     redirects === null ||
@@ -74,18 +94,24 @@ export async function registerHandler(
     return metadataError('invalid_client_metadata', 'token_endpoint_auth_method is not supported');
   }
   const scope = body['scope'];
-  const scopes = typeof scope === 'string' ? scope.split(' ').filter((s) => s !== '') : [];
+  // Deduplicated: every token is one the server grants, so the stored list is at most that set.
+  const scopes =
+    typeof scope === 'string' ? [...new Set(scope.split(' ').filter((s) => s !== ''))] : [];
   if (!scopes.every((s) => config.scopes.has(s))) {
     return metadataError('invalid_client_metadata', 'a scope is not one this server grants');
   }
   const name = body['client_name'];
-  const { client, clientSecret } = await storeClient(config, {
-    name: typeof name === 'string' && name !== '' ? name.slice(0, 200) : 'unnamed client',
-    authMethod: method as ClientAuthMethod,
-    redirectUris: redirects,
-    grantTypes: grants as readonly AuthServerGrant[],
-    scopes,
-  });
+  const { client, clientSecret } = await storeClient(
+    config,
+    {
+      name: typeof name === 'string' && name !== '' ? name.slice(0, 200) : 'unnamed client',
+      authMethod: method as ClientAuthMethod,
+      redirectUris: redirects,
+      grantTypes: grants as readonly AuthServerGrant[],
+      scopes,
+    },
+    true,
+  );
   return jsonAnswer(201, {
     client_id: client.clientId,
     ...(clientSecret === null ? {} : { client_secret: clientSecret, client_secret_expires_at: 0 }),

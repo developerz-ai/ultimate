@@ -6,8 +6,7 @@
 // selectable but not default — it takes a replication slot on a shared database, which is not
 // something every `x dev` in a team should do to the same server by simply starting.
 
-import type { Role } from '@ultimat3/core';
-import { ctxOf, isRole, logger, markReady, ROLES } from '@ultimat3/core';
+import { ctxOf, logger, markReady } from '@ultimat3/core';
 import { dbExecutor } from '@ultimat3/db';
 import type { RateLimitStore, Route, ServerHandle, WebSocketMount } from '@ultimat3/http';
 import {
@@ -31,7 +30,7 @@ import {
 import type { SyncWs } from '@ultimat3/realtime/server';
 import { loadAppConfig } from './app-config-load';
 import { errorPageHook } from './error-pages';
-import { BadFlagError, RuntimeDriverSplitError } from './errors';
+import { RuntimeDriverSplitError } from './errors';
 import {
   DEFAULT_METRICS_PORT,
   rolePorts,
@@ -41,9 +40,9 @@ import {
 import { startRolePgStats } from './role-pg-stats';
 import { rolesUnderRealtime } from './role-realtime';
 import { startReplicator } from './role-replicator';
+import { rolesDeclaredForDev } from './role-select';
 import { type DeviceMount, hostDeviceSockets } from './role-start-devices';
 import type { RunningRoles, StartRolesOptions } from './role-start-types';
-import { DEV_ROLES } from './role-start-types';
 import { prepareSync, type RunningSync, syncReadsChanges } from './role-sync';
 import { startWorkerWake } from './role-wake';
 import { installRoleBootWarnings } from './runtime-boot-warnings';
@@ -54,61 +53,21 @@ import { startLiveFeed } from './runtime-live-feed';
 import { type RunningServices, releaseOrThrow } from './runtime-services';
 import { inlineScriptSources } from './script-csp';
 import { bootWarningConcernsAny } from './serve-boot-warnings';
-import { quoteArg } from './shell-quote';
 import { inlineStyleSources } from './style-csp';
 import { syncConnectSources } from './sync-url';
 import { trustedHopsFromEnv } from './trusted-hops';
 import { DEV_BINDING } from './web-binding';
 
-// Declared beside the option types so `x dev`'s spec reads it without loading this module.
-export { DEV_ROLES } from './role-start-types';
-
-/**
- * What `--role` accepts. The replicator is here but not in `DEV_ROLES`: opt-in, because it takes
- * the one replication slot a database has, and a default that did that would mean two developers
- * pointed at one staging database silently fighting over it.
- */
-export const SELECTABLE_ROLES: readonly Role[] = [...DEV_ROLES, 'replicator'];
-
+// `--role`'s reading, in a file of its own at the line ceiling.
+export { rolesDeclaredForDev, SELECTABLE_ROLES, selectRoles } from './role-select';
 // The two shapes this module takes and answers, in a file of their own at the line ceiling.
 export type { RunningRoles, StartRolesOptions } from './role-start-types';
+// Declared beside the option types so `x dev`'s spec reads it without loading this module.
+export { DEV_ROLES } from './role-start-types';
 
 // Re-exported, not re-declared: `web-binding.ts` is a leaf so `role-sync` can read the default
 // without importing this module, which imports it.
 export { DEV_BINDING, type WebBinding } from './web-binding';
-
-/**
- * `--role web,worker` picks a subset. An unknown or out-of-scope role is a flag error with the
- * working invocation in the fix line, never a silently ignored value — which is what it was.
- */
-export function selectRoles(flag: string | undefined): readonly Role[] {
-  if (flag === undefined || flag.trim().length === 0) return DEV_ROLES;
-  const wanted = flag
-    .split(',')
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-  const selected: Role[] = [];
-  for (const name of wanted) {
-    if (!isRole(name)) {
-      throw new BadFlagError({
-        flag: 'role',
-        command: 'dev',
-        reason: `"${name}" is not a role (known: ${ROLES.join(', ')})`,
-        fix: `x dev --role ${quoteArg(DEV_ROLES.join(','))}`,
-      });
-    }
-    if (!SELECTABLE_ROLES.includes(name)) {
-      throw new BadFlagError({
-        flag: 'role',
-        command: 'dev',
-        reason: `"${name}" does not run under x dev (it runs once, as \`x db migrate\`)`,
-        fix: `x dev --role ${quoteArg(DEV_ROLES.join(','))}`,
-      });
-    }
-    if (!selected.includes(name)) selected.push(name);
-  }
-  return SELECTABLE_ROLES.filter((role) => selected.includes(role));
-}
 
 /**
  * A server whose route table demands an identity it has no way to resolve.
@@ -268,12 +227,12 @@ function assertOneJobDriver(runtime: RunningServices): void {
 }
 
 export async function startRoles(options: StartRolesOptions): Promise<RunningRoles> {
-  // `realtime.enabled` read here, before anything binds: a refusal leaves nothing to unwind.
-  const selected = rolesUnderRealtime(
-    options.roles,
-    options.runtime.realtime,
-    (options.http ?? DEV_BINDING).dev,
-  );
+  const dev = (options.http ?? DEV_BINDING).dev;
+  const config = options.root === undefined ? undefined : await loadAppConfig(options.root);
+  // `realtime.enabled` and `roles` read here, before anything binds: a refusal leaves nothing to
+  // unwind. `roles` for `x dev` only — a container's `ROLE` was refused against it at boot.
+  const realtime = rolesUnderRealtime(options.roles, options.runtime.realtime, dev);
+  const selected = dev ? rolesDeclaredForDev(realtime, config) : realtime;
   assertOneJobDriver(options.runtime);
   // Once per process, and only where a role in it can act on the line (`serve-boot-warnings.ts`):
   // `rateLimitStoreFor` is asked twice in a web boot, and a scheduler spends no limit at all.
@@ -297,7 +256,6 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // these roles takes back exactly this install, whatever else stacked over or under it.
     // Once, before any role serves: which roles core's `bootWarning` concerns, and its per-build
     // marker store (`runtime-boot-warnings.ts`). Released by the stop, like every frame here.
-    const config = options.root === undefined ? undefined : await loadAppConfig(options.root);
     const releaseWarnings = installRoleBootWarnings({
       roles: selected,
       config,

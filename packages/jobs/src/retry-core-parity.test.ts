@@ -3,7 +3,12 @@
 // a delegation is only equivalent if it is equivalent everywhere a caller can reach.
 
 import { describe, expect, test } from 'bun:test';
-import { backoffDelay, type JitterMode } from '@ultimat3/core';
+import {
+  backoffDelay,
+  defineConfig,
+  type JitterMode,
+  JOBS_MAX_ATTEMPTS_DEFAULT,
+} from '@ultimat3/core';
 import type { BackoffStrategy, RetryPolicy } from './retry';
 import { backoffDelayMs, DEFAULT_RETRY, retrySchedule } from './retry';
 
@@ -144,5 +149,12 @@ describe('invalid inputs answer core’s number, not the old one', () => {
   test('a negative attempt is still the base delay, exactly as before', () => {
     expect(backoffDelayMs(policy, -3)).toBe(1_000);
     expect(backoffDelayMs(policy, 0)).toBe(1_000);
+  });
+});
+
+describe('the default attempt count is stated once, in core', () => {
+  test('DEFAULT_RETRY and an unset jobs.maxAttempts both read JOBS_MAX_ATTEMPTS_DEFAULT', () => {
+    expect(DEFAULT_RETRY.attempts).toBe(JOBS_MAX_ATTEMPTS_DEFAULT);
+    expect(defineConfig({ name: 'parity' }).jobs.maxAttempts).toBe(JOBS_MAX_ATTEMPTS_DEFAULT);
   });
 });

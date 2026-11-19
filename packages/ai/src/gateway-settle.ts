@@ -73,6 +73,7 @@ export function promptCacheKey(request: GenerateRequest): string {
     // Only when asked for: an absent knob must leave every key written before it existed as it was.
     ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
     ...(request.seed === undefined ? {} : { seed: request.seed }),
+    ...(request.toolChoice === undefined ? {} : { toolChoice: request.toolChoice }),
     // A wire parameter changes the answer; absent leaves every older key as it was.
     ...(request.providerOptions === undefined ? {} : { providerOptions: request.providerOptions }),
   });

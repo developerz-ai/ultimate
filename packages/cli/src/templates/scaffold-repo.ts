@@ -107,6 +107,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@ultimat3/policy": "${version}",
     "@ultimat3/pwa": "${version}",
     "@ultimat3/query": "${version}",
+    "@ultimat3/realtime": "${version}",
     "@ultimat3/render": "${version}",
     "@ultimat3/schema": "${version}",
     "@ultimat3/seo": "${version}",
@@ -384,9 +385,11 @@ export function repoFiles(
   app: NameSet,
   version: string,
   example: boolean,
+  /** The app's directory, when known: the test stack's name and ports (`scaffold-test-services`). */
+  root?: string,
 ): readonly GeneratedFile[] {
   return [
-    ...docsFiles(app),
+    ...docsFiles(app, root),
     { path: 'package.json', contents: rootPackage(app, version) },
     { path: 'tsconfig.json', contents: rootTsconfig(app) },
     { path: 'biome.json', contents: biome() },

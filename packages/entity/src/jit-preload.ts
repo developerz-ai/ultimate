@@ -201,8 +201,9 @@ const fill = async <Row>(
     try {
       answers = await readByIds(read, chunk);
     } catch (error) {
-      // The statement failed, so it fails for everyone it was widened to cover — which is what
-      // the single statement each of them would have sent would have done.
+      // The statement failed for a reason that is the statement's, so it fails for everyone it was
+      // widened to cover. A refused VALUE is not that: `readByIds` isolates the id that carried it
+      // (`batch-read.ts`), so the rest are answered as their own statement would have been.
       for (const id of chunk) settlers.get(keyOf(read.key.kind, id))?.({ error });
       continue;
     }

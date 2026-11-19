@@ -19,11 +19,13 @@ on:
   # the cadence; a figure wanted sooner is `gh workflow run bench.yml --ref main`.
   workflow_dispatch:
 
-# `contents: write` + `pull-requests: write`: the branch and the pull request with the new JSON. No
-# `id-token` and no new secret — the job's own token is all it holds.
+# `contents: write` + `pull-requests: write`: the branch and the pull request with the new JSON;
+# `actions: write`: the ci.yml dispatch that gates that branch. No `id-token` and no new secret —
+# the job's own token is all it holds.
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 concurrency:
   group: bench
@@ -89,6 +91,9 @@ jobs:
           # Forced: the branch is always one commit of figures on today's `main`, and last week's
           # figures are what this run supersedes. The replaced commit stays on the pull request.
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          # A push made with the job token starts no workflow, so the pull request would wait on a
+          # `verify` check that never reports; a dispatch is GitHub's exception, as next-sync.yml's.
+          gh workflow run ci.yml --ref "$BRANCH"
           OPEN="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
           if [ -n "$OPEN" ]; then
             gh pr edit "$OPEN" --body "$BODY"

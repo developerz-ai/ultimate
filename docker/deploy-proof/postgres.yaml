@@ -10,10 +10,11 @@ spec:
     metadata: { labels: { app: postgres } }
     spec:
       containers:
-        # In RAM, without durability, silent — docker/docker-compose.test.yml's rules: the proof
-        # measures the release's rollout, and a database that survives a crash is not under test.
+        # In RAM, without durability, silent — docker/docker-compose.test.yml's rules and its image
+        # digest: the proof measures the release's rollout, and a database that survives a crash is
+        # not under test.
         - name: postgres
-          image: postgres:17-alpine
+          image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
           args:
             - postgres
             - -c

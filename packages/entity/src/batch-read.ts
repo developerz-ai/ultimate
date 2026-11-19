@@ -3,12 +3,13 @@
 // answers them. The microtask coalescer and the sibling-aware preload both read ids through here,
 // so the two can never disagree about when a shared statement is legal.
 
-import type { DbClient } from '@ultimat3/db';
+import { type DbClient, sqlState } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { canonicalDecimal, canonicalInteger } from './numeric-compare';
 import { decodeRow, type PhysicalRow } from './pg-row';
 import { type ReadShape, selectStatement } from './pg-sql';
 import type { QueryPlan } from './tenancy';
+import { canonicalUuid } from './uuid-text';
 
 /**
  * Postgres binds at most 65535 parameters, so a batch wider than this becomes several statements
@@ -36,14 +37,15 @@ export type Answer = { readonly row: unknown } | { readonly error: unknown };
  * The string both sides of a batch are filed under — the requested id, and the key of a row that
  * came back. Postgres compares a `uuid` as a value and prints it lower-cased, so an id handed in
  * upper case matches the row *there* and would miss it here, which would make an answer depend on
- * whether some other lookup shared the microtask. An integer or `numeric` is compared by value too:
+ * whether some other lookup shared the microtask; braces and missing hyphens are the same value
+ * there too (`uuid-text.ts`). An integer or `numeric` is compared by value too:
  * `'007'` matched the row and missed its answer here, filed under `'7'`. One the column could not
  * hold stays as written, so the statement still carries it and Postgres answers its own refusal.
  * Every other kind compares by its bytes, and lower-casing a text key would merge two rows
  * Postgres keeps apart.
  */
 export const keyOf = (kind: string, value: unknown): string => {
-  if (kind === 'uuid') return String(value).toLowerCase();
+  if (kind === 'uuid') return canonicalUuid(value) ?? String(value).toLowerCase();
   if (kind === 'integer' || kind === 'bigint') return canonicalInteger(value) ?? String(value);
   if (kind === 'numeric') return canonicalDecimal(value) ?? String(value);
   if (kind === 'timestamptz') return canonicalInstant(value) ?? String(value);
@@ -117,7 +119,7 @@ export interface PointRead<Row> {
 }
 
 /** The one statement, filed by key — the same builder, the same scope, `in` instead of `=`. */
-export const readByIds = async <Row>(
+const readStatement = async <Row>(
   read: PointRead<Row>,
   ids: readonly unknown[],
 ): Promise<ReadonlyMap<string, Answer>> => {
@@ -142,6 +144,62 @@ export const readByIds = async <Row>(
     }
   }
   return answers;
+};
+
+/** `in_failed_transaction`: a statement sent after the first refusal aborted the transaction. */
+const IN_FAILED_TRANSACTION = '25P02';
+
+/** SQLSTATE class 22, data exception: the server refused a VALUE, not the statement's shape. */
+const isDataError = (error: unknown): boolean => sqlState(error)?.startsWith('22') === true;
+
+/**
+ * `readStatement`, with a value the server refuses failing only the id that carried it. One key
+ * the column cannot hold (`'abc'` against a `bigint`) is a class 22 refusal of the WHOLE statement,
+ * so every lookup widened into it was failed by an id it never asked for — rows the single
+ * statement each would have sent answers. The ids are re-sent in halves until the refused one
+ * stands alone: about `2k·log2(n)` statements for `k` bad ids, never one per id.
+ *
+ * Anything else — a dropped connection, a timeout, a stale schema — is the statement's own failure
+ * and is rethrown for every caller, as before; a half that fails that way answers its ids with its
+ * own failure. Only a half sent into a transaction the first refusal aborted (`25P02`) gets the
+ * FIRST refusal, the one the unsplit statement gave them.
+ */
+export const readByIds = async <Row>(
+  read: PointRead<Row>,
+  ids: readonly unknown[],
+): Promise<ReadonlyMap<string, Answer>> => {
+  try {
+    return await readStatement(read, ids);
+  } catch (error) {
+    if (!isDataError(error) || ids.length < 2) throw error;
+    const answers = new Map<string, Answer>();
+    await isolate(read, ids, error, answers);
+    return answers;
+  }
+};
+
+/** `ids` is known to fail together with `refusal`: halve, and file what each half answers. */
+const isolate = async <Row>(
+  read: PointRead<Row>,
+  ids: readonly unknown[],
+  refusal: unknown,
+  answers: Map<string, Answer>,
+): Promise<void> => {
+  const middle = Math.ceil(ids.length / 2);
+  for (const half of [ids.slice(0, middle), ids.slice(middle)]) {
+    try {
+      for (const [key, answer] of await readStatement(read, half)) answers.set(key, answer);
+    } catch (error) {
+      if (isDataError(error) && half.length > 1) {
+        await isolate(read, half, error, answers);
+        continue;
+      }
+      // Only a transaction the first refusal ABORTED inherits it; a half's own failure (a pool
+      // timeout, a failover's 57P01) is that half's answer, never "invalid input syntax".
+      const own = sqlState(error) === IN_FAILED_TRANSACTION ? refusal : error;
+      for (const id of half) answers.set(keyOf(read.key.kind, id), { error: own });
+    }
+  }
 };
 
 /** One statement's worth at a time — a batch too wide for the bind count is several, never one. */

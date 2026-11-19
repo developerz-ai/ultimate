@@ -16,11 +16,14 @@ import {
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 import { writeErrorLine } from './write-line';
 
-/** Whether this run asked for `live` by name or the committed floor holds it to running. */
-async function liveRequired(ctx: VerifyContext): Promise<boolean> {
+/**
+ * Whether this run needs `live`: `floored` when the committed floor holds it (an empty suite is
+ * red there), `asked` when only `--only` named it.
+ */
+async function liveRequired(ctx: VerifyContext): Promise<'floored' | 'asked' | undefined> {
+  if (floorRequires(await readVerifyFloor(ctx.root), 'live')) return 'floored';
   const only = ctx.only === undefined ? [] : typeof ctx.only === 'string' ? [ctx.only] : ctx.only;
-  if (only.includes('live')) return true;
-  return floorRequires(await readVerifyFloor(ctx.root), 'live');
+  return only.includes('live') ? 'asked' : undefined;
 }
 
 /** `ctx` whose every child sees `env` beneath its own overrides — an explicit unset still wins. */
@@ -48,9 +51,10 @@ const stackLine = (stack: StackReport, services: readonly string[]): string =>
   });
 
 /**
- * `step` with its database found or started first. A stack that cannot be started is a WARNING on
- * this major, carrying `X_TEST_SERVICES_UNAVAILABLE` and the line to run: the suites skip exactly
- * as they did before, and a floor whose every live test skipped is still `X_VERIFY_SUITE_VANISHED`.
+ * `step` with its database found or started first. A stack that cannot be started is the step's
+ * FINDING when the floor holds `live` and nothing ran — the services are why, and the floor's own
+ * `X_VERIFY_SUITE_VANISHED` would only restate the symptom with a fix that reruns it. Otherwise it
+ * stays a WARNING carrying `X_TEST_SERVICES_UNAVAILABLE`: tests that ran without it still count.
  * Never torn down: the next run reuses it, and the warning says how to stop it.
  */
 export function withTestServices(
@@ -62,7 +66,8 @@ export function withTestServices(
   return {
     ...step,
     async run(ctx) {
-      if (!(await liveRequired(ctx))) return step.run(ctx);
+      const required = await liveRequired(ctx);
+      if (required === undefined) return step.run(ctx);
       const verdict = await ensureTestServices({
         root: ctx.root,
         runner: ctx.runner,
@@ -77,12 +82,15 @@ export function withTestServices(
         return own === undefined || own === '' ? outcome : reached(outcome);
       }
       if (verdict.kind === 'unavailable') {
+        const outcome = await step.run(ctx);
+        const ranNothing = outcome.tests?.ran === 0 && outcome.shard === undefined;
+        if (required === 'floored' && ranNothing) {
+          const findings = [verdict.finding, ...outcome.findings];
+          return { ...outcome, ok: false, findings, services: 'unavailable' };
+        }
         const { code, cause, fix } = verdict.finding;
         return {
-          ...withWarning(
-            await step.run(ctx),
-            msg('cli.verify.services.unavailable', { code, cause, fix }),
-          ),
+          ...withWarning(outcome, msg('cli.verify.services.unavailable', { code, cause, fix })),
           services: 'unavailable',
         };
       }

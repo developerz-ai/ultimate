@@ -5,8 +5,9 @@
  * handler starts — the policy, the input, the rate limit — is the ordinary problem response.
  */
 
+import type { Ctx } from '@ultimat3/core';
 import { useContext, withChildContext } from '@ultimat3/core';
-import { toProblem } from '@ultimat3/http';
+import { cappedWireDates, reportLateFault, toProblem } from '@ultimat3/http';
 import type { ChunkSink } from './action-stream';
 
 export const EVENT_STREAM = 'text/event-stream';
@@ -25,9 +26,20 @@ export function wantsEventStream(accept: string | null): boolean {
 const encoder = new TextEncoder();
 const STARTED: unique symbol = Symbol('started');
 
-/** One SSE frame. JSON never holds a raw newline, so `data:` is always one line. */
-export function sseFrame(event: 'chunk' | 'done' | 'error', data: unknown): Uint8Array {
-  return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data ?? null)}\n\n`);
+/**
+ * One SSE frame. JSON never holds a raw newline, so `data:` is always one line. `dates` is the
+ * `x-ultimate-dates` value for THIS frame's data (core's `wire-dates.ts`, URI-encoded, so one line
+ * too): a field the SSE format tells every reader that does not know it to ignore, so a client from
+ * before it reads the frame it always read. Under the header's cap (`cappedWireDates`): a frame
+ * whose value is past it carries no `dates:` line, and its instants are read as ISO strings.
+ */
+export function sseFrame(
+  event: 'chunk' | 'done' | 'error',
+  data: unknown,
+  dates?: string,
+): Uint8Array {
+  const named = dates === undefined ? '' : `dates: ${dates}\n`;
+  return encoder.encode(`event: ${event}\n${named}data: ${JSON.stringify(data ?? null)}\n\n`);
 }
 
 /** Runs the invocation with `sink` receiving its chunks; resolves the output. */
@@ -42,7 +54,9 @@ export async function streamAnswer(
   run: StreamRun,
   heartbeatMs: number = HEARTBEAT_MS,
 ): Promise<Response> {
-  const requestId = useContext().requestId;
+  // Read here, in the request's frame: the settle below runs on a later turn.
+  const ctx = useContext();
+  const requestId = ctx.requestId;
   // The client leaving cancels the body; that aborts this signal, added to the request's own.
   const left = new AbortController();
   let out: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -57,9 +71,14 @@ export async function streamAnswer(
   const sink: ChunkSink = {
     owner,
     start: () => begin(),
-    push: (chunk) => send(sseFrame('chunk', chunk)),
+    push: (chunk) => send(sseFrame('chunk', chunk, cappedWireDates(chunk, ctx))),
   };
-  const settled = withChildContext({ signal: left.signal }, () => run(sink));
+  // The handler's own scope: its signal is the request's and `left`'s, composed.
+  let scope: Ctx = ctx;
+  const settled = withChildContext({ signal: left.signal }, () => {
+    scope = useContext();
+    return run(sink);
+  });
   // Settled without starting is a refusal — thrown here, before any byte — or a replayed answer,
   // which streams as a lone `done`.
   await Promise.race([started, settled]);
@@ -77,8 +96,15 @@ export async function streamAnswer(
         }
       };
       settled.then(
-        (output) => finish(sseFrame('done', output)),
-        (error: unknown) => finish(sseFrame('error', toProblem(error, { requestId }))),
+        (output) => finish(sseFrame('done', output, cappedWireDates(output, ctx))),
+        (error: unknown) => {
+          // A fault after the first byte never reaches the pipeline's `error-map` stage — the 200
+          // has gone — so the request's late-fault report records it (the monitor, the app's
+          // `onError`, the log line, once). It tells the reader cancelling, or the caller hanging
+          // up, from a failure by `scope`'s signal, and records nothing for those.
+          reportLateFault(error, scope);
+          finish(sseFrame('error', toProblem(error, { requestId })));
+        },
       );
     },
     cancel() {

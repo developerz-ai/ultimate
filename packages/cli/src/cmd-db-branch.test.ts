@@ -177,7 +177,7 @@ describe('unit · x db branch', () => {
         dbCommand.run({ ...ctx, args: { ...ctx.args, subcommand: 'branhc' } }),
       );
       expect(failure).toBeUltimateError('X_CLI_UNKNOWN_COMMAND');
-      expect((failure as { cause: string }).cause).toContain('gen, migrate, reset');
+      expect((failure as { cause: string }).cause).toContain('gen, migrate, rollback, reset');
       // Help, not the nearest name: `x db branch` needs a word this refusal does not have, and a
       // suggestion that refuses in turn is not a fix. `x db --help` is refused by the parser.
       expect((failure as { fix: string }).fix).toBe('x help db');

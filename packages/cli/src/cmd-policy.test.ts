@@ -108,7 +108,9 @@ describe('unit · x policy · spec', () => {
     expect(policyCommand.spec.subcommands).toEqual(['list', 'explain']);
     expect(policyCommand.spec.requiresApp).toBe(true);
     expect(policyCommand.spec.summary).toBe('which clause decided a permission, and why');
-    expect(policyCommand.spec.usage).toBe('x policy [list|explain <subject>] [--json]');
+    expect(policyCommand.spec.usage).toBe(
+      "x policy [list|explain <subject> [--input '<json>']] [--json]",
+    );
   });
 
   test('the default subcommand is list — for the parser, and for run() given no subcommand', async () => {
@@ -243,9 +245,8 @@ describe('unit · x policy explain', () => {
     expect((result.data as { kind: string }).kind).toBe('query');
   });
 
-  test('a policy that dereferences request input renders the note instead of crashing', async () => {
-    // Registered on top of the fixture, so only this subject is undecidable: `input.post` is
-    // undefined outside a request and the predicate throws where the matrix used to run.
+  /** `restorePost`, on top of the fixture: the one subject whose predicate reads the input. */
+  function registerRestorePost(): void {
     interface PostInput {
       readonly post: { readonly id: string };
     }
@@ -263,19 +264,87 @@ describe('unit · x policy explain', () => {
         },
       }),
     });
+  }
 
+  const explainWith = (input: string) => {
+    const ctx = contextFor('explain', ['restorePost']);
+    return policyCommand.run({
+      ...ctx,
+      args: { ...ctx.args, flags: new Map<string, FlagValue>([['input', input]]) },
+    });
+  };
+
+  // `input.post` is undefined outside a request. The predicate threw, and before that it compared
+  // against `undefined` and read as a deny about the admin who had just succeeded over HTTP.
+  test('a policy that reads request input says "needs input", never "deny", and names --input', async () => {
+    registerRestorePost();
     const result = await policyCommand.run(contextFor('explain', ['restorePost']));
     expect(result.ok).toBe(true);
-    const rendered = (result.lines ?? []).join('\n');
-    expect(rendered).toContain(msg('cli.policy.undecidable'));
-    expect(rendered).not.toContain('anonymous');
-    expect(rendered).not.toContain(msg('cli.policy.noInput'));
+    const line = (actor: string) => result.lines?.find((one) => one.trim().startsWith(actor));
+    expect(line('admin')).toContain(msg('cli.policy.needsInput'));
+    expect(line('admin')).not.toContain(` ${msg('cli.policy.deny')} `);
+    expect(line('editor')).toContain(msg('cli.policy.needsInput'));
+    // Decided whatever the input is: no grant, or no actor.
+    expect(line('reader')).toContain('actor lacks post:publish');
+    expect(line('anonymous')).toContain('no actor for post:publish');
     expect(result.summary).toBe(
-      msg('cli.policy.explained', { subject: 'restorePost', allowed: 0, evaluations: 0 }),
+      msg('cli.policy.explainedPending', {
+        subject: 'restorePost',
+        allowed: 0,
+        evaluations: 4,
+        pending: 2,
+        command: "x policy explain restorePost --input '<the request input as JSON>'",
+      }),
     );
+    const data = result.data as {
+      pending: number;
+      declarations: readonly { rows: readonly { actor: string; allowed: boolean | null }[] }[];
+    };
+    expect(data.pending).toBe(2);
+    expect(data.declarations[0]?.rows.find((row) => row.actor === 'admin')?.allowed).toBeNull();
+  });
+
+  test('--input evaluates the predicate on the request input: allow and deny are both real', async () => {
+    registerRestorePost();
+    const allowed = await explainWith('{"post":{"id":"post_1"}}');
+    expect(allowed.summary).toBe(
+      msg('cli.policy.explained', { subject: 'restorePost', allowed: 2, evaluations: 4 }),
+    );
+    expect((allowed.lines ?? []).join('\n')).toContain(msg('cli.policy.withInput'));
+    const denied = await explainWith('{"post":{"id":"post_2"}}');
+    expect(denied.summary).toBe(
+      msg('cli.policy.explained', { subject: 'restorePost', allowed: 0, evaluations: 4 }),
+    );
+    const admin = denied.lines?.find((one) => one.trim().startsWith('admin'));
+    expect(admin).toContain('post:publish predicate returned false');
+  });
+
+  test('--input the policy throws on renders the note, never half a table', async () => {
+    registerRestorePost();
+    const result = await explainWith('{}');
+    const rendered = (result.lines ?? []).join('\n');
+    expect(rendered).toContain(msg('cli.policy.undecidableInput'));
+    expect(rendered).not.toContain('anonymous');
     expect(
       (result.data as { declarations: readonly { decidable: boolean }[] }).declarations,
     ).toEqual([expect.objectContaining({ decidable: false, rows: [] })]);
+  });
+
+  test('--input that is not JSON is refused without echoing it', async () => {
+    registerRestorePost();
+    const thrown = await rejectedBy(() => explainWith('{token: s3cret'));
+    expect(thrown.code).toBe('X_CLI_BAD_FLAG');
+    expect(thrown.cause).toContain('is not JSON');
+    expect(thrown.cause).not.toContain('s3cret');
+    expect(thrown.fix).toContain('x policy explain restorePost --input');
+  });
+
+  test('the parser accepts --input on explain', () => {
+    const parsed = parseArgs(
+      ['policy', 'explain', 'restorePost', '--input', '{"a":1}'],
+      [policyCommand.spec],
+    );
+    expect(parsed.flags.get('input')).toBe('{"a":1}');
   });
 });
 

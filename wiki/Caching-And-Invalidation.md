@@ -114,7 +114,7 @@ export const publishPost = action({
 |---|---|---|
 | Tier 1 request memo | drop entries carrying the tag | immediate, same request |
 | Tier 2 in-process LRU (**all instances**) | tag-invalidation message on NATS | ~ms, best-effort; a missed message costs a stale read until TTL, never a wrong write |
-| Tier 3 Redis | paged `ZSCAN` over the tag's sorted set, `UNLINK` per value key, `ZREM` of what died | immediate, inside the fan-out; 10k keys in 25 round trips |
+| Tier 3 Redis | paged `ZSCAN` over the tag's sorted set, `ZREM` of what was read, `UNLINK` per value key, re-`ZADD … GT` (at its read score, never lowering a later fill's; Redis ≥ 6.2) of any member whose `UNLINK` was refused. Sweep before delete, `As of 2026-11`: a fill from another replica landing mid-bust can no longer be left in no bucket, stale for its whole TTL. An inbound broadcast skips this shared tier only when the sender's frame names the same namespace (same build); another build's, or an older pod's, busts it. `As of 2026-11-19` | immediate, inside the fan-out; 10k keys in 25 round trips |
 | ISR pages | routes whose `revalidate.tags` include the tag are marked stale → regenerated in background | next request serves stale, regen enqueued as a job |
 | CDN | purge by surrogate key through the configured `PurgeDriver` — a row bust purges `post:1` and `post`, a collection bust `e:post` and `post` | seconds; `stale-while-revalidate` covers the gap |
 | Live queries | the same commit already flows through logical replication | **independent path** — realtime does not depend on cache invalidation |

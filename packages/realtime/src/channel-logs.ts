@@ -7,7 +7,8 @@ import type { ChangeEvent } from './changefeed';
 import type { Channel } from './channel-decl';
 import { carriesTable, updatesFor } from './channel-records';
 import { renderRecords } from './channel-render';
-import { ChannelRing } from './channel-ring';
+import { ChannelRing, type RecordsEntry } from './channel-ring';
+import { type Audience, admitsTenant, rowTenant } from './channel-tenant';
 import type { ChannelSince, ReplayGapFrame } from './channel-wire';
 import type { SocketRegistry, SyncSocket } from './socket';
 import { PROTOCOL_VERSION } from './sync-protocol';
@@ -79,9 +80,19 @@ export class ChannelLogs {
         frames += this.#reopen(update.topic, open.target);
         continue;
       }
-      const entry = open.ring.append(update.adopt, update.remove, change.write ?? undefined);
-      const frame = renderRecords(update.topic, open.ring.epoch, entry);
-      frames += this.#sockets.deliverRecords(update.topic, open.ring.epoch, frame);
+      const tenant = rowTenant(update.channel, change.table, update.row);
+      const write = change.write ?? undefined;
+      const entry = open.ring.append(update.adopt, update.remove, write, tenant);
+      const epoch = open.ring.epoch;
+      const frame = renderRecords(update.topic, epoch, entry);
+      const audience: Audience | undefined =
+        tenant === undefined
+          ? undefined
+          : {
+              admits: (actor) => admitsTenant(actor, tenant),
+              withheld: renderRecords(update.topic, epoch, withheld(entry)),
+            };
+      frames += this.#sockets.deliverRecords(update.topic, epoch, frame, audience);
     }
     return frames;
   }
@@ -127,6 +138,9 @@ export class ChannelLogs {
    * A `since` that is already CURRENT is answered too: the frame AT its cursor, carrying nothing.
    * Sent nothing, the client had no frame to leave `joining` on — a channel that was up to date
    * read as never joined. The seq is one it already holds, so its cursor does not move.
+   *
+   * A replayed entry holding another tenant's rows (`RecordsEntry.tenant`) is sent as its seq alone,
+   * exactly as the live frame was: a later joiner is never shown what a live member was not.
    */
   resume(socket: SyncSocket, topic: string, since: ChannelSince | undefined, fresh: boolean): void {
     const open = this.#byTopic.get(topic);
@@ -146,10 +160,19 @@ export class ChannelLogs {
     }
     const answer = entries.length > 0 ? entries : [{ seq: open.ring.seq, adopt: [], remove: [] }];
     for (const entry of answer) {
-      if (!socket.send(renderRecords(topic, open.ring.epoch, entry))) {
+      const shown = admitsTenant(socket.actor, entry.tenant) ? entry : withheld(entry);
+      if (!socket.send(renderRecords(topic, open.ring.epoch, shown))) {
         socket.gaps.set(topic, open.ring.epoch);
         return;
       }
     }
   }
+}
+
+/**
+ * One entry as a member outside its tenant receives it: the seq, so the cursor stays contiguous and
+ * no `replay-gap` is owed, and nothing else — no row, no key, and no write id to match an echo on.
+ */
+function withheld(entry: RecordsEntry): RecordsEntry {
+  return { seq: entry.seq, adopt: [], remove: [] };
 }

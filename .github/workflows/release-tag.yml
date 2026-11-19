@@ -37,11 +37,10 @@ on:
     # a bump branch named `release/31.1.0` was tagged off main's history (#1054).
     branches: [main, 'release/[0-9]+.x']
 
-# One release cut at a time, and never cancelled: a tag without its Release, or a Release without
-# its dispatch, is a half-cut release a human then has to finish.
-concurrency:
-  group: release-tag
-  cancel-in-progress: false
+# No workflow-level concurrency: every ci.yml completion on main starts this workflow, and a group
+# keeps ONE pending run — a third arrival cancels the pending one whatever `cancel-in-progress`
+# says, so a release commit's run waiting behind an ordinary commit's could be dropped. The queue
+# is on `cut`, which only a release cut ever reaches.
 
 permissions:
   contents: read
@@ -168,6 +167,11 @@ jobs:
   cut:
     needs: prepare
     if: needs.prepare.outputs.cut == 'true'
+    # One release cut at a time, and never cancelled: a tag without its Release, or a Release
+    # without its dispatch, is a half-cut release a human then has to finish.
+    concurrency:
+      group: release-tag
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

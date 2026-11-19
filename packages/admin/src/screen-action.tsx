@@ -181,6 +181,7 @@ function batchResult(
   action: AdminAction,
   result: AdminBatchResult,
   again: readonly (readonly [string, string])[],
+  all: boolean,
 ): AdminRouteResponse {
   const list = listHref(app.basePath, resource);
   const terms: readonly (readonly [string, number])[] = [
@@ -213,9 +214,12 @@ function batchResult(
           ))}
         </ul>
       )}
-      {result.remaining === 0 || (result.after === null && action.matching === undefined) ? null : (
+      {!all ||
+      result.remaining === 0 ||
+      (result.after === null && action.matching === undefined) ? null : (
         // The rest of an "all matching" batch: the same post, from where this one stopped — or,
-        // for a set-based one, the same post again: the set it reads has already shrunk.
+        // for a set-based one, the same post again: the set it reads has already shrunk. Never
+        // for checked rows: posting `all` would widen them to every row the list matches.
         <form
           class={styles['actionForm']}
           method="post"
@@ -321,11 +325,19 @@ export async function batchWrite(
     ...(batchPlan(action) === null ? {} : { enqueue: batchEnqueue(app.basePath) }),
   });
   if (result.ok) {
-    return batchResult(app, request, resource, action, result, [
-      ...Object.entries(values).map(
-        ([name, value]) => [`${ACTION_INPUT_PREFIX}${name}`, value] as const,
-      ),
-    ]);
+    return batchResult(
+      app,
+      request,
+      resource,
+      action,
+      result,
+      [
+        ...Object.entries(values).map(
+          ([name, value]) => [`${ACTION_INPUT_PREFIX}${name}`, value] as const,
+        ),
+      ],
+      all,
+    );
   }
   if (result.kind === 'denied') return refused(app, request, resource.titleKey, result.decision);
   if (result.kind === 'confirm') {

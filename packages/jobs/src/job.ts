@@ -25,7 +25,7 @@ import { limiterGateFor } from './limiter-gate';
 import { NO_TENANT, tenantKeyFrom } from './limits';
 import type { EnqueueOptions } from './outbox';
 import { jobsFacade } from './outbox';
-import { DEFAULT_RETRY } from './retry';
+import { resolvedRetry } from './retry-default';
 import { assertRetryJitter } from './retry-jitter';
 import type { JobSettled } from './settled';
 import { ON_SETTLED_TIMEOUT_MS } from './settled';
@@ -33,7 +33,14 @@ import { assertJobTenant, jobTenantFor } from './tenant';
 
 export type { AnyJobHandle, JobActor, JobDefinition, JobHandle, JobRunArgs } from './job-types';
 
-import type { AnyJobHandle, JobActor, JobDefinition, JobHandle, JobRunArgs } from './job-types';
+import type {
+  AnyJobHandle,
+  FactoryJobDefinition,
+  JobActor,
+  JobDefinition,
+  JobHandle,
+  JobRunArgs,
+} from './job-types';
 
 /**
  * The registry, and its name-sorted list cached until the next write. Every claim reads the list
@@ -83,13 +90,25 @@ interface JobOrigin {
 const origin = new WeakMap<object, JobOrigin>();
 
 export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<I> {
+  return declareJob(definition, false);
+}
+
+/**
+ * `job()` for a factory over it (`purge()`, `backfill()`, …): `retry: undefined` is "declares
+ * none", the app's default read when `handle.retry` is. Internal — not on the barrel.
+ */
+export function factoryJob<I, R = unknown>(definition: FactoryJobDefinition<I, R>): JobHandle<I> {
+  return declareJob(definition, true);
+}
+
+function declareJob<I, R>(definition: FactoryJobDefinition<I, R>, factory: boolean): JobHandle<I> {
   anonymous += 1;
   const name = definition.name ?? `anonymous-job-${anonymous}`;
 
   // Runtime backstops for generated code and JS callers; TS already forbids omitting any of them.
   // Collected, never one at a time — see `JobDeclarationInvalidError`. The two fields with a code
   // of their own keep it when they are the only thing missing: shipped codes keep their meaning.
-  const missing = missingJobFields(definition);
+  const missing = missingJobFields(definition, factory);
   if (missing.length === 1 && missing[0] === 'idempotencyKey') {
     throw new IdempotencyRequiredError({ job: name, positional: definition.name === undefined });
   }
@@ -100,8 +119,10 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
   // A COUNT, so whole and finite as well as at least 1: `>= 1` alone admitted `Infinity` and
   // `1.5`, which the memory driver ran and Postgres refused at the first enqueue (`$7::int`).
   // Zero is not "never retries" — that is `attempts: 1` — it is a job that never executes at all.
-  finiteCount(`job "${name}"`, 'retry.attempts', definition.retry.attempts, 1);
-  assertRetryJitter(name, definition.retry.jitter);
+  if (definition.retry !== undefined) {
+    finiteCount(`job "${name}"`, 'retry.attempts', definition.retry.attempts, 1);
+    assertRetryJitter(name, definition.retry.jitter);
+  }
   // `concurrency: 0` is not "no cap" — it is a fleet slot table that grants nothing, and the job
   // is permanently unrunnable with no log line. Refused where it is written, plain or keyed.
   const concurrency = resolveConcurrency(name, definition.concurrency);
@@ -166,7 +187,10 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     kind: 'job',
     name,
     queue: definition.queue ?? DEFAULT_QUEUE,
-    retry: { ...DEFAULT_RETRY, ...definition.retry },
+    // A getter: the app's default is installed by the boot, after this handle was built.
+    get retry() {
+      return resolvedRetry(definition.retry);
+    },
     concurrency: concurrency.limit,
     whenBusy: concurrency.whenBusy,
     limiter: definition.limiter,

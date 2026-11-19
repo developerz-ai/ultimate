@@ -11,7 +11,7 @@
 // `node:async_hooks` to `{}`, and took every importer of `@ultimat3/ai` with it.
 
 import type { Actor } from '@ultimat3/core';
-import { assert, asyncContext, finiteCount } from '@ultimat3/core';
+import { assert, asyncContext, finiteCount, logger } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { assertSameCurrency, commonScale, exponentOf, minorAt } from '@ultimat3/money';
 import type { BudgetStore } from './budget-store';
@@ -281,7 +281,7 @@ export class BudgetLedger {
     for (let l: BudgetLedger | undefined = this; l !== undefined; l = l.parent) {
       l.costMicro += micro;
     }
-    await this.debit(totalTokens(usage) - (reservation?.tokens ?? 0));
+    await this.debit(countedTokens(usage, reservation) - (reservation?.tokens ?? 0));
   }
 
   /**
@@ -446,4 +446,21 @@ export function withBudget<T>(ledger: BudgetLedger, fn: () => Promise<T>): Promi
 /** The ambient ledger, or `undefined` outside a budget scope (spend is then unmetered). */
 export function currentBudget(): BudgetLedger | undefined {
   return storage.get();
+}
+
+/**
+ * What `usage` adds up to — or, when any counter is not a count, what was reserved. The built-in
+ * wires clamp their counters; an app-written `Provider` may answer a `NaN`, and one `NaN` debit made
+ * the actor's counter `NaN` for the life of the process: every later `reserve` threw, and the
+ * ledger's own ceiling compared false. Each counter is screened, not the sum: `-1000 + 1000` sums
+ * to a count and refunded the reservation. The estimate over-counts: the safe side of unknown.
+ */
+function countedTokens(usage: TokenUsage, reservation: BudgetReservation | undefined): number {
+  const total = totalTokens(usage);
+  const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens } = usage;
+  const counters = [inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens];
+  if (counters.every((n) => Number.isFinite(n) && n >= 0)) return total;
+  const assumed = reservation?.tokens ?? 0;
+  logger.warn('ai.budget.usage_invalid', { received: String(total), assumed });
+  return assumed;
 }

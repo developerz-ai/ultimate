@@ -6,6 +6,7 @@ import {
   DRAIN_DEADLINE_DEFAULT_MS,
   DRAIN_DEADLINE_MAX_MS,
   drainDeadlineIssue,
+  laterHooksReserveMs,
 } from './drain-deadline';
 import { drainDeadlineMs, resetLifecycle } from './lifecycle';
 
@@ -42,5 +43,13 @@ describe('the drain budget', () => {
 
   test('the over-bound refusal says why rather than only the number', () => {
     expect(drainDeadlineIssue(DRAIN_DEADLINE_MAX_MS + 1)).toContain('at most 3600000');
+  });
+});
+
+describe('laterHooksReserveMs', () => {
+  test('a fifth of the budget, at most 2 s, kept from the in-flight wait for the hooks behind it', () => {
+    expect(laterHooksReserveMs(25_000)).toBe(2_000);
+    expect(laterHooksReserveMs(5_000)).toBe(1_000);
+    expect(laterHooksReserveMs(7)).toBe(1);
   });
 });

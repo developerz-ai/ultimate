@@ -7,6 +7,7 @@ import { expect, test } from 'bun:test';
 import type { AuthServerStore } from '@ultimat3/auth/adapter';
 import {
   at,
+  clientRecord,
   codeRecord,
   deviceRecord,
   grantRecord,
@@ -193,6 +194,52 @@ export const AUTH_SERVER_STORE_CHECKS: readonly AuthServerStoreCheck[] = [
       expect(await store.purge(at(4000), at(1))).toBeGreaterThanOrEqual(2);
       expect([await store.getToken(token), await store.getGrant(idle)]).toEqual([null, null]);
       expect((await store.getGrant(live))?.id).toBe(live);
+    },
+  },
+  {
+    // Restates `@ultimat3/auth`'s own purge-of-clients case (authorization-server-purge-fixture.ts,
+    // test-only there), under ids of its own: a shared table holds every check's rows.
+    name: 'purge deletes a self-registered client past the idle window that nothing names, only it',
+    async run(store) {
+      const id = (label: string): string => `d_${idOf(label)}`;
+      const [old, granted, young, pending, device] = [
+        id('old'),
+        id('granted'),
+        id('young'),
+        id('code'),
+        id('device'),
+      ];
+      const staticOld = idOf('static-old');
+      for (const [clientId, created] of [
+        [staticOld, at(0)],
+        [old, at(0)],
+        [granted, at(0)],
+        [young, at(600)],
+        [pending, at(0)],
+        [device, at(0)],
+      ] as const) {
+        await store.putClient(clientRecord(clientId, created));
+      }
+      await store.putGrant({
+        ...grantRecord(idOf('grant'), idOf('subject'), granted),
+        refreshedAt: at(900),
+      });
+      await store.putCode({
+        ...codeRecord(idOf('code'), idOf('grant')),
+        clientId: pending,
+        expiresAt: at(2000),
+      });
+      await store.putDevice({
+        ...deviceRecord(idOf('device'), idOf('user-code')),
+        clientId: device,
+        createdAt: at(900),
+        expiresAt: at(2000),
+      });
+      expect(await store.purge(at(1000), at(500))).toBeGreaterThanOrEqual(1);
+      expect(await store.getClient(old)).toBeNull();
+      for (const kept of [staticOld, granted, young, pending, device]) {
+        expect((await store.getClient(kept))?.clientId).toBe(kept);
+      }
     },
   },
 ];

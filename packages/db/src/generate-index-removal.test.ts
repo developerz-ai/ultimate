@@ -252,6 +252,8 @@ describe('generateMigration · a recorded index the entities no longer declare',
       current: recordedPosts([recordedIndex('posts_status_idx', ['status'])]),
       name: 'status becomes generated',
       now: at,
+      allowDestructive: true,
+      rollingUnsafe: true,
     });
 
     expect(migration.up).not.toContain('drop index "posts_status_idx"');

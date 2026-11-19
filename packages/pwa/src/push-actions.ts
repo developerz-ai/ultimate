@@ -31,6 +31,14 @@ const subscribeInput = () =>
     timeZone: t.timezone,
   });
 
+/**
+ * `expiration_time` is a Postgres `bigint`: a fraction or `1e30` was an uncoded driver error there
+ * and a stored row in memory. The input stays `number | null` — narrowing a published schema is a
+ * contract break — so a value that is not whole milliseconds states no expiry, for both stores.
+ */
+const storableExpiry = (at: number | null): number | null =>
+  at !== null && Number.isSafeInteger(at) && at >= 0 ? at : null;
+
 const subscribeOutput = () => t.object({ endpoint: t.string });
 const unsubscribeInput = () => t.object({ endpoint: t.string.min(1).max(2048) });
 const unsubscribeOutput = () => t.object({ removed: t.boolean });
@@ -80,7 +88,7 @@ export function pushSubscribe(
         timeZone: input.timeZone,
         actorId: ctx.actor.id,
         createdAt: ctx.now().getTime(),
-        expirationTime: input.expirationTime,
+        expirationTime: storableExpiry(input.expirationTime),
       });
       return { endpoint: input.endpoint };
     },

@@ -127,6 +127,7 @@ const CATALOG = {
   'cli.docs.installed': 'installed: {list}',
   'cli.docs.tryErrors': 'every X_* code, with its fix',
   'cli.docs.tryActions': "this app's own primitives, not the framework's",
+  'cli.docs.tryTopic': 'any topic id above prints that section whole',
   'cli.docs.found': '{count} doc(s) for "{query}"',
   'cli.docs.none': 'no framework doc matches "{query}"',
   'cli.docs.unresolved': 'the installed framework packages could not be located',
@@ -241,12 +242,18 @@ const CATALOG = {
   'cli.policy.explained': '{subject} — allowed for {allowed} of {evaluations} actor evaluation(s)',
   'cli.policy.allow': 'allow',
   'cli.policy.deny': 'deny',
+  'cli.policy.needsInput': 'needs input',
+  'cli.policy.explainedPending':
+    '{subject} — allowed for {allowed} of {evaluations} actor evaluation(s); {pending} not denied, decided by a predicate that reads the request input — {command}',
+  'cli.policy.withInput':
+    'evaluated on --input, with no row — a row-level rule decides again on the real request',
+  'cli.policy.undecidableInput':
+    'not decidable on this --input — the policy threw reading it: a field the JSON does not carry, or a row rule',
   'cli.policy.declaration': '{kind} {name} — policy {label}',
   /** The empty cell in a `x policy list` column — a value, not a column key. */
   'cli.policy.none': '-',
   'cli.policy.noInput':
     'evaluated with no request input and no row — a rule reading either decides again on the real request',
-  'cli.policy.undecidable': 'not decidable outside a request — this policy reads request input',
   'cli.policy.unenforced': '{count} permission(s) no action or query enforces:',
   'cli.registry.count': '{count} {kind}',
   'cli.registry.described': '{kind} {name}',
@@ -256,6 +263,7 @@ const CATALOG = {
     'sealed {sealed} second-factor secret(s); {already} already sealed, {skipped} changed mid-run and left alone',
   'cli.tasks.count': '{count} task(s)',
   'cli.tasks.shown': '{name} — {cron} ({tz}), next {next}',
+  'cli.tasks.ran': '{name} fired now — {count} job(s) enqueued; a worker (x dev) runs them',
   'cli.test.fail': '{failed} of {workers} shard(s) failed',
   'cli.test.affected.none': 'nothing is affected by {base}...HEAD — 0 test file(s) ran',
   'cli.test.empty': 'no test file matches {selection} — 0 test file(s) ran (--allow-empty)',
@@ -265,6 +273,8 @@ const CATALOG = {
   'cli.test.sampled': 'sampled {kept} of {total} {type} file(s)',
   'cli.test.type.fail': '{type} — {failed} of {workers} shard(s) failed',
   'cli.test.type.pass': '{type} — {files} test file(s) on {workers} worker(s) passed in {ms}ms',
+  'cli.test.allSkipped':
+    '{label} — 0 test(s) ran: all {skipped} skipped themselves, so nothing was checked',
   'cli.clean.nothing': 'nothing to clean: no test leftovers under this app',
   'cli.clean.removed': 'removed {paths} path(s) and {databases} probe database(s)',
   'cli.clean.would':
@@ -272,6 +282,8 @@ const CATALOG = {
   'cli.env.checked': '{count} declared variable(s), all present and valid',
   'cli.env.invalid': '{count} of {total} declared variable(s) missing or malformed',
   'cli.env.checkedAsProduction': 'checked as production: no ULTIMATE_ENV named',
+  'cli.env.checkedAsDevelopment':
+    'checked as development, as x dev runs here: no ULTIMATE_ENV named — a deploy: ULTIMATE_ENV=production x env check',
   'cli.env.wrote': 'wrote {path} — {count} declared variable(s)',
   'cli.env.fresh': '{path} already matches the declaration',
   'cli.env.initialised': 'wrote {path} — {count} value(s), secrets generated and never printed',

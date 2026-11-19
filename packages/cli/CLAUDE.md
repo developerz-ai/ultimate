@@ -16,13 +16,13 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 |---|---|
 | Entry | `src/bin.ts` — argv, stdout, exit code only ‡ |
 | Registry | `registry.ts`: every declaration static (`cmd-<name>-spec.ts`), every body `await import()`ed when that command runs ‡ |
-| Startup cost | `sass` loads on the first stylesheet compile (`@ultimat3/render`'s `compileStylesheet`), Babel on the first island transform (`solid-loader.ts`); both pinned by `*-lazy.test.ts` in a child process |
-| Module names | `role-*` / `runtime-*` are booted by `serve.ts` in production; `dev-*` is `x dev`'s alone. Derived from the import graph by `module-naming.test.ts`, never listed |
+| Startup cost | `sass` loads on the first stylesheet compile (`@ultimat3/render`'s `compileStylesheet`), Babel on the first island transform (`solid-loader.ts`); pinned by `*-lazy.test.ts` in a child |
+| Module names | `role-*` / `runtime-*` are booted by `serve.ts` in production; `dev-*` is `x dev`'s alone. Derived by `module-naming.test.ts` from imports, never listed |
 | stdout / stderr | `write-line.ts`'s `writeLine` / `writeErrorLine`, never `process.stdout.write`; `stream: 'stderr'` → fd 2 ‡ |
 | `--json` | every command; `dispatch.ts` sets core's log stream to stderr under it. Same data as the human render |
-| I/O | only `dispatch.ts` renders or exits; commands return `CommandResult`. `ok()` / `failed()` write `ok` after the `extra` spread — the verdict cannot be overturned |
-| Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`); the release runs inside the drain's own deadline |
-| Test execution | `test-shards.ts`'s `testArgs` — one `bun test --parallel=N` per pass (`test-passes.ts`); `live`/`e2e` run serially (`SERIAL_TYPES`, `test-workers.ts`); a file's type and each step's argv: `verify-test-command.ts` |
+| I/O | only `dispatch.ts` renders or exits; commands return `CommandResult`. `ok()` / `failed()` write `ok` after the `extra` spread, so the verdict stands |
+| Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`); its release runs inside the drain's deadline |
+| Test execution | `test-shards.ts`'s `testArgs` — one `bun test --parallel=N` per pass (`test-passes.ts`); `live`/`e2e` run serially (`SERIAL_TYPES`, `test-workers.ts`); a file's type and each step's argv: `verify-test-command.ts`; failing files, all-skipped: `test-verdict.ts` |
 | Numeric flags | `flag-number.ts` — one reader for `--port` / `--workers` / `--shard` |
 | Shell quoting | `shell-quote.ts`'s `quoteArg` for every value pasted into a `fix:` or a reproduce line |
 | Missing input | `MissingPositionalError`; a bare subcommand needs a declared `defaultSubcommand` (`MissingSubcommandError`) ‡ |
@@ -30,8 +30,8 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | Passthrough | declared per command (`CommandSpec.passthrough`); every other command refuses a `--` tail with `X_CLI_BAD_FLAG` |
 | App root | `CommandSpec.requiresApp`, enforced by `dispatch.ts` before `run` |
 | Declared flags | every flag a command declares is read in this package's source — `flag-reads.test.ts` (`X_CLI_FLAG_UNREAD`) |
-| Planned commands | none: `PLANNED_COMMANDS` / `PLANNED_SUBCOMMANDS` (`cmd-planned.ts`) stay empty, and the registry builds nothing from them. A command ships, or the parser refuses it `X_CLI_UNKNOWN_COMMAND` with its decision in `wiki/Known-Gaps.md` |
-| Errors | codes + titles in `error-codes.ts`, a runnable line per code in `mcp-errors.ts` (typed over `CliErrorCode`); a family at the ceiling moves to `error-codes-<family>.ts` / `mcp-errors-<family>.ts` (`-verify`: the gate's floor, run and split); classes in `errors.ts` or beside their one thrower when `errors.ts` is at its ceiling. Never a bare `Error` |
+| Planned commands | none: `PLANNED_COMMANDS` / `PLANNED_SUBCOMMANDS` (`cmd-planned.ts`) stay empty. A command ships, else the parser refuses it `X_CLI_UNKNOWN_COMMAND` with its decision in `wiki/Known-Gaps.md` |
+| Errors | codes + titles in `error-codes.ts`, a runnable line per code in `mcp-errors.ts` (typed over `CliErrorCode`); a family at the ceiling moves to `error-codes-<family>.ts` / `mcp-errors-<family>.ts` (`-verify`: the gate's floor, run and split); classes in `errors.ts`, else beside their one thrower. Never a bare `Error` |
 | Subprocesses | only through `exec.ts`'s injectable `Runner`; `gh` through `ctx.runner` with a required `fix` |
 | Templates | `templates/*.ts` return strings, pre-formatted for Biome (`wrap.ts`'s `wrapList` / `wrapImport` / `sortSpecifiers`); no fixture files on disk |
 | Strings | rendered output through `messages.ts` (missing key renders `⟦key⟧`) ‡ |
@@ -46,13 +46,13 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 |---|---|
 | `verify-checks.ts` / `verify-step.ts` / `verify-run.ts` / `verify-e2e-lane.ts` | steps, outcome, order (`BESIDE_SERIAL_SUITES`, e2e lane) |
 | `verify-changed*.ts` | `x verify --changed`: file → rule → steps, fail-open; `drift` only when reached † |
-| `verify-drift-owner.ts` | `drift`: an `app.config.ts` under `apps/`/`packages/` is `X_APP_ROOT_NESTED` — one repo, one app, one image, one migration owner |
+| `verify-drift-owner.ts` | `drift`: an `app.config.ts` under `apps/`/`packages/` is `X_APP_ROOT_NESTED`: one app (image, migration owner) per repo |
 | `verify-exercise.ts` / `cmd-exercise.ts` / `exercise-*.ts` | `exercise`: `x exercise --json` as a child, red on its findings |
 | `verify-floor.ts` | `x.verify.json`: a floor step that ran zero tests is `X_VERIFY_SUITE_VANISHED` |
 | `verify-strict.ts` / `verify-skip-reason.ts` / `verify-guard-baseline.ts` / `verify-merge-skips.ts` | `strict` + `skip` (`X_VERIFY_STRICT_UNRUN`), each zero-check step's reason, per-guard `guardBaseline` † |
-| `verify-live.ts` / `verify-services.ts` | `live`: nothing answering → the gate starts `docker/docker-compose.test.yml`; can't → `X_TEST_SERVICES_UNAVAILABLE` warning |
+| `verify-live.ts` / `verify-services.ts` | `live`: nothing answering → the gate starts `docker/docker-compose.test.yml`; can't → `X_TEST_SERVICES_UNAVAILABLE`, red if floored and none ran, else a warning |
 | `verify-e2e.ts` / `doctor-browser.ts` | `e2e` floored with no Chrome is `X_VERIFY_E2E_BROWSER_MISSING`; `x doctor` reports the browser |
-| `coverage-remap.ts` / `coverage-island.ts` / `island-bundle-options.ts` | under a coverage build, island chunk lines credited to their sources via the chunk's source map |
+| `coverage-remap.ts` / `coverage-island.ts` / `island-bundle-options.ts` | a coverage build credits island chunk lines to their sources via the chunk's source map |
 | `coverage-{floor,lcov,source,island,remap}.ts` / `verify-coverage-run.ts` | an app's `unit` coverage floor; `coverage-lcov.ts` is the ONE lcov reader † |
 | `verify-deadline.ts` / `verify-stalled.ts` / `verify-progress.ts` | a step past its deadline is `X_VERIFY_STEP_TIMEOUT`; its children are killed by tag † |
 | `load-findings.ts` | a module-load failure is reported once, by `manifest`; each step that loads the app stands down (`blockedByLoad`) † |
@@ -61,7 +61,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `verify-seeds.ts` / `verify-seeds-probe.ts` | `unit` runs the seeds in a child on `x exercise`'s scratch database; an uncoded throw is `X_SEED_FAILED` † |
 | `boundary-findings.ts` / `app-boundaries.ts` / `boundary-cuts.ts` / `package-boundaries.ts` | surface + layer rules, `X_BOUNDARY_PACKAGE_TO_APP`; a `fix:` is the concrete cut † |
 | `app-boundaries.ts` (workspaces) | `@<scope>/<app>/<rest>` resolves onto `apps/<app>/<rest>` when that is an app source, so the surface rules hold across app workspaces |
-| `app-transport.ts` / `browser-{transport,import-chain,barrel-cut}.ts` / `transport-{calls,values}.ts` / `binding-names.ts` / `import-closure.ts` / `server-barrels.ts` | `boundaries`, built in: one browser transport; a server barrel below an island is cut at its first hop † |
+| `app-transport.ts` / `browser-{transport,import-chain,barrel-cut}.ts` / `transport-*.ts` / `binding-names.ts` / `import-closure.ts` / `server-barrels.ts` | `boundaries`: one browser transport; a server barrel below an island is cut at its first hop † |
 | `guards.ts` / `guard-sources.ts` | an app's `guards/*.ts`, run on `boundaries`; ONE shared walk (`GuardSources`) † |
 | `guards-built-in.ts` / `guards-built-in-refusal.ts` | shipped guards run from the installed CLI, never a copy; `guards/shipped.json` is the opt-in and the severities; `x g guard <shipped>` is `X_GUARD_BUILT_IN` |
 | `templates/scaffold-guards.ts` | `SHIPPED`, the one list of shipped guards (`guards-built-in.ts`, `doctor-guards.ts`, `codemods/vendored-guards.ts`) † |
@@ -113,7 +113,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `app-artifacts.ts` | `x.manifest.json` + `openapi.json`, written together (`x g`, `x manifest`) |
 | `templates/` | every emitted file; `scaffold-*.ts` for `x new`, one per generator otherwise. See history |
 | `generate-feature-required.ts` | `x g query`/`backfill` with no slice holding an `entity.ts` is `X_FEATURE_REQUIRED` |
-| `generate-sign-in*.ts` | `x g sign-in`: one flag, no name; OIDC swaps only `x new`'s bytes |
+| `generate-sign-in*.ts` | `x g sign-in`: one flag, no name; OIDC swaps only `x new`'s bytes and ships the `mfaPath` leg |
 | `generate-invite*.ts`, `templates/invite*.ts` | `x g invite`: no name; three actions + two pages over `defineMemberInvite` |
 | `generate-format-written.ts` | the app's Biome over the TypeScript a run created, best effort; `lint` judges |
 | `templates/scaffold-mcp-{json,endpoint,admin}.ts` | `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`) and the refusing MCP endpoints ‡ |
@@ -123,28 +123,29 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 
 | File | Job |
 |---|---|
-| `serve.ts` / `serve-boot.ts` / `serve-entry.ts` / `serve-env.ts` | the production entry: `ROLE`, env bindings, `ROLE=migrate`; `X_APP_MODULE_LOAD_FAILED` † |
+| `serve.ts` / `serve-boot.ts` / `serve-entry.ts` / `serve-env.ts` | the production entry: `ROLE` (outside `config.roles`: `X_CONFIG_INVALID`; `migrate` exempt), env bindings, `ROLE=migrate`; `X_APP_MODULE_LOAD_FAILED` † |
 | `app-load-batch.ts` / `app-load-register.ts` | one hook module per app module, registered in order; registration state † |
 | `app-load-prebuilt.ts` / `build-registry.ts` / `build-registry-background.ts` | every serving role boots from the prebuilt registry (`x build`); stale → scan † |
 | `generate-refresh.ts` | `x g` refreshes the manifest only when a written file needs it |
 | `role-load.ts` / `document-graph.ts` / `serve-web.ts` | a role imports what it runs: `ROLE_LOADS` (`X_ROLE_LOAD_INCOMPLETE`) † |
 | `module-imports.ts` | a module's imports, resolved once for both graphs: `referenced` (reload), `evaluated` (document) |
-| `dev-rebuild-remount.ts` / `dev-rebuild-schema.ts` | a save that changes what `x dev` mounted is a restart; entities ahead of migrations are `X_DB_DRIFT` † |
+| `dev-rebuild-remount.ts` / `dev-rebuild-schema.ts` | a save that changes what `x dev` mounted is a restart; entities ahead of migrations are `X_DB_DRIFT`, the ledger behind them `X_APP_MIGRATIONS_UNAPPLIED` † |
 | `dev-log.ts` | every logger line to `<stateDir>/dev.log` (`logs.tail`); `dev.log.1` at 16 MiB |
 | `cmd-dev.ts` / `dev-boot.ts` / `dev-rebuild.ts` / `dev-route-table.ts` | `x dev`: every role in one process, `/_x`, the watcher; one save = one generation † |
 | `runtime-bindings.ts` | which service each binding points at (embedded or external); events follow `NATS_URL` |
 | `runtime-queue.ts` / `runtime-services.ts` / `runtime-bus.ts` | db + queue; every other accessor; the bus |
 | `framework-schema-apply.ts` / `framework-schema-stamp.ts` | the framework tables, applied in one locked transaction † |
-| `framework-schema-verify.ts` / `-wait.ts` / `app-migrations-verdict.ts` / `serve-boot-probe.ts` | a serving role behind its schema (stamp or app ledger) WAITS, `ULTIMATE_SCHEMA_WAIT_MS`, probe port up; a newer major refuses at once |
+| `framework-schema-verify.ts` / `-wait.ts` / `app-migrations-verdict.ts` / `serve-boot-probe.ts` | a serving role behind its schema WAITS (`ULTIMATE_SCHEMA_WAIT_MS`); a newer major refuses at once † |
 | `runtime-isr.ts` | the ISR controller both boots serve through, attached to `invalidateTags` (`attachedIsr`) † |
 | `runtime-mfa-warning.ts` / `runtime-idempotency-scope.ts` | boot warnings: unsealed MFA secrets, a per-process idempotency store † |
 | `app-config-load.ts` | the ONE reader of `app.config.ts` (`loadAppConfig`) † |
 | `theme-brand.ts` | the ONE reader of an app's theme (`brand` in `apps/web/shared/theme.ts`) † |
-| `runtime-{jobs,realtime,notify-retention,cache,purge,replica}.ts` | the `app.config.ts` sections the boot obeys (`*Of(config)`) † |
+| `runtime-{jobs,realtime,notify-retention,cache,purge,replica,database-ssl}.ts` | the `app.config.ts` sections the boot obeys (`*Of(config)`); `database.ssl` adds `sslmode=require` where neither the URL nor `PGSSLMODE` sets one, on every pool (`withAppTls`) † |
 | `runtime-cache-bus.ts` | which bus carries cache/ISR invalidations across replicas; one `cache.broadcast` boot line † |
+| `runtime-cache-frame.ts` | the bust frame on `x.cache.invalidate`: tags + optional `{scopes}`; older receivers keep the strings |
 | `runtime-jobs.ts` (queues) | `WORKER_QUEUES` = the EXACT set, else `X_WORKER_QUEUE_UNKNOWN`; `-unserved.ts`: what no worker serves † |
 | `serve-retire.ts` / `dev-restart-retire.ts` | the worker retire (SIGUSR2, before an `x dev` restart's drain) † |
-| `role-start*.ts` / `role-realtime.ts` | `--role` selection, start/stop per role, device mounts † |
+| `role-start*.ts` / `role-select.ts` / `role-realtime.ts` | `--role` selection (`x dev` runs only `config.roles`: `rolesDeclaredForDev`), start/stop per role, device mounts † |
 | `role-wake.ts` | the worker's LISTEN session (`@ultimat3/jobs`' `startQueueWake`) — worker role only, only over a client that `canListen` — and `queue_wake_live` |
 | `role-sync.ts` / `role-replicator.ts` / `runtime-live-feed.ts` | the sync node, the change feed |
 | `runtime-render*.ts` / `runtime-{isr-outcome,assets,storage,hooks}.ts` / `route-islands.ts` / `api-routes.ts` | the HTTP surface both boots mount † |
@@ -162,7 +163,8 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `local-cli.ts` / `local-cli-handoff.ts` | a global `x` hands over to the app's own CLI † |
 | `serve-prebuilt.ts` / `serve-prebuilt-paths.ts` | the image's prebuilt store; a boot that built anything logs `X_IMAGE_NOT_PREBUILT` † |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, watcher, reload, lock, port |
-| `cmd-stop.ts` / `cmd-stop-spec.ts` | `x stop`: the lock's pid only, SIGTERM, wait; `X_DEV_STOP_TIMEOUT` † |
+| `cmd-stop.ts` / `cmd-stop-spec.ts` | `x stop`: the lock's pid only, SIGTERM, wait; a reused pid's lock is cleared, unsignalled; `X_DEV_STOP_TIMEOUT` † |
+| `dev-lock-live.ts` / `db-{migrate,rollback}-pass.ts` / `dev-db-*.ts` | beside a live `x dev` on the embedded database, `x db migrate\|rollback` run in it (`POST /_x/db/…`); other writes refuse † |
 | `dev-dashboard-guard.ts` / `loopback-host.ts` | `/_x`: loopback `Host` (`X_DEV_HOST_REFUSED`) and peer (`X_DEV_PEER_REFUSED`) † |
 | `dev-host.ts` / `dev-tls*.ts` | `x dev --host` (loopback default) and `--tls`: a cached self-signed cert in `.x/tls/`, WebCrypto + hand-written DER |
 | `doctor-pooler.ts` / `runtime-statement-bound.ts` | the statement bound and a pooler's refusal, one finding, one boot line † |
@@ -175,6 +177,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `prerender.ts` / `measure-scope.ts` / `static-report.ts` / `static-*.ts` | the static export; weigh-only renders as `measurementActor()` † |
 | `sw-artifacts.ts` / `pwa-artifacts.ts` / `favicon.ts` | the service worker, the web manifest, `/favicon.ico` |
 | `cmd-db.ts` / `migrations.ts` / `db-*.ts` (generate, branch, seed, backfill, subscribes, accept-created) | one migration engine for `x db` and `ROLE=migrate` † |
+| `cmd-db-rollback.ts` / `db-rollback-consent.ts` / `db-applied-edits.ts` | `x db rollback`: on a named deploy, or an external non-loopback database, every id named in `ROLLBACK_ALLOW_DESTRUCTIVE`; `gen` refuses an edited applied migration |
 | `db-diagnostics.ts` | `x db diagnostics`: `startDb`, never `startQueue`; exit 0 whatever it says † |
 | `db-schema-dump.ts` / `db-schema-refresh.ts` / `db-replay-engine.ts` / `migration-extensions.ts` / `db-object-drift.ts` | the schema dump, replayed on a scratch database † |
 
@@ -183,6 +186,8 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | File | Job |
 |---|---|
 | `cmd-registries.ts` / `cmd-jobs.ts` / `cmd-tasks.ts` / `cmd-policy.ts` / `cmd-i18n.ts` | project a framework registry; each pairs CLI wiring with a facts module |
+| `cmd-tasks-run.ts` | `x tasks run`: `TaskHandle.enqueue()`; production needs `--production` or `ULTIMATE_TASK_RUN=<name>` (`X_TASK_RUN_PRODUCTION`) |
+| `doctor-api-listing.ts` | `x doctor` warns: action/query off a `defineApi()` listing others |
 | `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` |
 | `cmd-mcp.ts` / `mcp-host*.ts` / `mcp-errors.ts` / `mcp-db-target.ts` / `mcp-test-{output,run}.ts` | `x mcp serve`: 23 tools, two transports; `tests.run`/`verify.run` ARE `x test`/`x verify` † |
 | `cmd-shot*.ts` / `cdp-shot-*.ts` / `browser-launcher*.ts` / `island-*` | `x shot` over raw CDP; `verdict.json` names its own blind spots. Not a gate step |
@@ -193,11 +198,11 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `pr-threads.ts` / `pr-activity.ts` | `x pr review`'s ONE GraphQL document: threads, plus every review (verdict, body) and issue comment |
 | `pr-bots.ts` | which review bots posted a "did not review" notice (rate/review limit, skipped); `blocked` = no review of theirs after it |
 | `ci-log.ts` | `x ci`'s log reader: markers and fences undone, provenance `source: 'ci-log'` † |
-| `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for any code |
+| `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for any code; app codes: `cmd-errors-app.ts` |
 | `cmd-docs.ts` / `docs-sources.ts` / `docs-section.ts` | `x docs`: the app's and the CLI's `@ultimat3` docs; `Page#anchor` prints a section † |
 | `cmd-env-init.ts` / `env-production.ts` / `cmd-deploy-preflight.ts` | the one writer of `.env.production`; compose pre-flight (`X_DEPLOY_ENV_MISSING`) † |
 | `cmd-upgrade.ts` / `upgrade-*.ts` | `x upgrade`: one major per run; no `requiresApp` † |
-| `codemods/` / `cmd-upgrade-codemods.ts` / `upgrade-gate-codemods.ts` | a template change an app keeps, carried by a codemod (`codemod.ts`, the ONE list `codemods/index.ts`); the hop's installed CLI applies them before its gate; `scripts/template-codemods.ts` refuses a template change with none |
+| `codemods/` / `cmd-upgrade-codemods.ts` / `upgrade-gate-codemods.ts` | a kept template change, carried by a codemod (ONE list: `codemods/index.ts`) † |
 | `cmd-deploy-verify.ts` / `deploy-verify-*.ts` / `cmd-status*.ts` | `x deploy verify`: the wait, the verdict, lazy sources † · `x status` |
 
 ## Adding a command

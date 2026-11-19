@@ -148,6 +148,29 @@ describe('tools', () => {
     expect(toOpenAiTools([optional])[0]?.function).not.toHaveProperty('strict');
   });
 
+  test('strict is not claimed when an anyOf branch has an optional key', () => {
+    const branch = (required: readonly string[]) => ({
+      type: 'object' as const,
+      properties: {
+        pick: {
+          anyOf: [
+            {
+              type: 'object' as const,
+              properties: { a: { type: 'number' as const } },
+              required,
+              additionalProperties: false,
+            },
+            { type: 'null' as const },
+          ],
+        },
+      },
+      required: ['pick'],
+      additionalProperties: false,
+    });
+    expect(satisfiesStrictMode(branch(['a']))).toBe(true);
+    expect(satisfiesStrictMode(branch([]))).toBe(false);
+  });
+
   test('strict mode is checked recursively, because the server checks it recursively', () => {
     expect(satisfiesStrictMode(STRICT_SCHEMA)).toBe(true);
     expect(

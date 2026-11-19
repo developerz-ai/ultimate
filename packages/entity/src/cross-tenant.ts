@@ -62,7 +62,8 @@ export function crossTenant<T>(reason: string, fn: () => T): T {
 
 /**
  * The innermost enclosing reason, or `undefined` outside every scope — which is every query in an
- * app that never calls `crossTenant`. Read by the tenant guard, and by nothing else.
+ * app that never calls `crossTenant`. Read by the tenant guard, and by `search-repo.ts`, which must
+ * know the chain spans tenants before it asks an external index for one.
  */
 export const crossTenantReason = (): string | undefined => storage.get();
 

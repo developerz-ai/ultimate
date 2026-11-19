@@ -19,7 +19,7 @@ import { guardedCheck, guardedListing } from './doctor-guarded';
 import { shippedGuardsProbe, vendoredGuardWarnings, withGuardListing } from './doctor-guards';
 import { offlineFallbackFinding } from './doctor-offline';
 import { NO_POOLER_FACT, poolerFindings, withPoolerReport } from './doctor-pooler';
-import { doctorPort, portFindings } from './doctor-port';
+import { doctorPort, ownerAskedOnce, portFindings } from './doctor-port';
 import type { DoctorProbe } from './doctor-probe';
 import { probeFor } from './doctor-probe';
 import { redundantIndexesProbe, withRedundantIndexes } from './doctor-redundant-indexes';
@@ -188,9 +188,11 @@ export async function reportDoctor(probe: DoctorReportProbe): Promise<CommandRes
       ? Promise.resolve(none)
       : guardedListing(name, failed, () => read(root), none);
   };
-  // Asked once: `runDoctor` reads the verdict and the report beside it reads the numbers.
+  // Asked once: `runDoctor` reads the verdict and the report beside it reads the numbers. The port's
+  // owner too: the verdict and the warnings partition one answer (`ownerAskedOnce`).
   const pooler = await inApp('pooler', () => probe.pooler(), NO_POOLER_FACT);
-  const findings = await runDoctor({ ...probe, pooler: async () => pooler });
+  const asked = { ...probe, pooler: async () => pooler, portOwner: ownerAskedOnce(probe) };
+  const findings = await runDoctor(asked);
   const guardEntries = await inApp('shipped guards', shippedGuardsProbe, []);
   const listed = withGuardListing(
     {
@@ -229,7 +231,7 @@ export async function reportDoctor(probe: DoctorReportProbe): Promise<CommandRes
   // Last, and beside the verdict on `main`: the 31.16.0 checks (`doctor-warnings.ts`).
   // A copy of a shipped guard among them (`X_GUARD_VENDORED`): a warning, so exit stays.
   const browser = await guardedListing('browser', failed, () => probe.browser(), undefined);
-  const warnings = await guardedListing('warnings', failed, () => doctorWarnings(probe), []);
+  const warnings = await guardedListing('warnings', failed, () => doctorWarnings(asked), []);
   const superseded = await inApp('superseded workarounds', supersededFindings, []);
   const floors = await inApp('advisory floors', advisoryFloorFindings, []);
   // An `x upgrade` driven by a CLI older than the codemod engine left files it owed.

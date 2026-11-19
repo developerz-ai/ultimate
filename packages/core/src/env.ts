@@ -3,6 +3,7 @@
 // discover six missing variables.
 
 import { numeric } from '@ultimat3/schema';
+import { tryResolveEnvironment } from './environment';
 import { describeValue, renderFixShellArg } from './error-render';
 import { EnvMissingError } from './errors';
 import { isRedactedKey, REDACTED, redactKeys } from './logger';
@@ -161,6 +162,71 @@ function parseValue(decl: EnvVarDecl, raw: string): { ok: true; value: unknown }
   }
 }
 
+type EnvSource = Readonly<Record<string, string | undefined>>;
+
+/**
+ * The dotenv file a missing key is added to, for the environment `source` names. In development
+ * and test it is the per-box file Bun loads last and the scaffold's setup writes
+ * (`.env.<environment>.local`) — never `.env`, which no scaffold file is. A deploy
+ * (`staging`/`production`, or an `ULTIMATE_ENV` that is no environment: fail closed) reads
+ * `.env.production`, the file `x env init --production` writes and `x deploy --method compose` reads.
+ */
+function envFileFor(source: EnvSource): string {
+  const environment = tryResolveEnvironment({ env: source });
+  return environment === 'development' || environment === 'test'
+    ? `.env.${environment}.local`
+    : '.env.production';
+}
+
+const keyArg = (key: string): string => renderFixShellArg(key, '<KEY>');
+
+/** `grep` over every dotenv file: a malformed value is in whichever one set it. */
+const findLines = (keys: readonly string[]): string =>
+  `grep -n ${keys.map((key) => `-e '^${keyArg(key)}='`).join(' ')} .env*`;
+
+/**
+ * ONE fix for the whole throw, and never `x env check`: that command prints this same error and
+ * this same line. Every missing key gets the line to add, in the file this environment loads; a
+ * malformed one is found where it is set. A key whose declaration carries its own `fix` keeps it:
+ * the command leads (generated, else the first declared), and every other declared fix follows,
+ * named by its key, so one refusal still says how to repair every key.
+ */
+function fixFor(schema: EnvSchema, issues: readonly EnvIssue[], source: EnvSource): string {
+  const declared = issues.flatMap((issue) => {
+    const fix = schema[issue.key]?.fix;
+    return fix === undefined ? [] : [{ key: issue.key, fix }];
+  });
+  const lead = generatedFix(schema, issues, source) ?? declared.shift()?.fix;
+  const head = lead ?? findLines(issues.map((issue) => issue.key));
+  if (declared.length === 0) return head;
+  const rest = declared.map(({ key, fix }) => `${key}: ${fix}`).join('; ');
+  return `${head}${head.includes('#') ? '; then' : '   # then'}, per key — ${rest}`;
+}
+
+/** The command for the keys with no declared fix, or `undefined` when every key declares one. */
+function generatedFix(
+  schema: EnvSchema,
+  issues: readonly EnvIssue[],
+  source: EnvSource,
+): string | undefined {
+  const generated = issues.filter((issue) => schema[issue.key]?.fix === undefined);
+  const missing = generated.filter((issue) => issue.reason === 'missing');
+  const invalid = generated.filter((issue) => issue.reason === 'invalid');
+  const malformed = invalid.map((issue) => `${issue.key} (${issue.expected})`).join(', ');
+  if (missing.length === 0) {
+    if (invalid.length === 0) return undefined;
+    return `${findLines(invalid.map((issue) => issue.key))}   # each line to correct: ${malformed}`;
+  }
+  const lines = missing.map((issue) => `'${keyArg(issue.key)}=<value>'`);
+  const write = lines.length === 1 ? `echo ${lines[0]}` : `printf '%s\\n' ${lines.join(' ')}`;
+  const expected = missing.map((issue) => `${issue.key}: ${issue.expected}`).join('; ');
+  const also =
+    invalid.length === 0
+      ? ''
+      : `; also malformed, where ${findLines(invalid.map((issue) => issue.key))} finds them: ${malformed}`;
+  return `${write} >> ${envFileFor(source)}   # ${expected}${also}`;
+}
+
 /** Validate without throwing — this is what `x env check --json` prints. */
 export function checkEnv(schema: EnvSchema, options?: EnvOptions): EnvCheckReport {
   const source = options?.env ?? (process.env as Record<string, string | undefined>);
@@ -183,7 +249,7 @@ export function checkEnv(schema: EnvSchema, options?: EnvOptions): EnvCheckRepor
           received: undefined,
           fix:
             decl.fix ??
-            `grep '^${renderFixShellArg(key, '<KEY>')}=' .env.example >> .env   # then give it ${expectation(decl)}`,
+            `echo '${keyArg(key)}=<value>' >> ${envFileFor(source)}   # <value>: ${expectation(decl)}`,
         });
       } else {
         values[key] = undefined;
@@ -200,9 +266,7 @@ export function checkEnv(schema: EnvSchema, options?: EnvOptions): EnvCheckRepor
       reason: 'invalid',
       expected: expectation(decl),
       received: decl.secret === true ? '***' : raw,
-      fix:
-        decl.fix ??
-        `grep -n '^${renderFixShellArg(key, '<KEY>')}=' .env   # the line to set to ${expectation(decl)}`,
+      fix: decl.fix ?? `${findLines([key])}   # the line to set to ${expectation(decl)}`,
     });
   }
 
@@ -241,10 +305,13 @@ export function defineEnv<const S extends EnvSchema>(schema: S, options?: EnvOpt
           : `${issue.key} is not ${issue.expected} (received ${issue.received ?? 'undefined'})`,
       )
       .join('; ');
-    const keys = report.issues.map((issue) => issue.key).join(' ');
     throw new EnvMissingError({
       cause,
-      fix: `x env check   # each key to add to .env (copy .env.example): ${keys}`,
+      fix: fixFor(
+        schema,
+        report.issues,
+        options?.env ?? (process.env as Record<string, string | undefined>),
+      ),
       meta: { issues: described },
     });
   }

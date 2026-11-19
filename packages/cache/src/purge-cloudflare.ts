@@ -17,7 +17,7 @@ import {
   purgePost,
   requireCredential,
 } from './purge-http';
-import { assertFiniteDurationMs } from './tiers';
+import { assertFiniteDurationMs } from './tier-bounds';
 
 export const CLOUDFLARE_API_URL = 'https://api.cloudflare.com/client/v4';
 

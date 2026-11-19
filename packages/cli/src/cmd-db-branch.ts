@@ -31,6 +31,7 @@ import type { CommandResult, Finding } from './output';
 import { flagString, retiredVerbReplacement } from './parse';
 import type { DevServices } from './runtime-bindings';
 import { resolveServices } from './runtime-bindings';
+import { withAppTls } from './runtime-database-ssl';
 import { portFromEnv } from './serve';
 import { renderTable } from './table';
 
@@ -66,7 +67,12 @@ function branchRetry(word: string, name: string | undefined): string {
  * would leave two idle sessions holding the source open against itself; and cloning a real
  * database routinely outlives the 10s a `web` profile allows.
  */
-async function withBranchClient<T>(url: string, fn: (client: DbClient) => Promise<T>): Promise<T> {
+async function withBranchClient<T>(
+  services: DevServices,
+  fn: (client: DbClient) => Promise<T>,
+): Promise<T> {
+  // `database.ssl`, as the boot's own pool obeys it: this connection never goes through `startDb`.
+  const url = await withAppTls(services.root, services.db.url, Bun.env);
   const client = postgresClient({ url, role: 'migrate', applicationName: 'x-db-branch' });
   try {
     return await fn(client);
@@ -79,7 +85,7 @@ async function withBranchClient<T>(url: string, fn: (client: DbClient) => Promis
 const branchesOf = (services: DevServices): Promise<readonly BranchRow[]> =>
   services.db.mode === 'embedded'
     ? listPgliteBranches(services.db.url)
-    : withBranchClient(services.db.url, listExternalBranches);
+    : withBranchClient(services, listExternalBranches);
 
 const failure = (summary: string, finding: Finding): CommandResult => ({
   ok: false,
@@ -161,7 +167,7 @@ async function runCreate(
     branch =
       services.db.mode === 'embedded'
         ? await createPgliteBranch(services.db.url, name)
-        : await withBranchClient(services.db.url, (client) => createExternalBranch(client, name));
+        : await withBranchClient(services, (client) => createExternalBranch(client, name));
   } catch (error) {
     return failure(msg('cli.db.branch.failed'), stepFinding(error, 'X_DB_BRANCH_FAILED'));
   }
@@ -197,7 +203,7 @@ async function runDelete(services: DevServices, name: string): Promise<CommandRe
     const dropped =
       services.db.mode === 'embedded'
         ? await dropPgliteBranch(services.db.url, name)
-        : await withBranchClient(services.db.url, (client) => dropExternalBranch(client, name));
+        : await withBranchClient(services, (client) => dropExternalBranch(client, name));
     if (!dropped) return notABranch(services, name);
     return {
       ok: true,

@@ -53,6 +53,24 @@ describe('unit · a grant the generator could not make is a finding with the lin
     expect(finding?.at).toBe(POLICY);
   });
 
+  // The reference app's layout: `defineRoles` in `shared/policies.ts`, and no `roles.ts` at all.
+  test('grants land in the module that declared defineRoles when roles.ts is absent', async () => {
+    const elsewhere = 'apps/web/shared/policies.ts';
+    await Bun.write(join(root, elsewhere), scaffoldRoles());
+    expect(await grantGeneratedPermissions(root, WRITTEN)).toEqual([elsewhere]);
+    expect(await ungrantedByGenerator(root, WRITTEN)).toEqual([]);
+    expect(await Bun.file(join(root, elsewhere)).text()).toContain("'run:write'");
+    expect(await Bun.file(join(root, ROLES_FILE)).exists()).toBe(false);
+  });
+
+  test('two modules declaring a role map are never chosen between', async () => {
+    await Bun.write(join(root, 'apps/web/shared/policies.ts'), scaffoldRoles());
+    await Bun.write(join(root, 'apps/web/shared/staff.ts'), scaffoldRoles());
+    expect(await grantGeneratedPermissions(root, WRITTEN)).toEqual([]);
+    const [finding] = await ungrantedByGenerator(root, WRITTEN);
+    expect(finding?.fix).toStartWith('x policy list --json');
+  });
+
   test('a role map that is there but has no such role names the file and the same lines', async () => {
     const custom =
       "import { defineRoles } from '@ultimat3/policy';\n\ndefineRoles({\n  owner: { grants: ['*'] },\n});\n";

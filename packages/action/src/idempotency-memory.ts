@@ -13,7 +13,7 @@ import type {
   IdempotencyStore,
 } from './idempotency';
 import { requestDeadlineMs } from './request-deadline';
-import { liveTransaction } from './tx-scope';
+import { settleScope } from './tx-scope';
 
 /**
  * How long a key is remembered. A day is the window every payment API this shape exists to serve
@@ -118,7 +118,7 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
       createdAt: nowMs,
     };
     this.#records.set(key, record);
-    this.#flights.set(record, { bound: liveTransaction() !== undefined, settling: false });
+    this.#flights.set(record, { bound: settleScope() !== undefined, settling: false });
     this.#maintain(nowMs);
     return Promise.resolve({ record, created: true });
   }
@@ -158,15 +158,15 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
       value,
       ...(redacted ? { redacted: true } : {}),
     });
-    const tx = liveTransaction();
+    const tx = settleScope();
     if (tx === undefined) {
       if (existing !== undefined) this.#records.set(key, settled(existing));
       else fenced(key, reservationId, 'settle');
       return Promise.resolve();
     }
-    // Inside a transaction the record is settled BY the commit, as the Postgres store's is: a
-    // rollback leaves it in flight rather than replaying a success for rows nobody stored. And a
-    // settle that lost its reservation is thrown, because nothing has committed yet and the throw
+    // Inside a transaction — SQL or memory — the record is settled BY the commit, as the Postgres
+    // store's is: a rollback leaves it in flight rather than replaying a success for rows nobody
+    // stored. And a settle that lost its reservation is thrown, because nothing has committed yet and the throw
     // is what rolls this attempt back beside the retry that replaced it.
     if (existing === undefined) {
       return Promise.reject(new IdempotencyReservationLostError(key));

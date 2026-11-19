@@ -16,7 +16,8 @@ import type { LlmToolCall, LlmToolResult } from './tools';
  */
 export function assistantTurn(result: GenerateResult): AiMessage {
   const blocks: AiContentBlock[] = [];
-  if (result.text !== '') blocks.push({ type: 'text', text: result.text });
+  // Whitespace-only counts as empty: the Messages API refuses a blank text block either way.
+  if (result.text.trim() !== '') blocks.push({ type: 'text', text: result.text });
   for (const call of result.toolCalls) {
     blocks.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input });
   }
@@ -70,6 +71,36 @@ export function toolResultTurn(
   };
 }
 
+/** A call the run stopped before starting: safe to ask for again. */
+const NOT_RUN = 'Not run: the run stopped before this call started.';
+/** A call in flight when the run stopped. Never "not run": a model told that buys the effect twice. */
+const INTERRUPTED =
+  'Interrupted: this call had started when the run stopped, and its outcome is unknown. Check whether it took effect before calling it again.';
+
+/**
+ * One result per call of a turn that did not finish, in call order: the real result where the tool
+ * completed, and an error result saying WHICH of the two other things happened where it did not.
+ */
+export function settledResults(
+  calls: readonly LlmToolCall[],
+  started: readonly (boolean | undefined)[],
+  results: readonly (LlmToolResult | undefined)[],
+): readonly LlmToolResult[] {
+  return calls.map(
+    (call, index) =>
+      results[index] ?? {
+        toolUseId: call.id,
+        content: started[index] === true ? INTERRUPTED : NOT_RUN,
+        isError: true,
+      },
+  );
+}
+
+const REPAIR_OPENS = 'That answer failed its schema: ';
+
+/** Whether a user message's text is the loop's own correction (`repairTurn`), not the user's. */
+export const isRepairText = (text: string): boolean => text.startsWith(REPAIR_OPENS);
+
 /**
  * The correction after an answer that failed its schema, in whichever shape the turn it corrects
  * demands: a `tool_result` when the answer came through `respond` (the dominant path, and a
@@ -77,7 +108,7 @@ export function toolResultTurn(
  * prose and there is no id to name. Framework text, so never truncated by `maxToolResultChars`.
  */
 export function repairTurn(unaccepted: readonly LlmToolCall[], issues: string): AiMessage {
-  const text = `That answer failed its schema: ${issues}. Call the "${RESPOND}" tool with a value that satisfies it. Answer only through the tool.`;
+  const text = `${REPAIR_OPENS}${issues}. Call the "${RESPOND}" tool with a value that satisfies it. Answer only through the tool.`;
   return unaccepted.length === 0
     ? { role: 'user', content: text }
     : { role: 'user', content: rejections(unaccepted, text) };

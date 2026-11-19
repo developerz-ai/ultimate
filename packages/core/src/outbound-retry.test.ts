@@ -110,6 +110,23 @@ describe('unit · outbound · retry', () => {
     expect(calls).toHaveLength(3);
   });
 
+  test('a 3xx whose Location does not parse is X_OUTBOUND_REDIRECTED after one attempt', async () => {
+    for (const redirect of [undefined, 'follow'] as const) {
+      const { fetch, calls } = recordingFetch(
+        () => new Response(null, { status: 302, headers: { location: 'http://' } }),
+      );
+      const error = await caught(
+        outbound(call({ redirect }), { fetch, ...recordedSleep(), timer: manualTimer() }),
+      );
+      expect([error.code, error.retry, calls.length]).toEqual([
+        'X_OUTBOUND_REDIRECTED',
+        'terminal',
+        1,
+      ]);
+      expect(error.meta?.['location']).toBe('an unparseable Location');
+    }
+  });
+
   test('a 401 is terminal: one call, X_OUTBOUND_REFUSED with a redacted short detail', async () => {
     const body = JSON.stringify({
       error: 'expired',

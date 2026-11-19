@@ -6,6 +6,7 @@
  */
 
 import { isJsonObject } from '@ultimat3/core/page';
+import { decodeSegment } from './decode-segment';
 
 /** The router's own slot in `history.state`, beside whatever an app keeps there. */
 export const STATE_KEY = '__x';
@@ -66,8 +67,10 @@ export function recordEntry(win: Window, landed: string, doc: string, mode: Hist
  * `smooth`, and a new page is a new place, which a full load jumps to rather than glides to.
  */
 export function scrollAfter(win: Window, doc: Document, url: string, mode: HistoryMode): void {
-  const hash = new URL(url).hash;
-  const target = hash.length > 1 ? doc.getElementById(decodeURIComponent(hash.slice(1))) : null;
+  const raw = new URL(url).hash.slice(1);
+  // A malformed escape (`#50%`) is the raw id, as the browser's own fragment lookup reads it: a
+  // throw here is inside the swap, after the body was replaced and before any script ran.
+  const target = raw === '' ? null : doc.getElementById(decodeSegment(raw) ?? raw);
   const saved = entryOf(win.history.state);
   const to = (left: number, top: number): void =>
     win.scrollTo({ left, top, behavior: 'instant' as ScrollBehavior });

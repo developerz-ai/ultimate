@@ -67,16 +67,16 @@ jobTest('${name.camel} enqueues once, and dedupes a second sweep while one is li
 
 const unitSuite = (
   name: NameSet,
-): string => `// ${name.camel}'s BODY, run by a worker in this process: one pass completes and reports what it
-// removed — a number, never a guess, so \`x jobs show\` can print it.
+): string => `// ${name.camel}'s DECLARATION: the durable name its rows are keyed by, and that it is a job. The
+// pass itself deletes with SQL over whole tables, so it needs a migrated database and is not run
+// here: the unit step has none, and \`x jobs show\` prints what a real pass removed.
 
 import { expect, unitTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
-unitTest('one pass completes and reports how many rows it removed', async ({ runJobs }) => {
-  const trace = await runJobs(${name.camel}, {});
-  expect(trace.executions.map((run) => run.outcome)).toEqual(['completed']);
-  expect(trace.executions[0]?.result).toMatchObject({ removed: 0 });
+unitTest('${name.camel} is the job named ${name.kebab}', () => {
+  expect(${name.camel}.kind).toBe('job');
+  expect(${name.camel}.name).toBe('${name.kebab}');
 });
 `;
 

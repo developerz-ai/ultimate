@@ -66,6 +66,18 @@ describe('timeRangeUrl', () => {
     expect(a.href({ preset: 'q1' })).toBe('/ops?b.range=q1&a.range=q1');
   });
 
+  test("a window change drops every list's cursor on the page, namespaced or not", () => {
+    // One un-namespaced window above a namespaced table: the table's cursor was minted under the
+    // old window, and the server refuses it under the new one.
+    const range = timeRangeUrl('/metrics?runs.after=CURSOR1&runs.sort=name&after=C0', options);
+    expect(range.href({ preset: 'week' })).toBe('/metrics?runs.sort=name&range=week');
+    expect(range.hidden).toEqual([['runs.sort', 'name']]);
+    // A parameter that only ends like one is not a cursor.
+    expect(timeRangeUrl('/metrics?hereafter=1', options).href({ preset: 'week' })).toBe(
+      '/metrics?hereafter=1&range=week',
+    );
+  });
+
   test('a custom window round-trips across a DST day, in wall-clock time in its zone', () => {
     // Berlin springs forward on 2026-03-29: noon to noon across it is 47 hours, not 48.
     const from = new Date('2026-03-28T11:00:00Z');
@@ -80,6 +92,69 @@ describe('timeRangeUrl', () => {
     ]);
     expect((back.to.getTime() - back.from.getTime()) / 3_600_000).toBe(47);
     expect(back.local).toEqual({ from: '2026-03-28T12:00', to: '2026-03-30T12:00' });
+  });
+
+  describe('a custom window in a wall clock that cannot say it exactly', () => {
+    // New York falls back on 2026-11-01: 01:00–02:00 happens twice, 05:00Z–06:00Z then 06:00Z–07:00Z.
+    const ny = { ...options, timeZone: 'America/New_York', now: new Date('2026-11-02T12:00:00Z') };
+    const roundTrip = (from: string, to: string) => {
+      const href = timeRangeUrl('/runs', ny).href({ from: new Date(from), to: new Date(to) });
+      const back = timeRangeUrl(href, ny);
+      return {
+        href,
+        invalid: back.invalid,
+        from: back.from.toISOString(),
+        to: back.to.toISOString(),
+      };
+    };
+
+    test('a window inside the repeated hour round-trips or is refused, never shifted', () => {
+      // Across the repeat: the end is in the second pass, whose wall time reads back an hour early
+      // (before the start). It is widened to the first wall time that names one instant.
+      const across = roundTrip('2026-11-01T05:50:00Z', '2026-11-01T06:10:00Z');
+      expect(across.href).toBe('/runs?from=2026-11-01T01%3A50&to=2026-11-01T02%3A00');
+      expect(across).toMatchObject({
+        invalid: false,
+        from: '2026-11-01T05:50:00.000Z',
+        to: '2026-11-01T07:00:00.000Z',
+      });
+      // Wholly in the second pass: read back as a window that CONTAINS the one asked for.
+      const second = roundTrip('2026-11-01T06:10:00Z', '2026-11-01T06:50:00Z');
+      expect(second).toMatchObject({
+        invalid: false,
+        from: '2026-11-01T05:10:00.000Z',
+        to: '2026-11-01T07:00:00.000Z',
+      });
+      // Wholly in the first pass: exact.
+      const first = roundTrip('2026-11-01T05:10:00Z', '2026-11-01T05:50:00Z');
+      expect(first).toMatchObject({
+        invalid: false,
+        from: '2026-11-01T05:10:00.000Z',
+        to: '2026-11-01T05:50:00.000Z',
+      });
+    });
+
+    test('a window shorter than a minute keeps its seconds; a whole-minute one writes none', () => {
+      const short = roundTrip('2026-11-03T10:00:05Z', '2026-11-03T10:00:40Z');
+      expect(short.href).toBe('/runs?from=2026-11-03T05%3A00%3A05&to=2026-11-03T05%3A00%3A40');
+      expect(short).toMatchObject({
+        invalid: false,
+        from: '2026-11-03T10:00:05.000Z',
+        to: '2026-11-03T10:00:40.000Z',
+      });
+      // Below a second the wall clock has no field: the end rounds UP, so the window is never empty.
+      const tiny = roundTrip('2026-11-03T10:00:05.200Z', '2026-11-03T10:00:05.700Z');
+      expect(tiny).toMatchObject({
+        invalid: false,
+        from: '2026-11-03T10:00:05.000Z',
+        to: '2026-11-03T10:00:06.000Z',
+      });
+      // The form's defaults stay what a datetime-local input holds with no step: minutes.
+      expect(timeRangeUrl(short.href, ny).local).toEqual({
+        from: '2026-11-03T05:00',
+        to: '2026-11-03T05:00',
+      });
+    });
   });
 
   test('a preset with neither seconds nor from/to, and a zone that is not IANA, are refused', () => {

@@ -94,6 +94,10 @@ export function niceTicks(
     if (!covers(min, max, low, high)) break;
     if (count <= cap) {
       const ticks = Array.from({ length: count }, (_, i) => exact(min + i * step));
+      // `exact` keeps 12 digits: a step finer than that (epoch milliseconds varying in their last
+      // digits) rounds two ticks onto one and the minimum up past the data. No higher rung is
+      // asked for — the count already fits — so the data's two ends are the axis.
+      if (step < magnitude(low, high) * TICK_RESOLUTION || new Set(ticks).size !== count) break;
       return { min, max, step, ticks };
     }
     step = nextStep(step);
@@ -101,12 +105,17 @@ export function niceTicks(
   return edgeScale(low, high);
 }
 
+const magnitude = (low: number, high: number): number => Math.max(Math.abs(low), Math.abs(high));
+
+/** The smallest step, as a share of the data's magnitude, that `exact`'s 12 digits still tell apart. */
+const TICK_RESOLUTION = 1e-11;
+
 /**
  * `min..max` holds `low..high`, to within float noise: a billionth of the data's magnitude, so
  * `0.7 - 0.4` (0.29999999999999993) still gets its axis at 0.3, and -24 never gets one at 0.
  */
 function covers(min: number, max: number, low: number, high: number): boolean {
-  const noise = Math.max(Math.abs(low), Math.abs(high)) * 1e-9;
+  const noise = magnitude(low, high) * 1e-9;
   return min <= low + noise && max >= high - noise;
 }
 

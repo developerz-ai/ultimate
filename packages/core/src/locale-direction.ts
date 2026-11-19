@@ -8,8 +8,10 @@
 export type Direction = 'ltr' | 'rtl';
 
 /**
- * Right-to-left scripts, by primary subtag. A static CLDR-derived set rather than
- * `Intl.Locale.prototype.getTextInfo` so direction is deterministic across runtimes.
+ * Languages whose usual script is right-to-left, by primary subtag: what a tag naming no script
+ * falls back to. A static CLDR-derived set rather than `Intl.Locale.prototype.getTextInfo` so
+ * direction is deterministic across runtimes. No `ku`: CLDR's likely script for it is Latin
+ * (Kurmanji); Sorani is `ckb`, and Kurdish in Arabic script says so (`ku-Arab`).
  */
 const RTL_LOCALES: ReadonlySet<string> = new Set([
   'ar',
@@ -19,7 +21,6 @@ const RTL_LOCALES: ReadonlySet<string> = new Set([
   'fa',
   'he',
   'ks',
-  'ku',
   'nqo',
   'ps',
   'sd',
@@ -28,9 +29,26 @@ const RTL_LOCALES: ReadonlySet<string> = new Set([
   'yi',
 ]);
 
+/** ISO 15924 right-to-left scripts in living use, lower-cased. */
+const RTL_SCRIPTS: ReadonlySet<string> = new Set([
+  'adlm',
+  'arab',
+  'hebr',
+  'mand',
+  'nkoo',
+  'rohg',
+  'samr',
+  'syrc',
+  'thaa',
+]);
+
+/**
+ * A script subtag is four letters in second place (BCP 47), and when a tag names one it decides:
+ * `az-Arab` is rtl and `ks-Deva` ltr, whatever the language usually writes.
+ */
 export function isRtl(locale: string): boolean {
-  const primary = locale.split('-')[0]?.toLowerCase() ?? '';
-  return RTL_LOCALES.has(primary);
+  const [primary = '', second = ''] = locale.toLowerCase().split('-');
+  return /^[a-z]{4}$/.test(second) ? RTL_SCRIPTS.has(second) : RTL_LOCALES.has(primary);
 }
 
 export function directionOf(locale: string): Direction {

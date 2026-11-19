@@ -15,6 +15,13 @@ import { isJsonObject } from './json-object';
 export const JOBS_CONCURRENCY_DEFAULT = 8;
 
 /**
+ * `jobs.maxAttempts` when no layer says, and `@ultimat3/jobs`' `DEFAULT_RETRY.attempts`: the
+ * worker's default for a job that declares no retry. ONE constant, so the config default and the
+ * policy a factory's job falls back to cannot drift apart.
+ */
+export const JOBS_MAX_ATTEMPTS_DEFAULT = 3;
+
+/**
  * `jobs.doneRetentionMs` when no layer says: how long a `done` row and its step records are kept
  * before the boot's hourly purge deletes them. Two weeks — every incident is read inside it, and
  * a finished row is bookkeeping, unlike an inbox message: a `mail.send` input is an address and a

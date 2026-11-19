@@ -65,3 +65,23 @@ export async function validateOutput<S extends StandardSchemaV1>(
   }
   return result.value;
 }
+
+/**
+ * A REPLAYED answer's parse. JSON has no `undefined`, so a store that keeps the answer as JSON (the
+ * Postgres store) hands back `null` for a handler that returned nothing — and an output schema
+ * that accepted `undefined` refused its own replay. A stored `null` the schema refuses is read as
+ * the `undefined` it stood for, when the schema takes that; any other refusal is the first one.
+ */
+export async function validateReplayedOutput<S extends StandardSchemaV1>(
+  schema: S,
+  stored: unknown,
+  actionName: string,
+): Promise<InferOutput<S>> {
+  const result = await validateAsync(schema, stored);
+  if (result.issues === undefined) return result.value;
+  if (stored === null) {
+    const absent = await validateAsync(schema, undefined);
+    if (absent.issues === undefined) return absent.value;
+  }
+  throw new OutputInvalidError(actionName, formatIssues(result.issues).join('; '));
+}

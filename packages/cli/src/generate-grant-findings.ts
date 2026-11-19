@@ -13,6 +13,7 @@ import {
   policyGrantsFor,
   writtenTables,
 } from './generate-grants';
+import { rolesFileOf } from './generate-roles-file';
 import type { Finding } from './output';
 import { ROLES_FILE } from './permission-grants';
 
@@ -61,11 +62,12 @@ export async function ungrantedByGenerator(
   const admin = (await writtenTables(root, written, disk)).flatMap(adminGrantsFor);
   const grants = [...(await policyGrantsFor(root, written, disk)), ...admin];
   if (grants.length === 0) return [];
-  const source = await disk.read(ROLES_FILE);
+  const rolesFile = await rolesFileOf(root, disk);
+  const source = rolesFile === undefined ? undefined : await disk.read(rolesFile);
   // The file whose declarations nobody granted: where a reader starts when the map is not ours.
   const declaredIn =
     written.find((path) => path.endsWith('/policy.ts')) ?? written[0] ?? ROLES_FILE;
-  if (source === undefined) {
+  if (rolesFile === undefined || source === undefined) {
     return [
       {
         code: 'X_PERMISSION_UNGRANTED',
@@ -80,9 +82,9 @@ export async function ungrantedByGenerator(
   return [
     {
       code: 'X_PERMISSION_UNGRANTED',
-      cause: `${ROLES_FILE} has no role, no "grants: [...]" list or no definePermissions([...]) these could be safely added to, so nothing granted: ${linesFor(missing)}`,
-      fix: `{ ${roleEntries(missing)} }   // merge into the role map in ${ROLES_FILE}, declaring any the map does not know in definePermissions([...]) — then x verify --only policy`,
-      at: ROLES_FILE,
+      cause: `${rolesFile} has no role, no "grants: [...]" list or no definePermissions([...]) these could be safely added to, so nothing granted: ${linesFor(missing)}`,
+      fix: `{ ${roleEntries(missing)} }   // merge into the role map in ${rolesFile}, declaring any the map does not know in definePermissions([...]) — then x verify --only policy`,
+      at: rolesFile,
     },
   ];
 }

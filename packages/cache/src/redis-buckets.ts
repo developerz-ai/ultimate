@@ -6,6 +6,7 @@
 import { CacheDriverUnavailableError } from './errors';
 import type { RedisLike } from './redis';
 import type { CacheTag } from './tags';
+import { decodeCacheValue } from './value-codec';
 
 /**
  * How long a member outlives its value key, in ms. The score is the WRITER's clock and the prune
@@ -55,6 +56,8 @@ export function bucketLayout(ns: string) {
   const entityKey = (entity: string): string => `${ns}:e2:{${entity}}`;
   return {
     valueKey: (key: string): string => `${ns}:c:${key}`,
+    /** The bare collection tag's bucket — the one a collection bust sweeps but never reads. */
+    collectionBucketOf: (entity: string): string => tagKey({ entity }),
     /** A write joins its tag's bucket plus its entity's index. */
     writeBucketsFor: (owned: CacheTag): string[] => [tagKey(owned), entityKey(owned.entity)],
     /**
@@ -118,17 +121,25 @@ export async function lostMembership(
 }
 
 /** `[cursor, [member, score, …]]` — flat in RESP2 and RESP3 alike; `[member, score]` pairs read too. */
-function scanPage(reply: unknown, bucket: string): { readonly cursor: string; members: string[] } {
+function scanPage(
+  reply: unknown,
+  bucket: string,
+): { readonly cursor: string; entries: [string, string][] } {
   if (!Array.isArray(reply) || reply.length !== 2 || !Array.isArray(reply[1])) {
     throw unreadable(bucket);
   }
-  const [cursor, entries] = reply as [unknown, unknown[]];
+  const [cursor, flat] = reply as [unknown, unknown[]];
   if (typeof cursor !== 'string' && typeof cursor !== 'number') throw unreadable(bucket);
-  const members = entries.every(Array.isArray)
-    ? (entries as unknown[][]).map(([member]) => member)
-    : entries.filter((_, i) => i % 2 === 0);
-  if (!members.every((member) => typeof member === 'string')) throw unreadable(bucket);
-  return { cursor: String(cursor), members: members as string[] };
+  const pairs = flat.every(Array.isArray)
+    ? (flat as unknown[][]).map(([member, score]) => [member, score])
+    : flat.flatMap((member, i) => (i % 2 === 0 ? [[member, flat[i + 1]]] : []));
+  // RESP3 answers a score as a double, RESP2 as text: either is kept as the text `ZADD` takes.
+  const entries = pairs.map(([member, score]) => {
+    if (typeof member !== 'string') throw unreadable(bucket);
+    if (typeof score !== 'string' && typeof score !== 'number') throw unreadable(bucket);
+    return [member, String(score)] as [string, string];
+  });
+  return { cursor: String(cursor), entries };
 }
 
 const unreadable = (bucket: string): CacheDriverUnavailableError =>
@@ -139,23 +150,23 @@ const unreadable = (bucket: string): CacheDriverUnavailableError =>
   });
 
 /**
- * Every member of one bucket, `ZSCAN … COUNT BUST_PAGE_SIZE` per round trip. `ZSCAN`, never a
+ * Every member of one bucket with its score, `ZSCAN … COUNT BUST_PAGE_SIZE` per round trip. `ZSCAN`, never a
  * score cursor: Redis guarantees a scan returns every member present from its first call to its
  * last, whatever is added, removed or re-scored meanwhile. A `(score, offset)` cursor broke on
  * exactly those — a concurrent prune of a read page of tied dead members, or a re-write moving a
  * read tie member up, shifted the offset past live keys, which served stale until TTL. A scan
- * may return a member twice; the set dedupes.
+ * may return a member twice; the map dedupes. The score is what a refused delete is re-joined at.
  */
-export async function readBucket(client: RedisLike, bucket: string): Promise<string[]> {
-  const members = new Set<string>();
+export async function readBucket(client: RedisLike, bucket: string): Promise<Map<string, string>> {
+  const members = new Map<string, string>();
   let cursor = '0';
   do {
     const reply = await client.send('ZSCAN', [bucket, cursor, 'COUNT', String(BUST_PAGE_SIZE)]);
     const page = scanPage(reply, bucket);
-    for (const member of page.members) members.add(member);
+    for (const [member, score] of page.entries) members.set(member, score);
     cursor = page.cursor;
   } while (cursor !== '0');
-  return [...members];
+  return members;
 }
 
 /** `UNLINK` each key on its own (slot-local), pipelined per batch; which ones died is the answer. */
@@ -178,19 +189,48 @@ export async function unlinkAll(
   return { deleted, failures };
 }
 
-/** `ZREM` what died from every bucket that held it, `SWEEP_CONCURRENCY` commands in flight. */
+/** Which members each bucket really lost, and every `ZREM` the store refused. */
+export interface SweepResult {
+  readonly removed: Map<string, Set<string>>;
+  readonly failures: unknown[];
+}
+
+/**
+ * `ZREM` the members from every bucket named, `SWEEP_CONCURRENCY` commands in flight. Settled, never
+ * rejected: a refused chunk leaves its members where they were, which is a bucket still reaching
+ * them, and the caller must still delete the values the chunks that WERE removed point at.
+ */
 export async function sweepBuckets(
   client: RedisLike,
   gone: ReadonlyMap<string, ReadonlySet<string>>,
-): Promise<void> {
-  const work: (() => Promise<unknown>)[] = [];
+): Promise<SweepResult> {
+  const removed = new Map<string, Set<string>>();
+  const failures: unknown[] = [];
+  const work: (() => Promise<void>)[] = [];
   for (const [bucket, members] of gone) {
     const list = [...members];
     for (let start = 0; start < list.length; start += SWEEP_CHUNK) {
       const chunk = list.slice(start, start + SWEEP_CHUNK);
-      work.push(() => client.send('ZREM', [bucket, ...chunk]));
+      work.push(() =>
+        client.send('ZREM', [bucket, ...chunk]).then(
+          () => {
+            const into = removed.get(bucket) ?? new Set<string>();
+            for (const member of chunk) into.add(member);
+            removed.set(bucket, into);
+          },
+          (reason: unknown) => {
+            failures.push(reason);
+          },
+        ),
+      );
     }
   }
+  await inFlight(work);
+  return { removed, failures };
+}
+
+/** Run `work`, `SWEEP_CONCURRENCY` at a time. Each task settles its own failure. */
+async function inFlight(work: readonly (() => Promise<void>)[]): Promise<void> {
   let next = 0;
   const worker = async (): Promise<void> => {
     while (next < work.length) {
@@ -200,4 +240,79 @@ export async function sweepBuckets(
     }
   };
   await Promise.all(Array.from({ length: Math.min(SWEEP_CONCURRENCY, work.length) }, worker));
+}
+
+/**
+ * Put back every member whose value key the store refused to delete, in each bucket the sweep took
+ * it out of, at the score its bucket read gave it — so the retry the error asks for still reaches
+ * it. `SWEEP_CHUNK` members per `ZADD`, `SWEEP_CONCURRENCY` in flight, as the sweep: a large bust
+ * whose deletes failed must not answer with one command per member per bucket. Each `ZADD` is
+ * followed by the bucket's lease: one the sweep emptied is re-created by it, and a bucket with no
+ * TTL outlives every value it names. Settled: what the store refuses is reported, never thrown.
+ */
+export async function rejoinBuckets(
+  client: RedisLike,
+  removed: ReadonlyMap<string, ReadonlySet<string>>,
+  survivors: ReadonlyMap<string, string>,
+  now: number,
+): Promise<unknown[]> {
+  if (survivors.size === 0) return [];
+  const failures: unknown[] = [];
+  const work: (() => Promise<void>)[] = [];
+  for (const [bucket, members] of removed) {
+    const back = [...members].flatMap((member) => {
+      const score = survivors.get(member);
+      return score === undefined ? [] : [[score, member] as const];
+    });
+    for (let start = 0; start < back.length; start += SWEEP_CHUNK) {
+      const chunk = back.slice(start, start + SWEEP_CHUNK);
+      const latest = Math.max(...chunk.map(([score]) => Number(score)));
+      const lease = String(Math.max(1, Math.ceil((latest - now) / 1_000)));
+      // `GT` (Redis 6.2+): a fill that re-joined since, at a LATER score, keeps it. The read score
+      // written over it made the membership prunable while the fill's value still lived.
+      const args = [bucket, 'GT', ...chunk.flat()];
+      work.push(() =>
+        client
+          .send('ZADD', args)
+          .then(() => client.send('EVAL', [REDIS_TAG_LEASE_SCRIPT, '1', bucket, lease]))
+          .then(
+            () => undefined,
+            (reason: unknown) => void failures.push(reason),
+          ),
+      );
+    }
+  }
+  await inFlight(work);
+  return failures;
+}
+
+/**
+ * Which of `members` were written under `tag` — read off each value's own stored tag list, for a
+ * bucket a bust swept but never read. A value that cannot be read answers yes: an extra member
+ * costs a miss, a missing one serves stale. Only on a refused delete, `SWEEP_CONCURRENCY` at once.
+ */
+export async function writtenUnder(
+  client: RedisLike,
+  members: ReadonlySet<string>,
+  tag: string,
+): Promise<Set<string>> {
+  const held = new Set<string>();
+  const work = [...members].map((member) => async (): Promise<void> => {
+    const tags = await client.get(member).then(storedTags, () => undefined);
+    if (tags === undefined || tags.includes(tag)) held.add(member);
+  });
+  await inFlight(work);
+  return held;
+}
+
+/** The `t` list of a stored entry, or `undefined` when the text is gone or not one. */
+function storedTags(text: string | null): readonly string[] | undefined {
+  if (text === null) return undefined;
+  try {
+    const entry = decodeCacheValue(text);
+    const tags = typeof entry === 'object' && entry !== null ? Reflect.get(entry, 't') : undefined;
+    return Array.isArray(tags) ? tags.filter((each) => typeof each === 'string') : undefined;
+  } catch {
+    return undefined;
+  }
 }

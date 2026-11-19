@@ -24,6 +24,8 @@ import { handBack } from './worker-hand-back';
 export interface RunClaimedOptions {
   readonly driver: JobDriver;
   readonly claimed: ClaimedJob;
+  /** When the claim was asked, on `clock`: the lease's window starts there (`heartbeat.ts`). */
+  readonly claimedAt?: number;
   /** Supplies the ambient Ctx for this run; the app wires ALS + tenant here. */
   readonly context: () => Ctx;
   readonly fleetSlots: FleetSlots;
@@ -165,6 +167,7 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
     visibilityTimeoutMs,
     intervalMs: options.heartbeatIntervalMs,
     workerId,
+    ...(options.claimedAt === undefined ? {} : { claimedAt: options.claimedAt }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
     ...(options.schedule === undefined ? {} : { schedule: options.schedule }),
   });
@@ -208,6 +211,9 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
     // request that queued it) when the row carries a trace. That link is what `04-jobs.md`
     // promised: without it a checkout's `chargeCard` opens a fresh root two seconds later.
     const parent = parseTraceparent(claimed.traceparent);
+    // Admitted after its whole window: the queue may have handed the row on, so the body never
+    // starts here — thrown before `started`, the row goes back if it is still this claim's.
+    if (heartbeat.lost()) throw heartbeat.signal.reason;
 
     const execution = await withSpan(
       `job.${handle.name}`,

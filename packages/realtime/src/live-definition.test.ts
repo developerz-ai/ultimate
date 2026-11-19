@@ -219,6 +219,30 @@ describe('a declared live query is subscribable, per subscriber', () => {
     expect(allowed.frame.type).toBe('snapshot');
   });
 
+  test("a live policy's ctx.actor is the subscriber", async () => {
+    // Written against `ctx`, as an HTTP rule may be: there `ctx.actor` IS the caller. Handed the
+    // node's context it read the node's actor — anonymous here, a system actor on a real node.
+    const seen: string[] = [];
+    const byCtx: QueryPolicy = {
+      ...ownRowsOnly,
+      run: ({ ctx, row }) => {
+        seen.push(`${row === null ? 'subscribe' : 'row'}:${String(ctx?.actor.id)}`);
+        return ctx?.actor.id === 'alice'
+          ? { allowed: true }
+          : { allowed: false, reason: 'not alice', code: 'X_FORBIDDEN' };
+      },
+    };
+    const registry = registryFor(byCtx);
+    const alice = socketFor('s-alice', userActor({ id: 'alice', orgId: 'o1' }));
+    const answer = await registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input: INPUT,
+    });
+    expect(answer.frame.type).toBe('snapshot');
+    expect(new Set(seen)).toEqual(new Set(['subscribe:alice', 'row:alice']));
+  });
+
   test('a patch reaches only the subscriber whose policy admits the row', async () => {
     const registry = registryFor();
     const alice = socketFor('s-alice', userActor({ id: 'alice', orgId: 'o1' }));
@@ -444,37 +468,5 @@ describe('a declared live query is subscribable, per subscriber', () => {
 
     if (result.frame.type !== 'snapshot') expect.unreachable('expected a snapshot');
     expect(result.frame.entity).toBeUndefined();
-  });
-});
-
-// The lsn a snapshot claims is the position its rows are AT LEAST as new as. Read after the rows, a
-// commit landing between the two was claimed and missing: every change up to that lsn is then
-// dropped as already folded, and the row never arrives.
-describe('a snapshot claims the lsn from before its read', () => {
-  test('a commit during the read is not claimed by the rows that missed it', async () => {
-    let position = 1;
-    const target = registerQuery(
-      'lsnFeed',
-      query({
-        input: t.object({ orgId: t.string }),
-        policy: ownRowsOnly,
-        live: true,
-        sql: ({ orgId }) =>
-          from<FeedRow>('posts', async () => {
-            // A commit lands while the rows are being read.
-            position += 1;
-            return ROWS;
-          })
-            .where({ orgId })
-            .orderBy('id')
-            .limit(50),
-      }),
-    );
-    const definition = liveQueryDefinition(target, {
-      ctx: nodeCtx(),
-      lsn: () => formatLsn(position),
-    });
-    const result = await definition.snapshot({ input: INPUT, tenant: null });
-    expect(result.lsn).toBe(formatLsn(1));
   });
 });

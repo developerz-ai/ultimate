@@ -20,6 +20,7 @@ import { containerBinding, metricsPortFor, portFromEnv, roleFromEnv } from './se
 import type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve-types';
 
 export {
+  assertRoleDeclared,
   CONTAINER_BINDING,
   configureReporting,
   containerBinding,

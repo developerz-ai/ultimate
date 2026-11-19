@@ -4,7 +4,7 @@
 // process. `context()` was moved above the heartbeat for exactly that reason; this is the rest.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, ctxOf } from '@ultimat3/core';
+import { type Ctx, ctxOf, frozenClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -182,4 +182,67 @@ describe('a run that never started is handed back, not stranded', () => {
       expect(after?.lastError).toBeUndefined();
     });
   }
+});
+
+describe('a run admitted after its claim window', () => {
+  test("a job admitted after its claim's window has lapsed is not run on the strength of a fresh local window", async () => {
+    let ran = 0;
+    job({
+      tenant: 'none',
+      name: 'lateJob',
+      input: passthrough<Record<string, never>>(),
+      idempotencyKey: () => 'late:1',
+      retry: { attempts: 3, jitter: 'none' },
+      run: () => {
+        ran += 1;
+        return Promise.resolve();
+      },
+    });
+    const clock = frozenClock('2026-11-19T00:00:00.000Z');
+    const driver = memoryJobDriver({ clock });
+    await driver.enqueue({
+      name: 'lateJob',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'late:1',
+      maxAttempts: 3,
+    });
+    const claimedAt = clock.now().getTime();
+    const [claimed] = await driver.claim({
+      queues: ['default'],
+      limit: 1,
+      visibilityTimeoutMs: 30_000,
+      workerId: 'worker-1',
+    });
+    if (claimed === undefined) return expect.unreachable('the memory queue claimed nothing');
+    // Admission (each job behind it a fleet-slot write on a slow database) outlasted the window.
+    clock.advance(30_000);
+
+    const thrown = await runClaimedJob({
+      driver,
+      claimed,
+      claimedAt,
+      context,
+      fleetSlots: {
+        acquire: () => Promise.resolve({ outcome: 'granted' }),
+        startRenewal: () => () => undefined,
+        release: () => Promise.resolve(),
+      },
+      workerId: 'worker-1',
+      visibilityTimeoutMs: 30_000,
+      heartbeatIntervalMs: 10_000,
+      pollIntervalMs: 25,
+      clock,
+      schedule: armedTicks(),
+    }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    // Another worker may hold the row by now: the body never starts, and the row goes back
+    // uncounted if — as here — nobody has taken it yet.
+    expect(ran).toBe(0);
+    expect(thrown).toMatchObject({ code: 'X_JOB_LEASE_LOST' });
+    expect((await driver.introspect?.job(claimed.id))?.state).toBe('ready');
+  });
 });

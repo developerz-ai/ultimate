@@ -147,6 +147,42 @@ describe('niceTicks — a range float64 cannot step through', () => {
   });
 });
 
+// `exact` keeps 12 significant digits. A 14-digit axis whose values differ in their last digits
+// (epoch milliseconds, a byte counter) has a step below that: ticks rounded onto each other and
+// a minimum rounded UP past the data.
+describe('niceTicks — a range finer than the digits a tick keeps', () => {
+  test("a range below 12 significant digits of its magnitude falls back to the data's two ends", () => {
+    const [low, high] = [19641538872383.5, 19641538872465.6];
+    const scale = niceTicks(low, high, 3);
+    expect(scale.ticks).toEqual([low, high]);
+    expect([scale.min, scale.max]).toEqual([low, high]);
+  });
+
+  test('every scale has distinct, ascending ticks that cover the data, whatever the offset', () => {
+    let seed = 7;
+    const next = (): number => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed / 2_147_483_648;
+    };
+    for (let run = 0; run < 4_000; run += 1) {
+      const offset = 10 ** (next() * 15) * (next() < 0.5 ? 1 : -1);
+      const low = offset + next() * 100;
+      const high = low + next() * 10 ** (next() * 4);
+      const cap = 2 + Math.floor(next() * 7);
+      const { ticks, min, max } = niceTicks(low, high, cap);
+      const label = `niceTicks(${low}, ${high}, ${cap})`;
+      expect(new Set(ticks).size, label).toBe(ticks.length);
+      expect(
+        [...ticks].sort((a, b) => a - b),
+        label,
+      ).toEqual([...ticks]);
+      const noise = Math.max(Math.abs(low), Math.abs(high)) * 1e-9;
+      expect(min, label).toBeLessThanOrEqual(low + noise);
+      expect(max, label).toBeGreaterThanOrEqual(high - noise);
+    }
+  });
+});
+
 describe('niceTicks — integer data', () => {
   test('a small count gets whole steps, never 0.4 or 0.5 between two whole numbers', () => {
     expect(niceTicks(0, 3, 6, { integer: true }).ticks).toEqual([0, 1, 2, 3]);

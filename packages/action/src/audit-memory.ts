@@ -5,6 +5,7 @@
  */
 
 import type { AuditRecord, AuditSink } from './audit';
+import { acceptedIdOf } from './audit-accepted';
 
 /**
  * Records held at once. A record pins a whole `Ctx` — the actor, the service bag, the parsed
@@ -59,9 +60,16 @@ export function memoryAuditSink(options: MemoryAuditSinkOptions = {}): MemoryAud
       : DEFAULT_MAX_AUDIT_RECORDS;
   const log: AuditRecord[] = [];
   let dropped = 0;
+  // Group commit's accepted records already held: the memory twin of the Postgres sink skipping a
+  // row it stored under the same id, so a batch that stored and then rejected is not kept twice.
+  let held = new WeakSet<AuditRecord>();
 
   return {
     write(record: AuditRecord): void {
+      if (acceptedIdOf(record) !== undefined) {
+        if (held.has(record)) return;
+        held.add(record);
+      }
       log.push(record);
       // `shift` in a loop, not a slice: the cap is only ever exceeded by one per write, so this
       // runs at most once — and it releases the evicted record's `Ctx` rather than copying the
@@ -81,6 +89,7 @@ export function memoryAuditSink(options: MemoryAuditSinkOptions = {}): MemoryAud
     clear: (): void => {
       log.length = 0;
       dropped = 0;
+      held = new WeakSet();
     },
   };
 }

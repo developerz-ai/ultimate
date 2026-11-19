@@ -81,6 +81,16 @@ describe('unit · workflows · nothing checks main alone', () => {
     expect(checkout?.with?.['fetch-depth']).toBe(2);
   });
 
+  // Path-filtered, it ran only when a listed file moved; a change in any other package that alters
+  // a printed line a tutorial quotes started nothing, and the health row kept the last green.
+  test('tutorial-run has a schedule trigger', async () => {
+    const schedule = (await triggersOf('tutorial-run.yml'))['schedule'];
+    expect(Array.isArray(schedule) && schedule.length > 0).toBe(true);
+    const cron = Array.isArray(schedule) ? text(record(schedule[0])['cron']) : '';
+    // Weekly: five fields, a fixed day of week. The health row's staleness bound is eight days.
+    expect(cron).toMatch(/^\d+ \d+ \* \* \d$/);
+  });
+
   test('tutorial-run is grouped per ref: main never cancels a pull request`s run', async () => {
     const tutorials = await readWorkflow('tutorial-run.yml');
     expect(tutorials.concurrency?.group).toContain('github.ref');

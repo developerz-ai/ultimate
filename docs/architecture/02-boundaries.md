@@ -39,7 +39,7 @@ same violation as a cut, off one rule → code table.
 
 | Rule id | Code | Forbids | Prevents concretely |
 |---|---|---|---|
-| `site-imports-app` | `X_BOUNDARY_SITE_TO_APP` | `site/` → `app/`, transitively | the marketing page that ships a charting library three hops away from any reviewed file ([`../idea/06-surfaces.md`](../idea/06-surfaces.md)) |
+| `site-imports-app` | `X_BOUNDARY_SITE_TO_APP` | `site/` → `app/`, transitively — one finding per crossing: the first edge in the chain that lands on `app/`, at the file that writes it; the legal `app/ → app/` edges below are never reported (`As of 2026-11-19`, `classify()` in `packages/render/src/surfaces.ts`) | the marketing page that ships a charting library three hops away from any reviewed file ([`../idea/06-surfaces.md`](../idea/06-surfaces.md)) |
 | `shared-is-a-leaf` | `X_BOUNDARY_SHARED_LEAF` | `shared/` → `site/` or `app/` at runtime | `shared/` stops being a leaf |
 | `app-imports-api-at-runtime` | `X_BOUNDARY_APP_TO_API` | `app/` → `api/` as a **value** import | bundling server handlers into the client. `import type` is allowed; call the typed client instead |
 | `surface-imports-surface` | `X_BOUNDARY_SURFACE_IMPORT` | every other surface crossing `SURFACE_SPECS` does not allow — `api/ → site/`, `site/ → api/`, `app/ → site/` (`classify`, `packages/render/src/surfaces.ts`) | a surface table whose `mayImport` lists were read by nothing, so those crossings classified as no violation |

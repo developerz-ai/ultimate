@@ -299,12 +299,12 @@ unchanged tree, nothing. A failed build is the step's verdict, with the build's 
 
 | Error | Meaning | Command |
 |---|---|---|
-| `X_BOUNDARY_SITE_TO_APP` (and the other `X_BOUNDARY_*` codes) | an import crossed a surface or tier; `data.chain` shows the path | `x fix boundary <file> --json` |
+| `X_BOUNDARY_SITE_TO_APP` (and the other `X_BOUNDARY_*` codes) | an import crossed a surface or tier; `data.chain` shows the path. One crossing is one finding, at the importer that crosses — never the `app/ → app/` imports below it | `x fix boundary <file> --json` |
 | `X_DB_GEN_FAILED` | `x db gen` could not produce a migration; the cause carries the Postgres error verbatim | `x doctor --json` |
 | `X_DB_DRIFT` from `x verify` | source drift: an entity was edited and no migration recorded it | `x db gen "describe the change"` |
 | `X_DB_DRIFT` from `x db migrate` | live-catalog drift: the database that just migrated still disagrees with the ledger | `x verify --json` |
 | `X_FORBIDDEN` in a test | the policy is right and the fixture actor is wrong, or vice versa | `x policy explain <subject> --json` |
-| `X_CATALOG_MISSING_KEYS` | a locale's catalog lacks a key it owes: one source names through `t()`, one only a mail or a push names, one the `en` catalog defines, or one a mounted admin derives (`admin.<table>.field.<column>`). The sync writes the catalog nested — never hand-add a dotted key, `loadCatalog` refuses one (`X_CATALOG_INVALID`). The default locale's admin keys get the generator's label; every other key a `⟦…⟧` placeholder to replace | `x i18n sync <locale>` |
+| `X_CATALOG_MISSING_KEYS` | a locale's catalog lacks a key it owes: one source names through `t()`, one only a mail or a push names, one the `en` catalog defines, or one a mounted admin derives (`admin.<table>.field.<column>`). The sync writes the catalog nested — never hand-add a dotted key, `loadCatalog` refuses one (`X_CATALOG_INVALID`). A key source names is written `⟦key⟧` in the default locale and `⟦the default locale's string⟧` in any other; an admin-derived key gets the generator's label in the default locale (a real string) and that label inside `⟦…⟧` in any other | `x i18n sync <locale>` |
 | `X_BUDGET_EXCEEDED` | a route got heavier; `data.cause` names the import | `x routes --json` to see the chain, then move the heavy import behind `hydrate: 'interaction'` |
 | `X_MATCHER_UNSUPPORTED` | a `live: true` read the incremental matcher cannot evaluate | set `live: false` and poll, or reshape the query to equality filters + `orderBy` + `limit` |
 | `X_IDEMPOTENCY_REQUIRED` | a JS or generated `job()` whose ONLY missing field is `idempotencyKey` (TypeScript refuses the omission first). Missing it and any other required field is `X_JOB_DECLARATION_INVALID`, listing every one; a job with no `name` is told to name itself before the key is written | add `idempotencyKey: (input) => \`<job>:${input.id}\`` to the job definition |

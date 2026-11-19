@@ -11,6 +11,10 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { guardFormHash } from '../../packages/cli/src/guards-vendored';
 import {
+  RELEASED_GUARD_FORMS,
+  RELEASED_GUARD_TEST_FORMS,
+} from '../../packages/cli/src/templates/guard-released-forms';
+import {
   reportOnlyForm,
   SHIPPED_GUARD_NAMES,
 } from '../../packages/cli/src/templates/scaffold-guards';
@@ -99,6 +103,31 @@ export async function releasedForms(
 }
 
 /**
+ * The regenerated table, plus every hash the committed one recorded for a guard still shipped. A
+ * tag's templates import `@ultimat3/*` from the WORKING TREE, so a rule embedding a framework value
+ * (`undeclared-env` writes core's `FRAMEWORK_ENV`) re-hashes every past tag under today's value: a
+ * rewrite from scratch erased the hash an app's unedited copy really carries, and the codemod then
+ * kept that copy as the app's edit. A recorded form is history; history is only ever added to.
+ */
+export function withRecorded(
+  regenerated: { readonly forms: Forms; readonly tests: TestForms },
+  recordedForms: Readonly<Record<string, readonly (readonly [string, 'error' | 'warning'])[]>>,
+  recordedTests: Readonly<Record<string, readonly string[]>>,
+): { readonly forms: Forms; readonly tests: TestForms } {
+  const forms: Forms = {};
+  const tests: TestForms = {};
+  for (const [name, known] of Object.entries(regenerated.forms)) {
+    const merged = new Map(Object.hasOwn(recordedForms, name) ? recordedForms[name] : []);
+    for (const [hash, severity] of known) merged.set(hash, severity);
+    forms[name] = merged;
+    const recorded = Object.hasOwn(recordedTests, name) ? (recordedTests[name] ?? []) : [];
+    const testHashes = new Set([...recorded, ...(regenerated.tests[name] ?? [])]);
+    if (testHashes.size > 0) tests[name] = testHashes;
+  }
+  return { forms, tests };
+}
+
+/**
  * A key's entries in Biome's layout, so the written file is already formatted: on the key's line
  * when one pair, or flat strings that fit the 100 columns; otherwise one per line.
  */
@@ -147,7 +176,9 @@ ${testRows.join('\n')}
 
 if (import.meta.main) {
   const root = repoRoot();
-  const rendered = renderForms(await releasedForms(root));
+  const rendered = renderForms(
+    withRecorded(await releasedForms(root), RELEASED_GUARD_FORMS, RELEASED_GUARD_TEST_FORMS),
+  );
   if (process.argv.includes('--write')) await Bun.write(join(root, FORMS_FILE), rendered);
   const current = await Bun.file(join(root, FORMS_FILE))
     .text()

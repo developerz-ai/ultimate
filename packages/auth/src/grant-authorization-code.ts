@@ -79,11 +79,15 @@ export async function exchangeRefresh(
   const token = await config.store.getToken(hash);
   if (token === null || token.kind !== 'refresh')
     return invalidGrant('the refresh token is unknown');
-  if (token.retiredAt !== null) return replayed(config, token.grantId, client.clientId);
   const grant = await config.store.getGrant(token.grantId);
+  // Asked BEFORE the replay branch: a retired token is a replay only from the client it was issued
+  // to. Presented by any other client it would otherwise revoke a grant that client never held.
+  const foreign = grant !== null && grant.clientId !== client.clientId;
+  if (token.retiredAt !== null && !foreign) {
+    return replayed(config, token.grantId, client.clientId);
+  }
   if (grant === null || grant.revokedAt !== null) return invalidGrant('the grant is revoked');
-  if (grant.clientId !== client.clientId)
-    return invalidGrant('the token was issued to another client');
+  if (foreign) return invalidGrant('the token was issued to another client');
   if (grant.refreshedAt.getTime() + config.refreshIdleMs <= now.getTime()) {
     return invalidGrant('the grant sat idle past its refresh window');
   }

@@ -72,7 +72,12 @@ describe('readStack', () => {
     });
     expect(await readStack(root, runner)).toEqual({
       answered: true,
-      stack: { project: 'shop-test', services: ['postgres', 'redis'], roots: [root] },
+      stack: {
+        project: 'shop-test',
+        services: ['postgres', 'redis'],
+        roots: [root],
+        running: true,
+      },
     });
   });
 
@@ -96,6 +101,7 @@ describe('relationTo', () => {
     project: 'shop-test',
     services: ['postgres'],
     roots: owners,
+    running: true,
   });
 
   test('its own stack is simply ours, whichever path reached the checkout', async () => {
@@ -136,6 +142,18 @@ describe('relationTo', () => {
     expect(await relationTo(stackOf(other), root, runner, {})).toEqual({
       kind: 'collision',
       with: other,
+      running: true,
+    });
+  });
+
+  test('a stack whose every container exited is a stopped collision, not a running one', async () => {
+    const [root, other] = [await checkout(), await checkout()];
+    const { runner } = machine({ stack: () => '' });
+    const stopped = { ...stackOf(other), running: false };
+    expect(await relationTo(stopped, root, runner, {})).toEqual({
+      kind: 'collision',
+      with: other,
+      running: false,
     });
   });
 
@@ -170,6 +188,32 @@ describe('ensureTestServices and the stack it finds', () => {
     expect(verdict.finding.cause).toContain('shop-test');
     expect(verdict.finding.fix).toContain(SHARED_ENV);
     expect(up(calls)).toBe(0);
+  });
+
+  test('a stopped foreign stack is named stopped, and its fix removes it by project name', async () => {
+    const [root, other] = [await checkout(), await checkout()];
+    const { calls, runner } = machine({
+      stack: () =>
+        `${psLine('shop-test', 'postgres', other, 'exited')}\n${psLine('shop-test', 'redis', other, 'exited')}`,
+      identity: { [root]: { root: 'mine' }, [other]: { root: 'theirs' } },
+    });
+    const verdict = await ensure(root, runner);
+    if (verdict.kind !== 'unavailable') expect.unreachable(verdict.kind);
+    expect(verdict.finding.cause).toContain('stopped');
+    expect(verdict.finding.cause).not.toContain('running');
+    expect(verdict.finding.cause).toContain(other);
+    expect(verdict.finding.fix).toStartWith('docker compose -p shop-test down');
+    expect(up(calls)).toBe(0);
+  });
+
+  test('readStack: one running container is a running stack, all exited is not', async () => {
+    const root = await checkout();
+    const mixed = `${psLine('shop-test', 'postgres', root, 'exited')}\n${psLine('shop-test', 'redis', root)}`;
+    const read = await readStack(root, machine({ stack: () => mixed }).runner);
+    expect(read).toMatchObject({ stack: { running: true } });
+    const exited = psLine('shop-test', 'postgres', root, 'exited');
+    const gone = await readStack(root, machine({ stack: () => exited }).runner);
+    expect(gone).toMatchObject({ stack: { running: false } });
   });
 
   test('a collision that only appears after a cold start is refused too', async () => {

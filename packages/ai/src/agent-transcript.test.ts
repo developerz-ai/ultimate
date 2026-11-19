@@ -10,6 +10,7 @@ import { ctxOf, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
+import { assistantTurn } from './agent-transcript';
 import { echoProvider } from './echo-provider';
 import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
@@ -219,5 +220,25 @@ describe('every tool_use the transcript replays is answered', () => {
     const replayed = seen[1]?.messages ?? [];
     expect(unansweredToolUses(replayed)).toEqual([]);
     expect(replayed[2]?.content).toContain('failed its schema');
+  });
+});
+
+describe('assistantTurn()', () => {
+  const result = (text: string, toolCalls: GenerateResult['toolCalls']): GenerateResult => ({
+    model: 'claude-opus-5',
+    text,
+    toolCalls,
+    stopReason: 'tool_use',
+    stopDetails: undefined,
+    usage: USAGE,
+    cost: costOf('claude-opus-5', USAGE),
+  });
+
+  test('a whitespace-only text is not replayed', () => {
+    const call = { id: 't1', name: 'lookup', input: {} };
+    // The tool call survives; the blank block beside it would be a 400 on the next request.
+    expect(assistantTurn(result('\n\n', [call])).content).toEqual([{ type: 'tool_use', ...call }]);
+    expect(assistantTurn(result(' \t', [])).content).toBe('(no answer)');
+    expect(assistantTurn(result(' kept ', [])).content).toEqual([{ type: 'text', text: ' kept ' }]);
   });
 });

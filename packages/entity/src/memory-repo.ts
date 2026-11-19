@@ -391,12 +391,13 @@ export const memoryRepo = <Row>(
       if (hasJsOnlyInvariant(entity.$invariants)) assertedBound(found.length, 'updateWhere');
       // The WHOLE batch is judged before any row of it lands — the same statement Postgres sends,
       // which refuses as one. A row this batch refuses used to leave the rows before it stored:
-      // the write was a loop, and the loop stopped half way through. Postgres rolls that
-      // statement back; here nothing was written yet, so nothing has to be undone.
+      // the write was a loop, and the loop stopped half way through.
       const merged = judgeUpdate(entity, found, patch, untouched(found), storeKey);
       for (const row of merged) judgeReferences(row);
-      const written = merged.map((row, at) =>
-        write(row, options, 'updateWhere', storeKey(found[at])),
+      // Judged whole, yet each row still meets the rows stored as it lands: one refused undoes the
+      // rows before it, as `deleteWhere`'s loop does and as Postgres rolls its statement back.
+      const written = undoingBatch(options?.tx, (tx) =>
+        merged.map((row, at) => write(row, { ...options, tx }, 'updateWhere', storeKey(found[at]))),
       );
       if (written.length <= MAX_ASSERTED_ROWS) writtenRowsSink()?.(written);
       return found.length;
@@ -422,8 +423,10 @@ export const memoryRepo = <Row>(
       });
       const merged = judgeUpdateMany(entity, plan, found, untouched(found), storeKey);
       for (const row of merged) judgeReferences(row);
-      const written = merged.map((row, at) =>
-        write(row, options, 'updateMany', storeKey(found[at])),
+      // A batch whose END state is unique can still meet a stored value part way — `c` takes `b`'s
+      // slug before `b` lets it go — and Postgres refuses that statement whole: so is this loop.
+      const written = undoingBatch(options?.tx, (tx) =>
+        merged.map((row, at) => write(row, { ...options, tx }, 'updateMany', storeKey(found[at]))),
       );
       if (written.length <= MAX_ASSERTED_ROWS) writtenRowsSink()?.(written);
       return written.length;

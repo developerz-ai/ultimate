@@ -135,6 +135,28 @@ describe('sesMailDriver — the request', () => {
     expect(request.headers['x-amz-date']).toBe('20261006T120000Z');
   });
 
+  test('a non-ASCII display name reaches Destination and FromEmailAddress 7-bit', async () => {
+    const { fetch, seen } = stub(() => Response.json({ MessageId: 'ses-id' }));
+    const driver = driverWith(fetch, { from: 'José Muñoz <jose@postly.test>' });
+    await driver.send(
+      message({
+        to: ['Zoë Ünal <zoe@example.test>'],
+        cc: ['Grace <grace@example.test>'],
+        bcc: ['Ops Désk <ops@example.test>'],
+      }),
+    );
+    const body = JSON.parse(seen[0]?.body ?? '{}');
+    // SES's envelope takes 7-bit ASCII only: a friendly-from name as an RFC 2047 encoded word,
+    // and the destinations as the mailboxes the raw message's own headers already name.
+    expect(body.FromEmailAddress).toBe('=?UTF-8?B?Sm9zw6kgTXXDsW96?= <jose@postly.test>');
+    expect(body.Destination).toEqual({
+      ToAddresses: ['zoe@example.test'],
+      CcAddresses: ['grace@example.test'],
+      BccAddresses: ['ops@example.test'],
+    });
+    expect(/^[\x20-\x7e]*$/.test(seen[0]?.body ?? '')).toBe(true);
+  });
+
   test('a session token is sent and signed; an endpoint override replaces the host', async () => {
     const { fetch, seen } = stub(() => Response.json({ MessageId: 'm-1' }));
     await driverWith(fetch, {

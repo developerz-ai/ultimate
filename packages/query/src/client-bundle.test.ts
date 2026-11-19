@@ -81,8 +81,11 @@ describe('@ultimat3/query/client in a browser', () => {
   // measured: 16,170 B (2026-11-16, plan 101b sweep 8b-2), 16,081 with main's client.ts. why:
   // +89 B, core's linear `trimTrailingSlashes` on the base URL, the one trim that replaced the
   // quadratic `/\/+$/` at 26 sites (CodeQL polynomial-redos). The ceiling moves by it: 16,085 + 89.
+  // measured: 16,182 B (2026-11-19, Bun 1.4.4), 16,170 at the last raise. why: +31 B, core's
+  // `clientTransport` sends a write with no Idempotency-Key once (the unkeyed-write rule), net +12 B
+  // beside the other `./page` edits since. The ceiling moves by the measured growth: 16,174 + 12.
   test('stays under 16.2 kB minified (16,170 B as of 2026-11-16)', async () => {
     const { bytes } = await build(true);
-    expect(bytes).toBeLessThan(16_174);
+    expect(bytes).toBeLessThan(16_186);
   }, 60_000);
 });

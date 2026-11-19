@@ -22,7 +22,7 @@ import {
   writeDigest,
 } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
-import { jsonResponse, publishRateLimit, redirect, takeRedirect } from '@ultimat3/http';
+import { publishRateLimit, redirect, takeRedirect } from '@ultimat3/http';
 import { admitsAnonymous, policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { ActionRateLimit, AnyAction } from './action';
 import { withChunkSink } from './action-stream';
@@ -43,7 +43,7 @@ import {
 import { answerNatively, isNativeFormPost } from './native-answer';
 import { withDeclaredErrors } from './openapi-errors';
 import { assertActionRateLimit, fixedRateLimit } from './rate-limit-gate';
-import { carriesRecords, recordResponse } from './record-wire';
+import { carriesRecords, plainResponse, recordResponse } from './record-wire';
 import { assertReplayPrincipal, REPLAY_REFUSAL } from './replay-scope';
 
 /** The digest a request's idempotency key names its write by; none for a missing or blank one. */
@@ -174,7 +174,7 @@ function projectRoute(
         ? redirect(to.location, to.status)
         : enveloped
           ? recordResponse(target.output, result)
-          : jsonResponse(result);
+          : plainResponse(result);
     if (key !== null) response.headers.set(REPLAYED_HEADER, replayed ? '1' : '0');
     return response;
   };

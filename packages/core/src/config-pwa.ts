@@ -10,7 +10,11 @@
 // `x dev`, saw a served app and shipped it would meet the missing title in CI. Two checks, two
 // subjects (a config file, and a function argument a library caller supplies directly).
 
+import { booleanIssue } from './config-shape';
 import { describeValue } from './error-render';
+
+/** The block's three switches, each refused unless a boolean. */
+const PWA_SWITCHES = ['enabled', 'backgroundSync', 'push'] as const;
 
 /**
  * `installPrompt` was removed 2026-08, same rule: `@ultimat3/pwa`'s `installController` is
@@ -189,7 +193,13 @@ export const PWA_FIX =
  * object crosses into the framework, so every value here is `unknown` however the interface types it.
  */
 export function pwaIssues(pwa: PwaConfig, issues: string[]): boolean {
-  if (!pwa.enabled) return false;
+  // `typeof`, never truthiness: `enabled: 'false'` turned the PWA ON. A switch's own message is its
+  // remedy, so these are pushed before `before` and never earn the install-block fix line.
+  for (const key of PWA_SWITCHES) {
+    const issue = booleanIssue(`pwa.${key}`, pwa[key]);
+    if (issue !== undefined) issues.push(issue);
+  }
+  if (pwa.enabled !== true) return false;
   const before = issues.length;
   const { name, colors } = pwa;
   if (typeof name !== 'string' || name.trim() === '') {
@@ -285,10 +295,11 @@ const isVapidSubject = (value: unknown): boolean => {
  * emits no worker for a push handler to live in.
  */
 export function pwaPushIssues(pwa: PwaConfig, issues: string[]): boolean {
-  if (!pwa.enabled) return false;
+  if (pwa.enabled !== true) return false;
   const before = issues.length;
   const vapid: unknown = pwa.vapid;
-  if (!pwa.push) {
+  // A non-boolean `push` is `pwaIssues`' refusal already; here it is read as off.
+  if (pwa.push !== true) {
     if (vapid !== undefined) {
       issues.push('pwa.vapid is set while pwa.push is false, so nothing reads it');
     }
@@ -337,19 +348,42 @@ const absolute = (value: unknown): boolean => typeof value === 'string' && value
 const texts = (value: unknown): readonly unknown[] =>
   value !== null && typeof value === 'object' ? Object.values(value) : [value];
 
+const isTextList = (value: unknown): boolean =>
+  Array.isArray(value) && (value as readonly unknown[]).every((entry) => typeof entry === 'string');
+
 /** The optional manifest members, screened for the one mistake a browser drops them for silently. */
 function manifestIssues(pwa: PwaConfig, issues: string[]): void {
   if (pwa.id !== undefined && !absolute(pwa.id)) {
     issues.push(`pwa.id must be an absolute path like "/", and is ${describeValue(pwa.id)}`);
   }
-  for (const [i, shortcut] of (pwa.shortcuts ?? []).entries()) {
-    if (!absolute(shortcut?.url)) {
-      issues.push(
-        `pwa.shortcuts[${i}].url must be an absolute path, and is ${describeValue(shortcut?.url)}`,
-      );
+  const categories: unknown = pwa.categories;
+  if (categories !== undefined && !isTextList(categories)) {
+    issues.push(`pwa.categories must be a list of strings, not ${describeValue(categories)}`);
+  }
+  // Not a list at all is the structure check's refusal already; here, an entry of the wrong kind.
+  const neverCache: unknown = pwa.offline?.neverCache;
+  if (Array.isArray(neverCache) && !isTextList(neverCache)) {
+    issues.push(`pwa.offline.neverCache must list path strings, not ${describeValue(neverCache)}`);
+  }
+  const shortcuts: unknown = pwa.shortcuts ?? [];
+  const screenshots: unknown = pwa.screenshots ?? [];
+  // A list first: `shortcuts: 'x'` reached `.entries()` as a native TypeError.
+  if (!Array.isArray(shortcuts)) {
+    issues.push(`pwa.shortcuts must be a list, not ${describeValue(shortcuts)}`);
+  } else {
+    for (const [i, shortcut] of (shortcuts as readonly (PwaShortcut | undefined)[]).entries()) {
+      if (!absolute(shortcut?.url)) {
+        issues.push(
+          `pwa.shortcuts[${i}].url must be an absolute path, and is ${describeValue(shortcut?.url)}`,
+        );
+      }
     }
   }
-  for (const [i, screenshot] of (pwa.screenshots ?? []).entries()) {
+  if (!Array.isArray(screenshots)) {
+    issues.push(`pwa.screenshots must be a list, not ${describeValue(screenshots)}`);
+    return;
+  }
+  for (const [i, screenshot] of (screenshots as readonly (PwaScreenshot | undefined)[]).entries()) {
     if (!texts(screenshot?.src).every(absolute)) {
       issues.push(
         `pwa.screenshots[${i}].src must be an absolute path (or one per locale), and is ${describeValue(screenshot?.src)}`,

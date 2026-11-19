@@ -28,8 +28,7 @@ import { type ClaimAnswer, createClaimSweep } from './worker-claim-sweep';
 import { armWorkerCutoff, type DrainCutoff } from './worker-drain-cutoff';
 import { assertConcurrencyEnforceable, createFleetSlots } from './worker-fleet-slots';
 import { createHeldRuns } from './worker-held';
-import type { ClaimLoop } from './worker-loop';
-import { createClaimLoop, fillsAsk } from './worker-loop';
+import { type ClaimLoop, createClaimLoop, fillsAsk } from './worker-loop';
 import { resolveWorkerTimings } from './worker-options';
 import { createProcessCap } from './worker-process-cap';
 import { createQueueDepthPublisher } from './worker-queue-depth';
@@ -70,6 +69,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     fleetSlots,
     workerId,
     pollIntervalMs,
+    visibilityTimeoutMs,
     context: options.context,
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
@@ -91,12 +91,9 @@ export function jobWorker(options: WorkerOptions): Worker {
   let drainSignal = new AbortController();
   let cutoff: DrainCutoff | undefined; // armed by the first shutdown to reach this worker
   /**
-   * The deadline the teardown waits under. `undefined` for a manual `stop()`, bound the moment a
-   * shutdown lands — and bound LATE when that shutdown lands on a teardown already in flight: the
-   * `close` hook joins the memoised `stopping` rather than starting a second, and until 2026-09-07
-   * the teardown it joined kept the `undefined` it was started with. Core abandoned the hook at
-   * the deadline; the worker sat on a body ignoring `ctx.signal` with its driver open. Fresh per
-   * teardown, for the controller's reason: a restarted worker's manual stop is unbounded again.
+   * The deadline the teardown waits under: `undefined` for a manual `stop()`, bound when a shutdown
+   * lands — LATE too, on a teardown already in flight (the `close` hook joins `stopping`). Fresh per
+   * teardown: a restarted worker's manual stop is unbounded again.
    */
   let budget = createDrainBudget();
   let state: WorkerStats['state'] = 'idle';
@@ -117,7 +114,7 @@ export function jobWorker(options: WorkerOptions): Worker {
   });
 
   /** One claimed job, run under its lease, its slot and its span. `worker-run.ts` owns the wiring. */
-  const runClaimed = (claimed: ClaimedJob, refusal?: unknown): Promise<JobExecution> =>
+  const runClaimed = (claimed: ClaimedJob, at: number, refusal?: unknown): Promise<JobExecution> =>
     // A `limiter()` gate in the body renews on THIS worker's numbers, as `fleetSlots` does.
     withLimiterFrame(
       limiterFrameOf(claimed, visibilityTimeoutMs, heartbeatIntervalMs, options),
@@ -125,6 +122,7 @@ export function jobWorker(options: WorkerOptions): Worker {
         runClaimedJob({
           driver: options.driver,
           claimed,
+          claimedAt: at,
           ...(refusal === undefined ? {} : { refusal }),
           context: options.context,
           fleetSlots,
@@ -158,6 +156,7 @@ export function jobWorker(options: WorkerOptions): Worker {
       // A final attempt's lapsed lease is settled by the claim itself, handed to `onExhausted` and
       // told by this round alone; `burialPolicy()` is what the row does not carry.
       const buried: JobRecord[] = [];
+      const askedAt = nowMs(options.clock); // the lease's window starts here, not at the run
       const claimed = await options.driver.claim({
         ...ask,
         visibilityTimeoutMs,
@@ -168,93 +167,92 @@ export function jobWorker(options: WorkerOptions): Worker {
       });
       if (claimed.length > 0 || buried.length > 0) found = true;
 
-      for (const [index, job] of claimed.entries()) {
-        const queue = job.queue;
-        // Both caps, and what becomes of a job that passes neither — `worker-admit.ts`.
-        const admission = await admit(job, queue, () => claimed.slice(index + 1));
-        if (admission.kind === 'waiting') continue;
-        if (admission.kind === 'refused') {
-          // Settled without a body: counted and returned with the pass, the one job this loop
-          // itself finishes.
-          tally.refused();
-          const label = JOB_OUTCOME_LABELS[admission.execution.outcome];
-          if (label !== null) recordJob(queue, label);
-          started.push(Promise.resolve(admission.execution));
-          continue;
-        }
-        const { lease } = admission;
-        admitted.set(queue, (admitted.get(queue) ?? 0) + 1);
-        const returnCap = cap.take(); // `maxInFlight`'s count, handed back beside the lease
-
-        // The claimed job is the process's in-flight work, counted where the DRAIN can see it:
-        // core's own in-flight wait sits between `accept` and `inflight` and exists for exactly
-        // this. Counted nowhere, the worker had to wait for its own jobs inside a hook.
-        const finishWork = beginWork();
-        // Once per run, whichever comes first: the run's own `finally`, or the drain handing its
-        // row back while the body is still running (`worker-held.ts`).
-        let slotReleased = false;
-        const releaseSlot = async (): Promise<void> => {
-          if (slotReleased) return;
-          slotReleased = true;
-          await fleetSlots.release(job.id);
-        };
-        const running = runClaimed(job, admission.refusal)
-          .then((execution) => {
-            tally.count(execution);
-            // `jobs_total`, beside `queue_depth`: depth cannot tell a drained queue from one nothing
-            // claimed. QUEUE and OUTCOME only — a job-name label is unbounded in an app's vocabulary.
-            const label = JOB_OUTCOME_LABELS[execution.outcome];
+      try {
+        for (const [index, job] of claimed.entries()) {
+          const queue = job.queue;
+          // Both caps, and what becomes of a job that passes neither — `worker-admit.ts`.
+          const admission = await admit(job, queue, () => claimed.slice(index + 1), askedAt);
+          if (admission.kind === 'waiting') continue;
+          if (admission.kind === 'refused') {
+            // Settled without a body: counted and returned with the pass, the one job this loop
+            // itself finishes.
+            tally.refused();
+            const label = JOB_OUTCOME_LABELS[admission.execution.outcome];
             if (label !== null) recordJob(queue, label);
-            // Handed back with a time on it — a retry's backoff, a sleep's wake: this worker
-            // knows when the row is due, so it need not wait for a backed-off poll to find out.
-            if (execution.resumeAt !== undefined) {
-              loop.dueIn(execution.resumeAt - nowMs(options.clock));
-            }
-            return execution;
-          })
-          .finally(async () => {
-            lease.release();
-            returnCap();
-            // The slot is free NOW: behind a FULL pass, or a backed-off loop, the next pass runs at
-            // once (`worker-loop.ts`) — a backlog never waits out a timer for its next row.
-            loop.kick();
-            // AWAITED, never `void`: the slot is a row in `x_job_leases`, and a DELETE still on the
-            // wire at `driver.close()` left a `concurrency: 1` job unclaimable by the replacement
-            // pod for a visibility window. `release` swallows its own failures; the `finally` is
-            // for the one that could not, as a lost `finishWork()` holds the drain its whole budget.
-            try {
-              await releaseSlot();
-            } finally {
-              finishWork();
-            }
-          });
+            started.push(Promise.resolve(admission.execution));
+            continue;
+          }
+          const { lease } = admission;
+          admitted.set(queue, (admitted.get(queue) ?? 0) + 1);
+          const returnCap = cap.take(); // `maxInFlight`'s count, handed back beside the lease
 
-        started.push(running);
-        inFlight.add(running, job, async () => {
-          await releaseSlot();
-          finishWork();
-        });
-        // The claim loop no longer awaits these, so this is the one place a rejection is observed:
-        // unobserved it is an unhandled rejection, which on Bun's default is the whole process.
-        // `executeJob` settles the job itself, so reaching here means the driver could not be
-        // told how it ended — the lease will lapse and the queue will deliver it again.
-        void running.then(
-          () => {
-            inFlight.settle(running);
-          },
-          (error: unknown) => {
-            inFlight.settle(running);
-            logger.error('jobs.worker.settle-failed', {
-              workerId,
-              job: job.name,
-              jobId: job.id,
-              error: renderThrowable(error),
+          // The claimed job is the process's in-flight work, counted where the DRAIN can see it:
+          // core's own in-flight wait sits between `accept` and `inflight` and exists for exactly
+          // this. Counted nowhere, the worker had to wait for its own jobs inside a hook.
+          const finishWork = beginWork();
+          // Once per run, whichever comes first: the run's own `finally`, or the drain handing its
+          // row back while the body is still running (`worker-held.ts`).
+          let slotReleased = false;
+          const releaseSlot = async (): Promise<void> => {
+            if (slotReleased) return;
+            slotReleased = true;
+            await fleetSlots.release(job.id);
+          };
+          const running = runClaimed(job, askedAt, admission.refusal)
+            .then((execution) => {
+              tally.count(execution);
+              // `jobs_total`, beside `queue_depth` (which cannot tell drained from unclaimed). QUEUE
+              // and OUTCOME only: a job-name label is unbounded in an app's vocabulary.
+              const label = JOB_OUTCOME_LABELS[execution.outcome];
+              if (label !== null) recordJob(queue, label);
+              // Handed back with a time on it — a retry's backoff, a sleep's wake: this worker
+              // knows when the row is due, so it need not wait for a backed-off poll to find out.
+              if (execution.resumeAt !== undefined) {
+                loop.dueIn(execution.resumeAt - nowMs(options.clock));
+              }
+              return execution;
+            })
+            .finally(async () => {
+              lease.release();
+              returnCap();
+              // Free NOW: a backlog's next pass runs at once, never after a timer (`worker-loop.ts`).
+              loop.kick();
+              // AWAITED: a slot DELETE still on the wire at `driver.close()` stranded a `concurrency:
+              // 1` job for a window; the `finally` keeps a lost `finishWork()` off the drain.
+              try {
+                await releaseSlot();
+              } finally {
+                finishWork();
+              }
             });
-          },
-        );
+
+          started.push(running);
+          inFlight.add(running, job, async () => {
+            await releaseSlot();
+            finishWork();
+          });
+          // The one place a rejection is observed (unobserved, Bun ends the process). `executeJob`
+          // settled the job, so this is a driver never told: the lease lapses, the row returns.
+          void running.then(
+            () => {
+              inFlight.settle(running);
+            },
+            (error: unknown) => {
+              inFlight.settle(running);
+              logger.error('jobs.worker.settle-failed', {
+                workerId,
+                job: job.name,
+                jobId: job.id,
+                error: renderThrowable(error),
+              });
+            },
+          );
+        }
+      } finally {
+        // Told beside the pass, after its rows are running, never awaited — and when admission
+        // threw: the claim already committed the burial, so telling it never waits on a slot.
+        void teller.tell({ ...options, exhausted: buried, workerId }, tally.buried);
       }
-      // Told beside the pass, after the rows this claim handed over are running: never awaited here.
-      void teller.tell({ ...options, exhausted: buried, workerId }, tally.buried);
       if (fillsAsk(admitted, ask.limit)) full = true;
       return admitted;
     };
@@ -342,7 +340,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     cutoff = armWorkerCutoff({
       budget,
       workerId,
-      signal: shutdown.signal,
+      shutdown, // core owns the instant its in-flight wait ends; the cut-off lands a margin before
       drain: drainSignal,
       held: inFlight,
     });

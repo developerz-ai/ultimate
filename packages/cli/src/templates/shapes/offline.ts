@@ -3,7 +3,6 @@
 // realtime's outbox, `createPost` safe to replay, both proven offline in a real browser, and the
 // README's recipe for a phone on the LAN (`x dev --host <address> --tls`).
 
-import { loadVersion } from '../../version-loader';
 import { catalogJson } from '../catalog-json';
 import { catalogPath } from '../locales';
 import type { GeneratedFile, NameSet } from '../naming';
@@ -85,12 +84,6 @@ const edits = (): readonly ShapeEdit[] => [
     find: '  cache: { invalidates: [postTag] },\n',
     replace:
       '  cache: { invalidates: [postTag] },\n  // The outbox replays a write whose answer was lost under the SAME Idempotency-Key: this is what\n  // makes that replay answer the first result instead of inserting a second post.\n  idempotent: true,\n',
-  },
-  // The form imports `@ultimat3/realtime`; an isolated install resolves only what the app declares.
-  {
-    path: 'package.json',
-    find: '    "@ultimat3/render": ',
-    replace: `    "@ultimat3/realtime": "${loadVersion()}",\n    "@ultimat3/render": `,
   },
   { path: 'README.md', find: README_LAYOUT, replace: `${lan()}${README_LAYOUT}` },
   ...shapeLines(

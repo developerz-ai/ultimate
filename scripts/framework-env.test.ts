@@ -47,6 +47,17 @@ describe('what counts as a read', () => {
     );
   });
 
+  test('a destructured read is a read of every key it names', () => {
+    expect(
+      names(
+        "const { ULTIMATE_FOO, 'Q_R': q, BAR_MS = '5', ...rest } = process.env;\nconst { lower } = Bun.env;",
+      ),
+    ).toEqual(['ULTIMATE_FOO', 'Q_R', 'BAR_MS']);
+    expect(names('const {\n  A_ONE,\n  B_TWO: two,\n} = ctx.env;')).toEqual(['A_ONE', 'B_TWO']);
+    // Not from an env, or a pattern on its LEFT: neither is a read.
+    expect(names('const { A_ONE } = config; process.env = { ...env };')).toEqual([]);
+  });
+
   test('a computed key is not a literal read, and `environment.X` is not `env`', () => {
     expect(names('env[key]; environment.PORT;')).toEqual([]);
   });

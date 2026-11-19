@@ -93,6 +93,23 @@ const errorResult = (command: string, error: unknown): CommandResult => ({
  * Returns the exit code instead of calling process.exit, so a test can drive the whole CLI end to
  * end without terminating the test runner.
  */
+/**
+ * `argv` as a refusal's fix pastes it back: every word typed, less `--cwd` (the fix names the
+ * directory itself) and the JSON switch (it ends with one). Rebuilt from the command's name alone,
+ * `x db migrate` came back as `x db`, a second refusal. Cut at a bare `--`: the fix appends its
+ * `--json` last, and behind a passthrough tail that switch would be the other tool's.
+ */
+export function typedWords(argv: readonly string[]): readonly string[] {
+  const words: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const word = argv[index] as string;
+    if (word === '--') break;
+    if (word === '--cwd') index += 1;
+    else if (word !== '--json' && word !== '-j' && !word.startsWith('--cwd=')) words.push(word);
+  }
+  return words;
+}
+
 export async function dispatch(options: DispatchOptions): Promise<number> {
   const earlyReader = readerFor(options.cwd, options.invocation);
   // Its own branch, ahead of the parse: an unsupported Bun is a fact about the environment and
@@ -180,7 +197,9 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     // (`env init`, `secrets set`) — but the DECLARATION is now what decides, ahead of any check a
     // command makes about its own arguments. `--help` is exempt because `target` is then the help
     // command, which declares nothing: usage for a command must be readable from anywhere.
-    if (target.spec.requiresApp === true) requireAppRoot(target.spec.name, ctx.cwd);
+    if (target.spec.requiresApp === true) {
+      requireAppRoot(target.spec.name, ctx.cwd, typedWords(options.argv));
+    }
     const result = await target.run(ctx);
     sinkFor(result, options)(render(result, args.json, args.flags.get('verbose') === true, reader));
     // `x dev` and `x mcp serve --transport http` are still listening here: report first, so the

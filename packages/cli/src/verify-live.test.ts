@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ExecOptions, ExecResult, Runner } from './exec';
 import { withTestServices } from './verify-live';
+import { runVerify } from './verify-run';
 import { SERVICES_UP } from './verify-services';
 import { psLine } from './verify-services-fixture';
 import { SERVICES_LIST } from './verify-services-stack';
@@ -199,5 +200,35 @@ describe('one line says which stack the suites got', () => {
     const said = await run('cold');
     expect(said).toHaveLength(1);
     expect(said[0]).toStartWith('services: started shop-test');
+  });
+});
+
+describe('services that could not come up are the reason a floored live step ran nothing', () => {
+  /** Docker refuses; the suite's one test skips, as a live test with no database does. */
+  const allSkipped: Runner = async (command) => {
+    const docker = command[0] === 'docker' && !command.includes('ps');
+    const stdout = command[0] === 'bun' ? ' 0 pass\n 1 skip\n 0 fail\n' : '';
+    return { command, code: docker ? 1 : 0, ok: !docker, stdout, stderr: '', durationMs: 0 };
+  };
+
+  test('the floor holds live: X_TEST_SERVICES_UNAVAILABLE is the finding, first, and red', async () => {
+    const root = await fixtureApp(['live']);
+    const outcome = await liveStep().run(ctxOf(root, allSkipped));
+    expect(outcome.ok).toBe(false);
+    expect(outcome.findings[0]?.code).toBe('X_TEST_SERVICES_UNAVAILABLE');
+    expect(outcome.findings[0]?.fix).toContain(SERVICES_UP.join(' '));
+    expect(outcome.warnings ?? []).toEqual([]);
+    // And the gate adds no second, vaguer reason for the same red behind it.
+    const [result] = (await runVerify([liveStep()], ctxOf(root, allSkipped))).steps ?? [];
+    expect(result?.findings.map((finding) => finding.code)).toEqual([
+      'X_TEST_SERVICES_UNAVAILABLE',
+    ]);
+  });
+
+  test('asked for by --only with no floor: still a warning, as before', async () => {
+    const root = await fixtureApp([]);
+    const outcome = await liveStep().run(ctxOf(root, allSkipped, ['live']));
+    expect(outcome.findings).toEqual([]);
+    expect(outcome.warnings?.join('\n')).toContain('X_TEST_SERVICES_UNAVAILABLE');
   });
 });

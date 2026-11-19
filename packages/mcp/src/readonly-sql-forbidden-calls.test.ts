@@ -84,6 +84,29 @@ describe('a call that mutates the server, the queue or the replication stream is
     }
   });
 
+  test('the copy/sync/backup/stats-restore families and EXPLAIN ANALYSE are refused', () => {
+    for (const sql of [
+      // Postgres' own synonym: the plan is executed under either spelling.
+      'explain analyse select 1',
+      'explain (analyse) select 1',
+      // A quoted option name is the same option: Postgres folds nothing inside quotes, and
+      // `analyze` is already lower case.
+      'explain ("analyze") select 1',
+      'explain (verbose, "analyse" true) select 1',
+      "select pg_copy_logical_replication_slot('a', 'b')",
+      "select pg_copy_physical_replication_slot('a', 'b')",
+      'select pg_sync_replication_slots()',
+      "select pg_backup_start('label')",
+      'select pg_backup_stop()',
+      "select pg_start_backup('label')",
+      'select pg_stop_backup()',
+      "select pg_restore_relation_stats('schemaname', 'public', 'relname', 't')",
+      "select pg_clear_relation_stats('public', 't')",
+    ]) {
+      expect(caught(() => assertReadOnlyQuery(sql))).toMatchObject(refusal);
+    }
+  });
+
   test('the catalog beside them is still readable, and so is a column sharing a prefix', () => {
     for (const sql of [
       'select * from pg_replication_slots',

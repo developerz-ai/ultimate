@@ -21,12 +21,13 @@ import {
   dbStatusJson,
   dbStatusLines,
 } from './db-status';
-import { DevAlreadyRunningError, liveDevLock } from './dev-lock';
+import { refuseBesideDev } from './dev-lock-live';
 import { readStamp, thisBuild } from './framework-schema-apply';
 import { msg } from './messages';
 import { readMigrations } from './migrations';
 import type { CommandResult } from './output';
 import { resolveServices } from './runtime-bindings';
+import { databaseSslOf } from './runtime-database-ssl';
 import { startDb } from './runtime-queue';
 
 /** The stamp, then the ledger; a missing ledger (`42P01`) is a fact, every other failure throws. */
@@ -46,16 +47,10 @@ async function readFromApp(ctx: CommandContext, root: string): Promise<DbStatusR
   if (services.db.mode === 'embedded') {
     if (!existsSync(pgliteDataDir(services.db.url))) return { stamp: null, ledger: undefined };
     // PGlite's data directory has one writer: an `x dev` holding it is refused, as diagnostics is.
-    const holder = liveDevLock(services.stateDir);
-    if (holder !== undefined) {
-      throw new DevAlreadyRunningError({
-        lock: holder,
-        stateDir: services.stateDir,
-        embeddedDb: true,
-      });
-    }
+    await refuseBesideDev(services.stateDir);
   }
-  return withOpenedDb(() => startDb(services, ctx.env), readDbStatus);
+  const ssl = await databaseSslOf(services);
+  return withOpenedDb(() => startDb(services, ctx.env, ssl), readDbStatus);
 }
 
 export async function runDbStatus(ctx: CommandContext, root: string): Promise<CommandResult> {

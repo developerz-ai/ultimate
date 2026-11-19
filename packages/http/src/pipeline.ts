@@ -19,6 +19,7 @@ import { asCtx, elapsedMs, type RequestContext, requestContext } from './context
 import { readCorrelation } from './correlation';
 import { type Deadline, startDeadline } from './deadline';
 import { pipelineNoResponse } from './errors';
+import { answerableError, bindLateFault } from './fault-report';
 import { recoverWith, runFinalize } from './finalize';
 import { clientAddress, clientUsedHttps } from './forwarded';
 import type { ServerHooks } from './hooks';
@@ -184,17 +185,19 @@ export const httpPipeline = (deps: PipelineDeps): Pipeline => {
   const terminal = stages.find((stage) => stage.phase === 'terminal');
   const recovered = recoverWith(stages.find((stage) => stage.phase === 'recover'));
 
-  const runStages = async (request: UltimateRequest, ctx: RequestContext): Promise<void> => {
+  // RETURNS the answer and never writes `ctx.response`: under a deadline this keeps running after
+  // the 504 won the race, and an orphan that could write the slot replaced the answer mid-finalize
+  // — a 200 with no security headers, no request id and no cookies.
+  const runStages = async (
+    request: UltimateRequest,
+    ctx: RequestContext,
+  ): Promise<Response | undefined> => {
     for (const stage of requestStages) {
       const short = await stage.run(request, ctx);
-      if (short !== undefined) {
-        ctx.response = short;
-        return;
-      }
+      if (short !== undefined) return short;
     }
-    if (ctx.response === undefined && terminal !== undefined) {
-      ctx.response = (await terminal.run(request, ctx)) ?? new Response(null, { status: 204 });
-    }
+    if (ctx.response !== undefined || terminal === undefined) return ctx.response;
+    return (await terminal.run(request, ctx)) ?? new Response(null, { status: 204 });
   };
 
   const execute = async (
@@ -204,7 +207,7 @@ export const httpPipeline = (deps: PipelineDeps): Pipeline => {
   ): Promise<Response> => {
     try {
       const work = runStages(request, ctx);
-      if (deadline.expired === undefined) await work;
+      if (deadline.expired === undefined) ctx.response = await work;
       else {
         // The abort is the cooperative half and app code that reads `ctx.signal` unwinds on its
         // own; this race is the half that answers the SOCKET when it does not. `work` keeps its
@@ -216,7 +219,9 @@ export const httpPipeline = (deps: PipelineDeps): Pipeline => {
         };
         void work.then(settle, settle);
         try {
-          await Promise.race([work, deadline.expired]);
+          // The slot is written from the race's WINNER alone, so the orphan's answer has nowhere
+          // to land however few microtasks behind the 504 it is.
+          ctx.response = await Promise.race([work, deadline.expired]);
         } finally {
           // The deadline won and the handler is still running: it holds its pool slot and
           // whatever it was writing. The caller's own count ends when this response leaves, so
@@ -224,12 +229,22 @@ export const httpPipeline = (deps: PipelineDeps): Pipeline => {
           // process here closed the pool under it.
           if (!settled) {
             const done = beginWork();
-            void work.then(done, done);
+            const sent = ctx.response;
+            // Nobody will read the orphan's answer; a stream it built is cancelled, not leaked.
+            // Never the answer that WAS sent: an orphan whose later stage finds the slot filled
+            // (`runStages` returns `ctx.response`) hands back the 504 the caller is still reading.
+            const drop = (answer?: Response): void => {
+              done();
+              if (answer === sent || answer === ctx.response) return;
+              void answer?.body?.cancel().catch(() => undefined);
+            };
+            void work.then(drop, () => drop());
           }
         }
       }
     } catch (error) {
-      ctx.error = error;
+      // A caller that hung up is `X_ABORTED` (499), not the handler's 500 (`fault-report.ts`).
+      ctx.error = answerableError(error, ctx);
       ctx.response = await recovered(request, ctx);
     }
     // `finalize.ts`, not a loop here: these two stages run after the request is already answered
@@ -290,6 +305,8 @@ export const httpPipeline = (deps: PipelineDeps): Pipeline => {
         // and `ctx.session` had no way to exist.
         requestHeaders: raw.headers,
       });
+      // The hooks a fault AFTER the response left is recorded with (`reportLateFault`).
+      bindLateFault(ctx, deps.hooks ?? {});
       const request = new UltimateRequest(raw, ctx);
       // The ALS scope is entered here, before stage 1, so every stage — and everything
       // a handler calls — sees the same context object without threading it by hand.
@@ -343,6 +360,9 @@ export const httpPipeline = (deps: PipelineDeps): Pipeline => {
               });
               // A live timer keeps the event loop from going idle, so a process that answered
               // every request would still refuse to exit for the length of one timeout.
+              // Cleared at the HEADERS, on purpose: the deadline bounds time-to-headers, and a body
+              // streamed after this (SSE, an agent's answer) must be able to outlive it — the caller
+              // going away is what ends that (`pipeline-deadline.test.ts`).
               deadline.clear();
               // The bus event, last so a throwing (strict) subscriber cannot leak the timer. Every
               // request, sampled or not — the span reaches an exporter only when sampled. `route`

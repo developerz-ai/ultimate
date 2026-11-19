@@ -244,7 +244,7 @@ export function defaultHydrate(surface: Surface): HydrateStrategy {
  * runtimes an island gets unasked; `DEFAULT_ISLAND_HYDRATE`'s `'interaction'` is 1,669) =
  * **19,581**. That is the worst case an app reaches without writing a number down. 20,480 is the
  * next whole kilobyte above it, leaving 899 B of headroom and still under 2x 19,581, so a route
- * bundling the same island twice is refused. `island-budget.test.ts` asserts all three. `visible` costs 886, so an island route
+ * bundling the same island twice is refused. `island-budget.test.ts` asserts all three. `visible` costs 986, so an island route
  * that declares it pays less; the default is what the budget has to clear.
  *
  * All three grew by 129 B on 2026-08-21 (from 881 / 615 / 687), when the prelude learned to mark a
@@ -257,7 +257,9 @@ export function defaultHydrate(surface: Surface): HydrateStrategy {
  * shared `catchUp`, and both learned to aim a keyboard press by the pressed node's path (774 -> 1,744;
  * `interaction` 1,251 -> 1,629), and `idle` became the worst case. The
  * headroom absorbed all four and the conclusion is unchanged, which is the point of stating the
- * arithmetic here rather than the answer alone. It is not
+ * arithmetic here rather than the answer alone. As of 2026-11-19 `idle` is 1,943 (+59 B on
+ * 2026-10-05, a held island's listeners; +100 B in the shared prelude, `boot` reading the props
+ * script inside its own wrapper): 17,797 + 1,943 = 19,740, 740 B under the default. It is not
  * derived from Solid's own size on purpose — this package may not import or name `solid-js`
  * (`CLAUDE.md`), so a constant tracking the runtime's version would be a dependency in a comment.
  *

@@ -141,6 +141,31 @@ describe('unit · x jobs pause, resume, delete and promote', () => {
     expect((await claim()).map((row) => row.id)).toEqual([id]);
   });
 
+  // The runbook pauses, then polls the queue until it is empty: a typo's poll is empty at once.
+  test('pause of a queue the app does not serve is X_CLI_BAD_FLAG and writes no pause row', async () => {
+    const driver = memoryJobDriver();
+    const refusal = await runJobs(driver, { subcommand: 'pause', positionals: ['defualt'] }).then(
+      () => expect.unreachable('a typo was paused'),
+      (error: unknown) => error as { code: string; cause: string; fix: string },
+    );
+    expect(refusal.code).toBe('X_CLI_BAD_FLAG');
+    expect(refusal.cause).toContain('defualt');
+    expect(refusal.fix).toBe('x jobs pause default --json');
+    expect(await driver.introspect?.pausedQueues()).toEqual([]);
+  });
+
+  test('resume clears a paused queue the app no longer serves, and refuses one never paused', async () => {
+    const driver = memoryJobDriver();
+    await driver.introspect?.pauseQueue('retired');
+    const resumed = await runJobs(driver, { subcommand: 'resume', positionals: ['retired'] });
+    expect(resumed.data).toMatchObject({ queue: 'retired', paused: false, pausedQueues: [] });
+
+    const refusal = await runJobs(driver, { subcommand: 'resume', positionals: ['retired'] }).catch(
+      (error: unknown) => error as { code: string },
+    );
+    expect((refusal as { code: string }).code).toBe('X_CLI_BAD_FLAG');
+  });
+
   test('pause and resume name the queue positional when it is missing', async () => {
     const driver = memoryJobDriver();
     for (const subcommand of ['pause', 'resume']) {

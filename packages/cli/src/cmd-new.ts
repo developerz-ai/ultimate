@@ -37,6 +37,12 @@ export interface NewAppOptions {
   readonly example: boolean;
   /** `--shape`: an overlay over the scaffold below (`templates/shapes/`); absent is the default. */
   readonly shape?: NewShape | undefined;
+  /**
+   * The directory the app lands in. Hashed into the test stack's compose project and ports, so two
+   * checkouts of one name never share a stack; absent (a pure plan, the codemods' render), the
+   * bytes are the ones every earlier scaffold wrote.
+   */
+  readonly root?: string | undefined;
 }
 
 /** `--no-git`'s `problem`, matched rather than re-spelled where the report decides on a line. */
@@ -158,13 +164,13 @@ export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
 function planFiles(options: NewAppOptions): readonly GeneratedFile[] {
   if (options.shape !== undefined) {
     const overlay = SHAPE_OVERLAYS[options.shape];
-    const base = planFiles({ name: options.name, example: overlay.example });
+    const base = planFiles({ name: options.name, example: overlay.example, root: options.root });
     // Merge-aware, as below: a shape's catalog keys land in the one catalog the base wrote.
     return withDeclaredExercises(dedupe(applyOverlay(base, overlay, names(options.name))));
   }
   const app = names(options.name);
   const files: GeneratedFile[] = [
-    ...repoFiles(app, loadVersion(), options.example),
+    ...repoFiles(app, loadVersion(), options.example, options.root),
     ...appFiles(app, options.example),
   ];
   if (options.example) {
@@ -295,6 +301,7 @@ export const newCommand: CliCommand = {
       name: raw,
       example: ctx.args.flags.get('example') !== false,
       shape,
+      root: target,
     };
 
     if (flagBool(ctx.args, 'dry-run')) {

@@ -1,4 +1,4 @@
-// Single responsibility: the refusal `x g action` / `x g mutator` raise when the slice they were
+// Single responsibility: the refusal `x g action` / `x g mutator` / `x g query` raise when the slice they were
 // pointed at has a hand-written `policy.ts` without the exports the generated file imports.
 // Declared outside `templates/` (source the CLI emits) and beside nothing else, as
 // `generate-feature.ts`'s `FeatureUnknownError` is: `errors.ts` sits at its line ceiling.
@@ -11,7 +11,7 @@ export class SlicePolicyIncompleteError extends UltimateError {
     readonly policy: string;
     readonly feature: string;
     readonly missing: readonly string[];
-    readonly kind: 'action' | 'mutator';
+    readonly kind: 'action' | 'mutator' | 'query';
   }) {
     super({
       code: 'X_SLICE_POLICY_INCOMPLETE',
@@ -26,4 +26,4 @@ export class SlicePolicyIncompleteError extends UltimateError {
 const exportLine = (name: string, feature: string): string =>
   name.endsWith('Tag')
     ? `export const ${name} = tag('${feature}');`
-    : `export const ${name} = can('${feature}:write');`;
+    : `export const ${name} = can('${feature}:${name.endsWith('Read') ? 'read' : 'write'}');`;

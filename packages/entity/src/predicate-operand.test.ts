@@ -4,6 +4,7 @@
 // integer. Either both drivers answer the same rows or both refuse with the same code.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import {
   generateMigration,
   type PgliteClient,
@@ -11,9 +12,10 @@ import {
   raw,
   statementsOf,
 } from '@ultimat3/db';
+import { t } from '@ultimat3/schema';
 import { plainDate } from '@ultimat3/time';
-import { integer, text, timestamp, uuid } from './columns';
-import { arrayOf, bigint, date } from './columns-data';
+import { boolean, integer, text, timestamp, uuid } from './columns';
+import { arrayOf, bigint, date, json } from './columns-data';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
@@ -29,6 +31,10 @@ const rows = entity('predicate_operand_rows', {
     tags: arrayOf(text()),
     n: integer(),
     big: bigint(),
+    flag: boolean(),
+    label: text({ max: 20 }),
+    ref: uuid().nullable(),
+    data: json(t.object({ k: t.string })),
   },
 });
 
@@ -40,7 +46,14 @@ const SEED = [
   { at: new Date('2026-01-01T00:00:00Z'), day: '2026-01-01', tags: ['a', 'b'], n: 1, big: '10' },
   { at: new Date('2025-01-01T00:00:00Z'), day: '2025-12-31', tags: [], n: 2, big: '9' },
   { at: new Date('2026-06-01T00:00:00Z'), day: '2026-02-01', tags: ['c'], n: 3, big: '-3' },
-].map((row) => ({ ...row, day: plainDate(row.day) }));
+].map((row, index) => ({
+  ...row,
+  day: plainDate(row.day),
+  flag: index !== 1,
+  label: `a${String(index)}`,
+  ref: index === 1 ? null : idAt(7 + index),
+  data: { k: 'v' },
+}));
 
 let pglite: PgliteClient;
 let memory: Repo<Row>;
@@ -183,5 +196,134 @@ describe('integer() and bigint(): a non-integer operand is refused by both drive
     ['big', 'eq', 10n, [0]],
   ] as const)('%s %s %p still answers', async (column, op, value, expected) => {
     expect(await both({ column, op, value })).toEqual([expected, expected]);
+  });
+});
+
+describe('uuid(): an operand that is no uuid equals no row, in both drivers', () => {
+  // Postgres answered `22P02` — a 500 — for the id a URL carries; memory answered "no such row".
+  test('a malformed uuid operand answers the same on memory and PGlite', async () => {
+    expect(await both({ column: 'id', op: 'eq', value: 'nope' })).toEqual([[], []]);
+    expect(await both({ column: 'id', op: 'eq', value: 5 })).toEqual([[], []]);
+    expect(await both({ column: 'id', op: 'eq', value: ` ${idAt(0)}` })).toEqual([[], []]);
+    expect(await both({ column: 'id', op: 'in', value: ['nope', idAt(1), 7] })).toEqual([[1], [1]]);
+    expect(await both({ column: 'id', op: 'in', value: ['nope'] })).toEqual([[], []]);
+    expect(await both({ column: 'id', op: 'neq', value: 'nope' })).toEqual([
+      [0, 1, 2],
+      [0, 1, 2],
+    ]);
+    // `is distinct from`: the row holding NULL is distinct from a value no uuid equals, too.
+    expect(await both({ column: 'ref', op: 'neq', value: 'nope' })).toEqual([
+      [0, 1, 2],
+      [0, 1, 2],
+    ]);
+    expect(await both({ column: 'ref', op: 'in', value: ['nope', null] })).toEqual([[1], [1]]);
+  });
+
+  // Memory ordered the TEXT; Postgres refused the parameter (`22P02`). A range has no "no row" to
+  // agree on — every row is above or below SOMETHING — so both drivers refuse it.
+  test.each(['gt', 'gte', 'lt', 'lte'] as const)(
+    'a range operator %s against text that is no uuid is refused by both drivers',
+    async (op) => {
+      expect(await both({ column: 'id', op, value: 'nope' })).toEqual(REFUSED);
+      expect(await both({ column: 'ref', op, value: 5 })).toEqual(REFUSED);
+      expect(await both({ column: 'id', op, value: idAt(1) })).not.toEqual(REFUSED);
+    },
+  );
+
+  test('a malformed id is a row that is not there: null to findById, X_NOT_FOUND to a write', async () => {
+    for (const repo of [memory, postgres]) {
+      expect(await repo.findById('nope')).toBeNull();
+      const codeOf = (error: unknown): unknown => (error as { code?: unknown }).code;
+      expect(await repo.update('nope', { n: 9 }).catch(codeOf)).toBe('X_NOT_FOUND');
+      expect(await repo.delete('nope').catch(codeOf)).toBe('X_NOT_FOUND');
+    }
+  });
+
+  // Every spelling Postgres parses as the same sixteen bytes: memory compared the text.
+  test.each([idAt(0).toUpperCase(), idAt(0).replaceAll('-', ''), `{${idAt(0)}}`])(
+    'the spelling %p is the row both drivers hold',
+    async (spelling) => {
+      expect(await both({ column: 'id', op: 'eq', value: spelling })).toEqual([[0], [0]]);
+      expect(await both({ column: 'id', op: 'in', value: [spelling] })).toEqual([[0], [0]]);
+      for (const repo of [memory, postgres]) {
+        expect((await repo.findById(spelling))?.id).toBe(idAt(0));
+      }
+      // Batched, the answer is filed under the key the server printed (`keyOf`), not the spelling.
+      const batched = await runWithContext(ctxOf({}), () => postgres.findById(spelling));
+      expect(batched?.id).toBe(idAt(0));
+    },
+  );
+});
+
+describe('in: a list longer than one statement can bind', () => {
+  const PAST = 70_000;
+
+  test('an in list past the bind budget answers the same on both drivers', async () => {
+    const numbers = Array.from({ length: PAST }, (_, at) => at - 10);
+    expect(await both({ column: 'n', op: 'in', value: numbers })).toEqual([
+      [0, 1, 2],
+      [0, 1, 2],
+    ]);
+    const labels = Array.from({ length: PAST }, (_, at) => `a${String(at + 1)}`);
+    expect(await both({ column: 'label', op: 'in', value: [...labels, 'q"\\,{}'] })).toEqual([
+      [1, 2],
+      [1, 2],
+    ]);
+    const instants = Array.from({ length: PAST }, (_, at) => new Date(Date.UTC(2026, 0, 1) + at));
+    expect(await both({ column: 'at', op: 'in', value: instants })).toEqual([[0], [0]]);
+    const ids = Array.from({ length: PAST }, (_, at) => idAt(at % 2));
+    expect(await both({ column: 'ref', op: 'in', value: [...ids, null, 'nope'] })).toEqual([
+      [1],
+      [1],
+    ]);
+    const days = Array.from({ length: PAST }, () => new Date('2025-12-31T00:00:00Z'));
+    expect(await both({ column: 'day', op: 'in', value: days })).toEqual([[1], [1]]);
+    const flags = Array.from({ length: PAST }, () => false);
+    expect(await both({ column: 'flag', op: 'in', value: flags })).toEqual([[1], [1]]);
+    const bigs = Array.from({ length: PAST }, (_, at) => BigInt(at) + 10n);
+    expect(await both({ column: 'big', op: 'in', value: bigs })).toEqual([[0], [0]]);
+  }, 60_000);
+
+  test('a kind with no array form is refused past the budget by both drivers', async () => {
+    const lists = Array.from({ length: PAST }, () => ['a']);
+    expect(await both({ column: 'tags', op: 'in', value: lists })).toEqual(REFUSED);
+  });
+});
+
+describe('like: a pattern matches text', () => {
+  test.each(['id', 'at', 'day', 'tags', 'n', 'big', 'flag', 'data'] as const)(
+    'like is refused on every kind but text/char, identically on both drivers: %s',
+    async (column) => {
+      expect(await both({ column, op: 'like', value: '1%' })).toEqual(REFUSED);
+    },
+  );
+
+  test('a text column still matches by pattern in both', async () => {
+    expect(await both({ column: 'label', op: 'like', value: 'a%' })).toEqual([
+      [0, 1, 2],
+      [0, 1, 2],
+    ]);
+  });
+});
+
+describe('timestamp(): an instant Postgres cannot read as text is refused by both drivers', () => {
+  test.each([
+    new Date('0000-12-31T23:59:59.999Z'),
+    new Date(Date.UTC(10_000, 0, 1)),
+    new Date(-8.64e15),
+    '0000-06-01T00:00:00Z',
+    '0000-06-01',
+  ])('lt %p', async (value) => {
+    expect(await both({ column: 'at', op: 'lt', value })).toEqual(REFUSED);
+    expect(await both({ column: 'at', op: 'in', value: [value] })).toEqual(REFUSED);
+  });
+
+  test.each([
+    [new Date('0001-01-01T00:00:00.000Z'), []],
+    [new Date('9999-12-31T23:59:59.999Z'), [0, 1, 2]],
+    ['0001-01-01T00:00:00+14:00', []],
+    ['10000-01-01T00:00:00Z', [0, 1, 2]],
+  ] as const)('lt %p still answers, the same rows in both', async (value, expected) => {
+    expect(await both({ column: 'at', op: 'lt', value })).toEqual([expected, expected]);
   });
 });

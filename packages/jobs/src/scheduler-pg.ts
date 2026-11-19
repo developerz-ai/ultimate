@@ -74,6 +74,10 @@ export function postgresSchedulerState(executor: PgExecutor): SchedulerState {
             idempotency_key: request.idempotencyKey,
             run_id: request.runId ?? uuidV7(),
             max_attempts: request.maxAttempts,
+            // Absent is null in the recordset: no tenant, no trace, nobody to attribute.
+            tenant_id: request.tenantId,
+            traceparent: request.traceparent,
+            enqueued_by: request.enqueuedBy,
           })),
         ),
         // Where the watermark lands when that is past the occurrence (`run-once`): ONE statement.

@@ -388,3 +388,28 @@ describe('unit · a run refuses a completion ceiling that is not one', () => {
     expect((await evaluation.run(gateway)).score).toBe(1);
   });
 });
+
+describe('defineEval() screens its tolerance', () => {
+  const declare = (tolerance: number) => () =>
+    defineEval({
+      name: `tolerance-${String(tolerance)}`,
+      prompt: classify(),
+      baseline: '/tmp/never-read.baseline.json',
+      tolerance,
+      scorers: [exact],
+      cases: THREE_CASES,
+    });
+
+  test('a NaN tolerance is refused at declaration', () => {
+    // `drop > NaN` is false for every drop: the gate could not fail, and still looked declared.
+    expect(declare(Number.NaN)).toThrow(expect.objectContaining({ code: 'X_INVARIANT' }));
+    expect(declare(Number.POSITIVE_INFINITY)).toThrow(
+      expect.objectContaining({ code: 'X_INVARIANT' }),
+    );
+  });
+
+  test('a negative tolerance is refused: it fails a run that scored exactly its baseline', () => {
+    expect(declare(-0.1)).toThrow(expect.objectContaining({ code: 'X_INVARIANT' }));
+    expect(declare(0)).not.toThrow();
+  });
+});

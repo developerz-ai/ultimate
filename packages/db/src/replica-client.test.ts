@@ -325,6 +325,40 @@ describe('a statement the replica answered with a refusal of the statement itsel
   );
 });
 
+describe('a position asked of a parked replica', () => {
+  test('a parked replica is not asked its replay position: a minPosition read goes straight to the primary', async () => {
+    const primary = recordingClient();
+    const base = recordingClient();
+    let replayReads = 0;
+    const replica: typeof base = {
+      ...base,
+      query: () => Promise.reject(new TypeError('connection refused')),
+      one: () => {
+        // What a black-holed standby costs: the whole connect or statement timeout, per ask.
+        replayReads += 1;
+        return Promise.reject(new TypeError('connection refused'));
+      },
+    };
+    const clock = fakeClock();
+    const client = replicatedClient(primary, replica, { clock, breakerCooldownMs: 1_000 });
+    for (let n = 0; n < 3; n += 1) await withReplicaReads(() => client.query(sql`select 1`));
+    expect(client.stats.parked).toBe(true);
+
+    for (let n = 0; n < 3; n += 1) {
+      // Past the 50 ms sample cache each time, so a cached answer cannot stand in for not asking.
+      clock.advance(100);
+      await withReplicaReads(() => client.query(sql`select 2`), { minPosition: 0x20n });
+    }
+    expect(replayReads).toBe(0);
+    expect(primary.texts.filter((text) => text === 'select 2').length).toBe(3);
+
+    // Reading the state spent nothing: once the cooldown lapses the position is asked again.
+    clock.advance(1_000);
+    await withReplicaReads(() => client.query(sql`select 3`), { minPosition: 0x20n });
+    expect(replayReads).toBe(1);
+  });
+});
+
 describe('a position behind, while half-open', () => {
   test('the read goes to the primary and the probe stays unspent for the next caught-up read', async () => {
     const primary = recordingClient();

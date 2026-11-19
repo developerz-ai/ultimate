@@ -3,12 +3,12 @@
 // `pg-sql-aggregate.ts`; the predicates are `pg-sql.ts`'s, imported, never restated.
 
 import { identifier, join, type SqlFragment, sql } from '@ultimat3/db';
-import { AVG_SCALE } from './aggregate';
 import { moneyColumns } from './column';
 import { kindOf } from './cursor';
 import type { EntityCore } from './entity';
 import type { PlannedMeasure } from './measures';
 import { columnRef, conditions, predicatesSql, type ReadShape } from './pg-sql';
+import { averageSql } from './pg-sql-aggregate';
 import type { Predicate, QueryPlan } from './tenancy';
 
 /** Output names are positional and fixed (`m0`, `u0`, …): a measure's name never reaches SQL. */
@@ -43,7 +43,7 @@ const measureSql = <Row>(
     case 'sum':
       return sql`sum(${target})${filter}`;
     case 'avg':
-      return sql`round(avg(${target})${filter}, ${AVG_SCALE})`;
+      return averageSql(target, filter);
     default: {
       const extreme =
         measure.fn === 'min' ? sql`min(${target})${filter}` : sql`max(${target})${filter}`;

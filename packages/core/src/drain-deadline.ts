@@ -33,6 +33,15 @@ export const WORKER_DRAIN_DEADLINE_MAX_MS = 86_400_000;
  */
 export const WORKER_RETIRE_DEFAULT_MS = 3_600_000;
 
+/**
+ * The slice of a `deadlineMs` drain the in-flight wait never spends, kept for the `inflight` and
+ * `close` hooks behind it: a fifth, at most 2 s. The lifecycle hands its end to every hook as
+ * `ShutdownReason.inflightUntil`; `x verify`'s `X_JOB_OUTLASTS_DRAIN` grades against the same one.
+ */
+export function laterHooksReserveMs(deadlineMs: number): number {
+  return Math.min(2_000, Math.floor(deadlineMs / 5));
+}
+
 const DEADLINE_KEY = 'drain.deadlineMs';
 const WORKER_DEADLINE_KEY = 'drain.workerDeadlineMs';
 const WORKER_RETIRE_KEY = 'drain.workerRetireMs';

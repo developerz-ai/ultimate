@@ -17,6 +17,7 @@ import { clientErrorsSurface } from './client-errors-routes';
 import { clientScriptHeads, clientVitalsSurface } from './client-vitals-route';
 import type { DevDashboardInput } from './dev-dashboard';
 import { devDashboardRoutes } from './dev-dashboard';
+import { devMigrateRoutes } from './dev-db-migrate';
 import { errorPageStyleBodies } from './error-page-csp';
 import type { IslandBundle } from './island-bundle';
 import { islandHarnessRoutes } from './island-harness-route';
@@ -151,6 +152,12 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   const vitals = clientVitalsSurface(reporting?.vitals);
   const routes: readonly Route[] = [
     ...devDashboardRoutes(input.dashboard),
+    // `x db migrate` beside this process: applied here, by the one holder of the embedded database.
+    ...devMigrateRoutes({
+      root: input.root,
+      env: input.env,
+      devUrl: () => input.dashboard.status().url,
+    }),
     // The same API table the container serves: a read that answers here and 404s in production
     // is exactly the drift one composition exists to prevent.
     ...apiRoutes(),

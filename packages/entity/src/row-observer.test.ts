@@ -147,6 +147,31 @@ describe('every write verb reports what it committed', () => {
     );
     expect(seen.map((change) => change.op)).toEqual(['insert', 'update', 'insert']);
   });
+
+  // The input names no id — the key is the slug — so a lookup by the input's id found nothing and
+  // the second write, an UPDATE of the stored row, was reported as a fresh insert.
+  test('an upsert that matches on a natural key reports update with its before row', async () => {
+    const plans = entity('observed_plans', {
+      columns: { id: uuid().primaryKey(), slug: text({ max: 20 }).unique(), label: text() },
+    });
+    const seen: EntityRowEvent[] = [];
+    subscribe('entity.row', (event) => void seen.push(event.payload));
+    const db = database({ plans }, { driver: memoryDriver() });
+    await db.plans.upsertAll([{ slug: 'team', label: 'first' }], { onConflict: ['slug'] });
+    await db.plans.upsertAll(
+      [
+        { slug: 'team', label: 'second' },
+        { slug: 'solo', label: 'new' },
+      ],
+      { onConflict: ['slug'] },
+    );
+    expect(seen.map((change) => [change.op, change.before?.['label'] ?? null])).toEqual([
+      ['insert', null],
+      ['update', 'first'],
+      ['insert', null],
+    ]);
+    expect(seen[1]?.before?.['id']).toBe(seen[0]?.after?.['id']);
+  });
 });
 
 describe('a filtered write is reported as bulk, never as silence', () => {

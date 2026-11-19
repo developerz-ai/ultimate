@@ -6,7 +6,7 @@ import { installedBuildId } from './build-id';
 import { type Clock, systemClock } from './clock';
 import type { ReadinessMode } from './config-health';
 import { assertReadinessMode } from './config-health';
-import { DRAIN_DEADLINE_DEFAULT_MS } from './drain-deadline';
+import { DRAIN_DEADLINE_DEFAULT_MS, laterHooksReserveMs as reserveOf } from './drain-deadline';
 import { UltimateError } from './errors';
 import { finiteCount } from './finite-option';
 import { settleWithin } from './lifecycle-deadline';
@@ -285,6 +285,12 @@ function remainingBudget(reason: ShutdownReason): number {
   return Math.max(0, reason.deadlineAt - systemClock.monotonic());
 }
 
+/** The slice of the budget kept for `inflight` and `close` hooks: a fifth, at most 2s; none without one. */
+function laterHooksReserveMs(): number {
+  if (!registrations.some((entry) => entry.phase !== 'accept')) return 0;
+  return reserveOf(deadlineMs);
+}
+
 async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<void> {
   const hooks = registrations.filter((entry) => entry.phase === phase);
   // Resources are released in reverse of acquisition, and only `close` releases any: an exporter
@@ -330,18 +336,27 @@ async function runDrain(signal: string): Promise<void> {
     const grace = readinessGraceMs();
     report('info', 'draining', { signal, deadlineMs, readinessGraceMs: grace, inflight });
     if (grace > 0) await Bun.sleep(grace);
-    const reason: ShutdownReason = { signal, deadlineAt: systemClock.monotonic() + deadlineMs };
+    // A stuck request must not starve the hooks behind it to 0 ms: the OTLP flush that carries
+    // this very incident and the pool close get a slice the in-flight wait never spends. Decided
+    // BEFORE the `accept` phase and handed to it as `inflightUntil`: a role cutting its own work
+    // short (the jobs worker) must finish before this wait ends, not race it to the same instant.
+    const reserve = laterHooksReserveMs();
+    const deadlineAt = systemClock.monotonic() + deadlineMs;
+    const reason: ShutdownReason = { signal, deadlineAt, inflightUntil: deadlineAt - reserve };
     await runPhase('accept', reason);
 
     // Real monotonic, like `deadlineAt` itself: `waitForIdle` sleeps on a real `setTimeout`, and
     // a budget read off an injected clock is a number that timer will never honour.
-    const remaining = Math.max(0, reason.deadlineAt - systemClock.monotonic());
+    const remaining = Math.max(0, deadlineAt - reserve - systemClock.monotonic());
     const idle = await waitForIdle(remaining);
     if (!idle) {
       abandoned = true;
       report('warn', 'X_SHUTDOWN_TIMEOUT', {
         code: 'X_SHUTDOWN_TIMEOUT',
-        cause: `${inflight} in-flight operations still running after ${deadlineMs}ms`,
+        cause:
+          reserve === 0
+            ? `${inflight} in-flight operations still running after ${deadlineMs}ms`
+            : `${inflight} in-flight operations still running ${deadlineMs - reserve}ms into the ${deadlineMs}ms drain deadline (the last ${reserve}ms are kept for the inflight and close hooks)`,
         fix: 'drain: { deadlineMs: 600_000 }   // in app.config.ts: a budget past the slowest handler, here a 10-minute one (configureLifecycle({ deadlineMs: 600_000 }) outside a framework boot) — and give the platform kill timer at least as many seconds, or shorten the handler',
       });
     }

@@ -9,7 +9,7 @@ import { failed, ok } from './command';
 import { MissingPositionalError } from './errors';
 import { mergeCatalogText } from './merge-driver-catalog';
 import { driverConfig, gitPrefix } from './merge-driver-config';
-import { resolveAdditions } from './merge-driver-lines';
+import { conflictsLeft, resolveAdditions } from './merge-driver-lines';
 import { UNMERGED_FIX } from './merge-state';
 import type { CommandResult, Finding } from './output';
 
@@ -75,9 +75,12 @@ async function run(ctx: CommandContext): Promise<CommandResult> {
       findings: [conflictFinding(path, `git merge-file refused ${path}: ${merge.stderr.trim()}`)],
     });
   }
-  const { text: result, conflicts } = path.endsWith('.json')
+  const resolved = path.endsWith('.json')
     ? { text: merge.stdout, conflicts: merge.code }
     : resolveAdditions(merge.stdout);
+  const result = resolved.text;
+  // Never exit 0 over a marker: git then records a clean merge of a file that still holds one.
+  const conflicts = conflictsLeft(result, resolved.conflicts, merge.code);
   await Bun.write(ours, result);
   if (conflicts === 0) {
     return ok(NAME, `${path}: merged both sides' additions`, { data: { path, conflicts } });

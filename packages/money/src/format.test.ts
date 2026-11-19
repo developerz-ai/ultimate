@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, MAX_CACHED_FORMATTERS, type UltimateError } from '@ultimat3/core';
 import { currencySymbol, formatMoney, formatMoneyDecimal, formatMoneyParts } from './format';
-import { fromDecimal, fromMinor } from './money';
+import { fromDecimal, fromMinor, toDecimalString } from './money';
 
 /** Intl inserts narrow no-break spaces; compare on the digits, not the whitespace. */
 const normalize = (value: string) => value.replace(/[  ]/g, ' ');
@@ -323,5 +323,28 @@ describe('fractionDigits is screened before Intl sees it', () => {
   test('every count Intl accepts still formats', () => {
     expect(formatMoney(fromMinor(1299, 'USD'), 'en-US', { fractionDigits: 0 })).toBe('$13');
     expect(formatMoney(fromMinor(1299, 'USD'), 'en-US', { fractionDigits: 4 })).toBe('$12.9900');
+  });
+});
+
+describe('a hand-built Money with a non-integer minor is refused, never rendered', () => {
+  const codeOf = (run: () => unknown): unknown => {
+    try {
+      run();
+    } catch (error) {
+      return isUltimateError(error) ? error.code : error;
+    }
+    return undefined;
+  };
+
+  test('formatMoney, its parts, the decimal form and toDecimalString answer X_MONEY_NOT_INTEGER', () => {
+    // Was `$NaN` for NaN and `12..5` out of `toDecimalString` for 12.5: a wrong amount on a page.
+    const half = { minor: 12.5, currency: 'USD' } as const;
+    const nan = { minor: Number.NaN, currency: 'USD' } as const;
+    for (const amount of [half, nan]) {
+      expect(codeOf(() => formatMoney(amount, 'en-US'))).toBe('X_MONEY_NOT_INTEGER');
+      expect(codeOf(() => formatMoneyParts(amount, 'en-US'))).toBe('X_MONEY_NOT_INTEGER');
+      expect(codeOf(() => formatMoneyDecimal(amount, 'en-US'))).toBe('X_MONEY_NOT_INTEGER');
+      expect(codeOf(() => toDecimalString(amount))).toBe('X_MONEY_NOT_INTEGER');
+    }
   });
 });

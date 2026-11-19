@@ -3,7 +3,12 @@
 // read out of it. No state lives here — `remote-client.ts` holds the era and the session.
 
 import { isJsonObject } from '@ultimat3/core';
+import { takeFrames } from '@ultimat3/core/internal/sse-frames';
 import { META_PROTOCOL_VERSION } from './wire';
+
+/** Each frame's data of a whole SSE body, parsed: core's frame reader, the last frame unterminated. */
+const sseData = (text: string): readonly unknown[] =>
+  takeFrames(`${text}\n\n`).frames.map((frame) => parseJson(frame.data));
 
 /** The answer body a streamable-HTTP server may send: a JSON-RPC response, or SSE carrying one. */
 export function readRpcAnswer(
@@ -12,13 +17,7 @@ export function readRpcAnswer(
   id: number,
 ): Record<string, unknown> | undefined {
   if (contentType?.toLowerCase().startsWith('text/event-stream') === true) {
-    for (const event of text.split(/\r?\n\r?\n/)) {
-      const data = event
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).replace(/^ /, ''))
-        .join('\n');
-      const parsed = parseJson(data);
+    for (const parsed of sseData(text)) {
       // A server may interleave its own requests and notifications; only OUR answer counts.
       if (isJsonObject(parsed) && parsed['id'] === id) return parsed;
     }
@@ -32,13 +31,7 @@ export function readRpcAnswer(
 export function readNotifications(contentType: string | null, text: string): readonly string[] {
   if (contentType?.toLowerCase().startsWith('text/event-stream') !== true) return [];
   const methods: string[] = [];
-  for (const event of text.split(/\r?\n\r?\n/)) {
-    const data = event
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith('data:'))
-      .map((line) => line.slice(5).replace(/^ /, ''))
-      .join('\n');
-    const parsed = parseJson(data);
+  for (const parsed of sseData(text)) {
     if (
       isJsonObject(parsed) &&
       parsed['id'] === undefined &&

@@ -3,7 +3,12 @@
 // Envoy's `x-forwarded-client-cert`, at the hop index `x-forwarded-for` is read at. Untrusted,
 // this header is worse than nothing — it authenticates — so an untrusted read answers `null`.
 
-import { FORWARDED_CLIENT_CERT, type ForwardedInput, forwardedElement } from './forwarded';
+import {
+  FORWARDED_CLIENT_CERT,
+  type ForwardedInput,
+  type ForwardedSplit,
+  forwardedElement,
+} from './forwarded';
 
 /**
  * The peer's certificate facts, declared structurally rather than imported: `@ultimat3/auth` owns
@@ -29,11 +34,74 @@ export interface PeerIdentity {
   readonly by: string | null;
 }
 
+/** True when the `"` at `at` is escaped: an odd run of backslashes sits directly before it. */
+const escapedQuote = (value: string, at: number): boolean => {
+  let run = at - 1;
+  while (run >= 0 && value[run] === '\\') run -= 1;
+  return (at - 1 - run) % 2 === 1;
+};
+
+/** Nothing but whitespace from `from` up to the pair's end: a `;`, or the element's own end. */
+const endsPair = (value: string, from: number, end: number): boolean => {
+  for (let at = from; at < end; at += 1) {
+    const char = value[at];
+    if (char === ';') return true;
+    if (char !== ' ' && char !== '\t') return false;
+  }
+  return true;
+};
+
 /**
- * Splits on a separator outside double quotes, keeping the quotes and escapes EXACTLY as written.
- * Raw on purpose: the element split and the pair split both run over this text, and an element
- * split that also stripped quotes left `pairsOf` splitting `O=Acme; Inc` a second time, unquoted.
- * Unescaping happens once, per value, in `unquote`.
+ * The last `hops` elements of the list — the ones the trusted proxies appended — and nothing
+ * else. Read from the RIGHT, because the client writes everything before them: a left-to-right
+ * reader carries the client's quote state into the proxy's text, so one odd `"` turned the
+ * proxy's own `\"` into a closing quote, swallowed the trusted comma and handed the hop index to
+ * the client's `URI=`. From the right, where an element starts depends only on what is in it.
+ *
+ * An element is isolated only when it is well formed, since anything else can be re-read by what
+ * precedes it: a quoted value is `="…"` whole — the opening quote directly after `=`, the closing
+ * one ending its pair — and a `"` anywhere else is no element. That, or a quote still open at the
+ * start of the header, answers `[]`: no element is trustworthy, so `peerIdentity` is `null`.
+ * Empty elements are not hops, as in every other forwarded list.
+ */
+const trustedSuffix =
+  (hops: number): ForwardedSplit =>
+  (value, separator) => {
+    const found: string[] = [];
+    let end = value.length;
+    let quoted = false;
+    const take = (from: number): void => {
+      const element = value.slice(from, end).trim();
+      if (element.length > 0) found.push(element);
+      end = from - 1;
+    };
+    for (let at = value.length - 1; at >= 0 && found.length < hops; at -= 1) {
+      const char = value[at];
+      if (char === '"') {
+        const escaped = escapedQuote(value, at);
+        if (quoted) {
+          if (escaped) continue;
+          if (value[at - 1] !== '=') return [];
+          quoted = false;
+        } else {
+          if (escaped || !endsPair(value, at + 1, end)) return [];
+          quoted = true;
+        }
+      } else if (char === separator && !quoted) {
+        take(at + 1);
+      }
+    }
+    if (quoted) return [];
+    if (found.length < hops) take(0);
+    return found.reverse();
+  };
+
+/**
+ * Splits ONE isolated element on a separator outside double quotes, keeping the quotes and escapes
+ * EXACTLY as written. Raw on purpose: an element split that also stripped quotes left `pairsOf`
+ * splitting `O=Acme; Inc` a second time, unquoted. Unescaping happens once, per value, in
+ * `unquote`. Left to right is safe here and only here: every character is the proxy's, and
+ * `trustedSuffix` has already refused a quote this reading would pair differently.
  */
 const splitRaw = (value: string, separator: string): readonly string[] => {
   const out: string[] = [];
@@ -43,7 +111,7 @@ const splitRaw = (value: string, separator: string): readonly string[] => {
   for (const char of value) {
     if (escaped) {
       escaped = false;
-    } else if (char === '\\') {
+    } else if (char === '\\' && quoted) {
       escaped = true;
     } else if (char === '"') {
       quoted = !quoted;
@@ -54,6 +122,7 @@ const splitRaw = (value: string, separator: string): readonly string[] => {
     }
     current += char;
   }
+  if (quoted) return [];
   out.push(current.trim());
   return out.filter((entry) => entry.length > 0);
 };
@@ -94,7 +163,7 @@ export const peerIdentity = (input: ForwardedInput): PeerIdentity | null => {
   const element = forwardedElement(
     input.headers.get(FORWARDED_CLIENT_CERT),
     input.config.trustedProxyHops,
-    splitRaw,
+    trustedSuffix(input.config.trustedProxyHops),
   );
   if (element === undefined) return null;
   const pairs = pairsOf(element);

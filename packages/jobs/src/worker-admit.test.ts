@@ -3,8 +3,9 @@
 // lease lapsed, an attempt spent on a body that never started, and on the final attempt the claim
 // dead-lettered it. What is proven: it goes back with the jobs behind it, uncounted.
 
-import { describe, expect, test } from 'bun:test';
-import { ctxOf } from '@ultimat3/core';
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { ctxOf, frozenClock, logger } from '@ultimat3/core';
+import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { concurrencyLimiter } from './limits';
@@ -49,6 +50,10 @@ async function claimedPair() {
   return { driver, claimed, rows };
 }
 
+afterEach(() => {
+  mock.restore();
+});
+
 const slots = (grant: SlotGrant): FleetSlots => ({
   acquire: () => Promise.resolve(grant),
   startRenewal: () => () => undefined,
@@ -62,7 +67,7 @@ async function admitRejects(
   if (job === undefined) return expect.unreachable('nothing was claimed');
   let thrown: unknown;
   try {
-    await admit(job, 'default', () => behind);
+    await admit(job, 'default', () => behind, nowMs());
   } catch (error) {
     thrown = error;
   }
@@ -82,6 +87,7 @@ describe('a shed whose nack fails hands the job back with the rest', () => {
       fleetSlots: slots({ outcome: 'granted' }),
       workerId: 'w1',
       pollIntervalMs: 25,
+      visibilityTimeoutMs: 30_000,
       context: () => ctxOf(),
     });
 
@@ -101,6 +107,7 @@ describe('a shed whose nack fails hands the job back with the rest', () => {
       fleetSlots: slots({ outcome: 'wait', limit: 1, key: undefined }),
       workerId: 'w1',
       pollIntervalMs: 25,
+      visibilityTimeoutMs: 30_000,
       context: () => ctxOf(),
     });
 
@@ -110,5 +117,64 @@ describe('a shed whose nack fails hands the job back with the rest', () => {
       expect(row?.state).toBe('ready');
       expect(row?.attempt).toBe(0);
     }
+  });
+});
+
+describe('a run admitted after its claim window', () => {
+  test('is handed back as a shed: no lost lease, no settle failure, the slot given back', async () => {
+    const clock = frozenClock('2026-11-19T00:00:00.000Z');
+    const driver = memoryJobDriver({ clock });
+    await driver.enqueue({
+      name: 'late',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'late:1',
+      maxAttempts: 3,
+    });
+    const askedAt = clock.now().getTime();
+    const [job] = await driver.claim({
+      queues: ['default'],
+      limit: 1,
+      visibilityTimeoutMs: 30_000,
+      workerId: 'w1',
+    });
+    if (job === undefined) return expect.unreachable('nothing was claimed');
+    const released: string[] = [];
+    const admit = createAdmission({
+      driver,
+      limiter: concurrencyLimiter({}),
+      // The slot write of a slow store: the batch's tail is admitted past its whole window.
+      fleetSlots: {
+        acquire: () => {
+          clock.advance(30_000);
+          return Promise.resolve({ outcome: 'granted' });
+        },
+        startRenewal: () => () => undefined,
+        release: (jobId) => {
+          released.push(jobId);
+          return Promise.resolve();
+        },
+      },
+      workerId: 'w1',
+      pollIntervalMs: 25,
+      visibilityTimeoutMs: 30_000,
+      clock,
+      context: () => ctxOf(),
+    });
+    const debug = spyOn(logger, 'debug').mockImplementation(() => undefined);
+    const error = spyOn(logger, 'error').mockImplementation(() => undefined);
+    const admission = await admit(job, 'default', () => [], askedAt);
+
+    // Before: admitted as a run, its heartbeat reported `jobs.lease.lost` (counted: "may run
+    // twice") and the round logged `jobs.worker.settle-failed` for a body that never started.
+    expect(admission.kind).toBe('waiting');
+    expect(released).toEqual([job.id]);
+    expect(debug.mock.calls.filter(([message]) => message === 'jobs.worker.shed')).toEqual([
+      ['jobs.worker.shed', expect.objectContaining({ jobId: job.id, reason: 'admitted-late' })],
+    ]);
+    expect(error).not.toHaveBeenCalled();
+    const row = await driver.introspect?.job(job.id);
+    expect(row?.state).toBe('ready');
+    expect(row?.attempt).toBe(0);
   });
 });

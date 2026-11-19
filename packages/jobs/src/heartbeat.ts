@@ -25,6 +25,11 @@ export interface LeaseHeartbeatOptions {
   readonly intervalMs: number;
   readonly workerId: string;
   readonly clock?: Clock;
+  /**
+   * When the claim that bought this lease was ASKED, on `clock` — stamped before the request, so
+   * the window can only be read short. Absent, the window starts here, at the run.
+   */
+  readonly claimedAt?: number;
   /** What every renewal runs on (`renewal-timer.ts`). Default: a real, unrefed interval. */
   readonly schedule?: IntervalScheduler;
 }
@@ -61,13 +66,15 @@ export interface LeaseHeartbeat {
  *
  * The lease is measured on THIS process's clock, not on `claimed.visibleAt`: that timestamp comes
  * from the driver's clock, and comparing the two makes every lease decision a function of clock
- * skew. Measured from the moment renewal started, the window can only ever be read as shorter than
- * it really is — reporting late is safe, reporting early would cry loss over a live lease.
+ * skew. Measured from `claimedAt` (stamped before the claim was sent) the window can only be read
+ * shorter than it is. Measured from the run's start it was read LONGER by however long the row
+ * waited to be admitted — a body run on a lease the queue had already handed on. A run that starts
+ * an interval or more after its claim renews at once; one past the whole window is lost at once.
  */
 export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartbeat {
   const { claimed, visibilityTimeoutMs, workerId } = options;
   const now = (): number => nowMs(options.clock);
-  let renewedAt = now();
+  let renewedAt = options.claimedAt ?? now();
   let renewing = false;
   let lost = false;
   const gone = new AbortController();
@@ -228,6 +235,8 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
   };
 
   const timer = startRenewalTimer(options.intervalMs, renew, options.schedule);
+  // Admission took an interval or more: the timer's first tick would come too late to save it.
+  if (now() - renewedAt >= options.intervalMs) void renew();
 
   return {
     renew,

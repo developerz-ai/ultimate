@@ -1,10 +1,13 @@
 // Single responsibility: a memory transaction is ambient — a write inside it that names no `tx` is
 // undone when it rolls back, whichever door it came through — and a commit keeps every write.
 import { afterAll, describe, expect, test } from 'bun:test';
+import * as adapter from './adapter';
 import { text } from './columns';
 import { entity } from './entity';
-import { memoryJournal } from './memory-journal';
+import * as barrel from './index';
+import { memoryJournal } from './index';
 import { memoryRepo, memoryTransactor } from './memory-repo';
+import { memoryTxOpen } from './memory-tx-entry';
 import { clearRegistry } from './registry';
 import type { Tx } from './repo';
 
@@ -132,5 +135,43 @@ describe('a lock taken with no tx inside a memory transaction', () => {
     await chainB;
     expect(seen).toBe('before');
     expect(await ids(repo)).toEqual(['r:B']);
+  });
+});
+
+describe('memoryTxOpen, through its internal leaf entry', () => {
+  test('is on `/internal/memory-tx` alone: never the app barrel, never the driver kit', async () => {
+    expect(Object.keys(barrel)).not.toContain('memoryTxOpen');
+    expect(Object.keys(adapter)).not.toContain('memoryTxOpen');
+    const manifest: unknown = await Bun.file(new URL('../package.json', import.meta.url)).json();
+    expect(manifest).toMatchObject({
+      exports: { './internal/memory-tx': './src/memory-tx-entry.ts' },
+    });
+  });
+
+  test('is true while the root is open and false once it commits or rolls back', async () => {
+    let committed: Tx | undefined;
+    let nested: Tx | undefined;
+    await memoryTransactor().run(async (tx) => {
+      committed = tx;
+      expect(memoryTxOpen(tx)).toBe(true);
+      await memoryTransactor().run(async (inner) => {
+        nested = inner;
+        expect(memoryTxOpen(inner)).toBe(true);
+      });
+      // The savepoint released, but it answers to the root, which is still open.
+      expect(memoryTxOpen(nested as Tx)).toBe(true);
+    });
+    expect(memoryTxOpen(committed as Tx)).toBe(false);
+    expect(memoryTxOpen(nested as Tx)).toBe(false);
+    let undone: Tx | undefined;
+    await rolledBack(async () => {
+      undone = memoryJournal();
+    });
+    expect(undone).toBeDefined();
+    expect(memoryTxOpen(undone as Tx)).toBe(false);
+  });
+
+  test('a Tx the memory transactor never handed out is not a memory scope: open', () => {
+    expect(memoryTxOpen({ id: 'hand-written', onRollback: () => undefined })).toBe(true);
   });
 });

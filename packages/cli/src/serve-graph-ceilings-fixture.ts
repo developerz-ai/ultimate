@@ -342,8 +342,35 @@
  * `db/src/not-null-contract.ts` (a required column's NOT NULL contract step).
  * raised 987 → 989, measured 989 (2026-11-18, a queued write's binding): `core/src/client-scope-id.ts`
  * (the scope id auth renders and action judges, one key) and `action/src/replay-scope.ts` (the check).
+ * raised 989 → 995, measured 995 (2026-11-19, r9 sweep, metafile walk): `cli/src/runtime-database-ssl.ts`
+ * and the `cli/src/app-config-load.ts` it reads `database.ssl` through — the migrate step opens the
+ * pool too, and the switch was read by nothing; `entity/src/uuid-text.ts`, `entity/src/pg-sql-in.ts` and `entity/src/instant-range.ts` (a malformed
+ * uuid operand and a long `in` list answered alike on both drivers) and `jobs/src/retry-default.ts`
+ * (`jobs.maxAttempts`/`jobs.backoff` as the worker's default retry).
+ * raised 995 → 997, measured 997 (2026-11-19, r9 sweep 2, metafile walk): `db/src/column-drop.ts`
+ * (a column's drop and its two consents, split from `generate.ts` at its ceiling) and
+ * `http/src/fault-report.ts` (what a failed request owes its observers, a late fault included).
+ * raised 997 → 1011, measured 1011 (2026-11-19, r9 verification fixes, metafile walk against HEAD):
+ * `db/src/migrate-dev-fix.ts` (the embedded-dev `fix:` line and its environment probe, taken out of
+ * `migration-errors.ts`: a probe is not a refusal — a real SRP split, worth its one module);
+ * `cache/src/shared-scopes.ts` (the sender's shared-tier namespace on a bust broadcast);
+ * `http/src/wire-dates-cap.ts` (the `x-ultimate-dates` header cap); `cli/src/runtime-jobs.ts`
+ * (`startQueue` installs `jobs.maxAttempts`/`jobs.backoff`, so every enqueueing command stamps the
+ * worker's retry); and `entity/src/adapter.ts` with the nine driver-kit modules only it reaches
+ * (`define-driver`, `driver-{counters,delete,kit-types,repo-reads,repo-writes,scope,
+ * versioned-write,write-scope}.ts`) — `action/src/tx-scope.ts` now reads `memoryTxOpen` off
+ * `@ultimat3/entity/adapter`, which evaluates the whole subpath barrel.
+ * lowered 1011 → 1003, measured 1003 (2026-11-19, r9 final integration, metafile walk against
+ * origin/main's 989): `memoryTxOpen` moved to the one-export leaf `@ultimat3/entity/internal/
+ * memory-tx` (`entity/src/memory-tx-entry.ts`), so the driver kit left this graph (−10, +1), and
+ * `cache/src/tier-bounds.ts` (+1) is `tiers.ts` split at its 500-line ceiling (the three
+ * `assertFinite*` screens). The 14 modules on this graph since origin/main, every one named:
+ * `cache/src/{shared-scopes,tier-bounds}.ts`, `cli/src/{app-config-load,runtime-database-ssl,
+ * runtime-jobs}.ts`, `db/src/{column-drop,migrate-dev-fix}.ts`, `entity/src/{instant-range,
+ * memory-tx-entry,pg-sql-in,uuid-text}.ts`, `http/src/{fault-report,wire-dates-cap}.ts`,
+ * `jobs/src/retry-default.ts`.
  */
-export const MIGRATE_CEILING = 989;
+export const MIGRATE_CEILING = 1003;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

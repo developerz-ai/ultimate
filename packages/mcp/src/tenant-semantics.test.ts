@@ -12,7 +12,9 @@ import { scopedPlan } from '@ultimat3/entity';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
-import type { McpCaller } from './registry';
+import type { AnyMcpTool, McpCaller } from './registry';
+import { jsonResult } from './registry';
+import { mcpServer } from './server';
 import type { McpTenant } from './tenant';
 import type { JsonRpcResponse } from './wire';
 
@@ -168,5 +170,72 @@ describe('a resolve answering outside its type', () => {
     }).server;
     const answer = await inRequest(() => mcp.handle(call('orgName', { project: 'acme' }), person));
     expect(textOf(answer)).toContain('X_MCP_TENANT_UNRESOLVED');
+  });
+});
+
+describe('the meta dispatchers strip the tenant arg from params', () => {
+  // A connector's own schema, forwarded as it arrived: open to keys it does not declare.
+  const forwarded: unknown[] = [];
+  const connector = (name: string): AnyMcpTool => ({
+    name,
+    description: 'Forward to the connector.',
+    inputSchema: { type: 'object', properties: { x: { type: 'string' } } },
+    effect: 'write',
+    handle: async (args, caller) => {
+      forwarded.push({ as: caller.actor.orgId, args });
+      return jsonResult({ ok: true });
+    },
+  });
+  const smuggled = { x: '1', project: 'gamma' };
+  const expected = [{ as: 'acme', args: { x: '1' } }];
+
+  test('manage_resource: the tool acting in acme never receives project: gamma', async () => {
+    forwarded.length = 0;
+    const mcp = mcpServer({
+      tenant,
+      surface: 'meta',
+      groups: { crm: { description: 'The CRM', tools: ['push'] } },
+      tools: [connector('push')],
+    });
+    const answer = await inRequest(() =>
+      mcp.handle(
+        call('manage_resource', {
+          project: 'acme',
+          resource: 'crm',
+          action: 'push',
+          params: smuggled,
+        }),
+        person,
+      ),
+    );
+    expect(textOf(answer)).toBe('{"ok":true}');
+    expect(forwarded).toEqual(expected);
+  });
+
+  test('write_resource, and a tool from the per-request catalog, strip it too', async () => {
+    forwarded.length = 0;
+    const mcp = mcpServer({
+      tenant,
+      surface: 'meta-split',
+      groups: { crm: { description: 'The CRM', tools: ['push'] } },
+      tools: [connector('push')],
+      catalog: async () => ({
+        tools: [connector('sync')],
+        groups: { erp: { description: 'The ERP', tools: ['sync'] } },
+      }),
+    });
+    for (const [resource, action] of [
+      ['crm', 'push'],
+      ['erp', 'sync'],
+    ]) {
+      const answer = await inRequest(() =>
+        mcp.handle(
+          call('write_resource', { project: 'acme', resource, action, params: smuggled }),
+          person,
+        ),
+      );
+      expect(textOf(answer)).toBe('{"ok":true}');
+    }
+    expect(forwarded).toEqual([...expected, ...expected]);
   });
 });

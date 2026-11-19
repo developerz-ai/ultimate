@@ -6,6 +6,7 @@ import { catalogJson } from './catalog-json';
 import { catalogPath } from './locales';
 import type { GeneratedFile } from './naming';
 import { confirmSessionTest, createSessionTest } from './sign-in-action-tests';
+import { challengeSource, challengeTest } from './sign-in-challenge';
 import {
   SIGN_IN_CATALOG,
   type SignInForm,
@@ -14,66 +15,21 @@ import {
   signInPageSource,
   signInPageTest,
 } from './sign-in-pages';
-import { AUTH_DIR, SIGN_IN_PATH, sharedSignInFiles } from './sign-in-shared';
+import { AUTH_DIR, sharedSignInFiles } from './sign-in-shared';
 
 /** The master key seals the second-factor challenge between the two legs. */
 export const PASSWORD_SIGN_IN_ENV: readonly string[] = ['ULTIMATE_SECRETS_KEY'];
-
-const challengeSource =
-  (): string => `// The second-factor challenge between the two legs: a sealed, five-minute credential \`login()\`
-// hands back inside \`X_MFA_REQUIRED\`, carried in an HttpOnly cookie rather than a URL a log keeps.
-import { MFA_CHALLENGE_TTL_MS } from '@ultimat3/auth';
-import { isUltimateError } from '@ultimat3/core';
-import { deleteCookie, setCookie, useRequestCookie } from '@ultimat3/http';
-
-export const MFA_CHALLENGE_COOKIE = 'x_mfa_challenge';
-export const SECOND_FACTOR_PATH = '${SIGN_IN_PATH}/second-factor';
-
-/** The sealed challenge an \`X_MFA_REQUIRED\` carries, or \`null\` for any other throw. */
-export const challengeOf = (error: unknown): string | null => {
-  if (!isUltimateError(error) || error.code !== 'X_MFA_REQUIRED') return null;
-  const challenge = error.meta?.['challenge'];
-  return typeof challenge === 'string' && challenge !== '' ? challenge : null;
-};
-
-export const holdChallenge = (challenge: string): void =>
-  setCookie(MFA_CHALLENGE_COOKIE, challenge, { maxAge: Math.floor(MFA_CHALLENGE_TTL_MS / 1000) });
-
-export const heldChallenge = (): string | null => {
-  const value = useRequestCookie(MFA_CHALLENGE_COOKIE);
-  return value === null || value === '' ? null : value;
-};
-
-export const dropChallenge = (): void => deleteCookie(MFA_CHALLENGE_COOKIE);
-`;
-
-const challengeTest =
-  (): string => `// Only an X_MFA_REQUIRED carrying a challenge is a second leg; every other throw is not.
-import { UltimateError } from '@ultimat3/core';
-import { expect, unitTest } from '@ultimat3/testing';
-import { challengeOf } from './sign-in-challenge';
-
-const coded = (code: string, meta?: Record<string, unknown>) =>
-  new UltimateError({ code, cause: 'a test throw', fix: 'none', ...(meta ? { meta } : {}) });
-
-unitTest('a sealed challenge is read off X_MFA_REQUIRED, and nothing else is one', () => {
-  expect(challengeOf(coded('X_MFA_REQUIRED', { challenge: 'sealed' }))).toBe('sealed');
-  expect(challengeOf(coded('X_MFA_REQUIRED'))).toBeNull();
-  expect(challengeOf(coded('X_UNAUTHENTICATED', { challenge: 'sealed' }))).toBeNull();
-  expect(challengeOf('X_MFA_REQUIRED')).toBeNull();
-});
-`;
 
 const createSessionSource =
   (): string => `// Sign in with an address and a password. \`login()\` is the whole check — the hash, the lockout and
 // one indistinguishable \`X_UNAUTHENTICATED\` for every way a credential is wrong. A second factor
 // still owed stops here with the sealed challenge held for the next page.
 import { action, t } from '@ultimat3/action';
-import { login } from '@ultimat3/auth';
+import { login, mfaChallengeOf } from '@ultimat3/auth';
 import { useRequestContext } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { appAuth } from '../auth';
-import { challengeOf, holdChallenge, SECOND_FACTOR_PATH } from '../sign-in-challenge';
+import { holdChallenge, SECOND_FACTOR_PATH } from '../sign-in-challenge';
 import { NEXT_PARAM, nextPath } from '../sign-in-flow';
 
 export const createSession = action({
@@ -99,7 +55,7 @@ export const createSession = action({
       request.headers.append('set-cookie', signedIn.cookie);
       return { ok: true, next: nextPath(input[NEXT_PARAM]), secondFactor: false };
     } catch (error) {
-      const challenge = challengeOf(error);
+      const challenge = mfaChallengeOf(error);
       if (challenge === null) throw error;
       holdChallenge(challenge);
       // The way on survives the second leg: its form posts \`next\` back to \`confirmSession\`.
@@ -114,7 +70,8 @@ export const createSession = action({
 });
 `;
 
-const confirmSessionSource =
+/** Both shapes' second leg: it reads the challenge through `../sign-in-challenge`, whoever held it. */
+export const confirmSessionSource =
   (): string => `// The second leg: the six digits (or one recovery code) against the challenge the first leg held.
 // \`completeMfa()\` meters the guess against the same lockout a password guess spends.
 import { action, t } from '@ultimat3/action';
@@ -168,19 +125,24 @@ const PASSWORD_FORM: SignInForm = {
       </form>`,
 };
 
-const CATALOG: Readonly<Record<string, string>> = {
-  ...SIGN_IN_CATALOG,
-  'app.auth.signIn.email': 'Email',
-  'app.auth.signIn.password': 'Password',
-  'app.auth.signIn.submit': 'Sign in',
+/** The second-factor page's copy, for whichever shape reaches it. */
+export const SECOND_FACTOR_CATALOG: Readonly<Record<string, string>> = {
   'app.auth.secondFactor.title': 'Second factor',
   'app.auth.secondFactor.description': 'Enter the code from your authenticator app.',
   'app.auth.secondFactor.code': 'Code',
   'app.auth.secondFactor.submit': 'Continue',
 };
 
+const CATALOG: Readonly<Record<string, string>> = {
+  ...SIGN_IN_CATALOG,
+  'app.auth.signIn.email': 'Email',
+  'app.auth.signIn.password': 'Password',
+  'app.auth.signIn.submit': 'Sign in',
+  ...SECOND_FACTOR_CATALOG,
+};
+
 /** The test's expectation that the page's form posts at `action`'s derived route. */
-const POSTS_AT = (action: string): string => `\`action="\${derivePath('${action}').path}"\``;
+export const POSTS_AT = (action: string): string => `\`action="\${derivePath('${action}').path}"\``;
 
 export function passwordSignInFiles(options: SignInTemplateOptions): readonly GeneratedFile[] {
   const module = options.catalogModule;
@@ -189,7 +151,7 @@ export function passwordSignInFiles(options: SignInTemplateOptions): readonly Ge
       PASSWORD_SIGN_IN_ENV,
       'The master key seals the second-factor challenge between the two legs.',
     ),
-    { path: `${AUTH_DIR}/sign-in-challenge.ts`, contents: challengeSource() },
+    { path: `${AUTH_DIR}/sign-in-challenge.ts`, contents: challengeSource('password') },
     { path: `${AUTH_DIR}/sign-in-challenge.test.ts`, contents: challengeTest() },
     { path: `${AUTH_DIR}/actions/create-session.ts`, contents: createSessionSource() },
     {

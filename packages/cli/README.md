@@ -25,7 +25,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x exercise [<name>] [--seed n\|random] [--shard i/n]` | every action, query, job and route `load` run once on generated rows, no test written | a scratch database; `.x/exercise.json`; an `unreached` primitive is `X_CONTRACT_EXERCISE_UNREACHED` with the override to paste into `apps/web/exercise.ts` — the gate's `exercise` step. `x.verify.json` `exercise: { unprovenMax, statementsMax }` turns unproven proofs and over-ceiling calls red; absent, warning lines. Route loads land in `routes` beside `records`, their loops and seq scans as warning lines; a load's own typed-client reads are answered in process, and `defineExercise(…, { routes })` gives a page its params, query, actor or `empty` reason. A sent push is a `push` effect. `--shard i/n` runs one of n disjoint slices into `.x/exercise.<i>-of-<n>.json` |
 | `x drill [<name>] [--list] [--budget-ms n]` | the app's roles as real processes on real services, each fault played through a proxy or a signal, judged on framework contracts only | a scratch database per drill; load = anonymous site pages plus every action an anonymous POST reaches (`data.skippedWrites` names the rest and why); `X_DRILL_FAILED` per property that did not hold, `X_DRILL_SERVICE_MISSING` before anything starts. Not a gate step — CI's `fault-drills` job runs three on `examples/dummy` |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
-| `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. The schema browser is `/_x`'s db panel (`x dev`); `studio` left the registry ([Known gaps](../../wiki/Known-Gaps.md#open-by-decision)) |
+| `x db gen\|migrate\|rollback\|reset\|branch\|backfill` | everything DB | `rollback [--steps n]` (default 1) runs the `-- down` half of the most recently applied migration(s) and leaves the files on disk; `gen` refuses an applied migration edited since (`X_MIGRATION_CONFLICT`) before it writes — checked against the embedded ledger only (asked of a live `x dev` when one holds it): an external `DATABASE_URL` is never dialled, so there `x db migrate`'s own audit is the refusal, and an embedded ledger it cannot read is a warning line naming why, never a refusal; `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. The schema browser is `/_x`'s db panel (`x dev`); `studio` left the registry ([Known gaps](../../wiki/Known-Gaps.md#open-by-decision)) |
 | `x mcp serve` | `@ultimat3/mcp`'s 19 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
 | `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the gate; an `AGENTS.md` byte-identical to `CLAUDE.md` becomes a symlink to it, a different one is reported in `data.agentsMd` and left | the `--json` report names the wiki section, the guards that differ and what the gate still says ([fields](../../wiki/CLI-Reference.md#x-upgrade)); `bunx @ultimat3/cli@latest upgrade` in an app that predates it; pins with no `app.config.ts` still hop, and `data.proof` says what checked them |
 | `x doctor` | environment, ports, drift, PWA prerequisites, `APP_URL` | every finding carries a fix command; probes the port `x dev` binds ([which one](../../wiki/CLI-Reference.md#x-doctor)); the framework's deploy secrets only where the machine names `staging`/`production` |
@@ -34,14 +34,15 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
 | `x actions` / `x queries` / `x entities` | the declaration registries | `list` and `show <name>`, straight off the registries |
 | `x tasks list\|show` | cron tasks | timezone and next run, off `registeredTasks()` |
+| `x tasks run <name>` | fire a task now | its jobs onto the app's queue (`TaskHandle.enqueue()`); under `ULTIMATE_ENV=production` only with `--production` or `ULTIMATE_TASK_RUN=<name>`, else `X_TASK_RUN_PRODUCTION` |
 | `x jobs list\|show\|retry\|cancel\|delete\|promote\|pause\|resume` | the queue | depth, dead letters, step traces, `retry --from-step`, `cancel --reason`; `list --json` pages as `rows`/`nextCursor`/`hasMore`; `drain` is planned (`X_NOT_IMPLEMENTED`) |
 | `x test [type]` | one of the six test types, or all | same type rule as the gate; `--filter`, `--sample N` |
-| `x env check\|example\|init` | the typed environment `envSchema` declares; `init --production` writes `.env.production` for a compose deploy, secrets generated, never printed | and the `.env.example` rendered from it, plus the framework's deploy-required secrets (`ULTIMATE_CURSOR_SECRET`, `STORAGE_SIGNING_SECRET` unless `S3_ENDPOINT` is set), which `check` asks for wherever the boot refuses them — outside `development`/`test`, or with no environment named |
+| `x env check\|example\|init` | the typed environment `envSchema` declares; `init --production` writes `.env.production` for a compose deploy, secrets generated, never printed | and the `.env.example` rendered from it, plus the framework's deploy-required secrets (`ULTIMATE_CURSOR_SECRET`, `STORAGE_SIGNING_SECRET` unless `S3_ENDPOINT` is set), which `check` asks for wherever the boot refuses them — outside `development`/`test`. With no `ULTIMATE_ENV`/`NODE_ENV` named, a developer's shell is checked as `development` (as `x dev` runs there) and `CI` as production (the boot fails closed); a deploy's answer is `ULTIMATE_ENV=production x env check` |
 | `x auth seal-mfa` | one-shot auth maintenance | seals every `x_users.mfa_secret` still in the clear; idempotent, `{ sealed, alreadySealed, skipped }` |
 | `x secrets show\|init\|edit\|set\|rotate` | the committed encrypted secrets | decrypted into the `envSchema` variables of the same names |
 | `x policy list\|explain <subject>` | which clause decided a permission, and why | five packages print `x policy explain` as a denial's `fix:` |
 | `x i18n check\|add\|sync` | catalogs: gaps, a new locale, key sync | all three of i18n's own error fixes name it |
-| `x errors explain <CODE>` / `list` | the error table, programmatically | refuses an unregistered code instead of inventing one |
+| `x errors explain <CODE>` / `list` | the error table, programmatically | refuses an unregistered code instead of inventing one. An app's own `defineError()` code answers inside the app from the registry alone: title, HTTP status (`null`: off-socket) and the declaring `file:line` — no `cause`/`fix`, which only a throw has (`As of 2026-11-19`) |
 | `x repro <id> [--write] [--verify]` / `--list` / `--from` | a dead job or a captured 5xx as a red test in `repro/` | `--verify` answers `{ reproduced, code, fingerprint }`; a mismatch is `X_REPRO_NOT_REPRODUCED`, never a crash |
 | `x repro <id> --bundle` | the failure as one redacted `repro/bundle-<id>.json` for an issue | secrets masked, env values / hostnames / paths replaced; `bunx create-ultimate repro <file>` opens it |
 | `x docs "<question>"` | the framework docs and the wiki, offline | answered from the installed packages and the `wiki/` this tarball ships (`prepack`: `scripts/pack-cli-wiki.ts`), never the network; `x docs Upgrading#<anchor>` prints one whole section |
@@ -203,6 +204,8 @@ its name like any guard.
 | `parse.ts` | flags, subcommands, `--json`, `--help`, suggestions |
 | `flag-number.ts` | the one integer-flag reader — `--port`, `--workers`, `--shard` |
 | `shell-quote.ts` | the one POSIX quoter for a value pasted into a `fix:` or a reproduce line |
+| `stop-run-start.ts` | the one `x stop --json && x <command> && x dev` fix line (`stopRunStartFix`); `stop-run-start.test.ts` refuses a hand-built one |
+| `db-dev-wire.ts` | the `/_x/db` paths and the `--steps` rule, import-free, read by the dev routes and the `x db` clients; `db-dev-wire.test.ts` refuses a restated literal |
 | `output.ts` | one data shape, two renderers, the 3-line error format |
 | `registry.ts` | the one command list |
 | `generate-kinds.ts` | which generators exist, and how a command line names one |
@@ -244,7 +247,7 @@ its name like any guard.
 | `workspace-checks.ts` | file-size ceiling and package contract files |
 | `drift.ts` `budgets.ts` | the checks `x verify` composes |
 | `budgets-freshness.ts` `verify-budgets-build.ts` | whether `budgets` may read the stats on disk, and the build it runs when not |
-| `cmd-stop.ts` | `x stop`: SIGTERM to the lock's pid, the wait, the Windows lock clear |
+| `cmd-stop.ts` | `x stop`: SIGTERM to the lock's pid, the wait, the Windows lock clear; a lock whose pid the kernel reused is cleared with nothing signalled |
 
 The CLI describes an app by **loading** it, never by parsing it: `action()`, `entity()`,
 `job()` and `defineRoute()` register themselves, and `x manifest`, `x routes` and `x verify`
@@ -284,6 +287,49 @@ generator (a second run is `X_GENERATE_CONFLICT`), then edits `app.config.ts`
 (`generate-sign-in-config.ts`) and, for OIDC, swaps `x new`'s authenticator only while it is
 byte-for-byte `x new`'s (`generate-sign-in.ts`). `generate-sign-in.contract.test.ts` compiles,
 lints and runs what both shapes leave; `e2e/sign-in.e2e.test.ts` signs in to a production boot.
+Both shapes ship the second leg, `As of 2026-11`: `--oidc` hands `oauthLogin` `mfaPath:
+'/auth/sign-in/second-factor'` and writes that page, `actions/confirm-session.ts` and a
+`sign-in-challenge.ts` that reads auth's `__Host-x_mfa` cookie through `readMfaChallenge`.
+One challenge cookie for both shapes, `As of 2026-11-19`: `--password` holds its challenge in the
+same cookie through auth's `mfaChallengeOf` / `mfaChallengeCookie` (`templates/sign-in-challenge.ts`
+writes both shapes' module); no generated file names a cookie. An app generated before keeps its own
+`x_mfa_challenge` code — that file is the app's, and nothing in the framework reads it.
+
+## Beside a running `x dev` (embedded database)
+
+PGlite takes one writer and no lock: a second process's writes are replaced by the holder's next
+one, silently. `As of 2026-11`:
+
+| Command | Beside a live `x dev` holding `.x/pgdata` |
+|---|---|
+| `x db migrate` | applied BY the dev server (`POST /_x/db/migrate`: loopback Host and peer, same-origin — the command sends `Sec-Fetch-Site: same-origin`, so an app's CSRF check lets it through); the report, drift and schema dump are the same. `x dev`'s own `x db gen "…" && x db migrate` fix works as printed. A holder that is still booting (its lock claimed inside the last 120 s, or a new child) is waited for, up to 120 s, on a refused connection only |
+| `x db migrate`, app with `database.rowSecurity` | refused: the dev session serves as `x_app` and cannot migrate as `x_migrator`. Fix: `x stop --json && x db migrate && x dev` (what `x dev` prints for that app) |
+| `x db rollback [--steps n]` | run BY the dev server (`POST /_x/db/rollback`, the same doors); with `database.rowSecurity` refused the same way, fix `x stop --json && x db rollback --steps n && x dev` |
+| `x db gen` | reads the ledger's checksums from the dev server (`POST /_x/db/ledger`) for its edited-migration check; one that does not answer is a printed line, never a refusal |
+| `x db seed`, `x db backfill --write`, `x jobs retry\|cancel\|delete\|promote\|resolve-step\|pause\|resume`, `x auth seal-mfa` | `X_DEV_ALREADY_RUNNING`; the fix stops the holder, runs the command and starts `x dev` again |
+| `x db reset\|status\|diagnostics\|recount` | `X_DEV_ALREADY_RUNNING`, as before |
+
+With an external `DATABASE_URL` none of this applies: Postgres takes any number of writers.
+
+`x dev` is not green while its database is behind the files (`As of 2026-11-19`): a migration on
+disk the ledger lacks is `X_APP_MIGRATIONS_UNAPPLIED` (fix `x db migrate`) on the banner and `/_x`,
+an applied one edited since is `X_MIGRATION_CONFLICT`. A migrate or rollback applied through the
+dev server ends in a generation, so the finding clears with no save. A schema finding appearing
+or clearing never restarts the dev server: the process that answered the 500 answers the 200.
+
+## `x db rollback`
+
+| | |
+|---|---|
+| What runs | `@ultimat3/db`'s `rollback()`: the migrate lock, one transaction per `down`, most recently **applied** first (not highest id). `--json`: `data` = `{ reverted, steps, files }` |
+| Afterwards | the files are still on disk, so each is pending: `x db migrate` re-applies it; delete the `.sql`, `.snapshot.json` and `.hash` to drop the change |
+| No `-- down` half | `X_MIGRATION_IRREVERSIBLE`, nothing reversed — a ledger row is never deleted over SQL that was not undone. An empty down UNDER the marker is a reversal that needs no statement, and is reversed |
+| A change `x db gen` wrote as two migrations (`<id>`, `<id>_concurrently`) | one step reverses the second half only, and the output says the first is still applied; `--steps 2` reverses both |
+| File gone | `X_MIGRATION_CONFLICT`; on the embedded dev database its fix is `x stop --json && x db reset` |
+| Outside `development`/`test` | refused `X_MIGRATION_ROLLBACK_DESTRUCTIVE` until `ROLLBACK_ALLOW_DESTRUCTIVE` names **every** migration it would reverse — the migrate role's own override, checked under the lock against the exact rows. An unreadable `ULTIMATE_ENV` counts as production |
+
+`x jobs pause|resume <queue>` refuses a queue the app does not serve (`X_CLI_BAD_FLAG`, the nearest
+name in the fix); `resume` of a queue that IS paused always passes, to clear a retired one.
 
 ## Errors
 

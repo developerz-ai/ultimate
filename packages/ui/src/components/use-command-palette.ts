@@ -2,6 +2,7 @@
 // `⌘K` (a row of the page's one hotkey table, so `?` lists it) and focus back to the opener on
 // close. The rules stay in `command-palette-view.ts`; this file only holds the state they act on.
 
+import { isComposingKey } from '../composing-key';
 import { debounce } from '../debounce';
 import { solid } from '../theme/solid-adapter';
 import { useHotkeys } from '../use-hotkeys';
@@ -137,6 +138,8 @@ export function useCommandPalette(options: UseCommandPaletteOptions): CommandPal
       ask(value);
     },
     onFilterKeyDown: (event) => {
+      // An IME is mid-word: its confirming Enter must not run the active command.
+      if (isComposingKey(event)) return;
       const action = keyAction(event.key);
       if (action === null) return;
       event.preventDefault();

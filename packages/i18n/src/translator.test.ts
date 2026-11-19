@@ -148,6 +148,33 @@ describe('catalogTranslator', () => {
   });
 });
 
+describe('has() answers for a select or ordinal family as t() renders it', () => {
+  // A guard (`t.has(key) ? t(key, vars) : fallback`, the mail render's preheader and footer) used
+  // to drop copy `t()` renders: a family stem authored only in plural forms read as absent.
+  test('has(key) is true for a select family defined only in plural forms', () => {
+    const t = catalogTranslator(
+      {
+        invite_select_female_one: 'She sent {count} invite',
+        invite_select_other_one: 'They sent {count} invite',
+        invite_select_other_other: 'They sent {count} invites',
+        place_ordinal_other_plural: '{ordinal}th of {count}',
+      },
+      'en',
+    );
+    expect(t.has('invite')).toBe(true);
+    expect(t('invite', { select: 'female', count: 1 })).toBe('She sent 1 invite');
+    expect(isMiss(t('invite', { count: 3 }))).toBe(false);
+    expect(t.has('place')).toBe(true);
+    expect(isMiss(t('place', { ordinal: 4, count: 2 }))).toBe(false);
+    expect(isMiss(t('place', { count: 2 }))).toBe(false);
+  });
+
+  test('a family with no _other stem is still absent: an unnamed value would miss', () => {
+    const t = catalogTranslator({ invite_select_female_one: 'She sent {count} invite' }, 'en');
+    expect(t.has('invite')).toBe(false);
+  });
+});
+
 /**
  * These assertions fail at `tsc`, not at runtime: every `@ts-expect-error` below is a key an
  * app must not be able to write. The `expect()` calls exist so the values are not dead code.

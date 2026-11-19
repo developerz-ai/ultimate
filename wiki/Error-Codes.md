@@ -39,7 +39,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/ai` | [Error-Codes-ai](Error-Codes-ai) | 36 |
 | `@ultimat3/auth` | [Error-Codes-auth](Error-Codes-auth) | 30 |
 | `@ultimat3/cache` | [Error-Codes-cache](Error-Codes-cache) | 8 |
-| `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 228 |
+| `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 229 |
 | `@ultimat3/core` | [Error-Codes-core](Error-Codes-core) | 76 |
 | `@ultimat3/db` | [Error-Codes-db](Error-Codes-db) | 42 |
 | `@ultimat3/entity` | [Error-Codes-entity](Error-Codes-entity) | 44 |
@@ -1260,6 +1260,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_SURFACE_BOUNDARY | [render](Error-Codes-render) |
 | X_SW_SCOPE_INVALID | [pwa](Error-Codes-pwa) |
 | X_SYNC_UNCONFIGURED | [realtime](Error-Codes-realtime) |
+| X_TASK_RUN_PRODUCTION | [cli](Error-Codes-cli) |
 | X_TELEMETRY_SAMPLER_ARG_INVALID | [core](Error-Codes-core) |
 | X_TEMPLATE_CODEMOD_MISSING | [scripts](Error-Codes-scripts) |
 | X_TENANCY_ACTOR_MISMATCH | [entity](Error-Codes-entity) |

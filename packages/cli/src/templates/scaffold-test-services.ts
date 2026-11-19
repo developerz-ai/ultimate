@@ -18,14 +18,19 @@ export const TEST_PORT_SPREAD = 500;
 
 type TestPorts = { readonly [K in keyof typeof TEST_PORTS]: number };
 
+/** The app's name, and the checkout's root when the scaffold knows it: what keys its own stack. */
+const stackKey = (app: NameSet, root: string | undefined): string =>
+  root === undefined ? app.kebab : `${app.kebab}\0${root}`;
+
 /**
  * This app's host ports, one place: the compose file publishes them and the env file names them.
  * One fixed set made two scaffolds on one machine share 55432, so the second app's live suites
- * dialled the first app's container; the app's name now picks its offset into each band.
+ * dialled the first app's container; the app's name — and its root, when the scaffold knows it, so
+ * two scaffolds of one name differ too — picks its offset into each band.
  */
-export const testPorts = (app: NameSet): TestPorts => {
-  // FNV-1a over the app's name: stable across machines and runs.
-  const offset = fnv1a(app.kebab) % TEST_PORT_SPREAD;
+export const testPorts = (app: NameSet, root?: string): TestPorts => {
+  // FNV-1a: stable across machines and runs.
+  const offset = fnv1a(stackKey(app, root)) % TEST_PORT_SPREAD;
   return {
     postgres: TEST_PORTS.postgres + offset,
     redis: TEST_PORTS.redis + offset,
@@ -34,9 +39,21 @@ export const testPorts = (app: NameSet): TestPorts => {
   };
 };
 
+/**
+ * The compose project, written into the file as its `name:` — so every reader (`x verify`,
+ * `x clean --services`, CI, a hand-typed `docker compose -f`) resolves the same one, and a name
+ * an app wrote itself is never second-guessed. `<app>-test` alone made every scaffold of one name
+ * on one machine one project; with the root, each scaffold's is its own (clones of it share it).
+ */
+export const testProjectName = (app: NameSet, root?: string): string =>
+  root === undefined
+    ? `${app.kebab}-test`
+    : `${app.kebab}-test-${fnv1a(root).toString(16).padStart(8, '0')}`;
+
 const composeTest = (
   app: NameSet,
-  ports: TestPorts = testPorts(app),
+  root: string | undefined,
+  ports: TestPorts = testPorts(app, root),
 ): string => `# The services the test suites run against — in RAM, and silent.
 #
 #   docker compose -f ${TEST_COMPOSE_PATH} up -d --wait
@@ -58,7 +75,7 @@ const composeTest = (
 #     watch one that will not start, run it attached: \`docker compose -f ${TEST_COMPOSE_PATH} up postgres\`.
 #
 # Every port binds 127.0.0.1: the credentials are in this file.
-name: ${app.kebab}-test
+name: ${testProjectName(app, root)}
 
 x-silent: &silent
   logging: { driver: none }
@@ -151,7 +168,8 @@ services:
 
 const testEnv = (
   app: NameSet,
-  ports: TestPorts = testPorts(app),
+  root: string | undefined,
+  ports: TestPorts = testPorts(app, root),
 ): string => `# Where the suites find the services ${TEST_COMPOSE_PATH} starts — the one place these URLs are
 # written. A laptop sources it (\`set -a; . ${TEST_ENV_PATH}; set +a\`); CI appends it to $GITHUB_ENV.
 # TEST_DATABASE_URL is what @ultimat3/testing clones one database per test worker from.
@@ -161,10 +179,14 @@ TEST_NATS_URL=nats://127.0.0.1:${ports.nats}
 TEST_S3_URL=http://${app.kebab}:${app.kebab}-test@127.0.0.1:${ports.s3}/${app.kebab}-test
 `;
 
-/** The test stack and its env file. */
-export function testServicesFiles(app: NameSet): readonly GeneratedFile[] {
+/**
+ * The test stack and its env file. `root`, the absolute directory `x new` writes into, makes the
+ * project name and ports this scaffold's own; without it the bytes are the name-only ones every
+ * earlier scaffold wrote, which the codemods compare against.
+ */
+export function testServicesFiles(app: NameSet, root?: string): readonly GeneratedFile[] {
   return [
-    { path: TEST_COMPOSE_PATH, contents: composeTest(app) },
-    { path: TEST_ENV_PATH, contents: testEnv(app) },
+    { path: TEST_COMPOSE_PATH, contents: composeTest(app, root) },
+    { path: TEST_ENV_PATH, contents: testEnv(app, root) },
   ];
 }

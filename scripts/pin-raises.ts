@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // A ratchet pin that goes UP needs its reason in the same diff — `budget-raises`' rule, applied to
-// every `scripts/lib/*-pins.ts` table and to the ratchets kept inside scripts (`PIN_FILES`). History
+// every `scripts/lib/*-pins.ts` table, to the ratchets kept inside scripts (`PIN_FILES`) and to the
+// byte ceilings pinned inside bundle and `*-bytes` tests (`lib/test-byte-ceilings.ts`). History
 // shows why: `secret-compare` went 53 → 63, `node-import-pins` 3 → 12 and `proto-index-pins` 1 → 9
 // with nothing on the row saying why, and a ratchet that only rises in silence is a list of
 // findings nobody is asked to read.
@@ -12,6 +13,8 @@
 // no base key already a site, its total not above the base's) is one debt under new names, stated
 // by a `why:` in its header the base's header did not carry. A checkout without `origin/main` is
 // refused (`X_PIN_BASE_MISSING`). The `--write-pin` placeholder (`lib/pin-edit.ts`) is no `why:`.
+// A test file's row is a `const …_MAX = n` or a literal `toBeLessThan(n)`, n ≥ 256; its `why:` sits
+// above the constant, or above or inside the test that holds the literal.
 //
 //   bun run scripts/pin-raises.ts [--json]
 
@@ -28,6 +31,7 @@ import { importPinSource, pinRows } from './lib/pin-rows';
 import type { ScriptPinTable } from './lib/pin-tables';
 import { PIN_GLOB, SCRIPT_PIN_TABLES, scriptTableRows, tableDeclaration } from './lib/pin-tables';
 import { repoRoot } from './lib/run';
+import { TEST_BYTE_PIN_GLOB, testBytePinTable } from './lib/test-byte-ceilings';
 
 const SCRIPT = 'pin-raises';
 
@@ -232,6 +236,12 @@ export async function readPinTables(root: string, base: string): Promise<PinTabl
         ...(then === undefined ? {} : { baseSource: then }),
         ...(spec.line === undefined ? {} : { line: spec.line }),
       });
+    }
+    // The byte ceilings pinned inside test files: read as text at both ends, never imported.
+    for (const path of [...new Bun.Glob(TEST_BYTE_PIN_GLOB).scanSync({ cwd: root })].sort()) {
+      const source = await Bun.file(`${root}/${path}`).text();
+      const table = testBytePinTable(path, source, await textAt(root, base, path));
+      if (table.now.size > 0) tables.push(table);
     }
   } finally {
     await rm(scratch, { recursive: true, force: true });

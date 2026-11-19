@@ -7,11 +7,10 @@ import type { MoneyValue, StandardSchemaV1 } from '@ultimat3/schema';
 import { isCurrencyCode, isMoneyScale, t } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import type { JobHandle } from './job';
-import { job } from './job';
+import { factoryJob } from './job';
 import type { LedgerBook, LedgerLine } from './ledger-book';
 import { LedgerEntryInvalidError, LedgerUnbalancedError } from './ledger-errors';
 import type { RetryPolicy } from './retry';
-import { DEFAULT_RETRY } from './retry';
 import type { JobTenant } from './tenant';
 
 /** One leg: an account the app names and a signed amount. Debit or credit is the sign's, not ours. */
@@ -125,13 +124,13 @@ export const ledgerLines = (posting: LedgerPosting): readonly LedgerLine[] =>
   }));
 
 export function ledger(definition: LedgerDefinition): JobHandle<LedgerPosting> {
-  return job<LedgerPosting>({
+  return factoryJob<LedgerPosting>({
     name: definition.name,
     input: postingSchema,
     tenant: definition.tenant,
     // One live run per posting; the book's `(postingKey, line)` holds it after the run is gone.
     idempotencyKey: (posting) => `${definition.name}:${posting.key}`,
-    retry: definition.retry ?? DEFAULT_RETRY,
+    retry: definition.retry,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     run: async ({ step, input }): Promise<LedgerReport> => {

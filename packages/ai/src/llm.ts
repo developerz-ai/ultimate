@@ -380,7 +380,7 @@ function limitsOf(budget: LlmBudget | undefined): BudgetLimits {
 /**
  * What the model answered, as text the Messages API will accept — or nothing.
  *
- * `result.text` is the EMPTY STRING whenever the answer came through the `respond` tool, which
+ * `result.text` is the EMPTY STRING (or, from some models, bare whitespace) whenever the answer came through the `respond` tool, which
  * is the dominant path: an empty text block is a 400 (`text content blocks must be non-empty`),
  * so the repair turn came back as `X_AI_PROVIDER_UNAVAILABLE` and the caller never saw the
  * `X_LLM_OUTPUT_INVALID` this loop exists to raise. The tool call's own arguments ARE the answer
@@ -389,7 +389,7 @@ function limitsOf(budget: LlmBudget | undefined): BudgetLimits {
  * replaying it as text avoids the `tool_result` the API would then demand of the next message.
  */
 function assistantEcho(result: GenerateResult): string | undefined {
-  if (result.text !== '') return result.text;
+  if (result.text.trim() !== '') return result.text;
   const call = result.toolCalls.find((c) => c.name === RESPOND) ?? result.toolCalls[0];
   if (call === undefined) return undefined;
   const replayed = JSON.stringify(call.input);

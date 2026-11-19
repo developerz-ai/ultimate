@@ -86,6 +86,7 @@ export { MAX_LATEST_GROUPS } from './latest-by';
 export { MAX_LOCK_KEYS } from './lock-key';
 export type { CountByOptions, Measure, MeasureFn, MeasureMap } from './measures';
 export { MAX_MEASURES } from './measures';
+// Whether a memory transaction has ended: `@ultimat3/action`'s settle scope asks it, never a probe.
 export { memoryJournal } from './memory-journal';
 // How Postgres compares two values of one column, decided by the column's declared KIND. Exported
 // because `@ultimat3/query`'s matcher and in-memory source ask the same question — and a second

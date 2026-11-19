@@ -29,14 +29,21 @@ const page = (): NavigationWindow | undefined =>
 /**
  * Go to `url` (resolved against the page) as a click on a link to it would: through the router on
  * this origin — its own rules and the server's gate decide swap, modal or full load — and as a
- * document load anywhere else, or when the page has no router.
+ * document load anywhere else, or when the page has no router. A fragment of the page on screen
+ * (`#top`, same path and query) is the browser's: it scrolls, nothing is fetched or swapped.
  */
 export function navigate(url: string, options: NavigateToOptions = {}): Promise<void> {
   const win = page();
   if (win === undefined) return Promise.resolve();
-  const to = new URL(url, win.location.href);
+  const from = new URL(win.location.href);
+  const to = new URL(url, from);
   const router = win.__xNavigation;
-  if (router === undefined || to.origin !== new URL(win.location.href).origin) {
+  // The link rule (`linkVerdict`'s `hashOnly`), asked here because the router's `navigate` is
+  // reached past it: a fragment of the page on screen is the browser's scroll, and a fetch plus a
+  // swap for it disposes every island on the page.
+  const fragmentOnly =
+    to.href.includes('#') && to.pathname === from.pathname && to.search === from.search;
+  if (router === undefined || to.origin !== from.origin || fragmentOnly) {
     if (options.replace === true) win.location.replace(to.href);
     else win.location.assign(to.href);
     return Promise.resolve();

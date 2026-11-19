@@ -13,6 +13,7 @@ import {
   integer,
   locale,
   money,
+  narrowRow,
   text,
   timestamp,
   tz,
@@ -75,6 +76,11 @@ const SITES: readonly (readonly [string, () => unknown])[] = [
   ['integer value', () => integer().$parse(1.5)],
   ['boolean value', () => boolean().$parse('yes')],
   ['timestamp value', () => timestamp().$parse('nope')],
+  // Refused where a row is WRITTEN (`instant-range.ts`), never where one is read.
+  [
+    'timestamp outside years 0001–9999',
+    () => narrowRow({ at: timestamp() }, { at: new Date(8.64e15) }),
+  ],
   ['enumerated value', () => enumerated(['draft', 'live']).$parse('gone')],
   ['enumerated empty', () => enumerated([])],
   ['url value', () => url().$parse('/settings')],

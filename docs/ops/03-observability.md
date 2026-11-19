@@ -184,6 +184,7 @@ loop starts with no streak.
 | a `LISTEN` session's re-dial | `db.listen.redial_failed` (`warn`) | `db.listen.redialed` |
 | the worker wake's subscribe | `jobs.wake.listen-failed` (`warn`) | `jobs.wake.listen-recovered` |
 | the worker wake's probe | `jobs.wake.probe-failed` (`warn`) | `jobs.wake.probe-recovered` |
+| the worker wake's delivery: a proven session re-proven every 10 s (`reproveEveryMs`) stops delivering — the proof not back within `verifyTimeoutMs` of its send (a pool that has not sent it yet is no verdict: the wake stays proven and the proof is re-sent once the pool answers) | `jobs.wake.lost` (`warn`, `missing` names the silent channels; the loops poll at 2 s) | `jobs.wake.live` |
 | publishing the cache busts a bus outage deferred | `cache.broadcast.deferred-failed` (`warn`) | `cache.broadcast.deferred-recovered` |
 
 The default reporter is a **no-op**, so an unconfigured app and every test pay nothing and page

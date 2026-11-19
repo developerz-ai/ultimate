@@ -5,7 +5,7 @@
  */
 
 import { renderCauseValue, UltimateError } from '@ultimat3/core';
-import { rankRecipes } from './recipe-search';
+import { MAX_QUERY_LENGTH, rankRecipes } from './recipe-search';
 import type { McpRecipe } from './recipes';
 import { recipeNameOf, recipeUri, recipeVisible, renderRecipe } from './recipes';
 import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
@@ -55,7 +55,12 @@ export function recipesTool(
       properties: {
         name: { type: 'string', description: 'A recipe name from docs({}).' },
         uri: { type: 'string', description: 'A docs://recipes/ URI, as an error links one.' },
-        q: { type: 'string', description: 'Words describing the task.' },
+        // A miss quotes `q` back and ranks every recipe against it: a megabyte of it is refused.
+        q: {
+          type: 'string',
+          maxLength: MAX_QUERY_LENGTH,
+          description: 'Words describing the task.',
+        },
       },
       additionalProperties: false,
     },

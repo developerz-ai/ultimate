@@ -146,6 +146,9 @@ export function mcpOAuthClient(options: McpOAuthClientOptions): McpOAuthClient {
     async begin(serverUrl) {
       const resource = urlOf(serverUrl);
       if (resource === null) throw refused(serverUrl, 'is not an absolute URL');
+      // Discovery decides where the person consents: over cleartext, whoever sits on the path
+      // answers it (RFC 8414 §2 wants https for the issuer; loopback as below).
+      if (!secureEndpoint(resource)) throw refused(serverUrl, 'is not an https: URL');
       const prm = await firstOf(serverUrl, wellKnown(resource, 'oauth-protected-resource'));
       // RFC 9728 §3.3: metadata naming another resource is not this server's — a document copied
       // from elsewhere would send the person's consent, and `resource`, to that server's issuer.
@@ -163,6 +166,9 @@ export function mcpOAuthClient(options: McpOAuthClientOptions): McpOAuthClient {
       const issuerUrl = urlOf(issuer);
       if (issuerUrl === null)
         throw refused(serverUrl, 'names an authorization server that is no URL');
+      if (!secureEndpoint(issuerUrl)) {
+        throw refused(serverUrl, 'names an authorization server that is not https:');
+      }
       const as = await firstOf(issuer, authServerCandidates(issuerUrl));
       // RFC 8414 §3.3: a document answering for another issuer is not this issuer's.
       if (as['issuer'] !== issuer) throw refused(issuer, 'published metadata for another issuer');
@@ -232,8 +238,8 @@ export function mcpOAuthClient(options: McpOAuthClientOptions): McpOAuthClient {
       );
     },
 
-    refresh: (handshake, refreshToken) =>
-      token(
+    async refresh(handshake, refreshToken) {
+      const tokens = await token(
         handshake.tokenEndpoint,
         new URLSearchParams({
           grant_type: 'refresh_token',
@@ -241,7 +247,11 @@ export function mcpOAuthClient(options: McpOAuthClientOptions): McpOAuthClient {
           client_id: options.clientId,
           resource: handshake.resource,
         }),
-      ),
+      );
+      // RFC 6749 §6: the server MAY issue a new refresh token; when it does not, the one sent is
+      // still the one to keep — answered here so an app storing the answer cannot lose it.
+      return { ...tokens, refreshToken: tokens.refreshToken ?? refreshToken };
+    },
   };
 }
 

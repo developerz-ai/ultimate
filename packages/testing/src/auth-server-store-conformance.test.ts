@@ -53,6 +53,39 @@ describe(testName('unit', 'a store that breaks the contract fails conformance'),
     await revoke.run(memoryAuthServerStore());
   });
 
+  // Two ways to break it: dynamic clients piling up forever, or a client still in use swept away
+  // mid-authorization (its pending code then names a client that no longer exists).
+  test('a purge that never removes a client, or removes one still named', async () => {
+    const purge = check('self-registered client past the idle window');
+    const keepsClients = (): AuthServerStore => ({
+      ...memoryAuthServerStore(),
+      purge: async () => 0,
+    });
+    // Sweeps every old self-registered client, named by a grant, code or device code or not.
+    const sweepsNamed = (): AuthServerStore => {
+      const inner = memoryAuthServerStore();
+      const created = new Map<string, Date>();
+      const gone = new Set<string>();
+      return {
+        ...inner,
+        putClient: async (client) => {
+          created.set(client.clientId, client.createdAt);
+          await inner.putClient(client);
+        },
+        getClient: async (id) => (gone.has(id) ? null : inner.getClient(id)),
+        purge: async (before, idle) => {
+          for (const [id, at] of created) {
+            if (id.startsWith('d_') && at.getTime() < idle.getTime()) gone.add(id);
+          }
+          return inner.purge(before, idle);
+        },
+      };
+    };
+    await expect(purge.run(keepsClients())).rejects.toThrow();
+    await expect(purge.run(sweepsNamed())).rejects.toThrow();
+    await purge.run(memoryAuthServerStore());
+  });
+
   test('every check has a name of its own', () => {
     const names = AUTH_SERVER_STORE_CHECKS.map((each) => each.name);
     expect(new Set(names).size).toBe(names.length);

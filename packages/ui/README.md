@@ -469,8 +469,16 @@ coarse pointer the platform's own `<input>` is all there is, and it is the value
   week starts where the locale says (`Intl.Locale#getWeekInfo`: `en-US` Sunday, `de` Monday).
 - **Presets are the app's** (`{ id, label, seconds | from/to }`): none ships, and "this quarter" is
   business. `timeRangeUrl(url, { presets, default, ns?, timeZone, now })` composes `listUrl`, so a
-  changed window keeps every other parameter and drops every cursor; a malformed or backwards custom
-  window shows the default with `invalid: true`, and the picker says `ui.range.invalid`.
+  changed window keeps every other parameter and drops every cursor — each list's on the page,
+  namespaced (`runs.after`) or not, whatever the window's own `ns`; a malformed or backwards custom
+  window shows the default with `invalid: true`, and the picker says `ui.range.invalid`. A custom
+  window `href({ from, to })` wrote reads back as one that CONTAINS it: to the second (`:ss` only
+  when there are seconds), an end with a fraction rounded up, and an end in the second pass of a
+  fall-back hour moved past the repeat — a wall time cannot name that pass.
+- **A field that owns Enter and the arrows gives them to an IME mid-composition**
+  (`isComposingKey`, `composing-key.ts`): `SearchableSelect` picks nothing and `useCommandPalette`
+  runs nothing on the Enter that confirms a candidate. A `DateRangePicker` calendar pick calls
+  `onChange` once, with the range the pick made.
 - Six weeks always, so the box never jumps; a disabled day never holds the tab stop; a cell is
   `--touch-target`, 44 px, and a month fits a 320 px screen. A non-`PlainDate`, `min` after `max`, a
   preset with neither `seconds` nor `from`/`to`, a `Slider` `step` of zero: `X_UI_INVALID_VALUE`.

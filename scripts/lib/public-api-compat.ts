@@ -31,24 +31,32 @@ function literals(was: readonly string[], now: readonly string[]): ApiChange {
 
 /**
  * Members of something callers only READ — a `const`'s object type, a class instance: any new
- * member is compatible, required or not. Removed, retyped, or made optional is a break.
+ * member is compatible, required or not. Removed, retyped, or made optional is a break — except a
+ * method whose recorded code is its current one minus optional trailing parameters (`shorter`):
+ * every call it took still compiles, the rule `params()` gives a function.
  */
 function readOnly(
   was: Readonly<Record<string, MemberCode>>,
   now: Readonly<Record<string, MemberCode>>,
+  shorter: Readonly<Record<string, readonly MemberCode[]>> = {},
 ): ApiChange {
+  const grown: string[] = [];
   for (const [name, code] of Object.entries(was)) {
     const next = own(now, name);
     if (next === undefined) return breaks(`member \`${name}\` was removed`);
-    if (bare(code) !== bare(next)) return breaks(`member \`${name}\` changed its type`);
+    if (bare(code) !== bare(next)) {
+      if (!own(shorter, name)?.includes(code)) return breaks(`member \`${name}\` changed its type`);
+      grown.push(`optional trailing parameter(s) added to \`${name}\``);
+    }
     if (!optional(code) && optional(next)) return breaks(`member \`${name}\` became optional`);
   }
   const added = Object.keys(now).filter((name) => own(was, name) === undefined);
-  return compatible(
-    added.length === 0
-      ? 'members reordered or re-spelt only'
-      : `${added.map((name) => `\`${name}\``).join(', ')} added to a value callers only read`,
-  );
+  if (added.length > 0) {
+    grown.push(
+      `${added.map((name) => `\`${name}\``).join(', ')} added to a value callers only read`,
+    );
+  }
+  return compatible(grown.length === 0 ? 'members reordered or re-spelt only' : grown.join('; '));
 }
 
 /** A class: its instance read-only, its constructor an input. `implements` of one is not expected. */
@@ -56,7 +64,7 @@ function classChange(
   was: Extract<ApiShape, { kind: 'class' }>,
   now: Extract<ApiShape, { kind: 'class' }>,
 ): ApiChange {
-  const read = readOnly(was.members, now.members);
+  const read = readOnly(was.members, now.members, now.shorter);
   if (read.kind === 'break') return read;
   if (was.ctor === undefined && now.ctor === undefined) return read;
   if (was.ctor === undefined || now.ctor === undefined) {

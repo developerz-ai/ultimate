@@ -307,6 +307,10 @@ A NOT NULL contract is the same story. On an empty table — a fresh or `x db re
 | `X_MIGRATION_ROLLING_UNSAFE` | a column leaves the entity without having been retired, with or without `--allow-destructive`. Also a retired name no migration records or `columns` still declares, a NOT NULL column with no default or a key column (the new release's inserts would fail, so relax it first), a committed `drop`/`rename` when the `drift` rail is on, and a retire and its drop both pending on a live production database |
 | `X_MIGRATION_IRREVERSIBLE` | the retired column is removed without `--allow-destructive`. Retiring is not consent to losing the rows |
 
+**A plain column made `generated` is a drop**, `As of 2026-11-19`: Postgres has no `set expression` for it, so the migration drops the column and adds it back computed, and the stored values are gone. `x db gen` asks the same two consents: `X_MIGRATION_ROLLING_UNSAFE` unless the column was retired first (or `--rolling-unsafe`), then `X_MIGRATION_IRREVERSIBLE` unless `--allow-destructive`. Before, it wrote the migration unasked.
+
+**A drop's `down` restores the column's indexes and foreign keys**, `As of 2026-11-19` — those the previous `.snapshot.json` recorded over it, for every dropped column, retired or not. The rows, NOT NULL and the default are not restored. Only newly generated migrations change.
+
 An app that stops before it starts (one instance, `strategy: Recreate`) says so: `x db gen "drop legacy" --allow-destructive --rolling-unsafe` writes `-- rolling-unsafe: true` and needs no retire.
 
 **The rail.** `rollingSince: "<migration id>"` in `x.verify.json` turns on the `drift` step's fifth rail for every migration after that id: a `drop column` with no `-- retires` in an earlier file, a `rename column`, a `rename table`. A closed list, on statements and not on prose. `x new` writes `"0"`. Unset, the rail does not run, because an applied migration cannot gain a marker (checksum); `x doctor` prints one line naming the id to set. A retire before the bound still earns the drop after it.

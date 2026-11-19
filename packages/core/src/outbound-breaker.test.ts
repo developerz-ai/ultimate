@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { breaker } from './breaker';
-import { RETRY_BURST } from './breaker-retry-budget';
+import { RETRY_BURST, retryBudgetOf } from './breaker-retry-budget';
 import { ctxOf, runWithContext } from './context';
 import { isUltimateError, UltimateError } from './errors';
 import { outbound } from './outbound';
@@ -73,6 +73,32 @@ describe('unit · outbound · breaker', () => {
     controller.abort(new UltimateError({ code: 'X_TIMEOUT', cause: 'c', fix: 'f' }));
     expect(code(await pending)).toBe('X_TIMEOUT');
     expect([gate.state(), gate.failures(), gate.admit()?.probe]).toEqual(['half-open', 1, true]);
+  });
+
+  test('a call its own signal aborted spends no retry token and runs one attempt', async () => {
+    const gate = breaker({ name: 'cancelled', failures: 1_000, cooldownMs: 30_000 });
+    let sent = 0;
+    for (let i = 0; i < 6; i += 1) {
+      const controller = new AbortController();
+      const pending = outbound(
+        { ...call(gate), signal: controller.signal },
+        {
+          fetch: (url, init) => {
+            sent += 1;
+            return hangingFetch(url, init);
+          },
+          ...recordedSleep(),
+          timer: manualTimer(),
+        },
+      ).catch((e: unknown) => e);
+      await Promise.resolve();
+      controller.abort();
+      await pending;
+    }
+    const budget = retryBudgetOf(gate);
+    let left = 0;
+    while (budget.spend()) left += 1;
+    expect([sent, left]).toEqual([6, RETRY_BURST]);
   });
 
   test('a partial outage: retries stay within 20% of calls (plus the burst) per breaker key', async () => {

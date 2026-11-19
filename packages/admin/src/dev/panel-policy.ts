@@ -20,6 +20,11 @@ export interface PolicyPanelData {
   readonly trace: readonly string[];
   /** Permissions no actor holds — usually a policy nobody can satisfy. */
   readonly unreachable: readonly string[];
+  /**
+   * Permissions with a cell no request decided: a predicate there reads the request input.
+   * Optional only so a value built against 31.48.0's shape still type-checks; this panel sets it.
+   */
+  readonly needsInput?: readonly string[];
 }
 
 export const policyPanel: DevPanel<PolicyPanelData> = {
@@ -52,6 +57,10 @@ export const policyPanel: DevPanel<PolicyPanelData> = {
       (fact) => fact.permission === wantedPermission && fact.actorId === wantedActor,
     );
 
+    const needsInput = permissions.filter((permission) =>
+      facts.some((fact) => fact.permission === permission && fact.verdict === 'needs-input'),
+    );
+
     return {
       actors,
       permissions,
@@ -60,7 +69,9 @@ export const policyPanel: DevPanel<PolicyPanelData> = {
       trace: selected?.trace ?? [],
       unreachable: matrix
         .filter((row) => Object.values(row.byActor).every((allowed) => !allowed))
-        .map((row) => row.permission),
+        .map((row) => row.permission)
+        .filter((permission) => !needsInput.includes(permission)),
+      needsInput,
     };
   },
 };

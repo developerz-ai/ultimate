@@ -9,9 +9,9 @@
  */
 
 import type { RecordRows, Row } from '@ultimat3/core';
-import { DATES_HEADER, encodeRecordEnvelope, RECORDS_HEADER, wireDatePaths } from '@ultimat3/core';
+import { DATES_HEADER, encodeRecordEnvelope, RECORDS_HEADER } from '@ultimat3/core';
 import { hasEntityRows, rowsOf } from '@ultimat3/entity';
-import { jsonResponse } from '@ultimat3/http';
+import { cappedWireDates, jsonResponse } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Page } from './pagination';
 
@@ -37,9 +37,11 @@ export function recordAnswerFor(rows: StandardSchemaV1 | undefined): RecordAnswe
  * The instants of a read's DATA — the rows, the `Page` or the one row — by path
  * (`@ultimat3/core`'s `wire-dates.ts`), so the typed client hands back the `Date` the row type
  * promises. A header, never the body: the body and the OpenAPI document stay what they were.
+ * Capped (`cappedWireDates`, 4 KB — `@ultimat3/action`'s `record-wire.ts` follows the same rule):
+ * an answer needing one path per instant past that sends NO header and is logged once per query.
  */
 function datesOf(data: unknown): { readonly headers: Record<string, string> } {
-  const dates = wireDatePaths(data);
+  const dates = cappedWireDates(data);
   return { headers: dates === undefined ? {} : { [DATES_HEADER]: dates } };
 }
 

@@ -43,12 +43,17 @@ const posts = (overrides: Partial<EntityDescriptionLike> = {}): EntityDescriptio
 
 const at = new Date('2026-08-25T00:00:00.000Z');
 
-const migrate = (entity: EntityDescriptionLike, current?: EntityDescriptionLike): string =>
+const migrate = (
+  entity: EntityDescriptionLike,
+  current?: EntityDescriptionLike,
+  consent: { allowDestructive?: boolean; rollingUnsafe?: boolean } = {},
+): string =>
   generateMigration({
     entities: [entity],
     ...(current === undefined ? {} : { current: snapshotOf([current]) }),
     name: 'x',
     now: at,
+    ...consent,
   }).up;
 
 describe('columnCheckName', () => {
@@ -192,7 +197,7 @@ describe('diffTable', () => {
         column('status', { notNull: true, check: STATUS_CHECK, generated: 'lower(title)' }),
       ],
     });
-    const up = migrate(generated, posts());
+    const up = migrate(generated, posts(), { allowDestructive: true, rollingUnsafe: true });
     expect(up).toContain('drop column "status";');
     expect(up).toContain(
       `alter table "posts" add constraint "posts_status_check" check (${STATUS_CHECK});`,

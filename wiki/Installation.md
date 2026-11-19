@@ -119,18 +119,18 @@ Boot parses this before any listener binds. Failure costs ~40ms and exit 1 — n
 
 ```
 X_ENV_MISSING: required environment variables are missing or invalid
-  cause: STRIPE_KEY missing; NATS_URL is not a URL ("nats:4222")
-  fix:   add STRIPE_KEY, NATS_URL to .env (copy .env.example), then run: x env check
+  cause: STRIPE_KEY is missing (expected a non-empty string); NATS_URL is not an absolute URL (received a string of 4 characters)
+  fix:   echo 'STRIPE_KEY=<value>' >> .env.development.local   # STRIPE_KEY: a non-empty string; also malformed, where grep -n -e '^NATS_URL=' .env* finds them: NATS_URL (an absolute URL)
 ```
 
-The `fix:` is per-key and built from your own declarations ([`packages/core/src/env.ts:237`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/env.ts)); a `fix` on one `envSchema` entry overrides it for that key.
+The fix is the line to add, in the file this environment loads: `.env.development.local` in development, `.env.test.local` under test, `.env.production` for a deploy (`envFileFor`, [`packages/core/src/env.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/env.ts)). Several missing keys are one `printf '%s\n' 'A=<value>' 'B=<value>' >> <file>`; a malformed key is found where it is set (`grep -n -e '^KEY=' .env*`). The cause names each value's shape, never its content. A `fix` on one `envSchema` entry overrides it for that key. `As of 2026-11-19`.
 
 | Property | Behavior |
 |---|---|
 | Access | `env.STRIPE_KEY` is typed. A `process.env` read outside the schema is a lint error |
 | Per-role | a role requires only the keys it uses — `ROLE=worker` does not fail on a missing `VAPID` |
 | Repair | `x env example` regenerates `.env.example` from the schema; copy the keys it names into `.env.development.local` in dev, or into your platform's secret store in production. There is **no** `x env --fix` — `x env` declares `check` and `example` and no flags, so `x env check --fix` dies at the parser with `X_CLI_BAD_FLAG` |
-| CI | `x verify`'s `manifest` step holds `.env.example` to the schema's projection (`X_ENV_EXAMPLE_DRIFT`); `x env check` is not a gate step — run it against the deploy's own environment (`ULTIMATE_ENV=production x env check`), where it also reports the framework's deploy-required secrets |
+| CI | `x verify`'s `manifest` step holds `.env.example` to the schema's projection (`X_ENV_EXAMPLE_DRIFT`); `x env check` is not a gate step — run it against the deploy's own environment (`ULTIMATE_ENV=production x env check`), where it also reports the framework's deploy-required secrets. With no `ULTIMATE_ENV` or `NODE_ENV` set it checks as development (as `x dev` runs), except under `CI`, where it checks as production (`As of 2026-11-19`) |
 | Provenance | `/_x` → **Env** shows every resolved key and which source it came from |
 
 ## What Bun natives replace
@@ -195,7 +195,7 @@ server itself rather than counted here. The core of it:
 | `verify.run` | guessing whether the work is shippable |
 | `logs.tail` | scrollback archaeology |
 
-Read tools are unrestricted in dev; write tools are scoped to branch environments. The dev server is never exposed under `ROLE=web`. `db.query` refuses a batch, a write keyword anywhere at statement level (a data-modifying CTE included), a locking clause, `EXPLAIN ANALYZE`, and the banned function families matched by prefix (`pg_read_*`, `pg_ls_*`, `lo_*`, `pg_advisory_*`, `pg_sleep*`, `set_config`, …) — `X_MCP_QUERY_REJECTED`, before the host sees the string. Use `x mcp` for a standalone server (CI, remote agents). Editor config: Biome is the only formatter/linter — one binary, one config, no ESLint or Prettier.
+Read tools are unrestricted in dev; write tools are scoped to branch environments. The dev server is never exposed under `ROLE=web`. `db.query` refuses a batch, a write keyword anywhere at statement level (a data-modifying CTE included), a locking clause, `EXPLAIN ANALYZE` (or `ANALYSE`), and the banned function families matched by prefix (`pg_read_*`, `pg_ls_*`, `lo_*`, `pg_advisory_*`, `pg_sleep*`, `set_config`, `pg_copy_*`, `pg_sync_replication_*`, `pg_backup_*`, `pg_start_backup`, `pg_stop_backup`, `pg_restore_*`, `pg_clear_*`, …) — `X_MCP_QUERY_REJECTED`, before the host sees the string. Use `x mcp` for a standalone server (CI, remote agents). Editor config: Biome is the only formatter/linter — one binary, one config, no ESLint or Prettier.
 
 ## Upgrading and removal
 

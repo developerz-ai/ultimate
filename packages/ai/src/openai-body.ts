@@ -59,7 +59,9 @@ export function chatCompletionBody(input: ChatCompletionBodyInput): Record<strin
   if (request.tools !== undefined && request.tools.length > 0) {
     body['tools'] = toOpenAiTools(request.tools);
     // Forced unless the row says this model rejects a forced choice (`forcedToolChoice: false`).
-    const choice = spec.forcedToolChoice === false ? undefined : toolChoiceFor(request.tools);
+    // Nor when the request says prose is a legal answer (`toolChoice: 'auto'`, a summary call).
+    const unforced = spec.forcedToolChoice === false || request.toolChoice === 'auto';
+    const choice = unforced ? undefined : toolChoiceFor(request.tools);
     if (choice !== undefined) body['tool_choice'] = choice;
   }
   if (request.stopSequences !== undefined && request.stopSequences.length > 0) {

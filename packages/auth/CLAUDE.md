@@ -99,6 +99,10 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
   (`link: 'verified-email'`, default; `'never'` is the only other value).
 - **One sign-in route implementation** (`identity-provider-route-core.ts`) at
   `/auth/sso/:provider[/callback]` (the callback movable only by `callbackPath`); failure is coded JSON, success a 303 to `successPath`. †
+- **A built-in callback hands `X_MFA_REQUIRED` on by `mfaPath` only**: 303 + the challenge in
+  `__Host-x_mfa` (`mfa-handoff.ts`, the ONE challenge cookie: `mfaChallengeOf`, `mfaChallengeCookie`,
+  `readMfaChallenge`, `clearMfaChallengeCookie`, `MFA_CHALLENGE_COOKIE` — all public). Never a URL, body or log
+  line. No `mfaPath` → 401 with the `mfaPath` fix; a non-local path is `X_CONFIG_INVALID`.
 - Refresh is **not implemented**, so the framework **stores no provider token**: `accountFor`
   (`oauth-login.ts`) writes `accessToken: null, refreshToken: null`. The columns and `AuthAccount`
   fields stay; an app that stores tokens implements `linkAccount` itself.
@@ -159,6 +163,10 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 - **Every client registration is screened in `storeClient`**, the route's and `registerClient`'s
   alike: a list value that is empty or holds whitespace is `X_AUTH_CLIENT_INVALID` (the Postgres
   store space-joins each list). The route answers RFC 7591 JSON first.
+- **An anonymous registration is bounded, and reaped**: ≤ 10 `redirect_uris` of ≤ 2,048 chars
+  (`invalid_client_metadata`), keyed by `ipKey`; `storeClient(…, true)` mints a
+  `DYNAMIC_CLIENT_PREFIX` (`d_`) id, and `purge` deletes a `d_` client older than the idle window
+  that nothing names — never an app-registered `c_` one. Both stores run `dynamicClientPurgeCase`.
 - **SAML = `samlIdentityProvider`**, no dependency: assertion signature required, one assertion,
   metadata keys only, replay via `auth.totpReplay`, `trustEmail: true` needs `emailDomains`.
 
@@ -189,6 +197,7 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 | `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` (sessions and api keys) |
 | `member-invite.ts` / `member-invite-marks.ts` | `defineMemberInvite`: a verification purpose keyed on (tenant, address), accept into `orgId` via `updatePrivileges`; revoke = link, plus membership + sessions only where a `joined` mark proves an invite granted it. The `joined`/`revoked` marks make a racing revoke win without a transaction |
 | `mfa-challenge.ts` | the sealed challenge `X_MFA_REQUIRED` carries, and `completeMfa` |
+| `mfa-handoff.ts` | `mfaPath`: the challenge from a built-in callback to the app's page — path check, `__Host-x_mfa` cookie, reader |
 | `mfa-replay-postgres.ts` | the shared replay guard: the claim and the sweep. Its DDL is in `tables.ts` |
 | `mfa-secret.ts` | the TOTP secret at rest: seal on write, open on read, the one-shot that seals older rows |
 | `directory.ts` | `describeUser` (allow-list projection), `listOrgUsers`, external-id lookup |

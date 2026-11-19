@@ -36,7 +36,12 @@ const shellOf = (steps: readonly Step[]): string =>
     .filter((line) => !/^\s*#/.test(line))
     .join('\n');
 
-const FLOORS_PERMISSIONS = { contents: 'write', 'pull-requests': 'write', issues: 'write' };
+const FLOORS_PERMISSIONS = {
+  contents: 'write',
+  'pull-requests': 'write',
+  actions: 'write',
+  issues: 'write',
+};
 
 /** Every rule the workflow breaks, by name; empty is the shape held. */
 function shapeGaps(text: string): readonly string[] {

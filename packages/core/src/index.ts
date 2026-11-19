@@ -210,6 +210,7 @@ export {
   JOBS_CONCURRENCY_DEFAULT,
   JOBS_DEAD_RETENTION_MS_DEFAULT,
   JOBS_DONE_RETENTION_MS_DEFAULT,
+  JOBS_MAX_ATTEMPTS_DEFAULT,
   JOBS_OUTBOX_RETENTION_MS_DEFAULT,
   type JobsConcurrency,
 } from './config-jobs';
@@ -331,6 +332,7 @@ export {
 } from './dev-secrets';
 export {
   DRAIN_DEADLINE_DEFAULT_MS,
+  laterHooksReserveMs,
   WORKER_DRAIN_DEADLINE_MAX_MS,
   WORKER_RETIRE_DEFAULT_MS,
 } from './drain-deadline';

@@ -107,8 +107,9 @@ const flush = async (batch: Batch): Promise<void> => {
           else entry.settle(answer.row);
         }
       } catch (error) {
-        // The statement failed, so everyone in it gets the failure the single statement would
-        // have handed them. Every one was returned to a caller, so none goes unhandled.
+        // The statement failed for a reason that is the statement's — a refused VALUE never
+        // reaches here: `readByIds` re-sends around it and files that failure under its own id
+        // (`batch-read.ts`). Every entry was returned to a caller, so none goes unhandled.
         for (const entry of chunk) entry.fail(error);
       }
     }

@@ -6,6 +6,7 @@
 import { isFixShellSafe } from '@ultimat3/core';
 import type { DbClient } from './client';
 import type { SchemaDescription } from './introspect';
+import { embeddedDev, embeddedResetFix } from './migrate-dev-fix';
 import { migrationConflict } from './migration-errors';
 import { raw, sql } from './sql';
 import { SQLSTATE, sqlState } from './sqlstate';
@@ -157,7 +158,15 @@ export function auditLedger(
 const editedMigrationFix = (id: string, checksum: string): string => {
   const path = isFixShellSafe(id) ? `${APP_MIGRATIONS_DIR}/${id}.sql` : APP_MIGRATIONS_DIR;
   const applied = isFixShellSafe(checksum) ? `checksum ${checksum}` : 'the checksum in the cause';
-  return `git log --format='%h %ad %s' --date=short -- ${path}   # restore the revision applied with ${applied}: git checkout <rev> -- ${path} and never edit an applied migration; then x db gen "<change>"`;
+  const restore = `git log --format='%h %ad %s' --date=short -- ${path}   # restore the revision applied with ${applied}: git checkout <rev> -- ${path} and never edit an applied migration; then x db gen "<change>"`;
+  // A migration written this session has no revision to list, and the embedded database is the
+  // only one that applied it: re-applying the file on disk IS the repair. The restore stays in
+  // the line for the migration some other database applied too.
+  return embeddedDev()
+    ? embeddedResetFix(
+        `the edited migration is re-applied as it now reads. If it is committed or another database applied it, restore it instead: ${restore.replace('   # ', ' — ')}`,
+      )
+    : restore;
 };
 
 /**
@@ -181,12 +190,39 @@ const editedMigrationFix = (id: string, checksum: string): string => {
  * which migration this is, `fix:` is where they paste. `psql` echoes the row count it deleted.
  */
 function conflictFix(row: LedgerRow): string {
+  // `DATABASE_URL` is empty on the embedded database, so psql has nothing to dial; and the row is
+  // there because this checkout dropped the file, not because another build is deployed.
+  if (embeddedDev()) {
+    return embeddedResetFix(
+      'the ledger records a migration whose file this checkout no longer holds; to keep the rows, restore the file (git status --short -- packages/db/migrations)',
+    );
+  }
   const encodedId = Buffer.from(row.id, 'utf8').toString('base64');
   return (
     'deploy the app version this error names — or, if that build is gone, drop its row: ' +
     `psql "$DATABASE_URL" -c "delete from ${LEDGER_TABLE} ` +
     `where id = convert_from(decode('${encodedId}', 'base64'), 'UTF8')"`
   );
+}
+
+/**
+ * The `steps` rows a rollback reverses: the most recently APPLIED first, never the highest id. A
+ * branch merged late applies an older id after a newer one, and reversing by id then undoes the
+ * previous release's migration while the one just shipped stays applied. Rows sharing an
+ * `applied_at` (one run on a coarse clock, a restored dump) fall back to id descending, which is
+ * one run read backwards: a run applies in id order. Every ledger any release wrote has the column
+ * (`not null default now()`); a value no driver could parse ties rather than guessing an order.
+ */
+export function rollbackTargets(ledger: readonly LedgerRow[], steps: number): readonly LedgerRow[] {
+  // `applied_at` is typed as text but a driver hands back a `Date`: both construct one.
+  const at = (row: LedgerRow): number => new Date(row.applied_at).getTime();
+  return [...ledger]
+    .sort((a, b) => {
+      const later = at(b) - at(a);
+      if (later > 0 || later < 0) return later;
+      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+    })
+    .slice(0, steps);
 }
 
 export function pendingMigrations(

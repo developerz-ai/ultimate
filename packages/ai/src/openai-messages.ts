@@ -249,7 +249,8 @@ function mediaPart(block: AiMediaBlock, at: string, target: MediaTarget): OpenAi
  * a promise the server checks: a schema with an optional field — one key in `properties` and not in
  * `required` — is a 400 (`Invalid schema for function …`) rather than a looser check. So the flag
  * is derived from the schema, never forwarded, and a schema that cannot keep the promise is sent
- * without it and validated by the output schema on the way back, exactly as the Anthropic path is.
+ * without it and validated by the output schema on the way back. The Anthropic wire derives its
+ * own flag from its own, different subset (`anthropic-provider.ts`).
  */
 export function toOpenAiTools(tools: readonly LlmTool[]): readonly OpenAiFunctionTool[] {
   return tools.map((tool) => ({
@@ -265,11 +266,13 @@ export function toOpenAiTools(tools: readonly LlmTool[]): readonly OpenAiFunctio
 
 /**
  * Whether a schema keeps OpenAI's strict-mode promise: every object closed with
- * `additionalProperties: false`, and every one of its keys listed in `required`. Recursive, because
- * the server checks it recursively.
+ * `additionalProperties: false`, and every one of its keys listed in `required`. Recursive —
+ * through `properties`, `items` and every `anyOf` branch — because the server checks it so.
  */
 export function satisfiesStrictMode(schema: JsonSchema): boolean {
   if (schema.items !== undefined && !satisfiesStrictMode(schema.items)) return false;
+  // A nullable object is `anyOf: [object, null]`: the server checks every branch.
+  if (schema.anyOf !== undefined && !schema.anyOf.every(satisfiesStrictMode)) return false;
   if (schema.type !== 'object' && schema.properties === undefined) return true;
   if (schema.additionalProperties !== false) return false;
   const properties = schema.properties ?? {};

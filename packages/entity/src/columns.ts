@@ -20,6 +20,7 @@ import {
   makeTimestamp,
 } from './column';
 import { got, oneOf, refuseNul } from './column-values';
+import { assertInstantsCross } from './instant-range';
 import { refuseColumn } from './refuse';
 import type {
   Column,
@@ -443,8 +444,10 @@ const narrowUuid = <Row>(columns: ColumnMap, row: Row): Row => {
  * nowhere. The `as` is the one assertion this file is for — every money property is a `MoneyValue`
  * once `narrowMoney` has returned, and `parseMinor` threw for anything that could not become one.
  */
-export const narrowRow = <Row>(columns: ColumnMap, values: RowWrite<Row>): Row =>
-  narrowUuid(columns, narrowMoney(columns, values)) as Row;
+export const narrowRow = <Row>(columns: ColumnMap, values: RowWrite<Row>): Row => {
+  assertInstantsCross(columns, values);
+  return narrowUuid(columns, narrowMoney(columns, values)) as Row;
+};
 
 /**
  * The CHECK that stops a psql session writing a currency the app would refuse — the app's own

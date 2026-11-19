@@ -53,7 +53,7 @@ Those facts are repeated on several pages because the wiki is plain markdown wit
 
 ## Tutorials
 
-Follow in order. Each page states what it was executed against in its own first line — tutorial 1 its own measurement. `As of 2026-11-03`, 2–4 were re-run by hand, whole, in the app tutorial 1 leaves, and 5 with Docker up to the point a real host is needed. `scripts/tutorial-run.ts` (workflow `tutorial-run.yml`, on `main`) runs 1–4 in order and never 5; it has not yet run green. A workaround for a gap fixed since has been removed rather than left to mislead.
+Follow in order. Each page states what it was executed against in its own first line — tutorial 1 its own measurement. `As of 2026-11-03`, 2–4 were re-run by hand, whole, in the app tutorial 1 leaves, and 5 with Docker up to the point a real host is needed. `scripts/tutorial-run.ts` (workflow `tutorial-run.yml`, on `main` and weekly since 2026-11-19) runs 1–4 in order and never 5; it has not yet run green. A workaround for a gap fixed since has been removed rather than left to mislead.
 
 | Page | You end with |
 |---|---|

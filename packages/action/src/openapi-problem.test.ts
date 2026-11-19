@@ -91,6 +91,8 @@ describe('the published Problem schema against the document @ultimat3/http serve
   });
 
   test('a code the framework did not mint still satisfies the published `code`', () => {
+    // Declared first: an UNDECLARED foreign code on a production 5xx is served as `X_INTERNAL`.
+    registerErrorStatus({ E_UPSTREAM: 502 });
     const served = wire({ code: 'E_UPSTREAM', message: 'boom' });
     expect(served['code']).toBe('E_UPSTREAM');
     const pattern = (problemSchema().properties['code'] as { pattern?: string }).pattern;

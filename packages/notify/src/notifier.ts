@@ -171,6 +171,7 @@ export function notifier<Params>(
         ? (value: NotifyPayload<Params>) =>
             (definition.tenant as (params: Params) => string)(value.params)
         : definition.tenant,
+    // The identity sentinel `@ultimat3/jobs`' `resolvedRetry` reads as "declares none".
     retry: definition.retry ?? DEFAULT_RETRY,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),

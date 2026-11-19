@@ -18,7 +18,7 @@ import {
   purgePost,
   requireCredential,
 } from './purge-http';
-import { assertFiniteDurationMs } from './tiers';
+import { assertFiniteDurationMs } from './tier-bounds';
 
 export const FASTLY_API_URL = 'https://api.fastly.com';
 

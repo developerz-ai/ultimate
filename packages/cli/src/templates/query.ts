@@ -2,11 +2,16 @@
 // generated declaration always carries `orderBy` + `limit` and the generated test pins them:
 // an unbounded live query is a memory leak that only shows up under load.
 
-import { UltimateError } from '@ultimat3/core';
 import type { FeatureTarget } from './entity';
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
+import {
+  assertSliceExports,
+  QuerySliceEntityError,
+  readsThroughView,
+  withoutOwnedTests,
+} from './query-slice';
 import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
 import { foreignSliceEntity, sliceFoundation, sliceTakesScaffoldRow } from './slice-foundation';
 import { wrapImport } from './wrap';
@@ -15,22 +20,50 @@ import { wrapImport } from './wrap';
 const cacheLine = (feature: NameSet, live: boolean): string =>
   live ? '' : `\n  cache: { tags: [${feature.camel}Tag], ttlMs: 30_000 },`;
 
+/**
+ * The projection a read answers through: the slice's `<Feature>View`, the shape its actions
+ * already answer — so a column added to the entity reaches the wire only by an edit to the view,
+ * and the tenant column never does. Live too: `@ultimat3/realtime` narrows every patch to the
+ * columns the snapshot's rows carry (`narrowRow`).
+ */
+const viewProjection = (feature: NameSet): string => `
+/**
+ * What this read answers: the slice's \`${feature.pascal}View\`, the shape its actions answer —
+ * never the whole row. A column added to the entity reaches the wire only once the view lists it,
+ * and the tenant column never does.
+ */
+const viewOf = (row: ${feature.pascal}): ${feature.pascal}View => {
+  const keys = ${feature.pascal}View.$keys;
+  return Object.fromEntries(keys.map((key) => [key, row[key]])) as ${feature.pascal}View;
+};
+`;
+
+/** The `sql:` thunk: the repo's page, through the view when the slice declares one. */
+const readThunk = (feature: NameSet, view: boolean): string =>
+  view
+    ? `from<${feature.pascal}View>('${feature.table}', async () => {
+      const rows = await repo.list(limit, sort, dir);
+      return rows.map(viewOf);
+    })`
+    : `from<${feature.pascal}>('${feature.table}', () => repo.list(limit, sort, dir))`;
+
 const querySource = (
   name: NameSet,
   feature: NameSet,
   live: boolean,
+  view: boolean,
 ): string => `// ${name.camel}: a ${live ? 'live (subscribable)' : 'one-shot'} read over ${feature.pluralKebab}.
 // Bounded and ordered — required for${live ? ' live queries' : ' predictable pagination'}.
 // \`t\` comes from @ultimat3/query, not @ultimat3/schema: a query file imports one package.
 
 import { from, query, t } from '@ultimat3/query';
-import type { ${feature.pascal} } from '../entity';
+${view ? wrapImport([`type ${feature.pascal}`, `${feature.pascal}View`], '../entity') : `import type { ${feature.pascal} } from '../entity';`}
 ${wrapImport(
   live ? [`can${feature.pascal}Read`] : [`can${feature.pascal}Read`, `${feature.camel}Tag`],
   '../policy',
 )}
 import * as repo from '../repo';
-
+${view ? viewProjection(feature) : ''}
 /** The columns this read sorts by: \`repo.ListSort\`, and what a page's \`listUrl\` offers. */
 export const ${name.camel}Sorts = ['createdAt', 'title'] as const;
 
@@ -56,7 +89,7 @@ export const ${name.camel} = query({
   sql: ({ limit, sort, dir }) =>
     // \`feature.table\`, not the kebab plural: \`from()\` quotes the identifier into the SQL text,
     // and the entity created the table as snake_case.
-    from<${feature.pascal}>('${feature.table}', () => repo.list(limit, sort, dir))
+    ${readThunk(feature, view)}
       // \`repo.list\`'s own order. These lines are ONE read spelled twice: the thunk is what the
       // in-memory driver answers and this chain is the SQL Postgres runs, so a sort or a direction
       // that differs here is a bounded page holding different rows on each.
@@ -87,7 +120,7 @@ const queryTest = (name: NameSet, feature: NameSet, shape: ReadShape): string =>
       ? [`import { expect, ${wrapper} } from '@ultimat3/testing';`]
       : readImports(shape, ['expect', wrapper]);
   const repo = shape.storesRow
-    ? `${subscribes ? `\nimport type { ${feature.pascal} } from '../entity';` : ''}\nimport * as repo from '../repo';`
+    ? `${subscribes ? `\nimport type { ${rowType(feature, shape)} } from '../entity';` : ''}${!live && shape.view ? `\nimport { ${feature.pascal}View } from '../entity';` : ''}\nimport * as repo from '../repo';`
     : '';
   return `// ${name.camel}: the shape it reads, the policy it asserts, and the actor it refuses. The read is
 // declarative, so what a test can get wrong is the authz, and that is what this pins.
@@ -165,7 +198,7 @@ ${wrapper}('the read is offered to no agent until its tool is described', () => 
   expect(target.kind).toBe('query');
   expect(target.mcp).toBeUndefined();
 });
-${subscribes ? subscribeTest(name, feature) : ''}`;
+${subscribes ? subscribeTest(name, feature, shape) : ''}`;
 };
 
 /**
@@ -175,13 +208,13 @@ ${subscribes ? subscribeTest(name, feature) : ''}`;
  * `repo.list` — read fine there while every real subscriber was answered `X_TENANCY_UNSCOPED`.
  * Two orgs, a snapshot and a write: the window a subscriber is served from is its own org's.
  */
-const subscribeTest = (name: NameSet, feature: NameSet): string => `
+const subscribeTest = (name: NameSet, feature: NameSet, shape: ReadShape): string => `
 // The module's own export under its own name, through \`defineApi\` as the boot hands it over, so
 // a subscribe frame naming it reaches this declaration.
 const api = defineApi({ queries: { ${name.camel} } });
 const live = api.queries.${name.camel};
 
-type Row = ${feature.pascal};
+type Row = ${rowType(feature, shape)};
 
 const otherOrg = '${OTHER_ORG}';
 
@@ -223,9 +256,28 @@ liveTest('two orgs subscribe: each is sent its own rows and writes', async ({ su
   await theirs.settled();
   expect(ours.rows().map((row) => row.title)).toEqual(['ours too', 'ours']);
   expect(theirs.rows().map((row) => row.title)).toEqual(['theirs']);
-  expect(theirs.patches()).toEqual([]);
+  expect(theirs.patches()).toEqual([]);${shape.view ? NARROWED_PATCH : ''}
 });
 `;
+
+/** A patch is narrowed to the snapshot's columns (`narrowRow`): the view's, never the org's. */
+const NARROWED_PATCH = `
+  // The patched row is narrowed to the columns the snapshot carried — the view's — so the tenant
+  // column a change event holds never reaches a subscriber.
+  for (const row of ours.rows()) expect(row).not.toHaveProperty('orgId');`;
+
+/** The row type a read answers: the slice's view, or the row when the slice declares none. */
+const rowType = (feature: NameSet, shape: ReadShape): string =>
+  shape.view ? `${feature.pascal}View` : feature.pascal;
+
+/** What the stored-rows case pins about the wire: the view's keys, and never the tenant column. */
+const wireShape = (feature: NameSet): string => `
+  // What leaves the server is the slice's view: its keys exactly, and never the tenant column — a
+  // column added to the entity reaches the wire only once the view lists it.
+  for (const row of page) {
+    expect(Object.keys(row).sort()).toEqual([...${feature.pascal}View.$keys].sort());
+    expect(row).not.toHaveProperty('orgId');
+  }`;
 
 const ORG = '00000000-0000-4000-8000-000000000002';
 
@@ -241,6 +293,8 @@ interface ReadShape {
   readonly live: boolean;
   /** The slice still takes the row `x g entity` scaffolds, so the test may store some. */
   readonly storesRow: boolean;
+  /** The read answers through the slice's `<Feature>View` (`readsThroughView`). */
+  readonly view: boolean;
   readonly dbModule: string;
 }
 
@@ -249,7 +303,7 @@ interface ReadShape {
  * it. Three rows a second apart, a page of two — so an order that is not newest-first, a missing
  * bound and another org's row each fail it on their own.
  */
-const storedRowsTest = (): string => `
+const storedRowsTest = (feature: NameSet, shape: ReadShape): string => `
 const otherOrg = '${OTHER_ORG}';
 
 // The request clock, so \`createdAt\` is an instant this file chose and "newest" is decidable.
@@ -275,7 +329,7 @@ unitTest('stored rows read back newest first, bounded, and never another org', a
   // The declaration's order over the repo's rows: what the SQL names on Postgres, read here
   // from the in-memory driver. A page of two is the two NEWEST, on both.
   const page = await target.as(member, { limit: 2 });
-  expect(page.map((row) => row.title)).toEqual(['third', 'second']);
+  expect(page.map((row) => row.title)).toEqual(['third', 'second']);${shape.view ? wireShape(feature) : ''}
   // The same input, an actor in the other org: its own row, and nothing of this org's.
   const outsider = testActor('outsider', { orgId: otherOrg, permissions: [read] }).actor;
   const theirs = await target.as(outsider, { limit: 50 });
@@ -324,7 +378,7 @@ unitTest('the read runs as its caller: an org with no rows reads empty', async (
   // in-memory driver.
   expect(await target.as(member, { limit: 50 })).toEqual([]);
 });
-${shape.storesRow ? storedRowsTest() : ''}`;
+${shape.storesRow ? storedRowsTest(feature, shape) : ''}`;
 
 /** The imports the read cases need, over whatever the file they land in already imports. */
 const readImports = (shape: ReadShape, testing: readonly string[]): readonly string[] => [
@@ -342,7 +396,7 @@ const liveReadTest = (
   shape: ReadShape,
 ): string => `// ${name.camel}, READ: what a caller gets back, through the repo and the in-memory driver. The
 // subscription — the snapshot and the patches a write produces — is the live suite's, next door.
-${sortedImports([...readImports(shape, ['expect', 'unitTest']), "import { testActor } from '@ultimat3/policy';"])}${shape.storesRow ? "\nimport * as repo from '../repo';" : ''}
+${sortedImports([...readImports(shape, ['expect', 'unitTest']), "import { testActor } from '@ultimat3/policy';"])}${shape.storesRow ? `${shape.view ? `\nimport { ${feature.pascal}View } from '../entity';` : ''}\nimport * as repo from '../repo';` : ''}
 import { ${name.camel} } from './${name.kebab}';
 
 const orgId = '${ORG}';
@@ -364,21 +418,11 @@ export interface QueryOptions extends FeatureTarget {
   readonly sliceEntity?: string;
   /** The slice's `repo.ts` as it stands on disk, or absent alongside `sliceEntity`. */
   readonly sliceRepo?: string;
-}
-
-/**
- * Declared beside its one thrower, as `backfill.ts`'s twin is: the read imports the slice's own row
- * type and repo, and a slice declaring another table under its name has neither.
- */
-export class QuerySliceEntityError extends UltimateError {
-  constructor(input: { readonly path: string; readonly binding: string; readonly table: string }) {
-    super({
-      code: 'X_QUERY_SLICE_ENTITY',
-      cause: `x g query reads the slice's own scaffolded table, and its entity.ts declares ${input.binding} (${input.table}) instead — the generated read would import a row type and a repo that do not exist`,
-      fix: `x queries list --json   # then declare query({ sql: … from('${input.table}', …) }) by hand in ${input.path}, over ../entity's ${input.binding}`,
-      meta: { binding: input.binding, table: input.table },
-    });
-  }
+  /**
+   * The slice's `policy.ts` as it stands on disk, absent when the slice has none yet (and then the
+   * scaffolded one is written). The read IMPORTS `can<Feature>Read` from it — `action.ts`'s reason.
+   */
+  readonly slicePolicy?: string;
 }
 
 export function queryFiles(rawName: string, target: QueryOptions): readonly GeneratedFile[] {
@@ -390,17 +434,19 @@ export function queryFiles(rawName: string, target: QueryOptions): readonly Gene
   if (foreign !== undefined) {
     throw new QuerySliceEntityError({ path: `${dir}/${name.kebab}.ts`, ...foreign });
   }
+  assertSliceExports(target, feature, live);
   const shape: ReadShape = {
     live,
     storesRow: sliceTakesScaffoldRow(target, target.sliceEntity, target.sliceRepo),
+    view: readsThroughView(feature, target.sliceEntity),
     dbModule: target.dbModule ?? PLACEHOLDER_DB_MODULE,
   };
   return [
     // A read declares the row type it returns (`../entity`), the rule that admits it (`../policy`)
     // and the one module allowed to query the table (`../repo`) — all three are the slice's, and
     // `--live` changes only which directory this file lands in.
-    ...sliceFoundation(target, ['entity', 'policy'], target.locales),
-    { path: `${dir}/${name.kebab}.ts`, contents: querySource(name, feature, live) },
+    ...withoutOwnedTests(sliceFoundation(target, ['entity', 'policy'], target.locales), target),
+    { path: `${dir}/${name.kebab}.ts`, contents: querySource(name, feature, live, shape.view) },
     // The suffix follows the WRAPPER, which follows `--live`: a `liveTest` in a plain
     // `<name>.test.ts` runs under `unit`, so `x test live` had no files in an app full of them.
     {

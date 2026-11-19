@@ -95,6 +95,40 @@ describe('checkSurfaceBoundary', () => {
     ]);
   });
 
+  // One illegal import produced three findings, the first two telling the author to delete the
+  // query's own policy and repo imports — legal app/ → app/ edges below the crossing.
+  test('one site/ → app/ crossing is one finding: the app/ → app/ edges below it are legal', () => {
+    const graph = importGraph({
+      'apps/web/site/promo/page.tsx': ['apps/web/app/ticket/live/ticket-list.ts'],
+      'apps/web/app/ticket/live/ticket-list.ts': [
+        'apps/web/app/ticket/policy.ts',
+        'apps/web/app/ticket/repo.ts',
+      ],
+      'apps/web/app/ticket/policy.ts': ['apps/web/shared/roles.ts'],
+      'apps/web/app/ticket/repo.ts': [],
+    });
+    expect(checkSurfaceBoundary(graph).map((v) => [v.rule, v.importer, v.imported])).toEqual([
+      [
+        'site-imports-app',
+        'apps/web/site/promo/page.tsx',
+        'apps/web/app/ticket/live/ticket-list.ts',
+      ],
+    ]);
+  });
+
+  test('a second crossing on a different edge from the same page is still its own finding', () => {
+    const graph = importGraph({
+      'apps/web/site/promo/page.tsx': ['apps/web/app/a.ts', 'apps/web/shared/ui/button.tsx'],
+      'apps/web/app/a.ts': ['apps/web/app/b.ts'],
+      'apps/web/shared/ui/button.tsx': ['apps/web/app/b.ts'],
+    });
+    const site = checkSurfaceBoundary(graph).filter((v) => v.rule === 'site-imports-app');
+    expect(site.map((v) => [v.importer, v.imported])).toEqual([
+      ['apps/web/shared/ui/button.tsx', 'apps/web/app/b.ts'],
+      ['apps/web/site/promo/page.tsx', 'apps/web/app/a.ts'],
+    ]);
+  });
+
   test('app/ → api/ is types-only: the type edge passes, the value edge fails', () => {
     const typeOnly = importGraph({
       'apps/web/app/reports/page.tsx': [{ file: 'apps/web/api/reports/actions.ts', type: true }],

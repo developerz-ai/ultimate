@@ -284,3 +284,22 @@ describe('assembleContext fences a document with the one neutraliser render uses
     }
   });
 });
+
+describe('chunkDocument() counts the join', () => {
+  test('no chunk exceeds size for many short sentences', () => {
+    // Forty 4-character sentences: each is one token alone, and the space joining them is not free.
+    const text = Array.from({ length: 40 }, () => 'Abc.').join(' ');
+    const chunks = chunkDocument({ id: 'd', text, size: 8, overlap: 0 });
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) expect(chunk.tokens).toBeLessThanOrEqual(8);
+    // Nothing is lost to the tighter fit: every sentence is in exactly one chunk.
+    expect(chunks.flatMap((chunk) => chunk.text.split(' ')).length).toBe(40);
+  });
+
+  test('with an overlap, a chunk still stays within size', () => {
+    const text = Array.from({ length: 40 }, (_, n) => `S${n % 10}x.`).join(' ');
+    for (const chunk of chunkDocument({ id: 'd', text, size: 8, overlap: 3 })) {
+      expect(chunk.tokens).toBeLessThanOrEqual(8);
+    }
+  });
+});

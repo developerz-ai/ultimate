@@ -3,7 +3,10 @@
 // invented should come back refused: "no such code", never a plausible-sounding explanation.
 
 import { nearestName, singleLine } from '@ultimat3/core';
+import { definedErrorStatus } from '@ultimat3/core/internal/error-status';
 import type { ErrorExplanation } from '@ultimat3/mcp';
+import { findAppRoot } from './app-root';
+import { type AppCodeExplanation, AppCodeUnknownError, explainAppCode } from './cmd-errors-app';
 import { explainGuardCode } from './cmd-errors-guards';
 import { withRecent } from './cmd-errors-recent';
 import { errorsSpec } from './cmd-errors-spec';
@@ -54,13 +57,23 @@ async function explainOne(
   cwd: string,
   reader?: ReaderOptions,
 ): Promise<CommandResult> {
-  const explanation = explainErrorCode(code) ?? (await explainGuardCode(code, cwd));
+  // A `defineError()` code is an app's, even once this process has loaded the app (`x mcp serve`, a
+  // test rerun): the registry then knows it, and it was answered as a framework code with no throw
+  // site in the installed framework, never from the app that declares it.
+  const appDeclared = definedErrorStatus(code) !== undefined;
+  const explanation = appDeclared
+    ? undefined
+    : (explainErrorCode(code) ?? (await explainGuardCode(code, cwd)));
   if (explanation === undefined) {
+    // Before the app loads, so the near miss is a framework code the caller mistyped.
     const suggestion = nearestName(
       code,
       explainEveryErrorCode().map((entry) => entry.code),
     );
-    throw new ErrorCodeUnknownError(suggestion === undefined ? { code } : { code, suggestion });
+    const declared = await explainAppCode(code, cwd);
+    if (declared !== undefined) return appCodeResult(declared);
+    if (suggestion !== undefined) throw new ErrorCodeUnknownError({ code, suggestion });
+    throw new AppCodeUnknownError({ code, inApp: findAppRoot(cwd) !== undefined });
   }
   return {
     ok: true,
@@ -70,6 +83,23 @@ async function explainOne(
     data: asJson(explanation, reader),
   };
 }
+
+/**
+ * An app's own code: what the registry holds (title, status) and the declaring line. No `cause:` or
+ * `fix:` line — the registry keeps neither for a `defineError` code, and the declaration is one open
+ * file away.
+ */
+const appCodeResult = (declared: AppCodeExplanation): CommandResult => ({
+  ok: true,
+  command: 'errors',
+  summary: msg('cli.errors.explained', { code: declared.code, title: declared.title }),
+  lines: [
+    `  status:   ${declared.status ?? 'off-socket'}`,
+    ...(declared.site === null ? [] : [`  declared: ${declared.site.at}:${declared.site.line}`]),
+    `  docs:     ${singleLine(declared.docs)}`,
+  ],
+  data: { ...declared },
+});
 
 /**
  * A package that resolved and then threw is a defect, not a host gap: its codes are missing from

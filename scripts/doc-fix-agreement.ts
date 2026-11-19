@@ -28,8 +28,9 @@ const PAGE = 'the wiki/Error-Codes*.md pages';
  * `X_CONFIG_INVALID`'s 23), where the page states the class of remedy and each site its instance;
  * a few are a row ahead of a stale site (`X_RPC_FAILED`'s site is thrown by nothing since 21.0.0).
  * Agreeing one lowers this by one in the same diff; `X_DOC_FIX_DISAGREES_PIN_STALE` says when.
+ * lowered 17 → 16, measured 16 (2026-11-19, r9 sweep 3): a row the docs pass brought into agreement.
  */
-export const DISAGREEMENT_PIN = 17;
+export const DISAGREEMENT_PIN = 16;
 
 /** One site's registered fix; `undefined` when the site builds it at run time. */
 export interface RegisteredFix {

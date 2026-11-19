@@ -240,6 +240,7 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
           ...target,
           live: options.live === true,
           ...(options.locales === undefined ? {} : { locales: options.locales }),
+          ...(options.slicePolicy === undefined ? {} : { slicePolicy: options.slicePolicy }),
           ...(options.sliceEntity === undefined ? {} : { sliceEntity: options.sliceEntity }),
           ...(options.sliceRepo === undefined ? {} : { sliceRepo: options.sliceRepo }),
         }),

@@ -135,6 +135,10 @@ describe('unit · what counts as a read', () => {
 });
 
 describe('unit · nineteen readers is the alarm, not the all-clear', () => {
+  // A bare name is no read since 2026-11-19 (`qualifiedRead`), so each fixture below is also
+  // `unread`; these tests ask the OTHER question, whether the reader set is evidence at all.
+  const doubts = (gaps: readonly { readonly kind: string }[]) =>
+    gaps.filter((gap) => gap.kind !== 'unread');
   const noisy = (count: number, key: string) =>
     Array.from({ length: count }, (_at, index) => ({
       path: `packages/cache/src/file-${String(index)}.ts`,
@@ -147,8 +151,8 @@ describe('unit · nineteen readers is the alarm, not the all-clear', () => {
       files: noisy(AMBIGUOUS_LIMIT + 1, 'tier'),
       pins: {},
     });
-    expect(gaps.map((gap) => gap.kind)).toEqual(['ambiguous']);
-    const finding = configReaderFindingFor(gaps[0] as never);
+    expect(gaps.map((gap) => gap.kind)).toEqual(['unread', 'ambiguous']);
+    const finding = configReaderFindingFor(doubts(gaps)[0] as never);
     expect(finding.code).toBe('X_CONFIG_KEY_READER_AMBIGUOUS');
     expect(finding.cause).toContain('packages/realtime/');
     expect(finding.fix).toContain('CONFIG_AMBIGUOUS_PINS');
@@ -163,7 +167,7 @@ describe('unit · nineteen readers is the alarm, not the all-clear', () => {
       ],
       pins: {},
     });
-    expect(gaps).toEqual([]);
+    expect(doubts(gaps)).toEqual([]);
   });
 
   test('the qualified <section>.<key> spelt anywhere settles it too', () => {
@@ -178,20 +182,19 @@ describe('unit · nineteen readers is the alarm, not the all-clear', () => {
     expect(gaps).toEqual([]);
   });
 
-  test('at or below the limit the old looseness stands — a narrow name is still evidence', () => {
-    expect(
-      checkConfigReaders({
-        leaves: ['realtime.tier'],
-        files: noisy(AMBIGUOUS_LIMIT, 'tier'),
-        pins: {},
-      }),
-    ).toEqual([]);
+  test('at or below the limit nothing is ambiguous — and a bare name alone is still unread', () => {
+    const gaps = checkConfigReaders({
+      leaves: ['realtime.tier'],
+      files: noisy(AMBIGUOUS_LIMIT, 'tier'),
+      pins: {},
+    });
+    expect(gaps.map((gap) => gap.kind)).toEqual(['unread']);
   });
 
   test('a top-level leaf has no section to qualify, and is never reported ambiguous', () => {
-    expect(checkConfigReaders({ leaves: ['name'], files: noisy(200, 'name'), pins: {} })).toEqual(
-      [],
-    );
+    expect(
+      doubts(checkConfigReaders({ leaves: ['name'], files: noisy(200, 'name'), pins: {} })),
+    ).toEqual([]);
   });
 
   test('a section whose package is named differently resolves through SECTION_PACKAGE', () => {
@@ -223,8 +226,10 @@ describe('unit · nineteen readers is the alarm, not the all-clear', () => {
       pins: {},
       ambiguousPins: { 'realtime.tier': 'the bare name matches 19 files' },
     });
-    expect(gaps.map((gap) => [gap.kind, gap.stale])).toEqual([['stale', 'now-qualified']]);
-    expect(configReaderFindingFor(gaps[0] as never).fix).toBe(
+    expect(doubts(gaps).map((gap) => [gap.kind, (gap as { stale?: string }).stale])).toEqual([
+      ['stale', 'now-qualified'],
+    ]);
+    expect(configReaderFindingFor(doubts(gaps)[0] as never).fix).toBe(
       'bun run scripts/config-readers.ts --unpin realtime.tier',
     );
   });
@@ -236,7 +241,9 @@ describe('unit · nineteen readers is the alarm, not the all-clear', () => {
       pins: {},
       ambiguousPins: { 'realtime.tier': 'deleted with the key it excused' },
     });
-    expect(gaps.map((gap) => [gap.leaf, gap.stale])).toEqual([['realtime.tier', 'key-deleted']]);
+    expect(gaps.filter((gap) => gap.kind === 'stale').map((gap) => [gap.leaf, gap.stale])).toEqual([
+      ['realtime.tier', 'key-deleted'],
+    ]);
   });
 });
 
@@ -252,17 +259,18 @@ describe('unit · the ratchet', () => {
    * two: 22.0.0 WIRED `realtime.urlEnv` (`@ultimat3/realtime`'s `selectTransport`).
    */
   // 25.0.0 deleted the last two (`defaultTimeZone`, `defaultCurrency`: owner decision O-6, no
-  // ambient default), so every key `AppConfig` declares now has a reader.
-  test('unpinned, this tree reports no key nothing in packages/*/src reads', () => {
+  // ambient default). 2026-11-19 demanded a QUALIFIED read and found five more read by nothing:
+  // four were wired, and `database.driver` (one accepted value) is pinned on a decision for `next`.
+  test('unpinned, this tree reports exactly the pinned keys as read by nothing', () => {
     const gaps = checkConfigReaders({ ...input, pins: {}, ambiguousPins: {} }).filter(
       (gap) => gap.kind === 'unread',
     );
-    expect(gaps.map((gap) => gap.leaf)).toEqual([]);
+    expect(gaps.map((gap) => gap.leaf)).toEqual(['database.driver']);
   });
 
   test('and pinned, the tree is green — so the pins are exactly the reds, with nothing spare', async () => {
     expect(await configReaderGaps(repoRoot())).toEqual([]);
-    expect(Object.keys(CONFIG_READER_PINS)).toEqual([]);
+    expect(Object.keys(CONFIG_READER_PINS)).toEqual(['database.driver']);
   });
 
   test('the ambiguity pins are exactly this tree reds, with nothing spare', () => {
@@ -281,7 +289,7 @@ describe('unit · the ratchet', () => {
   test('a pin whose key gained a reader is stale, and the fix is the command that drops it', () => {
     const gaps = checkConfigReaders({
       leaves: ['jobs.concurrency'],
-      files: [{ path: 'packages/jobs/src/worker.ts', text: 'const n = options.concurrency;' }],
+      files: [{ path: 'packages/jobs/src/worker.ts', text: 'const n = config.jobs.concurrency;' }],
       pins: { 'jobs.concurrency': 'nobody reads it' },
     });
     expect(gaps.map((gap) => gap.kind)).toEqual(['stale']);
@@ -299,7 +307,7 @@ describe('unit · the ratchet', () => {
   test('a pin for a key AppConfig no longer declares is stale too, with its own cause', () => {
     const gaps = checkConfigReaders({
       leaves: ['jobs.concurrency'],
-      files: [{ path: 'packages/jobs/src/worker.ts', text: 'const n = options.concurrency;' }],
+      files: [{ path: 'packages/jobs/src/worker.ts', text: 'const n = config.jobs.concurrency;' }],
       pins: { 'jobs.driver': 'deleted in 5.0.0, and the pin outlived it' },
     });
     expect(gaps.map((gap) => [gap.kind, gap.leaf, gap.stale])).toEqual([
@@ -317,15 +325,17 @@ describe('unit · the ratchet', () => {
   test('--unpin performs the edit the stale finding names, and refuses one that is not stale', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-config-pins-')).then(made);
     const path = join(dir, CONFIG_PINS_FILE);
-    // The real file, with two multi-line rows seeded back into its (now empty) table: the shape
-    // the entry-delete regex must survive, which the live table no longer holds.
+    // The real file, with two multi-line rows seeded at the top of its table: the shape the
+    // entry-delete regex must survive, whatever the live table holds today.
     const real = await Bun.file(join(repoRoot(), CONFIG_PINS_FILE)).text();
-    // Biome writes the empty table as `= {};`, so the seed reopens it.
+    // Biome writes an empty table as `= {};`, so the seed reopens it; a full one keeps its rows.
     const seeded = real.replace(
-      'export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {};\n',
-      'export const CONFIG_READER_PINS: Readonly<Record<string, string>> = {\n' +
+      /(export const CONFIG_READER_PINS: Readonly<Record<string, string>> = \{)(\};)?\n/,
+      (_all, open: string, empty: string | undefined) =>
+        `${open}\n` +
         "  defaultCurrency:\n    'a reason that wraps ' +\n    'over two lines',\n" +
-        "  defaultTimeZone:\n    'the neighbour, which must survive',\n};\n",
+        "  defaultTimeZone:\n    'the neighbour, which must survive',\n" +
+        (empty === undefined ? '' : '};\n'),
     );
     expect(seeded).not.toBe(real);
     await Bun.write(path, seeded);

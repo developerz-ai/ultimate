@@ -1,7 +1,8 @@
 /**
  * The open database transaction, as this package needs it — **the only** file here that imports
  * `@ultimat3/db` (`tx-scope.test.ts`): when a write is durable, whether a transaction is OPEN and on
- * which client, a scope whose writes are never kept, and an executor that never joins one.
+ * which client, a scope whose writes are never kept, an executor that never joins one, and the
+ * one SQLSTATE an insert outside a transaction asks about.
  */
 
 // Type-only: `idempotency-postgres.ts` imports this module, and a runtime edge would be a cycle.
@@ -13,9 +14,12 @@ import {
   dbClientInstalled,
   liveTxConnection,
   outsideTransaction,
+  SQLSTATE,
+  sqlState,
   withTransaction,
 } from '@ultimat3/db';
 import { memoryJournal, memoryTransactor } from '@ultimat3/entity';
+import { memoryTxOpen } from '@ultimat3/entity/internal/memory-tx';
 
 /** The mark a keyed run puts on the open root: its COMMIT carries the settle, abort or no abort. */
 export const carrySettleOnCommit = (): void => completeTransaction();
@@ -28,6 +32,10 @@ export const carrySettleOnCommit = (): void => completeTransaction();
 export const outsideTransactions = (executor: PgExecutor): PgExecutor => ({
   query: (text, values) => outsideTransaction(() => executor.query(text, values)),
 });
+
+/** Whether `error` is Postgres' `unique_violation`, read through db's one SQLSTATE reader. */
+export const isUniqueViolation = (error: unknown): boolean =>
+  sqlState(error) === SQLSTATE.uniqueViolation;
 
 /** The half of a transaction a deferred effect needs. `@ultimat3/db`'s `DbTx` satisfies it. */
 export interface CommitScope {
@@ -80,6 +88,23 @@ export function liveTransaction(): LiveTransaction | undefined {
       query: <R>(text: string, values: readonly unknown[]) => tx.query<R>({ text, values }),
     },
   };
+}
+
+/** The half of an open transaction a settle bound to it needs: its commit and its rollback. */
+export type SettleScope = Pick<LiveTransaction, 'onCommit' | 'onRollback'>;
+
+/**
+ * The OPEN transaction a settle rides — the SQL one (`liveTransaction`), else the open MEMORY one,
+ * the answer `openCommitScope` gives the bust. `undefined` outside both and for an ended scope, so
+ * a settle the body forgot to await is its own unit of work on either store, never a dropped one.
+ */
+export function settleScope(): SettleScope | undefined {
+  const sql = liveTransaction();
+  if (sql !== undefined) return sql;
+  const memory = memoryJournal();
+  const onCommit = memory?.onCommit?.bind(memory);
+  if (memory === undefined || onCommit === undefined || !memoryTxOpen(memory)) return undefined;
+  return { onCommit, onRollback: (undo) => memory.onRollback(undo) };
 }
 
 /**

@@ -66,10 +66,13 @@ function writerRequest(
   maxTokens: number,
   messages: readonly AiMessage[],
 ): GenerateRequest {
-  if (writer === base.model) return { ...base, messages, maxTokens };
+  // `toolChoice: 'auto'`: the summary is prose. A run offering `respond` alone would otherwise be
+  // FORCED through it on the chat-completions wire, answer no text, and never compact.
+  const prose = { messages, maxTokens, toolChoice: 'auto' as const };
+  if (writer === base.model) return { ...base, ...prose };
   // Nor the run model's fallback chain: a separate writer is its own choice, and may be in it.
   const { effort: _effort, thinking: _thinking, fallbackModels: _chain, ...rest } = base;
-  return { ...rest, model: writer, messages, maxTokens };
+  return { ...rest, model: writer, ...prose };
 }
 
 /** Roles must alternate, and the older turns end on a user message: the instruction joins it. */

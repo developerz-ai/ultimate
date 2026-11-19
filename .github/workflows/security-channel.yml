@@ -63,11 +63,13 @@ jobs:
 
   floors:
     # `contents: write` + `pull-requests: write`: the branch and the pull request with the raised
-    # ranges, as bench.yml opens one. `issues: write`: the alarm for an advisory no floor closes. No
-    # `id-token`: this job can never publish, only propose; a release ships the raise.
+    # ranges, as bench.yml opens one. `actions: write`: the ci.yml dispatch that gates that branch.
+    # `issues: write`: the alarm for an advisory no floor closes. No `id-token`: this job can never
+    # publish, only propose; a release ships the raise.
     permissions:
       contents: write
       pull-requests: write
+      actions: write
       issues: write
     runs-on: ubuntu-latest
     # One packument and one advisory query per dependency, a few dozen in all, measured well under a
@@ -122,6 +124,9 @@ jobs:
           BRANCH='security/advisory-floors'
           # One branch, force-pushed: tomorrow's run refreshes today's pull request, never a second.
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          # A push made with the job token starts no workflow, so the pull request would wait on a
+          # `verify` check that never reports; a dispatch is GitHub's exception, as next-sync.yml's.
+          gh workflow run ci.yml --ref "$BRANCH"
           body="$(jq -r '"**" + .summary + "**\n\n" + ([.data.raises[] | "- `" + .manifest + "` " + .field + "." + .name + ": `" + .from + "` -> `" + .to + "` (" + ([.advisories[].advisory] | unique | join(", ")) + ")"] | join("\n")) + "\n\nThe root `package.json`, the scaffold pin and the tracked apps may pin the old version: CI on this branch names them."' floors.json)"
           existing="$(gh pr list --head "$BRANCH" --state open --limit 1 --json number --jq '.[0].number // empty')"
           if [ -n "$existing" ]; then

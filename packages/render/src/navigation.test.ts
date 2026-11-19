@@ -414,6 +414,25 @@ describe('history and scroll', () => {
   });
 });
 
+describe('a fragment', () => {
+  // `decodeURIComponent('50%')` threw inside the swap, AFTER the body was replaced and the entry
+  // pushed; the fallback `location.assign` then targeted the URL already in the bar, which is a
+  // fragment navigation, not a load — so no script of the new page ever ran.
+  test('a fragment with a malformed percent-escape still lands: scripts run and ultimate:navigated fires', async () => {
+    const doc = page('A', {}, [h('a', { id: 'to-bad', href: '/b#50%' }, 'bad')]);
+    const { win, calls } = tab({ '/b': answers.b }, doc);
+    const landed: string[] = [];
+    doc.addEventListener(NAVIGATED_EVENT, (e) => landed.push((e as CustomEvent).detail.url));
+    click(win, 'to-bad');
+    await settle();
+    expect(calls).toEqual(['GET /b soft']);
+    expect(doc.title).toBe('B');
+    expect(win.assigned).toEqual([]);
+    expect(landed).toEqual(['https://app.test/b#50%']);
+    expect(doc.ran).toContain('hydrate(B)');
+  });
+});
+
 describe('stop', () => {
   test('lets go of every listener', async () => {
     const { win, calls } = tab({ '/b': answers.b });

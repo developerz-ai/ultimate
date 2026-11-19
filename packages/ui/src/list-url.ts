@@ -53,7 +53,9 @@ const BASE = 'http://list.invalid';
 
 const CURSOR = 'after';
 
-const isCursorParam = (name: string): boolean => name === CURSOR || name.endsWith(`.${CURSOR}`);
+/** A cursor of ANY list on the page: the bare one, or a namespaced list's (`runs.after`). */
+export const isCursorParam = (name: string): boolean =>
+  name === CURSOR || name.endsWith(`.${CURSOR}`);
 
 const direction = (raw: string | null): SortDirection => (raw === 'desc' ? 'desc' : 'asc');
 

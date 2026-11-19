@@ -84,6 +84,22 @@ function bothSides(ours: readonly string[], theirs: readonly string[]): string[]
     .flatMap((entry) => entry.split('\n'));
 }
 
+/**
+ * A marker line, with or without the `\r` git ends it with on a CRLF file. The `\r` stays on every
+ * line this module passes through or reorders, so the merged file keeps its own line ending.
+ */
+const isMarker = (line: string | undefined, marker: string): boolean =>
+  line === marker || line === `${marker}\r`;
+
+/** The first `marker` line at or after `from`; -1 when there is none, or no `from` to start at. */
+export const markerAt = (lines: readonly string[], marker: string, from: number): number => {
+  if (from < 0) return -1;
+  for (let at = from; at < lines.length; at += 1) {
+    if (isMarker(lines[at], marker)) return at;
+  }
+  return -1;
+};
+
 /** `text` — `git merge-file --diff3 -L ours -L base -L theirs` output — with additions resolved. */
 export function resolveAdditions(text: string): LineMerge {
   const lines = text.split('\n');
@@ -91,13 +107,13 @@ export function resolveAdditions(text: string): LineMerge {
   let conflicts = 0;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] as string;
-    if (line !== OURS_MARKER) {
+    if (!isMarker(line, OURS_MARKER)) {
       out.push(line);
       continue;
     }
-    const baseAt = lines.indexOf(BASE_MARKER, index);
-    const splitAt = lines.indexOf(SPLIT_MARKER, baseAt);
-    const endAt = lines.indexOf(THEIRS_MARKER, splitAt);
+    const baseAt = markerAt(lines, BASE_MARKER, index);
+    const splitAt = markerAt(lines, SPLIT_MARKER, baseAt);
+    const endAt = markerAt(lines, THEIRS_MARKER, splitAt);
     if (baseAt === -1 || splitAt === -1 || endAt === -1) {
       out.push(line);
       continue;
@@ -111,4 +127,14 @@ export function resolveAdditions(text: string): LineMerge {
     index = endAt;
   }
   return { text: out.join('\n'), conflicts };
+}
+
+/**
+ * The count the driver exits on. `resolved` is `resolveAdditions`' own; the rest is a backstop for
+ * a marker it did not recognise: when git reported conflicts and a line of the result still opens
+ * one, the file is not merged whatever was counted, and git's number stands.
+ */
+export function conflictsLeft(text: string, resolved: number, gitReported: number): number {
+  if (resolved > 0 || gitReported <= 0) return resolved;
+  return /^<{7} /m.test(text) ? gitReported : 0;
 }

@@ -122,11 +122,40 @@ export const wantsJson = (argv: readonly string[]): boolean =>
 const HELP_ALIASES = new Set(['--help', '-h', 'help']);
 const VERSION_ALIASES = new Set(['--version', '-v', '-V']);
 
+// What an unknown top-level word most likely MEANT, ahead of what it merely resembles. Edit
+// distance answered `x migrate` with `x upgrade` and `x start` with `x stop`: a `fix:` is pasted
+// and run, so a guess that changes state is worse than no guess.
+/**
+ * A word other toolchains use, as the `x` argv that does it. Each is held to the shipped parser by
+ * `parse.test.ts`, so an entry cannot outlive the command it names.
+ */
+export const COMMAND_INTENTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  migrate: ['db', 'migrate'],
+  seed: ['db', 'seed'],
+  start: ['dev'],
+  serve: ['dev'],
+  server: ['dev'],
+  lint: ['verify', '--only', 'lint'],
+  typecheck: ['verify', '--only', 'typecheck'],
+  tsc: ['verify', '--only', 'typecheck'],
+  check: ['verify'],
+});
+
+/** The suggestion for `word` (`'db migrate'`), when `commands` has the command it starts with. */
+export function intentFor(word: string, commands: readonly string[]): string | undefined {
+  const argv = Object.hasOwn(COMMAND_INTENTS, word) ? COMMAND_INTENTS[word] : undefined;
+  const [command] = argv ?? [];
+  return argv !== undefined && command !== undefined && commands.includes(command)
+    ? argv.join(' ')
+    : undefined;
+}
+
 function resolveCommand(token: string, specs: readonly CommandSpec[]): CommandSpec {
   const found = specs.find((spec) => spec.name === token || (spec.aliases ?? []).includes(token));
   if (found !== undefined) return found;
   const names = specs.map((spec) => spec.name);
-  const suggestion = nearestName(token, names);
+  // What the word means before what it resembles: `migrate` is two edits from `upgrade`.
+  const suggestion = intentFor(token, names) ?? nearestName(token, names);
   throw new UnknownCommandError(
     suggestion === undefined
       ? { path: token, known: names }
@@ -351,11 +380,13 @@ function readSubcommand(spec: CommandSpec, positionals: readonly string[]): Reso
   if (spec.defaultSubcommandTakesPositional === true && suggestion === undefined) {
     return { name: spec.defaultSubcommand, consumed: false };
   }
-  throw new UnknownCommandError(
-    suggestion === undefined
-      ? { path: `${spec.name} ${token}`, known: allowed }
-      : { path: `${spec.name} ${token}`, known: allowed, suggestion: `${spec.name} ${suggestion}` },
-  );
+  // Near nothing: the command's own page, which lists the subcommands it REGISTERS — the command
+  // was right, so the top-level `x help` sent the reader back through every other one.
+  throw new UnknownCommandError({
+    path: `${spec.name} ${token}`,
+    known: allowed,
+    suggestion: suggestion === undefined ? `help ${spec.name}` : `${spec.name} ${suggestion}`,
+  });
 }
 
 function blank(command: string, specs: readonly CommandSpec[], json: boolean): ParsedArgs {

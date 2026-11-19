@@ -46,7 +46,7 @@ import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { ISOLATED_ENV } from '@ultimat3/testing';
 import type { AffectedSelection } from './affected';
-import type { Runner } from './exec';
+import type { ExecResult, Runner } from './exec';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import { quoteArg } from './shell-quote';
@@ -57,10 +57,12 @@ import type { MachineLease } from './test-slots';
 export const TEST_TIMINGS_FILE = '.x/test-timings.json';
 
 import { runBatches, testBatches } from './test-batches';
+import { countsOf } from './test-counts';
 import { tidyBeforeTestRun } from './test-housekeeping';
 import { testPasses } from './test-passes';
 import type { TestFile } from './test-select';
 import { loadTimings, SLOWEST_KEPT, slowestOf } from './test-timings';
+import { allSkippedFinding, failingFiles } from './test-verdict';
 import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
 import type { TestType } from './verify-tests';
 
@@ -151,27 +153,30 @@ export interface ReproduceOptions {
  * and the command still runs, over a different file set, which reproduces nothing.
  */
 export function reproduceFor(options: ReproduceOptions): string {
+  return `x ${quoteArg(reproduceWords(options))}`;
+}
+
+/** `reproduceFor`'s words after `x`, unquoted: each is quoted on its own (`quoteArg`) where pasted. */
+export function reproduceWords(options: ReproduceOptions): readonly string[] {
   return [
-    'x test',
-    ...(options.type === undefined ? [] : [quoteArg(options.type)]),
-    ...(options.filter === undefined ? [] : ['--filter', quoteArg(options.filter)]),
+    'test',
+    ...(options.type === undefined ? [] : [options.type]),
+    ...(options.filter === undefined ? [] : ['--filter', options.filter]),
     ...(options.sample === undefined ? [] : ['--sample', String(options.sample)]),
     // `--base` is emitted always rather than only when non-default: the default is `main`, and a
     // rerun days later against a moved `main` is a different diff wearing the same flag.
-    ...(options.affected === undefined
-      ? []
-      : ['--affected', '--base', quoteArg(options.affected.base)]),
+    ...(options.affected === undefined ? [] : ['--affected', '--base', options.affected.base]),
     ...(options.affected?.dirty === true ? ['--dirty'] : []),
     '--workers',
     String(options.workers),
     ...(options.isolate === true ? ['--isolate'] : []),
     ...(options.seed === undefined ? [] : ['--seed', String(options.seed)]),
     // Last, and after a `--` of its own, because that is where the caller typed it and where the
-    // parser will find it again. Quoted for `shell-quote.ts`'s reason: a reproduce line is pasted.
+    // parser will find it again.
     ...(options.passthrough === undefined || options.passthrough.length === 0
       ? []
-      : ['--', ...options.passthrough.map(quoteArg)]),
-  ].join(' ');
+      : ['--', ...options.passthrough]),
+  ];
 }
 
 export interface RunShardsOptions {
@@ -233,16 +238,56 @@ const planOf = (
     : { passthrough: options.passthrough }),
 });
 
-/**
- * `X_TEST_FAILED`, whose `fix:` reruns exactly what failed. `X_TEST_SHARD_FAILED` was the
- * `--worker` rerun's and went with it: the code stays registered (codes are forever) and unthrown.
- */
-export const failureOf = (code: number, files: number, plan: ReproduceOptions): Finding => ({
-  code: 'X_TEST_FAILED',
-  cause: `${plan.type ?? 'test'} run exited ${code} across ${plan.workers} worker(s) (${files} file(s))`,
-  fix: reproduceFor(plan),
-  docs: ERROR_DOCS_URL,
+/** The failing files shown in a cause; the rest are counted. */
+const SHOWN_FAILING = 5;
+
+/** `plan` narrowed to one file, alone: the rerun of a failure that is not the whole suite again. */
+const narrowedTo = (plan: ReproduceOptions, file: string): ReproduceOptions => ({
+  workers: 1,
+  filter: file,
+  ...(plan.type === undefined ? {} : { type: plan.type }),
+  ...(plan.isolate === true ? { isolate: true } : {}),
+  ...(plan.seed === undefined ? {} : { seed: plan.seed }),
+  ...(plan.passthrough === undefined ? {} : { passthrough: plan.passthrough }),
 });
+
+/**
+ * `X_TEST_FAILED`. With the failing files read out of bun's output, the cause names them and the
+ * fix reruns the first one alone — rerunning the selection that just failed is the line the
+ * reader already ran. Only when bun named no file is the fix the whole reproduction.
+ * `X_TEST_SHARD_FAILED` was the `--worker` rerun's and went with it: registered, unthrown.
+ */
+export const failureOf = (
+  code: number,
+  files: number,
+  plan: ReproduceOptions,
+  failing: readonly string[] = [],
+): Finding => {
+  const first = failing[0];
+  const more = failing.length > SHOWN_FAILING ? ` (+${failing.length - SHOWN_FAILING} more)` : '';
+  const named =
+    first === undefined ? '' : `; failing: ${failing.slice(0, SHOWN_FAILING).join(', ')}${more}`;
+  return {
+    code: 'X_TEST_FAILED',
+    cause: `${plan.type ?? 'test'} run exited ${code} across ${plan.workers} worker(s) (${files} file(s))${named}`,
+    fix: reproduceFor(first === undefined ? plan : narrowedTo(plan, first)),
+    docs: ERROR_DOCS_URL,
+  };
+};
+
+/** The environment the children saw: this process's, with the overrides applied (undefined unsets). */
+const childEnv = (
+  env: Readonly<Record<string, string | undefined>>,
+  overrides: Readonly<Record<string, string | undefined>>,
+): Readonly<Record<string, string | undefined>> => {
+  // A Map, never a keyed object: an env key is any string, `__proto__` included.
+  const out = new Map(Object.entries(env));
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) out.delete(key);
+    else out.set(key, value);
+  }
+  return Object.fromEntries(out);
+};
 
 /**
  * ONE `bun test` PER BATCH, a pass being as many batches as `test-batches.ts` cuts it into, and
@@ -283,6 +328,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   let peak = 1;
   let ok = true;
   let exitCode = 0;
+  const results: ExecResult[] = [];
   for (const pass of passes) {
     const files = pass.files.map((file) => file.path);
     // `-- --watch` is never split: it never exits, so a second batch would never start. Every
@@ -331,7 +377,9 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       // `output.ts` documents this field as absent for a NON-test step, so omitting it here made
       // `renderJson` describe the test step as one — recoverable only by parsing `name`.
       workers: reached,
-      findings: result.ok ? [] : [failureOf(result.code, files.length, plan)],
+      findings: result.ok
+        ? []
+        : [failureOf(result.code, files.length, plan, failingFiles(result.output, files))],
       output: result.output,
     });
     spent.push({
@@ -346,6 +394,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     });
     ok = ok && result.ok;
     if (exitCode === 0) exitCode = result.code;
+    results.push(...result.results);
   }
   const durationMs = Math.round(performance.now() - started);
   const fileCount = options.files.length;
@@ -358,7 +407,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     SLOWEST_KEPT,
   );
   // Each pass's line names its own slowest, so a mixed run's serial half is not hidden by the rest.
-  const timedSteps = steps.map((step, index) => {
+  let timedSteps = steps.map((step, index) => {
     const own = slowestOf(timings, passes[index]?.files.map((file) => file.path) ?? []);
     return own.length === 0 ? step : { ...step, slowest: own };
   });
@@ -370,6 +419,25 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     workers,
     ...(options.type === undefined ? {} : { type: options.type }),
   });
+  // `bun test` exits 0 over a run whose every test skipped itself: only the counts say nothing ran.
+  const counts = countsOf(results);
+  const skippedOnly = ok && !watching && counts.ran === 0 && counts.skipped > 0;
+  if (skippedOnly) {
+    const finding = allSkippedFinding({
+      ...(options.type === undefined ? {} : { type: options.type }),
+      skipped: counts.skipped,
+      files: options.files.map((file) => file.path),
+      env: childEnv(options.env ?? Bun.env, envOverrides),
+      rerun: reproduceWords(plan),
+    });
+    timedSteps = timedSteps.map((step) => ({
+      ...step,
+      ok: false,
+      findings: [...step.findings, finding],
+    }));
+    ok = false;
+    exitCode = 1;
+  }
   const type = options.type;
   const typeParam = type === undefined ? {} : { type };
   const sample = options.sample;
@@ -396,18 +464,20 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   return {
     ok,
     command: 'test',
-    summary: ok
-      ? msg(type === undefined ? 'cli.test.pass' : 'cli.test.type.pass', {
-          ...typeParam,
-          files: fileCount,
-          workers: Math.min(peak, workers),
-          ms: durationMs,
-        })
-      : msg(type === undefined ? 'cli.test.fail' : 'cli.test.type.fail', {
-          ...typeParam,
-          failed: steps.filter((step) => !step.ok).length,
-          workers,
-        }),
+    summary: skippedOnly
+      ? msg('cli.test.allSkipped', { label: type ?? 'test', skipped: counts.skipped })
+      : ok
+        ? msg(type === undefined ? 'cli.test.pass' : 'cli.test.type.pass', {
+            ...typeParam,
+            files: fileCount,
+            workers: Math.min(peak, workers),
+            ms: durationMs,
+          })
+        : msg(type === undefined ? 'cli.test.fail' : 'cli.test.type.fail', {
+            ...typeParam,
+            failed: steps.filter((step) => !step.ok).length,
+            workers,
+          }),
     steps: timedSteps,
     ...(sample === undefined
       ? {}

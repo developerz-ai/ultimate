@@ -166,12 +166,14 @@ const recordFire = async (name: string, occurrenceMs: number): Promise<void> => 
 };
 
 describe('unit · x tasks spec', () => {
-  test('names both subcommands, list first, with the --count flag', () => {
+  test('names its subcommands, list first, with --count and run’s --production', () => {
     expect(tasksCommand.spec.name).toBe('tasks');
     expect(tasksCommand.spec.requiresApp).toBe(true);
-    expect(tasksCommand.spec.subcommands).toEqual(['list', 'show']);
-    expect(tasksCommand.spec.summary).toBe('cron tasks, their timezone and their next run');
-    expect(tasksCommand.spec.flags?.map((flag) => flag.name)).toEqual(['count']);
+    expect(tasksCommand.spec.subcommands).toEqual(['list', 'show', 'run']);
+    expect(tasksCommand.spec.summary).toBe(
+      'cron tasks, their timezone and their next run; fire one now',
+    );
+    expect(tasksCommand.spec.flags?.map((flag) => flag.name)).toEqual(['count', 'production']);
   });
 });
 

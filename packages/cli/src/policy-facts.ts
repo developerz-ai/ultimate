@@ -4,11 +4,12 @@
 
 import type { AnyAction } from '@ultimat3/action';
 import { describeActions, getAction } from '@ultimat3/action';
-import type { MatrixRow, Policy } from '@ultimat3/policy';
+import type { Policy } from '@ultimat3/policy';
 import { knownPermissions, policyMatrix, roleDefinitions, rolesGranting } from '@ultimat3/policy';
 import type { AnyQuery } from '@ultimat3/query';
 import { describeQueries, getQuery } from '@ultimat3/query';
 import { devActors } from './dev-policy';
+import { decided, type ExplainRow, rowWithoutInput } from './policy-row';
 
 const isDefined = <T>(value: T | undefined): value is T => value !== undefined;
 
@@ -81,6 +82,12 @@ export function listPolicy(): PolicyListFacts {
 export type DeclarationKind = 'action' | 'query';
 export type SubjectKind = 'permission' | DeclarationKind;
 
+/** What `x policy explain --input '<json>'` supplies: the request's input, parsed. */
+export interface ExplainOptions {
+  /** Absent: no input was given, and a rule that reads one is `needs-input`. */
+  readonly input?: { readonly value: unknown } | undefined;
+}
+
 export interface DeclarationExplanation {
   readonly name: string;
   readonly kind: DeclarationKind;
@@ -94,12 +101,13 @@ export interface DeclarationExplanation {
   readonly permissions: readonly string[];
   readonly label: string;
   /**
-   * Whether this policy can be decided at all outside a request. `false` when evaluating it
-   * with no request input threw — a predicate dereferencing `input.post.id` has nothing to
-   * dereference here — and `rows` is then empty, because a partial matrix reads as a verdict.
+   * Whether this policy could be evaluated at all. `false` only when it threw on the input
+   * `--input` supplied — a row rule dereferencing a row there is none of, a field the JSON did not
+   * carry — and `rows` is then empty, because a partial matrix reads as a verdict. With no input
+   * given a throwing predicate is a `needs-input` row instead: the missing input is why it threw.
    */
   readonly decidable: boolean;
-  readonly rows: readonly MatrixRow[];
+  readonly rows: readonly ExplainRow[];
 }
 
 export interface SubjectExplanation {
@@ -118,17 +126,21 @@ type DeclarationMatrix = Pick<DeclarationExplanation, 'decidable' | 'rows'>;
  * "every role plus anonymous" builder here is the duplicate axiom 1 bans, and it would drift
  * from the panel's own set the first time a role is renamed.
  *
- * Actor by actor inside a `try`, because there is no request input outside a request and
- * `policyMatrix` does not catch: a predicate reading `input.post.id` threw a bare `TypeError`
- * straight out of `x policy explain`. One throw makes the whole declaration undecidable rather
- * than half-reported — the rows a synthetic `{}` did produce are not the request's verdicts.
- * `policyMatrix` stays the only decider; nothing here re-derives one.
+ * With `--input` the policy is evaluated on it, actor by actor inside a `try`: `policyMatrix` does
+ * not catch, and a row rule dereferencing the row this command has none of threw a bare
+ * `TypeError` straight out of `x policy explain`. One throw makes the whole declaration
+ * undecidable rather than half-reported.
  */
-const matrixFor = (policy: Policy): DeclarationMatrix => {
-  const rows: MatrixRow[] = [];
+const matrixFor = (policy: Policy, options: ExplainOptions): DeclarationMatrix => {
+  const { input } = options;
+  if (input === undefined) {
+    return { decidable: true, rows: devActors().map((actor) => rowWithoutInput(policy, actor)) };
+  }
+  const rows: ExplainRow[] = [];
   for (const actor of devActors()) {
     try {
-      rows.push(...policyMatrix(policy, { actors: [actor], input: {} }).rows);
+      const matrix = policyMatrix(policy, { actors: [actor], input: input.value });
+      rows.push(...matrix.rows.map(decided));
     } catch {
       return { decidable: false, rows: [] };
     }
@@ -136,7 +148,7 @@ const matrixFor = (policy: Policy): DeclarationMatrix => {
   return { decidable: true, rows };
 };
 
-const explainAction = (action: AnyAction): DeclarationExplanation => {
+const explainAction = (action: AnyAction, options: ExplainOptions): DeclarationExplanation => {
   const descriptor = action.describe();
   return {
     name: descriptor.name,
@@ -144,11 +156,11 @@ const explainAction = (action: AnyAction): DeclarationExplanation => {
     capability: descriptor.capability,
     permissions: descriptor.permissions,
     label: action.policy.label,
-    ...matrixFor(action.policy),
+    ...matrixFor(action.policy, options),
   };
 };
 
-const explainQuery = (query: AnyQuery): DeclarationExplanation => {
+const explainQuery = (query: AnyQuery, options: ExplainOptions): DeclarationExplanation => {
   const descriptor = query.describe();
   return {
     name: descriptor.name,
@@ -156,7 +168,7 @@ const explainQuery = (query: AnyQuery): DeclarationExplanation => {
     capability: descriptor.capability,
     permissions: descriptor.permissions,
     label: query.policy.label,
-    ...matrixFor(query.policy),
+    ...matrixFor(query.policy, options),
   };
 };
 
@@ -188,7 +200,10 @@ export function knownPolicySubjects(): readonly string[] {
   ];
 }
 
-export function explainPolicy(name: string): SubjectExplanation | undefined {
+export function explainPolicy(
+  name: string,
+  options: ExplainOptions = {},
+): SubjectExplanation | undefined {
   const resolved = resolveSubject(name);
   if (resolved === undefined) return undefined;
   if (resolved.kind === 'permission') {
@@ -198,12 +213,12 @@ export function explainPolicy(name: string): SubjectExplanation | undefined {
         .filter((descriptor) => enforces(descriptor, permission))
         .map((descriptor) => getAction(descriptor.name))
         .filter(isDefined)
-        .map(explainAction),
+        .map((action) => explainAction(action, options)),
       ...describeQueries()
         .filter((descriptor) => enforces(descriptor, permission))
         .map((descriptor) => getQuery(descriptor.name))
         .filter(isDefined)
-        .map(explainQuery),
+        .map((query) => explainQuery(query, options)),
     ];
     return {
       subject: name,
@@ -213,7 +228,9 @@ export function explainPolicy(name: string): SubjectExplanation | undefined {
     };
   }
   const declaration =
-    resolved.kind === 'action' ? explainAction(resolved.action) : explainQuery(resolved.query);
+    resolved.kind === 'action'
+      ? explainAction(resolved.action, options)
+      : explainQuery(resolved.query, options);
   return {
     subject: name,
     kind: resolved.kind,

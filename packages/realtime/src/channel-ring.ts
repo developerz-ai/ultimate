@@ -12,6 +12,11 @@ export interface RecordsEntry {
   readonly remove: readonly { readonly type: string; readonly key: string }[];
   /** The write that produced the change (`ChangeEvent.write`), kept so a replay still names it. */
   readonly write?: string;
+  /**
+   * Present when the rows are one tenant's on a topic that is not that tenant's (`rowTenant`): only
+   * its members are shown them, live or replayed. `null`: the row named no tenant — nobody is.
+   */
+  readonly tenant?: string | null;
 }
 
 export interface RecordPart {
@@ -48,6 +53,7 @@ export class ChannelRing {
     adopt: readonly RecordPart[],
     remove: RecordsEntry['remove'],
     write?: string,
+    tenant?: string | null,
   ): RecordsEntry {
     this.#seq += 1;
     const entry: RecordsEntry = {
@@ -55,6 +61,7 @@ export class ChannelRing {
       adopt,
       remove,
       ...(write === undefined ? {} : { write }),
+      ...(tenant === undefined ? {} : { tenant }),
     };
     this.#entries.push(entry);
     if (this.#entries.length > this.#capacity) this.#entries.shift();

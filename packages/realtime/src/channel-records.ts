@@ -1,6 +1,6 @@
 // A committed change → the record updates each declared channel owes its subscribers. Pure: no
-// socket, no seq, no policy — `ChannelHub` does those per node and per socket. The only derivation
-// of "which channel carries this row" lives here, so a write never names a channel (axiom 2).
+// socket, no seq, no policy, no tenant — `ChannelHub` does those per node and per socket. The only
+// derivation of "which channel carries this row" lives here, so a write never names a channel.
 
 import { type Counter, counter, logger } from '@ultimat3/core';
 import type { Row } from '@ultimat3/core/page';
@@ -9,7 +9,10 @@ import type { ChangeEvent } from './changefeed';
 import type { Channel, Topic } from './channel-decl';
 import type { RecordPart } from './channel-ring';
 
-/** One topic's share of one change. `row` is what a per-row policy decides on. */
+/**
+ * One topic's share of one change. `row` is the image it came from: no policy re-decides it, but
+ * its tenant decides which of the topic's members are shown it (`rowTenant`, `channel-tenant.ts`).
+ */
 export interface TopicUpdate {
   readonly channel: Channel;
   readonly topic: Topic;

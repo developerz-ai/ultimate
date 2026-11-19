@@ -147,6 +147,70 @@ export const pollFleet = task({
 `webhook()` below is this pattern shipped as a factory; a fleet poll, a per-tenant digest and a
 per-subscriber notification are the same three files with different names.
 
+### One job per org, from a schedule
+
+The per-tenant form of the same fan-out, and the three things it has to say that the untenanted one
+does not: the schedule belongs to **no** org, listing the orgs is a read **across** tenants, and
+each child runs **as** its org.
+
+```ts
+import { serviceActor, withChildContext } from '@ultimat3/core';
+import { CROSS_TENANT_SCOPE, crossTenant } from '@ultimat3/entity';
+import { cronJob, job, t } from '@ultimat3/jobs';
+
+// A read over a tenant-scoped table — `db.orgs.orderBy('id').inBatches(500)`, collected to ids.
+declare const listOrgIds: () => Promise<readonly string[]>;
+declare const sendDigest: (orgId: string) => Promise<void>;
+
+// The scheduler is no org's actor, so it names itself and holds the one scope `crossTenant()` asks.
+const digestScheduler = serviceActor({ id: 'digest-scheduler', scopes: [CROSS_TENANT_SCOPE] });
+
+// jobs/org-digest.ts — the unit of retry: one org, and the run acts AS that org
+export const orgDigest = job({
+  input: t.object({ orgId: t.uuid, occurrenceMs: t.number.int() }),
+  idempotencyKey: ({ orgId, occurrenceMs }) => `org-digest:${orgId}:${occurrenceMs}`,
+  tenant: ({ orgId }) => orgId,
+  retry: { attempts: 3, backoff: 'exponential' },
+  async run({ input }) {
+    await sendDigest(input.orgId);
+  },
+});
+
+// jobs/org-digests.ts — the schedule and the fan-out, one declaration
+export const orgDigests = cronJob({
+  name: 'orgDigests',
+  cron: '0 6 * * *',
+  tz: 'UTC',
+  input: t.object({ occurrenceMs: t.number.int() }),
+  payload: (occurrenceMs) => ({ occurrenceMs }),
+  idempotencyKey: ({ occurrenceMs }) => `org-digests:${occurrenceMs}`,
+  tenant: 'none',
+  retry: { attempts: 3, backoff: 'exponential' },
+  async run({ input, step }) {
+    const orgIds = await step.run('list', () =>
+      withChildContext({ actor: digestScheduler }, () =>
+        crossTenant('the daily digest queues one job per org, so listing them spans every org', () =>
+          listOrgIds(),
+        ),
+      ),
+    );
+    for (const orgId of orgIds) {
+      await step.run(`enqueue:${orgId}`, () =>
+        orgDigest.enqueue({ orgId, occurrenceMs: input.occurrenceMs }),
+      );
+    }
+  },
+});
+```
+
+| Piece | Why it is this piece |
+|---|---|
+| `tenant: 'none'` on the cron job | a schedule has no org; its body carries none, so a tenant-scoped read in it is `X_TENANCY_ACTOR_ORG_REQUIRED` until it says it spans tenants |
+| `serviceActor({ scopes: [CROSS_TENANT_SCOPE] })` | `crossTenant()` proves `tenancy:cross` on the actor in scope and a job's own actor does not hold it (`X_TENANCY_CROSS_DENIED`). The sweep names itself, once, at module scope |
+| `withChildContext`, not a new context | the run's `requestId` and trace carry through, so the one cross-tenant read is auditable back to the occurrence that asked for it |
+| `crossTenant()` around the LIST only | the enqueues need none: the cron job's actor has no org, so there is nothing for the payload's org to contradict |
+| `tenant: ({ orgId }) => orgId` on the child | each row is queued under the org its payload names and `executeJob` installs that org's actor: every read and write in `sendDigest` is scoped to it, and two orgs' identical keys are two jobs |
+
 ## The export name is the job's name
 
 ```ts
@@ -189,6 +253,12 @@ table, and they are not part of this package's public API. There is one way to r
 so an inline run would be a second execution path next to the worker's — with no retry, no
 dedupe and no dead letter. Its idempotency key is the job's own, so a manual `task.enqueue()`
 and the scheduler's occurrence-scoped fire stay distinct rows on purpose.
+
+**One entry the scheduler cannot queue fails the whole occurrence** (`As of 2026-11`): a `tenant()`
+that throws or answers empty, or an empty concurrency key, on any entry of a task's `enqueue`.
+Nothing is queued and the watermark stays; `jobs.scheduler.entry-refused` (error) names the task,
+the job and the entry index. The next tick owes the same occurrence and logs it again, until the
+declaration or the data is repaired — then that tick queues every entry. Never a partial fire.
 
 With no facade installed, `enqueue` publishes straight to `jobDriver()`; with none of those
 either, it is `X_DRIVER_UNAVAILABLE` at the call, not a silently dropped job.
@@ -1308,7 +1378,7 @@ barrel, which carries no installer (`adapter.test.ts`).
 | `redis` | complete, `As of 2026-10` | core's `redisClient()` (`@ultimat3/core/redis`); one Lua script per operation, sent as `EVALSHA` (40 bytes, not the claim's 2.5 KB) with an `EVAL` fallback on `NOSCRIPT` (`driver-redis-eval.ts`), every key in one `{hash tag}` slot | a queue off the database; no `introspect`, `backfills` or `leases` |
 | `memory` | complete | in-process maps | `x dev`, tests |
 
-**`redisJobDriver({ client?, prefix?, clock?, doneTtlMs? })`** passes `@ultimat3/testing`'s
+**`redisJobDriver({ client?, prefix?, clock?, doneTtlMs?, deadTtlMs? })`** passes `@ultimat3/testing`'s
 `jobDriverConformance`, the suite the other two pass, and `driver-redis.live.test.ts` runs one
 script of operations on it and on the memory driver and compares every answer. Installed with
 `jobs: redisJobDriver()` in `apps/<app>/runtime.ts`, imported from its own entry
@@ -1316,7 +1386,15 @@ script of operations on it and on the memory driver and compares every answer. I
 What it does not carry: `introspect` (so `x jobs show`/`retry`/`cancel` and queue pauses answer
 for Postgres only), `backfills`, and `leases` — a job declaring `concurrency` refuses
 `jobWorker().start()` (`X_JOB_CONCURRENCY_UNENFORCEABLE`). A `done` row and its steps expire
-after `doneTtlMs` (a week; `0` keeps them); `dead` and `failed` rows are kept. The outbox still
+after `doneTtlMs` (a week; `0` keeps them); a `dead` or `failed` row (an expired one included),
+its steps and its set entry after `deadTtlMs` (default `JOBS_DEAD_RETENTION_MS_DEFAULT`, 90 days,
+pg's `jobs.deadRetentionMs`; `0` keeps them) `As of 2026-11`. A debounce fence
+(`onConflict: 'replace'`) is one `debounce:<key>` that expires with its row: a key debounced once
+holds nothing past its row's life. **One clock** `As of 2026-11`: with no `clock` injected, every
+lease, retry, settle debt and gauge is measured on the SERVER's (`TIME` in the script), never a
+pod's — two pods whose clocks disagree cannot both hold one row, as pg's `now()` guarantees; an
+injected `clock` (a test's frozen one) decides them instead. `runAt` stays the enqueuer's, as on
+pg. The outbox still
 stages in Postgres — the relay publishes committed rows onto it with their ids. The NATS stub
 deleted in 25.0.0 stays deleted.
 
@@ -1548,6 +1626,7 @@ export const wake = startQueueWake({ listener: client, executor });
 | a notification is throttled in the statement | Postgres serialises the commit of every transaction that issued a `NOTIFY` behind one lock, held through its WAL flush. One per enqueue caps enqueuing commits at one flush at a time |
 | a woken loop passes now, then at the floor again | that pass is what finds the row its slot kept silent — so pickup is never worse than the fixed 250 ms poll |
 | the wake is PROVEN before the ceiling rises | a probe sent through the pool has to come back on the session (`jobs.wake.live`). One that does not is `jobs.wake.unverified`, once, with the fix |
+| a proven wake is proven AGAIN, every `reproveEveryMs` (10 s) | a session that stops delivering with no re-dial (half-open) announces nothing, and a loop would rest up to a minute on it. One notification per channel that wakes no loop; not back within `verifyTimeoutMs` of the SEND, the wake is un-proven (`jobs.wake.lost`, warn) and the loops poll at the 2 s ceiling until one crosses again (`jobs.wake.live`). A pool that has not sent the notification by then is no verdict: a saturated pool cannot be told from a dead session, so the wake stays proven, and the proof is sent again, with its own window, once the pool answers (`queue-wake-reprove.test.ts`) |
 | the poll is the guarantee | a notification is lost with the session that would have carried it. The driver re-dials (`jobs.wake.live` again); meanwhile jobs start on the poll |
 | a transaction-pooling proxy delivers nothing | PgBouncer `pool_mode = transaction`: the `LISTEN` lands on a connection the proxy takes back. The wake stays unproven and the ceiling stays 2 s — give the `worker` role a direct or session-pooled `DATABASE_URL` |
 | the memory driver needs none | one process: `signalEnqueued` is the whole wake |
@@ -1588,6 +1667,22 @@ running job used to run it twice), and one whose idempotency key a live job now 
 retrySchedule({ attempts: 5, backoff: 'exponential', delay: 1000 })
 // => [1000, 2000, 4000, 8000]
 ```
+
+**A job that declares no `retry` runs under the app's default** (`As of 2026-11`): `jobs.maxAttempts`
+and `jobs.backoff` in `app.config.ts`, which the boot installs in every role
+(`installDefaultRetry`, on `@ultimat3/jobs/adapter`; the CLI's `startQueue`, the boot every entry
+point shares — `x tasks run`, `x jobs` and `x db backfill` included). With neither key set it is
+`DEFAULT_RETRY`: 3 attempts, exponential.
+
+| Declared | Attempts | Backoff |
+|---|---|---|
+| no `retry` — a factory's only (`purge()`, `backfill()`, `rollup()`, …: omitted or `undefined`). `job()` refuses both with `X_JOB_DECLARATION_INVALID`: a plain job states its own | `jobs.maxAttempts` | `jobs.backoff` |
+| `retry: { ...DEFAULT_RETRY }` — a policy, spelled out | 3 | `'exponential'` |
+| `retry: { attempts: 5 }` | 5 | `jobs.backoff` |
+| `retry: { attempts: 5, backoff: 'linear' }` | 5 | `'linear'` |
+
+`job()` itself requires `retry.attempts`, so a plain job's count is always its own. `handle.retry`
+is read when used, never frozen at declaration: the handle exists before the config is loaded.
 
 **The error decides too, not only the attempt count** (`As of 2026-08`). `executeJob` reads the
 thrown error's retry classification — `@ultimat3/core`'s `registerErrorRetry`, the same table

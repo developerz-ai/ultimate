@@ -12,9 +12,10 @@
  */
 
 import type { Ctx, Deprecation } from '@ultimat3/core';
-import { queryPath, useContext } from '@ultimat3/core';
+import { actorOf, fingerprint, queryPath, useContext } from '@ultimat3/core';
 import type { RequestedRange } from '@ultimat3/http';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import { coerceQuery } from '@ultimat3/schema';
 import type { DownloadUrl, QueryCallOptions, QueryClientOptions } from './client';
 import { downloadClientFor } from './client';
 import { QueryDownloadInvalidError, QueryDownloadOnlyError } from './download-errors';
@@ -24,10 +25,13 @@ import {
   mintDownloadToken,
   openDownloadToken,
 } from './download-token';
+import { absentArraysOf } from './input-shape';
 import type { QueryPolicy } from './policy-gate';
+import { guardQuery } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, QueryDescriptor, QueryOptions, QueryRateLimit } from './query';
 import { admittedCall, defOf, queryName, stashDef } from './read';
 import { searchOf } from './search-string';
+import { parsedOrNothing } from './validate';
 
 export type { DownloadUrl } from './client';
 
@@ -212,7 +216,12 @@ export function readDownloadFile(
 
 /**
  * Admit the caller exactly as a read would, then seal the decision. The URL carries the input as
- * it was HANDED in (the route re-parses it to the same value) and the token binds the PARSED one.
+ * it was HANDED in, and the token binds what the ROUTE will parse that URL back to — never the
+ * admitted value itself: a search string has no `null` and no empty list, so `{ note: null }` or
+ * `{ tags: [] }` on an optional member arrives absent, and a token bound to the admitted value
+ * refused every URL minted with one. So when the round trip CHANGES the input, the policy judges
+ * the changed one too, as this caller: the serve never re-runs it, and a token may only grant an
+ * input the policy admitted (`{ note: null }` admitted, an absent note denied: no URL).
  */
 export function mintDownloadUrl(
   target: AnyQuery,
@@ -223,14 +232,36 @@ export function mintDownloadUrl(
   const ttl = handlerOf(target).expiresInMs ?? DEFAULT_DOWNLOAD_TTL_MS;
   return admittedCall(target, raw, options, async (input, ctx) => {
     const expiresAtMs = ctx.now().getTime() + ttl;
-    const token = await mintDownloadToken(name, input, ctx.actor, expiresAtMs);
     const search = searchOf(raw);
+    const granted = (await wireInputOf(target.input, search)) ?? input;
+    if (fingerprint(granted) !== fingerprint(input)) {
+      const subject = { actor: actorOf(ctx), input: granted, ctx, query: name };
+      guardQuery(defOf(target).policy, subject, options.surface ?? 'server');
+    }
+    const token = await mintDownloadToken(name, granted, ctx.actor, expiresAtMs);
     const tokenParam = `${DOWNLOAD_GRANT_PARAM}=${encodeURIComponent(token)}`;
     return {
       url: `${queryPath(name)}?${search === '' ? '' : `${search}&`}${tokenParam}`,
       expiresAt: new Date(expiresAtMs).toISOString(),
     };
   });
+}
+
+/**
+ * The input `toDownloadRoute` parses `search` back to — the same `coerceQuery` + `absentArraysOf`
+ * + schema parse, over the same repeated-key-is-a-list reading of the string. `undefined` when it
+ * does not parse: that URL is refused at serve whatever the token binds, so the admitted value
+ * stands, as it did before.
+ */
+async function wireInputOf(schema: StandardSchemaV1, search: string): Promise<unknown> {
+  const values: Record<string, string | string[]> = Object.create(null);
+  for (const [key, value] of new URLSearchParams(search)) {
+    const seen = values[key];
+    if (seen === undefined) values[key] = value;
+    else if (Array.isArray(seen)) seen.push(value);
+    else values[key] = [seen, value];
+  }
+  return parsedOrNothing(schema, absentArraysOf(schema, coerceQuery(schema, values)));
 }
 
 /**

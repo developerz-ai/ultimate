@@ -11,6 +11,7 @@ import { findAppRoot } from './app-root';
 import { checkMigrationSnapshots } from './db-snapshot';
 import type { PortOwner } from './dev-lock-holder-dir';
 import { portOwner } from './dev-lock-holder-dir';
+import { unlistedPrimitiveFindings } from './doctor-api-listing';
 import { type AuthStorageFact, authStorageProbe } from './doctor-auth';
 import type { EmbeddedDatabase } from './doctor-database';
 import { externalUrl, installedAbove, probeDatabase } from './doctor-database';
@@ -34,6 +35,7 @@ import { driverUnset } from './merge-driver-config';
 import { catalogFileFindings, unmergedFindings } from './merge-state';
 import type { Finding } from './output';
 import { portFree } from './port-probe';
+import { withAppTls } from './runtime-database-ssl';
 import { checkMigrationDrift } from './schema-drift';
 import type { TypescriptLag } from './typescript-floor';
 import type { VerifyStepName } from './verify-step';
@@ -54,7 +56,8 @@ export interface DoctorProbe {
   /**
    * The framework's own secrets this machine lacks — `framework-env.ts`'s
    * `machineSecretFindings`, gated by `namedDeployed`: only an environment NAMED staging or
-   * production (an unnamed developer shell owes nothing; `x env check` is the fail-closed answer).
+   * production (an unnamed developer shell owes nothing; `x env check` is the fail-closed answer
+   * under `CI` only — elsewhere it checks an unnamed shell as development, as `x dev` runs).
    * The list's own `needed`/`unsafe` decide; doctor reports.
    */
   readonly frameworkFindings: readonly Finding[];
@@ -128,6 +131,8 @@ export interface DoctorProbe {
   readonly mergeState?: () => Promise<readonly Finding[]>;
   /** Whether `.gitattributes` names a merge driver this clone has not installed. Absent: no. */
   readonly mergeDriverUnset?: () => Promise<boolean>;
+  /** Actions and queries no `defineApi()` lists (`doctor-api-listing.ts`). Absent: none. */
+  readonly unlistedPrimitives?: () => Promise<readonly Finding[]>;
 }
 
 export function probeFor(
@@ -138,6 +143,10 @@ export function probeFor(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): DoctorProbe {
   const root = findAppRoot(cwd)?.dir;
+  // As the boot dials it: `database.ssl` requires TLS where the URL and `PGSSLMODE` state no mode,
+  // so a probe never answers green over a connection the app itself would refuse to make.
+  const databaseUrl = (): Promise<string | undefined> =>
+    withAppTls(root, process.env['DATABASE_URL'], env);
   return {
     bunVersion,
     root,
@@ -147,7 +156,7 @@ export function probeFor(
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
     portOwner,
-    database: () => probeDatabase(process.env['DATABASE_URL'], env),
+    database: async () => probeDatabase(await databaseUrl(), env),
     // `root ?? cwd` because the walk needs a directory that exists; outside an app `runDoctor`
     // returns on `X_NOT_IN_APP` before this is ever asked, so the value only has to be honest.
     embeddedDatabase: async () => ({
@@ -166,11 +175,11 @@ export function probeFor(
       root === undefined ? { fallback: null, routes: undefined } : offlineFallbackProbe(root),
     sealedKeys: async () =>
       root === undefined ? { columns: undefined, keys: undefined } : sealedKeysProbe(root),
-    authStorage: () => authStorageProbe(process.env['DATABASE_URL'], env),
-    pooler: () => poolerProbe(process.env['DATABASE_URL'], env),
+    authStorage: async () => authStorageProbe(await databaseUrl(), env),
+    pooler: async () => poolerProbe(await databaseUrl(), env),
     typescript: async () => (root === undefined ? [] : typescriptProbe(root)),
     rowSecurity: async () =>
-      root === undefined ? [] : rowSecurityProbe(root, process.env['DATABASE_URL'], env),
+      root === undefined ? [] : rowSecurityProbe(root, await databaseUrl(), env),
     rowSecurityOff: async () =>
       root === undefined ? { declared: false, touches: [] } : rowSecurityOffProbe(root),
     envNames: async () => (root === undefined ? NO_APP_ENV_NAMES : appEnvNamesProbe(root, env)),
@@ -181,6 +190,7 @@ export function probeFor(
         ? []
         : [...(await unmergedFindings(root)), ...(await catalogFileFindings(root))],
     mergeDriverUnset: async () => (root === undefined ? false : driverUnset(root, exec)),
+    unlistedPrimitives: async () => (root === undefined ? [] : unlistedPrimitiveFindings(root)),
   };
 }
 

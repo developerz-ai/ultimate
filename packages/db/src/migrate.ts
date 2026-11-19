@@ -13,10 +13,11 @@ import {
 } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { expectedQueryLoop } from './expected-loop';
+import { embeddedDev, embeddedResetFix } from './migrate-dev-fix';
 import { MIGRATION_LOCK_RETRIES } from './migrate-lock-retry';
 import { destructiveBit, ledgerAheadOfBuild } from './migrate-rollback';
 import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './migration-errors';
-import type { Migration } from './migration-ledger';
+import type { LedgerRow, Migration } from './migration-ledger';
 import {
   auditLedger,
   ensureLedger,
@@ -24,6 +25,7 @@ import {
   migrationChecksum,
   pendingMigrations,
   readLedger,
+  rollbackTargets,
 } from './migration-ledger';
 import { applyMigrationStep } from './migration-step';
 import { poolProfileFor } from './pool-profile';
@@ -310,7 +312,10 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
 export interface RollbackOptions {
   readonly migrations: readonly Migration[];
   readonly client?: DbClient | undefined;
-  /** How many applied migrations to reverse, newest first. A positive integer; defaults to 1. */
+  /**
+   * How many applied migrations to reverse, most recently applied first (not highest id). A
+   * positive integer; defaults to 1.
+   */
   readonly steps?: number | undefined;
   /**
    * Skip the advisory lock, for a database only this process can reach — a branch, a test. No
@@ -323,9 +328,20 @@ export interface RollbackOptions {
   readonly lockTimeoutMs?: number | undefined;
   /** Attempts past the first when `lock_timeout` fires. Defaults to 5, as `migrate`'s does. */
   readonly lockRetries?: number | undefined;
+  /**
+   * Asked once, under the lock, with the exact rows about to be reversed and before the first
+   * `down`: throw (or reject) to refuse — an `async` callback is assignable here and its promise
+   * is AWAITED, so an async consent settles before any SQL runs (the type stays `void`: widening
+   * it is a public-API change). The caller's consent rule (`x db rollback` outside development) is
+   * judged here because only the lock's own ledger read says which rows those are.
+   */
+  readonly confirm?: ((targets: readonly LedgerRow[]) => void) | undefined;
 }
 
-/** Reverse the newest `steps` applied migrations. `x db rollback`. */
+/**
+ * Reverse the `steps` most recently APPLIED migrations — by `applied_at`, not by id, so a migration
+ * merged late is the first undone (`rollbackTargets`). `x db rollback` is the command over it.
+ */
 export async function rollback(options: RollbackOptions): Promise<readonly string[]> {
   const client = options.client ?? baseClient();
   const steps = options.steps ?? 1;
@@ -345,10 +361,12 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
     finiteCount('migrate', 'lockWaitMs', options.lockWaitMs ?? MIGRATION_LOCK_WAIT_MS, 0),
     async (session) => {
       const ledger = await readLedger(session);
-      const targets = [...ledger].reverse().slice(0, steps);
+      const targets = rollbackTargets(ledger, steps);
+      await options.confirm?.(targets);
 
-      // The same deliberate loop as `migrate`, read backwards: one transaction per `down`, newest
-      // first, so a `down` that fails leaves every migration before it still applied and recorded.
+      // The same deliberate loop as `migrate`, read backwards: one transaction per `down`, most
+      // recently applied first, so a `down` that fails leaves every migration applied before it
+      // still applied and recorded.
       return expectedQueryLoop(
         'each migration reverses in its own transaction, newest first, so a failure stops exactly there',
         async () => {
@@ -360,10 +378,15 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
                 `migration "${row.id}" is in the ledger but not in this build, so its down SQL is unknown`,
                 // Same reason as `auditLedger`'s: psql works where the CLI is absent. The `down` SQL
                 // only exists in the build that shipped it, so the fix reads which build that was.
-                `psql "$DATABASE_URL" -c "select id, app_version from ${renderFixShellArg(LEDGER_TABLE, '<ledger table>')} ` +
-                  `order by id desc limit 5"   # deploy the build that shipped the migration ` +
-                  `whose id is base64 ${Buffer.from(row.id, 'utf8').toString('base64')}, ` +
-                  'and roll back there — its down SQL exists nowhere else',
+                // On the embedded database no other build exists and psql has no URL to dial.
+                embeddedDev()
+                  ? embeddedResetFix(
+                      'the file holding this migration and its down SQL is gone from the checkout; to keep the rows, restore it (git status --short -- packages/db/migrations) and run x db rollback',
+                    )
+                  : `psql "$DATABASE_URL" -c "select id, app_version from ${renderFixShellArg(LEDGER_TABLE, '<ledger table>')} ` +
+                      `order by applied_at desc, id desc limit 5"   # deploy the build that shipped the migration ` +
+                      `whose id is base64 ${Buffer.from(row.id, 'utf8').toString('base64')}, ` +
+                      'and roll back there — its down SQL exists nowhere else',
               );
             }
             // The marker on `up` governs `down` too: the reversal of a concurrent build is a

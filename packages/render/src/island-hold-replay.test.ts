@@ -107,6 +107,7 @@ async function held(strategy: Exclude<HydrateStrategy, 'never'>): Promise<Harnes
     },
     contains: (node: unknown): boolean => node === el,
     children: [],
+    querySelector: (): unknown => null,
     addEventListener: (name: string, fn: (event: FakeEvent) => void): void => {
       listeners.set(name, [...(listeners.get(name) ?? []), fn]);
     },

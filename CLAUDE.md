@@ -16,7 +16,7 @@ tracked apps — the reference app (`examples/dummy`), the deployed demo
 `@ultimat3`, imports `@ultimat3/<pkg>`.
 
 **Status:** released, every package in lockstep. Semver covers the primitive shapes, the `x` CLI,
-the tier table and the `X_*` codes; from v30 one major per 90 days (`X_RELEASE_MAJOR_WINDOW`),
+the tier table and the `X_*` codes; from v31 one major per 90 days (`X_RELEASE_MAJOR_WINDOW`),
 breaks wait on `next` (`X_BREAKING_ON_MAIN`): [`wiki/Stability.md`](wiki/Stability.md).
 
 **This page states no version number, on purpose.** Every fact below is a command. What each

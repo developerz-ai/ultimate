@@ -7,6 +7,7 @@ import { systemClock } from '@ultimat3/core';
 import { checkClauses, checkPlan } from './check-ddl';
 import { alterColumnInPlace, retypeOverDefault, typeClause, wantedDefault } from './column-alter';
 import { defaultExpression } from './column-default';
+import { admitRebuilds, dropColumns } from './column-drop';
 import { emptyConcurrentPlan } from './concurrent-plan';
 import { dropOrder } from './drop-order';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
@@ -35,11 +36,10 @@ import { beforeContract, contractNotNull, type NotNullContracts } from './not-nu
 import { addChangedKey, dropChangedKey, migrationNameArg } from './primary-key';
 import type { ReplicaIdentityInput } from './replica-identity';
 import { replicaIdentityFullAfter, replicaIdentityPlan } from './replica-identity';
-import { contractsMarkerFor, recordRetired, retirePlan } from './retired';
+import { recordRetired, retirePlan } from './retired';
 import type { MovedAside } from './retype-dependents';
 import { moveDependentsAside } from './retype-dependents';
 import { moveKeysAside, retypedColumns, retypedIn } from './retype-keys';
-import { columnDropNotRetired } from './rolling-errors';
 import { rowSecurityAfter, rowSecurityPlan } from './row-security-plan';
 import { withSameTenantIndexes } from './same-tenant';
 import { identifier } from './sql';
@@ -336,45 +336,12 @@ export function generateMigration(given: GenerateOptions): GeneratedMigration {
     }
     // The key first and last, around every column statement of the table (`primary-key.ts`): the
     // snapshot below records `entity.primaryKey`, and until this arm existed nothing produced it.
+    // Before any statement: a plain column becoming generated is a drop, and is asked as one.
+    if (admitRebuilds(entity, live, options)) droppedUnretired = true;
     retirePlan(entity, live, plan, options.entities);
     dropChangedKey(entity, live, current, plan, options.name);
     diffTable(entity, live, plan, retypedIn(retyped, entity.table), contracts);
-    const kept = new Set([
-      ...entity.columns.map((column) => column.column),
-      ...(entity.retired ?? []),
-    ]);
-    for (const column of live.columns) {
-      if (kept.has(column.name)) continue;
-      // Order matters: the release boundary first, with the flag or without it. Retiring is what
-      // earns the next question; it is never consent to losing the rows, so that one still stands.
-      if (column.retired !== true && options.rollingUnsafe !== true) {
-        throw columnDropNotRetired(
-          entity.name,
-          entity.table,
-          column.name,
-          migrationNameArg(options.name),
-        );
-      }
-      if (options.allowDestructive !== true) {
-        throw migrationIrreversible(
-          `dropping "${entity.table}"."${column.name}" discards its rows and cannot be undone`,
-          `x db gen ${migrationNameArg(options.name)} --allow-destructive   # or put "${column.name}" back in columns and keep it`,
-        );
-      }
-      if (column.retired === true) {
-        plan.up.push(contractsMarkerFor(entity.table, column.name));
-      } else {
-        droppedUnretired = true;
-      }
-      plan.up.push(
-        `alter table ${identifier(entity.table).text} drop column ${identifier(column.name).text};`,
-      );
-      plan.down.push(
-        `alter table ${identifier(entity.table).text} add column ` +
-          `${identifier(column.name).text} ${column.dataType};` +
-          ' -- data is not restored',
-      );
-    }
+    if (dropColumns(entity, live, plan, plans, options)) droppedUnretired = true;
     addChangedKey(entity, live, plan, options.name);
   }
 

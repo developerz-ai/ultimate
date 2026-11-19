@@ -9,7 +9,11 @@ name: tutorial-run
 # of a green pull request (#1272: `x db gen`'s success line gained its tables); on a pull request
 # the red lands before the merge. Not a required check: `verify` is the one
 # (docs/history/ci-split.md), and a path-filtered workflow never leaves a check pending.
-# `scripts/ci-workflow-main-only.test.ts` holds the two path lists equal.
+# `scripts/ci-workflow-main-only.test.ts` holds the two path lists equal. AND weekly: the paths
+# cannot list every package whose printed line a tutorial quotes (`x routes`, `x policy`, `x tasks`,
+# `x build`, `create-ultimate`, …), so a filter alone let tutorials rot unseen while the health row
+# (`scripts/lib/health-tutorials.ts`) kept reading the last green; a newest run over eight days old
+# is stale there.
 # The same job RUNS `wiki/Building-Your-Own-Base.md`'s recipes: each `## Recipe:` fence written to
 # the path it names in a scratch app and driven by `scripts/base-recipes/` — seconds, no scaffold.
 
@@ -47,6 +51,10 @@ on:
       - 'scripts/base-recipes/**'
       - 'scripts/lib/base-recipes.ts'
       - '.github/workflows/tutorial-run.yml'
+  schedule:
+    # Weekly, Sunday early UTC — clear of the nightly flake hunt (02:23), Saturday's compat (03:41)
+    # and Monday's bench and next-sync (04:41).
+    - cron: '29 5 * * 0'
   workflow_dispatch:
 
 # One group per ref: a newer push to main supersedes the run before it, as it always did, and a pull

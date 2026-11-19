@@ -315,6 +315,14 @@ describe.skipIf(!hasPostgres)('live · postgres · the subset and what it leaves
       ['^\\q$', 'q'],
       ['^(?<y>a)$', 'a'],
       ['^{2}$', '{2}'],
+      // Sweep r9-2: an astral literal as Bun writes it, a bound past ARE's 255, a range chained on
+      // a range or a class escape, and a repeated lookahead — each `pattern-portability.ts` refuses.
+      ['^\\uD83D\\uDE00$', '😀'],
+      ['^a{256}$', 'a'.repeat(256)],
+      ['^[a-z]{1,300}$', 'abc'],
+      ['^[a-z-9]+$', 'a-9'],
+      ['^[\\d-z]+$', '5-z'],
+      ['^(?=a)*a$', 'a'],
     ];
     for (const [source, value] of divergent) {
       const server = await rawMatch(source, value);

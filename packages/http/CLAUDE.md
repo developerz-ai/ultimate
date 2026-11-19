@@ -82,7 +82,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **The two inbound ids are read BEFORE the context and the span** (`correlation.ts`, core's
   `parseTraceparent`). `x-request-id` is gated on `trustProxy`; `traceparent` deliberately is not.
 - **Every proxy-supplied header goes through `forwardedElement(header, hops)`**, the entry at `entries.length - hops`, never `[0]`, except `x-forwarded-proto` (`forwardedProto`). `ctx.peer` is `null` unless trusted AND `trustClientCertHeader` is declared, and is never an actor. ‡
-- **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` off; Bun's `idleTimeout` derives from it, `idle-timeout.ts`), shortened by `x-request-timeout-ms`, never lengthened. ‡
+- **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` off; Bun's `idleTimeout` derives from it, `idle-timeout.ts`), shortened by `x-request-timeout-ms`, never lengthened. To HEADERS only; the 504 is final; a hang-up is `X_ABORTED`. ‡
 - **`admit` is the second stage and refuses before ANY work**: past `maxInflight` (1000) is
   `X_OVERLOADED` with `retry-after`, counted by core's `inflightCount()`. **A DRAINING process
   serves** with `connection: close`; only `lifecycleState() === 'stopped'` answers `X_DRAINING`
@@ -137,7 +137,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `markReady()`, `drain()`, the payloads) — never a private state or in-flight counter.
 - **`stop()` hands its two hooks back ABOVE its early return** (`packages/http/e2e/server.e2e.test.ts`
   reads `shutdownHookCount()`).
-- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`): `zstd` then `gzip` by weight; a 304's validator is its 200's (`etag-form.ts`); `private`/`no-store`/`no-cache`/`no-transform` is identity (BREACH); a refused response is the SAME object. An `immutable` asset is coded ONCE in the background at br 11 / zstd 19 / gzip 9 (`compress-precode.ts`, 2 keys at a time; a coder that throws is logged, never unhandled), and later hits are lookups. ‡
+- **`compress` is the last stage and has no option** (`compress.ts`, `compress-read.ts`): `zstd` then `gzip` by weight; a 304's validator is its 200's (`etag-form.ts`); `private`/`no-store`/`no-cache`/`no-transform` is identity (BREACH); a refused response is the SAME object. An `immutable` asset is pre-coded once (`compress-precode.ts`). ‡
 
 ## Rules — errors and the problem document
 
@@ -212,7 +212,7 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `navigation.ts` | the client router's server half: `context`'s gate after the match (an un-opted prefetch, or a soft GET off the router's `<app>:<surface>` → `204` [+ `x-ultimate-location`], before auth) and `response`'s rewrite of a 3xx to that hand-over, cookies kept |
 | `error-map.ts` | the code → status table, closed: COMPOSES the slices and holds no row of its own |
 | `error-map-http.ts`, `error-map-tier-<0-4>.ts` | the rows, one slice per owning tier. `bun run new-error-code` appends to its `--package`'s slice; a code in two is refused by `error-map.test.ts` |
-| `error-facts.ts` | every RENDERING of a throwable: `factsOf()`, the problem document (including the issue list and the opacity rule over it), the three terminal lines |
+| `error-facts.ts` | every RENDERING of a throwable: `factsOf()`, the problem document (issue list, opacity rule, `callerCode`), the three terminal lines |
 | `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices`, `errorPage`, `explainMiss` (a `not-found` match only, sync; its error replaces `X_ROUTE_NOT_FOUND`) + `configureAuthenticator(fn, { credentialTtlMs })` |
 | `type-pins.ts` | compile-time claims about `AuthzDecision`'s shape — source, because `tsc` never reads a `.test.ts` |
 | `overlay.ts` | the dev error page: the same code/cause/fix as the terminal, plus any notices |
@@ -223,9 +223,10 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `object-response.ts` | `objectResponse`: an object held elsewhere, structural; `notModified`: the `if-none-match` answer |
 | `stored-object-headers.ts` | inline only for raster images, audio, video; else `attachment` + `sandbox` (private) |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
-| `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor — and the review of a declared one (`reviewedHint`) |
+| `cache-policy.ts` | the default `CacheHint` for a route that declared none and the review of a declared one (`reviewedHint`) |
+| `fault-report.ts` | monitor, `onError`, log line: `error-map`'s, and `reportLateFault`'s |
 | `error-log-level.ts` | the `error-map` line's level: `error` 5xx, `warn` 401/403/429, `info` the rest and a `routineRefusal` |
-| `route-cache.ts` | the screen a `Route.cache` hint gets where it is DECLARED, thrown from `httpRouter`; the response path's `finiteDeltaSeconds` is the total half of the same rule |
+| `route-cache.ts` | the screen a `Route.cache` hint gets where it is DECLARED, thrown from `httpRouter` |
 | `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver |
 | `adapter.ts` | `@ultimat3/http/adapter`: the store port's interface, the shipped stores' types (also on `.`, beside their factories), the driver error (adapter only), and the boot's installer |
 | `rate-limit-config.ts` | the bucket table, its resolver and `toBucket` |
@@ -236,12 +237,13 @@ Full rules and their reasons: [`docs/history/http-rate-limit.md`](../../docs/his
 | `error-titles.ts` | the owned codes, titles and `retry-after` classes, registered at import — the one `sideEffects` module. Server realm only: a browser reads title and delay off the body and `Retry-After` |
 | `correlation.ts` | the inbound request id and trace, read before the context and the span exist |
 | `forwarded.ts` | one hop-indexed reader for every header a trusted proxy writes |
-| `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule |
+| `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule, read from the right |
+| `wire-dates-cap.ts` | `cappedWireDates`: `x-ultimate-dates` or none past 1.5 KB, one warn per route |
 | `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
 | `csrf.ts` | the origin proof an unsafe method from a browser must carry, signed in or not |
 | `webhook-verify.ts` | the INBOUND webhook: canonical string, constant-time mac, replay window. Outbound is `@ultimat3/jobs`' `webhook()` |
 | `webhook-hmac.ts` | `verifyBodyHmac`: a vendor's HMAC-SHA256 over named bytes, UTF-8 secret, rotation list, constant-time; answers `{ bytes, text }` |
-| `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only. It negotiates nothing; the cookie is read by core's `readCookie`, imported, never re-exported |
+| `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only. It negotiates nothing; the cookie is read by core's `readCookie` |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
 | `rate-limit-stage.ts` | what the pipeline spends and when: the `rate-limit` stage's list of keys, and the address-keyed allowance the `auth` stage spends for a failed credential |
 | `health-disclosure.ts` | WHO `/healthz` and `/readyz` tell the detail to: `healthDetailPeers`, its screen, the trusted-proxy half. Body rule and peer match are core's |

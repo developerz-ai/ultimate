@@ -61,6 +61,7 @@ function slotOf(host: HotkeyHost, mac: boolean): HotkeySlot {
         metaKey: event.metaKey,
         altKey: event.altKey,
         isComposing: event.isComposing === true,
+        keyCode: event.keyCode,
         editable: editableTarget(event.target),
         at: event.timeStamp,
       },

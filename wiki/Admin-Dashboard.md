@@ -74,7 +74,7 @@ A count reads no row, so it is not audited. Upgrading from a release that counte
 | `?f.<field>=<value>` | the field's default operator (`contains` for text, `eq` otherwise) |
 | `?f.<field>.<op>=<value>` | `eq` `neq` `contains` `gt` `gte` `lt` `lte` `in` (repeat the parameter) `is-null` (`true` / `false`) — the ones the field's shape answers |
 | `?scope=<name>` | a declared scope; absent is the default; `*` is no scope at all — what a related card's link opens. A scope may not be declared as `*` |
-| `?sort=<field>:<asc\|desc>` | a sortable field |
+| `?sort=<field>:<asc\|desc>` | a sortable field. A `money()` column sorts by currency, then minor (`As of 2026-11-19`): amounts compare only within a currency, so each currency is a group, and the id breaks ties; it answered 500 `X_INVARIANT_VIOLATED` before |
 | `?cursor=<signed>` | keyset position on `(sort, id)`: any number of rows sharing a sort value, and NULLs (last ascending, first descending), are reached both ways |
 
 An unknown field, operator, sort, scope or parameter — or a value that is not the column's type (a number is decimal digits: no blank, hex or exponent; a date is one the calendar has) — is `X_ADMIN_FILTER_INVALID`: a 400 naming what the list answers, never the unfiltered list. The MCP list tool takes the same grammar (`scope`, `where: [{ field, op?, value }]`).
@@ -98,7 +98,7 @@ Statements per list page: 1 for the rows (2 when the sort column is nullable, on
 |---|---|
 | `input: t.object({ … })` | the button is a link to the action's form; a refusal is a 422 with each issue on its field. No schema: a confirm only |
 | `when: (row) => boolean` | decides the button on the detail and each list row, and is asked again before the handler: `X_ADMIN_ACTION_NOT_APPLICABLE` (409) |
-| `batch: true` | in the list's batch bar: checked rows, or every row the list's URL matches (200 per request, continued from where it stopped). Each row through the button's gate and on the audit log; answered `done` / `refused` / `failed` / `remaining` |
+| `batch: true` | in the list's batch bar: checked rows, or every row the list's URL matches (200 per request, continued from where it stopped). Each row through the button's gate and on the audit log; answered `done` / `refused` / `failed` / `remaining`. Only an "all matching" selection continues: a checked-rows batch past the bound answers `after: null` (screen and MCP) and the caller re-sends the remaining ids — `As of 2026-11-19`; its continuation used to widen to every row the list matched |
 | `batch: { threshold, chunk? }` | past `threshold` rows, one `admin.batch` job per chunk, run by a worker as the operator; `queued` in the answer. The batch id is derived from actor, action, rows and input, so retrying a request whose enqueue failed part-way dedupes the chunks already queued |
 | `matching: ({ where, input, ctx }) => { affected, remaining }` | "all matching" as ONE set-based call over the list's `where` (row scope, scope, filters) — a store's bounded bulk verb — decided and audited once; a destructive one types `<entity>:all matching`. Checked rows still run row by row |
 | `readonly: true` | the action changes nothing (an export, a verification), so its admin-level gate is `admin:read`, not `admin:write`: a read-only staff role and an `admin:read` MCP token may run it. The action's own `permission` is still required beside it |

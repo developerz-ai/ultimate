@@ -282,3 +282,30 @@ describe('divide by zero', () => {
     expect(divide(fromMinor(100, 'USD'), -1)).toEqual({ minor: -100, currency: 'USD' });
   });
 });
+
+describe('a hand-built Money with a non-integer minor', () => {
+  // `Money` is a type, not a check: `{ minor: 12.5 }` reached `BigInt()` and left as a bare
+  // `RangeError`. Every operation refuses it with the constructor's own code.
+  const broken = { minor: 12.5, currency: 'USD' } as const;
+  const whole = fromMinor(100, 'USD');
+
+  test('every arithmetic entry refuses it with X_MONEY_NOT_INTEGER', () => {
+    const calls: readonly (() => unknown)[] = [
+      () => add(broken, whole),
+      () => add(whole, broken),
+      () => subtract(whole, broken),
+      () => sum([whole, broken]),
+      () => multiply(broken, 2),
+      () => divide(broken, 2),
+      () => compare(broken, whole),
+      () => greaterThan(whole, broken),
+      () => max(broken, whole),
+      () => rescale(broken, 6),
+      () => rescale({ ...broken, scale: 6 }, 2, 'half-up'),
+      () => negate(broken),
+      () => absolute({ minor: Number.NaN, currency: 'USD' }),
+      () => multiply({ minor: Number.POSITIVE_INFINITY, currency: 'USD' }, 2),
+    ];
+    for (const call of calls) expect(codeOf(call)).toBe('X_MONEY_NOT_INTEGER');
+  });
+});

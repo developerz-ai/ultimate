@@ -243,7 +243,7 @@ volumes:
 `;
 
 /** Docs, shims and container files for a new app, in the order a reader meets them. */
-export function docsFiles(app: NameSet): readonly GeneratedFile[] {
+export function docsFiles(app: NameSet, root?: string): readonly GeneratedFile[] {
   return [
     { path: 'README.md', contents: readme(app) },
     { path: 'CLAUDE.md', contents: conventions(app) },
@@ -256,7 +256,7 @@ export function docsFiles(app: NameSet): readonly GeneratedFile[] {
     ...binFiles(),
     { path: 'docker/docker-compose.dev.yml', contents: composeDev(app) },
     // What the suites run against — in RAM, silent; ci.yml starts it before the gate.
-    ...testServicesFiles(app),
+    ...testServicesFiles(app, root),
     // The harness half of the same job AGENTS.md does. It lands in the app's own repo rather than
     // in a global config, so it is visible in the scaffold's diff and deletable in one line.
     ...claudeFiles(app),

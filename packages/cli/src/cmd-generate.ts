@@ -77,7 +77,10 @@ export const generateCommand: CliCommand = {
   spec: generateSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('g', ctx.cwd).dir;
-    const kind = readKind(ctx.args.positionals[0]);
+    const kind = readKind(ctx.args.positionals[0], {
+      name: ctx.args.positionals[1],
+      feature: flagString(ctx.args, 'feature'),
+    });
     refuseSignInFlags(kind, ctx.args);
     refuseChartAlertsFlags(kind, ctx.args);
     // One sign-in per app, named by a flag rather than a `<name>`, and edits no other kind makes.
@@ -301,7 +304,9 @@ export const generateCommand: CliCommand = {
     const written = [...report.written, ...edited, ...artifacts];
     // Named only over a clean run: with a finding, the finding's own `fix:` is the next command.
     const table = names(isEntityKind(kind) ? name : (featureFlag ?? name)).table;
-    const next = findings.length === 0 ? nextSteps(report.written, edited, table) : [];
+    // `cronJob()` pins its schedule as `<kebab name>.schedule` (`templates/generate-cron-job.ts`).
+    const schedule = kind === 'cron-job' ? `${kebab(name)}.schedule` : undefined;
+    const next = findings.length === 0 ? nextSteps(report.written, edited, table, schedule) : [];
     return {
       ok: findings.length === 0,
       command: 'g',
@@ -340,9 +345,13 @@ export function nextSteps(
   written: readonly string[],
   edited: readonly string[],
   table: string,
+  /** A schedule this run declared (`x g cron-job`): fired now, so its first run is not its cron. */
+  task?: string,
 ): readonly string[] {
-  if (!written.some(isEntityModule)) return [];
+  const fire = task === undefined ? [] : [`bunx x tasks run ${quoteArg(task)}`];
+  if (!written.some(isEntityModule)) return fire;
   return [
+    ...fire,
     ...(edited.some((path) => path.endsWith('package.json')) ? ['bun install'] : []),
     `bunx x db gen "create ${table}"`,
     'bunx x db migrate',
@@ -373,7 +382,11 @@ async function readSliceErrors(
   slice: string,
   name: 'errors.ts' | 'policy.ts' = 'errors.ts',
 ): Promise<string | undefined> {
-  if (kind !== 'action' && kind !== 'mutator') return undefined;
+  // A read imports its rule from `policy.ts` too (`can<Feature>Read`), and throws nothing of the
+  // slice's — so `query` reads the policy and never the errors.
+  const reads =
+    kind === 'action' || kind === 'mutator' || (kind === 'query' && name === 'policy.ts');
+  if (!reads) return undefined;
   const file = containedPath(root, `${slice}/${name}`);
   return existsSync(file) ? await Bun.file(file).text() : undefined;
 }

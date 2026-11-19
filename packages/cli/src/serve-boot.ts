@@ -30,7 +30,13 @@ import { bootTimeline } from './serve-boot-phases';
 import { type BootProbe, openBootProbe } from './serve-boot-probe';
 import { bootWarningConcerns, warnAtBoot } from './serve-boot-warnings';
 import { loadDrainConfig, loadHealthConfig } from './serve-drain';
-import { configureReporting, containerBinding, metricsPortFor, portFromEnv } from './serve-env';
+import {
+  assertRoleDeclared,
+  configureReporting,
+  containerBinding,
+  metricsPortFor,
+  portFromEnv,
+} from './serve-env';
 import { type ListenerTls, tlsFromEnv } from './serve-env-tls';
 import { adoptPrebuiltStyles, reportBootBuilds, watchBootBuilds } from './serve-prebuilt';
 import type { ServedApp, ServeOptions } from './serve-types';
@@ -97,6 +103,9 @@ export async function bootServing(boot: {
   readonly metrics: MetricsEndpoint;
 }): Promise<ServedApp> {
   const { options } = boot;
+  // Before anything is started or created: a role `app.config.ts` does not list is refused while
+  // there is nothing to unwind but the scrape listener.
+  assertRoleDeclared(boot.role, await loadAppConfig(options.root));
   // The role's own grace FIRST, before the services: the schema wait runs inside them, and a worker
   // SIGTERMed mid-wait sat through web's readiness grace. `app.config.ts`'s `drain` section is
   // applied over this once the app is loaded (`bootRoles`).

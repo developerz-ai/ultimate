@@ -8,6 +8,7 @@ import type { PgExecutor } from '@ultimat3/core';
 import { pgliteClient, raw } from '@ultimat3/db';
 import { refreshAfterNarrowing, serverFixture } from './authorization-server-fixture';
 import { postgresAuthServerStore } from './authorization-server-postgres';
+import { dynamicClientPurgeCase } from './authorization-server-purge-fixture';
 import { SQL_AUTH_SERVER_TABLES } from './authorization-server-schema';
 import type { AuthServerStore } from './authorization-server-store';
 import type { DeviceCodeRecord } from './authorization-server-types';
@@ -211,6 +212,10 @@ describe('postgresAuthServerStore on PGlite', () => {
     expect(await store.getCode('code-2')).toBeNull();
     expect(await store.deviceByUserCode('uc-4')).toBeNull();
     expect(await store.purge(at(100_000), at(100_000))).toBe(0);
+  });
+
+  test('purge removes a dynamic client that never got a grant, and no other client', async () => {
+    await dynamicClientPurgeCase(store);
   });
 
   test('a client not registered for refresh_token gets no refresh token and cannot refresh', async () => {

@@ -3,6 +3,7 @@
 // a dead store still fails every one — and a drain leaves nothing queued behind.
 
 import { afterEach, describe, expect, jest, test } from 'bun:test';
+import { acceptedIdOf } from '@ultimat3/action/adapter';
 import {
   configureLifecycle,
   ctxOf,
@@ -15,6 +16,7 @@ import {
 import type { AuditRecord } from './audit';
 import type { BatchAuditSink, BatchedAuditSink } from './audit-batch';
 import { batchedAuditSink } from './audit-batch';
+import { memoryAuditSink } from './audit-memory';
 
 const recordNamed = (name: string): AuditRecord => ({
   at: new Date(1_700_000_000_000),
@@ -158,6 +160,59 @@ describe('batchedAuditSink groups concurrent writes into one writeMany', () => {
     expect(settled.map((each) => each.status)).toEqual(['fulfilled', 'rejected', 'fulfilled']);
     expect(settled[1]?.status === 'rejected' ? settled[1].reason : undefined).toBe(refusal);
     expect(singles.toSorted()).toEqual(['a', 'c', 'poisoned']);
+  });
+
+  test("a sink of one's own reads the accepted id off the adapter: one per write, the same on the retry", async () => {
+    const seen: (string | undefined)[][] = [];
+    const lostReply = new RangeError('connection reset after commit');
+    let first = true;
+    const sink: BatchAuditSink = {
+      write: async (record) => {
+        seen.push([acceptedIdOf(record)]);
+      },
+      async writeMany(records) {
+        seen.push(records.map(acceptedIdOf));
+        if (first) {
+          first = false;
+          throw lostReply;
+        }
+      },
+    };
+    const batched = open(sink, { maxDelayMs: 0 });
+    await Promise.all(['a', 'b'].map((name) => batched.write(recordNamed(name))));
+    const [batch = [], ...singles] = seen;
+    expect(batch).toHaveLength(2);
+    expect(batch.every((id) => typeof id === 'string')).toBe(true);
+    expect(new Set(batch).size).toBe(2);
+    expect(singles.flat().toSorted()).toEqual(batch.toSorted());
+    expect(acceptedIdOf(recordNamed('never accepted'))).toBeUndefined();
+  });
+
+  test('a batch that stored its rows and then rejected settles every waiter as stored, and stores each record once', async () => {
+    const ring = memoryAuditSink();
+    const lostReply = new RangeError('connection reset after commit');
+    const sink: BatchAuditSink = {
+      write: async (record) => ring.write(record),
+      async writeMany(records) {
+        for (const record of records) ring.write(record);
+        throw lostReply;
+      },
+    };
+    const batched = open(sink, { maxDelayMs: 0 });
+    const twice = recordNamed('twice');
+
+    const settled = await Promise.allSettled(
+      [recordNamed('a'), recordNamed('b'), twice, twice].map((record) => batched.write(record)),
+    );
+
+    expect(settled.map((each) => each.status)).toEqual([
+      'fulfilled',
+      'fulfilled',
+      'fulfilled',
+      'fulfilled',
+    ]);
+    // One object written twice is two attempts — two records — and neither is stored twice.
+    expect(ring.records().map((record) => record.name)).toEqual(['a', 'b', 'twice', 'twice']);
   });
 
   test('writeMany through the wrapper splits at maxRecords and resolves when all have', async () => {

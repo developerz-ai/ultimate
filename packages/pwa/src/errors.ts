@@ -236,7 +236,7 @@ export class PwaPushRejectedError extends UltimateError {
       cause: `the push service at ${input.origin} refused the message with status ${input.status}${input.body === '' ? '' : `: ${input.body}`}`,
       fix:
         input.status === 403 || input.status === 401
-          ? 'x vapid show   # the subscription was made with another public key: a key change means every subscriber subscribes again'
+          ? 'x vapid show   # the service refused OUR token: a public key the subscription was not made with, a pwa.vapid.subject it rejects, or a server clock outside the 12 h the token is valid for — the subscription is kept'
           : "vapid: { subject: 'mailto:ops@example.com' }   # pwa.vapid in app.config.ts — the push service's answer in the cause names the field it refused",
       meta: { origin: input.origin, status: input.status },
     });

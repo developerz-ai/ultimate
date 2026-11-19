@@ -101,3 +101,7 @@ never `throw new Error`. A FRAMEWORK code: `bun run new-error-code` (a class, `C
 ## where a visitor's light/dark choice is stored
 
 `theme-storage.ts` (`THEME_STORAGE_KEY`, also on `./page`) | render's boot script reads it, ui's toggle writes it — both tier 4, so the one literal lives here. Persisted in browsers: never respelled
+
+## `error-reporter.ts`'s Sentry transport (moved 2026-11-19)
+
+`error-reporter-sentry.ts`, an optional export, reads the answer: one warn per non-2xx status, a 429 pauses for its `Retry-After` (60 s unstated), bodies cancelled. A DSN refusal never echoes its userinfo; a DSN that is not an http(s) URL (a legacy scheme-less `key:secret@host/1`) is described, never echoed, in the cause and in `meta.dsn`. Full rule: `docs/history/core.md`.

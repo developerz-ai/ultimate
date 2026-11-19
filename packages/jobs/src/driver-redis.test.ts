@@ -3,7 +3,7 @@
 // run only on a real server: `driver-redis.live.test.ts` and the conformance suite.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
+import { frozenClock, JOBS_DEAD_RETENTION_MS_DEFAULT } from '@ultimat3/core';
 import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
 import type { RedisSender } from './driver-redis';
 import { redisJobDriver } from './driver-redis';
@@ -258,6 +258,7 @@ describe('redisJobDriver', () => {
       '30000',
       'w1',
       '0', // no `onEmpty`: the script computes no horizon
+      String(JOBS_DEAD_RETENTION_MS_DEFAULT), // a buried row's life
       '1',
       'quiet.job',
       '2',
@@ -313,7 +314,7 @@ describe('redisJobDriver', () => {
 
   test('ack, nack and heartbeat bind their fence and answer whether the script landed', async () => {
     const { client, sent } = recording({ ack: 1, nack: 0, heartbeat: 1 });
-    const driver = redisJobDriver({ client, clock: clock(), doneTtlMs: 0 });
+    const driver = redisJobDriver({ client, clock: clock(), doneTtlMs: 0, deadTtlMs: 9 });
     const by = { workerId: 'w1', claim: 2 };
     expect(await driver.ack('j1', { ...by, owesSettle: true })).toBe(true);
     expect(await driver.nack('j1', { ...by, delayMs: 500, error: 'boom', stack: 'at x' })).toBe(
@@ -332,15 +333,42 @@ describe('redisJobDriver', () => {
         '2',
         String(AT),
         'ready',
-        String(AT + 500),
+        '500', // the delay: the script adds it to ITS now
         '1',
         '1',
         'boom',
         'at x',
         '0',
+        '9',
       ],
-      ['nack', 'j1', 'w1', '2', String(AT), 'suspended', String(AT), '0', '0', '', '', '0'],
-      ['heartbeat', 'j1', '', '', String(AT + 1_000)],
+      ['nack', 'j1', 'w1', '2', String(AT), 'suspended', '0', '0', '0', '', '', '0', '9'],
+      ['heartbeat', 'j1', '', '', String(AT), '1000'],
+    ]);
+  });
+
+  test('with no clock injected, every instant a script compares is the server one', async () => {
+    const { client, sent } = recording({ ack: 1, nack: 1, heartbeat: 1, claim: [], demand: [] });
+    const driver = redisJobDriver({ client });
+    const by = { workerId: 'w1', claim: 2 };
+    await driver.claim({ queues: ['q'], limit: 1, visibilityTimeoutMs: 1_000, workerId: 'w1' });
+    await driver.ack('j1', by);
+    await driver.nack('j1', { ...by, delayMs: 500 });
+    await driver.heartbeat('j1', { visibilityTimeoutMs: 1_000 });
+    await driver.stats();
+    await driver.demand();
+    await driver.settleDebt?.takeLost([{ name: 'n', graceMs: 1 }], 1);
+    // `''` is `NOW_OF`'s ask for `TIME`: a pod's own clock decides no lease, retry or debt. The
+    // fence's three come before `now` on a settle and a renewal, nothing on the rest.
+    const nowArg = (each: Sent) =>
+      each.args[['ack', 'nack', 'heartbeat'].includes(each.command) ? 5 : 2];
+    expect(sent.map((each) => [each.command, nowArg(each)])).toEqual([
+      ['claim', ''],
+      ['ack', ''],
+      ['nack', ''],
+      ['heartbeat', ''],
+      ['stats', ''],
+      ['demand', ''],
+      ['unknown', ''], // the settle take, a script this table does not name
     ]);
   });
 
@@ -361,10 +389,10 @@ describe('redisJobDriver', () => {
     ]);
   });
 
-  test('stats reads one row per queue, sorted by code unit, oldest from the due score', async () => {
+  test("stats reads one row per queue, sorted by code unit, the oldest due row's age as the script measured it", async () => {
     const { client } = recording({
       stats: [
-        ['b', 2, 1, 0, 0, 0, 1, String(AT - 5_000)],
+        ['b', 2, 1, 0, 0, 0, 1, '5000'],
         ['B', 0, 0, 1, 1, 1, 0, -1],
       ],
     });

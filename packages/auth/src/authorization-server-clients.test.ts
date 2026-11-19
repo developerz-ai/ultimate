@@ -13,6 +13,7 @@ import {
   REDIRECT,
   serverFixture,
 } from './authorization-server-fixture';
+import { DYNAMIC_CLIENT_PREFIX } from './authorization-server-types';
 import { memoryAuthLimiter } from './rate-limit';
 
 const DOC_ID = 'https://client.example/oauth/client.json';
@@ -28,6 +29,7 @@ const serving =
 const register = async (
   server: Awaited<ReturnType<typeof serverFixture>>['server'],
   body: unknown,
+  ip = '198.51.100.7',
 ) => {
   const route = server.routes.find((r) => r.path === '/oauth/register');
   if (route === undefined) return expect.unreachable('dynamic registration mounts /oauth/register');
@@ -37,10 +39,7 @@ const register = async (
     body: JSON.stringify(body),
   });
   const bytes = new Uint8Array(await raw.clone().arrayBuffer());
-  const response = await route.handler(
-    { raw, bodyBytes: async () => bytes },
-    { ip: '198.51.100.7' },
-  );
+  const response = await route.handler({ raw, bodyBytes: async () => bytes }, { ip });
   return { status: response.status, body: (await response.json()) as Record<string, unknown> };
 };
 
@@ -61,6 +60,19 @@ describe('metadata-document clients', () => {
       expect(read.ok && read.request.client.name).toBe('Doc client');
     }
     expect(calls).toHaveLength(1);
+  });
+
+  test("a metadata-document client carries its client_id's host beside the name it chose", async () => {
+    const { server, client } = await serverFixture({
+      fetch: serving({ client_id: DOC_ID, client_name: 'Acme CLI', redirect_uris: [REDIRECT] }),
+      resolveHost: publicDns,
+    });
+    const read = await server.readRequest(authorizeUrl(DOC_ID, pkce().challenge));
+    expect(read.ok && read.request.client).toMatchObject({
+      name: 'Acme CLI',
+      host: 'client.example',
+    });
+    expect(client.host).toBeUndefined();
   });
 
   test('the consent page read meters metadata fetches per caller when it names one', async () => {
@@ -87,7 +99,20 @@ describe('metadata-document clients', () => {
       },
     });
     await server.readRequest(authorizeUrl(DOC_ID, pkce().challenge), { callerKey: '203.0.113.9' });
-    expect(keys).toEqual(['oauth-client-metadata:203.0.113.9']);
+    // A fresh path: the cached document would skip the limiter.
+    const second = `${DOC_ID}?v=2`;
+    await server.readRequest(authorizeUrl(second, pkce().challenge), {
+      callerKey: '2001:db8:1:2::a',
+    });
+    await server.readRequest(authorizeUrl(`${DOC_ID}?v=3`, pkce().challenge), {
+      callerKey: '2001:db8:1:2::b',
+    });
+    // Keyed by network, as `login` is: two addresses in one /64 are one bucket.
+    expect(keys).toEqual([
+      'oauth-client-metadata:ip:203.0.113.9',
+      'oauth-client-metadata:ip:2001:db8:1:2::/64',
+      'oauth-client-metadata:ip:2001:db8:1:2::/64',
+    ]);
   });
 
   test('a consent read naming no caller is metered too, on one shared key', async () => {
@@ -239,6 +264,44 @@ describe('dynamic registration', () => {
     ]) {
       expect((await register(server, body)).status).toBe(400);
     }
+  });
+
+  test('a registration naming more redirect_uris than the cap is invalid_client_metadata, and nothing is stored', async () => {
+    const { server, store } = await serverFixture({ registration: 'dynamic' });
+    const puts: string[] = [];
+    const put = store.putClient.bind(store);
+    store.putClient = async (client) => {
+      puts.push(client.clientId);
+      await put(client);
+    };
+    const many = Array.from({ length: 11 }, (_, i) => `https://app.test/cb/${i}`);
+    const long = `https://app.test/${'a'.repeat(2_048)}`;
+    for (const redirect_uris of [many, [long]]) {
+      const answer = await register(server, { redirect_uris });
+      expect(answer).toMatchObject({ status: 400, body: { error: 'invalid_client_metadata' } });
+    }
+    expect(puts).toEqual([]);
+    expect((await register(server, { redirect_uris: many.slice(0, 10) })).status).toBe(201);
+  });
+
+  test('a self-registered client gets the purgeable d_ id; one the app registers keeps c_', async () => {
+    const { server, store, client } = await serverFixture({ registration: 'dynamic' });
+    const answer = await register(server, { redirect_uris: [REDIRECT], scope: 'read read read' });
+    expect(answer.body['scope']).toBe('read');
+    const id = String(answer.body['client_id']);
+    expect(id.startsWith(DYNAMIC_CLIENT_PREFIX)).toBe(true);
+    expect((await store.getClient(id))?.scopes).toEqual(['read']);
+    expect(client.clientId.startsWith('c_')).toBe(true);
+  });
+
+  test('registrations from many addresses in one /64 share one bucket', async () => {
+    const { server } = await serverFixture({ registration: 'dynamic' });
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      const ip = `2001:db8:1:2::${(i + 1).toString(16)}`;
+      statuses.push((await register(server, { redirect_uris: [REDIRECT] }, ip)).status);
+    }
+    expect(statuses).toContain(429);
   });
 
   test('is rate limited per address', async () => {

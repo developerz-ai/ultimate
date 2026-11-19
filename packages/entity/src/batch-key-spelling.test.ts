@@ -90,6 +90,17 @@ describe('postgres · a key the column cannot hold', () => {
     await pglite.close();
   });
 
+  test('one key the column cannot hold fails alone: the lookups batched with it still answer', async () => {
+    const repo = postgresRepo(bigs, { client: pglite });
+    const settled = await inRequest(() =>
+      Promise.allSettled([repo.findById('7'), repo.findById('abc'), repo.findById('8')]),
+    );
+    expect(settled.map((result) => result.status)).toEqual(['fulfilled', 'rejected', 'fulfilled']);
+    expect(settled[0]).toMatchObject({ value: { label: 'big' } });
+    expect(settled[1]).toMatchObject({ reason: { code: 'X_DB_STATEMENT_FAILED' } });
+    expect(settled[2]).toMatchObject({ value: null });
+  });
+
   test("a key the column cannot hold is the server's own refusal", async () => {
     const repo = postgresRepo(bigs, { client: pglite });
     const refused = await inRequest(() => repo.findById('abc')).catch((error: unknown) => error);

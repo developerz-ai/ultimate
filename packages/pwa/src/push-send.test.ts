@@ -350,11 +350,15 @@ describe('unit · one notification to every device of one person', () => {
       body: 'Mira replied',
       lang: 'en',
     });
-    // Gone and refused-for-this-key (403) are deleted; the busy one waits for the retry.
+    // Only GONE (404/410) is deleted. A 401/403 is as often a fault on THIS side — a subject the
+    // service refuses, a clock skewed past the token's validity — and deleting on it unsubscribed
+    // every device of every person a send reached until each clicked subscribe again. It is kept
+    // and the send refused by code; the busy one waits for the retry.
     expect((await store.listFor('ana')).map((row) => row.endpoint)).toEqual([
       `${base}/a-de`,
       `${base}/b-en`,
       `${base}/busy`,
+      `${base}/wrong-key`,
     ]);
   });
 

@@ -8,6 +8,7 @@ import { type Actor, userActor } from '@ultimat3/core';
 import { ChannelHub, type Topic } from './channel';
 import { channel } from './channel-decl';
 import { clearChannels } from './channel-registry';
+import { TransportUnavailableError } from './errors';
 import {
   InProcessTransport,
   type Transport,
@@ -373,5 +374,66 @@ describe('a socket that closes while its subscribe is parked', () => {
     expect(alice.socket.topics.size).toBe(0);
     expect(hub.subscriberCount(name)).toBe(0);
     expect(hub.topicCount).toBe(0);
+  });
+});
+
+/** A bus that refuses every subscribe while `down`, then answers like the real one. */
+class FlakyTransport extends SlowTransport {
+  down = true;
+  asked = 0;
+  override async subscribe(
+    subject: string,
+    handler: TransportHandler,
+  ): Promise<TransportSubscription> {
+    this.asked += 1;
+    if (this.down) throw new TransportUnavailableError({ transport: 'flaky', reason: 'bus down' });
+    this.gate.resolve();
+    return await super.subscribe(subject, handler);
+  }
+}
+
+describe('a bus subscribe that rejected', () => {
+  test('is asked again by the next subscriber once the bus is back', async () => {
+    // alice's row read is slow, so her reservation keeps the bridge alive across bob's failure:
+    // the state in which a cached rejection used to answer every later subscriber.
+    const slowRead = deferred();
+    channel('conc-flaky', {
+      params: ['orgId', 'leaf'],
+      catchUp: { name: 'orgRead' },
+      events: true,
+      row: async ({ ctx }) => {
+        if (ctx.actor?.id === 'alice') await slowRead.promise;
+        return { id: 1 };
+      },
+      policy: {
+        kind: 'allow',
+        label: 'g',
+        permissions: [],
+        children: [],
+        run: () => ({ allowed: true }),
+      },
+    });
+    const transport = new FlakyTransport();
+    const sockets = new SocketRegistry();
+    const hub = new ChannelHub({ transport, sockets });
+    const join = (who: string) =>
+      hub
+        .subscribeChannel(connect(sockets, actor(who)).socket, {
+          kind: 'channel',
+          channel: 'conc-flaky',
+          params: { orgId: 'o1', leaf: 'x' },
+        })
+        .then(
+          () => 'ok',
+          (error: unknown) => (error instanceof TransportUnavailableError ? 'bus down' : 'other'),
+        );
+
+    const alice = join('alice');
+    expect(await join('bob')).toBe('bus down');
+    transport.down = false;
+    expect(await join('carol')).toBe('ok');
+    slowRead.resolve();
+    expect(await alice).toBe('ok');
+    expect(transport.asked).toBe(2);
   });
 });

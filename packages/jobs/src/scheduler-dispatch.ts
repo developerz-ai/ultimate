@@ -2,7 +2,7 @@
 // watermark in ONE step (`SchedulerState.fire`). Apart from `scheduler.ts` because that file is the
 // round — which occurrences are owed, under which lease — and this is what firing one of them is.
 
-import { logger } from '@ultimat3/core';
+import { logger, renderThrowable } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { signalEnqueued } from './enqueue-signal';
 import { instrumentedFire } from './job-instrument';
@@ -37,9 +37,28 @@ export async function dispatchOccurrence(
 ): Promise<DispatchedOccurrence | undefined> {
   // The occurrence, not `at`: a catch-up dispatch runs long after the instant it fires for,
   // and the payload has to describe the occurrence the email/report claims to be about.
-  const requests = handle.entries(occurrenceMs).map(([handleForJob, input]) => {
-    // The facade's refusal, at the one enqueue that does not go through it: an empty key.
-    handleForJob.concurrencyKeyFor(input);
+  const requests = handle.entries(occurrenceMs).map(([handleForJob, input], entry) => {
+    let tenantId: string | undefined;
+    try {
+      // The facade's refusal, at the one enqueue that does not go through it: an empty key.
+      handleForJob.concurrencyKeyFor(input);
+      // The org the payload names, as the facade queues it (`enqueue-record.ts`): the key's
+      // namespace is `(name, tenant, key)`, so a fan-out per org queued for nobody is ONE row.
+      tenantId = handleForJob.tenantFor(input);
+    } catch (error) {
+      // The WHOLE occurrence fails, before anything is queued or the watermark moves: the next
+      // tick owes it again, and logs this again, until the declaration or the data is repaired —
+      // then every entry fires. Loud and retried, never a partial fire or a silent skip. The
+      // round's `jobs.task.round_failed` names the task; this names the entry that failed it.
+      logger.error('jobs.scheduler.entry-refused', {
+        task: handle.name,
+        job: handleForJob.name,
+        entry,
+        occurrence: new Date(occurrenceMs).toISOString(),
+        error: renderThrowable(error),
+      });
+      throw error;
+    }
     return {
       name: handleForJob.name,
       queue: handleForJob.queue,
@@ -49,6 +68,7 @@ export async function dispatchOccurrence(
       idempotencyKey: `${handle.name}:${occurrenceMs}:${handleForJob.idempotencyKeyFor(input)}`,
       maxAttempts: enqueuedAttempts(handleForJob.retry, handleForJob.compensates),
       runAt: occurrenceMs,
+      ...(tenantId === undefined ? {} : { tenantId }),
     };
   });
   target.firing(handle.name);

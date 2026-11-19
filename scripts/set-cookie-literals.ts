@@ -68,8 +68,8 @@ export const SET_COOKIE_PINS: Readonly<Record<string, SetCookiePin>> = {};
  */
 export const SET_COOKIE_RELAY_PINS: Readonly<Record<string, SetCookiePin>> = {
   'packages/auth/src/identity-provider-route-core.ts': {
-    sites: 4,
-    why: 'appends identityStateCookie(), clearIdentityStateCookie() and sessionCookie() output — each a serializeSetCookie line in identity-provider-cookie.ts / session.ts — onto the redirect and problem Responses the sign-in routes build themselves (oauthLogin moved onto these routes in 31.0.0)',
+    sites: 1,
+    why: 'withCookies() appends identityStateCookie(), clearIdentityStateCookie(), sessionCookie() and mfaChallengeCookie() output — each a serializeSetCookie line — onto the Responses the sign-in routes build',
   },
   'packages/auth/src/sign-out.ts': {
     sites: 1,

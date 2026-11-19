@@ -26,6 +26,7 @@ import {
   WRITER,
 } from './agent-compact-fixture';
 import { useFixtureModels } from './model-fixture';
+import { chatCompletionBody } from './openai-body';
 import { anthropicProvider, costOf, totalTokens } from './provider';
 
 useFixtureModels();
@@ -166,6 +167,26 @@ describe('the cached prefix survives', () => {
     );
     const joined = summary.at(-1)?.content;
     expect(Array.isArray(joined) && joined.at(-1)?.type).toBe('text');
+  });
+});
+
+describe('the summary call asks for prose', () => {
+  test("a one-tool run's summary request is not forced through respond on the openai wire", async () => {
+    const { loop, summaries } = scripted(SIX_READS);
+    await declare({ compact: { keepTurns: 2 } })(INPUT, { ctx: ctx() });
+    const summary = summaries[0] ?? expect.unreachable('no summary call');
+    // An agent with `tools: []` offers `respond` alone, and one tool is forced on this wire.
+    const only = { ...summary, tools: (summary.tools ?? []).slice(-1) };
+    const body = chatCompletionBody({
+      provider: 'openai',
+      request: only,
+      model: SMALL,
+      stream: false,
+    });
+    expect(body['tools']).toHaveLength(1);
+    expect(body['tool_choice']).toBeUndefined();
+    // A loop turn is untouched: the marker is the summary call's alone.
+    expect(loop.every((request) => request.toolChoice === undefined)).toBe(true);
   });
 });
 

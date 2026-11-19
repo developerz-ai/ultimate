@@ -108,6 +108,7 @@ const DATABASE_DRIVERS = ['postgres'] as const;
 
 export interface DatabaseConfig {
   readonly driver: (typeof DATABASE_DRIVERS)[number];
+  /** `true` requires TLS when the URL states no `sslmode`; a URL's own `sslmode` is never overridden. */
   readonly ssl: boolean;
   /**
    * Every `tenant:` table carries a forced policy (`x db gen`) the serving role must be subject to
@@ -137,6 +138,7 @@ export interface DatabaseConfig {
  * exist is `cache.tiers` and only that; a rung the environment cannot supply refuses the boot.
  */
 export interface CacheConfig {
+  /** At least 1: the rungs refuse a lease of no length, so 0 is refused here rather than at boot. */
   readonly defaultTtlMs: number;
   /** Order is fixed by `CACHE_TIERS`; listing order here selects rungs, it does not rank them. */
   readonly tiers: readonly CacheTierName[];
@@ -168,6 +170,7 @@ export interface JobsConfig {
    * `maxInFlight`), the per-queue `concurrency` still bounding each under it. Unset: no process cap.
    */
   readonly maxInFlight?: number | undefined;
+  /** With `backoff`: the retry of a job that declares none. A job's own `retry` wins. */
   readonly maxAttempts: number;
   readonly backoff: (typeof JOB_BACKOFFS)[number];
   readonly visibilityTimeoutMs: number;
@@ -308,7 +311,7 @@ function validate(config: AppConfig): void {
       config.jobs[key] === undefined ? undefined : countIssue(`jobs.${key}`, config.jobs[key], 1),
     ),
     oneOfIssue('jobs.backoff', config.jobs.backoff, JOB_BACKOFFS),
-    countIssue('cache.defaultTtlMs', config.cache.defaultTtlMs, 0),
+    countIssue('cache.defaultTtlMs', config.cache.defaultTtlMs, 1),
     oneOfIssue('database.driver', config.database.driver, DATABASE_DRIVERS),
     booleanIssue('database.ssl', config.database.ssl),
     booleanIssue('database.rowSecurity', config.database.rowSecurity),

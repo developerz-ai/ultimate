@@ -84,6 +84,8 @@ export const digestTask = sendDigest.schedule;
 
 Hand the job's module to `defineApi({ jobs })`; the task registers with it — it needs no `tasks` entry. A task that fires several jobs, or a job other code also enqueues, stays a `task()` beside its jobs.
 
+**One job per org, from a schedule**: the schedule belongs to no org (`tenant: 'none'`), the org list is read inside `crossTenant()` as a service actor, and each child job is tenant-scoped and runs as its org — the whole pattern, with a test that runs it, is `x docs 'jobs.README#one-job-per-org-from-a-schedule'`. Fire it now in dev with `x tasks run <name>.schedule`.
+
 ## The fluent surface
 
 Every projection is a method on the task — `nightlyDigest.enqueue()`, never `runTask(nightlyDigest)` — and every declared field is lifted onto it. A task has no `.def`.
@@ -160,8 +162,9 @@ Role table and drain sequence: [Deployment](Deployment).
 |---|---|
 | `x tasks list --json` | the descriptor — `name`, `cron`, `tz`, `catchUp`, `maxCatchUp`, `jobs` — plus the resolved **`next`** occurrence, rendered in the task's own `tz`, and its `nextMs` epoch instant; and the **`last`** fire (`last`, `lastMs`, `lastFiredAtMs` — `null` before the first), read from the queue, which `x tasks` opens when a task is declared. All derived, never declared fields |
 | `x tasks show <name> --json` | the same, plus the cron in words (`describe`) and the next N occurrences (`--count`, default 5) |
+| `x tasks run <name> --json` | fires the task now: each job its occurrence enqueues goes onto the app's queue (`TaskHandle.enqueue()`, the run-now path; the scheduler's watermark is untouched, so the next scheduled occurrence still fires). Beside an `x dev` on the embedded database it refuses with the stop–run–restart fix; where the environment resolves `production` it needs `--production` (or `ULTIMATE_TASK_RUN=<name>` in a container), else `X_TASK_RUN_PRODUCTION`. `x g cron-job` prints it as its next step. `As of 2026-11-19` |
 | `/admin/jobs/tasks` | the jobs dashboard every `defineAdmin()` serves: schedule, zone, last fire, next fire (`nextTaskRun`), paused; pause, resume and run now behind `job:manage` → [Admin dashboard](Admin-Dashboard#the-jobs-dashboard) |
-| MCP `admin.x_job_tasks.list`, `admin.action.job.task.run-now` | the same screen and actions as admin MCP tools, same authz (`job:read`, `job:manage`) |
+| MCP `admin.x_job_tasks.list`, `admin.action.job.task.run-now` | the same screen and actions as admin MCP tools, same authz: listing needs `job:read`, run-now `job:manage` — which `x new`'s `admin` role does **not** hold (it holds `job:read`); grant it in `apps/web/shared/roles.ts` to see the tool |
 | `/_x` dev panel | the jobs tab: the dev process's tasks beside its queues and runs |
 | `x.manifest.json` | generated `tasks` section — the build-time source of truth |
 | `<task>.describe()` | in process: `kind`, `name`, `cron`, `tz`, `catchUp`, `maxCatchUp`, and the job names it enqueues |

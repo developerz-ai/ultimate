@@ -161,7 +161,11 @@ function originIssue(origin: string): string | undefined {
 }
 
 /** A favicon names one SVG under the app's site assets, never an arbitrary URL or path. */
-function faviconIssue(favicon: string): string | undefined {
+function faviconIssue(favicon: unknown): string | undefined {
+  // The type first: an untyped config's `favicon: 42` reached `.startsWith` as a native TypeError.
+  if (typeof favicon !== 'string') {
+    return `site.favicon must be a site asset path like "assets/favicon.svg", not ${describeValue(favicon)}`;
+  }
   if (!favicon.startsWith('assets/')) {
     return `site.favicon "${favicon}" must be a site asset path starting with assets/`;
   }
@@ -182,7 +186,7 @@ export function siteIssues(config: SiteSections, issues: string[]): void {
     const issue = originIssue(origin);
     if (issue !== undefined) issues.push(issue);
   }
-  const favicon = config.site.favicon;
+  const favicon: unknown = config.site.favicon;
   if (favicon !== undefined) {
     const issue = faviconIssue(favicon);
     if (issue !== undefined) issues.push(issue);

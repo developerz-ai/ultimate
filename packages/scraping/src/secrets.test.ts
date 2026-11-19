@@ -95,6 +95,32 @@ describe('unit · redaction is BY VALUE, not by key name', () => {
     );
   });
 
+  test('a quoted `>` before type=password still blanks the value', () => {
+    // The tag ends where HTML ends it: a `>` inside a quoted value is that value's text.
+    expect(
+      blankPasswordFields('<input pattern="(?=.*>)" type="password" value="hunter2secret">'),
+    ).toBe('<input pattern="(?=.*>)" type="password" value="">');
+    expect(blankPasswordFields("<input title='a>b' type=password value=hunter2secret>")).toBe(
+      '<input title=\'a>b\' type=password value="">',
+    );
+    // A quote inside an UNQUOTED value opens nothing, so the tag still ends at its `>`.
+    expect(
+      blankPasswordFields("<input title=it's type=password value=hunter2secret><b>'</b>"),
+    ).toBe('<input title=it\'s type=password value=""><b>\'</b>');
+    // Cut off mid-value: no `>` ever closes it, and the value is blanked all the same.
+    expect(blankPasswordFields('<p>x</p><input type=password value="hunter2secret')).not.toContain(
+      'hunter2secret',
+    );
+  });
+
+  test('finding the tags stays linear on a page of unterminated ones', () => {
+    for (const hostile of ['<input "'.repeat(100_000), '<input '.repeat(100_000)]) {
+      const started = performance.now();
+      blankPasswordFields(hostile);
+      expect(performance.now() - started).toBeLessThan(1000);
+    }
+  });
+
   test('a non-password input keeps its value — the blank is structural, not a sweep', () => {
     expect(
       blankPasswordFields('<input value="ada" type="text"><input value="x" name="passwordish">'),

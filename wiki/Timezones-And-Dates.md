@@ -66,7 +66,11 @@ and `Calendar` take and post `YYYY-MM-DD` and know no zone. Month and weekday na
 `Intl.DateTimeFormat` with `timeZone: 'UTC'` on the plain date's UTC midnight, which names the date
 and never shifts it; the week starts on the locale's day (`Intl.Locale#getWeekInfo`). A *window* is
 instants: `timeRangeUrl(url, { presets, default, timeZone, now })` reads a custom `from`/`to` as
-wall-clock time in `timeZone` (a spring-forward gap resolves forward) and `TimeRangePicker` requires
+wall-clock time in `timeZone` (a spring-forward gap resolves forward); `href({ from, to })` writes
+`:ss` when an instant has seconds and writes the end so it reads back at or after the instant
+asked for, so a window touching a fall-back hour reads back as one containing the window given,
+never `invalid` or an hour early (`As of 2026-11-19`). Every list cursor on the page, a namespaced
+one (`runs.after`) included, is dropped when the window changes. And `TimeRangePicker` requires
 the same `timeZone` as a prop — omitting it is a type error. "Today" is the caller's: pass `month`
 (or `now`) computed with `plainDateIn(now(), actor.tz)`; with none, `Calendar` opens on today in
 `useUi().timeZone`, the request's zone, never the device's.

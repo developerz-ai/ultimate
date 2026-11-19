@@ -5,10 +5,10 @@ import type { CommandSpec } from './parse';
 
 export const tasksSpec: CommandSpec = {
   name: 'tasks',
-  summary: 'cron tasks, their timezone and their next run',
-  usage: 'x tasks [list|show <name>] [--count n] [--json]',
+  summary: 'cron tasks, their timezone and their next run; fire one now',
+  usage: 'x tasks [list|show <name>|run <name>] [--count n] [--production] [--json]',
   requiresApp: true,
-  subcommands: ['list', 'show'],
+  subcommands: ['list', 'show', 'run'],
   defaultSubcommand: 'list',
   flags: [
     {
@@ -16,6 +16,13 @@ export const tasksSpec: CommandSpec = {
       type: 'string',
       summary: 'show: how many upcoming occurrences to list',
       subcommands: ['show'],
+    },
+    {
+      name: 'production',
+      type: 'boolean',
+      summary:
+        'run: fire it where ULTIMATE_ENV resolves production — real work, asked for by name; also ULTIMATE_TASK_RUN=<name>',
+      subcommands: ['run'],
     },
   ],
 };

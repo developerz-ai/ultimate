@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test';
+// why: Bun has no directory probe — `Bun.file().exists()` answers false for a directory.
+import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; the fixture is joined to this file's directory.
 import { join } from 'node:path';
@@ -6,12 +8,14 @@ import { errorGroupsSink, memoryErrorGroupsStore } from '@ultimat3/admin/error-g
 import type { ErrorReport } from '@ultimat3/core';
 import {
   chainErrorReporters,
+  defineConfig,
   errorReportersOf,
   InternalError,
   installedErrorReporter,
   isSentryErrorReporter,
   logger,
   memoryErrorReporter,
+  ROLES,
   reportError,
   resetErrorReporting,
   sentryErrorReporter,
@@ -21,6 +25,7 @@ import { installErrorReporter } from '@ultimat3/core/adapter';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import { processRoot } from './process-root-fixture';
 import {
+  assertRoleDeclared,
   CONTAINER_BINDING,
   configureReporting,
   containerBinding,
@@ -33,6 +38,7 @@ import {
   releaseBoot,
   roleFromEnv,
   runRole,
+  serveApp,
   withAppRuntime,
 } from './serve';
 import type { ThrownShape } from './thrown-by-fixture';
@@ -320,4 +326,54 @@ test('a release that itself fails does not strand the ones acquired before it', 
   ]);
   // The step that refused to START is the failure worth reporting; a stop on the way out is not.
   expect(released).toEqual(['roles', 'services']);
+});
+
+// `roles` was validated (a closed set, never empty), documented as "which runtime roles this app
+// runs", and read by nothing: an app declaring `roles: ['web']` booted a worker all the same.
+test('a ROLE outside config.roles refuses to boot', async () => {
+  const root = processRoot(join(import.meta.dir, '..', '.serve-roles-fixture'));
+  await rm(root, { recursive: true, force: true });
+  try {
+    await Bun.write(
+      join(root, 'app.config.ts'),
+      "export const config = { name: 'roles-fixture', roles: ['web', 'sync'] };\n",
+    );
+    const env = { NODE_ENV: 'test', ULTIMATE_STATE_DIR: join(root, '.x') };
+    const refused = await serveApp({ root, env, role: 'worker', port: 0, metricsPort: 0 }).then(
+      () => expect.unreachable('a role the app does not declare booted'),
+      (error: unknown) => error as ThrownShape,
+    );
+    expect(refused.code).toBe('X_CONFIG_INVALID');
+    expect(refused.cause).toContain('ROLE=worker');
+    expect(refused.cause).toContain('web, sync');
+    // Either remedy, each pasteable: declare the role, or start one that is declared.
+    expect(refused.fix).toContain("roles: ['web', 'sync', 'worker']");
+    expect(refused.fix).toContain('ROLE=web bun apps/web/server.ts');
+    // Refused before a single service: no state directory was created under the root.
+    expect(existsSync(join(root, '.x'))).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('config.roles unset declares every role, and the release phase is never a declared process', () => {
+  const unset = defineConfig({ name: 'roles-default' });
+  for (const role of ROLES) assertRoleDeclared(role, unset);
+  // No app.config.ts at all: nothing was declared, so nothing is refused.
+  for (const role of ROLES) assertRoleDeclared(role, undefined);
+  const webOnly = defineConfig({ name: 'roles-web', roles: ['web'] });
+  assertRoleDeclared('web', webOnly);
+  // `migrate` runs once and exits (`x db migrate`, the release phase): `roles` lists what RUNS.
+  assertRoleDeclared('migrate', webOnly);
+  expect(thrownBy(() => assertRoleDeclared('scheduler', webOnly)).code).toBe('X_CONFIG_INVALID');
+});
+
+// `roles: ['migrate']` is a valid declaration with no process to serve: "start a declared role"
+// would name `ROLE=web`, the very role refused — the remedy is the config edit alone.
+test('with no serving role declared, the fix is the declaration, never the refused ROLE again', () => {
+  const migrateOnly = defineConfig({ name: 'roles-migrate', roles: ['migrate'] });
+  const refused = thrownBy(() => assertRoleDeclared('web', migrateOnly));
+  expect(refused.code).toBe('X_CONFIG_INVALID');
+  expect(refused.fix).not.toContain('ROLE=');
+  expect(refused.fix).toStartWith("defineConfig({ roles: ['migrate', 'web'] })   // ");
 });

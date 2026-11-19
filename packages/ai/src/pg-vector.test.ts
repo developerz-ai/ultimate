@@ -117,7 +117,10 @@ describe('PostgresVectorStore reads', () => {
     const { client, store } = harness();
     await store.searchText('x_db_drift schema', 3);
     const text = readTexts(client)[0] ?? '';
-    expect(text).toContain('websearch_to_tsquery($1::regconfig, $2) q');
+    // One phrase per word, OR-ed: any word matches, as the memory store's BM25 does.
+    expect(text).toContain("phraseto_tsquery(c.cfg, word)::text || ')', ' | ')");
+    expect(text).toContain('(select $1::regconfig as cfg) c, regexp_split_to_table($2,');
+    expect(text).not.toContain('websearch_to_tsquery');
     expect(text).toContain('where "tsv" @@ q');
     expect(text).toContain('ts_rank_cd("tsv", q) as score');
     expect(reads(client)[0]?.values).toEqual(['english', 'x_db_drift schema', 3]);

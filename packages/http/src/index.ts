@@ -80,6 +80,8 @@ export {
   routeNotFound,
   unauthenticated,
 } from './errors';
+/** A fault AFTER the response left (a streamed body's producer), recorded as `error-map` would. */
+export { reportLateFault } from './fault-report';
 export type { ForwardedInput, ForwardedSplit } from './forwarded';
 export { clientAddress, forwardedElement } from './forwarded';
 export type { Authenticator, AuthenticatorOptions, AuthzDecision, ServerHooks } from './hooks';
@@ -224,3 +226,5 @@ export type { VerifiedWebhook, WebhookVerifyOptions } from './webhook-verify';
 export { DEFAULT_WEBHOOK_BODY_LIMIT, verifyWebhookSignature } from './webhook-verify';
 export type { JoinedWebSocketMounts } from './websocket-mounts';
 export { joinWebSocketMounts } from './websocket-mounts';
+/** An answer's `x-ultimate-dates` value, or none past the size a proxy takes in a header. */
+export { cappedWireDates, WIRE_DATES_MAX_BYTES } from './wire-dates-cap';

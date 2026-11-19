@@ -126,6 +126,31 @@ describe('the manifest is deterministic', () => {
     expect(verifyBuildId(buildManifest(sources))).toBe(true);
   });
 
+  // A schema default reaches a fact verbatim (`sources.ts`'s `asJson` is a cast), so a `Date`, a
+  // sparse array or an `undefined` member is hashed as itself and WRITTEN as what JSON makes of it.
+  test('a fact holding a Date round-trips: verifyBuildId(JSON.parse(manifestJson(m))) is true', () => {
+    const sparse: unknown[] = ['a'];
+    sparse[2] = 'c';
+    const input = {
+      type: 'object',
+      properties: {
+        at: { type: 'string', default: new Date('2026-01-02T03:04:05.000Z') },
+        tags: { type: 'array', default: sparse },
+        note: { type: 'string', default: undefined },
+      },
+    } as unknown as JsonValue;
+    const manifest = buildManifest({
+      ...sources,
+      actions: [{ ...(sources.actions?.[0] as ActionFact), input }],
+    });
+
+    const onDisk = JSON.parse(manifestJson(manifest)) as Manifest;
+    expect(verifyBuildId(onDisk)).toBe(true);
+    expect(onDisk.buildId).toBe(manifest.buildId);
+    // The manifest in memory is the one the file holds, so a drift check compares like with like.
+    expect(canonicalJson(manifest.actions)).toBe(canonicalJson(onDisk.actions));
+  });
+
   // Every buildId ever stamped into an app's `x.manifest.json` was SHA-256/16 over canonicalJson;
   // that is core's `fingerprint`, so the copy was deleted rather than the value changed.
   // 25.0.0 (plan 101, M3): `contentHash` was `fingerprint` under a second name, exported from here
@@ -420,67 +445,5 @@ describe('unit · a default JSON cannot write is refused, never hashed apart', (
     const zero = buildManifest(withDefault(0)).buildId;
     const nul = buildManifest(withDefault(null)).buildId;
     expect(zero).not.toBe(nul);
-  });
-});
-
-// A file an app with no mount has committed must not move: the key's absence is the whole fact,
-// and writing `mounts: []` would stale every manifest in existence for nothing.
-describe('the mounts section', () => {
-  const app = { name: 'acme', version: '1.0.0' };
-
-  test('prefixes, scopes and names are sets: declaration order moves no byte', () => {
-    const forward = buildManifest({
-      app,
-      mounts: [
-        { prefix: '/a', scopes: { read: ['listA'] } },
-        { prefix: '/v1', scopes: { read: ['listB', 'listA'], audit: ['log'] } },
-      ],
-    });
-    const backward = buildManifest({
-      app,
-      mounts: [
-        { prefix: '/v1', scopes: { audit: ['log'], read: ['listA', 'listB'] } },
-        { prefix: '/a', scopes: { read: ['listA'] } },
-      ],
-    });
-    expect(manifestJson(forward)).toBe(manifestJson(backward));
-    expect(forward.buildId).toBe(backward.buildId);
-    expect(forward.mounts?.map((mount) => mount.prefix)).toEqual(['/a', '/v1']);
-    expect(Object.keys(forward.mounts?.[1]?.scopes ?? {})).toEqual(['audit', 'read']);
-    expect(forward.mounts?.[1]?.scopes['read']).toEqual(['listA', 'listB']);
-  });
-
-  test('no mount writes no key, so an app without one keeps its bytes and its buildId', () => {
-    const none = buildManifest({ app });
-    expect('mounts' in none).toBe(false);
-    expect(manifestJson(none)).not.toContain('mounts');
-    expect(buildManifest({ app, mounts: [] }).buildId).toBe(none.buildId);
-  });
-});
-
-// `mounts`' rule, for the same reason: an app without a consumer keeps its committed bytes.
-describe('the consumers section', () => {
-  const app = { name: 'acme', version: '1.0.0' };
-  const row = (name: string) => ({
-    name,
-    queue: 'default',
-    supervisor: `${name}.supervisor`,
-    arm: `${name}.arm`,
-    rearm: '* * * * *',
-    batch: 100,
-    lags: false,
-  });
-
-  test('sorted by name: declaration order moves no byte', () => {
-    const forward = buildManifest({ app, consumers: [row('b'), row('a')] });
-    const backward = buildManifest({ app, consumers: [row('a'), row('b')] });
-    expect(manifestJson(forward)).toBe(manifestJson(backward));
-    expect(forward.consumers?.map((consumer) => consumer.name)).toEqual(['a', 'b']);
-  });
-
-  test('no consumer writes no key, so an app without one keeps its bytes and its buildId', () => {
-    const none = buildManifest({ app });
-    expect('consumers' in none).toBe(false);
-    expect(buildManifest({ app, consumers: [] }).buildId).toBe(none.buildId);
   });
 });

@@ -77,7 +77,8 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
   row (`attempt = 0`) `failed`/`JOB_EXPIRED`; a requeue clears expiry and `settle_owed`;
   `backlog(queue, cap)` counts no further than `cap`, `holds` probes a key once full. Refused in any
   batch (`assertEnqueueMany`).
-- **Redis scripts go by `EVALSHA`** (`driver-redis-eval.ts`): `EVAL` only on `NOSCRIPT`.
+- **Redis scripts go by `EVALSHA`** (`driver-redis-eval.ts`): `EVAL` only on `NOSCRIPT`; the
+  server's clock (`NOW_OF`) unless injected; an ended row's keys expire (`ENDED`).
 
 ## Rules — numbers and limits
 
@@ -99,22 +100,23 @@ A rule or row marked `†` has its full text in [`docs/history/jobs-rules.md`](.
 - **One enqueue implementation**: `jobsFacade()` owns `enqueue` AND `enqueueMany`, over
   `enqueue-record.ts`'s row builders; the only other `driver.enqueue` sites are the outbox relay and
   the scheduler. `handle.as(actor, input)` QUEUES; `executeJob` is the one execution path.
-- The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`); `task.enqueue()` uses the
-  job's plain key.
+- The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`), its row under
+  `tenantFor(input)`; `task.enqueue()` uses the job's plain key.
 - **TWO shutdown hooks per worker, one per PHASE**: `accept` is `stopAccepting()` (flip state, clear
   the poll timer, arm the cut-off; aborts nothing); `close` is the teardown. `stop()` releases both
   in a `finally`; `start()` refuses while draining.
 - **A claimed job is counted with core's `beginWork()`**: the drain's in-flight phase waits. The
   teardown's wait is bounded on SIGTERM (`drain-wait.ts`), unbounded on `stop()`; one teardown, joined.
 - **A deploy lets a running job FINISH**: SIGTERM only stops claiming; `X_DRAINING` at
-  `deadlineAt − margin`; settles `interrupted`. †
+  `inflightUntil − margin` (core's `ShutdownReason.inflightUntil`, where its in-flight wait ends; else
+  `deadlineAt`); settles `interrupted`. †
 - **`X_RATE_LIMITED` defers uncounted** (`rateLimitDeferralMs`).
 - **The drain waits out the claim round it races** — `tick()` registers its round in `rounds`
   synchronously with its guard.
 - **A fleet slot is HELD, not owned**: a lost one CANCELS the run (`X_JOB_SLOT_LOST`). †
 - **The run's signal is a controller this worker owns** (`run-signal.ts`).
 - **A lease is HELD, not owned** (`heartbeat.ts`): a whole window without a renewal is
-  `jobs.lease.lost`. †
+  `jobs.lease.lost`, timed from the claim's ask (`claimedAt`). †
 - **A renewal is decided against `stopped()`** (`renewal-timer.ts`, re-read after every await); the
   interval is `unref`ed; every renewal is armed through `WorkerOptions.schedule`.
 - **Settlement is not part of the retry decision**: `driver.ack` sits after the `try`.
@@ -204,10 +206,10 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `events-pg.ts` | `postgresEventBus` — `step.waitForEvent` across processes |
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, and `postgresLeader` |
-| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` — the ONE install point — `JOBS_TABLE_STORAGE` (fillfactor 80, exported for the framework schema's drift check), and the hot tables' autovacuum settings (`x_scheduler_state`, `x_job_workers`, `x_outbox`) as `tableStorage()` declarations in `JOBS_STORAGE`, which drift checks. Its comments carry no `;` and no `'` |
+| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` (the ONE install), `JOBS_TABLE_STORAGE` (fillfactor 80), the hot tables' autovacuum as `tableStorage()` in `JOBS_STORAGE`, drift-checked. Comments carry no `;` and no `'` |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
-| `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled`, told beside the claim pass (`burialTeller`, awaited by `tick()` and the drain) and started only inside its debt's grace (else left owed) |
-| `retry.ts` | the dead-letter decision; this package's option names over core's `backoffDelay`, no curve |
+| `driver-memory.ts` / `claim-exhausted.ts` | `x dev` / tests; a buried row's log line and `onSettled`, told beside the claim pass (`burialTeller`) and started only inside its debt's grace |
+| `retry.ts` / `retry-default.ts` | the dead-letter decision over core's `backoffDelay`; the app's default (`jobs.maxAttempts`/`backoff`), resolved when `handle.retry` is READ; `DEFAULT_RETRY.attempts` is core's `JOBS_MAX_ATTEMPTS_DEFAULT` |
 | `retry-classification.ts` | the other half: what the thrown error says, and the stop reason |
 | `retry-jitter.ts` | `retry.jitter` refused at `job()` unless a `JitterMode` (a v30 boolean names its mapping) |
 | `execute-unwind.ts` / `execute-ctx.ts` | a saga failed for good; caller ctx |
@@ -232,19 +234,18 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `scheduler-known.ts` / `scheduler-dispatch.ts` | what the leader remembers of each watermark (an idle round reads nothing, a cold one ONE `watermarks` read); one occurrence fired |
 | `limits.ts` / `limiter*.ts` | per-process caps; `limiter()`: a named fleet budget |
 | `events.ts` / `-cursor.ts` | memory bus; the wait cursor, both buses |
-| `inspect.ts` | `--json` introspection. `operatorInput`: no registered handle gives `[redacted]` whole; otherwise `redactInput(maskSensitive(handle.input, …))` |
+| `inspect.ts` | `--json` introspection; `operatorInput`: `[redacted]` whole with no handle, else `redactInput(maskSensitive(…))` |
 | `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume, resolve-step |
 | `inspect-unsupported.ts` | `requireIntrospection`: every verb's guard, `X_JOB_INTROSPECTION_UNSUPPORTED` (redis ships no `introspect`) |
 | `introspection.ts` | `JobIntrospection`, every operator type, and the bounds |
 | `counters.ts` / `counter-batch.ts` | bucket arithmetic, `nackOutcome`, the memory counters; the pg driver's per-process batch, flushed every 10 s and on close |
 | `driver-memory-operator.ts` / `driver-pg-operator.ts` | each driver's operator members |
 | `progress.ts` / `settled.ts` / `redact-input.ts` | the progress throttle; the `onSettled` runner; a payload as an operator reads it |
-| `settled-types.ts` / `driver-settle.ts` / `settle-redrive.ts` / `scheduler-upkeep.ts` | what `onSettled` is handed; the settle fence and the `onSettled` debt contract; the leader's re-drive of lost debts; the leader's cadence (counter fold, re-drive) |
-| `driver-memory-settle.ts` / `driver-pg-settle-debt.ts` / `driver-redis-settle.ts` | the `onSettled` debt per driver: a map, `x_jobs.settle_owed`, the `owed` ZSET — held equal by `@ultimat3/testing`'s `SETTLE_DEBT_CHECKS` |
+| `settled-types.ts` / `*settle*.ts` / `scheduler-upkeep.ts` | `onSettled`'s input, fence and debt (one per driver, held equal by `SETTLE_DEBT_CHECKS`); the leader's re-drive and cadence † |
 | `scheduler-state.ts` | `SchedulerState`, `fire`, `readWatermarks` (one read a round), the memory watermark |
 | `scheduler-leader.ts` / `scheduler-occurrences.ts` | `LeaderElection` + `soleLeader`; which occurrences fall in a window |
 | `idle-backoff.ts` / `enqueue-signal.ts` | the wait both polling loops share, and the rest (`restAfter`); the two wake signals and `wakeIsLive` |
-| `queue-wake.ts` / `driver-pg-wake-sql.ts` | the `LISTEN` session and its proof; which statement notifies |
+| `queue-wake.ts` / `driver-pg-wake-sql.ts` | the `LISTEN` session, its proof and re-proof; which statement notifies |
 | `worker-loop.ts` | the claim loop's timer: wake, `again`, the kicks, its heartbeat stamps |
 | `loop-heartbeat.ts` | a long-running loop's heartbeat (`loopHeartbeat`, `staleLoops`): the bound the cli's `/healthz` on `METRICS_PORT` answers 503 past |
 | `errors-operator.ts` / `errors-requeue.ts` | the operator verbs' refusals; `requeue`'s |

@@ -20,12 +20,17 @@
 import { linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';
-import { ownerText, type PortOwner, portOwner } from './dev-lock-holder-dir';
+import {
+  DevLockUnreadableError,
+  DevPortInUseError,
+  DevStateUnwritableError,
+} from './dev-lock-errors';
+import { type PortOwner, portOwner } from './dev-lock-holder-dir';
 import { reusedPid, startedOf } from './dev-lock-identity';
 import type { PortHolder } from './dev-lock-port-holder';
 import { stealStale } from './dev-lock-steal';
 import { freeDevPortPair } from './port-pair-free';
-import { quoteArg } from './shell-quote';
+import { stopRunStartFix } from './stop-run-start';
 
 /** Where the running dev server records itself, inside the state directory it already owns. */
 export const DEV_LOCK_FILE = 'dev.lock';
@@ -122,6 +127,19 @@ export class DevAlreadyRunningError extends UltimateError {
     readonly stateDir: string;
     /** True when this checkout's database is the embedded one. */
     readonly embeddedDb?: boolean;
+    /**
+     * The refused command's own words (`['db', 'seed', 'dev']`), for one that needs the embedded
+     * database to itself: the fix then stops the holder, runs it, and starts `x dev` again.
+     */
+    readonly resume?: readonly string[];
+    /** Why the holder could not do the work itself, when it was asked: closes the cause. */
+    readonly unanswered?: string;
+    /**
+     * The read-only command that says whether a request the holder may have run did run (`['db',
+     * 'status']`): set when the request was sent and its answer lost, so the fix reads, never
+     * repeats — a rollback asked twice reverses two migrations.
+     */
+    readonly settle?: readonly string[];
   }) {
     const single =
       input.embeddedDb === true
@@ -129,81 +147,15 @@ export class DevAlreadyRunningError extends UltimateError {
         : ' — x dev runs every role in one process, so a second one on this checkout is unsupported';
     super({
       code: 'X_DEV_ALREADY_RUNNING',
-      cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}`,
+      cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}${input.unanswered === undefined ? '' : `; asked to do it instead, ${input.unanswered}`}`,
       // `x stop`, not `kill <pid>`: a kill returns before the drain ends and the next boot refuses.
-      fix: `x stop --json   # or use the one already running at ${input.lock.url}`,
-      meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
-    });
-  }
-}
-
-/**
- * The lock file exists, this process could not read it and could not remove it — which is not
- * "another x dev is running", and was reported as exactly that.
- *
- * `DevAlreadyRunningError` needs a `DevLock`, and the only one in hand on that path was `mine`:
- * the refusal then read `pid <this process> is already running x dev` with `fix: … kill <this
- * process>`, a remedy that kills the reader and a cause naming the wrong holder. Axiom 4 wants a
- * runnable fix and an honest cause, so the honest answer is its own code — the file is the
- * problem, and removing it is what a reader can actually do.
- */
-export class DevLockUnreadableError extends UltimateError {
-  constructor(input: { readonly path: string; readonly stateDir: string }) {
-    super({
-      code: 'X_DEV_LOCK_UNREADABLE',
-      cause: `${input.path} could not be parsed as a dev lock and could not be removed, so x dev cannot tell whether another process owns ${input.stateDir}`,
-      fix: `rm ${quoteArg(input.path)}   # then re-run x dev`,
-      meta: { path: input.path, stateDir: input.stateDir },
-    });
-  }
-}
-
-/**
- * The state directory refused the claim itself: it could not be created, the lock could not be
- * staged in it, or the filesystem would not hard-link the staged file into place. None of that is
- * another `x dev` — only `EEXIST` is — and escaping raw it reached the operator as
- * `X_CLI_UNEXPECTED` with `fix: x doctor --json`, which says nothing about `.x/`.
- */
-export class DevStateUnwritableError extends UltimateError {
-  constructor(input: { readonly stateDir: string; readonly error: unknown }) {
-    // Read the field, never cast and dereference: `unknown` is what a catch hands over.
-    const errno = stringField(input.error, 'code') ?? 'an unreported errno';
-    super({
-      code: 'X_DEV_STATE_UNWRITABLE',
-      cause: `${input.stateDir} could not be created, written, or hard-linked into (${errno}), so x dev cannot take its lock — a read-only checkout, a .x/ this user may not write, or a filesystem without hard links`,
-      fix: `ls -ld ${quoteArg(input.stateDir)}   # make it writable by this user, on a filesystem that supports hard links, then re-run x dev`,
-      meta: { stateDir: input.stateDir, errno },
-      sourceError: input.error,
-    });
-  }
-}
-
-/**
- * The port is bound by something that is not us. Named separately from the lock case because the
- * remedy is different: a stranger's port is worked around with `--port`, while a second `x dev` on
- * this checkout is not a port problem at all and moving it would still fail on the database.
- *
- * The holder is NAMED when the OS will say. On a developer machine :3000 is usually another
- * project's dev server, and "pid 41234, bun" is the difference between knowing that and guessing —
- * which decides whether the right move is `--port` or stopping the other thing. Both are offered,
- * `--port` first: moving your own server is always safe, and killing someone else's is not.
- */
-export class DevPortInUseError extends UltimateError {
-  constructor(input: {
-    readonly port: number;
-    readonly suggestion: number;
-    readonly holder?: PortOwner;
-  }) {
-    const holder = input.holder ?? {};
-    const named = ownerText(holder) ?? 'another process';
-    super({
-      code: 'X_PORT_IN_USE',
-      cause: `:${input.port} is already bound by ${named}, so the web role cannot listen — on a machine running several projects this is usually another one's dev server, not a stale copy of this one`,
       fix:
-        holder.pid === undefined
-          ? `x dev --port ${quoteArg(String(input.suggestion))}`
-          : `x dev --port ${quoteArg(String(input.suggestion))}   # or free it, if that pid is yours: kill ${holder.pid}`,
-      meta: { port: input.port, ...holder },
+        input.settle !== undefined
+          ? `${stopRunStartFix(input.settle)}   # the request may have run before its answer was lost: read the ledger before asking again`
+          : input.resume === undefined
+            ? `x stop --json   # or use the one already running at ${input.lock.url}`
+            : `${stopRunStartFix(input.resume)}   # the embedded database takes one process at a time; pass the flags you passed`,
+      meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
     });
   }
 }
@@ -307,6 +259,30 @@ const readLock = async (path: string): Promise<DevLock | null> => {
   const raw = await readRaw(path);
   return raw === null ? null : parseLock(raw);
 };
+
+/**
+ * Remove the lock `judged` was read from, for a caller that found its pid reused (`x stop`). Under
+ * the same guard a boot's steal holds, and only while the file still holds those bytes: a claim
+ * made since is another `x dev`'s, and is never deleted.
+ */
+export function clearStaleLock(stateDir: string, judged: DevLock): void {
+  const path = lockPath(stateDir);
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf-8');
+  } catch {
+    return;
+  }
+  const now = parseLock(raw);
+  if (now === null || now.pid !== judged.pid || now.started !== judged.started) return;
+  const mine: DevLock = { pid: process.pid, port: 0, url: '', startedAt: new Date().toISOString() };
+  stealStale({
+    path,
+    judged: raw,
+    claim: (guard) => claimExclusive(stateDir, guard, mine),
+    alive: isProcessAlive,
+  });
+}
 
 export interface PreflightInput {
   readonly stateDir: string;

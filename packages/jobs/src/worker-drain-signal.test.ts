@@ -111,6 +111,11 @@ async function rig(after: (ctx: Ctx) => void | Promise<void>): Promise<Rig> {
 
 /** Small, so the cut-off — half of it, for a budget this size — lands inside a test's patience. */
 const DEADLINE_MS = 300;
+/**
+ * Where core's in-flight wait ends: a fifth of the budget is its hooks' reserve, and the cut-off
+ * measures back from that instant (`ShutdownReason.inflightUntil`), not from the deadline.
+ */
+const INFLIGHT_UNTIL_MS = DEADLINE_MS - DEADLINE_MS / 5;
 
 beforeEach(() => {
   resetLifecycle();
@@ -136,7 +141,7 @@ describe('the cut-off aborts the signal of every job the worker still holds', ()
     // the wall clock — a loaded CI runner measured 325.8 ms against the 300 ms budget (#663) — and
     // none is needed: "finished, not abandoned at the deadline" is `processed: 1` below, since an
     // abandoned run is handed back and never counted.
-    expect(tookMs).toBeGreaterThanOrEqual(DEADLINE_MS / 2 - 5);
+    expect(tookMs).toBeGreaterThanOrEqual(INFLIGHT_UNTIL_MS / 2 - 5);
     const stats = await app.worker.stats();
     expect(stats.state).toBe('stopped');
     expect(stats.processed).toBe(1);

@@ -25,6 +25,7 @@ interface Step {
 }
 
 interface Job {
+  readonly concurrency?: { readonly group?: string; readonly 'cancel-in-progress'?: boolean };
   readonly if?: string;
   readonly needs?: string | readonly string[];
   readonly outputs?: Readonly<Record<string, unknown>>;
@@ -179,9 +180,14 @@ describe('unit · release-tag.yml runs no repository code beside a write token',
     expect(executed).not.toMatch(/\bbun\b/);
   });
 
-  test('one named queue, never cancelled', () => {
-    expect(workflow.concurrency?.group).toBe('release-tag');
-    expect(workflow.concurrency?.['cancel-in-progress']).toBe(false);
+  // Every ci.yml completion on main starts this workflow, and a concurrency group keeps ONE pending
+  // run: a third arrival cancels the pending one, `cancel-in-progress: false` notwithstanding. At
+  // the workflow level a release commit's run could wait behind an ordinary commit's and be
+  // cancelled by the next; on `cut`, only a release cut ever enters the queue.
+  test('a non-release ci completion cannot occupy the release-tag concurrency group', () => {
+    expect(workflow.concurrency).toBeUndefined();
+    expect(job('cut').concurrency?.group).toBe('release-tag');
+    expect(job('cut').concurrency?.['cancel-in-progress']).toBe(false);
   });
 });
 

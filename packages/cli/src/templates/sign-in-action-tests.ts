@@ -77,9 +77,9 @@ export const createSessionTest =
   (): string => `// createSession, run inside a real request over the app's migrated database: a wrong password is
 // refused, a right one sets the session cookie, and a second factor still owed holds the challenge.
 import { toRoute } from '@ultimat3/action';
-import { generateTotpSecret, register, saveTotpSecret } from '@ultimat3/auth';
+import { generateTotpSecret, MFA_CHALLENGE_COOKIE, register, saveTotpSecret } from '@ultimat3/auth';
 ${SHARED_IMPORTS}
-import { MFA_CHALLENGE_COOKIE, SECOND_FACTOR_PATH } from '../sign-in-challenge';
+import { SECOND_FACTOR_PATH } from '../sign-in-challenge';
 import { AFTER_SIGN_IN } from '../sign-in-flow';
 import { createSession } from './create-session';
 
@@ -149,17 +149,19 @@ unitTest('a second factor still owed holds the challenge and sets no session', a
 export const confirmSessionTest =
   (): string => `// confirmSession, run inside a real request over the app's migrated database: with no challenge
 // held it refuses, a wrong code is refused, and the held challenge plus the right code signs in.
+// The challenge and its cookie's name are auth's, whichever shape's first leg held it.
 import { toRoute } from '@ultimat3/action';
 import {
   generateTotpSecret,
   login,
+  MFA_CHALLENGE_COOKIE,
+  mfaChallengeOf,
   register,
   saveTotpSecret,
   totpCode,
   totpStep,
 } from '@ultimat3/auth';
 ${SHARED_IMPORTS}
-import { challengeOf, MFA_CHALLENGE_COOKIE } from '../sign-in-challenge';
 import { confirmSession } from './confirm-session';
 
 ${DATABASE}
@@ -184,7 +186,7 @@ const challenged = async (email: string) => {
   const secret = generateTotpSecret();
   await saveTotpSecret(appAuth(), user.id, secret);
   const first = await login(appAuth(), { email, password: PASSWORD }).catch((e: unknown) => e);
-  const challenge = challengeOf(first);
+  const challenge = mfaChallengeOf(first);
   expect(challenge).not.toBeNull();
   return { secret, cookie: \`\${MFA_CHALLENGE_COOKIE}=\${challenge}\` };
 };

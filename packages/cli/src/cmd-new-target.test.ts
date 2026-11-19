@@ -184,3 +184,48 @@ describe('unit · x new · writing into the parent directory', () => {
     }
   }, 30_000);
 });
+
+// Two scaffolds of one name on one machine shared `<app>-test` and its ports: a stopped stack
+// left by the other directory blocked the gate's `live` step. The root picks both now.
+describe('unit · x new · the test stack is the checkout’s own', () => {
+  const run = (cwd: string) =>
+    newCommand.run({
+      args: parseArgs(['new', 'bareapp', '--no-example', '--no-git'], SPECS),
+      cwd,
+      runner: exec,
+      env: {},
+      bunVersion: REQUIRED_BUN,
+    });
+
+  /** The compose project name and the ports the env file points at, in one scaffold. */
+  const stackOf = async (dir: string) => ({
+    name: /^name: (.+)$/m.exec(
+      await Bun.file(join(dir, 'docker/docker-compose.test.yml')).text(),
+    )?.[1],
+    ports: [
+      ...(await Bun.file(join(dir, 'docker/test-services.env')).text()).matchAll(/:(\d{4,5})\b/g),
+    ].map((match) => match[1]),
+  });
+
+  test('two directories, one name: different project names and different ports', async () => {
+    const parents = [0, 1].map(() => mkdtempSync(join(tmpdir(), 'x-new-stack-')));
+    try {
+      for (const parent of parents) expect((await run(parent)).ok).toBe(true);
+      const [a, b] = await Promise.all(parents.map((parent) => stackOf(join(parent, 'bareapp'))));
+      expect(a?.name).toStartWith('bareapp-test-');
+      expect(b?.name).toStartWith('bareapp-test-');
+      expect(a?.name).not.toBe(b?.name);
+      expect(a?.ports.length).toBeGreaterThan(0);
+      expect(a?.ports).not.toEqual(b?.ports);
+    } finally {
+      for (const parent of parents) rmSync(parent, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  test('a plan with no root is the bytes it always was: the codemods compare against them', () => {
+    const compose = planNewApp({ name: 'bareapp', example: false }).find(
+      (file) => file.path === 'docker/docker-compose.test.yml',
+    );
+    expect(String(compose?.contents)).toContain('\nname: bareapp-test\n');
+  });
+});

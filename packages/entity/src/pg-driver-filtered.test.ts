@@ -181,11 +181,12 @@ describe('deleteWhere(), in both drivers', () => {
     expect(lastText()).toBe('delete from "pg_test_likes" where "post_id" = $1 and "user_id" = $2');
     expect(lastValues()).toEqual([POST_A, USER_A]);
 
-    // A value that looks like SQL stays a parameter, exactly as it does on the read path.
+    // A value that looks like SQL never reaches the text — and against a `uuid()` column it is
+    // no uuid, so it is not even a parameter: the predicate is "no row" (`predicate-operand.ts`).
     await postgresRepo(likes).deleteWhere({ postId: "x'; drop table pg_test_likes; --" });
     expect(lastText()).not.toContain('drop table');
-    expect(lastText()).toBe('delete from "pg_test_likes" where "post_id" = $1');
-    expect(lastValues()).toEqual(["x'; drop table pg_test_likes; --"]);
+    expect(lastText()).toBe('delete from "pg_test_likes" where 1 = 0');
+    expect(lastValues()).toEqual([]);
   });
 
   test('deleteWhere respects soft delete exactly as delete(id) does', async () => {

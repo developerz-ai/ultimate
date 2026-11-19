@@ -63,6 +63,34 @@ describe('with the router', () => {
   });
 });
 
+describe('a fragment of the page on screen', () => {
+  // A click on `<a href="/runs#top">` is left to the browser (`linkVerdict`'s hash-only rule); the
+  // same URL from code was fetched and swapped, disposing every island for what is a scroll.
+  test("a fragment of the page on screen is the browser's: no fetch, no swap", async () => {
+    const calls = install(true);
+    await navigate('#top');
+    await navigate('/runs#', { replace: true });
+    await navigate('https://app.test/runs#a%20b');
+    expect(calls).toEqual([
+      'assign https://app.test/runs#top',
+      'replace https://app.test/runs#',
+      'assign https://app.test/runs#a%20b',
+    ]);
+  });
+
+  test('another path or another query with a fragment still goes through the router', async () => {
+    const calls = install(true);
+    await navigate('/runs/1#top');
+    await navigate('/runs?page=2#top');
+    await navigate('/runs');
+    expect(calls).toEqual([
+      'navigate https://app.test/runs/1#top push',
+      'navigate https://app.test/runs?page=2#top push',
+      'navigate https://app.test/runs push',
+    ]);
+  });
+});
+
 describe('without the router', () => {
   test("the browser's own load, reload, and the modal's whole page", async () => {
     const calls = install(false);

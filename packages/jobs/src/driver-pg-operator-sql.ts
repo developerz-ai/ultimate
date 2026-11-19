@@ -319,6 +319,10 @@ select task_name,
  * `greatest` ignores a null, so with no `$4` the watermark lands on the occurrence — and a `$4`
  * behind the occurrence can never leave the watermark short of what just fired.
  *
+ * Each job carries its `tenant_id`, `traceparent` and `enqueued_by` as `SQL_ENQUEUE` writes them:
+ * the conflict target's namespace includes the tenant, so a row queued for nobody dedupes every
+ * org of a fan-out onto the first.
+ *
  * $1 task, $2 occurrence (ms), $3 the jobs as a JSON array, $4 where the watermark lands (ms) or
  * null for the occurrence itself.
  */
@@ -335,13 +339,14 @@ with moved as (
   returning task_name
 ), queued as (
   insert into x_jobs
-    (id, name, queue, input, idempotency_key, run_id, max_attempts, state, run_at)
+    (id, name, queue, input, idempotency_key, run_id, max_attempts, state, run_at, tenant_id,
+     traceparent, enqueued_by)
   select j.id, j.name, j.queue, coalesce(j.input, 'null'::jsonb), j.idempotency_key, j.run_id, j.max_attempts,
          case when to_timestamp($2::bigint / 1000.0) > now() then 'delayed' else 'ready' end,
-         to_timestamp($2::bigint / 1000.0)
+         to_timestamp($2::bigint / 1000.0), j.tenant_id, j.traceparent, j.enqueued_by
     from jsonb_to_recordset($3::jsonb) as j(
            id uuid, name text, queue text, input jsonb, idempotency_key text,
-           run_id uuid, max_attempts int)
+           run_id uuid, max_attempts int, tenant_id text, traceparent text, enqueued_by text)
    where exists (select 1 from moved)
   on conflict (name, (coalesce(tenant_id, '')), idempotency_key)
     where state in ${LIVE}

@@ -7,7 +7,7 @@ import { isMoneyScale, type MoneyValue } from '@ultimat3/schema';
 import { assertCurrency, type CurrencyCode, exponentOf } from './currency';
 import { decimalNotNumeric, decimalTooPrecise, moneyNotInteger } from './errors';
 import { type RoundingMode, roundRatio } from './rounding';
-import { assertScale, commonScale, minorAt, moneyScale } from './scale';
+import { assertScale, commonScale, minorAt, minorOf, moneyScale } from './scale';
 
 /**
  * `{ minor: 129900, currency: 'EUR' }` is €1,299.00. Instances are immutable, and now enforced
@@ -106,10 +106,9 @@ export function fromDecimal(
 /** `1299 EUR` → `'12.99'`; `1200 JPY` → `'1200'`; `2 USD @ scale 6` → `'0.000002'`. */
 export function toDecimalString(amount: Money): string {
   const exponent = moneyScale(amount);
-  const sign = amount.minor < 0 ? '-' : '';
-  const digits = Math.abs(amount.minor)
-    .toString()
-    .padStart(exponent + 1, '0');
+  const minor = minorOf(amount);
+  const sign = minor < 0n ? '-' : '';
+  const digits = (minor < 0n ? -minor : minor).toString().padStart(exponent + 1, '0');
   if (exponent === 0) return `${sign}${digits}`;
   return `${sign}${digits.slice(0, digits.length - exponent)}.${digits.slice(-exponent)}`;
 }

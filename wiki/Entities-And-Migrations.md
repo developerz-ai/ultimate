@@ -179,6 +179,10 @@ constructs where the two engines disagree are **refused at declaration**:
 | `\s` `\S` | `'\u00a0'` is whitespace to JS, not to Postgres | `[ \t\n\r\f\v]` |
 | `\A` `\Z` | anchors in Postgres, letters in JS | `^` `$` |
 | `\1`–`\9`, `(?<name>…)`, `(?i)`, `[[:alpha:]]`, a non-ASCII range endpoint | backreference, named group, embedded flag, POSIX class, collation-ordered range | a predicate |
+| a surrogate escape `\uD800`–`\uDFFF` (any astral character written in a regex literal) | JS matches the pair as one character, Postgres reads two code points no text holds — its CHECK refused every row. `As of 2026-11-19` | a predicate |
+| a repetition bound above 255 (`{256}`) | Postgres refuses the migration: invalid repetition count. `As of 2026-11-19` | a smaller bound, or a predicate on `length` |
+| a `-` straight after a range or `\d`/`\D` inside a class, not last (`[a-z-9]`, `[\d-z]`) | Postgres refuses an invalid range; JS reads a literal `-`. `As of 2026-11-19` | `-` last in the class: `[a-z9-]` |
+| a quantified lookaround (`(?=…)*`, `(?!…){2}`) | JS allows it (Annex B), Postgres refuses the operand. `As of 2026-11-19` | the lookaround unquantified |
 
 The refusal is `X_INVARIANT_VIOLATED` at `entity()` time — before a migration exists — and names the
 construct, its index, both readings, and the portable spelling where there is one. The subset is
@@ -1386,7 +1390,7 @@ Rule: `.search(term)` on a chain asks the INSTALLED `SearchIndex` — one search
 | Index | How `.search(term)` answers |
 |---|---|
 | the built-in Postgres one (default) | inside the statement, its `matches` predicate over the `.searchable()` columns — the same SQL as before the port; costs a write nothing |
-| an external one (`searchIndex` in `apps/<app>/runtime.ts`: Meilisearch, Typesense, the app's adapter) | ids first, then the chain reads those rows — tenancy, soft delete, order and cursor still apply, so a hit can never widen what the chain sees |
+| an external one (`searchIndex` in `apps/<app>/runtime.ts`: Meilisearch, Typesense, the app's adapter) | ids first, then the chain reads those rows — tenancy, soft delete, order and cursor still apply, so a hit can never widen what the chain sees. Asked one tenant at a time: the chain's `eq` on the tenant column, else the actor's org. Inside `crossTenant()` an `andWhere('<tenant>', 'in', [...])` asks it once per listed tenant, and a chain naming no tenant is `X_INVARIANT_VIOLATED` — before `As of 2026-11-19` it silently answered the actor's org alone |
 
 | Fact | Detail |
 |---|---|

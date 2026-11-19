@@ -162,9 +162,24 @@ from (
 order by distance, "id" asc`;
 }
 
+/**
+ * The lexical query: ANY word of `query` matches, and `ts_rank_cd` orders — what the memory
+ * store's BM25 does. `websearch_to_tsquery` ANDs every word, so a whole question ("how do I reset
+ * my password after the billing migration") matched no chunk at all and hybrid fused the dense
+ * ranking alone. Each whitespace-separated word is its own `phraseto_tsquery` — an identifier the
+ * parser splits (`x_vector_drift`) still has to match as one — and the words are OR-ed. A word
+ * with no lexeme (a stop word, bare punctuation) is skipped; none at all is the empty query,
+ * which matches nothing. Nothing a caller typed is query syntax: `phraseto_tsquery` has none.
+ */
+function anyWordSql(target: PgVectorTable, query: string): SqlFragment {
+  return sql`(select coalesce(string_agg('(' || phraseto_tsquery(c.cfg, word)::text || ')', ' | '), '')::tsquery as q
+  from (select ${target.language}::regconfig as cfg) c, regexp_split_to_table(${query}, '[[:space:]]+') word
+  where length(to_tsvector(c.cfg, word)) > 0) terms`;
+}
+
 export function textSql(target: PgVectorTable, query: string, args: PgSearchArgs): SqlFragment {
   return sql`select "id", "content", "metadata", ts_rank_cd("tsv", q) as score
-from ${identifier(target.table)}, websearch_to_tsquery(${target.language}::regconfig, ${query}) q
+from ${identifier(target.table)}, ${anyWordSql(target, query)}
 where "tsv" @@ q and ${conditionsSql(args.scope, args.filter)}
 order by score desc, "id" asc
 limit ${args.k}`;
@@ -177,8 +192,9 @@ export interface PgHybridArgs extends PgSearchArgs {
 
 /**
  * Reciprocal-rank fusion, done in SQL. Two candidate sets are ranked independently and fused by
- * `1 / (rrfK + rank)` — identical to `fuse()` in `vector.ts`, so dev and production order hits
- * the same way. Both CTEs carry the SAME scope conditions: fusing an unfiltered lexical ranking
+ * `1 / (rrfK + rank)` — identical to `fuse()` in `vector.ts`. The lexical half matches on ANY
+ * word (`anyWordSql`), as the memory store's does; the two RANK by different formulas
+ * (`ts_rank_cd` here, BM25 there), so which chunks qualify agrees and their order may not. Both CTEs carry the SAME scope conditions: fusing an unfiltered lexical ranking
  * into a filtered dense one would leak the other tenant's rows through the back door. A rank is a
  * position, so each window breaks a tie by `"id"` as `vector.ts` does; the dense candidate scan
  * keeps its bare `order by distance`, the shape HNSW answers.
@@ -204,7 +220,7 @@ export function hybridSql(
   select "tenant", "id", row_number() over (order by relevance desc, "id" asc) as rank
   from (
     select "tenant", "id", ts_rank_cd("tsv", q) as relevance
-    from ${table}, websearch_to_tsquery(${target.language}::regconfig, ${query}) q
+    from ${table}, ${anyWordSql(target, query)}
     where "tsv" @@ q and ${where}
     order by relevance desc, "id" asc
     limit ${args.candidates}

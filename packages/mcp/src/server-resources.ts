@@ -1,6 +1,6 @@
-// `resources/read` — the document surface's three outcomes (hidden = absent, scope, read), every
-// one audited, and every provider call inside a `try`. Split from `server.ts` for the size ceiling;
-// the server passes what it owns, so this stays a function and never a second dispatcher.
+// `resources/read` and `resources/list` — the document surface's three outcomes (hidden = absent,
+// scope, read), every one audited, and every provider or source call inside a `try`. Split from
+// `server.ts` for the size ceiling; the server passes what it owns, so these stay functions.
 
 import { asCallerContext } from '@ultimat3/action';
 import type { ErrorAudience } from '@ultimat3/core';
@@ -11,9 +11,9 @@ import { asFrameworkError, forAudience } from './framework-error';
 import type { McpEra } from './protocol-era';
 import { resourceNotFoundCode } from './protocol-era';
 import type { McpCaller } from './registry';
-import type { ResourceRegistry } from './resources';
+import type { ResourceRegistry, ResourceResolution } from './resources';
 import { readResource } from './resources';
-import type { JsonRpcRequest, JsonRpcResponse } from './wire';
+import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse } from './wire';
 import {
   errorResponse,
   INTERNAL_ERROR,
@@ -52,7 +52,15 @@ export async function resourcesRead(
     return errorResponse(id, INVALID_PARAMS, 'resources/read params.uri must be a string');
   }
 
-  const resolved = await on.resources.resolveFor(uri, caller);
+  // A per-caller SOURCE is an injected thunk too (`extraRecipes` is a tenant-runbook lookup), and
+  // `resolveFor` asks it for any URI the fixed list does not hold: it gets the same `try` the read
+  // below has, or its throw is the unanswered request that comment describes.
+  let resolved: ResourceResolution;
+  try {
+    resolved = await on.resources.resolveFor(uri, caller);
+  } catch (error) {
+    return failed(on, id, uri, `resource "${uri}" could not be read`, error, caller);
+  }
   switch (resolved.kind) {
     // OUTCOME 1. Absent AND hidden collapse to one answer with no `data`: this branch used to
     // return `available: [...every uri]`, so one wrong guess enumerated the whole catalog. No
@@ -103,20 +111,50 @@ export async function resourcesRead(
     on.audit.resourceRead({ uri, outcome: 'ok', caller });
     return resultResponse(id, { contents: [contents] });
   } catch (error) {
-    const thrown = asFrameworkError(error);
-    if (thrown !== undefined) {
-      const framework = forAudience(thrown, on.audience);
-      on.audit.resourceRead({ uri, outcome: 'failed', caller, code: framework.code });
-      return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`, {
-        code: framework.code,
-        cause: framework.cause,
-        fix: fixFor(framework, on.audience),
-        ...(framework.docs === undefined ? {} : { docs: framework.docs }),
-      });
-    }
-    // No internals: a provider's own message names a path, a query or a host the caller has no
-    // business seeing, exactly as a failing tool's does.
-    on.audit.resourceRead({ uri, outcome: 'failed', caller });
-    return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`);
+    return failed(on, id, uri, `resource "${uri}" could not be read`, error, caller);
   }
+}
+
+/**
+ * `resources/list`: the fixed list plus every per-caller source, each source call inside the `try`.
+ * Silent when it answers (pre-filtered, as `tools/list` is); a source that throws is one audited
+ * `failed` under the method's own name, there being no URI to file it under.
+ */
+export async function resourcesList(
+  on: ResourceReadDeps,
+  req: JsonRpcRequest,
+  caller: McpCaller,
+): Promise<JsonRpcResponse> {
+  const id = req.id ?? null;
+  try {
+    return resultResponse(id, { resources: await on.resources.listFor(caller) });
+  } catch (error) {
+    return failed(on, id, 'resources/list', 'resources could not be listed', error, caller);
+  }
+}
+
+/** A provider's throw as `-32603`: a framework error keeps its code, cause and fix. */
+function failed(
+  on: ResourceReadDeps,
+  id: JsonRpcId,
+  uri: string,
+  message: string,
+  error: unknown,
+  caller: McpCaller,
+): JsonRpcResponse {
+  const thrown = asFrameworkError(error);
+  if (thrown !== undefined) {
+    const framework = forAudience(thrown, on.audience);
+    on.audit.resourceRead({ uri, outcome: 'failed', caller, code: framework.code });
+    return errorResponse(id, INTERNAL_ERROR, message, {
+      code: framework.code,
+      cause: framework.cause,
+      fix: fixFor(framework, on.audience),
+      ...(framework.docs === undefined ? {} : { docs: framework.docs }),
+    });
+  }
+  // No internals: a provider's own message names a path, a query or a host the caller has no
+  // business seeing, exactly as a failing tool's does.
+  on.audit.resourceRead({ uri, outcome: 'failed', caller });
+  return errorResponse(id, INTERNAL_ERROR, message);
 }

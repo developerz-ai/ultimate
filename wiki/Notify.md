@@ -167,7 +167,7 @@ What each push-service answer does:
 | 404 / 410, or an expired subscription | the subscription is deleted; nothing is retried |
 | 429 / 5xx / no connection | `X_PWA_PUSH_FAILED` — thrown after every other device was tried, so the delivery fails as `X_NOTIFY_DELIVERY_FAILED` and the notifier job retries on its own backoff |
 | 400 / 413 | `X_PWA_PUSH_REJECTED` — logged and counted, never retried |
-| 401 / 403 | `X_PWA_PUSH_REJECTED`, and the subscription is deleted: it was made with a VAPID key this server no longer signs with. `subscribeToPush` replaces such a browser's subscription the next time it asks |
+| 401 / 403 | `X_PWA_PUSH_REJECTED` — logged with its code and counted as `refused`; the subscription is **kept** (`As of 2026-11-19`): a push service answers a fault in this server's token (a `pwa.vapid.subject` it refuses, a skewed clock) the same way as a rotated key, and deleting on it unsubscribed every device a send reached. After a real key rotation `subscribeToPush` (or the emitted `subscribePush`) replaces such a browser's subscription the next time it asks |
 
 A retry re-sends to the devices that already got it; the `tag` makes that a replacement on the device
 rather than a second notification. `renotify` without a `tag` is dropped with a warning — the spec

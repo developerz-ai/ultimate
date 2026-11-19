@@ -111,6 +111,12 @@ describe('unit · x i18n over a mounted admin’s derived keys', () => {
     );
     const command = printed?.fix.split('#')[0]?.trim() ?? '';
     expect(command).toBe('x i18n sync en');
+    // The comment said "as ⟦key⟧" and the default locale's catalog held no ⟦ afterwards: an admin
+    // key gets the generator's label there, which is what the line below proves and the fix says.
+    expect(printed?.fix).not.toContain('as ⟦key⟧');
+    expect(printed?.fix).toContain(
+      'in the default locale the label x g resource --admin generates',
+    );
     const [bin, ...args] = command.split(/\s+/);
     expect(bin).toBe('x');
     const synced = await i18nCommand.run(contextFor(appRoot, args.slice(1)));

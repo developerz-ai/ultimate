@@ -7,7 +7,7 @@
 import { rescaleNotExact } from './errors';
 import { fromMinor, type Money } from './money';
 import { type RoundingMode, roundRatio } from './rounding';
-import { assertScale, minorAt, moneyScale, toMinor } from './scale';
+import { assertScale, minorAt, minorOf, moneyScale, toMinor } from './scale';
 
 /**
  * `rescale(fromMinor(80, 'USD'), 8)` → 80,000,000 hundred-millionths, the granularity a per-token
@@ -26,7 +26,7 @@ export function rescale(amount: Money, scale: number, mode?: RoundingMode): Mone
   }
 
   const divisor = 10n ** BigInt(from - scale);
-  const numerator = BigInt(amount.minor);
+  const numerator = minorOf(amount);
   // An exact narrowing needs no mode: nothing is being decided, so nothing has to be declared.
   if (mode === undefined && numerator % divisor !== 0n) {
     throw rescaleNotExact(amount, from, scale);

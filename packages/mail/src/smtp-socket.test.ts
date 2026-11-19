@@ -468,3 +468,33 @@ test('an upgrade that returns no TLS socket is refused, and the raw socket stays
   runtime.pushRaw('250 still in the clear\r\n');
   expect(await stream.read()).toBe('250 still in the clear\r\n');
 });
+
+test('a connect that never resolves fails at timeoutMs with stage connect', async () => {
+  let ended = 0;
+  let land!: (socket: SocketLike) => void;
+  const late: SocketLike = {
+    write: (data) => data.length,
+    end: () => {
+      ended += 1;
+    },
+    upgradeTLS: () => [],
+  };
+  const stalled: BunConnect = {
+    connect: () =>
+      new Promise<SocketLike>((resolve) => {
+        land = resolve;
+      }),
+  };
+
+  const error = await caught(smtpStreamOver(stalled, { ...FAKE_TARGET, timeoutMs: 20 }));
+
+  expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
+  expect(metaOf(error)['stage']).toBe('connect');
+  expect(metaOf(error)['retryable']).toBe(true);
+  expect(causeOf(error)).toContain('20ms');
+  // The socket that lands after the deadline is closed, never leaked.
+  land(late);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(ended).toBe(1);
+});

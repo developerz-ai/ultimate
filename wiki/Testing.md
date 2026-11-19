@@ -234,7 +234,8 @@ export const summarizeEval = defineEval({
 ```
 
 `ULTIMATE_EVAL_RECORD=1 x test eval` re-records every baseline, so accepting a new number is a
-reviewable diff instead of an edited threshold. It is refused inside the gate: `x verify` with that
+reviewable diff instead of an edited threshold. `0`, `false`, `no`, `off` or empty (any case) is
+off and gates; any other value records (`As of 2026-11-19`). It is refused inside the gate: `x verify` with that
 variable set is `X_EVAL_RECORDING` and runs no eval suite, because recording passes by definition
 and would overwrite the committed baselines during the run.
 
@@ -402,7 +403,7 @@ Installed by the preload on `expect`.
 | `toDenyPolicy(context)` | the policy refuses that context |
 | `toEmitSteps(names)` | a job runs exactly those steps, in order |
 | `toMatchOpenApi(committed)` | no operation removed, no parameter newly required |
-| `toBeWithinBudget(limit)` | a measured number is at or under the limit |
+| `toBeWithinBudget(limit)` | a measured number is at or under the limit; a limit that is not a finite number (`undefined` from a renamed budget key, `NaN`, `Infinity`) throws `X_TEST_NUMBER_EXPECTED`, under `.not` too (`As of 2026-11-19`) |
 | `toRejectInput(input)` / `toAcceptInput(input)` | a schema's verdict on one input |
 | `toEqualRow(expected)` | equality over every OWN property — the one that sees a `.sealed()` column |
 | `toBeVisible(options?)` | waits for a locator to show; `.not` waits for it to go |
@@ -1098,7 +1099,7 @@ coverage floor counts that suite alone, so a body only a typed suite reaches is 
 |---|---|---|
 | `x g action` | input parse; the handler through `.as(actor, input)` — the refusal first, then what it answers | `contract`: the action contract (the exercise as a member of the input's org), the foreign-org denial, the OpenAPI operation |
 | `x g mutator` | the same, plus `local()` against `memoryLocalTx()`, applied twice | `contract` |
-| `x g query` | the SQL's bound, total order and direction; the read through `.as()` — no grant refused, an empty org reads empty, stored rows read back newest first and never another org's, the read costing one `statements` count however many rows it answers | `--live`: the declaration in `.live.test.ts` |
+| `x g query` | the SQL's bound, total order and direction; the read through `.as()` — no grant refused, an empty org reads empty, stored rows read back newest first and never another org's — a read through the slice's `<Feature>View` answers exactly its keys, no `orgId` — the read costing one `statements` count however many rows it answers | `--live`: the declaration in `.live.test.ts` |
 | `x g job` · `x g task` | the body under `runJobs`: which steps one run takes, what it answers, and how it ends | `job`: key, tenant, retry policy, enqueue dedupe |
 | `x g backfill` | one whole pass over rows in two tenants; the projection replayed | `job`: durable name, dedupe |
 | `x g route` | the page rendered (`renderRoute`): heading, metadata, mode, budget, islands | `e2e`: the offline fallback |

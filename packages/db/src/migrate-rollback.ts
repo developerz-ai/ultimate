@@ -5,6 +5,7 @@
 import { renderFixShellArg } from '@ultimat3/core';
 import { isDestructiveMigration } from './destructive';
 import { DbError } from './errors';
+import { embeddedDev, embeddedResetFix } from './migrate-dev-fix';
 import type { LedgerRow, Migration } from './migration-ledger';
 import { pendingMigrations } from './migration-ledger';
 
@@ -77,7 +78,13 @@ function assertRollbackSafe(ahead: readonly LedgerRow[], allow: string | undefin
   throw new DbError({
     code: 'X_MIGRATION_ROLLBACK_DESTRUCTIVE',
     cause: `the ledger holds ${ids.length} destructive migration(s) a newer build applied (${ids.join(', ')}) and this build predates them — it may read a column or table that no longer exists`,
-    fix: `x deploy --image <the newer image> --json   # roll forward; or, after checking this build runs on the newer schema: ${ROLLBACK_ALLOW_DESTRUCTIVE_ENV}=${renderFixShellArg(all.join(','), '<migration id>')} on the migrate role`,
+    // On the embedded database there is no newer image: the rows are ahead because this checkout
+    // dropped their files, and only a build holding a migration's `down` can reverse it.
+    fix: embeddedDev()
+      ? embeddedResetFix(
+          'this checkout no longer holds the migration file(s) the cause names; to keep the rows, restore them (git status --short -- packages/db/migrations) and run x db rollback',
+        )
+      : `x deploy --image <the newer image> --json   # roll forward; or, after checking this build runs on the newer schema: ${ROLLBACK_ALLOW_DESTRUCTIVE_ENV}=${renderFixShellArg(all.join(','), '<migration id>')} on the migrate role`,
     meta: { refused: ids, appVersions: [...new Set(refused.map((row) => row.app_version))] },
   });
 }

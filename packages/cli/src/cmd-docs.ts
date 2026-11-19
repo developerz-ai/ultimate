@@ -4,19 +4,23 @@
 // should not have to guess which of 29 packages holds the answer, and it must never be handed a
 // URL: `node_modules` already contains every doc, because the published artifact IS the source.
 
+// why: Bun ships no path module; the CLI's own scope is its package directory's parent.
+import { dirname } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { DocEntry, DocHit } from '@ultimat3/manifest';
 import { nearestTopics, searchDocs } from '@ultimat3/manifest';
 import { DEFAULT_LIMIT, docsSpec } from './cmd-docs-spec';
+import { topicNamed, topicResult } from './cmd-docs-topic';
 import type { CliCommand, CommandContext } from './command';
 import { parseWikiTopic, sectionResult } from './docs-section';
-import { loadDocs, wikiSource } from './docs-sources';
+import { cliPackageDir, loadDocs, wikiSource } from './docs-sources';
 import { MissingPositionalError } from './errors';
 import { frameworkScopeDir } from './framework-scope';
 import { parseLimitFlag } from './jobs-report';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { flagString } from './parse';
+import { quoteArg } from './shell-quote';
 
 /** An install where the CLI cannot see its own dependency is broken, not merely undocumented. */
 const unresolvedFinding = (): Finding => ({
@@ -68,6 +72,11 @@ function humanLines(hits: readonly DocHit[]): readonly string[] {
         `    ${msg('cli.docs.exports', { list: hit.entry.symbols.slice(0, 12).join(', ') })}`,
       );
     }
+  }
+  // What to type next for the body: the id above, handed back. Inline, as every command here is.
+  const [first] = hits;
+  if (first !== undefined) {
+    lines.push(`  x docs ${quoteArg(first.entry.topic)}   # ${msg('cli.docs.tryTopic')}`);
   }
   return lines;
 }
@@ -173,6 +182,11 @@ export const docsCommand: CliCommand = {
 
     const { entries, wiki } = await loadDocs(scope);
     const findings = wiki === undefined ? [noWikiFinding()] : [];
+    // A topic id — what every search line starts with — is answered with that topic's body.
+    const named = topicNamed(entries, query);
+    if (named !== undefined) {
+      return topicResult(named, [scope, dirname(cliPackageDir())], query);
+    }
     // `x jobs list --limit`'s reader, and its `command` parameter exists for exactly this second
     // caller. A local `Number.parseInt` accepted `--limit 1e9` as 1 and answered with one match,
     // and fell silently through to the default for `abc`, `0` and `-3` — a bound other than the one

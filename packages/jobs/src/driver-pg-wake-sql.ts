@@ -19,6 +19,14 @@ export const JOBS_WAKE_CHANNEL = 'x_jobs_wake';
 export const OUTBOX_WAKE_CHANNEL = 'x_outbox_wake';
 
 /**
+ * The payload of a listener's RE-PROOF (`queue-wake.ts`): a notification that asks only whether
+ * the session still delivers, and wakes no loop. A control character leads it, so no queue is
+ * ever named it; a pod from before it reads an unknown queue on the jobs channel and passes once
+ * on the outbox one.
+ */
+export const WAKE_REPROVE_PAYLOAD = '\u0001reprove';
+
+/**
  * One notification per queue per slot, whatever the enqueue rate — save the first commits of a
  * slot racing each other, which may each send one (`notifyJobReady`). Declared beside the loops
  * that honour it (`idle-backoff.ts`): a woken loop keeps passing until a slot has gone by since

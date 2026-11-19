@@ -23,21 +23,60 @@ export type CatalogSubset = {
 /** The two members of a translator a subset is read through — any app's typed `t` has them. */
 export interface RawTranslator {
   raw(key: string): string | undefined;
+  /**
+   * Every key of the catalog. A `select` family's values are an open set, so its members can only
+   * be found by listing: a translator without `keys()` yields a subset with no families.
+   */
+  keys?(): string[];
   readonly locale: Locale;
 }
 
+/** The infix of a family member: `<key>_select_<value>`, `<key>_ordinal_<category>`. */
+const FAMILY = /_(?:select|ordinal)_/g;
+
 /**
- * The templates `keys` name in `t`'s locale, each with every plural variant the catalog holds, so
- * `t(key, { count })` in the island picks the form the server would. A key the catalog lacks is
- * left out, and renders `⟦key⟧` in the island exactly as it would on the server.
+ * Each translator's family members by stem, listed once: a subset is cut per island per request,
+ * and scanning a 4,000-key catalog each time cost 0.78 ms where the lookups cost 0.006. A
+ * translator's catalog is fixed for its life (a reload builds a new one), so the index never stales.
+ */
+const families = new WeakMap<RawTranslator, ReadonlyMap<string, readonly string[]>>();
+
+function familiesOf(t: RawTranslator): ReadonlyMap<string, readonly string[]> {
+  const known = families.get(t);
+  if (known !== undefined) return known;
+  const index = new Map<string, string[]>();
+  for (const name of t.keys?.() ?? []) {
+    // Every infix, never only the first: a named key may itself spell `_select_`.
+    for (const infix of name.matchAll(FAMILY)) {
+      const stem = name.slice(0, infix.index);
+      // In place: a copy per member made one family of n members cost n²/2.
+      const members = index.get(stem);
+      if (members === undefined) index.set(stem, [name]);
+      else members.push(name);
+    }
+  }
+  families.set(t, index);
+  return index;
+}
+
+/**
+ * The templates `keys` name in `t`'s locale, each with every plural variant and every `select` and
+ * `ordinal` family member the catalog holds, so `t(key, { count, select, ordinal })` in the island
+ * picks the form the server would. A key the catalog lacks is left out, and renders `⟦key⟧` in the
+ * island exactly as it would on the server.
  */
 export function catalogSubset(t: RawTranslator, keys: readonly string[]): CatalogSubset {
   const catalog: Record<string, string> = Object.create(null) as Record<string, string>;
+  const copy = (name: string): void => {
+    const template = t.raw(name);
+    if (template !== undefined) catalog[name] = template;
+  };
   for (const key of keys) {
-    for (const name of [key, ...pluralVariantsOf(key)]) {
-      const template = t.raw(name);
-      if (template !== undefined) catalog[name] = template;
-    }
+    for (const name of [key, ...pluralVariantsOf(key)]) copy(name);
+  }
+  const index = familiesOf(t);
+  for (const key of keys) {
+    for (const name of index.get(key) ?? []) copy(name);
   }
   return { locale: t.locale, catalog };
 }

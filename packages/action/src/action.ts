@@ -417,7 +417,8 @@ function build<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1
   // stream-declaring one is stored draining (`action-stream.ts`), so `invoke` stays one path.
   stashDef(
     self,
-    streamingDef(def as ActionDef<TInput, TOutput, TRow> & StreamFields, () => name),
+    // `self.name`, read per refusal: `nameAction` names in place after this line has run.
+    streamingDef(def as ActionDef<TInput, TOutput, TRow> & StreamFields, () => self.name),
   );
   return self;
 }

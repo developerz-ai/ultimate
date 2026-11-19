@@ -9,7 +9,13 @@ import { JSX_NODE } from '@ultimat3/core/render-node';
 import { PrerenderFailedError } from './errors';
 import type { HoleNode } from './hole';
 import { isHoleNode } from './hole';
-import { renderAttributes, VOID_ELEMENTS } from './html';
+import {
+  carriesJson,
+  escapeJsonContent,
+  escapeRawTextContent,
+  renderAttributes,
+  VOID_ELEMENTS,
+} from './html';
 import { emitIslandAttributes, emitIslandProps } from './hydrate';
 import type { IslandNode } from './island';
 import { isIslandNode } from './island';
@@ -183,9 +189,43 @@ function emitNode(node: JsxNode, depth: number, walk: RenderHtmlOptions, out: Bu
   if (VOID_ELEMENTS.has(type)) return;
   const raw = (props as { innerHTML?: unknown }).innerHTML;
   if (raw === undefined || raw === null) {
-    emit((props as { children?: unknown }).children, depth + 1, walk, out);
+    const children = (props as { children?: unknown }).children;
+    const text = type === 'script' || type === 'style' ? rawText(children, depth + 1) : undefined;
+    if (text === undefined) emit(children, depth + 1, walk, out);
+    else if (typeof text !== 'string') emit(text.resolved, depth + 1, walk, out);
+    else {
+      const json = type === 'script' && carriesJson((props as { type?: unknown }).type);
+      write(out, json ? escapeJsonContent(text) : escapeRawTextContent(text));
+    }
   } else write(out, String(raw));
   write(out, `</${type}>`);
+}
+
+/**
+ * The text a `<script>` or `<style>` holds, unescaped — the two raw text elements, where a
+ * character reference is never decoded, so `&gt;` in a selector or `&amp;&amp;` in a condition
+ * reaches the parser as written and breaks it. When a child is anything but text (an element, a
+ * promise) the caller walks the children as any other, escaped — as `resolved`, the children with
+ * every thunk this read already called swapped for its value: a thunk runs once, never twice.
+ */
+function rawText(value: unknown, depth: number): string | { readonly resolved: unknown } {
+  assertDepth(depth);
+  if (value === null || value === undefined || value === false || value === true) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'bigint') return String(value);
+  if (typeof value === 'function') return rawText((value as () => unknown)(), depth + 1);
+  if (!Array.isArray(value) || isIslandNode(value) || isHoleNode(value)) return { resolved: value };
+  let text = '';
+  const resolved: unknown[] = [];
+  let markup = false;
+  for (const item of value) {
+    // Past the first non-text child no thunk is called here: the walk calls each, once.
+    const piece = markup ? { resolved: item } : rawText(item, depth + 1);
+    if (typeof piece === 'string') text += piece;
+    else markup = true;
+    resolved.push(typeof piece === 'string' ? piece : piece.resolved);
+  }
+  return markup ? { resolved } : text;
 }
 
 /**

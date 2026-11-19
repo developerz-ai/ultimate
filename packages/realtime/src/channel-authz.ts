@@ -2,11 +2,12 @@
 // with the params as input and the row the channel's own loader answered. Through
 // `@ultimat3/query`'s `guardQuery`, the package's one authz seam — the call `policy-gate.ts` makes.
 
-import { type Actor, type Ctx, ctxOf, runWithContext } from '@ultimat3/core';
+import { type Actor, type Ctx, runWithContext } from '@ultimat3/core';
 import { guardQuery, QueryDeniedError } from '@ultimat3/query';
 import type { Channel } from './channel-decl';
 import { assertChannelTenant } from './channel-tenant';
 import { isTenancyDenial, TopicForbiddenError } from './errors';
+import { subscriberContext } from './policy-gate';
 
 /**
  * A denial is `X_TOPIC_FORBIDDEN`. A loader or a rule that RAISED is not a denial and leaves as it
@@ -73,16 +74,4 @@ function decide(
       reason: `channel "${channel.name}" policy denied the subscribe`,
     });
   }
-}
-
-/** The node's context, re-made for one subscriber: same deploy, role and clock, their actor. */
-function subscriberContext(node: Ctx, actor: Actor): Ctx {
-  return ctxOf({
-    actor,
-    role: node.role,
-    buildId: node.buildId,
-    clock: node.clock,
-    locale: node.locale,
-    tz: node.tz,
-  });
 }

@@ -126,13 +126,20 @@ export function requiredStrategies(
 // runtime below would then flush its replay queue into an island that never mounted — the bug
 // `el.__x`-as-a-promise was introduced to fix, reintroduced one layer further out.
 //
+// The props are the script INSIDE this wrapper (`render-walk.ts` emits it as a child), never the
+// first one in the document carrying the id: an id is `<moduleId>-<instance>` per RENDER, so the
+// page under a modal and the modal's document both hold `like-1`, and so does an island carried
+// across a swap (`data-x-persist`). A script loose in the document — a hand-assembled page —
+// is still read by id, and one that sits in another island's wrapper is that island's.
+//
 // `el.__x` resolves to whatever `mount()` returned. An island's `mount` may return `() => void`,
 // its disposer (Solid's `render` answers one); the runtime keeps it there and
 // `@ultimat3/testing`'s `mountIsland` calls it on dispose. Nothing here ever calls it.
 const RUNTIME_PRELUDE = `
 function boot(el){var e=el.getAttribute('data-x-entry');
 if(!e)return Promise.resolve();if(el.__x)return el.__x;
-var p=document.querySelector('script[data-x-props="'+el.getAttribute('data-x-island')+'"]');
+var p=el.querySelector(':scope>script[data-x-props]');
+if(!p){p=document.querySelector('script[data-x-props="'+el.getAttribute('data-x-island')+'"]');if(p&&p.closest('[data-x-island]'))p=null}
 var props=p?JSON.parse(p.textContent||'{}'):{};
 return el.__x=import(e).then(function(m){return m.mount(el,props)}).then(
 function(r){el.setAttribute('${ISLAND_MOUNTED_ATTRIBUTE}','');return r},

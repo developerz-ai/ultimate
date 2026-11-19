@@ -82,6 +82,16 @@ describe('unit · x dev --role', () => {
     expect((thrown as { fix: string }).fix).toBe('x dev --role web,sync,worker,scheduler');
   });
 
+  // `--role ,` split to nothing and selected NO role: `x dev` booted, served nothing, held the lock.
+  test('a --role that names no role at all is a flag error, never an empty selection', () => {
+    for (const flag of [',', ' , ,', ',,']) {
+      const thrown = refused(flag);
+      expect(thrown).toBeUltimateError('X_CLI_BAD_FLAG');
+      expect((thrown as { cause: string }).cause).toContain('names no role');
+      expect((thrown as { fix: string }).fix).toBe('x dev --role web,sync,worker,scheduler');
+    }
+  });
+
   test('migrate is refused rather than silently dropped: it is a command, not a process', () => {
     expect(refused('migrate')).toBeUltimateError('X_CLI_BAD_FLAG');
   });

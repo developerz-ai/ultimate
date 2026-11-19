@@ -68,7 +68,9 @@ describe('authz stage refusals', () => {
     const problem = await problemOf(response);
     expect(problem.code).toBe('X_FORBIDDEN');
     // `x policy explain /settings` exits `X_DECLARATION_UNKNOWN`: a pathname is not a subject.
-    expect(problem.fix).toBe('x policy explain member:self --json   # shows which clause denied');
+    expect(problem.fix).toBe(
+      "x policy explain member:self --input '<the request input as JSON>' --json   # shows which clause denied; --input decides a predicate that reads the request",
+    );
   });
 
   test("outside dev a caller is told what IT can do — the developer's command stays in the log", async () => {
@@ -86,7 +88,9 @@ describe('authz stage refusals', () => {
     const response = await pipelineWith().handle(get('/unwired'), { role: 'web' });
     expect(response.status).toBe(403);
     const problem = await problemOf(response);
-    expect(problem.fix).toBe('x policy explain post:publish --json   # shows which clause denied');
+    expect(problem.fix).toBe(
+      "x policy explain post:publish --input '<the request input as JSON>' --json   # shows which clause denied; --input decides a predicate that reads the request",
+    );
   });
 
   test('the cause still carries the pathname, so the log line locates the route', async () => {

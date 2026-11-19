@@ -2,6 +2,7 @@
 // credential names the matcher catches, and the ordinary names it must leave readable.
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
+import { UltimateError } from './errors';
 import { isRedactedKey, REDACTED, redactKeys, structuredLogger } from './logger';
 
 function capture() {
@@ -28,6 +29,21 @@ describe('logger · redaction by key', () => {
       password: REDACTED,
       nested: { token: REDACTED, keep: 'yes' },
     });
+  });
+
+  test("an UltimateError field's meta is redacted by key, like a plain field", () => {
+    const { logger, lines } = capture();
+    const meta = {
+      password: 'hunter2',
+      apiKey: 'sk_live',
+      headers: { authorization: 'Bearer abc' },
+    };
+    const error = new UltimateError({ code: 'X_INTERNAL', cause: 'c', fix: 'f', meta });
+    logger.error('failed', { error, plain: meta });
+    const line = lines[0] as { error: { code: string; meta: unknown }; plain: unknown };
+    expect(line.error.code).toBe('X_INTERNAL');
+    expect(line.error.meta).toEqual(line.plain);
+    expect(JSON.stringify(line)).not.toMatch(/hunter2|sk_live|Bearer abc/);
   });
 
   /**
