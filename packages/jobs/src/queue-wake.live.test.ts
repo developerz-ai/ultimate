@@ -10,7 +10,8 @@ import type { PostgresClient } from '@ultimat3/db';
 import { dbExecutor, postgresClient, raw, sql } from '@ultimat3/db';
 import { postgresJobDriver } from './driver-pg';
 import { SQL_JOBS_TABLE } from './driver-pg-sql';
-import { setWakeLive, wakeIsLive } from './enqueue-signal';
+import { JOBS_WAKE_CHANNEL } from './driver-pg-wake-sql';
+import { onEnqueued, setWakeLive, wakeIsLive } from './enqueue-signal';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
 import { startQueueWake } from './queue-wake';
@@ -20,6 +21,9 @@ const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
 const PROBE_DB = probeDatabaseName('x_jobs_wake_live');
 const LISTENER_APP = 'x-wake-live-worker';
+/** How long a job gets to start: a small part of the rest its worker is first seen taking. */
+const START_BUDGET_MS = 3_000;
+const IDLE_REST_MS = 60_000;
 
 const probeUrl = (): string => {
   const parsed = new URL(url ?? 'postgres://localhost/postgres');
@@ -91,21 +95,30 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
   });
 
   test('a web pod enqueues, an idle worker pod starts the job; the listener is killed, and it does so again', async () => {
+    // Issue #1167's two vantage points, read only on a miss: a second session, which says whether
+    // Postgres delivered the notification at all, and the signal the worker's loop subscribes to.
+    const witnessed: string[] = [];
+    const witness = await webPod.listen(JOBS_WAKE_CHANNEL, (queue) => witnessed.push(queue));
+    cleanups.push(() => witness.unlisten());
+    const heard: string[] = [];
+    const stopHearing = onEnqueued((queue) => heard.push(queue ?? '<any queue>'));
+    cleanups.push(() => Promise.resolve(stopHearing()));
+
     const wake = startQueueWake({ listener: workerPod, executor: executorFor(workerPod) });
     cleanups.push(() => wake.stop());
     await until(() => wakeIsLive());
 
-    const started: { item: string; at: number }[] = [];
+    const started: string[] = [];
     const handle = itemJob({
       run({ input }) {
-        started.push({ item: input.item, at: performance.now() });
+        started.push(input.item);
         return Promise.resolve();
       },
     });
     const worker = jobWorker({
       driver: postgresJobDriver({ executor: executorFor(workerPod) }),
       pollIntervalMs: 25,
-      idlePollMaxMs: 60_000,
+      idlePollMaxMs: IDLE_REST_MS,
       heartbeatIntervalMs: 3_600_000,
       context: () => ctxOf({ role: 'worker', buildId: 'test' }),
       drainOnShutdown: false,
@@ -113,9 +126,10 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
     worker.start();
     cleanups.push(() => worker.stop());
     const web = postgresJobDriver({ executor: executorFor(webPod) });
-    const enqueueFromWeb = async (item: string): Promise<number> => {
-      await until(async () => (await worker.stats()).pollDelayMs >= 800);
-      const before = performance.now();
+    // Resting: the next poll is a minute off, so a start inside the budget can only be the wake's.
+    // No bound on how fast — a loaded machine broke that one (3 of 60 runs past 200 ms at load 85).
+    const enqueueFromWeb = async (item: string): Promise<void> => {
+      await until(async () => (await worker.stats()).pollDelayMs === IDLE_REST_MS);
       await web.enqueue({
         name: handle.name,
         queue: 'default',
@@ -126,30 +140,32 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
         runAt: 1,
       });
       await until(
-        () => started.some((entry) => entry.item === item),
-        3_000,
-        // Issue #1167: this wait missed once in CI and never locally. What a miss needs to tell —
-        // did the row commit, is it still waiting, was the wake live, is a LISTEN session held.
+        () => started.includes(item),
+        START_BUDGET_MS,
+        // Issue #1167: this wait missed once in CI and never locally. What a miss needs to tell:
+        // `witnessed` without the queue, Postgres sent nothing; `witnessed` but not `heard`, the
+        // worker's session lost it; `heard` with the row `ready`, the loop did not claim it; the
+        // row `running` or `done`, the claim happened and the run is what to read.
         async () =>
           JSON.stringify({
             rows: await webPod.query(
               sql`select state, attempt, run_at, created_at from x_jobs
                    where idempotency_key = ${`live:${item}`}`,
             ),
+            witnessed,
+            heard,
             wakeIsLive: wakeIsLive(),
             wakeLive: wake.live(),
-            pollDelayMs: (await worker.stats()).pollDelayMs,
+            worker: await worker.stats(),
             listeners: await admin.query(
               sql`select pid, state, query from pg_stat_activity
                    where application_name = ${LISTENER_APP} and query ilike 'listen%'`,
             ),
           }),
       );
-      return (started.find((entry) => entry.item === item)?.at ?? 0) - before;
     };
 
-    // The wait in hand is 800 ms or more; the job starts in a round trip or two.
-    expect(await enqueueFromWeb('first')).toBeLessThan(200);
+    await enqueueFromWeb('first');
 
     // Kill the session the LISTEN is held on.
     const sessions = await admin.query<{ pid: number }>(
@@ -167,6 +183,6 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
       return now.length === 1 && now[0]?.pid !== sessions[0]?.pid && wakeIsLive();
     });
 
-    expect(await enqueueFromWeb('after-the-kill')).toBeLessThan(200);
+    await enqueueFromWeb('after-the-kill');
   });
 });

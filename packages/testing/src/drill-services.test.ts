@@ -56,6 +56,49 @@ describe('drillServices', () => {
   });
 });
 
+describe('drillServices · the rollout order', () => {
+  const logical = 'postgres://u:p@127.0.0.1:5440/postgres?sslmode=disable';
+
+  test('the logical server and the bus when the run has them, whatever the app declares', () => {
+    expect(
+      drillServices(drill('roll-before-migrate'), { ...env, TEST_REPLICATION_URL: logical }, none),
+    ).toEqual({
+      postgres: logical,
+      logicalPostgres: true,
+      redis: undefined,
+      nats: { url: env.TEST_NATS_URL, env: 'NATS_URL' },
+    });
+  });
+
+  test('Postgres alone still plays it', () => {
+    const { TEST_DATABASE_URL } = env;
+    expect(drillServices(drill('roll-before-migrate'), { TEST_DATABASE_URL }, none)).toEqual({
+      postgres: TEST_DATABASE_URL,
+      logicalPostgres: false,
+      redis: undefined,
+      nats: undefined,
+    });
+  });
+
+  test('the variable an app declares for its bus is the one its roles are handed', () => {
+    const declared = { redis: false, nats: { env: 'BUS_URL' } };
+    expect(drillServices(drill('roll-before-migrate'), env, declared).nats).toEqual({
+      url: env.TEST_NATS_URL,
+      env: 'BUS_URL',
+    });
+  });
+
+  test('no other drill moves to the logical server or picks up an undeclared bus', () => {
+    const services = drillServices(
+      drill('web-sigterm'),
+      { ...env, TEST_REPLICATION_URL: logical },
+      none,
+    );
+    expect(services.postgres).toBe(env.TEST_DATABASE_URL);
+    expect(services.nats).toBeUndefined();
+  });
+});
+
 describe('DrillFailedError', () => {
   test('names the property, its evidence and the command that replays the drill', () => {
     const error = new DrillFailedError({

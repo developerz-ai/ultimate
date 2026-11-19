@@ -254,9 +254,8 @@ Each job sizes its own test width the same way the laptop does (`x verify` print
 line, e.g. `3 workers (budget 4.0 GB)`): a budget of `max(2.75 GiB, 25% of the runner's RAM)`,
 1.25 GiB planned per worker, never more workers than cores. On a 16 GB `ubuntu-latest` that is 3
 workers; a 62 GB, 16-core workstation plans 12 (`As of 2026-11-07`, when the fixed 4 GiB cap went —
-the machine-wide slot pool is what keeps two runs on one box inside one budget). `ULTIMATE_TEST_MEMORY_BUDGET=6g` or `ULTIMATE_TEST_MAX_WORKERS=4` override it; `--workers`
-wins over both. The machine-wide slot pool (see [Testing](Testing#memory-width-and-isolation))
-has nothing to share on a one-job VM; `ULTIMATE_TEST_SLOTS=0` turns it off.
+the [machine ledger](Many-Agents) is what keeps two runs on one box inside one budget). `ULTIMATE_TEST_MEMORY_BUDGET=6g` or `ULTIMATE_TEST_MAX_WORKERS=4` override it; `--workers`
+wins over both. The [machine ledger](Many-Agents) has nothing to share on a one-job VM and is off under `CI`.
 
 ## Skipping the build's duplicate preflight
 

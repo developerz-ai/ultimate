@@ -233,7 +233,7 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
               stage: 'data',
               detail: `the socket stopped accepting bytes for ${target.timeoutMs}ms`,
               retryable: true,
-              fix: 'smtpMailDriver({ url, from, timeoutMs: 60_000 })   // where the driver is built',
+              fix: 'MAIL_TIMEOUT_MS=60000   # in .env.production — or smtpMailDriver({ url, from, timeoutMs: 60_000 })',
             }),
           );
         }, target.timeoutMs);

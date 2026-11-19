@@ -81,8 +81,9 @@ feature slice. Nothing else. A change outside that set is a collision — report
 
 Inspect before you change: \`bunx x entities list\`, \`bunx x entities show <name>\`, both with \`--json\`.
 
-Checks: \`bun test <path>/entity.test.ts\`, \`bunx @biomejs/biome check --write <paths>\`, and \`bun run typecheck\`
-once when you are otherwise done. Never \`bunx x verify\` — that belongs to whoever coordinates you.
+Checks: \`bun test <path>/entity.test.ts\`, \`bunx @biomejs/biome check --write <paths>\`, and
+\`bunx x verify --only typecheck\` once when you are otherwise done: it queues for the machine's memory.
+Never the whole \`bunx x verify\` — that belongs to whoever coordinates you.
 `;
 
 const server = (app: NameSet): string => `---
@@ -108,8 +109,9 @@ renders. A change outside that set is a collision — report it, do not make it.
 Inspect before you change: \`bunx x actions show <name>\`, \`bunx x queries show <name>\`, \`bunx x jobs list\`,
 \`bunx x tasks list\`, \`bunx x policy explain <subject>\` — every one takes \`--json\`.
 
-Checks: \`bun test <path>/<file>.test.ts\`, \`bunx @biomejs/biome check --write <paths>\`, and \`bun run typecheck\`
-once when you are otherwise done. Never \`bunx x verify\` — that belongs to whoever coordinates you.
+Checks: \`bun test <path>/<file>.test.ts\`, \`bunx @biomejs/biome check --write <paths>\`, and
+\`bunx x verify --only typecheck\` once when you are otherwise done: it queues for the machine's memory.
+Never the whole \`bunx x verify\` — that belongs to whoever coordinates you.
 `;
 
 const web = (app: NameSet): string => `---
@@ -143,8 +145,9 @@ Every one of the last five is a build error, not a preference — a guard the fr
 Inspect before you change: \`bunx x routes --json\`, \`bunx x i18n check\` for catalog gaps, and
 \`bunx x shot <route> --json\` when you need to see what you built.
 
-Checks: \`bun test <path>/page.test.ts\`, \`bunx @biomejs/biome check --write <paths>\`, and \`bun run typecheck\`
-once when you are otherwise done. Never \`bunx x verify\` — that belongs to whoever coordinates you.
+Checks: \`bun test <path>/page.test.ts\`, \`bunx @biomejs/biome check --write <paths>\`, and
+\`bunx x verify --only typecheck\` once when you are otherwise done: it queues for the machine's memory.
+Never the whole \`bunx x verify\` — that belongs to whoever coordinates you.
 `;
 
 /** One agent per boundary, plus the read-only one that runs before there is a boundary to hold. */

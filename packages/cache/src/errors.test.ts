@@ -115,7 +115,7 @@ describe('CacheTooLargeError', () => {
     expect(EVERY_CODE).toContain(err.code);
   });
 
-  test('the fix is the constructor option that holds the cap — app.config.ts has no such key', () => {
+  test('the fix is the runtime.ts rung that holds the cap — app.config.ts has no such key', () => {
     // `cache.lru.maxBytes` is not a config field (wiki/Configuration.md): a fix naming it sent the
     // reader to write a key the boot refuses with X_CONFIG_INVALID.
     const lru = new CacheTooLargeError({ key: 'k', bytes: 5_000, tier: 'lru', maxBytes: 1_000 });
@@ -126,8 +126,9 @@ describe('CacheTooLargeError', () => {
       maxBytes: 1_000,
     });
 
-    expect(lru.fix).toContain('lruTier({ maxBytes: 5000 })');
-    expect(redis.fix).toContain('redisTier({ maxValueBytes: 5000 })');
+    expect(lru.fix).toStartWith('cacheTiers: [lruTier({ maxBytes: 5000 })]');
+    expect(redis.fix).toStartWith('cacheTiers: [redisTier({ maxValueBytes: 5000 })]');
+    for (const err of [lru, redis]) expect(err.fix).toContain('apps/web/runtime.ts');
     for (const err of [lru, redis]) expect(err.fix).not.toContain('app.config.ts');
   });
 });
@@ -141,9 +142,19 @@ describe('CacheJitterInvalidError', () => {
     expect(err.cause).toContain('1.5');
     // The option of the factory that read it — `cache.redis.jitterFraction` is no config key.
     expect(err.fix).toStartWith('{ jitterFraction: 0.05 }');
-    expect(err.fix).toContain("redis tier's lruTier({ ... }) or redisTier({ ... })");
+    expect(err.fix).toContain('cacheTiers: [redisTier({ jitterFraction: 0.05 })]');
+    expect(err.fix).toContain('apps/web/runtime.ts');
+    expect(err.fix).not.toContain('lruTier');
     expect(err.meta).toEqual({ tier: 'redis', jitterFraction: 1.5 });
     expect(EVERY_CODE).toContain(err.code);
+  });
+});
+
+describe('a tier name that is also an Object.prototype member', () => {
+  test('is named as written, never replaced by the inherited function', () => {
+    const err = new CacheJitterInvalidError({ tier: 'constructor', jitterFraction: 2 });
+    expect(err.fix).toContain('in constructor(...)');
+    expect(err.fix).not.toContain('[native code]');
   });
 });
 

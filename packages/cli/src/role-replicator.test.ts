@@ -132,6 +132,26 @@ describe('x dev --role replicator', () => {
   });
 
   /**
+   * A view has no WAL of its own and Postgres refuses it in a publication (22023), so one listed
+   * here took the role down at `CREATE PUBLICATION` on every boot of an app that declares one.
+   */
+  test('a view, plain or materialized, is no relation the feed can publish', () => {
+    entity('billingAccount', {
+      table: 'billing_accounts',
+      columns: { id: uuid().primaryKey(), note: text() },
+    });
+    entity('account_notes', {
+      columns: { id: uuid().primaryKey(), note: text() },
+      view: { sql: 'select id, note from billing_accounts' },
+    });
+    entity('account_totals', {
+      columns: { id: uuid().primaryKey(), note: text() },
+      view: { sql: 'select id, note from billing_accounts', materialized: true },
+    });
+    expect(replicatedRelations()).toEqual(['billing_accounts']);
+  });
+
+  /**
    * The same fact through the real call chain, so the projection above is proved to be the one
    * `selectChangeFeed` is handed. `PgReplicationStream`'s constructor screens every entry with
    * `assertIdentifier`, and `billingAccount` is not a lower-case postgres identifier while

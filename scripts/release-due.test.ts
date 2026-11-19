@@ -16,23 +16,26 @@
 // `release-due-flags.test.ts`, which owns the parser, the flag reader and the JSON envelope.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
-// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
-import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { FETCH_MAIN } from './lib/base-ref';
+import { type TempTree, tempTree } from '@ultimat3/testing';
+import { FETCH_MAIN, type GitRunner } from './lib/base-ref';
 import { git as gitIn } from './lib/release-due-git';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import type { TagProbe } from './registry-audit';
-import { decideAt, lastReleaseTag, readWindow } from './release-due';
+import { decideAt, lastReleaseTag, readWindow, refreshTags } from './release-due';
 
 // Each test spawns a dozen git processes.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-const madeDirs: string[] = [];
+const trees: TempTree[] = [];
+const ownedDir = (prefix: string): string => {
+  const tree = tempTree(prefix);
+  trees.push(tree);
+  return tree.path;
+};
 afterAll(async () => {
-  for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+  await Promise.all(trees.splice(0).map((tree) => tree.dispose()));
 });
 
 const HOUR = 3_600_000;
@@ -52,12 +55,10 @@ const CHANGELOG =
 
 /** A repository with one publishable package, released and tagged at 1.0.0 — or untagged. */
 async function released(options: { readonly tag: boolean } = { tag: true }) {
-  const dir = await mkdtemp(join(tmpdir(), 'release-due-'));
-  madeDirs.push(dir);
+  const dir = ownedDir('release-due-');
   // A bare upstream reachable as `origin`, so `baseRef()` resolves and `decideAt` can read
-  // both HEAD and the base SHA from the same fixture. Tracks in `madeDirs` for cleanup.
-  const upstream = await mkdtemp(join(tmpdir(), 'release-due-upstream-'));
-  madeDirs.push(upstream);
+  // both HEAD and the base SHA from the same fixture. Owned like `dir`.
+  const upstream = ownedDir('release-due-upstream-');
   // Through the one bounded, non-interactive git the script uses: no call here can outlive
   // GIT_TIMEOUT_MS or wait on stdin, whatever git or the machine is doing.
   const git = async (argv: readonly string[], hoursAgo = 72): Promise<string> => {
@@ -443,3 +444,28 @@ function decideAtCalls(source: string): readonly string[] {
   }
   return found;
 }
+
+describe('unit · release-due · refreshTags', () => {
+  const answering =
+    (ok: boolean, calls: string[][]): GitRunner =>
+    async (command) => {
+      calls.push([...command]);
+      const result = { command, durationMs: 1, timedOut: false };
+      if (command.includes('--is-shallow-repository')) {
+        return { ...result, code: 0, ok: true, output: 'false' };
+      }
+      return { ...result, code: ok ? 0 : 1, ok, output: ok ? '' : 'could not read from remote' };
+    };
+
+  test('fetches every tag from origin and has nothing to report', async () => {
+    const calls: string[][] = [];
+    expect(await refreshTags('/repo', answering(true, calls))).toBeUndefined();
+    expect(calls.at(-1)).toEqual(['git', 'fetch', '--quiet', '--tags', 'origin']);
+  });
+
+  test('a fetch that failed refuses: stale tags would read as awaiting_tag', async () => {
+    const finding = await refreshTags('/repo', answering(false, []));
+    expect(finding?.code).toBe('X_RELEASE_WINDOW_UNREADABLE');
+    expect(finding?.cause).toContain('could not read from remote');
+  });
+});

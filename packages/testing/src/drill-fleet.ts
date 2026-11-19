@@ -22,6 +22,8 @@ import { testSealKeyEnv } from './test-seal-key';
 export interface DrillServiceUrls {
   /** A Postgres URL with rights to CREATE DATABASE: the drill's scratch database is made there. */
   readonly postgres: string;
+  /** That server runs `wal_level=logical`, so a replicator can stream from the scratch database. */
+  readonly logicalPostgres?: boolean | undefined;
   readonly redis?: string | undefined;
   /** NATS, and the variable the app's `realtime.urlEnv` reads it from. */
   readonly nats?: { readonly url: string; readonly env: string } | undefined;

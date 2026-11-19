@@ -251,7 +251,7 @@ describe('runCovered', () => {
       let released = 0;
       const held: (string | undefined)[] = [];
       const runner: Runner = (command, options) => {
-        held.push(options.env?.['ULTIMATE_TEST_SLOT_HELD']);
+        held.push(options.env?.['ULTIMATE_HEAVY_HOLD']);
         return exec(command, options);
       };
       const run = await runCovered({
@@ -264,6 +264,7 @@ describe('runCovered', () => {
           expect(want).toBe(2);
           return {
             count: 1,
+            env: { ULTIMATE_HEAVY_HOLD: '/ledger/holds/this-run' },
             release: () => {
               released += 1;
             },
@@ -272,7 +273,7 @@ describe('runCovered', () => {
       });
       expect(run.ok).toBe(true);
       expect(run.workers).toBe(1);
-      expect(held).toEqual(['1', '1']);
+      expect(held).toEqual(['/ledger/holds/this-run', '/ledger/holds/this-run']);
       expect(released).toBe(1);
     } finally {
       await rm(root, { recursive: true, force: true });

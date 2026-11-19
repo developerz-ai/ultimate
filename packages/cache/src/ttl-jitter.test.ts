@@ -4,6 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { CacheJitterInvalidError, CacheTtlInvalidError } from './errors';
+import { lruTier } from './lru';
+import { redisTier } from './redis';
 import { assertTtl, DEFAULT_TTL_JITTER_FRACTION } from './tiers';
 
 describe('assertTtl spreads the lease it validates', () => {
@@ -29,6 +31,15 @@ describe('assertTtl spreads the lease it validates', () => {
       expect(() => assertTtl('k', 1_000, 'lru', { jitterFraction })).toThrow(
         CacheJitterInvalidError,
       );
+    }
+  });
+
+  // At first write a bad fraction refused every `set`, and the stack reads a refused write as a
+  // tier failure: a boot that came up healthy and cached nothing.
+  test('a tier refuses a bad fraction when it is built, before any write', () => {
+    for (const jitterFraction of [1, 1.5, -0.1, Number.NaN]) {
+      expect(() => lruTier({ jitterFraction })).toThrow(CacheJitterInvalidError);
+      expect(() => redisTier({ jitterFraction })).toThrow(CacheJitterInvalidError);
     }
   });
 

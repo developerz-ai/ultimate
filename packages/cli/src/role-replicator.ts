@@ -69,7 +69,8 @@ const embeddedRefusal = (dev: boolean): BadFlagError | ConfigInvalidError =>
       });
 
 /**
- * The relations the feed decodes: every registered entity's PHYSICAL TABLE, never its name.
+ * The relations the feed decodes: every registered entity's PHYSICAL TABLE, never its name, and
+ * never a view's — a view writes no WAL of its own, and Postgres refuses one in a publication.
  *
  * Both readers of this list are catalog readers. `PgReplicationStream` keeps a change only when
  * `#entities.has(relation.name)`, and a pgoutput Relation message names the table; `warnPartialIdentity`
@@ -83,7 +84,8 @@ const embeddedRefusal = (dev: boolean): BadFlagError | ConfigInvalidError =>
  * feed the same list whatever order it was registered in.
  */
 export function replicatedRelations(): readonly string[] {
-  return [...new Set(describeEntities().map((entity) => entity.table))].sort();
+  const tables = describeEntities().filter((entity) => entity.view === undefined);
+  return [...new Set(tables.map((entity) => entity.table))].sort();
 }
 
 /**
@@ -92,7 +94,7 @@ export function replicatedRelations(): readonly string[] {
  * list came from the app's own registry, so it can name the command that adds to it.
  */
 const NO_ENTITIES =
-  'no entities are registered, so the replicator would decode changes nothing matches';
+  'no entity on a table is registered, so the replicator would decode changes nothing matches';
 
 const noEntitiesRefusal = (dev: boolean): BadFlagError | ConfigInvalidError =>
   dev

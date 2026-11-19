@@ -163,7 +163,7 @@ deadline (at least 1 s), as `X_DB_UNAVAILABLE` if none answered — and the plat
 | no migrate ran: an applier that drops Helm hooks, a compose `up` without the `run --rm migrate` step, a PaaS with no release phase | run it once against the same database: `x db migrate --json`, or the image with `ROLE=migrate`. Then wire the order: [deploy contract](./07-deploy-contract.md#order-migrate-before-roles) |
 | the cause names a newer major as the newest applied build | refused at once, no wait: an old-major role over a database a newer release migrated. Roll forward to that release (`x deploy --image <newer> --json`), never migrate the old one over it |
 | a migrate Job that is merely slow, past the wait | raise `ULTIMATE_SCHEMA_WAIT_MS` on the serving roles; `0` turns the wait off and refuses at once |
-| rehearsing it | `x drill roll-before-migrate --json` plays this failure on a scratch database for `web`, `worker` and `scheduler` ([deploy contract](./07-deploy-contract.md#failures-their-alert-and-their-runbook)) |
+| rehearsing it | `x drill roll-before-migrate --json` plays this failure on a scratch database for every role the run's services can start ([deploy contract](./07-deploy-contract.md#failures-their-alert-and-their-runbook)) |
 | `ultimate framework major skew` in the logs, no refusal | a fleet across a major mid-rollout or mid-rollback; it serves. Finish the rollout: `kubectl rollout status deployment --selector app.kubernetes.io/component=web` |
 
 ## A credential leaked

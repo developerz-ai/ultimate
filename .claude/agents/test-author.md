@@ -68,8 +68,8 @@ show none of the mutation when you finish; check it and say so.
 
 Run `bun test ./<path>` for your files — the `./` matters: a bare `packages/<pkg>` is a substring
 filter that also runs `examples/dummy/packages/<pkg>` under the wrong config. **Do not run
-`bun run verify`**, and `bun run typecheck` only under the run's `flock` lock the brief names — the
-coordinator owns whole-repo checks.
+`bun run verify`**, and `bun run typecheck` once, when otherwise done (it queues for the checkout's
+one compiler) — the coordinator owns whole-repo checks.
 
 ## Output
 

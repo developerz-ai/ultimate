@@ -550,8 +550,9 @@ export const choosePreferences = action({
 | | |
 |---|---|
 | defaults | `Path=/; HttpOnly; Secure; SameSite=Lax` — core's; every option is `SetCookieOptions` |
+| a line already built | `setCookie(line)`, `As of 2026-11`: **the one way to send what `@ultimat3/auth` answers** — `setCookie(sessionCookie(issued.token, policy))`, `setCookie(signedIn.cookie)`. Sent unchanged, and only if `serializeSetCookie` writes exactly those bytes back: CR/LF, an attribute it never writes or a hand-edited line is `X_COOKIE_INVALID`, and the refusal never repeats the line, which can hold a session token |
 | two calls | two `Set-Cookie` lines, in call order. The same name on two paths is two cookies; nothing overwrites |
-| clearing | **`deleteCookie(name, { path, domain })` is the one way**: empty value, `Max-Age=0`, the `Path`/`Domain` (and `Partitioned`) the cookie was set with. `setCookie` with `maxAge: 0`, or an `expires` at or before `ctx.now()`, is `X_COOKIE_INVALID` naming `deleteCookie` |
+| clearing | **`deleteCookie(name, { path, domain })` is the one way**: empty value, `Max-Age=0`, the `Path`/`Domain` (and `Partitioned`) the cookie was set with. `setCookie` with `maxAge: 0`, or an `expires` at or before `ctx.now()`, is `X_COOKIE_INVALID` naming `deleteCookie`. So is a line with an empty value and `Max-Age=0`; a line that still carries a value keeps its `Max-Age=0` (a rotated session in its last second) |
 | an invalid cookie | `X_COOKIE_INVALID` (core) before anything is appended: a non-token name, `__Host-` without `Secure`, a pair over 4096 octets |
 | off HTTP | `X_NO_REQUEST` in a job, a task or an impersonated child context; `X_NO_CONTEXT` outside any |
 | is there a request | `hasRequest()`: `true` in a request and in any context derived inside one (where readers still refuse), `false` in a job, a task or no context. For a reader whose honest answer off HTTP is `null` (`useActionAnswer`) |

@@ -44,6 +44,11 @@ export type ApiShape =
       readonly kind: 'function';
       /** The name, the type parameters and every local type the signature names. */
       readonly head: string;
+      /**
+       * An overload's heading as `const name :` would spell it: an arrow const that gains an
+       * overload must become a `function`, and the calls it accepted are the same calls.
+       */
+      readonly constHead?: string;
       readonly params: readonly ParamCode[];
       readonly returns: string;
       /**

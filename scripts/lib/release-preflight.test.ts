@@ -40,12 +40,22 @@ describe('unit · a release refuses a working tree with changes in it', () => {
   });
 
   test('a dirty tree is refused with the paths in the cause and the rerun in the fix', () => {
-    const [finding, ...rest] = treeDirtyFindings(' M CHANGELOG.md\n?? scratch.ts', RERUN);
+    const [finding, ...rest] = treeDirtyFindings(' M README.md\n?? scratch.ts', RERUN);
     expect(rest).toEqual([]);
     expect(finding?.code).toBe('X_RELEASE_TREE_DIRTY');
-    expect(finding?.cause).toContain('CHANGELOG.md');
+    expect(finding?.cause).toContain('README.md');
     expect(finding?.cause).toContain('scratch.ts');
     expect(finding?.fix).toBe(`git stash -u && ${RERUN}`);
+  });
+
+  test('the release notes alone are not dirt: the bump promotes them', () => {
+    expect(treeDirtyFindings(' M CHANGELOG.md', RERUN)).toEqual([]);
+  });
+
+  test('the release notes do not excuse anything beside them', () => {
+    const [finding] = treeDirtyFindings(' M CHANGELOG.md\n M README.md', RERUN);
+    expect(finding?.cause).toContain('1 uncommitted change(s)');
+    expect(finding?.cause).not.toContain('CHANGELOG.md');
   });
 
   test('a long list is capped, and says how many it left out', () => {

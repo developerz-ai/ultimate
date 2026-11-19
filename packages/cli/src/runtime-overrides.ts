@@ -54,8 +54,10 @@ export interface PortValues {
   readonly authServerStore: AuthServerStore;
   /**
    * Rung implementations. `cache.tiers` still NAMES the ladder: a tier here replaces the rung of
-   * its own `name` (a `redis` tier needs no `REDIS_URL`), the boot builds every other named rung,
-   * and a tier whose name `cache.tiers` does not list is logged (`cache.tier.unnamed`) and unused.
+   * its own `name` (a `redisTier` given its own `client` needs no `REDIS_URL`; one without dials
+   * core's default and, with no URL set, logs `cache.tier.default-redis`), the boot builds every
+   * other named rung, and a tier `cache.tiers` does not list is logged (`cache.tier.unnamed`) and
+   * unused.
    */
   readonly cacheTiers: readonly CacheTier[];
   /** The process's clock: every "now" and every wait not handed one. Default `systemClock`. */

@@ -103,7 +103,7 @@ export type TtlScope = TierName | 'semantic';
 
 /**
  * A tier's ceiling — bytes or entries — screened where it is still nameable. The same rule as
- * `assertTtl` beside it, over the other knob an `app.config.ts` carries. A SEPARATE refusal from
+ * `assertTtl` beside it, over the other knob a tier's constructor takes. A SEPARATE refusal from
  * `X_CACHE_TOO_LARGE`, which is one entry against a valid ceiling: this one is the ceiling itself,
  * and it needs a screen because a bad ceiling refuses nothing and evicts nothing rather than
  * refusing everything. `NaN > x` and `x > NaN` are both false.
@@ -165,6 +165,15 @@ export function assertFiniteSimilarityFloor(
   });
 }
 
+/**
+ * A tier's TTL spread, screened when the tier is BUILT as well as at each write: found only at the
+ * first `set`, a bad fraction refused every write of a tier that had booted healthy.
+ */
+export function assertJitterFraction(tier: TtlScope, fraction: number): number {
+  if (Number.isFinite(fraction) && fraction >= 0 && fraction < 1) return fraction;
+  throw new CacheJitterInvalidError({ tier, jitterFraction: fraction });
+}
+
 export function assertTtl(
   key: string,
   ttlMs: number,
@@ -174,10 +183,10 @@ export function assertTtl(
   if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
     throw new CacheTtlInvalidError({ key, ttlMs, tier });
   }
-  const fraction = jitter.jitterFraction ?? DEFAULT_TTL_JITTER_FRACTION;
-  if (!Number.isFinite(fraction) || fraction < 0 || fraction >= 1) {
-    throw new CacheJitterInvalidError({ tier, jitterFraction: fraction });
-  }
+  const fraction =
+    jitter.jitterFraction === undefined
+      ? DEFAULT_TTL_JITTER_FRACTION
+      : assertJitterFraction(tier, jitter.jitterFraction);
   if (fraction === 0) return ttlMs;
   // Clamped rather than trusted: an `rng` outside [0, 1) would EXTEND the lease past what the
   // caller asked for, which is a stale read no reader can explain.

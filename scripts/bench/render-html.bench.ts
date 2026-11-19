@@ -79,9 +79,19 @@ export interface RenderBenchResult {
   readonly ms: number;
   /** Best template-string run, timed in the same loop. */
   readonly baselineMs: number;
-  /** `ms / baselineMs`: what the walker costs over writing the strings by hand. */
+  /**
+   * Best CPU time of the walker over best CPU time of the baseline: what it costs over writing the
+   * strings by hand. CPU, not wall clock: on a loaded machine the long side rarely gets a quiet run
+   * while the short one does, which moved a wall-clock ratio 4.6-6.9 where this one read 5.3-5.7.
+   */
   readonly ratio: number;
 }
+
+/** Microseconds of CPU this process spent since `from`. */
+const cpuSince = (from: NodeJS.CpuUsage): number => {
+  const spent = process.cpuUsage(from);
+  return spent.user + spent.system;
+};
 
 const round = (value: number, places: number): number => {
   const scale = 10 ** places;
@@ -94,12 +104,18 @@ export async function benchRender(rows: number, runs = 5): Promise<RenderBenchRe
   templateBaseline(rows);
   let best = Number.POSITIVE_INFINITY;
   let baseline = Number.POSITIVE_INFINITY;
+  let bestCpu = Number.POSITIVE_INFINITY;
+  let baselineCpu = Number.POSITIVE_INFINITY;
   for (let i = 0; i < runs; i++) {
     let started = performance.now();
+    let cpu = process.cpuUsage();
     (await renderToHtml(page)).length;
+    bestCpu = Math.min(bestCpu, cpuSince(cpu));
     best = Math.min(best, performance.now() - started);
     started = performance.now();
+    cpu = process.cpuUsage();
     templateBaseline(rows).length; // `.length` flattens the rope, as a response body would
+    baselineCpu = Math.min(baselineCpu, cpuSince(cpu));
     baseline = Math.min(baseline, performance.now() - started);
   }
   const html = await renderToHtml(page);
@@ -108,7 +124,7 @@ export async function benchRender(rows: number, runs = 5): Promise<RenderBenchRe
     bytes: html.length,
     ms: round(best, 2),
     baselineMs: round(baseline, 2),
-    ratio: round(best / baseline, 1),
+    ratio: round(bestCpu / baselineCpu, 1),
   };
 }
 

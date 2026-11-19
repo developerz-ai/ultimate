@@ -79,6 +79,35 @@ async function lockPackages(root: string): Promise<Readonly<Record<string, unkno
   }
 }
 
+/** What `bun.lock` resolves for this row below its floor, lowest first. */
+function versionsBelow(
+  packages: Readonly<Record<string, unknown>>,
+  row: AdvisoryFloor,
+): readonly string[] {
+  // A git, tarball or `file:` head is no release on npm's line, so no advisory range reads it:
+  // skipped rather than ordered, because `Bun.semver.order` throws on it and would take every
+  // other `x doctor` check down with this warning.
+  return resolvedVersions(packages, row.name)
+    .filter((version) => RELEASE.test(version))
+    .filter((version) => Bun.semver.order(version, row.floor) < 0)
+    .sort((a, b) => Bun.semver.order(a, b));
+}
+
+/**
+ * The transitive packages `bun.lock` holds under a floor: `bun install` honours the lockfile, so
+ * `x upgrade` names these to `bun update`, and an upgraded app is not left to `x doctor`'s warning.
+ */
+export async function staleTransitiveFloors(
+  root: string,
+  floors: readonly AdvisoryFloor[] = ADVISORY_FLOORS,
+): Promise<readonly string[]> {
+  const packages = await lockPackages(root);
+  if (packages === undefined) return [];
+  return floors
+    .filter((row) => row.via === 'transitive' && versionsBelow(packages, row).length > 0)
+    .map((row) => row.name);
+}
+
 /** One warning per floor the lockfile resolves under, lowest resolved version named. */
 export async function advisoryFloorFindings(
   root: string,
@@ -88,14 +117,7 @@ export async function advisoryFloorFindings(
   if (packages === undefined) return [];
   const transitive = floors.filter((f) => f.via === 'transitive').map((f) => quoteArg(f.name));
   return floors.flatMap((row) => {
-    // A git, tarball or `file:` head is no release on npm's line, so no advisory range reads it:
-    // skipped rather than ordered, because `Bun.semver.order` throws on it and would take every
-    // other `x doctor` check down with this warning.
-    const below = resolvedVersions(packages, row.name)
-      .filter((version) => RELEASE.test(version))
-      .filter((version) => Bun.semver.order(version, row.floor) < 0)
-      .sort((a, b) => Bun.semver.order(a, b));
-    const lowest = below[0];
+    const lowest = versionsBelow(packages, row)[0];
     if (lowest === undefined) return [];
     return [
       {

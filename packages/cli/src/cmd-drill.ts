@@ -11,6 +11,7 @@ import type {
   DrillDeclarations,
   DrillFleet,
   DrillReport,
+  DrillRoleNotPlayed,
 } from '@ultimat3/testing';
 import {
   bunDrillSql,
@@ -21,6 +22,7 @@ import {
   drillBudgets,
   drillNamed,
   drillRoles,
+  drillRolesNotPlayed,
   drillServices,
   runDrill,
   runRollout,
@@ -38,6 +40,7 @@ import { readIntFlag } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { flagBool } from './parse';
+import { replicatedRelations } from './role-replicator';
 
 /** Read through `readIntFlag`, which refuses `5s`, `NaN` and a fraction with the flag's name. */
 const BUDGET_FLAG = 'budget-ms';
@@ -177,9 +180,20 @@ export const drillCommand: CliCommand = {
     }
     const budgets = drillBudgets(drillConfigOf(config), override);
     const { targets, skipped } = await drillTargets(root);
+    // After `drillTargets`: loading the app is what fills the entity registry read here.
+    const publishable = replicatedRelations().length > 0;
     const reports: DrillReport[] = [];
+    const rolesNotPlayed: (DrillRoleNotPlayed & { readonly drill: string })[] = [];
     for (const { drill, services } of planned) {
       const { fault } = drill;
+      const found = {
+        bus: services.nats !== undefined,
+        logicalPostgres: services.logicalPostgres === true,
+        publishable,
+      };
+      for (const gap of drillRolesNotPlayed(drill, found)) {
+        rolesNotPlayed.push({ drill: drill.name, ...gap });
+      }
       // The rollout order: the stamp is this package's to write, so the rewind is handed in.
       const order =
         fault.kind === 'order'
@@ -188,7 +202,7 @@ export const drillCommand: CliCommand = {
       const fleet = await startDrillFleet({
         root,
         services,
-        roles: drillRoles(drill),
+        roles: drillRoles(drill, found),
         readyTimeoutMs: READY_TIMEOUT_MS,
         beforeMigrate: order,
       });
@@ -209,6 +223,9 @@ export const drillCommand: CliCommand = {
       lines: [
         ...reports.map((report) => `  ${report.verdict.ok ? 'held' : 'FAILED'}  ${report.name}`),
         ...notRun.map((drill) => `  not run  ${drill}`),
+        ...rolesNotPlayed.map(
+          (gap) => `  not played  ${gap.drill}: ${gap.role}, needs ${gap.needs}`,
+        ),
       ],
       findings,
       data: {
@@ -218,6 +235,8 @@ export const drillCommand: CliCommand = {
         skippedWrites: skipped.map((entry) => ({ ...entry })),
         drills: reports.map(reportJson),
         notRun,
+        // A role the rollout order left out, with what it needs: CI refuses a non-empty list.
+        rolesNotPlayed: rolesNotPlayed.map((gap) => ({ ...gap })),
       },
     };
   },

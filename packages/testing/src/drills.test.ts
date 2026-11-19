@@ -4,7 +4,14 @@
 import { describe, expect, test } from 'bun:test';
 import { DRILL_DEFAULT_DEADLINE_MS, DRILL_PROMPT_MS, drillBudgets } from './drill-budgets';
 import { DRILL_PROPERTIES } from './drill-verdict';
-import { DRILL_NAMES, DRILLS, drillNamed, drillRoles, drillService } from './drills';
+import {
+  DRILL_NAMES,
+  DRILLS,
+  drillNamed,
+  drillRoles,
+  drillRolesNotPlayed,
+  drillService,
+} from './drills';
 import { screenFaultMode } from './fault-proxy';
 
 const config = {
@@ -62,6 +69,35 @@ describe('DRILLS', () => {
     expect(drillService(drill)).toBeUndefined();
     if (drill.fault.kind !== 'order') expect.unreachable();
     expect(drill.fault.waitCode).toBe('X_FRAMEWORK_SCHEMA_UNAPPLIED');
+  });
+
+  test('roll-before-migrate adds the sync node on a bus and the replicator on a logical server', () => {
+    const drill = drillNamed('roll-before-migrate') ?? expect.unreachable();
+    const found = { bus: true, logicalPostgres: true, publishable: true };
+    expect(drillRoles(drill, found)).toEqual(['web', 'worker', 'scheduler', 'sync', 'replicator']);
+    expect(drillRolesNotPlayed(drill, found)).toEqual([]);
+  });
+
+  test('a role the run cannot start is stated with what it needs, never dropped silently', () => {
+    const drill = drillNamed('roll-before-migrate') ?? expect.unreachable();
+    const bare = { bus: false, logicalPostgres: false, publishable: true };
+    expect(drillRoles(drill, bare)).toEqual(['web', 'worker', 'scheduler']);
+    expect(drillRolesNotPlayed(drill, bare)).toEqual([
+      { role: 'sync', needs: 'TEST_NATS_URL' },
+      { role: 'replicator', needs: 'TEST_REPLICATION_URL' },
+    ]);
+    const noTables = { bus: true, logicalPostgres: true, publishable: false };
+    expect(drillRoles(drill, noTables)).toEqual(['web', 'worker', 'scheduler', 'sync']);
+    expect(drillRolesNotPlayed(drill, noTables)).toEqual([
+      { role: 'replicator', needs: 'an entity on a table' },
+    ]);
+  });
+
+  test('every other drill keeps its fleet, and owes no role', () => {
+    const drill = drillNamed('web-sigterm') ?? expect.unreachable();
+    const found = { bus: true, logicalPostgres: true, publishable: true };
+    expect(drillRoles(drill, found)).toEqual(['web', 'worker']);
+    expect(drillRolesNotPlayed(drill, found)).toEqual([]);
   });
 
   test('drillService names the faulted service, or nothing for a signal', () => {

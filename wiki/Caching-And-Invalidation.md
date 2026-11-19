@@ -302,7 +302,7 @@ From code: `invalidateTags([...])` from `@ultimat3/cache`, the call `x cache bus
 |---|---|---|
 | `X_CACHE_UNTAGGED_QUERY` | **reserved, nothing raises it** `As of 2026-08` — a query's tables are covered by no tag, so it could never be invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) | declare the entity tag, then `x manifest` |
 | `X_CACHE_TAG_UNKNOWN` | `tag "<name>" is not declared by any entity` | `declareTags(['<name>'])` beside the app's other declared tags, plus the name in its `CacheTagRegistry`; for a typo, correct the tag |
-| `X_CACHE_TOO_LARGE` | `entry "<key>" is <n>B, over the <tier> budget of <m>B` | `lruTier({ maxBytes: <n> })` / `redisTier({ maxValueBytes: <n> })` where the tier is built, or cache a projection instead of the row |
+| `X_CACHE_TOO_LARGE` | `entry "<key>" is <n>B, over the <tier> budget of <m>B` | `cacheTiers: [lruTier({ maxBytes: <n> })]` / `cacheTiers: [redisTier({ maxValueBytes: <n> })]` in `apps/web/runtime.ts` ([limits](Configuration#cache)), or cache a projection instead of the row |
 | `X_CACHE_DRIVER_UNAVAILABLE` | `cache tier "<driver>" is unavailable` — a Redis command missed its deadline, or the tier is parked after one; or a purge driver built without its token | the error carries the exact config or command to fix |
 | `X_CACHE_PURGE_FAILED` | `<driver> refused the purge (HTTP <status>)` — a wrong token, a zone without tag purge, a throttle, or a key a CDN would split | `meta.retryable === true` → the identical purge can land again; otherwise set the env key the `fix` names |
 

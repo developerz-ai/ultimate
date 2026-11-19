@@ -12,6 +12,7 @@ import {
   recording,
   removeFixtures,
   run,
+  STALE_ADVISORY_LOCK,
 } from './cmd-upgrade-fixture';
 
 afterEach(removeFixtures);
@@ -94,6 +95,18 @@ describe('unit · x upgrade, the refusals', () => {
     expect(code).toBe(1);
     expect(output.findings?.[0]?.code).toBe('X_UPGRADE_INSTALL_FAILED');
     expect(output.findings?.[0]?.cause).toContain('@ultimat3/gone');
+    expect(output.findings?.[0]?.fix).toContain('git restore .');
+    expect(spawned).not.toContain('x verify');
+  });
+
+  test('a failed advisory refresh refuses with the same undo, and no gate runs', async () => {
+    const dir = await fixture({ 'bun.lock': STALE_ADVISORY_LOCK });
+    const { runner, spawned } = recording({ updateCode: 1 });
+    const { code, output } = await run(dir, runner);
+    expect(code).toBe(1);
+    expect(output.findings?.[0]?.code).toBe('X_UPGRADE_INSTALL_FAILED');
+    expect(output.findings?.[0]?.cause).toContain('bun update immutable exited 1');
+    expect(output.findings?.[0]?.cause).toContain('registry unreachable');
     expect(output.findings?.[0]?.fix).toContain('git restore .');
     expect(spawned).not.toContain('x verify');
   });

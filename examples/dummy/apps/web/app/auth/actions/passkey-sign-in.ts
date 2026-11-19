@@ -5,17 +5,7 @@
 import { action, t } from '@ultimat3/action';
 import { setCookie, useRequestHeader } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
-import { auth } from '../login';
 import { passkeys } from '../passkeys';
-
-/**
- * The session cookie, through http's one writer: the same name, value and `Max-Age` as the
- * `cookie` line `login()` answers (`sessionCookie`), so no attribute is spelled here.
- */
-const setSessionCookie = (token: string): void => {
-  const { policy } = auth.sessions;
-  setCookie(policy.cookieName, token, { maxAge: Math.floor(policy.absoluteTtlMs / 1000) });
-};
 
 /** The response headers the pipeline publishes, read structurally: a job or a test has none. */
 const carriesHeaders = (ctx: unknown): ctx is { readonly headers: Headers } =>
@@ -33,7 +23,7 @@ export const passkeySignIn = action({
       response: input.response,
       userAgent: http ? useRequestHeader('user-agent') : null,
     });
-    if (http) setSessionCookie(signedIn.token);
+    if (http) setCookie(signedIn.cookie);
     return { userId: signedIn.actor.id };
   },
 });

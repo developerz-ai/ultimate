@@ -23,7 +23,7 @@ import { testServicesFiles } from './scaffold-test-services';
  */
 const conventions = (app: NameSet): string => `# ${app.pascal}
 
-Human-authored, short, stable — one file under two names, \`AGENTS.md\` being a symlink to it.
+One file, two names: \`AGENTS.md\` is a symlink to it.
 Facts live in \`x.manifest.json\`; this file holds only what an agent cannot infer from the code.
 
 Every row below names what refuses it. A rule with nothing in the last column does not exist.
@@ -40,6 +40,7 @@ queries, jobs, MCP tools, published operations and tests it touches, each with p
 |---|---|---|
 | One gate | \`bun run verify\` — \`bunx x verify\`, which builds what its \`budgets\` step weighs. Green means shippable; never merge red. CI runs the same gate, cut into parts: \`bun run verify plan --json\` names them, each runner runs \`bun run setup && bun run verify --only <steps>\`, and \`bun run verify merge\` is the verdict | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
 | Coverage | the unit suite covers 95% of the lines and functions of this app's own source — every file under \`apps/\` and \`packages/\`, one no test loads counted at 0%. A floor, not the goal: a test added to raise it is proven by mutation — break the source, watch it go red, restore | \`X_COVERAGE_BELOW_FLOOR\` on the \`unit\` step; \`coverage\` in \`x.verify.json\` states the floor, and it only rises |
+| Many agents | a worker runs its own files; the coordinator runs the gate once | \`bunx x heavy status\` |
 | One way | generators, not hand-rolled files: \`bunx x g resource\`, \`bunx x g action\`, \`bunx x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
 | Data | routes call actions and queries; only \`repo.ts\` touches the database | \`X_BOUNDARY_ROUTE_TO_DB\` |
@@ -134,11 +135,11 @@ Commands: \`bun run setup\`, \`bun run dev\`, \`bun run verify\`, \`bunx x g <pr
 | Tool | What it answers | How to reach it |
 |---|---|---|
 | \`x.manifest.json\` | every route, action, query, job and policy, generated — read it before searching the tree | \`bunx x manifest\` rewrites it |
-| \`bunx x impact <file|primitive> --json\` · \`bunx x graph --json\` | what an edit reaches, and the app as one graph (declared, import and observed edges) | rebuilt from the loaded app on every call |
+| \`bunx x impact <file|primitive> --json\` · \`bunx x graph --json\` | what an edit reaches, and the app as one graph (declared, import and observed edges) | rebuilt on every call |
 | \`.mcp.json\` | the dev tools over MCP: routes, schema, policies, the database, tests, the gate — \`bunx x mcp tools\` lists them | a client that reads \`.mcp.json\` starts it; from any other, run \`bunx @ultimat3/cli mcp serve --transport stdio\` here |
 | \`POST /mcp\` | this app's own tools — every action declaring \`mcp: { expose: true }\` — for a remote agent | \`apps/web/mcp.ts\`; under \`bun run dev\`, \`Authorization: Bearer dev-agent.admin\`, else an API key |
-| \`.claude/commands/feature.md\` | build or fix one thing end to end, done when \`bun run verify\` is green | plain markdown: any agent can read one and follow it |
-| \`.claude/commands/planx.md\` | write a plan to \`docs/plans/\` for another agent to execute | the same |
+| \`.claude/commands/feature.md\` | build or fix one thing end to end, done when \`bun run verify\` is green | plain markdown any agent can follow |
+| \`.claude/commands/planx.md\` | write a plan to \`docs/plans/\` | the same |
 | \`.claude/commands/verify.md\` | run the gate and fix what it reports | the same |
 
 Project notes for ${app.kebab}: replace this line with the conventions a newcomer could not guess.

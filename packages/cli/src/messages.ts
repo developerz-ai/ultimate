@@ -317,6 +317,17 @@ const CATALOG = {
   ...OPS_MESSAGES,
   ...FLOOR_MESSAGES,
   ...STATUS_MESSAGES,
+  'cli.heavy.waiting':
+    'heavy: {label} waits for {need} MB, position {position} of {queued}; {used} of {capacity} MB held by {holders}',
+  'cli.heavy.lockWait': 'heavy: waiting for this checkout’s {name} lock, held by {holder}',
+  'cli.heavy.status.summary':
+    '{used} of {capacity} MB reserved, {holds} running, {queued} queued; {cores} core(s) per run',
+  'cli.heavy.status.off': 'admission is off here ({reason}); {cores} core(s) per run',
+  'cli.heavy.status.machine':
+    'machine: load {load} on {cpus} cores, {runnable} runnable, {free} GB of {total} GB available',
+  'cli.heavy.status.hold': 'running: {entry}',
+  'cli.heavy.status.queued': 'queued {position}: {entry}',
+  'cli.heavy.run.done': '{command} exited {code} after {ran}, {waited} in the queue',
 } as const;
 
 export type MessageKey = keyof typeof CATALOG;

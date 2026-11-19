@@ -320,6 +320,21 @@ describe('public-api-compat · overloads', () => {
     );
   });
 
+  // `export const f = (…) => …` growing an overload has to become `export function f`: same calls.
+  test('an arrow const that became overloaded functions, its call shape kept, is compatible', () => {
+    const arrow = 'const set : ( name : string , value : string ) => void';
+    const overloaded =
+      'function set ( line : string ) : void\nfunction set ( name : string , value : string ) : void';
+    expect(verdict(arrow, overloaded)).toBe(
+      'compatible: every recorded call shape still matches an overload with the same return',
+    );
+    expect(
+      verdict(arrow, 'function set ( line : string ) : void\nfunction set ( n : 1 ) : void'),
+    ).toBe(
+      'break: the recorded call shape matches no overload with the same return — closest: no overload accepts it',
+    );
+  });
+
   test('an old call shape matched only by an overload with a widened return is a break', () => {
     const widened = MAP.replace('Promise < T [ ] >', 'Promise < T [ ] | S [ ] >');
     expect(verdict(MAP, `${ALL}\n${widened}`)).toBe(

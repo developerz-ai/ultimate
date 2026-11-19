@@ -22,6 +22,7 @@ export const MAIL_ENV_KEYS = [
   'RESEND_API_KEY',
   'MAIL_FROM',
   'MAIL_POOL_SIZE',
+  'MAIL_TIMEOUT_MS',
   'SES_REGION',
   'SES_ACCESS_KEY_ID',
   'SES_SECRET_ACCESS_KEY',
@@ -97,6 +98,27 @@ function poolSizeFrom(env: MailEnvironment): number | undefined {
   return parsed;
 }
 
+/** The longest delay `setTimeout` holds: one past it overflows to 1 ms and fires at once. */
+const MAX_TIMER_MS = 2_147_483_647;
+
+/**
+ * `MAIL_POOL_SIZE`'s rule, plus a ceiling: the deadline reaches `setTimeout`, so a value past
+ * `MAX_TIMER_MS` — written to wait LONGER — would expire every read on the next tick.
+ */
+function timeoutMsFrom(env: MailEnvironment): number | undefined {
+  const raw = nonEmpty(env['MAIL_TIMEOUT_MS']);
+  if (raw === undefined) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_TIMER_MS) {
+    throw new ConfigInvalidError({
+      cause: `MAIL_TIMEOUT_MS is "${raw}", which is not a whole number of milliseconds from 1 to ${MAX_TIMER_MS}`,
+      fix: 'MAIL_TIMEOUT_MS=60000 — in .env.production, or unset it to keep the 30000 default',
+      meta: { MAIL_TIMEOUT_MS: raw },
+    });
+  }
+  return parsed;
+}
+
 /**
  * A credential selects its transport. Two credentials is the one case that cannot be answered by
  * picking a winner — whichever this chose would be the one an operator did not mean half the time,
@@ -130,11 +152,13 @@ export function selectMailDriver(
   const smtpUrl = nonEmpty(env['SMTP_URL']);
   if (smtpUrl !== undefined) {
     const poolSize = poolSizeFrom(env);
+    const timeoutMs = timeoutMsFrom(env);
     return {
       driver: smtpMailDriver({
         url: smtpUrl,
         from: requireFrom(env, 'SMTP_URL'),
         ...(poolSize === undefined ? {} : { poolSize }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
         retainMime: options.retainMime,
       }),
       detail: 'SMTP_URL',

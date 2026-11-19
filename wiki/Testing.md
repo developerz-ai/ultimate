@@ -1387,10 +1387,10 @@ gates at once — and it is held to a **memory budget**, not to whatever looks f
   what it chose and why — `3 workers (budget 4.0 GB)`. `ULTIMATE_TEST_MEMORY_BUDGET=3g` replaces
   the budget, `ULTIMATE_TEST_MAX_WORKERS=2` caps the width, `--workers N` wins over both. Total RAM,
   never "free": page cache counts as free, and two gates each planning on it took a 45 GB box down.
-- **One budget per machine.** Each batch of workers leases that many slots from a pool of lock
-  files under the OS temp dir (one per worker the budget allows; a dead holder's slot is taken
-  over). A second `x test` or `x verify` on the same box gets what is left and runs narrower, or
-  waits for one slot, instead of doubling the memory. `ULTIMATE_TEST_SLOTS=0` turns it off.
+- **One budget per machine.** Each batch of workers reserves its measured memory in the
+  [machine ledger](Many-Agents), at most 4 cores locally. A second `x test` or `x verify` on the
+  same box runs narrower or queues instead of doubling the memory; a selection of 3 files or fewer
+  runs free. `ULTIMATE_TEST_SLOTS=0` turns it off.
 - **No per-file isolation by default.** A worker keeps one global and one module registry across
   the files it runs (`bun test --parallel=N --no-isolate`) — measured 2-5x faster than `--isolate`
   at the same width. Between two files the testing preload hands the next file the process it would
@@ -1521,7 +1521,7 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 |---|---|
 | `typecheck` | any error; `any` is banned by lint, not tolerated by a cast |
 | `lint` | biome only: formatting, `any`, default exports, unused imports. **Not** raw colours, bare `Error`, untranslated strings or unzoned dates — biome ignores `.scss` entirely and those are guards, one row down |
-| `boundaries` | `site/` → `app/`, routes → DB, services → HTTP, tier violations in framework packages, **and every file in the app's own `guards/`** — every name in `SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`) that `x new` writes, or the ones you kept → [Interface rules](Interface-Rules) |
+| `boundaries` | `site/` → `app/`, routes → DB, services → HTTP, tier violations in framework packages, **and every guard**: every name in `SHIPPED_GUARD_NAMES` (`packages/cli/src/templates/scaffold-guards.ts`), run from the installed framework at the severity `guards/shipped.json` gives it, and every file of your own in `guards/` → [Interface rules](Interface-Rules) |
 | `filesize` | a source file over 500 lines |
 | `package-shape` | a workspace package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, or `src/index.ts` |
 | `errors` | an `X_*` code with no runnable fix or no docs page |

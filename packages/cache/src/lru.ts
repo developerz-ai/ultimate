@@ -17,7 +17,13 @@ import type {
   TierInvalidation,
   TtlJitter,
 } from './tiers';
-import { assertFiniteCapacity, assertFiniteDurationMs, assertTtl, nowMs } from './tiers';
+import {
+  assertFiniteCapacity,
+  assertFiniteDurationMs,
+  assertJitterFraction,
+  assertTtl,
+  nowMs,
+} from './tiers';
 import { decodeCacheValue, encodeCacheValue } from './value-codec';
 
 export interface LruOptions {
@@ -130,6 +136,9 @@ export class LruCache {
       options.defaultTtlMs ?? 60_000,
     );
     this.clock = options.clock ?? systemClock;
+    if (options.jitterFraction !== undefined) {
+      assertJitterFraction('lru', options.jitterFraction);
+    }
     this.jitter = {
       ...(options.jitterFraction === undefined ? {} : { jitterFraction: options.jitterFraction }),
       ...(options.rng === undefined ? {} : { rng: options.rng }),

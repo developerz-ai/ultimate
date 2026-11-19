@@ -9,6 +9,9 @@
 // Paths narrow the diff to what they prefix: a worker in a shared checkout names its own file set,
 // and the units its teammates touched are neither run nor counted.
 
+import { withHeavy } from '../packages/cli/src/heavy';
+import { LOCAL_CORE_CAP } from '../packages/cli/src/heavy-cores';
+import { TEST_RUN_BASE_MB, TEST_WORKER_PEAK_MB } from '../packages/cli/src/heavy-weights';
 import { parseScriptArgs } from './lib/args';
 import { changedSinceBase } from './lib/changed-files';
 import { unreleasedCheck } from './lib/changelog-unreleased-git';
@@ -75,7 +78,29 @@ export async function runStep(
   runner: StepRunner = run,
 ): Promise<StepResult> {
   const timeoutMs = step.heavy ? LONG_RUN_TIMEOUT_MS : DEFAULT_RUN_TIMEOUT_MS;
-  const result = await runner(step.command, { cwd: root, timeoutMs });
+  // A heavy step is one reservation; the coverage gate it starts inherits it instead of queueing.
+  const result = step.heavy
+    ? await withHeavy(
+        {
+          label: `preflight ${step.name}`,
+          cwd: root,
+          env: Bun.env,
+          unitMb: TEST_WORKER_PEAK_MB,
+          baseMb: TEST_RUN_BASE_MB,
+          units: LOCAL_CORE_CAP,
+          minUnits: 1,
+        },
+        (child) =>
+          runner(step.command, {
+            cwd: root,
+            timeoutMs,
+            // `run` takes a whole environment, so the hold is laid over this process's.
+            ...(Object.keys(child.env).length === 0 && child.fds.length === 0
+              ? {}
+              : { env: { ...Bun.env, ...child.env }, inheritFds: child.fds }),
+          }),
+      )
+    : await runner(step.command, { cwd: root, timeoutMs });
   if (step.kind === 'test') {
     return {
       name: step.name,

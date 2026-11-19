@@ -68,7 +68,7 @@ export type { FastlyPurgeOptions } from './purge-fastly';
 export { fastlyPurgeDriver } from './purge-fastly';
 export type { PurgeFetch } from './purge-http';
 export type { RedisLike, RedisTierOptions } from './redis';
-export { namespaceFor, redisTier } from './redis';
+export { namespaceFor, redisTier, usesDefaultRedisClient } from './redis';
 export type {
   InvalidationBus,
   InvalidationSubscription,

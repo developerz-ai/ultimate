@@ -346,7 +346,7 @@ Read as a review checklist. Each one is a defect on sight.
 | live regions and the focus trap | `packages/ui/src/a11y.ts` |
 | the toast queue's rules | `packages/ui/src/toast/toast-state.ts` |
 | a list's URL state (sort, cursor, limit, `q`) | `packages/ui/src/list-url.ts` |
-| your app's guards | `guards/` in the app root — `x new` writes every name in `SHIPPED_GUARD_NAMES`, `x g guard <name>` adds one, `x doctor` lists the shipped ones missing |
+| your app's guards | `guards/` in the app root — `x new` writes only `guards/shipped.json`, `x g guard <name>` adds one of your own, `x doctor` lists any copy of a shipped guard still held |
 
 Components, props and token vocabulary: [UI components](UI-Components). Colour roles and the
 contrast table: [Theming](Theming). Seeing a component in a state you cannot click to:

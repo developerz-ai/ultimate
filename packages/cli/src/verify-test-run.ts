@@ -13,6 +13,7 @@ import { testEnvOverrides } from './test-dotenv';
 import { tidyBeforeTestRun } from './test-housekeeping';
 import type { TestFile } from './test-select';
 import { failureOf, TEST_TIMINGS_FILE, testArgs } from './test-shards';
+import type { MachineLease } from './test-slots';
 import { loadTimings, slowestOf } from './test-timings';
 import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
 import type { MachinePace } from './verify-pace';
@@ -36,7 +37,7 @@ export interface ParallelRunOptions {
   /** Why the width is what it is — printed on the step line. */
   readonly widthReason?: string;
   /** The machine-pool lease (`test-slots.ts`), for a default-width run. */
-  readonly lease?: (want: number) => Promise<{ readonly count: number; release(): void }>;
+  readonly lease?: MachineLease;
   /** The machine's pace (`verify-pace.ts`): each test's default and declared deadline stretch by it. */
   readonly pace?: MachinePace;
 }
@@ -76,7 +77,7 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
     runner: options.runner,
     batches,
     workers,
-    ...(options.lease === undefined || workers === 1 ? {} : { lease: options.lease }),
+    ...(options.lease === undefined ? {} : { lease: options.lease }),
     argsFor: (batch, width) =>
       testArgs({
         files: batch,

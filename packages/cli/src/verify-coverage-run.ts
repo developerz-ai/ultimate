@@ -32,7 +32,7 @@ import { msg } from './messages';
 import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
 import { failureOf } from './test-shards';
-import { SLOT_HELD_ENV } from './test-slots';
+import type { MachineLease } from './test-slots';
 import {
   costOf,
   junitDurations,
@@ -99,7 +99,7 @@ export interface CoveredRunOptions {
   readonly isolate?: boolean;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly widthReason?: string;
-  readonly lease?: (want: number) => Promise<{ readonly count: number; release(): void }>;
+  readonly lease?: MachineLease;
   /** Test files per process. Absent is `COVERAGE_SLICE_FILES`; a test cuts smaller. */
   readonly sliceFiles?: number;
   /** The machine's pace (`verify-pace.ts`): each test's default and declared deadline stretch by it. */
@@ -144,14 +144,14 @@ export const coveredArgs = (
 export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun> {
   const slices = coverageSlices(options.files, options.sliceFiles);
   const want = Math.max(1, Math.min(Math.trunc(options.workers), slices.length));
-  const lease = want > 1 ? await options.lease?.(want) : undefined;
+  const lease = await options.lease?.(want);
   const width = Math.min(want, lease?.count ?? want);
   const base = join(options.root, COVERAGE_DIR, `unit-${String(process.pid)}`);
   const isolate = options.isolate === true;
   const overrides = {
     ...testEnvOverrides(options.root, options.env ?? Bun.env),
     ...(isolate ? { [ISOLATED_ENV]: '1' } : {}),
-    ...(lease === undefined ? {} : { [SLOT_HELD_ENV]: '1' }),
+    ...lease?.env,
     ...paceEnv(options.pace),
   };
   const results = new Array<ExecResult>(slices.length);
@@ -174,6 +174,7 @@ export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun
         ),
         {
           cwd: options.root,
+          ...(lease?.fds === undefined || lease.fds.length === 0 ? {} : { inheritFds: lease.fds }),
           env: {
             ...overrides,
             ULTIMATE_TEST_WORKER: String(slot),

@@ -830,6 +830,11 @@ original ceiling, so its cookie takes the time left, not the full TTL:
 `sessionCookie(issued.token, policy, { maxAgeSeconds: remainingMaxAgeSeconds(issued.session, clock.now()) })`
 — what `updatePrivileges` already does for you.
 
+An action sets any of these lines with `@ultimat3/http`'s `setCookie(line)`, `As of 2026-11`:
+`setCookie(sessionCookie(issued.token, policy))`, or `setCookie(signedIn.cookie)` with what `login()`
+answered. This package cannot call it (both are tier 2), so it answers the line and the caller sends
+it. No attribute is respelled at the call site.
+
 | Attribute | Attack it closes |
 |---|---|
 | `HttpOnly` | XSS reading `document.cookie` and exfiltrating the session |

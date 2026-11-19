@@ -26,6 +26,7 @@ import {
   registerInvalidationBroadcast,
   registerTier,
   resetTiers,
+  usesDefaultRedisClient,
 } from '@ultimat3/cache';
 import type { AppConfig, CacheTierName } from '@ultimat3/core';
 import {
@@ -74,9 +75,12 @@ export interface CacheTiersOptions {
    */
   readonly tiers: readonly CacheTierName[];
   /**
-   * `runtime.ts`'s `cacheTiers`: each replaces the rung of its own `name` — built from nothing
-   * here, so a supplied `redis` tier needs no `REDIS_URL`. A supplied tier `tiers` does not name is
-   * logged (`cache.tier.unnamed`) and never registered: the declaration decides the ladder.
+   * `runtime.ts`'s `cacheTiers`: each replaces the rung of its own `name`, and it is the ONE way
+   * to set a rung's limits (`lruTier({ maxBytes })`, `redisTier({ maxValueBytes, jitterFraction })`):
+   * `buildTier` passes none, and a config key would be a second spelling of this replacement. A
+   * supplied `redis` tier holding its own `client` needs no `REDIS_URL`; one without is
+   * `warnDefaultRedis`'s. A supplied tier `tiers` does not name is logged (`cache.tier.unnamed`) and
+   * never registered: the declaration decides the ladder.
    */
   readonly supplied?: readonly CacheTier[] | undefined;
   /** The wait before re-subscribing after `attempt` failures (1-based). Injected by a test. */
@@ -209,6 +213,22 @@ function warnUnnamed(options: CacheTiersOptions): void {
 }
 
 /**
+ * A `redisTier({ maxValueBytes })` with no `client`, and no URL in the boot's env. `buildTier` refuses
+ * that state, but only for the rung it builds: this one is the app's, and its default client dials
+ * the local server, which may be what a single-box deployment means. So it boots, and says so —
+ * tuning a limit must not quietly cost the operator the signal that the URL is missing.
+ */
+function warnDefaultRedis(built: readonly CacheTier[], env: Env): void {
+  const onDefault = built.some((tier) => usesDefaultRedisClient(tier));
+  if (!onDefault || redisUrlSource(env) !== undefined) return;
+  logger.warn('cache.tier.default-redis', {
+    tier: 'redis',
+    source: 'runtime.ts',
+    expected: 'REDIS_URL or VALKEY_URL',
+  });
+}
+
+/**
  * Register the tiers the app declared, wire both halves of cross-instance invalidation, and return
  * the release.
  *
@@ -238,6 +258,7 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   const built = options.tiers.map((name) => supplied.get(name) ?? buildTier(name, options));
   for (const tier of built) registerTier(tier);
   warnUnnamed(options);
+  warnDefaultRedis(built, options.env);
   // NATS (or a supplied transport) when it crosses processes; Redis pub/sub when the transport is
   // the in-process bus and REDIS_URL is set; else in-process. One rule, one boot line.
   const selected = selectCacheBus({

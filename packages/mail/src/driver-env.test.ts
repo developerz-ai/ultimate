@@ -43,6 +43,40 @@ function memoryLike(members: MemoryMembers): MailDriver {
   return driver;
 }
 
+/**
+ * What a send answers against a server that accepts the socket and never greets: the read deadline
+ * is the only thing that can end it, so its text proves which `timeoutMs` the driver was built with.
+ */
+async function silentServerRefusal(env: Record<string, string>): Promise<UltimateError> {
+  const server = Bun.listen({
+    hostname: '127.0.0.1',
+    port: 0,
+    socket: { data: () => undefined },
+  });
+  try {
+    const { driver } = selectMailDriver({
+      SMTP_URL: `smtp://127.0.0.1:${server.port}`,
+      MAIL_FROM: FROM,
+      ...env,
+    });
+    const refusal: unknown = await driver
+      .send({
+        to: ['ada@example.test'],
+        subject: 'Hello',
+        html: '<p>Hello</p>',
+        text: 'Hello',
+        mailId: 'welcome',
+        locale: 'en',
+        tz: 'UTC',
+      })
+      .catch((error: unknown) => error);
+    if (refusal instanceof UltimateError) return refusal;
+    return expect.unreachable('expected the send to be refused with an UltimateError');
+  } finally {
+    server.stop(true);
+  }
+}
+
 describe('selectMailDriver', () => {
   test('SMTP_URL selects the smtp transport', () => {
     const selection = selectMailDriver({ SMTP_URL, MAIL_FROM: FROM });
@@ -112,6 +146,44 @@ describe('selectMailDriver', () => {
     },
   );
 
+  test('MAIL_TIMEOUT_MS is the deadline the smtp driver reads under', async () => {
+    const error = await silentServerRefusal({ MAIL_TIMEOUT_MS: '25' });
+    expect(error.code).toBe('X_MAIL_SEND_FAILED');
+    expect(error.cause).toContain('sent nothing for 25ms');
+  });
+
+  // The refusal an operator reads when the deadline is too short has to name the key that raises it.
+  test('an expired deadline names MAIL_TIMEOUT_MS as the fix', async () => {
+    const error = await silentServerRefusal({ MAIL_TIMEOUT_MS: '25' });
+    expect(error.fix).toStartWith('MAIL_TIMEOUT_MS=60000');
+  });
+
+  // `Number('  ')` is 0: read raw, an empty line in an env file would be a refused zero deadline.
+  test('a blank MAIL_TIMEOUT_MS is unset, not a zero deadline', () => {
+    const env = { SMTP_URL, MAIL_FROM: FROM, MAIL_TIMEOUT_MS: '  ' };
+    expect(selectMailDriver(env).driver.name).toBe('smtp');
+  });
+
+  // 2147483648 is a whole number `setTimeout` cannot hold: it overflows to 1ms, so the value meant
+  // as "wait longer" fails every read at once.
+  test.each([['nope'], ['0'], ['2.5'], ['-1'], ['2147483648']])(
+    'MAIL_TIMEOUT_MS=%p is refused at the env boundary',
+    (raw) => {
+      const error = thrown(() =>
+        selectMailDriver({ SMTP_URL, MAIL_FROM: FROM, MAIL_TIMEOUT_MS: raw }),
+      );
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      expect(error.cause).toContain('MAIL_TIMEOUT_MS');
+      expect(error.cause).not.toContain('NaN');
+      expect(error.fix).toStartWith('MAIL_TIMEOUT_MS=60000');
+    },
+  );
+
+  test('the largest deadline a timer can hold is accepted', () => {
+    const env = { SMTP_URL, MAIL_FROM: FROM, MAIL_TIMEOUT_MS: '2147483647' };
+    expect(selectMailDriver(env).driver.name).toBe('smtp');
+  });
+
   // The keys are documented in the wiki and read by the CLI's service resolution. A key added
   // here without being added there is a key nothing tells an operator about.
   test('the read keys are exactly the declared ones', () => {
@@ -120,6 +192,7 @@ describe('selectMailDriver', () => {
       'RESEND_API_KEY',
       'MAIL_FROM',
       'MAIL_POOL_SIZE',
+      'MAIL_TIMEOUT_MS',
       'SES_REGION',
       'SES_ACCESS_KEY_ID',
       'SES_SECRET_ACCESS_KEY',

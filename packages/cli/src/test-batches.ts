@@ -31,7 +31,7 @@
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
 import { msg } from './messages';
-import { SLOT_HELD_ENV } from './test-slots';
+import type { MachineLease } from './test-slots';
 import { BATCH_FILES_PER_WORKER } from './test-workers';
 
 /**
@@ -89,7 +89,7 @@ export async function runBatches(input: {
    * Lease the batch's workers from the machine pool (`test-slots.ts`) before it starts, and give
    * them back when it exits — so two runs on one box share its budget batch by batch.
    */
-  readonly lease?: (want: number) => Promise<{ readonly count: number; release(): void }>;
+  readonly lease?: MachineLease;
   readonly options: Parameters<Runner>[1];
   /**
    * Launch no further batch once one is red. Set for a caller-forwarded `--bail`: Bun stops a
@@ -109,7 +109,13 @@ export async function runBatches(input: {
         input.argsFor(files, width),
         lease === undefined
           ? input.options
-          : { ...input.options, env: { ...input.options.env, [SLOT_HELD_ENV]: '1' } },
+          : {
+              ...input.options,
+              env: { ...input.options.env, ...lease.env },
+              ...(lease.fds === undefined || lease.fds.length === 0
+                ? {}
+                : { inheritFds: lease.fds }),
+            },
       );
     } finally {
       lease?.release();

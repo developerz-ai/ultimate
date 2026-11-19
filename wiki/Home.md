@@ -91,6 +91,7 @@ Follow in order. Each page states what it was executed against in its own first 
 | [Client navigation](Client-Navigation) | soft navigation over server-rendered pages: one config line per surface, swap, prefetch, history, focus |
 | [MCP and AI](MCP-And-AI) | the dev MCP server, every action as a tool, the `llm()` gateway, evals |
 | [Agents](Agents) | `agent()` as an action factory, tools as real actions, `hive()`, `agentJob()`, and the at-least-once trap |
+| [Working with many agents](Many-Agents) | a worker runs its own files, the coordinator runs the gate once; the machine's memory ledger and core cap |
 | [Admin dashboard](Admin-Dashboard) | `defineAdmin()` serving list, detail and form per entity with no host code; filters, scopes, sections, related rows, actions with `when` and `batch`, the audit log, the jobs dashboard; zero JavaScript; its MCP surface |
 | [Scraping](Scraping) | `scrape()` as a job factory, the driver-blind page vocabulary, robots and host gates, per-run egress, a rented CDP browser, usage, sealed sessions, mid-run prompts |
 | [Auth](Auth) | sessions, OAuth, MFA, API keys and service tokens — the output is an `Actor` |

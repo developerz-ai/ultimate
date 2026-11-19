@@ -12,6 +12,7 @@ import {
   recording,
   removeFixtures,
   run,
+  STALE_ADVISORY_LOCK,
   VERIFY_GREEN,
   VERIFY_RED,
 } from './cmd-upgrade-fixture';
@@ -70,6 +71,15 @@ describe('unit · x upgrade, the walk', () => {
     });
     const web = await Bun.file(join(dir, 'apps/web/package.json')).json();
     expect(web.dependencies).toEqual({ '@ultimat3/core': '20.1.0', sass: '^1.0.0' });
+  });
+
+  // `bun install` honours the lockfile, so a patched transitive release never arrives by itself.
+  test('install is followed by bun update for the transitive packages under an advisory floor', async () => {
+    const dir = await fixture({ 'bun.lock': STALE_ADVISORY_LOCK });
+    const { runner, spawned } = recording();
+    const { code } = await run(dir, runner);
+    expect(code).toBe(0);
+    expect(spawned.slice(2, 4)).toEqual(['install', 'update immutable']);
   });
 
   // A mixed set walks its lowest pins one major per run; the workspaces already ahead stay put.

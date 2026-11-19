@@ -22,9 +22,9 @@ export interface SpawnTimeoutPin {
 export const SPAWN_TIMEOUT_PINS: Readonly<Record<string, SpawnTimeoutPin>> = {
   // why: four children whose lifetime is a human's or a caller's, never a number this file knows.
   cli: {
-    count: 4,
+    count: 5,
     reason:
-      "why: `exec.ts` is the CLI subprocess boundary — its deadline is the caller's: `x verify` ends a step's whole tree in `verify-deadline.ts` (`X_VERIFY_STEP_TIMEOUT`). `local-cli-handoff.ts` spawns the app's own CLI with the user's argv, forwards its stop signals and answers its exit code, and `bin.ts` exits with that code, so its lifetime is the command the user typed. `dev-supervisor.ts` runs `x dev`'s server until Ctrl-C. `cmd-secrets.ts` opens `$EDITOR` on a terminal and waits for the human to close it.",
+      "why: `cmd-heavy.ts` runs the command its caller named, for as long as the caller wants it, forwarding stop signals through `local-cli-handoff.ts`. `exec.ts` is the CLI subprocess boundary — its deadline is the caller's: `x verify` ends a step's whole tree in `verify-deadline.ts` (`X_VERIFY_STEP_TIMEOUT`). `local-cli-handoff.ts` spawns the app's own CLI with the user's argv, forwards its stop signals and answers its exit code, and `bin.ts` exits with that code, so its lifetime is the command the user typed. `dev-supervisor.ts` runs `x dev`'s server until Ctrl-C. `cmd-secrets.ts` opens `$EDITOR` on a terminal and waits for the human to close it.",
   },
   // why: two long-lived children each with its own stop path. Chrome's launch left this row in
   // 31.0.0: it moved to `@ultimat3/scraping/cdp`, and its spawn carries `timeout: lifetimeMs`.

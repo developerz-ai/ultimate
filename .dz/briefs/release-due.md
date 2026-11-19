@@ -1,9 +1,16 @@
 # Brief: is a release needed?
 
-Weekly checkup, Tuesdays 03:00 UTC, fired by `schedules: release-due` in
+Weekly devops session, Tuesdays 03:00 UTC, fired by `schedules: release-due` (`mode: devops`) in
 `.dz/maintainer/maintainer.yml`. It asks one question: is a release needed now? `scripts/release-due.ts`
-gathers the facts and you make the call. Nothing cuts a release because a merge landed or a count
-was reached, and a maintainer can still cut one by hand at any time (`PUBLISHING.md`).
+gathers the facts, you make the call, and when the answer is yes this session makes the bump. Nothing
+cuts a release because a merge landed or a count was reached, and a maintainer can still cut one by
+hand (`PUBLISHING.md`).
+
+You have a shell and no `git` writes and no `gh`: the runner commits what you leave in the tree and
+opens the pull request. Leave the tree untouched and no pull request opens. `gh` commands below name
+the fact to read; read it with `curl -fsS https://api.github.com/repos/developerz-ai/ultimate/...`
+(this repo is public). A lookup that fails is unknown, never "none open": stop and say so. To file an
+issue for a maintainer, use the raw-task file your deliverables name.
 
 ## Judge
 
@@ -18,7 +25,7 @@ something real from a release now?
   shipping, so read whether a bump moved `dependencies` or only `devDependencies`. Nothing real:
   no release, and it rolls into the next one.
 
-Say why either way: a release ask opens with your reason, and a no ends your run summary with
+Say why either way, in `REPORT.md`: a release opens with your reason, and a no is
 `no release: <reason>`.
 
 ## Security: the one off-cycle release
@@ -33,14 +40,12 @@ unless a person cuts it. `.dz/briefs/security-release.md` asks this on the other
 ## Run
 
 ```bash
-git fetch --tags origin && bun run scripts/release-due.ts --json
+bun run scripts/release-due.ts --json
 ```
 
-Fetch tags first: a shallow or tagless clone holds no reachable `v*` tag, and the run refuses
-rather than guess. A refusal (`ok:false`) prints the whole JSON envelope, then exits 1, so never
-run this under `set -e`. Branch on `data.due`; on `ok:false`, read the envelope: each finding
-carries its `fix`, and `X_RELEASE_WINDOW_UNREADABLE` (tag found, window unreadable) names
-`git fetch --unshallow --tags origin; bun run scripts/release-due.ts --json`.
+It refreshes the tags itself. A refusal (`ok:false`) prints the whole JSON envelope, then exits 1, so
+never run this under `set -e`. Branch on `data.due`; on `ok:false`, read each finding's `cause`, report
+it and stop: this session cannot fetch or switch branches.
 
 The envelope is input, and `data.due` is the script's count, not the verdict. Some reasons do settle
 it: `nothing_ships` leaves nothing to release, `awaiting_tag` is one already cutting, and a major
@@ -48,82 +53,41 @@ stays a maintainer's — inside the major window: from v30, at most one major pe
 ([`wiki/Stability.md`](../../wiki/Stability.md)), and only a security fix that cannot be
 non-breaking takes the exception (`--security <advisory-id>`).
 
-| `data.due` | `data.reason` | What to file |
+| `data.due` | `data.reason` | What to do |
 |---|---|---|
 | `false` | `nothing_ships` | nothing |
 | `false` | `settling` | usually nothing — the whole window merged in the last `data.settleHours` hours, and next week's checkup sees it |
 | `false` | `major_needs_a_maintainer` | with `data.windowOpensOn` set: nothing — the major window ([`wiki/Stability.md`](../../wiki/Stability.md)) is closed until that date, `scripts/release.ts` refuses the major (`X_RELEASE_MAJOR_WINDOW`), and the break belongs on `next`. Without it: nothing, unless no open issue already says a major is pending: then one issue titled `Major release pending: <data.next>`, listing `data.breaking`, for a maintainer. Check with `gh issue list --state open --search "Major release pending: <next> in:title" --json number,title`, where `<next>` is `data.next` |
 | `false` | `awaiting_tag` | nothing — the release PR merged and `release-tag.yml` has not tagged it yet: watch `gh run list --workflow release-tag.yml --limit 5 --json status,conclusion,databaseId,displayTitle,headSha,url,createdAt` and file only on a failed run |
-| `false` | `X_RELEASE_HEAD_NOT_MAIN` (in `findings`) | nothing — HEAD is not the tip of `origin/main`; run `git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main && git checkout main`, then re-run |
-| `true` | — | shipping commits have waited: judge them above. When a release is needed, one ask: **Release `<data.next>`**, opening with your reason and listing `data.shipping` — unless `data.detail` names an ask already open |
+| `false` | `X_RELEASE_HEAD_NOT_MAIN` (in `findings`) | nothing — HEAD is not the tip of `origin/main`; the session's tree is stale: report it and stop |
+| `true` | — | shipping commits have waited: judge them above. When a release is needed, cut it (below) unless an open bump PR already carries `data.next` |
 
 ## The major path: `data.nextLane`
 
-Every break waits on `next` ([`wiki/Stability.md`](../../wiki/Stability.md)); `data.nextLane` says
-whether this is the week to PROPOSE it. A major is proposed, never cut: you open the pull request, a
-person merges it, after seven green days of `compat.yml` and of the canary on `next`. Never merge it,
-approve it, tag or publish. The window is read first, from the changelog; GitHub is asked only once
-it is open.
+Every break waits on `next` ([`wiki/Stability.md`](../../wiki/Stability.md)). A major is proposed,
+never cut here, and a person merges it. With `data.nextLane.propose: true`, file one raw task for a
+maintainer carrying `data.nextLane.prTitle` and `data.nextLane.steps`, unless an open issue or pull
+request already says so. On every other `data.nextLane.reason` do nothing; `no_next` also files one
+raw task saying the lane has no `next` branch. `cannot_tell` is never read as green.
 
-| `data.nextLane.reason` | What to do |
-|---|---|
-| `window_closed` | nothing — `data.nextLane.refusal` is the `X_RELEASE_MAJOR_WINDOW` the bump would print; the window opens on `data.nextLane.windowOpensOn` |
-| `no_next` | one issue for a maintainer: the lane has no `next` branch — `git push origin origin/main:refs/heads/next` creates it |
-| `not_ahead` | nothing — `next` changes no file `main` lacks |
-| `not_green` | nothing this week; `data.nextLane.detail` names the run at `next`'s tip. A red one is `next-sync.yml`'s and the tracking issue's to fix |
-| `cannot_tell` | nothing — a GitHub lookup could not answer; never read it as green or as no PR open |
-| `proposal_open` | nothing — the proposal PR is already open |
-| absent, with `data.nextLane.propose: true` | run `data.nextLane.steps` in order, on fresh `main`; the last opens the one PR, titled `data.nextLane.prTitle`. A red step stops you: file its output for a maintainer instead |
+## Cut the release, when one is needed
 
-## The ask, when a release is needed
+1. Bump PR already open? `curl` the open pulls (`/pulls?state=open&per_page=100`) and look for the title
+   `chore: release <next>` or `release: <next>`, `<next>` being `data.next`. One open is that release in
+   flight: change nothing, and say so.
+2. Write the notes under `## [Unreleased]` in `CHANGELOG.md`, replacing `Nothing yet.`: `### Highlights`
+   first (at most five plain bullets a user cares about), then `### Added`, `### Changed` or `### Fixed`
+   over what `data.shipping` lists. A Dependabot-only window names each bumped runtime dependency and
+   its new range under `### Changed`. `CHANGELOG.md` is the one file the bump accepts already edited.
+3. Run `data.command` with `--dry-run` first. A refusal you cannot fix from its `fix:` line: put
+   `Nothing yet.` back so the tree is unchanged, report it, stop. Then run `data.command`
+   (`bun run scripts/release.ts --version <next>`), `bun run scripts/release.ts --check <next>` and
+   `bun run scripts/changelog-check.ts --json`. Anything still red after the bump goes in `PR.md`:
+   CI holds that pull request, and nobody hand-edits a stamped file.
+4. Write `PR.md`: first line exactly `chore: release <next>`, then your reason and `data.shipping`.
+   Nothing else goes in the diff. CI's `verify` is the gate; merging on green is the release.
 
-Title `Release <next>`. Body, verbatim steps for the box that takes it:
-
-1. `bun run scripts/release-due.ts --json` again on fresh `main`. Compare both gates
-   against this run's answer:
-   - `data.next`: still `data.next` from the run that filed the ask, or stop.
-   - `data.headSha`: the same SHA as the ask body quoted — the SHA the run that filed this
-     ask was anchored to. That SHA must still be `origin/main`'s tip
-     (`git rev-parse origin/main`) and the SHA of a green `ci.yml` run on `main`
-     (`gh run list --workflow ci.yml --branch main --event push --json conclusion,headSha`).
-     A different answer means the run is stale: stop.
-2. An empty `## [Unreleased]` is written before the bump, never after — `scripts/release.ts`
-   promotes that section verbatim, and `data.notes` is non-empty exactly when it is empty:
-   - A Dependabot-only window: add a `### Changed` line naming each bumped runtime dependency and
-     its new range under `## [Unreleased]`.
-   - Any other window: write the notes `data.notes` calls for, over what `data.shipping` lists,
-     under `## [Unreleased]` before `data.command` runs — so the promoted `## <next>` section holds
-     its notes, never a body of nothing but `### Commits`.
-3. Run the `data.command` it printed (`bun run scripts/release.ts --version <next>`), then
-   `bun run verify`.
-4. One PR, `chore: release <next>`, nothing else in the diff. It merges on green like any PR.
-5. Merging it is the release: `.github/workflows/release-tag.yml` tags `v<next>` (annotated),
-   publishes the GitHub Release and dispatches `release.yml`. Never tag, never `gh release create`,
-   never `npm publish` by hand — `PUBLISHING.md`. The canonical close is the workflow's own
-   `close the release ask` step — by the job that did the tag, on the exact title
-   `Release <next>`. The PR body carrying `Fixes #<ask>` is a backstop, not the path:
-   `scripts/release.ts` prints the ask link when one is open.
-
-Never file a second ask while one titled exactly `Release <next>` is open, byte for byte:
-`release <v> did not publish`, `Release <v> (#N)` and `Release <other>` are not twins. Fetch
-candidates with `gh issue list --state open --search "Release <next> in:title"`, `<next>` being
-`data.next`, then keep exact title matches. A due run names an ask it found in `data.detail`
-(`; an ask already open: <title>`), and the `data.due` row then files nothing.
-
-Likewise an open `chore: release <next>` PR is that release in flight (merging it is the release,
-step 5): file nothing, cut nothing. Ask `bun run scripts/bump-pr.ts --version <next> --json`
-(`<next>` being `data.next`) and branch on `data.open`: `chore: release <next>` and
-`release: <next>` are twins; `Release <next>` (the ask) and `chore: release <next>-beta` are not.
-On `ok:false` the lookup could not answer: read its `findings`, never read it as none open. A due
-run names one it found in `data.detail` (`; a bump PR already open: <title>`).
-
-## Rows
-
-- `release-due` — Run the release-due command and read its envelope: handle refusals and HEAD recovery, file nothing for `nothing_ships`, and failing only when you judge a release is needed now, with your reason.
-- `major-release-pending` — On `major_needs_a_maintainer`, file nothing while `data.windowOpensOn` is set; otherwise check for an open pending-major issue before filing the maintainer issue for `data.next` with `data.breaking`.
-- `next-lane` — Read `data.nextLane`: on `propose`, run its steps and open the one major PR, never merging it; on every reason, do what its row says.
-- `release-tag-run` — On `awaiting_tag`, watch `release-tag.yml` runs and file only on a failed run.
-- `release-ask-open` — When due, check for an open ask titled exactly `Release <next>`; file nothing if one is already open.
-- `bump-pr-open` — For `data.next`, use the callable bump-PR lookup; an open release PR means file nothing and cut nothing, while a lookup refusal requires reading its findings, never treating it as none open.
+`.github/workflows/release-tag.yml` then tags `v<next>` (annotated), publishes the GitHub Release and
+dispatches `release.yml`. Never tag, never create a Release, never publish: `PUBLISHING.md`.
 
 Historical sample envelope: [release-due-evidence.md](release-due-evidence.md).

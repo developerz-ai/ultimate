@@ -9,7 +9,10 @@ import {
   defineAuth,
   type IssuedSession,
   memoryAuthAdapter,
+  sessionCookie,
 } from '@ultimat3/auth';
+import { type Ctx, runWithContext } from '@ultimat3/core';
+import { asCtx, defineHttpConfig, requestContext } from '@ultimat3/http';
 import { exportsOf, type LoadedRecipe, loadRecipe } from '../lib/base-recipes';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from '../lib/run';
 
@@ -21,17 +24,20 @@ interface OperatorRow {
   readonly pinHash: string;
 }
 
+interface OperatorSwitch {
+  operatorId: string;
+  pin: string;
+  operator: OperatorRow | null;
+  device: Pick<AuthSession, 'userId' | 'absoluteExpiresAt'>;
+}
+
 interface PinRecipe {
   enrolPin(pin: string): Promise<string>;
   switchOperator(
     auth: Auth,
-    input: {
-      operatorId: string;
-      pin: string;
-      operator: OperatorRow | null;
-      device: Pick<AuthSession, 'userId' | 'absoluteExpiresAt'>;
-    },
+    input: OperatorSwitch,
   ): Promise<{ readonly issued: IssuedSession; readonly cookie: string }>;
+  switchOperatorOnResponse(auth: Auth, input: OperatorSwitch): Promise<IssuedSession>;
 }
 
 const MAX_ATTEMPTS = 3;
@@ -43,7 +49,7 @@ let operator: OperatorRow;
 
 beforeAll(async () => {
   loaded = await loadRecipe(repoRoot(), 'apps/web/shared/base/operator-pin.ts');
-  recipe = exportsOf<PinRecipe>(loaded, ['enrolPin', 'switchOperator']);
+  recipe = exportsOf<PinRecipe>(loaded, ['enrolPin', 'switchOperator', 'switchOperatorOnResponse']);
   auth = defineAuth({ adapter: memoryAuthAdapter(), rateLimit: { maxAttempts: MAX_ATTEMPTS } });
   operator = { userId: 'user_op_7', pinHash: await recipe.enrolPin('4821') };
 });
@@ -97,5 +103,28 @@ describe('recipe · a PIN for a shared device', () => {
     expect(await codeOf(() => attempt('4821', 'till_3'))).toBe('X_ACCOUNT_LOCKED');
     // Another device is another key: one locked till does not lock the operator everywhere.
     expect((await attempt('4821', 'till_4')).issued.session.userId).toBe('user_op_7');
+  });
+
+  test('the action’s half puts that session’s cookie on the response to the request', async () => {
+    const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null });
+    const request = requestContext({
+      url: new URL('https://example.com/'),
+      method: 'POST',
+      role: 'web',
+      config,
+    });
+    const ctx: Ctx = asCtx(request);
+    const issued = await runWithContext(ctx, () =>
+      recipe.switchOperatorOnResponse(auth, {
+        operatorId: 'op_7',
+        pin: '4821',
+        operator,
+        device: { userId: 'till_5', absoluteExpiresAt: deviceExpiry() },
+      }),
+    );
+    expect(issued.session.userId).toBe('user_op_7');
+    expect(request.headers.getSetCookie()).toEqual([
+      sessionCookie(issued.token, auth.sessions.policy),
+    ]);
   });
 });

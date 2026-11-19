@@ -231,14 +231,31 @@ its config into a variable first.
 | ~~`cache.driver`~~ | — | — | **Deleted in 9.0.0.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). It was the second way to ask for Redis and the losing one: the ladder is built from `cache.tiers`, so `driver: 'redis'` beside `tiers: ['request-memo', 'lru']` asked for a rung nothing built. Name `redis` in `tiers` |
 | ~~`cache.urlEnv`~~ | — | — | **Deleted in 9.0.0** and refused at boot since 25.0.0, `database.urlEnv`'s defect verbatim: the Redis tier reads the literal `REDIS_URL`, so `urlEnv: 'MY_REDIS'` made nothing read `MY_REDIS` |
 
-**The per-tier byte caps and TTLs are constructor options, not config** — the same shape as the realtime caps above. `cache.memo.maxBytes`, `cache.lru.maxBytes`, `cache.redis.*` and `cache.ttl.*` are not fields and never were; writing one is `TS2353`, excess property on `Input<CacheConfig>`, and `X_CONFIG_INVALID` at boot.
+**A rung's limits are constructor options, set in `runtime.ts`, never config** `As of 2026-11`. The boot builds `lru` and `redis` with their defaults; `cacheTiers` replaces the rung of the same name, and that is the one way to change a limit:
+
+```ts
+// apps/web/runtime.ts — `cache.tiers` still decides which rungs exist
+import { lruTier, redisTier } from '@ultimat3/cache';
+
+export const runtime = {
+  cacheTiers: [
+    lruTier({ maxBytes: 128 * 1024 * 1024 }),
+    redisTier({ maxValueBytes: 2 * 1024 * 1024, jitterFraction: 0.1 }),
+  ],
+};
+```
+
+`cache.memo.maxBytes`, `cache.lru.maxBytes`, `cache.redis.*` and `cache.ttl.*` are not fields and never were: writing one is `TS2353`, excess property on `Input<CacheConfig>`, and `X_CONFIG_INVALID` at boot. A bad value is refused where the tier is built (`X_CACHE_LIMIT_INVALID`, `X_CACHE_JITTER_INVALID`). There is no entry-count limit: both rungs are bounded in bytes.
+
+A supplied `redisTier` with no `client` uses core's client: `REDIS_URL`, then `VALKEY_URL`, then `redis://localhost:6379`. The refusal the boot's own `redis` rung gets for an unset URL does not apply to it; the boot logs `cache.tier.default-redis` instead.
 
 | Option | Where | Default | Effect |
 |---|---|---|---|
 | `maxBytes` | `lruTier({ … })` | 64 MiB | byte budget for the whole tier; a single value over it is `X_CACHE_TOO_LARGE` rather than a silent drop |
-| `defaultTtlMs` | same | `60_000` | applied when a `set` omits `ttlMs` |
-| `jitterFraction` | same | `DEFAULT_TTL_JITTER_FRACTION` | TTL spread in `[0, 1)`; `0` disables it, which is how a stampede is reproduced in a test |
-| `clock` / `rng` | same | system | injected so a jittered expiry is deterministic |
+| `maxValueBytes` | `redisTier({ … })` | 1 MiB | the largest encoded value one `set` may write; over it is `X_CACHE_TOO_LARGE` |
+| `defaultTtlMs` | `lruTier({ … })` | `60_000` | applied when a `set` omits `ttlMs` |
+| `jitterFraction` | `lruTier({ … })`, `redisTier({ … })` | `DEFAULT_TTL_JITTER_FRACTION` | TTL spread in `[0, 1)`; `0` disables it, which is how a stampede is reproduced in a test |
+| `clock` / `rng` | `lruTier({ … })`, `redisTier({ … })` | system | injected so a jittered expiry is deterministic |
 | `loadDeadlineMs` | `cacheStack(tiers, { … })` | `30_000` | how long one `load()` may hold its key before a later reader starts its own. Frees the KEY, never the load — the wedged call runs on. Anchored to `http`'s own request timeout: a load still running at 30 s has no reader left to serve |
 | `schedule` | same | `setTimeout` | injected so the deadline above is provable without a test waiting one out |
 
@@ -526,6 +543,7 @@ mail: { retainMime: { maxBytes: 262_144 } },
 | `SES_CONFIGURATION_SET` | — | SES only, optional: the configuration set that publishes delivery events |
 | `MAIL_FROM` | — | required by SMTP, Resend and SES; the memory and unconfigured drivers do not read it. `Name <addr>`; also the envelope sender and the `Message-ID` domain |
 | `MAIL_POOL_SIZE` | — | SMTP connections open at once. Default `4`, whole number ≥ 1 |
+| `MAIL_TIMEOUT_MS` | — | SMTP only: the deadline for any single read or write. Default `30000`, whole number from 1 to 2147483647 (the most a timer holds); anything else is `X_CONFIG_INVALID` at boot |
 
 The list is `MAIL_ENV_KEYS` in `packages/mail/src/driver-env.ts`, `As of 2026-10`. More than one of
 `SMTP_URL`, `RESEND_API_KEY` and `SES_REGION` is `X_CONFIG_INVALID`: a process delivers through

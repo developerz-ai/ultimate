@@ -170,7 +170,7 @@ describe('unit · parseArgs', () => {
     // And at least one command really does forward, or the rule above is a ban with no exception.
     expect(
       SPECS_SHIPPED.filter((spec) => spec.passthrough === true).map((spec) => spec.name),
-    ).toEqual(['test']);
+    ).toEqual(['test', 'heavy']);
   });
 
   test('an unknown command throws X_CLI_UNKNOWN_COMMAND with a suggestion', () => {

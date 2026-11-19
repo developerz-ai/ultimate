@@ -24,6 +24,8 @@ export interface RunOptions {
   readonly timeoutMs?: number;
   /** The child's environment. Default: this process's. */
   readonly env?: Readonly<Record<string, string | undefined>>;
+  /** Descriptors the child inherits from fd 3 up: the machine ledger's locks. */
+  readonly inheritFds?: readonly number[];
 }
 
 export interface RunResult {
@@ -103,9 +105,7 @@ export async function run(
   const proc = Bun.spawn([head, ...rest], {
     cwd: options.cwd,
     env: { ...(options.env ?? Bun.env) },
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
+    stdio: ['ignore', 'pipe', 'pipe', ...(options.inheritFds ?? [])],
     signal: deadline.signal,
     killSignal: 'SIGKILL',
   });

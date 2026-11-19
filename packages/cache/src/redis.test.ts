@@ -8,7 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import { appVersion, frozenClock } from '@ultimat3/core';
 import { lruTier } from './lru';
-import { namespaceFor, redisTier } from './redis';
+import { namespaceFor, redisTier, usesDefaultRedisClient } from './redis';
 import { bucketsJoined, bucketsRead, fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
 import { tag } from './tags';
 import { cacheStack } from './tiers';
@@ -276,5 +276,19 @@ describe('the redis lease is spread', () => {
     const client = fakeRedis();
     await redisTier({ client, buildId: null, jitterFraction: 0, rng: () => 1 }).set('k', 'v');
     expect(client.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('300000');
+  });
+});
+
+// The boot cannot read a tier's options, and it owes an operator one line when a rung it was handed
+// will dial the local default because no Redis URL is set.
+describe('usesDefaultRedisClient', () => {
+  test('true for a tier built with no client, false for one handed its own', () => {
+    expect(usesDefaultRedisClient(redisTier({ maxValueBytes: 2_048 }))).toBe(true);
+    expect(usesDefaultRedisClient(redisTier({ client: fakeRedis() }))).toBe(false);
+  });
+
+  test('false for a tier that is not this factory, whatever its name', () => {
+    expect(usesDefaultRedisClient(lruTier())).toBe(false);
+    expect(usesDefaultRedisClient({ ...redisTier(), name: 'redis' })).toBe(false);
   });
 });

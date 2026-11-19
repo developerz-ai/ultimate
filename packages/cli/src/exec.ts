@@ -33,6 +33,11 @@ export interface ExecOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly stdin?: string;
   /**
+   * Descriptors the child inherits, from fd 3 up: the machine ledger's locks (`heavy-ledger.ts`),
+   * which must outlive this process when it is killed and the child is not.
+   */
+  readonly inheritFds?: readonly number[];
+  /**
    * Told the child's pid the moment it exists. A gate step's deadline records it here
    * (`verify-deadline.ts`): on Windows no process's environment is readable, so the tag sweep
    * finds nothing and the pid recorded at spawn is the only handle on what the step started.
@@ -91,9 +96,12 @@ function spawnOrRefuse(command: readonly string[], options: ExecOptions) {
     return Bun.spawn([head, ...rest], {
       cwd: options.cwd,
       env: options.env === undefined ? Bun.env : mergedEnv(options.env),
-      stdin: options.stdin === undefined ? 'ignore' : new TextEncoder().encode(options.stdin),
-      stdout: 'pipe',
-      stderr: 'pipe',
+      stdio: [
+        options.stdin === undefined ? 'ignore' : new TextEncoder().encode(options.stdin),
+        'pipe',
+        'pipe',
+        ...(options.inheritFds ?? []),
+      ],
     });
   } catch (error) {
     throw new UltimateError({

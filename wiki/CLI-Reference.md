@@ -72,6 +72,7 @@ x version              # CLI version
 | `x cache graph\|bust <tag>\|clear` | the tag graph off the manifest (what each write evicts), a bust of one tag or every declared tag through the app's own tiers and bus · `stats` was removed `As of 2026-11-15` ([Known gaps](Known-Gaps#open-by-decision)) | shipped |
 | `x explain <query> [--input <json>] [--org <id>]` | one declared query run once on the dev database, every statement it sent planned by the `exercise` step's oracle | shipped |
 | `x profile <route> [--runs 20] [--top 10]` | a CPU profile of rendering one route in this process: the hottest functions, file and line | shipped |
+| `x heavy [status]` · `x heavy run [--label s] [--mb n] -- <command…>` | the machine's shared memory ledger: who runs, who is queued, load and memory; any command run inside one reservation, its exit code passed through | shipped |
 | `x status [--url <origin>] [--samples n]` | the build each live worker runs (`x_job_workers`), and the build, status and role each sampled origin's `/readyz` answers | shipped |
 
 ## x new
@@ -1288,16 +1289,16 @@ x doctor [--port 3000] [--json]
 
 Checks Bun version, env completeness, source drift, **the newest migration's `.snapshot.json`**, port availability, PWA prerequisites and **embedded-Postgres readiness** — each failing check carries its own fix command.
 
-It also lists the shipped guards the app holds that differ from the current template — a copy from an older release, or the app's own edit — and warns `X_SHIPPED_GUARD_MISSING` for each one the app's `guards/` does not hold, its fix `x g guard <name> && x verify --only boundaries --json` (`As of 31.22`: a warning beside the verdict in `data.warnings[]`, so the exit status is unchanged; it was a listing). `As of 2026-10-07` (owner decision 8: shipped guards stay copies the app owns).
+It also lists the copies of shipped guards the app's `guards/` still holds, each with `X_GUARD_VENDORED` beside the verdict in `data.warnings[]`: shipped guards run from the installed framework, so a copy runs in place of the shipped one and never receives a fix. `As of 31.28`. No shipped guard is ever missing, so `data.guards.missing` is always `[]`.
 
 | Listing | One line each | `--json` |
 |---|---|---|
-| missing | its `X_SHIPPED_GUARD_MISSING` warning line (`As of 31.22`) | `data.guards.missing[]`: `{ name, add }`, and the warning in `data.warnings[]` |
-| differs from the template (line endings ignored) | `x g guard <name> --force` — rewrites the guard and its test; review the diff, and restore your edit if it was deliberate | `data.guards.differs[]`: `{ name, refresh }` |
+| a copy, identical or edited | the edit that resolves it: `rm -f` for an identical copy; for an edited one, `mv` to `guards/app-<name>.ts` and `"<name>": "off"` in `guards/shipped.json` | `data.guards.vendored[]`: every copy's name |
+| an edited copy | the same line | `data.guards.differs[]`: `{ name, refresh, diff }` — `refresh` is that edit |
 
-A listing, never a finding: deleting or editing a guard is how an app changes a rule, so the verdict does not move.
+A listing, never a finding: the verdict does not move. `x upgrade` applies the same migration (`vendored-guards` codemod); how a shipped guard reports is a row in `guards/shipped.json`.
 
-Four warnings about how the app is held, `As of 31.16.0` (a fifth, `X_SHIPPED_GUARD_MISSING`, `As of 31.22`) — beside the verdict, never in it: the exit status, `findings` and `data.codes` stay as they were, and `--json` carries each as `data.warnings[]` (`{ code, cause, fix, docs, at }`). None is a gate step; on `next` they join the verdict, red:
+Warnings about how the app is held — beside the verdict, never in it: the exit status, `findings` and `data.codes` stay as they were, and `--json` carries each as `data.warnings[]` (`{ code, cause, fix, docs, at }`). None is a gate step; on `next` they join the verdict, red:
 
 | Code | Asked | Fix |
 |---|---|---|
@@ -1305,7 +1306,7 @@ Four warnings about how the app is held, `As of 31.16.0` (a fifth, `X_SHIPPED_GU
 | `X_VERIFY_STEP_UNFLOORED` | a gate step applies here — its suite files exist, its input is committed — and `x.verify.json` `"steps"` does not hold it, so a deleted suite reads as skipped. `e2e` is never proposed (the scaffold's placeholder skips until a browser driver is registered) | `x verify --only <steps> --json`, then add each step that passed to `"steps"` |
 | `X_FRAMEWORK_PIN_RANGE` | an `@ultimat3/*` dependency in any of the app's manifests is anything but an exact version or a `workspace:`/`file:`/`link:` path (`^31.0.0`, `*`, `latest`, `>=31 <32`; an `npm:` alias by its own spec), one finding per manifest | the exact version `bun install` resolved, at the line named; then `bun install` |
 | `X_ENV_NAME_RESERVED` | a name the app declares in `envSchema` or seals in `secrets.enc.json` is one `FRAMEWORK_ENV` (`@ultimat3/core`) lists as a `switch` or `internal` name — setting it for the app also switches that package's behaviour. Deploy-contract names (`DATABASE_URL`, `PORT`) and host names are not collisions | rename it `APP_<name>` (or delete it where the value is meant for the framework); then `x env example` |
-| `X_SHIPPED_GUARD_MISSING` (`As of 31.22`) | a guard `x new` ships is not in the app's `guards/`, so the gate does not hold the app to that rule — one per guard | `x g guard <name> && x verify --only boundaries --json` |
+| `X_GUARD_VENDORED` (`As of 31.28`) | the app's `guards/` holds a copy of a shipped guard, which runs in place of the built-in one and never receives a fix — one per copy. `boundaries` lists it too | the resolving edit above |
 
 **Redundant indexes**, the same way (`As of 2026-11-14`): each implicit index the entities describe that another index, the primary key or a unique invariant already leads with, still in the newest migration's snapshot, is one line — `<table>.<index> (<columns>) — <covering index>` — under a header naming `x db gen "drop redundant indexes" --drop-redundant`; `--json`: `data.redundantIndexes[]` = `{ table, name, columns, coveredBy }`, `[]` when none, absent when the app would not load or has no snapshot. A listing, never a finding: every write pays for each twice, and dropping it is a migration the app opts into.
 
@@ -1614,9 +1615,11 @@ sampled throughout.
 | `roll-before-migrate` | the roles started before `ROLE=migrate`, on a schema stamped by an older build | `roles-wait`, `serves-after-migrate`, `one-wait-line` |
 
 `roll-before-migrate`, `As of 2026-11-15`, is the rollout order a deploy cannot always hold: no
-proxy and no load. The scratch database is migrated, its framework stamp (`x_jobs`' table comment)
+fault and no load. The scratch database is migrated, its framework stamp (`x_jobs`' table comment)
 is rewound to name only an older build, then `web`, `worker` and `scheduler` start on it without
-waiting for readiness. Once each has logged its wait (or exited), they are held 3 s and
+waiting for readiness, with `sync` when `TEST_NATS_URL` is set and `replicator` when
+`TEST_REPLICATION_URL` names a logical server (the scratch database then lives there) and the app
+has an entity on a table. A role left out is in `data.rolesNotPlayed[]`, `{ drill, role, needs }`. Once each has logged its wait (or exited), they are held 3 s and
 `ROLE=migrate` runs again. Each must stay up (`roles-wait`: an exit is a crash-loop), log exactly
 one line naming `X_FRAMEWORK_SCHEMA_UNAPPLIED` (`one-wait-line`), and answer `/readyz` 200 once
 migrate has run (`serves-after-migrate`). `ULTIMATE_SCHEMA_WAIT_MS` is inherited: `0` — refuse at
@@ -1635,7 +1638,7 @@ property is red when no job ran during the drill, `sync-resumes` when no sync cl
 A service the app uses must be up for every drill; an unset one is refused, never skipped. A named
 drill that faults a service the app does not declare is refused; a whole run lists it under
 `data.notRun`. `--list` prints the table and runs nothing. `--json`: `{ budgets, targets,
-skippedWrites, drills[], notRun }`, each drill `{ name, verdict, evidence, budgets, baseline }`.
+skippedWrites, drills[], notRun, rolesNotPlayed }`, each drill `{ name, verdict, evidence, budgets, baseline }`.
 
 Errors: `X_DRILL_FAILED` (one per property that did not hold), `X_DRILL_SERVICE_MISSING`, `X_CLI_UNKNOWN_COMMAND`, `X_CLI_BAD_FLAG`.
 
@@ -1760,8 +1763,8 @@ One major per run, so each hop's gate attributes its red to that hop. `As of 30.
 | 2 | read every workspace's `@ultimat3/*` pins, `overrides` and `resolutions` included | `X_UPGRADE_PIN_UNREADABLE`, `X_UPGRADE_MIXED_PINS` |
 | 3 | `bun pm view @ultimat3/cli versions`: the next major's newest; the last major's newest when no later major exists | `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_BUN_VERSION` |
 | 4 | write exact pins, raise the Bun floor | — |
-| 5 | `bun install` | `X_UPGRADE_INSTALL_FAILED`, `fix:` carries the undo |
-| 6 | the installed CLI: `x upgrade codemods --from <from> --to <to>` (below), then `x manifest`, `x doctor --json`, each missing guard (`x g guard <name>`, kept only when `x verify --only boundaries` finds nothing more), a Bun-floor hop's `x verify --only unit` coverage rebaseline, `x exercise --json` and its `exercise` floor figures, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
+| 5 | `bun install`, then `bun update <names>` for each transitive package `bun.lock` holds under an advisory floor (`X_ADVISORY_FLOOR_UNMET`) | `X_UPGRADE_INSTALL_FAILED`, `fix:` carries the undo |
+| 6 | the installed CLI: `x upgrade codemods --from <from> --to <to>` (below), then `x manifest`, `x doctor --json`, each guard that doctor reports missing (only a hop landing before 31.28: `x g guard <name>`, kept when `x verify --only boundaries` finds nothing more), a Bun-floor hop's `x verify --only unit` coverage rebaseline, `x exercise --json` and its `exercise` floor figures, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
 
 A dry run refuses exactly what the real run would, then stops before step 4 — after previewing this CLI's codemods for the span, written nowhere. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
 
@@ -1779,7 +1782,7 @@ A dry run refuses exactly what the real run would, then stops before step 4 — 
 | `pins[]` | `{ file, name, from, to }` |
 | `bun` | `{ from, to, edited[], manual[] }`. `manual[]`: `{ path, line, text, why }`, a site only you can move, listed on every run |
 | `agentsMd` | `link`: `AGENTS.md` was byte-identical to `CLAUDE.md` and the hop makes it a relative symlink to it · `linked`: already one · `differs`: two different files, left alone; merge what only `AGENTS.md` says into `CLAUDE.md`, then `ln -sf CLAUDE.md AGENTS.md` · `none`: one of the two is missing · `null`: no hop planned |
-| `guards` | `{ reported, missing[], differs[], installed[], withheld[] }` from the hop's own `x doctor`. `As of 31.16.0` each missing shipped guard is written from the installed release's template and kept when `boundaries` finds nothing more with it on disk: `installed[]` names it. One the tree already breaks is taken back out: `withheld[]` is `{ name, add, findings }` (`findings: null` when the count could not be measured) and `missing[]` still lists it. `differs[]` — the app's edit or an older copy — is never overwritten: `x g guard <name> --force` is yours. `reported: false` is a CLI too old to list them, which is not the same as none |
+| `guards` | `{ reported, missing[], differs[], installed[], withheld[], baselined[]? }` from the hop's own `x doctor`. A hop landing on 31.28 or later has `missing[]`, `installed[]` and `withheld[]` empty: shipped guards run built in. Landing earlier (`As of 31.16.0`), each missing shipped guard is written from the installed release's template and kept when `boundaries` finds nothing more with it on disk: `installed[]` names it; one the tree already breaks is taken back out: `withheld[]` is `{ name, add, findings }` (`findings: null` when the count could not be measured) and `missing[]` still lists it. `differs[]` is `{ name, refresh }`: an edited copy the hop's `vendored-guards` codemod left, never overwritten, `refresh` the edit that resolves it. `reported: false` is a CLI too old to list them, which is not the same as none |
 | `guards.baselined` | `[{ name, findings }]`, absent when empty, `As of 2026-11-15`: a guard the tree breaks, kept anyway — its measured count merged into `x.verify.json` as `"guardBaseline": { "<name>": n }` (beside the app's keys; a baseline the app already wrote for it, or a floor that is not a JSON object, is never touched) and kept only when the installed CLI's `boundaries` then finds no more than before. Also in `installed[]`. `findings: null` stays withheld |
 | `coverage` | a hop that moved the Bun floor re-measures unit coverage (`x verify --only unit`); only when that measurement is `X_COVERAGE_BELOW_FLOOR` is the `x.verify.json` `coverage` floor moved to it, the number that fell alone, with a dated `why`: `{ file, measured, from, to, why }`. `null` when nothing moved |
 | `exerciseFloor` | `{ file, written }`: the `exercise` keys (`unprovenMax`, `statementsMax` ≥ 100) the hop's own `x exercise` measured, written into an `x.verify.json` that stated none, so the hop stays green and the floor only falls. A key the app already wrote is never touched; `null` when nothing was written |
@@ -2163,6 +2166,15 @@ For each violation involving the file it reports the offending edge, the full ch
 | `revoke <id>` | revokes it; an unknown or already-revoked id answers `revoked: false`, exit 0 — neither is a key that works |
 
 Every flag is read before the database opens: a refusal costs no boot.
+
+## x heavy
+
+`As of 2026-11-18`. `x heavy [status] [--json]` · `x heavy run [--label s] [--mb n] [--json] -- <command…>` — the machine ledger every heavy run on this machine reserves its measured memory in, from any directory, in any repository. The rules, the weights and what stays outside: [Working with many agents](Many-Agents).
+
+| Form | Answers |
+|---|---|
+| `x heavy` / `x heavy status` | `data.holds` and `data.queue` (label, directory, MB, pid, age), `data.capacityMb`, `data.usedMb`, `data.coreCap`, `data.machine` (load, runnable tasks, available and usable memory); `data.enabled: false` with `data.off` naming why (`ci`, `test-run`, `disabled`, `unsupported`) |
+| `x heavy run -- <command…>` | runs it inside one reservation of `--mb` (default: a monorepo typecheck). Exit code passed through, `128 + n` for a signal, 127 and `X_HEAVY_COMMAND_NOT_FOUND` for no such program. SIGTERM and SIGHUP are forwarded. Its summary goes to stderr, so stdout stays the command's; with `--json` the one document is on stdout and the command's stdout moves to stderr |
 
 ## x status
 
