@@ -84,6 +84,8 @@ export const digestTask = sendDigest.schedule;
 
 Hand the job's module to `defineApi({ jobs })`; the task registers with it — it needs no `tasks` entry. A task that fires several jobs, or a job other code also enqueues, stays a `task()` beside its jobs.
 
+**One job per org, from a schedule**: the schedule belongs to no org (`tenant: 'none'`), the org list is read inside `crossTenant()` as a service actor, and each child job is tenant-scoped and runs as its org — the whole pattern, with a test that runs it, is `x docs 'jobs.README#one-job-per-org-from-a-schedule'`. Fire it now in dev with `x tasks run <name>.schedule`.
+
 ## The fluent surface
 
 Every projection is a method on the task — `nightlyDigest.enqueue()`, never `runTask(nightlyDigest)` — and every declared field is lifted onto it. A task has no `.def`.

@@ -160,7 +160,9 @@ describe('forbidden', () => {
   // command this error told the reader to run was the one command that could not work.
   test('names the POLICY, never the pathname, when the route declares one', () => {
     const error = forbidden('/settings', 'not the owner', 'member:self');
-    expect(error.fix).toBe('x policy explain member:self --json   # shows which clause denied');
+    expect(error.fix).toBe(
+      "x policy explain member:self --input '<the request input as JSON>' --json   # shows which clause denied; --input decides a predicate that reads the request",
+    );
     expect(error.fix).not.toContain('/settings');
   });
 

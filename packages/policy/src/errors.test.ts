@@ -26,10 +26,10 @@ describe('policyForbidden()', () => {
     // `knownPolicySubjects()` (cli's `policy-facts.ts`) holds every declared permission, so this
     // is the one label shape the command can answer.
     expect(policyForbidden(can('post:publish').label, 'no').fix).toContain(
-      'x policy explain post:publish --json',
+      "x policy explain post:publish --input '<the request input as JSON>' --json",
     );
     expect(policyForbidden('org_admin:read-all', 'no').fix).toContain(
-      'x policy explain org_admin:read-all --json',
+      "x policy explain org_admin:read-all --input '<the request input as JSON>' --json",
     );
   });
 

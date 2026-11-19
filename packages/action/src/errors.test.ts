@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, ERROR_DOCS_URL, statedDelayMs } from '@ultimat3/core';
 import {
+  ActionDeniedError,
   ActionDuplicateError,
   ActionPolicyMissingError,
   ActionUnregisteredError,
@@ -115,5 +116,30 @@ describe('unit · RemoteActionError states a delay only from the header', () => 
     const error = new RemoteActionError({ ...failure, retryAfterSeconds: 2 });
     expect(error.meta?.['retryAfterSeconds']).toBe(2);
     expect(error.retry).toBe('retry-after');
+  });
+});
+
+// A predicate that reads the request input is never decided without one: `x policy explain`
+// answers `needs input` and evaluates on `--input`. The fix pastes that flag as a PLACEHOLDER —
+// a fix line is logged and returned to callers, so the real input never rides in it.
+describe('unit · X_FORBIDDEN names --input as a placeholder', () => {
+  test('the fix carries the --input form and no request value', () => {
+    const error = new ActionDeniedError({
+      kind: 'action',
+      name: 'publishPost',
+      surface: 'job',
+      code: 'X_FORBIDDEN',
+      reason: 'not the author',
+      denial: {
+        surface: 'job',
+        outcome: 'failed',
+        retryable: false,
+        code: 'X_FORBIDDEN',
+        reason: 'not the author',
+      },
+    });
+    expect(error.fix).toStartWith(
+      "x policy explain publishPost --input '<the request input as JSON>' --json",
+    );
   });
 });

@@ -15,6 +15,9 @@ const BRIEF_TYPECHECK_WHY =
 const WORKER_BRIEF_WHY =
   "the agent briefs now tell a worker with a file set to skip the gate and stop allowing the raw typecheck and lint scripts; an existing app's .claude files are the app's to edit and keep working, so x upgrade leaves them alone";
 
+const QUERY_VIEW_WHY =
+  "x g query and x g resource now answer the slice's View; an existing app's reads are its own code and keep answering the row they always did — narrowing them would drop fields a deployed client may read, so x upgrade leaves them alone";
+
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
   ...[
@@ -235,4 +238,46 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.49.0',
     none: "the specimen's replicator now ships at replicas: 0, as sync and the chart's replicator do; x new writes no replicator service at all, and an app that runs one turned realtime on and configured Postgres for it, so rewriting its replica count would switch a working change feed off",
   },
+  ...[
+    'packages/cli/src/templates/query.ts',
+    'packages/cli/src/templates/query-slice.ts',
+    'packages/cli/src/templates/resource-page.ts',
+    'apps/web/app/post/live/post-list.ts',
+    'apps/web/app/post/live/post-list.test.ts',
+    'apps/web/app/post/live/post-list.live.test.ts',
+    'apps/web/app/posts/page.tsx',
+  ].map((template) => ({ template, since: '31.49.0', none: QUERY_VIEW_WHY })),
+  ...['packages/cli/src/templates/scaffold-repo.ts', 'package.json'].map((template) => ({
+    template,
+    since: '31.49.0',
+    none: 'new apps declare @ultimat3/realtime at the framework pin; an existing app that imports it adds it once with bun add --exact at its @ultimat3/core pin, and one that does not never needs it, so x upgrade leaves the dependency set alone',
+  })),
+  ...[
+    'packages/cli/src/templates/shapes/realtime.ts',
+    'packages/cli/src/templates/shapes/offline.ts',
+  ].map((template) => ({
+    template,
+    since: '31.49.0',
+    none: "the @ultimat3/realtime dependency these shapes added moved into every scaffold's package.json; x new writes the same package.json for both shapes",
+  })),
+  {
+    template: 'packages/cli/src/templates/scaffold-container-compose.ts',
+    since: '31.49.0',
+    none: "new apps pin the compose database image by digest; an existing app's docker-compose.yml runs a live database on the tag it chose, and moving that image is a backup-first operation the app decides, so x upgrade leaves it alone",
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-test-services.ts',
+    since: '31.49.0',
+    none: "x new now keys the test services' ports and compose project by the checkout root as well as the name; an existing app's docker-compose.test.yml and .env.test keep working as written, and renaming its project would orphan the containers it already runs, so x upgrade leaves them alone",
+  },
+  ...[
+    'packages/cli/src/templates/sign-in-action-tests.ts',
+    'packages/cli/src/templates/sign-in-oidc-mfa.ts',
+    'packages/cli/src/templates/sign-in-oidc.ts',
+    'packages/cli/src/templates/sign-in-password.ts',
+  ].map((template) => ({
+    template,
+    since: '31.49.0',
+    none: "x g sign-in --oidc now also writes the second-factor leg and passes mfaPath; a sign-in an app already generated is its own code and keeps signing in as it did, and the password shape's files render byte-identical, so x upgrade leaves them alone",
+  })),
 ];

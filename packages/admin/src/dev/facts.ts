@@ -264,8 +264,14 @@ export interface InvalidationFact {
 export interface PolicyFact {
   readonly permission: string;
   readonly actorId: string;
+  /** `false` for a `needs-input` cell too: nothing allowed it, though nothing denied it either. */
   readonly allowed: boolean;
   readonly trace: readonly string[];
+  /**
+   * `needs-input`: a predicate read the request input the panel has none of, so the cell is not
+   * decided. Absent from a source that predates it, which then reads as `allowed` says.
+   */
+  readonly verdict?: 'allow' | 'deny' | 'needs-input';
 }
 
 export interface ManifestFact {

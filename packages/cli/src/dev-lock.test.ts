@@ -14,14 +14,13 @@ import {
   clearLock,
   DEV_LOCK_FILE,
   DevAlreadyRunningError,
-  DevLockUnreadableError,
-  DevPortInUseError,
   isProcessAlive,
   lockPath,
   parseLock,
   preflight,
   writeLock,
 } from './dev-lock';
+import { DevLockUnreadableError, DevPortInUseError } from './dev-lock-errors';
 
 const scratch = (): string => mkdtempSync(join(tmpdir(), 'ultimate-dev-lock-'));
 

@@ -77,16 +77,19 @@ describe('defineEnv', () => {
   });
 
   test('a key with a declared fix is never given a generated line', () => {
+    // A command this build ships: the `errors` step runs every fix line a test cites.
+    const STRIPE_FIX =
+      'x env check --json   # STRIPE_KEY: the secret key the Stripe dashboard shows';
     let fix = '';
     try {
       defineEnv(
-        { STRIPE_KEY: { type: 'string', fix: 'x stripe login' } },
+        { STRIPE_KEY: { type: 'string', fix: STRIPE_FIX } },
         { env: { ROLE: 'web' }, redact: false },
       );
     } catch (thrown) {
       fix = (thrown as UltimateError).fix;
     }
-    expect(fix).toBe('x stripe login');
+    expect(fix).toBe(STRIPE_FIX);
   });
 
   test("each issue's fix is a command that finds the line, the key never spliced raw", () => {

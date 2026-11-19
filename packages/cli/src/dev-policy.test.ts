@@ -157,6 +157,35 @@ describe('unit · the /_x policy matrix', () => {
     expect(cell(facts, 'post:publish', 'anonymous')).toBe(false);
   });
 
+  // The same false deny `x policy explain` used to print: an input-scoped rule (every one
+  // `x g resource` writes) read "deny" for the admin who succeeds over HTTP. With no request
+  // there is nothing to decide it on, so the cell says so — and the panel never calls it
+  // unreachable.
+  test('a predicate that reads the request input is needs-input, never a deny', () => {
+    definePermissions(['post:edit'] as const);
+    defineRoles({ admin: { grants: ['post:edit'] } });
+    registerActions({
+      editPost: action({
+        input: t.object({ authorId: t.string }),
+        output: t.object({}),
+        policy: can<{ authorId: string }>('post:edit', ({ input }) => input.authorId === 'me'),
+        async handle() {
+          return {};
+        },
+      }),
+    });
+    const admin = devPolicyMatrix().find(
+      (fact) => fact.permission === 'post:edit' && fact.actorId === 'admin',
+    );
+    expect(admin?.verdict).toBe('needs-input');
+    expect(admin?.trace[0]).toContain('needs input');
+    expect(admin?.trace[0]).not.toContain('deny');
+    const anonymous = devPolicyMatrix().find(
+      (fact) => fact.permission === 'post:edit' && fact.actorId === 'anonymous',
+    );
+    expect(anonymous?.verdict).toBe('deny');
+  });
+
   test('an app with no registered primitives answers an empty matrix, not a throw', () => {
     expect(devPolicyMatrix()).toEqual([]);
   });

@@ -68,6 +68,23 @@ describe('unreachable permissions', () => {
     expect(panel.unreachable).toEqual(['post:purge']);
   });
 
+  // A cell whose predicate read the request input it was not given is UNDECIDED, not a deny:
+  // calling its permission unreachable sent the reader to fix a correct, input-scoped rule.
+  test('a permission undecided for want of request input is pending, never unreachable', async () => {
+    const panel = await policyPanel.data(
+      staticDevSources({
+        policyMatrix: () =>
+          Promise.resolve([
+            fact({ permission: 'post:edit', actorId: 'admin', verdict: 'needs-input' }),
+            fact({ permission: 'post:edit', actorId: 'anonymous', verdict: 'deny' }),
+          ]),
+      }),
+      new URLSearchParams(),
+    );
+    expect(panel.unreachable).toEqual([]);
+    expect(panel.needsInput).toEqual(['post:edit']);
+  });
+
   test('an empty matrix has no unreachable rows to report', async () => {
     const panel = await policyPanel.data(staticDevSources(), new URLSearchParams());
     expect(panel.actors).toEqual([]);

@@ -91,7 +91,7 @@ export class QueryDeniedError extends UltimateError {
     super({
       code: refused.code,
       cause: `${refused.name} denied: ${refused.reason}`,
-      fix: `x policy explain ${renderFixShellArg(refused.name, '<permission>')} --json   # shows which clause decided and why`,
+      fix: `x policy explain ${renderFixShellArg(refused.name, '<permission>')} --input '<the request input as JSON>' --json   # shows which clause decided and why; --input decides a predicate that reads the request`,
       callerFix: deniedCallerFix(),
     });
     this.denial = refused.denial;

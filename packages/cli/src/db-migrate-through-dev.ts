@@ -2,7 +2,7 @@
 // that holds `.x/pgdata` (`dev-db-migrate.ts`'s POST), never applied by a second opener. A holder
 // that cannot answer is `X_DEV_ALREADY_RUNNING`, its fix the stop, migrate, start that does work.
 
-import { renderThrowable, UltimateError } from '@ultimat3/core';
+import { renderThrowable, stringField, UltimateError } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import type { DevMigrateData } from './dev-db-migrate';
 import { DevAlreadyRunningError, type DevLock } from './dev-lock';
@@ -96,11 +96,10 @@ const waitFor = (stateDir: string): DevWait => ({
  * pass twice. Anything else (a socket closed mid-answer, a timeout) may have reached the holder,
  * and a rollback asked twice reverses two migrations.
  */
-const neverSent = (error: unknown): boolean =>
-  typeof error === 'object' &&
-  error !== null &&
-  'code' in error &&
-  (error.code === 'ECONNREFUSED' || error.code === 'ConnectionRefused');
+const neverSent = (error: unknown): boolean => {
+  const code = stringField(error, 'code');
+  return code === 'ECONNREFUSED' || code === 'ConnectionRefused';
+};
 
 /**
  * Asked of the holder, and answered by it. Its own refusal (a failed migration, a forked ledger)

@@ -56,7 +56,8 @@ export interface DoctorProbe {
   /**
    * The framework's own secrets this machine lacks — `framework-env.ts`'s
    * `machineSecretFindings`, gated by `namedDeployed`: only an environment NAMED staging or
-   * production (an unnamed developer shell owes nothing; `x env check` is the fail-closed answer).
+   * production (an unnamed developer shell owes nothing; `x env check` is the fail-closed answer
+   * under `CI` only — elsewhere it checks an unnamed shell as development, as `x dev` runs).
    * The list's own `needed`/`unsafe` decide; doctor reports.
    */
   readonly frameworkFindings: readonly Finding[];

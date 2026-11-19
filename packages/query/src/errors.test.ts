@@ -5,7 +5,12 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL, type UltimateError } from '@ultimat3/core';
-import { QueryDuplicateError, QueryPolicyMissingError, QueryUnregisteredError } from './errors';
+import {
+  QueryDeniedError,
+  QueryDuplicateError,
+  QueryPolicyMissingError,
+  QueryUnregisteredError,
+} from './errors';
 
 const CAN_ARGUMENT = /can\('(?<permission>[^']*)'\)/;
 
@@ -52,5 +57,29 @@ describe('unit · every query error documents at the one page core declares', ()
       expect(error.docs).not.toContain(error.code);
       expect(error.docs).not.toContain('ultimate.dev');
     }
+  });
+});
+
+// Same rule as the action's: `x policy explain` decides a predicate that reads input only on
+// `--input`, so the fix names the flag — as a placeholder, never the request's own value.
+describe('unit · X_FORBIDDEN names --input as a placeholder', () => {
+  test('the fix carries the --input form and no request value', () => {
+    const error = new QueryDeniedError({
+      kind: 'query',
+      name: 'postList',
+      surface: 'server',
+      code: 'X_FORBIDDEN',
+      reason: 'not a member',
+      denial: {
+        surface: 'job',
+        outcome: 'failed',
+        retryable: false,
+        code: 'X_FORBIDDEN',
+        reason: 'not a member',
+      },
+    });
+    expect(error.fix).toStartWith(
+      "x policy explain postList --input '<the request input as JSON>' --json",
+    );
   });
 });

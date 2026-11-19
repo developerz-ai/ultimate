@@ -141,6 +141,15 @@ describe('auditCatalogs', () => {
     expect(cause).toContain('es.json');
     expect(cause).toContain('admin.nav.jobs');
   });
+
+  // `x i18n sync` writes `⟦key⟧` only in the default locale; any other gets the default locale's
+  // string inside `⟦…⟧`. `x errors explain X_CATALOG_MISSING_KEYS` quotes this literal.
+  test('the fix comment says what the sync writes in a non-default locale too', () => {
+    const { fix } = catalogMissingKeys('es', ['a.b']);
+    expect(fix).toBe(
+      'x i18n sync es   # writes each key above as a placeholder to replace with the real string: ⟦key⟧ in the default locale, ⟦the default locale’s string⟧ in any other',
+    );
+  });
 });
 
 describe('extractKeys \u00B7 declared properties', () => {

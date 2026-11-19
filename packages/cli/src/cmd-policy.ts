@@ -10,8 +10,9 @@ import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, DeclarationUnknownError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
-import type { DeclarationExplanation, ExplainOptions, ExplainVerdict } from './policy-facts';
+import type { DeclarationExplanation, ExplainOptions } from './policy-facts';
 import { explainPolicy, knownPolicySubjects, listPolicy } from './policy-facts';
+import type { ExplainVerdict } from './policy-row';
 import { quoteArg } from './shell-quote';
 import { renderTable } from './table';
 
