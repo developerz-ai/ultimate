@@ -292,9 +292,11 @@ jobs:
   # took three CI rounds over `renderScaffold('31.28.0')`. So the next minor is stamped in this
   # runner's checkout — `release.ts --rehearse`: every file a bump stamps, never the changelog,
   # never committed — and the suites that can read a stamp run on it
-  # (`scripts/release-rehearse.ts`: the CLI's templates, codemods and upgrade, and every scripts
-  # test naming a version). Only a pull request reaching `scripts/`, those CLI paths or a
-  # `package.json`; no list is a full run. Beside the gate: nothing waits on this job.
+  # (`scripts/release-rehearse.ts`: the CLI's templates, codemods and upgrade, every CLI test
+  # importing a module that calls `cliVersion()` / `loadVersion()` — 31.49.0's `x doctor` (#1284) —
+  # and every scripts test naming a version). Only a pull request reaching `scripts/`, those CLI
+  # paths, a stamp reader or a suite importing one, or a `package.json`; no list is a full run.
+  # Beside the gate: nothing waits on this job.
   release-rehearsal:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

@@ -9,6 +9,7 @@
 
 import { flagBool, parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
+import { importsStampReader, type SourceFile, stampReaders } from './lib/stamp-readers';
 
 /**
  * The changelog side of a bump, dropped under `--rehearse`: a pull request's `[Unreleased]` may
@@ -26,9 +27,18 @@ export const REHEARSAL_PATHS: readonly RegExp[] = [
   /(^|\/)package\.json$/,
 ];
 
-/** True when any changed (repository-relative) path is one a version stamp can reach. */
-export const rehearsalDue = (paths: readonly string[]): boolean =>
-  paths.some((path) => REHEARSAL_PATHS.some((pattern) => pattern.test(path.trim())));
+/**
+ * True when any changed (repository-relative) path is one a version stamp can reach: a
+ * `REHEARSAL_PATHS` match, or one of `reached` — the stamp readers and the suites that import them.
+ */
+export const rehearsalDue = (paths: readonly string[], reached: readonly string[] = []): boolean =>
+  paths.some((path) => {
+    const trimmed = path.trim();
+    return (
+      REHEARSAL_PATHS.some((pattern) => pattern.test(trimmed)) ||
+      reached.some((one) => one === trimmed || one === `./${trimmed}`)
+    );
+  });
 
 /**
  * Whatever reads the stamped version on the CLI's side: every test file, the stamp is theirs to
@@ -44,20 +54,28 @@ const CLI_STAMP_TESTS = /^packages\/cli\/src\/(templates\/|codemods\/|upgrade|cm
  */
 const VERSION_SENSITIVE = /version|\b\d+\.\d+\.\d+\b/i;
 
-/** The CLI's stamp-reading test files, then every version-sensitive `scripts/` one; `./`, sorted. */
+/**
+ * The CLI's stamp-reading test files — under those paths, or importing a module that calls
+ * `cliVersion()` / `loadVersion()` (`lib/stamp-readers.ts`) — then every version-sensitive
+ * `scripts/` one; `./`, sorted.
+ */
 export const rehearsalSuites = (
-  scriptTests: readonly { readonly path: string; readonly text: string }[],
-  cliTests: readonly string[],
-): readonly string[] => [
-  ...cliTests
-    .filter((path) => CLI_STAMP_TESTS.test(path))
-    .map((path) => `./${path}`)
-    .sort(),
-  ...scriptTests
-    .filter((file) => VERSION_SENSITIVE.test(file.text))
-    .map((file) => `./${file.path}`)
-    .sort(),
-];
+  scriptTests: readonly SourceFile[],
+  cliTests: readonly SourceFile[],
+  readers: readonly string[] = [],
+): readonly string[] => {
+  const reading = new Set(readers);
+  return [
+    ...cliTests
+      .filter((file) => CLI_STAMP_TESTS.test(file.path) || importsStampReader(file, reading))
+      .map((file) => `./${file.path}`)
+      .sort(),
+    ...scriptTests
+      .filter((file) => VERSION_SENSITIVE.test(file.text))
+      .map((file) => `./${file.path}`)
+      .sort(),
+  ];
+};
 
 async function testPaths(pattern: string): Promise<readonly string[]> {
   const paths: string[] = [];
@@ -67,13 +85,20 @@ async function testPaths(pattern: string): Promise<readonly string[]> {
   return paths;
 }
 
+const read = (paths: readonly string[]): Promise<readonly SourceFile[]> =>
+  Promise.all(paths.map(async (path) => ({ path, text: await Bun.file(path).text() })));
+
+/** The CLI's stamp readers over this checkout, read from the repository root. */
+export const stampReadersHere = async (): Promise<readonly string[]> =>
+  stampReaders(await read(await testPaths('packages/cli/src/**/*.{ts,tsx}')));
+
 /** `rehearsalSuites` over this checkout, read from the repository root. */
-export async function rehearsalSuitesHere(): Promise<readonly string[]> {
-  const scripts = await testPaths('scripts/**/*.test.ts');
-  const scriptTests = await Promise.all(
-    scripts.map(async (path) => ({ path, text: await Bun.file(path).text() })),
+export async function rehearsalSuitesHere(readers?: readonly string[]): Promise<readonly string[]> {
+  return rehearsalSuites(
+    await read(await testPaths('scripts/**/*.test.ts')),
+    await read(await testPaths('packages/cli/src/**/*.test.ts')),
+    readers ?? (await stampReadersHere()),
   );
-  return rehearsalSuites(scriptTests, await testPaths('packages/cli/src/**/*.test.ts'));
 }
 
 if (import.meta.main) {
@@ -98,7 +123,9 @@ if (import.meta.main) {
     list === undefined || !(await Bun.file(list).exists())
       ? undefined
       : (await Bun.file(list).text()).split('\n').filter((line) => line.trim().length > 0);
-  const due = paths === undefined || rehearsalDue(paths);
+  const readers = paths === undefined ? [] : await stampReadersHere();
+  const reached = paths === undefined ? [] : [...readers, ...(await rehearsalSuitesHere(readers))];
+  const due = paths === undefined || rehearsalDue(paths, reached);
   report(
     {
       ok: true,

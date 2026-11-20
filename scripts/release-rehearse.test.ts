@@ -3,12 +3,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import { jobOf, readWorkflow, text } from './lib/ci-workflow-read';
+import { stampReaders } from './lib/stamp-readers';
 import { releaseInvocation, unknownReleaseFlags } from './release';
 import {
   REHEARSAL_PATHS,
   rehearsalDue,
   rehearsalSuites,
   rehearsalSuitesHere,
+  stampReadersHere,
   unlessRehearsed,
 } from './release-rehearse';
 
@@ -79,13 +81,46 @@ describe('unit · which suites a rehearsal runs', () => {
       'packages/cli/src/templates/scaffold-ci.test.ts',
       'packages/cli/src/codemods/engine-edits.test.ts',
       'packages/cli/src/cmd-db.test.ts',
-    ];
+    ].map((path) => ({ path, text: '' }));
     expect(rehearsalSuites([], cli)).toEqual([
       './packages/cli/src/cmd-upgrade.test.ts',
       './packages/cli/src/codemods/engine-edits.test.ts',
       './packages/cli/src/templates/scaffold-ci.test.ts',
       './packages/cli/src/upgrade-plan.test.ts',
     ]);
+  });
+
+  // The 31.49.0 break (#1284): `doctor-warnings.test.ts` sits under none of those paths, and
+  // `cmd-doctor.ts`, which it imports, read `cliVersion()` — only the release PR ran it bumped.
+  test('a CLI test importing a module that reads the stamp, wherever it lives', () => {
+    const readers = stampReaders([
+      { path: 'packages/cli/src/cmd-doctor.ts', text: 'pending(root, cliVersion());' },
+      { path: 'packages/cli/src/registry.ts', text: 'export function cliVersion() {}' },
+      { path: 'packages/cli/src/fixture.test.ts', text: 'loadVersion();' },
+    ]);
+    expect(readers).toEqual(['packages/cli/src/cmd-doctor.ts']);
+    const cli = [
+      {
+        path: 'packages/cli/src/doctor-warnings.test.ts',
+        text: "import { r } from './cmd-doctor';",
+      },
+      { path: 'packages/cli/src/doctor-pins.test.ts', text: "import { r } from './doctor-pins';" },
+      { path: 'packages/cli/src/a/b.test.tsx', text: "import { r } from '../cmd-doctor.ts';" },
+    ];
+    expect(rehearsalSuites([], cli, readers)).toEqual([
+      './packages/cli/src/a/b.test.tsx',
+      './packages/cli/src/doctor-warnings.test.ts',
+    ]);
+  });
+
+  test('a pull request changing a stamp reader, or a suite that imports one, rehearses', () => {
+    const reached = [
+      'packages/cli/src/cmd-doctor.ts',
+      './packages/cli/src/doctor-warnings.test.ts',
+    ];
+    expect(rehearsalDue(['packages/cli/src/cmd-doctor.ts'], reached)).toBe(true);
+    expect(rehearsalDue(['packages/cli/src/doctor-warnings.test.ts'], reached)).toBe(true);
+    expect(rehearsalDue(['packages/cli/src/doctor-pins.ts'], reached)).toBe(false);
   });
 
   test('on this tree: every emitted path is a file, and the upgrade tests are among them', async () => {
@@ -96,6 +131,8 @@ describe('unit · which suites a rehearsal runs', () => {
     expect(suites).toContain('./packages/cli/src/upgrade-plan.test.ts');
     expect(suites).toContain('./packages/cli/src/cmd-upgrade.test.ts');
     expect(suites).toContain('./scripts/release.test.ts');
+    expect(await stampReadersHere()).toContain('packages/cli/src/cmd-doctor.ts');
+    expect(suites).toContain('./packages/cli/src/doctor-warnings.test.ts');
   });
 });
 

@@ -53,6 +53,9 @@ export const probe = (over: Partial<DoctorReportProbe> = {}): DoctorReportProbe 
   mergeDriverUnset: async () => false,
   // Nothing to list: this machine's Chrome is never started under a unit test's clock.
   browser: async () => undefined,
+  // A fixed release, never the stamp: a bump must not change what a report test owes. Shipped
+  // codemods keep their `since`, so up to this one a bare app root owes none.
+  release: '31.48.0',
   ...over,
 });
 
