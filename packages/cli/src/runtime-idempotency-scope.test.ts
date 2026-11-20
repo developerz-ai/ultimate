@@ -38,9 +38,15 @@ describe('unit · the idempotency store a container boot ends with', () => {
   });
 
   test('in one of several supervised children it is refused: siblings would each keep their own', () => {
-    expect(() =>
-      warnIfIdempotencyProcessScoped(memoryIdempotencyStore(), { ULTIMATE_CHILD: '0/2' }),
-    ).toThrow(expect.objectContaining({ code: 'X_PROCESSES_UNSHARED_STATE' }));
+    let refused: unknown;
+    try {
+      warnIfIdempotencyProcessScoped(memoryIdempotencyStore(), { ULTIMATE_CHILD: '0/2' });
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toMatchObject({ code: 'X_PROCESSES_UNSHARED_STATE' });
+    // The cause is what the operator reads: it names the store, not an empty list of reasons.
+    expect(String(Reflect.get(refused as object, 'cause'))).toContain('the idempotency store');
   });
 
   test('a lone child (1/1) keeps the warning', () => {

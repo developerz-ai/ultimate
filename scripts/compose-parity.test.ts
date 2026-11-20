@@ -144,6 +144,9 @@ const waitsForMigrate = (service: Service): boolean => {
  */
 const HTTP_ROLES: readonly string[] = ['web', 'sync'];
 
+/** The opt-in as the specimens ship it: a comment line, at the service's own indent. */
+const MIGRATE_REQ_OPT_IN = /\n {4}# sysctls: \{ net\.ipv4\.tcp_migrate_req: 1 \}\n/;
+
 /**
  * The one role whose socket the image's HEALTHCHECK cannot compute. `web` binds `$PORT` and the
  * inherited probe fetches `$PORT`, so it agrees by construction; `sync` binds `PORT + 1`.
@@ -209,9 +212,14 @@ const DEPLOY_ROLES: readonly string[] = planDeploy('app:probe', 'compose', ROOT)
 const shipped = COMPOSE_GLOBS.flatMap((glob) => [...new Bun.Glob(glob).scanSync({ cwd: ROOT })]);
 
 /** Read up front: `describe` blocks are registered synchronously and the sources are files. */
-const files: { readonly at: string; readonly table: Readonly<Record<string, Service>> }[] = [];
+const files: {
+  readonly at: string;
+  readonly source: string;
+  readonly table: Readonly<Record<string, Service>>;
+}[] = [];
 for (const at of shipped.sort()) {
-  files.push({ at, table: services(await Bun.file(join(ROOT, at)).text(), at) });
+  const source = await Bun.file(join(ROOT, at)).text();
+  files.push({ at, source, table: services(source, at) });
 }
 
 /** One `x new`, read twice: the planner is deterministic and the prod and dev files both come off it. */
@@ -232,6 +240,7 @@ const scaffoldedCompose = (path: string): string => {
 
 files.push({
   at: `x new → ${COMPOSE_FILE}`,
+  source: scaffoldedCompose(COMPOSE_FILE),
   table: services(scaffoldedCompose(COMPOSE_FILE), COMPOSE_FILE),
 });
 
@@ -291,7 +300,7 @@ describe('the compose files agree with the deploy plan', () => {
     expect(DEPLOY_ROLES).toContain('backfill');
   });
 
-  for (const { at, table } of files) {
+  for (const { at, source, table } of files) {
     describe(at, () => {
       test('every role the deploy plan rolls is a service', () => {
         const missing = DEPLOY_ROLES.filter((role) => table[role] === undefined);
@@ -333,14 +342,31 @@ describe('the compose files agree with the deploy plan', () => {
         const unbudgeted = serving.filter((name) => typeof table[name]?.['cpus'] !== 'string');
         expect(unbudgeted, `${at}: declare cpus: '<n>' on ${unbudgeted.join(', ')}`).toEqual([]);
         // A closing SO_REUSEPORT listener resets its queued connections unless the kernel may
-        // migrate them (93–109 of 200 reset, 0 with the sysctl): both port-sharing roles carry it.
+        // migrate them (93–109 of 200 reset, 0 with the sysctl): both port-sharing roles carry
+        // the line, COMMENTED — the next rule says why it is never active.
         for (const role of HTTP_ROLES) {
-          const sysctls = table[role]?.['sysctls'];
+          const block = source.split(`\n  ${role}:\n`)[1]?.split(/\n {2}[a-z]+:\n/)[0] ?? '';
           expect(
-            isRecord(sysctls) && sysctls['net.ipv4.tcp_migrate_req'] === 1,
-            `${at}: ${role} needs sysctls: { net.ipv4.tcp_migrate_req: 1 }`,
+            MIGRATE_REQ_OPT_IN.test(block) && block.includes('5.14'),
+            `${at}: ${role} needs the commented opt-in \`# sysctls: { net.ipv4.tcp_migrate_req: 1 }\` and its Linux 5.14 floor`,
           ).toBe(true);
         }
+      });
+
+      test('no service sets net.ipv4.tcp_migrate_req: Docker refuses it below Linux 5.14', () => {
+        // Docker refuses to CREATE a container whose sysctl the host kernel lacks: active, the
+        // role never starts on RHEL 8, Ubuntu 20.04 or Amazon Linux 2. Every file, not only the
+        // specimens: an app that turns it on does so on a host it knows, by uncommenting the line.
+        const active = Object.entries(table)
+          .filter(([, service]) => {
+            const sysctls = service['sysctls'];
+            return isRecord(sysctls) && 'net.ipv4.tcp_migrate_req' in sysctls;
+          })
+          .map(([name]) => name);
+        expect(
+          active,
+          `${at}: comment out sysctls: { net.ipv4.tcp_migrate_req: 1 } on ${active.join(', ')}`,
+        ).toEqual([]);
       });
 
       test('backfill overrides the entrypoint, or its command is discarded', () => {

@@ -1,7 +1,7 @@
 // The supervisor's one port: the merged exposition (a `child` label, HELP/TYPE once per family),
 // and the three answers over a real loopback socket with real child scrape listeners.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { METRICS_PATH, markListening } from '@ultimat3/core';
 import type { ChildView, SupervisorView } from './supervise';
 import { childHealthy, labelSample, mergeMetrics, startSupervisorProbe } from './supervise-probe';
@@ -109,7 +109,10 @@ describe('unit · startSupervisorProbe', () => {
     ready = true;
     expect((await fetch(`${url}/readyz`)).status).toBe(200);
     live = false;
-    expect(await (await fetch(`${url}/healthz`)).json()).toMatchObject({ state: 'crash-loop' });
+    const unhealthy = await fetch(`${url}/healthz`);
+    // The status is what an orchestrator restarts on; the body only says why.
+    expect(unhealthy.status).toBe(503);
+    expect(await unhealthy.json()).toMatchObject({ state: 'crash-loop' });
     expect((await fetch(`${url}/nope`)).status).toBe(404);
   });
 
@@ -122,6 +125,42 @@ describe('unit · startSupervisorProbe', () => {
     const url = probe({ children: () => children });
     const response = await fetch(`${url}${METRICS_PATH}`);
     expect(await response.text()).toBe('up{child="0"} 1\nup{child="2"} 1\n');
+  });
+
+  // A draining child answers its scrape 503: the body it began is given back at once, never left
+  // holding the stream and its socket (Bun released an unread one after ~1 s, measured). The child
+  // is a fake fetch, so the verdict is whether `cancel()` ran before the scrape answered — no clock.
+  test('a child scrape answered non-2xx has its body cancelled', async () => {
+    const child = 'http://127.0.0.1:9';
+    let cancelled = false;
+    const real = globalThis.fetch;
+    const spy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) =>
+      String(input).startsWith(child)
+        ? Promise.resolve(
+            new Response(
+              new ReadableStream({
+                start(controller) {
+                  controller.enqueue(new TextEncoder().encode('draining'));
+                },
+                cancel() {
+                  cancelled = true;
+                },
+              }),
+              { status: 503 },
+            ),
+          )
+        : real(input, init)) as typeof fetch);
+    try {
+      const children: ChildView[] = [{ index: 0, state: 'draining', metricsUrl: child }];
+      const url = probe({ children: () => children });
+      expect(await (await real(`${url}${METRICS_PATH}`)).text()).toBe('');
+      expect(cancelled).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test('childHealthy is a 200 and nothing else', async () => {

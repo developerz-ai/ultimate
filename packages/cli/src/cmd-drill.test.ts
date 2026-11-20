@@ -9,7 +9,8 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { NotImplementedError } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
-import { drillCommand, withDrillFleet } from './cmd-drill';
+import type { DrillFleetRun } from './cmd-drill';
+import { drillCommand, thrownRun, withDrillFleet } from './cmd-drill';
 import type { CommandContext } from './command';
 import type { FlagValue } from './parse';
 import { processRoot } from './process-root-fixture';
@@ -122,6 +123,9 @@ describe('x drill · the fleet is always stopped', () => {
       },
     };
   };
+  /** What the body (or the connection) threw; a run that returned a value is the test's failure. */
+  const thrownOf = (run: DrillFleetRun<unknown>): unknown =>
+    'thrown' in run ? run.thrown : expect.unreachable('the run returned a value');
   const boom = (what: string) =>
     new NotImplementedError({
       cause: `${what} in this test is not implemented`,
@@ -137,7 +141,7 @@ describe('x drill · the fleet is always stopped', () => {
       },
       async () => 'ran',
     );
-    expect(await run.catch((error: unknown) => error)).toBeUltimateError('X_NOT_IMPLEMENTED');
+    expect(thrownOf(await run)).toBeUltimateError('X_NOT_IMPLEMENTED');
     expect(stopped).toEqual(['stop']);
   });
 
@@ -154,7 +158,7 @@ describe('x drill · the fleet is always stopped', () => {
       () => sql,
       async () => 'ran',
     );
-    expect(await run.catch((error: unknown) => error)).toBeUltimateError('X_NOT_IMPLEMENTED');
+    expect(thrownOf(await run)).toBeUltimateError('X_NOT_IMPLEMENTED');
     expect(stopped).toEqual(['stop']);
   });
 
@@ -172,7 +176,7 @@ describe('x drill · the fleet is always stopped', () => {
       () => sql,
       async () => 'held',
     );
-    expect(run.value).toBe('held');
+    expect('value' in run ? run.value : undefined).toBe('held');
     expect(run.teardown).toEqual([
       expect.objectContaining({
         code: 'X_NOT_IMPLEMENTED',
@@ -181,7 +185,9 @@ describe('x drill · the fleet is always stopped', () => {
     ]);
   });
 
-  test('a body that threw keeps its own throw when the stop throws too', async () => {
+  // The scratch database the teardown could not drop is the leak X_DRILL_TEARDOWN_FAILED exists to
+  // name: a body that threw first must not take that finding down with it.
+  test('a body that threw keeps its own throw AND the teardown finding when the stop throws too', async () => {
     const run = withDrillFleet(
       {
         databaseUrl: 'postgres://u@127.0.0.1/x',
@@ -194,8 +200,49 @@ describe('x drill · the fleet is always stopped', () => {
         throw boom('the body');
       },
     );
-    const error = await run.catch((thrown: unknown) => thrown);
+    const settled = await run;
+    const error = thrownOf(settled);
     expect(error).toBeUltimateError('X_NOT_IMPLEMENTED');
     expect(String(Reflect.get(error as object, 'cause'))).toContain('the body');
+    expect(settled.teardown).toEqual([
+      expect.objectContaining({
+        code: 'X_NOT_IMPLEMENTED',
+        cause: expect.stringContaining('the drop'),
+      }),
+    ]);
+  });
+});
+
+// The run's half of the same rule: what `withDrillFleet` kept must reach the result — the throw
+// first, then every finished drill's failures and every teardown finding, red with exit 1.
+describe('x drill · a drill that threw ends the run with every finding', () => {
+  test('the throw, the earlier reports and the teardown findings are all in the result', () => {
+    const held = { name: 'pg-down', verdict: { ok: true, failures: [] } };
+    const failed = {
+      name: 'pg-slow',
+      verdict: {
+        ok: false,
+        failures: [
+          { property: 'recovers' as const, expected: 'within 5000 ms', observed: 'never' },
+        ],
+      },
+    };
+    const teardown = { code: 'X_DRILL_TEARDOWN_FAILED', cause: 'slot still held', fix: 'x drill' };
+    const result = thrownRun({
+      thrown: new NotImplementedError({ cause: 'the body threw', fix: 'x drill --list --json' }),
+      reports: [held, failed],
+      teardowns: [teardown],
+      notRun: ['redis-down'],
+    });
+    expect({ ok: result.ok, exitCode: result.exitCode }).toEqual({ ok: false, exitCode: 1 });
+    expect(result.findings?.map((finding) => finding.code)).toEqual([
+      'X_NOT_IMPLEMENTED',
+      'X_DRILL_FAILED',
+      'X_DRILL_TEARDOWN_FAILED',
+    ]);
+    expect(result.findings?.[1]?.cause).toContain('pg-slow');
+    expect(result.findings?.[2]).toEqual(teardown);
+    // The drill that threw counts as run and not held: 1 held of 3 ran, 1 not run.
+    expect(result.summary).toStartWith('1 of 3 drill(s) held; 1 not run');
   });
 });

@@ -15,6 +15,7 @@ import { quoteArg } from '../packages/cli/src/shell-quote';
 import { maskLiterals, stripComments } from '../packages/core/src/source-mask';
 import { APP_ROOTS } from './boundaries';
 import { parseScriptArgs } from './lib/args';
+import { CORPUS_PATTERNS } from './lib/corpus';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -37,14 +38,19 @@ export interface SourceText {
 
 /**
  * Whether the word at `at` sets the option. In code, always — the mask keeps code and blanks a
- * string's contents. Inside a string, only as a whole string (a computed key) or followed by `:`
- * (an options object a template writes); a message naming the option is prose.
+ * string's contents. Inside a string, only as a whole string (a computed key) or as a key in an
+ * object literal a template writes (`{` or `,` before it, `:` after); a message naming the
+ * option — `'reusePort: true is …'` included — is prose.
  */
 const setsOption = (text: string, masked: string, at: number): boolean => {
   if (masked[at] !== ' ') return true;
   const before = text[at - 1] ?? '';
   const after = text[at + NAME.length] ?? '';
-  return (before === after && QUOTE.test(before)) || /^\s*:/.test(text.slice(at + NAME.length));
+  const inObjectLiteral = /[{,]\s*$/.test(text.slice(Math.max(0, at - 200), at));
+  return (
+    (before === after && QUOTE.test(before)) ||
+    (inObjectLiteral && /^\s*:/.test(text.slice(at + NAME.length)))
+  );
 };
 
 /** Every line, outside the seam and tests, that sets `reusePort` in code or a string. */
@@ -89,7 +95,11 @@ export function reusePortResult(files: readonly SourceText[]): ScriptResult {
   };
 }
 
-const GLOBS = ['packages/*/src/**/*.{ts,tsx}', `${APP_ROOTS}/*/**/*.{ts,tsx}`];
+/**
+ * The corpus's shipped `packages` scope (`scripts/lib/corpus.ts`), plus the tracked apps, which no
+ * corpus scope covers and which bind a port through the same `Bun.serve` an app would copy.
+ */
+const GLOBS = [...CORPUS_PATTERNS.packages, `${APP_ROOTS}/*/**/*.{ts,tsx}`];
 const NOT_SOURCE = /(?:^|\/)(?:node_modules|dist|\.x)\//;
 
 export async function readReusePortSources(root: string): Promise<readonly SourceText[]> {

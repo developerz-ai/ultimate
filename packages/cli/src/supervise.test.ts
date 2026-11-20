@@ -26,6 +26,7 @@ function harness(
   let now = 0;
   let queue: { at: number; run: () => void; id: number }[] = [];
   let ids = 0;
+  const cleared: unknown[] = [];
   const timers: SupervisorTimers = {
     now: () => now,
     setTimeout: (run, ms) => {
@@ -34,6 +35,7 @@ function harness(
       return ids;
     },
     clearTimeout: (handle) => {
+      cleared.push(handle);
       queue = queue.filter((entry) => entry.id !== handle);
     },
   };
@@ -82,6 +84,8 @@ function harness(
     supervisor,
     children,
     listeners,
+    /** Every handle `clearTimeout` was asked to clear, in order. */
+    cleared,
     signal: (name: SignalName) => listeners.get(name)?.(),
     /** Every timer due within `ms`, in order, with the promise queue drained between them. */
     async advance(ms: number): Promise<void> {
@@ -232,6 +236,20 @@ describe('unit · supervise — restarts', () => {
 
   test('the failures that restart a child span more than 6 s: a saturated child answers late', () => {
     expect((HEALTH_FAILURES - 1) * HEALTH_POLL_MS).toBeGreaterThan(6_000);
+  });
+
+  // A fired timer is no longer the slot's: a child up for a day polls ~17k times, and each handle
+  // kept until its next exit would be a list growing for as long as the child stays healthy.
+  test('a fired poll leaves the slot: an exit clears only what is still pending', async () => {
+    const h = harness({ count: 1, healthy: async () => true });
+    const child = h.children[0];
+    if (child === undefined) return expect.unreachable('one child');
+    h.ready(child);
+    await h.advance(HEALTH_POLL_MS * 10);
+    h.cleared.length = 0;
+    child.exit(1);
+    await h.flush();
+    expect(h.cleared).toHaveLength(1);
   });
 
   test('a healthy answer resets the count', async () => {

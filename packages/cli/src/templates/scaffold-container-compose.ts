@@ -54,7 +54,9 @@ export const composeProdFile = (
 # of the role on one port; no \`cpus:\` runs one. Most of a request's wall time is I/O wait, so the
 # budgets are modest: raise a role's \`cpus\` when its process sits above ~70% of one core. Memory
 # is 256 MiB per process plus headroom; jobs.concurrency, jobs.maxInFlight and DATABASE_POOL_MAX
-# are per CONTAINER, split across its processes.
+# are per CONTAINER, split across its processes. \`net.ipv4.tcp_migrate_req\` is a commented opt-in
+# on web and sync, never active: a kernel older than Linux 5.14 has no such knob, and Docker then
+# refuses to create the container at all.
 name: ${app.kebab}
 
 # Every service's logs, rotated. Docker's default json-file driver never rotates, so a chatty role
@@ -162,11 +164,13 @@ services:
       migrate: { condition: service_completed_successfully }
     deploy: { replicas: 1 } # stateless, scales on RPS — pinned by the published port
     ports: ['3000:3000']
-    # Two processes on one port; 2 x 256 MiB plus headroom fits in 1g. The sysctl hands a closing
-    # process's queued connections to its sibling instead of resetting them.
+    # Two processes on one port; 2 x 256 MiB plus headroom fits in the anchor's 1g.
     cpus: '2'
-    mem_limit: 1g
-    sysctls: { net.ipv4.tcp_migrate_req: 1 }
+    # Opt-in, Linux >= 5.14 only (Docker refuses to create the container on an older kernel —
+    # RHEL 8, Ubuntu 20.04, Amazon Linux 2). With more than one process here, a stopping process's
+    # queued connections move to a sibling instead of being reset: 93-109 of 200 reset without it,
+    # 0 with it. \`x doctor\` warns when the knob exists, reads 0 and N > 1.
+    # sysctls: { net.ipv4.tcp_migrate_req: 1 }
 
   sync:
     <<: *image
@@ -187,9 +191,10 @@ services:
     deploy: { replicas: 0 } # when on: scales on concurrent websockets — pinned to 1 by the port
     # The sync role binds PORT + 1. PORT is unset here, so it is 3000 and this listens on 3001.
     ports: ['3001:3001']
-    # One process; a second needs NATS_URL. The sysctl keeps a closing process's queued sockets.
+    # One process; a second needs NATS_URL. With a second, the opt-in below (Linux >= 5.14 only, as
+    # on web) keeps a stopping process's queued sockets instead of resetting them.
     cpus: '1'
-    sysctls: { net.ipv4.tcp_migrate_req: 1 }
+    # sysctls: { net.ipv4.tcp_migrate_req: 1 }
     # ...which is why the image's own HEALTHCHECK cannot be inherited here. It fetches $PORT —
     # 3000 — and this role never binds it, so the container reports \`unhealthy\` from
     # \`start_period\` onward and never recovers, and anything gated on \`sync: service_healthy\`

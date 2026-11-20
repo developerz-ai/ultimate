@@ -4,15 +4,15 @@
 
 import type { Role } from '@ultimat3/core';
 import { ROLES, resolveEnvironment } from '@ultimat3/core';
-import { redisUrlSource } from '@ultimat3/core/redis';
 import { POOL_PROFILES, poolMaxFromEnv, postgresClient, sql } from '@ultimat3/db';
-import { loadAppConfig } from './app-config-load';
+import { loadAppRuntime } from './app-runtime';
 import type { ProcessesFact, RoleProcesses } from './doctor-processes';
 import { findingFrom } from './output';
-import { cacheTiersOf } from './runtime-cache';
+import type { RuntimeOverrides } from './runtime-overrides';
 import type { ReadText } from './supervise-cgroup';
 import { readCgroup, readText } from './supervise-cgroup';
 import { resolveProcessCount } from './supervise-count';
+import { sharedStateFacts } from './supervise-facts';
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -21,11 +21,11 @@ const REPORTED: readonly Role[] = ROLES.filter((role) => role !== 'migrate');
 
 export const MIGRATE_REQ_PATH = '/proc/sys/net/ipv4/tcp_migrate_req';
 
-const set = (value: string | undefined): boolean => value !== undefined && value.trim() !== '';
-
 export interface ProcessesSources {
-  readonly root: string | undefined;
+  readonly root: string;
   readonly env: Env;
+  /** `apps/<app>/runtime.ts`'s overrides: its stores and transport are shared state or not. */
+  readonly runtime: () => Promise<RuntimeOverrides | undefined>;
   readonly platform: string;
   readonly cores: number;
   readonly read: ReadText;
@@ -34,22 +34,16 @@ export interface ProcessesSources {
 
 /**
  * Asked as `production`: the fact answers what a deployed container here would run, which `x dev`
- * (always one process) never does. Per-process stores a `runtime.ts` supplies are not loaded, and
- * the image is taken as prebuilt (the Dockerfile's `x build --target prebuilt`): the boot itself
- * clamps on both, and its line names that clamp.
+ * (always one process) never does. The image is taken as prebuilt (the Dockerfile's `x build
+ * --target prebuilt`): the boot itself clamps on that, and its line names the clamp.
  */
 export async function processesFact(sources: ProcessesSources): Promise<ProcessesFact> {
   const { env } = sources;
-  const config = sources.root === undefined ? undefined : await loadAppConfig(sources.root);
+  const runtime = await sources.runtime();
+  // The boot's own reader of shared state (`supervise-facts.ts`) over the same `runtime.ts`, so
+  // doctor and the boot cannot name different clamps.
+  const options = { root: sources.root, env, ...(runtime === undefined ? {} : { runtime }) };
   const cgroup = await readCgroup(sources.read);
-  const shared = {
-    // The boot's own readers (`supervise-facts.ts`), so the two can never disagree.
-    lruTier: cacheTiersOf(config).includes('lru'),
-    crossingBus: set(env['NATS_URL']),
-    redis: redisUrlSource(env) !== undefined,
-    embeddedDatabase: !set(env['DATABASE_URL']),
-    stores: [],
-  };
   const poolOf = (role: Role): number => poolMaxFromEnv(env).max ?? POOL_PROFILES[role].max;
   const roles = await Promise.all(
     REPORTED.map(async (role): Promise<RoleProcesses> => {
@@ -63,7 +57,7 @@ export async function processesFact(sources: ProcessesSources): Promise<Processe
           cgroup: async () => cgroup,
           parallelism: () => sources.cores,
           pool: () => poolOf(role),
-          shared: async () => ({ role, ...shared }),
+          shared: () => sharedStateFacts(options, role),
           prebuilt: async () => true,
         });
         return { role, resolved, pool: poolOf(role), listen };
@@ -117,14 +111,15 @@ export async function maxConnectionsOf(
   }
 }
 
-/** The real sources: this host's files, cores and database. */
+/** The real sources: this host's files, cores, app and database. */
 export const hostProcessesSources = (
-  root: string | undefined,
+  root: string,
   env: Env,
   databaseUrl: () => Promise<string | undefined>,
 ): ProcessesSources => ({
   root,
   env,
+  runtime: () => loadAppRuntime(root),
   platform: process.platform,
   cores: navigator.hardwareConcurrency,
   read: readText,

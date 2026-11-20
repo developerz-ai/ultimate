@@ -1,5 +1,5 @@
 // What the container's cgroup DECLARES: a CPU budget and a memory ceiling. Read from the files, not
-// from `availableParallelism()`, because that answers every host core when no quota is set
+// from `navigator.hardwareConcurrency`, because that answers every host core when no quota is set
 // (`cpu.max = max`), and "undeclared" must read as one process, never as the node's core count.
 
 /** A file's text, or `undefined` when it does not exist or cannot be read: a fact, not a failure. */

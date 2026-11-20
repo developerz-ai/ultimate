@@ -4,7 +4,7 @@
 export const PROCESSES_MESSAGES = {
   'cli.doctor.processes':
     'processes per container, as a production container here would run them — {cores} core(s) seen, CPU budget {budget}:',
-  'cli.doctor.processesUndeclared': 'undeclared (1 process)',
+  'cli.doctor.processesUndeclared': 'undeclared — auto runs 1 process',
   'cli.doctor.processesRole':
     '  {role}: {count} process(es), bound by {binding} · pool {pool} + {listen} LISTEN = {connections} connection(s) per container',
   'cli.doctor.processesRefused': '  {role}: ULTIMATE_PROCESSES refused — {code}',

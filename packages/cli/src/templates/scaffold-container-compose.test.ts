@@ -92,9 +92,8 @@ describe('unit · the scaffolded compose file is hardened and rotates its logs',
     }
   });
 
-  // `cpus` is what `ULTIMATE_PROCESSES=auto` reads; the two port-sharing roles keep a closing
-  // process's queued connections (`tcp_migrate_req`).
-  test('every serving role declares its CPU budget, and the port roles the migrate sysctl', () => {
+  // `cpus` is what `ULTIMATE_PROCESSES=auto` reads.
+  test('every serving role declares its CPU budget', () => {
     const all = services();
     expect(['web', 'sync', 'worker', 'scheduler'].map((name) => [name, all[name]?.cpus])).toEqual([
       ['web', '2'],
@@ -102,11 +101,26 @@ describe('unit · the scaffolded compose file is hardened and rotates its logs',
       ['worker', '1'],
       ['scheduler', '0.5'],
     ]);
-    for (const name of ['web', 'sync']) {
-      expect([name, all[name]?.sysctls]).toEqual([name, { 'net.ipv4.tcp_migrate_req': 1 }]);
-    }
-    // 2 processes at 256 MiB each, plus the supervisor and headroom.
+    // 2 processes at 256 MiB each, plus the supervisor and headroom: the anchor's one budget.
     expect(all['web']?.mem_limit).toBe('1g');
+  });
+
+  // Docker refuses to CREATE a container whose sysctl the host kernel lacks, and
+  // `net.ipv4.tcp_migrate_req` is Linux ≥ 5.14: active by default, `web` never starts on RHEL 8,
+  // Ubuntu 20.04 or Amazon Linux 2. It ships as a commented opt-in on the two port-sharing roles.
+  test('tcp_migrate_req is never active, and is the documented opt-in on web and sync', () => {
+    const compose = composeProdFile(names('shop'));
+    for (const [name, service] of Object.entries(services())) {
+      expect([name, service.sysctls]).toEqual([name, undefined]);
+    }
+    for (const name of ['web', 'sync']) {
+      const block = compose.split(`\n  ${name}:\n`)[1]?.split(/\n {2}[a-z]+:\n/)[0] ?? '';
+      expect([name, block]).toEqual([
+        name,
+        expect.stringMatching(/\n {4}# sysctls: \{ net\.ipv4\.tcp_migrate_req: 1 \}\n/),
+      ]);
+      expect([name, block]).toEqual([name, expect.stringContaining('5.14')]);
+    }
   });
 
   test('sync ships at zero replicas, with the recipe for turning it on', () => {

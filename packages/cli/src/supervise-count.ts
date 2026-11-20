@@ -70,7 +70,7 @@ export function unsharedState(facts: SharedStateFacts): readonly string[] {
   return [
     ...(facts.lruTier && !facts.crossingBus && !facts.redis
       ? [
-          'the lru cache tier, whose invalidations ride the in-process bus (no NATS_URL or REDIS_URL)',
+          'the lru cache tier, whose invalidations ride the in-process bus (no NATS_URL, REDIS_URL or VALKEY_URL)',
         ]
       : []),
     ...unsharedStores(facts.stores),
@@ -90,7 +90,7 @@ export interface CountSources {
   readonly platform: string;
   readonly environment: Environment | undefined;
   readonly cgroup: () => Promise<CgroupFacts>;
-  /** `availableParallelism()`: the cpuset bound under a quota. */
+  /** `navigator.hardwareConcurrency`: the cores this process may run on, the cap under a quota. */
   readonly parallelism: () => number;
   /** The container's pool: `DATABASE_POOL_MAX`, else the role's profile. */
   readonly pool: () => number;
@@ -200,15 +200,16 @@ async function checkExplicit(sources: CountSources, requested: number): Promise<
       level: 'warn',
       msg: 'ultimate processes above the memory fit',
       cause: `${PROCESSES_ENV}=${String(requested)} children at about 256 MiB each fit ${String(fit)} into this container's memory ceiling, so an OOM kill takes a child under load`,
-      fix: `${PROCESSES_ENV}=${renderFixShellArg(String(fit), '<count>')}   # or raise the service's memory limit (mem_limit, resources.limits.memory)`,
+      fix: `export ULTIMATE_PROCESSES=${renderFixShellArg(String(fit), '<count>')}   # in this service's deploy environment, or raise the service's memory limit (mem_limit, resources.limits.memory)`,
     },
   };
 }
 
 /**
  * The count, or a coded refusal. Only a production-like container supervises: `x dev`, the test
- * runner and any other environment run one process, and a count asked for there is ignored with
- * one info line rather than refused — a `.env` shared with production must not stop a laptop.
+ * runner and any other environment run one process, and a valid count asked for there is ignored
+ * with one info line rather than refused — a `.env` shared with production must not stop a laptop.
+ * A value that is no count at all (`two`, `0`) is refused everywhere: production would refuse it.
  */
 export async function resolveProcessCount(sources: CountSources): Promise<ProcessCount> {
   const requested = readProcessesRequest(sources.env);

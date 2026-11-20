@@ -119,6 +119,32 @@ describe('unit · auto', () => {
     });
   });
 
+  // The early returns come first: off Linux or on a singleton role the count is 1 whatever the
+  // state, and the binding names that cause, never `shared-state` — nor is the app's state asked.
+  test.each([
+    ['sync', 'darwin', 'platform'],
+    ['scheduler', 'linux', 'role'],
+  ] as const)(
+    '%s on %s binds on %s before shared state is read',
+    async (role, platform, binding) => {
+      let asked = false;
+      const input = sources({
+        role,
+        platform,
+        shared: { crossingBus: false, embeddedDatabase: true },
+      });
+      const count = await resolveProcessCount({
+        ...input,
+        shared: async () => {
+          asked = true;
+          return input.shared();
+        },
+      });
+      expect(count).toEqual({ count: 1, requested: 'auto', binding, clamps: { [binding]: 1 } });
+      expect(asked).toBe(false);
+    },
+  );
+
   test('unshared state and an image that compiles at boot each clamp to one', async () => {
     const lru = await resolveProcessCount(sources({ shared: { crossingBus: false } }));
     expect(lru).toMatchObject({ count: 1, binding: 'shared-state' });
@@ -170,12 +196,19 @@ describe('unit · an explicit count', () => {
     expect(await refusal(sources({ processes: '21' }))).toBe('X_PROCESSES_OVER_POOL');
   });
 
+  // Unshared state is refused before the pool: raising DATABASE_POOL_MAX could never make an
+  // embedded database or a per-process store safe, so the pool's refusal would be a wrong fix.
+  test('unshared state AND a pool too small is refused for the state, the fix that matters', async () => {
+    const input = sources({ processes: '4', pool: 2, shared: { embeddedDatabase: true } });
+    expect(await refusal(input)).toBe('X_PROCESSES_UNSHARED_STATE');
+  });
+
   test('above the memory fit is a warning, never a refusal', async () => {
     const count = await resolveProcessCount(
       sources({ processes: '4', cgroup: { cpus: 4, memoryBytes: 1 * GIB } }),
     );
     expect(count).toMatchObject({ count: 4, note: { level: 'warn' } });
-    expect(count.note?.fix).toStartWith('ULTIMATE_PROCESSES=3');
+    expect(count.note?.fix).toStartWith('export ULTIMATE_PROCESSES=3');
   });
 });
 

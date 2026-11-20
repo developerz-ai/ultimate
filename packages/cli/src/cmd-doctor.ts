@@ -274,7 +274,10 @@ export const doctorCommand: CliCommand = {
     return reportDoctor({
       ...probe,
       browser: () => browserProbe(root, ctx.env),
-      processes: () => processesFact(hostProcessesSources(root, ctx.env, databaseUrl)),
+      // Outside an app there is no container to count, and `reportDoctor` asks no in-app listing.
+      ...(root === undefined
+        ? {}
+        : { processes: () => processesFact(hostProcessesSources(root, ctx.env, databaseUrl)) }),
     });
   },
 };

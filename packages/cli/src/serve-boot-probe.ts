@@ -64,14 +64,33 @@ function servedWithTls<T>(serve: () => T): T {
 }
 
 /**
+ * A supervised child's pair, put to OpenSSL on a loopback port the kernel picks and closed at once:
+ * the same refusal the probe gives, without touching the port its siblings share.
+ */
+function checkedTls(tls: ListenerTls): void {
+  servedWithTls(() =>
+    Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      tls: { cert: tls.cert, key: tls.key },
+      fetch: () => new Response(null, { status: 404 }),
+    }),
+  ).stop(true);
+}
+
+/**
  * `undefined` for the roles whose probes knock on the metrics port — open before any boot work
  * (`serve.ts`) — for an ephemeral boot (a test), whose real port is not known yet, and for a
  * supervised child: a plain bind would refuse its siblings' `reusePort` listeners (EADDRINUSE,
  * measured), and a `reusePort` one would take a share of real traffic and answer it 503. The
- * container's probes go to the supervisor's `METRICS_PORT` instead.
+ * container's probes go to the supervisor's `METRICS_PORT` instead; the child's TLS pair is still
+ * judged here (`checkedTls`).
  */
 export function openBootProbe(input: BootProbeInput): BootProbe | undefined {
-  if (supervisedChild(input.env ?? process.env) !== undefined) return undefined;
+  if (supervisedChild(input.env ?? process.env) !== undefined) {
+    if (input.tls !== undefined) checkedTls(input.tls);
+    return undefined;
+  }
   const port = rolePorts(input.port, [input.role])[0]?.port;
   if (port === undefined) return undefined;
   const { role } = input;

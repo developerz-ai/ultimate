@@ -13,8 +13,16 @@ const HOLDER = { slot_name: 'x_replicator', active_pid: 4242 };
 
 type Step = 'poll' | 'terminate' | 'drop';
 
-/** Answers each poll from `held` (true: the slot is still active), recording what ran in order. */
-const scripted = (held: (poll: number) => boolean, dropFails = false) => {
+/** What Bun.SQL rejects with when the admin session drops mid-wait: a raw, uncoded error. */
+const connectionClosed = (): Error =>
+  Object.assign(new Error('Connection closed'), { code: 'ERR_POSTGRES_CONNECTION_CLOSED' });
+
+/**
+ * Answers each poll from `held` (true: the slot is still active), recording what ran in order.
+ * `fails` names the step whose statement rejects: the drop with the server's refusal, a poll or
+ * the terminate with the raw error a dropped admin connection gives.
+ */
+const scripted = (held: (poll: number) => boolean, fails?: Step) => {
   const steps: Step[] = [];
   const params: unknown[][] = [];
   let polls = 0;
@@ -23,7 +31,7 @@ const scripted = (held: (poll: number) => boolean, dropFails = false) => {
       params.push([...values]);
       if (statement.startsWith('DROP DATABASE')) {
         steps.push('drop');
-        if (dropFails) {
+        if (fails === 'drop') {
           throw new NotImplementedError({
             cause: 'database is being accessed by other users',
             fix: 'x drill --list --json',
@@ -33,10 +41,12 @@ const scripted = (held: (poll: number) => boolean, dropFails = false) => {
       }
       if (statement.includes('pg_terminate_backend')) {
         steps.push('terminate');
+        if (fails === 'terminate') throw connectionClosed();
         return [{ pg_terminate_backend: true }];
       }
       steps.push('poll');
       polls += 1;
+      if (fails === 'poll' && polls === 2) throw connectionClosed();
       return held(polls) ? [HOLDER] : [];
     },
     close: async () => undefined,
@@ -96,7 +106,7 @@ describe('dropScratchDatabase', () => {
   });
 
   test('a drop the server refuses is the same coded error, carrying what it said', async () => {
-    const { sql, steps } = scripted(() => false, true);
+    const { sql, steps } = scripted(() => false, 'drop');
     const error = await dropScratchDatabase(sql, NAME, ADMIN).catch((thrown: unknown) => thrown);
     expect(steps).toEqual(['poll', 'drop']);
     expect(error).toBeUltimateError('X_DRILL_TEARDOWN_FAILED');
@@ -112,5 +122,25 @@ describe('dropScratchDatabase', () => {
     );
     expect(error).toBeUltimateError('X_DRILL_TEARDOWN_FAILED');
     expect(steps).toEqual([]);
+    // The name never reaches the paste: a quote in it would close the `-c "…"` argument.
+    const fix = String(Reflect.get(error as object, 'fix'));
+    expect(fix).not.toContain('postgres"');
+    expect(fix).toContain("where database = '<database>'");
   });
+
+  // The admin session can drop during the ~10 s wait; Bun.SQL then rejects with a raw error.
+  for (const [step, held, ran] of [
+    ['poll', (poll: number) => poll < 3, ['poll', 'poll']],
+    ['terminate', () => true, [...repeat('poll', SCRATCH_SLOT_POLLS), 'terminate']],
+  ] as const) {
+    test(`a ${step} the connection drops under is the coded error, carrying its text`, async () => {
+      const { sql, steps } = scripted(held, step);
+      const error = await dropScratchDatabase(sql, NAME, ADMIN).catch((thrown: unknown) => thrown);
+      expect(steps).toEqual([...ran]);
+      expect(error).toBeUltimateError('X_DRILL_TEARDOWN_FAILED');
+      const cause = String(Reflect.get(error as object, 'cause'));
+      expect(cause).toContain(NAME);
+      expect(cause).toContain('Connection closed');
+    });
+  }
 });

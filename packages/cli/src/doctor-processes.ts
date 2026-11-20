@@ -62,13 +62,15 @@ export function processesWarnings(fact: ProcessesFact): readonly Finding[] {
       docs: ERROR_DOCS_URL,
     });
   }
+  // Only where the knob exists and reads 0: a kernel before 5.14 has none (`migrateReq` undefined),
+  // and the compose line would then stop the container from being created at all.
   const shared = fact.roles.filter((entry) => (countOf(entry) ?? 1) > 1);
   if (shared.length > 0 && fact.migrateReq === '0') {
     const roles = shared.map((entry) => `${entry.role} (${countOf(entry)})`).join(', ');
     warnings.push({
       code: 'X_PROCESSES_MIGRATE_REQ_OFF',
-      cause: `net.ipv4.tcp_migrate_req is 0 while ${roles} share a port: a process that closes its listener resets every connection queued on it (measured 93–109 of 200; 0 with the sysctl)`,
-      fix: `sysctls: { net.ipv4.tcp_migrate_req: 1 }   # on the service in ${COMPOSE}; or docker run --sysctl net.ipv4.tcp_migrate_req=1`,
+      cause: `this kernel has net.ipv4.tcp_migrate_req and it reads 0 while ${roles} share a port: a process that closes its listener resets every connection queued on it (measured 93–109 of 200; 0 with the sysctl)`,
+      fix: `sysctls: { net.ipv4.tcp_migrate_req: 1 }   # uncomment it on web and sync in ${COMPOSE}; Linux >= 5.14 only — this host has the knob, an older kernel refuses to create the container`,
       docs: ERROR_DOCS_URL,
     });
   }

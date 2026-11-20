@@ -162,8 +162,8 @@ export interface JobsConfig {
   readonly queues: readonly string[];
   /**
    * Slots per worker CONTAINER: one number for every queue it serves, or a table per queue
-   * (`{ banks: 4 }`; a queue it does not name at `JOBS_CONCURRENCY_DEFAULT`). N processes split
-   * each total with `childShare`; a total below N runs on the indices < total, so `1` stays serial.
+   * (`{ banks: 4 }`; one it does not name at `JOBS_CONCURRENCY_DEFAULT`). Over N processes the
+   * runtime gives the indices >= total 0 slots, then `childShare`s the rest: `1` stays serial.
    */
   readonly concurrency: JobsConcurrency;
   /**

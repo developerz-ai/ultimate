@@ -44,6 +44,7 @@ import { UnknownCommandError } from './errors';
 import { readIntFlag } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
+import { findingFrom } from './output';
 import { flagBool } from './parse';
 import { replicatedRelations } from './role-replicator';
 
@@ -103,7 +104,10 @@ const reportJson = (report: DrillReport): JsonValue =>
     ),
   ) as JsonValue;
 
-const findingsOf = (report: DrillReport): readonly Finding[] =>
+/** A report's failures, each as `X_DRILL_FAILED`: the name and the verdict are all it reads. */
+type JudgedDrill = Pick<DrillReport, 'name' | 'verdict'>;
+
+const findingsOf = (report: JudgedDrill): readonly Finding[] =>
   report.verdict.failures.map((failure) => {
     const error = new DrillFailedError({ drill: report.name, failure });
     return { code: error.code, cause: error.cause, fix: error.fix };
@@ -112,11 +116,13 @@ const findingsOf = (report: DrillReport): readonly Finding[] =>
 /** The evidence connection: `bunDrillSql`'s shape, a seam so a test can make it throw. */
 type DrillSqlConnection = ReturnType<typeof bunDrillSql>;
 
-/** The body's value, and the teardown's refusal (a scratch database left behind) as a finding. */
-export interface DrillFleetRun<T> {
-  readonly value: T;
+/**
+ * The body's value — or what it threw — and the teardown's refusal (a scratch database left
+ * behind) as a finding. Both halves on both paths: a throw must not take the leak's finding with it.
+ */
+export type DrillFleetRun<T> = ({ readonly value: T } | { readonly thrown: unknown }) & {
   readonly teardown: readonly Finding[];
-}
+};
 
 /** Stop the fleet; a coded refusal is answered as a finding, so it cannot replace a verdict. */
 async function stopFleet(fleet: Pick<DrillFleet, 'stop'>): Promise<readonly Finding[]> {
@@ -133,8 +139,8 @@ async function stopFleet(fleet: Pick<DrillFleet, 'stop'>): Promise<readonly Find
  * One drill's body over a started fleet, which is ALWAYS stopped. The fleet is spawned role
  * processes: the connection was opened before the `try`, so a constructor that threw (a malformed
  * URL is a synchronous `Invalid URL`) left every role running, and a `close()` that threw skipped
- * `stop()` the same way. A body that threw keeps its throw: the teardown after it is best-effort,
- * and its own failure — a later, smaller fact — is not allowed to replace the one that ended it.
+ * `stop()` the same way. A body that threw keeps its throw, answered as `thrown`: the teardown's
+ * failure — a later, smaller fact — rides beside it and never replaces the one that ended the run.
  */
 export async function withDrillFleet<T>(
   fleet: Pick<DrillFleet, 'databaseUrl' | 'stop'>,
@@ -150,10 +156,39 @@ export async function withDrillFleet<T>(
     closed = true;
     await sql.close();
   } catch (error) {
-    await Promise.allSettled([closed ? undefined : sql?.close(), stopFleet(fleet)]);
-    throw error;
+    const [, stopped] = await Promise.allSettled([
+      closed ? undefined : sql?.close(),
+      stopFleet(fleet),
+    ]);
+    // `stopFleet` answers a coded refusal as a finding; only an uncoded throw rejects it.
+    const teardown = stopped.status === 'fulfilled' ? stopped.value : [findingFrom(stopped.reason)];
+    return { thrown: error, teardown };
   }
   return { value, teardown: await stopFleet(fleet) };
+}
+
+/**
+ * A drill that threw ends the run, as it always has — red, exit 1 — with its throw first, then
+ * every finished drill's failures and every teardown finding so far: none of them is dropped.
+ */
+export function thrownRun(input: {
+  readonly thrown: unknown;
+  readonly reports: readonly JudgedDrill[];
+  readonly teardowns: readonly Finding[];
+  readonly notRun: readonly string[];
+}): CommandResult {
+  const { reports } = input;
+  return {
+    ok: false,
+    command: 'drill',
+    summary: msg('cli.drill.summary', {
+      held: reports.filter((report) => report.verdict.ok).length,
+      ran: reports.length + 1,
+      notRun: input.notRun.length,
+    }),
+    findings: [findingFrom(input.thrown), ...reports.flatMap(findingsOf), ...input.teardowns],
+    exitCode: 1,
+  };
 }
 
 export const drillCommand: CliCommand = {
@@ -237,8 +272,9 @@ export const drillCommand: CliCommand = {
           ? runDrill({ drill, fleet, budgets, targets, sql, sync: drillSyncLane(fleet) })
           : runRollout({ drill, fleet, budgets, readyTimeoutMs: READY_TIMEOUT_MS }),
       );
-      reports.push(run.value);
       teardowns.push(...run.teardown);
+      if ('thrown' in run) return thrownRun({ thrown: run.thrown, reports, teardowns, notRun });
+      reports.push(run.value);
     }
     const held = reports.filter((report) => report.verdict.ok).length;
     const findings = [...reports.flatMap(findingsOf), ...teardowns];

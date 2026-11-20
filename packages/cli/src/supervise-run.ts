@@ -14,7 +14,7 @@ import { childHealthy, startSupervisorProbe } from './supervise-probe';
 /** The process seams `supervise()` defaults to the real ones: a test hands in fakes. */
 export type SupervisedSeams = Pick<SuperviseInput, 'spawn' | 'signals' | 'timers'>;
 
-/** Runs `count.count` children of this very entry point; answers the container's exit code. */
+/** Runs `count` children of this very entry point; answers the container's exit code. */
 export async function runSupervised(
   options: ServeOptions,
   role: Role,

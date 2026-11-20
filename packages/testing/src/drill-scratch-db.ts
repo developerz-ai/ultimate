@@ -69,10 +69,18 @@ export async function dropScratchDatabase(
   if (!NAME.test(name)) {
     throw refused(adminUrl, name, `${renderCauseValue(name)} is not a drill scratch database`);
   }
-  let holders = await awaitInactive(sql, name);
-  if (holders.length > 0) {
-    await sql.query(TERMINATE_SQL, [name]);
+  // Every statement in one `try`: the admin session can drop during the wait, and Bun.SQL then
+  // rejects a poll or the terminate with a raw error the drill would otherwise print uncoded.
+  let holders: readonly Holder[];
+  try {
     holders = await awaitInactive(sql, name);
+    if (holders.length > 0) {
+      await sql.query(TERMINATE_SQL, [name]);
+      holders = await awaitInactive(sql, name);
+    }
+    if (holders.length === 0) await sql.query(dropSql(name));
+  } catch (error) {
+    throw refused(adminUrl, name, renderThrowable(error));
   }
   if (holders.length > 0) {
     const named = holders.map((holder) => `slot ${holder.slot} (pid ${String(holder.pid)})`);
@@ -81,11 +89,6 @@ export async function dropScratchDatabase(
       name,
       `still used by an active logical replication slot after its holder was terminated: ${named.join(', ')}`,
     );
-  }
-  try {
-    await sql.query(dropSql(name));
-  } catch (error) {
-    throw refused(adminUrl, name, renderThrowable(error));
   }
 }
 

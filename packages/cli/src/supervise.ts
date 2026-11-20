@@ -66,7 +66,7 @@ export interface ChildView {
 
 export interface SupervisorView {
   children(): readonly ChildView[];
-  /** Every child that is not draining reported ready, and the container is not stopping. */
+  /** At least one child ready, every other one ready or draining, and the container not stopping. */
   ready(): boolean;
   /** Alive and not giving up on a crash loop. */
   live(): boolean;
@@ -172,8 +172,15 @@ export function supervise(input: SuperviseInput): Supervisor {
     resolve = settle;
   });
 
+  // Only PENDING handles stay on the slot: a fired one leaves it, or a healthy child's polls
+  // (one per HEALTH_POLL_MS) would pile up until its next exit.
   const later = (slot: Slot, ms: number, run: () => void): void => {
-    slot.timers.push(timers.setTimeout(run, ms));
+    const handle = timers.setTimeout(() => {
+      const at = slot.timers.indexOf(handle);
+      if (at !== -1) slot.timers.splice(at, 1);
+      run();
+    }, ms);
+    slot.timers.push(handle);
   };
   const clear = (slot: Slot): void => {
     for (const handle of slot.timers.splice(0)) timers.clearTimeout(handle);

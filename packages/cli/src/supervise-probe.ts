@@ -93,7 +93,12 @@ async function scrape(child: ChildView): Promise<{ index: number; body: string }
     const response = await fetch(`${child.metricsUrl}${METRICS_PATH}`, {
       signal: AbortSignal.timeout(CHILD_SCRAPE_TIMEOUT_MS),
     });
-    return response.ok ? { index: child.index, body: await response.text() } : undefined;
+    if (!response.ok) {
+      // Given back now, as `childHealthy` does: unread, the stream and its socket stay held.
+      await response.body?.cancel();
+      return undefined;
+    }
+    return { index: child.index, body: await response.text() };
   } catch {
     // A child that is restarting or saturated is absent from this scrape, never the scrape's end.
     return undefined;

@@ -86,8 +86,9 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
       value: {{ $root.Values.metricsPort | quote }}
     {{- end }}
     {{- /*
-    One process per pod: per-pod parallelism is the HPA's, and a pod with no CPU limit (this chart
-    sets requests only) would read the node's cores. env.ULTIMATE_PROCESSES wins when set.
+    One process per pod: per-pod parallelism is the HPA's. This chart sets CPU requests only, so
+    auto already resolves to 1; the pin makes the count explicit, and a CPU limit added later
+    cannot change it. env.ULTIMATE_PROCESSES wins when set.
     */}}
     {{- if not (hasKey $root.Values.env "ULTIMATE_PROCESSES") }}
     - name: ULTIMATE_PROCESSES

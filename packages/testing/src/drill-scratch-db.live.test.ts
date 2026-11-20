@@ -9,15 +9,27 @@ import { scratchDatabase } from './drill-scratch-db';
 
 const replicationUrl = Bun.env['TEST_REPLICATION_URL'] ?? '';
 
+// The logical server, from this file alone:
+//   docker compose -f docker/docker-compose.test.yml up -d --wait postgres-tls
+//   set -a; . docker/test-services.env; set +a
+//   bun test ./packages/testing/src/drill-scratch-db.live.test.ts
+
+type Reserved = Awaited<ReturnType<Bun.SQL['reserve']>>;
+
 describe.skipIf(replicationUrl === '')('live · the drill scratch database drop', () => {
   test('an active logical slot on it is waited out or terminated, and the drop leaves nothing', async () => {
-    const database = await scratchDatabase(replicationUrl);
-    const writer = new Bun.SQL(database.url);
-    const creator = new Bun.SQL(database.url);
+    // The admin client before the database (Bun.SQL connects on first use), the others inside
+    // the `try`: a client or a reserve that fails still drops the database.
     const admin = new Bun.SQL(replicationUrl);
-    const writing = await writer.reserve();
+    const database = await scratchDatabase(replicationUrl);
+    let writer: Bun.SQL | undefined;
+    let creator: Bun.SQL | undefined;
+    let writing: Reserved | undefined;
     let creating: Promise<unknown> = Promise.resolve();
     try {
+      writer = new Bun.SQL(database.url);
+      creator = new Bun.SQL(database.url);
+      writing = await writer.reserve();
       await writing.unsafe('begin');
       await writing.unsafe('create table t (id int)');
       await writing.unsafe('insert into t values (1)');
@@ -47,10 +59,10 @@ describe.skipIf(replicationUrl === '')('live · the drill scratch database drop'
       expect([databases.length, slots.length]).toEqual([0, 0]);
     } finally {
       // After a drop the writer's session is gone, so its rollback has nothing to answer.
-      await writing.unsafe('rollback').catch(() => undefined);
+      await writing?.unsafe('rollback').catch(() => undefined);
       await creating;
-      writing.release();
-      await Promise.all([writer.close(), creator.close()]);
+      writing?.release();
+      await Promise.all([writer?.close(), creator?.close()]);
       // What a refused drop left behind: the slot, now created and inactive, then the database.
       await admin.unsafe(
         'select pg_drop_replication_slot(slot_name) from pg_replication_slots where database = $1',

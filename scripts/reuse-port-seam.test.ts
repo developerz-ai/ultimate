@@ -40,6 +40,15 @@ describe('reusePort outside the seam', () => {
     const source = 'cause: `on darwin, where Bun ignores reusePort (SO_REUSEPORT is Linux only)`,';
     expect(reusePortSites(AT, source)).toEqual([]);
     expect(reusePortSites(AT, "const why = 'reusePort is Linux only';")).toEqual([]);
+    // A colon after the word is prose too, unless the word is a key inside an object literal.
+    expect(reusePortSites(AT, "const why = 'reusePort: true is safe under a supervisor';")).toEqual(
+      [],
+    );
+  });
+
+  test('a key a template writes after another key, or on its own line, is still reported', () => {
+    expect(reusePortSites(AT, 'const src = `Bun.serve({ port, reusePort: true })`;')).toEqual([1]);
+    expect(reusePortSites(AT, 'const src = `Bun.serve({\n  reusePort: true,\n})`;')).toEqual([2]);
   });
 
   test('a test file is a fixture, never reported', () => {

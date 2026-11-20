@@ -19,17 +19,13 @@ const QUERY_VIEW_WHY =
   "x g query and x g resource now answer the slice's View; an existing app's reads are its own code and keep answering the row they always did — narrowing them would drop fields a deployed client may read, so x upgrade leaves them alone";
 
 const PROCESSES_COMPOSE_WHY =
-  "new apps' compose declares cpus per role, init: true and the tcp_migrate_req sysctl for processes per container; an existing app's compose declares no cpus, so ULTIMATE_PROCESSES=auto runs one process as before, and sizing a container's CPU and memory is the app's decision, so x upgrade leaves it alone (wiki/Upgrading.md)";
+  "new apps' compose declares cpus per role and init: true, and carries the tcp_migrate_req sysctl commented out (Docker refuses it below Linux 5.14); an existing compose with no cpus runs one process as before, one that already sets cpus of 2 or more runs that many and pins ULTIMATE_PROCESSES=1 to keep one or adds the sysctl on a kernel that has it (x doctor names the count), and sizing a container's CPU and memory is the app's decision, so x upgrade leaves it alone (wiki/Upgrading.md)";
 
 const PROCESSES_HELM_WHY =
   'new charts pin ULTIMATE_PROCESSES=1 on every role; an existing chart sets no CPU limit, so auto already resolves to one process per pod, and the pin only states it, so x upgrade leaves the chart alone';
 
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
-  ...[
-    'packages/cli/src/templates/scaffold-container-compose.ts',
-    'docker/docker-compose.prod.yml',
-  ].map((template) => ({ template, since: '31.49.0', none: PROCESSES_COMPOSE_WHY })),
   ...[
     'packages/cli/src/templates/scaffold-helm-templates.ts',
     'docker/helm/templates/_helpers.tpl',
@@ -250,7 +246,7 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   {
     template: 'docker/docker-compose.prod.yml',
     since: '31.49.0',
-    none: "the specimen's replicator now ships at replicas: 0, as sync and the chart's replicator do; x new writes no replicator service at all, and an app that runs one turned realtime on and configured Postgres for it, so rewriting its replica count would switch a working change feed off",
+    none: `the specimen's replicator now ships at replicas: 0, as sync and the chart's replicator do; x new writes no replicator service at all, and an app that runs one turned realtime on and configured Postgres for it, so rewriting its replica count would switch a working change feed off. Also: ${PROCESSES_COMPOSE_WHY}`,
   },
   ...[
     'packages/cli/src/templates/query.ts',
@@ -277,7 +273,7 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   {
     template: 'packages/cli/src/templates/scaffold-container-compose.ts',
     since: '31.49.0',
-    none: "new apps pin the compose database image by digest; an existing app's docker-compose.yml runs a live database on the tag it chose, and moving that image is a backup-first operation the app decides, so x upgrade leaves it alone",
+    none: `new apps pin the compose database image by digest; an existing app's docker-compose.yml runs a live database on the tag it chose, and moving that image is a backup-first operation the app decides, so x upgrade leaves it alone. Also: ${PROCESSES_COMPOSE_WHY}`,
   },
   {
     template: 'packages/cli/src/templates/scaffold-test-services.ts',

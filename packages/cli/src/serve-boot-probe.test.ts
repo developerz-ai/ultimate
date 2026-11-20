@@ -105,6 +105,24 @@ describe('unit · the boot probe listener', () => {
     expect(healthz.status).toBe(200);
   });
 
+  // The probe is where OpenSSL first meets the pair; a child opens none, so it still asks OpenSSL
+  // on a loopback port of its own — never the shared one — or its real listener throws a bare
+  // `ERR_OSSL_*` naming no variable.
+  test('a supervised child still refuses a pair OpenSSL refuses as X_CONFIG_INVALID', async () => {
+    const env = { ULTIMATE_CHILD: '0/2' };
+    const tls = {
+      cert: '-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n',
+      key: '-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n',
+    };
+    expect(() =>
+      openBootProbe({ role: 'web', port: UNBOUND_PORT, hostname: '127.0.0.1', env, tls }),
+    ).toThrow(expect.objectContaining({ code: 'X_CONFIG_INVALID' }));
+    const valid = await selfSignedCertificate({ names: ['127.0.0.1'], now: new Date() });
+    expect(
+      openBootProbe({ role: 'web', port: UNBOUND_PORT, hostname: '127.0.0.1', env, tls: valid }),
+    ).toBeUndefined();
+  });
+
   test('a supervised child opens none: its siblings share the port, and a probe would take traffic', () => {
     for (const role of ['web', 'sync'] as const) {
       const env = { ULTIMATE_CHILD: '0/2' };
