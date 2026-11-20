@@ -36,18 +36,24 @@ printf '%s\n' "$DEVELOPERZ_LIVE_CHECK_SSH_KNOWN_HOSTS" >"$d/known_hosts"
 bastion="dz-live-check@$(head -n1 "$d/known_hosts" | cut -d' ' -f1)"
 export KUBECONFIG="$d/kubeconfig"
 # The control socket is under /tmp, not "$d": a unix socket path is capped at 108 bytes and
-# $HOME can be long. %C is ssh's own hash of the connection. The trap closes the tunnel, which
-# removes the socket, when this shell exits: run the proof below in this same shell.
+# $HOME can be long. %C is ssh's own hash of the connection. The master outlives this shell
+# and closes itself, removing the socket, after 15 idle minutes. This block is idempotent: a
+# later shell runs it again and reuses the live tunnel.
 ctl="/tmp/dz-lc-%C"
-trap 'ssh -S "$ctl" -O exit "$bastion" 2>/dev/null' EXIT
-for t in $DEVELOPERZ_LIVE_CHECK_API_TARGETS; do
-  ssh -f -N -M -S "$ctl" -o BatchMode=yes -o IdentitiesOnly=yes -i "$d/id" \
-    -o UserKnownHostsFile="$d/known_hosts" -o StrictHostKeyChecking=yes \
-    -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 \
-    -L "127.0.0.1:26443:$t" "$bastion" \
-  && kubectl --request-timeout=5s get --raw /readyz >/dev/null && break
+if ! { ssh -S "$ctl" -O check "$bastion" 2>/dev/null \
+  && kubectl --request-timeout=5s get --raw /readyz >/dev/null 2>&1; }; then
   ssh -S "$ctl" -O exit "$bastion" 2>/dev/null
-done
+  for t in $DEVELOPERZ_LIVE_CHECK_API_TARGETS; do
+    ssh -f -N -S "$ctl" -o ControlMaster=auto -o ControlPersist=15m \
+      -o BatchMode=yes -o IdentitiesOnly=yes -i "$d/id" \
+      -o UserKnownHostsFile="$d/known_hosts" -o StrictHostKeyChecking=yes \
+      -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 \
+      -L "127.0.0.1:26443:$t" "$bastion" \
+    && kubectl --request-timeout=5s get --raw /readyz >/dev/null && break
+    ssh -S "$ctl" -O exit "$bastion" 2>/dev/null
+  done
+fi
+# close it early: ssh -S "$ctl" -O exit "$bastion"
 ```
 
 What it may read: pods, pod logs, deployments, replicasets, statefulsets, services, events and
