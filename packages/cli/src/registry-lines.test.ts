@@ -129,11 +129,12 @@ describe('unit · withRegistryLines over an existing app', () => {
       '',
     ].join('\n');
     const after = withRegistryLines(API, source);
+    // Every spelling of the property — `key:`, `'key':`, the shorthand `key,` — counted together.
     for (const key of ['queries', 'jobs', 'tasks']) {
-      expect(after.match(new RegExp(`\\b${key}\\b\\s*:`, 'g'))?.length ?? 0).toBe(
-        key === 'jobs' ? 1 : 0,
-      );
+      const property = new RegExp(`^\\s*(?:${key}|'${key}'|"${key}")\\s*[:,]`, 'gm');
+      expect({ key, count: after.match(property)?.length ?? 0 }).toEqual({ key, count: 1 });
     }
+    expect(after).toContain("  'jobs': jobs,\n");
     expect(after).toContain('  queries,\n');
     expect(after).toContain(`  actions: [\n    ${REGISTRY_LINE_COMMENT}\n    actions,\n  ],`);
   });

@@ -92,8 +92,9 @@ function apiDeclares(source: string, key: string): boolean {
   if (call === null) return false;
   const object = readList(source, masked, call.index + call[0].length - 1);
   const named = new RegExp(`^(?:${key}|'${key}'|"${key}")\\s*(?::|$)`);
+  // The SOURCE text, not the masked: masking blanks a string's contents, so `'jobs':` read as absent.
   return (object?.entries ?? []).some((entry) =>
-    named.test(masked.slice(entry.start, entry.end).trim()),
+    named.test(source.slice(entry.start, entry.end).trim()),
   );
 }
 
