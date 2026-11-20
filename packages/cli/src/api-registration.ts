@@ -82,6 +82,22 @@ export const apiListsOf = (
 };
 
 /**
+ * Whether the `defineApi({ ... })` call names `key` in ANY form — `key: [...]`, `key: value`, the
+ * shorthand `key,`. `readProperties` sees only `key:`; a shorthand `queries,` read as absent, and
+ * 31.49.0's merge-drivers codemod added `queries: []` beside it: a duplicate key, TS1117.
+ */
+function apiDeclares(source: string, key: string): boolean {
+  const masked = maskOf(source);
+  const call = /\bdefineApi\(\s*\{/.exec(masked);
+  if (call === null) return false;
+  const object = readList(source, masked, call.index + call[0].length - 1);
+  const named = new RegExp(`^(?:${key}|'${key}'|"${key}")\\s*(?::|$)`);
+  return (object?.entries ?? []).some((entry) =>
+    named.test(masked.slice(entry.start, entry.end).trim()),
+  );
+}
+
+/**
  * `source` with `key: value,` added as a property, on its own row: in the order `x new` writes —
  * actions, queries, jobs, tasks — so after the nearest list before it the call already holds, which
  * is `actions` at the least. `undefined` when the row would not land inside the call: an earlier
@@ -94,7 +110,7 @@ export function insertApiList(
 ): string | undefined {
   const listOf = apiListsOf(source);
   const actions = listOf?.('actions');
-  if (listOf === undefined || actions === undefined) return undefined;
+  if (listOf === undefined || actions === undefined || apiDeclares(source, key)) return undefined;
   const earlier = LIST_ORDER.slice(0, LIST_ORDER.indexOf(key))
     .map((name) => listOf(name))
     .findLast((found) => found !== undefined);

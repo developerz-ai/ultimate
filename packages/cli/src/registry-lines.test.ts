@@ -112,6 +112,32 @@ describe('unit · withRegistryLines over an existing app', () => {
     expect(withRegistryLines(ROLES, source)).toBe(source);
   });
 
+  // notificado.co's 31.49.0 upgrade: `queries, jobs, tasks` shorthand gained `queries: []` beside
+  // each — a duplicate key, TS1117.
+  test('a shorthand or non-list property is declared already: no second key is written', () => {
+    const source = [
+      "import { defineApi } from '@ultimat3/action';",
+      "import * as actions from './actions';",
+      "import { jobs, queries, tasks } from './more';",
+      '',
+      'export const api = defineApi({',
+      '  actions: [actions],',
+      '  queries,',
+      "  'jobs': jobs,",
+      '  tasks,',
+      '});',
+      '',
+    ].join('\n');
+    const after = withRegistryLines(API, source);
+    for (const key of ['queries', 'jobs', 'tasks']) {
+      expect(after.match(new RegExp(`\\b${key}\\b\\s*:`, 'g'))?.length ?? 0).toBe(
+        key === 'jobs' ? 1 : 0,
+      );
+    }
+    expect(after).toContain('  queries,\n');
+    expect(after).toContain(`  actions: [\n    ${REGISTRY_LINE_COMMENT}\n    actions,\n  ],`);
+  });
+
   test('any other file is untouched', () => {
     expect(withRegistryLines('apps/web/other.ts', 'const a = [1, 2];\n')).toBe(
       'const a = [1, 2];\n',

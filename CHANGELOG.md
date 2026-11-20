@@ -11,6 +11,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 ## [Unreleased]
 
 ### Fixed
+- `x upgrade`'s `merge-drivers` codemod and `x g` no longer write a second `queries` / `jobs` / `tasks` key into a `defineApi({ ... })` that already names it as a shorthand (`queries,`) or a non-list value: a list is added only when the call names no such key (31.49.0 wrote `queries: []` beside `queries,`, TS1117).
+- `x upgrade` codemods keep a rewritten file's mode: 31.49.0's `merge-drivers` turned an executable `bin/setup.ts` into a plain file.
 
 - `x upgrade`'s `merge-drivers` codemod reports the setup step it cannot place: in an app whose `bun run setup` is not `bin/setup.ts` (a bash `bin/setup`), `skipped` now names the script `package.json` runs, or `package.json` itself, with the line to add (`bunx x merge-driver install`). Before, the step was in neither `changed` nor `skipped`, and the drivers were never installed.
 - `x upgrade` no longer drops an app under its coverage floor with no behaviour change: when the `merge-drivers` codemod puts `apps/web/api/index.ts` one entry per line and no `index.test.ts` sits beside it, it writes `apps/web/api/index.test.ts`, which checks that each listed primitive is registered under its export name (`x new` has shipped its own version of this test since 2026-10). An index that exports no `api` is reported in `skipped`.
