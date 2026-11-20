@@ -28,8 +28,8 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const ROOT = repoRoot();
 
-const footerAt = (version: string): string =>
-  `**Ultimate** — v${version} \`As of 2026-09\`. MIT licensed.\n`;
+const footerAt = (version: string, asOf = '2026-09'): string =>
+  `**Ultimate** — v${version} \`As of ${asOf}\`. MIT licensed.\n`;
 
 /** `bun.lock`'s own shape, down to the trailing commas: the block reader is a regex over it. */
 const lockAt = (version: string): string => `{
@@ -125,27 +125,38 @@ describe('RELEASE_WRITES', () => {
 });
 
 describe('rewriteStamps', () => {
-  test('moves the version and leaves the `As of` date it was anchored on', () => {
+  test('moves the version and its `As of` date to the release day, at the written precision', () => {
     const { text, moved } = rewriteStamps(
       { path: 'wiki/_Footer.md', text: footerAt('19.2.0') },
       '19.3.0',
+      '2026-11-20',
     );
-    expect(text).toBe(footerAt('19.3.0'));
+    // 31.49.0's footer kept `As of 2026-10` beside a release dated 2026-11-20.
+    expect(text).toBe(footerAt('19.3.0', '2026-11'));
     expect(moved).toBe(1);
-    // The date is the half a release does not know: it says when the sentence was true.
-    expect(text).toContain('`As of 2026-09`');
+  });
+
+  test('a day-precision date moves to the day', () => {
+    const page = '**Ultimate** — v1.0.0 `As of 2026-01-02`.';
+    const { text } = rewriteStamps({ path: 'wiki/_Footer.md', text: page }, '1.1.0', '2026-11-20');
+    expect(text).toBe('**Ultimate** — v1.1.0 `As of 2026-11-20`.');
   });
 
   test('a version inside a fenced block is an example, never a stamp', () => {
     const page = ['```sh', 'git tag -a v1.0.0 `As of 2026-01`', '```'].join('\n');
-    const { text, moved } = rewriteStamps({ path: 'wiki/_Footer.md', text: page }, '19.3.0');
+    const { text, moved } = rewriteStamps(
+      { path: 'wiki/_Footer.md', text: page },
+      '19.3.0',
+      '2026-11-20',
+    );
     expect(moved).toBe(0);
     expect(text).toBe(page);
   });
 
   test('a page already stamping the release moves nothing', () => {
     expect(
-      rewriteStamps({ path: 'wiki/_Footer.md', text: footerAt('19.3.0') }, '19.3.0').moved,
+      rewriteStamps({ path: 'wiki/_Footer.md', text: footerAt('19.3.0') }, '19.3.0', '2026-11-20')
+        .moved,
     ).toBe(0);
   });
 });
@@ -189,7 +200,7 @@ describe('performReleaseWrites', () => {
   test('a tree that owed all three owes none, and then answers --check clean', async () => {
     const dir = await fixture({ declared: '2.0.0', locked: '1.0.0', footer: footerAt('1.0.0') });
     expect(await codesOf(dir)).not.toEqual([]);
-    const { writes, findings } = await performReleaseWrites(dir, '2.0.0');
+    const { writes, findings } = await performReleaseWrites(dir, '2.0.0', '2026-11-20');
     expect(findings).toEqual([]);
     expect(writes.map((write) => write.kind).sort()).toEqual(['lockfile', 'manifest', 'stamps']);
     expect(writes.every((write) => write.facts > 0)).toBe(true);
@@ -199,8 +210,8 @@ describe('performReleaseWrites', () => {
 
   test('re-running it is a no-op that still reports each file', async () => {
     const dir = await fixture({ declared: '2.0.0', locked: '1.0.0', footer: footerAt('1.0.0') });
-    await performReleaseWrites(dir, '2.0.0');
-    const { writes } = await performReleaseWrites(dir, '2.0.0');
+    await performReleaseWrites(dir, '2.0.0', '2026-11-20');
+    const { writes } = await performReleaseWrites(dir, '2.0.0', '2026-11-20');
     expect(writes.every((write) => write.facts === 0)).toBe(true);
     await rm(dir, { recursive: true, force: true });
   });
@@ -212,7 +223,7 @@ describe('performReleaseWrites', () => {
       footer: footerAt('2.0.0'),
       lockfile: false,
     });
-    const { writes, findings } = await performReleaseWrites(dir, '2.0.0');
+    const { writes, findings } = await performReleaseWrites(dir, '2.0.0', '2026-11-20');
     const refusal = findings.find((finding) => finding.code === 'X_LOCKFILE_STALE');
     expect(refusal?.fix).toBe('bun install && bun run lockfile:fix');
     // The other two still ran: a release that stops on the first refusal makes the operator
@@ -227,7 +238,7 @@ describe('performReleaseWrites', () => {
   test('a step that throws is a finding naming its file, and the steps after it still run', async () => {
     const dir = await fixture({ declared: '2.0.0', locked: '1.0.0', footer: footerAt('1.0.0') });
     await Bun.write(join(dir, 'packages/broken/package.json'), '[1]\n');
-    const { writes, findings } = await performReleaseWrites(dir, '2.0.0');
+    const { writes, findings } = await performReleaseWrites(dir, '2.0.0', '2026-11-20');
     const lockfile = findings.find((finding) => finding.code === 'X_LOCKFILE_STALE');
     expect(lockfile?.cause).toContain('packages/broken/package.json');
     expect(lockfile?.fix).toBe('bun run lockfile:fix');
@@ -237,7 +248,7 @@ describe('performReleaseWrites', () => {
     ]);
     // What WAS written is named: the footer moved, and the report says so.
     expect(writes.map((write) => write.kind)).toEqual(['stamps']);
-    expect(await Bun.file(join(dir, 'wiki/_Footer.md')).text()).toBe(footerAt('2.0.0'));
+    expect(await Bun.file(join(dir, 'wiki/_Footer.md')).text()).toBe(footerAt('2.0.0', '2026-11'));
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -247,7 +258,7 @@ describe('performReleaseWrites', () => {
     async () => {
       const dir = await fixture({ declared: '2.0.0', locked: '1.0.0', footer: footerAt('1.0.0') });
       await chmod(join(dir, 'wiki/_Footer.md'), 0o444);
-      const { writes, findings } = await performReleaseWrites(dir, '2.0.0');
+      const { writes, findings } = await performReleaseWrites(dir, '2.0.0', '2026-11-20');
       expect(findings.map((finding) => finding.code)).toEqual(['X_VERSION_STAMP_STALE']);
       expect(findings[0]?.cause).toContain('wiki/_Footer.md could not be stamped');
       expect(writes.map((write) => write.kind)).toEqual(['manifest', 'lockfile']);
@@ -257,7 +268,7 @@ describe('performReleaseWrites', () => {
 
   test('a wiki with no footer is refused rather than silently unstamped', async () => {
     const dir = await fixture({ declared: '2.0.0', locked: '2.0.0', footer: undefined });
-    const { findings } = await performReleaseWrites(dir, '2.0.0');
+    const { findings } = await performReleaseWrites(dir, '2.0.0', '2026-11-20');
     const refusal = findings.find((finding) => finding.code === 'X_VERSION_STAMP_STALE');
     expect(refusal?.cause).toContain('stamps no version');
     expect(refusal?.fix).toContain('git checkout -- wiki/_Footer.md');
@@ -335,7 +346,7 @@ describe('releaseCheckFindings', () => {
 
   test('the three go quiet once the writes have been made, and skew does not', async () => {
     const dir = await fixture({ declared: '2.0.0', locked: '2.0.0', footer: footerAt('2.0.0') });
-    await performReleaseWrites(dir, '2.0.0');
+    await performReleaseWrites(dir, '2.0.0', '2026-11-20');
     const atThree = (await releaseCheckFindings(dir, '3.0.0')).map((one) => one.code);
     const atTwo = (await releaseCheckFindings(dir, '2.0.0')).map((one) => one.code);
     expect(atThree).toContain('X_RELEASE_VERSION_SKEW');

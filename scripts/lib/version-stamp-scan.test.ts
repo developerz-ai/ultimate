@@ -45,8 +45,12 @@ describe('the rewriter moves the date-first version, and only it', () => {
     // `14.0.0-rc1` is no stamp (suffixed), but it CONTAINS `4.0.0`: a first-occurrence replace
     // would rewrite the rc and leave the claim.
     const page = '`As of 2026-08-20` after 14.0.0-rc1, at 4.0.0';
-    const { text, moved } = rewriteStamps({ path: 'wiki/_Footer.md', text: page }, '5.0.0');
+    const { text, moved } = rewriteStamps(
+      { path: 'wiki/_Footer.md', text: page },
+      '5.0.0',
+      '2026-11-20',
+    );
     expect(moved).toBe(1);
-    expect(text).toBe('`As of 2026-08-20` after 14.0.0-rc1, at 5.0.0');
+    expect(text).toBe('`As of 2026-11-20` after 14.0.0-rc1, at 5.0.0');
   });
 });

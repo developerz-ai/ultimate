@@ -329,7 +329,7 @@ export async function releaseResult(args: ScriptArgs, deps: ReleaseDeps): Promis
   // just wrote, so a run that computed them first would record the version this release is leaving.
   const performed = dryRun
     ? { writes: [], findings: [] }
-    : await (deps.performWrites ?? performReleaseWrites)(root, version);
+    : await (deps.performWrites ?? performReleaseWrites)(root, version, date);
   // Last of the derived files: the public API lock, the surface read above at this version, so the
   // next release's breaks are judged against this one.
   const apiLock = dryRun

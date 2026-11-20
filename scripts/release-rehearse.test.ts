@@ -113,6 +113,15 @@ describe('unit · which suites a rehearsal runs', () => {
     ]);
   });
 
+  test('a test importing a reader through its directory index is selected too', () => {
+    const readers = ['packages/cli/src/templates/index.ts'];
+    const cli = [
+      { path: 'packages/cli/src/t.test.ts', text: "import { r } from './templates';" },
+      { path: 'packages/cli/src/u.test.ts', text: "import { r } from './templates.json';" },
+    ];
+    expect(rehearsalSuites([], cli, readers)).toEqual(['./packages/cli/src/t.test.ts']);
+  });
+
   test('a pull request changing a stamp reader, or a suite that imports one, rehearses', () => {
     const reached = [
       'packages/cli/src/cmd-doctor.ts',

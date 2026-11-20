@@ -25,7 +25,11 @@ const transpilers = {
   tsx: new Bun.Transpiler({ loader: 'tsx' }),
 };
 
-/** A file's relative value imports, resolved to repository paths (`.ts` when it names none). */
+/**
+ * A file's relative value imports, as the repository paths each could resolve to: an
+ * extension-less specifier is a file (`.ts`, `.tsx`) or a directory's `index.ts` — `./templates`
+ * read as `templates.ts` alone missed a test importing a reader through its directory.
+ */
 export function relativeImports(file: SourceFile): readonly string[] {
   const transpiler = file.path.endsWith('.tsx') ? transpilers.tsx : transpilers.ts;
   const dir = posix.dirname(file.path);
@@ -33,7 +37,9 @@ export function relativeImports(file: SourceFile): readonly string[] {
     .scanImports(file.text)
     .filter((entry) => entry.path.startsWith('.'))
     .map((entry) => posix.join(dir, entry.path))
-    .map((path) => (/\.tsx?$/.test(path) ? path : `${path}.ts`));
+    .flatMap((path) =>
+      /\.tsx?$/.test(path) ? [path] : [`${path}.ts`, `${path}.tsx`, `${path}/index.ts`],
+    );
 }
 
 /** True when the test imports a stamp reader directly: what it asserts can carry the stamp. */

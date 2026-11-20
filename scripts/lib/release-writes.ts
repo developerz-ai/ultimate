@@ -125,6 +125,7 @@ export const performedWriteLine = (write: ReleaseWrite): string =>
 export async function performReleaseWrites(
   root: string,
   version: string,
+  today: string,
 ): Promise<{ readonly writes: readonly ReleaseWrite[]; readonly findings: readonly Finding[] }> {
   const writes: ReleaseWrite[] = [];
   const findings: Finding[] = [];
@@ -133,7 +134,7 @@ export async function performReleaseWrites(
   // report names each file that moved and each that did not — the partial bump, spelled out.
   for (const step of RELEASE_STEPS) {
     try {
-      const outcome = await step.run(root, version);
+      const outcome = await step.run(root, version, today);
       if ('kind' in outcome) writes.push(outcome);
       else findings.push(outcome.finding);
     } catch (error) {
@@ -187,7 +188,7 @@ async function writeLockfile(root: string): Promise<StepOutcome> {
   };
 }
 
-async function writeFooter(root: string, version: string): Promise<StepOutcome> {
+async function writeFooter(root: string, version: string, today: string): Promise<StepOutcome> {
   const footer = (await readStampPages(root)).find((page) => page.path === STAMP_PAGE);
   if (footer === undefined || readStamps(footer).length === 0) {
     return {
@@ -198,7 +199,7 @@ async function writeFooter(root: string, version: string): Promise<StepOutcome> 
       ),
     };
   }
-  const { text, moved } = rewriteStamps(footer, version);
+  const { text, moved } = rewriteStamps(footer, version, today);
   if (moved > 0) await Bun.write(`${root}/${STAMP_PAGE}`, text);
   return {
     kind: 'stamps',
@@ -215,7 +216,7 @@ async function writeFooter(root: string, version: string): Promise<StepOutcome> 
 const RELEASE_STEPS: readonly {
   readonly spec: ReleaseWriteSpec;
   readonly failed: string;
-  readonly run: (root: string, version: string) => Promise<StepOutcome>;
+  readonly run: (root: string, version: string, today: string) => Promise<StepOutcome>;
 }[] = [
   { spec: MANIFEST_WRITE, failed: 'regenerated', run: writeManifest },
   { spec: LOCKFILE_WRITE, failed: 'corrected', run: writeLockfile },
