@@ -157,4 +157,45 @@ describe('x drill · the fleet is always stopped', () => {
     expect(await run.catch((error: unknown) => error)).toBeUltimateError('X_NOT_IMPLEMENTED');
     expect(stopped).toEqual(['stop']);
   });
+
+  // A drop refused at teardown (a slot still held) used to REPLACE the drill's report: the verdict
+  // that held was lost, and the run read as the teardown's error alone.
+  test('a stop that throws keeps the body report and adds the teardown as its own finding', async () => {
+    const sql = { rows: async () => [], close: async () => undefined };
+    const run = await withDrillFleet(
+      {
+        databaseUrl: 'postgres://u@127.0.0.1/x_drill_0123456789abcdef',
+        stop: async () => {
+          throw boom('the scratch database drop');
+        },
+      },
+      () => sql,
+      async () => 'held',
+    );
+    expect(run.value).toBe('held');
+    expect(run.teardown).toEqual([
+      expect.objectContaining({
+        code: 'X_NOT_IMPLEMENTED',
+        cause: expect.stringContaining('the scratch database drop'),
+      }),
+    ]);
+  });
+
+  test('a body that threw keeps its own throw when the stop throws too', async () => {
+    const run = withDrillFleet(
+      {
+        databaseUrl: 'postgres://u@127.0.0.1/x',
+        stop: async () => {
+          throw boom('the drop');
+        },
+      },
+      () => ({ rows: async () => [], close: async () => undefined }),
+      async () => {
+        throw boom('the body');
+      },
+    );
+    const error = await run.catch((thrown: unknown) => thrown);
+    expect(error).toBeUltimateError('X_NOT_IMPLEMENTED');
+    expect(String(Reflect.get(error as object, 'cause'))).toContain('the body');
+  });
 });

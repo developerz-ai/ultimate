@@ -62,7 +62,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | repository scripts | [Error-Codes-scripts](Error-Codes-scripts) | 357 |
 | `@ultimat3/seo` | [Error-Codes-seo](Error-Codes-seo) | 11 |
 | `@ultimat3/storage` | [Error-Codes-storage](Error-Codes-storage) | 31 |
-| `@ultimat3/testing` | [Error-Codes-testing](Error-Codes-testing) | 81 |
+| `@ultimat3/testing` | [Error-Codes-testing](Error-Codes-testing) | 82 |
 | `@ultimat3/time` | [Error-Codes-time](Error-Codes-time) | 8 |
 | `@ultimat3/ui` | [Error-Codes-ui](Error-Codes-ui) | 7 |
 
@@ -414,6 +414,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_DRAINING | [core](Error-Codes-core) |
 | X_DRILL_FAILED | [testing](Error-Codes-testing) |
 | X_DRILL_SERVICE_MISSING | [testing](Error-Codes-testing) |
+| X_DRILL_TEARDOWN_FAILED | [testing](Error-Codes-testing) |
 | X_DRIVER_CAPABILITY_MISSING | [entity](Error-Codes-entity) |
 | X_DRIVER_ROW_OUT_OF_SCOPE | [entity](Error-Codes-entity) |
 | X_DRIVER_UNAVAILABLE | [jobs](Error-Codes-jobs) |

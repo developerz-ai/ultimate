@@ -11,12 +11,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { tailOf } from './drill-output';
 import { probeStatus } from './drill-probe';
+import { scratchDatabase } from './drill-scratch-db';
 import type { DrillRole, DrillService } from './drills';
 import { E2eAppFailedError } from './e2e-errors';
 import type { FaultProxy } from './fault-proxy';
 import { faultProxy, faultTarget, throughFaultProxy } from './fault-proxy';
 import { bindFreePorts, isPortClash } from './free-port-bind';
-import { dropSql, urlFor } from './template-db';
 import { testSealKeyEnv } from './test-seal-key';
 
 export interface DrillServiceUrls {
@@ -100,28 +100,6 @@ const refuse = (step: string, output: string): E2eAppFailedError =>
     output,
     fix: 'ROLE=web bun apps/web/server.ts   # in the app root, with the same DATABASE_URL: read why the role will not start',
   });
-
-/** Create the scratch database on the admin URL; answers its own URL and its drop. */
-async function scratchDatabase(adminUrl: string) {
-  const name = `x_drill_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;
-  const admin = new Bun.SQL(adminUrl);
-  try {
-    await admin.unsafe(`create database ${name}`);
-  } finally {
-    await admin.close();
-  }
-  return {
-    url: urlFor(adminUrl, name),
-    async drop(): Promise<void> {
-      const again = new Bun.SQL(adminUrl);
-      try {
-        await again.unsafe(dropSql(name));
-      } finally {
-        await again.close();
-      }
-    },
-  };
-}
 
 async function waitReady(url: string, deadlineMs: number, alive: () => boolean): Promise<boolean> {
   const until = performance.now() + deadlineMs;
@@ -282,9 +260,21 @@ export async function startDrillFleet(options: DrillFleetOptions): Promise<Drill
           };
     return { base: webBase, databaseUrl: database.url, proxies, roles, rollout, stop };
   } catch (error) {
-    await stop();
-    throw error;
+    return stopAfterFailedStart(error, stop);
   }
+}
+
+/**
+ * A start that failed stops what it began, then rethrows ITS error: the stop's own failure (a
+ * scratch database left behind) is a later, smaller fact, and replacing the start's refusal with it
+ * hid why the drill never ran.
+ */
+export async function stopAfterFailedStart(
+  error: unknown,
+  stop: () => Promise<void>,
+): Promise<never> {
+  await Promise.allSettled([stop()]);
+  throw error;
 }
 
 /** A role's exit, or `null` past `withinMs`: SIGKILLed then, so a wedged drain ends the drill. */

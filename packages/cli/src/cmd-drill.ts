@@ -4,7 +4,12 @@
 // and the verdict are testing's. Not a gate step: it needs Postgres, and `x verify` needs nothing.
 
 import type { AppConfig } from '@ultimat3/core';
-import { DRAIN_DEADLINE_DEFAULT_MS, frameworkVersion, MAX_TIMER_MS } from '@ultimat3/core';
+import {
+  DRAIN_DEADLINE_DEFAULT_MS,
+  frameworkVersion,
+  isUltimateError,
+  MAX_TIMER_MS,
+} from '@ultimat3/core';
 import type {
   Drill,
   DrillConfig,
@@ -107,28 +112,48 @@ const findingsOf = (report: DrillReport): readonly Finding[] =>
 /** The evidence connection: `bunDrillSql`'s shape, a seam so a test can make it throw. */
 type DrillSqlConnection = ReturnType<typeof bunDrillSql>;
 
+/** The body's value, and the teardown's refusal (a scratch database left behind) as a finding. */
+export interface DrillFleetRun<T> {
+  readonly value: T;
+  readonly teardown: readonly Finding[];
+}
+
+/** Stop the fleet; a coded refusal is answered as a finding, so it cannot replace a verdict. */
+async function stopFleet(fleet: Pick<DrillFleet, 'stop'>): Promise<readonly Finding[]> {
+  try {
+    await fleet.stop();
+    return [];
+  } catch (error) {
+    if (!isUltimateError(error)) throw error;
+    return [{ code: error.code, cause: error.cause, fix: error.fix }];
+  }
+}
+
 /**
  * One drill's body over a started fleet, which is ALWAYS stopped. The fleet is spawned role
  * processes: the connection was opened before the `try`, so a constructor that threw (a malformed
  * URL is a synchronous `Invalid URL`) left every role running, and a `close()` that threw skipped
- * `stop()` the same way.
+ * `stop()` the same way. A body that threw keeps its throw: the teardown after it is best-effort,
+ * and its own failure — a later, smaller fact — is not allowed to replace the one that ended it.
  */
 export async function withDrillFleet<T>(
   fleet: Pick<DrillFleet, 'databaseUrl' | 'stop'>,
   open: (url: string) => DrillSqlConnection,
   body: (sql: DrillSqlConnection) => Promise<T>,
-): Promise<T> {
+): Promise<DrillFleetRun<T>> {
   let sql: DrillSqlConnection | undefined;
+  let closed = false;
+  let value: T;
   try {
     sql = open(fleet.databaseUrl);
-    return await body(sql);
-  } finally {
-    try {
-      await sql?.close();
-    } finally {
-      await fleet.stop();
-    }
+    value = await body(sql);
+    closed = true;
+    await sql.close();
+  } catch (error) {
+    await Promise.allSettled([closed ? undefined : sql?.close(), stopFleet(fleet)]);
+    throw error;
   }
+  return { value, teardown: await stopFleet(fleet) };
 }
 
 export const drillCommand: CliCommand = {
@@ -183,6 +208,7 @@ export const drillCommand: CliCommand = {
     // After `drillTargets`: loading the app is what fills the entity registry read here.
     const publishable = replicatedRelations().length > 0;
     const reports: DrillReport[] = [];
+    const teardowns: Finding[] = [];
     const rolesNotPlayed: (DrillRoleNotPlayed & { readonly drill: string })[] = [];
     for (const { drill, services } of planned) {
       const { fault } = drill;
@@ -206,16 +232,16 @@ export const drillCommand: CliCommand = {
         readyTimeoutMs: READY_TIMEOUT_MS,
         beforeMigrate: order,
       });
-      reports.push(
-        await withDrillFleet(fleet, bunDrillSql, (sql) =>
-          order === undefined
-            ? runDrill({ drill, fleet, budgets, targets, sql, sync: drillSyncLane(fleet) })
-            : runRollout({ drill, fleet, budgets, readyTimeoutMs: READY_TIMEOUT_MS }),
-        ),
+      const run = await withDrillFleet(fleet, bunDrillSql, (sql) =>
+        order === undefined
+          ? runDrill({ drill, fleet, budgets, targets, sql, sync: drillSyncLane(fleet) })
+          : runRollout({ drill, fleet, budgets, readyTimeoutMs: READY_TIMEOUT_MS }),
       );
+      reports.push(run.value);
+      teardowns.push(...run.teardown);
     }
     const held = reports.filter((report) => report.verdict.ok).length;
-    const findings = reports.flatMap(findingsOf);
+    const findings = [...reports.flatMap(findingsOf), ...teardowns];
     return {
       ok: findings.length === 0 && held === reports.length,
       command: 'drill',

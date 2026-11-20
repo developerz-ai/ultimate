@@ -1,6 +1,7 @@
-// The two ways a fault drill ends red. Declared in `errors.ts` with this package's codes, thrown
+// The three ways a fault drill ends red. Declared in `errors.ts` with this package's codes, thrown
 // from here: a drill whose service is missing is REFUSED, never skipped — a green drill that ran
-// nothing is the vacuous pass — and a drill whose property failed names the property and evidence.
+// nothing is the vacuous pass — a drill whose property failed names the property and evidence, and
+// a scratch database the teardown could not drop is named with the paste that drops it.
 
 import { renderCauseValue, renderFixShellArg, UltimateError } from '@ultimat3/core';
 import type { DrillFailure } from './drill-verdict';
@@ -40,6 +41,40 @@ export class DrillFailedError extends UltimateError {
       cause: `x drill ${renderCauseValue(input.drill)}: ${failure.property} did not hold — expected ${failure.expected}; observed ${renderCauseValue(failure.observed)}`,
       fix: `x drill ${renderFixShellArg(input.drill, DRILL_PLACEHOLDER)} --json   # read ${failure.property} and its evidence, then explain the code that evidence names: x errors explain <CODE>`,
       meta: { drill: input.drill, property: failure.property },
+    });
+  }
+}
+
+/** A paste that does by hand what the drop could not: terminate the slot holder, then drop. */
+function dropFix(adminUrl: string, database: string): string {
+  const url = new URL(adminUrl);
+  const db = renderFixShellArg(database, '<database>');
+  const host = renderFixShellArg(url.hostname, '<host>');
+  const port = renderFixShellArg(url.port || '5432', '<port>');
+  const user = renderFixShellArg(decodeURIComponent(url.username), '<user>');
+  const admin = renderFixShellArg(url.pathname.slice(1) || 'postgres', '<admin database>');
+  return (
+    `psql -h ${host} -p ${port} -U ${user} -d ${admin}` +
+    ` -c "select pg_terminate_backend(active_pid) from pg_replication_slots where database = '${db}'"` +
+    ` -c 'select pg_sleep(1)' -c 'DROP DATABASE IF EXISTS ${db} WITH (FORCE)'`
+  );
+}
+
+/**
+ * The fleet's scratch database outlived its drop: a slot still held after its holder was
+ * terminated, or the server refused. The password is never in the fix — psql asks for it.
+ */
+export class DrillTeardownFailedError extends UltimateError {
+  constructor(input: {
+    readonly database: string;
+    readonly adminUrl: string;
+    readonly why: string;
+  }) {
+    super({
+      code: 'X_DRILL_TEARDOWN_FAILED',
+      cause: `x drill could not drop its scratch database ${renderCauseValue(input.database)}: ${input.why}; it is left on the server`,
+      fix: dropFix(input.adminUrl, input.database),
+      meta: { database: input.database },
     });
   }
 }

@@ -7489,6 +7489,7 @@
       "DrillSyncLane": {"hash":"e60c3f6967590292","shape":{"kind":"members","head":"9e514524","members":{"stop":"4ec0b7ab"}}},
       "DrillSyncOptions": {"hash":"352b8d18f117fee3","shape":{"kind":"members","head":"f37c45f8","members":{"connect":"?ae009dd9","protocolVersion":"4e57c805","redialMs":"?5d7469a7","sleep":"?8f142133","subscriptions":"?627c5b5e","url":"1fb0a448"}}},
       "DrillTarget": {"hash":"7f9cc267bbbcbfd3","shape":{"kind":"members","head":"a59f90dd","members":{"body":"?2456a234","draw":"?e3c23b05","method":"2dab9351","path":"1fb0a448"}}},
+      "DrillTeardownFailedError": {"hash":"e829d6afbbc8192d","shape":{"kind":"class","head":"b9d43cf6","members":{},"ctor":["{adminUrl=1fb0a448,database=1fb0a448,why=1fb0a448}"]}},
       "DrillTiming": {"hash":"14031996d69bbc56","shape":{"kind":"members","head":"fad3ff5e","members":{"phaseMs":"4e57c805"}}},
       "DrillWrites": {"hash":"dcc837bfabd1a626","shape":{"kind":"members","head":"9ef232de","members":{"skipped":"9bbcf8cc","targets":"1463a818"}}},
       "DriverFixtureName": {"hash":"db0389c88a4efd7b","shape":{"kind":"declaration","keyword":"type","head":"db0389c8"}},

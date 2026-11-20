@@ -83,6 +83,7 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_SOAK_HEAP_GROWTH',
   'X_TEST_TEMP_TREE_LEFT',
   'X_TEST_ISLAND_BUILD_REUSED',
+  'X_DRILL_TEARDOWN_FAILED',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -169,6 +170,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_SOAK_HEAP_GROWTH: 'a soak() run grew the live heap past its stated bound',
   X_TEST_TEMP_TREE_LEFT: 'a temp tree survived its own remove',
   X_TEST_ISLAND_BUILD_REUSED: 'an island builder answered the shipped build with the coverage one',
+  X_DRILL_TEARDOWN_FAILED: 'a fault drill could not drop its scratch database',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "db259ffbb82224a3b739cf90744346626ac19a717e3ff8e6fda2abdad6315f31",
+  "buildId": "a8344cf06fff2dc7a38092280e3964ee856b71e19572b3bfdc24855ffc4e5655",
   "tiers": {
     "0": [
       "core",
@@ -1951,6 +1951,11 @@
     },
     {
       "code": "X_DRILL_SERVICE_MISSING",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_DRILL_TEARDOWN_FAILED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },
