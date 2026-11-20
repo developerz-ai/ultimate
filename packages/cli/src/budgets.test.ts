@@ -160,7 +160,7 @@ describe('unit · budgets', () => {
     );
   });
 
-  // slaphead-colony: the raise alone left the committed x.manifest.json behind the page, and CI
+  // one adopter: the raise alone left the committed x.manifest.json behind the page, and CI
   // went red X_PROJECTION_DRIFT on the next push.
   test('a raised budget is re-projected: the fix regenerates the committed manifest', () => {
     const findings = checkBudgets(

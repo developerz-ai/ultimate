@@ -11,6 +11,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 ## [Unreleased]
 
 ### Fixed
+- `x drill roll-before-migrate` retries a role that lost its port before migrate: an outgoing Postgres connection could take a handed-out port before the role bound it, and the role's EADDRINUSE exit read as a failed drill.
 - `x upgrade`'s `merge-drivers` codemod and `x g` no longer write a second `queries` / `jobs` / `tasks` key into a `defineApi({ ... })` that already names it as a shorthand (`queries,`) or a non-list value: a list is added only when the call names no such key (31.49.0 wrote `queries: []` beside `queries,`, TS1117).
 - `x upgrade` codemods keep a rewritten file's mode: 31.49.0's `merge-drivers` turned an executable `bin/setup.ts` into a plain file.
 

@@ -1,6 +1,6 @@
 // The hop's coverage ratchet: a gate red only because the tree now covers more than its floor
 // (`X_COVERAGE_FLOOR_STALE`) gets the floor raised to what it measured, never lowered, and the
-// `unit` step judged again — castlefight.online's upgrade went red on a test a codemod wrote.
+// `unit` step judged again — one adopter's upgrade went red on a test a codemod wrote.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory or recursive-remove primitive.

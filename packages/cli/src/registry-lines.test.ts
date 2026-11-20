@@ -112,7 +112,7 @@ describe('unit · withRegistryLines over an existing app', () => {
     expect(withRegistryLines(ROLES, source)).toBe(source);
   });
 
-  // notificado.co's 31.49.0 upgrade: `queries, jobs, tasks` shorthand gained `queries: []` beside
+  // one adopter's 31.49.0 upgrade: `queries, jobs, tasks` shorthand gained `queries: []` beside
   // each — a duplicate key, TS1117.
   test('a shorthand or non-list property is declared already: no second key is written', () => {
     const source = [

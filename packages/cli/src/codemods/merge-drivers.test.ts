@@ -58,7 +58,7 @@ describe('unit · merge-drivers codemod', () => {
     expect(result.skipped[0]?.reason).toContain(INSTALL_STEP.trim());
   });
 
-  // castlefight.online: the spread index.ts grew 21 lines no unit test loaded, and the gate's
+  // one adopter: the spread index.ts grew 21 lines no unit test loaded, and the gate's
   // coverage floor went red on an upgrade that changed no behaviour.
   describe('the spread registration is loaded by a unit test', () => {
     test('writes the registration test beside an index.ts no test sits beside', async () => {
@@ -101,7 +101,7 @@ describe('unit · merge-drivers codemod', () => {
     });
   });
 
-  // ai-maxxing and castlefight.online: `"setup": "bin/setup"` is bash, there is no bin/setup.ts,
+  // two adopters: `"setup": "bin/setup"` is bash, there is no bin/setup.ts,
   // and the step went missing with nothing in `changed` or `skipped` to say so.
   describe('an app whose setup is not bin/setup.ts', () => {
     const shellApp = (setup: string, files: Record<string, string> = {}) => {
