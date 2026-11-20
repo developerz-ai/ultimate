@@ -156,8 +156,21 @@ describe('unit · budgets', () => {
       (url) => (url === '/dash' ? 'apps/web/app/dash/page.tsx' : undefined),
     );
     expect(findings[0]?.fix).toBe(
-      "edit apps/web/app/dash/page.tsx — set budget: { js: '41kb' } with // measured: 40961 B (x build --target static) — why: <the function it buys> directly above it; or x routes --json for the chain and move the heavy import behind hydrate: 'interaction'",
+      "edit apps/web/app/dash/page.tsx — set budget: { js: '41kb' } with // measured: 40961 B (x build --target static) — why: <the function it buys> directly above it, then x manifest (x.manifest.json carries the budget); or x routes --json for the chain and move the heavy import behind hydrate: 'interaction'",
     );
+  });
+
+  // slaphead-colony: the raise alone left the committed x.manifest.json behind the page, and CI
+  // went red X_PROJECTION_DRIFT on the next push.
+  test('a raised budget is re-projected: the fix regenerates the committed manifest', () => {
+    const findings = checkBudgets(
+      manifestOf(route('/dash', { js: '10kb' })),
+      stats({ path: '/dash', jsBytes: 40_961 }),
+      [],
+      () => undefined,
+    );
+    const raise = findings[0]?.fix.split('; or ')[0] ?? '';
+    expect(raise).toContain('then x manifest');
   });
 
   test('a mounted path an app file CLAIMED is that file’s to edit; an unclaimed one is no file', () => {

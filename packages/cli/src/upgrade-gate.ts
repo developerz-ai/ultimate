@@ -1,7 +1,7 @@
 // A hop's gate, run by the CLI the hop just installed: codemods, manifest, doctor, missing guards,
-// a Bun-floor hop's coverage, exercise, verify (`upgrade-gate-codemods.ts`, `upgrade-guards.ts`).
-// Never in this process: the installed CLI may be majors older, so each answer is read as a
-// foreign document (`local-cli.ts`), and one that will not parse is never green.
+// a Bun-floor hop's coverage, exercise, verify, a stale coverage floor raised (`upgrade-gate-*`,
+// `upgrade-guards.ts`, `upgrade-coverage-ratchet.ts`). Never in this process: the installed CLI may
+// be majors older, so each answer is a foreign document (`local-cli.ts`); unparsed is never green.
 
 // why: Bun exposes no path-join primitive; the installed bin is assembled from the app root.
 import { join } from 'node:path';
@@ -13,6 +13,13 @@ import { exerciseReportStamp } from './exercise-floor-report';
 import { LOCAL_CLI_BIN } from './local-cli';
 import type { CoverageRebaseline, HopCoverage } from './upgrade-coverage';
 import { rebaselineCoverage, statedCoverage } from './upgrade-coverage';
+import type { HopCoverageRatchet } from './upgrade-coverage-ratchet';
+import {
+  measuredUnit,
+  raiseCoverageFloor,
+  rejudgedVerify,
+  staleUnitFloor,
+} from './upgrade-coverage-ratchet';
 import { documentIn } from './upgrade-document';
 import type { HopExerciseFloor } from './upgrade-exercise-floor';
 import { ratchetExerciseFloor } from './upgrade-exercise-floor';
@@ -140,6 +147,11 @@ export interface HopGate {
   readonly exercise: HopExercise;
   /** The exercise figures the hop wrote into `x.verify.json` as its ratchet; null when none. */
   readonly exerciseFloor: HopExerciseFloor | null;
+  /**
+   * The coverage floor raised to what the gate's `unit` run measured, on its `X_COVERAGE_FLOOR_STALE`
+   * — `verify` is then the verdict with `unit` re-run. Absent when nothing was raised.
+   */
+  readonly coverageRaised?: HopCoverageRatchet;
   readonly verify: {
     readonly ok: boolean;
     readonly summary: string;
@@ -305,14 +317,21 @@ export async function runHopGate(input: {
   // The installed gate's own list first: the steps owed to CI are steps that CLI has. None owed
   // (every one of its steps named) is that CLI's full gate, run and reported as one.
   const notRun = only === undefined ? undefined : await installedNotRun(installed, only);
-  const verify =
-    only === undefined || notRun === undefined || notRun.length === 0
-      ? readVerify(await installed(['verify', '--json']))
-      : {
-          ...readVerify(await installed(['verify', '--only', only.steps.join(','), '--json'])),
-          only: only.steps,
-          notRun,
-        };
+  const full = only === undefined || notRun === undefined || notRun.length === 0;
+  const ran = await installed(
+    full ? ['verify', '--json'] : ['verify', '--only', only.steps.join(','), '--json'],
+  );
+  let verify: HopGate['verify'] = full
+    ? readVerify(ran)
+    : { ...readVerify(ran), only: only.steps, notRun };
+  let coverageRaised: HopCoverageRatchet | null = null;
+  const measured = staleUnitFloor(verify) ? measuredUnit(ran.stdout) : undefined;
+  if (measured !== undefined) coverageRaised = await raiseCoverageFloor(root, measured);
+  if (coverageRaised !== null) {
+    onStage('coverage');
+    const unit = readVerify(await installed(['verify', '--only', 'unit', '--json']));
+    verify = rejudgedVerify(verify, unit);
+  }
   return {
     codemods,
     superseded,
@@ -322,6 +341,7 @@ export async function runHopGate(input: {
     coverage,
     exercise,
     exerciseFloor,
+    ...(coverageRaised === null ? {} : { coverageRaised }),
     verify,
   };
 }

@@ -145,6 +145,19 @@ export const humanLines = (
             funcs: Math.floor(gate.coverage.measured.funcs * 10) / 10,
           }),
         ]),
+    ...(gate?.coverageRaised === undefined
+      ? []
+      : [
+          msg('cli.upgrade.coverageRaised', {
+            file: gate.coverageRaised.file,
+            fromLines: gate.coverageRaised.from.lines,
+            fromFuncs: gate.coverageRaised.from.funcs,
+            toLines: gate.coverageRaised.to.lines,
+            toFuncs: gate.coverageRaised.to.funcs,
+            lines: Math.floor(gate.coverageRaised.measured.lines * 10) / 10,
+            funcs: Math.floor(gate.coverageRaised.measured.funcs * 10) / 10,
+          }),
+        ]),
     ...(gate === undefined || gate.exerciseFloor === null
       ? []
       : [
@@ -220,6 +233,7 @@ export const report = (
     doctorWarnings: gate?.doctorWarnings ?? [],
     exercise: gate?.exercise ?? null,
     exerciseFloor: gate?.exerciseFloor ?? null,
+    coverageRaised: gate?.coverageRaised ?? null,
     verify: gate?.verify ?? null,
     scripts,
     then,

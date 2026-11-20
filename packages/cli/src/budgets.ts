@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { ERROR_DOCS_URL, formatBytes } from '@ultimat3/core';
 import type { Manifest, RouteFact } from '@ultimat3/manifest';
 import { describePages, parseByteBudget, themeScriptBody } from '@ultimat3/render';
+import { MANIFEST_FILE } from './app-root';
 import type { ChargedFile } from './budgets-charged';
 import { chargedClause, chargedMeta, heaviestFirst } from './budgets-charged';
 import type { RouteRequests } from './budgets-requests';
@@ -115,7 +116,7 @@ const KB = 1024;
 function exceededJsFix(url: string, file: string | undefined, bytes: number): string {
   const where = file ?? `the file declaring ${url}`;
   const kb = Math.ceil(bytes / KB);
-  return `edit ${where} — set budget: { js: '${String(kb)}kb' } with // measured: ${String(bytes)} B (x build --target static) — why: <the function it buys> directly above it; or x routes --json for the chain and move the heavy import behind hydrate: 'interaction'`;
+  return `edit ${where} — set budget: { js: '${String(kb)}kb' } with // measured: ${String(bytes)} B (x build --target static) — why: <the function it buys> directly above it, then x manifest (${MANIFEST_FILE} carries the budget); or x routes --json for the chain and move the heavy import behind hydrate: 'interaction'`;
 }
 
 /**

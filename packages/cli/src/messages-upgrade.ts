@@ -46,6 +46,10 @@ export const UPGRADE_MESSAGES = {
     'guard not installed, its findings could not be counted — yours to take: {fix}',
   'cli.upgrade.coverage':
     'coverage floor: {file} {fromLines} / {fromFuncs} -> {toLines} / {toFuncs}, measured {lines}% / {funcs}% after the Bun floor moved — review the why',
+  'cli.upgrade.coverageRaised':
+    "coverage floor raised: {file} {fromLines} / {fromFuncs} -> {toLines} / {toFuncs}, measured {lines}% / {funcs}% by this hop's unit run (X_COVERAGE_FLOOR_STALE) — it may only rise",
+  'cli.upgrade.coverageRejudged':
+    '{summary}; the coverage floor rose to what unit measured, and unit re-run: {unit}',
   'cli.upgrade.exerciseFloor':
     'exercise floor: {file} "exercise" {figures}, measured by this hop\'s x exercise — it may only fall',
   'cli.upgrade.coverage.unpinned': 'no engines.bun',

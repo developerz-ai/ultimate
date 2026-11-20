@@ -305,14 +305,14 @@ unchanged tree, nothing. A failed build is the step's verdict, with the build's 
 | `X_DB_DRIFT` from `x db migrate` | live-catalog drift: the database that just migrated still disagrees with the ledger | `x verify --json` |
 | `X_FORBIDDEN` in a test | the policy is right and the fixture actor is wrong, or vice versa | `x policy explain <subject> --json` |
 | `X_CATALOG_MISSING_KEYS` | a locale's catalog lacks a key it owes: one source names through `t()`, one only a mail or a push names, one the `en` catalog defines, or one a mounted admin derives (`admin.<table>.field.<column>`). The sync writes the catalog nested — never hand-add a dotted key, `loadCatalog` refuses one (`X_CATALOG_INVALID`). A key source names is written `⟦key⟧` in the default locale and `⟦the default locale's string⟧` in any other; an admin-derived key gets the generator's label in the default locale (a real string) and that label inside `⟦…⟧` in any other | `x i18n sync <locale>` |
-| `X_BUDGET_EXCEEDED` | a route got heavier; `data.cause` names the import | `x routes --json` to see the chain, then move the heavy import behind `hydrate: 'interaction'` |
+| `X_BUDGET_EXCEEDED` | a route got heavier; the cause names the import chain and the bytes each file is charged | the gate's `fix`, with the page, the kb and the bytes filled in: `edit <page> — set budget: { js: '<N>kb' } with // measured: <bytes> B (x build --target static) — why: <the function it buys> directly above it, then x manifest (x.manifest.json carries the budget); or x routes --json for the chain and move the heavy import behind hydrate: 'interaction'` |
 | `X_MATCHER_UNSUPPORTED` | a `live: true` read the incremental matcher cannot evaluate | set `live: false` and poll, or reshape the query to equality filters + `orderBy` + `limit` |
 | `X_IDEMPOTENCY_REQUIRED` | a JS or generated `job()` whose ONLY missing field is `idempotencyKey` (TypeScript refuses the omission first). Missing it and any other required field is `X_JOB_DECLARATION_INVALID`, listing every one; a job with no `name` is told to name itself before the key is written | add `idempotencyKey: (input) => \`<job>:${input.id}\`` to the job definition |
 | `X_MANIFEST_STALE` | `openapi.json` is stale (`X_MANIFEST_DRIFT` for a stale `framework.manifest.json`) | `x manifest --json` |
 | `X_CACHE_TAG_UNKNOWN` | `cache.invalidates` names a tag no entity declared | `declareTags(['<name>'])` in the app's tag module, plus the name in its `CacheTagRegistry`; for a typo, correct the tag |
 | anything else | every error carries a `fix:` | `x errors explain <CODE> --json` |
 
-Every row's command is the error's own registered `fix:` line, not a paraphrase — `x errors explain <CODE> --json` prints it for any code, and that output is the authority if this table ever falls behind.
+Every row's command is the error's own `fix:` line, not a paraphrase — the registered one, or for a code whose fix is built per finding (`X_BUDGET_EXCEEDED`) the line the gate prints. `x errors explain <CODE> --json` prints the registered fix for any code, and that output is the authority if this table ever falls behind.
 
 ## Rules that keep the loop short
 
