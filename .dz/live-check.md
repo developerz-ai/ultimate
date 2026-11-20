@@ -7,29 +7,43 @@ repo's merge: the running pod's image tag does.
 
 ## Cluster identity (read-only)
 
-Repo secrets `DEVELOPERZ_LIVE_CHECK_SSH_KEY` + `DEVELOPERZ_LIVE_CHECK_KUBECONFIG`:
-ServiceAccount `dz-live-check`, server `https://127.0.0.1:26443`, through an SSH account on
-the bastion that can forward to the k3s API and do nothing else (no shell). The source of
-truth is the infrastructure repository's `stacks/platform/dz-live-check/README.md`; if this
-block stops answering, read that page for the current bastion host key and API targets.
-Needs `ssh` and `kubectl` on the box; without them the check is `cannot_grade`, naming the
-missing tool.
+Four repo secrets, all set by the platform's publisher:
+
+| Secret | Holds |
+|---|---|
+| `DEVELOPERZ_LIVE_CHECK_SSH_KEY` | the SSH private key for the forwarding-only bastion account |
+| `DEVELOPERZ_LIVE_CHECK_KUBECONFIG` | kubeconfig for ServiceAccount `dz-live-check`, server `https://127.0.0.1:26443` |
+| `DEVELOPERZ_LIVE_CHECK_SSH_KNOWN_HOSTS` | the bastion's pinned `known_hosts` line; its first field is the SSH host |
+| `DEVELOPERZ_LIVE_CHECK_API_TARGETS` | the k3s API `host:port` targets the tunnel forwards to, space-separated, in failover order |
+
+This guide names no host, host key or address: the recipe reads every one from those secrets,
+so never write one into it. An unset secret is `cannot_grade`, naming it. The bastion account
+can forward to the k3s API and do nothing else (no shell). If the tunnel or `/readyz` fails
+with every secret set, the published values are stale: `cannot_grade`, naming the step that
+failed; the source of truth is the infrastructure repository's
+`stacks/platform/dz-live-check/README.md`. Needs `ssh` and `kubectl` on the box; without them
+the check is `cannot_grade`, naming the missing tool.
 
 ```bash
+for v in DEVELOPERZ_LIVE_CHECK_SSH_KEY DEVELOPERZ_LIVE_CHECK_KUBECONFIG \
+  DEVELOPERZ_LIVE_CHECK_SSH_KNOWN_HOSTS DEVELOPERZ_LIVE_CHECK_API_TARGETS; do
+  [ -n "${!v:-}" ] || echo "cannot_grade: $v is unset"
+done
 d="$HOME/.cache/developerz-live-check"; umask 077; mkdir -p "$d"
 printf '%s\n' "$DEVELOPERZ_LIVE_CHECK_SSH_KEY" >"$d/id"
 printf '%s\n' "$DEVELOPERZ_LIVE_CHECK_KUBECONFIG" >"$d/kubeconfig"
-echo 'vpn.infra.developerz.ai ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFyVA+u+R7tmv6oWLlRSbIQJGjxJrvHuqErTmOV/U3Ur' >"$d/known_hosts"
+printf '%s\n' "$DEVELOPERZ_LIVE_CHECK_SSH_KNOWN_HOSTS" >"$d/known_hosts"
+bastion="dz-live-check@$(head -n1 "$d/known_hosts" | cut -d' ' -f1)"
 export KUBECONFIG="$d/kubeconfig"
-for t in 100.64.0.8:6443 100.64.0.11:6443 100.64.0.9:6443; do
+for t in $DEVELOPERZ_LIVE_CHECK_API_TARGETS; do
   ssh -f -N -M -S "$d/ctl" -o BatchMode=yes -o IdentitiesOnly=yes -i "$d/id" \
     -o UserKnownHostsFile="$d/known_hosts" -o StrictHostKeyChecking=yes \
     -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 \
-    -L "127.0.0.1:26443:$t" dz-live-check@vpn.infra.developerz.ai \
+    -L "127.0.0.1:26443:$t" "$bastion" \
   && kubectl --request-timeout=5s get --raw /readyz >/dev/null && break
-  ssh -S "$d/ctl" -O exit dz-live-check@vpn.infra.developerz.ai 2>/dev/null
+  ssh -S "$d/ctl" -O exit "$bastion" 2>/dev/null
 done
-# close it when done: ssh -S "$d/ctl" -O exit dz-live-check@vpn.infra.developerz.ai
+# close it when done: ssh -S "$d/ctl" -O exit "$bastion"
 ```
 
 What it may read: pods, pod logs, deployments, replicasets, statefulsets, services, events and
