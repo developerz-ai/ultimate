@@ -1,7 +1,7 @@
 // When a crashed child comes back, and when the supervisor stops trying. Pure: the loop in
 // `supervise.ts` hands in the clock's reading and the child's uptime, and keeps what comes back.
 
-import { DRAIN_TIMEOUT_EXIT_CODE } from '@ultimat3/core';
+import { backoffDelay, DRAIN_TIMEOUT_EXIT_CODE } from '@ultimat3/core';
 
 /** The first restart waits a second, then 2, 4, 8… */
 export const BACKOFF_BASE_MS = 1_000;
@@ -33,7 +33,8 @@ export function afterCrash(history: CrashHistory, now: number, uptimeMs: number)
   const at = [...history.at.filter((when) => now - when < CRASH_WINDOW_MS), now];
   return {
     history: { consecutive, at },
-    delayMs: Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * 2 ** (consecutive - 1)),
+    // Core's one curve, no jitter: a supervisor restarting its own children has no herd to spread.
+    delayMs: backoffDelay({ attempt: consecutive, base: BACKOFF_BASE_MS, max: BACKOFF_CAP_MS }),
     loop: at.length >= CRASH_LIMIT,
   };
 }

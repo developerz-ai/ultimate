@@ -39,7 +39,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/ai` | [Error-Codes-ai](Error-Codes-ai) | 36 |
 | `@ultimat3/auth` | [Error-Codes-auth](Error-Codes-auth) | 30 |
 | `@ultimat3/cache` | [Error-Codes-cache](Error-Codes-cache) | 8 |
-| `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 235 |
+| `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 237 |
 | `@ultimat3/core` | [Error-Codes-core](Error-Codes-core) | 76 |
 | `@ultimat3/db` | [Error-Codes-db](Error-Codes-db) | 42 |
 | `@ultimat3/entity` | [Error-Codes-entity](Error-Codes-entity) | 44 |
@@ -913,7 +913,9 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_PRIVATE_NAMES_UNSET | [scripts](Error-Codes-scripts) |
 | X_PROBE_DATABASE_FIXED | [scripts](Error-Codes-scripts) |
 | X_PROBLEM_META_INVALID | [http](Error-Codes-http) |
+| X_PROCESSES_CPU_UNDECLARED | [cli](Error-Codes-cli) |
 | X_PROCESSES_INVALID | [cli](Error-Codes-cli) |
+| X_PROCESSES_MIGRATE_REQ_OFF | [cli](Error-Codes-cli) |
 | X_PROCESSES_OVER_POOL | [cli](Error-Codes-cli) |
 | X_PROCESSES_ROLE_SINGLETON | [cli](Error-Codes-cli) |
 | X_PROCESSES_UNBALANCED | [cli](Error-Codes-cli) |

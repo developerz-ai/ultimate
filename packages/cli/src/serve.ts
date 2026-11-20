@@ -10,7 +10,6 @@
 import {
   assertNoDevSecretsOutsideLocal,
   frameworkVersion,
-  isUltimateError,
   logger,
   supervisedChild,
 } from '@ultimat3/core';
@@ -260,10 +259,8 @@ export async function runRole(input: ServeOptions): Promise<StartedApp> {
     );
   } catch (error) {
     retire?.disarm();
-    // A refusal no restart can fix: the supervisor stops restarting rather than crash-looping.
-    if (isUltimateError(error) && error.code === 'X_PROCESSES_UNSHARED_STATE') {
-      link?.fatal(error.code);
-    }
+    // Said as this child, and `fatal` for a refusal no restart can fix (`supervise-child.ts`).
+    link?.refused(error);
     throw error;
   }
   const { app, hold } = booted;

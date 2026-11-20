@@ -12,7 +12,7 @@ import { PREBUILT_REGISTRY_DIR } from './serve-prebuilt-paths';
 import type { ServeOptions } from './serve-types';
 import { readCgroup } from './supervise-cgroup';
 import type { ProcessCount } from './supervise-count';
-import { resolveProcessCount } from './supervise-count';
+import { ignoredRequest, readProcessesRequest, resolveProcessCount } from './supervise-count';
 import { containerPool } from './supervise-pool';
 
 export function processCountFor(options: ServeOptions, role: Role): Promise<ProcessCount> {
@@ -40,7 +40,19 @@ export function logProcessCount(count: ProcessCount, role: Role): void {
     binding: count.binding,
     ...count.clamps,
   });
-  const note = count.note;
+  logNote(count.note);
+}
+
+/**
+ * `x dev` runs every role in one process whatever `ULTIMATE_PROCESSES` says (it has its own
+ * restarting supervisor); a count asked of it is said once, never refused. An invalid value is
+ * refused as a container's boot refuses it: the `.env` that carries it would stop production too.
+ */
+export function logDevProcesses(env: ServeOptions['env']): void {
+  logNote(ignoredRequest(readProcessesRequest(env), 'x dev').note);
+}
+
+function logNote(note: ProcessCount['note']): void {
   if (note === undefined) return;
   logger[note.level](note.msg, {
     cause: note.cause,

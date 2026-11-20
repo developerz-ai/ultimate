@@ -8,6 +8,8 @@ import type { CliErrorCode } from './error-codes';
 import { CLI_ERROR_CODES } from './error-codes';
 import { codeFixes, codeFixScan } from './error-fixes';
 import { AGENTS_FIXES } from './mcp-errors-agents';
+import { DOCTOR_FIXES } from './mcp-errors-doctor';
+import { PROCESSES_FIXES } from './mcp-errors-processes';
 import { SHOT_FIXES } from './mcp-errors-shot';
 import { VERIFY_FIXES } from './mcp-errors-verify';
 
@@ -64,6 +66,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // `x shot` and the `ui.*` tools: their own family, in `mcp-errors-shot.ts`.
   ...AGENTS_FIXES,
   ...SHOT_FIXES,
+  // `x doctor`'s warnings and `x upgrade`'s: their own family, in `mcp-errors-doctor.ts`.
+  ...DOCTOR_FIXES,
+  // `ULTIMATE_PROCESSES`: their own family, in `mcp-errors-processes.ts`.
+  ...PROCESSES_FIXES,
   // The gate's floor, run and split: their own family, in `mcp-errors-verify.ts`.
   ...VERIFY_FIXES,
   X_GH_UNAVAILABLE: 'gh auth login   # install first from https://cli.github.com',
@@ -364,24 +370,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     "native: { success: (output) => '/where-it-lands' } in the action's declaration, then x verify --only manifest",
   X_ASSET_RETAIN_UNDECLARED:
     "edit app.config.ts: add assets: { retain: { disk: 'assets', builds: 3 } }, naming a disk your defineStorage({ disks }) declares that every web pod reads",
-  X_EXERCISE_UNPROVEN_ABOVE_FLOOR:
-    'x exercise --json   # re-measures at the constant seed the gate runs (a floor from before 31.47.0 was measured under random seeds); each unproven record in .x/exercise.json names the proof and its reason: fix the seed helper or override it names, assuming no order between sized calls; the floor only falls',
-  X_ENV_NAME_RESERVED:
-    'edit app.config.ts: add an APP_ prefix to the envSchema name the finding cites (or delete it where the value is meant for the framework); then: x env example --json && x doctor --json',
-  X_FRAMEWORK_PIN_RANGE:
-    'x doctor --json   # each X_FRAMEWORK_PIN_RANGE names a package.json line and the exact version: write it there, then: bun install',
-  X_VERIFY_STEP_UNFLOORED:
-    'x doctor --json   # its X_VERIFY_STEP_UNFLOORED fix names the steps: run that x verify --only, then add each step that passed, not skipped, to "steps" in x.verify.json',
-  X_DB_ROW_SECURITY_OFF:
-    'database: { rowSecurity: true }   # in defineConfig, app.config.ts; then: x db gen "row security" --json && x db migrate --json && x doctor --json',
   X_DEV_DATA_UNOPENABLE:
     'x db migrate --json   # the fresh database has no tables yet; then x db seed --json if the app declares a seed. The moved directory (meta.aside) is kept: delete it once its rows are not needed',
   X_EXPLAIN_PRODUCTION_DATABASE:
     'env -u DATABASE_URL x queries list --json   # then the same prefix on x explain <query> --json: it plans on the embedded dev database; for a copy of production data, point DATABASE_URL at a staging restore with ULTIMATE_ENV=staging',
-  X_DB_INDEX_UNDECLARED:
-    'x verify --only drift --json   # each X_DB_INDEX_UNDECLARED warning names the index: its DROP INDEX CONCURRENTLY IF EXISTS "<name>"; goes in a new hand-written migration (-- transaction: false), or declare it in the entity\'s indexes: [...] and x db gen "<change>"',
-  X_SHIPPED_GUARD_MISSING:
-    "x doctor --json   # each X_SHIPPED_GUARD_MISSING warning's fix is the command that writes its guard, then x verify --only boundaries --json",
   X_DEV_LOG_ABSENT:
     'x dev --json   # the dev server writes the dev log as it boots; then: x logs tail --json',
   X_DEV_PEER_REFUSED:
@@ -389,15 +381,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_PROFILE_ROUTE_FAILED: 'x routes --json',
   X_ROWS_SLICE_ENTITY:
     'x help g --json   # then generate a job with the name and feature the finding names, and declare exportRows/importRows in it over the table that entity.ts declares',
-  X_SUPERSEDED_WORKAROUND:
-    'x doctor --json   # each finding names the file, the release that retired the workaround and its replacement',
-  X_GUARD_VENDORED: 'x upgrade --json',
   X_GUARD_BUILT_IN:
     'x verify --only boundaries --json   # set its severity in guards/shipped.json, or generate an app guard under another name',
   X_REPRO_BUNDLE_INVALID:
     'x repro --json   # lists the failing jobs and error groups; then run it again with one id and --bundle, and attach the file it writes',
-  X_ADVISORY_FLOOR_UNMET: 'bun update source-map-js immutable',
-  X_UPGRADE_CODEMODS_PENDING: 'x upgrade codemods --from 0.0.0 --json',
   X_APP_MIGRATIONS_UNAPPLIED: 'x db migrate --json',
   X_HEAVY_LEDGER_UNAVAILABLE: 'x heavy status --json',
   X_HEAVY_MEMORY_INVALID: 'export ULTIMATE_HEAVY_MEMORY=8g',
@@ -406,17 +393,6 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // raised error's own `fix:` carries the named invocation; `ULTIMATE_TASK_RUN` stays in the cause.
   X_TASK_RUN_PRODUCTION:
     'x tasks list --json   # then name the task: x tasks run <name> --production --json',
-  X_PROCESSES_INVALID:
-    'ULTIMATE_PROCESSES=auto   # in the deploy environment of this service, or a positive whole number such as 2',
-  X_PROCESSES_ROLE_SINGLETON:
-    'ULTIMATE_PROCESSES=1   # in the environment of the scheduler, replicator and migrate services',
-  X_PROCESSES_UNSHARED_STATE:
-    'NATS_URL=nats://<host>:4222   # or REDIS_URL for the cache, drop the per-process store from apps/<app>/runtime.ts, or set ULTIMATE_PROCESSES=1',
-  X_PROCESSES_OVER_POOL:
-    'DATABASE_POOL_MAX=<processes>   # at least ULTIMATE_PROCESSES, or lower ULTIMATE_PROCESSES to the pool size',
-  X_PROCESSES_UNBALANCED: 'ULTIMATE_PROCESSES=1   # or run the image in a Linux container',
-  X_PROCESS_CRASH_LOOP:
-    'docker compose logs --tail 200 <service>   # the last error line with the crashing child index names the boot error to fix',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

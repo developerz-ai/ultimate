@@ -3,6 +3,7 @@
 // a changed ppid — drains the child with a hard exit armed behind it.
 
 import { describe, expect, test } from 'bun:test';
+import { installLogSink, UltimateError } from '@ultimat3/core';
 import type { ChildLinkHost } from './supervise-child';
 import { linkToSupervisor, ORPHAN_EXIT_SLACK_MS } from './supervise-child';
 import type { ChildMessage, DrainSignal } from './supervise-messages';
@@ -137,5 +138,42 @@ describe('unit · linkToSupervisor', () => {
     ]);
     link?.release();
     expect(fake.released()).toBe(6);
+  });
+
+  test('a refused boot is one logged error line, and fatal only when no restart can fix it', () => {
+    const fake = fakeHost();
+    const link = linkToSupervisor(CHILD, fake.host);
+    const lines: string[] = [];
+    const release = installLogSink((line) => {
+      lines.push(line);
+    });
+    try {
+      link?.refused(
+        new UltimateError({
+          code: 'X_DB_UNAVAILABLE',
+          cause: 'no answer on 5432',
+          fix: 'x doctor --json',
+        }),
+      );
+      link?.refused(
+        new UltimateError({
+          code: 'X_PROCESSES_UNSHARED_STATE',
+          cause: 'the lru tier',
+          fix: 'ULTIMATE_PROCESSES=1',
+        }),
+      );
+    } finally {
+      release();
+    }
+    // Through the logger, so the line carries this child's `child` field: Bun's own print of an
+    // uncaught throw names no child, and the crash loop's fix sends the operator to that line.
+    const refused = lines.filter((line) => line.includes('"msg":"ultimate child refused to boot"'));
+    expect(refused).toHaveLength(2);
+    expect(refused[0]).toContain('"level":"error"');
+    expect(refused[0]).toContain('"code":"X_DB_UNAVAILABLE"');
+    expect(refused[0]).toContain('"fix":"x doctor --json"');
+    expect(fake.sent).toEqual([
+      { type: 'x-proc', event: 'fatal', code: 'X_PROCESSES_UNSHARED_STATE' },
+    ]);
   });
 });

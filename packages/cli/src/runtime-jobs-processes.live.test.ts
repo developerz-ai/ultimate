@@ -27,6 +27,20 @@ interface Event {
   readonly concurrency?: unknown;
 }
 
+const KINDS: ReadonlySet<unknown> = new Set(['ready', 'start', 'end', 'renew', 'lost']);
+
+/** A fixture line is an event only with the fields every event carries; anything else is noise. */
+const isEvent = (value: unknown): value is Event =>
+  typeof value === 'object' &&
+  value !== null &&
+  'mc' in value &&
+  'child' in value &&
+  typeof value.child === 'string' &&
+  'at' in value &&
+  typeof value.at === 'number' &&
+  'kind' in value &&
+  KINDS.has(value.kind);
+
 const probeUrl = (): string => {
   const parsed = new URL(url ?? 'postgres://localhost/postgres');
   parsed.pathname = `/${PROBE_DB}`;
@@ -53,8 +67,7 @@ describe.skipIf(!runs)('live · two worker processes in one container', () => {
       buffered = lines.pop() ?? '';
       for (const line of lines) {
         const parsed: unknown = line.startsWith('{') ? JSON.parse(line) : undefined;
-        if (typeof parsed === 'object' && parsed !== null && 'mc' in parsed)
-          events.push(parsed as Event);
+        if (isEvent(parsed)) events.push(parsed);
       }
       for (const wake of listeners) wake();
     }

@@ -131,6 +131,8 @@ export const POOL_MAX_ENV = 'DATABASE_POOL_MAX';
  * `max: 20` is 8,000 backends against a `max_connections` of 450. An unparseable value **refuses**
  * rather than falling back: a fleet that ignored the number it was given is the failure the
  * variable exists to prevent, and it would only be found in `pg_stat_activity` at 3am.
+ * Per CONTAINER: a supervised container (`ULTIMATE_PROCESSES` > 1) hands each child its
+ * `childShare` of it, so the container's connections do not grow with its processes.
  */
 export function poolMaxFromEnv(
   env: Readonly<Record<string, string | undefined>> = process.env,

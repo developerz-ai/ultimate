@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "0194ad3a677f4631040ceba425489ab9a58d64ed5f4aecbf784d9f48714ca212",
+  "buildId": "db259ffbb82224a3b739cf90744346626ac19a717e3ff8e6fda2abdad6315f31",
   "tiers": {
     "0": [
       "core",
@@ -4455,6 +4455,46 @@
       "at": "packages/http/src/error-titles.ts"
     },
     {
+      "code": "X_PROCESS_CRASH_LOOP",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-processes.ts"
+    },
+    {
+      "code": "X_PROCESSES_CPU_UNDECLARED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-processes.ts"
+    },
+    {
+      "code": "X_PROCESSES_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-processes.ts"
+    },
+    {
+      "code": "X_PROCESSES_MIGRATE_REQ_OFF",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-processes.ts"
+    },
+    {
+      "code": "X_PROCESSES_OVER_POOL",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-processes.ts"
+    },
+    {
+      "code": "X_PROCESSES_ROLE_SINGLETON",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-processes.ts"
+    },
+    {
+      "code": "X_PROCESSES_UNBALANCED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-processes.ts"
+    },
+    {
+      "code": "X_PROCESSES_UNSHARED_STATE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-processes.ts"
+    },
+    {
       "code": "X_PRODUCTION_APPS_DRIFT",
       "owner": "scripts",
       "at": "scripts/production-apps.ts"
@@ -5032,7 +5072,7 @@
     {
       "code": "X_REPRO_BUNDLE_INVALID",
       "owner": "cli",
-      "at": "packages/cli/src/error-codes.ts"
+      "at": "packages/cli/src/error-codes-tooling.ts"
     },
     {
       "code": "X_REPRO_CAPTURE_OFF",
@@ -5048,6 +5088,11 @@
       "code": "X_REPRO_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-tooling.ts"
+    },
+    {
+      "code": "X_REUSEPORT_OUTSIDE_SEAM",
+      "owner": "scripts",
+      "at": "scripts/reuse-port-seam.ts"
     },
     {
       "code": "X_ROADMAP_FILE_MISSING",

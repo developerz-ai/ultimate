@@ -218,16 +218,26 @@ export async function resolveProcessCount(sources: CountSources): Promise<Proces
       requested,
       binding: 'environment',
       clamps: { environment: 1 },
-      ...(requested === 'auto' || requested === 1
-        ? {}
-        : {
-            note: {
-              level: 'info' as const,
-              msg: 'ultimate processes ignored',
-              cause: `${PROCESSES_ENV}=${String(requested)} applies to production containers only; this ${sources.environment ?? 'unnamed'} process runs as one`,
-            },
-          }),
+      ...ignoredRequest(requested, sources.environment ?? 'unnamed'),
     };
   }
   return requested === 'auto' ? resolveAuto(sources) : checkExplicit(sources, requested);
+}
+
+/**
+ * The one line a process that always runs as one owes a count asked of it: the test runner and any
+ * non-production environment here, `x dev` (`dev-boot.ts`) everywhere. Nothing for auto or `1`.
+ */
+export function ignoredRequest(
+  requested: ProcessesRequest,
+  where: string,
+): { readonly note?: NonNullable<ProcessCount['note']> } {
+  if (requested === 'auto' || requested === 1) return {};
+  return {
+    note: {
+      level: 'info',
+      msg: 'ultimate processes ignored',
+      cause: `${PROCESSES_ENV}=${String(requested)} applies to production containers only; this ${where} process runs as one`,
+    },
+  };
 }

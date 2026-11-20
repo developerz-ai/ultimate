@@ -201,7 +201,7 @@ The body always opens with a `target_info` gauge carrying the service identity, 
 | `/metrics` on `METRICS_PORT` | the supervisor's: each child's own scrape (loopback, an ephemeral port), merged under one `# HELP` / `# TYPE` per family, every sample labelled `child="<i>"`. A child that does not answer within 2 s is left out of that scrape |
 | counters and histograms | per child: `sum by (…)` over `child` is the container's total, as it is over pods |
 | **process-global gauges** | appear **N times**, once per child — `queue_demand`, `queue_depth`, `queue_oldest_ready_seconds` and the `db_server_*` gauges are each child's reading of one shared fact. **Use `max`, never `sum`**: a sum reads N× the backlog and scales the fleet N× |
-| log lines | every line a child writes carries `"child": <i>`; the supervisor's carry `"child": "supervisor"`. A caller's own `child` field moves to `field.child` |
+| log lines | every line a child writes carries `"child": <i>`; the supervisor's carry `"child": "supervisor"`. A caller's own `child` field moves to `field.child`. A child whose boot throws says so first as `ultimate child refused to boot` (`error`, with the code, cause and fix) — the line `X_PROCESS_CRASH_LOOP` sends you to |
 | `/healthz`, `/readyz` | the supervisor's: alive and not in a crash loop; every child that is not draining reported ready |
 
 ## The series autoscaling reads

@@ -144,10 +144,11 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `runtime-cache-bus.ts` | which bus carries cache/ISR invalidations across replicas; one `cache.broadcast` boot line † |
 | `runtime-cache-frame.ts` | the bust frame on `x.cache.invalidate`: tags + optional `{scopes}`; older receivers keep the strings |
 | `runtime-jobs.ts` (queues) | `WORKER_QUEUES` = the EXACT set, else `X_WORKER_QUEUE_UNKNOWN`; `-unserved.ts`: what no worker serves † |
-| `supervise*.ts` | `ULTIMATE_PROCESSES`: the count and its clamps, N children on one port, the container's `METRICS_PORT`, each child's IPC link † |
+| `supervise*.ts` | `ULTIMATE_PROCESSES`: count and clamps, N children on one port, `METRICS_PORT`, IPC † |
+| `runtime-jobs-share.ts` / `doctor-processes*.ts` | a worker child's slot share; `x doctor`'s processes fact † |
 | `serve-retire.ts` / `dev-restart-retire.ts` | the worker retire (SIGUSR2, before an `x dev` restart's drain) † |
 | `role-start*.ts` / `role-select.ts` / `role-realtime.ts` | `--role` selection (`x dev` runs only `config.roles`: `rolesDeclaredForDev`), start/stop per role, device mounts † |
-| `role-wake.ts` | the worker's LISTEN session (`@ultimat3/jobs`' `startQueueWake`) — worker role only, only over a client that `canListen` — and `queue_wake_live` |
+| `role-wake.ts` | the worker's LISTEN session (one per process) and `queue_wake_live` † |
 | `role-sync.ts` / `role-replicator.ts` / `runtime-live-feed.ts` | the sync node, the change feed |
 | `runtime-render*.ts` / `runtime-{isr-outcome,assets,storage,hooks}.ts` / `route-islands.ts` / `api-routes.ts` | the HTTP surface both boots mount † |
 | `asset-route-meta.ts` | the ONE writer of an asset route's `tags: ['assets']` + `rateLimit: 'assets'` † |
@@ -204,7 +205,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `cmd-env-init.ts` / `env-production.ts` / `cmd-deploy-preflight.ts` | the one writer of `.env.production`; compose pre-flight (`X_DEPLOY_ENV_MISSING`) † |
 | `cmd-upgrade.ts` / `upgrade-*.ts` | `x upgrade`: one major per run; no `requiresApp` † |
 | `codemods/` / `cmd-upgrade-codemods.ts` / `upgrade-gate-codemods.ts` | a kept template change, carried by a codemod (ONE list: `codemods/index.ts`) † |
-| `cmd-deploy-verify.ts` / `deploy-verify-*.ts` / `cmd-status*.ts` | `x deploy verify`: the wait, the verdict, lazy sources † · `x status` |
+| `cmd-deploy-verify.ts` / `deploy-verify-*.ts` / `cmd-status*.ts` | `x deploy verify`: wait, verdict, lazy sources, rows per container † · `x status` |
 
 ## Adding a command
 

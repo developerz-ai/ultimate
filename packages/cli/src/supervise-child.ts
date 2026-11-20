@@ -7,8 +7,10 @@ import {
   DRAIN_TIMEOUT_EXIT_CODE,
   drain,
   drainDeadlineMs,
+  isUltimateError,
   logger,
   readinessGraceMs,
+  renderThrowable,
   supervisedChild,
 } from '@ultimat3/core';
 import type { ChildMessage, DrainSignal } from './supervise-messages';
@@ -20,6 +22,51 @@ export const PARENT_POLL_MS = 1_000;
 export const ORPHAN_EXIT_SLACK_MS = 2_000;
 
 type Release = () => void;
+
+/**
+ * Boot refusals that are a function of the image and its environment alone: a restart of the same
+ * child meets each again, unchanged, so the supervisor stops at the first and the container exits 1
+ * with the child's own code and fix. Never what can heal by itself while the child waits — a
+ * database, Redis or NATS still starting, migrations the migrate job has not applied yet
+ * (`X_APP_MIGRATIONS_UNAPPLIED`, `X_FRAMEWORK_SCHEMA_UNAPPLIED`), a port still held, a pool
+ * timeout — nor state outside the image (`X_DB_ROW_SECURITY_BYPASSED`: a grant;
+ * `X_SEAL_KEY_UNKNOWN`: rows), nor `X_APP_MODULE_LOAD_FAILED`, which wraps whatever an app module
+ * threw at import.
+ */
+export const FATAL_BOOT_CODES: ReadonlySet<string> = new Set([
+  // The environment: a required variable missing or malformed, a value no deploy names.
+  'X_ENV_MISSING',
+  'X_ROLE_UNKNOWN',
+  'X_ROLE_INVALID',
+  'X_ENVIRONMENT_INVALID',
+  'X_PORT_INVALID',
+  'X_CURSOR_SECRET_DEV',
+  // `app.config.ts`, the TLS pair, a role the config does not list, a database a newer major
+  // stamped.
+  'X_CONFIG_INVALID',
+  // The committed secrets against the key the environment holds.
+  'X_SEAL_KEY_MISSING',
+  'X_SECRETS_KEY_MISSING',
+  'X_SECRETS_KEY_INVALID',
+  'X_SECRETS_KEY_MISMATCH',
+  'X_SECRETS_FILE_INVALID',
+  'X_SECRETS_TAMPERED',
+  // What the image holds: an import that resolves nowhere, an app that registers nothing, a role
+  // missing what the manifest names, a queue, disk or store the app never declared.
+  'X_APP_IMPORT_UNRESOLVED',
+  'X_APP_EMPTY',
+  'X_ROLE_LOAD_INCOMPLETE',
+  'X_WORKER_QUEUE_UNKNOWN',
+  'X_STORAGE_DISK_UNKNOWN',
+  'X_IDEMPOTENCY_NOT_SHARED',
+  'X_NOTIFY_STORE_MISSING',
+  // The count itself and per-process state under it.
+  'X_PROCESSES_INVALID',
+  'X_PROCESSES_ROLE_SINGLETON',
+  'X_PROCESSES_UNSHARED_STATE',
+  'X_PROCESSES_OVER_POOL',
+  'X_PROCESSES_UNBALANCED',
+]);
 
 /** Every process seam the link touches, injected so a test drives it without a second process. */
 export interface ChildLinkHost {
@@ -84,6 +131,12 @@ export interface ChildLink {
   gone(code: number): void;
   /** A refusal no restart can fix: the supervisor stops restarting and the container exits 1. */
   fatal(code: string): void;
+  /**
+   * The boot threw: one `error` line through the logger, so it carries this child's index (Bun's
+   * own print of the uncaught throw names none, and the crash loop's fix points at this line);
+   * `fatal` too when it is a refusal only a redeploy changes (`FATAL_BOOT_CODES`).
+   */
+  refused(error: unknown): void;
   release(): void;
 }
 
@@ -135,6 +188,17 @@ export function linkToSupervisor(
       }),
     gone: (code) => host.send({ type: PROCESS_MESSAGE_TYPE, event: 'gone', code }),
     fatal: (code) => host.send({ type: PROCESS_MESSAGE_TYPE, event: 'fatal', code }),
+    refused: (error) => {
+      logger.error(
+        'ultimate child refused to boot',
+        isUltimateError(error)
+          ? { code: error.code, cause: error.cause, fix: error.fix }
+          : { cause: renderThrowable(error) },
+      );
+      if (isUltimateError(error) && FATAL_BOOT_CODES.has(error.code)) {
+        host.send({ type: PROCESS_MESSAGE_TYPE, event: 'fatal', code: error.code });
+      }
+    },
     release: () => {
       for (const release of releases.splice(0)) release();
     },

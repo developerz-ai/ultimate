@@ -126,6 +126,7 @@ export async function bootServing(boot: {
     role: boot.role,
     port: options.port ?? portFromEnv(options.env),
     hostname: containerBinding(options.env, options.hostname).hostname,
+    env: options.env,
     ...(tls === undefined ? {} : { tls }),
   });
   if (probe !== undefined) boot.acquired.push(() => probe.stop());

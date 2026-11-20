@@ -311,5 +311,7 @@
  * Nothing web-only.
  * raised 1764 → 1768, measured 1768 (2026-11-19, multi-process containers): the four on
  * `SERVING_ROLE_CEILING`. Nothing web-only.
+ * raised 1768 → 1769, measured 1769 (2026-11-19, integration): `cli/src/messages-processes.ts`, the
+ * one on `SERVING_ROLE_CEILING`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1768;
+export const WEB_ROLE_CEILING = 1769;

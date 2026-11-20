@@ -320,9 +320,12 @@ with one `ultimate processes ignored` info line.
 | `image` | 1 when the image holds no prebuilt store (`x build --target prebuilt`) | not read |
 | `platform` | 1 off Linux, where Bun ignores `reusePort` | refused, `X_PROCESSES_UNBALANCED` |
 
-An idempotency store an app module swaps in after boot is seen only by a child: one of several
-refuses its boot `X_PROCESSES_UNSHARED_STATE` and tells the supervisor, which stops (exit 1)
-rather than restart into the same refusal.
+A child whose boot is refused for a reason a restart meets again (`FATAL_BOOT_CODES` in
+`supervise-child.ts`: a missing or malformed variable, `X_CONFIG_INVALID`, a key that does not
+match, an unresolved import, every `X_PROCESSES_*` refusal — among them an idempotency store an app
+module swaps in after boot, seen only by a child) logs `ultimate child refused to boot` with its own
+code and fix and tells the supervisor, which stops (exit 1) rather than restart into the same
+refusal. A database, bus or migration still on its way is restarted with backoff.
 
 Every boot logs one line: `ultimate processes` with `role`, `count`, `requested`, `binding` (the
 clamp that set it: `environment`, `platform`, `role`, `cpu`, `memory`, `pool`, `shared-state`,

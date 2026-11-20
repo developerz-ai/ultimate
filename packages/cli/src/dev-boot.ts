@@ -44,6 +44,7 @@ import { releaseOrThrow, startServices } from './runtime-services';
 import { metricsPortFor, releaseBoot } from './serve';
 import type { ListenerTls } from './serve-env-tls';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
+import { logDevProcesses } from './supervise-boot';
 
 export interface DevServer {
   readonly url: string;
@@ -114,6 +115,8 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // EVERY boot: a scratch server (`x shot`, `ui.shot`) boots here too, and without this a
   // fail-closed dev actor installs nothing — the picture is of a 401. Idempotent.
   declareDevEnvironment(options.env);
+  // One process, always: a count the `.env` asks for production is said once and ignored here.
+  logDevProcesses(options.env);
   // Before the first scan: the watcher's rescans evict a saved module AND everything importing it,
   // and that needs the import graph recorded as each module is first loaded (`app-reload-graph.ts`).
   enableReloadTracking(true);

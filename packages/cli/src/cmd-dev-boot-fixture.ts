@@ -42,8 +42,14 @@ export interface BootedDev {
  */
 export function bootDevFixture(
   base: string,
-  options: { hostname?: string; tls?: ListenerTls } = {},
+  options: {
+    hostname?: string;
+    tls?: ListenerTls;
+    /** Laid over the fixture's own env: what a developer's `.env` would add. */
+    env?: Readonly<Record<string, string>>;
+  } = {},
 ): BootedDev {
+  const { env: extraEnv, ...listen } = options;
   const root = processRoot(join(import.meta.dir, '..', base));
   let server: DevServer | undefined;
   let metricsPort: number | undefined;
@@ -61,8 +67,8 @@ export function bootDevFixture(
       return startDev({
         root,
         port: 0,
-        ...options,
-        env: { METRICS_PORT: String(port), BUILD_ID: 'stamped-7' },
+        ...listen,
+        env: { ...extraEnv, METRICS_PORT: String(port), BUILD_ID: 'stamped-7' },
         roles: ['web', 'sync', 'worker', 'scheduler'],
       });
     });

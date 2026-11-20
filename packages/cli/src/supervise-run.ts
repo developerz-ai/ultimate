@@ -6,16 +6,20 @@ import type { Role } from '@ultimat3/core';
 import { drainDeadlineMs, readinessGraceMs } from '@ultimat3/core';
 import { containerBinding, metricsPortFor, portFromEnv } from './serve-env';
 import type { ServeOptions } from './serve-types';
-import type { Supervisor, SupervisorView } from './supervise';
+import type { SuperviseInput, Supervisor, SupervisorView } from './supervise';
 import { supervise } from './supervise';
 import { containerPool } from './supervise-pool';
 import { childHealthy, startSupervisorProbe } from './supervise-probe';
+
+/** The process seams `supervise()` defaults to the real ones: a test hands in fakes. */
+export type SupervisedSeams = Pick<SuperviseInput, 'spawn' | 'signals' | 'timers'>;
 
 /** Runs `count.count` children of this very entry point; answers the container's exit code. */
 export async function runSupervised(
   options: ServeOptions,
   role: Role,
   count: number,
+  seams: SupervisedSeams = {},
 ): Promise<number> {
   let supervisor: Supervisor | undefined;
   const view: SupervisorView = {
@@ -33,6 +37,7 @@ export async function runSupervised(
   });
   try {
     supervisor = supervise({
+      ...seams,
       count,
       role,
       // The role this process resolved, whatever `options.role` overrode: a child re-reads `ROLE`.

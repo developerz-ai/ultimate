@@ -8,6 +8,7 @@ import { DB_MESSAGES } from './messages-db';
 import { FLOOR_MESSAGES } from './messages-floor';
 import { GATE_MESSAGES } from './messages-gate';
 import { OPS_MESSAGES } from './messages-ops';
+import { PROCESSES_MESSAGES } from './messages-processes';
 import { REPRO_MESSAGES } from './messages-repro';
 import { SHOT_MESSAGES } from './messages-shot';
 import { STATUS_MESSAGES } from './messages-status';
@@ -327,6 +328,7 @@ const CATALOG = {
   ...UPGRADE_MESSAGES,
   ...GATE_MESSAGES,
   ...OPS_MESSAGES,
+  ...PROCESSES_MESSAGES,
   ...FLOOR_MESSAGES,
   ...STATUS_MESSAGES,
   'cli.heavy.waiting':

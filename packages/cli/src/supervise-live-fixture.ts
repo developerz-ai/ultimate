@@ -3,15 +3,16 @@
 // SERVES — `PORT` with the core seam's `reusePort`, a loopback scrape, the real child link.
 // Answers `<index> <pid>`, so the test can tell children apart and kill one.
 
+import type { SupervisedChild } from '@ultimat3/core';
 import { sharedPortOption, supervisedChild } from '@ultimat3/core';
 import { supervise } from './supervise';
 import { linkToSupervisor } from './supervise-child';
 import { childHealthy, startSupervisorProbe } from './supervise-probe';
 
-const env = process.env;
-const place = supervisedChild(env);
+type Env = Readonly<Record<string, string | undefined>>;
 
-if (place === undefined) {
+/** The supervisor's half: the container's probe, then `FIXTURE_COUNT` children; its exit code. */
+export async function superviseFixture(env: Env): Promise<number> {
   let view: ReturnType<typeof supervise>['view'] | undefined;
   const probe = startSupervisorProbe({
     port: Number(env['METRICS_PORT']),
@@ -34,8 +35,14 @@ if (place === undefined) {
   view = supervisor.view;
   const code = await supervisor.done;
   probe.stop();
-  process.exit(code);
-} else {
+  return code;
+}
+
+/** A child's half: serve `PORT`, a loopback scrape, say ready. `leave` is what a signal runs. */
+export function serveFixtureChild(
+  env: Env,
+  place: SupervisedChild,
+): { readonly url: string; leave(): Promise<void> } {
   const link = linkToSupervisor(env);
   const server = Bun.serve({
     port: Number(env['PORT']),
@@ -51,13 +58,28 @@ if (place === undefined) {
         ? new Response(`fixture_up 1\n`)
         : new Response('ok'),
   });
-  const leave = async (): Promise<void> => {
-    await server.stop();
-    scrape.stop(true);
-    link?.gone(0);
-    process.exit(0);
-  };
-  process.on('SIGTERM', () => void leave());
-  process.on('SIGINT', () => void leave());
   link?.ready(scrape.url.origin);
+  return {
+    url: server.url.origin,
+    async leave(): Promise<void> {
+      await server.stop();
+      scrape.stop(true);
+      link?.gone(0);
+      link?.release();
+    },
+  };
+}
+
+if (import.meta.main) {
+  const env = process.env;
+  const place = supervisedChild(env);
+  if (place === undefined) process.exit(await superviseFixture(env));
+  else {
+    const child = serveFixtureChild(env, place);
+    const leave = (): void => {
+      void child.leave().then(() => process.exit(0));
+    };
+    process.on('SIGTERM', leave);
+    process.on('SIGINT', leave);
+  }
 }
