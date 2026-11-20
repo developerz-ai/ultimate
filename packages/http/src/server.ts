@@ -16,6 +16,7 @@ import {
   markReady,
   onShutdown,
   readyzPayload,
+  sharedPortOption,
   systemClock,
 } from '@ultimat3/core';
 import type { Server } from 'bun';
@@ -321,6 +322,8 @@ const buildServer = (options: ServerOptions): ServerHandle => {
         // and its 128 MiB default refused every larger signed upload. `maxRequestBodyBytes` is
         // the ceiling, enforced coded in `admit` and on the stream (`body-ceiling.ts`).
         maxRequestBodySize: BUN_MAX_REQUEST_BODY_SIZE,
+        // A supervised child on Linux shares the port with its siblings; anything else binds alone.
+        ...sharedPortOption(process.env),
         // Only when declared, so a plaintext listener's options are the ones it always had. Bun
         // then builds each request's URL as `https:`, which is what `ctx.https` reads with no
         // trusted proxy — the socket's own fact, no header consulted that was not before.

@@ -996,6 +996,8 @@ export {
 } from './service';
 export { onSessionLost, sessionIsLost } from './session-lost';
 export { isSessionRefusal, isSessionRefusalCode } from './session-refusal';
+export type { SupervisedChild } from './shared-port';
+export { childShare, sharedPortOption, supervisedChild } from './shared-port';
 export type { FlightJoin, Scheduler, SingleFlight, SingleFlightOptions } from './single-flight';
 export { singleFlight } from './single-flight';
 export { ambientClock, noWaitClock } from './sleep-clock';

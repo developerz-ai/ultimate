@@ -24,6 +24,16 @@
 # the horizontal scaling of `web` and `sync` lives in docker/helm with an HPA per role. To scale
 # them on one box anyway, delete the `ports:` line and put your own proxy on this network — the
 # service name resolves to every replica over the compose DNS round robin.
+#
+# `cpus:` is the knob `ULTIMATE_PROCESSES=auto` (the default) reads: a container with a CPU budget
+# of K whole cores runs K processes of its role on one port (wiki/Deployment.md, "Processes per
+# container"); a service with no `cpus:` runs one, whatever the host has. Most of a request's wall
+# time is I/O wait, so one process already holds many requests at once and the budgets below are
+# modest: raise a role's `cpus` when its process sits above ~70% of one core. Memory is sized at
+# 256 MiB per process plus headroom; `jobs.concurrency`, `jobs.maxInFlight` and `DATABASE_POOL_MAX`
+# are per CONTAINER and split across its processes, so raising `cpus` multiplies neither.
+# `net.ipv4.tcp_migrate_req` is a commented opt-in on web and sync, never active: a kernel older
+# than Linux 5.14 has no such knob, and Docker then refuses to create the container at all.
 
 name: ultimate
 
@@ -41,6 +51,9 @@ x-common: &common
   restart: unless-stopped
   env_file: [../.env.production]
   logging: *logging
+  # An init as PID 1 (Docker's tini): Bun as PID 1 never reaps an orphaned grandchild, and ignores
+  # SIGTERM until a handler is installed, so `docker stop` waited out the grace and SIGKILLed.
+  init: true
   # SIGTERM drains in-flight work before the process exits, and it is spent in two halves: the
   # readiness grace (`drain.readinessGraceMs`, packages/core — /readyz at 503 with the listener still
   # open, 5s outside local environments) and then the drain itself, bounded by `drain.deadlineMs`
@@ -122,6 +135,13 @@ services:
     environment: { ROLE: web, PORT: 3000, SYNC_URL: '${SYNC_URL:?set SYNC_URL=ws://<host>:3001/_x/sync, see wiki/Deployment.md}' }
     ports: ['3000:3000']
     depends_on: { migrate: { condition: service_completed_successfully } }
+    # Two processes on one port: 2 × 256 MiB per process, plus headroom, fits in x-common's 1g.
+    cpus: '2'
+    # Opt-in, Linux ≥ 5.14 only: on an older kernel (RHEL 8, Ubuntu 20.04, Amazon Linux 2) the knob
+    # does not exist and Docker refuses to create the container. With more than one process here,
+    # a stopping process's queued connections move to a sibling instead of being reset (measured:
+    # 93–109 of 200 reset without it, 0 with it). `x doctor` warns when it exists, reads 0, N > 1.
+    # sysctls: { net.ipv4.tcp_migrate_req: 1 }
     # No `healthcheck:` here on purpose. The app image declares its own — `/readyz` on $PORT, which
     # this role does serve — and this file used to override it with `['CMD', '/app/x', 'doctor']`.
     # `/app/x` exists ONLY in the framework's distroless CLI image, which the header above says
@@ -142,6 +162,11 @@ services:
     environment: { ROLE: sync, PORT: 3000, APP_URL: '${APP_URL:?set APP_URL=http://<host>:3000 — the origin the pages are served on, see wiki/Deployment.md}' }
     depends_on: { migrate: { condition: service_completed_successfully } }
     ports: ['3001:3001']
+    # One process. A second needs NATS_URL (fan-out and presence must cross processes); raise
+    # `cpus` with it, and the opt-in below (Linux ≥ 5.14 only, as on web) keeps a stopping
+    # process's queued sockets instead of resetting them.
+    cpus: '1'
+    # sysctls: { net.ipv4.tcp_migrate_req: 1 }
     # ...which is why the image's own HEALTHCHECK cannot be inherited here. It fetches $PORT —
     # 3000 — and this role never binds it, so the container reports `unhealthy` from
     # `start_period` onward and never recovers, and anything gated on `sync: service_healthy`
@@ -171,6 +196,9 @@ services:
     environment: { ROLE: worker }
     depends_on: { migrate: { condition: service_completed_successfully } }
     healthcheck: *metrics-probe
+    # One process per replica. CPU-heavy queues raise it: a synchronous handler blocks every job in
+    # its process and their lease renewals, and each core here is one more process to contain it.
+    cpus: '1'
     deploy:
       replicas: 2
 
@@ -182,6 +210,8 @@ services:
     environment: { ROLE: scheduler }
     depends_on: { migrate: { condition: service_completed_successfully } }
     healthcheck: *metrics-probe
+    # Always one process (a lease row has one holder): a small budget.
+    cpus: '0.5'
     deploy:
       replicas: 1
 
@@ -194,5 +224,7 @@ services:
     environment: { ROLE: replicator }
     depends_on: { migrate: { condition: service_completed_successfully } }
     healthcheck: *metrics-probe
+    # Always one process (a replication slot has one reader): a small budget.
+    cpus: '0.5'
     deploy:
       replicas: 0

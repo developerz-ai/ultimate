@@ -31,6 +31,7 @@ Rules that keep this honest:
 - `web` and `sync` are interchangeable to the load balancer except for protocol.
 - Only `migrate` **exits non-zero with a typed error** when its lock is held (`X_MIGRATE_CONCURRENT`); `x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD`. `scheduler` and `replicator` containers stand by instead: a node that does not hold the lease or lock stays up — the replicator unready — and retries, the scheduler every round, the replicator on a jittered backoff.
 - Any role can be co-located in one process for dev — role isolation is simulated, never skipped.
+- A production container may run its role as N processes on one port ([below](#processes-per-container-the-supervisor)); a row above is then true of each child, and the container's `METRICS_PORT` is the supervisor's.
 - Every role runs the same image and the same `x.manifest.json`, so the build ID is identical across the fleet.
 
 ## What each role imports
@@ -211,6 +212,26 @@ Closing 50,000 sockets at once means 50,000 simultaneous reconnects, all resubsc
 
 Result: a rolling restart produces a wide flat load curve instead of a spike.
 
+## Processes per container: the supervisor
+
+`As of 2026-11`. `runRole` (`packages/cli/src/serve.ts`) asks once, in the process the platform started, how many processes this container runs (`ULTIMATE_PROCESSES`, resolved by `supervise-count.ts`; every clamp in [Deployment](../../wiki/Deployment.md#processes-per-container)) and logs `ultimate processes` with the count and the clamp that bound it. One: it boots the role itself, exactly as before. More: it supervises and never boots the app. A process that already carries `ULTIMATE_CHILD` is a child and never asks.
+
+| Phase | Supervisor (`supervise-run.ts`, `supervise.ts`) | Child (`supervise-child.ts`, the ordinary boot) |
+|---|---|---|
+| start | installs SIGTERM / SIGINT / SIGUSR2 handlers **before** the first spawn (Bun as PID 1 ignores an unhandled SIGTERM), opens `METRICS_PORT` for the container (`supervise-probe.ts`), then spawns N copies of its own entry (`process.execPath` + `argv`) with `ipc`, `serialization: 'json'` | env carries `ULTIMATE_CHILD=<i>/<N>`, `ROLE`, and `DATABASE_POOL_MAX` = `childShare(pool, i, N)`; `jobs.concurrency` / `maxInFlight` are split the same way at worker start (`runtime-jobs-share.ts`) |
+| boot | `/readyz` 503 until at least one child said `ready` and every other one is ready or draining | opens **no** boot probe on the shared port (a plain bind would refuse its siblings, a shared one would take traffic); `Bun.serve` spreads core's `sharedPortOption(env)` → `reusePort` (the one place it is spelled, `X_REUSEPORT_OUTSIDE_SEAM`); its own scrape on `127.0.0.1:0`; IPC `ready` with that URL and its drain budget |
+| serving | polls each child's loopback `/healthz` every 5 s; 3 failures in a row → restart by drain (busy is not dead: a saturated child answered 1.9–5.2 s late); `/metrics` merges every child's scrape with `child="<i>"` | every log line carries `child: <i>`; the supervisor's carry `child: 'supervisor'` |
+| crash | restarts the child after 1, 2, 4 … s, capped at 30 s, reset by 60 s of uptime; 5 unexpected exits of one child in 5 minutes → `X_PROCESS_CRASH_LOOP`: drain the siblings, exit 1. A boot refusal in `FATAL_BOOT_CODES` (`supervise-child.ts`: the image and its environment alone decide it) is never restarted: drain, exit 1 at once | — |
+| stop | forwards the signal to every child at once (SIGUSR2, the worker retire, to a `worker`'s only); each child's bound runs from its `draining` ack + 2 s, one outer ceiling = the longest bound + 6 s from the signal, then SIGKILL | drains as a lone process does, then exits; IPC `disconnect` or a changed ppid (compared with the ORIGINAL, never 1: an orphan goes to the nearest subreaper) means the supervisor is gone — the child drains and exits too |
+| exit | 0 when every child exited 0; 70 (`DRAIN_TIMEOUT_EXIT_CODE`) when one did or was killed at the ceiling; else 1 | its own code |
+
+Rules:
+
+- **No rolling restart inside a container.** The image is immutable; a deploy replaces the container, and `server.reload` is dev-only.
+- **Production containers only.** `x dev` keeps its own supervisor (`dev-supervisor.ts`, restarts on save) and always runs one process of each role; the test runner never supervises.
+- **Control messages are strings, numbers and booleans** (`supervise-messages.ts`): JSON IPC turns a `Date` into a string and a `Map` into `{}` silently.
+- **What multiplies with N**: one LISTEN session per worker child, the outbox relay's polling (lease-safe), per-process `perTenant` / `ratePerTenant` caps and per-actor socket caps. What does not: pool connections, job slots, fleet `concurrency` / `limiter()` (rows in the database).
+
 ## Leader election
 
 **Two mechanisms, and which one a consumer gets is decided by whether it owns its connection.**
@@ -299,4 +320,10 @@ Skew handling during a rolling deploy:
 | `X_DRAINING` | work arrived after SIGTERM | retry against another replica; the LB should already have removed this one |
 | `X_ROLE_INVALID` | `ROLE` is not a known runtime role | set `ROLE` to `web`, `sync`, `worker`, `scheduler`, `migrate` or `replicator` |
 | `X_ROLE_LOAD_INCOMPLETE` | a worker or scheduler does not register what the whole app does — a finding from the gate, a logged fallback at boot | import the named module from `apps/web/api/index.ts`, or move the declaration out of the module that imports a component |
+| `X_PROCESSES_INVALID` | `ULTIMATE_PROCESSES` is neither `auto` nor a positive whole number | `ULTIMATE_PROCESSES=auto` |
+| `X_PROCESSES_ROLE_SINGLETON` | a count above 1 for `scheduler`, `replicator` or `migrate` | `ULTIMATE_PROCESSES=1` on that service |
+| `X_PROCESSES_UNSHARED_STATE` | a count above 1 over per-process state (in-process `lru` bus, a `scope` other than `'shared'`, the embedded database, `sync` without NATS) | share it (`NATS_URL`, `REDIS_URL`, `DATABASE_URL`), or `ULTIMATE_PROCESSES=1` |
+| `X_PROCESSES_OVER_POOL` | more processes than pool connections | `DATABASE_POOL_MAX=<n>` |
+| `X_PROCESSES_UNBALANCED` | a count above 1 off Linux, where Bun ignores `reusePort` | `ULTIMATE_PROCESSES=1`, or a Linux container |
+| `X_PROCESS_CRASH_LOOP` | one child exited unexpectedly 5 times in 5 minutes | the child's last `ultimate child refused to boot` line (`"child": <i>`) names the boot error |
 | `X_IMAGE_NOT_PREBUILT` | a role built island chunks or compiled stylesheets at boot | add `RUN bun node_modules/@ultimat3/cli/src/bin.ts build --target prebuilt` after `COPY . .` in the Dockerfile's runtime stage, rebuild |

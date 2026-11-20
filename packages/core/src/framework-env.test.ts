@@ -16,6 +16,16 @@ describe('unit · FRAMEWORK_ENV', () => {
     });
   });
 
+  // An app's compose file sets the count; only the supervisor writes a child's place.
+  test('the process count is the contract, a child index is internal', () => {
+    expect(frameworkEnvEntry('ULTIMATE_PROCESSES')).toMatchObject({
+      owner: 'cli',
+      use: 'contract',
+    });
+    expect(frameworkEnvEntry('ULTIMATE_CHILD')).toMatchObject({ owner: 'core', use: 'internal' });
+    expect(frameworkEnvEntry('ULTIMATE_CHILD')?.prefix).toBeUndefined();
+  });
+
   test('a name the framework does not read has no entry, prototype members included', () => {
     expect(frameworkEnvEntry('HCAPTCHA_SECRET')).toBeUndefined();
     expect(frameworkEnvEntry('constructor')).toBeUndefined();

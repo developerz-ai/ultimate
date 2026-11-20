@@ -161,13 +161,14 @@ export interface JobsConfig {
    */
   readonly queues: readonly string[];
   /**
-   * Slots per worker process: one number for every queue it serves, or a table per queue
-   * (`{ banks: 4, 'banks-long': 2 }`, a queue it does not name at `JOBS_CONCURRENCY_DEFAULT`).
+   * Slots per worker CONTAINER: one number for every queue it serves, or a table per queue
+   * (`{ banks: 4 }`; one it does not name at `JOBS_CONCURRENCY_DEFAULT`). Over N processes the
+   * runtime gives the indices >= total 0 slots, then `childShare`s the rest: `1` stays serial.
    */
   readonly concurrency: JobsConcurrency;
   /**
-   * Runs one worker process holds at once across every queue it serves (`jobWorker`'s
-   * `maxInFlight`), the per-queue `concurrency` still bounding each under it. Unset: no process cap.
+   * Runs one worker CONTAINER holds at once across its queues (`jobWorker`'s `maxInFlight`, split
+   * across its processes as `concurrency` is), each queue's `concurrency` under it. Unset: no cap.
    */
   readonly maxInFlight?: number | undefined;
   /** With `backoff`: the retry of a job that declares none. A job's own `retry` wins. */

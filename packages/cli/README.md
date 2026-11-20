@@ -230,6 +230,7 @@ its name like any guard.
 | `app-transport.ts` / `browser-transport.ts` | one browser transport, on `boundaries` in every app: a raw `fetch(`, `new WebSocket(` or `new XMLHttpRequest(` in an island's closure is `X_BROWSER_TRANSPORT_BYPASS`; a server barrel there is `X_BROWSER_SERVER_BARREL` |
 | `app-agents-md.ts` | `AGENTS.md` exists and stays short, over `@ultimat3/manifest`'s check |
 | `serve.ts` | **what a container starts** — `runRole(options)`, the same boot `x dev` runs minus the watcher, `/_x` and `dev: true`. `x new`'s `apps/web/server.ts` is three lines that call it. `ROLE`, `PORT` and `HOST` are read from `env`; `role`, `port` and `hostname` on `ServeOptions` override each. `ROLE=worker` also retires on SIGUSR2 (`serve-retire.ts`, 25.0.0): stop claiming, finish every held job, abort nothing, drain, exit 0 — what the chart's opt-in `roles.worker.retireSeconds` `preStop` sends; core's `isRetiring()` is true from the signal on, and a SIGTERM mid-retire drains on `drain.workerDeadlineMs` when declared (`lifecycleForRole`); a no-op on Windows ([Deployment](../../wiki/Deployment.md#retiring-a-worker-before-sigterm)) |
+| `supervise*.ts` | `ULTIMATE_PROCESSES`: how many processes one production container runs, and the supervisor that runs them on one port — see [Processes per container](#processes-per-container-ultimate_processes) |
 | `prerender.ts` | `x build --target static`: which `site/` routes qualify, and where the bytes land |
 | `metrics-endpoint.ts` | the `METRICS_PATH` scrape listener every role opens, on `METRICS_PORT`; opening it starts the `process_*` series, labelled by `startMetricsEndpoint({ role })` |
 | `runtime-liveness.ts` | `/healthz` on `METRICS_PORT`: core's liveness plus every running loop's heartbeat (`@ultimat3/jobs`' `staleLoops`) — 503 on a wedged worker, scheduler or replicator loop; the loop's name only in the `ultimate.liveness.loop-stale` log line |
@@ -294,6 +295,51 @@ One challenge cookie for both shapes, `As of 2026-11-19`: `--password` holds its
 same cookie through auth's `mfaChallengeOf` / `mfaChallengeCookie` (`templates/sign-in-challenge.ts`
 writes both shapes' module); no generated file names a cookie. An app generated before keeps its own
 `x_mfa_challenge` code — that file is the app's, and nothing in the framework reads it.
+
+## Processes per container (`ULTIMATE_PROCESSES`)
+
+`runRole` decides once, in the process the platform started (`As of 2026-11-19`). Above one, that
+process supervises: it never boots the app, and N children of the same entry point serve one port
+through `reusePort` (`sharedPortOption`, `@ultimat3/core`). Production and staging only: `x dev`,
+`bun test` and every other environment run one process, and a count asked for there is ignored
+with one `ultimate processes ignored` info line.
+
+| Value | Count |
+|---|---|
+| unset, blank, `auto` | the minimum of the clamps below |
+| a positive whole number | that number, checked: refused for the conditions marked *refused* |
+| anything else | `X_PROCESSES_INVALID` |
+
+| Clamp (auto) | Value | An explicit count |
+|---|---|---|
+| `cpu` | cgroup v2 `cpu.max` quota / period (v1 CFS quota beside it), floored, at least 1, at most `navigator.hardwareConcurrency`. **No quota declared (`max`) is 1** | not read |
+| `memory` | (`memory.max` − 32 MiB) / 256 MiB, floored; none when unlimited | a warning above it, never a refusal |
+| `pool` | `DATABASE_POOL_MAX`, else the role's profile: the children split it, never multiply it | refused, `X_PROCESSES_OVER_POOL` |
+| `role` | 1 for `scheduler`, `replicator`, `migrate` | refused, `X_PROCESSES_ROLE_SINGLETON` |
+| `shared-state` | 1 for: `lru` in `cache.tiers` with neither `NATS_URL` nor `REDIS_URL`/`VALKEY_URL`; a `runtime.ts` rate-limit or idempotency store whose scope is not `'shared'`; no `DATABASE_URL`; `sync` without `NATS_URL` (or a supplied transport) | refused, `X_PROCESSES_UNSHARED_STATE` |
+| `image` | 1 when the image holds no prebuilt store (`x build --target prebuilt`) | not read |
+| `platform` | 1 off Linux, where Bun ignores `reusePort` | refused, `X_PROCESSES_UNBALANCED` |
+
+A child whose boot is refused for a reason a restart meets again (`FATAL_BOOT_CODES` in
+`supervise-child.ts`: a missing or malformed variable, `X_CONFIG_INVALID`, a key that does not
+match, an unresolved import, every `X_PROCESSES_*` refusal — among them an idempotency store an app
+module swaps in after boot, seen only by a child) logs `ultimate child refused to boot` with its own
+code and fix and tells the supervisor, which stops (exit 1) rather than restart into the same
+refusal. A database, bus or migration still on its way is restarted with backoff.
+
+Every boot logs one line: `ultimate processes` with `role`, `count`, `requested`, `binding` (the
+clamp that set it: `environment`, `platform`, `role`, `cpu`, `memory`, `pool`, `shared-state`,
+`image` or `requested`) and each clamp's number.
+
+| Supervisor | Rule |
+|---|---|
+| Children | `[process.execPath, ...process.argv.slice(1)]`, `ipc` with `serialization: 'json'`, env `ULTIMATE_CHILD=<i>/<N>`, `ROLE`, and `DATABASE_POOL_MAX` = `childShare(pool, i, N)` |
+| `METRICS_PORT` | the supervisor's: `/healthz` (alive, not in a crash loop), `/readyz` (200 only when every child not draining said `ready`), `/metrics` (each child's loopback scrape, `child="<i>"` added, HELP/TYPE once per family). A child's own listener is `127.0.0.1:0`; its role port opens no boot probe |
+| Signals | handlers installed before the first spawn; SIGTERM and SIGINT forwarded to every child; SIGUSR2 to a worker container's children only |
+| Drain | a child's bound (`readinessGraceMs + drainDeadlineMs`, as it reports it) starts at its `draining` ack, + 2 s, then SIGKILL; one outer ceiling, the longest bound + 6 s from the signal |
+| Exit | 0 when every child exited 0; 70 when one exited 70 or was killed at a bound; 1 for any other failure, a child's refusal, or `X_PROCESS_CRASH_LOOP` |
+| Restart | never while stopping; backoff 1, 2, 4… s capped at 30 s, reset after 60 s up; 5 unexpected exits of one child in 5 minutes drain the rest and exit 1 (`X_PROCESS_CRASH_LOOP`); 3 failed `/healthz` polls 5 s apart restart a child by drain |
+| A child | sends `ready` (`metricsUrl`, `budgetMs`), `draining` (`budgetMs`), `gone` (`code`), `fatal` (`code`); drains on a signal or a `drain` message; leaves on IPC `disconnect` or when its ppid differs from the one it started with |
 
 ## Beside a running `x dev` (embedded database)
 

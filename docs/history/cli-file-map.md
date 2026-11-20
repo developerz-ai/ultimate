@@ -17,6 +17,9 @@ two disagree, `packages/cli/CLAUDE.md` wins.
 - `x deploy verify`: the wait (samples, window, queues), the pure verdict, flags refused before a
   sample, the `--json` shape, the real sources — lazy, so the build verdict loads neither.
 - `DATABASE_URL` from the env only, never `resolveServices` (full rule: `docs/history/cli.md`).
+- `deploy-verify-processes.ts` (2026-11-19): the registry's serving rows of this build grouped by
+  `host` → `data.queues.containers` (`{ host, processes, slots }`): a container running N processes
+  is one host with N rows.
 
 ## `runtime-cache-bus.ts` (v31, plan 101 slice 22)
 
@@ -362,3 +365,24 @@ a template change an app keeps, carried by a codemod (`codemod.ts`, the ONE list
 ## `framework-schema-verify.ts` / `-wait.ts` / `app-migrations-verdict.ts` / `serve-boot-probe.ts` (moved 2026-11-19)
 
 a serving role behind its schema (stamp or app ledger) WAITS, `ULTIMATE_SCHEMA_WAIT_MS`, probe port up; a newer major refuses at once
+
+## `runtime-{jobs,realtime,notify-retention,cache,purge,replica,database-ssl}.ts` (moved 2026-11-19)
+
+the `app.config.ts` sections the boot obeys (`*Of(config)`); `database.ssl` adds `sslmode=require` where neither the URL nor `PGSSLMODE` sets one, on every pool (`withAppTls`)
+
+## `dev-host.ts` / `dev-tls*.ts` (moved 2026-11-19)
+
+`x dev --host` (loopback default) and `--tls`: a cached self-signed cert in `.x/tls/`, WebCrypto + hand-written DER
+
+## `supervise*.ts` (2026-11-19)
+
+`ULTIMATE_PROCESSES` = `auto` | a count, production and staging containers only (`x dev` and tests run one). `supervise-count.ts`: auto is the minimum of the cgroup CPU quota (none declared → 1), the memory fit ((`memory.max` − 32 MiB) / 256 MiB), the pool, the role (scheduler/replicator/migrate 1), per-process state (`unsharedState`, the ONE decision: auto clamps, an explicit count is refused `X_PROCESSES_UNSHARED_STATE`, a child refuses an idempotency store only its boot sees), a prebuilt image, Linux; one `ultimate processes` boot line names the binding clamp. `supervise.ts`: N `Bun.spawn` children of the same argv, `ipc` json, `ULTIMATE_CHILD=i/N` + a `DATABASE_POOL_MAX` share each; signal handlers before the first spawn; backoff 1, 2, 4… ≤ 30 s, reset after 60 s up, 5 crashes in 5 min → `X_PROCESS_CRASH_LOOP`, exit 1; a child's drain bound starts at its `draining` ack, one outer ceiling, exit 0/70/1. `supervise-probe.ts`: the container's `METRICS_PORT` (`/healthz`, `/readyz`, `/metrics` merged with `child="i"`). `supervise-child.ts`: `ready`/`draining`/`gone`/`fatal`, IPC `disconnect` + an original-ppid poll. `serve-boot-probe.ts` opens nothing in a child; its scrape is loopback `:0` (`serve.ts`).
+The `supervise*.ts` row's cell before 2026-11-19's cut: "`ULTIMATE_PROCESSES`: the count and its clamps, N children on one port, the container's `METRICS_PORT`, each child's IPC link".
+
+## `runtime-jobs-share.ts` / `doctor-processes*.ts` (2026-11-19)
+
+`runtime-jobs-share.ts`: a supervised worker child's share of the container's `jobs.concurrency` and `maxInFlight` (`childShare`; a total below N is served only by the indices below it, so `1` stays serial; a child past `maxInFlight` claims nothing). `runtime-jobs.ts` applies it only when `ULTIMATE_CHILD` is set. `doctor-processes.ts` (pure) / `doctor-processes-probe.ts` (cgroup, `tcp_migrate_req`, `max_connections`): `x doctor`'s `data.processes` — per role the count a production container would run here and its binding clamp, connections per container = max(pool, N) + N × LISTEN (worker); warnings `X_PROCESSES_CPU_UNDECLARED`, `X_PROCESSES_MIGRATE_REQ_OFF` on production/staging hosts only.
+
+## `role-wake.ts` (moved 2026-11-19)
+
+The worker's LISTEN session (`@ultimat3/jobs`' `startQueueWake`) — worker role only, only over a client that `canListen` — and `queue_wake_live`. One session per process, outside the pool: a container running N worker processes holds N (`x doctor`'s connections fact counts them).

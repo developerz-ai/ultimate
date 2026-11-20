@@ -22,6 +22,9 @@ import { NO_POOLER_FACT, poolerFindings, withPoolerReport } from './doctor-poole
 import { doctorPort, ownerAskedOnce, portFindings } from './doctor-port';
 import type { DoctorProbe } from './doctor-probe';
 import { probeFor } from './doctor-probe';
+import type { ProcessesFact } from './doctor-processes';
+import { processesWarnings, withProcessesReport } from './doctor-processes';
+import { hostProcessesSources, processesFact } from './doctor-processes-probe';
 import { redundantIndexesProbe, withRedundantIndexes } from './doctor-redundant-indexes';
 import { rollingSinceProbe, withRollingReminder } from './doctor-rolling';
 import { sealedKeyFindings } from './doctor-sealed';
@@ -32,6 +35,7 @@ import { ICON_SOURCE } from './icon-assets';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { cliVersion } from './registry';
+import { withAppTls } from './runtime-database-ssl';
 import { quoteArg } from './shell-quote';
 
 // `src/index.ts` publishes the seam from here; its declaration lives in `doctor-probe.ts`.
@@ -176,6 +180,8 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
 export interface DoctorReportProbe extends DoctorProbe {
   /** Which Chrome the e2e driver would launch, and whether one is required (`doctor-browser.ts`). */
   browser(): Promise<BrowserFact | undefined>;
+  /** Processes per container and the connections they hold (`doctor-processes.ts`); unset: unasked. */
+  processes?(): Promise<ProcessesFact>;
 }
 
 /** The whole report over one probe: the verdict, then the listings and warnings beside it. */
@@ -231,6 +237,11 @@ export async function reportDoctor(probe: DoctorReportProbe): Promise<CommandRes
   // Last, and beside the verdict on `main`: the 31.16.0 checks (`doctor-warnings.ts`).
   // A copy of a shipped guard among them (`X_GUARD_VENDORED`): a warning, so exit stays.
   const browser = await guardedListing('browser', failed, () => probe.browser(), undefined);
+  const { processes } = probe;
+  const counted =
+    processes === undefined
+      ? undefined
+      : await inApp<ProcessesFact | undefined>('processes', processes, undefined);
   const warnings = await guardedListing('warnings', failed, () => doctorWarnings(asked), []);
   const superseded = await inApp('superseded workarounds', supersededFindings, []);
   const floors = await inApp('advisory floors', advisoryFloorFindings, []);
@@ -240,8 +251,10 @@ export async function reportDoctor(probe: DoctorReportProbe): Promise<CommandRes
     (root) => pendingCodemodFindings(root, cliVersion()),
     [],
   );
-  return withDoctorWarnings(withBrowserReport(reminded, browser), [
+  const reported = counted === undefined ? reminded : withProcessesReport(reminded, counted);
+  return withDoctorWarnings(withBrowserReport(reported, browser), [
     ...warnings,
+    ...(counted === undefined ? [] : processesWarnings(counted)),
     ...vendoredGuardWarnings(guardEntries),
     ...browserWarnings(browser),
     ...superseded,
@@ -256,6 +269,15 @@ export const doctorCommand: CliCommand = {
   run(ctx: CommandContext): Promise<CommandResult> {
     const port = doctorPort(ctx.args, ctx.env);
     const probe = probeFor(ctx.cwd, ctx.bunVersion, port, ctx.env);
-    return reportDoctor({ ...probe, browser: () => browserProbe(probe.root, ctx.env) });
+    const { root } = probe;
+    const databaseUrl = () => withAppTls(root, ctx.env['DATABASE_URL'], ctx.env);
+    return reportDoctor({
+      ...probe,
+      browser: () => browserProbe(root, ctx.env),
+      // Outside an app there is no container to count, and `reportDoctor` asks no in-app listing.
+      ...(root === undefined
+        ? {}
+        : { processes: () => processesFact(hostProcessesSources(root, ctx.env, databaseUrl)) }),
+    });
   },
 };

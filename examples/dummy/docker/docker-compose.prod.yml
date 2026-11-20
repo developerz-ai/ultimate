@@ -18,6 +18,10 @@ x-image: &image
   image: ${IMAGE:-ghcr.io/developerz-ai/postly:dev}
   env_file: [../.env.production]
   restart: unless-stopped
+  # An init as PID 1 (Docker's tini): Bun as PID 1 never reaps an orphaned grandchild, and ignores
+  # SIGTERM until a handler is installed. No `cpus:` here, so `ULTIMATE_PROCESSES=auto` stays at 1
+  # process per container: sizing this app's containers is this app's call (wiki/Deployment.md).
+  init: true
   # Default 5s readiness grace + 25s drain + 10s margin before Docker SIGKILL.
   stop_grace_period: 40s
 

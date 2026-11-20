@@ -71,7 +71,11 @@ export {
 // `x drill` (plan 101 / 40): the nine fault drills, the fleet they run on, the verdict over evidence.
 export type { DrillConfig, DrillTiming } from './drill-budgets';
 export { drillBudgets } from './drill-budgets';
-export { DrillFailedError, DrillServiceMissingError } from './drill-errors';
+export {
+  DrillFailedError,
+  DrillServiceMissingError,
+  DrillTeardownFailedError,
+} from './drill-errors';
 export type { DrillFleet, DrillRoleProcess, DrillRollout, DrillServiceUrls } from './drill-fleet';
 export { startDrillFleet } from './drill-fleet';
 export { bunDrillSql } from './drill-jobs';

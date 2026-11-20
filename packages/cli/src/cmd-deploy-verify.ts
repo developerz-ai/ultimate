@@ -28,6 +28,7 @@ import {
   UNGRADED,
   windowClosed,
 } from './deploy-verify-grade';
+import { workerContainers } from './deploy-verify-processes';
 import { BadFlagError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -161,11 +162,15 @@ async function readQueues(
     disarm.abort();
   }
   const [workers, demand] = rows;
-  return gradeQueues({
-    ...input,
-    workers,
-    depth: new Map(demand.map((queue) => [queue.queue, queue.demand])),
-  });
+  return {
+    ...gradeQueues({
+      ...input,
+      workers,
+      depth: new Map(demand.map((queue) => [queue.queue, queue.demand])),
+    }),
+    // N rows under one host is a container running N processes (`ULTIMATE_PROCESSES`).
+    containers: workerContainers(workers, input.build),
+  };
 }
 
 /**

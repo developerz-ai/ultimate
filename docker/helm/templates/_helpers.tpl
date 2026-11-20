@@ -89,6 +89,15 @@ in values.yaml, where the two numbers would drift.
       value: {{ $root.Values.metricsPort | quote }}
     {{- end }}
     {{- /*
+    One process per pod: per-pod parallelism is the HPA's. This chart sets CPU requests only, so
+    auto already resolves to 1; the pin makes the count explicit, and a CPU limit added later
+    cannot change it. env.ULTIMATE_PROCESSES wins when set.
+    */}}
+    {{- if not (hasKey $root.Values.env "ULTIMATE_PROCESSES") }}
+    - name: ULTIMATE_PROCESSES
+      value: "1"
+    {{- end }}
+    {{- /*
     The sync node's page origin, from the one place this chart already knows it. Undeclared, a node
     reached over plain http behind this Ingress admits BOTH spellings of its host — the plain-http
     page included. env.APP_URL wins when set; an APP_URL kept in the Secret is shadowed for this

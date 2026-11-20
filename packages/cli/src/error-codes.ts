@@ -11,6 +11,8 @@ import type { CliDoctorErrorCode } from './error-codes-doctor';
 import { CLI_DOCTOR_ERROR_CODES, CLI_DOCTOR_ERROR_TITLES } from './error-codes-doctor';
 import type { CliPackageErrorCode } from './error-codes-package';
 import { CLI_PACKAGE_ERROR_CODES, CLI_PACKAGE_ERROR_TITLES } from './error-codes-package';
+import type { CliProcessesErrorCode } from './error-codes-processes';
+import { CLI_PROCESSES_ERROR_CODES, CLI_PROCESSES_ERROR_TITLES } from './error-codes-processes';
 import type { CliShotErrorCode } from './error-codes-shot';
 import { CLI_SHOT_ERROR_CODES, CLI_SHOT_ERROR_TITLES } from './error-codes-shot';
 import type { CliToolingErrorCode } from './error-codes-tooling';
@@ -234,7 +236,6 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_PROFILE_ROUTE_FAILED',
   'X_ROWS_SLICE_ENTITY',
   'X_GUARD_BUILT_IN',
-  'X_REPRO_BUNDLE_INVALID',
   'X_APP_MIGRATIONS_UNAPPLIED',
   'X_TASK_RUN_PRODUCTION',
 ] as const;
@@ -276,6 +277,7 @@ export const CLI_ERROR_CODES = [
   ...CLI_BOUNDARY_ERROR_CODES,
   ...CLI_DOCTOR_ERROR_CODES,
   ...CLI_PACKAGE_ERROR_CODES,
+  ...CLI_PROCESSES_ERROR_CODES,
   ...CLI_SHOT_ERROR_CODES,
   ...CLI_TOOLING_ERROR_CODES,
   ...CLI_VERIFY_ERROR_CODES,
@@ -290,6 +292,7 @@ export type CliOwnedErrorCode =
   | CliBoundaryErrorCode
   | CliDoctorErrorCode
   | CliPackageErrorCode
+  | CliProcessesErrorCode
   | CliShotErrorCode
   | CliToolingErrorCode
   | CliVerifyErrorCode;
@@ -462,7 +465,6 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliListedErrorCode, string>> = {
   X_PROFILE_ROUTE_FAILED: 'the profiled route answered an error',
   X_ROWS_SLICE_ENTITY: "the slice's entity is not the scaffolded table",
   X_GUARD_BUILT_IN: 'x g guard named a shipped guard',
-  X_REPRO_BUNDLE_INVALID: 'the file is not a repro bundle this version can open',
   X_APP_MIGRATIONS_UNAPPLIED:
     'a serving role booted over a database missing migrations this build ships',
   X_TASK_RUN_PRODUCTION: 'x tasks run refused to fire a task in production unasked',
@@ -478,6 +480,7 @@ registerErrorCodes(
       ...CLI_BOUNDARY_ERROR_TITLES,
       ...CLI_DOCTOR_ERROR_TITLES,
       ...CLI_PACKAGE_ERROR_TITLES,
+      ...CLI_PROCESSES_ERROR_TITLES,
       ...CLI_SHOT_ERROR_TITLES,
       ...CLI_TOOLING_ERROR_TITLES,
       ...CLI_VERIFY_ERROR_TITLES,

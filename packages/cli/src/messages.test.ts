@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { messageKeys, msg } from './messages';
 import { DB_MESSAGES } from './messages-db';
 import { GATE_MESSAGES } from './messages-gate';
+import { PROCESSES_MESSAGES } from './messages-processes';
 import { SHOT_MESSAGES } from './messages-shot';
 import { UPGRADE_MESSAGES } from './messages-upgrade';
 
@@ -15,6 +16,7 @@ const PARTS: ReadonlyMap<string, Readonly<Record<string, string>>> = new Map<
 >([
   ['messages-db.ts', DB_MESSAGES],
   ['messages-gate.ts', GATE_MESSAGES],
+  ['messages-processes.ts', PROCESSES_MESSAGES],
   ['messages-shot.ts', SHOT_MESSAGES],
   ['messages-upgrade.ts', UPGRADE_MESSAGES],
 ]);

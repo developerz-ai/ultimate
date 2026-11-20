@@ -43,6 +43,26 @@ Rung 2's real ceiling, `As of 2026-08`: the shipped prod compose publishes stati
 services declare `replicas: 1` — the file says what it does, rather than declaring 3 and starting 1.
 `worker` has no published port and scales freely.
 
+**One container, several cores** (`As of 2026-11`): a production container runs one process per
+CPU its `cpus:` declares, all on the role's one port (`ULTIMATE_PROCESSES=auto`; every clamp and
+refusal in [Deployment](../../wiki/Deployment.md#processes-per-container)). The shipped compose
+declares `web: '2'`, `sync: '1'`, `worker: '1'` per replica, `scheduler`/`replicator: '0.5'`, plus
+`init: true` everywhere; `sysctls: { net.ipv4.tcp_migrate_req: 1 }` sits commented out on
+`web`/`sync`, an opt-in for a host on Linux ≥ 5.14 (older, Docker refuses to create the
+container). What an operator checks:
+
+| Check | Where |
+|---|---|
+| the count each role runs, and the clamp that set it | the boot line `ultimate processes` (`count`, `binding`); `x doctor` (`data.processes`) |
+| connections per container: Σ child pool shares + one LISTEN session per worker process, against `max_connections` | `x doctor` — the pool is split across processes, never multiplied |
+| `net.ipv4.tcp_migrate_req` is 1 where N > 1, on a kernel that has it | `x doctor` warns `X_PROCESSES_MIGRATE_REQ_OFF`; uncomment the `sysctls:` line in the compose file. Without it a stopping process resets its queued connections |
+| memory | 256 MiB of `mem_limit` per process plus headroom |
+| N worker processes per container | `x deploy verify --json`: `data.queues.containers` lists N registry rows under the container's host |
+| a CPU-heavy queue | its own worker service with a raised `cpus:` ([Jobs](../../wiki/Jobs-And-Workflows.md#cpu-bound-handlers)) |
+
+A container with no CPU quota runs one process. Rung 3 stays at one per pod: the chart pins
+`ULTIMATE_PROCESSES: "1"` and leaves parallelism to the HPA.
+
 **How `x deploy --method compose` rolls a serving role** (`As of 2026-10`): read off the compose
 file per role ([`packages/cli/src/cmd-deploy-compose.ts`](../../packages/cli/src/cmd-deploy-compose.ts)),
 rolled by

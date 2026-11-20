@@ -359,5 +359,14 @@
  * runtime-database-ssl}.ts`, `db/src/{column-drop,migrate-dev-fix}.ts`, `entity/src/{instant-range,
  * memory-tx-entry,pg-sql-in,uuid-text}.ts`, `http/src/{fault-report,wire-dates-cap}.ts`,
  * `jobs/src/retry-default.ts`.
+ * raised 1564 → 1568, measured 1568 (2026-11-19, multi-process containers, metafile walk): the
+ * two on `MIGRATE_CEILING` (`core/src/shared-port.ts`, `cli/src/runtime-jobs-share.ts`), and
+ * `cli/src/supervise-count.ts` + `cli/src/supervise-errors.ts` — `runtime-idempotency-scope.ts`
+ * refuses a per-process idempotency store in one of several children with the same decision the
+ * supervisor clamps on (`unsharedStores`) and its coded error. The supervisor, its probe and the
+ * child link are `await import()`ed by `runRole` and stay off this graph.
+ * raised 1568 → 1569, measured 1569 (2026-11-19, integration): `cli/src/messages-processes.ts` —
+ * `x doctor`'s processes rows, spread into the one CLI catalog (`messages.ts`) every role loads;
+ * unspread, the doctor printed `⟦cli.doctor.processes…⟧`.
  */
-export const SERVING_ROLE_CEILING = 1564;
+export const SERVING_ROLE_CEILING = 1569;

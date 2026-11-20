@@ -10,6 +10,7 @@ import { subscribed } from './instrument';
 import { publishRecord } from './logger-record';
 import { INVALID_DATE, type LogFields, redactFields, redactionGeneration } from './logger-redact';
 import { redactedValue } from './redact-values';
+import { supervisedChild } from './shared-port';
 
 // The redaction half lives in `logger-redact.ts`; every caller keeps importing it from here.
 export type { LogFields } from './logger-redact';
@@ -279,6 +280,27 @@ function refuse(cause: string, fix: string): never {
   assert(false, cause, fix);
 }
 
+/**
+ * Which supervised child this process is (`ULTIMATE_CHILD`), read once at load — a fact about the
+ * PROCESS, like the stream, so N children writing one container log stay told apart. `typeof`
+ * for the browser, as `envLevel` says why; a malformed value refuses here, the first line written.
+ */
+const PROCESS_CHILD = typeof process === 'undefined' ? undefined : supervisedChild(process.env);
+
+/**
+ * `child: <index>` on a supervised child's line. The process's fact wins: a caller's own `child`
+ * field moves to `field.child`, as a reserved key does, so no line can claim another child.
+ */
+function withProcessChild(fields: Record<string, unknown>): Record<string, unknown> {
+  if (PROCESS_CHILD === undefined) return fields;
+  const { child: own, ...rest } = fields;
+  return {
+    ...rest,
+    ...(Object.hasOwn(fields, 'child') ? { 'field.child': own } : undefined),
+    child: PROCESS_CHILD.index,
+  };
+}
+
 /** The keys a line owns. A caller field spelled like one is renamed, never allowed to replace it. */
 const RESERVED_KEYS: ReadonlySet<string> = new Set(['ts', 'level', 'msg']);
 
@@ -340,11 +362,11 @@ function derive(level: LogLevel, bound: Bound, clock: Clock, writer: LogSink): L
     // The message is a string a caller interpolated: the one leaf `redactFields` never sees.
     const message = redactedValue(raw);
     const context = contextFields();
-    const caller = {
+    const caller = withProcessChild({
       ...current(bound),
       ...(context === undefined ? undefined : redactFields(context)),
       ...(fields === undefined ? undefined : redactFields(fields)),
-    };
+    });
     const line = {
       ts: timestamp(clock),
       level: lineLevel,

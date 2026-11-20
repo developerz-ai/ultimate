@@ -55,6 +55,8 @@ export const FRAMEWORK_ENV: readonly FrameworkEnvName[] = [
   ...contract('cli', 'S3_ENDPOINT', 'S3_BUCKET', 'S3_REGION', 'S3_FORCE_PATH_STYLE'),
   ...contract('cli', 'SCRAPE_CDP_URL', 'TLS_CERT', 'TLS_KEY'),
   ...contract('cli', 'ULTIMATE_SCHEMA_WAIT_MS'),
+  // How many processes one production container runs (`auto` or a count); `x dev` is always one.
+  ...contract('cli', 'ULTIMATE_PROCESSES'),
   // libpq's own TLS mode: stated, it keeps `database.ssl` from adding `sslmode=require`.
   ...contract('cli', 'PGSSLMODE'),
   ...toggles('cli', 'OTEL_SDK_DISABLED'),
@@ -68,6 +70,8 @@ export const FRAMEWORK_ENV: readonly FrameworkEnvName[] = [
   ...contract('core', 'ULTIMATE_CURSOR_SECRET', 'ULTIMATE_SECRETS_KEY'),
   ...contract('core', 'ULTIMATE_SECRETS_RETIRED_KEYS', 'METRICS_INTERVAL_MS'),
   ...contract('core', 'REDIS_URL', 'VALKEY_URL'),
+  // `<index>/<count>`, written by the production supervisor into each child (`shared-port.ts`).
+  ...internal('core', 'ULTIMATE_CHILD'),
   ...contract('core', 'OTEL_EXPORTER_OTLP_ENDPOINT', 'OTEL_EXPORTER_OTLP_HEADERS'),
   ...contract('core', 'OTEL_EXPORTER_OTLP_PROTOCOL', 'OTEL_TRACES_SAMPLER'),
   ...contract('core', 'OTEL_TRACES_SAMPLER_ARG'),

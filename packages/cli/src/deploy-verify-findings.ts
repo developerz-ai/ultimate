@@ -94,5 +94,8 @@ export const resultData = (
       depth,
     })),
     idle: [...queues.idle],
+    ...(queues.containers === undefined
+      ? {}
+      : { containers: queues.containers.map((container) => ({ ...container })) }),
   },
 });

@@ -88,6 +88,24 @@ describe('x deploy verify · the queues', () => {
     expect(result.data).toMatchObject({ queues: { graded: true, served: ['mail'] } });
   });
 
+  test('a container running two processes reports two registry rows under its host', async () => {
+    const server = origin([[200, BUILD]]);
+    const rows = [worker(), worker({ id: 'w2' }), worker({ id: 'w3', host: 'pod-2' })];
+    const deps = frozen(queueDeps({ rows: () => rows }));
+    const result = await runDeployVerify(
+      contextFor(['--url', server.url, ...held], appRoot(), DB),
+      deps,
+    );
+    expect(result.data).toMatchObject({
+      queues: {
+        containers: [
+          { host: 'pod-1', processes: 2, slots: 2 },
+          { host: 'pod-2', processes: 1, slots: 1 },
+        ],
+      },
+    });
+  });
+
   test('a failed read keeps the last grade and reads again next interval', async () => {
     const server = origin([[200, BUILD]]);
     const flaky = queueDeps({

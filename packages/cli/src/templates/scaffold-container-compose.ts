@@ -49,6 +49,14 @@ export const composeProdFile = (
 # file, is the chart \`x deploy --method helm\` installs. To scale them on one box anyway, drop
 # \`ports:\` and put your own proxy on this network — the service name resolves to every replica
 # over the compose DNS round robin.
+#
+# \`cpus:\` is the knob \`ULTIMATE_PROCESSES=auto\` (the default) reads: K whole cores run K processes
+# of the role on one port; no \`cpus:\` runs one. Most of a request's wall time is I/O wait, so the
+# budgets are modest: raise a role's \`cpus\` when its process sits above ~70% of one core. Memory
+# is 256 MiB per process plus headroom; jobs.concurrency, jobs.maxInFlight and DATABASE_POOL_MAX
+# are per CONTAINER, split across its processes. \`net.ipv4.tcp_migrate_req\` is a commented opt-in
+# on web and sync, never active: a kernel older than Linux 5.14 has no such knob, and Docker then
+# refuses to create the container at all.
 name: ${app.kebab}
 
 # Every service's logs, rotated. Docker's default json-file driver never rotates, so a chatty role
@@ -62,6 +70,9 @@ x-image: &image
   env_file: [../${PROD_ENV_FILE}]
   restart: unless-stopped
   logging: *logging
+  # An init as PID 1: Bun as PID 1 never reaps an orphaned grandchild, and ignores SIGTERM until a
+  # handler is installed, so \`docker stop\` waited out the grace and SIGKILLed.
+  init: true
   # SIGTERM → /readyz answers 503 for the readiness grace (5s outside local environments), then the
   # drain of in-flight requests, jobs and sockets (25s). 40s leaves 10s before Docker SIGKILLs.
   stop_grace_period: 40s
@@ -112,6 +123,7 @@ services:
       interval: 5s
     restart: unless-stopped
     logging: *logging
+    init: true
 
   # The release phase. Applies pending migrations under an advisory lock and exits; every serving
   # role waits for it to complete, so no replica ever serves against a schema it does not ship.
@@ -152,6 +164,13 @@ services:
       migrate: { condition: service_completed_successfully }
     deploy: { replicas: 1 } # stateless, scales on RPS — pinned by the published port
     ports: ['3000:3000']
+    # Two processes on one port; 2 x 256 MiB plus headroom fits in the anchor's 1g.
+    cpus: '2'
+    # Opt-in, Linux >= 5.14 only (Docker refuses to create the container on an older kernel —
+    # RHEL 8, Ubuntu 20.04, Amazon Linux 2). With more than one process here, a stopping process's
+    # queued connections move to a sibling instead of being reset: 93-109 of 200 reset without it,
+    # 0 with it. \`x doctor\` warns when the knob exists, reads 0 and N > 1.
+    # sysctls: { net.ipv4.tcp_migrate_req: 1 }
 
   sync:
     <<: *image
@@ -172,6 +191,10 @@ services:
     deploy: { replicas: 0 } # when on: scales on concurrent websockets — pinned to 1 by the port
     # The sync role binds PORT + 1. PORT is unset here, so it is 3000 and this listens on 3001.
     ports: ['3001:3001']
+    # One process; a second needs NATS_URL. With a second, the opt-in below (Linux >= 5.14 only, as
+    # on web) keeps a stopping process's queued sockets instead of resetting them.
+    cpus: '1'
+    # sysctls: { net.ipv4.tcp_migrate_req: 1 }
     # ...which is why the image's own HEALTHCHECK cannot be inherited here. It fetches $PORT —
     # 3000 — and this role never binds it, so the container reports \`unhealthy\` from
     # \`start_period\` onward and never recovers, and anything gated on \`sync: service_healthy\`
@@ -193,6 +216,9 @@ services:
       migrate: { condition: service_completed_successfully }
     healthcheck: *metrics-probe
     deploy: { replicas: 1 } # scales on queue depth
+    # One process per replica. CPU-heavy queues raise it: a synchronous handler blocks every job in
+    # its process and their lease renewals.
+    cpus: '1'
 
   scheduler:
     <<: *image
@@ -206,6 +232,7 @@ services:
     # holds one. A second instance is harmless but idle.
     healthcheck: *metrics-probe
     deploy: { replicas: 1 }
+    cpus: '0.5' # always one process: a small budget
 
 volumes:
   pgdata:

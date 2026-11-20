@@ -7,7 +7,12 @@
 // production-shaped decisions live here: which role, which port, and which interface — every one by
 // default, because a container is reached through a port mapping.
 
-import { assertNoDevSecretsOutsideLocal, frameworkVersion, logger } from '@ultimat3/core';
+import {
+  assertNoDevSecretsOutsideLocal,
+  frameworkVersion,
+  logger,
+  supervisedChild,
+} from '@ultimat3/core';
 import { assertNoSchemaDrift, checkDrift, migrate } from '@ultimat3/db';
 import { loadAppRuntime } from './app-runtime';
 import { acceptCreatedTables } from './db-accept-created';
@@ -136,7 +141,22 @@ export async function withAppRuntime(options: ServeOptions): Promise<ServeOption
   return runtime === undefined ? options : { ...options, runtime };
 }
 
-export async function serveApp(input: ServeOptions): Promise<ServedApp> {
+export function serveApp(input: ServeOptions): Promise<ServedApp> {
+  return serveAppBound(input);
+}
+
+/** Where a supervised child's own scrape listener lives: loopback, a port the kernel picks. */
+const CHILD_METRICS = { port: 0, hostname: '127.0.0.1' } as const;
+
+/**
+ * `serveApp`, telling `onBound` the scrape listener's base once the roles are up — what a
+ * supervised child reports as `ready`. A child's listener is loopback on an ephemeral port: the
+ * supervisor owns `METRICS_PORT` for the container and merges each child's scrape behind it.
+ */
+async function serveAppBound(
+  input: ServeOptions,
+  onBound?: (metricsUrl: string) => void,
+): Promise<ServedApp> {
   // FIRST, before any service starts: a production process on a key this framework publishes is
   // refused, rather than reported by `x doctor` and served anyway (plan 101, slices 01 e and 12 h).
   // The storage twin is `startStorage`'s own `LocalDiskUnsafeError`, one step later, where the
@@ -148,9 +168,12 @@ export async function serveApp(input: ServeOptions): Promise<ServedApp> {
   // so a cold pod answers `/metrics` (and the chart's startup probe on it) while it boots. It was
   // opened inside `startRoles`, after all of that, so `_helpers.tpl`'s "FIRST" was not true.
   const port = options.port ?? portFromEnv(options.env);
+  const child = supervisedChild(options.env) !== undefined;
   const metrics = startMetricsEndpoint({
-    port: metricsPortFor(options.env, port, options.metricsPort),
-    hostname: containerBinding(options.env, options.hostname).hostname,
+    port: child ? CHILD_METRICS.port : metricsPortFor(options.env, port, options.metricsPort),
+    hostname: child
+      ? CHILD_METRICS.hostname
+      : containerBinding(options.env, options.hostname).hostname,
     role,
     // Opened before the roles are, so the check `startRoles` makes is made here: adopted, the
     // listener is never re-checked, and one on the web or sync port would take it first.
@@ -163,7 +186,9 @@ export async function serveApp(input: ServeOptions): Promise<ServedApp> {
     // exits, and the services and the role boot are ~240 modules it never calls
     // (`serve-graph.test.ts` pins the count each role is left with).
     const { bootServing } = await import('./serve-boot');
-    return await bootServing({ options, role, acquired, metrics });
+    const app = await bootServing({ options, role, acquired, metrics });
+    onBound?.(metrics.url);
+    return app;
   } catch (error) {
     await releaseBoot(acquired);
     throw error;
@@ -180,6 +205,18 @@ export async function runRole(input: ServeOptions): Promise<StartedApp> {
   // always going to fail creates nothing under it — the same order `resolveServices` is held to.
   const role = input.role ?? roleFromEnv(input.env);
   const options = await withAppRuntime(input);
+  // How many processes this container runs (`ULTIMATE_PROCESSES`), decided once, by the process
+  // the platform started — never by a child it spawned (`ULTIMATE_CHILD`), which serves as one.
+  // More than one: this process supervises and never boots the app itself.
+  if (supervisedChild(options.env) === undefined) {
+    const boot = await import('./supervise-boot');
+    const count = await boot.processCountFor(options, role);
+    boot.logProcessCount(count, role);
+    if (count.count > 1) {
+      const { runSupervised } = await import('./supervise-run');
+      process.exit(await runSupervised(options, role, count.count));
+    }
+  }
   if (role === 'migrate') {
     const migrated = await runMigrations({ ...options, role });
     // The release phase has one channel — the exit code — so drift is thrown here rather than
@@ -201,16 +238,29 @@ export async function runRole(input: ServeOptions): Promise<StartedApp> {
   // while the pod still boots. The retire ends in the same drain, so the same hold exits 0.
   // Behind `await import()`, as the serving graph is: `ROLE=migrate` never loads it.
   const retire = role === 'worker' ? (await import('./serve-retire')).armWorkerRetire() : undefined;
+  // A supervised child's link, before the boot as the drain's handlers are: a SIGTERM during the
+  // boot is acknowledged too, and a supervisor that dies mid-boot still takes this child with it.
+  const link =
+    supervisedChild(options.env) === undefined
+      ? undefined
+      : (await import('./supervise-child')).linkToSupervisor(options.env);
   let booted: BootedHold<ServedApp>;
   try {
-    booted = await holdWhileBooting('serve', () => serveApp({ ...options, role }), {
-      exit: (code) => {
-        retire?.disarm();
-        process.exit(code);
+    booted = await holdWhileBooting(
+      'serve',
+      () => serveAppBound({ ...options, role }, (metricsUrl) => link?.ready(metricsUrl)),
+      {
+        exit: (code) => {
+          retire?.disarm();
+          link?.gone(code);
+          process.exit(code);
+        },
       },
-    });
+    );
   } catch (error) {
     retire?.disarm();
+    // Said as this child, and `fatal` for a refusal no restart can fix (`supervise-child.ts`).
+    link?.refused(error);
     throw error;
   }
   const { app, hold } = booted;

@@ -64,6 +64,7 @@
     "probe-databases": "bun run scripts/probe-databases.ts",
     "proto-index": "bun run scripts/proto-index.ts",
     "render-modes": "bun run scripts/render-modes.ts",
+    "reuse-port-seam": "bun run scripts/reuse-port-seam.ts",
     "root-bin": "bun run scripts/root-bin.ts",
     "schema-dumps": "bun run scripts/schema-dumps.ts",
     "seal-calls": "bun run scripts/seal-calls.ts",
