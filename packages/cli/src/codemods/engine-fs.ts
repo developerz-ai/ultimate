@@ -4,8 +4,8 @@
 
 // why: Bun has no file-removal, rename, lstat or realpath primitive; `rm` with `force` makes a
 // removal of nothing no error, `rename` lands a write whole, and only `realpath` answers where a
-// symlinked component really points.
-import { lstat, realpath, rename, rm } from 'node:fs/promises';
+// symlinked component really points; `stat`/`chmod` carry a rewritten file's mode across the rename.
+import { chmod, lstat, realpath, rename, rm, stat } from 'node:fs/promises';
 // why: Bun exposes no path-resolve primitive; containment is decided on the resolved path.
 import { dirname, resolve, sep } from 'node:path';
 import { ScaffoldPathEscapeError } from '../errors';
@@ -60,8 +60,15 @@ export async function landFile(
   move: (from: string, to: string) => Promise<void> = rename,
 ): Promise<void> {
   const temp = `${target}.x-codemod-${String(process.pid)}-${crypto.randomUUID()}.tmp`;
+  // The temp file is born 0644: without the target's mode carried over, the rename drops `+x` —
+  // 31.49.0's merge-drivers codemod turned an app's executable `bin/setup.ts` into a plain file.
+  const mode = await stat(target).then(
+    (found) => found.mode,
+    () => undefined,
+  );
   await Bun.write(temp, source);
   try {
+    if (mode !== undefined) await chmod(temp, mode);
     await move(temp, target);
   } catch (error) {
     await rm(temp, { force: true });

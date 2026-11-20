@@ -3,7 +3,15 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, no recursive remove and no symlink.
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -47,6 +55,19 @@ describe('unit · codemod engine, the real filesystem', () => {
       'a/b.ts',
     ]);
   });
+
+  // 31.49.0: the merge-drivers codemod turned an app's 0755 `bin/setup.ts` into 0644.
+  test.skipIf(process.platform === 'win32')(
+    'a rewrite keeps the target file mode: an executable stays executable',
+    async () => {
+      const dir = root();
+      const app = fsCodemodApp(dir);
+      await Bun.write(join(dir, 'bin/setup.ts'), '#!/usr/bin/env bun\n');
+      chmodSync(join(dir, 'bin/setup.ts'), 0o755);
+      await app.write('bin/setup.ts', '#!/usr/bin/env bun\nconsole.log(1);\n');
+      expect(statSync(join(dir, 'bin/setup.ts')).mode & 0o777).toBe(0o755);
+    },
+  );
 
   test('a rename that fails leaves the old file whole and no temp file behind', async () => {
     const dir = root();

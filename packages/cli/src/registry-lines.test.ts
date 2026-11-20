@@ -112,6 +112,33 @@ describe('unit · withRegistryLines over an existing app', () => {
     expect(withRegistryLines(ROLES, source)).toBe(source);
   });
 
+  // one adopter's 31.49.0 upgrade: `queries, jobs, tasks` shorthand gained `queries: []` beside
+  // each — a duplicate key, TS1117.
+  test('a shorthand or non-list property is declared already: no second key is written', () => {
+    const source = [
+      "import { defineApi } from '@ultimat3/action';",
+      "import * as actions from './actions';",
+      "import { jobs, queries, tasks } from './more';",
+      '',
+      'export const api = defineApi({',
+      '  actions: [actions],',
+      '  queries,',
+      "  'jobs': jobs,",
+      '  tasks,',
+      '});',
+      '',
+    ].join('\n');
+    const after = withRegistryLines(API, source);
+    // Every spelling of the property — `key:`, `'key':`, the shorthand `key,` — counted together.
+    for (const key of ['queries', 'jobs', 'tasks']) {
+      const property = new RegExp(`^\\s*(?:${key}|'${key}'|"${key}")\\s*[:,]`, 'gm');
+      expect({ key, count: after.match(property)?.length ?? 0 }).toEqual({ key, count: 1 });
+    }
+    expect(after).toContain("  'jobs': jobs,\n");
+    expect(after).toContain('  queries,\n');
+    expect(after).toContain(`  actions: [\n    ${REGISTRY_LINE_COMMENT}\n    actions,\n  ],`);
+  });
+
   test('any other file is untouched', () => {
     expect(withRegistryLines('apps/web/other.ts', 'const a = [1, 2];\n')).toBe(
       'const a = [1, 2];\n',

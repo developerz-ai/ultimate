@@ -110,6 +110,21 @@ async function waitReady(url: string, deadlineMs: number, alive: () => boolean):
   return false;
 }
 
+/**
+ * Before migrate a role is never ready, so its bind is proven by its first `watch` line — or it
+ * exits. Until this wait, a role that lost its port to another process (an outgoing Postgres
+ * connection's ephemeral port) between hand-out and bind died unseen and read as a failed drill
+ * (`ROLE=sync exited 1`, EADDRINUSE, PR #1286); now it reaches `bindFreePorts`' retry.
+ */
+async function waitWatching(
+  watched: () => number,
+  deadlineMs: number,
+  alive: () => boolean,
+): Promise<void> {
+  const until = performance.now() + deadlineMs;
+  while (performance.now() < until && alive() && watched() === 0) await Bun.sleep(100);
+}
+
 /** The fleet, ready: database created and migrated, every proxy listening, every role answering. */
 export async function startDrillFleet(options: DrillFleetOptions): Promise<DrillFleet> {
   const database = await scratchDatabase(options.services.postgres);
@@ -215,6 +230,17 @@ export async function startDrillFleet(options: DrillFleetOptions): Promise<Drill
               child.kill('SIGKILL');
               await child.exited;
               throw refuse(`ROLE=${role} never answered ${readyz}`, output.log());
+            }
+          } else {
+            await waitWatching(
+              output.watched,
+              options.readyTimeoutMs,
+              () => child.exitCode === null,
+            );
+            if (child.exitCode !== null && isPortClash(output.log())) {
+              clashed = true;
+              children.delete(child);
+              throw refuse(`ROLE=${role} lost its port before migrate`, output.log());
             }
           }
           // The sync node listens on PORT + 1 (`syncPortFor`): held too, so no other role is handed it.
