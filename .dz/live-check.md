@@ -1,16 +1,16 @@
 # Live check: proving a merge is deployed
 
 A merge is not a deploy. This repo ships as container images tagged `sha-<short commit>`;
-ArgoCD runs them from `developerz-ai/infrastructure` `stacks/apps/ultimate-social/`. The Application's synced
-revision is the INFRASTRUCTURE repo's commit, so it never proves this repo's merge: the
-running pod's image tag does.
+ArgoCD runs them from the infrastructure repository's `stacks/apps/ultimate-social/`. The
+Application's synced revision is the INFRASTRUCTURE repo's commit, so it never proves this
+repo's merge: the running pod's image tag does.
 
 ## Cluster identity (read-only)
 
 Repo secrets `DEVELOPERZ_LIVE_CHECK_SSH_KEY` + `DEVELOPERZ_LIVE_CHECK_KUBECONFIG`:
 ServiceAccount `dz-live-check`, server `https://127.0.0.1:26443`, through an SSH account on
 the bastion that can forward to the k3s API and do nothing else (no shell). The source of
-truth is `developerz-ai/infrastructure` `stacks/platform/dz-live-check/README.md`; if this
+truth is the infrastructure repository's `stacks/platform/dz-live-check/README.md`; if this
 block stops answering, read that page for the current bastion host key and API targets.
 Needs `ssh` and `kubectl` on the box; without them the check is `cannot_grade`, naming the
 missing tool.
