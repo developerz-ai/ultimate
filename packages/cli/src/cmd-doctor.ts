@@ -182,6 +182,11 @@ export interface DoctorReportProbe extends DoctorProbe {
   browser(): Promise<BrowserFact | undefined>;
   /** Processes per container and the connections they hold (`doctor-processes.ts`); unset: unasked. */
   processes?(): Promise<ProcessesFact>;
+  /**
+   * The release codemods still owed are measured up to: the CLI's own, `cliVersion()`. A fact like
+   * the rest, never read inside the report: from the stamp, a release bump moved every report test.
+   */
+  readonly release: string;
 }
 
 /** The whole report over one probe: the verdict, then the listings and warnings beside it. */
@@ -248,7 +253,7 @@ export async function reportDoctor(probe: DoctorReportProbe): Promise<CommandRes
   // An `x upgrade` driven by a CLI older than the codemod engine left files it owed.
   const codemods = await inApp(
     'pending codemods',
-    (root) => pendingCodemodFindings(root, cliVersion()),
+    (root) => pendingCodemodFindings(root, probe.release),
     [],
   );
   const reported = counted === undefined ? reminded : withProcessesReport(reminded, counted);
@@ -274,6 +279,7 @@ export const doctorCommand: CliCommand = {
     return reportDoctor({
       ...probe,
       browser: () => browserProbe(root, ctx.env),
+      release: cliVersion(),
       // Outside an app there is no container to count, and `reportDoctor` asks no in-app listing.
       ...(root === undefined
         ? {}

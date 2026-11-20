@@ -134,6 +134,19 @@ describe('unit · x doctor · warnings beside the verdict', () => {
     expect(result.data).toMatchObject({ warnings: [{ code: 'X_ACTION_UNREGISTERED' }] });
   });
 
+  // The release the codemods owed are measured up to is the probe's, never the stamp: read from
+  // `package.json`, the 31.49.0 bump made this file's bare app root owe `merge-drivers` (it writes
+  // a `.gitattributes`) and redded only the release PR (#1284).
+  test("codemods owed are measured up to the probe's release, so a bump moves no report", async () => {
+    const root = appRoot();
+    const before = await reportDoctor(probe({ root, release: '31.48.0' }));
+    expect(before.data).not.toHaveProperty('warnings');
+    const after = await reportDoctor(probe({ root, release: '31.49.0' }));
+    expect(after.data).toMatchObject({
+      warnings: [{ code: 'X_UPGRADE_CODEMODS_PENDING', at: '.gitattributes' }],
+    });
+  });
+
   test('a real finding still reds the doctor, with the warnings beside it', async () => {
     const result = await reportDoctor({ ...ranged(), exists: () => false });
     expect(result.ok).toBe(false);

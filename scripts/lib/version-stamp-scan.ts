@@ -104,18 +104,21 @@ export function readStamps(file: MarkdownFile): readonly VersionStamp[] {
  *
  * The `STAMP` grammar itself, never a second pattern: what the rule FINDS and what a release
  * WRITES have to be the same sentence, or a bump moves a line the check does not read and leaves
- * the line it does. Only the version inside the match moves — the `` `As of `` date beside it is
- * somebody's claim about when the sentence was true, and a release does not know it.
+ * the line it does. The version inside the match moves, and with it the line's `` `As of `` date,
+ * to `today` at the precision it was written in: a moved stamp is a new claim made on the release
+ * day. 31.49.0's footer kept `As of 2026-10` beside a version released 2026-11-20.
  */
 export function rewriteStamps(
   file: MarkdownFile,
   version: string,
+  today: string,
 ): { readonly text: string; readonly moved: number } {
   const lines = file.text.split('\n');
   let moved = 0;
   for (const index of proseLineIndices(lines)) {
     const line = lines[index] ?? '';
-    lines[index] = line.replace(
+    const before = moved;
+    const rewritten = line.replace(
       STAMP,
       (whole: string, first: string | undefined, last: string | undefined) => {
         const found = first ?? last ?? version;
@@ -129,9 +132,19 @@ export function rewriteStamps(
           : `${whole.slice(0, whole.length - found.length)}${version}`;
       },
     );
+    lines[index] =
+      moved === before
+        ? rewritten
+        : rewritten.replace(
+            AS_OF_DATE,
+            (_whole: string, date: string) => `\`As of ${today.slice(0, date.length)}\``,
+          );
   }
   return { text: lines.join('\n'), moved };
 }
+
+/** The date of an `` `As of `` claim, `YYYY-MM` or `YYYY-MM-DD`: the precision is the author's. */
+const AS_OF_DATE = /`As of (\d{4}-\d{2}(?:-\d{2})?)`/g;
 
 export const readStampPages = async (root: string): Promise<readonly MarkdownFile[]> => {
   const seen = new Map<string, MarkdownFile>();
