@@ -3,7 +3,9 @@
 // takes it over a role default — on a walsender too — and that the text it then writes is the
 // text `pg-values.ts` reads as the instant Bun's driver hands the repository.
 //
-// Skips unless a server is configured: `set -a; . docker/test-services.env; set +a`.
+// Skips unless a server is configured: `set -a; . docker/test-services.env; set +a`. The one
+// draining case skips again on a server whose `wal_level` is not `logical`, because only a
+// walsender can answer that and no non-superuser session changes a restart-only GUC.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { PgConnection } from './pg-connection';
@@ -41,6 +43,30 @@ const admin = (): Promise<PgConnection> => {
 };
 
 const describeLive = url === undefined ? describe.skip : describe;
+
+/**
+ * The draining case below drives a real walsender, so it needs `wal_level = logical` — a
+ * restart-only GUC a server either has or cannot be lent. Asked as a probe and skipping on the one
+ * case that needs it, never as the suite's gate: the session pins above hold on a replica-level
+ * server too. `pg-replication.live.test.ts:86-119` gates its whole suite off the same probe.
+ */
+const logicalWal = async (): Promise<boolean> => {
+  if (url === undefined) return false;
+  try {
+    const connection = await admin();
+    try {
+      const [row] = await connection.query('SHOW wal_level');
+      return row?.[0] === 'logical';
+    } finally {
+      await connection.close();
+    }
+  } catch {
+    return false;
+  }
+};
+
+/** Read once, at module load, so no case pays for the probe twice. */
+const walIsLogical = await logicalWal();
 
 describeLive('live · pg connection session pins', () => {
   beforeAll(async () => {
@@ -117,34 +143,37 @@ describeLive('live · pg connection session pins', () => {
   // The goodbye `stop()` now reads (`awaitCopyEnd`): a real walsender answers a CopyDone with
   // CopyDone, CommandComplete and ReadyForQuery. Closed over them unread, the socket was reset and
   // the server logged `Connection reset by peer` on every replicator shutdown.
-  test('a walsender answers CopyDone through ReadyForQuery, so close() leaves nothing unread', async () => {
-    const target = parsePgUrl(url ?? '');
-    const setup = await admin();
-    await setup.query('DROP PUBLICATION IF EXISTS x_live_drain_pub');
-    await setup.query('CREATE PUBLICATION x_live_drain_pub');
-    const session = await connect(
-      { user: target.user, password: target.password ?? '' },
-      'database',
-    );
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await session.query('CREATE_REPLICATION_SLOT x_live_drain_slot TEMPORARY LOGICAL pgoutput');
-      await session.startCopyBoth(
-        "START_REPLICATION SLOT x_live_drain_slot LOGICAL 0/0 (proto_version '1', " +
-          "publication_names 'x_live_drain_pub')",
-      );
-      await session.endCopy();
-      const deadline = new Promise<void>((resolve) => {
-        // real-clock: only a bound — a real walsender answers in one round trip, on its own time.
-        timer = setTimeout(resolve, 10_000);
-      });
-      expect(await session.awaitCopyEnd(deadline)).toBe(true);
-      expect(session.inCopyBoth).toBe(false);
-    } finally {
-      clearTimeout(timer);
-      await session.close();
+  test.skipIf(!walIsLogical)(
+    'a walsender answers CopyDone through ReadyForQuery, so close() leaves nothing unread',
+    async () => {
+      const target = parsePgUrl(url ?? '');
+      const setup = await admin();
       await setup.query('DROP PUBLICATION IF EXISTS x_live_drain_pub');
-      await setup.close();
-    }
-  });
+      await setup.query('CREATE PUBLICATION x_live_drain_pub');
+      const session = await connect(
+        { user: target.user, password: target.password ?? '' },
+        'database',
+      );
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await session.query('CREATE_REPLICATION_SLOT x_live_drain_slot TEMPORARY LOGICAL pgoutput');
+        await session.startCopyBoth(
+          "START_REPLICATION SLOT x_live_drain_slot LOGICAL 0/0 (proto_version '1', " +
+            "publication_names 'x_live_drain_pub')",
+        );
+        await session.endCopy();
+        const deadline = new Promise<void>((resolve) => {
+          // real-clock: only a bound — a real walsender answers in one round trip, on its own time.
+          timer = setTimeout(resolve, 10_000);
+        });
+        expect(await session.awaitCopyEnd(deadline)).toBe(true);
+        expect(session.inCopyBoth).toBe(false);
+      } finally {
+        clearTimeout(timer);
+        await session.close();
+        await setup.query('DROP PUBLICATION IF EXISTS x_live_drain_pub');
+        await setup.close();
+      }
+    },
+  );
 });
