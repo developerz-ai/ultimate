@@ -185,9 +185,19 @@ mcp: {
 ```
 
 An `outputSchema` is **structure only** — `type`, `properties`, `required`, `items`, `enum`,
-`const`, `anyOf`. A client validates `structuredContent` against it and refuses the call on a
-miss, so a bound, a pattern or `additionalProperties: false` on rows read from the database would
-be a promise nothing enforces on the way out. The meta tools publish their own hints:
+`const`, `anyOf` (`toWireOutputSchema`, `packages/schema/src/wire-schema.ts`). A client validates
+`structuredContent` against it and refuses the call on a miss, so a bound, a pattern or a closed
+`additionalProperties` on rows read from the database would be a promise nothing enforces on the
+way out. No generated document makes that promise: the projection emits
+`additionalProperties: true` on every object and money schema
+(`packages/schema/src/json-schema.ts`), which says the parse ACCEPTED an undeclared key, never that
+one survived it; the input narrowing republishes it as `true` and the output narrowing
+(`shape`, `packages/schema/src/wire-schema.ts`) drops the keyword altogether. `As of 2026-11`.
+Every closed body left is a hand-written literal outside the projection, for example
+`packages/admin/src/mcp.ts`'s derived CRUD tools, `packages/mcp/src/resources.ts`'s
+`URI_ARG_SCHEMA`, `NO_ARGS` (`packages/mcp/src/wire.ts`), the dev server's and meta surface's own
+tool schemas (`packages/mcp/src/dev-server.ts`, `packages/mcp/src/meta-surface.ts`) and
+`packages/ai/src/tools.ts`'s `EMPTY_SCHEMA`. The meta tools publish their own hints:
 `list_resources` / `describe_resource` read-only, `manage_resource` a write (it reaches every
 grouped tool); `manage_resource` answers the inner tool's `structuredContent` byte for byte.
 

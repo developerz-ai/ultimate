@@ -16,6 +16,7 @@ import { echoProvider } from './echo-provider';
 import { inProcessTool } from './in-process-tool';
 import { install, POST_ID, promptFor } from './llm-fixture';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
+import { satisfiesStrictMode, toOpenAiTools } from './openai-messages';
 import type { GenerateRequest, GenerateResult, Provider } from './provider';
 import { costOf } from './provider';
 import { resetAiRuntime } from './runtime';
@@ -53,26 +54,40 @@ describe('inProcessTool()', () => {
     expect(kbRead.inProcess).toBe(true);
     expect(kbRead.mcp).toBeUndefined();
     expect(isMcpExposed(kbRead.mcp)).toBe(false);
-    // Offered to the model with the schema the declaration states.
-    expect(toLlmTools([kbRead])).toEqual([
-      {
-        name: 'kbRead',
-        description: 'Read one knowledge-base document by id.',
-        input_schema: {
-          type: 'object',
-          properties: { id: { type: 'string', minLength: 1 } },
-          required: ['id'],
-          additionalProperties: false,
-        },
-        strict: true,
+    // Offered to the model with the schema the declaration states. Read back off the OFFERED tool,
+    // where `input_schema` is required: `ProjectableAction`'s own `inputJsonSchema` is optional, and
+    // `satisfiesStrictMode` takes a schema.
+    const tool = toLlmTools([kbRead])[0] ?? expect.unreachable('kbRead is offered to an agent');
+    // `strict: true` here is the PREFERENCE every projection asks for, never a granted flag: the
+    // schema is open (`additionalProperties: true`), so each wire weighs it against its own subset
+    // (`toOpenAiTools`/`satisfiesStrictMode`). This assertion is about pass-through, not a promise.
+    expect(tool).toEqual({
+      name: 'kbRead',
+      description: 'Read one knowledge-base document by id.',
+      input_schema: {
+        type: 'object',
+        properties: { id: { type: 'string', minLength: 1 } },
+        required: ['id'],
+        additionalProperties: true,
       },
-    ]);
+      strict: true,
+    });
+    // The open root is exactly the case OpenAI's strict mode refuses: the document is forwarded
+    // unchanged and the flag is dropped rather than claimed.
+    expect(satisfiesStrictMode(tool.input_schema)).toBe(false);
+    expect(toOpenAiTools([tool])[0]?.function.parameters).toEqual({
+      type: 'object',
+      properties: { id: { type: 'string', minLength: 1 } },
+      required: ['id'],
+      additionalProperties: true,
+    });
+    expect(toOpenAiTools([tool])[0]?.function.strict).toBeUndefined();
   });
 
   test('runs as the caller, on input its own schema parsed', async () => {
     const result = await runLlmToolCall(
       [kbRead],
-      { id: 'c1', name: 'kbRead', input: { id: 'ley-2213' } },
+      { id: 'c1', name: 'kbRead', input: { id: 'ley-2213', extra: true } },
       actor,
     );
     expect(result).toEqual({

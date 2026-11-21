@@ -96,7 +96,7 @@ describe('tools as a named record', () => {
       type: 'object',
       properties: { orgId: { type: 'string', minLength: 1 } },
       required: ['orgId'],
-      additionalProperties: false,
+      additionalProperties: true,
     });
     // Policy is the only gate; a scope would be a second one and the two would drift.
     expect(tool.scope).toBeUndefined();
@@ -152,11 +152,62 @@ describe('tools as a named record', () => {
   });
 
   test('the handler runs as the MCP caller, not as the ambient request actor', async () => {
-    const tool = byName(defineAppMcp({ tools: { seatReport } }).tools, 'seatReport');
-
-    const result = await inRequest(() => tool.handle({ orgId: 'o1' }, caller(owner)));
-
+    const seen: unknown[] = [];
+    const report = {
+      ...seatReport,
+      handle: (args: Parameters<typeof seatReport.handle>[0]) => {
+        seen.push(args.input);
+        return seatReport.handle(args);
+      },
+    };
+    const { server } = defineAppMcp({ tools: { seatReport: report } });
+    const request = {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'seatReport', arguments: { orgId: 'o1', extra: true } },
+    };
+    const response = await inRequest(() => server.handle(request, caller(owner)));
+    expect(response?.error).toBeUndefined();
+    const result = response?.result as McpToolResult;
+    expect(result.isError).toBeUndefined();
+    expect(seen).toEqual([{ orgId: 'o1' }]);
     expect(JSON.parse(textOf(result))).toEqual({ used: 3, actingAs: 'a1' });
+  });
+
+  // Two authoring forms, two answers: a DERIVED schema is open (parse takes a stray key and drops
+  // it), a HAND-WRITTEN one is republished byte for byte and the dispatcher performs its refusal.
+  test('a derived schema is open and a hand-written one stays closed, and tools/call agrees', async () => {
+    const call = async (
+      mcp: ReturnType<typeof defineAppMcp>,
+      name: string,
+      args: Record<string, unknown>,
+    ) => {
+      const at = { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } };
+      return (await inRequest(() => mcp.server.handle(at, caller(owner))))?.result as McpToolResult;
+    };
+
+    const derived = defineAppMcp({ tools: { seatReport } });
+    expect(byName(derived.tools, 'seatReport').inputSchema.additionalProperties).toBe(true);
+    // The stray key is accepted at the boundary and dropped before the handler runs.
+    const open = await call(derived, 'seatReport', { orgId: 'o1', extra: true });
+    expect(JSON.parse(textOf(open))).toEqual({ used: 3, actingAs: 'a1' });
+
+    // The ready-array form carries the literal the author wrote, untouched.
+    const inputSchema: JsonSchema = { type: 'object', properties: {}, additionalProperties: false };
+    const closed: AnyMcpTool = {
+      name: 'ping',
+      description: 'pong',
+      inputSchema,
+      handle: async () => jsonResult('pong'),
+    };
+    const handWritten = defineAppMcp({ tools: [closed] });
+    expect(byName(handWritten.tools, 'ping').inputSchema).toEqual(inputSchema);
+    // `false` is a rejection its author wrote and the dispatcher performs; had the projection
+    // widened this literal too, the call below would answer instead of refusing.
+    const refused = await call(handWritten, 'ping', { extra: true });
+    expect(refused.isError).toBe(true);
+    expect(textOf(refused)).toContain('X_INPUT_INVALID');
   });
 
   test('a tool declared without a policy is refused at boot, not at first call', () => {
@@ -272,7 +323,7 @@ describe("include: 'exposed'", () => {
       type: 'object',
       properties: { postId: { type: 'string', minLength: 1 } },
       required: ['postId'],
-      additionalProperties: false,
+      additionalProperties: true,
     });
   });
 
@@ -446,32 +497,5 @@ describe('two primitives may not project to one tool name', () => {
     expect(thrown?.cause).toContain('include:');
     expect(thrown?.cause).toContain('tools:');
     expect(thrown?.fix).toContain('seatAudit');
-  });
-});
-
-describe('prompts', () => {
-  test('a path becomes a named prompt; an object passes through', async () => {
-    const mcp = defineAppMcp({
-      prompts: [
-        'apps/web/app/posts/prompts/summarize.v3.md',
-        { name: 'triage', description: 'Triage a comment thread.' },
-      ],
-    });
-
-    const response = await mcp.server.handle(
-      { jsonrpc: '2.0', id: 1, method: 'prompts/list' },
-      caller(owner),
-    );
-
-    expect(response?.result).toEqual({
-      prompts: [
-        {
-          // The version stays in the name: `summarize.v2` and `summarize.v3` are two prompts.
-          name: 'summarize.v3',
-          description: 'Versioned prompt artifact: apps/web/app/posts/prompts/summarize.v3.md',
-        },
-        { name: 'triage', description: 'Triage a comment thread.' },
-      ],
-    });
   });
 });

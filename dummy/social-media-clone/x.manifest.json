@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "3b1704aeed076f13",
+  "buildId": "c5ab7ca4e4b0cfab",
   "app": {
     "name": "social-media-clone",
     "version": "1.0.0"
@@ -989,7 +989,7 @@
         "required": [
           "request"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1003,7 +1003,7 @@
         "required": [
           "next"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "oauth:consent",
       "permissions": [
@@ -1028,7 +1028,7 @@
         "required": [
           "userId"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1052,7 +1052,7 @@
           "blockedId",
           "createdAt"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "block:create",
       "permissions": [
@@ -1106,7 +1106,7 @@
           "email",
           "password"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1129,7 +1129,7 @@
           "next",
           "handle"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "public",
       "permissions": [],
@@ -1169,7 +1169,7 @@
           "handle",
           "password"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1192,7 +1192,7 @@
           "next",
           "handle"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "public",
       "permissions": [],
@@ -1216,7 +1216,7 @@
         "required": [
           "request"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1230,7 +1230,7 @@
         "required": [
           "next"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "oauth:consent",
       "permissions": [
@@ -1254,7 +1254,7 @@
         "required": [
           "confirm"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1276,7 +1276,7 @@
           "next",
           "revoked"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "public",
       "permissions": [],
@@ -1292,7 +1292,7 @@
         "type": "object",
         "properties": {},
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1310,7 +1310,7 @@
           "ok",
           "role"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "public",
       "permissions": [],
@@ -1337,7 +1337,7 @@
         "required": [
           "ids"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1350,7 +1350,7 @@
         "required": [
           "marked"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "notification:mark-read",
       "permissions": [
@@ -1377,7 +1377,7 @@
         "required": [
           "userId"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1422,7 +1422,7 @@
           "respondedAt",
           "createdAt"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "friend:request",
       "permissions": [
@@ -1456,7 +1456,7 @@
           "requesterId",
           "decision"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1501,7 +1501,7 @@
           "respondedAt",
           "createdAt"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "friend:respond",
       "permissions": [
@@ -1533,7 +1533,7 @@
           "conversationId",
           "body"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1567,7 +1567,7 @@
           "body",
           "createdAt"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "message:send",
       "permissions": [
@@ -1593,7 +1593,7 @@
         "required": [
           "userId"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1612,7 +1612,7 @@
           "blockerId",
           "blockedId"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "block:delete",
       "permissions": [
@@ -1640,7 +1640,7 @@
         "required": [
           "userId"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "notification:read",
       "permissions": [
@@ -1663,7 +1663,7 @@
         "required": [
           "conversationId"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "message:read",
       "permissions": [
@@ -2697,7 +2697,7 @@
           "locale",
           "tz"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "queue": "default",
       "retry": {
@@ -2720,7 +2720,7 @@
         "required": [
           "occurrence"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "queue": "default",
       "retry": {
@@ -2743,7 +2743,7 @@
         "required": [
           "before"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "queue": "default",
       "retry": {

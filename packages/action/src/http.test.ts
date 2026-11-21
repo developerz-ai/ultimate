@@ -22,6 +22,7 @@ import type { AnyAction } from './action';
 import { action } from './action';
 import { toOpenApiOperation, toRoute } from './http';
 import { invoke } from './invoke';
+import { buildOpenApi } from './openapi';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -83,6 +84,47 @@ const publish = (server: ReturnType<typeof serve>): Promise<Response> =>
   );
 
 describe('an action route over the pipeline', () => {
+  test('accepts extra body keys but passes only declared input to the handler', async () => {
+    const seen: unknown[] = [];
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: allow(),
+      handle: ({ input }) => {
+        seen.push(input);
+        return { id: input.postId, published: true };
+      },
+    }).named('publishPost');
+    const server = httpServer({ routes: [toRoute(target)], config: oneProcess() });
+    for (const body of [
+      { postId: POST_ID, bogus: true, status: 'published' },
+      { postId: POST_ID },
+    ]) {
+      const response = await server.fetch(
+        new Request('http://dev.test/api/posts/publish', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin: 'http://dev.test' },
+          body: JSON.stringify(body),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ id: POST_ID, published: true });
+    }
+    for (const body of [{ bogus: true }, { postId: 7, status: 'published' }]) {
+      const request = new Request('http://dev.test/api/posts/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const response = await server.fetch(request);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: 'X_INPUT_INVALID' });
+    }
+    expect(seen).toEqual([{ postId: POST_ID }, { postId: POST_ID }]);
+    const document = buildOpenApi({ actions: [target] });
+    expect(document.components.schemas['PublishPostInput']?.['additionalProperties']).toBe(true);
+  });
+
   test('declares that its handler holds the one evaluation', () => {
     const evaluations = { count: 0 };
     const route = toRoute(publisher('u1', evaluations));

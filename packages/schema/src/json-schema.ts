@@ -289,8 +289,8 @@ function convert(node: SchemaNode): JsonSchema {
           // generated client checks against, so a widened predicate here would be a client
           // refusing a code the boundary accepts.
           currency: { type: 'string', pattern: CURRENCY_CODE_PATTERN },
-          // Optional, never required: `additionalProperties: false` alone would make a generated
-          // client refuse a scaled amount the framework's own validator accepts.
+          // Optional, never required: listing it in `required` would make a generated client refuse
+          // a value the framework's own validator accepts.
           scale: {
             type: 'integer',
             description: 'decimal places `minor` counts; absent means the currency’s own',
@@ -299,7 +299,11 @@ function convert(node: SchemaNode): JsonSchema {
           },
         },
         required: ['minor', 'currency'],
-        additionalProperties: false,
+        // Same rule as the object case below, for the same reason: `moneySchema` accepts
+        // undeclared keys and answers only `minor`/`currency`/`scale`, so `false` would promise a
+        // rejection the boundary never performs, and an output document would refuse a response the
+        // server produced. `true` means accepted at the parse, never that an extra key survives it.
+        additionalProperties: true,
       });
     case 'object': {
       // `Object.create(null)`, the same rule `validators.ts` applies to the IR this reads: a
@@ -316,7 +320,12 @@ function convert(node: SchemaNode): JsonSchema {
         type: 'object',
         properties,
         required: requiredKeys(node),
-        additionalProperties: false,
+        // One projection, one meaning, and it serves INPUT and OUTPUT objects alike (`openapi.json`
+        // and `x.manifest.json` publish action/query output through this same case). `true` says
+        // undeclared keys are ACCEPTED at the parse boundary, never that they survive it: object
+        // parsing builds its result from declared keys only. So an output document is not
+        // exhaustive either: a strict reading of it would refuse a response the server produced.
+        additionalProperties: true,
       });
     }
     // No `type`: an empty schema is JSON Schema's own spelling of "any JSON value", and every

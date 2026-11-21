@@ -296,6 +296,23 @@ parse(publishPost, coerceQuery(publishPost, url.searchParams));
 numeric(' 12 ');                              // 12 — numeric('0x10'), numeric(' '): undefined
 ```
 
+The dropped keys are not a secret of the parser: the generated JSON Schema, both dialects, and the
+MCP wire input schema publish `additionalProperties: true`. That flag is **acceptance**, never
+passthrough, and the same projection renders OUTPUT objects too (`openapi.json`, `x.manifest.json`
+publish action and query outputs through it), so an output document is not exhaustive either.
+
+The rule, one line: **every generated object and money schema publishes
+`additionalProperties: true`, because the parser accepts a value carrying undeclared keys and
+answers declared keys only, and `true` never means an extra key survives `parse()`**. A published
+`false` would promise a rejection the boundary never performs, and, on an output document, refuse a
+response the server itself produced. The only closed objects in this package are hand-written
+literals outside the projection (the empty input schema among them), never something `toJsonSchema`
+emits.
+
+One rule, two views that must not drift: the `money` and `object` cases in `src/json-schema.ts` (the
+projection) and the `money` and object schemas in `src/validators.ts` (the parser, which answers a
+declared-key-only value).
+
 Coercion is separate from validation on purpose: only the HTTP layer has strings that mean
 numbers. `coerceQuery` promotes repeated params to arrays and leaves anything ambiguous
 untouched so validation still produces the real error. It never invents data: only a **decimal**

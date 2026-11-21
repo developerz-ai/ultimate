@@ -54,9 +54,13 @@ export interface LlmTool {
   readonly description: string;
   readonly input_schema: JsonSchema;
   /**
-   * Strict mode guarantees the model's `input` validates against the schema exactly. Every
-   * projection ASKS for it; each wire grants it only where its own documented subset and caps
-   * allow (`anthropic-provider.ts`, `toOpenAiTools`), because past them the flag is a 400.
+   * Strict-mode preference: every projection ASKS for it, and each wire grants it only where its
+   * own documented subset and caps allow — `anthropicTools` (`anthropic-strict.ts`, read by
+   * `anthropic-provider.ts`) drops the flag outside Anthropic's strict subset or past a cap, where
+   * the flag is a 400 rather than a looser check. On OpenAI's wire the flag is additionally a
+   * promise the server verifies, so `toOpenAiTools` enables it only when `satisfiesStrictMode`
+   * (`openai-messages.ts`) finds the schema recursively closed; projected objects permit extras,
+   * so a permissive input schema is sent without `strict` rather than with a broken claim.
    */
   readonly strict?: boolean;
 }

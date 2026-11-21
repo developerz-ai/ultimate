@@ -8,7 +8,7 @@ import type { HttpConfig } from '@ultimat3/http';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
 import { allow, and, can, or } from '@ultimat3/policy';
-import { t } from '@ultimat3/schema';
+import { t, toWireSchema } from '@ultimat3/schema';
 import type { FetchLike } from './client';
 import { toQueryRoute } from './http';
 import type { AnyQuery, Query } from './query';
@@ -156,6 +156,35 @@ describe('the route a query projects', () => {
 });
 
 describe('a query read over the pipeline', () => {
+  test('accepts unknown parameters, publishes an open schema, and SQL sees declared input only', async () => {
+    const seen: unknown[] = [];
+    const target = query({
+      input: t.object({ orgId: t.uuid, first: t.number.default(1) }),
+      policy: allow(),
+      sql: (input) => {
+        seen.push(input);
+        return from<Post>('posts', posts)
+          .where({ orgId: input.orgId })
+          .limit(input.first ?? 50);
+      },
+    }).named('orgFeed');
+    const server = serve(target, null);
+    // A declared key beside two strays the schema never declared (`limt`, `offset`): the declared
+    // one still coerces off the search string and the strays never reach the SQL.
+    for (const search of [`?orgId=${ORG}&first=1&limt=100&offset=2`, `?orgId=${ORG}&first=1`]) {
+      const response = await read(server, search);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual([{ id: 'a', orgId: ORG, rank: 1 }]);
+    }
+    expect(seen).toEqual(Array(2).fill({ orgId: ORG, first: 1 }));
+    // The published input schema reports the same openness: the boundary ACCEPTS an undeclared key.
+    expect(toWireSchema(target.input).additionalProperties).toBe(true);
+    // An open projection is acceptance, not leniency: what the schema refuses still fails.
+    const refused = await read(server, `?orgId=${ORG}&first=nope&limt=100`);
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { code: string }).code).toBe('X_INPUT_INVALID');
+  });
+
   test('answers the rows as json, with the policy evaluated exactly once', async () => {
     const evaluations = { count: 0 };
     const response = await read(serve(feed(evaluations), reader('u1')));

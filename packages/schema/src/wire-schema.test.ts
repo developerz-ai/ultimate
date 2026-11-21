@@ -68,6 +68,31 @@ const Everything = t.object({
 });
 
 describe('toWireSchema', () => {
+  test('permits root and nested extras that parsing accepts and drops', () => {
+    const input = t.object({ id: t.string, nested: t.object({ count: t.number }) });
+    expect(input.parse({ id: 'p1', extra: true, nested: { count: 1, extra: true } })).toEqual({
+      id: 'p1',
+      nested: { count: 1 },
+    });
+    const wire = toWireSchema(input);
+    expect(wire.additionalProperties).toBe(true);
+    expect(wire.required).toEqual(['id', 'nested']);
+    expect(wire.properties?.['id']?.type).toBe('string');
+    expect(wire.properties?.['nested']).toMatchObject({
+      additionalProperties: true,
+      required: ['count'],
+      properties: { count: { type: 'number' } },
+    });
+    for (const invalid of [
+      { extra: true, nested: { count: 1 } },
+      { id: 7, extra: true, nested: { count: 1 } },
+      { id: 'p1', extra: true, nested: {} },
+      { id: 'p1', extra: true, nested: { count: '1' } },
+    ]) {
+      expect(input.safeParse(invalid).issues).toBeDefined();
+    }
+  });
+
   test('no keyword outside the input subset survives, at any depth', () => {
     const keys = [...keysIn(toWireSchema(Everything))];
     expect(keys.filter((key) => !INPUT_KEYWORDS.has(key))).toEqual([]);
@@ -82,7 +107,20 @@ describe('toWireSchema', () => {
 
   test('a record schema says "extra keys allowed", never a value schema the subset cannot hold', () => {
     expect(toWireSchema(Everything).properties?.['meta']?.additionalProperties).toBe(true);
-    expect(toWireSchema(Everything).additionalProperties).toBe(false);
+    expect(toWireSchema(Everything).additionalProperties).toBe(true);
+  });
+
+  test('a money value permits extras too, because its parse drops them', () => {
+    // The projection flips one flag for the whole class: an object and a money value both ACCEPT an
+    // undeclared key and answer declared keys only, so a tool schema that closed money would refuse
+    // an argument the parser takes. The pair, in one assertion.
+    expect(t.money.parse({ minor: 1250, currency: 'EUR', note: 'dropped' })).toEqual({
+      minor: 1250,
+      currency: 'EUR',
+    });
+    const wire = toWireSchema(t.money);
+    expect(wire.additionalProperties).toBe(true);
+    expect(wire.required).toEqual(['minor', 'currency']);
   });
 
   test('the shape survives: required, nesting, defaults, descriptions, nullable branches', () => {
@@ -90,6 +128,7 @@ describe('toWireSchema', () => {
     expect(wire.type).toBe('object');
     expect(wire.required).toContain('postId');
     expect(wire.properties?.['nested']?.properties?.['childId']?.type).toBe('string');
+    expect(wire.properties?.['nested']?.additionalProperties).toBe(true);
     expect(wire.properties?.['count']?.default).toBe(5);
     expect(wire.properties?.['title']?.description).toBe('the title');
     expect(wire.properties?.['note']?.anyOf?.map((branch) => branch.type)).toEqual([

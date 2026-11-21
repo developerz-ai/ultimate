@@ -161,7 +161,16 @@ Gotchas:
 - `Schema<In, Out>` splits input from output: `.default()` makes the key optional on input and
   present on output. Object key optionality is derived from that — don't hand-roll it.
 - `AnySchema = Schema<unknown, unknown>` is the general constraint. Never `any`.
-- Unknown object keys are dropped by design; JSON Schema says `additionalProperties: false`.
+- Builtin `t.object` accepts and drops unknown keys, and so does `t.money` (`moneySchema` answers
+  only `minor`/`currency`/`scale`). Every generated object AND money schema publishes
+  `additionalProperties: true` for that ACCEPTANCE, never for retention; the same projection
+  renders output objects too, so an output document is not exhaustive either. Declared fields still
+  validate. The projection (`json-schema.ts`, the `object` and `money` cases) and the parser
+  (`validators.ts`'s object and money schemas, which build their result from declared keys only) are
+  the two views of that one rule and must not drift: a schema that refuses extras refuses a request
+  the boundary accepts. The only closed objects (`additionalProperties: false`) are hand-written
+  literals outside the projection (the empty input schema among them), and `toJsonSchema` emits
+  none.
 - **An object parse reads every declared field with `Object.hasOwn` and answers a null-prototype
   object** — the same two halves `recordSchema` has. A raw `value[key]` read `toString` off the
   PROTOTYPE, so a field named after one was unsatisfiable for every input and its `.default()`

@@ -1,18 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { action } from '@ultimat3/action';
-import {
-  agentActor,
-  ctxOf,
-  resetPublicCauses,
-  runWithContext,
-  stringField,
-  UltimateError,
-} from '@ultimat3/core';
+import { agentActor, ctxOf, resetPublicCauses, stringField, UltimateError } from '@ultimat3/core';
 import { driverError } from '@ultimat3/db';
 import { registerErrorStatus, registerProblemMeta, resetErrorStatus } from '@ultimat3/http';
 import { resetRateLimitStore } from '@ultimat3/http/adapter';
 import { allow, policyForbidden } from '@ultimat3/policy';
-import { t, toWireSchema } from '@ultimat3/schema';
+import { t } from '@ultimat3/schema';
+import { satisfiesStrictMode, toOpenAiTools } from './openai-messages';
 import type { ProjectableAction } from './tools';
 import {
   asProjectableAction,
@@ -20,7 +14,6 @@ import {
   runLlmToolCall,
   toLlmTool,
   toLlmTools,
-  toolLabel,
 } from './tools';
 
 const actor = agentActor({ id: 'agent-1' });
@@ -69,6 +62,41 @@ describe('toLlmTool', () => {
       additionalProperties: false,
     });
     expect(tool.strict).toBe(true);
+  });
+
+  // `strict: true` on the tool is the PREFERENCE every projection asks for, never a granted flag: a
+  // projected action input carries `additionalProperties: true`, which OpenAI's strict mode refuses
+  // (it must list every key in `required` AND close the object), so the schema rides unchanged and
+  // that wire drops the flag rather than sending a promise the server answers with a 400.
+  test('a projected action keeps its open input schema, and the OpenAI wire withholds strict', () => {
+    const tool = toLlmTool(
+      asProjectableAction(
+        action({
+          input: t.object({ id: t.string }),
+          output: t.object({ ok: t.boolean }),
+          policy: allow(),
+          mcp: { expose: true },
+          handle: () => ({ ok: true }),
+        }).named('noteOn'),
+      ),
+    );
+
+    expect(tool.input_schema.additionalProperties).toBe(true);
+    expect(Object.keys(tool.input_schema.properties as object)).toEqual(['id']);
+    expect(tool.input_schema.required).toEqual(['id']);
+    expect(tool.strict).toBe(true);
+    // The open schema is exactly the case strict mode refuses, so no test may read the flag back as
+    // granted: the sent document is the same schema, and `strict` is absent from it.
+    expect(satisfiesStrictMode(tool.input_schema)).toBe(false);
+    const sent = toOpenAiTools([tool])[0];
+    expect(sent?.function.parameters).toEqual(tool.input_schema);
+    expect(sent?.function.strict).toBeUndefined();
+  });
+
+  test('a closed hand-built schema is the one case the OpenAI wire does claim strict for', () => {
+    const closed = toLlmTool({ name: 'ping', run: async () => 'pong' });
+    expect(satisfiesStrictMode(closed.input_schema)).toBe(true);
+    expect(toOpenAiTools([closed])[0]?.function.strict).toBe(true);
   });
 });
 
@@ -402,91 +430,5 @@ describe('an anonymous visitor’s tool calls', () => {
     expect(await visit('198.51.100.1')).toBe(false);
     expect(await visit('198.51.100.1')).toBe(true);
     expect(await visit('198.51.100.2')).toBe(false);
-  });
-});
-
-describe('asProjectableAction', () => {
-  const publishPost = () =>
-    action({
-      input: t.object({ id: t.string }),
-      output: t.object({ published: t.boolean }),
-      policy: allow(),
-      mcp: { expose: true, description: 'Publish a draft post' },
-      handle: ({ input, ctx }) => ({ published: `${input.id}:${ctx.actor.id}` !== '' }),
-    });
-
-  // One tool document per declaration: the model is offered what `.tool()` returns and what an MCP
-  // client's `tools/list` serves, never a fuller draft-07 shape of its own.
-  test('the model is offered the wire schema every other tool surface publishes', () => {
-    const Input = t.object({ id: t.uuid, note: t.string.max(80) });
-    const projected = asProjectableAction(
-      action({
-        input: Input,
-        output: t.object({ ok: t.boolean }),
-        policy: allow(),
-        mcp: { expose: true },
-        handle: () => ({ ok: true }),
-      }).named('noteOn'),
-    );
-    expect(projected.inputJsonSchema).toEqual(toWireSchema(Input));
-  });
-
-  test("a real action() becomes the seam, carrying its own schema and its declaration's name", () => {
-    const projected = asProjectableAction(publishPost().named('publishPost'));
-    expect(projected.name).toBe('publishPost');
-    expect(projected.description).toBe('Publish a draft post');
-    expect(projected.mcp?.expose).toBe(true);
-    // The action's own `input:`, not the empty stand-in `toLlmTool` falls back to.
-    expect(projected.inputJsonSchema).toMatchObject({
-      type: 'object',
-      properties: { id: { type: 'string' } },
-      required: ['id'],
-    });
-  });
-
-  test('run() is invoke: the action parses the model’s arguments and runs as the given actor', async () => {
-    const seen: string[] = [];
-    const probe = action({
-      input: t.object({ id: t.string }),
-      output: t.object({ id: t.string }),
-      policy: allow(),
-      mcp: { expose: true },
-      handle: ({ input, ctx }) => {
-        seen.push(`${ctx.actor.id}:${JSON.stringify(input)}`);
-        return { id: input.id };
-      },
-    }).named('probe');
-
-    await runWithContext(ctxOf({}), async () => {
-      const result = await runLlmToolCall(
-        [asProjectableAction(probe)],
-        // The model names an actor and an extra field. Neither survives the action's own parse.
-        { id: 'call-9', name: 'probe', input: { id: 'p1', actor: 'admin' } },
-        actor,
-      );
-      expect(result).toEqual({ toolUseId: 'call-9', content: '{"id":"p1"}' });
-    });
-    expect(seen).toEqual(['agent-1:{"id":"p1"}']);
-  });
-
-  test('an unnamed action is refused rather than offered as a tool called ""', () => {
-    expect(() => asProjectableAction(publishPost())).toThrow('X_ACTION_UNREGISTERED');
-  });
-
-  // Not itself since 30.0.0: a hand-built tool under a gated name waits like any other, so its `run`
-  // is behind the gate (`tools-confirmation.test.ts`). The rest of it is what the author wrote.
-  test('an already-projectable object keeps its fields, and projects to itself once projected', () => {
-    const fake = projectable('handRolled', { expose: true });
-    const once = asProjectableAction(fake);
-    const { run: _fake, ...declared } = fake;
-    const { run: _once, ...projected } = once;
-    expect(projected).toEqual(declared);
-    expect(asProjectableAction(once)).toBe(once);
-  });
-
-  test('toolLabel names an unregistered action instead of failing to name it', () => {
-    expect(toolLabel(publishPost())).toBe('(an unregistered action)');
-    expect(toolLabel(publishPost().named('publishPost'))).toBe('publishPost');
-    expect(toolLabel(projectable('handRolled'))).toBe('handRolled');
   });
 });

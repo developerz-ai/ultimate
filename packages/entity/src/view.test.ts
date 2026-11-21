@@ -133,7 +133,11 @@ describe('$view()', () => {
     ]);
     const schema = toJsonSchema(view, { includeDialect: false });
     expect(schema.type).toBe('object');
-    expect(schema.additionalProperties).toBe(false);
+    // `json-schema.ts` renders every object the same way, input and output alike: `true` says an
+    // undeclared key is ACCEPTED at the parse boundary, never that it survives it. The other half
+    // is the 'projects a row down to exactly the picked keys' test above, which projects a row
+    // carrying `orgId` and `likeCount` and finds neither in the result.
+    expect(schema.additionalProperties).toBe(true);
     // Nullable is a value the field holds, never an absent key: still required, `null` in the union.
     expect(schema.required).toEqual([
       'id',

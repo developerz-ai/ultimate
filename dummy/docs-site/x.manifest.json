@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "fc3f65f84e0fd238",
+  "buildId": "d223310a770d365f",
   "app": {
     "name": "docs-site",
     "version": "0.1.0"
@@ -221,7 +221,7 @@
         "type": "object",
         "properties": {},
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "output": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -239,7 +239,7 @@
           "ok",
           "role"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "policy": "public",
       "permissions": [],
@@ -806,7 +806,7 @@
         "type": "object",
         "properties": {},
         "required": [],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "queue": "default",
       "retry": {
@@ -919,7 +919,7 @@
           "locale",
           "tz"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       },
       "queue": "default",
       "retry": {

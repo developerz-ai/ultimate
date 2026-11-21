@@ -3,7 +3,7 @@
     "schemas": {
       "ApproveConnectionInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "request": {
             "maxLength": 8192,
@@ -18,7 +18,7 @@
       },
       "ApproveConnectionOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "next": {
             "minLength": 1,
@@ -32,7 +32,7 @@
       },
       "BlockUserInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "userId": {
             "format": "uuid",
@@ -46,7 +46,7 @@
       },
       "BlockUserOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "blockedId": {
             "format": "uuid",
@@ -70,7 +70,7 @@
       },
       "CreateAccountInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "displayName": {
             "maxLength": 80,
@@ -112,7 +112,7 @@
       },
       "CreateAccountOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "handle": {
             "minLength": 1,
@@ -135,7 +135,7 @@
       },
       "CreateSessionInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "h-captcha-response": {
             "minLength": 1,
@@ -166,7 +166,7 @@
       },
       "CreateSessionOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "handle": {
             "minLength": 1,
@@ -189,7 +189,7 @@
       },
       "DenyConnectionInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "request": {
             "maxLength": 8192,
@@ -204,7 +204,7 @@
       },
       "DenyConnectionOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "next": {
             "minLength": 1,
@@ -218,7 +218,7 @@
       },
       "DestroySessionInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "confirm": {
             "const": "sign-out"
@@ -231,7 +231,7 @@
       },
       "DestroySessionOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "next": {
             "minLength": 1,
@@ -253,14 +253,14 @@
       },
       "HealthInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {},
         "required": [],
         "type": "object"
       },
       "HealthOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "ok": {
             "type": "boolean"
@@ -278,7 +278,7 @@
       },
       "MarkNotificationsReadInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "ids": {
             "items": {
@@ -295,7 +295,7 @@
       },
       "MarkNotificationsReadOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "marked": {
             "type": "number"
@@ -399,7 +399,7 @@
       },
       "RequestFriendInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "userId": {
             "format": "uuid",
@@ -413,7 +413,7 @@
       },
       "RequestFriendOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "addresseeId": {
             "format": "uuid",
@@ -458,7 +458,7 @@
       },
       "RespondFriendInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "decision": {
             "enum": [
@@ -480,7 +480,7 @@
       },
       "RespondFriendOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "addresseeId": {
             "format": "uuid",
@@ -525,7 +525,7 @@
       },
       "SendMessageInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "body": {
             "maxLength": 5000,
@@ -545,7 +545,7 @@
       },
       "SendMessageOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "authorId": {
             "format": "uuid",
@@ -579,7 +579,7 @@
       },
       "UnblockUserInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "userId": {
             "format": "uuid",
@@ -593,7 +593,7 @@
       },
       "UnblockUserOutput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "blockedId": {
             "format": "uuid",

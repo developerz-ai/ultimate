@@ -6,7 +6,7 @@ import {
   toJsonSchema,
   toMcpInputSchema,
 } from './json-schema';
-import { CURRENCY_CODE_PATTERN } from './money-value';
+import { CURRENCY_CODE_PATTERN, MAX_MONEY_SCALE } from './money-value';
 import type { SchemaNode } from './node';
 import { configureSchemaProvider, resetSchemaProvider } from './provider';
 import { t } from './t';
@@ -26,6 +26,56 @@ const publishPost = t.object({
 });
 
 describe('toJsonSchema', () => {
+  test.each(['2020-12', 'draft-07'] as const)(
+    '%s permits extra input keys without promising to retain them',
+    (dialect) => {
+      const input = t.object({ name: t.string, nested: t.object({ count: t.number }) });
+      const declared = { name: 'post', nested: { count: 1 } };
+      const parsed = input.parse({ name: 'post', nested: { count: 1, status: 'x' }, bogus: true });
+      // The title's claim, proved: a declared key survives the parse, an undeclared one does not.
+      expect(parsed).toEqual(declared);
+      expect(Object.hasOwn(parsed, 'bogus')).toBe(false);
+      for (const invalid of [
+        { nested: { count: 1 } },
+        { name: 1, nested: { count: 1 } },
+        { name: 'post', nested: {} },
+        { name: 'post', nested: { count: '1' } },
+      ]) {
+        expect(input.safeParse(invalid).issues).toBeDefined();
+      }
+      const schema = toJsonSchema(input, { dialect });
+      expect(schema.additionalProperties).toBe(true);
+      expect(schema.required).toEqual(['name', 'nested']);
+      expect(schema.properties?.['name']?.type).toBe('string');
+      expect(schema.properties?.['nested']).toMatchObject({
+        additionalProperties: true,
+        required: ['count'],
+        properties: { count: { type: 'number' } },
+      });
+    },
+  );
+
+  test('permits extras in empty objects, array items and union branches', () => {
+    const item = t.object({ count: t.number });
+    const input = t.object({
+      empty: t.object({}),
+      items: t.array(item),
+      choice: t.union(item, t.string),
+    });
+    const extra = { count: 2, extra: true };
+    expect(
+      input.parse({ empty: { extra: true }, items: [{ count: 1, extra: true }], choice: extra }),
+    ).toEqual({ empty: {}, items: [{ count: 1 }], choice: { count: 2 } });
+    for (const invalid of [{}, { count: '1' }]) {
+      expect(input.safeParse({ empty: {}, items: [invalid], choice: 'ok' }).issues).toBeDefined();
+      expect(input.safeParse({ empty: {}, items: [], choice: invalid }).issues).toBeDefined();
+    }
+    const properties = toJsonSchema(input, { includeDialect: false }).properties;
+    expect(properties?.['empty']).toMatchObject({ properties: {}, additionalProperties: true });
+    expect(properties?.['items']?.items).toMatchObject({ additionalProperties: true });
+    expect(properties?.['choice']?.anyOf?.[0]).toMatchObject({ additionalProperties: true });
+  });
+
   test('publishes a `__proto__` field as an own property, never through the setter', () => {
     // Same defect one file over: `properties[key] = convert(child)` on a `{}` literal drops the
     // one key `Object.prototype` has an accessor for, so the document omits a field the server
@@ -40,7 +90,7 @@ describe('toJsonSchema', () => {
     const schema = toJsonSchema(publishPost, { includeDialect: false });
 
     expect(schema.type).toBe('object');
-    expect(schema.additionalProperties).toBe(false);
+    expect(schema.additionalProperties).toBe(true);
     // Defaults and optionals are not required; everything else is.
     expect(schema.required).toEqual(['postId', 'price', 'tags', 'status']);
     expect(schema.properties?.['postId']).toEqual({ type: 'string', format: 'uuid' });
@@ -56,12 +106,12 @@ describe('toJsonSchema', () => {
     expect(schema.properties?.['publishAt']).toEqual({ type: 'string', format: 'date-time' });
   });
 
-  test('money projects to integer minor units plus an ISO code', () => {
+  test('money projects minor units plus a code, and admits the extras it drops', () => {
     const money = toJsonSchema(t.money, { includeDialect: false });
     expect(money).toMatchObject({
       type: 'object',
       required: ['minor', 'currency'],
-      additionalProperties: false,
+      additionalProperties: true,
       properties: {
         minor: { type: 'integer' },
         currency: { type: 'string', pattern: '^[A-Z]{3}$' },
@@ -70,14 +120,23 @@ describe('toJsonSchema', () => {
     // Both halves on purpose: the literal above pins WHAT is published (a shipped contract), this
     // pins that it is the same string the validator tests against and not a fourth copy of it.
     expect(money.properties?.['currency']?.pattern).toBe(CURRENCY_CODE_PATTERN);
-  });
-
-  test('money admits an optional scale without requiring one', () => {
-    const money = toJsonSchema(t.money, { includeDialect: false });
-    // `additionalProperties: false` is what made a scaled value fail a generated client's own
-    // check while the framework's validator accepted it.
+    // `scale` is listed but never required: a generated client must not insist on one the
+    // framework's own validator accepts as absent.
     expect(money.properties?.['scale']).toMatchObject({ type: 'integer', minimum: 0 });
-    expect(money.required).toEqual(['minor', 'currency']);
+    // The pair the flag exists for: the money parser ACCEPTS an undeclared key and answers declared
+    // keys only, so `additionalProperties: false` would refuse a body the boundary takes.
+    expect(t.money.parse({ minor: 1250, currency: 'EUR', note: 'dropped' })).toEqual({
+      minor: 1250,
+      currency: 'EUR',
+    });
+    // Declared fields still validate, extra key or not.
+    for (const invalid of [
+      { minor: 1.5, currency: 'EUR' },
+      { minor: 1250, currency: 'eur' },
+      { minor: 1250, currency: 'EUR', scale: MAX_MONEY_SCALE + 1 },
+    ]) {
+      expect(t.money.safeParse(invalid).issues).toBeDefined();
+    }
   });
 
   // `t.money`'s `minor` has published the safe-integer range since the validator started demanding
@@ -130,7 +189,7 @@ describe('toJsonSchema', () => {
       type: 'object',
       properties: { id: { type: 'string', format: 'uuid' } },
       required: ['id'],
-      additionalProperties: false,
+      additionalProperties: true,
     });
   });
 
