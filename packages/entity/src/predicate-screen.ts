@@ -8,6 +8,7 @@ import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
 import { isOperator, operatorUnknown } from './operator';
 import { isGroup, orMembers, predicateNodeInvalid, viaValue } from './predicate-node';
+import { operandFor } from './predicate-operand';
 import { getEntity } from './registry';
 import { sealedFields } from './sealed';
 import type { Predicate } from './tenancy';
@@ -54,6 +55,9 @@ export const screenPredicates = <Row>(
         `${property} is money: name ${property}.minor or ${property}.currency`,
       );
     }
+    // Before row iteration: empty stores and short-circuited branches must refuse too.
+    // Groups and via targets recurse above, after their existing structural checks.
+    operandFor(entity, predicate);
   }
 };
 

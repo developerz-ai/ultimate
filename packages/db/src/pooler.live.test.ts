@@ -51,6 +51,63 @@ describe.skipIf(!hasPooler)('live · a transaction pooler in its stock config', 
     await admin.close();
   });
 
+  /**
+   * The one host tool the printed fixes name. A runner without `psql` is a machine this suite
+   * still has a claim to make on: its absence changes HOW the fix is run, never WHETHER the bound
+   * comes back (`drift-check.live.test.ts:157`, `object-drift.live.test.ts:87`).
+   */
+  const hasPsql = Bun.which('psql') !== null;
+
+  /**
+   * A shell function of the same name, printing the words the line hands it: the `sed` that drops
+   * `options`, the `-c` arguments and the `export` beside them are still the SHELL's, which is the
+   * layer these fixes can get wrong. `object-drift.live.test.ts:116` reads a fix the same way.
+   */
+  const STUB_PSQL = [
+    'psql() {',
+    '  while [ "$#" -gt 0 ]; do',
+    '    case "$1" in',
+    '      -c) shift; printf \'sql\\t%s\\n\' "$1" ;;',
+    '      *) printf \'url\\t%s\\n\' "$1" ;;',
+    '    esac',
+    '    shift',
+    '  done',
+    '}; ',
+  ].join('\n');
+
+  interface FixRun {
+    /** What the line left in `$DATABASE_POOLER` — already exported, or named by a refusal it fixes. */
+    readonly exported: string | undefined;
+    readonly statements: readonly string[];
+    readonly url: string | undefined;
+  }
+
+  /**
+   * The fix, run by a shell as printed. With `psql` present that is the real client, so the whole
+   * line is proven end to end. Without it, the line still runs — only `psql` is a function — and
+   * the statements it passed on are returned for the caller to send to the server itself, so the
+   * claim never rests on which machine this ran on. Both stderr and the exit code are the shell's.
+   */
+  const runFix = async (fix: string, url: string): Promise<FixRun> => {
+    const line = `${hasPsql ? '' : STUB_PSQL}${fix}\nprintf '%s' "$DATABASE_POOLER"`;
+    const shell = Bun.spawnSync(['bash', '-c', line], {
+      env: { PATH: process.env['PATH'] ?? '', DATABASE_URL: url },
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 10_000,
+    });
+    expect(shell.stderr.toString()).toBe('');
+    expect(shell.exitCode).toBe(0);
+    const lines = shell.stdout.toString().split('\n');
+    const word = (prefix: string): readonly string[] =>
+      lines.filter((one) => one.startsWith(prefix)).map((one) => one.slice(prefix.length));
+    return {
+      exported: lines.at(-1),
+      statements: word('sql\t'),
+      url: word('url\t')[0],
+    };
+  };
+
   test('a bare URL names the switch, not an outage', async () => {
     const refused = await postgresClient({ url: poolerUrl ?? '', role: 'web', env: {} })
       .query(sql`select 1`)
@@ -119,16 +176,15 @@ describe.skipIf(!hasPooler)('live · a transaction pooler in its stock config', 
       .catch((error: unknown) => error as DbError);
     // The emitted line, its one placeholder filled, then the variable the export left behind.
     const fix = (refused as DbError).fix.replaceAll('<user>', BOUND_ROLE);
-    const shell = Bun.spawnSync(['bash', '-c', `${fix}\nprintf '%s' "$DATABASE_POOLER"`], {
-      env: { PATH: process.env['PATH'] ?? '', DATABASE_URL: poolerUrl ?? '' },
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 10_000,
-    });
-    expect(shell.stderr.toString()).toBe('');
-    expect(shell.exitCode).toBe(0);
-    const exported = shell.stdout.toString().split('\n').at(-1);
+    const shell = await runFix(fix, poolerUrl ?? '');
+    const exported = shell.exported;
     expect(exported).toBe('transaction');
+    if (!hasPsql) {
+      // No `psql` here: the two `alter role` words the line handed it, sent to the server as it
+      // would have sent them.
+      expect(shell.statements).toHaveLength(2);
+      for (const statement of shell.statements) await admin.execute(raw(statement));
+    }
 
     const login = new URL(poolerUrl ?? '');
     login.username = BOUND_ROLE;
@@ -156,14 +212,14 @@ describe.skipIf(!hasPooler)('live · a transaction pooler in its stock config', 
     expect((refused as DbError).code).toBe('X_DB_POOLER_OPTIONS_REFUSED');
 
     const fix = (refused as DbError).fix.replaceAll('<user>', OWN_ROLE).replaceAll('<value>', '1s');
-    const shell = Bun.spawnSync(['bash', '-c', fix], {
-      env: { PATH: process.env['PATH'] ?? '', DATABASE_URL: carrying.toString() },
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 10_000,
-    });
-    expect(shell.stderr.toString()).toBe('');
-    expect(shell.exitCode).toBe(0);
+    const shell = await runFix(fix, carrying.toString());
+    if (!hasPsql) {
+      // The `sed` in the line is the only thing between the fix and the option the pooler just
+      // refused: assert what it was handed, then run the statement it passed on.
+      expect(shell.url).toBeDefined();
+      expect(shell.url ?? '').not.toContain('options=');
+      for (const statement of shell.statements) await admin.execute(raw(statement));
+    }
     const row = await admin.one<{ readonly settings: readonly string[] | null }>(
       sql`select setconfig as settings from pg_db_role_setting s join pg_roles r on r.oid = s.setrole where r.rolname = ${OWN_ROLE}`,
     );

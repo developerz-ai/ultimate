@@ -8,6 +8,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 31.x → 32.0.0 (pending on `next`) | **1** — shared entity comparison operand refusals | [Unreleased] walkthrough below; `next` only |
 | 30.x → 31.0.0 | **74** — plan 101 final hardening: an `AuthServerStore` with a required `getCode` and a `pollDevice` that takes the client; a drain that abandoned work exits 70; validation issues capped at 100 and causes at 4 KiB; storage keys, header values and revision-pinned reads; one policy gate for action and query; a paged read capped at 500 rows over the wire; a `PreferenceStore` asked once per 500 recipients; remote MCP tools not re-exposed unless opted in; **a `(tenant, pk)` index on every tenant table that needs one `x db gen`**; an `IsrStore` that may answer with a promise; `localhost` no longer admitted by a wildcard `allowHosts`; span exporters installed by subscribing to `span.end` on the one instrumentation bus; an app's own Sentry transport replacing the `SENTRY_DSN` one, local sinks marked; `jobs.queues` defaulting to `['default']`; OpenTelemetry's stable http, messaging and gen_ai span attributes; a `defineStorage` disk that reports on the bus; OTLP logs and the semconv histograms on every boot; db, entity, policy and cache observer slots replaced by bus events; a database span for every statement in production; a bus installed from `runtime.ts`, never a realtime setter; one `ADAPTER_PORTS` table and core installers on `@ultimat3/core/adapter`; a `SecretSource` port for the master key; `realtime.transport`/`urlEnv` removed from `app.config.ts`; job, event-bus, mail, idempotency, meter and notify installers on each package's `./adapter`, swapped from `runtime.ts`; the rate-limit store, auth limiters, TOTP guard and scrape driver installed the same way, `httpServer` taking no store; one core clock for scraping and flags; admin audit sinks typed by core's `AuditSink`; the AI gateway installed only as `aiGateway`, never through `configureAi`; factories with `belongsTo`/`hasMany`, `buildList`/`createList` and a `create()` that answers the stored row; `runtime.syncAuthenticate` removed, every port a `runtime.ts` field and `<app>/packages/db/factories.ts` linted on `unit`; the audit sink, error reporter and KDF gate installed on `./adapter`, `runtime.storage` a `StorageDriver` and the last four ports `runtime.ts` fields; port suites on `@ultimat3/testing/conformance` only; a malformed uuid refused before the statement; a push subscription that always names its person; no memory delivery ledger outside development; the embedder and semantic cache as `runtime.ts` ports, `configureAi` keeping `redact` only; metric exporters subscribing to `metric.export` on the bus; sign-in routes at `/auth/sso/:provider` for OAuth and SAML alike; the raw-CDP launcher imported from `@ultimat3/scraping/cdp` only; no framework mails — an app declares its own; `noopMetricExporter` deleted; `AuditPrimitive` gaining `'job'` for GDPR erases; the storage quarantine flow replaced by the scanner's `hold` verdict; one retry shape, core's `RetryPolicy`, for the AI gateway, realtime redials and job `jitter`; `setLogSink` replaced by `installLogSink`, which answers its release; realtime's `Row` renamed `LiveRow`; `Surface` and `SURFACES` imported from `@ultimat3/core` only; a `SearchIndex` with a required `list` and a `reindex()` that sweeps what the table lost; `defineApi` the one way to register actions and queries; `x g app`/`package` refusing slice flags; a searchable row's version strictly increasing, advanced by a custom store in its own write; a targeted upload grant refused while a scanner is installed; a write-path search document replacing a tombstone; an instant in a key spelled ISO 8601; every package's `.` barrel cut to the app API, ports on `./adapter` | [the `31.0.0` section](#30x--3100-entry-by-entry), in order |
 | 29.x → 30.0.0 | **143** — plan 101 (ten waves), issues #990–#999 and two find-and-fix sweeps: a write past its deadline that rolls back, a closed-transaction refusal, a two-release column drop, **same-tenant composite keys that need one `x db gen`**, `upsertAll` overwriting only what it names, every agent and MCP call held by `mcpConfirmations`, `'null'` refused in `cors.origins`, `isr` and `static` that render as nobody, a query-free `isr` key by default, a pool that refuses past `acquireTimeoutMs`, an upload grant bound to its declared size, mail that refuses an unresolved key, a problem document with `retry`, a worker retire on by default, required `StorageDriver`, `JobDriver` and `PoolProfile` members, a `budgets` step that builds before it weighs, no `bin/check` in a new app, `ui`'s Standard Schema copies removed, no vendor link on the default error page, the render brands at `@ultimat3/core/render-node` only, a required `enqueueMany` on every `JobHandle`, `JobsFacade` and `JobDriver`, an outbox relay that claims 500 rows a pass, `'browser'` in `ERROR_SOURCES`, `assets` and `clientErrors` on `AppConfig`, `pwa`'s `retentionPlan` and `retainBuildIds` removed, a `DefineEvalInput` union, `MCP_PROTOCOL_VERSION` deleted, an MCP revision decided per request with `2026-07-28` the newest, a cross-origin `POST /mcp` refused with `'origin-refused'` in `McpAuthRefusal`, `x mcp serve` answering only a loopback Host, a raw `WorkloadToken` payload, a role that refuses a half-loaded app, a query's own MCP tool wording, no `QueryPoll.ms`, an exercise refused outside `bun test`, an accessibility audit on every `e2eTest`, factory values read off each column's declaration, a memory transaction that holds every write inside it, a 21st gate step that runs every primitive with no test written, a finding for an untenanted child of a tenant-owned table, a memory transaction that refuses a write after it ended and runs nested effects at the root's commit, required `failureCapture` and `time` on `AppConfig`, an `x_failures` table in the schema dump, a description on every page `/llms.txt` lists, a required `TimeZoneConfig.detectedCookie`, an MCP resource read handed its caller, a required `DevCapabilities.queryGraph` and `DevSources.mailTemplates`, an exercise step that plans every statement and reds an unindexed read or a loop over rows, an `OpenGraph` that is a hosted `image` or a captured page and never both, a `postgresAuthAdapter()` that reads the ambient client per call, a `refetch()` that returns a promise, 48 more `UI_KEYS` in a module namespace, charts that draw `null` and negative values and refuse a series that does not match its keys, a two-mode `TabsProps`, a command palette that ranks, two more contrast pairs on `bg-soft`, every `mock.module` put back at its file boundary, a static export that writes image variants as files, `/assets` answering only the variants it declares, an island `mount` that must return its disposer, passkey storage on every `AuthAdapter`, a per-call rate limit split from the fixed one, a signed vote in `McpConfirmationStore.decide`, a meter in the manifest and its contract diff, a hand-rolled websocket refused, bad-token counting on every `PushDeviceStore`, exact history images on Postgres, a policy on every multipart part and completion, `LiveHandle.retry`, a Bearer-only CSRF exemption, no `enqueueInTx`, and an event id from `EventLookup.find` | [the `30.0.0` section](#29x--3000-entry-by-entry), in order |
 | 28.x → 29.0.0 | **2** — **Bun 1.4.4 as the floor**; a `WORKER_QUEUES` entry the app does not know refuses the worker's boot | [the `29.0.0` section](#28x--2900-entry-by-entry), in order |
@@ -69,6 +70,79 @@ x upgrade --only typecheck,lint --json   # here: two steps, and the hop
 ```
 
 To leave only `unit`, `live` and `e2e` to CI, name every other step: `x help verify` lists them in the gate's order.
+
+## 31.x → 32.0.0, entry by entry (Unreleased)
+
+**Pending on `next`, not a released stable-line change.** No version bump or stable backport is
+implied. Existing stored rows and the `Predicate` shape are unchanged.
+
+### Entry by entry
+
+Entity (1).
+
+| # | Surface | Change and migration |
+|---|---|---|
+| 1 | Entity comparison operands | `eq`, `neq`, `gt`, `gte`, `lt`, `lte` and each `in` member are validated before either driver executes, including empty stores and nested predicates. Replace the coercion-dependent operands listed below with typed values; these refusals now consistently raise `X_INVARIANT_VIOLATED`. UUID no-value answers remain unchanged. |
+
+### The upgrade, top to bottom
+
+| # | Action | Entries |
+|---|---|---|
+| 1 | Audit comparison operands at input boundaries; replace coercion-dependent values as below, then run the application's tests and `x verify`. | 1 |
+
+Use `true`, not `'true'`, for a boolean; use a string, not a number, for text. Text query bounds
+may exceed the column's write length. For `date()`, use a real `YYYY-MM-DD` calendar date or a
+valid `Date` whose UTC year is 0001 through 9999, inclusive; year 0000, negative years and years
+above 9999 are unsupported. `Date` against `date()` means its UTC calendar date. Invalid and
+out-of-range Dates raise `X_INVARIANT_VIOLATED`, not `X_SCHEDULE_INVALID` or a database error.
+For example, replace `'2026-02-30'` with the intended valid date, such as `'2026-02-28'`, not an
+automatically rolled-over date. A `Date` operand for `timestamp()` must also sit in years 0001
+through 9999; an instant as ISO text may name a wider year, and zoneless ISO text still means UTC.
+Replace `'USD '` with `'USD'`: currency is exactly three uppercase ASCII letters.
+
+Use whole-number operands within signed int4 bounds (-2147483648 through 2147483647) for `integer()`,
+and signed int8 bounds (-9223372036854775808 through 9223372036854775807) for `bigint()` and
+`money.minor`. Decimal integer strings and JS bigint inputs remain accepted; use
+strings beyond JS safe integer precision. Validate every array element against its declared kind,
+and give an array column an array: for `ints`, use `[1, 2]`, not the scalar `1`.
+For numeric comparisons, finite decimal forms such as `'1.25'`, `'+01.250'` and `'1.25e0'` are
+normalised; do not send `NaN`, infinity, hex text or empty text. Query bounds may exceed stored-row
+decimal precision and scale. This uses the existing canonical numeric reader (exponent magnitude
+at most 1000), not a column write parser.
+
+Replace unsupported non-null JSON comparisons with existing containment operators, for example
+`.andWhere('payload', 'contains', { ok: true })`, when containment is the intended question.
+NULL comparisons and `is-null` / `is-not-null` retain their existing meaning; containment and search
+are not comparison operands. Tests should assert explicit row IDs for valid filters and
+`X_INVARIANT_VIOLATED` for invalid filters, rather than driver-specific SQL errors or empty results.
+
+UUID spellings still canonicalize; malformed UUID equality still answers no row, `in` drops
+malformed UUID members, and malformed UUID ranges still refuse. Large `in` lists retain their
+single-array binding for supported kinds and the existing bind-budget refusal for other kinds.
+
+As of 2026-11, the table below records prior-attempt reconstruction results, not a fresh
+measurement in this documentation revision. The pre-validation implementation was reconstructed
+for the `packages/entity/src/predicate-operand.test.ts` fixture (memory / PGlite, equality;
+row indexes refer to that fixture). These are not results from an installed released artifact
+and do not prove the behavior of a particular published version. Released-artifact proof would
+require running the same inputs against that version's packages and recording their identity
+and output separately. The final column states the pending-next contract, not a new test verdict.
+
+| Operand | Reconstructed before: memory / PGlite | Pending-next contract: both drivers |
+|---|---|---|
+| Boolean `'true'` or `1` | No rows / rows 0, 2 | `X_INVARIANT_VIOLATED` |
+| Text `123`; date `'tomorrow'` or `123` | No rows / no rows | `X_INVARIANT_VIOLATED` |
+| Date `'2026-02-30'`; integer array `[1, 'oops']`; out-of-range int4/int8 | No rows / `X_DB_STATEMENT_FAILED` | `X_INVARIANT_VIOLATED` |
+| Currency `'USD '` | No rows / rows 0, 1, 2 | `X_INVARIANT_VIOLATED` |
+| Numeric `'oops'` or `''` | No rows / `X_DB_STATEMENT_FAILED` | `X_INVARIANT_VIOLATED` |
+| Numeric infinity, `'NaN'` or `'0x10'` | No rows / no rows | `X_INVARIANT_VIOLATED` |
+| JSON object; text object | No rows / `X_SQL_UNSAFE` | `X_INVARIANT_VIOLATED` |
+| JSON string `'{}'` | No rows / no rows | `X_INVARIANT_VIOLATED` |
+
+In that reconstruction, malformed integer and timestamp operands already refused on evaluated
+branches; pending-next plan-time screening extends that refusal to empty stores and
+short-circuited branches. Decimal `' +01.25e0 '` matched no rows in memory and all three in
+PGlite in the reconstruction; the pending-next canonicalization contract matches all three in both.
 
 ## 30.x → 31.0.0, entry by entry
 

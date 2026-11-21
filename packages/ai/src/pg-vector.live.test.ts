@@ -294,7 +294,14 @@ describe.skipIf(!hasPostgres)('live · pgvector · PostgresVectorStore', () => {
   describe('scope', () => {
     test('a tenant sees only its own rows, on every read path', async () => {
       const scoped = acme();
-      expect(ids(await scoped.search(vec(1, 0, 0, 0), 10))).not.toContain('globex-only');
+      // Counted first, or the read paths below are green over a tenant that holds nothing: globex's
+      // row and acme's share the id 'a' (the key is `(tenant, id)`), so no id can tell them apart
+      // and the TEXT is the entire claim the filters below make.
+      const [globex] = await client.query<{ count: string }>(
+        sql`select count(*)::text as count from ${raw(`"${TABLE}"`)}
+            where "tenant" = 'globex' and "id" = 'a'`,
+      );
+      expect(globex?.count).toBe('1');
       for (const hits of [
         await scoped.search(vec(1, 0, 0, 0), 10),
         await scoped.searchText('x_vector_drift', 10),
@@ -344,22 +351,30 @@ describe.skipIf(!hasPostgres)('live · pgvector · PostgresVectorStore', () => {
 
     beforeAll(async () => {
       if (!available) return;
-      await client.execute(
-        raw(`insert into "${TABLE}" ("tenant", "id", "embedding", "content")
-             select 'bulk', 'bulk-' || i,
-               ('[' || sin(i)::text || ',' || cos(i)::text || ',' ||
-                       sin(i * 2)::text || ',' || cos(i * 2)::text || ']')::vector,
-               'bulk document ' || i
-             from generate_series(1, 5000) i
-             on conflict do nothing`),
-      );
+      // In batches, and for a measured reason: each row maintains the hnsw graph, so one statement
+      // for all 5,000 outlasts the role's `statement_timeout` (10s, `POOL_PROFILES.web`) on a busy
+      // server — the gate measured the single insert aborting at 10,007ms with
+      // `X_DB_STATEMENT_TIMEOUT`, and the same rows land in 7.7s on an idle one. A batch this size
+      // stays well inside the bound under load, and the hnsw graph ends up identical.
+      for (let first = 1; first <= 5_000; first += 500) {
+        await client.execute(
+          raw(`insert into "${TABLE}" ("tenant", "id", "embedding", "content")
+               select 'bulk', 'bulk-' || i,
+                 ('[' || sin(i)::text || ',' || cos(i)::text || ',' ||
+                         sin(i * 2)::text || ',' || cos(i * 2)::text || ']')::vector,
+                 'bulk document ' || i
+               from generate_series(${first}, ${first + 499}) i
+               on conflict do nothing`),
+        );
+      }
       // Without stats the planner sizes every tenant at the default guess and picks the exact
       // path for all of them, which is a correct answer and a slow one. `x db migrate` analyzes;
       // a bulk backfill that skips it is why a search that used the index yesterday scans today.
       await client.execute(raw(`analyze "${TABLE}"`));
       // 30s, not Bun's 5s default: 5,000 inserts each maintain the hnsw graph, which is pure server
       // work — measured 3.6s on a 12-core laptop against pgvector:pg16 with no other load, so a
-      // shared CI runner crosses 5s on a busy day (PR #504's `verify` job: 5,012ms, twice).
+      // shared CI runner crosses 5s on a busy day (PR #504's `verify` job: 5,012ms, twice). The
+      // batches divide that work, not the bound: ten of them still have to fit inside it.
     }, 30_000);
 
     test('the search this store emits is answered by the hnsw index', async () => {

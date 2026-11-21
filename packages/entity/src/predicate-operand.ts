@@ -4,15 +4,18 @@
 // it is spelled one way, or it is refused with the same code in both.
 
 import { renderFixLiteral } from '@ultimat3/core';
+import { isCurrencyCode } from '@ultimat3/schema';
 import { plainDateUtc } from '@ultimat3/time';
+import { columnFor } from './column';
 import { got } from './column-values';
 import { kindOf } from './cursor';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
 import { instantCrosses, instantMicros } from './instant';
 import { isNullish as isNull } from './is-null';
+import { canonicalDecimal, canonicalInteger } from './numeric-compare';
 import type { Predicate } from './tenancy';
-import type { ColumnKind } from './types';
+import type { AnyColumn, ColumnKind } from './types';
 import { canonicalUuid } from './uuid-text';
 
 /** The operators whose operand is compared to the column's value as a value of its kind. */
@@ -70,9 +73,6 @@ const ARRAY_BOUND_KINDS: ReadonlySet<ColumnKind | undefined> = new Set<ColumnKin
 
 export const bindsAsArray = (kind: ColumnKind | undefined, length: number): boolean =>
   length >= IN_LIST_AS_ARRAY_FROM && ARRAY_BOUND_KINDS.has(kind);
-
-/** What an `int4`/`int8` parameter parses: digits with a sign, surrounding blanks allowed. */
-const INTEGER_TEXT = /^\s*[+-]?\d+\s*$/;
 
 /** A digit string is a cursor's MICROSECOND count to `instantMicros`, and no instant to Postgres. */
 const DIGITS = /^\s*-?\d+\s*$/;
@@ -133,13 +133,20 @@ const dateOperand = <Row>(
   predicate: Predicate,
   value: unknown,
 ): unknown => {
-  if (!(value instanceof Date)) return value;
-  if (!Number.isNaN(value.getTime())) return plainDateUtc(value);
+  // Check before conversion so unsupported years receive the entity refusal, not a time error.
+  if (value instanceof Date && instantCrosses(value)) return plainDateUtc(value);
+  if (
+    typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    !value.startsWith('0000-') &&
+    instantMicros(`${value}T00:00:00Z`) !== undefined
+  )
+    return value;
   throw refused(
     entity,
     predicate,
     `expected a calendar date, ${got(value)}`,
-    `.andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, '${predicate.op}', '2026-08-22')   // a YYYY-MM-DD string or a valid Date`,
+    `.andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, '${predicate.op}', '2026-08-22') // a YYYY-MM-DD string or a valid Date`,
   );
 };
 
@@ -152,22 +159,19 @@ const integerOperand = <Row>(
   entity: EntityCore<Row>,
   predicate: Predicate,
   value: unknown,
+  kind: ColumnKind,
 ): unknown => {
-  // A NUMBER the text spells (`'1.5'`, `'1e1'`) is the same fraction; text that is no number at
-  // all is left as written, so Postgres answers its own refusal (`keyOf`'s rule, `batch-read.ts`).
-  const fraction =
-    typeof value === 'number'
-      ? !Number.isInteger(value)
-      : typeof value === 'string' &&
-        !INTEGER_TEXT.test(value) &&
-        value.trim() !== '' &&
-        Number.isFinite(Number(value));
-  if (!fraction) return value;
+  const text = canonicalInteger(value);
+  if (text !== undefined) {
+    const integer = BigInt(text);
+    const limit = kind === 'bigint' ? 9223372036854775808n : 2147483648n;
+    if (integer >= -limit && integer < limit) return text;
+  }
   throw refused(
     entity,
     predicate,
-    `expected a whole number for an integer column, ${got(value)}`,
-    `.andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, '${predicate.op}', Math.ceil(value))   // or Math.floor — pick the bound the fraction meant; the column holds whole numbers`,
+    `expected a whole number within the physical integer range, ${got(value)}`,
+    `.andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, '${predicate.op}', 0) // replace with the intended whole-number bound within the column's physical range`,
   );
 };
 
@@ -176,16 +180,48 @@ const scalarOperand = <Row>(
   predicate: Predicate,
   kind: ColumnKind | undefined,
   value: unknown,
+  column?: AnyColumn,
 ): unknown => {
   if (isNull(value)) return value;
   if (kind === 'timestamptz') return instantOperand(entity, predicate, value);
   if (kind === 'date') return dateOperand(entity, predicate, value);
-  if (kind === 'integer' || kind === 'bigint') return integerOperand(entity, predicate, value);
+  if (kind === 'integer' || kind === 'bigint')
+    return integerOperand(entity, predicate, value, kind);
   // Every spelling Postgres parses to the same sixteen bytes is ONE operand: memory compared the
   // text, so a braced or unhyphenated id matched there and nowhere else. Text that is no uuid is
   // left as written — `operandFor` decides what it means for the operators that have an answer.
   if (kind === 'uuid') return canonicalUuid(value) ?? value;
-  return value;
+  if (kind === 'numeric') {
+    const numeric = canonicalDecimal(value);
+    if (numeric !== undefined) return numeric;
+  } else if (kind === 'array') {
+    const element = column?.$meta.element;
+    if (Array.isArray(value) && element !== undefined) {
+      return value.map((item: unknown) =>
+        scalarOperand(entity, predicate, element.$meta.kind, item, element),
+      );
+    }
+  } else if (kind === 'boolean') {
+    if (typeof value === 'boolean') return value;
+  } else if (kind === 'text') {
+    if (typeof value === 'string') return value;
+  } else if (kind === 'char') {
+    // `char` is the kind of exactly one thing this layer declares: `money()`'s `<name>_currency`.
+    // The bound is `@ultimat3/schema`'s `isCurrencyCode`, imported rather than restated. Its
+    // `CURRENCY_CODE_PATTERN` is already the source of the OpenAPI `pattern` and of
+    // `currencyCheck`'s Postgres CHECK, and a fourth copy here is a fourth thing to drift.
+    if (isCurrencyCode(value)) return value;
+  } else if (kind !== 'jsonb') {
+    return value;
+  }
+  throw refused(
+    entity,
+    predicate,
+    `expected a supported ${kind} comparison operand, ${got(value)}`,
+    kind === 'jsonb'
+      ? `.andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, 'contains', { key: value })`
+      : `.andWhere(${renderFixLiteral(predicate.column, "'<column>'")}, '${predicate.op}', value) // use a typed operand of the declared column kind`,
+  );
 };
 
 /**
@@ -202,9 +238,10 @@ const inList = <Row>(
   predicate: Predicate,
   kind: ColumnKind | undefined,
   list: readonly unknown[],
+  column?: AnyColumn,
 ): readonly unknown[] => {
   const operands = list
-    .map((each: unknown) => scalarOperand(entity, predicate, kind, each))
+    .map((each: unknown) => scalarOperand(entity, predicate, kind, each, column))
     .filter((each) => !equalsNoValue(kind, each));
   if (operands.length <= MAX_BINDS || ARRAY_BOUND_KINDS.has(kind)) return operands;
   throw refused(
@@ -223,7 +260,13 @@ const RANGE = new Set(['gt', 'gte', 'lt', 'lte']);
  * their own rules (`containment.ts`, `is-null.ts`, `search.ts`).
  */
 export const operandFor = <Row>(entity: EntityCore<Row>, predicate: Predicate): Predicate => {
-  const kind = kindOf(entity, predicate.column);
+  const [property = predicate.column, part] = predicate.column.split('.');
+  const metadata = columnFor(entity.$columns, property);
+  // Cursor revival uses integer; operand bounds must follow the physical int8 column.
+  const kind =
+    metadata?.$meta.kind === 'money' && part === 'minor'
+      ? 'bigint'
+      : kindOf(entity, predicate.column);
   if (predicate.op === 'like' && NO_LIKE_KINDS.has(kind)) {
     const column = renderFixLiteral(predicate.column, "'<column>'");
     throw refused(
@@ -237,9 +280,9 @@ export const operandFor = <Row>(entity: EntityCore<Row>, predicate: Predicate): 
   }
   if (!COMPARING.has(predicate.op)) return predicate;
   if (predicate.op === 'in' && Array.isArray(predicate.value)) {
-    return { ...predicate, value: inList(entity, predicate, kind, predicate.value) };
+    return { ...predicate, value: inList(entity, predicate, kind, predicate.value, metadata) };
   }
-  const value = scalarOperand(entity, predicate, kind, predicate.value);
+  const value = scalarOperand(entity, predicate, kind, predicate.value, metadata);
   // `eq` against a value nothing equals is the empty list both drivers already answer no row for.
   if (predicate.op === 'eq' && equalsNoValue(kind, value)) {
     return { ...predicate, op: 'in', value: [] };

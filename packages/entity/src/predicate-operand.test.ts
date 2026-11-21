@@ -14,8 +14,8 @@ import {
 } from '@ultimat3/db';
 import { t } from '@ultimat3/schema';
 import { plainDate } from '@ultimat3/time';
-import { boolean, integer, text, timestamp, uuid } from './columns';
-import { arrayOf, bigint, date, json } from './columns-data';
+import { boolean, integer, money, text, timestamp, uuid } from './columns';
+import { arrayOf, bigint, date, decimal, json } from './columns-data';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
@@ -35,6 +35,10 @@ const rows = entity('predicate_operand_rows', {
     label: text({ max: 20 }),
     ref: uuid().nullable(),
     data: json(t.object({ k: t.string })),
+    price: money(),
+    ints: arrayOf(integer()),
+    amount: decimal({ precision: 4, scale: 2 }),
+    payload: json(t.object({ ok: t.boolean })),
   },
 });
 
@@ -53,6 +57,10 @@ const SEED = [
   label: `a${String(index)}`,
   ref: index === 1 ? null : idAt(7 + index),
   data: { k: 'v' },
+  price: { minor: 3_000_000_000, currency: 'USD' },
+  ints: [1, 2],
+  amount: '1.25',
+  payload: { ok: true },
 }));
 
 let pglite: PgliteClient;
@@ -325,5 +333,157 @@ describe('timestamp(): an instant Postgres cannot read as text is refused by bot
     ['10000-01-01T00:00:00Z', [0, 1, 2]],
   ] as const)('lt %p still answers, the same rows in both', async (value, expected) => {
     expect(await both({ column: 'at', op: 'lt', value })).toEqual([expected, expected]);
+  });
+});
+
+const INVALID = [
+  ['boolean text', 'flag', 'true'],
+  ['text number', 'label', 123],
+  ['date invalid', 'day', new Date(Number.NaN)],
+  ['date year zero', 'day', new Date('0000-12-31T23:59:59.999Z')],
+  ['date negative year', 'day', new Date('-000001-01-01T00:00:00Z')],
+  ['date year 10000', 'day', new Date('+010000-01-01T00:00:00Z')],
+  ['date minimum JS', 'day', new Date(-8.64e15)],
+  ['date maximum JS', 'day', new Date(8.64e15)],
+  ['date malformed', 'day', 'tomorrow'],
+  ['date rollover', 'day', '2026-02-30'],
+  // A TEXT date outside years 0001-9999, which the `Date` rows above never reach: the guard that
+  // refuses it lives in a different branch (`dateOperand`'s string arm), so only a string pins it.
+  ['date string year zero', 'day', '0000-06-01'],
+  ['money whole column', 'price', 5],
+  ['currency padded', 'price.currency', 'USD '],
+  ['integer array', 'ints', [1, 'oops']],
+  ['int4 upper', 'n', '2147483648'],
+  ['int4 lower', 'n', '-2147483649'],
+  ['int8 upper', 'big', '9223372036854775808'],
+  ['int8 lower', 'big', '-9223372036854775809'],
+  ['integer malformed', 'n', 'oops'],
+  ['numeric malformed', 'amount', 'oops'],
+  ['numeric nonfinite', 'amount', Infinity],
+  ['numeric hex', 'amount', '0x10'],
+  ['JSON object', 'payload', { ok: true }],
+  ['JSON string', 'payload', '{}'],
+  ['boolean number', 'flag', 1],
+  ['text object', 'label', {}],
+  ['date number', 'day', 123],
+  ['timestamp malformed', 'at', '2026-02-30'],
+  ['integer nonfinite', 'n', Number.NaN],
+  ['numeric NaN', 'amount', 'NaN'],
+  ['numeric empty', 'amount', ''],
+  ['money upper', 'price.minor', '9223372036854775808'],
+  ['array scalar', 'ints', 1],
+  // Boundaries the class must keep refusing when a check LOOSENS: a lowercase or numeric code
+  // passes an unanchored or case-blind pattern, a fraction and an empty string pass a `BigInt`
+  // round trip, and an exponent past the cap is padding nobody asked for.
+  ['currency lowercase', 'price.currency', 'usd'],
+  ['currency numeric', 'price.currency', 840],
+  ['currency short', 'price.currency', 'US'],
+  ['integer fraction', 'n', '1.5'],
+  ['integer empty', 'n', ''],
+  ['bigint fraction', 'big', '1.0'],
+  ['numeric exponent past cap', 'amount', '1e1001'],
+  ['array element numeric', 'ints', [1, 2.5]],
+] as const;
+
+describe('comparison operands refuse before execution', () => {
+  test.each(INVALID)('%s', async (_name, column, value) => {
+    for (const op of ['eq', 'neq', 'gt', 'gte', 'lt', 'lte'] as const) {
+      expect(await both({ column, op, value })).toEqual(REFUSED);
+    }
+  });
+
+  test.each(INVALID)(
+    '%s in lists and nested short-circuit branches',
+    async (_name, column, value) => {
+      expect(await both({ column, op: 'in', value: [null, value] })).toEqual(REFUSED);
+      expect(
+        await both({
+          column: '$or',
+          op: 'or',
+          value: [
+            { column: 'n', op: 'gt', value: 0 },
+            { column: '$and', op: 'and', value: [{ column, op: 'eq', value }] },
+          ],
+        }),
+      ).toEqual(REFUSED);
+    },
+  );
+
+  test('empty stores still refuse every invalid operand', async () => {
+    const emptyMemory = memoryRepo(rows);
+    await pglite.execute(raw('DELETE FROM predicate_operand_rows'));
+    try {
+      for (const [, column, value] of INVALID) {
+        for (const op of ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in'] as const) {
+          const predicate = { column, op, value: op === 'in' ? [value] : value };
+          expect([await answer(emptyMemory, predicate), await answer(postgres, predicate)]).toEqual(
+            REFUSED,
+          );
+        }
+      }
+    } finally {
+      for (const [index, row] of SEED.entries()) await postgres.insert({ id: idAt(index), ...row });
+    }
+  });
+
+  test.each([
+    ['day', 'gte', new Date('0001-01-01T00:00:00Z'), [0, 1, 2]],
+    ['day', 'lt', new Date('0001-01-01T00:00:00Z'), []],
+    ['day', 'lte', new Date('9999-12-31T23:59:59.999Z'), [0, 1, 2]],
+    ['day', 'gt', new Date('9999-12-31T23:59:59.999Z'), []],
+    ['day', 'in', [new Date('0001-01-01'), new Date('9999-12-31')], []],
+    ['flag', 'eq', true, [0, 2]],
+    ['label', 'eq', 'a1', [1]],
+    ['label', 'lt', 'z'.repeat(300), [0, 1, 2]],
+    ['price.currency', 'eq', 'USD', [0, 1, 2]],
+    ['price.minor', 'eq', '3000000000', [0, 1, 2]],
+    ['ints', 'eq', [1, 2], [0, 1, 2]],
+    ['ints', 'in', [[1, '002']], [0, 1, 2]],
+    ['ints', 'in', [[2, 1]], []],
+    ['price.minor', 'lte', '9223372036854775807', [0, 1, 2]],
+    ['price.minor', 'gte', '-9223372036854775808', [0, 1, 2]],
+    ['amount', 'lt', '100000.12345', [0, 1, 2]],
+    ['amount', 'eq', ' +01.25e0 ', [0, 1, 2]],
+    ['payload', 'contains', { ok: true }, [0, 1, 2]],
+    ['payload', 'eq', null, []],
+    ['n', 'lte', '2147483647', [0, 1, 2]],
+    ['big', 'gte', '-9223372036854775808', [0, 1, 2]],
+    ['n', 'is-not-null', undefined, [0, 1, 2]],
+  ] as const)('valid %s %s %p', async (column, op, value, expected) => {
+    expect(await both({ column, op, value })).toEqual([expected, expected]);
+  });
+});
+
+// A `via` inner level is screened as its TARGET's. The target holds no rows here, so nothing but the
+// plan-time screen can refuse: without it memory answers [] (no row to match) where Postgres refuses.
+const notes = entity('predicate_operand_notes', {
+  columns: { id: uuid().primaryKey(), score: integer() },
+});
+
+const badHop: Predicate = {
+  column: 'ref',
+  op: 'via',
+  value: {
+    entity: 'predicate_operand_notes',
+    target: 'id',
+    where: [{ column: 'score', op: 'eq', value: 'oops' }],
+  },
+};
+
+describe('via: an inner level is screened as its target, before any row is read', () => {
+  test('a hop whose target operand is refused answers REFUSED on both drivers', async () => {
+    expect(await both(badHop)).toEqual(REFUSED);
+  });
+
+  test('a hop under a short-circuited or branch is refused too', async () => {
+    const nested: Predicate = {
+      column: '$or',
+      op: 'or',
+      value: [
+        { column: 'n', op: 'gt', value: 0 },
+        { column: '$and', op: 'and', value: [badHop] },
+      ],
+    };
+    expect(await both(nested)).toEqual(REFUSED);
   });
 });
