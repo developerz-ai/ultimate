@@ -2,16 +2,28 @@
 // `fetch`: this checkout's `@ultimat3/*`, stamped as one release nobody published, in front of the real
 // npm for everything else — so a real old release and the "newest" CLI resolve side by side. Prints
 // `{ "url": … }` once it serves. Usage: bun upgrade-registry-fixture.ts <repo root> <from> <to> <work dir>
+//
+// The copy skips every `.`-prefixed name: those are sibling e2e suites' run roots, alive and being
+// deleted while it walks (see `copyWorkspace`).
 
-// why: Bun has no recursive copy or directory listing primitive.
-import { cpSync, mkdirSync, readdirSync, symlinkSync } from 'node:fs';
+// why: Bun has no recursive copy, directory listing, or symlink read.
+import {
+  copyFileSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readlinkSync,
+  symlinkSync,
+} from 'node:fs';
 // why: Bun exposes no path-join primitive or basename.
 import { basename, join } from 'node:path';
 
 const UPSTREAM = 'https://registry.npmjs.org';
-// `.serve-fixture`: `serve.live.test.ts`'s gitignored run dirs, whose Postgres data a test still
-// tearing down deletes under `cpSync` (ENOENT mid-copy). `bun pm pack` ships none of these.
-const SKIP_COPY = new Set(['node_modules', 'dist', 'coverage', '.serve-fixture']);
+// What `bun pm pack` never ships, so the copy need not carry: no tracked file under `packages/`
+// has a dotted path segment and no `files` entry names one, so every `.`-prefixed name is a
+// test's own gitignored run root (`process-root-fixture.ts`).
+const SKIP_COPY = new Set(['node_modules', 'dist', 'coverage']);
+const skipped = (name: string): boolean => name.startsWith('.') || SKIP_COPY.has(name);
 
 interface Stamped {
   readonly manifest: Record<string, unknown>;
@@ -42,6 +54,37 @@ function prepack(root: string, copyRoot: string, scripts: unknown): void {
   if (ran.exitCode !== 0) process.exit(1);
 }
 
+/**
+ * A workspace copied, tolerating an entry that vanishes mid-walk.
+ *
+ * `cpSync` walks the whole tree and throws ENOENT the moment a directory it listed is gone, and the
+ * gate runs the e2e suites together: every suite's root is `packages/cli/.…-fixture/run-<pid>/` and
+ * its `afterAll` deletes it while this copy is running, so the registry exited before serving
+ * (upgrade.e2e.test.ts:135). An entry that vanished is no entry: the same set `files` ships.
+ */
+function copyWorkspace(source: string, copy: string): void {
+  mkdirSync(copy, { recursive: true });
+  for (const name of readdirSync(source)) {
+    if (skipped(name)) continue;
+    const from = join(source, name);
+    const to = join(copy, name);
+    try {
+      const stat = lstatSync(from);
+      if (stat.isDirectory()) {
+        copyWorkspace(from, to);
+      } else if (stat.isSymbolicLink()) {
+        symlinkSync(readlinkSync(from), to);
+      } else {
+        copyFileSync(from, to);
+      }
+    } catch (error) {
+      // ENOENT only: the entry, or a directory under it, was removed between the listing and the
+      // walk, from a sibling run's fixture teardown. Anything else is this copy's own failure.
+      if ((error as { readonly code?: unknown }).code !== 'ENOENT') throw error;
+    }
+  }
+}
+
 /** One workspace as `bun pm pack` ships it, under the stamped version. */
 async function pack(
   root: string,
@@ -58,10 +101,7 @@ async function pack(
   // `<copy root>/packages/<dir>`, the checkout's own shape, so a hook's `packages/cli` is the copy.
   const copyRoot = join(work, 'copies', name.replace('/', '__'));
   const copy = join(copyRoot, 'packages', basename(source));
-  cpSync(source, copy, {
-    recursive: true,
-    filter: (path) => !SKIP_COPY.has(path.split('/').at(-1) ?? ''),
-  });
+  copyWorkspace(source, copy);
   await Bun.write(join(copy, 'package.json'), stamp(text, to));
   const out = join(work, 'tarballs');
   mkdirSync(out, { recursive: true });
