@@ -9,7 +9,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no recursive delete; `rm(…, { force: true })` removes a root that may not exist.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path'; // why: Bun exposes no path API — nothing native joins a path.
-import { clearPlugins, ISOLATED_ENV, releasePluginsAfterIsolatedFile } from './isolated-plugins';
+import {
+  clearPlugins,
+  ISOLATED_ENV,
+  needsPluginRelease,
+  releasePluginsAfterIsolatedFile,
+} from './isolated-plugins';
 
 // One root per PROCESS: two runs of this file share a checkout, and on one fixed root a peer's
 // `rm` deleted this run's corpus mid-`bun test`.
@@ -130,10 +135,19 @@ describe('releasePluginsAfterIsolatedFile', () => {
     expect(releasePluginsAfterIsolatedFile({}, after, plugin)).toBe(false);
     expect(releasePluginsAfterIsolatedFile({ [ISOLATED_ENV]: '0' }, after, plugin)).toBe(false);
     expect(hooked).toEqual([]);
-    expect(releasePluginsAfterIsolatedFile({ [ISOLATED_ENV]: '1' }, after, plugin)).toBe(true);
-    expect(hooked).toHaveLength(1);
+    // The runtime clears plugins itself from 1.4.6, so the hook belongs only on older Bun.
+    const expected = needsPluginRelease();
+    expect(releasePluginsAfterIsolatedFile({ [ISOLATED_ENV]: '1' }, after, plugin)).toBe(expected);
+    expect(hooked).toHaveLength(expected ? 1 : 0);
     hooked[0]?.();
-    expect(cleared).toBe(1);
+    expect(cleared).toBe(expected ? 1 : 0);
+  });
+
+  test('the release is needed below Bun 1.4.6 and gone from 1.4.6 on', () => {
+    for (const version of ['1.4.0', '1.4.4', '1.4.5', '1.4.5-canary'])
+      expect(needsPluginRelease(version)).toBe(true);
+    for (const version of ['1.4.6', '1.5.0', '1.4.6-canary', '1.4.6-canary.1', '1.4.7-canary'])
+      expect(needsPluginRelease(version)).toBe(false);
   });
 
   // Never Bun's own here: this file may share its process with later ones in a serial run.

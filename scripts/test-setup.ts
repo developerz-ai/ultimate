@@ -50,8 +50,9 @@ onFileBoundary(() => restoreCapturedDeterminism(installedClock));
 // leaves a process-global registry dirty fails a later file in another package. The guard names it.
 installRegistryLeakGuard();
 
-// Isolated runs only (`x test` says so): Bun 1.4.0 keeps every finished file alive while a plugin
-// is registered. See `isolated-plugins.ts`.
+// Isolated runs only (`x test` says so): through Bun 1.4.5, Bun keeps every finished file alive
+// while a plugin is registered. The call self-gates by Bun version and is a no-op on 1.4.6+, where
+// the runtime clears at the isolation swap itself. See `isolated-plugins.ts`.
 releasePluginsAfterIsolatedFile();
 
 // Every `.tsx` compiles to the server factory from the first file on, AFTER the release above for

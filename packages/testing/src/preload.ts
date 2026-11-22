@@ -97,7 +97,8 @@ if (Bun.env[ISOLATED_ENV] !== '1') {
 // clear the loader's handler at the first file's boundary, where the module graph it retains is
 // released with it. Installed the other way round, the release still fires but the graph the loader
 // already built is what is held, and every finished file stays resident — measured on Bun 1.4.0,
-// 8 files, 1 -> 8 live global objects (this file's own leak fixture).
+// 8 files, 1 -> 8 live global objects (this file's own leak fixture). On Bun 1.4.6+ the call is a
+// no-op: the runtime clears the plugins at the isolation swap itself.
 releasePluginsAfterIsolatedFile();
 
 // Every `.tsx` compiles with the framework's JSX factory from the first file on, in every test
