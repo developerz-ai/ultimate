@@ -26,6 +26,21 @@ const PROCESSES_HELM_WHY =
 
 export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
   ...TEMPLATE_CODEMOD_HISTORY,
+  {
+    template: 'biome.json',
+    since: '31.50.0',
+    none: 'the merge moves only the `$schema` editor hint to 2.6.6; an existing app keeps its installed Biome and its own config remains valid, so no codemod moves an app file',
+  },
+  {
+    template: 'package.json',
+    since: '31.50.0',
+    none: 'the root `@biomejs/biome` pin moves to 2.6.6 (D9), what x new writes and x doctor reads; an existing app retains its installed Biome, and its own dependency range is its to set, so x upgrade leaves it alone',
+  },
+  {
+    template: 'packages/cli/src/templates/scaffold-repo.ts',
+    since: '31.50.0',
+    none: 'x new now writes the 2.6.6 Biome pin and schema URL (D9); an existing app keeps its valid Biome config and its own pin, so x upgrade leaves the app files alone',
+  },
   ...[
     'packages/cli/src/templates/scaffold-helm-templates.ts',
     'docker/helm/templates/_helpers.tpl',
