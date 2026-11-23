@@ -29,7 +29,7 @@ import { verifyFloor } from './scaffold-verify-floor';
  * config as out of date on every `bun run lint`. A formatter is a build input: a floating range
  * is a `lint` step whose verdict depends on the day the app was installed.
  */
-const BIOME_VERSION = '2.6.4';
+const BIOME_VERSION = '2.6.6';
 
 /**
  * The checker a scaffolded app typechecks with, and it must not lag the one the FRAMEWORK is built

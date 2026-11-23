@@ -21,6 +21,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - `x upgrade` no longer stops a hop on `X_COVERAGE_FLOOR_STALE`, which means the tree now covers more than its floor. The hop raises each `x.verify.json` `coverage` number to the larger of its floor and the measured whole percent (it never lowers one, and a floor reaching 95 drops its `why`), re-runs `unit`, and judges again. The raise is in `--json` as `coverageRaised` and on one terminal line.
 - The `X_BUDGET_EXCEEDED` fix says to run `x manifest` after raising a route's budget: `x.manifest.json` carries the budget, and a raise without it failed CI with `X_PROJECTION_DRIFT`.
 
+### Changed
+
+- The scaffold pins `@biomejs/biome` 2.6.6, and every tracked `biome.json` `$schema` moves with it, so a new app lints with the same formatter this repository runs.
+
 ## Releases
 
 | Version | Date | Summary |
