@@ -34,7 +34,12 @@ export interface TestOnlyModule {
  * field: a module the manifest names is shipped on purpose, whichever field names it.
  */
 export function entryPatternsOf(manifest: unknown): readonly string[] {
-  const text = JSON.stringify(manifest ?? null);
+  // A `files` negation names what the tarball leaves out, never an entry it ships.
+  const text = JSON.stringify(manifest ?? null, (key, value: unknown) =>
+    key === 'files' && Array.isArray(value)
+      ? value.filter((entry) => typeof entry !== 'string' || !entry.startsWith('!'))
+      : value,
+  );
   const found = [...text.matchAll(/(?:\.\/)?(src\/[\w./*-]+?\.tsx?)(?![\w.])/g)];
   return [...new Set(found.map((match) => match[1] ?? ''))].sort();
 }
@@ -140,25 +145,35 @@ export function testOnlyModules(
       pkg.entries.map((entry) => new Bun.Glob(`packages/${pkg.dir}/${entry}`)),
     ]),
   );
+  // A negation names a file or a directory (`!src/held/`): match the pattern and what is under it.
   const excludedGlobs = new Map(
     packages.map((pkg) => [
       pkg.dir,
-      (pkg.excluded ?? []).map((pattern) => new Bun.Glob(`packages/${pkg.dir}/${pattern}`)),
+      (pkg.excluded ?? []).flatMap((pattern) => {
+        const base = `packages/${pkg.dir}/${pattern.replace(/\/+$/, '')}`;
+        return [new Bun.Glob(base), new Bun.Glob(`${base}/**`)];
+      }),
     ]),
   );
+  const isExcluded = (path: string): boolean => {
+    const dir = /^packages\/([^/]+)\/src\//.exec(path)?.[1];
+    return (excludedGlobs.get(dir ?? '') ?? []).some((glob) => glob.match(path));
+  };
   const referrers = new Map<string, ReadonlySet<string>>();
   for (const path of sources.keys()) {
     const dir = /^packages\/([^/]+)\/src\//.exec(path)?.[1];
     const globs = dir === undefined ? undefined : entryGlobs.get(dir);
     if (globs === undefined || !path.endsWith('.ts') || isGenerated(path)) continue;
-    if ((excludedGlobs.get(dir ?? '') ?? []).some((glob) => glob.match(path))) continue;
+    if (isExcluded(path)) continue;
     if (isTest(path) || isFixture(path) || globs.some((glob) => glob.match(path))) continue;
     const from = new Set([...(imports.get(path) ?? []), ...(named.get(baseName(path)) ?? [])]);
     from.delete(path);
     if (from.size > 0) referrers.set(path, from);
   }
   const testOnly = new Set(referrers.keys());
-  const live = (path: string): boolean => !isTest(path) && !isFixture(path) && !testOnly.has(path);
+  // An excluded file is not in the tarball, so what only it imports ships for no one's sake.
+  const live = (path: string): boolean =>
+    !isTest(path) && !isFixture(path) && !isExcluded(path) && !testOnly.has(path);
   for (let changed = true; changed; ) {
     changed = false;
     for (const path of testOnly) {

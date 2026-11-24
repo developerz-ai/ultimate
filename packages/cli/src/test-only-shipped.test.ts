@@ -157,6 +157,27 @@ describe('testOnlyModules', () => {
     expect(paths(sources, holding)).toEqual([]);
   });
 
+  test('an excluded module is not a live importer: a helper only it imports is still flagged', () => {
+    const sources = tree({
+      'packages/p/src/index.ts': 'export const x = 1;\n',
+      'packages/p/src/held.ts': "import { help } from './help';\nexport const held = help;\n",
+      'packages/p/src/help.ts': 'export const help = 1;\n',
+    });
+    const holding = [{ dir: 'p', entries: ['src/index.ts'], excluded: ['src/held.ts'] }];
+    expect(paths(sources, holding)).toEqual(['packages/p/src/help.ts']);
+  });
+
+  test('a directory negation excludes what is under it', () => {
+    const sources = tree({
+      'packages/p/src/index.ts': 'export const x = 1;\n',
+      'packages/p/src/held/helper.ts': 'export const helper = 1;\n',
+      'packages/p/src/held/helper.test.ts': "import { helper } from './helper';\n",
+    });
+    expect(paths(sources)).toEqual(['packages/p/src/held/helper.ts']);
+    const holding = [{ dir: 'p', entries: ['src/index.ts'], excluded: ['src/held/'] }];
+    expect(paths(sources, holding)).toEqual([]);
+  });
+
   test('a shipped importer anywhere in the repo counts — a script, another package', () => {
     const sources = tree({
       'packages/p/src/index.ts': 'export const x = 1;\n',
@@ -251,6 +272,32 @@ describe('integration · package-shape', () => {
       await Bun.write(join(root, 'packages/p/package.json'), manifest('"private":true,'));
       const exempt = await checkPackageShape(root);
       expect(exempt.map((finding) => finding.code)).not.toContain('X_PACKAGE_TEST_ONLY_SHIPPED');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // The negation reaches the rule through the manifest, and does not make the held file an entry.
+  test('checkPackageShape reads a `files` negation: the diagnostic goes only with it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-test-only-'));
+    try {
+      for (const file of PACKAGE_FILES) await Bun.write(join(root, 'packages/p', file), '{}\n');
+      const manifest = (negation: string): string =>
+        `{"name":"p","version":"1.0.0","exports":{".":"./src/index.ts"},"files":["src","${TEST_EXCLUSION}","${FIXTURE_EXCLUSION}"${negation}]}\n`;
+      await Bun.write(join(root, 'packages/p/src/index.ts'), 'export const x = 1;\n');
+      await Bun.write(join(root, 'packages/p/src/fake.ts'), 'export const fake = 1;\n');
+      await Bun.write(
+        join(root, 'packages/p/src/fake.test.ts'),
+        "import { fake } from './fake';\n",
+      );
+      const flagged = async (): Promise<readonly (string | undefined)[]> =>
+        (await checkPackageShape(root))
+          .filter((finding) => finding.code === 'X_PACKAGE_TEST_ONLY_SHIPPED')
+          .map((finding) => finding.at);
+      await Bun.write(join(root, 'packages/p/package.json'), manifest(''));
+      expect(await flagged()).toEqual(['packages/p/src/fake.ts']);
+      await Bun.write(join(root, 'packages/p/package.json'), manifest(',"!src/**/fake.*"'));
+      expect(await flagged()).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
