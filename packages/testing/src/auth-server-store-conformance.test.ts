@@ -1,5 +1,6 @@
 // The conformance suite over the memory store, and the proof it can fail: a take that never marks
-// the code used (every replay is fresh), and a revokeGrants that ignores the client it was handed.
+// the code used (every replay is fresh), a revokeGrants that ignores the client it was handed, and
+// a revokeGrant that claims a second revoke of one grant ended it too.
 
 import { describe, expect, test } from 'bun:test';
 import { memoryAuthServerStore } from '@ultimat3/auth';
@@ -45,6 +46,18 @@ describe(testName('unit', 'a store that breaks the contract fails conformance'),
     await expect(race.run(neverSpends())).rejects.toThrow();
     await expect(check('taken fresh once').run(neverSpends())).rejects.toThrow();
     await race.run(memoryAuthServerStore());
+  });
+
+  test('a revokeGrant that claims every call ended the grant', async () => {
+    const inner = memoryAuthServerStore();
+    const alwaysEnds: AuthServerStore = {
+      ...inner,
+      revokeGrant: async (id, at) => {
+        await inner.revokeGrant(id, at);
+        return true;
+      },
+    };
+    await expect(check('revokes by id and by subject').run(alwaysEnds)).rejects.toThrow();
   });
 
   test('a revokeGrants that ignores the client', async () => {

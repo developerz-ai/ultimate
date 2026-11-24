@@ -122,7 +122,9 @@ export const AUTH_SERVER_STORE_CHECKS: readonly AuthServerStoreCheck[] = [
       await store.putGrant(grantRecord(g1, subject));
       await store.putGrant(grantRecord(g2, subject, 'c2'));
       await store.putGrant(grantRecord(g3, subject, 'c3'));
-      await store.revokeGrant(g1, at(1));
+      // A store that answers says whether this call ended the grant; one that answers nothing passes.
+      const ended = [await store.revokeGrant(g1, at(1)), await store.revokeGrant(g1, at(5))];
+      if (ended[0] !== undefined) expect(ended).toEqual([true, false]);
       expect((await store.getGrant(g1))?.revokedAt?.getTime()).toBe(at(1).getTime());
       expect(await store.revokeGrants({ subject, clientId: 'c2' }, at(2))).toBe(1);
       expect(await store.revokeGrants({ subject }, at(3))).toBe(1);

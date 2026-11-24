@@ -6,6 +6,7 @@
 import { expect } from 'bun:test';
 import type { AuthorizationServer } from './authorization-server';
 import { post, type ServerFixture, tokensFor } from './authorization-server-fixture';
+import { sha256Hex } from './tokens';
 
 /** `authorizationServer()` sets both; they are optional only in the type (`AuthorizationServer`). */
 export function grantMethods(server: AuthorizationServer) {
@@ -38,6 +39,15 @@ export async function oneGrantRevokedCase(fixture: ServerFixture): Promise<void>
   // A rotation keeps the grant's id, so a revoke by that id still reaches the rotated tokens.
   const rotated = await refresh(fixture, first.body['refresh_token']);
   expect((await server.resolve(String(rotated.body['access_token'])))?.grantId).toBe(firstId);
+  // The successor is a live refresh row of the same grant, so its later refusal proves the revoke.
+  const successor = rotated.body['refresh_token'];
+  if (typeof successor !== 'string') return expect.unreachable('rotation issues a refresh token');
+  const successorRow = await fixture.store.getToken(sha256Hex(successor));
+  expect([successorRow?.kind, successorRow?.grantId, successorRow?.retiredAt]).toEqual([
+    'refresh',
+    firstId,
+    null,
+  ]);
   expect((await grants({ subject: 'user-1' })).map((grant) => grant.grantId)).toEqual([
     firstId,
     secondId,
@@ -49,14 +59,20 @@ export async function oneGrantRevokedCase(fixture: ServerFixture): Promise<void>
   expect(await revokeGrant({ subject: 'user-1', grantId: 'g_unknown' })).toBe(0);
   expect(await server.resolve(String(rotated.body['access_token']))).not.toBeNull();
 
-  expect(await revokeGrant({ subject: 'user-1', grantId: firstId })).toBe(1);
+  // Two revokes racing on one grant: both read it live, only the one that ends it counts it.
+  const raced = await Promise.all([
+    revokeGrant({ subject: 'user-1', grantId: firstId }),
+    revokeGrant({ subject: 'user-1', grantId: firstId }),
+  ]);
+  expect(raced.toSorted()).toEqual([0, 1]);
   expect(await revokeGrant({ subject: 'user-1', grantId: firstId })).toBe(0);
   expect(await server.resolve(String(rotated.body['access_token']))).toBeNull();
-  expect((await refresh(fixture, rotated.body['refresh_token'])).body['error']).toBe(
-    'invalid_grant',
-  );
+  expect((await refresh(fixture, successor)).body['error']).toBe('invalid_grant');
 
   expect((await server.resolve(String(second.body['access_token'])))?.grantId).toBe(secondId);
+  // A later refresh than the creation, so the two timestamps cannot pass for each other.
+  const secondCreatedAt = new Date(fixture.clock.now().getTime());
+  fixture.clock.advance(5000);
   const secondRefreshed = await refresh(fixture, second.body['refresh_token']);
   expect(secondRefreshed.status).toBe(200);
   const listed = await grants({ subject: 'user-1', clientId: fixture.client.clientId });
@@ -66,9 +82,20 @@ export async function oneGrantRevokedCase(fixture: ServerFixture): Promise<void>
       clientId: fixture.client.clientId,
       scopes: ['read', 'write'],
       resource: 'https://as.test/mcp',
-      createdAt: new Date(fixture.clock.now().getTime()),
+      createdAt: secondCreatedAt,
       refreshedAt: new Date(fixture.clock.now().getTime()),
     },
   ]);
   expect(await grants({ subject: 'user-1', clientId: 'c_other' })).toEqual([]);
+
+  // A listing is a snapshot: changing what it answers changes nothing stored.
+  const [snapshot] = listed;
+  if (snapshot === undefined) return expect.unreachable('one grant is listed');
+  snapshot.createdAt.setTime(0);
+  (snapshot.scopes as string[]).push('admin');
+  const relisted = await grants({ subject: 'user-1', clientId: fixture.client.clientId });
+  expect([relisted[0]?.createdAt, relisted[0]?.scopes]).toEqual([
+    secondCreatedAt,
+    ['read', 'write'],
+  ]);
 }
