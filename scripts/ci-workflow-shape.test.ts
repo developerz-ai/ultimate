@@ -23,6 +23,7 @@ const read = readWorkflow;
 
 const ci = await read('ci.yml');
 const job = (name: string): Job => jobOf(ci, name);
+const FETCH_BASE = './.github/actions/fetch-base';
 const runsOf = (target: Job): string =>
   (target.steps ?? []).map((step) => step.run ?? '').join('\n');
 const allRuns = Object.values(ci.jobs ?? {})
@@ -206,10 +207,28 @@ describe('unit · ci.yml · every reader of a job name still finds it', () => {
   // `undefined`. Each job running those tests fetches the base ONCE, before any test starts.
   test('every job that runs the scripts tests fetches origin/main before them', () => {
     for (const name of ['gate', 'packages']) {
-      expect(runsOf(job(name)), name).toContain(
-        'git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main',
-      );
+      const uses = (job(name).steps ?? []).map((step) => text(step.uses));
+      expect(uses, name).toContain(FETCH_BASE);
     }
+  });
+
+  // #1328: the base was main's tip at fetch time, so a pull request merged mid-run put its files
+  // in this run's diff (X_CHANGELOG_UNRELEASED_EMPTY on a scripts-only change). Every fetch of the
+  // base goes through the one action, which pins a pull request to its merge commit's first parent.
+  test('origin/main is fetched as the run base, never as a moving tip', async () => {
+    expect(allRuns).not.toContain('refs/heads/main:refs/remotes/origin/main');
+    for (const name of ['flaky', 'release-rehearsal', 'gate', 'packages']) {
+      expect(
+        (job(name).steps ?? []).filter((step) => text(step.uses) === FETCH_BASE),
+        name,
+      ).toHaveLength(1);
+    }
+    const action = await Bun.file(`${repoRoot()}/.github/actions/fetch-base/action.yml`).text();
+    expect(action).toContain('if [ "$GITHUB_EVENT_NAME" = pull_request ]; then');
+    expect(action).toContain(`base="$(git cat-file -p HEAD | sed -n 's/^parent //p' | head -1)"`);
+    expect(action).toContain(
+      'git fetch --no-tags --depth=1 origin "+$base:refs/remotes/origin/main"',
+    );
   });
 });
 

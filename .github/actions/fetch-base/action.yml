@@ -1,0 +1,26 @@
+name: fetch-base
+description: origin/main as this run's base — a pull request's merge-commit first parent, else main's tip.
+
+# Every rule that diffs against `origin/main` (budget-raises, pin-raises, changelog-check's
+# unreleased-entry rule, the base-ref tests) must read the base THIS run's merge commit was made
+# on. Fetching main's tip instead raced every other merge: a pull request merged while this run
+# was going moved the tip, and the diff then held that merge's files as this change's
+# (X_CHANGELOG_UNRELEASED_EMPTY on a scripts-only change, #1328). A pull_request checkout is the
+# merge commit, so its first parent is the base; a commit object names its parents even in a
+# depth-1 clone. Any other event keeps main's tip. One commit, at depth 1, as before.
+
+runs:
+  using: composite
+  steps:
+    - name: fetch origin/main as this run's base
+      shell: bash
+      run: |
+        base=refs/heads/main
+        if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+          base="$(git cat-file -p HEAD | sed -n 's/^parent //p' | head -1)"
+          if [ -z "$base" ]; then
+            echo "::error title=No base::HEAD names no parent, so this pull request's base is unknown. fix: check out the pull request's merge commit (actions/checkout's default for pull_request)"
+            exit 1
+          fi
+        fi
+        git fetch --no-tags --depth=1 origin "+$base:refs/remotes/origin/main"
