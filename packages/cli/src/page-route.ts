@@ -1,9 +1,6 @@
-// A page's own GET, for a unit test: the registered pages served through the real
-// `httpPipeline` — every stage a request crosses in production (locale, cookies, auth, authz,
-// headers, error pages) — with no socket and no `x dev`. `renderRoute` (`@ultimat3/testing`)
-// answers what a page renders; this answers what a visitor RECEIVES: status, headers, cookies set,
-// redirects and the document. It lives here because the page handler (`appRoutes`) does, and
-// `@ultimat3/testing` sits below `@ultimat3/cli`.
+// Single responsibility: a registered page's GET through the real `httpPipeline`, for a unit test —
+// what a visitor RECEIVES (status, headers, cookies set, redirect, document), where `renderRoute`
+// answers what the page renders. It lives in cli because the page handler (`appRoutes`) does.
 
 import { assert } from '@ultimat3/core';
 import { defineHttpConfig, httpPipeline, httpRouter } from '@ultimat3/http';
@@ -44,14 +41,14 @@ export async function pageRoute(path: string, options: PageRouteOptions = {}): P
   assert(
     path.startsWith('/'),
     `pageRoute was handed '${path}', which is not a path`,
-    "pass the URL path and query, starting with '/': pageRoute('/dashboard?tab=2')",
+    "pageRoute('/dashboard?tab=2')   # the URL path and query, starting with '/'",
   );
   const headers = new Headers(options.headers);
   if (options.cookies !== undefined) {
     assert(
       !headers.has('cookie'),
       'pageRoute was handed both `cookies` and a `cookie` header',
-      'pass the cookies once: `cookies: { sid: "s-1" }`, or a `cookie` header, not both',
+      "pageRoute('/dashboard', { cookies: { sid: 's-1' } })   # the cookies once: as `cookies` or as a `cookie` header, not both",
     );
     if (Object.keys(options.cookies).length > 0) {
       headers.set('cookie', cookieHeader(options.cookies));
