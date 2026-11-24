@@ -442,7 +442,10 @@ export async function checkPackageShape(
     }
     if (record.private !== true) {
       findings.push(...(await fixtureReach(root, dir, manifest)));
-      shipped.push({ dir, entries: entryPatternsOf(manifest) });
+      const excluded = filesOf(manifest)
+        .filter((entry) => entry.startsWith('!'))
+        .map((entry) => entry.slice(1));
+      shipped.push({ dir, entries: entryPatternsOf(manifest), excluded });
     }
     facts.push({
       dir,
