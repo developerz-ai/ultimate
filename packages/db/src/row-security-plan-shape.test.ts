@@ -11,7 +11,13 @@ import { APP_ROLE, assumeRole, ensureRowSecurityRoles, MIGRATOR_ROLE } from './r
 import { raw } from './sql';
 
 const ORG = '00000000-0000-4000-8000-000000000015';
-const PAGE = `select * from members where org_id = '${ORG}' order by role, created_at, id limit 51`;
+const ORDER = 'order by role, created_at, id limit 51';
+/** The first page, the tenant as a literal. */
+const FIRST_PAGE = `select * from members where org_id = '${ORG}' ${ORDER}`;
+/** A continuation page as the runtime sends it: every value bound, a `(role, created_at, id)` cursor. */
+const NEXT_PAGE = `select * from members where org_id = $1 and (role, created_at, id) > ($2, $3, $4) ${ORDER}`;
+
+type PlanNode = { 'Node Type'?: string; 'Index Name'?: string; Plans?: PlanNode[] };
 
 describe('the tenant policy keeps a keyset page on its index', () => {
   const client = pgliteClient();
@@ -20,30 +26,37 @@ describe('the tenant policy keeps a keyset page on its index', () => {
   });
 
   /** Every node type of the plan, depth first. */
-  const nodesOf = (plan: unknown): string[] => {
-    if (typeof plan !== 'object' || plan === null) return [];
-    const node = plan as { 'Node Type'?: unknown; Plans?: unknown };
-    const children = Array.isArray(node.Plans) ? node.Plans.flatMap(nodesOf) : [];
-    return typeof node['Node Type'] === 'string' ? [node['Node Type'], ...children] : children;
-  };
+  const nodesOf = (node: PlanNode): string[] => [
+    ...(node['Node Type'] === undefined ? [] : [node['Node Type']]),
+    ...(node.Plans ?? []).flatMap(nodesOf),
+  ];
 
-  const planAs = async (role: typeof APP_ROLE | typeof MIGRATOR_ROLE): Promise<string[]> => {
-    await assumeRole(client, role);
+  /** The runtime role's plan for `explained`, the tenant set, after `setup` in the same transaction. */
+  const planOf = async (explained: string, setup: readonly string[] = []): Promise<PlanNode> => {
+    await assumeRole(client, APP_ROLE);
     await client.execute(raw('begin'));
     try {
       await client.execute(raw(`select set_config('x.tenant', '${ORG}', true)`));
-      const [row] = await client.query<{ 'QUERY PLAN': unknown }>(
-        raw(`explain (format json) ${PAGE}`),
+      for (const statement of setup) await client.execute(raw(statement));
+      const [row] = await client.query<{ 'QUERY PLAN': [{ Plan: PlanNode }] }>(
+        raw(`explain (format json) ${explained}`),
       );
-      const document = row?.['QUERY PLAN'];
-      const top = Array.isArray(document) ? (document[0] as { Plan?: unknown }).Plan : undefined;
-      return nodesOf(top);
+      return row?.['QUERY PLAN'][0].Plan ?? {};
     } finally {
       await client.execute(raw('rollback'));
     }
   };
 
-  test('50,000 rows over 20 orgs: the runtime role plans an ordered index scan, no sort', async () => {
+  /** `Limit` straight over an ordered scan of `members_keyset`: nothing between them sorts the page. */
+  const expectOrderedIndexPage = (plan: PlanNode): void => {
+    expect(plan['Node Type']).toBe('Limit');
+    const [scan] = plan.Plans ?? [];
+    expect(scan?.['Node Type']).toMatch(/^Index (Only )?Scan$/);
+    expect(scan?.['Index Name']).toBe('members_keyset');
+    expect(nodesOf(plan).filter((node) => node.includes('Sort'))).toEqual([]);
+  };
+
+  test('50,000 rows over 20 orgs: first and bound continuation pages are ordered index scans, no sort', async () => {
     await ensureRowSecurityRoles(client);
     await assumeRole(client, MIGRATOR_ROLE);
     await client.execute(
@@ -65,8 +78,16 @@ describe('the tenant policy keeps a keyset page on its index', () => {
       await client.execute(raw(statement));
     }
     await client.execute(raw(`grant select on members to ${APP_ROLE}`));
-    const runtime = await planAs(APP_ROLE);
-    expect(runtime).not.toContain('Sort');
-    expect(runtime.some((node) => node.startsWith('Index'))).toBe(true);
+    expectOrderedIndexPage(await planOf(FIRST_PAGE));
+    // The generic plan — what a reused prepared statement runs — knows none of the bound values.
+    try {
+      const next = await planOf(`execute next_page('${ORG}', 'member', '2026-11-23', '${ORG}')`, [
+        'set local plan_cache_mode = force_generic_plan',
+        `prepare next_page(uuid, text, timestamptz, uuid) as ${NEXT_PAGE}`,
+      ]);
+      expectOrderedIndexPage(next);
+    } finally {
+      await client.execute(raw('deallocate all'));
+    }
   }, 60_000);
 });

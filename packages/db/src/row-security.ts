@@ -21,7 +21,8 @@ const TYPE = /^[a-z][a-z0-9 ]*$/;
 /**
  * Unset is `''` (a `set_config` local value reads back as `''` once its transaction ends) and
  * `nullif` turns it into NULL, so an unset tenant matches NO row: fail closed, never open. An unset
- * cross switch reads NULL, which is not `'on'`, so the `else` — the tenant — decides.
+ * cross switch reads NULL on a connection that never set it, and `''` on a pooled one whose earlier
+ * transaction set it locally; neither is `'on'`, so in both the `else` — the tenant — decides.
  *
  * A `case`, never `tenant or cross`, and the two read the same rows. The difference is the PLAN:
  * the planner multiplies an `or` of two guessed selectivities (~5% together) into every row
