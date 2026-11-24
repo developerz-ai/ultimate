@@ -65,7 +65,10 @@ export interface NativePushReport {
   readonly refused: number;
   /** Rows deleted: gone (APNs 410, FCM `UNREGISTERED`), a bad token at its limit, or unsendable. */
   readonly removed: number;
-  /** Never sent: its platform has no provider configured, or a credential refusal stopped it. */
+  /**
+   * Never sent: its platform has no provider configured. A credential refusal rejects the whole
+   * send instead, so no report carries the devices it stopped.
+   */
   readonly skipped: number;
 }
 
