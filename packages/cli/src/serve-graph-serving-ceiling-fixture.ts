@@ -373,4 +373,4 @@
  * raised 1570 → 1571, measured 1571 (2026-11-23, sign-in by mailed link): `auth/src/link-login.ts`
  * (`signInWithLink`: a consumed link to a session or the second-factor challenge), on the auth barrel.
  */
-export const SERVING_ROLE_CEILING = 1570;
+export const SERVING_ROLE_CEILING = 1571;
