@@ -11,6 +11,7 @@ import type { CdpConnection } from '@ultimat3/scraping/cdp';
 import { CdpCallFailedError, CdpTimeoutError } from '@ultimat3/scraping/cdp';
 import type { AxTreeNode } from './ax-node';
 import { axRecord, toAxTreeNodes } from './ax-node';
+import { registerTabPort } from './cdp-ports';
 import type { AxTreeRequest, E2eBrowserPage } from './e2e-page';
 
 /** What the page threw, when `Runtime.evaluate` answered with an exception rather than a value. */
@@ -449,5 +450,7 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
       options.audit?.closed();
     },
   };
+  // What `addVirtualAuthenticator(tab)` drives: this tab's own session, never a member on the port.
+  registerTabPort(tab, { connection: options.connection, sessionId });
   return tab;
 }

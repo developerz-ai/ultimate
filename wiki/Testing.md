@@ -393,6 +393,30 @@ test('the vendor map renders', async () => {
 
 An entry covers the reads after the call and ends with the test; a blank `because` is refused, as in `e2eTest`. Each `goto` now spends five CDP deadlines, not three (`E2E_GOTO_MS`), for the audit's two reads. Source: `packages/testing/src/e2e-a11y.ts` (rules), `e2e-a11y-run.ts` (one test's run), `e2e-a11y-tabs.ts` (raw tabs), `ax-node.ts` (the tree reader).
 
+## Passkeys and a second person in the e2e browser
+
+`As of 2026-11`. Two free functions over the harness's own objects — `e2eBrowser()` in an app's e2e suite, `openE2eBrowser()` beside it — never a member a hand-rolled tab would lack:
+
+```ts
+import { addVirtualAuthenticator, e2eBaseUrl, e2eBrowser, expect, newBrowserContext } from '@ultimat3/testing';
+
+const { page, session } = e2eBrowser();
+const passkey = await addVirtualAuthenticator(page); // CTAP2, resident key, user verified
+// … the app's own register / sign-in buttons run navigator.credentials.create/get, unprompted
+expect((await passkey.credentials()).map((one) => one.rpId)).toEqual(['localhost']);
+
+const invitee = await newBrowserContext(session); // no cookie or storage of the first profile
+const tab = await invitee.newTab();
+await tab.goto(`${e2eBaseUrl()}/invite/accept`);
+await invitee.close();
+```
+
+| Call | Is |
+|---|---|
+| `addVirtualAuthenticator(tab, { transport?, residentKey?, userVerified? })` | CDP `WebAuthn` on that tab: `{ id, credentials(), setUserVerified(verified), remove() }`. Per tab, presence simulated; `userVerified: false` makes every user-verification fail. The rp id the ceremony names must be the page's host or a parent domain of it (`login.example.com` may register for `example.com`) and never an IP; locally, serve on `localhost`. `remove()` detaches that authenticator only |
+| `newBrowserContext(session)` | `Target.createBrowserContext`: `{ id, newTab(), close() }`. Its tabs are attached, configured (offline switch, init scripts, `Accept-Language`) and audited as `session.newTab()`'s are; `close()` disposes every tab in it |
+| a tab or session the harness did not build | `X_TEST_FIXTURE_UNAVAILABLE`, naming what it needs |
+
 ## Matchers
 
 Installed by the preload on `expect`.
