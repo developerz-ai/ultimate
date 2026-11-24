@@ -298,4 +298,20 @@ describe('renderRoute · the cookies a request carries', () => {
     const view = await renderRoute({ config, Page }, { actor, cookies: { sid: 's-1' } });
     expect([view.data.session, view.data.actorId]).toEqual(['s-1', 'member-9']);
   });
+
+  test('cookies under a routed locale prefix: the locale still holds', async () => {
+    const before = localeConfig();
+    configureLocales({ supported: ['en', 'es'], fallback: 'en' });
+    try {
+      const Where = (props: { readonly data: { readonly session: string } }): unknown =>
+        h('p', null, `${props.data.session} ${currentLocale()}`);
+      const view = await renderRoute(
+        { config, Where },
+        { url: 'https://example.test/es/account', cookies: { sid: 's-2' } },
+      );
+      expect(view.text).toBe('s-2 es');
+    } finally {
+      configureLocales(before);
+    }
+  });
 });
