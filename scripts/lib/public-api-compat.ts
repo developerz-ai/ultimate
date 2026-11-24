@@ -90,7 +90,7 @@ function namespaceChange(
   for (const [name, digest] of Object.entries(was)) {
     const next = own(now, name);
     if (next === undefined) return breaks(`its export \`${name}\` was removed`);
-    if (next !== digest) return breaks(`its export \`${name}\` changed`);
+    if (!timingSafeEqual(next, digest)) return breaks(`its export \`${name}\` changed`);
   }
   const added = Object.keys(now).filter((name) => own(was, name) === undefined);
   return compatible(
