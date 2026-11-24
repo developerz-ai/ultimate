@@ -9,7 +9,7 @@ import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
-import { toRoute } from './http';
+import { toPostBinding, toRoute } from './http';
 
 const oneProcess = (): HttpConfig => defineHttpConfig({ rateLimit: { scope: 'process' } });
 
@@ -71,5 +71,29 @@ describe('a form body is coerced toward the action input', () => {
       'content-type': 'application/json',
     });
     expect(response.status).toBe(400);
+  });
+});
+
+describe('a page POST binding coerces its form the same way', () => {
+  const unsubscribe = action({
+    input: t.object({ t: t.string, ok: t.boolean, count: t.number.int() }),
+    output: t.object({ t: t.string, ok: t.boolean, count: t.number.int() }),
+    policy: allow(),
+    handle: ({ input }) => input,
+  }).named('unsubscribeList');
+
+  test('typed fields from the form, and the query wins a field both carry', async () => {
+    const response = await httpServer({
+      routes: [toPostBinding(unsubscribe, '/baja')],
+      config: oneProcess(),
+    }).fetch(
+      new Request('http://dev.test/baja?t=from-url', {
+        method: 'POST',
+        headers: { origin: 'http://dev.test', ...URLENCODED },
+        body: 't=from-body&ok=on&count=4',
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ t: 'from-url', ok: true, count: 4 });
   });
 });

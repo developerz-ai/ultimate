@@ -29,10 +29,12 @@ describe('a form body is coerced toward the schema', () => {
     form.set('ok', 'false');
     form.set('count', '2');
     form.set('tags', 'a');
-    form.set('file', new File(['x'], 'x.txt'));
+    form.set('file', new File(['the bytes'], 'notes.txt', { type: 'text/plain' }));
     const coerced = (await post(form).bodyCoerced(schema)) as Record<string, unknown>;
     expect([coerced['ok'], coerced['count'], coerced['tags']]).toEqual([false, 2, ['a']]);
-    expect(coerced['file']).toBeInstanceOf(File);
+    const file = coerced['file'];
+    if (!(file instanceof File)) return expect.unreachable('the file field is a File');
+    expect([file.name, await file.text()]).toEqual(['notes.txt', 'the bytes']);
   });
 
   test('a JSON body is never coerced', async () => {
