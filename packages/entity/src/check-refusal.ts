@@ -14,15 +14,23 @@ import { invariantViolated } from './errors';
  */
 const CHECK_VIOLATION = '23514';
 
+/** A table name without its schema: the server reports the relation's own name. */
+const bareTable = (table: string): string => table.slice(table.lastIndexOf('.') + 1);
+
 /**
  * The invariant refusal `error` stands for, or `error` itself. Only a check this entity declares
  * is rewritten: a hand-written constraint the declaration does not know stays the server's
- * verdict, because no rule here can name what it means.
+ * verdict, because no rule here can name what it means. And only on the entity's own table: a
+ * constraint name is unique per table, so a trigger's write to another table whose CHECK shares
+ * a rule's name is that table's failure, not this rule's. A driver that names no table is judged
+ * by the constraint alone, as before.
  */
 export const asInvariantRefusal = (entity: EntityCore<unknown>, error: unknown): unknown => {
   if (sqlState(error) !== CHECK_VIOLATION || !isUltimateError(error)) return error;
   const constraint = error.meta?.['constraint'];
   if (typeof constraint !== 'string') return error;
+  const table = error.meta?.['table'];
+  if (typeof table === 'string' && table !== bareTable(entity.$table)) return error;
   const rule = entity.$invariants.find(
     (inv) => inv.kind === 'check' && namesConstraint(entity.$table, inv, constraint),
   );

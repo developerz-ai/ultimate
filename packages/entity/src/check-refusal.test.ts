@@ -105,6 +105,30 @@ describe('a CHECK refusing an update answers as insert does', () => {
     }
   });
 
+  test("another table's CHECK sharing a rule's name, failed by a trigger, stays that table's failure", async () => {
+    const statements = [
+      'create table "check_refusal_audit" ("low" integer constraint "low_non_negative" check ("low" > 100))',
+      `create function "check_refusal_audit_write"() returns trigger language plpgsql as $$
+        begin insert into "check_refusal_audit" values (new."low"); return new; end $$`,
+      'create trigger "check_refusal_audit_on_update" after update on "check_refusal_ranges" for each row execute function "check_refusal_audit_write"()',
+    ];
+    for (const statement of statements) await client.execute(raw(statement));
+    try {
+      const repo = postgresRepo(ranges, { client }) as unknown as Repo<Range>;
+      await repo.insert({ id: ID, low: 1, high: 5 });
+      // The row itself is valid (low 2 ≥ 0); only the audit row (2 ≤ 100) breaks its own CHECK.
+      const refused = await refusal(() => repo.update(ID, { low: 2 }));
+      expect(refused.code).toBe('X_DB_STATEMENT_FAILED');
+      expect(refused.cause).toContain('check_refusal_audit');
+    } finally {
+      await client.execute(
+        raw('drop trigger "check_refusal_audit_on_update" on "check_refusal_ranges"'),
+      );
+      await client.execute(raw('drop function "check_refusal_audit_write"()'));
+      await client.execute(raw('drop table "check_refusal_audit"'));
+    }
+  });
+
   test('a CHECK no invariant declares stays the statement failure it was', async () => {
     await client.execute(
       raw(
