@@ -1,7 +1,6 @@
 /**
  * `docs({ q })`'s ranking, stated so it can be argued with: a recipe scores the query words it
- * contains — 3 for one in its name, title or aliases, 2 in its description, 1 in its body — each
- * word once.
+ * contains — 3 in name, title or aliases, 2 in description, 1 in body — each word once.
  * The best positive score is the hit. With none, the nearest names by edit distance are offered,
  * so a miss is never an empty answer while any recipe exists.
  */

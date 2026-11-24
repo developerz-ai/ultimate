@@ -1,9 +1,7 @@
 /**
- * Recipes from a folder of markdown, one file per recipe, its body served verbatim. The file name
- * is the recipe's name, a sub-folder one level down its section; an optional `---` block sets
- * `title:`, `description:` and `aliases:`, else the first `# ` heading and the first paragraph do.
- * Its steps are its ```call fences — `tool {json}` — so the boot check holds a markdown recipe to
- * the catalog exactly as a structured one.
+ * Recipes from a folder of markdown, one file per recipe, body verbatim: file name = name, a
+ * sub-folder = section, `---` sets `title:`/`description:`/`aliases:` (else heading, paragraph).
+ * Its ```call fences — `tool {json}` — are its steps, boot-checked like a structured recipe's.
  */
 
 // why: Bun exposes no path-join primitive; the folder is the app's.
