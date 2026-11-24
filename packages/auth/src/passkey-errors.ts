@@ -88,7 +88,7 @@ export const stepUpDigestInvalid = (length: number): AuthError =>
 /** A SHA-512 in hex is 128 bytes; this leaves room for a versioned, prefixed one. */
 export const MAX_STEP_UP_DIGEST_BYTES = 1024;
 
-/** At `register` and at `renamePasskey`: a label is shown back to its owner, so it must read as one. */
+/** At `renamePasskey`: a label is shown back to its owner, so it must read as one. */
 export const passkeyLabelInvalid = (reason: string): AuthError =>
   new AuthError({
     code: 'X_PASSKEY_LABEL_INVALID',

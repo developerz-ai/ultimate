@@ -1,6 +1,6 @@
 // Single responsibility: a passkey's label — the name its owner gives it ("Work laptop") so a list of
 // several can be told apart and the right one removed. One reader for every label written
-// (`passkeyLabel`, at `register` and here), and `renamePasskey`, the owner-scoped rename.
+// (`passkeyLabel`), and `renamePasskey`, the owner-scoped rename — right after `register`, or later.
 
 import type { PasskeyCredential } from './adapter';
 import type { Auth } from './auth';

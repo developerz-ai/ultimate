@@ -1,5 +1,5 @@
-// A passkey a person can tell apart from their others: `register({ label })` names it, and
-// `renamePasskey(auth, { userId, id, label })` renames it — the owner's only, `null` clearing it.
+// A passkey a person can tell apart from their others: `renamePasskey(auth, { userId, id, label })`
+// names it — right after `register`, or any time later — the owner's only, `null` clearing it.
 // Both adapters, the Postgres half on PGlite over `AUTH_TABLES` (the label column included).
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -75,16 +75,16 @@ const world = async (make: () => Promise<AuthAdapter>, label?: string | null) =>
   const passkeys = passkeyLogin(auth);
   const device = await softAuthenticator({ origin: ORIGIN });
   const response = await device.create(await passkeys.registerOptions({ userId: ADA }));
-  const stored = await passkeys.register({
-    userId: ADA,
-    response,
-    ...(label === undefined ? {} : { label }),
-  });
-  return { adapter, auth, passkeys, stored };
+  const registered = await passkeys.register({ userId: ADA, response });
+  const stored =
+    label === undefined
+      ? registered
+      : ((await renamePasskey(auth, { userId: ADA, id: registered.id, label })) ?? registered);
+  return { adapter, auth, stored };
 };
 
 describe.each(ADAPTERS)('%s · a passkey label', (_name, make) => {
-  test('register stores a trimmed label, and the list reads it back', async () => {
+  test('a rename right after register stores a trimmed label, and the list reads it back', async () => {
     const { adapter, stored } = await world(make, '  Work laptop ');
     expect(stored.label).toBe('Work laptop');
     expect((await adapter.listPasskeys(ADA)).map((row) => row.label)).toEqual(['Work laptop']);
@@ -111,16 +111,12 @@ describe.each(ADAPTERS)('%s · a passkey label', (_name, make) => {
     ['blank', '   '],
     ['too long', 'x'.repeat(65)],
     ['a control character', 'Work\nlaptop'],
-  ])('a %s label is refused, at register and at rename', async (_label, bad) => {
-    const { auth, passkeys, stored } = await world(make, 'Phone');
+  ])('a %s label is refused, and the stored one kept', async (_label, bad) => {
+    const { adapter, auth, stored } = await world(make, 'Phone');
     expect(
       await codeOf(() => renamePasskey(auth, { userId: ADA, id: stored.id, label: bad })),
     ).toBe('X_PASSKEY_LABEL_INVALID');
-    const device = await softAuthenticator({ origin: ORIGIN });
-    const response = await device.create(await passkeys.registerOptions({ userId: GRACE }));
-    expect(await codeOf(() => passkeys.register({ userId: GRACE, response, label: bad }))).toBe(
-      'X_PASSKEY_LABEL_INVALID',
-    );
+    expect((await adapter.findPasskey(stored.id))?.label).toBe('Phone');
   });
 });
 
