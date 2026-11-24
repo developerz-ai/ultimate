@@ -10,6 +10,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Added
+- `@ultimat3/auth`'s authorization server names one grant: `resolve(token)` answers `grantId`, kept across every refresh rotation; `grants({ subject, clientId? })` lists a subject's live grants (`grantId`, `clientId`, `scopes`, `resource`, `createdAt`, `refreshedAt`), oldest first; `revoke({ subject, grantId })` ends that grant alone, refresh tokens included, and answers 0 for another subject's id. `AuthServerStore` gains an optional `liveGrants(filter, at)`, implemented by the memory and Postgres stores; a store without it makes `grants()` `X_AUTH_GRANTS_UNSUPPORTED` (501). No schema change: every grant row already had its id.
+
 ### Fixed
 - Isolated test runs no longer retain one global object per file on Bun 1.4.6+: the runtime now clears finished files' plugins at the isolation swap, so the framework's `Bun.plugin.clearAll()` workaround is skipped from that version on while older Bun keeps it.
 - `x drill roll-before-migrate` retries a role that lost its port before migrate: an outgoing Postgres connection could take a handed-out port before the role bound it, and the role's EADDRINUSE exit read as a failed drill.

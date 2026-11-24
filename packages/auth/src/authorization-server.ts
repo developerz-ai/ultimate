@@ -13,7 +13,7 @@ import {
   type AuthorizationServerOptions,
   resolveAuthServerConfig,
 } from './authorization-server-config';
-import { consentInvalid } from './authorization-server-errors';
+import { consentInvalid, grantsUnsupported } from './authorization-server-errors';
 import {
   type ReadRequestResult,
   redirectWith,
@@ -21,7 +21,7 @@ import {
 } from './authorization-server-request';
 import { authServerMetadata, authServerRoutes } from './authorization-server-routes';
 import { resolveAccess, resolvedGrant } from './authorization-server-tokens';
-import type { AuthorizationRequest, ResolvedGrant } from './authorization-server-types';
+import type { AuthorizationRequest, LiveGrant, ResolvedGrant } from './authorization-server-types';
 import type { AuthServerRoute } from './authorization-server-wire';
 import { type DeviceReading, decideDevice, readDevice } from './grant-device';
 import { randomToken, sha256Hex } from './tokens';
@@ -69,11 +69,24 @@ export interface AuthorizationServer {
   registerClient(input: RegisterClientInput): Promise<RegisteredClient>;
   /** A live access token's grant, or `null`: unknown, expired and revoked look alike. */
   resolve(token: string): Promise<ResolvedGrant | null>;
-  /** Every grant of `subject` (of one client when named), dead on the next lookup. */
+  /**
+   * Every grant of `subject` (of one client when named), dead on the next lookup — or, with
+   * `grantId`, that one grant alone, refresh tokens included. A `grantId` another subject (or
+   * another client than the one named) holds revokes nothing, as an unknown one: answers 0.
+   */
   revoke(input: {
     readonly subject: string;
     readonly clientId?: string | undefined;
+    readonly grantId?: string | undefined;
   }): Promise<number>;
+  /**
+   * The live grants of `subject` (of one client when named), oldest first: not revoked and
+   * holding a token still usable. Each `grantId` is what `resolve` answers and `revoke` takes.
+   */
+  grants(input: {
+    readonly subject: string;
+    readonly clientId?: string | undefined;
+  }): Promise<readonly LiveGrant[]>;
   /** Run from the app's own `task`: nothing here runs on a timer. */
   purge(input: { readonly before: Date }): Promise<number>;
 }
@@ -188,11 +201,33 @@ export function authorizationServer(options: AuthorizationServerOptions): Author
       const live = await resolveAccess(config, token);
       return live === null ? null : resolvedGrant(live.grant);
     },
-    revoke: (input) =>
-      config.store.revokeGrants(
+    async revoke(input) {
+      const now = config.clock.now();
+      if (input.grantId === undefined) {
+        return config.store.revokeGrants({ subject: input.subject, clientId: input.clientId }, now);
+      }
+      const grant = await config.store.getGrant(input.grantId);
+      // Another subject's grant answers as an unknown one: an id is no proof of ownership.
+      if (grant === null || grant.revokedAt !== null || grant.subject !== input.subject) return 0;
+      if (input.clientId !== undefined && grant.clientId !== input.clientId) return 0;
+      await config.store.revokeGrant(grant.id, now);
+      return 1;
+    },
+    async grants(input) {
+      if (config.store.liveGrants === undefined) throw grantsUnsupported();
+      const live = await config.store.liveGrants(
         { subject: input.subject, clientId: input.clientId },
         config.clock.now(),
-      ),
+      );
+      return live.map((grant) => ({
+        grantId: grant.id,
+        clientId: grant.clientId,
+        scopes: grant.scopes,
+        resource: grant.resource,
+        createdAt: grant.createdAt,
+        refreshedAt: grant.refreshedAt,
+      }));
+    },
     purge: ({ before }) =>
       config.store.purge(before, new Date(before.getTime() - config.refreshIdleMs)),
   };

@@ -164,6 +164,10 @@ export function postgresAuthServerStore(options: PostgresAuthServerStoreOptions)
     },
     revokeGrants: (filter, at) =>
       count(SQL.SQL_OAUTH_GRANTS_REVOKE, [filter.subject, filter.clientId ?? null, at]),
+    liveGrants: async (filter, at) =>
+      (await rows(SQL.SQL_OAUTH_GRANTS_LIVE, [filter.subject, filter.clientId ?? null, at])).map(
+        toGrant,
+      ),
     async putToken(t) {
       await rows(SQL.SQL_OAUTH_TOKEN_PUT, [
         t.tokenHash,

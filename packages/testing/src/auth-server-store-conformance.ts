@@ -131,6 +131,46 @@ export const AUTH_SERVER_STORE_CHECKS: readonly AuthServerStoreCheck[] = [
     },
   },
   {
+    // Optional on the port: a store without `liveGrants` answers `grants()` with a refusal of its
+    // own, so there is nothing here to hold it to.
+    name: "liveGrants lists a subject's grants holding a usable token, oldest first, one client or all",
+    async run(store) {
+      if (store.liveGrants === undefined) return;
+      const subject = idOf('subject');
+      const [older, newer, other, bare, revoked, spent] = [
+        idOf('older'),
+        idOf('newer'),
+        idOf('other'),
+        idOf('bare'),
+        idOf('revoked'),
+        idOf('spent'),
+      ];
+      await store.putGrant({ ...grantRecord(newer, subject), createdAt: at(5) });
+      await store.putGrant(grantRecord(older, subject));
+      await store.putGrant({ ...grantRecord(other, subject, 'c2'), createdAt: at(7) });
+      await store.putGrant(grantRecord(bare, subject));
+      await store.putGrant(grantRecord(revoked, subject));
+      await store.putGrant(grantRecord(spent, subject));
+      for (const grant of [older, newer, other, revoked]) {
+        await store.putToken(tokenRecord(idOf('token'), grant));
+      }
+      const retired = idOf('retired');
+      await store.putToken(tokenRecord(retired, spent));
+      await store.rotateRefresh(
+        retired,
+        { ...tokenRecord(idOf('next'), spent), expiresAt: at(1) },
+        at(1),
+      );
+      await store.revokeGrant(revoked, at(1));
+      const ids = async (clientId?: string) =>
+        (await store.liveGrants?.({ subject, clientId }, at(10)))?.map((grant) => grant.id);
+      expect(await ids()).toEqual([older, newer, other]);
+      expect(await ids('c2')).toEqual([other]);
+      expect(await store.liveGrants({ subject: idOf('nobody') }, at(10))).toEqual([]);
+      expect(await store.liveGrants({ subject }, at(3600))).toEqual([]);
+    },
+  },
+  {
     name: 'touchGrant restarts the idle window',
     async run(store) {
       const id = idOf('touch');

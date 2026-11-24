@@ -87,6 +87,7 @@ export type {
   AuthTokenRecord,
   ClientAuthMethod,
   DeviceCodeRecord,
+  LiveGrant,
   ResolvedGrant,
 } from './authorization-server-types';
 export { DEVICE_GRANT } from './authorization-server-types';

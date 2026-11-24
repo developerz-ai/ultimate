@@ -157,4 +157,6 @@ export const TIER_2_ERROR_STATUS = {
   X_ENTITY_VERSION_INVALID: 500,
   // @ultimat3/entity — a predicate tree (andWhereNode, a policy scope) no driver can answer
   X_ENTITY_PREDICATE_NODE_INVALID: 500,
+  // @ultimat3/auth — the authorization server's store cannot list a subject's live grants
+  X_AUTH_GRANTS_UNSUPPORTED: 501,
 } satisfies Readonly<Record<string, number>>;

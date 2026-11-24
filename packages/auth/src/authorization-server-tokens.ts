@@ -122,6 +122,7 @@ export async function resolveAccess(
 }
 
 export const resolvedGrant = (grant: AuthGrantRecord): ResolvedGrant => ({
+  grantId: grant.id,
   subject: grant.subject,
   scopes: new Set(grant.scopes),
   clientId: grant.clientId,

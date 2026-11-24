@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "92cea4907bce639fe9a861c4bfb25d9be7f3114b1c0577ea8f8662d0e3252b61",
+  "buildId": "d8dbf9ffdde004522dc3a241e0fc37cbad8079cc3454b327a70d02420cef341d",
   "tiers": {
     "0": [
       "core",
@@ -671,6 +671,11 @@
     },
     {
       "code": "X_AUTH_GRANT_DISABLED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_AUTH_GRANTS_UNSUPPORTED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },

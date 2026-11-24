@@ -47,6 +47,17 @@ export interface AuthServerStore {
     filter: { subject: string; clientId?: string | undefined },
     at: Date,
   ): Promise<number>;
+  /**
+   * The grants of `subject` (of one client when named) that are not revoked and hold a token
+   * neither expired nor retired at `at` — a consent never redeemed, or one idle past its window,
+   * holds none. Oldest first. Optional for a hand-rolled store only: the memory and Postgres
+   * stores implement it, and without it `grants()` is `X_AUTH_GRANTS_UNSUPPORTED`. Required
+   * waits on `next`.
+   */
+  liveGrants?(
+    filter: { subject: string; clientId?: string | undefined },
+    at: Date,
+  ): Promise<readonly AuthGrantRecord[]>;
   putToken(token: AuthTokenRecord): Promise<void>;
   getToken(tokenHash: string): Promise<AuthTokenRecord | null>;
   /** Retire the live refresh token `tokenHash` and store `next`, atomically. */
@@ -134,6 +145,26 @@ export function memoryAuthServerStore(): AuthServerStore {
         revoked += 1;
       }
       return revoked;
+    },
+    async liveGrants(filter, at) {
+      const holding = new Set<string>();
+      for (const token of tokens.values()) {
+        const live = token.retiredAt === null && token.expiresAt.getTime() > at.getTime();
+        if (live) holding.add(token.grantId);
+      }
+      return [...grants.values()]
+        .filter(
+          (grant) =>
+            grant.revokedAt === null &&
+            grant.subject === filter.subject &&
+            (filter.clientId === undefined || grant.clientId === filter.clientId) &&
+            holding.has(grant.id),
+        )
+        .sort(
+          (a, b) =>
+            a.createdAt.getTime() - b.createdAt.getTime() ||
+            (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+        );
     },
     async putToken(token) {
       tokens.set(token.tokenHash, token);
