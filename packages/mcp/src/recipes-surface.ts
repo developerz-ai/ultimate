@@ -1,14 +1,20 @@
 /**
  * What `recipes:` and `extraRecipes:` add to a `defineAppMcp` server, after the boot checks: the
- * `docs` tool, one `docs://recipes/<name>` resource per recipe, and — for a caller's own — a
+ * `docs` tool, one `docs://<section>/<name>` resource per recipe, and — for a caller's own — a
  * per-caller resource source. Nothing at all without either option.
  */
 
 import { McpToolDuplicateError } from './errors';
 import { noteServedRecipes } from './recipe-links';
 import type { McpRecipe } from './recipes';
-import { assertNoRecipeResources, checkRecipes, recipeResources } from './recipes';
-import type { ExtraRecipes } from './recipes-tool';
+import {
+  assertNoRecipeResources,
+  checkRecipes,
+  DEFAULT_SECTION,
+  recipeResources,
+  sectionOf,
+} from './recipes';
+import type { DocsToolOptions, ExtraRecipes } from './recipes-tool';
 import { DOCS_TOOL, recipesFor, recipesTool } from './recipes-tool';
 import type { AnyMcpTool } from './registry';
 import type { McpResource, McpResourceSource } from './resources';
@@ -24,19 +30,26 @@ export function withRecipes(
   resources: readonly McpResource[],
   recipes: readonly McpRecipe[] | undefined,
   extra: ExtraRecipes | undefined,
+  options: DocsToolOptions = {},
 ): RecipeSurface {
   const declared = recipes ?? [];
   if (declared.length === 0 && extra === undefined) {
     return { tools, resources, resourceSources: [] };
   }
-  assertNoRecipeResources(resources);
+  assertNoRecipeResources(resources, declared);
   checkRecipes(declared, tools);
   // The one name this adds; an app tool already called `docs` is a duplicate, never a shadow.
   if (tools.some((tool) => tool.name === DOCS_TOOL)) {
     throw new McpToolDuplicateError({ name: DOCS_TOOL, declaredBy: ['tools:', 'recipes:'] });
   }
-  const final: readonly AnyMcpTool[] = [...tools, recipesTool(declared, () => final, extra)];
-  noteServedRecipes(declared.map((recipe) => recipe.name));
+  const final: readonly AnyMcpTool[] = [
+    ...tools,
+    recipesTool(declared, () => final, extra, options),
+  ];
+  // Error links name `docs://recipes/<name>` only: the other sections are not theirs to judge.
+  noteServedRecipes(
+    declared.filter((recipe) => sectionOf(recipe) === DEFAULT_SECTION).map((recipe) => recipe.name),
+  );
   const source: McpResourceSource | undefined =
     extra === undefined
       ? undefined

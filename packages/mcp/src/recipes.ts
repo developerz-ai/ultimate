@@ -1,7 +1,8 @@
 /**
  * MCP recipes — "how do I do X here" as structure the boot checks: every step names a projected
- * tool and its example must pass that tool's input. Served as `docs://recipes/<name>` and through
- * `docs`, only to a caller who can see and call every tool a recipe names.
+ * tool and its example must pass that tool's input. Served as `docs://<section>/<name>` (section
+ * `recipes` unless set) and through `docs`, only to a caller who can see and call every tool a
+ * recipe names.
  */
 
 import {
@@ -17,7 +18,11 @@ import type { McpResource } from './resources';
 import { validateArgs } from './validate-args';
 
 export const RECIPE_URI_PREFIX = 'docs://recipes/';
-const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** The section a recipe that names none is served under. */
+export const DEFAULT_SECTION = 'recipes';
+/** A name and a section alike: closed, so neither can step out of `docs://<section>/`. */
+export const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([a-z0-9]+(?:-[a-z0-9]+)*)/g;
 
 export interface McpRecipeStep {
   /** A tool THIS server projects, by name. Checked at boot. */
@@ -29,8 +34,12 @@ export interface McpRecipeStep {
 }
 
 export interface McpRecipe {
-  /** `[a-z0-9-]+`; the URI is `docs://recipes/<name>`. */
+  /** `[a-z0-9-]+`; the URI is `docs://<section>/<name>`. */
   readonly name: string;
+  /** `[a-z0-9-]+`, `recipes` when unset: one `docs({})` group and one `docs://<section>/` prefix. */
+  readonly section?: string;
+  /** Other words for it: `docs({ q })` scores each as it scores the title. */
+  readonly aliases?: readonly string[];
   readonly title: string;
   readonly description: string;
   readonly steps: readonly McpRecipeStep[];
@@ -43,7 +52,29 @@ export interface McpRecipe {
   readonly body?: string;
 }
 
-export const recipeUri = (name: string): string => `${RECIPE_URI_PREFIX}${name}`;
+export const recipeUri = (name: string, section: string = DEFAULT_SECTION): string =>
+  `docs://${section}/${name}`;
+
+/** The URI one recipe is served at. */
+export const uriOf = (recipe: McpRecipe): string => recipeUri(recipe.name, recipe.section);
+
+/** The section one recipe is listed under. */
+export const sectionOf = (recipe: McpRecipe): string => recipe.section ?? DEFAULT_SECTION;
+
+/** `docs({ name })`'s spelling: the bare name in `recipes`, `<section>/<name>` elsewhere. */
+export const recipeKey = (recipe: McpRecipe): string =>
+  sectionOf(recipe) === DEFAULT_SECTION ? recipe.name : `${sectionOf(recipe)}/${recipe.name}`;
+
+/** The URI a `docs({ name })` / `docs({ uri })` argument names: a URI, `<section>/<name>` or a name. */
+export const uriOfKey = (key: string): string =>
+  key.startsWith('docs://') ? key : key.includes('/') ? `docs://${key}` : recipeUri(key);
+
+/** A section outside the closed pattern is refused before it becomes part of a URI. */
+export function assertSection(recipe: McpRecipe): void {
+  if (recipe.section !== undefined && !NAME.test(recipe.section)) {
+    throw new McpRecipeUriReservedError({ uri: uriOf(recipe), reason: 'section' });
+  }
+}
 
 /** The recipe a `docs://recipes/<name>` names, or `undefined` for any other URI. */
 export const recipeNameOf = (uri: string): string | undefined =>
@@ -56,10 +87,11 @@ export const recipeNameOf = (uri: string): string | undefined =>
 export function checkRecipes(recipes: readonly McpRecipe[], catalog: readonly AnyMcpTool[]): void {
   const seen = new Set<string>();
   for (const recipe of recipes) {
-    const uri = recipeUri(recipe.name);
+    const uri = uriOf(recipe);
     if (!NAME.test(recipe.name)) throw new McpRecipeUriReservedError({ uri, reason: 'name' });
-    if (seen.has(recipe.name)) throw new McpRecipeUriReservedError({ uri, reason: 'duplicate' });
-    seen.add(recipe.name);
+    assertSection(recipe);
+    if (seen.has(uri)) throw new McpRecipeUriReservedError({ uri, reason: 'duplicate' });
+    seen.add(uri);
   }
   const tools = new Map(catalog.map((tool) => [tool.name, tool]));
   const unknown: string[] = [];
@@ -90,30 +122,47 @@ export function checkRecipes(recipes: readonly McpRecipe[], catalog: readonly An
   assertRecipeBodyLinks(recipes);
 }
 
-/** Every `docs://recipes/<name>` a recipe's text names, as written. */
-export function recipeLinks(recipe: McpRecipe): readonly string[] {
+/** `recipes`, then every section `recipes` holds: the `docs://` prefixes this set owns. */
+export const sectionsOf = (recipes: readonly McpRecipe[]): ReadonlySet<string> =>
+  new Set([DEFAULT_SECTION, ...recipes.map(sectionOf)]);
+
+/**
+ * Every recipe URI a recipe's text names, as written — in a section `sections` holds. A link into
+ * any other `docs://` prefix is somebody else's resource, and not judged here.
+ */
+export function recipeLinks(recipe: McpRecipe, sections: ReadonlySet<string>): readonly string[] {
   const text = `${recipe.body ?? ''}\n${recipe.notes ?? ''}`;
-  return [...text.matchAll(/docs:\/\/recipes\/([a-z0-9]+(?:-[a-z0-9]+)*)/g)].map(
-    (match) => match[1] as string,
-  );
+  return [...text.matchAll(SECTIONED_LINK)]
+    .filter((match) => sections.has(match[1] as string))
+    .map((match) => recipeUri(match[2] as string, match[1] as string));
 }
 
 /** A recipe pointing at one that does not exist is the stale link this whole file refuses. */
 function assertRecipeBodyLinks(recipes: readonly McpRecipe[]): void {
-  const names = new Set(recipes.map((recipe) => recipe.name));
+  const uris = new Set(recipes.map(uriOf));
+  const sections = sectionsOf(recipes);
   const offenders = recipes.flatMap((recipe) =>
-    recipeLinks(recipe)
-      .filter((name) => !names.has(name))
-      .map((name) => `recipe "${recipe.name}" links to ${recipeUri(name)}`),
+    recipeLinks(recipe, sections)
+      .filter((uri) => !uris.has(uri))
+      .map((uri) => `recipe "${recipe.name}" links to ${uri}`),
   );
   if (offenders.length > 0) {
-    throw new McpRecipeLinkDanglingError({ offenders, recipes: [...names].sort() });
+    throw new McpRecipeLinkDanglingError({
+      offenders,
+      recipes: recipes.map(recipeKey).sort(),
+    });
   }
 }
 
-/** A hand-written resource may not take the prefix `recipes:` owns on the same server. */
-export function assertNoRecipeResources(resources: readonly McpResource[]): void {
-  const taken = resources.find((resource) => resource.uri.startsWith(RECIPE_URI_PREFIX));
+/** A hand-written resource may not take a `docs://<section>/` prefix `recipes:` owns. */
+export function assertNoRecipeResources(
+  resources: readonly McpResource[],
+  recipes: readonly McpRecipe[],
+): void {
+  const prefixes = [...sectionsOf(recipes)].map((section) => `docs://${section}/`);
+  const taken = resources.find((resource) =>
+    prefixes.some((prefix) => resource.uri.startsWith(prefix)),
+  );
   if (taken !== undefined)
     throw new McpRecipeUriReservedError({ uri: taken.uri, reason: 'resource' });
 }
@@ -157,7 +206,7 @@ export function recipeResources(
 ): readonly McpResource[] {
   const tools = new Map(catalog.map((tool) => [tool.name, tool]));
   return recipes.map((recipe) => ({
-    uri: recipeUri(recipe.name),
+    uri: uriOf(recipe),
     name: recipe.title,
     description: recipe.description,
     mimeType: 'text/markdown',

@@ -1,8 +1,7 @@
 /**
- * Recipes from a folder of markdown, one file per recipe, its body served verbatim. The file name
- * is the recipe's name; an optional `---` block sets `title:` and `description:`, else the first
- * `# ` heading and the first paragraph do. Its steps are its ```call fences — `tool {json}` — so
- * the boot check holds a markdown recipe to the catalog exactly as a structured one.
+ * Recipes from a folder of markdown, one file per recipe, body verbatim: file name = name, a
+ * sub-folder = section, `---` sets `title:`/`description:`/`aliases:` (else heading, paragraph).
+ * Its ```call fences — `tool {json}` — are its steps, boot-checked like a structured recipe's.
  */
 
 // why: Bun exposes no path-join primitive; the folder is the app's.
@@ -15,19 +14,32 @@ export const PLACEHOLDER = /^<([A-Za-z][\w-]*)>$/;
 
 const FENCE = /^```call[^\S\n]*\n([\s\S]*?)\n```[^\S\n]*$/gm;
 
-/** Every `*.md` under `dir`, sorted by name: the same folder is the same recipes, in order. */
+/**
+ * Every `*.md` in `dir` (section `recipes`), then every `<section>/*.md` one folder down, each
+ * sorted by path: the same folder is the same recipes, in order. `recipes/<name>.md` and
+ * `<name>.md` are one URI. A folder name outside `[a-z0-9-]` is refused at boot, like a name.
+ */
 export async function markdownRecipes(input: { readonly dir: string }): Promise<McpRecipe[]> {
-  const files = [...new Bun.Glob('*.md').scanSync({ cwd: input.dir })].sort();
+  const top = [...new Bun.Glob('*.md').scanSync({ cwd: input.dir })].sort();
+  const nested = [...new Bun.Glob('*/*.md').scanSync({ cwd: input.dir })]
+    .map((file) => file.replaceAll('\\', '/'))
+    .sort();
   const recipes: McpRecipe[] = [];
-  for (const file of files) {
+  for (const file of [...top, ...nested]) {
     const text = await Bun.file(join(input.dir, file)).text();
-    recipes.push(recipeFromMarkdown(file.replace(/\.md$/, ''), text));
+    const slash = file.indexOf('/');
+    const name = file.slice(slash + 1).replace(/\.md$/, '');
+    recipes.push(
+      slash === -1
+        ? recipeFromMarkdown(name, text)
+        : recipeFromMarkdown(name, text, file.slice(0, slash)),
+    );
   }
   return recipes;
 }
 
 /** One file's recipe. A fenced call that does not parse is refused naming the file and fence. */
-export function recipeFromMarkdown(name: string, text: string): McpRecipe {
+export function recipeFromMarkdown(name: string, text: string, section?: string): McpRecipe {
   const { fields, body } = frontMatter(text.replace(/\r\n/g, '\n'));
   const lines = body.split('\n');
   const heading = lines
@@ -35,8 +47,11 @@ export function recipeFromMarkdown(name: string, text: string): McpRecipe {
     ?.slice(2)
     .trim();
   const paragraph = firstParagraph(lines);
+  const aliases = fields.get('aliases');
   return {
     name,
+    ...(section === undefined ? {} : { section }),
+    ...(aliases === undefined ? {} : { aliases: aliasList(aliases) }),
     title: fields.get('title') ?? heading ?? name,
     description: fields.get('description') ?? paragraph ?? '',
     steps: fencedCalls(name, body),
@@ -57,6 +72,15 @@ function frontMatter(text: string): {
     if (colon > 0) fields.set(line.slice(0, colon).trim(), line.slice(colon + 1).trim());
   }
   return { fields, body: text.slice(end + 5) };
+}
+
+/** `aliases: refund, money back` or `aliases: [refund, "money back"]`. */
+function aliasList(value: string): readonly string[] {
+  return value
+    .replace(/^\[(.*)\]$/, '$1')
+    .split(',')
+    .map((alias) => alias.trim().replace(/^(["'])(.*)\1$/, '$2'))
+    .filter((alias) => alias !== '');
 }
 
 function firstParagraph(lines: readonly string[]): string | undefined {

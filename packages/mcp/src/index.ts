@@ -172,7 +172,7 @@ export { markdownRecipes } from './recipe-markdown';
 export type { ReplayOptions, ReplayReport } from './recipe-replay';
 export { replayRecipes } from './recipe-replay';
 export type { McpRecipe, McpRecipeStep } from './recipes';
-export type { ExtraRecipes } from './recipes-tool';
+export type { DocsToolOptions, ExtraRecipes } from './recipes-tool';
 export type {
   AnyMcpTool,
   ContentBlock,

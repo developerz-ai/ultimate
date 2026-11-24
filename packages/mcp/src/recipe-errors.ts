@@ -44,17 +44,22 @@ export class McpRecipeUnknownError extends UltimateError {
 }
 
 export class McpRecipeUriReservedError extends UltimateError {
-  constructor(input: { readonly uri: string; readonly reason: 'resource' | 'duplicate' | 'name' }) {
+  constructor(input: {
+    readonly uri: string;
+    readonly reason: 'resource' | 'duplicate' | 'name' | 'section';
+  }) {
     const why =
       input.reason === 'resource'
-        ? 'resources: holds it beside recipes:, and docs://recipes/ is owned by recipes:'
+        ? 'resources: holds it beside recipes:, and every docs://<section>/ a recipe uses is owned by recipes:'
         : input.reason === 'duplicate'
-          ? 'two recipes share that name'
-          : 'a recipe name is lowercase letters, digits and -';
+          ? 'two recipes share that URI'
+          : input.reason === 'section'
+            ? 'a recipe section is lowercase letters, digits and -'
+            : 'a recipe name is lowercase letters, digits and -';
     super({
       code: 'X_MCP_RECIPE_URI_RESERVED',
       cause: `${renderCauseValue(input.uri)}: ${why}`,
-      fix: "recipes: [{ name: 'issue-a-credit-note', title, description, steps }]   # one name each, [a-z0-9-]; move a hand-written docs://recipes/ resource here",
+      fix: "recipes: [{ name: 'issue-a-credit-note', section?: 'billing', title, description, steps }]   # one URI each, name and section [a-z0-9-]; move a hand-written docs://<section>/ resource here",
       meta: { uri: input.uri },
     });
   }
