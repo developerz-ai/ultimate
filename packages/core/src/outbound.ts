@@ -92,6 +92,7 @@ function prepare(request: OutboundRequest, deps: OutboundDeps): AttemptCall {
     idleMs: finiteCount('outbound()', 'idleMs', request.idleMs ?? OUTBOUND_IDLE_MS, 1),
     maxBytes: finiteCount('outbound()', 'maxBytes', request.maxBytes ?? OUTBOUND_MAX_BYTES),
     read: request.read ?? 'bytes',
+    refusal: request.refusal,
     signal: request.signal,
     now,
     timer: deps.timer ?? platformDeadlineTimer,

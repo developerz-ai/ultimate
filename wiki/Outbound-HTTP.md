@@ -33,7 +33,7 @@ export async function chargeStatus(id: string): Promise<{ id: string; status: st
 | `Retry-After` | a retryable status that states a delay waits that delay (clamped by the policy's `max`) |
 | body | read under an idle watchdog (`idleMs`, default 30 s) and a byte cap (`maxBytes`, default 16 MiB). `read: 'stream'` hands the body over under both |
 | redirects | `redirect: 'error'` by default. `'follow'` takes at most 5 hops and screens EVERY hop after the first as a public dial, `'named'` included; at an origin change only `accept`, `content-type` and `user-agent` travel |
-| redaction | a cause, `meta` and the `outbound.attempt` log line carry vendor, method, origin and the path's FIRST segment plus the length of the rest (`/services/…(21 chars)`: a webhook keeps its token in the path), never the query or a header. A refusal's body reaches `meta.detail` only as a JSON object, credential-named fields redacted, 200 characters; anything else (a form, an array, HTML, a cut body) is dropped |
+| redaction | a cause, `meta` and the `outbound.attempt` log line carry vendor, method, origin and the path's FIRST segment plus the length of the rest (`/services/…(21 chars)`: a webhook keeps its token in the path), never the query or a header. A refusal's body reaches `meta.detail` only as a JSON object, credential-named fields redacted, 200 characters; anything else (a form, an array, HTML, a cut body) is dropped. [`refusal`](#refusal-what-a-non-2xx-body-becomes) declares the fields to keep from the whole body, or drops `meta.detail` |
 | breaker | `breaker: breaker({ name, failures, cooldownMs })` from `@ultimat3/core`, recorded once per call after the retries. See below |
 
 ## `dial`: which network a URL may reach
@@ -112,7 +112,7 @@ codes: `@ultimat3/jobs`' webhook target and `@ultimat3/scraping`'s wildcard leg 
 | `X_OUTBOUND_UNREACHABLE` | retryable | DNS, connect, TLS or reset: no response |
 | `X_OUTBOUND_THROTTLED` | retry-after | a retryable status with `Retry-After` (`meta.retryAfterSeconds`) |
 | `X_OUTBOUND_UNAVAILABLE` | retryable | 5xx, 408, 409, 425, 429 with no stated delay (`meta.status`) |
-| `X_OUTBOUND_REFUSED` | terminal | any other non-2xx (`meta.status`, `meta.detail`) |
+| `X_OUTBOUND_REFUSED` | terminal | any other non-2xx (`meta.status`, `meta.detail`, `meta.fields` under `refusal.schema`) |
 | `X_OUTBOUND_TOO_LARGE` | terminal | the body passed `maxBytes` |
 | `X_OUTBOUND_HOST_BLOCKED` | terminal | `dial: 'public'` refused an address class, a scheme or a hop |
 | `X_OUTBOUND_REDIRECTED` | terminal | a 3xx under `redirect: 'error'`, or more than 5 hops (`meta.location`, no query) |
@@ -120,6 +120,39 @@ codes: `@ultimat3/jobs`' webhook target and `@ultimat3/scraping`'s wildcard leg 
 | `X_OUTBOUND_RETRY_UNSAFE` | terminal | `retry` on POST or PATCH without `idempotent: true` |
 | `X_OUTBOUND_BODY_INVALID` | terminal | `answer.json(schema)` refused the body (`meta.issues`) |
 | `X_OUTBOUND_PROXY_INVALID` | terminal | `proxy` is not an `http:`/`https:` URL, or its resolver threw (`meta.reason`, never the URL) |
+
+### `refusal`: what a non-2xx body becomes
+
+`X_OUTBOUND_REFUSED`, `X_OUTBOUND_UNAVAILABLE` and `X_OUTBOUND_THROTTLED` read the body once, per
+the call's `refusal`:
+
+| `refusal` | Read | On the error |
+|---|---|---|
+| unset (default) | chunks until 1,024 characters are decoded, the rest cancelled (a whole chunk is kept, so one large chunk is read whole) | `meta.detail`: a JSON object, credential-named fields redacted, 200 characters; else `''`. A large error object that arrives in pieces is cut, does not parse, and is `''` |
+| `{ schema }` | the whole body, up to the call's `maxBytes` | `meta.fields`: the schema's answer, credential-named fields redacted at any depth; absent when the body is not JSON, does not fit or passes `maxBytes`. `meta.detail` is the 200-character excerpt of that whole body |
+| `{ detail: false }` | nothing for the excerpt | `meta.detail: ''`: the excerpt, and the free text it carries (an address, a name), never kept. Combines with `schema`; it does not filter `meta.fields`, so a schema keeps only fields that are safe to log |
+
+```ts
+import { isUltimateError } from '@ultimat3/core';
+import { outbound } from '@ultimat3/core/outbound';
+import { t } from '@ultimat3/schema';
+
+declare const url: string;
+declare const body: string;
+
+const decline = t.object({ error: t.object({ decline_code: t.string }) });
+try {
+  await outbound({ url, vendor: 'payments', dial: 'named', deadlineMs: 10_000, method: 'POST',
+    body, refusal: { schema: decline, detail: false } });
+} catch (error) {
+  // meta.fields is unknown on the error: the schema that declared it reads it back typed.
+  if (isUltimateError(error) && error.code === 'X_OUTBOUND_REFUSED') {
+    console.log(decline.safeParse(error.meta?.['fields']));
+  }
+}
+```
+
+The schema is the whole of what `meta.fields` keeps: undeclared keys never reach it. `meta.detail` is a separate excerpt of the raw body and may still carry an undeclared field (an `error.message` holding an email): set `detail: false` to keep only what the schema declares.
 
 **A 401 is `X_OUTBOUND_REFUSED` with `meta.status: 401`.** There is no refresh hook: the app's own
 wrapper refreshes its token and calls again. Token storage and single-flight stay the app's.

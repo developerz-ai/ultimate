@@ -63,6 +63,21 @@ export type OutboundProxy =
  */
 export type OutboundFetch = (url: string, init: OutboundInit) => Promise<Response>;
 
+/** How a refusal's body is read, per call: `OutboundRequest.refusal`. */
+export interface OutboundRefusalRead {
+  /**
+   * The body read whole (up to the call's `maxBytes`), parsed as JSON through this schema: what it
+   * answers, credential-named fields redacted, is the error's `meta.fields`. A body that is not
+   * JSON, does not fit, or passes `maxBytes` leaves `meta.fields` unset.
+   */
+  readonly schema?: Schema<unknown, unknown> | undefined;
+  /**
+   * `false`: `meta.detail` is `''`, the raw-body excerpt never kept. Default `true`. It does not
+   * filter `meta.fields`: a schema declares only fields that are safe to log.
+   */
+  readonly detail?: boolean | undefined;
+}
+
 export interface OutboundRequest {
   readonly url: string | URL;
   /** A bounded label chosen in code (`'resend'`), in every log line and cause. */
@@ -89,6 +104,12 @@ export interface OutboundRequest {
   /** A POST or PATCH carrying the vendor's idempotency key: retried as a safe method is. */
   readonly idempotent?: true | undefined;
   readonly read?: 'bytes' | 'stream' | undefined;
+  /**
+   * How a non-2xx body is read for the coded error. Unset: a redacted 200-character excerpt of
+   * the chunks that decode its first 1,024 characters, `meta.detail`. `{ schema }`: the whole body (within `maxBytes`) through the
+   * schema, its answer at `meta.fields`. `{ detail: false }`: `meta.detail` stays `''`.
+   */
+  readonly refusal?: OutboundRefusalRead | undefined;
   /**
    * A signal of the caller's own, heard BESIDE the ambient `ctx.signal` — a fan-out's cancel. Its
    * reason reaches the caller unchanged, as the context's does.
