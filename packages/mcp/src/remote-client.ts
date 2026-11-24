@@ -33,7 +33,17 @@ export interface McpClientOptions {
   readonly auth?: () =>
     | Readonly<Record<string, string>>
     | Promise<Readonly<Record<string, string>>>;
-  /** The transport, for a test. Default `fetch`. */
+  /**
+   * The largest answer one call reads, in bytes; past it the read stops, `X_MCP_REMOTE_REFUSED`
+   * (`meta.failure: 'transport'`, source `X_OUTBOUND_TOO_LARGE`). Default 16 MiB, `outbound()`'s.
+   */
+  readonly maxBytes?: number;
+  /**
+   * The transport: a test double, or a production one. Default `fetch`. It sits under `outbound()`,
+   * so the dial screen, deadline, `maxBytes` and redirect refusal stay this client's whatever it
+   * does; one that dials anywhere but the url it is handed takes the screen over
+   * (`OutboundFetch`).
+   */
   readonly fetch?: OutboundFetch;
   /**
    * The server said `notifications/tools/list_changed` — on a response stream, or on the `GET`
@@ -81,6 +91,10 @@ const MAX_TOOL_PAGES = 50;
 export function mcpClient(options: McpClientOptions): McpClient {
   const state: { era?: 'modern' | 'legacy'; session?: string | null; next: number } = { next: 1 };
   const listenMs = finiteCount('mcpClient', 'listenMs', options.listenMs ?? DEFAULT_LISTEN_MS, 1);
+  const maxBytes =
+    options.maxBytes === undefined
+      ? undefined
+      : finiteCount('mcpClient', 'maxBytes', options.maxBytes, 1);
   /** The open `GET` stream; `'unsupported'` once the server answered it 405, `'closed'` after close(). */
   let listener: Listener | 'unsupported' | 'closed' | undefined;
   /** The one handshake in flight: concurrent calls that need a session share it, never race two. */
@@ -127,6 +141,7 @@ export function mcpClient(options: McpClientOptions): McpClient {
             ...headers,
           },
           body: JSON.stringify(body),
+          ...(maxBytes === undefined ? {} : { maxBytes }),
           ...(signal === undefined ? {} : { signal }),
         },
         options.fetch === undefined ? {} : { fetch: options.fetch },
@@ -135,7 +150,11 @@ export function mcpClient(options: McpClientOptions): McpClient {
       if (!isUltimateError(error)) throw error;
       // An abort is the caller's decision, never the server's fault: it passes through.
       if (error.code === 'X_ABORTED') throw error;
-      throw refused(`was not reachable (${error.code})`, 'transport', undefined, error);
+      const reason =
+        error.code === 'X_OUTBOUND_TOO_LARGE'
+          ? `answered past the client's byte cap (${error.code})`
+          : `was not reachable (${error.code})`;
+      throw refused(reason, 'transport', undefined, error);
     }
     // A token is wanted, or the one sent is no longer good: never an era to fall back from.
     if (answer.status === 401) {

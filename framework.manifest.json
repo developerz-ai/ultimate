@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d3dbd4cb8d80168ee0d88d58913698083192eefd8dfa272a6aeff57a4793653a",
+  "buildId": "9386c65f78f63b7df7cc44374cc7b52d975a2adf98978610ec4eac0c7b4f4077",
   "tiers": {
     "0": [
       "core",
@@ -4238,6 +4238,11 @@
       "code": "X_OUTBOUND_TOO_LARGE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_OUTBOUND_TRANSPORT_REDIRECTED",
+      "owner": "core",
+      "at": "packages/core/src/outbound-errors.ts"
     },
     {
       "code": "X_OUTBOUND_UNAVAILABLE",
