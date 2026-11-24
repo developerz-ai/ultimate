@@ -109,6 +109,8 @@ export type { NewShape } from './new-shapes';
 export { NEW_SHAPES } from './new-shapes';
 export type { CommandResult, Finding, JsonValue } from './output';
 export { exitCodeFor, findingFrom, render, renderFinding, renderHuman } from './output';
+export type { PageRouteOptions } from './page-route';
+export { pageRoute } from './page-route';
 export type { CommandSpec, FlagSpec, ParsedArgs } from './parse';
 export { flagBool, flagList, flagString, GLOBAL_FLAGS, parseArgs } from './parse';
 export type { PrerenderedPage, PrerenderReport } from './prerender';
