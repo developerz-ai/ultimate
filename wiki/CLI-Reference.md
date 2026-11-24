@@ -799,7 +799,11 @@ declaration and say so in the output. **`x test live` and `x test e2e` obey the 
 `As of 2026-08-27`** — they did not, so `x test live --workers 8` ran eight processes over the very
 files `x verify` ran one over. `--workers` is accepted there and clamps to 1. That clamp read the
 POSITIONAL, so the bare `x test --workers 8` still widened over the same files until 2026-09; the
-selection is now partitioned by each file's own type. The default width is
+selection is now partitioned by each file's own type. `x test`'s e2e pass also LAUNCHES as the
+gate's `e2e` step does, `As of 2026-11`: in an app root with a browser (`CHROME_PATH`, or one
+`x doctor` finds) it runs under `@ultimat3/testing`'s e2e preload, which spawns the app, with the
+device zone `America/Los_Angeles` — before, `x test e2e` never opened a browser and every
+browser-backed case skipped. With no browser both skip alike. The default width is
 a memory budget, `As of 2026-11-07`: `max(2.75 GiB, 25% of RAM)` (`BUDGET_RULE`) at 1.25 GiB a worker
 (`WORKER_BYTES`, `GATE_BUDGET_FLOOR` and `GATE_BUDGET_SHARE` in
 `packages/cli/src/test-workers.ts`), at most one per core — the paragraph under `x verify` above.
