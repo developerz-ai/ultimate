@@ -108,4 +108,6 @@ export {
   SITE_ASSETS_SOURCE,
   siteAssetTable,
 } from './site-assets';
+/** The comment a `stream` page writes after its shell and after each hole: what a reader splits on. */
+export { STREAM_FLUSH_MARK } from './stream-scripts';
 export { serverTsxBuildPlugin } from './tsx-build-plugin';

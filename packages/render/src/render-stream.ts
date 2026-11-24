@@ -22,7 +22,12 @@ import {
 } from '@ultimat3/core';
 import { finiteStatus } from './finite-status';
 import type { RenderResult } from './route';
-import { REVEAL_BODY, REVEAL_CALL, STREAM_FLUSH_MARK } from './stream-scripts';
+import {
+  REVEAL_BODY,
+  REVEAL_CALL,
+  STREAM_FLUSH_MARK,
+  STREAM_KEEPALIVE_CHUNK,
+} from './stream-scripts';
 
 export interface StreamHole {
   /** Stable within a response; becomes the DOM id, so keep it short. */
@@ -118,8 +123,8 @@ export interface StreamOptions {
 /** Under the shortest `idleTimeout` `@ultimat3/http` derives: `ceil(requestTimeoutMs / 1000) + 2` ≥ 3 s. */
 export const DEFAULT_STREAM_KEEPALIVE_MS = 1_000;
 
-/** The keep-alive write: a comment, inert wherever the parser is between two chunks. */
-export const STREAM_KEEPALIVE_CHUNK = '<!---->';
+/** The keep-alive write, declared beside the flush mark so the client router reads the same one. */
+export { STREAM_KEEPALIVE_CHUNK } from './stream-scripts';
 
 /**
  * `null` is the declared "this hole owns its own timeout" opt-out; every other value is a
