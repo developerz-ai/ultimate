@@ -140,7 +140,9 @@ const region = (
 ```
 
 `empty` and `ready` are **required**, so forgetting the empty state is a type error rather than a
-review comment. Three properties are structural, not documented:
+review comment. `failed={(error, retry) => …}` is optional: the failed branch for a person's page,
+in place of `ErrorState`'s code, cause and shell fix (`As of 2026-11`). `EmptyState` and `Alert`
+take `level` to title with a heading. Three properties are structural, not documented:
 
 - **`empty` is unreachable while pending.** A `pending` state carries no data, so nothing can be
   found empty in it — "No results" before the first page arrives is unconstructible.
