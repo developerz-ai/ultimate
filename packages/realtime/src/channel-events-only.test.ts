@@ -4,15 +4,21 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
+import { clearRegistry, entity, uuid } from '@ultimat3/entity';
 import { channel } from './channel-decl';
-import { channelRef } from './channel-ref';
+import { catchUpReadOf, channelRef } from './channel-ref';
 import { clearChannels } from './channel-registry';
 import { ChannelBook } from './client-channels';
 import { OPEN_POLICY } from './policy-fake-fixture';
 import { RecordStore } from './record-store';
 import { PROTOCOL_VERSION } from './sync-protocol';
 
-afterAll(() => clearChannels());
+const rows = entity('events_only_rows', { columns: { id: uuid().primaryKey(), orgId: uuid() } });
+
+afterAll(() => {
+  clearChannels();
+  clearRegistry();
+});
 
 describe('an events-only channel ref', () => {
   test('declares with params alone, and answers no catch-up name', () => {
@@ -47,12 +53,20 @@ describe('an events-only channel ref', () => {
     const feed = channelRef('typing-records', { params: ['orgId'] });
     let caught: unknown;
     try {
-      channel(feed, { policy: OPEN_POLICY, records: [{} as never] });
+      channel(feed, { policy: OPEN_POLICY, records: [rows] });
     } catch (error) {
       caught = error;
     }
     expect(isUltimateError(caught) ? caught.code : String(caught)).toBe(
       'X_CHANNEL_DECLARATION_INVALID',
     );
+    expect(isUltimateError(caught) ? caught.cause : '').toContain('names no catchUp read');
   });
+});
+
+test('a catch-up query not yet named (stamped at boot) still carries records', () => {
+  const read = { name: '' };
+  const feed = channelRef('typing-unnamed', { params: ['orgId'], catchUp: read });
+  expect(channel(feed, { policy: OPEN_POLICY, records: [rows] }).records).toHaveLength(1);
+  expect(catchUpReadOf(feed)).toBe(read);
 });

@@ -357,11 +357,8 @@ export class ChannelBook {
     // answered (replication slower than the read) is waited for (#778): the read lands once the
     // writes in flight over its types are answered or echoed, bounded by the store's server wait.
     // An events-only channel names no read: nothing is replayed, so the gap answers with nothing.
-    const read =
-      entry.catchUp === ''
-        ? Promise.resolve(undefined)
-        : this.#deps.catchUp(entry.catchUp, entry.params);
-    read.then(
+    const { catchUp } = this.#deps;
+    (entry.catchUp === '' ? Promise.resolve(undefined) : catchUp(entry.catchUp, entry.params)).then(
       (answered) => {
         if (this.#byTopic.get(entry.topic) !== entry) return;
         let landed = false;
