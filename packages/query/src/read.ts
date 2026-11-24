@@ -50,7 +50,7 @@ import type { RowsOverride } from './rows-override';
 import { rowsOverrideOf, setRowsOverride } from './rows-override';
 import { composeScope } from './scope-compose';
 import type { SqlSource } from './source';
-import { from } from './source';
+import { boundTo, from } from './source';
 import { parsedOrNothing, parseQueryInput } from './validate';
 
 /**
@@ -150,52 +150,17 @@ export function builtFor(
     const audit = auditFor(target, ctx, options);
     // A source handed out is executed by its caller — `@ultimat3/mcp`'s served tool among them —
     // so an audited read records per `execute()`, and a build that refuses records here.
-    if (audit === null) {
-      const built = await admitAndBuild(target, raw, ctx, options, null);
-      return { source: asBuiltActor(options, ctx, built.source), input: built.input };
-    }
+    // Built as a named actor, it executes as that actor: the actor lives in this frame alone.
+    const bind = options.actor === undefined ? undefined : ctx;
+    if (audit === null) return boundTo(bind, await admitAndBuild(target, raw, ctx, options, null));
     let input: unknown;
     const source = await auditedBuild(audit, async () => {
       const built = await admitAndBuild(target, raw, ctx, options, audit.trace);
       input = built.input;
       return built.source;
     });
-    return { source: asBuiltActor(options, ctx, source), input };
+    return boundTo(bind, { source, input });
   });
-}
-
-/**
- * Bound only when the build named an `actor`: that actor exists in the build's frame alone, so an
- * `execute()` after it returned would read as someone else. Without one the build ran in the
- * caller's own context, which the caller is free to execute under — or to replace, as a live window
- * built once on the sync node and read per subscriber tenant does.
- */
-function asBuiltActor<TRow>(
-  options: SourceOptions,
-  ctx: Ctx,
-  source: SqlSource<TRow>,
-): SqlSource<TRow> {
-  return options.actor === undefined ? source : executingAs(ctx, source);
-}
-
-/**
- * The source, executing under the context it was BUILT in. A `from()` source produces its rows at
- * `execute()` — a tenant-scoped repository call, which derives its tenant from `tryUseContext()` —
- * and the caller executes after the build's frame has returned, so without this the read was
- * policed as one actor and its rows fetched as whoever, or nobody, the caller's frame held.
- * `seek` and `total` answer sources of their own, bound the same way.
- */
-function executingAs<TRow>(ctx: Ctx, source: SqlSource<TRow>): SqlSource<TRow> {
-  const { total, seek } = source;
-  return {
-    toSQL: () => source.toSQL(),
-    shape: () => source.shape(),
-    execute: () => runWithContext(ctx, () => source.execute()),
-    ...(total === undefined ? {} : { total: () => executingAs(ctx, total.call(source)) }),
-    ...(seek === undefined
-      ? {}
-      : { seek: (after, limit) => executingAs(ctx, seek.call(source, after, limit)) }),
-  };
 }
 
 /**

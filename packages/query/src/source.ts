@@ -5,6 +5,8 @@
  * answer these four questions.
  */
 
+import type { Ctx } from '@ultimat3/core';
+import { runWithContext } from '@ultimat3/core';
 import type { ScopedNode } from '@ultimat3/entity';
 import { compareByKind } from '@ultimat3/entity';
 import type { ScopeNode } from '@ultimat3/policy';
@@ -78,6 +80,34 @@ export interface RowWindow {
 export type RowProvider<TRow> =
   | readonly TRow[]
   | ((window: RowWindow) => readonly TRow[] | Promise<readonly TRow[]>);
+
+/**
+ * `source`, executing under `ctx` — the context it was BUILT in. A `from()` source produces its
+ * rows at `execute()` (a tenant-scoped repository call, which derives its tenant from
+ * `tryUseContext()`), after the build's frame returned. `seek` and `total` are bound the same way.
+ */
+export function executingAs<TRow>(ctx: Ctx, source: SqlSource<TRow>): SqlSource<TRow> {
+  const { total, seek } = source;
+  return {
+    toSQL: () => source.toSQL(),
+    shape: () => source.shape(),
+    execute: () => runWithContext(ctx, () => source.execute()),
+    ...(total === undefined ? {} : { total: () => executingAs(ctx, total.call(source)) }),
+    ...(seek === undefined
+      ? {}
+      : { seek: (after, limit) => executingAs(ctx, seek.call(source, after, limit)) }),
+  };
+}
+
+/**
+ * A built read, its source bound to `ctx` when there is one. Without one the caller's context was
+ * the build's, and a caller may replace it on purpose: a live window built once on the sync node
+ * is read per subscriber tenant.
+ */
+export const boundTo = <T, B extends { readonly source: SqlSource<T> }>(
+  ctx: Ctx | undefined,
+  built: B,
+): B => (ctx === undefined ? built : { ...built, source: executingAs(ctx, built.source) });
 
 /**
  * In-memory reference source. `from<Post>('posts', rows).where({ orgId }).orderBy('createdAt')`
