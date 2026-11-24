@@ -4,13 +4,14 @@
 // account verified with the registrant still signed in.
 
 import { describe, expect, spyOn, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import { issueApiKey, verifyApiKey } from './api-keys';
 import { authenticate, login, register } from './auth';
 import { caught, PASSWORD } from './auth-fixture';
 import { authWriteFailed } from './errors';
 import { EMAIL, mailed, redeem, SECRET, type World, world } from './link-login-fixture';
 import { saveTotpSecret } from './mfa-secret';
-import { disableUser, enableUser, reclaimAccount } from './revocation';
+import { disableUser, reclaimAccount } from './revocation';
 
 /** The pre-registration: signed in, with a second factor, an API key and a passkey. */
 const registrant = async (w: World) => {
@@ -69,7 +70,7 @@ describe('reclaimAccount', () => {
     expect((await redeem(w.auth, await mailed(w))).session.mfaSatisfied).toBe(true);
   });
 
-  test('a sweep that fails leaves the account shut and unverified; a rerun finishes the sweep, then enableUser reopens it', async () => {
+  test('a sweep that fails leaves the account shut and unverified, and a rerun finishes and reopens it', async () => {
     const w = world();
     const r = await registrant(w);
     const failing = spyOn(w.adapter, 'deletePasskey').mockImplementation(async () => {
@@ -91,9 +92,9 @@ describe('reclaimAccount', () => {
     const result = await reclaimAccount(w.auth, r.userId, 'address proven by reset');
     expect(result.passkeysDeleted).toBe(1);
     expect(result.user.emailVerifiedAt).toEqual(w.clock.now());
-    // The rerun cannot tell its own earlier disable from an operator's, so it lifts neither.
-    expect(result.user.disabledAt).toEqual(stuck?.disabledAt ?? null);
-    await enableUser(w.auth, r.userId);
+    // The shut state is the reclaim's own, never a clock's instant, so the rerun knows it as its
+    // own and lifts it.
+    expect(result.user.disabledAt).toBeNull();
     expect((await redeem(w.auth, await mailed(w))).session.userId).toBe(r.userId);
   });
 
@@ -113,14 +114,85 @@ describe('reclaimAccount', () => {
 
   test('an id no account holds is X_AUTH_WRITE_FAILED before any write', async () => {
     const w = world();
-    const writes: string[] = [];
-    w.adapter.updateUser = async (id) => {
-      writes.push(id);
-      return null;
-    };
+    const writes = spyOn(w.adapter, 'updateUserWhere');
     const error = await caught(() => reclaimAccount(w.auth, 'nobody', 'address proven by reset'));
     expect(error?.code).toBe('X_AUTH_WRITE_FAILED');
     expect(error?.meta?.['operation']).toBe('findUserById');
-    expect(writes).toEqual([]);
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  test('an operator who disables the account mid-reclaim wins: it stays disabled and unverified', async () => {
+    const w = world();
+    const r = await registrant(w);
+    const list = w.adapter.listPasskeys.bind(w.adapter);
+    spyOn(w.adapter, 'listPasskeys').mockImplementation(async (userId) => {
+      await disableUser(w.auth, userId, 'offboarded');
+      return await list(userId);
+    });
+
+    const error = await caught(() => reclaimAccount(w.auth, r.userId, 'address proven by reset'));
+    expect(error?.code).toBe('X_UNAUTHENTICATED');
+    const after = await w.adapter.findUserById(r.userId);
+    expect(after?.disabledAt).toEqual(w.clock.now());
+    expect(after?.emailVerifiedAt).toBeNull();
+    expect((await caught(async () => redeem(w.auth, await mailed(w))))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+  });
+
+  test("a reset that arrives after another reclaimed the account touches nothing of the new owner's", async () => {
+    const w = world();
+    const r = await registrant(w);
+    await reclaimAccount(w.auth, r.userId, 'address proven by reset');
+    await w.adapter.updateUser(r.userId, { passwordHash: 'owner-hash' });
+    const owner = await redeem(w.auth, await mailed(w));
+
+    const late = await caught(() => reclaimAccount(w.auth, r.userId, 'address proven by reset'));
+    expect(late?.code).toBe('X_UNAUTHENTICATED');
+    expect((await w.adapter.findUserById(r.userId))?.passwordHash).toBe('owner-hash');
+    expect((await authenticate(w.auth, owner.token)).id).toBe(r.userId);
+  });
+
+  test('a reset whose read predates another reclaim finishing is refused by the shutting write', async () => {
+    const w = world();
+    const r = await registrant(w);
+    const find = w.adapter.findUserById.bind(w.adapter);
+    // The late callback reads the account unverified; the first one verifies it before the late
+    // one's first write lands.
+    spyOn(w.adapter, 'findUserById').mockImplementationOnce(async (id) => {
+      const stale = await find(id);
+      await w.adapter.updateUser(id, {
+        emailVerifiedAt: w.clock.now(),
+        passwordHash: 'owner-hash',
+      });
+      return stale;
+    });
+
+    const late = await caught(() => reclaimAccount(w.auth, r.userId, 'address proven by reset'));
+    expect(late?.code).toBe('X_UNAUTHENTICATED');
+    const after = await w.adapter.findUserById(r.userId);
+    expect(after?.passwordHash).toBe('owner-hash');
+    expect(after?.disabledAt).toBeNull();
+    expect(await w.adapter.listPasskeys(r.userId)).toHaveLength(1);
+  });
+
+  test('an adapter without updateUserWhere is refused before anything is written', async () => {
+    const w = world();
+    const r = await registrant(w);
+    const bare = new Proxy(w.adapter, {
+      get: (target, key) => {
+        if (key === 'updateUserWhere') return undefined;
+        const value: unknown = Reflect.get(target, key);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    let thrown: unknown;
+    try {
+      await reclaimAccount({ ...w.auth, adapter: bare }, r.userId, 'address proven by reset');
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isUltimateError(thrown) ? thrown.code : 'reclaimed').toBe('X_CONFIG_INVALID');
+    expect((await w.adapter.findUserById(r.userId))?.disabledAt).toBeNull();
   });
 });

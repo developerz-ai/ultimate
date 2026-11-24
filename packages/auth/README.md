@@ -868,7 +868,7 @@ show it beside `name`. Full table and the rule each test holds:
 | `revokeOrgSessions(auth, orgId, reason)` | one tenant, at 03:00, without touching another |
 | `revokeSessionsCreatedBefore(auth, at, reason)` | everything minted under a rotated secret |
 | `disableUser(auth, userId, reason)` | stamps `disabledAt`, kills the sessions **and** revokes the user's live api keys — `{ user, sessionsRevoked, apiKeysRevoked }`. Re-enabling restores neither |
-| `reclaimAccount(auth, userId, reason)` | an account handed to its inbox's owner after a reset link proved the address: ONE write shuts it (`disabledAt`) and clears the password and second factor, its sessions, api keys and passkeys go while it is shut, then ONE write stamps `emailVerifiedAt` and lifts the disable — `{ user, sessionsRevoked, apiKeysRevoked, passkeysDeleted }`. A failure before that write leaves it disabled and unverified. Only a disable the same call set is lifted: an account found disabled (an operator's, or a reclaim that failed part-way) is swept and verified and stays disabled, and `enableUser` is then safe |
+| `reclaimAccount(auth, userId, reason)` | an account handed to its inbox's owner after a reset link proved the address — `{ user, sessionsRevoked, apiKeysRevoked, passkeysDeleted }`. Both of its writes are compare-and-set (`updateUserWhere`): the first, only while the row is still unverified and undisturbed, shuts it (`disabledAt` set to the reclaim's own state, epoch 0, never a clock's instant) and clears the password and second factor; sessions, api keys and passkeys go while it is shut; the second, only while that shut state still holds, stamps `emailVerifiedAt` and lifts it. An account already verified (a second, late reset) and one an operator disabled or enabled mid-reclaim are `X_UNAUTHENTICATED`, left as they are. A failure before the second write leaves it shut and unverified, and a rerun finishes and reopens it. An operator's earlier disable is swept past and kept. An adapter without `updateUserWhere` is `X_CONFIG_INVALID` |
 | `listOrgUsers(auth, orgId, { role })` | the quarterly access review, as safe summaries — in byte (code-point) order of `email` on both adapters, whatever the database collation |
 | `updatePrivileges(auth, userId, patch, session?)` | the grant, plus the session rotation it requires. A `passwordHash` change ends every OTHER session of that user (`sessionsRevoked`) — all of them when no session of theirs was passed, as in a reset |
 
@@ -911,7 +911,11 @@ refusal — except `getSessionWithUser(id)` (`As of 2026-11`): the session and i
 `{ session, user | null }` or `null`. `authenticate` uses it when present and makes the two reads
 it replaces (`getSession`, then `findUserById`) when not, so an adapter written before it still
 binds. Both shipped adapters carry it; `authAdapterConformance` holds one that does to answering
-exactly what the two reads answer.
+exactly what the two reads answer. And `updateUserWhere(id, expected, patch)` (`As of 2026-11`):
+the `updateUser` patch, written only while the row still holds `expected`
+(`{ emailVerifiedAt?, disabledAt? }`, a field left out unchecked) in one atomic step, else `null`.
+`reclaimAccount` writes through it and refuses an adapter without it (`X_CONFIG_INVALID`), never
+falling back to a plain write; both shipped adapters carry it.
 
 `x_users` gained two columns in 1.3.0 — `scopes text[]` and `external_id text unique` — plus an
 `org_id` index.

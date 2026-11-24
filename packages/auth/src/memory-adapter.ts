@@ -15,6 +15,7 @@ import type {
   SessionPatch,
   SessionWithUser,
   StoredMfaSecret,
+  UserExpectation,
   UserPatch,
   UserQuery,
 } from './adapter';
@@ -172,6 +173,21 @@ export class MemoryAuthAdapter implements AuthAdapter {
     };
     this.#users.set(id, next);
     return next;
+  }
+
+  // No `await` between the check and the write: `updateUser` writes before its first `await`.
+  async updateUserWhere(
+    id: string,
+    expected: UserExpectation,
+    patch: UserPatch,
+  ): Promise<AuthUser | null> {
+    const user = this.#users.get(id);
+    if (user === undefined) return null;
+    const same = (stored: Date | null, wanted: Date | null | undefined): boolean =>
+      wanted === undefined || (stored?.getTime() ?? null) === (wanted?.getTime() ?? null);
+    if (!same(user.emailVerifiedAt, expected.emailVerifiedAt)) return null;
+    if (!same(user.disabledAt, expected.disabledAt)) return null;
+    return await this.updateUser(id, patch);
   }
 
   async listUsersWithMfaSecret(): Promise<readonly StoredMfaSecret[]> {

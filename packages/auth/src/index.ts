@@ -21,6 +21,7 @@ export type {
   SessionStore,
   SessionWithUser,
   StoredMfaSecret,
+  UserExpectation,
   UserPatch,
   UserStore,
   VerificationStore,

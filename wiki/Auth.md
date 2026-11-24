@@ -57,7 +57,9 @@ expires the session cookie and sends `Clear-Site-Data: "cache", "storage"`
 service worker and cached pages. Revocation at scale is `revokeUserSessions`, `revokeOrgSessions`,
 `revokeSessionsCreatedBefore` (after rotating a secret) and `disableUser`, which also revokes the
 user's live API keys; `reclaimAccount` hands an unverified account to its inbox's owner after a
-reset link, shut while every prior authenticator goes and verified only in the write that reopens it. A `passwordHash` change through `updatePrivileges` ends every other session
+reset link, shut while every prior authenticator goes and verified only in the write that reopens it —
+both writes conditional on the adapter's `updateUserWhere`, so a late second reset or an operator's
+disable mid-reclaim wins. A `passwordHash` change through `updatePrivileges` ends every other session
 of that user — all of them when no session of theirs is passed, as in a reset.
 
 **A sign-in page is one command**, `As of 2026-11`: `x g sign-in --password` (a native form over
