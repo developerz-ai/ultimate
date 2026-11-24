@@ -450,7 +450,7 @@ unitTest('the dashboard counts the posts of the org that is looking', async () =
 | Answer | Is |
 |---|---|
 | `view.html` | the markup, as the document carries it |
-| `view.text` | what a reader sees — tags and script/style bodies removed, character references decoded (every numeric one, and the common named ones: `&quot;`, `&apos;`, `&nbsp;`, typographic quotes and dashes …). Compare it with `t('<key>')` |
+| `view.text` | what a reader sees — tags and script/style bodies removed, character references decoded (every numeric one, and the common named ones: `&quot;`, `&apos;`, `&nbsp;`, typographic quotes and dashes …) as a browser reads them; a no-break space is kept. Compare it with `t('<key>')` |
 | `view.data` · `view.meta` | what `load` resolved, and what `meta` answered for that same object |
 | `view.islands` | the islands the render emitted. Empty on a page that ships no JavaScript |
 

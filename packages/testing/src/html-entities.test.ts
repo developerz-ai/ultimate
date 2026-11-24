@@ -14,6 +14,14 @@ describe('decodeHtmlEntities', () => {
     expect(decodeHtmlEntities('&#39;&#x2019;&#X1F600;')).toBe("'’\u{1f600}");
   });
 
+  test('128 to 159 read as windows-1252, as a browser renders them', () => {
+    expect(decodeHtmlEntities('&#128; &#x80; &#150; &#x9F;')).toBe('€ € – Ÿ');
+  });
+
+  test('a numeric reference needs no semicolon, as a browser reads it', () => {
+    expect(decodeHtmlEntities('Tom&#39s &#x41!')).toBe("Tom's A!");
+  });
+
   test('named references from the table', () => {
     expect(decodeHtmlEntities('&nbsp;&mdash;&ldquo;&rdquo;&euro;')).toBe(' —“”€');
   });
@@ -22,10 +30,14 @@ describe('decodeHtmlEntities', () => {
     expect(decodeHtmlEntities('&amp;lt; &amp;#39;')).toBe('&lt; &#39;');
   });
 
-  test('a name outside the table, or no semicolon, stays as written', () => {
-    expect(decodeHtmlEntities('&bogus; &amp &constructor; &#;')).toBe(
-      '&bogus; &amp &constructor; &#;',
+  test('a name outside the table, or a non-legacy one with no semicolon, stays as written', () => {
+    expect(decodeHtmlEntities('&bogus; &constructor; &#; &hellip &euro')).toBe(
+      '&bogus; &constructor; &#; &hellip &euro',
     );
+  });
+
+  test('a legacy name needs no semicolon: the longest one it starts with, the rest kept', () => {
+    expect(decodeHtmlEntities('&amp &lt &copy2026 &ampx')).toBe('& < ©2026 &x');
   });
 
   test('a null, a surrogate or a point past Unicode reads as U+FFFD', () => {

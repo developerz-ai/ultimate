@@ -71,11 +71,14 @@ const DEFAULT_URL = 'http://localhost/';
 
 const SCRIPT_OR_STYLE = /<(script|style)\b[^>]*>[\s\S]*?<\/\1>/g;
 
+/** HTML's collapsible whitespace: never U+00A0, which a translation may carry (`10&nbsp;€`). */
+const COLLAPSIBLE = /[ \t\n\f\r]+/g;
+
 /** Tags dropped before references are decoded, so a decoded `<` never reads as a tag. */
 const visibleText = (html: string): string =>
   decodeHtmlEntities(html.replace(SCRIPT_OR_STYLE, ' ').replace(/<[^>]*>/g, ' '))
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(COLLAPSIBLE, ' ')
+    .replace(/^[ ]+|[ ]+$/g, '');
 
 const viewOf = (html: string): RenderedView => ({ html, text: visibleText(html) });
 
