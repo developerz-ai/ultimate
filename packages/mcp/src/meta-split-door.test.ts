@@ -219,9 +219,7 @@ describe('the stricter hook', () => {
     const answer = await via(lax, 'write_resource', { action: 'update', params: {} });
     expect(text(answer)).toStartWith('X_MCP_WRONG_TOOL: ');
     const throwing = server({
-      stricter: () => {
-        throw new Error('rules table unreachable at db.internal');
-      },
+      stricter: () => Promise.reject(new Error('rules table unreachable at db.internal')),
     });
     const failed = await via(throwing, 'write_resource', { action: 'update', params: {} });
     expect(JSON.stringify(failed)).not.toContain('db.internal');
