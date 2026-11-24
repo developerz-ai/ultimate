@@ -17,9 +17,10 @@ export interface ClientScopeOptions {
 }
 
 /**
- * `''` for the anonymous page — the empty scope core reads as "nobody". Otherwise the principal
- * AND who is really acting, so an admin impersonating a user is not the user's own scope: their
- * stores must never share records, on the page or on disk. The derivation is core's, because
+ * `''` for the anonymous page — the empty scope core reads as "nobody". Otherwise the principal,
+ * who is really acting and the actor's org, so an admin impersonating a user is not the user's own
+ * scope, nor one person in two orgs one scope: their stores must never share records, on the page
+ * or on disk. The derivation is core's, because
  * `@ultimat3/action` compares against it and may not reach this tier's sibling for one function.
  */
 export function clientScopeOf(actor: Actor, options: ClientScopeOptions = {}): string {

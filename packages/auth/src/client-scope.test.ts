@@ -55,6 +55,47 @@ describe('clientScopeOf', () => {
     );
   });
 
+  // A scope that named only the person let a page, a store or a queued write rendered under one
+  // org be reused under another: the router swaps on an equal scope, and the store keeps its rows.
+  test('one person in two orgs is two scopes; each is stable', () => {
+    const inA = clientScopeOf(userActor({ id: 'alice', orgId: 'org-a' }), { secret: SECRET });
+    const inB = clientScopeOf(userActor({ id: 'alice', orgId: 'org-b' }), { secret: SECRET });
+
+    expect(inA).toMatch(/^[0-9a-f]{32}$/);
+    expect(inA).not.toBe(inB);
+    expect(clientScopeOf(userActor({ id: 'alice', orgId: 'org-a' }), { secret: SECRET })).toBe(inA);
+    expect(inA).not.toBe(clientScopeOf(userActor({ id: 'alice' }), { secret: SECRET }));
+    expect(inA).not.toContain('org-a');
+  });
+
+  // Known answer: an actor with no org keeps the id it had before the org joined the material, so
+  // an app without tenants sees no rescope on upgrade.
+  test('no org: the same id as before the org joined the material', async () => {
+    // WebCrypto, not core's `hmac`: a known answer from a second implementation of the same MAC.
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(SECRET),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const mac = await crypto.subtle.sign(
+      'HMAC',
+      key,
+      encoder.encode(JSON.stringify(['user', 'alice', null, null])),
+    );
+    const before = Array.from(new Uint8Array(mac), (byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
+      .slice(0, 32);
+
+    expect(clientScopeOf(userActor({ id: 'alice' }), { secret: SECRET })).toBe(before);
+  });
+
+  test('the anonymous page stays the empty scope, whatever org it names', () => {
+    expect(clientScopeOf({ ...anonymousActor(), orgId: 'org-a' }, { secret: SECRET })).toBe('');
+  });
+
   test('no SESSION_SECRET still answers an opaque id, stable within the process', () => {
     const actor = userActor({ id: 'alice' });
     const first = clientScopeOf(actor, { env: {} });

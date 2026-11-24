@@ -70,6 +70,13 @@ describe('a replay that names its principal', () => {
     expect(runs.handled).toBe(0);
   });
 
+  test('queued in one org, replayed by the same person in another: 409, and nothing ran', async () => {
+    const inOrgA = userActor({ id: 'alice', orgId: 'org-a' });
+    const { answer, runs } = post(userActor({ id: 'alice', orgId: 'org-b' }), keyOf(inOrgA));
+    expect((await answer).status).toBe(409);
+    expect(runs.handled).toBe(0);
+  });
+
   test('never renders either principal into the refusal', async () => {
     const text = await (await post(bob, keyOf(alice)).answer).text();
     expect(text).not.toContain(clientScopeId(alice));
