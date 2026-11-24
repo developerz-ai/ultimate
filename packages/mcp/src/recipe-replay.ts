@@ -1,6 +1,7 @@
 /**
  * `replayRecipes()` — a recipe's contract test: every step's example CALLED through the real server
- * as `caller` (placeholders filled), every `docs://recipes/` link read. No such tool, refused
+ * as `caller` (placeholders filled), every link into `recipes`, the sections of `recipes` or
+ * `sections` read — replaying a subset, pass the server's other sections. No such tool, refused
  * arguments, a refusing policy or a dangling link fail it; a tool's own refusal is the tool working.
  */
 
@@ -8,7 +9,7 @@ import { isJsonObject, renderCauseValue } from '@ultimat3/core';
 import { McpRecipeExampleInvalidError, McpRecipeLinkDanglingError } from './recipe-errors';
 import { fillPlaceholders } from './recipe-markdown';
 import type { McpRecipe } from './recipes';
-import { recipeLinks, recipeUri } from './recipes';
+import { recipeKey, recipeLinks, sectionsOf } from './recipes';
 import type { McpCaller } from './registry';
 import type { McpServer } from './server';
 
@@ -16,6 +17,11 @@ export interface ReplayOptions {
   readonly caller: McpCaller;
   /** `"<postId>"` in an example becomes `placeholders.postId`. */
   readonly placeholders?: Readonly<Record<string, unknown>>;
+  /**
+   * More sections the server's recipes serve, beyond those `recipes` holds: links into them are
+   * read too. Replaying a subset, a link into a section only the rest use is otherwise unread.
+   */
+  readonly sections?: readonly string[];
 }
 
 export interface ReplayReport {
@@ -47,6 +53,7 @@ export async function replayRecipes(
   const links: string[] = [];
   const failed: string[] = [];
   const dangling: string[] = [];
+  const sections = new Set([...sectionsOf(recipes), ...(options.sections ?? [])]);
   let id = 0;
   const rpc = async (method: string, params: Record<string, unknown>) => {
     id += 1;
@@ -62,8 +69,7 @@ export async function replayRecipes(
       const reason = unreached(answer);
       if (reason !== undefined) failed.push(`${at}: ${reason}`);
     }
-    for (const name of recipeLinks(recipe)) {
-      const uri = recipeUri(name);
+    for (const uri of recipeLinks(recipe, sections)) {
       const answer = await rpc('resources/read', { uri });
       links.push(uri);
       if (answer === null || 'error' in answer) {
@@ -75,7 +81,8 @@ export async function replayRecipes(
   if (dangling.length > 0) {
     throw new McpRecipeLinkDanglingError({
       offenders: dangling,
-      recipes: recipes.map((recipe) => recipe.name).sort(),
+      recipes: recipes.map(recipeKey).sort(),
+      at: 'unread',
     });
   }
   return { calls, links };

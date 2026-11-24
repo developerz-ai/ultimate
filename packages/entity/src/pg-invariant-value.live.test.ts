@@ -121,6 +121,16 @@ describe.skipIf(!hasPostgres)('live · postgres · a value rule means one thing'
     expect(await check(total, rate, code)).toBe(CHECK_VIOLATION);
   });
 
+  test('a patch the CHECK refuses answers as the insert of that row does', async () => {
+    const repo = postgresRepo(ledgers);
+    await repo.insert({ id: id(9), total: '5', rate: '1.5', share: null, code: 'x' });
+    expect(await codeOf(() => repo.update(id(9), { total: '-1' }))).toBe('X_INVARIANT_VIOLATED');
+    expect(await codeOf(() => repo.updateWhere({ id: id(9) }, { rate: '2' }))).toBe(
+      'X_INVARIANT_VIOLATED',
+    );
+    expect((await repo.findById(id(9)))?.total).toBe('5');
+  });
+
   test('one past int8 is refused before the server answers 22003', async () => {
     const row = { id: id(4), total: '9223372036854775808', rate: '1.5', share: null, code: 'x' };
     // Through `database()`: the table handle is what runs the column's `$parse`.

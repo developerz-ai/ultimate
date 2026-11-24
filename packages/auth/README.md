@@ -701,11 +701,17 @@ const verification = await consumeVerification(runtime, {
 | `DEFAULT_VERIFICATION_TTL_MS` | 24 h for `email-verify`, 1 h for `password-reset` — a reset link is a password |
 | `MailSender` | the injected port: `send(template, to, data, locale)`. `@ultimat3/mail` is tier 4 and this package is tier 2, so the app wires it |
 | `issueVerification(runtime, input)` | `{ token, expiresAt }`. The token comes back for a test or a CLI; production only ever mails it |
-| `consumeVerification(runtime, input)` | the `AuthVerification` row, or `X_UNAUTHENTICATED`. Unknown, spent, expired and mismatched are one answer. An undeclared purpose on either door is `X_VERIFICATION_PURPOSE_UNKNOWN` |
+| `consumeVerification(runtime, input)` | the `AuthVerification` row, or `X_UNAUTHENTICATED`. Unknown, spent, expired and mismatched are one answer. Reads only `{ store, clock }` of the runtime. An undeclared purpose on either door is `X_VERIFICATION_PURPOSE_UNKNOWN` |
 
 One live token per `(purpose, identifier)`. A wrong guess destroys nothing: the store's
 `takeVerification(purpose, identifier, tokenHash)` matches before it consumes, so an
 unauthenticated POST with any token cannot kill the victim's live link.
+
+### Signing in with a mailed link
+
+Not exported in this release: `signInWithLink` stays internal to the package until its account
+reclaim path settles, and ships in the next minor. Until then a mailed credential is
+`defineVerificationPurpose` + `consumeVerification`, as above.
 
 ## Passkeys — WebAuthn sign-in and digest-bound step-up
 
@@ -744,11 +750,12 @@ const erase = passkeyStepUp<{ readonly memberId: string }>(auth, {
 | Export | What |
 |---|---|
 | `passkeyLogin(auth)` | `{ registerOptions({ userId }), register({ userId, response }), loginOptions(), login({ response, ip?, userAgent? }) }` — `login` answers `login()`'s `LoginResult`, MFA-satisfied |
+| `renamePasskey(auth, { userId, id, label })` | the owner's passkey renamed (`label: null` clears it): the updated `PasskeyCredential`, or `null` when `userId` holds no passkey with that id. A label is 1-`PASSKEY_LABEL_MAX` (64) characters after trimming, then no control character or lone surrogate, else `X_PASSKEY_LABEL_INVALID` (422). Named right after `register`, or any time later An adapter with no `renamePasskey` member is `X_PASSKEY_RENAME_UNSUPPORTED` (501) |
 | `passkeyStepUp(auth, { digest, ttlMs? })` | `{ options({ userId, input }), verify({ userId, input, response }) }`; `verify` answers the stored `PasskeyEvidence` or throws `X_PASSKEY_STEP_UP_REQUIRED` (no proof, a proof for other bytes, no passkey registered) |
 | `verifyPasskeyEvidence(evidence, { rpId, origins })` | `true` only when the row is a user-verified signature, by its own key, over the challenge its nonce, digest and user derive — no adapter, no clock: a separate process re-checks it |
 | `@ultimat3/auth/client` | `newPasskey`, `getPasskey`, `passkeysSupported`: outcomes `ok` / `cancelled` / `unsupported` / `failed`, never a throw. Two modules, ~2.3 kB minified (`client-bundle.test.ts`) |
 | testing a ceremony | `softAuthenticator({ origin })` from `@ultimat3/auth/soft-authenticator`: real WebCrypto keys answering `create` / `get` — this package's own suites and an app's share the one implementation and the one path |
-| `PasskeyStore` | the nine `AuthAdapter` members over `x_passkeys`, `x_passkey_challenges` (sha256 of the challenge, TTL, taken by `DELETE … RETURNING`) and `x_passkey_evidence`; both adapters, one suite (`passkey-store.test.ts`, PGlite) |
+| `PasskeyStore` | the nine `AuthAdapter` members, and the optional `renamePasskey`, over `x_passkeys` (its `label` column added at every boot), `x_passkey_challenges` (sha256 of the challenge, TTL, taken by `DELETE … RETURNING`) and `x_passkey_evidence`; both adapters, one suite (`passkey-store.test.ts`, PGlite) |
 
 Every ceremony checks `clientDataJSON`'s type, the origin exactly, `rpIdHash`, UP **and** UV, the
 signature under the stored key's algorithm, and a counter that must move forward unless both are
@@ -765,9 +772,11 @@ OAuth 2.1 server: authorization code + PKCE (S256 only), refresh rotation with r
 `readDevice`/`approveDevice`/`denyDevice`); the consent page reads with
 `readRequest(url, { callerKey })` — every metadata-document fetch is metered, and an absent
 `callerKey` shares one bucket with every other unkeyed read. `oauthBearerResolver(server, { actor, resource? })` is
-the `resolveToken`. `resolve` answers the token's `grantId` (one consent, kept across refresh
-rotation); `grants({ subject, clientId? })` lists a subject's live grants and
-`revoke({ subject, grantId })` ends one of them alone. Stores: `memoryAuthServerStore()`, `postgresAuthServerStore({ executor })`
+the `resolveToken`. `resolve` answers the token's `grantId` (the grant it was issued under — a user's consent, or a
+`client_credentials` client's own — kept across refresh rotation); `grants({ subject, clientId? })`
+lists a subject's unrevoked grants holding at least one stored token neither expired nor retired,
+and `revokeGrant({ subject, grantId })` ends one of them alone — counted once under racing calls
+when the store implements `revokeLiveGrant` (the memory and Postgres stores do). Stores: `memoryAuthServerStore()`, `postgresAuthServerStore({ executor })`
 over `SQL_AUTH_SERVER_TABLES`, which the boot applies. A code is spent only by a request that could
 redeem it: client, PKCE verifier, `redirect_uri` and `resource` are checked on `getCode` before
 `takeCode` marks it used, so a request without the verifier neither burns a login nor trips the
@@ -896,7 +905,10 @@ one `idleSlideMs`.
 `getSessionWithUser` joins `x_sessions` to `x_users` by the session id, and the secret half and
 both clocks are checked on the row it returns exactly as `verifySession` checks them
 (`admitSession`, one copy). A request that slides the idle window adds the one write above.
-Counted on PGlite by `authenticate-statements.test.ts`.
+Counted on PGlite by `authenticate-statements.test.ts`. A hook that needs the session and the user
+rather than an actor calls the same read: `verifySessionWithUser(auth.sessions, auth.adapter, token)`
+answers `{ session, user }` (`user: null` when the session outlived its user — delete the session and
+refuse), one join on an adapter with `getSessionWithUser`, else `verifySession` then `findUserById`.
 
 **Revocation is unaffected, and deliberately so.** `authenticate` re-reads the *user* row on every
 request — in that same join — so a revoked role takes effect on the very next one with no token-expiry lag — a better

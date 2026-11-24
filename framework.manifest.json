@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d3dbd4cb8d80168ee0d88d58913698083192eefd8dfa272a6aeff57a4793653a",
+  "buildId": "fba86765039e4b3a09c7936a71fe8a8c63749832bcbdab8f8c45113369659452",
   "tiers": {
     "0": [
       "core",
@@ -48,187 +48,187 @@
   "packages": [
     {
       "name": "@ultimat3/core",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/schema",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 0,
       "private": false
     },
     {
       "name": "@ultimat3/cache",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/db",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/flags",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/i18n",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/money",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/seo",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/storage",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/time",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 1,
       "private": false
     },
     {
       "name": "@ultimat3/auth",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/entity",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/http",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/policy",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 2,
       "private": false
     },
     {
       "name": "@ultimat3/action",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/jobs",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/query",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/realtime",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 3,
       "private": false
     },
     {
       "name": "@ultimat3/ai",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mail",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/manifest",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/mcp",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/notify",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/pwa",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/render",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/scraping",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/ui",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 4,
       "private": false
     },
     {
       "name": "@ultimat3/admin",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/cli",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "@ultimat3/testing",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 5,
       "private": false
     },
     {
       "name": "create-ultimate",
-      "version": "31.49.0",
+      "version": "31.50.0",
       "tier": 6,
       "private": false
     }
@@ -751,6 +751,21 @@
     },
     {
       "code": "X_BEARER_MOUNT_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_BEARER_TENANT_LIST_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_BEARER_TENANT_REQUIRED",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_BEARER_TENANT_UNRESOLVED",
       "owner": "http",
       "at": "packages/http/src/error-titles.ts"
     },
@@ -2006,6 +2021,11 @@
     },
     {
       "code": "X_E2E_APP_FAILED",
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
+    },
+    {
+      "code": "X_E2E_CONSOLE_ERRORS",
       "owner": "testing",
       "at": "packages/testing/src/e2e-error-codes.ts"
     },
@@ -3590,6 +3610,11 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_ELICITATION_URL_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_GROUP_CONFLICT",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -4240,6 +4265,11 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_OUTBOUND_TRANSPORT_REDIRECTED",
+      "owner": "core",
+      "at": "packages/core/src/outbound-errors.ts"
+    },
+    {
       "code": "X_OUTBOUND_UNAVAILABLE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -4306,6 +4336,16 @@
     },
     {
       "code": "X_PASSKEY_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_LABEL_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_RENAME_UNSUPPORTED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },

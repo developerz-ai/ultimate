@@ -10,6 +10,7 @@ import {
   renderFixLiteral,
   UltimateError,
 } from '@ultimat3/core';
+import { siteAssetTable } from '@ultimat3/render/server';
 import type { Storage } from '@ultimat3/storage';
 import type { IslandBundle } from './island-bundle';
 import type { BuildAsset, PublishReport, RetainLog } from './retained-assets';
@@ -18,7 +19,6 @@ import { retainedPrefix } from './retained-assets-layout';
 import type { RetainedAssets } from './retained-assets-read';
 import { retainedAssets } from './retained-assets-read';
 import { retainedBuildOnce } from './runtime-boot-warnings';
-import { siteAssetTable } from './site-assets';
 import type { StyleBundle } from './style-bundle';
 import type { FrameworkScript } from './worker-bundle';
 

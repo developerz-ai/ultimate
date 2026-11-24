@@ -21,7 +21,7 @@ import { routeEntries, setAssetResolver } from '@ultimat3/render';
 // here is six hops through `error-contract` → `fix-command` → the command registry, which is an
 // accident one refactor away from compiling every app's `.tsx` to `React.createElement`. The named
 // import is a value import, so the side effect holds without the bare line it replaced.
-import { setStylesheetRoot } from '@ultimat3/render/server';
+import { setStylesheetRoot, siteAssetTable } from '@ultimat3/render/server';
 import { asyncModules } from './app-load-async';
 import { importInOrder } from './app-load-batch';
 import { isFirstPass, registeredAny, registerModule } from './app-load-register';
@@ -33,7 +33,6 @@ import type { Finding } from './output';
 import { findingFrom } from './output';
 import { hasPathSegment } from './path-segments';
 import { posixRelative, toPosix } from './posix-path';
-import { siteAssetTable } from './site-assets';
 import { isTest } from './source-files';
 
 /** Every place an app keeps code the framework has to see. */

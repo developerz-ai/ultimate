@@ -32,6 +32,12 @@ describe('@ultimat3/auth public surface', () => {
     expect(Object.isFrozen(auth.BUILTIN_OAUTH_PROVIDER_IDS)).toBe(true);
   });
 
+  // The one-read session check `authenticate` runs, for a hook that needs the session and the user
+  // themselves: one join on an adapter with `getSessionWithUser`, never two sequential reads.
+  test('re-exports verifySessionWithUser', () => {
+    expect(typeof auth.verifySessionWithUser).toBe('function');
+  });
+
   test('v31: the app API only — no error factory, code list, schema or internal default', () => {
     const internal = [
       'API_KEY_NAMESPACE',

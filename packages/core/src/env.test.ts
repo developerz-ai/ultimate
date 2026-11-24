@@ -253,3 +253,63 @@ describe('defineEnv', () => {
     expect((best / CHECKS_PER_ROUND) * 1000).toBeLessThan(BUDGET_US_PER_CHECK);
   });
 });
+
+describe('a key required only in some environments', () => {
+  const deployed = {
+    PAYMENTS_KEY: {
+      type: 'string',
+      secret: true,
+      required: false,
+      requiredIn: ['staging', 'production'],
+    },
+  } as const satisfies EnvSchema;
+  const issuesIn = (env: Record<string, string>): readonly string[] =>
+    checkEnv(deployed, { env: { ROLE: 'web', ...env }, redact: false }).issues.map(
+      (issue) => issue.key,
+    );
+
+  test('unset in development and test: undefined, no issue', () => {
+    expect(issuesIn({ ULTIMATE_ENV: 'development' })).toEqual([]);
+    expect(issuesIn({ NODE_ENV: 'test' })).toEqual([]);
+    const env = defineEnv(deployed, { env: { ROLE: 'web', ULTIMATE_ENV: 'test' }, redact: false });
+    // Exactly `string | undefined`: a type that promised `string` would be a lie in development.
+    type Key = typeof env.PAYMENTS_KEY;
+    const exact: [Key] extends [string | undefined]
+      ? [string | undefined] extends [Key]
+        ? true
+        : false
+      : false = true;
+    expect(exact).toBe(true);
+    expect(env.PAYMENTS_KEY).toBeUndefined();
+  });
+
+  test('unset in a deploy: missing, as any required key is', () => {
+    expect(issuesIn({ ULTIMATE_ENV: 'production' })).toEqual(['PAYMENTS_KEY']);
+    expect(issuesIn({ ULTIMATE_ENV: 'staging' })).toEqual(['PAYMENTS_KEY']);
+  });
+
+  test('NODE_ENV is the fallback, and ULTIMATE_ENV wins over it', () => {
+    expect(issuesIn({ NODE_ENV: 'production' })).toEqual(['PAYMENTS_KEY']);
+    expect(issuesIn({ NODE_ENV: 'production', ULTIMATE_ENV: 'test' })).toEqual([]);
+  });
+
+  test("another role's key is not this process's, in a deploy too", () => {
+    const syncOnly = {
+      SYNC_KEY: { type: 'string', role: 'sync', required: false, requiredIn: ['production'] },
+    } as const satisfies EnvSchema;
+    const issues = (role: string) =>
+      checkEnv(syncOnly, { env: { ROLE: role, ULTIMATE_ENV: 'production' }, redact: false }).issues;
+    expect(issues('web')).toEqual([]);
+    expect(issues('sync').map((issue) => issue.key)).toEqual(['SYNC_KEY']);
+  });
+
+  test('an environment no reader can name fails closed: required', () => {
+    expect(issuesIn({ ULTIMATE_ENV: 'prod' })).toEqual(['PAYMENTS_KEY']);
+  });
+
+  test('describeEnv names the environments, and only when declared', () => {
+    const [summary] = describeEnv({ ...deployed, OTHER: { type: 'string' } });
+    expect(summary?.requiredIn).toEqual(['staging', 'production']);
+    expect('requiredIn' in (describeEnv({ OTHER: { type: 'string' } })[0] ?? {})).toBe(false);
+  });
+});

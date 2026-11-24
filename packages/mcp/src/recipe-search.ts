@@ -1,12 +1,12 @@
 /**
  * `docs({ q })`'s ranking, stated so it can be argued with: a recipe scores the query words it
- * contains — 3 for one in its name or title, 2 in its description, 1 in its body — each word once.
+ * contains — 3 in name, title or aliases, 2 in description, 1 in body — each word once.
  * The best positive score is the hit. With none, the nearest names by edit distance are offered,
  * so a miss is never an empty answer while any recipe exists.
  */
 
 import type { McpRecipe } from './recipes';
-import { renderRecipe } from './recipes';
+import { renderRecipe, uriOf } from './recipes';
 
 const NEAREST = 3;
 /** A recipe name is a few dozen characters; a longer probe is no nearer to one for its tail. */
@@ -35,19 +35,25 @@ export function rankRecipes(recipes: readonly McpRecipe[], q: string): RecipeRan
   const scored = recipes
     .map((recipe) => ({ recipe, score: scoreOf(recipe, asked) }))
     .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score || a.recipe.name.localeCompare(b.recipe.name));
+    .sort((a, b) => b.score - a.score || byName(a.recipe, b.recipe));
   if (scored.length > 0) return { matches: scored.map((entry) => entry.recipe), nearest: [] };
   const target = q.toLowerCase().trim();
   const nearest = recipes
     .map((recipe) => ({ recipe, distance: closeness(recipe, target, asked) }))
-    .sort((a, b) => a.distance - b.distance || a.recipe.name.localeCompare(b.recipe.name))
+    .sort((a, b) => a.distance - b.distance || byName(a.recipe, b.recipe))
     .slice(0, NEAREST)
     .map((entry) => entry.recipe);
   return { matches: [], nearest };
 }
 
+/** Ties by name, then by URI: one name may sit in two sections. */
+const byName = (a: McpRecipe, b: McpRecipe): number =>
+  a.name.localeCompare(b.name) || uriOf(a).localeCompare(uriOf(b));
+
+const aliasText = (recipe: McpRecipe): string => (recipe.aliases ?? []).join(' ');
+
 function scoreOf(recipe: McpRecipe, asked: readonly string[]): number {
-  const named = words(`${recipe.name} ${recipe.title}`);
+  const named = words(`${recipe.name} ${recipe.title} ${aliasText(recipe)}`);
   const described = words(recipe.description);
   const body = words(renderRecipe(recipe));
   let score = 0;
@@ -60,13 +66,14 @@ function scoreOf(recipe: McpRecipe, asked: readonly string[]): number {
 }
 
 /**
- * The smallest edit distance from the query, or any of its words, to the name or a title word.
+ * The smallest edit distance from the query, or any of its words, to the name or a title or alias
+ * word.
  * Bounded: the query is caller input and the distance is |probe| x |candidate|, so only the first
  * `MAX_PROBES` words count, each cut to `MAX_PROBE_LENGTH`, and a pair whose lengths already differ
  * by the best distance found is skipped — it cannot beat it.
  */
 function closeness(recipe: McpRecipe, target: string, asked: readonly string[]): number {
-  const candidates = [recipe.name, ...words(recipe.title)].map(clamped);
+  const candidates = [recipe.name, ...words(`${recipe.title} ${aliasText(recipe)}`)].map(clamped);
   const probes = [target, ...asked.slice(0, MAX_PROBES)].map(clamped);
   let best = Number.POSITIVE_INFINITY;
   for (const probe of probes) {

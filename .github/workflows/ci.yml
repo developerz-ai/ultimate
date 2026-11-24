@@ -266,14 +266,15 @@ jobs:
             echo "::notice title=Flaky rerun capped::${skipped} changed test file(s) past the first $(jq -r '.data.cap' "$RUNNER_TEMP/rerun.json") (sorted) were not rerun. fix: bun test --rerun-each 5 <path> for each one you changed"
           fi
           echo "any=$(jq -r '.data.paths | length > 0' "$RUNNER_TEMP/rerun.json")" >> "$GITHUB_OUTPUT"
-      # What a unit part has before its tests: the test Postgres, origin/main's tip and the two
-      # newest release tags (the gate's own steps say why each is fetched once, up front).
+      # What a unit part has before its tests: the test Postgres, origin/main as the run's base and
+      # the two newest release tags (the gate's own steps say why each is fetched once, up front).
+      - if: steps.select.outputs.any == 'true'
+        uses: ./.github/actions/fetch-base
       - name: test Postgres, in RAM, and the refs the scripts tests read
         if: steps.select.outputs.any == 'true'
         run: |
           docker compose -f docker/docker-compose.test.yml up -d --wait postgres
           grep -E '^TEST_DATABASE_URL=' docker/test-services.env >> "$GITHUB_ENV"
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
           refs=""
           for tag in $(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' \
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -2); do
@@ -320,12 +321,13 @@ jobs:
         run: bun run scripts/release.ts --bump minor --rehearse
       # What the scripts tests read beside the tree, as `flaky` fetches it — AFTER the bump, whose
       # clean-tree rule a service's files could never break but whose commit range a fetch would.
+      - if: steps.due.outputs.due == 'true'
+        uses: ./.github/actions/fetch-base
       - name: test Postgres, in RAM, and the refs the scripts tests read
         if: steps.due.outputs.due == 'true'
         run: |
           docker compose -f docker/docker-compose.test.yml up -d --wait postgres
           grep -E '^TEST_DATABASE_URL=' docker/test-services.env >> "$GITHUB_ENV"
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
           refs=""
           for tag in $(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' \
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -2); do
@@ -467,13 +469,14 @@ jobs:
           nohup bash -c 'time docker compose -f docker/docker-compose.test.yml up -d --wait "$@"; echo $? > "$RUNNER_TEMP/services.exit"' \
             services $SERVICES > "$RUNNER_TEMP/services.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/services.pid"
-      # `scripts/budget-raises.ts` compares every route budget with origin/main's TIP, so one commit
-      # at depth 1 is all it needs — never `fetch-depth: 0`. Skipped on a push to main, where HEAD
-      # IS that tip: the rule then prints that it compared nothing, and there is nothing to raise.
+      # `scripts/budget-raises.ts` compares every route budget with origin/main, this run's base
+      # (`fetch-base`), so one commit at depth 1 is all it needs — never `fetch-depth: 0`. Skipped
+      # on a push to main, where HEAD IS that tip: the rule then prints that it compared nothing,
+      # and there is nothing to raise.
       # In every part, because the rule is a test and a shard may be the one that holds it.
-      - name: fetch origin/main's tip for budget-raises
+      - name: fetch origin/main as this run's base, for budget-raises
         if: github.ref != 'refs/heads/main'
-        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+        uses: ./.github/actions/fetch-base
       # `changelog-check` diffs the guard templates between the two newest release tags and since
       # the newest (`scripts/lib/guard-refresh-git.ts`): both tags once, at depth 1, before the
       # parallel tests that would otherwise each fetch them and race on `.git/shallow.lock`.
@@ -1527,9 +1530,9 @@ jobs:
       # that found no origin/main fetched it at the same moment — the losers died on
       # `.git/shallow.lock` and `pin-raises.test.ts` read `undefined` (run 42941773147). Skipped on
       # a push to main for the reason the gate's identical step gives.
-      - name: fetch origin/main's tip for the base-ref tests
+      - name: fetch origin/main as this run's base, for the base-ref tests
         if: github.ref != 'refs/heads/main'
-        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+        uses: ./.github/actions/fetch-base
       # `changelog-check` diffs the guard templates between the two newest release tags and since
       # the newest (`scripts/lib/guard-refresh-git.ts`): both tags once, at depth 1, before the
       # parallel tests that would otherwise each fetch them and race on `.git/shallow.lock`.

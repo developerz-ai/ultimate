@@ -1,6 +1,7 @@
 // Which changes to a declaration every caller survives: an optional member, an optional trailing
 // parameter, a parameter that accepts more, a literal set that grew, a read-only value or class that
-// gained members, a local that changed compatibly. Everything else — and anything unknown — breaks.
+// gained members, a namespace that gained exports, a local that changed compatibly. Everything else
+// — and anything unknown — breaks.
 
 import { describe, expect, test } from 'bun:test';
 import type { ApiSymbol } from './public-api-compat';
@@ -292,6 +293,30 @@ describe('public-api-compat · declarations', () => {
     const overloads = 'function f ( a : 1 ) : void\nfunction f ( a : 2 ) : void';
     expect(verdict(overloads, 'function f ( a : 1 ) : void')).toContain('break');
     expect(verdict('type S = { a : 1 ; }', 'function S ( ) : void')).toContain('break');
+  });
+
+  // `import * as UI_KEYS` re-exported: `public-api-symbols.ts` writes it as `name=digest,…`.
+  const KEYS = 'a=1111,b=2222';
+
+  test('a namespace that gained an export is compatible: a module object is only read', () => {
+    expect(verdict(KEYS, `${KEYS},c=3333`)).toBe(
+      'compatible: 1 export(s) added to a namespace callers only read',
+    );
+  });
+
+  test('a namespace export removed or changed is a break', () => {
+    expect(verdict(KEYS, 'a=1111')).toBe('break: its export `b` was removed');
+    expect(verdict(KEYS, 'a=1111,b=9999,c=3333')).toBe('break: its export `b` changed');
+  });
+
+  test('a namespace recorded without its exports is still judged by its text', () => {
+    const before = symbol(KEYS);
+    if (before.shape?.kind !== 'declaration') return expect.unreachable('a namespace declaration');
+    const { exports: _exports, ...bare } = before.shape;
+    expect(classify({ hash: before.hash, shape: bare }, symbol(`${KEYS},c=3333`))).toEqual({
+      kind: 'break',
+      why: 'its namespace declaration changed, and one of this form is judged by its text',
+    });
   });
 
   test('a recorded bare hash, or an unrecorded shape, judges any change a break', () => {

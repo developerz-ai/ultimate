@@ -142,7 +142,18 @@ export function shapeOf(text: string): ApiShape {
     keyword,
     head: shortDigest(own.join('\n')),
     ...(Object.keys(locals).length === 0 ? {} : { locals }),
+    ...(keyword === 'namespace' ? { exports: namespaceExports(own[0] ?? '') } : {}),
   };
+}
+
+/** A namespace's text, `name=digest,…` (`public-api-symbols.ts`'s `namespaceText`), as a record. */
+function namespaceExports(text: string): Record<string, string> {
+  return Object.fromEntries(
+    text.split(',').map((pair) => {
+      const at = pair.indexOf('=');
+      return [pair.slice(0, at), pair.slice(at + 1)];
+    }),
+  );
 }
 
 /** Each `inherits interface P … { … }` line's members, the nearest ancestor's code first. */

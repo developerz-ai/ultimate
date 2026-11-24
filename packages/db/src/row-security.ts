@@ -20,13 +20,21 @@ const TYPE = /^[a-z][a-z0-9 ]*$/;
 
 /**
  * Unset is `''` (a `set_config` local value reads back as `''` once its transaction ends) and
- * `nullif` turns it into NULL, so an unset tenant matches NO row: fail closed, never open.
+ * `nullif` turns it into NULL, so an unset tenant matches NO row: fail closed, never open. An unset
+ * cross switch reads NULL on a connection that never set it, and `''` on a pooled one whose earlier
+ * transaction set it locally; neither is `'on'`, so in both the `else` — the tenant — decides.
+ *
+ * A `case`, never `tenant or cross`, and the two read the same rows. The difference is the PLAN:
+ * the planner multiplies an `or` of two guessed selectivities (~5% together) into every row
+ * estimate, so a tenant's 2,500-row keyset page read as ~140 rows and was answered by a bitmap scan
+ * and a sort instead of the ordered index scan its `(org_id, …)` index exists for. A `case` is
+ * estimated at one half, which keeps that scan (`row-security-plan-shape.test.ts`).
  */
 function predicate(column: string, type: string): string {
   if (!TYPE.test(type)) throw identifierUnsafe(type);
   return (
-    `(${identifier(column).text} = nullif(current_setting('${TENANT_SETTING}', true), '')::${type}` +
-    ` or current_setting('${CROSS_TENANT_SETTING}', true) = 'on')`
+    `(case when current_setting('${CROSS_TENANT_SETTING}', true) = 'on' then true` +
+    ` else ${identifier(column).text} = nullif(current_setting('${TENANT_SETTING}', true), '')::${type} end)`
   );
 }
 

@@ -4,7 +4,12 @@
 import type { Ctx } from '@ultimat3/core';
 import { emptyClauseList } from './errors';
 import { actorHas } from './grant-index';
-import { assertPermission, type KnownPermission, type Permission } from './permissions';
+import {
+  assertPermission,
+  type KnownPermission,
+  type Permission,
+  permissionSetDeclared,
+} from './permissions';
 import { markPreInput, type PreInputRun, preInputRun } from './pre-input-brand';
 import type { Actor } from './roles';
 import type { PolicyScope } from './scope';
@@ -132,10 +137,22 @@ export const can = <I = unknown, R = unknown>(
 ): Policy<I, R> => {
   assertPermission(permission);
   const label = permission;
+  // Built while no permission was declared — a rule at module scope imported ahead of the app's
+  // permission module — the check above had nothing to check against and let the name through.
+  // So it is made again at the first decision after the declared set becomes nonempty (an empty
+  // `definePermissions([])` does not count): a name that set lacks is `X_PERMISSION_UNKNOWN` there,
+  // never a deny for every actor with no reason given. Decisions before that stay unchecked.
+  let vetted = permissionSetDeclared();
+  const vet = (): void => {
+    if (vetted || !permissionSetDeclared()) return;
+    assertPermission(permission);
+    vetted = true;
+  };
   // The actor half of the rule, on its own: it reads nothing the caller sent, which is what lets
   // the before-input gate (`pre-input.ts`) refuse a caller who may never call this before their
   // payload is parsed — and a 403 then says nothing about the input schema.
   const gate = (actor: Actor | null): PolicyDecision | undefined => {
+    vet();
     if (actor === null) return denied(`no actor for ${label}`, 'X_UNAUTHENTICATED');
     if (!actorHas(actor, permission as Permission)) return denied(`actor lacks ${label}`);
     return undefined;

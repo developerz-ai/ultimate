@@ -329,7 +329,9 @@ export type {
   PasskeyPolicyInput,
   PasskeyRelyingParty,
 } from './passkey-config';
+export { PASSKEY_LABEL_MAX } from './passkey-errors';
 export { verifyPasskeyEvidence } from './passkey-evidence';
+export { renamePasskey } from './passkey-label';
 export type { PasskeyLogin } from './passkey-login';
 export { passkeyLogin } from './passkey-login';
 export type { PasskeyStepUp, PasskeyStepUpOptions } from './passkey-step-up';
@@ -425,6 +427,8 @@ export {
   sessionExpiry,
   verifySession,
 } from './session';
+export type { VerifiedSession } from './session-user';
+export { verifySessionWithUser } from './session-user';
 /** A sign-out response's headers: the session cookie expired, and `Clear-Site-Data`. */
 export type { SignOutHeadersOptions } from './sign-out';
 export { SIGN_OUT_CLEAR_SITE_DATA, signOutHeaders } from './sign-out';

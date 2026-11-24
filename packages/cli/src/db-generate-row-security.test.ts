@@ -35,7 +35,9 @@ async function generate(rowSecurity: boolean): Promise<string> {
 test('flag on: the tenant table is enabled, forced and given the policy; the shared one is not', async () => {
   const up = await generate(true);
   expect(up).toContain('alter table "dgrs_posts" force row level security;');
-  expect(up).toContain('create policy "ultimate_tenant" on "dgrs_posts" using ("org_id" =');
+  expect(up).toContain(
+    'create policy "ultimate_tenant" on "dgrs_posts" using (case when current_setting(\'x.cross\', true) = \'on\' then true else "org_id" =',
+  );
   expect(up).not.toContain('"dgrs_plans" enable row level security');
 });
 

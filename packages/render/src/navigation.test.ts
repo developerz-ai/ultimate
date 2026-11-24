@@ -273,6 +273,19 @@ describe('forms', () => {
     expect(win.assigned).toHaveLength(1);
   });
 
+  test('the error event’s default on a page with a fragment reloads it: `assign` would only scroll', async () => {
+    const { win } = tab({}, page('A', {}, [form({ method: 'post', action: '/send' }, [])]));
+    win.history.replaceState(null, '', 'https://app.test/a#top');
+    submit(win);
+    await settle();
+    expect(win.assigned).toEqual(['reload']);
+    // An empty fragment is one too, though `URL.hash` reads it as none.
+    win.history.replaceState(null, '', 'https://app.test/a#');
+    submit(win);
+    await settle();
+    expect(win.assigned).toEqual(['reload', 'reload']);
+  });
+
   test('an opaque redirect or a failed swap after a POST is the error event, never a resubmit', async () => {
     const { win, doc } = tab(
       {

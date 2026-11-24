@@ -57,7 +57,7 @@ Declared one per file in a feature's `actions/` (`actions/publish-post.ts`, what
 | `mcp.description` | `string` | no | the tool description an agent reads, and the OpenAPI `summary`. Contract text, so it stays outside `t()` — `openapi.json` must not depend on a locale. Write it for a stranger |
 | `mcp.visibleTo` | `readonly string[]` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
 | `rateLimit` | `{ limit: number \| (({ ctx }) => number \| Promise<number>); windowMs: number }` | no | `limit` may be resolved **per call** from `ctx` (the tenant's plan, read by the app), before any bucket is touched; a resolver answering `NaN`, `0`, `Infinity` or a non-number is `X_RATE_LIMIT_INVALID`, never allow-all. A per-call limit publishes as `rateLimit: null` + `rateLimitPerCall: { windowMs }` in `describe()` and `x-ultimate.rateLimit.limit: 'per-call'` in `openapi.json`. Spent **inside `invoke`**, so the HTTP route, the MCP tool, the in-app agent's tool call and `.job()` draw on ONE bucket — the third call to a `limit: 2` action is `X_RATE_LIMITED` whichever surface it came through; a direct in-process call spends nothing. Keyed actor → org → IP; counted in `@ultimat3/http`'s installed store — the `rateLimitStore` adapter port, filled by the boot on every role, `postgresRateLimitStore` unless `apps/<app>/runtime.ts` names one ([Adapters](Adapters#ratelimitstore)). Over HTTP the refusal is `429` + `Retry-After` and `RateLimit-*`, and the route is not also capped by the `default` bucket; the same `toBucket` conversion feeds `openapi.json`, so the published numbers are the enforced ones. `/mcp` additionally buckets by verb class (`MCP_RATE_LIMITS`, read 120/min, write 20/min per token) |
-| `meter` | `{ name, period: 'hour' \| 'day' \| 'month', limit, warnAt?, onWarn? }` | no | a durable per-period allowance — see [Usage meters](#usage-meters-meter). Drawn on **every** surface, `server` included, after the policy and before `handle`; spent, `X_METER_EXCEEDED` (429) |
+| `meter` | `{ name, period: 'hour' \| 'day' \| 'month', limit, warnAt?, onWarn? }` | no | a durable per-period allowance — see [Usage meters](#usage-meters-meter); an amount measured after the work is [`drawMeter`](#programmatic-draws-drawmeter). Drawn on **every** surface, `server` included, after the policy and before `handle`; spent, `X_METER_EXCEEDED` (429) |
 | `idempotent` | `boolean` | no — **required `true` on a `mutator`** | marks the action safe to retry with an `Idempotency-Key` header — over MCP, the tool's optional `idempotencyKey` argument. Inside a transaction the Postgres store settles the record with the write's own `COMMIT`, so a rollback never leaves a `settled` record behind. A field core redacts by name (`apiKey`, `password`, `*Token`…) or a `Secret` is stored as `[redacted]`, and the replay of such an answer is `X_IDEMPOTENT_REPLAY_REDACTED` |
 | `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a caller already holds (`'/api/uploads/signed'`) or a resource-shaped one (`'/orders/:id/refund'`). Lowercase static segments and `:param`s, never `/_x`; each `:param` a REQUIRED `t.string` key of `input:`, else `X_ACTION_HTTP_PATH_INVALID` at registration. The URL's value joins the body before the input is parsed, so the schema, the policy, `row` and the handler read one object; a body naming the key with another value is **400** `X_HTTP_PATH_INPUT_CONFLICT`, never overridden. Under a bearer mount the pin is served at the prefix (`/v1/orders/:id/refund`) — and still at its own path, with the cookie session, as every pin is; the policy decides both. `derivePath(name)` refuses a template; `actionHttpPath(name, { id })` fills it. A `deprecated.replacedBy` naming one is `X_ACTION_DEPRECATION_INVALID`. An inbound webhook is not this door: it is `webhookReceiver()` ([Jobs and workflows](Jobs-And-Workflows#inbound-webhooks)) |
 | `http.method` | `'POST'` · `'PUT'` · `'PATCH'` · `'DELETE'` | no — `'POST'` | the verb the pin answers; needs `http.path`. `X_ACTION_PATH_DUPLICATE` keys on method and path, so `PUT /orders/:id` and `DELETE /orders/:id` are two actions. `action.client()` sends it and fills the URL from the input (each value one encoded segment, the key left out of the body); `rpc()` by name cannot see a pin. In `openapi.json`: `{id}`, an `in: path` required parameter, the key gone from the request body, the operation under the declared verb. `x.manifest.json` writes `http: { path, method }` for a pin only; moving it is breaking. `As of 2026-11` |
@@ -129,6 +129,66 @@ export const callTool = action({
 | contract diff | breaking when a call pattern the old meter admitted is refused: a meter introduced, a lower limit, a longer period not covering the old one at full use (100/day → month needs ≥ 3,100), a rename (`meta.meter` is on the wire), a move to or from a per-call limit. A shorter period at the same limit admits MORE (100/day → 100/hour): additive, as are a higher limit and a removed meter. `warnAt` is internal. `As of 2026-11` |
 | tests | the app preload resets the meter store at every file boundary, as it does the rate-limit store: a test file never resets it itself |
 
+### Programmatic draws: `drawMeter`
+
+Work measured after the fact — tokens a model spent, bytes exported, rows synced — is drawn with `drawMeter(ctx, { meter, period, amount, limit, key })` from `@ultimat3/action`, inside the handler that measured it. Same counters, same store, same caller as `meter:`. `As of 2026-11`.
+
+```ts
+import { action, drawMeter, t } from '@ultimat3/action';
+import { allow } from '@ultimat3/policy';
+
+const PLAN_TOKENS = new Map([['org-free', 100_000]]);
+const tokensFor = (orgId: string | undefined) => PLAN_TOKENS.get(orgId ?? '') ?? 0;
+// The app's own model client, whatever it is: it answers the run's id, its text and its usage.
+declare const model: {
+  complete(text: string): Promise<{ id: string; text: string; usage: { totalTokens: number } }>;
+};
+
+export const summarise = action({
+  input: t.object({ text: t.string }),
+  output: t.object({ summary: t.string, used: t.number.int() }),
+  policy: allow(),
+  // Admission, before the model runs: a caller with no token allowance — anonymous, or on a plan
+  // without one — is refused here, or every call would bill the provider and record nothing.
+  meter: {
+    name: 'summaries',
+    period: 'day',
+    limit: ({ ctx }) => (tokensFor(ctx.actor.orgId) > 0 ? 1_000 : 0),
+  },
+  handle: async ({ input, ctx }) => {
+    // The handler does the work, so it measures the usage: never a count or an id the caller sent,
+    // which would let any member spend the tenant's allowance without running anything.
+    // Accounting after the fact, NOT a spend cap: the model has run before the draw is judged, so a
+    // tenant past its tokens still costs one run per admitted call, refused here and unrecorded.
+    // Bound that with the admission meter's call count and the model's own max-tokens setting.
+    const run = await model.complete(input.text);
+    const drawn = await drawMeter(ctx, {
+      meter: 'tokens',
+      period: 'day',
+      amount: run.usage.totalTokens,
+      limit: ({ ctx }) => tokensFor(ctx.actor.orgId),
+      key: run.id, // the run's own id: a retry of this draw for the same run counts once
+    });
+    return { summary: run.text, used: drawn.used }; // also: limit, replayed, resetsAt
+  },
+});
+```
+
+| Use | When |
+|---|---|
+| `meter:` on the action | the unit is **the call**, known before the handler runs: refused before any work starts — also the admission gate in front of a costly handler, a limit of 0 for a caller with no allowance |
+| `drawMeter` | the unit is an **amount known only after the work**, or one action draws several meters. It records and refuses what was spent; it cannot stop work already done, so it bounds spend only together with a pre-work gate (a `meter:`, a per-call cap on the work) |
+
+| Rule | What happens |
+|---|---|
+| amount | a positive safe integer, added whole or not at all: an amount that would pass `limit` counts nothing and throws `X_METER_EXCEEDED` (429, the same `meta` and `Retry-After`). One larger than the whole limit fits no period: its refusal says so, names no `retryAfterSeconds` (no `Retry-After`) and is `retry: 'terminal'`, so a job dead-letters it instead of waiting out a reset. `limit` judges new charges: a remembered key replays even after its limit drops below its amount |
+| key | required, 1–255 chars, no NUL or lone surrogate (Postgres `text` cannot hold either as written): the unit of work's own id, never one the caller made up. A second draw under it — a retry, a duplicate on another replica, a parallel one — adds nothing and answers `replayed: true`. Remembered for the period it counted in and the next, so a retry just after the reset still counts once; a lagging replica's draw counts in, and is remembered by, the counter's period. A refused draw leaves no key. Replicas share keys only through a shared store: `memoryMeterStore()` remembers per process, and either bound ends that early: `maxDrawKeys` (default 200,000 across every counter, the period before dropped first) or `maxKeys`, whose eviction of a counter takes its keys with it. A durable guarantee is the Postgres store's |
+| counter | a `meter:` with the same name and period counts on the same counter; units are the app's to keep consistent |
+| transaction | the draw is written outside the caller's transaction and stays counted if it rolls back — retry with the same `key` |
+| store | the installed `MeterStore` with `amount` and `drawKey` on `MeterDraw`, declaring `keyedDraws: true` (one that does not is `X_METER_INVALID` before it is drawn on: a store written before keyed draws would count one call and never replay): memory in one process, `x_meter` + `x_meter_key` in Postgres (the counter row locked, then the key claimed under it). A store of your own passes `meterStoreConformance` |
+| no warning | `warnAt`/`onWarn` are `meter:`'s; read `used` and `limit` off the answer |
+| malformed | a bad name, period, amount, key or resolved limit is `X_METER_INVALID`, its fix naming the `drawMeter` call |
+
 ## Streaming: `stream:` and an async generator
 
 An action that answers in pieces declares `stream: <chunk schema>` and writes `handle` as `async *handle({ input, ctx })`: each `yield` is a chunk, the `return` is the output.
@@ -194,6 +254,7 @@ export const load = async (): Promise<{ readonly answer: ActionAnswer | null }> 
 | `static` / `isr` pages read `null` | a shared document is rendered as nobody, with no inbound cookie |
 | outside a request (the `llms.txt` build runs `load` with none) reads `null`, never `X_NO_REQUEST` | no request, no answer |
 | translate on `code` and `issues[].rule` with `t()` | the flash carries no prose, so no locale |
+| a field's text reaches its declared type | a form posts text; the route coerces it toward `input` as a query route coerces a query string — `ok=on` is `true` for `t.boolean`, `count=7` is `7`, one value fills a `t.array`, the last of a repeated scalar wins (a hidden `false` before its checkbox). A JSON body is never coerced. `As of 2026-11` |
 | field values are not carried back | a password or a card number does not belong in a cookie; the form re-renders empty, or the page keeps a draft |
 
 **Enforced.** The `manifest` step of `x verify` reads every `page.tsx` for a `<form method="post">` whose `action` names an action — a literal path, `derivePath(name).path`, `actionHttpPath(name, …).path`, or a `const` in the same file holding one — and reports one with no `native` as `X_NATIVE_FORM_UNANSWERED`, the page's `file:line` and the fix. On `main` it is a **warning** — listed under the step's `warnings` in `--json`, the step stays green — because refusing it would turn an app's gate red between two minors (`X_BREAKING_ON_MAIN`); the refusal is planned for `next`. A form inside a component other than the page is not read. `As of 2026-11`.
@@ -243,7 +304,8 @@ There is **one execution path**. HTTP, MCP, jobs, and direct server calls differ
 | Key | Effect |
 |---|---|
 | `http.pathStyle` | `'resource'` (default — every existing URL stays) or `'readable'`: `signIn` → `/api/sign-in`, `health` → `/api/health`. A browser states nothing: the server stamps a non-default style into every document (`<meta name="ultimate-path-style">`) and `rpc({ baseUrl: '' })`, `useMutation` and the outbox replay derive under it. A caller with no document — a script, another service — passes `rpc({ baseUrl, pathStyle: 'readable' })`; the wrong one is answered 404 `X_CONTRACT_DRIFT` naming the style served and the action's real path, never a bare `X_ROUTE_NOT_FOUND`. The module scan evaluates `apps/web/api/index.ts` first, so a module-level `derivePath(name)` anywhere else sees the declared style; one evaluated earlier (inside the index's own imports) is refused at the declaration, `X_ACTION_PATH_DERIVED_EARLY` — derive inside the function that uses it |
-| `http.mounts[]` | `{ prefix: '/v1', scopes, resolveToken, rateLimit?, openapi? }` — a second door onto a cut of the same routes. Only `Authorization: Bearer` authenticates there (a session cookie reaches nothing, so no CSRF proof is needed); a primitive outside the token's scopes answers **404** like MCP's unknown tool; no/invalid token **401** with `WWW-Authenticate: Bearer`; a per-token `rateLimit` answers `RateLimit-*` and **429** + `Retry-After`, and it **replaces** the `default` bucket on the mount's routes (no `rateLimit`, `default` stands; a route's own bucket and the tenant allowance still apply). A `Link: rel="successor-version"` names the mounted path, and is dropped when the successor is outside this token's cut. `scopes` is the map `defineAppMcp` takes; `resolveToken` the same resolver. `/api/create-case` → `/v1/create-case`, `/_x/query/case-list` → `GET /v1/case-list` |
+| `http.mounts[]` | `{ prefix: '/v1', scopes, resolveToken, rateLimit?, openapi?, tenant? }` — a second door onto a cut of the same routes. Only `Authorization: Bearer` authenticates there (a session cookie reaches nothing, so no CSRF proof is needed); a primitive outside the token's scopes answers **404** like MCP's unknown tool; no/invalid token **401** with `WWW-Authenticate: Bearer`; a per-token `rateLimit` answers `RateLimit-*` and **429** + `Retry-After`, and it **replaces** the `default` bucket on the mount's routes (no `rateLimit`, `default` stands; a route's own bucket and the tenant allowance still apply). A `Link: rel="successor-version"` names the mounted path, and is dropped when the successor is outside this token's cut. `scopes` is the map `defineAppMcp` takes; `resolveToken` the same resolver. `/api/create-case` → `/v1/create-case`, `/_x/query/case-list` → `GET /v1/case-list` |
+| `http.mounts[].tenant` | `{ arg, resolve, list }` — the shape `defineAppMcp({ tenant })` takes, with MCP's three outcomes. The token resolves to a person; every call to a mounted primitive names its tenant in the query string, `?org=org_a`, read after the per-token allowance (an exhausted token is **429** before its tenant is read) and before the pipeline's tenant-aware rate limit, the body and the policy, never from the body; `resolve({ person, value })`'s actor is the caller, so policy, the tenant allowance and a meter see one org per call. None named: **400** `X_BEARER_TENANT_REQUIRED`, fix `GET /v1/tenants`. One the person is not in: the **404** a primitive outside the token's scopes gets, byte for byte. `resolve` threw, or answered no actor: **500** `X_BEARER_TENANT_UNRESOLVED`. `GET <prefix>/tenants` answers `{ tenants }` from `list({ person })` to any valid token, and is the exception: no scope, no tenant; a listed value that `isTenantValue` (`@ultimat3/http`) refuses — not a string, empty, over 256 characters (code points), or holding a lone surrogate — is **500** `X_BEARER_TENANT_LIST_INVALID`. A successor link keeps the tenant the call named. The mount's document requires the parameter on every primitive operation (keeping a read's own schema for it) and adds the `tenants` path beside any operation already there. `As of 2026-11-23` |
 | `http.mounts[].openapi` | a file (`'openapi.v1.json'`) `x manifest` writes with only the cut, bearer-secured; `x verify` refuses it stale or missing. Each operation's `security` is `[{ bearer: ['<its scope>'] }]` — the one scope of `scopes` that names it (also `x-ultimate.scope`) — and `components.securitySchemes.bearer` lists every scope with the operations it unlocks, in its `description` and as `x-ultimate.scopes` (`{ scope: [names] }`). `As of 22.12`; before, every operation said `bearer: []` |
 | `openapi` | `{ title, version, description, servers, sessionCookie }` — any key makes `openapi.json` complete: `info`, `servers`, `securitySchemes` (`cookie`, plus `bearer` with a mount), `401` + `429` (with `Retry-After`) on every operation its route authenticates, `RateLimit-*` on rate-limited ones. Absent, the bytes are unchanged |
 

@@ -114,8 +114,9 @@ export interface DeviceCodeRecord {
 /** What `resolve(token)` answers for a live access token. */
 export interface ResolvedGrant {
   /**
-   * The grant the token belongs to: one consent, kept across every refresh rotation — what
-   * `revoke({ subject, grantId })` ends. `resolve` always sets it; optional only so a
+   * The grant the token was issued under — a user's consent, or a `client_credentials` client's
+   * own grant — kept across every refresh rotation: what
+   * `revokeGrant({ subject, grantId })` ends. `resolve` always sets it; optional only so a
    * `ResolvedGrant` built by hand (a test's fake source) still compiles. Required waits on `next`.
    */
   readonly grantId?: string | undefined;
@@ -132,6 +133,9 @@ export interface LiveGrant {
   readonly scopes: readonly string[];
   readonly resource: string | null;
   readonly createdAt: Date;
-  /** The last refresh; the grant dies `refreshIdleDays` after it. */
+  /**
+   * The last refresh (the creation until one). Listing reads stored token expiry, not this: a
+   * token issued before `refreshIdleDays` was shortened keeps its stored expiry.
+   */
   readonly refreshedAt: Date;
 }

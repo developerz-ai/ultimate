@@ -10,14 +10,14 @@ import { join } from 'node:path'; // why: Bun ships no path join.
 import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import type { AssetPath } from '@ultimat3/render';
 import { asset, setAssetResolver } from '@ultimat3/render';
-import { siteAssetRoutes } from './site-asset-routes';
 import {
-  createSiteAssetTable,
   hashedAssetUrl,
   parseHashedAssetUrl,
   SITE_ASSETS_SOURCE,
-  writeSiteAssets,
-} from './site-assets';
+  siteAssetTable,
+} from '@ultimat3/render/server';
+import { siteAssetRoutes } from './site-asset-routes';
+import { writeSiteAssets } from './site-assets';
 
 const root = mkdtempSync(join(tmpdir(), 'x-site-assets-'));
 const source = join(root, SITE_ASSETS_SOURCE);
@@ -34,7 +34,7 @@ afterEach(() => setAssetResolver(undefined));
 const HASH = /^[0-9a-f]{8}$/;
 
 const get = async (
-  table: ReturnType<typeof createSiteAssetTable>,
+  table: ReturnType<typeof siteAssetTable>,
   pathname: string,
   headers: Record<string, string> = {},
 ): Promise<Response> => {
@@ -51,7 +51,7 @@ const get = async (
 
 describe('X_ASSET_MISSING', () => {
   test('a file that is not there is refused by code, naming where it belongs', () => {
-    const table = createSiteAssetTable(root);
+    const table = siteAssetTable(root);
     let caught: unknown;
     try {
       table.resolve('assets/missing.webp');
@@ -63,7 +63,7 @@ describe('X_ASSET_MISSING', () => {
   });
 
   test('asset() through an installed table fails the render the same way', () => {
-    const table = createSiteAssetTable(root);
+    const table = siteAssetTable(root);
     setAssetResolver((path) => table.resolve(path).url);
     expect(() => asset('assets/nope.png')).toThrow(
       expect.objectContaining({ code: 'X_ASSET_MISSING' }),
@@ -74,7 +74,7 @@ describe('X_ASSET_MISSING', () => {
 
 describe('the hashed URL', () => {
   test('is content-addressed and round-trips through the parser', () => {
-    const hero = createSiteAssetTable(root).resolve('assets/hero.avif');
+    const hero = siteAssetTable(root).resolve('assets/hero.avif');
     expect(hero.hash).toMatch(HASH);
     expect(hero.url).toBe(`/assets/hero.${hero.hash}.avif`);
     expect(parseHashedAssetUrl(hero.url)).toEqual({ path: 'assets/hero.avif', hash: hero.hash });
@@ -86,7 +86,7 @@ describe('the hashed URL', () => {
   });
 
   test('changes when the bytes change, with no watcher and no restart', () => {
-    const table = createSiteAssetTable(root);
+    const table = siteAssetTable(root);
     const file = join(source, 'changing.png');
     writeFileSync(file, 'one');
     const before = table.resolve('assets/changing.png').url;
@@ -100,7 +100,7 @@ describe('the static export', () => {
   test('carries every servable asset under its hashed name, and nothing else', async () => {
     const out = join(root, '.x', 'static');
     const written = writeSiteAssets(root, out);
-    const table = createSiteAssetTable(root);
+    const table = siteAssetTable(root);
     const hero = table.resolve('assets/hero.avif');
     const film = table.resolve('assets/films/explainer.mp4');
     expect(written).toEqual(
@@ -117,7 +117,7 @@ describe('the static export', () => {
 });
 
 describe('the served surface', () => {
-  const table = createSiteAssetTable(root);
+  const table = siteAssetTable(root);
 
   test('answers the hashed URL immutable, with the type the extension names', async () => {
     const cases: readonly [AssetPath, string][] = [

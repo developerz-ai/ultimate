@@ -87,4 +87,6 @@ export const TIER_0_ERROR_STATUS = {
   X_ERROR_UNDECLARED: 500,
   // @ultimat3/core — a synchronous raster transform is over the web role pixel budget
   X_IMAGE_RASTER_BUDGET: 503,
+  // @ultimat3/core — an outbound transport followed a redirect itself
+  X_OUTBOUND_TRANSPORT_REDIRECTED: 502,
 } satisfies Readonly<Record<string, number>>;

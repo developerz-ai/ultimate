@@ -1,4 +1,5 @@
-// `press()` in a REAL browser: a key that types runs its default action, the way a keyboard does.
+// `press()` and the console in a REAL browser: a key that types runs its default action, the way a
+// keyboard does, a chord holds its modifiers, and the page's console errors are kept.
 // Enter on a focused submit button submits its form; Tab moves focus. A `rawKeyDown` with no text
 // raises no character event, so Enter submitted nothing — this file is that pin.
 //
@@ -16,16 +17,28 @@ const FORM = `<!doctype html><html lang="en"><head><title>press</title></head><b
 <button type="button" id="next">Next</button>
 <script>
 window.__submits = 0;
+window.__shortcut = 0;
+document.addEventListener('keydown', (event) => {
+  if (event.ctrlKey && event.key === 'k') window.__shortcut += 1;
+});
 document.getElementById('f').addEventListener('submit', (event) => {
   event.preventDefault();
   window.__submits += 1;
 });
 </script></main></body></html>`;
 
+/** Served cross-site (`localhost` against the page's `127.0.0.1`): Chrome runs it out of process. */
+const FRAME = `<!doctype html><html lang="en"><head><title>frame</title></head><body>
+<script>console.error('frame broke'); parent.postMessage('logged', '*');</script></body></html>`;
+
 const server = Bun.serve({
   port: 0,
   hostname: '127.0.0.1',
-  fetch: () => new Response(FORM, { headers: { 'content-type': 'text/html; charset=utf-8' } }),
+  fetch: (request) => {
+    const { pathname } = new URL(request.url);
+    const html = pathname === '/frame' ? FRAME : FORM;
+    return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  },
 });
 const baseUrl = `http://127.0.0.1:${String(server.port)}/`;
 
@@ -69,6 +82,55 @@ describe.skipIf(noBrowser)('press() runs the default action of a real key', () =
       await page().press('a');
       await page().press('7');
       expect(await page().evaluate(`document.querySelector('input').value`)).toBe('a7');
+    },
+    E2E_BROWSER_OPEN_MS,
+  );
+
+  test(
+    'Shift+Tab moves focus back, and Control+k reaches a keydown listener with ctrlKey',
+    async () => {
+      await page().goto(baseUrl);
+      await page().evaluate(`document.getElementById('next').focus()`);
+      await page().press('Shift+Tab');
+      expect(await page().evaluate('document.activeElement.id')).toBe('go');
+      await page().press('Control+k');
+      expect(await page().evaluate('window.__shortcut')).toBe(1);
+    },
+    E2E_BROWSER_OPEN_MS,
+  );
+
+  test(
+    'the console keeps a console.error and an uncaught throw from the page',
+    async () => {
+      await page().goto(baseUrl);
+      page().clearConsole?.();
+      await page().evaluate(
+        `addEventListener('error', () => { window.__thrown = true; }); console.error('broken', 2); setTimeout(() => { throw new Error('late'); })`,
+      );
+      // The page's own signal that the throw happened, then one round trip so its event is in.
+      await page().waitFor('window.__thrown === true', 'the uncaught throw', 5_000);
+      await page().evaluate('0');
+      const seen = page().consoleMessages?.() ?? [];
+      expect(seen[0]).toEqual({ level: 'error', text: 'broken 2', source: 'console' });
+      expect(seen[1]?.source).toBe('exception');
+      expect(seen[1]?.text).toContain('late');
+    },
+    E2E_BROWSER_OPEN_MS,
+  );
+
+  test(
+    'a console error in a cross-site iframe is the page’s console error',
+    async () => {
+      await page().goto(baseUrl);
+      page().clearConsole?.();
+      // The frame posts once it has logged; then one round trip so its console event is in.
+      await page().evaluate(
+        `addEventListener('message', () => { window.__frameLogged = true; }); document.body.insertAdjacentHTML('beforeend', '<iframe title="frame" src="http://localhost:' + location.port + '/frame"></iframe>')`,
+      );
+      await page().waitFor('window.__frameLogged === true', 'the cross-site frame to log', 10_000);
+      await page().evaluate('0');
+      const heard = (page().consoleMessages?.() ?? []).some((m) => m.text === 'frame broke');
+      expect(heard).toBe(true);
     },
     E2E_BROWSER_OPEN_MS,
   );

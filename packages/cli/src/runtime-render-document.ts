@@ -20,7 +20,7 @@ import {
   seoRenderers,
 } from '@ultimat3/render';
 import type { HoleSink } from '@ultimat3/render/server';
-import { ROOT_ELEMENT_ID, renderComponent } from '@ultimat3/render/server';
+import { ROOT_ELEMENT_ID, renderComponent, siteAssetTable } from '@ultimat3/render/server';
 import { loadAppConfig } from './app-config-load';
 import type { DocumentOptions } from './document-options';
 import { routeQuery } from './isr-query-guard';
@@ -28,7 +28,6 @@ import { navigationTagsOf } from './page-navigation';
 import { servedPins } from './page-pins';
 import { bootScript, collectorFor } from './route-islands';
 import { linkHeader, preloadTagsOf, preloadUrls } from './route-islands-preload';
-import { siteAssetTable } from './site-assets';
 import { styleBundle } from './style-bundle';
 
 /**

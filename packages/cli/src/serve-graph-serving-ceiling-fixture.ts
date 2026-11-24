@@ -368,5 +368,16 @@
  * raised 1568 → 1569, measured 1569 (2026-11-19, integration): `cli/src/messages-processes.ts` —
  * `x doctor`'s processes rows, spread into the one CLI catalog (`messages.ts`) every role loads;
  * unspread, the doctor printed `⟦cli.doctor.processes…⟧`.
+ * raised 1569 → 1570, measured 1570 (2026-11-23, per-call tenant on bearer mounts): the one on
+ * `MIGRATE_CEILING`, `http/src/bearer-mount-tenant.ts`.
+ * raised 1570 → 1571, measured 1571 (2026-11-23, sign-in by mailed link): `auth/src/link-login.ts`
+ * (`signInWithLink`: a consumed link to a session or the second-factor challenge), on the auth barrel.
+ * raised 1571 → 1572, measured 1572 (2026-11-24, passkey label): `auth/src/passkey-label.ts` — `renamePasskey` and the label reader, on the auth barrel).
+ * raised 1572 → 1573, measured 1573 (2026-11-24, allOf and anyOf): the one on `MIGRATE_CEILING`, `entity/src/expr-connectives.ts`).
+ * raised 1573 → 1574, measured 1574 (2026-11-24, a CHECK refusing an update): the one on `MIGRATE_CEILING`, `entity/src/check-refusal.ts`).
+ * raised 1574 → 1575, measured 1575 (2026-11-24, form bodies coerced): the one on `MIGRATE_CEILING`, `http/src/form-fields.ts`).
+ * lowered 1575 → 1574, measured 1574 (2026-11-24, mailed-link sign-in held back): `auth/src/link-login.ts`
+ * leaves the auth barrel until the next minor, so no role loads it.
+ * raised 1574 → 1575, measured 1575 (2026-11-24, keyed meter draws): the one on `MIGRATE_CEILING`, `action/src/meter-fifo.ts`.
  */
-export const SERVING_ROLE_CEILING = 1569;
+export const SERVING_ROLE_CEILING = 1575;

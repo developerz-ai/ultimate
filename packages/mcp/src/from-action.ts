@@ -41,6 +41,7 @@ import type {
   ToolArgs,
 } from './registry';
 import { jsonResult, structuredResult } from './registry';
+import { withCallAsk } from './url-elicitation';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
 
@@ -149,16 +150,23 @@ export function toolFrom(listed: ListedPrimitive): AnyMcpTool {
       // ONE authz system, TWO surfaces. This `run` IS `invoke`; the HTTP route reaches the
       // same `invoke` with an actor of kind 'user', MCP arrives with kind 'agent'. Same
       // policy, same decision.
-      const output = await withSignal(signal, () =>
-        primitive.runThrough === undefined
-          ? primitive.run({ input: args, actor: caller.actor })
-          : primitive.runThrough({ input: args, actor: caller.actor, door: caller.door }),
+      const { value: output, ask: urlElicitation } = await withCallAsk(async () =>
+        withSignal(signal, () =>
+          primitive.runThrough === undefined
+            ? primitive.run({ input: args, actor: caller.actor })
+            : primitive.runThrough({ input: args, actor: caller.actor, door: caller.door }),
+        ),
       );
       const result =
         outputSchema === undefined ? jsonResult(output) : structuredResult(output, wrap);
       // A list query's page that was cut says so, and where the next one starts (`query-page.ts`).
       const page = pageFactsOf(output);
-      return page === undefined ? result : truncatedResult(result, page);
+      const answer = page === undefined ? result : truncatedResult(result, page);
+      // A handler that asked the person to open a page (`withUrlElicitation`) says so beside it —
+      // unless its answer could not be rendered: that failure is the answer.
+      return urlElicitation === undefined || answer.isError === true
+        ? answer
+        : { ...answer, urlElicitation };
     },
   };
 }

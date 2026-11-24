@@ -72,7 +72,13 @@ export const openApiArtifacts = (manifest: Manifest): readonly OpenApiArtifact[]
   const merged = mergedDocument(manifest);
   const routes = apiRoutes();
   for (const mount of mounts) {
-    bearerMount({ prefix: mount.prefix, routes, scopes: mount.scopes, resolveToken: () => null });
+    bearerMount({
+      prefix: mount.prefix,
+      routes,
+      scopes: mount.scopes,
+      resolveToken: () => null,
+      ...(mount.tenant === undefined ? {} : { tenant: mount.tenant }),
+    });
     artifacts.push({
       file: mount.openapi ?? OPENAPI_FILE,
       text: serializeOpenApi(

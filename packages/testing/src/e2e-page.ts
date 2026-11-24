@@ -4,8 +4,10 @@
 
 import { finiteCount } from '@ultimat3/core';
 import type { AxTreeNode } from './ax-node';
+import type { E2eConsoleMessage } from './e2e-console';
 import { evaluateClosure } from './e2e-evaluate';
 import { e2eLocator } from './e2e-locator';
+import { bindPagePort } from './e2e-page-input';
 import type { E2eSelection } from './e2e-selection';
 import { callBudget, waitForServiceWorker } from './e2e-service-worker';
 import type { LocatorLike, PageLike } from './test-types';
@@ -40,6 +42,19 @@ export interface E2eBrowserPage {
    * (`e2e-a11y-run.ts`) rather than passing a page nothing audited.
    */
   accessibilityTree?(request: AxTreeRequest): Promise<readonly AxTreeNode[]>;
+  /**
+   * A real key press at the focused element, or a chord (`Shift+Tab`, `Control+k`): what
+   * `pressKey(page, key)` forwards to. OPTIONAL as `offline` is; absent, `pressKey` refuses by name.
+   */
+  press?(key: string): Promise<void>;
+  /**
+   * Every console line and uncaught exception the page has printed since `clearConsole()` (or since
+   * this port was built), in order: what `consoleMessages(page)` reads. OPTIONAL as `offline` is;
+   * absent, it refuses by name.
+   */
+  consoleMessages?(): readonly E2eConsoleMessage[];
+  /** Forget the console held so far: the e2e driver calls it as each test starts. */
+  clearConsole?(): void;
 }
 
 /** What the audit asks of one tree read: which nodes to describe, and the selectors to test. */
@@ -163,7 +178,7 @@ export function e2ePage(options: E2ePageOptions): PageLike {
     return answer;
   };
 
-  return {
+  const adapted: PageLike = {
     url: () => page.url(),
     goto: (url) => settled(page.goto(absolute(url), { timeout })),
     // The page's OWN url, re-read at call time: a reload of the url the adapter was built with
@@ -198,4 +213,6 @@ export function e2ePage(options: E2ePageOptions): PageLike {
       }),
     getByText: (text) => locate({ kind: 'text', text, first: false }),
   };
+  bindPagePort(adapted, page);
+  return adapted;
 }

@@ -108,12 +108,25 @@ None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose l
 
 | Request | Era | Answered |
 |---|---|---|
-| `params._meta["io.modelcontextprotocol/protocolVersion"]` in `MCP_MODERN_VERSIONS` (`2026-07-28`) | modern, stateless | `server/discover` and the seven shared methods. Every result carries `resultType: 'complete'` and `_meta["io.modelcontextprotocol/serverInfo"]`; the lists, `resources/read` and `server/discover` add `ttlMs: 0`, `cacheScope: 'private'`. No `initialize`, no `ping` |
+| `params._meta["io.modelcontextprotocol/protocolVersion"]` in `MCP_MODERN_VERSIONS` (`2026-07-28`) | modern, stateless | `server/discover` and the seven shared methods. Every result carries `resultType: 'complete'` — or `'input_required'` for a `tools/call` answered with the URL prompt below, so branch on `resultType` before reading `content` — and `_meta["io.modelcontextprotocol/serverInfo"]`; the lists, `resources/read` and `server/discover` add `ttlMs: 0`, `cacheScope: 'private'`. No `initialize`, no `ping` |
 | no `_meta` version, or one in `MCP_LEGACY_VERSIONS` (`2025-11-25`, `2025-06-18`, `2025-03-26`) | legacy | `initialize` echoes an offered legacy revision, else answers `2025-11-25`; `ping`; the seven shared methods |
 | any other `_meta` version | — | `-32022` `X_MCP_PROTOCOL_UNSUPPORTED`, `data: { supported, requested }` |
 
-`MCP_PROTOCOL_VERSION` is gone (`As of 2026-11`): name the era — `MCP_MODERN_VERSIONS[0]`, or `MCP_LEGACY_VERSIONS`. `resources/templates/list` is `{ resourceTemplates: [] }` on both eras. A resource not found, hidden or absent, is one answer: `-32601` legacy, `-32602` modern. Not served and not advertised: `subscriptions/listen`, multi-round-trip input, the tasks extension, `x-mcp-header`, SSE responses; every `listChanged` is `false`.
+`MCP_PROTOCOL_VERSION` is gone (`As of 2026-11`): name the era — `MCP_MODERN_VERSIONS[0]`, or `MCP_LEGACY_VERSIONS`. `resources/templates/list` is `{ resourceTemplates: [] }` on both eras. A resource not found, hidden or absent, is one answer: `-32601` legacy, `-32602` modern. Not served and not advertised: `subscriptions/listen`, multi-round-trip input other than the URL prompt below, the tasks extension, `x-mcp-header`, SSE responses; every `listChanged` is `false`.
 
+A tool asks the person to open a page with `withUrlElicitation(output, { url, message })` (`As of 2026-11`; spec `client/elicitation`, `basic/patterns/mrtr`):
+
+| `tools/call` | Answer |
+|---|---|
+| modern, and the request's `_meta["io.modelcontextprotocol/clientCapabilities"].elicitation.url` is an object | `resultType: 'input_required'` with `inputRequests.url_elicitation`: `elicitation/create`, `mode: 'url'`, `url` (parsed, `new URL(url).href`), `message`. No `content`, no `requestState` |
+| its retry, carrying `inputResponses.url_elicitation.action` of `accept`, `decline` or `cancel` | the tool runs again and its result is the answer — asked once per call, whichever of the three the person chose. Any other `action` is no answer: an ask the rerun makes is sent, not suppressed; a rerun that no longer asks answers its result |
+| the tool failed (`isError`) | the failure, for every caller: never hidden behind a prompt, and an ask beside it is not checked |
+| modern without the capability, and every legacy request | the tool's result: `output` says in text what the prompt would have. `-32042` is never sent, since a legacy capability is declared on `initialize` and no handshake is kept |
+| a URL that is not absolute `https:` (`http:` on `localhost`, `127.0.0.1` or `[::1]`), carries credentials, or has no message | `X_MCP_ELICITATION_URL_INVALID`, for every caller |
+
+The ask belongs to the call that made it. The handler reruns on the retry whatever the answer, so a write before the ask runs twice: keep writes behind a completion check the handler makes itself. A retry under the same `idempotencyKey` replays the first result and never sees the page finished; check completion in a call without that key. Nothing about the person goes in the URL, and the page checks that whoever opened it is the caller the tool asked.
+
+Over HTTP:
 Over HTTP:
 
 | Request | Answer |
@@ -544,13 +557,21 @@ The reference app's `draftReview` (`examples/dummy/apps/web/mcp-tools.ts`) queue
 | The prefix | with `recipes:`, `resources:` may not hold `docs://recipes/` (`X_MCP_RECIPE_URI_RESERVED`) |
 | Error links | `defineError({ docs: 'docs://recipes/<name>' })` must name a recipe some endpoint serves — `X_MCP_RECIPE_UNKNOWN` at mount; a throw-site link to none is dropped from the render and logged |
 
-**From a markdown folder.** `recipes: await markdownRecipes({ dir: join(import.meta.dir, 'docs') })` reads one `*.md` per recipe and serves its body verbatim. The file name is the recipe name. `title:` and `description:` come from `---` frontmatter, else from the first `# ` heading and the paragraph under it. A fence tagged `call` holds one step, `tool {"arg": "value"}`, and is checked at boot like any `step.example`. A whole `"<postId>"` value is a placeholder, so any value passes at boot. A `docs://recipes/<name>` link in the text that names no recipe is `X_MCP_RECIPE_LINK_DANGLING`.
+**From a markdown folder.** `recipes: await markdownRecipes({ dir: join(import.meta.dir, 'docs') })` reads one `*.md` per recipe and serves its body as written, line ends normalised to LF and outer blank lines trimmed. The file name is the recipe name. `title:`, `description:` and `aliases:` come from `---` frontmatter, else the title and description come from the first `# ` heading and the paragraph under it. A fence tagged `call` holds one step, `tool {"arg": "value"}`, and is checked at boot like any `step.example`. A whole `"<postId>"` value is a placeholder, so any value passes at boot. A `docs://<section>/` link in the text, into a section the recipes serve, that names no recipe is `X_MCP_RECIPE_LINK_DANGLING`; the link's whole path is checked.
 
-**Searching.** `docs({})` lists what this caller can follow. `docs({ name })` and `docs({ uri })` read one recipe. `docs({ q })` inlines the best match (`q` at most 1,000 characters, else `X_INPUT_INVALID`; a miss compares its first 16 words, 64 characters each, for the nearest — `As of 2026-11-19`), scoring 3 for each word in the name or title, 2 in the description and 1 in the body. On a miss it names the nearest recipes, so a caller with any visible recipe never gets an empty answer.
+**Sections.** A recipe's `section` (default `recipes`) is its URI prefix: `{ name: 'errors', section: 'ref' }` is `docs://ref/errors`. In a markdown folder, one sub-folder level is the section: `ref/errors.md` is `docs://ref/errors`, and `recipes/<name>.md` is the same URI as `<name>.md`. A section, like a name, is lowercase letters and digits in groups joined by single `-` (`ref-v2`; never `-ref`, `ref-` or `ref--v2`), so no section steps out of `docs://<section>/` (`X_MCP_RECIPE_URI_RESERVED`). Every section a declared recipe uses is owned by `recipes:`: a `resources:` URI under it is refused. A body link into a served section must name a recipe; a link to any other `docs://` prefix is not judged. Error links (`defineError({ docs })`) still name `docs://recipes/<name>` only.
 
-**Per caller.** `extraRecipes: (caller) => recipes` adds the caller's own recipes, such as a tenant's runbooks. They are listed as `source: 'caller'` on `docs`, and on `resources/list` and `resources/read` to that caller only. They are not checked at boot. A recipe that names a tool the caller cannot call is not shown.
+| `docsTool:` | Effect |
+|---|---|
+| `description: '…'` | replaces the `docs` tool's default description |
+| `index: 'map'` | `docs({})` answers plain text: `# <section>`, then one `<uri>  <title>` line per recipe, ` (yours)` on a caller's own |
+| `index: 'json'` (default) | `docs({})` answers `{ recipes: [{ name, title, description, uri, source }] }` |
 
-**Replayed.** In a contract test, `await replayRecipes(server, recipes, { caller, placeholders })` calls every step's example through the real server as `caller` and reads every link. Three answers fail it with `X_MCP_RECIPE_EXAMPLE_INVALID`: no such tool, refused arguments, and a policy that refuses that caller. A dangling link fails it with `X_MCP_RECIPE_LINK_DANGLING`. A tool's own refusal (`X_NOT_FOUND` for a sample id) counts as the tool working. The reference app replays its recipes as an org owner: `examples/dummy/packages/mcp/src/recipes-replay.contract.test.ts`.
+**Searching.** `docs({})` lists what this caller can follow. `docs({ name })` and `docs({ uri })` read one recipe; `name` is the bare name in `recipes` and `<section>/<name>` in any other section. `docs({ q })` inlines the best match (`q` at most 1,000 characters, else `X_INPUT_INVALID`; a miss compares its first 16 words, 64 characters each, for the nearest — `As of 2026-11-19`), scoring 3 for each word in the name, title or aliases, 2 in the description and 1 in the body. On a miss it names the nearest recipes, so a caller with any visible recipe never gets an empty answer.
+
+**Per caller.** `extraRecipes: (caller) => recipes` adds the caller's own recipes, such as a tenant's runbooks. They are listed as `source: 'caller'` on `docs`, and on `resources/list` and `resources/read` to that caller only. They may use a section no app recipe uses; another caller reads it as not found, byte for byte. They are not checked at boot. A recipe that names a tool the caller cannot call is not shown.
+
+**Replayed.** In a contract test, `await replayRecipes(server, recipes, { caller, placeholders, sections })` calls every step's example through the real server as `caller` and reads every link into a section `recipes` uses or `sections` names: replaying a subset, `sections` names the server's other sections, else a link into one only the rest use goes unread. Three answers fail it with `X_MCP_RECIPE_EXAMPLE_INVALID`: no such tool, refused arguments, and a policy that refuses that caller. A dangling link fails it with `X_MCP_RECIPE_LINK_DANGLING`. A tool's own refusal (`X_NOT_FOUND` for a sample id) counts as the tool working. The reference app replays its recipes as an org owner: `examples/dummy/packages/mcp/src/recipes-replay.contract.test.ts`.
 
 ### Consuming another server: `mcpTools()`
 
@@ -561,8 +582,9 @@ Remote MCP tools as this app's actions — the app's `policy`, rate limit, confi
 | Declared | `mcpTools({ name, url, auth, allow, policy, lock })` → `tools: Map<remoteName, Action>`, action names `<name>_<tool>`. `policy` is an app `resource:verb` permission, as a hand-written tool takes: the input is the remote's schema, so a predicate over it would decide nothing |
 | Reviewed | `allow` is required; `lock` is the committed `tools.lock.json` written by `x mcp lock <name>`; `x mcp lock <name> --check` writes nothing and fails on drift |
 | Drift | a missing, re-described or re-shaped tool is `X_MCP_REMOTE_TOOL_CHANGED` — at declaration against the lock, before the first call against the live server |
-| Wire | `outbound()` (`dial: 'public'` by default, deadline, size cap); modern era first, then legacy `initialize` + `Mcp-Session-Id`; JSON or SSE answers |
+| Wire | `outbound()` (`dial: 'public'` by default, deadline, size cap `maxBytes`, default 16 MiB); modern era first, then legacy `initialize` + `Mcp-Session-Id`; JSON or SSE answers |
 | Era fallback | the legacy handshake only when the first modern call is refused for its era: a `400`/`404`/`405`, JSON-RPC `-32022`/`-32601`/`-32600`/`-32602`, or a body that is no answer. Never on a `429`, `408` or `403`, a refusal of the moment. Concurrent first calls share one handshake; a failed handshake leaves the era undecided, so the next call tries again (`eraRefusal`, `packages/mcp/src/remote-client.ts`, `As of 2026-11`) |
+| Transport | `fetch` swaps the transport under `outbound()`, in production as in a test. The client keeps the dial screen, deadline, `maxBytes` and redirect refusal: the transport is handed the screened address and `redirect: 'manual'`, and an answer it reached by following a redirect itself is refused (`X_OUTBOUND_TRANSPORT_REDIRECTED` as the source). A transport that dials anywhere else takes the screen over — [Outbound HTTP → transport](Outbound-HTTP#depsfetch-the-transport) |
 | Paging | `listTools()` follows `nextCursor` for at most 50 pages; a cursor still open past that is `X_MCP_REMOTE_REFUSED`, `meta.failure: 'malformed'`, never a truncated list |
 | Cancel | a legacy server hears `notifications/cancelled` for the aborted call's own request id, and only when the request was already sent |
 | Untrusted | the answer arrives as `{ untrusted, isError }`, fenced `<untrusted source="mcp:<name>/<tool>">`, middle-cut past `maxResultChars`; invisible format characters stripped, then every `<` (and full-width `＜`, small `﹤`) written `&lt;` — no spelling of `</untrusted>` survives |

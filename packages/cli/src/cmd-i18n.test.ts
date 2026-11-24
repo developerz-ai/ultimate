@@ -258,6 +258,8 @@ describe('unit · x i18n sync', () => {
       registered: true,
       // A copied string is not a translation: every key it added waits on a human, by name.
       placeholders: ['extra', 'farewell', 'nav.about'],
+      // No admin is mounted here, so the default locale's catalog is untouched.
+      defaultAdded: [],
     });
 
     const after = await readCatalog(join(appRoot, 'packages/i18n/catalogs/es.json'));

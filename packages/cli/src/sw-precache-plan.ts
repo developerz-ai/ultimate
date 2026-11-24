@@ -6,8 +6,8 @@ import { localeSegment, localizePath } from '@ultimat3/core';
 import type { PrecacheAsset, PwaRoute } from '@ultimat3/pwa';
 import { strategyFor } from '@ultimat3/pwa';
 import type { RouteDescriptor } from '@ultimat3/render';
+import { parseHashedAssetUrl } from '@ultimat3/render/server';
 import type { IslandBundle } from './island-bundle';
-import { parseHashedAssetUrl } from './site-assets';
 import type { StyleBundle } from './style-bundle';
 
 /**

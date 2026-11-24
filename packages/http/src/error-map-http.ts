@@ -98,4 +98,10 @@ export const HTTP_ERROR_STATUS = {
   X_EXERCISE_REQUEST_INVALID: 500,
   // @ultimat3/http — request body over the transport ceiling
   X_BODY_TOO_LARGE: 413,
+  // @ultimat3/http — a bearer mount call named no tenant
+  X_BEARER_TENANT_REQUIRED: 400,
+  // @ultimat3/http — a bearer mount could not resolve the tenant a call named
+  X_BEARER_TENANT_UNRESOLVED: 500,
+  // @ultimat3/http — a bearer mount listed a tenant no call could name
+  X_BEARER_TENANT_LIST_INVALID: 500,
 } satisfies Readonly<Record<string, number>>;

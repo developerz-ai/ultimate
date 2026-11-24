@@ -19,7 +19,7 @@ import {
 import { readDocPages } from './doc-commands';
 
 const COUNTS: DerivedDocCounts = {
-  components: 99,
+  components: 100,
   seamRows: 26,
   seamRowsTotal: 26,
   pipelineStages: 15,
@@ -34,11 +34,11 @@ const catalogComponents = async (root: string): Promise<number> => {
 };
 
 const validPages = [
-  { path: 'docs/idea/16-app-targets.md', text: '99 source-derived UI components' },
-  { path: 'wiki/Home.md', text: '26 seam rows are shipped\n99 source-derived UI components' },
+  { path: 'docs/idea/16-app-targets.md', text: '100 source-derived UI components' },
+  { path: 'wiki/Home.md', text: '26 seam rows are shipped\n100 source-derived UI components' },
   {
     path: 'llms.txt',
-    text: '15 ordered stages\n26 seam rows are shipped\n99 source-derived UI components',
+    text: '15 ordered stages\n26 seam rows are shipped\n100 source-derived UI components',
   },
   { path: 'docs/architecture/README.md', text: '15 ordered stages' },
   // "N of the M" states two counts in one sentence: the shipped rows (26) and the row total (26).
@@ -54,7 +54,7 @@ describe('derived documentation counts', () => {
 
   test('reports each stale inventory claim', () => {
     const gaps = checkDerivedDocCounts(
-      validPages.map((page) => ({ ...page, text: page.text.replace(/99|26|15/g, '1') })),
+      validPages.map((page) => ({ ...page, text: page.text.replace(/100|26|15/g, '1') })),
       COUNTS,
     );
     expect(gaps.map((gap) => gap.kind).sort()).toEqual([
@@ -101,8 +101,8 @@ describe('derived documentation counts', () => {
         ? {
             ...page,
             text: page.text.replace(
-              '99 source-derived UI components',
-              '99 source-derived `@ultimat3/ui` components',
+              '100 source-derived UI components',
+              '100 source-derived `@ultimat3/ui` components',
             ),
           }
         : page,
@@ -117,7 +117,7 @@ describe('derived documentation counts', () => {
   test('names the line a stale claim is written on', () => {
     const gaps = checkDerivedDocCounts(
       validPages.map((page) =>
-        page.path === 'wiki/Home.md' ? { ...page, text: page.text.replace('99', '98') } : page,
+        page.path === 'wiki/Home.md' ? { ...page, text: page.text.replace('100', '98') } : page,
       ),
       COUNTS,
     );

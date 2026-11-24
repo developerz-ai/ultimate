@@ -317,5 +317,18 @@
  * which calls of a `tenant` MCP server may name no tenant — split from `tenant.ts`, web-only.
  * raised 1770 → 1771, measured 1771 (2026-11-23, the stricter door): `mcp/src/meta-split-options.ts`,
  * an app's own fields and `stricter` hook on the `'meta-split'` dispatchers — web-only.
+ * raised 1771 → 1772, measured 1772 (2026-11-23, URL-mode elicitation): `mcp/src/url-elicitation.ts`
+ * (`withUrlElicitation` and the `input_required` answer), web-only: the MCP endpoint is the web role's.
+ * raised 1772 → 1773, measured 1773 (2026-11-23, per-call tenant on bearer mounts): the one on
+ * `SERVING_ROLE_CEILING`, `http/src/bearer-mount-tenant.ts`. Nothing web-only.
+ * raised 1773 → 1774, measured 1774 (2026-11-23, sign-in by mailed link): `auth/src/link-login.ts`, the
+ * one on `SERVING_ROLE_CEILING`. Nothing web-only.
+ * raised 1774 → 1775, measured 1775 (2026-11-24, passkey label): the one on `SERVING_ROLE_CEILING`, `auth/src/passkey-label.ts`).
+ * raised 1775 → 1776, measured 1776 (2026-11-24, allOf and anyOf): the one on `MIGRATE_CEILING`, `entity/src/expr-connectives.ts`).
+ * raised 1776 → 1777, measured 1777 (2026-11-24, a CHECK refusing an update): the one on `MIGRATE_CEILING`, `entity/src/check-refusal.ts`).
+ * raised 1777 → 1778, measured 1778 (2026-11-24, form bodies coerced): the one on `MIGRATE_CEILING`, `http/src/form-fields.ts`).
+ * lowered 1778 → 1777, measured 1777 (2026-11-24, mailed-link sign-in held back): the one off
+ * `SERVING_ROLE_CEILING`, `auth/src/link-login.ts`.
+ * raised 1777 → 1778, measured 1778 (2026-11-24, keyed meter draws): the one on `SERVING_ROLE_CEILING`, `action/src/meter-fifo.ts`.
  */
-export const WEB_ROLE_CEILING = 1771;
+export const WEB_ROLE_CEILING = 1778;

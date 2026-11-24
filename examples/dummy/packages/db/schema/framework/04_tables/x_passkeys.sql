@@ -9,5 +9,6 @@ create table "x_passkeys" (
   "transports" text[] default '{}'::text[] not null,
   "created_at" timestamp with time zone default now() not null,
   "last_used_at" timestamp with time zone,
+  "label" text,
   constraint "x_passkeys_pkey" PRIMARY KEY (id)
 );

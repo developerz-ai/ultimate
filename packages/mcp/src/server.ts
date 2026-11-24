@@ -47,6 +47,7 @@ import {
 import { assertTenant, listTenantsTool, tenantStep, withTenantArg } from './tenant';
 import { tenantDoor, tenantsCall } from './tenant-discover';
 import { admitted, thrownResponse } from './tool-thrown';
+import { inputRequiredFor } from './url-elicitation';
 import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, McpWire, ServerInfo } from './wire';
 import {
   defaultServerInfo,
@@ -339,7 +340,8 @@ export class McpServer {
           tools: view.tools,
           audit: this.audit,
           catalogDetail: this.voice.catalogDetail ?? 'full',
-          dispatch: (at, tool, resolved, who) => this.dispatch(at, tool, resolved, who, signal),
+          dispatch: (at, tool, resolved, who) =>
+            this.dispatch(at, tool, resolved, who, signal, req),
           notFound: (at, tool, who, fix) => this.notFound(at, tool, who, fix),
           refuse: (at, tool, error, who) =>
             thrownResponse(at, tool, error, who, this.voice.errorAudience, this.audit),
@@ -349,7 +351,7 @@ export class McpServer {
       );
       if (answered !== undefined) return answered;
     }
-    return this.dispatch(id, name, view.tools.resolve(name, rawArgs ?? {}, who), who, signal);
+    return this.dispatch(id, name, view.tools.resolve(name, rawArgs ?? {}, who), who, signal, req);
   }
 
   /** OUTCOME 1, the one answer for absent and hidden alike. See `dispatch`. */
@@ -368,6 +370,7 @@ export class McpServer {
     resolved: ToolResolution,
     caller: McpCaller,
     signal?: AbortSignal,
+    request?: JsonRpcRequest,
   ): Promise<JsonRpcResponse> {
     const audience = this.voice.errorAudience;
     // Three outcomes, deliberately different — and every one of them audited, including the
@@ -419,8 +422,11 @@ export class McpServer {
     }
 
     let result: McpToolResult;
+    // A page the tool asked the person to open, for a client that can show one (`url-elicitation.ts`).
+    let asked: Record<string, unknown> | undefined;
     try {
       result = await resolved.tool.handle(resolved.args, caller, signal);
+      asked = request === undefined ? undefined : inputRequiredFor(request, result);
     } catch (error) {
       return thrownResponse(id, name, error, caller, audience, this.audit);
     }
@@ -434,6 +440,7 @@ export class McpServer {
       caller,
       ...(result.code === undefined ? {} : { code: result.code }),
     });
+    if (asked !== undefined) return resultResponse(id, asked);
     // `code` is audit-only and never reaches the wire: it is already inside the rendered body.
     const payload: Record<string, unknown> = { content: result.content };
     // Through `manage_resource` too, byte for byte: the meta door answers what the flat one does,

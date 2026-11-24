@@ -69,21 +69,33 @@ export interface AuthorizationServer {
   registerClient(input: RegisterClientInput): Promise<RegisteredClient>;
   /** A live access token's grant, or `null`: unknown, expired and revoked look alike. */
   resolve(token: string): Promise<ResolvedGrant | null>;
-  /**
-   * Every grant of `subject` (of one client when named), dead on the next lookup — or, with
-   * `grantId`, that one grant alone, refresh tokens included. A `grantId` another subject (or
-   * another client than the one named) holds revokes nothing, as an unknown one: answers 0.
-   */
+  /** Every grant of `subject` (of one client when named), dead on the next lookup. */
   revoke(input: {
     readonly subject: string;
     readonly clientId?: string | undefined;
-    readonly grantId?: string | undefined;
+  }): Promise<number>;
+  /**
+   * One grant of `subject` by its `grantId`, refresh tokens included: 1, or 0 when it is unknown,
+   * already revoked, or another subject's (or another client's than the one named) — alike. Two
+   * racing calls on one grant count it once on a store implementing `revokeLiveGrant`; on one
+   * without it, both may answer 1.
+   * `authorizationServer()` always sets it; optional only so an `AuthorizationServer` of an app's
+   * own (a test's fake) still compiles. Required waits on `next`.
+   */
+  revokeGrant?(input: {
+    readonly subject: string;
+    readonly grantId: string;
+    readonly clientId?: string | undefined;
   }): Promise<number>;
   /**
    * The live grants of `subject` (of one client when named), oldest first: not revoked and
-   * holding a token still usable. Each `grantId` is what `resolve` answers and `revoke` takes.
+   * holding a stored token neither expired nor retired. Not a promise the next refresh succeeds:
+   * a client since denied refresh can stay listed while its grant row and an unexpired, unretired
+   * token remain (`purge` may remove the row sooner). Copies, never the rows. Each `grantId` is
+   * what `resolve` answers and `revokeGrant` takes.
+   * Always set by `authorizationServer()`; optional only as `revokeGrant` is.
    */
-  grants(input: {
+  grants?(input: {
     readonly subject: string;
     readonly clientId?: string | undefined;
   }): Promise<readonly LiveGrant[]>;
@@ -201,16 +213,22 @@ export function authorizationServer(options: AuthorizationServerOptions): Author
       const live = await resolveAccess(config, token);
       return live === null ? null : resolvedGrant(live.grant);
     },
-    async revoke(input) {
-      const now = config.clock.now();
-      if (input.grantId === undefined) {
-        return config.store.revokeGrants({ subject: input.subject, clientId: input.clientId }, now);
-      }
+    revoke: (input) =>
+      config.store.revokeGrants(
+        { subject: input.subject, clientId: input.clientId },
+        config.clock.now(),
+      ),
+    async revokeGrant(input) {
       const grant = await config.store.getGrant(input.grantId);
       // Another subject's grant answers as an unknown one: an id is no proof of ownership.
       if (grant === null || grant.revokedAt !== null || grant.subject !== input.subject) return 0;
       if (input.clientId !== undefined && grant.clientId !== input.clientId) return 0;
-      await config.store.revokeGrant(grant.id, now);
+      // The store's conditional write decides a race: only the call that ended it counts it.
+      const at = config.clock.now();
+      if (config.store.revokeLiveGrant !== undefined) {
+        return (await config.store.revokeLiveGrant(grant.id, at)) ? 1 : 0;
+      }
+      await config.store.revokeGrant(grant.id, at);
       return 1;
     },
     async grants(input) {
@@ -222,10 +240,11 @@ export function authorizationServer(options: AuthorizationServerOptions): Author
       return live.map((grant) => ({
         grantId: grant.id,
         clientId: grant.clientId,
-        scopes: grant.scopes,
+        // Copies: a caller editing its listing must not edit a memory store's rows.
+        scopes: [...grant.scopes],
         resource: grant.resource,
-        createdAt: grant.createdAt,
-        refreshedAt: grant.refreshedAt,
+        createdAt: new Date(grant.createdAt.getTime()),
+        refreshedAt: new Date(grant.refreshedAt.getTime()),
       }));
     },
     purge: ({ before }) =>

@@ -37,19 +37,19 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/action` | [Error-Codes-action](Error-Codes-action) | 34 |
 | `@ultimat3/admin` | [Error-Codes-admin](Error-Codes-admin) | 16 |
 | `@ultimat3/ai` | [Error-Codes-ai](Error-Codes-ai) | 36 |
-| `@ultimat3/auth` | [Error-Codes-auth](Error-Codes-auth) | 31 |
+| `@ultimat3/auth` | [Error-Codes-auth](Error-Codes-auth) | 33 |
 | `@ultimat3/cache` | [Error-Codes-cache](Error-Codes-cache) | 8 |
 | `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 237 |
-| `@ultimat3/core` | [Error-Codes-core](Error-Codes-core) | 76 |
+| `@ultimat3/core` | [Error-Codes-core](Error-Codes-core) | 77 |
 | `@ultimat3/db` | [Error-Codes-db](Error-Codes-db) | 42 |
 | `@ultimat3/entity` | [Error-Codes-entity](Error-Codes-entity) | 44 |
 | `@ultimat3/flags` | [Error-Codes-flags](Error-Codes-flags) | 6 |
-| `@ultimat3/http` | [Error-Codes-http](Error-Codes-http) | 31 |
+| `@ultimat3/http` | [Error-Codes-http](Error-Codes-http) | 34 |
 | `@ultimat3/i18n` | [Error-Codes-i18n](Error-Codes-i18n) | 5 |
 | `@ultimat3/jobs` | [Error-Codes-jobs](Error-Codes-jobs) | 72 |
 | `@ultimat3/mail` | [Error-Codes-mail](Error-Codes-mail) | 18 |
 | `@ultimat3/manifest` | [Error-Codes-manifest](Error-Codes-manifest) | 5 |
-| `@ultimat3/mcp` | [Error-Codes-mcp](Error-Codes-mcp) | 59 |
+| `@ultimat3/mcp` | [Error-Codes-mcp](Error-Codes-mcp) | 60 |
 | `@ultimat3/money` | [Error-Codes-money](Error-Codes-money) | 10 |
 | `@ultimat3/notify` | [Error-Codes-notify](Error-Codes-notify) | 12 |
 | `@ultimat3/policy` | [Error-Codes-policy](Error-Codes-policy) | 6 |
@@ -62,7 +62,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | repository scripts | [Error-Codes-scripts](Error-Codes-scripts) | 357 |
 | `@ultimat3/seo` | [Error-Codes-seo](Error-Codes-seo) | 11 |
 | `@ultimat3/storage` | [Error-Codes-storage](Error-Codes-storage) | 31 |
-| `@ultimat3/testing` | [Error-Codes-testing](Error-Codes-testing) | 82 |
+| `@ultimat3/testing` | [Error-Codes-testing](Error-Codes-testing) | 83 |
 | `@ultimat3/time` | [Error-Codes-time](Error-Codes-time) | 8 |
 | `@ultimat3/ui` | [Error-Codes-ui](Error-Codes-ui) | 7 |
 
@@ -174,6 +174,9 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_BACKFILL_STALLED | [jobs](Error-Codes-jobs) |
 | X_BACKFILL_UNKNOWN | [jobs](Error-Codes-jobs) |
 | X_BEARER_MOUNT_INVALID | [http](Error-Codes-http) |
+| X_BEARER_TENANT_LIST_INVALID | [http](Error-Codes-http) |
+| X_BEARER_TENANT_REQUIRED | [http](Error-Codes-http) |
+| X_BEARER_TENANT_UNRESOLVED | [http](Error-Codes-http) |
 | X_BENCH_CLAIM_STALE | [scripts](Error-Codes-scripts) |
 | X_BENCH_RUN_FAILED | [scripts](Error-Codes-scripts) |
 | X_BENCH_RUN_TOO_SHORT | [scripts](Error-Codes-scripts) |
@@ -425,6 +428,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_DURATION_INVALID | [time](Error-Codes-time) |
 | X_E2E_A11Y_VIOLATION | [testing](Error-Codes-testing) |
 | X_E2E_APP_FAILED | [testing](Error-Codes-testing) |
+| X_E2E_CONSOLE_ERRORS | [testing](Error-Codes-testing) |
 | X_E2E_EVALUATE_CAPTURED | [testing](Error-Codes-testing) |
 | X_E2E_EVALUATE_THREW | [testing](Error-Codes-testing) |
 | X_E2E_EVALUATE_UNSUPPORTED | [testing](Error-Codes-testing) |
@@ -741,6 +745,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_MCP_CONFIRMATION_UNKNOWN | [mcp](Error-Codes-mcp) |
 | X_MCP_EFFECT_CONFLICT | [mcp](Error-Codes-mcp) |
 | X_MCP_EFFECT_UNDECLARED | [mcp](Error-Codes-mcp) |
+| X_MCP_ELICITATION_URL_INVALID | [mcp](Error-Codes-mcp) |
 | X_MCP_GROUP_CONFLICT | [mcp](Error-Codes-mcp) |
 | X_MCP_GROUP_UNKNOWN | [mcp](Error-Codes-mcp) |
 | X_MCP_HEADER_MISMATCH | [mcp](Error-Codes-mcp) |
@@ -871,6 +876,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_OUTBOUND_THROTTLED | [core](Error-Codes-core) |
 | X_OUTBOUND_TIMEOUT | [core](Error-Codes-core) |
 | X_OUTBOUND_TOO_LARGE | [core](Error-Codes-core) |
+| X_OUTBOUND_TRANSPORT_REDIRECTED | [core](Error-Codes-core) |
 | X_OUTBOUND_UNAVAILABLE | [core](Error-Codes-core) |
 | X_OUTBOUND_UNREACHABLE | [core](Error-Codes-core) |
 | X_OUTBOX_NO_TX | [jobs](Error-Codes-jobs) |
@@ -885,6 +891,8 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_PARTITIONS_UNMAINTAINED | [cli](Error-Codes-cli) |
 | X_PASSKEY_CHALLENGE_EXPIRED | [auth](Error-Codes-auth) |
 | X_PASSKEY_INVALID | [auth](Error-Codes-auth) |
+| X_PASSKEY_LABEL_INVALID | [auth](Error-Codes-auth) |
+| X_PASSKEY_RENAME_UNSUPPORTED | [auth](Error-Codes-auth) |
 | X_PASSKEY_STEP_UP_REQUIRED | [auth](Error-Codes-auth) |
 | X_PASSWORD_WEAK | [auth](Error-Codes-auth) |
 | X_PATCH_EMPTY | [entity](Error-Codes-entity) |

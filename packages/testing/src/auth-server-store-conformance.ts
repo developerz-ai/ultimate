@@ -131,6 +131,37 @@ export const AUTH_SERVER_STORE_CHECKS: readonly AuthServerStoreCheck[] = [
     },
   },
   {
+    // Optional on the port: a store without it counts a per-grant revoke on its read.
+    name: 'revokeLiveGrant answers true only for the write that ended a live grant',
+    async run(store) {
+      if (store.revokeLiveGrant === undefined) return;
+      const subject = idOf('subject');
+      const [live, gone, sibling] = [idOf('live'), idOf('gone'), idOf('sibling')];
+      await store.putGrant(grantRecord(live, subject));
+      // The subject's other grant: ending one by id must leave it live.
+      await store.putGrant(grantRecord(sibling, subject));
+      const ended = [
+        await store.revokeLiveGrant(live, at(1)),
+        await store.revokeLiveGrant(live, at(5)),
+      ];
+      expect(ended).toEqual([true, false]);
+      expect((await store.getGrant(live))?.revokedAt?.getTime()).toBe(at(1).getTime());
+      expect(await store.revokeLiveGrant(gone, at(6))).toBe(false);
+      // Overlapping calls: one conditional write wins, so exactly one answers true.
+      const raced = idOf('raced');
+      await store.putGrant(grantRecord(raced, subject));
+      const both = await Promise.all([
+        store.revokeLiveGrant(raced, at(7)),
+        store.revokeLiveGrant(raced, at(8)),
+      ]);
+      expect(both.filter(Boolean)).toHaveLength(1);
+      // The losing call writes nothing: the stored time is the winner's.
+      const winner = both[0] ? at(7) : at(8);
+      expect((await store.getGrant(raced))?.revokedAt?.getTime()).toBe(winner.getTime());
+      expect((await store.getGrant(sibling))?.revokedAt).toBeNull();
+    },
+  },
+  {
     // Optional on the port: a store without `liveGrants` answers `grants()` with a refusal of its
     // own, so there is nothing here to hold it to.
     name: "liveGrants lists a subject's grants holding a usable token, oldest first, one client or all",

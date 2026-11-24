@@ -36,7 +36,7 @@ export const SQL_OAUTH_GRANT_GET = 'select * from x_oauth_grants where id = $1';
 export const SQL_OAUTH_GRANT_TOUCH = 'update x_oauth_grants set refreshed_at = $2 where id = $1';
 
 export const SQL_OAUTH_GRANT_REVOKE = `
-update x_oauth_grants set revoked_at = $2 where id = $1 and revoked_at is null
+update x_oauth_grants set revoked_at = $2 where id = $1 and revoked_at is null returning 1
 `;
 
 export const SQL_OAUTH_GRANTS_REVOKE = `

@@ -18,6 +18,7 @@ export type {
   OutboundProxy,
   OutboundProxyInit,
   OutboundProxyTarget,
+  OutboundRefusalRead,
   OutboundRequest,
   OutboundStreamAnswer,
 } from './outbound-types';

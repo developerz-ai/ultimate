@@ -12,9 +12,9 @@ import {
   parseByteRange,
   RANGE_UNSATISFIABLE,
 } from '@ultimat3/http';
+import type { SiteAsset, SiteAssetTable } from '@ultimat3/render/server';
+import { parseHashedAssetUrl, SITE_ASSET_BASE_PATH } from '@ultimat3/render/server';
 import { assetRouteMeta } from './asset-route-meta';
-import type { SiteAsset, SiteAssetTable } from './site-assets';
-import { parseHashedAssetUrl, SITE_ASSET_BASE_PATH } from './site-assets';
 
 /** The URL is the content, so the answer is `public, max-age=31536000, immutable`. */
 export const SITE_ASSET_CACHE: CacheHint = { mode: 'immutable' };

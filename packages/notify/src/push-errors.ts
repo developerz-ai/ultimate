@@ -70,6 +70,21 @@ export class NotifyPushProviderRefusedError extends UltimateError {
   }
 }
 
+const DATA_FIX =
+  'pushChannel({ pusher, data: ({ event }) => ({ id: event.params.id }) })   # in the notifier: one id per push, the app fetches the rest over its API';
+
+/** Each a valid edit of the notifier's own `message`: the field set, everything else kept. */
+const FIELD_FIX = {
+  sound:
+    "pushChannel({ pusher, message: (args) => ({ ...message(args), sound: 'default' }) })   # message: the notifier's current message function, its own keys and url kept; or a sound the app bundles: APNs takes its file name, FCM its res/raw name without the extension; 1 to 64 of A-Za-z0-9._-",
+  category:
+    "pushChannel({ pusher, message: (args) => ({ ...message(args), category: 'reply' }) })   # message: the notifier's current message function, its own keys and url kept; a category the iOS app registered; 1 to 64 of A-Za-z0-9._-",
+  channelId:
+    "pushChannel({ pusher, message: (args) => ({ ...message(args), channelId: 'mentions' }) })   # message: the notifier's current message function, its own keys and url kept; a channel the Android app created; 1 to 64 of A-Za-z0-9._-",
+  interruptionLevel:
+    "pushChannel({ pusher, message: (args) => ({ ...message(args), interruptionLevel: 'time-sensitive' }) })   # message: the notifier's current message function, its own keys and url kept; one of passive, active, time-sensitive, critical: fixed by APNs, critical needs Apple's entitlement",
+} as const;
+
 /**
  * A data-only push carrying more than an id: a reserved key, too many keys, a long value. Or, with
  * `field`, a visible native push whose sound, category, channel or interruption level no provider
@@ -86,13 +101,10 @@ export class NotifyPushMessageInvalidError extends UltimateError {
       cause:
         field === undefined
           ? `the data of a data-only push ${input.problem}; it travels through the provider, so it carries ids and nothing a person would read`
-          : `the ${field} of a native push ${input.problem}; the provider takes it as a name the app registered or bundles`,
-      fix:
-        field === undefined
-          ? 'pushChannel({ pusher, data: ({ event }) => ({ id: event.params.id }) })   # in the notifier: one id per push, the app fetches the rest over its API'
           : field === 'interruptionLevel'
-            ? "pushChannel({ pusher: nativePush({ … }), message: () => ({ …, interruptionLevel: 'time-sensitive' }) })   # passive, active, time-sensitive or critical"
-            : `pushChannel({ pusher: nativePush({ … }), message: () => ({ …, ${field}: '${field === 'sound' ? 'default' : 'reply'}' }) })   # the name the app registered or bundles`,
+            ? `the interruptionLevel of a native push ${input.problem}; APNs takes only these fixed values`
+            : `the ${field} of a native push ${input.problem}; the provider takes it as a name the app registered or bundles`,
+      fix: field === undefined ? DATA_FIX : FIELD_FIX[field],
       meta: field === undefined ? { problem: input.problem } : { problem: input.problem, field },
     });
   }

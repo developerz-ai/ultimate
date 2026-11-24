@@ -1,10 +1,12 @@
 // Columns of sortable groups sharing one gesture: a card moves within a column or across to
 // another by pointer, touch, the arrow keys, or — with scripting off — a target `select` per card.
+// With `selection`, cards are also ticked for a bulk action, as `DataTable` rows are.
 // No card look and no column rules: `renderItem` and `canDrop` are the caller's.
 
 import type { JSX } from 'solid-js';
 import type { CanDrop, SortMove } from '../drag/sort-view';
 import { boardGroups } from './board-view';
+import type { ListSelection } from './selection-control';
 import { type SortFields, sortSurface } from './sort-surface';
 
 export interface BoardColumn<T> {
@@ -28,6 +30,12 @@ export interface BoardProps<T> {
   /** The action URL the no-script target select posts to. */
   action?: string | undefined;
   fields?: SortFields | undefined;
+  /**
+   * Card selection: a native checkbox per card posting its `itemKey`, Shift+click and the keyboard
+   * ranging in reading order, a held finger on touch, and a `BulkBar` under the board. Set for the
+   * board's life.
+   */
+  selection?: ListSelection<T> | undefined;
   class?: string | undefined;
 }
 
@@ -41,6 +49,7 @@ export function Board<T>(props: BoardProps<T>): JSX.Element {
     action: props.action,
     fields: props.fields,
     layout: 'board',
+    selection: () => props.selection,
     label: props.label,
     class: props.class,
   });

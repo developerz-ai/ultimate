@@ -49,7 +49,7 @@ describe('x db gen · row security', () => {
     expect(migration.up).toContain('alter table "posts" enable row level security;');
     expect(migration.up).toContain('alter table "posts" force row level security;');
     expect(migration.up).toContain(
-      `create policy "ultimate_tenant" on "posts" using ("org_id" = nullif(current_setting('x.tenant', true), '')::uuid`,
+      `create policy "ultimate_tenant" on "posts" using (case when current_setting('x.cross', true) = 'on' then true else "org_id" = nullif(current_setting('x.tenant', true), '')::uuid end)`,
     );
     expect(migration.up).not.toContain('"tags" enable');
     expect(migration.down).toContain('drop policy if exists "ultimate_tenant" on "posts";');

@@ -111,6 +111,12 @@ releasePluginsAfterIsolatedFile();
 const { installRenderLoader } = await import('@ultimat3/render/server');
 installRenderLoader();
 
+// And the app's site asset table, as the boot installs it: a stylesheet calling Sass `asset()` is
+// compiled the moment a test imports its module, and with no table every test importing it died
+// with `X_ASSET_MISSING` on a fresh app. Again per file, so a test's own resolver never outlives it.
+const { installAppAssets } = await import('./app-assets');
+if (installAppAssets()) onFileBoundary(() => installAppAssets());
+
 // Opt-out exists for one case: a test that deliberately exercises a real integration in a job the
 // team runs on purpose. It is an env var, not an API, so it cannot be set from inside a test file.
 if (Bun.env['ULTIMATE_TEST_ALLOW_NET'] !== '1') sealNetwork();
