@@ -10,6 +10,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Highlights
+
+- **Tenant-aware bearer mounts and meters:** one token can act across tenants, `drawMeter` counts work measured after the fact, and a keyed draw judges every key by its counter's own period.
+- **Selection and theming:** `DataTable` and `Board` select rows, and `defineTheme({ motion })` sets an app's own durations and curves.
+- **Agent surface:** MCP recipes take sections and aliases, `mcpClient` caps one answer, and a JSON answer can ask for a URL-mode elicitation.
+- **Native push and device sockets:** richer visible pushes, per-send reports, and `deviceSocket` open and close hooks.
+- **Test tooling:** virtual authenticators, key presses and console checks in e2e tests, and `asset()` resolves in unit tests.
+
 ### Added
 - `@ultimat3/auth`: a passkey label. `renamePasskey(auth, { userId, id, label })` names or renames a passkey â€” right after `register`, or later (`null` clears; owner-scoped, `null` for another user's id). `PasskeyCredential.label`, the optional `PasskeyStore.renamePasskey` (both shipped adapters implement it; `authAdapterConformance` holds it), and `x_passkeys.label`, added at every boot. A label blank, over 64 characters, or holding a control character or a lone surrogate after trimming is `X_PASSKEY_LABEL_INVALID`; an adapter without the member is `X_PASSKEY_RENAME_UNSUPPORTED`.
 - `@ultimat3/auth`'s authorization server names one grant: `resolve(token)` answers `grantId`, kept across every refresh rotation; `grants({ subject, clientId? })` lists a subject's live grants (`grantId`, `clientId`, `scopes`, `resource`, `createdAt`, `refreshedAt`), oldest first; `revokeGrant({ subject, grantId, clientId? })` ends that grant alone, refresh tokens included, and answers 0 for another subject's id. Both are optional members of `AuthorizationServer`, so an app's own implementation still compiles; `authorizationServer()` always sets them. `AuthServerStore` gains an optional `liveGrants(filter, at)`, implemented by the memory and Postgres stores; a store without it makes `grants()` `X_AUTH_GRANTS_UNSUPPORTED` (501). No schema change: every grant row already had its id.
