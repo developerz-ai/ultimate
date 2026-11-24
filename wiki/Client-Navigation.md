@@ -88,6 +88,12 @@ before any hook, before the handler**:
 | any router request answered with a 3xx (a form's 303, a sign-in wall, a `load`'s `setRedirect`, an OAuth or payment hop) | any | `204` + `x-ultimate-location: <target>`, cookies kept. The handler ran once; the router follows a same-origin target as its own next request, and hands another origin to the browser. A target that is not `http:`/`https:` (or will not parse) is never handed over: the header names the requested URL instead, as a path |
 | POST | any | never gated: it is the form's submission |
 
+A principal is the actor's kind and id, who is really acting (an impersonator), and the actor's
+`orgId` when it has one: the same person in two orgs is two principals, so a page rendered in one
+org is never swapped into a document of the other, and the client store it fences is never
+shared. An actor with no `orgId` keeps the scope id it had before the org joined it (`As of
+2026-11`; `packages/core/src/client-scope-id.ts`).
+
 A soft GET across a principal change runs auth and rate-limit **twice** — once before the `204` of
 the principal row above, once for the real load. Expected and harmless (auth and rate-limit only;
 the handler and `load` run once), but a tight per-actor rate limit should budget one extra request

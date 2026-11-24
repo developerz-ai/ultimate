@@ -15,7 +15,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 // why: Bun has no file-URL-to-path API; the router's entry is located beside this file.
 import { fileURLToPath } from 'node:url';
-import { isUltimateError, userActor } from '@ultimat3/core';
+import { clientScopeOf } from '@ultimat3/auth';
+import { CLIENT_NAVIGATION_SCOPE_HEADER, isUltimateError, userActor } from '@ultimat3/core';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { RouteNavigationDeclaration } from '@ultimat3/render';
 import {
@@ -171,6 +172,30 @@ describe('unit · the gate over real pages — what a router request may run', (
     expect(answer.status).toBe(204);
     expect(answer.headers.get('x-ultimate-location')).toBe('/casos');
     expect(loads).toEqual([]);
+  });
+
+  // Red team: the router holds a page alice was rendered in org A, and she is now acting in org B.
+  // Swapping B's page into A's document would keep A's store, rows and queued writes in memory.
+  test('a page for the same person in another org is refused before its load runs', async () => {
+    page('apps/web/app/casos/page.tsx', { gated: true });
+    loads.length = 0;
+    const alice = { id: 'alice@example.com', permissions: ['casos.read'] };
+    const inOrgA = userActor({ ...alice, orgId: 'org-a' });
+    const inOrgB = userActor({ ...alice, orgId: 'org-b' });
+    const fromOrgA = router('soft', { [CLIENT_NAVIGATION_SCOPE_HEADER]: clientScopeOf(inOrgA) });
+
+    const across = await serverFor(inOrgB).fetch(
+      new Request('http://dev.test/casos', { headers: fromOrgA }),
+    );
+    expect(across.status).toBe(204);
+    expect(across.headers.get('x-ultimate-location')).toBe('/casos');
+    expect(loads).toEqual([]);
+
+    const same = await serverFor(inOrgA).fetch(
+      new Request('http://dev.test/casos', { headers: fromOrgA }),
+    );
+    expect(same.status).toBe(200);
+    expect(loads).toEqual(['/casos']);
   });
 
   test("navigation: { modal: true, prefetch: 'intent' } — a prefetch runs it, and it is still a modal", async () => {
