@@ -24,7 +24,9 @@ describe('enableRowSecuritySql', () => {
     expect(enable).toBe('alter table "posts" enable row level security;');
     expect(force).toBe('alter table "posts" force row level security;');
     expect(policy).toContain(`"org_id" = nullif(current_setting('x.tenant', true), '')::uuid`);
-    expect(policy).toContain(`or current_setting('x.cross', true) = 'on'`);
+    expect(policy).toContain(`(case when current_setting('x.cross', true) = 'on' then true else`);
+    // A `case`, never an `or`: the planner's guess for an `or` cost a keyset page its index.
+    expect(policy).not.toContain(' or ');
     expect(policy).toContain(' using (');
     expect(policy).toContain(' with check (');
   });

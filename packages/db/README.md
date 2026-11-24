@@ -315,7 +315,7 @@ commit what it writes, ship. The drop is its own non-transactional migration.
 
 | API | |
 |---|---|
-| `enableRowSecuritySql(table, column, type)` | `enable` + `force` + one `ultimate_tenant` policy: `using` and `with check` both `column = nullif(current_setting('x.tenant', true), '')::type or current_setting('x.cross', true) = 'on'`. Unset matches nothing |
+| `enableRowSecuritySql(table, column, type)` | `enable` + `force` + one `ultimate_tenant` policy: `using` and `with check` both `case when current_setting('x.cross', true) = 'on' then true else column = nullif(current_setting('x.tenant', true), '')::type end`. Unset matches nothing. A `case` and not an `or` (`As of 2026-11`): the same rows, but the planner's guess for an `or` turned a tenant's keyset page into a bitmap scan and a sort; a `case` keeps the ordered index scan. A table generated before keeps its `or` policy until `drop policy` / `create policy` with this text runs in a migration |
 | `rowSecureClient(client)` | a statement sent outside a transaction while the provider has a tenant is wrapped: `BEGIN [READ ONLY]`, `set_config`, the statement, `COMMIT` |
 | `assertRowSecurityBinds(client)` | `X_DB_ROW_SECURITY_BYPASSED` for a superuser, a `bypassrls` role, or the owner of an unforced table — Postgres exempts all three |
 | `rowSecurityRolesSql()` | `x_app` (`nosuperuser nobypassrls`) and `x_migrator` (`bypassrls`, owns tables), with default privileges from one to the other, as text |
