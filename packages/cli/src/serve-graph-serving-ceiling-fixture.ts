@@ -378,5 +378,6 @@
  * raised 1574 → 1575, measured 1575 (2026-11-24, form bodies coerced): the one on `MIGRATE_CEILING`, `http/src/form-fields.ts`).
  * lowered 1575 → 1574, measured 1574 (2026-11-24, mailed-link sign-in held back): `auth/src/link-login.ts`
  * leaves the auth barrel until the next minor, so no role loads it.
+ * raised 1574 → 1575, measured 1575 (2026-11-24, keyed meter draws): the one on `MIGRATE_CEILING`, `action/src/meter-fifo.ts`.
  */
-export const SERVING_ROLE_CEILING = 1574;
+export const SERVING_ROLE_CEILING = 1575;

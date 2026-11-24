@@ -662,9 +662,13 @@ installed by the CLI boot (one row per counter, rolled over in place, no purge).
 [Actions → Usage meters](https://github.com/developerz-ai/ultimate/wiki/Actions#usage-meters-meter).
 
 An amount measured after the work — tokens, bytes, rows — is `drawMeter(ctx, { meter, period,
-amount, limit, key })`: added whole or not at all (`X_METER_EXCEEDED`), once per `key` across
-replicas, on the counter a `meter:` of the same name uses. Answers `{ used, limit, replayed,
-resetsAt }`: [Actions → Programmatic draws](https://github.com/developerz-ai/ultimate/wiki/Actions#programmatic-draws-drawmeter).
+amount, limit, key })`: added whole or not at all (`X_METER_EXCEEDED`), on the counter a `meter:`
+of the same name and period uses. A `key` counts once while it is remembered: for the period it
+counted in and the next, by one store — across replicas and restarts on the Postgres store the
+boot installs; within one process on `memoryMeterStore()`, where either bound ends it early
+(`maxDrawKeys`, or `maxKeys` evicting the counter with its keys). `limit` judges
+new charges only: a remembered key replays even after its limit drops below its amount. Answers
+`{ used, limit, replayed, resetsAt }`: [Actions → Programmatic draws](https://github.com/developerz-ai/ultimate/wiki/Actions#programmatic-draws-drawmeter).
 
 ## `idempotent:` — and where its records live
 
@@ -1185,8 +1189,8 @@ around it; `undefined` restores the declared handler. `@ultimat3/testing`'s `stu
 | `X_ACTION_PATH_DUPLICATE` | two actions derive one HTTP path (`archiveOrder` / `archiveOrders`) | rename one export |
 | `X_ACTION_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
 | `X_RATE_LIMIT_INVALID` | `rateLimit:` with a non-positive or non-finite half — `windowMs: 0` refills infinitely. Owned by `@ultimat3/http`, which owns the conversion | make both positive, or delete the block |
-| `X_METER_EXCEEDED` | a `meter:`'s allowance for the current UTC period is spent, or a `drawMeter` amount would pass it; `meta.resetsAt` and `Retry-After` say when it resets | wait, or raise what `meter.limit` resolves to for the tenant |
-| `X_METER_INVALID` | a `meter:` with a bad name, period or `warnAt`, half a `warnAt`/`onWarn` pair, or a limit resolving to anything but a whole number ≥ 0; a `drawMeter` with a bad amount or key too | fix the declaration the cause names |
+| `X_METER_EXCEEDED` | a `meter:`'s allowance for the current UTC period is spent, or a `drawMeter` amount would pass it; `meta.resetsAt` and `Retry-After` say when it resets | wait, or raise what `meter.limit` resolves to for the tenant. A `drawMeter` amount larger than the whole limit fits no period, carries no `Retry-After` and is `terminal` for a job: raise the limit, or, above 0, split the work into draws within it |
+| `X_METER_INVALID` | a `meter:` with a bad name, period or `warnAt`, half a `warnAt`/`onWarn` pair, or a limit resolving to anything but a whole number ≥ 0; a `drawMeter` with a bad amount (a positive safe integer) or key (1–255 chars, no NUL or lone surrogate), or an installed store that does not declare `keyedDraws: true` | fix the declaration the cause names |
 | `X_ACTION_DEPRECATION_INVALID` | `deprecated:` with a `since`/`sunset` that is not a date | use an ISO-8601 instant |
 | `X_INPUT_INVALID` | input failed the Standard Schema. Carries the rejections **twice**: the flattened line in `cause`, and the structured list in `meta.issues` — one value rendered two ways, `As of 2026-08-24` | `x actions show <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |

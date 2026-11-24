@@ -107,7 +107,11 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
   }),
   // The counters behind `meter:` and `drawMeter`. One row per tenant × meter × period declaration,
   // rolled over in place, so it ships no purge: the table is bounded by its subjects, never by
-  // time. `x_meter_key` keeps a counter's draw keys for two periods; each keyed draw prunes it.
+  // time. `x_meter_key` holds one row per counted keyed draw, about two periods of them per active
+  // counter: a keyed draw that counts prunes its counter's older rows, and an idle counter keeps
+  // its last rows until its next one.
+  // `SQL_METER_KEY_TABLE` also creates `x_meter_key_counted`, the function a refused keyed draw
+  // reads its key through: not a table, so it is in no `tables` list.
   Object.freeze({
     pkg: '@ultimat3/action',
     tables: Object.freeze(['x_meter', 'x_meter_key']),
