@@ -172,6 +172,11 @@ describeLive('live · postgres · the rate-limit table writes no WAL', () => {
     const one = connect(1);
     try {
       await untilHorizonClear(one);
+      // A fresh table isolates its statistics from every other test without privileged resets.
+      await one.unsafe('drop table if exists x_rate_limit', []);
+      for (const piece of SQL_RATE_LIMIT_TABLE.split(';')) {
+        if (piece.trim().length > 0) await one.unsafe(piece, []);
+      }
       const single = postgresRateLimitStore({
         executor: {
           query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
@@ -180,10 +185,7 @@ describeLive('live · postgres · the rate-limit table writes no WAL', () => {
       });
       const roomy = { capacity: 1_000_000, refillPerSecond: 1 };
       for (let key = 0; key < keys; key += 1) await single.take(`hot-${key}`, roomy, 1, 10_000);
-      // The table's `n_tup_upd` also counts other tests' takes on this shared table. A fresh
-      // measurement starts at zero, so the interval below is exactly this fixture's work. The
-      // rows stay: the buckets that make the page full are what this test measures.
-      await one.unsafe("select pg_stat_reset_single_table_counters('x_rate_limit'::regclass)", []);
+      // Keep the inserted rows: full pages are what this test measures.
       await one.unsafe('select pg_stat_force_next_flush()', []);
       const before = await hotCounts(one);
       for (let take = 0; take < takes; take += 1) {
