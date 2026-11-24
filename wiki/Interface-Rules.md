@@ -47,7 +47,7 @@ noticed.
 | A refetch keeps the previous data on screen | `asyncStateOf` — `loading` beside a defined `data` is `refreshing`, never `pending` |
 | A failure beats stale data: report the error, do not re-render rows the failed request did not answer | `asyncBranch` tests `failed` first |
 | Placeholder, error, empty and content land in the same box | `reserveBlockSize` is emitted as `--async-reserve` on the region in every branch |
-| A person never reads a shell command: a failure in a page for an end user is the app's own screen | `AsyncRegionProps.failed(error, retry)` replaces `ErrorState` (code, cause, fix — the developer's report) on that branch; absent, `ErrorState` renders, `As of 2026-11` |
+| A person never reads a shell command: a failure in a page for an end user is the app's own screen | **judgement**: supply `AsyncRegionProps.failed(error, retry)` on every end-user page; it replaces `ErrorState` (code, cause, fix — the developer's report) on that branch. Nothing enforces it: a page that omits `failed` still typechecks and renders `ErrorState` with its shell fix, `As of 2026-11` |
 | A state's title is in the outline when it is a destination | `EmptyState` and `Alert` take `level` (1-6): the title is `role="heading"` with that `aria-level` — an outline entry without six per-level templates in every island; absent, a paragraph |
 | The region carries `aria-busy` while in flight | `AsyncRegion` derives it from `isBusyBranch` |
 | `data: undefined` means nothing has arrived. An empty array is data | `asyncStateOf` |
