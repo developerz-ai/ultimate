@@ -665,7 +665,7 @@ that renders documents itself.
 | `colors.light` / `colors.dark` | any `ColorRole`, as `R G B` channels | `X_TOKEN_UNKNOWN` for the role, `X_UI_INVALID_VALUE` for the value |
 | `radius` | any `RadiusName`, as a bare CSS length | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
 | `font` | `sans`, `mono`, `data`, as a `font-family` list | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
-| `motion.duration` / `motion.easing` | any `DurationName` as a CSS time (`'180ms'`, `'0.3s'`), any `EasingName` as `cubic-bezier(x1, y1, x2, y2)` with both x in [0, 1]. `:root` only, not themed | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
+| `motion.duration` / `motion.easing` | any `DurationName` as a CSS time (`'180ms'`, `'0.3s'`; `'0'` is emitted as `0ms`), any `EasingName` as `cubic-bezier(x1, y1, x2, y2)` with both x in [0, 1]. `:root` only, not themed | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
 | `shadows.light` / `shadows.dark` | any `ShadowName`, as a `box-shadow`: comma-separated layers of lengths plus `rgb(R G B / a)` or `rgb(var(--color-<role>) / a)`, or `none` | `X_TOKEN_UNKNOWN` for the rung, `X_UI_INVALID_VALUE` for the value |
 | `preset` | a `THEME_PRESETS` name — `'scifi'` | `X_UI_INVALID_VALUE` |
 

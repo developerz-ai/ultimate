@@ -142,9 +142,27 @@ function isCurve(value: string): boolean {
   return [match[1], match[3]].every((x) => Number(x) >= 0 && Number(x) <= 1);
 }
 
+const SCALE_EXPECTED = 'an object of rungs such as { base: "180ms" }';
+
+/** A theme read from JSON can carry `null` or an array where the type says an object. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export function motionDeclarations(overrides: MotionInput | undefined): string[] {
   if (overrides === undefined) return [];
+  // Checked as `unknown`, so the typed slot below keeps its scale keys.
+  const slot: unknown = overrides;
+  if (!isRecord(slot)) {
+    throw invalidBrandTokenError('theme', 'motion', slot, 'an object with duration or easing');
+  }
   assertKnown('motion', overrides, MOTION_SCALES, '_motion.scss');
+  for (const scale of MOTION_SCALES) {
+    const rungs: unknown = overrides[scale];
+    if (rungs !== undefined && !isRecord(rungs)) {
+      throw invalidBrandTokenError('motion', scale, rungs, SCALE_EXPECTED);
+    }
+  }
   const out: string[] = [];
   const durations = overrides.duration ?? {};
   const durationNames = Object.keys(durationTokens) as DurationName[];
@@ -155,7 +173,9 @@ export function motionDeclarations(overrides: MotionInput | undefined): string[]
     if (!TIME_PATTERN.test(value)) {
       throw invalidBrandTokenError('motion.duration', name, value, TIME_EXPECTED);
     }
-    out.push(`--duration-${name}: ${value};`);
+    // A unitless `0` is a length, not a <time>: `transition-duration: var(--duration-x)` would be
+    // invalid at computed time, so the zero carries its unit.
+    out.push(`--duration-${name}: ${value === '0' ? '0ms' : value};`);
   }
   const easings = overrides.easing ?? {};
   const easingNames = Object.keys(easingTokens) as EasingName[];
