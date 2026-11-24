@@ -84,6 +84,23 @@ await outbound({
 });
 ```
 
+## `deps.fetch`: the transport
+
+`outbound(request, { fetch })` swaps the transport, for a test or in production (a client with its
+own sockets, an instrumented one). It sits UNDER `outbound()`, so every rule above stays the call's.
+
+| The transport is handed | The transport must |
+|---|---|
+| the SCREENED url: under `dial: 'public'` the approved address, with `host` and `tls.serverName` naming the name | dial that url, nowhere else |
+| `init` with `signal` and `redirect: 'manual'` | pass `init` through; a hop is `outbound()`'s to take (`redirect: 'follow'`) |
+
+- **A transport that followed a redirect itself is refused**: an answer with `redirected: true` is
+  `X_OUTBOUND_TRANSPORT_REDIRECTED`, under `redirect: 'error'` and `'follow'` alike — no screen saw
+  that hop (`outbound-transport.test.ts`).
+- `maxBytes`, `idleMs` and `deadlineMs` cut the body the transport streams, whatever it does.
+- **A transport that reaches another address (a tunnel, a relay) takes the screen over**: the app
+  proves it, as for a proxy it names.
+
 `screenDial(url, { resolve, allowPrivate })` is the screen alone, for a transport that keeps its own
 codes: `@ultimat3/jobs`' webhook target and `@ultimat3/scraping`'s wildcard leg call it.
 
@@ -99,6 +116,7 @@ codes: `@ultimat3/jobs`' webhook target and `@ultimat3/scraping`'s wildcard leg 
 | `X_OUTBOUND_TOO_LARGE` | terminal | the body passed `maxBytes` |
 | `X_OUTBOUND_HOST_BLOCKED` | terminal | `dial: 'public'` refused an address class, a scheme or a hop |
 | `X_OUTBOUND_REDIRECTED` | terminal | a 3xx under `redirect: 'error'`, or more than 5 hops (`meta.location`, no query) |
+| `X_OUTBOUND_TRANSPORT_REDIRECTED` | terminal | the transport in `deps.fetch` answered `redirected: true`: it followed a hop itself (`meta.location`, no query) |
 | `X_OUTBOUND_RETRY_UNSAFE` | terminal | `retry` on POST or PATCH without `idempotent: true` |
 | `X_OUTBOUND_BODY_INVALID` | terminal | `answer.json(schema)` refused the body (`meta.issues`) |
 | `X_OUTBOUND_PROXY_INVALID` | terminal | `proxy` is not an `http:`/`https:` URL, or its resolver threw (`meta.reason`, never the URL) |

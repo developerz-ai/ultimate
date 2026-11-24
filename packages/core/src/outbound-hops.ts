@@ -6,7 +6,12 @@
 import type { DialResolve } from './outbound-dial';
 import { publicUrlRefusal, screenDial } from './outbound-dial';
 import type { OutboundSite } from './outbound-errors';
-import { outboundHostBlocked, outboundRedirected, outboundUnreachable } from './outbound-errors';
+import {
+  outboundHostBlocked,
+  outboundRedirected,
+  outboundTransportRedirected,
+  outboundUnreachable,
+} from './outbound-errors';
 import { proxyFor } from './outbound-proxy';
 import type { OutboundBody, OutboundFetch, OutboundInit, OutboundProxy } from './outbound-types';
 import { OUTBOUND_MAX_REDIRECTS } from './outbound-types';
@@ -120,6 +125,11 @@ export async function sendHops(call: HopCall, signal: AbortSignal): Promise<Resp
       redirect: 'manual',
     };
     const response = await call.fetch(target.url, init);
+    // A transport that ignored `redirect: 'manual'` dialled a hop no screen saw: never its answer.
+    if (response.redirected) {
+      await discard(response);
+      throw outboundTransportRedirected(call.site, redactedLocation(response.url, url));
+    }
     const location = response.headers.get('location');
     if (!isRedirect(response.status) || location === null || call.redirect === 'error') {
       return response;

@@ -40,7 +40,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/auth` | [Error-Codes-auth](Error-Codes-auth) | 31 |
 | `@ultimat3/cache` | [Error-Codes-cache](Error-Codes-cache) | 8 |
 | `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 237 |
-| `@ultimat3/core` | [Error-Codes-core](Error-Codes-core) | 76 |
+| `@ultimat3/core` | [Error-Codes-core](Error-Codes-core) | 77 |
 | `@ultimat3/db` | [Error-Codes-db](Error-Codes-db) | 42 |
 | `@ultimat3/entity` | [Error-Codes-entity](Error-Codes-entity) | 44 |
 | `@ultimat3/flags` | [Error-Codes-flags](Error-Codes-flags) | 6 |
@@ -871,6 +871,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_OUTBOUND_THROTTLED | [core](Error-Codes-core) |
 | X_OUTBOUND_TIMEOUT | [core](Error-Codes-core) |
 | X_OUTBOUND_TOO_LARGE | [core](Error-Codes-core) |
+| X_OUTBOUND_TRANSPORT_REDIRECTED | [core](Error-Codes-core) |
 | X_OUTBOUND_UNAVAILABLE | [core](Error-Codes-core) |
 | X_OUTBOUND_UNREACHABLE | [core](Error-Codes-core) |
 | X_OUTBOX_NO_TX | [jobs](Error-Codes-jobs) |

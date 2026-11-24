@@ -52,7 +52,15 @@ export type OutboundProxy =
   | OutboundProxyTarget
   | ((target: URL) => OutboundProxyTarget | undefined | Promise<OutboundProxyTarget | undefined>);
 
-/** "Just the call", the seam `MailFetch` already is. Its `init` always carries the signal. */
+/**
+ * "Just the call", the seam `MailFetch` already is — a test double, or a production transport.
+ * `outbound()` keeps the screen, the deadline, retries, the byte cap, the idle watchdog and every
+ * redirect rule: the transport is handed the SCREENED url (the approved address under `'public'`,
+ * with `host` and `tls.serverName` naming the name) and `init` with `signal` and `redirect:
+ * 'manual'`. It must dial that url and pass `init` through. An answer with `redirected: true` is
+ * `X_OUTBOUND_TRANSPORT_REDIRECTED`. A transport that reaches somewhere else (a tunnel, a relay)
+ * takes the address screen over: that is the app's to prove.
+ */
 export type OutboundFetch = (url: string, init: OutboundInit) => Promise<Response>;
 
 export interface OutboundRequest {

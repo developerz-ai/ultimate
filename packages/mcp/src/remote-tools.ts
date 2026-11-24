@@ -40,6 +40,9 @@ export interface McpToolsDef {
   readonly deadlineMs?: number;
   /** The longest answer handed to a model; the middle of a longer one is cut. Default 20,000. */
   readonly maxResultChars?: number;
+  /** The largest answer one call reads off the wire, in bytes (`mcpClient`'s). Default 16 MiB. */
+  readonly maxBytes?: number;
+  /** The transport under `outbound()` (`mcpClient`'s `fetch`). Default `fetch`. */
   readonly fetch?: OutboundFetch;
   /**
    * Whether this app's OWN MCP surface (`include: 'exposed'`) and its in-app `agent()`s are offered
@@ -113,6 +116,7 @@ export function mcpTools(def: McpToolsDef): McpTools {
     ...(def.dial === undefined ? {} : { dial: def.dial }),
     ...(def.deadlineMs === undefined ? {} : { deadlineMs: def.deadlineMs }),
     ...(def.auth === undefined ? {} : { auth: def.auth }),
+    ...(def.maxBytes === undefined ? {} : { maxBytes: def.maxBytes }),
     ...(def.fetch === undefined ? {} : { fetch: def.fetch }),
     // The server's list moved: forget the verdict, so the next call re-lists and is held to the
     // lock again — a drift there is `X_MCP_REMOTE_TOOL_CHANGED`, never a quietly new tool.

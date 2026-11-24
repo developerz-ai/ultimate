@@ -94,6 +94,7 @@ const CORE_CODE_TITLES = {
   X_IMAGE_RASTER_BUDGET: 'a synchronous raster transform is over the web role pixel budget',
   X_REDACT_PATTERN_UNSAFE: 'a redactValues() pattern is refused at registration',
   X_OUTBOUND_PROXY_INVALID: 'an outbound HTTP call was given a proxy it cannot use',
+  X_OUTBOUND_TRANSPORT_REDIRECTED: 'an outbound transport followed a redirect itself',
 } as const;
 
 export type CoreErrorCode = keyof typeof CORE_CODE_TITLES;

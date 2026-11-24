@@ -1,4 +1,4 @@
-// Single responsibility: the eleven refusals `outbound()` can end on, each built from the call's
+// Single responsibility: the twelve refusals `outbound()` can end on, each built from the call's
 // redacted label. Never a query string, never a header: a cause reaches a log store and a
 // problem document, and a signed URL's query is the credential.
 
@@ -8,7 +8,7 @@ import { UltimateError } from './errors';
 import { replaceUrlUserinfo } from './url-userinfo';
 
 /**
- * The eleven codes' retry classes, registered HERE and not in `error-retry.ts`'s core table: that
+ * The twelve codes' retry classes, registered HERE and not in `error-retry.ts`'s core table: that
  * table rides every browser page, and these are server-only (axiom 6). The transport faults are
  * retryable, a stated delay is `retry-after`, and every answer the same request gets again is
  * terminal — unclassified, `retry()` would replay a 401 three times.
@@ -22,6 +22,7 @@ registerErrorRetry({
   X_OUTBOUND_TOO_LARGE: 'terminal',
   X_OUTBOUND_HOST_BLOCKED: 'terminal',
   X_OUTBOUND_REDIRECTED: 'terminal',
+  X_OUTBOUND_TRANSPORT_REDIRECTED: 'terminal',
   X_OUTBOUND_RETRY_UNSAFE: 'terminal',
   X_OUTBOUND_BODY_INVALID: 'terminal',
   X_OUTBOUND_PROXY_INVALID: 'terminal',
@@ -175,6 +176,19 @@ export function outboundRedirected(
     cause: `${siteLabel(site)} answered ${String(status)} towards ${location}, and redirects are not followed by default`,
     fix: `outbound({ url, vendor: '${site.vendor}', redirect: 'follow' })   # or call the Location the cause names directly`,
     meta: { ...siteMeta(site), status, location },
+  });
+}
+
+/**
+ * The app's transport (`deps.fetch`) followed a hop itself: no screen saw it, so its answer is not
+ * the vendor's to trust. No `status` in `meta`, so `outboundResponse()` never rebuilds it as that 2xx.
+ */
+export function outboundTransportRedirected(site: OutboundSite, reached: string): UltimateError {
+  return new UltimateError({
+    code: 'X_OUTBOUND_TRANSPORT_REDIRECTED',
+    cause: `${siteLabel(site)}: the transport passed as deps.fetch followed a redirect itself, towards ${reached}, ignoring init.redirect ('manual')`,
+    fix: `fetch(url, init)   # in the transport given to outbound(): pass init through unchanged, and let outbound({ url, vendor: '${site.vendor}', redirect: 'follow' }) take each hop`,
+    meta: { ...siteMeta(site), location: reached },
   });
 }
 
