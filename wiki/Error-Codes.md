@@ -62,7 +62,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | repository scripts | [Error-Codes-scripts](Error-Codes-scripts) | 357 |
 | `@ultimat3/seo` | [Error-Codes-seo](Error-Codes-seo) | 11 |
 | `@ultimat3/storage` | [Error-Codes-storage](Error-Codes-storage) | 31 |
-| `@ultimat3/testing` | [Error-Codes-testing](Error-Codes-testing) | 82 |
+| `@ultimat3/testing` | [Error-Codes-testing](Error-Codes-testing) | 83 |
 | `@ultimat3/time` | [Error-Codes-time](Error-Codes-time) | 8 |
 | `@ultimat3/ui` | [Error-Codes-ui](Error-Codes-ui) | 7 |
 
@@ -427,6 +427,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_DURATION_INVALID | [time](Error-Codes-time) |
 | X_E2E_A11Y_VIOLATION | [testing](Error-Codes-testing) |
 | X_E2E_APP_FAILED | [testing](Error-Codes-testing) |
+| X_E2E_CONSOLE_ERRORS | [testing](Error-Codes-testing) |
 | X_E2E_EVALUATE_CAPTURED | [testing](Error-Codes-testing) |
 | X_E2E_EVALUATE_THREW | [testing](Error-Codes-testing) |
 | X_E2E_EVALUATE_UNSUPPORTED | [testing](Error-Codes-testing) |

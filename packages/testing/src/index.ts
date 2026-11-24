@@ -122,11 +122,13 @@ export { allowA11y } from './e2e-a11y-tabs';
 export type { E2eApp, E2eAppMode, StartE2eAppOptions } from './e2e-app';
 export { E2E_APP_START_MS, E2E_APP_STOP_MS, startE2eApp } from './e2e-app';
 export { E2E_ROOT_ENV, e2eApp, e2eBaseUrl, e2eBrowser } from './e2e-browser-handle';
+export type { E2eConsoleLevel, E2eConsoleMessage } from './e2e-console';
 export type { E2eDriverOptions } from './e2e-driver';
 export { e2eFixtures, installE2eDriver } from './e2e-driver';
 export { E2E_ERROR_CODES } from './e2e-error-codes';
 export {
   E2eAppFailedError,
+  E2eConsoleErrorsError,
   E2eEvaluateCapturedError,
   E2eEvaluateThrewError,
   E2eEvaluateUnsupportedError,
@@ -138,6 +140,7 @@ export type { LocatablePage } from './e2e-locator';
 export { e2eLocator } from './e2e-locator';
 export type { AxTreeRequest, E2eBrowserPage, E2ePageOptions } from './e2e-page';
 export { DEFAULT_E2E_TIMEOUT_MS, DEFAULT_SERVICE_WORKER_TIMEOUT_MS, e2ePage } from './e2e-page';
+export { consoleMessages, expectNoConsoleErrors, pressKey } from './e2e-page-input';
 export type { E2eSelection } from './e2e-selection';
 export type { TestingErrorCode } from './errors';
 export {

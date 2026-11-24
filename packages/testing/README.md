@@ -368,7 +368,11 @@ fixture that silently no-opped would make the assertion after it read as proof.
 **Real input, `As of 2026-11`.** A raw-CDP tab (`cdpE2eTab`, the `E2eTab` the framework implements)
 sends trusted input the page cannot forge: `tab.touchDrag(from, to, steps)` is a finger
 (`Input.dispatchTouchEvent`, touch emulation on once per tab) and `tab.press(key)` a key
-(`Input.dispatchKeyEvent`, so Tab really moves focus) — a key from `PRESS_KEYS`, a letter or a digit.
+(`Input.dispatchKeyEvent`, so Tab really moves focus) — a key from `PRESS_KEYS`, a letter or a digit,
+optionally a chord with `Alt`, `Control`, `Meta` or `Shift` held (`Shift+Tab`, `Control+k`). The tab
+also keeps its console (`tab.consoleMessages()`, `tab.clearConsole()`: every `console.*` call and uncaught exception, cross-site iframes included; 1,000 lines of 2,000 characters at most, oldest non-error dropped first).
+An app's e2e test reaches both through its `page`: `pressKey(page, key)`, `consoleMessages(page)`
+(since the running test began) and `expectNoConsoleErrors(page)` (`X_E2E_CONSOLE_ERRORS`).
 A touch `PointerEvent` dispatched from page script is refused by `setPointerCapture`, so a drag
 proven that way proves nothing; `TouchPoint` is the `{ x, y }` both ends take.
 
