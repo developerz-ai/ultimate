@@ -90,9 +90,12 @@ before any hook, before the handler**:
 | POST | any | never gated: it is the form's submission |
 
 A principal is the actor's kind and id, who is really acting (an impersonator), and the actor's
-`orgId` when it has one: the same person in two orgs is two principals, so a page rendered in one
-org is never swapped into a document of the other, and the client store it fences is never
-shared. An actor with no `orgId` keeps the scope id it had before the org joined it (`As of
+`orgId` when it has one: the same person in two orgs is two principals, so a soft GET never swaps
+a page rendered in one org into a document of the other, and the client store it fences is never
+shared. The one exception is a POST answered in place: a form that switches org and renders its
+page instead of redirecting is swapped in, since it cannot be repeated; the router then empties
+every tab's cache and stops swapping (the POST row under
+[What happens to the answer](#what-happens-to-the-answer)). An actor with no `orgId` keeps the scope id it had before the org joined it (`As of
 2026-11`; `packages/core/src/client-scope-id.ts`).
 
 A soft GET across a principal change runs auth and rate-limit **twice** — once before the `204` of

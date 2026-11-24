@@ -182,7 +182,14 @@ describe('unit · the gate over real pages — what a router request may run', (
     const alice = { id: 'alice@example.com', permissions: ['casos.read'] };
     const inOrgA = userActor({ ...alice, orgId: 'org-a' });
     const inOrgB = userActor({ ...alice, orgId: 'org-b' });
-    const fromOrgA = router('soft', { [CLIENT_NAVIGATION_SCOPE_HEADER]: clientScopeOf(inOrgA) });
+    // The router echoes the scope org A's real document carried, not one this test computes.
+    const document = await (
+      await serverFor(inOrgA).fetch(new Request('http://dev.test/casos'))
+    ).text();
+    const scope = /<meta name="ultimate-scope" content="([^"]+)">/.exec(document)?.[1];
+    expect(scope).toBe(clientScopeOf(inOrgA));
+    loads.length = 0;
+    const fromOrgA = router('soft', { [CLIENT_NAVIGATION_SCOPE_HEADER]: String(scope) });
 
     const across = await serverFor(inOrgB).fetch(
       new Request('http://dev.test/casos', { headers: fromOrgA }),
