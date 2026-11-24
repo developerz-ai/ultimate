@@ -129,7 +129,7 @@ $lg: map.get(t.$breakpoints, 'lg');
 // Below `sm` a row is a card and each cell a labelled line. Every element still carries its table
 // role (the markup declares them), because WebKit drops table semantics on a `display` change. The
 // header row stays in the accessibility tree — it is what names each cell — and shows only the
-// headers that are sort controls, as a row of chips above the cards.
+// headers that are sort controls, as a row of chips above the cards, and the tick-all box.
 
 @container datatable (width < #{$sm}) {
   .wrap[data-narrow='cards'] {
@@ -144,7 +144,7 @@ $lg: map.get(t.$breakpoints, 'lg');
       border-block-end: 1px solid t.role('line');
     }
 
-    .head:not([data-sortable]) {
+    .head:not([data-controls]) {
       @include t.visually-hidden;
     }
 

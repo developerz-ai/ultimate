@@ -1,6 +1,6 @@
 // The bar under a selection: how many rows it names, the caller's actions in a slot, and — when the
 // list's filter matches more than the page — the "all matching" box. The count is a status region,
-// so a screen reader hears each change without moving focus.
+// so a screen reader hears each change without moving focus; a no-script form has no count.
 //
 // "All matching" is a native checkbox posting the FILTER under its own name, never a list of ids:
 // with scripting off it is the same control in the same form as the row boxes.
@@ -23,15 +23,21 @@ export interface SelectionMatching {
 }
 
 export interface BulkBarProps {
-  /** Rows selected now. */
-  count: number;
+  /**
+   * Rows selected now. Absent — a scripting-off form, whose boxes change with nothing to recount
+   * them — the bar shows no count and stays in reach as if something were selected.
+   */
+  count?: number | undefined;
   /** The bulk actions: buttons that submit the selection's form or call back. */
   children?: JSX.Element | undefined;
   /** Present when the filter matches more rows than the page shows. */
   matching?: SelectionMatching | undefined;
   /** Whether "all matching" is the selection. */
   allMatching?: boolean | undefined;
-  /** Callback mode for the "all matching" box. Absent, it is a plain form control. */
+  /**
+   * Callback mode for the "all matching" box: once it answers, the box shows `allMatching` again,
+   * so a change the caller declines is not left ticked. Absent, it is a plain form control.
+   */
   onAllMatching?: ((on: boolean) => void) | undefined;
   /** Callback mode: the clear button. Absent, no clear button — a no-script page reloads instead. */
   onClear?: (() => void) | undefined;
@@ -42,7 +48,12 @@ export interface BulkBarProps {
 
 export function BulkBar(props: BulkBarProps): JSX.Element {
   const ui = useUi();
-  const count = (): number => finiteCount('BulkBar', 'count', props.count);
+  const count = (): number | undefined =>
+    props.count === undefined ? undefined : finiteCount('BulkBar', 'count', props.count);
+  const onAllMatching = (event: Event & { currentTarget: HTMLInputElement }): void => {
+    props.onAllMatching?.(event.currentTarget.checked);
+    event.currentTarget.checked = props.allMatching === true;
+  };
 
   const matchingBox = (matching: SelectionMatching): JSX.Element => (
     <label class={styles['matching']}>
@@ -52,9 +63,7 @@ export function BulkBar(props: BulkBarProps): JSX.Element {
         value={matching.filter}
         form={props.form}
         checked={props.allMatching === true}
-        onChange={(event: Event & { currentTarget: HTMLInputElement }) =>
-          props.onAllMatching?.(event.currentTarget.checked)
-        }
+        onChange={props.onAllMatching === undefined ? undefined : onAllMatching}
       />
       {ui.t(UI_KEYS.selectionMatching, {
         count: finiteCount('BulkBar', 'matching.count', matching.count),
@@ -68,11 +77,14 @@ export function BulkBar(props: BulkBarProps): JSX.Element {
       class={cx(styles['bar'], props.class)}
       role="group"
       aria-label={ui.t(UI_KEYS.selectionBar)}
-      data-count={String(count())}
+      data-count={count() === undefined ? undefined : String(count())}
     >
-      <p class={styles['count']} role="status">
-        {ui.t(UI_KEYS.selectionCount, { count: count() })}
-      </p>
+      {props.count === undefined ? null : (
+        // One node while the count lives: a status region replaced on each change says nothing.
+        <p class={styles['count']} role="status">
+          {ui.t(UI_KEYS.selectionCount, { count: count() ?? 0 })}
+        </p>
+      )}
       {props.matching === undefined ? null : matchingBox(props.matching)}
       {props.onClear === undefined ? null : (
         <button type="button" class={styles['clear']} onClick={() => props.onClear?.()}>

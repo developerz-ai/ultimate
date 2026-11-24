@@ -11,6 +11,7 @@ import {
   type RowSelection,
   selectedCount,
   selectionIntent,
+  selectPage,
   selectRange,
   toggleKey,
   togglePage,
@@ -61,6 +62,16 @@ describe('a Shift range', () => {
     const before = keys('a');
     expect(selectRange(before, PAGE, 'a', 'gone', true)).toBe(before);
   });
+
+  test('ranging on over "all matching" keeps the filter, never this page’s keys', () => {
+    expect(selectRange(ALL, PAGE, 'b', 'd', true)).toBe(ALL);
+  });
+
+  test('a span already in the asked state answers the SAME selection', () => {
+    const before = keys('b', 'c');
+    expect(selectRange(before, PAGE, 'b', 'c', true)).toBe(before);
+    expect(selectRange(before, PAGE, 'd', 'e', false)).toBe(before);
+  });
 });
 
 describe('the tick-all box', () => {
@@ -75,6 +86,23 @@ describe('the tick-all box', () => {
   test('some becomes all, all becomes none', () => {
     expect(togglePage(keys('b'), PAGE)).toEqual(keys('b', 'a', 'c', 'd', 'e'));
     expect(togglePage(keys(...PAGE), PAGE)).toEqual(keys());
+  });
+
+  test('an empty page has nothing to tick: the selection is answered unchanged', () => {
+    const before = keys('a');
+    expect(togglePage(before, [])).toBe(before);
+  });
+});
+
+describe('Ctrl/Cmd+A', () => {
+  test('selects the page, and pressed again keeps it selected', () => {
+    const once = selectPage(keys('b'), PAGE);
+    expect(once).toEqual(keys('b', 'a', 'c', 'd', 'e'));
+    expect(selectPage(once, PAGE)).toBe(once);
+  });
+
+  test('over "all matching" keeps the filter', () => {
+    expect(selectPage(ALL, PAGE)).toBe(ALL);
   });
 });
 

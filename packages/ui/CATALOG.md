@@ -163,15 +163,15 @@ Ancestor trail. The last item is the current page: rendered as text, never a lin
 
 ### BulkBar
 
-The bar under a selection: how many rows it names, the caller's actions in a slot, and — when the list's filter matches more than the page — the "all matching" box. The count is a status region, so a screen reader hears each change without moving focus.  "All matching" is a native checkbox posting the FILTER under its own name, never a list of ids: with scripting off it is the same control in the same form as the row boxes.
+The bar under a selection: how many rows it names, the caller's actions in a slot, and — when the list's filter matches more than the page — the "all matching" box. The count is a status region, so a screen reader hears each change without moving focus; a no-script form has no count.  "All matching" is a native checkbox posting the FILTER under its own name, never a list of ids: with scripting off it is the same control in the same form as the row boxes.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
-| `count` | `number` | yes | Rows selected now. |
+| `count` | `number` | — | Rows selected now. Absent — a scripting-off form, whose boxes change with nothing to recount them — the bar shows no count and stays in reach as if something were selected. |
 | `children` | `JSX.Element` | — | The bulk actions: buttons that submit the selection's form or call back. |
 | `matching` | `SelectionMatching` | — | Present when the filter matches more rows than the page shows. |
 | `allMatching` | `boolean` | — | Whether "all matching" is the selection. |
-| `onAllMatching` | `((on: boolean) => void)` | — | Callback mode for the "all matching" box. Absent, it is a plain form control. |
+| `onAllMatching` | `((on: boolean) => void)` | — | Callback mode for the "all matching" box: once it answers, the box shows `allMatching` again, so a change the caller declines is not left ticked. Absent, it is a plain form control. |
 | `onClear` | `(() => void)` | — | Callback mode: the clear button. Absent, no clear button — a no-script page reloads instead. |
 | `form` | `string` | — | The id of the `<form>` the "all matching" box submits with. |
 | `class` | `string` | — |  |

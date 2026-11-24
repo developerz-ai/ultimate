@@ -168,13 +168,14 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
     // A first page in flight has no rows yet, and that is not every row leaving the list.
     () => props.loading !== true && (props.error === undefined || props.error === null),
   );
+  /** The tick-all box: callback mode only, since scripting off it could tick nothing. */
+  const pageBoxShown = selectable && props.selection?.onChange !== undefined;
   /** The selection's cell at the inline start of a row; `content` is empty for a placeholder. */
-  const selectCell = (content: JSX.Element): JSX.Element =>
-    selectable ? (
-      <td role={TABLE_ROLES.cell} class={styles['select']}>
-        {content}
-      </td>
-    ) : null;
+  const selectCell = (content: JSX.Element): JSX.Element => (
+    <td role={TABLE_ROLES.cell} class={styles['select']}>
+      {content}
+    </td>
+  );
 
   const cards = (): boolean => (props.narrow ?? 'cards') === 'cards';
   /** Read through the validator on every render, so a bad priority is refused, never shown. */
@@ -219,7 +220,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
     const more = moreColumn(props.columns);
     return (
       <tr role={TABLE_ROLES.row} class={styles['row']} data-row={key}>
-        {selectCell(select.box(row, key))}
+        {selectable ? selectCell(select.box(row, key)) : null}
         {props.columns.map((column) => (
           <td
             role={TABLE_ROLES.cell}
@@ -249,7 +250,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
       const more = moreColumn(props.columns);
       return Array.from({ length: placeholders }, () => (
         <tr role={TABLE_ROLES.row} class={styles['row']}>
-          {selectCell(null)}
+          {selectable ? selectCell(null) : null}
           {props.columns.map((column) => (
             <td role={TABLE_ROLES.cell} class={styles['cell']} data-priority={priorityOf(column)}>
               <Skeleton height="1.1em" />
@@ -347,12 +348,14 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
       <thead
         role={TABLE_ROLES.rowgroup}
         class={styles['head']}
-        data-sortable={props.columns.some(hasSortControl) ? '' : undefined}
+        // A narrow card list shows the header only when it holds a control — a sort chip or the
+        // tick-all box — and hides it otherwise, where a control would be an invisible Tab stop.
+        data-controls={pageBoxShown || props.columns.some(hasSortControl) ? '' : undefined}
       >
         <tr role={TABLE_ROLES.row}>
           {selectable ? (
             <th scope="col" role={TABLE_ROLES.columnheader} class={styles['select']}>
-              {props.selection?.onChange === undefined ? null : select.pageBox()}
+              {pageBoxShown ? select.pageBox() : null}
             </th>
           ) : null}
           {props.columns.map((column) => (
@@ -447,11 +450,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
   const barSlot = (): JSX.Element => (view() === 'table' ? bar : null);
 
   return (
-    <div
-      class={cx(styles['wrap'], props.class)}
-      data-narrow={props.narrow ?? 'cards'}
-      data-selection-scope={selectable ? '' : undefined}
-    >
+    <div class={cx(styles['wrap'], props.class)} data-narrow={props.narrow ?? 'cards'}>
       {content()}
       {barSlot()}
       {pagerSlot()}

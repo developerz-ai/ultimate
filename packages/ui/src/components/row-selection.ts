@@ -25,13 +25,17 @@ function keysOf(selection: RowSelection, visible: readonly string[]): readonly s
   return selection.kind === 'matching' ? visible : selection.keys;
 }
 
-/** Sets each of `keys` on or off, keeping the rest of the selection in its order. */
+/**
+ * Sets each of `keys` on or off, keeping the rest of the selection in its order. Keys already in
+ * that state answer the SAME selection: a `matching` one stays the filter, never this page's keys.
+ */
 function setKeys(
   selection: RowSelection,
   visible: readonly string[],
   keys: readonly string[],
   on: boolean,
 ): RowSelection {
+  if (keys.every((key) => isSelected(selection, key) === on)) return selection;
   const before = keysOf(selection, visible);
   if (!on) {
     const drop = new Set(keys);
@@ -80,6 +84,11 @@ export function pageState(selection: RowSelection, visible: readonly string[]): 
 /** The tick-all box: a page not wholly selected becomes wholly selected, else none of it is. */
 export function togglePage(selection: RowSelection, visible: readonly string[]): RowSelection {
   return setKeys(selection, visible, visible, pageState(selection, visible) !== 'all');
+}
+
+/** Ctrl/Cmd+A: every row on the page selected — pressed again it stays so, never a toggle. */
+export function selectPage(selection: RowSelection, visible: readonly string[]): RowSelection {
+  return setKeys(selection, visible, visible, true);
 }
 
 /**

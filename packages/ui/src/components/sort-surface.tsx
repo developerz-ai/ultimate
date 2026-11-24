@@ -77,14 +77,19 @@ export function sortSurface<T>(input: SortSurfaceInput<T>): JSX.Element {
   const names = input.fields ?? {};
   const selectionOf = (): ListSelection<T> | undefined => input.selection?.();
   const selectable = selectionOf() !== undefined;
+  // Reading order is the order on screen: the controller's view, a pending move's preview included.
   const select = selectionControls<T>(
     selectionOf,
-    () => input.groups().flatMap((group) => group.items.map(input.itemKey)),
+    () => controller.view().flatMap((group) => group.items.map(input.itemKey)),
     () => true,
   );
-  /** Touch has no Shift+click: a finger held on a card ticks its box. Callback mode only. */
+  /**
+   * Touch has no Shift+click: a finger held on a card ticks its box. Callback mode only. A card
+   * that leaves while the finger is still down takes its pending press with it.
+   */
   const bindPress = (id: string, el: HTMLElement): void => {
-    if (selectionOf()?.onChange !== undefined) bindLongPress(el, () => select.toggle(id));
+    if (selectionOf()?.onChange !== undefined)
+      rt.onCleanup(bindLongPress(el, () => select.toggle(id)));
   };
 
   const hidden = (name: string | null, value: string): JSX.Element =>
@@ -242,7 +247,6 @@ export function sortSurface<T>(input: SortSurfaceInput<T>): JSX.Element {
       role="group"
       aria-label={input.label}
       ref={(el: HTMLDivElement) => geometry.root(el)}
-      data-selection-scope={selectable ? '' : undefined}
     >
       {single ?? columns(input.groups())}
     </div>

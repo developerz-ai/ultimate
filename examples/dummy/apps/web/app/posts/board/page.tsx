@@ -108,12 +108,15 @@ export const config = defineRoute({
   // (29,955 → 31,904): a soft visit to a `stream` page reads the answer as it arrives, swaps
   // the shell in at the server's flush mark and fills each hole as its chunk lands, so the page
   // paints before its slowest hole (65 ms p95 against 2,041 ms). Raised 111.3kb → 113.1kb.
-  // measured: 122533 B (2026-11-24; x build --target static, against 115,814) — why: the board
-  // island +6,715 B (79,876 → 86,591): `Board` gains card selection — a native checkbox per card,
+  // measured: 123485 B (2026-11-24; x build --target static, against 115,814) — why: the board
+  // island +7,667 B (79,876 → 87,543): `Board` gains card selection — a native checkbox per card,
   // Shift+click and the grid keys ranging in reading order, a long press on touch, the prune of a
   // card that left the board, and `BulkBar` with its live count and "all matching" box — carried by
-  // `sort-surface.tsx`, which every `Board` and `SortableList` shares. Raised 113.1kb → 119.7kb.
-  budget: { js: '119.7kb' },
+  // `sort-surface.tsx`, which every `Board` and `SortableList` shares; the review's fixes (boxes
+  // reconciled to `value`, the native mixed state, per-list memos) are 952 B of it. The selection
+  // stays in a board that never sets it: its no-script boxes render in the same synchronous pass,
+  // and the barrel is the one import path. Raised 113.1kb → 120.6kb.
+  budget: { js: '120.6kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

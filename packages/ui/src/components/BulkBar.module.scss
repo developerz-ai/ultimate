@@ -1,7 +1,8 @@
 @use '../tokens' as t;
 
 // The selection's bar: a row of count, scope and actions. It sticks to the bottom of the scroll box
-// while something is selected, so the actions stay in reach past a long page.
+// while something is selected — and always with no count, scripting off, where it cannot know —
+// so the actions stay in reach past a long page.
 .bar {
   @include t.row(t.space(3), center);
   @include t.surface('surface', 'xs');

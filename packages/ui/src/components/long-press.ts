@@ -57,8 +57,11 @@ export function longPress(
   };
 }
 
-/** Only a touch press is watched: a mouse has Shift+click and a pen has its own hover. */
-export function bindLongPress(el: HTMLElement, onLongPress: () => void): void {
+/**
+ * Only a touch press is watched: a mouse has Shift+click and a pen has its own hover. Answers the
+ * function that cancels a press still held, for the owner of `el` to call when the card goes.
+ */
+export function bindLongPress(el: HTMLElement, onLongPress: () => void): () => void {
   const press = longPress(onLongPress, (fn, ms) => {
     const handle = setTimeout(fn, ms);
     return () => clearTimeout(handle);
@@ -75,13 +78,18 @@ export function bindLongPress(el: HTMLElement, onLongPress: () => void): void {
   el.addEventListener('contextmenu', (event) => {
     if (press.fired()) event.preventDefault();
   });
+  // Only the lift's own click is swallowed, once: a keyboard activation (`detail` 0) of a link in
+  // the card is the reader's, and so is every click after the first.
   el.addEventListener(
     'click',
     (event) => {
       if (!press.fired()) return;
+      press.reset();
+      if (event.detail === 0) return;
       event.preventDefault();
       event.stopPropagation();
     },
     { capture: true },
   );
+  return () => press.reset();
 }

@@ -5,19 +5,21 @@
 // Scripting off, every box is a plain form control in one form (`form`), and the submit is the
 // caller's action button in the bar. With `onChange` the boxes are controlled and call back.
 
+import { renderCauseValue } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
+import { UI_ERROR_CODES, UiError } from '../errors';
 import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
 import { solid } from '../theme/solid-adapter';
 import { BulkBar, type SelectionMatching } from './BulkBar';
 import {
-  isSelected,
   NO_SELECTION,
   pageState,
   pruneSelection,
   type RowSelection,
   selectedCount,
   selectionIntent,
+  selectPage,
   selectRange,
   toggleKey,
   togglePage,
@@ -28,20 +30,27 @@ import styles from './selection-control.module.scss';
 export interface ListSelection<Item> {
   /** The field name each row's box posts its key under. */
   readonly name: string;
-  /** The id of the `<form>` every box submits with — the bar's actions submit it. */
+  /**
+   * The id of the `<form>` every box submits with — the bar's actions submit it. Omitted, the boxes
+   * belong to the form around the list. A `Board` with `action` draws a `<form>` per card for its
+   * no-script move, and the HTML parser drops a form nested in another: there the bulk form stands
+   * apart from the board, named here, and its submit buttons carry `form` with the same id.
+   */
   readonly form?: string | undefined;
   /** What is selected now. Scripting off, the server's reading of the last post. */
   readonly value: RowSelection;
   /**
    * Callback mode: a click, Shift+click, a key or a long press answers the next selection, and a
-   * row that left the list is pruned from it. Absent, the boxes are plain form controls.
+   * row that left the list is pruned from it. Absent, the boxes are plain form controls. A change
+   * the caller declines leaves every box showing `value`, not the browser's own toggle.
    */
   readonly onChange?: ((next: RowSelection) => void) | undefined;
   /** Each row box's accessible name, already translated: "Select invoice 42". */
   readonly label: (item: Item) => string;
   /**
    * Present when the filter matches more rows than this page shows. Its box posts `filter` under
-   * `name`; a server that receives it acts on the filter and ignores the row keys beside it.
+   * `matching.name`, which must differ from `name`; a server that receives it acts on the filter
+   * and ignores the row keys beside it.
    */
   readonly matching?: SelectionMatching | undefined;
   /** The bulk actions, in the bar. */
@@ -51,19 +60,13 @@ export interface ListSelection<Item> {
 type BoxKeyEvent = KeyboardEvent & { currentTarget: HTMLInputElement };
 type BoxClickEvent = MouseEvent & { currentTarget: HTMLInputElement };
 
-/** The attribute the keyboard finds a row's box by, and the scope it searches within. */
-export const SELECT_KEY_ATTR = 'data-select-key';
-export const SELECTION_SCOPE_ATTR = 'data-selection-scope';
-
-function focusBox(from: Element, key: string): void {
-  const scope = from.closest(`[${SELECTION_SCOPE_ATTR}]`);
-  if (scope === null) return;
-  for (const box of scope.querySelectorAll<HTMLInputElement>(`input[${SELECT_KEY_ATTR}]`)) {
-    if (box.getAttribute(SELECT_KEY_ATTR) === key) {
-      box.focus();
-      return;
-    }
-  }
+/** One field name for a row key and a filter: the server could not tell one row from all of them. */
+function sharedNameError(name: string): UiError {
+  return new UiError({
+    code: UI_ERROR_CODES.invalidValue,
+    cause: `selection.matching.name and selection.name are both ${renderCauseValue(name)}, so a posted value could be a row key or the filter and the server cannot tell which`,
+    fix: "selection: { name: 'ids', matching: { name: 'all', filter, count } }   # two distinct field names",
+  });
 }
 
 export interface SelectionControls<Item> {
@@ -72,7 +75,7 @@ export interface SelectionControls<Item> {
   /** The tick-all box — callback mode only: scripting off it could tick nothing. */
   pageBox(): JSX.Element;
   bar(): JSX.Element;
-  /** The long press's toggle: one row, as a plain click on its box. */
+  /** The long press's toggle: one row, as a plain click on its box. A row gone since is ignored. */
   toggle(key: string): void;
 }
 
@@ -87,17 +90,34 @@ export function selectionControls<Item>(
 ): SelectionControls<Item> {
   const ui = useUi();
   const rt = solid();
-  // The Shift range's fixed end: the last row clicked or moved to without Shift.
+  // The Shift range's fixed end: the last row clicked, or moved to without Shift.
   let anchor: string | undefined;
+  // The box the last gesture left focus on. Shift+Arrow from it continues the range; from any
+  // other box — reached by Tab or a click elsewhere — it starts a new one there.
+  let focusAt: string | undefined;
+  // Each row's box by key, for the keyboard: this list's own boxes, never a nested list's.
+  const boxes = new Map<string, HTMLInputElement>();
 
-  const current = (): RowSelection => {
-    const s = selection();
-    return s === undefined ? NO_SELECTION : s.value;
-  };
+  const current = (): RowSelection => selection()?.value ?? NO_SELECTION;
+  // Once per list, not once per row: every box and the tick-all box read the same answers.
+  const keys = rt.createMemo(visible);
   /** What the boxes show: never a key that left the list, never another filter's "all". */
-  const shown = (): RowSelection =>
-    pruneSelection(current(), visible(), selection()?.matching?.filter);
-  const change = (next: RowSelection): void => selection()?.onChange?.(next);
+  const shown = rt.createMemo(
+    (): RowSelection => pruneSelection(current(), keys(), selection()?.matching?.filter),
+  );
+  const ticked = rt.createMemo((): ReadonlySet<string> | 'all' => {
+    const s = shown();
+    return s.kind === 'matching' ? 'all' : new Set(s.keys);
+  });
+  const has = (key: string): boolean => {
+    const set = ticked();
+    return set === 'all' || set.has(key);
+  };
+  const state = (): ReturnType<typeof pageState> => pageState(shown(), keys());
+  /** A gesture that changes nothing is not a change: no call back. */
+  const change = (next: RowSelection): void => {
+    if (next !== shown()) selection()?.onChange?.(next);
+  };
 
   rt.createEffect(() => {
     const s = selection();
@@ -114,36 +134,47 @@ export function selectionControls<Item>(
   };
 
   const onClick = (key: string, event: BoxClickEvent): void => {
-    const keys = visible();
-    const on = !isSelected(shown(), key);
     const next =
       event.shiftKey && anchor !== undefined
-        ? selectRange(shown(), keys, anchor, key, on)
-        : toggleKey(shown(), keys, key);
+        ? selectRange(shown(), keys(), anchor, key, !has(key))
+        : toggleKey(shown(), keys(), key);
     anchor = key;
+    focusAt = key;
     change(next);
+    // The browser has already flipped the box; it shows what the caller holds, accepted or not.
+    event.currentTarget.checked = has(key);
   };
 
   const onKeyDown = (key: string, event: BoxKeyEvent): void => {
     const intent = selectionIntent(event);
     if (intent === null) return;
     event.preventDefault();
-    const keys = visible();
+    const list = keys();
     if (intent === 'all' || intent === 'clear') {
       anchor = undefined;
-      change(intent === 'all' ? togglePage(shown(), keys) : NO_SELECTION);
+      focusAt = undefined;
+      change(intent === 'all' ? selectPage(shown(), list) : NO_SELECTION);
       return;
     }
-    const at = keys.indexOf(key);
-    const target = keys[intent === 'next' || intent === 'extend-next' ? at + 1 : at - 1];
+    const at = list.indexOf(key);
+    const target = list[intent === 'next' || intent === 'extend-next' ? at + 1 : at - 1];
     if (target === undefined) return;
     if (intent === 'extend-next' || intent === 'extend-prev') {
-      change(selectRange(shown(), keys, anchor ?? key, target, true));
-      anchor ??= key;
+      const from = focusAt === key && anchor !== undefined ? anchor : key;
+      anchor = from;
+      change(selectRange(shown(), list, from, target, true));
     } else {
       anchor = target;
     }
-    focusBox(event.currentTarget, target);
+    focusAt = target;
+    boxes.get(target)?.focus();
+  };
+
+  const track = (key: string, el: HTMLInputElement): void => {
+    boxes.set(key, el);
+    rt.onCleanup(() => {
+      if (boxes.get(key) === el) boxes.delete(key);
+    });
   };
 
   const box = (item: () => Item, key: string): JSX.Element => {
@@ -155,38 +186,57 @@ export function selectionControls<Item>(
         name={selection()?.name}
         value={key}
         form={selection()?.form}
-        checked={isSelected(shown(), key)}
+        checked={has(key)}
         aria-label={selection()?.label(item())}
-        data-select-key={key}
+        ref={(el: HTMLInputElement) => track(key, el)}
         onClick={callbacks ? (event: BoxClickEvent) => onClick(key, event) : undefined}
         onKeyDown={callbacks ? (event: BoxKeyEvent) => onKeyDown(key, event) : undefined}
       />
     );
   };
 
-  const pageBox = (): JSX.Element => {
-    const state = (): ReturnType<typeof pageState> => pageState(shown(), visible());
-    return (
-      <input
-        type="checkbox"
-        class={styles['box']}
-        aria-label={ui.t(UI_KEYS.selectionPage)}
-        checked={state() === 'all'}
-        // `indeterminate` has no attribute form, so "mixed" is ARIA's alone, as `Checkbox` does it.
-        aria-checked={state() === 'some' ? 'mixed' : undefined}
-        data-mixed={state() === 'some' ? 'true' : undefined}
-        onClick={() => change(togglePage(shown(), visible()))}
-      />
-    );
+  /** `indeterminate` is a property with no attribute: set here, beside ARIA's "mixed". */
+  const paint = (el: HTMLInputElement): void => {
+    el.checked = state() === 'all';
+    el.indeterminate = state() === 'some';
   };
 
-  /** Read through `selection()` at every use: the bar is built once and a new value updates it. */
+  const pageBox = (): JSX.Element => (
+    <input
+      type="checkbox"
+      class={styles['box']}
+      aria-label={ui.t(UI_KEYS.selectionPage)}
+      checked={state() === 'all'}
+      // A first page in flight, or an empty one, has nothing to tick.
+      disabled={keys().length === 0}
+      aria-checked={state() === 'some' ? 'mixed' : undefined}
+      data-mixed={state() === 'some' ? 'true' : undefined}
+      ref={(el: HTMLInputElement) => rt.createEffect(() => paint(el))}
+      onClick={(event: BoxClickEvent) => {
+        change(togglePage(shown(), keys()));
+        paint(event.currentTarget);
+      }}
+    />
+  );
+
+  /** "All matching" posts under its own name: the same name as a row key's could not be told apart. */
+  const matchingOf = (): SelectionMatching | undefined => {
+    const s = selection();
+    const matching = s?.matching;
+    if (matching !== undefined && matching.name === s?.name) throw sharedNameError(matching.name);
+    return matching;
+  };
+
+  /**
+   * Read through `selection()` at every use: the bar is built once and a new value updates it.
+   * Scripting off it carries no count — the boxes change and nothing could recount them.
+   */
   const bar = (): JSX.Element => {
     const callbacks = selection()?.onChange !== undefined;
     return (
       <BulkBar
-        count={selectedCount(shown(), selection()?.matching?.count ?? 0)}
-        matching={selection()?.matching}
+        count={callbacks ? selectedCount(shown(), selection()?.matching?.count ?? 0) : undefined}
+        matching={matchingOf()}
         allMatching={shown().kind === 'matching'}
         form={selection()?.form}
         onAllMatching={callbacks ? allMatching : undefined}
@@ -198,8 +248,10 @@ export function selectionControls<Item>(
   };
 
   const toggle = (key: string): void => {
+    if (!keys().includes(key)) return;
     anchor = key;
-    change(toggleKey(shown(), visible(), key));
+    focusAt = undefined;
+    change(toggleKey(shown(), keys(), key));
   };
 
   return { box, pageBox, bar, toggle };
