@@ -41,13 +41,14 @@ export interface AuthServerStore {
   getGrant(id: string): Promise<AuthGrantRecord | null>;
   /** Restarts the idle window. */
   touchGrant(id: string, at: Date): Promise<void>;
+  revokeGrant(id: string, at: Date): Promise<void>;
   /**
-   * Revokes a grant still live, in one step: `true` when this call ended it, `false` when it was
-   * unknown or already revoked — so two racing revokes count it once. A hand-rolled store may still
-   * answer nothing; then the count trusts its read before the write. Required waits on `next`.
+   * `revokeGrant` that answers, in one conditional write: `true` when this call ended the grant,
+   * `false` when it was unknown or already revoked — so two racing revokes count it once. Optional
+   * for a hand-rolled store only: the memory and Postgres stores implement it; without it, a
+   * per-grant revoke counts on its read before the write. Required waits on `next`.
    */
-  // biome-ignore lint/suspicious/noConfusingVoidType: a store written before the answer still compiles.
-  revokeGrant(id: string, at: Date): Promise<boolean | void>;
+  revokeLiveGrant?(id: string, at: Date): Promise<boolean>;
   /** Every live grant of `subject` (of one client when named). Answers how many. */
   revokeGrants(
     filter: { subject: string; clientId?: string | undefined },
@@ -138,6 +139,12 @@ export function memoryAuthServerStore(): AuthServerStore {
       if (grant !== undefined) grants.set(id, { ...grant, refreshedAt: at });
     },
     async revokeGrant(id, at) {
+      const grant = grants.get(id);
+      if (grant !== undefined && grant.revokedAt === null) {
+        grants.set(id, { ...grant, revokedAt: at });
+      }
+    },
+    async revokeLiveGrant(id, at) {
       const grant = grants.get(id);
       if (grant === undefined || grant.revokedAt !== null) return false;
       grants.set(id, { ...grant, revokedAt: at });

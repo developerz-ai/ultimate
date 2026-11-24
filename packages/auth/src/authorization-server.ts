@@ -221,7 +221,12 @@ export function authorizationServer(options: AuthorizationServerOptions): Author
       if (grant === null || grant.revokedAt !== null || grant.subject !== input.subject) return 0;
       if (input.clientId !== undefined && grant.clientId !== input.clientId) return 0;
       // The store's conditional write decides a race: only the call that ended it counts it.
-      return (await config.store.revokeGrant(grant.id, config.clock.now())) === false ? 0 : 1;
+      const at = config.clock.now();
+      if (config.store.revokeLiveGrant !== undefined) {
+        return (await config.store.revokeLiveGrant(grant.id, at)) ? 1 : 0;
+      }
+      await config.store.revokeGrant(grant.id, at);
+      return 1;
     },
     async grants(input) {
       if (config.store.liveGrants === undefined) throw grantsUnsupported();

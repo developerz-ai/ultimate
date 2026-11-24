@@ -159,7 +159,11 @@ export function postgresAuthServerStore(options: PostgresAuthServerStoreOptions)
     async touchGrant(id, at) {
       await rows(SQL.SQL_OAUTH_GRANT_TOUCH, [id, at]);
     },
-    revokeGrant: async (id, at) => (await rows(SQL.SQL_OAUTH_GRANT_REVOKE, [id, at])).length > 0,
+    async revokeGrant(id, at) {
+      await rows(SQL.SQL_OAUTH_GRANT_REVOKE, [id, at]);
+    },
+    revokeLiveGrant: async (id, at) =>
+      (await rows(SQL.SQL_OAUTH_GRANT_REVOKE, [id, at])).length > 0,
     revokeGrants: (filter, at) =>
       count(SQL.SQL_OAUTH_GRANTS_REVOKE, [filter.subject, filter.clientId ?? null, at]),
     liveGrants: async (filter, at) =>
