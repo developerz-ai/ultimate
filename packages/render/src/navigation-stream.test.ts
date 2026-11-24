@@ -86,20 +86,29 @@ describe('readShell', () => {
 
   test('a character split across reads survives, in the shell and in a chunk', async () => {
     const encoder = new TextEncoder();
-    const shell = encoder.encode(`${SHELL.replace('…', 'café ✓')}${MARK}`);
+    const shellText = SHELL.replace('…', 'café ✓');
+    const shell = encoder.encode(`${shellText}${MARK}`);
     const chunk = encoder.encode(`<p>naïve 🙂</p>${MARK}`);
-    // Every cut lands inside a multibyte character: `é`, `✓` and `🙂` are 2, 3 and 4 bytes.
-    const cutShell = SHELL.indexOf('…') + 4;
-    const cutChunk = 9;
+    /** The byte offset one byte into `char`'s encoding in `text`: a cut inside that character. */
+    const inside = (text: string, char: string): number =>
+      encoder.encode(text.slice(0, text.indexOf(char))).length + 1;
+    // Every cut lands inside a multibyte character: `é` and `ï` are 2 bytes, `✓` 3, `🙂` 4.
     const page = body();
-    page.bytes(shell.slice(0, cutShell));
-    page.bytes(shell.slice(cutShell));
+    const shellCuts = [inside(shellText, 'é'), inside(shellText, '✓'), shell.length];
+    shellCuts.reduce((from, to) => {
+      page.bytes(shell.slice(from, to));
+      return to;
+    }, 0);
     const head = await readShell(page.stream);
-    expect(head.html).toBe(SHELL.replace('…', 'café ✓'));
+    expect(head.html).toBe(shellText);
     const next = head.rest?.next();
-    page.bytes(chunk.slice(0, cutChunk));
-    page.bytes(chunk.slice(cutChunk));
-    expect(await next).toBe('<p>naïve 🙂</p>');
+    const chunkText = '<p>naïve 🙂</p>';
+    const chunkCuts = [inside(chunkText, 'ï'), inside(chunkText, '🙂'), chunk.length];
+    chunkCuts.reduce((from, to) => {
+      page.bytes(chunk.slice(from, to));
+      return to;
+    }, 0);
+    expect(await next).toBe(chunkText);
     page.close();
   });
 
@@ -113,6 +122,15 @@ describe('readShell', () => {
     page.write(KEEPALIVE.slice(0, 3));
     page.write(`${KEEPALIVE.slice(3)}${CHUNK_A}${MARK}`);
     expect(await next).toBe(CHUNK_A);
+    page.close();
+  });
+
+  test('keep-alives between two chunks of one read never reach the page', async () => {
+    const page = body();
+    page.write(`${SHELL}${MARK}`);
+    const head = await readShell(page.stream);
+    page.write(`${CHUNK_A}${MARK}${KEEPALIVE}${KEEPALIVE}${CHUNK_B}${MARK}`);
+    expect(await head.rest?.next()).toBe(`${CHUNK_A}${MARK}${CHUNK_B}`);
     page.close();
   });
 
@@ -132,7 +150,7 @@ describe('readShell', () => {
 // renders can spell one: text and attributes, script and style bodies, JSON blocks — every way a
 // value reaches the markup is escaped, so only an author's own `innerHTML` could carry it.
 test('no rendered value spells the flush mark, however it was escaped', () => {
-  const hostile = `{"note":"${MARK}"}</script>${MARK}`;
+  const hostile = `{"note":"${MARK}${KEEPALIVE}"}</script>${MARK}${KEEPALIVE}`;
   for (const escaped of [
     escapeHtml(hostile),
     escapeRawTextContent(hostile),

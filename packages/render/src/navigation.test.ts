@@ -279,6 +279,11 @@ describe('forms', () => {
     submit(win);
     await settle();
     expect(win.assigned).toEqual(['reload']);
+    // An empty fragment is one too, though `URL.hash` reads it as none.
+    win.history.replaceState(null, '', 'https://app.test/a#');
+    submit(win);
+    await settle();
+    expect(win.assigned).toEqual(['reload', 'reload']);
   });
 
   test('an opaque redirect or a failed swap after a POST is the error event, never a resubmit', async () => {

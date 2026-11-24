@@ -85,7 +85,9 @@ describe.skipIf(noBrowser)('stream · a soft visit when the page or the line mov
         'a full load of the page, whose URL only differs by its fragment',
         WAIT_MS,
       );
-      expect(await tab.evaluate('location.pathname + location.search')).toBe('/streamed?break');
+      expect(await tab.evaluate('location.pathname + location.search + location.hash')).toBe(
+        '/streamed?break#filled',
+      );
     },
     TIMEOUT_MS,
   );

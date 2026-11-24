@@ -81,7 +81,9 @@ describe.skipIf(noBrowser)('stream · a hole open, in a browser, under the enfor
         'the shell to be swapped in with the hole still open',
         WAIT_MS,
       );
-      // The event says the page landed while its hole is still held, not once the stream ended.
+      // The event says the page landed while its hole is still held, not once the stream ended:
+      // the hole stays held until `closeHole()` below, so waiting for it here proves just that.
+      await tab.waitFor('window.__navigated !== undefined', 'ultimate:navigated', WAIT_MS);
       expect(await tab.evaluate('window.__navigated')).toEqual({
         url: `${base}/streamed`,
         open: true,
@@ -149,7 +151,11 @@ describe.skipIf(noBrowser)('stream · a hole open, in a browser, under the enfor
       // And the read under the hole is told while it is still held: its signal is what stops it.
       // Never aborted, this too waits out the test's own deadline.
       await aborted(wire.heldSignal);
+      // By the cancel, not by the hole's own deadline (`X_TIMEOUT`), which would abort it too.
       expect(wire.heldSignal?.aborted).toBe(true);
+      expect((wire.heldSignal?.reason as { code?: string } | undefined)?.code).not.toBe(
+        'X_TIMEOUT',
+      );
       closeHole();
       expect(await tab.evaluate('document.getElementById("filled") === null')).toBe(true);
       expect(await tab.evaluate('window.__kept')).toBe('same-document');

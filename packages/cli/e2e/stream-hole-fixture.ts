@@ -10,6 +10,7 @@ import { tryUseContext } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { clearRoutes, defineRoute, Hole, h, island, registerRoute } from '@ultimat3/render';
+import { STREAM_FLUSH_MARK } from '@ultimat3/render/server';
 import { findChrome } from '@ultimat3/scraping/cdp';
 import type { E2eBrowser, E2eBrowserLease, E2eTab } from '@ultimat3/testing';
 import {
@@ -127,7 +128,7 @@ const broken = (response: Response): Response => {
       const { done, value } = await reader.read();
       if (done) return controller.close();
       controller.enqueue(value);
-      shellSent = new TextDecoder().decode(value).includes('<!--x:flush-->');
+      shellSent = new TextDecoder().decode(value).includes(STREAM_FLUSH_MARK);
     },
     cancel: (reason) => reader.cancel(reason),
   });

@@ -67,8 +67,8 @@ An opted-in document (every page of the surface except a `'document'` one) carri
 | `<script src="/_x/assets/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
 | `<meta name="ultimate-modals" content='{"routes":[…],"close":"…","loading":"…"}'>` | only on a surface with a `'modal'` route: the modal patterns, most specific first, with `!<pattern>` for a page that outranks one (`/runs/new/peek` over `/runs/:id/peek`), and the frame's two words in the document's locale (`ui.close`, `ui.loading` — override them in the app's catalog). What lets a click open the dialog before the answer ([Modals](#opening-on-the-click)) |
 
-**Budget:** the router is 32,620 B minified (11,765 B gzip) `As of 2026-11` — 31,904 B (11,507 B
-gzip) before a stream's late fragment, its recovery and keep-alive frames were handled (+716 B);
+**Budget:** the router is 32,699 B minified (11,809 B gzip) `As of 2026-11` — 31,904 B (11,507 B
+gzip) before a stream's late fragment, its recovery and keep-alive frames were handled (+795 B);
 29,955 B (10,817 B gzip) before a soft visit read as it streams (+1,949 B); 27,845 B (10,094 B gzip) at 29.1.0, 24,448 B (9,028 B
 gzip) before the modal that opens on the click and its popover opening (+3,397 B), and 19,966 B
 before route-presented modals and navigating from code (+4,092 B, 26.1.0). It is **charged** to
@@ -184,8 +184,8 @@ In one order, so no frame is unstyled and no island runs twice:
 
 **A `stream` page paints before its slowest hole** (`As of 2026-11`). A soft visit reads the
 answer as it arrives: the swap above runs once the shell is in (the server ends it with a flush
-mark), with each hole's fallback on screen, and `ultimate:navigated` fires then, after the
-shell's scripts and before any hole's. Each hole's chunk is appended to the body as it lands and
+mark), with each hole's fallback on screen, and on a page (not a modal) `ultimate:navigated` fires
+then, after the shell's scripts and before any hole's. Each hole's chunk is appended to the body as it lands and
 its scripts run — the `$X()` reveal and the hole's own islands — so a hole fills, or shows its
 `error` markup, as on a full load. A link to a fragment the shell does not have (`/feed#post-7`,
 the post inside a hole) is scrolled to when the hole that carries it lands, unless the visitor
@@ -509,7 +509,7 @@ Dispatched on `document`:
 | Event | When | `detail` |
 |---|---|---|
 | `ultimate:navigate` | before the fetch. **Cancelable**: `preventDefault()` keeps the tab where it is | `{ url, method }` |
-| `ultimate:navigated` | after the swap, the scroll and the new scripts — and after a modal opens, its `url` the modal's. On a `stream` page, the shell's scripts only: each hole's run when its chunk lands, so a hole's element may still be its fallback | `{ url }` |
+| `ultimate:navigated` | after the swap, the scroll and the new scripts — and after a modal opens, its `url` the modal's. On a `stream` page swapped in as a page, the shell's scripts only: each hole's run when its chunk lands, so a hole's element may still be its fallback. A `stream` modal is shown whole, holes included | `{ url }` |
 | `ultimate:navigation-error` | a POST that failed or could not be shown, a swap that failed on a POST. **Cancelable**: the default is a GET of the current page | `{ url, method, reason }` |
 
 The three event names are on `@ultimat3/render/client` too — what an island listens with. The event

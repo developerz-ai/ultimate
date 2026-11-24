@@ -51,7 +51,12 @@ function restOf(
       for (;;) {
         const end = buffer.lastIndexOf(STREAM_FLUSH_MARK);
         if (end !== -1) {
-          const whole = buffer.slice(0, end);
+          // Keep-alives between two chunks of one read never reach the page either.
+          const whole = buffer
+            .slice(0, end)
+            .split(STREAM_FLUSH_MARK)
+            .map(withoutKeepAlives)
+            .join(STREAM_FLUSH_MARK);
           buffer = buffer.slice(end + STREAM_FLUSH_MARK.length);
           return whole;
         }
@@ -113,6 +118,8 @@ export async function fillHoles(
           el.tagName === 'SCRIPT' ? [el as HTMLScriptElement] : [...el.querySelectorAll('script')],
         );
       await runScripts(scripts, ran, (fresh, inert) => inert.replaceWith(fresh));
+      // A stop or a newer page while the scripts ran: this page is no longer the visitor's.
+      if (signal.aborted) return;
       if (waiting?.() === true) waiting = undefined;
     }
   } catch (error) {

@@ -18,7 +18,7 @@
 
 import { navigationCache } from './navigation-cache';
 import { withinDeadline } from './navigation-deadline';
-import { announcer, handOver } from './navigation-dom';
+import { announcer, handOver, isAttachment } from './navigation-dom';
 import {
   type Answer,
   fetchDocument,
@@ -27,7 +27,6 @@ import {
   responseFactsOf,
 } from './navigation-fetch';
 import {
-  type HistoryMode,
   lateFragment,
   loadForReal,
   recordEntry,
@@ -157,11 +156,17 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   };
 
   /**
-   * The router hands the tab to the browser: a held recovery (`fill`) is dropped, or it would take
-   * the visitor back to the page they were leaving.
+   * The tab is about to be the browser's: the page on screen stops reading its holes and a held
+   * recovery (`fill`) is dropped. Either would otherwise load the page being left, over the load the
+   * browser has not committed yet.
    */
-  const loadInstead = (url: string): void => {
+  const abandon = (): void => {
     recoverOnSettle = undefined;
+    filling?.abort();
+  };
+
+  const loadInstead = (url: string): void => {
+    abandon();
     win.location.assign(url);
   };
 
@@ -170,7 +175,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     const detail = { url, method, reason };
     const event = new CustomEvent(NAVIGATION_ERROR_EVENT, { detail, cancelable: true });
     if (!doc.dispatchEvent(event)) return;
-    recoverOnSettle = undefined;
+    abandon();
     // Under a modal the URL differs only by its hash, which `assign` merely scrolls to: reloaded,
     // the page and its modal are both asked for again (the entry is the router's own GET).
     if (modal.address === undefined) loadForReal(win, win.location.href);
@@ -274,7 +279,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
           });
           return;
         case 'hand-over':
-          recoverOnSettle = undefined;
+          // A download leaves the page on screen, still filling; anything else is shown by the
+          // browser in its place.
+          if (!isAttachment(answer.disposition)) abandon();
           if (answer.body !== null) handOver(win, answer.body, answer.disposition);
           return;
         default:
@@ -319,6 +326,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         modal.release();
         modal.dismiss();
         let swapped: ReturnType<typeof swapDocument> | undefined;
+        let scrolled: (() => boolean) | undefined;
         const hold = holdFor(doc, options.refresh);
         if (hold === null) return;
         await swapIn(
@@ -337,6 +345,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
             recordEntry(win, landed, rendered, history);
             // Inside the swap, so a view transition's "after" frame is already where the page lands.
             scrollAfter(win, doc, landed, history);
+            // Where the visitor is now, before any script or listener moves them.
+            scrolled = lateFragment(win, doc, landed, history);
           },
           press.track,
         );
@@ -360,15 +370,16 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         // taken the body. The holes left unread are then cancelled below, never filled.
         if (mine.signal.aborted) return;
         if (unread !== null) {
-          fill(unread, landed, method, history);
+          fill(unread, landed, method, scrolled);
           unread = null;
         }
       } catch {
         // A swap that failed part-way leaves a page nobody rendered: a GET is loaded for real; a
         // POST's answer cannot be asked for again, so the visitor is told and shown this page.
-        recoverOnSettle = undefined;
-        if (method === 'GET') loadForReal(win, landed);
-        else failed(url, method, 'the answer could not be shown');
+        if (method === 'GET') {
+          abandon();
+          loadForReal(win, landed);
+        } else failed(url, method, 'the answer could not be shown');
       }
     } finally {
       unread?.cancel();
@@ -390,18 +401,17 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
    * The holes of the page just shown, filled as they arrive: the shell painted without them. A
    * stream that breaks under the page is a page nobody rendered — a GET is loaded for real, a POST
    * (never re-sent) is reported. One the next swap cut short is nobody's failure; one that breaks
-   * while the visitor's next page is on its way waits for it, and recovers only if that page never
-   * took the body (it stayed, failed quietly, or handed over).
+   * while the visitor's next page is on its way waits for it, and recovers only if that visit
+   * stayed or failed quietly — one that took the body, or handed the tab to the browser, drops it.
    */
   function fill(
     rest: PageRest,
     landed: string,
     method: 'GET' | 'POST',
-    history: HistoryMode,
+    scrolled: (() => boolean) | undefined,
   ): void {
     const own = new AbortController();
     filling = own;
-    const scrolled = lateFragment(win, doc, landed, history);
     fillHoles(doc, rest, ran, own.signal, scrolled).catch(() => {
       const recover = (): void => {
         if (own.signal.aborted) return;
