@@ -803,7 +803,8 @@ selection is now partitioned by each file's own type. `x test`'s e2e pass also L
 gate's `e2e` step does, `As of 2026-11`: in an app root with a browser (`CHROME_PATH`, or one
 `x doctor` finds) it runs under `@ultimat3/testing`'s e2e preload, which spawns the app, with the
 device zone `America/Los_Angeles` — before, `x test e2e` never opened a browser and every
-browser-backed case skipped. With no browser both skip alike. The default width is
+browser-backed case skipped. With no browser both skip those cases alike, and under
+`E2E_BROWSER_REQUIRED=1` those cases refuse instead of skipping, in both. The default width is
 a memory budget, `As of 2026-11-07`: `max(2.75 GiB, 25% of RAM)` (`BUDGET_RULE`) at 1.25 GiB a worker
 (`WORKER_BYTES`, `GATE_BUDGET_FLOOR` and `GATE_BUDGET_SHARE` in
 `packages/cli/src/test-workers.ts`), at most one per core — the paragraph under `x verify` above.

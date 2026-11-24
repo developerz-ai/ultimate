@@ -1,7 +1,7 @@
 // `x test e2e` runs the e2e suite the way the gate's `e2e` step does: in an app root, with a
 // browser on the machine, under `@ultimat3/testing`'s e2e preload with the app root and the device
 // zone named — the preload spawns the app and the browser-backed cases run. Without it every one of
-// them skipped, so `x test e2e` was green having opened no browser.
+// them skipped: `x test e2e` never opened a browser.
 
 import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no mkdtemp or recursive remove.
@@ -84,5 +84,23 @@ describe('x test: the e2e pass drives a browser, as the gate does', () => {
   test('not an app: nothing to spawn, so no preload', async () => {
     const { e2e } = await run(root(false), withBrowser);
     expect(e2e?.command).not.toContain('--preload');
+  });
+
+  test('x test e2e — the typed run — launches the same way', async () => {
+    const dir = root(true);
+    const { calls, runner } = recorder();
+    const e2eOnly = FILES.filter((file) => file.path.startsWith('e2e/'));
+    await runShards({
+      root: dir,
+      runner,
+      env: withBrowser,
+      files: e2eOnly,
+      workers: 1,
+      type: 'e2e',
+    });
+    const [call] = calls;
+    expect(call?.command.slice(0, 4)).toEqual(['bun', 'test', '--preload', e2ePreload()]);
+    expect(call?.env?.[E2E_ROOT_ENV]).toBe(dir);
+    expect(call?.env?.['TZ']).toBe(E2E_TIME_ZONE);
   });
 });
