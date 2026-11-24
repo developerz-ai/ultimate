@@ -104,7 +104,11 @@ export const config = defineRoute({
   // its islands; the inline hydration runtime +100 B, an island boots with the props inside its own
   // wrapper, not the first script in the document with its id (a modal's island took the page's).
   // Against 113,106, origin/main built the same way. Raised 110.5kb → 111.3kb.
-  budget: { js: '111.3kb' },
+  // measured: 115814 B (2026-11-24; x build --target static) — why: the client router +1,949 B
+  // (29,955 → 31,904): a soft visit to a `stream` page reads the answer as it arrives, swaps
+  // the shell in at the server's flush mark and fills each hole as its chunk lands, so the page
+  // paints before its slowest hole (65 ms p95 against 2,041 ms). Raised 111.3kb → 113.1kb.
+  budget: { js: '113.1kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });

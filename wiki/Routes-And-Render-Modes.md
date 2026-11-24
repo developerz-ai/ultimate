@@ -342,7 +342,7 @@ In a VDOM framework a streaming shell still pays for hydrating the whole tree, w
 | Async component | `X_ROUTE_ASYNC_PAGE` applies to `Page`, never to what renders under a hole |
 | A hole's island | hydrates from its chunk: the chunk carries the hydration runtime after its reveal, and the realtime boot if this is the first island that needs it |
 | A shell island while a hole is open | live: the runtime is `<script type="module" async>`, so it does not wait for parsing to end. With a realtime boot in the document it stays deferred ([Known gaps](Known-Gaps)) |
-| Client router | a soft visit reads the whole answer before it swaps ([Known gaps](Known-Gaps)); every reveal still runs |
+| Client router | a soft visit swaps the shell in as soon as it arrives, then fills each hole as its chunk lands, through the same reveal ([Client navigation](Client-Navigation#the-swap)) |
 | A hand-rolled swap | the reveal is an inline `<script>`, and a document parsed by `DOMParser` or set through `innerHTML` runs none, so its holes keep their fallback. Re-run the scripts, or call `refresh()` / `scheduleRefresh()` from `@ultimat3/render/client`, which the router swaps through (`navigation-swap.ts`'s `runScripts`) |
 | CSP | every chunk's inline script is a body `inlineScriptSources()` already hashes |
 

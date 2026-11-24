@@ -16,3 +16,10 @@ export const REVEAL_CALL = '$X()';
  * every template that has arrived.
  */
 export const STREAM_REVEAL_BODIES: readonly string[] = Object.freeze([REVEAL_BODY, REVEAL_CALL]);
+
+/**
+ * Written after the shell and after each hole's chunk, in the same write: everything before it is
+ * whole markup. The client router reads a soft visit as it arrives and swaps the shell at the first
+ * mark, then fills each hole at the next; a full load's parser reads it as an empty comment.
+ */
+export const STREAM_FLUSH_MARK = '<!--x:flush-->';

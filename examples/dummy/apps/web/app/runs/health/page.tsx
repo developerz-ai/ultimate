@@ -67,7 +67,11 @@ export const config = defineRoute({
   // +100 B, an island boots with the props inside its own wrapper, not the first script in the
   // document with its id (a modal's island took the page's). Against 33,848, origin/main built the
   // same way. Raised 33.1kb → 33.2kb.
-  budget: { js: '33.2kb' },
+  // measured: 35942 B (2026-11-24; x build --target static) — why: the client router +1,949 B
+  // (29,955 → 31,904): a soft visit to a `stream` page reads the answer as it arrives, swaps
+  // the shell in at the server's flush mark and fills each hole as its chunk lands, so the page
+  // paints before its slowest hole (65 ms p95 against 2,041 ms). Raised 33.2kb → 35.1kb.
+  budget: { js: '35.1kb' },
   load: async ({ url }): Promise<RunHealthData> => {
     // The kill switch first: switched off, the page does not exist and neither read is sent.
     assertCoded(
