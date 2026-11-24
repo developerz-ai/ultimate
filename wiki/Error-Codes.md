@@ -62,7 +62,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | repository scripts | [Error-Codes-scripts](Error-Codes-scripts) | 357 |
 | `@ultimat3/seo` | [Error-Codes-seo](Error-Codes-seo) | 11 |
 | `@ultimat3/storage` | [Error-Codes-storage](Error-Codes-storage) | 31 |
-| `@ultimat3/testing` | [Error-Codes-testing](Error-Codes-testing) | 82 |
+| `@ultimat3/testing` | [Error-Codes-testing](Error-Codes-testing) | 83 |
 | `@ultimat3/time` | [Error-Codes-time](Error-Codes-time) | 8 |
 | `@ultimat3/ui` | [Error-Codes-ui](Error-Codes-ui) | 7 |
 
