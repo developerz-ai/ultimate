@@ -5,6 +5,7 @@
  */
 
 import { finiteCount } from '@ultimat3/core';
+import { Fifo } from './meter-fifo';
 import { meterWindow, periodOfKey, previousPeriodStart } from './meter-period';
 import type { MeterDraw, MeterDrawResult, MeterKey, MeterStore } from './meter-store';
 
@@ -25,10 +26,17 @@ interface Counter {
   periodEndMs: number;
   used: number;
   warned: boolean;
-  /** Draw keys that counted in THIS counter's period, oldest first. */
+  /** Draw keys that counted in THIS counter's period. */
   keys: Set<string>;
+  /** `keys` oldest first: a key leaves `keys` only from this head, or with the whole set. */
+  order: Fifo<string>;
   /** Draw keys of the period just before, kept only when the counter rolled over from it. */
   previous: Set<string>;
+  /** Whether it sits in the store's `holdingKeys` / `holdingPrevious` queue. */
+  queuedKeys: boolean;
+  queuedPrevious: boolean;
+  /** Evicted, or replaced by its next period: a queue entry for it is stale. */
+  gone: boolean;
 }
 
 /** `day@UTC` → the end of the period starting at `startMs`; the zone is UTC, the only one. */
@@ -69,16 +77,27 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
   /** Every counter's `keys` and `previous` together: kept exact so the bound costs no scan. */
   let drawKeys = 0;
   /**
-   * The counters holding a nonempty `previous` / `keys`, in the order each became nonempty: kept as
-   * the sets fill and empty, so a saturated draw finds another counter's keys without a scan.
+   * The counters holding a nonempty `previous` / `keys`, in the order each became nonempty, so a
+   * saturated draw finds another counter's keys without a scan. Removal is lazy: an entry whose
+   * counter emptied or left is dropped when it reaches the head, once, so the head is O(1) amortized.
    */
-  const holdingPrevious = new Set<Counter>();
-  const holdingKeys = new Set<Counter>();
-  const firstOf = (holding: Set<Counter>): Counter | undefined => holding.values().next().value;
-  /** A counter leaving the map — evicted, or replaced by its next period — leaves both sets. */
-  const release = (counter: Counter): void => {
-    holdingPrevious.delete(counter);
-    holdingKeys.delete(counter);
+  const holdingPrevious = new Fifo<Counter>();
+  const holdingKeys = new Fifo<Counter>();
+  const firstWithPrevious = (): Counter | undefined => {
+    for (let head = holdingPrevious.peek(); head !== undefined; head = holdingPrevious.peek()) {
+      if (!head.gone && head.previous.size > 0) return head;
+      holdingPrevious.shift();
+      head.queuedPrevious = false;
+    }
+    return undefined;
+  };
+  const firstWithKeys = (): Counter | undefined => {
+    for (let head = holdingKeys.peek(); head !== undefined; head = holdingKeys.peek()) {
+      if (!head.gone && head.keys.size > 0) return head;
+      holdingKeys.shift();
+      head.queuedKeys = false;
+    }
+    return undefined;
   };
 
   /** The latest period start any draw named: a moment known to have passed, with no clock read. */
@@ -109,7 +128,7 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
     const gone = victim === undefined ? undefined : counters.get(victim);
     if (victim === undefined || gone === undefined) return;
     drawKeys -= gone.keys.size + gone.previous.size;
-    release(gone);
+    gone.gone = true;
     counters.delete(victim);
   };
 
@@ -121,26 +140,28 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
    */
   const forgetKey = (counter: Counter): void => {
     if (drawKeys < maxDrawKeys) return;
-    const withPrevious = counter.previous.size > 0 ? counter : firstOf(holdingPrevious);
+    const withPrevious = counter.previous.size > 0 ? counter : firstWithPrevious();
     if (withPrevious !== undefined) {
       drawKeys -= withPrevious.previous.size;
       withPrevious.previous = new Set();
-      holdingPrevious.delete(withPrevious);
       return;
     }
-    const holder = counter.keys.size > 0 ? counter : firstOf(holdingKeys);
-    const oldest = holder?.keys.values().next().value;
+    const holder = counter.keys.size > 0 ? counter : firstWithKeys();
+    const oldest = holder?.order.shift();
     if (holder === undefined || oldest === undefined) return;
     holder.keys.delete(oldest);
     drawKeys -= 1;
-    if (holder.keys.size === 0) holdingKeys.delete(holder);
   };
 
   const remember = (counter: Counter, drawKey: string | undefined): void => {
     if (drawKey === undefined || counter.keys.has(drawKey)) return;
     forgetKey(counter);
     counter.keys.add(drawKey);
-    holdingKeys.add(counter);
+    counter.order.push(drawKey);
+    if (!counter.queuedKeys) {
+      holdingKeys.push(counter);
+      counter.queuedKeys = true;
+    }
     drawKeys += 1;
   };
 
@@ -186,7 +207,7 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
           existing.periodStartMs === previousPeriodStart(request.period, request.periodStartMs);
         if (existing !== undefined) {
           drawKeys -= existing.previous.size + (adjacent ? 0 : existing.keys.size);
-          release(existing);
+          existing.gone = true;
         }
         const counter: Counter = {
           periodStartMs: request.periodStartMs,
@@ -194,10 +215,17 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
           used,
           warned: false,
           keys: new Set(),
+          order: new Fifo(),
           previous: adjacent ? existing.keys : new Set(),
+          queuedKeys: false,
+          queuedPrevious: false,
+          gone: false,
         };
         counters.set(id, counter);
-        if (counter.previous.size > 0) holdingPrevious.add(counter);
+        if (counter.previous.size > 0) {
+          holdingPrevious.push(counter);
+          counter.queuedPrevious = true;
+        }
         remember(counter, drawKey);
         return { allowed: true, used, warned: false, ...at };
       }

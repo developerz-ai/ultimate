@@ -118,6 +118,19 @@ describe('memoryMeterStore', () => {
     expect(() => memoryMeterStore({ maxDrawKeys: 0 })).toThrow();
   });
 
+  // A busy counter at the bound forgets its oldest key on every new one: the order lives in a queue,
+  // so the oldest is found in O(1) however many keys came and went before it.
+  test('at the bound, one busy counter forgets its keys oldest first, over many rotations', async () => {
+    const store = memoryMeterStore({ maxDrawKeys: 100 });
+    const keyed = (drawKey: string) => store.draw({ ...draw(1_000_000, DAY), amount: 1, drawKey });
+    for (let i = 0; i < 5000; i += 1) await keyed(`k${i}`);
+    expect((await keyed('k4900')).replayed).toBe(true);
+    expect((await keyed('k4999')).replayed).toBe(true);
+    // k4899 was the last key forgotten: it counts again, and forgets the oldest kept one, k4900.
+    expect(await keyed('k4899')).toMatchObject({ used: 5001 });
+    expect((await keyed('k4900')).replayed).toBeUndefined();
+  });
+
   // No counter here reaches the bound alone: only their sum does, so a cap held per counter would
   // forget nothing. A counter with keys gives up its own oldest; one with none, the counter that
   // filled first.
