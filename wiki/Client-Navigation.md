@@ -54,8 +54,9 @@ prefetch: 'intent' }` — only for a GET that does nothing but render.** A plain
 unprefetched: a modal is often a form, and its GET may prepare one (a draft, a token, a reserved
 slot). One spelling per meaning: the object takes exactly those two keys and values, anything else
 is `X_ROUTE_NAVIGATION_INVALID`, and `{ modal: true }` alone is refused — that is `'modal'`.
-Declaring any of them on a surface without client navigation refuses the boot
-(`X_ROUTE_NAVIGATION_INVALID`).
+A `navigation` key on a page of a surface `navigation.client` does not list is refused at boot,
+since no router runs there — except `'document'`, which asks for the real load such a surface
+already gives and is honoured on every surface (`As of 2026-11`).
 
 An opted-in document (every page of the surface except a `'document'` one) carries:
 

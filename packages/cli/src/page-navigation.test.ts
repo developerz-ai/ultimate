@@ -271,6 +271,17 @@ describe('unit · pageNavigation', () => {
     expect.unreachable('a navigation key nothing can honour was accepted');
   });
 
+  // 'document' asks for what a surface with no router already does: a real load. A shared page
+  // module declaring it is honoured on every surface, opted in or not.
+  test("navigation: 'document' on a surface with no client navigation boots, and names no router", () => {
+    page('apps/web/site/baja/page.tsx', { navigation: 'document' });
+    expect(() => assertRouteNavigation(['app'], routeEntries())).not.toThrow();
+    expect(() => assertRouteNavigation([], routeEntries())).not.toThrow();
+    const [entry] = routeEntries();
+    if (entry === undefined) return expect.unreachable('the page registered');
+    expect(routeNavigationOf(entry, HEAD)).toBeUndefined();
+  });
+
   test('a document names its router as <app>:<surface>; another surface gets no head', () => {
     expect(navigationHeadFor(HEAD, 'site')).toBeUndefined();
     expect(navigationHeadFor(undefined, 'app')).toBeUndefined();
