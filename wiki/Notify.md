@@ -236,11 +236,13 @@ export const approvalRequested = notifier({
 | devices | `x_push_devices`, keyed `(platform, token)` — a phone a second person signs in on is theirs now |
 | register | `registerDevice` on every launch; `previousToken` when the OS rotated it. `unregisterDevice` on sign-out. Stored against `ctx.actor.id`; an agent never registers |
 | data-only | `pushChannel({ pusher, data })` — APNs `background`, priority 5, `content-available: 1`; FCM with no `notification`. ≤ 8 string keys, ≤ 256 characters, no reserved key: else `X_NOTIFY_PUSH_MESSAGE_INVALID`. `webPush()` cannot take it — a type error |
-| visible | `pushChannel({ pusher, message })`, the same `NotifyPushMessage` as the web: rendered per device locale |
+| visible | `pushChannel({ pusher, message })`, the same `NotifyPushMessage` as the web: rendered per device locale. `urgency` sets APNs `apns-priority` (10, or 5 for `low`/`very-low`) and FCM `android.priority` (`high`/`normal`) |
+| native-only fields | on the same message, ignored by `webPush()`: `sound` (`'default'` or a bundled file) → APNs `aps.sound` and FCM `android.notification.sound`; `interruptionLevel` (`passive`, `active`, `time-sensitive`, `critical` — the last needs Apple's entitlement) → `aps.interruption-level`; `category` → `aps.category`; `channelId` → `android.notification.channel_id`. A name is 1–64 of `A-Za-z0-9._-`, else `X_NOTIFY_PUSH_MESSAGE_INVALID` with `meta.field`, before any device. Unset, nothing is added: the wire is byte identical to a message without them. `As of 2026-11-23` |
+| report | `send()` and `sendData()` resolve `NativePushReport` — `{ accepted, refused, removed, skipped }`, one count per device. `accepted` is what APNs or FCM took (a 2xx), never what a device showed: no provider reports delivery. `removed`: rows deleted (gone, a bad token at its limit, an unsendable token); `skipped`: no provider configured for its platform, or a credential refusal stopped it. A send nothing accepted and something refused still rejects |
 
 | Provider answer | Outcome |
 |---|---|
-| 2xx | delivered |
+| 2xx | accepted by the provider |
 | APNs 410 · FCM `UNREGISTERED` | `X_NOTIFY_PUSH_DEVICE_GONE` — the device row is deleted, the delivery settles |
 | other 4xx | `X_NOTIFY_PUSH_PROVIDER_REFUSED` — logged, next device tried; fails the delivery when no device took it. 401/403 also drops the cached credential |
 | 429 · 5xx · timeout | rethrown after every other device was tried: `X_NOTIFY_DELIVERY_FAILED`, the job retries |

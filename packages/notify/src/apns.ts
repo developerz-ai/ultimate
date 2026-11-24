@@ -79,7 +79,14 @@ export function apnsRequest(
   return {
     headers,
     body: JSON.stringify({
-      aps: { alert: { title: alert.title, body: alert.body } },
+      aps: {
+        alert: { title: alert.title, body: alert.body },
+        ...(alert.sound === undefined ? {} : { sound: alert.sound }),
+        ...(alert.category === undefined ? {} : { category: alert.category }),
+        ...(alert.interruptionLevel === undefined
+          ? {}
+          : { 'interruption-level': alert.interruptionLevel }),
+      },
       url: alert.url,
     }),
   };

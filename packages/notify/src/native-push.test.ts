@@ -344,3 +344,105 @@ describe('unit · nativePush — answers', () => {
     expect(fake.sent).toEqual([]);
   });
 });
+
+describe('unit · nativePush — sound, interruption level, category, channel', () => {
+  test('each reaches the provider that reads it, and only that one', async () => {
+    await device('ios', IOS, 'es');
+    await device('android', ANDROID, 'de');
+    await pusher().send({
+      to: 'ana',
+      message: {
+        ...message,
+        sound: 'chime.caf',
+        interruptionLevel: 'time-sensitive',
+        category: 'reply',
+        channelId: 'mentions',
+      },
+      signal,
+    });
+    expect(JSON.parse(toApns()[0]?.body ?? '').aps).toEqual({
+      alert: { title: 'es|push.comment.title|Kenji', body: 'es|push.comment.body|Kenji' },
+      sound: 'chime.caf',
+      category: 'reply',
+      'interruption-level': 'time-sensitive',
+    });
+    expect(JSON.parse(toFcm()[0]?.body ?? '').message.android).toEqual({
+      priority: 'high',
+      ttl: '86400s',
+      collapse_key: 'post:p1',
+      notification: { sound: 'chime.caf', channel_id: 'mentions' },
+    });
+  });
+
+  test('a value no provider would take is refused, naming the field, before a single request', async () => {
+    await device('ios', IOS, 'es');
+    for (const [field, value] of [
+      ['sound', 'my sound'],
+      ['category', ''],
+      ['channelId', 'c'.repeat(65)],
+      ['interruptionLevel', 'loud'],
+    ] as const) {
+      const refused = pusher().send({ to: 'ana', message: { ...message, [field]: value }, signal });
+      await expect(refused).rejects.toMatchObject({
+        code: 'X_NOTIFY_PUSH_MESSAGE_INVALID',
+        meta: { field },
+      });
+    }
+    expect(fake.sent).toEqual([]);
+  });
+});
+
+describe('unit · nativePush — the report', () => {
+  test('each device the provider took is counted as accepted', async () => {
+    await device('ios', IOS, 'es');
+    await device('android', ANDROID, 'de');
+    expect(await pusher().send({ to: 'ana', message, signal })).toEqual({
+      accepted: 2,
+      refused: 0,
+      removed: 0,
+      skipped: 0,
+    });
+    expect(await pusher().sendData({ to: 'ana', data: { id: '1' }, signal })).toMatchObject({
+      accepted: 2,
+    });
+  });
+
+  test('every device refused as gone: zero accepted, both removed, and the send settles', async () => {
+    await device('ios', IOS, 'es');
+    await device('android', ANDROID, 'de');
+    fake.answer(APNS, apnsRefusal(410, 'Unregistered'));
+    fake.answer(FCM, fcmRefusal(404, 'UNREGISTERED', 'NOT_FOUND'));
+    expect(await pusher().send({ to: 'ana', message, signal })).toEqual({
+      accepted: 0,
+      refused: 0,
+      removed: 2,
+      skipped: 0,
+    });
+  });
+
+  test('a refusal beside an acceptance, and a platform with no provider, are counted apart', async () => {
+    await device('ios', IOS, 'es');
+    await device('android', ANDROID, 'de');
+    fake.answer(APNS, apnsRefusal(400, 'BadDeviceToken'));
+    expect(await pusher().send({ to: 'ana', message, signal })).toEqual({
+      accepted: 1,
+      refused: 1,
+      removed: 0,
+      skipped: 0,
+    });
+    const iosOnly = nativePush({
+      devices,
+      apns: APNS_OPTIONS,
+      fetch: fake.fetch,
+      env: keys.env,
+      clock,
+    });
+    fake.answer(APNS, ok());
+    expect(await iosOnly.send({ to: 'ana', message, signal })).toEqual({
+      accepted: 1,
+      refused: 0,
+      removed: 0,
+      skipped: 1,
+    });
+  });
+});

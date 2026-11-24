@@ -48,16 +48,30 @@ export interface NotifyPushMessage {
   readonly urgency?: 'very-low' | 'low' | 'normal' | 'high' | undefined;
   /** Collapse key AT THE PUSH SERVICE, for a device that is offline. */
   readonly topic?: string | undefined;
+  /**
+   * NATIVE ONLY — a browser push has no such field and `webPush()` sends none of these. The sound
+   * an iOS or Android device plays: `'default'`, or a sound file the app bundles.
+   */
+  readonly sound?: string | undefined;
+  /** iOS: how far the alert may break through Focus. `critical` needs Apple's entitlement. */
+  readonly interruptionLevel?: 'passive' | 'active' | 'time-sensitive' | 'critical' | undefined;
+  /** iOS: the notification category the app registered, which names its action buttons. */
+  readonly category?: string | undefined;
+  /** Android: the notification channel the app created, which sets importance and sound. */
+  readonly channelId?: string | undefined;
 }
 
-/** The seam. `@ultimat3/pwa`'s `webPush()` is the framework's; a vendor SDK fits it too. */
+/**
+ * The seam. `@ultimat3/pwa`'s `webPush()` is the framework's; a vendor SDK fits it too. What a send
+ * resolves with is the pusher's own (`nativePush()`'s report); the channel reads none of it.
+ */
 export interface Pusher {
   send(push: {
     /** The recipient's id — the actor whose subscriptions receive it. */
     readonly to: string;
     readonly message: NotifyPushMessage;
     readonly signal: AbortSignal;
-  }): Promise<void> | void;
+  }): Promise<unknown> | void;
 }
 
 /**
@@ -72,7 +86,7 @@ export interface DataPusher {
     /** String ids only; screened by the transport (`X_NOTIFY_PUSH_MESSAGE_INVALID`). */
     readonly data: Readonly<Record<string, string>>;
     readonly signal: AbortSignal;
-  }): Promise<void> | void;
+  }): Promise<unknown> | void;
 }
 
 export const PUSH_CHANNEL = 'push';

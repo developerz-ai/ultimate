@@ -38,7 +38,7 @@ export const NOTIFY_ERROR_TITLES: Readonly<Record<NotifyErrorCode, string>> = {
   X_NOTIFY_DELIVERY_HELD: 'another attempt holds this delivery',
   X_NOTIFY_PUSH_DEVICE_GONE: 'the push provider says a device token is dead',
   X_NOTIFY_PUSH_PROVIDER_REFUSED: 'APNs or FCM refused a push for good',
-  X_NOTIFY_PUSH_MESSAGE_INVALID: 'a data-only push carries more than an id',
+  X_NOTIFY_PUSH_MESSAGE_INVALID: 'a native push carries what its provider must not or cannot take',
   X_NOTIFY_SMS_TRANSPORT_MISSING: 'an SMS was sent with no SmsTransport installed',
   X_NOTIFY_SMS_NUMBER_INVALID: 'an SMS number is not E.164',
 };
@@ -83,8 +83,8 @@ registerErrorRetry({
   // Waited out with the attempt uncounted and `maxDelay` no cap (`rateLimitDeferralMs`, jobs).
   X_NOTIFY_DELIVERY_HELD: 'retry-after',
   // Native push (`push-errors.ts`). A refusal the provider gives again — a bad credential, a wrong
-  // topic, a payload over its limit — and a data push carrying more than ids: no attempt fixes
-  // either. `X_NOTIFY_PUSH_DEVICE_GONE` is absent: `nativePush()` catches it, deletes the row, and
+  // topic, a payload over its limit — and a data push carrying more than ids, or a sound, category,
+  // channel or interruption level no provider takes: no attempt fixes either. `X_NOTIFY_PUSH_DEVICE_GONE` is absent: `nativePush()` catches it, deletes the row, and
   // it never leaves a send.
   X_NOTIFY_PUSH_PROVIDER_REFUSED: 'terminal',
   X_NOTIFY_PUSH_MESSAGE_INVALID: 'terminal',

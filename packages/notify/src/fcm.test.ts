@@ -53,4 +53,29 @@ describe('unit · fcmMessage golden payloads', () => {
     (message['data'] as Record<string, string>)['postId'] = 'changed';
     expect(data.postId).toBe('42');
   });
+
+  test('sound and channel id ride in android.notification, after the collapse key', () => {
+    expect(
+      JSON.stringify(
+        fcmMessage('tok', {
+          kind: 'alert',
+          push: alert({ collapse: 'thread-42', sound: 'default', channelId: 'mentions' }),
+        })['android'],
+      ),
+    ).toBe(
+      '{"priority":"high","ttl":"86400s","collapse_key":"thread-42",' +
+        '"notification":{"sound":"default","channel_id":"mentions"}}',
+    );
+  });
+
+  test('category and interruption level are iOS-only: the FCM message is byte identical without them', () => {
+    expect(
+      JSON.stringify(
+        fcmMessage('tok', {
+          kind: 'alert',
+          push: alert({ category: 'reply', interruptionLevel: 'critical' }),
+        }),
+      ),
+    ).toBe(JSON.stringify(fcmMessage('tok', { kind: 'alert', push: alert() })));
+  });
 });

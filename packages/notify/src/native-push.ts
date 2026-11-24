@@ -16,7 +16,7 @@ import { platformFetch } from './native-transport';
 import type { PushDeviceStore, PushPlatform } from './push-device';
 import { isDeviceToken } from './push-device';
 import type { NativePush, NativeSender, PushData, PushTranslate } from './push-message';
-import { renderNativePush, screenPushData } from './push-message';
+import { renderNativePush, screenNativeFields, screenPushData } from './push-message';
 
 export const DEFAULT_NATIVE_PUSH_DEADLINE_MS = 10_000;
 
@@ -43,10 +43,27 @@ export interface NativePushOptions {
   readonly translate?: ((locale: string) => PushTranslate) | undefined;
 }
 
-/** Both seams, each answering a promise: a send settles once every device was tried. */
+/**
+ * What one send did with the recipient's devices. `accepted` is what the PROVIDER took (a 2xx from
+ * APNs or FCM) — never what a device received or showed: neither provider reports that.
+ */
+export interface NativePushReport {
+  readonly accepted: number;
+  /** Refused by the provider and kept: a payload it will not take, a token not yet at its limit. */
+  readonly refused: number;
+  /** Rows deleted: gone (APNs 410, FCM `UNREGISTERED`), a bad token at its limit, or unsendable. */
+  readonly removed: number;
+  /** Never sent: its platform has no provider configured, or a credential refusal stopped it. */
+  readonly skipped: number;
+}
+
+/**
+ * Both seams, each settling once every device was tried, with the report. A send nothing accepted
+ * and something refused still rejects with the first refusal, as a delivery must.
+ */
 export interface NativePusher extends Pusher, DataPusher {
-  send(push: Parameters<Pusher['send']>[0]): Promise<void>;
-  sendData(push: Parameters<DataPusher['sendData']>[0]): Promise<void>;
+  send(push: Parameters<Pusher['send']>[0]): Promise<NativePushReport>;
+  sendData(push: Parameters<DataPusher['sendData']>[0]): Promise<NativePushReport>;
 }
 
 /** The message for one device, in that device's locale. */
@@ -70,16 +87,23 @@ async function eachDevice(
   devices: PushDeviceStore,
   senders: Senders,
   push: { readonly to: string; readonly signal: AbortSignal; readonly message: PushFor },
-): Promise<void> {
+): Promise<NativePushReport> {
   let delivered = 0;
+  let refused = 0;
+  let removed = 0;
+  let skipped = 0;
   let retry: unknown;
   let refusal: unknown;
   let credential: unknown;
   const stopped = new Set<PushPlatform>();
   for (const device of await devices.listFor(push.to)) {
-    if (stopped.has(device.platform)) continue;
+    if (stopped.has(device.platform)) {
+      skipped += 1;
+      continue;
+    }
     const sender = senders.get(device.platform);
     if (sender === undefined) {
+      skipped += 1;
       logger.warn('notify.push.unconfigured', {
         platform: device.platform,
         fix: `nativePush({ ${device.platform === 'ios' ? 'apns' : 'fcm'}: { … } })   # or drop '${device.platform}' from pushRegister({ platforms })`,
@@ -89,6 +113,7 @@ async function eachDevice(
     // A stored token no provider could take is a row no send will ever reach.
     if (!isDeviceToken(device.platform, device.token)) {
       await devices.remove(device.platform, device.token);
+      removed += 1;
       continue;
     }
     try {
@@ -102,6 +127,7 @@ async function eachDevice(
       }
       if (error.code === 'X_NOTIFY_PUSH_DEVICE_GONE') {
         await devices.remove(device.platform, device.token);
+        removed += 1;
         // info: a rare outcome — the provider retired this device and its row was deleted; the only record of why.
         logger.info('notify.push.gone', { code: error.code, cause: error.cause });
         continue;
@@ -111,6 +137,7 @@ async function eachDevice(
       if (meta['credential'] === true) {
         stopped.add(device.platform);
         credential ??= error;
+        refused += 1;
         continue;
       }
       refusal ??= error;
@@ -119,14 +146,16 @@ async function eachDevice(
         (await devices.noteBadToken(device.platform, device.token)) >= PUSH_BAD_TOKEN_LIMIT
       ) {
         await devices.remove(device.platform, device.token);
+        removed += 1;
         // info: a rare outcome — a token refused PUSH_BAD_TOKEN_LIMIT times was deleted; the only record of why.
         logger.info('notify.push.bad_token_removed', { code: error.code, cause: error.cause });
-      }
+      } else refused += 1;
     }
   }
   if (credential !== undefined) throw credential;
   if (retry !== undefined) throw retry;
   if (delivered === 0 && refusal !== undefined) throw refusal;
+  return { accepted: delivered, refused, removed, skipped };
 }
 
 /**
@@ -153,8 +182,18 @@ export function nativePush(options: NativePushOptions): NativePusher {
   if (options.fcm !== undefined) senders.set('android', fcmSender(options.fcm, deps));
   const translate = options.translate ?? ((locale: string) => translatorFor(locale));
   return {
-    send({ to, message, signal }: { to: string; message: NotifyPushMessage; signal: AbortSignal }) {
-      return eachDevice(options.devices, senders, {
+    async send({
+      to,
+      message,
+      signal,
+    }: {
+      to: string;
+      message: NotifyPushMessage;
+      signal: AbortSignal;
+    }) {
+      // Screened once, before any device, as `sendData` screens its ids.
+      screenNativeFields(message);
+      return await eachDevice(options.devices, senders, {
         to,
         signal,
         message: (locale) => ({
