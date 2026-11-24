@@ -112,11 +112,21 @@ export interface ReclaimedAccount extends DisabledUser {
 }
 
 /**
- * The `disabledAt` a reclaim shuts an account with: a state of its own, never an instant a clock
- * stamps, so the reopening write can require that the disable is still the reclaim's. An
- * operator's `disableUser` mid-reclaim overwrites it with a real instant, and nothing is lifted.
+ * How long a reclaim's claim on an account excludes another. A second reclaim inside it is refused
+ * rather than sweeping beside the first — which, once the first reopened the account, would revoke
+ * the new owner's sessions and credentials. Past it the claim is presumed dead (its call failed or
+ * its process went away) and the next reclaim takes the account over. Far longer than a sweep.
  */
-const RECLAIMING = new Date(0);
+export const RECLAIM_LEASE_MS = 10 * 60 * 1000;
+
+/**
+ * A reclaim's claim, held in `disabledAt` as its own instant mirrored before the epoch: no clock
+ * stamps one, so it tells a reclaim's disable from an operator's, dates the claim for the lease,
+ * and differs between two claims, so each reclaim's writes can require that the claim is its own.
+ */
+const claimOf = (at: Date): Date => new Date(-at.getTime());
+const claimedAtMs = (disabledAt: Date): number | null =>
+  disabledAt.getTime() < 0 ? -disabledAt.getTime() : null;
 
 const reclaimUnsupported = (adapter: string): ConfigInvalidError =>
   new ConfigInvalidError({
@@ -125,17 +135,30 @@ const reclaimUnsupported = (adapter: string): ConfigInvalidError =>
     meta: { adapter },
   });
 
-const ALREADY_VERIFIED =
-  'the account already verified its address, so it has an owner and nothing of a registrant is left to reclaim';
-const CHANGED =
-  'the account changed while it was being reclaimed — an operator disabled or enabled it, or another reset verified it — so this reclaim left it as that write did';
+const LOOK_FIRST =
+  "await auth.adapter.findUserById(userId)   // read the account as it is now: a verified one takes an ordinary password reset, a disabled one is the operator's. Never reclaim it again blind";
 
-const reclaimRefused = (cause: string): AuthError =>
-  new AuthError({
-    code: 'X_UNAUTHENTICATED',
-    cause,
-    fix: "await auth.adapter.findUserById(userId)   // read the account as it is now: a verified one takes an ordinary password reset, a disabled one stays the operator's. Never reclaim it again blind",
-  });
+const reclaimRefused = (cause: string, fix = LOOK_FIRST): AuthError =>
+  new AuthError({ code: 'X_UNAUTHENTICATED', cause, fix });
+
+const refusedVerified = (): AuthError =>
+  reclaimRefused(
+    'the account already verified its address, so it has an owner and nothing of a registrant is left to reclaim',
+  );
+const refusedDisabled = (): AuthError =>
+  reclaimRefused(
+    "an operator disabled the account, and a reset link is not how an operator's disable ends",
+    'enableUser(auth, userId)   // only where the operator means the account to open again; then reclaim it',
+  );
+const refusedInProgress = (): AuthError =>
+  reclaimRefused(
+    'another reclaim of this account holds it, and two sweeping side by side would revoke what the first one hands over',
+    `reclaimAccount(auth, userId, reason)   // after RECLAIM_LEASE_MS (${RECLAIM_LEASE_MS / 60_000} minutes) from that claim, if it never finished`,
+  );
+const refusedChanged = (): AuthError =>
+  reclaimRefused(
+    'the account changed under this reclaim — an operator disabled or enabled it, another reclaim took it over, or another reset verified it — so this one stopped and left it as that write did',
+  );
 
 /**
  * An account handed to the owner of its inbox, once a reset link proved the address: every
@@ -143,22 +166,22 @@ const reclaimRefused = (cause: string): AuthError =>
  *
  * Revoking them one by one while the account still opens races the registrant — a live session
  * enrols a passkey after the sweep listed them — and a stamp written before a sweep that then fails
- * publishes the account as verified with the registrant still inside. So both writes are
- * conditional (`updateUserWhere`) and the account is shut between them:
+ * publishes the account as verified with the registrant still inside. So the account is CLAIMED,
+ * through the adapter's compare-and-set `updateUserWhere`, and every write after requires the claim:
  *
- * 1. Only while the row is still unverified and its `disabledAt` is what was read: shut it
- *    (`disabledAt` = the reclaim's own state) and clear the password and second factor. `login`,
+ * 1. Only while the row is still unverified and its `disabledAt` is what was read: claim it
+ *    (`disabledAt` = this call's claim) and clear the password and second factor. `login`,
  *    `authenticate`, `verifyApiKey`, passkey register and sign-in, the OAuth path and
- *    `completeMfa` all re-read `disabledAt`, so a request racing the sweep can enrol nothing. A
- *    second reset arriving after the first verified the account is refused here, and touches
- *    nothing.
- * 2. Sessions, API keys and passkeys go while it is shut.
- * 3. Only while the row still holds the reclaim's shut state: stamp `emailVerifiedAt` and lift it.
- *    An operator who disabled the account meanwhile wins, and the call is refused.
+ *    `completeMfa` all re-read `disabledAt`, so a request racing the sweep can enrol nothing.
+ * 2. Sessions, API keys and passkeys go while the claim is held; it is re-read before each.
+ * 3. Only while the row still holds this call's claim: stamp `emailVerifiedAt` and lift it.
  *
- * A failure before step 3 leaves the account shut and unverified; running the reclaim again
- * finishes and reopens it. An account an operator had disabled is swept and verified and stays
- * disabled: a reset link is not how an operator's disable ends.
+ * Refused (`X_UNAUTHENTICATED`, nothing written): an account already verified — a late second
+ * reset — one an operator disabled, and one another reclaim claimed less than `RECLAIM_LEASE_MS`
+ * ago. So two reclaims of one account never sweep at once, on one replica or many: the claim is a
+ * single conditional write on the row. A claim older than the lease is taken over. Refused after
+ * claiming: the claim was overwritten (an operator's disable, a takeover), and nothing is lifted.
+ * A failure before step 3 leaves the account shut and unverified until a reclaim past the lease.
  */
 export async function reclaimAccount(
   auth: Auth,
@@ -170,27 +193,40 @@ export async function reclaimAccount(
   if (adapter.updateUserWhere === undefined) throw reclaimUnsupported(adapter.name);
   const found = await adapter.findUserById(userId);
   if (found === null) throw authWriteFailed('findUserById', 'x_users');
-  if (found.emailVerifiedAt !== null) throw reclaimRefused(ALREADY_VERIFIED);
-  const ours = found.disabledAt === null || found.disabledAt.getTime() === RECLAIMING.getTime();
-  const shutAt = ours ? RECLAIMING : found.disabledAt;
+  if (found.emailVerifiedAt !== null) throw refusedVerified();
+  const now = auth.clock.now();
+  if (found.disabledAt !== null) {
+    const claimed = claimedAtMs(found.disabledAt);
+    if (claimed === null) throw refusedDisabled();
+    if (now.getTime() - claimed < RECLAIM_LEASE_MS) throw refusedInProgress();
+  }
+  const claim = claimOf(now);
   const shut = await adapter.updateUserWhere(
     userId,
     { emailVerifiedAt: null, disabledAt: found.disabledAt },
-    { disabledAt: shutAt, passwordHash: null, mfaSecret: null, recoveryCodeHashes: [] },
+    { disabledAt: claim, passwordHash: null, mfaSecret: null, recoveryCodeHashes: [] },
   );
-  if (shut === null) throw reclaimRefused(CHANGED);
-  const now = auth.clock.now();
+  if (shut === null) throw refusedChanged();
+  // Re-read between sweeps: a claim taken over is never swept past.
+  const stillHeld = async (): Promise<void> => {
+    const row = await adapter.findUserById(userId);
+    if (row?.emailVerifiedAt !== null || row.disabledAt?.getTime() !== claim.getTime()) {
+      throw refusedChanged();
+    }
+  };
   const sessionsRevoked = await adapter.deleteSessionsForUser(userId);
+  await stillHeld();
   const apiKeysRevoked = await revokeOwnedApiKeys(auth, userId, now);
+  await stillHeld();
   let passkeysDeleted = 0;
   for (const passkey of await adapter.listPasskeys(userId)) {
     if (await adapter.deletePasskey(userId, passkey.id)) passkeysDeleted += 1;
   }
   const user = await adapter.updateUserWhere(
     userId,
-    { emailVerifiedAt: null, disabledAt: shutAt },
-    { emailVerifiedAt: now, ...(ours ? { disabledAt: null } : {}) },
+    { emailVerifiedAt: null, disabledAt: claim },
+    { emailVerifiedAt: now, disabledAt: null },
   );
-  if (user === null) throw reclaimRefused(CHANGED);
+  if (user === null) throw refusedChanged();
   return { user, sessionsRevoked, apiKeysRevoked, passkeysDeleted };
 }

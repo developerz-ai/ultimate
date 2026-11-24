@@ -11,7 +11,7 @@ import { caught, PASSWORD } from './auth-fixture';
 import { authWriteFailed } from './errors';
 import { EMAIL, mailed, redeem, SECRET, type World, world } from './link-login-fixture';
 import { saveTotpSecret } from './mfa-secret';
-import { disableUser, reclaimAccount } from './revocation';
+import { disableUser, RECLAIM_LEASE_MS, reclaimAccount } from './revocation';
 
 /** The pre-registration: signed in, with a second factor, an API key and a passkey. */
 const registrant = async (w: World) => {
@@ -70,7 +70,7 @@ describe('reclaimAccount', () => {
     expect((await redeem(w.auth, await mailed(w))).session.mfaSatisfied).toBe(true);
   });
 
-  test('a sweep that fails leaves the account shut and unverified, and a rerun finishes and reopens it', async () => {
+  test('a sweep that fails leaves the account shut and unverified; past the lease a rerun finishes and reopens it', async () => {
     const w = world();
     const r = await registrant(w);
     const failing = spyOn(w.adapter, 'deletePasskey').mockImplementation(async () => {
@@ -89,24 +89,28 @@ describe('reclaimAccount', () => {
     );
 
     failing.mockRestore();
+    // Inside the lease the failed claim still excludes another reclaim, which writes nothing.
+    const early = await caught(() => reclaimAccount(w.auth, r.userId, 'address proven by reset'));
+    expect(early?.code).toBe('X_UNAUTHENTICATED');
+    expect((await w.adapter.findUserById(r.userId))?.disabledAt).toEqual(stuck?.disabledAt ?? null);
+    w.clock.advance(RECLAIM_LEASE_MS);
     const result = await reclaimAccount(w.auth, r.userId, 'address proven by reset');
     expect(result.passkeysDeleted).toBe(1);
     expect(result.user.emailVerifiedAt).toEqual(w.clock.now());
-    // The shut state is the reclaim's own, never a clock's instant, so the rerun knows it as its
-    // own and lifts it.
     expect(result.user.disabledAt).toBeNull();
     expect((await redeem(w.auth, await mailed(w))).session.userId).toBe(r.userId);
   });
 
-  test("an operator's disable outlives a reclaim: a reset link never lifts it", async () => {
+  test("an operator's disabled account is refused and left exactly as it was", async () => {
     const w = world();
     const r = await registrant(w);
     const disabled = await disableUser(w.auth, r.userId, 'offboarded');
 
-    const result = await reclaimAccount(w.auth, r.userId, 'address proven by reset');
-    expect(result.user.disabledAt).toEqual(disabled.user.disabledAt);
-    expect(result.user.emailVerifiedAt).toEqual(w.clock.now());
-    expect(result.passkeysDeleted).toBe(1);
+    const refused = await caught(() => reclaimAccount(w.auth, r.userId, 'address proven by reset'));
+    expect(refused?.code).toBe('X_UNAUTHENTICATED');
+    expect(refused?.fix).toContain('enableUser');
+    expect(await w.adapter.findUserById(r.userId)).toEqual(disabled.user);
+    expect(await w.adapter.listPasskeys(r.userId)).toHaveLength(1);
     expect((await caught(async () => redeem(w.auth, await mailed(w))))?.code).toBe(
       'X_UNAUTHENTICATED',
     );
@@ -174,6 +178,57 @@ describe('reclaimAccount', () => {
     expect(after?.passwordHash).toBe('owner-hash');
     expect(after?.disabledAt).toBeNull();
     expect(await w.adapter.listPasskeys(r.userId)).toHaveLength(1);
+  });
+
+  test('a second reclaim while the first sweeps is refused, and never sweeps what the first hands over', async () => {
+    const w = world();
+    const r = await registrant(w);
+    const list = w.adapter.listPasskeys.bind(w.adapter);
+    let second: string | undefined;
+    // The first is mid-sweep; the second (another replica, a second reset callback) arrives now.
+    spyOn(w.adapter, 'listPasskeys').mockImplementationOnce(async (userId) => {
+      second = (await caught(() => reclaimAccount(w.auth, userId, 'second callback')))?.code;
+      return await list(userId);
+    });
+
+    const first = await reclaimAccount(w.auth, r.userId, 'address proven by reset');
+    expect(second).toBe('X_UNAUTHENTICATED');
+    expect(first.passkeysDeleted).toBe(1);
+    expect(first.user.disabledAt).toBeNull();
+    const owner = await redeem(w.auth, await mailed(w));
+    expect((await authenticate(w.auth, owner.token)).id).toBe(r.userId);
+  });
+
+  test('two reclaims started together: exactly one claims the account', async () => {
+    const w = world();
+    const r = await registrant(w);
+    const outcomes = await Promise.all(
+      [1, 2, 3].map(async (n) =>
+        reclaimAccount(w.auth, r.userId, `callback ${n}`).then(
+          () => 'reclaimed',
+          (error: unknown) => (isUltimateError(error) ? error.code : 'thrown'),
+        ),
+      ),
+    );
+    expect(outcomes.filter((outcome) => outcome === 'reclaimed')).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome === 'X_UNAUTHENTICATED')).toHaveLength(2);
+  });
+
+  test('a reclaim whose claim is taken over past the lease stops before its next sweep', async () => {
+    const w = world();
+    const r = await registrant(w);
+    const revokeKeys = w.adapter.listApiKeys.bind(w.adapter);
+    let takeover: string | undefined;
+    // The first stalls past the lease after revoking sessions; a second takes the account over.
+    spyOn(w.adapter, 'listApiKeys').mockImplementationOnce(async (userId) => {
+      w.clock.advance(RECLAIM_LEASE_MS);
+      takeover = (await reclaimAccount(w.auth, userId, 'takeover')).user.id;
+      return await revokeKeys(userId);
+    });
+    const stalled = await caught(() => reclaimAccount(w.auth, r.userId, 'address proven by reset'));
+    expect(takeover).toBe(r.userId);
+    expect(stalled?.code).toBe('X_UNAUTHENTICATED');
+    expect((await w.adapter.findUserById(r.userId))?.disabledAt).toBeNull();
   });
 
   test('an adapter without updateUserWhere is refused before anything is written', async () => {

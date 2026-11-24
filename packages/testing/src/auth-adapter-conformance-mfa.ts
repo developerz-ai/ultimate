@@ -1,12 +1,16 @@
-// The members a second factor needs from `UserStore`, for `authAdapterConformance`: every stored
-// secret enumerated as stored, a compare-and-set on it, and a recovery code consumed in ONE
-// atomic step — two concurrent redemptions of one code must not both find it.
+// The members a second factor and an account reclaim need from `UserStore`, for
+// `authAdapterConformance`: every stored secret enumerated as stored, a compare-and-set on it, a
+// recovery code consumed in ONE atomic step — two concurrent redemptions of one code must not both
+// find it — and `updateUserWhere`, the compare-and-set `reclaimAccount` claims an account with.
 
 import { expect } from 'bun:test';
 import type { AuthAdapterCheck } from './auth-adapter-conformance-support';
 import { own, seedUser } from './auth-adapter-conformance-support';
 
 const REDEEMERS = 10;
+/** A reclaim's claim: an instant before the epoch, which the row must store and match exactly. */
+const CLAIM = new Date(-1_786_276_800_123);
+const VERIFIED_AT = new Date('2026-08-09T12:00:02.000Z');
 
 export const AUTH_ADAPTER_MFA_CHECKS: readonly AuthAdapterCheck[] = [
   {
@@ -39,6 +43,54 @@ export const AUTH_ADAPTER_MFA_CHECKS: readonly AuthAdapterCheck[] = [
       expect(await adapter.replaceMfaSecret(ada, 'old', 'next')).toBe(true);
       expect(await adapter.replaceMfaSecret(ada, 'old', 'again')).toBe(false);
       expect((await adapter.findUserById(ada))?.mfaSecret).toBe('next');
+    },
+  },
+  {
+    // Optional on the seam: an adapter without it passes here, and `reclaimAccount` refuses it.
+    name: 'updateUserWhere writes only while the row still holds what was expected',
+    async run({ adapter }) {
+      if (adapter.updateUserWhere === undefined) return;
+      const [ada, grace] = [await seedUser(adapter), await seedUser(adapter)];
+      const claimed = await adapter.updateUserWhere(
+        ada,
+        { emailVerifiedAt: null, disabledAt: null },
+        { disabledAt: CLAIM, passwordHash: null },
+      );
+      expect(claimed?.disabledAt).toEqual(CLAIM);
+      expect(
+        await adapter.updateUserWhere(ada, { disabledAt: null }, { passwordHash: 'x' }),
+      ).toBeNull();
+      expect(
+        await adapter.updateUserWhere(ada, { emailVerifiedAt: VERIFIED_AT }, { passwordHash: 'x' }),
+      ).toBeNull();
+      expect(
+        await adapter.updateUserWhere(crypto.randomUUID(), {}, { passwordHash: 'x' }),
+      ).toBeNull();
+      expect((await adapter.findUserById(ada))?.passwordHash).toBeNull();
+      expect((await adapter.findUserById(grace))?.disabledAt).toBeNull();
+      const opened = await adapter.updateUserWhere(
+        ada,
+        { emailVerifiedAt: null, disabledAt: CLAIM },
+        { emailVerifiedAt: VERIFIED_AT, disabledAt: null },
+      );
+      expect(opened?.disabledAt).toBeNull();
+      expect(opened?.emailVerifiedAt).toEqual(VERIFIED_AT);
+    },
+  },
+  {
+    name: `${REDEEMERS} concurrent claims from one expectation: exactly one lands`,
+    async run({ adapter }) {
+      if (adapter.updateUserWhere === undefined) return;
+      const write = adapter.updateUserWhere.bind(adapter);
+      const ada = await seedUser(adapter);
+      const answers = await Promise.all(
+        Array.from({ length: REDEEMERS }, (_, n) =>
+          write(ada, { disabledAt: null }, { disabledAt: new Date(CLAIM.getTime() - n) }),
+        ),
+      );
+      const landed = answers.filter((answer) => answer !== null);
+      expect(landed).toHaveLength(1);
+      expect((await adapter.findUserById(ada))?.disabledAt).toEqual(landed[0]?.disabledAt ?? null);
     },
   },
   {

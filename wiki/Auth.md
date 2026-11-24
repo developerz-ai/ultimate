@@ -59,7 +59,8 @@ service worker and cached pages. Revocation at scale is `revokeUserSessions`, `r
 user's live API keys; `reclaimAccount` hands an unverified account to its inbox's owner after a
 reset link, shut while every prior authenticator goes and verified only in the write that reopens it —
 both writes conditional on the adapter's `updateUserWhere`, so a late second reset or an operator's
-disable mid-reclaim wins. A `passwordHash` change through `updatePrivileges` ends every other session
+disable mid-reclaim wins, and a second reclaim is refused while the first holds its claim
+(`RECLAIM_LEASE_MS`). A `passwordHash` change through `updatePrivileges` ends every other session
 of that user — all of them when no session of theirs is passed, as in a reset.
 
 **A sign-in page is one command**, `As of 2026-11`: `x g sign-in --password` (a native form over

@@ -398,6 +398,7 @@ export type { DisabledUser, ReclaimedAccount } from './revocation';
 export {
   disableUser,
   enableUser,
+  RECLAIM_LEASE_MS,
   reclaimAccount,
   revokeOrgSessions,
   revokeSessionsCreatedBefore,
