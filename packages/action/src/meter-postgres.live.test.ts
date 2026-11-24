@@ -220,7 +220,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
     const counting = keyed(10, 2, 'k');
     await holder.queued(1);
     // Queued behind it: this statement's snapshot predates that draw's commit, and its own limit
-    // of 4 refuses the count it then finds — only the key's index can tell it the key counted.
+    // of 4 refuses the count it then finds — only a fresh snapshot, under the lock, sees the key.
     const refusing = keyed(4, 2, 'k');
     await holder.queued(2);
     await holder.release();
@@ -232,7 +232,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
       replayed: true,
       periodStartMs: START,
     });
-    // The refusal's probe left no placeholder behind.
+    // The refusal wrote no key.
     const keys = await dbExecutor(() => client).query<{ draw_key: string }>(
       'select draw_key from x_meter_key order by draw_key',
       [],
@@ -285,8 +285,8 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
       drawKey: 'big',
     });
     expect(refused).toEqual({ allowed: false, used: 990, warned: false, periodStartMs: START });
-    // One decision, plus the delete of the probe's placeholder.
-    expect(statements).toBe(2);
+    // One statement decides it, and writes nothing.
+    expect(statements).toBe(1);
   });
 
   // A text-mode client renders a timestamp in the session's DateStyle (`German`: 07.11.2026), which
