@@ -1,11 +1,34 @@
 // `bearerMount({ tenant })` — one token across tenants, the tenant named per call in the query
-// string. The token resolves to a PERSON; the mount's authenticator asks `resolve` for the actor
-// this person is in the tenant the call names, and that actor IS the caller from the `auth` stage
-// on — rate limit, policy, meter, `ctx.actor.orgId` — so nothing downstream sees the person. A
-// query parameter, never the body: the step runs before the body is read, and before every gate.
+// string, never the body. The mount's authenticator asks `resolve` for the actor the token's person
+// is in that tenant, and that actor IS the caller from the `auth` stage on: rate limit, policy,
+// meter. Its two refusals live here too, so `errors.ts` stays under its ceiling.
 
 import type { Actor } from '@ultimat3/core';
-import { bearerMountInvalid, bearerTenantRequired, bearerTenantUnresolved } from './errors';
+import { renderFixShellArg, renderThrowable } from '@ultimat3/core';
+import { bearerMountInvalid, HttpError } from './errors';
+
+/**
+ * A tenant mount's call named no tenant. The fix is the caller's: the listing route every valid
+ * token reaches, then the same call with the argument — `prefix` and `arg` are the app's own
+ * declaration, never request text.
+ */
+export const bearerTenantRequired = (prefix: string, arg: string): HttpError =>
+  new HttpError({
+    code: 'X_BEARER_TENANT_REQUIRED',
+    cause: `this mount acts every call in the tenant the call names, and the query string carries no "${arg}"`,
+    fix: `curl -H 'authorization: Bearer <token>' <origin>${renderFixShellArg(prefix, '<prefix>')}/tenants   # then send the call again with ?${arg}=<one of its values>`,
+  });
+
+/**
+ * `tenant.resolve` threw, or answered neither an actor nor `null`. A failed lookup is NOT "not a
+ * member": a 404 would tell the caller a primitive it may call does not exist.
+ */
+export const bearerTenantUnresolved = (cause: string, thrown?: unknown): HttpError =>
+  new HttpError({
+    code: 'X_BEARER_TENANT_UNRESOLVED',
+    cause: thrown === undefined ? cause : `${cause}: ${renderThrowable(thrown)}`,
+    fix: 'tenant: { resolve: ({ person, value }) => actorIn(person, value) ?? null }   // in defineApi({ http: { mounts } }) — an actor, or null for a tenant the person is not in; a throw is a fault, never a non-member',
+  });
 
 /** One tenant the person may act in, as `GET <prefix>/tenants` lists it. */
 export interface BearerTenantEntry {

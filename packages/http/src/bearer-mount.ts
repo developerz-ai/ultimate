@@ -96,7 +96,7 @@ export interface BearerMountInput {
 }
 
 /** The listing route's gate: any valid token, no scope, no tenant. */
-const EVERY_TOKEN = Symbol('every token');
+const LISTING_GATE = Symbol('any valid token');
 
 /** A mount prefix: `/v1`, `/public/v2`. Lowercase segments, no parameters, no trailing slash. */
 const PREFIX = /^(\/[a-z0-9][a-z0-9._~-]*)+$/;
@@ -189,9 +189,9 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
   // 422 with the schema's issues or 403 with the policy's reason, both confirming the primitive.
   // `null` is the catch-all's: a scope no token holds, so a valid token is told 404 exactly where
   // an out-of-scope one is, and a missing or bad one gets the same challenge as on a served path.
-  // `EVERY_TOKEN` is the tenant listing's: any valid token, asked in no tenant.
+  // `LISTING_GATE` is the tenant listing's: any valid token, asked in no tenant.
   const authenticatorOf =
-    (scope: string | null | typeof EVERY_TOKEN): NonNullable<RouteMeta['authenticate']> =>
+    (scope: string | null | typeof LISTING_GATE): NonNullable<RouteMeta['authenticate']> =>
     async (request, ctx) => {
       const token = bearerTokenOf(request.header('authorization'));
       if (token === null) {
@@ -212,7 +212,7 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       // Out of scope, a token walking the cut would go unmetered too, and `RateLimit-*` on one
       // 404 but not another would tell hidden from unknown.
       await spend(tokenKey(token), ctx);
-      if (scope === EVERY_TOKEN) {
+      if (scope === LISTING_GATE) {
         callers.set(ctx, { caller });
         return caller.actor;
       }
@@ -300,7 +300,7 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       tenantsRoute(
         prefix,
         input.tenant,
-        authenticatorOf(EVERY_TOKEN),
+        authenticatorOf(LISTING_GATE),
         callers,
         bucket !== undefined,
       ),

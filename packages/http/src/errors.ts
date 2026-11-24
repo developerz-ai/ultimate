@@ -163,29 +163,6 @@ export const bearerMountInvalid = (prefix: string, reason: string): HttpError =>
     fix: "mounts: [{ prefix: '/v1', scopes: { 'cases:read': ['caseList'] }, resolveToken }]   // in defineApi({ http }) — a prefix of lowercase segments that is not /api or /_x, naming only registered actions and queries (x routes --json lists them)",
   });
 
-/**
- * A tenant mount's call named no tenant. The fix is the caller's: the listing route every valid
- * token reaches, then the same call with the argument — `prefix` and `arg` are the app's own
- * declaration, never request text.
- */
-export const bearerTenantRequired = (prefix: string, arg: string): HttpError =>
-  new HttpError({
-    code: 'X_BEARER_TENANT_REQUIRED',
-    cause: `this mount acts every call in the tenant the call names, and the query string carries no "${arg}"`,
-    fix: `GET ${prefix}/tenants   # then send the call again with ?${arg}=<one of its values>`,
-  });
-
-/**
- * `tenant.resolve` threw, or answered neither an actor nor `null`. A failed lookup is NOT "not a
- * member": a 404 would tell the caller a primitive it may call does not exist.
- */
-export const bearerTenantUnresolved = (cause: string, thrown?: unknown): HttpError =>
-  new HttpError({
-    code: 'X_BEARER_TENANT_UNRESOLVED',
-    cause: thrown === undefined ? cause : `${cause}: ${renderThrowable(thrown)}`,
-    fix: 'tenant: { resolve: ({ person, value }) => actorIn(person, value) ?? null }   // in defineApi({ http: { mounts } }) — an actor, or null for a tenant the person is not in; a throw is a fault, never a non-member',
-  });
-
 /** No actor on a required route: the routine login wall, logged at `info` (`routineRefusal`). */
 export const unauthenticated = (pathname: string): HttpError =>
   routineRefusal(

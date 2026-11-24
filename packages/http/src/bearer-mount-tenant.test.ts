@@ -8,6 +8,7 @@ import { bearerMount } from './bearer-mount';
 import type { BearerMountTenant } from './bearer-mount-tenant';
 import { defineHttpConfig } from './config';
 import { useRequestContext } from './context';
+import { bearerMountInvalid } from './errors';
 import { httpPipeline } from './pipeline';
 import { memoryRateLimitStore } from './rate-limit';
 import { jsonResponse } from './response';
@@ -120,7 +121,7 @@ describe('bearerMount({ tenant })', () => {
       const refused = await answer(pipelineFor(), call('POST', path));
       expect(refused.status).toBe(400);
       expect(refused.body['code']).toBe('X_BEARER_TENANT_REQUIRED');
-      expect(String(refused.body['fix'])).toContain('GET /v1/tenants');
+      expect(String(refused.body['fix'])).toContain('/v1/tenants');
     }
     expect(ran).toBe(0);
   });
@@ -141,7 +142,8 @@ describe('bearerMount({ tenant })', () => {
   test('a resolve that throws or answers no actor is X_BEARER_TENANT_UNRESOLVED, never a 404', async () => {
     const throwing = tenant({
       resolve: () => {
-        throw new TypeError('directory down');
+        // Any fault the app's lookup raises; an UltimateError stands in for it.
+        throw bearerMountInvalid('/v1', 'the directory is down');
       },
     });
     const thrown = await answer(pipelineFor(throwing), call('GET', '/v1/case-list?org=org_a'));
