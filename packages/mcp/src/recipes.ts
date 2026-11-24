@@ -31,7 +31,14 @@ export const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * `%65rrors` and `errors+old` are not `docs://ref/errors`. Less a sentence's end (`LINK_TAIL`).
  */
 const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([^\s()<>[\]{}"'`*|]+)/g;
-const LINK_TAIL = /[.,;:!?]+$/;
+const LINK_TAIL = new Set(['.', ',', ';', ':', '!', '?']);
+
+/** `path` less its trailing sentence punctuation, in one backward pass (no regex backtracking). */
+function withoutLinkTail(path: string): string {
+  let end = path.length;
+  while (end > 0 && LINK_TAIL.has(path[end - 1] as string)) end -= 1;
+  return path.slice(0, end);
+}
 /** The section a `docs://<section>/…` URI sits in. */
 const SECTION_OF_URI = /^docs:\/\/([^/]*)\//;
 
@@ -148,7 +155,7 @@ export function recipeLinks(recipe: McpRecipe, sections: ReadonlySet<string>): r
     .filter((match) => sections.has(match[1] as string))
     .map((match) => ({
       section: match[1] as string,
-      path: (match[2] as string).replace(LINK_TAIL, ''),
+      path: withoutLinkTail(match[2] as string),
     }))
     .filter((link) => link.path !== '')
     .map((link) => recipeUri(link.path, link.section));

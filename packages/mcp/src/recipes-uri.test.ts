@@ -79,6 +79,11 @@ describe('a recipe link is checked whole', () => {
     expect(() =>
       serve([errors, linking('**docs://ref/errors** | docs://ref/errors|')]),
     ).not.toThrow();
+    expect(() => serve([errors, linking('See docs://ref/errors!?.')])).not.toThrow();
+    // A long punctuation run inside a path is trimmed in one pass, never rescanned per position.
+    expect(codeOf(() => serve([errors, linking(`docs://ref/x${'!'.repeat(100_000)}a`)]))).toBe(
+      'X_MCP_RECIPE_LINK_DANGLING',
+    );
   });
 
   test('the dangling refusal names the section it was linked into', () => {
