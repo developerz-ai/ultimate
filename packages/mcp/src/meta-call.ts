@@ -8,7 +8,7 @@ import { META_UNKNOWN_FIX } from './meta-errors';
 import type { MetaHost } from './meta-host';
 import { resolveAddressed } from './meta-host';
 import { splitCall } from './meta-split-call';
-import { DESCRIBE_RESOURCE, LIST_RESOURCES, MetaSurface } from './meta-surface';
+import { DESCRIBE_RESOURCE, LIST_RESOURCES, type MetaSurface } from './meta-surface';
 import type { McpCaller } from './registry';
 import { jsonResult, textResult } from './registry';
 import { validateArgs } from './validate-args';
@@ -32,7 +32,7 @@ export async function metaCall(
 ): Promise<JsonRpcResponse | undefined> {
   const { id, name, caller } = request;
   const surface = meta.surfaceFor(caller) === 'meta-split' ? 'meta-split' : 'meta';
-  const entry = MetaSurface.entriesFor(surface).find((tool) => tool.name === name);
+  const entry = meta.entries(surface).find((tool) => tool.name === name);
   if (entry === undefined) {
     return meta.isGrouped(name) ? host.notFound(id, name, caller, META_UNKNOWN_FIX) : undefined;
   }

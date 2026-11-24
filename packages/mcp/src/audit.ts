@@ -212,6 +212,8 @@ function callerFields(entry: McpResourceAuditEntry | McpAuditEntry): LogFields {
     ...(entry.caller.role === undefined ? {} : { role: entry.caller.role }),
     // The tenant a `tenant` server resolved for this call — the decision's subject, not an argument.
     ...(entry.caller.tenant === undefined ? {} : { tenant: entry.caller.tenant }),
+    // The dispatcher a 'meta-split' call came through — its name alone: a field is an argument.
+    ...(entry.caller.door === undefined ? {} : { door: entry.caller.door.tool }),
     ...(entry.scope === undefined ? {} : { scope: entry.scope }),
     ...(entry.code === undefined ? {} : { code: entry.code }),
   };

@@ -3,16 +3,14 @@
 // and an already-resolved caller, and returns a response or `null` for a notification.
 // Both transports (http, stdio) and every test drive this one function.
 
-import type { Clock, ErrorAudience } from '@ultimat3/core';
 import { fixFor } from '@ultimat3/core';
 import { outcomeForResult } from './audit';
-import type { McpAuditHook, McpAuditor } from './audit-hook';
+import type { McpAuditor } from './audit-hook';
 import { LOG_ONLY_AUDITOR, mcpAuditor } from './audit-hook';
 import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
 import { metaCall } from './meta-call';
-import type { McpCatalogDetail } from './meta-catalog-render';
 import { META_UNKNOWN_FIX } from './meta-errors';
-import type { McpResourceGroups, McpSurfaceOption, MetaResource } from './meta-surface';
+import type { MetaResource } from './meta-surface';
 import { MetaSurface } from './meta-surface';
 import { promptListEntry, promptsGet, visiblePrompts } from './prompts-get';
 import type { McpEra } from './protocol-era';
@@ -26,7 +24,6 @@ import {
   unsupportedVersion,
 } from './protocol-era';
 import type {
-  AnyMcpTool,
   McpCaller,
   McpToolResult,
   McpVerbClass,
@@ -34,19 +31,19 @@ import type {
   ToolResolution,
 } from './registry';
 import { ToolRegistry } from './registry';
-import type { McpPrompt, McpResource, McpResourceSource } from './resources';
+import type { McpPrompt } from './resources';
 import { ResourceRegistry } from './resources';
-import type { CatalogRefused, CatalogView, McpCatalogSource, PerCall } from './server-catalog';
+import type { CatalogRefused, CatalogView, PerCall } from './server-catalog';
 import { catalogRefusal, viewOf } from './server-catalog';
+import type { McpServerInput } from './server-input';
 import { resourcesList, resourcesRead } from './server-resources';
-import type { McpInstructions, McpServerVoice } from './server-voice';
+import type { McpServerVoice } from './server-voice';
 import {
   instructionsFor,
   invalidArgsResult,
   protocolRefusal,
   screenCatalogDetail,
 } from './server-voice';
-import type { McpTenant } from './tenant';
 import { assertTenant, listTenantsTool, tenantStep, withTenantArg } from './tenant';
 import { tenantDoor, tenantsCall } from './tenant-discover';
 import { admitted, thrownResponse } from './tool-thrown';
@@ -64,50 +61,8 @@ import {
   resultResponse,
 } from './wire';
 
+export type { McpServerInput } from './server-input';
 export type { McpWire } from './wire';
-
-export interface McpServerInput {
-  readonly tools?: readonly AnyMcpTool[];
-  readonly resources?: readonly McpResource[];
-  /** Resources listed per caller (a tenant's own docs), after the fixed ones. */
-  readonly resourceSources?: readonly McpResourceSource[];
-  readonly prompts?: readonly McpPrompt[];
-  readonly serverInfo?: ServerInfo;
-  /** `'flat'` (the default): one tool per primitive. See `McpSurfaceOption`. */
-  readonly surface?: McpSurfaceOption | undefined;
-  /** The meta catalog's resources. Required with a surface that can be `'meta'`. */
-  readonly groups?: McpResourceGroups | undefined;
-  /**
-   * How much of each action `list_resources` says: `'full'` (the default) or `'compact'` — names
-   * and tags, the rest in `describe_resource`. Needs a surface that can be `'meta'`.
-   */
-  readonly catalogDetail?: McpCatalogDetail | undefined;
-  /**
-   * `initialize`'s `instructions`: how to use this server, for a client that injects it into the
-   * model's context (Claude Code does; many clients do not — never load-bear on it). A function
-   * answers per caller population — a staff surface and a customer one read different advice —
-   * and a function that throws or answers anything but a non-empty string sends none.
-   */
-  readonly instructions?: McpInstructions | undefined;
-  /**
-   * Whose `fix:` line a refusal carries. `'developer'` (the default, and the dev server's): the
-   * fix the author wrote — `x policy explain …`, a declaration to edit. `'caller'`: the error's
-   * `callerFix` where it declares one — what a REMOTE agent can do about it. `defineAppMcp`
-   * serves `'caller'`.
-   */
-  readonly errorAudience?: ErrorAudience | undefined;
-  /** Every gate decision as data, after its log line — see `audit-hook.ts`. The route reads it too. */
-  readonly onAudit?: McpAuditHook | undefined;
-  /** Stamps each `onAudit` event's `at`. */
-  readonly clock?: Clock | undefined;
-  /**
-   * The per-caller catalog, resolved per request for `tools/list` and every `tools/call` and merged
-   * with `tools`/`groups` (`server-catalog.ts`). `defineAppMcp({ catalog })` builds it.
-   */
-  readonly catalog?: McpCatalogSource | undefined;
-  /** One token across tenants, the tenant named per call — see `tenant.ts`. */
-  readonly tenant?: McpTenant | undefined;
-}
 
 export function mcpServer(input: McpServerInput = {}): McpServer {
   const tenant = input.tenant;
@@ -123,6 +78,7 @@ export function mcpServer(input: McpServerInput = {}): McpServer {
     surface: input.surface,
     groups: input.groups,
     tools: all,
+    split: input.split,
   });
   const catalogDetail = screenCatalogDetail(input.catalogDetail, input.surface);
   return new McpServer(
@@ -145,6 +101,7 @@ export function mcpServer(input: McpServerInput = {}): McpServer {
       tools: all,
       surface: input.surface,
       groups: input.groups,
+      split: input.split,
     },
   );
 }
@@ -300,9 +257,7 @@ export class McpServer {
       tenant === undefined ? entries : withTenantArg(entries, tenant);
     if (meta === undefined) return withArg(flat);
     // Constant: the meta tools plus whatever the app left ungrouped (`docs`, `whoami`).
-    const entries = MetaSurface.entriesFor(
-      meta.surfaceFor(caller) === 'meta' ? 'meta' : 'meta-split',
-    );
+    const entries = meta.entries(meta.surfaceFor(caller) === 'meta' ? 'meta' : 'meta-split');
     return withArg(
       [...flat.filter((tool) => !meta.isGrouped(tool.name)), ...entries].sort((a, b) =>
         a.name < b.name ? -1 : a.name > b.name ? 1 : 0,

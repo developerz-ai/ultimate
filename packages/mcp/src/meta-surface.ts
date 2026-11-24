@@ -16,6 +16,8 @@ import { assertListParams, listParamsSchema } from './list-params';
 import { oneLineParams } from './meta-catalog-render';
 import { McpGroupConflictError, McpGroupUnknownError, McpSurfaceInvalidError } from './meta-errors';
 import { assertEffects, SPLIT_DISPATCHERS, SPLIT_TOOL_ENTRIES } from './meta-split';
+import type { McpSplitOptions } from './meta-split-options';
+import { assertSplit, splitEntries } from './meta-split-options';
 import type { AnyMcpTool, McpCaller, ToolListEntry } from './registry';
 import { visibleToCaller } from './registry';
 import type { JsonSchema } from './wire';
@@ -150,6 +152,8 @@ export class MetaSurface {
   readonly #tools: ReadonlyMap<string, AnyMcpTool>;
   /** Every grouped tool's effect was checked at boot, so `'meta-split'` may be served. */
   readonly #split: boolean;
+  /** The app's `split:` — its envelope fields and `stricter` hook. Read by the split dispatch. */
+  readonly split: McpSplitOptions | undefined;
 
   private constructor(
     option: McpSurfaceOption,
@@ -157,8 +161,10 @@ export class MetaSurface {
     home: ReadonlyMap<string, string>,
     tools: ReadonlyMap<string, AnyMcpTool>,
     split: boolean,
+    options: McpSplitOptions | undefined,
   ) {
     this.#split = split;
+    this.split = options;
     this.#option = option;
     this.#groups = groups;
     this.#home = home;
@@ -173,6 +179,7 @@ export class MetaSurface {
     readonly surface?: McpSurfaceOption | undefined;
     readonly groups?: McpResourceGroups | undefined;
     readonly tools: readonly AnyMcpTool[];
+    readonly split?: McpSplitOptions | undefined;
   }): MetaSurface | undefined {
     for (const tool of input.tools) {
       if (tool.listParams !== undefined) {
@@ -182,6 +189,7 @@ export class MetaSurface {
     const option = input.surface ?? 'flat';
     const entries = Object.entries(input.groups ?? {});
     if (option === 'flat') {
+      if (input.split !== undefined) assertSplit(input.split, false);
       if (entries.length === 0) return undefined;
       throw new McpSurfaceInvalidError({
         cause: `groups: declares ${entries.length} resource(s), and surface is 'flat' for every caller, so no caller would ever see them`,
@@ -221,7 +229,8 @@ export class MetaSurface {
       option === 'meta-split' ||
       (typeof option === 'function' && grouped.some((tool) => tool.effect !== undefined));
     if (split) assertEffects(grouped);
-    return new MetaSurface(option, new Map(entries), home, tools, split);
+    if (input.split !== undefined) assertSplit(input.split, split);
+    return new MetaSurface(option, new Map(entries), home, tools, split, input.split);
   }
 
   /**
@@ -243,6 +252,13 @@ export class MetaSurface {
   /** The constant `tools/list` entries of a meta surface: the catalog pair plus its dispatcher(s). */
   static entriesFor(surface: Exclude<McpSurface, 'flat'>): readonly ToolListEntry[] {
     return surface === 'meta' ? META_TOOL_ENTRIES : [...CATALOG_ENTRIES, ...SPLIT_TOOL_ENTRIES];
+  }
+
+  /** `entriesFor` as THIS server publishes it: the dispatchers carry the app's `split.fields`. */
+  entries(surface: Exclude<McpSurface, 'flat'>): readonly ToolListEntry[] {
+    return surface === 'meta' || this.split?.fields === undefined
+      ? MetaSurface.entriesFor(surface)
+      : [...CATALOG_ENTRIES, ...splitEntries(this.split)];
   }
 
   /** True when a META caller must reach this tool through a dispatcher, not by its name. */

@@ -47,6 +47,19 @@ export interface McpCaller {
    * belongs to the server, and `ToolRegistry` is where it lives.
    */
   readonly tenant?: string;
+  /**
+   * The `'meta-split'` dispatcher THIS call came through — set by `meta-split-call.ts` for one
+   * call. Absent on every other path. The audit line carries its `tool`, never its `fields`.
+   */
+  readonly door?: McpDoor;
+}
+
+/** The dispatcher one call came through, and the app-declared envelope fields it carried. */
+export interface McpDoor {
+  /** `read_resource`, `write_resource` or `delete_resource`. */
+  readonly tool: string;
+  /** `split.fields` as this call sent them: a `reason`, a ticket. Never part of the action input. */
+  readonly fields: Readonly<Record<string, string>>;
 }
 
 /**

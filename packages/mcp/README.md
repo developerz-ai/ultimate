@@ -282,7 +282,7 @@ serves the same catalog pair plus three dispatchers, each running only its own e
 |---|---|---|---|
 | `read_resource` | every query (`destructive: false`) | `{ resource, action, params? }` | `readOnlyHint: true` |
 | `write_resource` | actions declaring `mcp: { effect: 'write' }` | `{ resource, action, params? }` | `readOnlyHint: false`, `destructiveHint: true` |
-| `delete_resource` | actions declaring `mcp: { effect: 'delete' }` — archive, cancel, delete, an external send, a spend | `{ resource, action, params?, live?, confirmed_by_user }` | `readOnlyHint: false`, `destructiveHint: true` |
+| `delete_resource` | actions declaring `mcp: { effect: 'delete' }` — archive, cancel, delete, an external send, a spend; and, as the stricter door, any `write` sent to it and a read the app's `stricter` hook demands | `{ resource, action, params?, live?, confirmed_by_user }` | `readOnlyHint: false`, `destructiveHint: true` |
 
 ```ts
 import { action } from '@ultimat3/action';
@@ -322,7 +322,46 @@ defineAppMcp({
   Neither is `required` by the schema — the dispatcher is the one gate, so a call carrying both only
   inside `params` is read, not refused as `X_INPUT_INVALID` (#798).
 - Order: visibility (absent answer) → effect (`X_MCP_WRONG_TOOL`) → scope → arguments → the policy's
-  actor half → preview / confirmation → `dispatch`, the flat path — same audit line, same bucket.
+  actor half → the `stricter` hook → preview / confirmation → `dispatch`, the flat path — same
+  audit line, same bucket.
+- **The stricter door** (`As of 2026-11`). `delete_resource` also runs a `write` action sent to it:
+  the same preview, the same `confirmed_by_user`. `write_resource` and `read_resource` are never
+  widened — a delete through `write_resource` stays `X_MCP_WRONG_TOOL`. A read through
+  `delete_resource` stays `X_MCP_WRONG_TOOL` unless the app demanded it for that call (below).
+- **The door is on the call.** `caller.door` is `{ tool, fields }` for a call that came through a
+  dispatcher: the audit line carries `door: '<dispatcher>'`, `onAudit` reads `event.caller.door`,
+  and a hand-written tool or a `runtimeTool` is handed `door` beside `input` and `ctx`.
+
+#### `split:` — envelope fields and the `stricter` hook
+
+`As of 2026-11`. Two things an app adds to the dispatchers, checked at boot (`X_MCP_SPLIT_INVALID`:
+a surface that is never `'meta-split'`, a field name the envelope owns, a `stricter` that is not a
+function):
+
+| `split.` | What it is | Refusal |
+|---|---|---|
+| `fields: { <name>: { description, tools?, required?, maxLength? } }` | a string field of the app's own on the envelope of the named dispatchers (default: all three): a `reason`, a change ticket. Published by `tools/list`, validated on the envelope, handed on as `door.fields`. **Never part of the action input** | undeclared, mistyped, too long, or a required one missing: invalid arguments, as for any other |
+| `stricter: (call) => boolean` | whether THIS call must come through `delete_resource`, decided from `{ caller, tool, resource, action, effect, params, fields }` — `params` already validated, the caller already in scope and admitted | demanded on `read_resource` / `write_resource`: `X_MCP_WRONG_TOOL` naming `delete_resource`, nothing ran. On `delete_resource` it is what lets a read run there, behind preview and `confirmed_by_user` |
+
+`stricter` fails closed: anything but the literal `false` demands the stricter door, and a throw
+fails the call. It is not asked for a `delete` action, nor for a `write` already on
+`delete_resource`.
+
+```ts
+import { defineAppMcp } from '@ultimat3/mcp';
+
+defineAppMcp({
+  include: 'exposed',
+  surface: 'meta-split',
+  groups: { payments: { description: 'Payments', tools: ['refundPayment', 'paymentById'] } },
+  split: {
+    fields: { reason: { description: 'Why this call is made, in one sentence.', maxLength: 500 } },
+    // A large refund is confirmed by the user, a small one is not.
+    stricter: ({ action, params }) =>
+      action === 'refundPayment' && Number(params['amountMinor']) > 10_000,
+  },
+});
+```
 - Ungrouped tools (`docs`, `whoami`) stay flat beside the five, exactly as on `'meta'`.
 
 ### Per-caller tools: `catalog:` and `runtimeTool()`

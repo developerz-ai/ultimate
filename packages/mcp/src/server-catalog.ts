@@ -9,6 +9,7 @@ import { fixFor, isJsonObject, logger, stringField } from '@ultimat3/core';
 import type { McpCatalogNameSource } from './catalog-errors';
 import { McpCatalogToolDuplicateError, McpCatalogUnresolvedError } from './catalog-errors';
 import { asFrameworkError, forAudience } from './framework-error';
+import type { McpSplitOptions } from './meta-split-options';
 import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
 import { META_TOOL_NAMES, MetaSurface } from './meta-surface';
 import type { AnyMcpTool, McpCaller } from './registry';
@@ -49,6 +50,7 @@ export interface PerCall {
   readonly tools: readonly AnyMcpTool[];
   readonly surface?: McpSurfaceOption | undefined;
   readonly groups?: McpResourceGroups | undefined;
+  readonly split?: McpSplitOptions | undefined;
 }
 
 export interface CatalogRefused {
@@ -67,6 +69,7 @@ export async function viewOf(
       tools: perCall.tools,
       surface: perCall.surface,
       groups: perCall.groups,
+      split: perCall.split,
       source: perCall.catalog,
       tenantArg: perCall.tenant?.arg,
     },
@@ -107,6 +110,8 @@ export interface CatalogBoot {
   readonly tools: readonly AnyMcpTool[];
   readonly surface: McpSurfaceOption | undefined;
   readonly groups: McpResourceGroups | undefined;
+  /** The app's `split:`, so a resolved view's dispatchers are the boot ones. */
+  readonly split?: McpSplitOptions | undefined;
   readonly source: McpCatalogSource;
   /** `tenant.arg`, which no runtime tool may declare either. */
   readonly tenantArg: string | undefined;
@@ -179,6 +184,7 @@ function metaOf(
       surface: boot.surface,
       groups: groups.size === 0 ? undefined : Object.fromEntries(groups),
       tools,
+      split: boot.split,
     }),
   );
 }
