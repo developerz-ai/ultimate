@@ -82,21 +82,24 @@ const scaleRung = (property: string): { scale: string; name: string } | undefine
 /** \`defineTheme\`'s own grammar for a duration; it refuses any other spelling at boot. */
 const THEME_TIME = /^(0|\\d+(\\.\\d+)?(ms|s))$/;
 const CSS_NUMBER = /^-?\\d*\\.?\\d+$/;
-/** \`.5\` is valid CSS; the theme spells it \`0.5\`. */
-const leadingZero = (text: string): string =>
-  text.replace(/^(-?)\\./, (_match, sign: string) => \`\${sign}0.\`);
+/** \`.5\` and \`+0.5\` are valid CSS; the theme spells both \`0.5\`. */
+const themeNumber = (text: string): string =>
+  text.replace(/^\\+/, '').replace(/^(-?)\\./, (_match, sign: string) => \`\${sign}0.\`);
 
 /** The value as \`defineTheme\` takes it, or \`undefined\` when no spelling of it is one. */
 const themeValue = (scale: string, value: string): string | undefined => {
   if (scale === 'duration') {
-    const time = leadingZero(value);
+    const time = themeNumber(value);
     return THEME_TIME.test(time) ? time : undefined;
   }
-  const points = /^cubic-bezier\\(([^()]*)\\)$/.exec(value)?.[1]?.split(',').map((n) => n.trim());
+  const points = /^cubic-bezier\\(([^()]*)\\)$/
+    .exec(value)?.[1]
+    ?.split(',')
+    .map((n) => themeNumber(n.trim()));
   if (points?.length !== 4 || !points.every((n) => CSS_NUMBER.test(n))) return undefined;
   // x1 and x2 are points in time: the theme refuses a curve with either outside [0, 1].
   const inTime = [points[0], points[2]].every((x) => Number(x) >= 0 && Number(x) <= 1);
-  return inTime ? \`cubic-bezier(\${points.map(leadingZero).join(', ')})\` : undefined;
+  return inTime ? \`cubic-bezier(\${points.join(', ')})\` : undefined;
 };
 
 /** The value the scale ships for a rung — a call that always boots. */
@@ -165,7 +168,12 @@ export function rawMotion(files: readonly StyleFile[]): readonly Finding[] {
       const rung = scaleRung(property);
       if (rung !== undefined) {
         const key = /^\\w+$/.test(rung.name) ? rung.name : \`'\${rung.name}'\`;
-        const accepted = themeValue(rung.scale, value);
+        // \`!important\` is the declaration's priority, not its value: the theme takes the time.
+        const important = /\\s*!important$/i.exec(value);
+        const accepted = themeValue(rung.scale, value.slice(0, important?.index));
+        const priority = important
+          ? ' (the theme sets it without !important, so a later declaration of the property wins)'
+          : '';
         const call = (themed: string): string =>
           \`defineTheme({ motion: { \${rung.scale}: { \${key}: '\${themed}' } } }) in apps/web/shared/theme.ts\`;
         if (accepted === undefined) {
@@ -184,7 +192,7 @@ export function rawMotion(files: readonly StyleFile[]): readonly Finding[] {
         findings.push({
           code: CODE,
           cause: \`\${file.path}:\${line} re-declares \\\`\${property}: \${value}\\\` — the motion scale's own property, set from a stylesheet\`,
-          fix: \`\${call(accepted)} — every \${ns}.\${rung.scale}(\${rung.name}) then moves at it; delete the line at \${file.path}:\${line}, then: x verify --only boundaries\`,
+          fix: \`\${call(accepted)} — every \${ns}.\${rung.scale}(\${rung.name}) then moves at it\${priority}; delete the line at \${file.path}:\${line}, then: x verify --only boundaries\`,
           at: \`\${file.path}:\${line}\`,
         });
         continue;

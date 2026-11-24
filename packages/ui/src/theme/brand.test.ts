@@ -7,7 +7,6 @@ import { UI_ERROR_CODES } from '../errors';
 import { colorTokens } from '../tokens/tokens';
 import { brandStyleCspSource, brandStyleTag, defineTheme } from './brand';
 
-const TOKENS_DIR = Bun.fileURLToPath(new URL('../tokens', import.meta.url));
 const RENDER_DIR = Bun.fileURLToPath(new URL('../../../render', import.meta.url));
 
 function codeOf(run: () => unknown): string | undefined {
@@ -145,6 +144,7 @@ describe('defineTheme', () => {
     // A theme loaded from JSON can carry `null` where the type says an object.
     const malformed: readonly unknown[] = [
       { motion: null },
+      { motion: [] },
       { motion: 'fast' },
       { motion: { duration: null } },
       { motion: { easing: null } },
@@ -163,8 +163,9 @@ describe('defineTheme', () => {
       compileString(source: string, options: { url: URL }): { css: string };
     };
     const css = sass.compileString(
-      `@use '${TOKENS_DIR}' as t;\n.a { transition: opacity t.duration(base) t.easing(out); }`,
-      { url: Bun.pathToFileURL(`${TOKENS_DIR}/../brand-motion.scss`) },
+      // Relative to `url`, never an interpolated path: Sass reads a Windows `\` as an escape.
+      `@use './tokens' as t;\n.a { transition: opacity t.duration(base) t.easing(out); }`,
+      { url: new URL('../brand-motion.scss', import.meta.url) },
     ).css;
     const brand = defineTheme({
       motion: { duration: { base: '180ms' }, easing: { out: 'cubic-bezier(0.2, 0, 0, 1)' } },
@@ -173,6 +174,8 @@ describe('defineTheme', () => {
       [...brand.matchAll(/(--[\w-]+): ([^;]+);/g)].map((m) => [m[1] ?? '', m[2] ?? '']),
     );
     const transition = /transition: ([^;]+);/.exec(css)?.[1] ?? '';
+    // The token functions read the brand's properties; an inlined literal would also resolve below.
+    expect(transition).toBe('opacity var(--duration-base) var(--easing-out)');
     const resolved = transition.replaceAll(/var\((--[\w-]+)\)/g, (_, name: string) => {
       const value = declared.get(name);
       if (value === undefined)

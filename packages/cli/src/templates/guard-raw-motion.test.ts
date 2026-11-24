@@ -85,6 +85,35 @@ describe('unit · shipped guard · raw-motion', () => {
     }
   });
 
+  test('a leading plus and a trailing !important keep the re-declared value in the fix', async () => {
+    const findings = await shippedGuardFindings('raw-motion', {
+      [SHEET]: [
+        ':root {',
+        '  --duration-base: +180ms;',
+        '  --easing-out: cubic-bezier(+0.2, 0, 0, 1);',
+        '  --duration-slow: 300ms !important;',
+        '}',
+        '',
+      ].join('\n'),
+    });
+    expect(findings.map((finding) => finding.fix.split(' in apps/')[0])).toEqual([
+      "defineTheme({ motion: { duration: { base: '180ms' } } })",
+      "defineTheme({ motion: { easing: { out: 'cubic-bezier(0.2, 0, 0, 1)' } } })",
+      "defineTheme({ motion: { duration: { slow: '300ms' } } })",
+    ]);
+    // The theme's `:root` line carries no priority: the fix says what moving it gives up.
+    expect(findings[2]?.fix).toContain('without !important');
+    expect(findings[0]?.fix).not.toContain('!important');
+    expect(() =>
+      defineTheme({
+        motion: {
+          duration: { base: '180ms', slow: '300ms' },
+          easing: { out: 'cubic-bezier(0.2, 0, 0, 1)' },
+        },
+      }),
+    ).not.toThrow();
+  });
+
   test('a re-declared rung the theme cannot hold says so instead of naming a call that fails', async () => {
     const findings = await shippedGuardFindings('raw-motion', {
       [SHEET]:

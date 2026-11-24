@@ -79,6 +79,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
   ],
   'raw-motion': [
     ['14c1bs20ysc1u', 'error'],
+    ['23t5nj717gkf0', 'error'],
     ['3azasze78buvt', 'error'],
     ['3tk0sdgns06ck', 'error'],
     ['u6julhh0et2k', 'error'],

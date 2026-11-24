@@ -228,7 +228,7 @@ brandStyleTag(brand);       // '<style>…</style>' — for a page you render yo
 | `shadows` | `Partial<Record<'light' \| 'dark', Partial<Record<ShadowName, string>>>>` | elevation is themed like colour |
 | `radius` | `Partial<Record<RadiusName, string>>` | `none sm md lg xl pill full` |
 | `font` | `Partial<Record<'sans' \| 'mono' \| 'data', string>>` | the font slots |
-| `motion` | `{ duration?: Partial<Record<DurationName, string>>; easing?: Partial<Record<EasingName, string>> }` | the app's own tempo: `t.duration(base)` reads `--duration-base`, so one rung re-times every component. Declaring `--duration-base` with a literal time or curve in a stylesheet is `X_RAW_MOTION`, whose fix names this slot with the value spelled as the slot takes it; a zero (`0ms`) or a `var()` is not reported |
+| `motion` | `{ duration?: Partial<Record<DurationName, string>>; easing?: Partial<Record<EasingName, string>> }` | the app's own tempo: `t.duration(base)` reads `--duration-base`, so one rung re-times every component. Declaring `--duration-base` with a literal time (`180ms`, `.5s`; lowercase `ms` or `s`) or `cubic-bezier(…)` in a stylesheet is `X_RAW_MOTION`, whose fix names this slot with the value spelled as the slot takes it; a zero (`0ms`) or a plain `var(--…)` read is not reported, but a literal nested in one (`var(--x, calc(180ms * 2))`) is |
 
 Returns a frozen `{ css: string }`. It emits `:root`, `html[data-theme='light']`, the `prefers-color-scheme: dark` block and `html[data-theme='dark']` — radius, font and motion ride `:root` only. Output is ordered by the canonical scale arrays rather than by your object, so re-rendering the same input is byte-identical. Empty input gives `css: ''`, which the framework emits nothing for.
 
