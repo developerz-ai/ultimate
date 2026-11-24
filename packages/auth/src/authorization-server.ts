@@ -76,7 +76,9 @@ export interface AuthorizationServer {
   }): Promise<number>;
   /**
    * One grant of `subject` by its `grantId`, refresh tokens included: 1, or 0 when it is unknown,
-   * already revoked, or another subject's (or another client's than the one named) — alike.
+   * already revoked, or another subject's (or another client's than the one named) — alike. Two
+   * racing calls on one grant count it once on a store implementing `revokeLiveGrant`; on one
+   * without it, both may answer 1.
    * `authorizationServer()` always sets it; optional only so an `AuthorizationServer` of an app's
    * own (a test's fake) still compiles. Required waits on `next`.
    */
@@ -87,7 +89,8 @@ export interface AuthorizationServer {
   }): Promise<number>;
   /**
    * The live grants of `subject` (of one client when named), oldest first: not revoked and
-   * holding a token still usable. Each `grantId` is what `resolve` answers and `revokeGrant` takes.
+   * holding a stored token neither expired nor retired. Not a promise the next refresh succeeds:
+   * a client since denied refresh still lists until those tokens expire. Copies, never the rows. Each `grantId` is what `resolve` answers and `revokeGrant` takes.
    * Always set by `authorizationServer()`; optional only as `revokeGrant` is.
    */
   grants?(input: {
@@ -218,7 +221,12 @@ export function authorizationServer(options: AuthorizationServerOptions): Author
       // Another subject's grant answers as an unknown one: an id is no proof of ownership.
       if (grant === null || grant.revokedAt !== null || grant.subject !== input.subject) return 0;
       if (input.clientId !== undefined && grant.clientId !== input.clientId) return 0;
-      await config.store.revokeGrant(grant.id, config.clock.now());
+      // The store's conditional write decides a race: only the call that ended it counts it.
+      const at = config.clock.now();
+      if (config.store.revokeLiveGrant !== undefined) {
+        return (await config.store.revokeLiveGrant(grant.id, at)) ? 1 : 0;
+      }
+      await config.store.revokeGrant(grant.id, at);
       return 1;
     },
     async grants(input) {
@@ -230,10 +238,11 @@ export function authorizationServer(options: AuthorizationServerOptions): Author
       return live.map((grant) => ({
         grantId: grant.id,
         clientId: grant.clientId,
-        scopes: grant.scopes,
+        // Copies: a caller editing its listing must not edit a memory store's rows.
+        scopes: [...grant.scopes],
         resource: grant.resource,
-        createdAt: grant.createdAt,
-        refreshedAt: grant.refreshedAt,
+        createdAt: new Date(grant.createdAt.getTime()),
+        refreshedAt: new Date(grant.refreshedAt.getTime()),
       }));
     },
     purge: ({ before }) =>
