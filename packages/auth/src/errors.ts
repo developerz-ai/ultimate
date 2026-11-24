@@ -44,6 +44,8 @@ export const AUTH_OWNED_ERROR_CODES = [
   'X_IDENTITY_PROVIDER_UNKNOWN',
   'X_AUTH_CLIENT_INVALID',
   'X_AUTH_GRANTS_UNSUPPORTED',
+  'X_PASSKEY_LABEL_INVALID',
+  'X_PASSKEY_RENAME_UNSUPPORTED',
 ] as const;
 
 /**
@@ -112,6 +114,8 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthOwnedErrorCode, string>> = {
   X_AUTH_CLIENT_INVALID:
     'an oauth client was registered with a list value the store cannot hold as one value',
   X_AUTH_GRANTS_UNSUPPORTED: "the authorization server's store cannot list a subject's live grants",
+  X_PASSKEY_LABEL_INVALID: 'the passkey label is not one a person can read back',
+  X_PASSKEY_RENAME_UNSUPPORTED: 'the auth adapter cannot rename a passkey',
 };
 
 // Registered unconditionally, in one call: a second package claiming a code auth owns has to fail

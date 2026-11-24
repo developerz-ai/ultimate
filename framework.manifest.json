@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "4bc5e3ba1fd34599e11a0cadff1e2aae24a41221bb9c350b119549871419ef1c",
+  "buildId": "3c73d0c67bd9efd695d679386ba8dbfddf4f589577f068bd5a95dadb04ced4cc",
   "tiers": {
     "0": [
       "core",
@@ -4326,6 +4326,16 @@
     },
     {
       "code": "X_PASSKEY_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_LABEL_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_RENAME_UNSUPPORTED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },
