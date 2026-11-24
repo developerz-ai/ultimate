@@ -1,8 +1,6 @@
-// The site asset table: every file under `apps/web/site/assets/`, named by a content-hashed URL.
-// One table per app root answers all three questions — the URL `asset()` returns while a page
-// renders, the file `/assets/*` serves, and the copy `x build --target static` writes — so the
-// page, the container and the CDN can never name one file three ways. Here, below the CLI, so a
-// test process (`@ultimat3/testing`'s preload) installs the same table the app's boot does.
+// The site asset table: every file under `apps/web/site/assets/` by content-hashed URL, one per app
+// root, answering `asset()`, `/assets/*` and the static export's copy alike. Below the CLI so the
+// test preload installs the same table the boot does.
 
 // why: `asset()` is called from a synchronous render, so the table answers synchronously — and Bun
 // ships no sync stat or sync read; `join`/`relative` because Bun ships no path API either.
@@ -81,7 +79,7 @@ export interface SiteAssetTable {
 const missing = (path: string, cause: string): AssetMissingError =>
   new AssetMissingError(
     `asset(${JSON.stringify(path)}): ${cause}`,
-    `add the file at ${SITE_ASSETS_SOURCE}/${path.slice(ASSET_DIR.length + 1)}, or correct the path passed to asset(), then x build --target static --json`,
+    `x build --target static --json   # after adding the file at ${SITE_ASSETS_SOURCE}/${path.slice(ASSET_DIR.length + 1)}, or correcting the path passed to asset()`,
   );
 
 /**
@@ -89,7 +87,7 @@ const missing = (path: string, cause: string): AssetMissingError =>
  * on the next render with no watcher, and the container — whose files never change — pays one
  * `stat` per `asset()` call and nothing else. One behaviour in both, never a dev-only rescan.
  */
-export function createSiteAssetTable(root: string): SiteAssetTable {
+function createSiteAssetTable(root: string): SiteAssetTable {
   const source = join(root, SITE_ASSETS_SOURCE);
   const cache = new Map<string, { readonly stamp: string; readonly asset: SiteAsset }>();
 

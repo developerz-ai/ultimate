@@ -10,7 +10,6 @@ import { siteAssetTable } from '@ultimat3/render/server';
 export type { SiteAsset, SiteAssetTable } from '@ultimat3/render/server';
 export {
   ASSET_CONTENT_TYPES,
-  createSiteAssetTable,
   hashedAssetUrl,
   parseHashedAssetUrl,
   SITE_ASSET_BASE_PATH,

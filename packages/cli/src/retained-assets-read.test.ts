@@ -21,7 +21,7 @@ import { publishBuildAssets } from './retained-assets';
 import { retainedFileKey, retainedPrefix } from './retained-assets-layout';
 import { retainedAssets, withRetainedAssets } from './retained-assets-read';
 import { siteAssetRoutes } from './site-asset-routes';
-import { createSiteAssetTable } from './site-assets';
+import { siteAssetTable } from './site-assets';
 import { styleBundleOf } from './style-bundle';
 import { styleRoutes } from './style-routes';
 import { pageBootRoutes, syncWorkerRoutes } from './worker-bundle';
@@ -42,7 +42,7 @@ const empty: IslandBundle = {
 const ROUTES: readonly Route[] = [
   ...styleRoutes(() => styleBundleOf([])),
   ...islandRoutes(() => empty),
-  ...siteAssetRoutes(createSiteAssetTable(root)),
+  ...siteAssetRoutes(siteAssetTable(root)),
   ...syncWorkerRoutes(() => undefined),
   ...pageBootRoutes(() => undefined),
 ];

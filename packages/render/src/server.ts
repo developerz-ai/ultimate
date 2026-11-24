@@ -102,7 +102,6 @@ export { sassCompilations, setSassCacheDir } from './sass-cache';
 export type { SiteAsset, SiteAssetTable } from './site-assets';
 export {
   ASSET_CONTENT_TYPES,
-  createSiteAssetTable,
   hashedAssetUrl,
   parseHashedAssetUrl,
   SITE_ASSET_BASE_PATH,
