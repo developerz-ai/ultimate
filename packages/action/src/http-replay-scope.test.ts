@@ -70,16 +70,20 @@ describe('a replay that names its principal', () => {
     expect(runs.handled).toBe(0);
   });
 
-  test('queued in one org: runs in that org, and is refused for the same person in another', async () => {
+  test('queued in one org, replayed by the same person in that org: 200, and it ran once', async () => {
     const inOrgA = userActor({ id: 'alice', orgId: 'org-a' });
-    const same = post(inOrgA, keyOf(inOrgA));
-    expect((await same.answer).status).toBe(200);
-    expect(same.runs.handled).toBe(1);
-    const across = post(userActor({ id: 'alice', orgId: 'org-b' }), keyOf(inOrgA));
-    const response = await across.answer;
+    const { answer, runs } = post(inOrgA, keyOf(inOrgA));
+    expect((await answer).status).toBe(200);
+    expect(runs.handled).toBe(1);
+  });
+
+  test('queued in one org, replayed by the same person in another: 409, and nothing ran', async () => {
+    const inOrgA = userActor({ id: 'alice', orgId: 'org-a' });
+    const { answer, runs } = post(userActor({ id: 'alice', orgId: 'org-b' }), keyOf(inOrgA));
+    const response = await answer;
     expect(response.status).toBe(409);
     expect(((await response.json()) as { code: string }).code).toBe('X_REPLAY_PRINCIPAL_MISMATCH');
-    expect(across.runs.handled).toBe(0);
+    expect(runs.handled).toBe(0);
   });
 
   test('never renders either principal into the refusal', async () => {
