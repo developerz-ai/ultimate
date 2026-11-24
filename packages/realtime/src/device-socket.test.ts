@@ -13,8 +13,9 @@ import {
   upgradeRequest,
   upgradeTarget,
 } from './device-fixture';
+import type { DeviceCloseHandler, DeviceOpenHandler } from './device-hooks';
 import type { DeviceFrameHandler } from './device-host';
-import { type DeviceAttachment, deviceSocket } from './device-socket';
+import { type DeviceAttachment, deviceSocket, forgetDeviceSockets } from './device-socket';
 import type { DeviceGrant } from './device-upgrade';
 import { DEVICE_FRAME_MAX_BYTES } from './device-wire';
 import { InProcessTransport } from './fanout';
@@ -23,6 +24,8 @@ let paths = 0;
 const attachments: DeviceAttachment[] = [];
 afterEach(() => {
   for (const attachment of attachments.splice(0)) attachment.stop();
+  // A rerun evaluates this file again and its path counter restarts: the registry must too.
+  forgetDeviceSockets();
 });
 
 const flush = async (): Promise<void> => {
@@ -38,7 +41,14 @@ const codeOf = async (work: Promise<unknown>): Promise<string> => {
   return expect.unreachable('the request resolved');
 };
 
-async function node(options: { onFrame?: DeviceFrameHandler; heartbeatMs?: number } = {}) {
+async function node(
+  options: {
+    onFrame?: DeviceFrameHandler;
+    heartbeatMs?: number;
+    onOpen?: DeviceOpenHandler;
+    onClose?: DeviceCloseHandler;
+  } = {},
+) {
   const clock = testClock();
   const timers = manualScheduler(clock);
   const grants = new Map<string, DeviceGrant>([
@@ -59,6 +69,8 @@ async function node(options: { onFrame?: DeviceFrameHandler; heartbeatMs?: numbe
     resolveToken: (token) => grants.get(token) ?? null,
     onFrame: options.onFrame ?? (() => undefined),
     heartbeatMs: options.heartbeatMs ?? 10_000,
+    onOpen: options.onOpen,
+    onClose: options.onClose,
   });
   const attachment = await link.attach({
     transport: new InProcessTransport(),
@@ -291,5 +303,41 @@ describe('unit · deviceSocket declaration', () => {
     expect(await codeOf(link.request({ actor: deviceActor('c') }, 'dev-1', {}))).toBe(
       'X_DEVICE_OFFLINE',
     );
+  });
+});
+
+describe('unit · deviceSocket open, close and disconnect', () => {
+  test('disconnect closes the socket with its reason, and the hooks see both ends', async () => {
+    const events: string[] = [];
+    const { link, dial, caller } = await node({
+      onOpen: ({ device, ctx }) => {
+        events.push(`open ${device.deviceId} as ${ctx.actor.id}`);
+      },
+      onClose: ({ device, reason }) => {
+        events.push(`close ${device.deviceId}: ${reason}`);
+      },
+    });
+    const ws = await dial('tok-a');
+    expect(await link.disconnect(caller, 'dev-1', 'revoked')).toBe(true);
+    expect(ws.closed).toEqual({ code: 1008, reason: 'revoked' });
+    await flush();
+    expect(events).toEqual(['open dev-1 as dev-owner', 'close dev-1: revoked']);
+    expect(link.connected).toBe(0);
+  });
+
+  test("another tenant's device is not disconnected: false, as for an unknown one", async () => {
+    const { link, dial, caller } = await node();
+    const foreign = await dial('tok-b');
+    expect(await link.disconnect(caller, 'dev-9', 'revoked')).toBe(false);
+    expect(await link.disconnect(caller, 'nope', 'revoked')).toBe(false);
+    expect(foreign.closed).toBeNull();
+  });
+
+  test('a reason no websocket close frame can carry is X_CONFIG_INVALID, before any send', async () => {
+    const { link, dial, caller } = await node();
+    const ws = await dial('tok-a');
+    expect(await codeOf(link.disconnect(caller, 'dev-1', ''))).toBe('X_CONFIG_INVALID');
+    expect(await codeOf(link.disconnect(caller, 'dev-1', 'é'.repeat(62)))).toBe('X_CONFIG_INVALID');
+    expect(ws.closed).toBeNull();
   });
 });

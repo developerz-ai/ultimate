@@ -7,9 +7,11 @@ import { ctxOf, isUltimateError, reportError, runWithContext } from '@ultimat3/c
 import { CLOSE } from './close-codes';
 import type { DeviceBus, DeviceBusHandlers } from './device-bus';
 import { DeviceFrameTooLargeError } from './device-errors';
+import type { DeviceHooks, DeviceInfo } from './device-hooks';
 import type { DeviceWsData } from './device-upgrade';
 import {
   type BusClaim,
+  type BusDisconnect,
   type BusRequest,
   bytesOverLimit,
   DEVICE_FRAME_MAX_BYTES,
@@ -26,13 +28,6 @@ export interface DeviceWs {
   /** Bun's answer: bytes written, `-1` queued under backpressure, `0` dropped. */
   send(data: string): number;
   close(code?: number, reason?: string): void;
-}
-
-/** Who sent a frame — what `onFrame` reads alongside it. */
-export interface DeviceInfo {
-  readonly deviceId: string;
-  readonly socketId: string;
-  readonly tenant: string;
 }
 
 export type DeviceFrameHandler = (input: {
@@ -57,6 +52,8 @@ interface Held {
   queued: number;
   /** Request id → the requesting node and when this node stops waiting for the device. */
   readonly requests: Map<string, { readonly from: string; readonly until: number }>;
+  /** Why this node closed it, set by the first close this node makes; `null` until then. */
+  reason: string | null;
 }
 
 export interface DeviceHostOptions {
@@ -68,7 +65,12 @@ export interface DeviceHostOptions {
   readonly clock: Clock;
   readonly rng: Rng;
   readonly schedule: Scheduler;
+  /** `onOpen`/`onClose`, run beside the socket path. Absent: no hook, no ledger. */
+  readonly hooks?: DeviceHooks | undefined;
 }
+
+/** The close reason of a socket this node did not close: the device, or its network, did. */
+const PEER_CLOSED = 'disconnected';
 
 /** A device's key on this node: tenant and id together, never one without the other. */
 const deviceKey = (tenant: string, deviceId: string): string => JSON.stringify([tenant, deviceId]);
@@ -91,14 +93,17 @@ export class DeviceHost implements DeviceBusHandlers {
     const key = deviceKey(tenant, grant.deviceId);
     // One socket per device: the newest wins here and, through the claim, on every other node.
     const previous = this.#byDevice.get(key);
-    if (previous !== undefined) this.#held.get(previous)?.ws.close(CLOSE.policy, 'replaced');
+    const replaced = previous === undefined ? undefined : this.#held.get(previous);
+    if (replaced !== undefined) this.#shut(replaced, CLOSE.policy, 'replaced');
     this.#held.set(socketId, {
       ws,
       lastSeen: this.#options.clock.monotonic(),
       lane: Promise.resolve(),
       queued: 0,
       requests: new Map(),
+      reason: null,
     });
+    this.#options.hooks?.opened(ws.data);
     this.#byDevice.set(key, socketId);
     this.#send(ws, {
       type: 'hello',
@@ -115,18 +120,18 @@ export class DeviceHost implements DeviceBusHandlers {
     const held = this.#held.get(ws.data.socketId);
     if (held === undefined) return;
     if (typeof message !== 'string') {
-      ws.close(1003, 'text frames only');
+      this.#shut(held, 1003, 'text frames only');
       return;
     }
     // Bun's `maxPayloadLength` refuses first; this is the same limit for a host that applied none.
     if (bytesOverLimit(message) !== null) {
-      ws.close(1009, 'X_DEVICE_FRAME_TOO_LARGE');
+      this.#shut(held, 1009, 'X_DEVICE_FRAME_TOO_LARGE');
       return;
     }
     held.lastSeen = this.#options.clock.monotonic();
     const frame = decodeDeviceFrame(message);
     if (frame === undefined) {
-      ws.close(CLOSE.policy, 'X_PROTOCOL_VERSION');
+      this.#shut(held, CLOSE.policy, 'X_PROTOCOL_VERSION');
       return;
     }
     if (frame.type === 'response') {
@@ -146,6 +151,7 @@ export class DeviceHost implements DeviceBusHandlers {
     this.#options.principals.release(socketId);
     if (held === undefined) return;
     this.#held.delete(socketId);
+    this.#options.hooks?.closed(ws.data, held.reason ?? PEER_CLOSED);
     for (const [id, asked] of held.requests)
       this.#offline(asked.from, id, 'the device disconnected');
     const key = deviceKey(tenant, grant.deviceId);
@@ -180,7 +186,23 @@ export class DeviceHost implements DeviceBusHandlers {
   onClaim(claim: BusClaim): void {
     const socketId = this.#byDevice.get(deviceKey(claim.tenant, claim.deviceId));
     if (socketId === undefined || socketId === claim.socketId) return;
-    this.#held.get(socketId)?.ws.close(CLOSE.policy, 'replaced');
+    const held = this.#held.get(socketId);
+    if (held !== undefined) this.#shut(held, CLOSE.policy, 'replaced');
+  }
+
+  /** `disconnect()` from any node: the device's socket here closed with the caller's reason. */
+  onDisconnect(order: BusDisconnect): void {
+    const socketId = this.#byDevice.get(deviceKey(order.tenant, order.deviceId));
+    const held = socketId === undefined ? undefined : this.#held.get(socketId);
+    if (held === undefined) {
+      this.#offline(order.from, order.id, 'no socket for it on the node it was registered on');
+      return;
+    }
+    this.#shut(held, CLOSE.policy, order.reason);
+    this.#background(
+      this.#options.bus.reply(order.from, { kind: 'response', id: order.id, frame: true }),
+      'device.reply',
+    );
   }
 
   /** One pass: silent and expired sockets closed, live ones re-registered, stale requests forgotten. */
@@ -191,17 +213,27 @@ export class DeviceHost implements DeviceBusHandlers {
     for (const held of this.#held.values()) {
       const { grant, tenant, socketId } = held.ws.data;
       if (now - held.lastSeen > silentAfter) {
-        held.ws.close(CLOSE.idle, 'no beat');
+        this.#shut(held, CLOSE.idle, 'no beat');
         continue;
       }
       if (grant.expiresAt !== undefined && !(grant.expiresAt > wall)) {
-        held.ws.close(CLOSE.policy, 'grant expired');
+        this.#shut(held, CLOSE.policy, 'grant expired');
         continue;
       }
       for (const [id, asked] of held.requests) if (asked.until <= now) held.requests.delete(id);
       this.#background(
         this.#options.bus.refresh(tenant, grant.deviceId, socketId, this.#registrationTtl()),
         'device.refresh',
+      );
+    }
+    const { hooks } = this.#options;
+    if (hooks !== undefined) {
+      this.#background(
+        hooks.sweep(
+          () => [...this.#held.values()].map((entry) => entry.ws.data),
+          (socketId) => this.#held.has(socketId),
+        ),
+        'device.ledger',
       );
     }
   }
@@ -221,12 +253,18 @@ export class DeviceHost implements DeviceBusHandlers {
       await new Promise<void>((resolve) => this.#options.schedule(resolve, options.graceMs));
     }
     // Closed, not removed: each `close` callback releases its slot, its requests and its entry.
-    for (const entry of [...this.#held.values()]) entry.ws.close(CLOSE.goingAway, 'drain');
+    for (const entry of [...this.#held.values()]) this.#shut(entry, CLOSE.goingAway, 'drain');
+  }
+
+  /** Every close this node makes: the first reason is the one `onClose` reads. */
+  #shut(held: Held, code: number, reason: string): void {
+    held.reason ??= reason;
+    held.ws.close(code, reason);
   }
 
   #enqueue(held: Held, frame: JsonValue): void {
     if (held.queued >= DEVICE_FRAME_QUEUE_MAX) {
-      held.ws.close(CLOSE.policy, 'X_FRAME_RATE_LIMIT');
+      this.#shut(held, CLOSE.policy, 'X_FRAME_RATE_LIMIT');
       return;
     }
     held.queued += 1;

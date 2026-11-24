@@ -66,10 +66,15 @@ export {
   DeviceRequestTimeoutError,
 } from './device-errors';
 export {
+  DEVICE_NODE_LOST,
+  type DeviceCloseHandler,
+  type DeviceInfo,
+  type DeviceOpenHandler,
+} from './device-hooks';
+export {
   DEVICE_FRAME_QUEUE_MAX,
   DEVICE_REQUESTS_OUTSTANDING_MAX,
   type DeviceFrameHandler,
-  type DeviceInfo,
   type DeviceWs,
 } from './device-host';
 export {
@@ -78,6 +83,7 @@ export {
   DEFAULT_DEVICE_REQUEST_DEADLINE_MS,
   DEFAULT_DEVICE_SOCKETS_PER_ACTOR,
   DEVICE_AUTH_DEADLINE_MS,
+  DEVICE_DISCONNECT_DEADLINE_MS,
   DEVICE_MAX_PENDING_UPGRADES,
   type DeviceAttachment,
   type DeviceAttachOptions,
@@ -95,7 +101,7 @@ export type {
   DeviceUpgradeTarget,
   DeviceWsData,
 } from './device-upgrade';
-export { DEVICE_FRAME_MAX_BYTES } from './device-wire';
+export { DEVICE_CLOSE_REASON_MAX_BYTES, DEVICE_FRAME_MAX_BYTES } from './device-wire';
 export { RealtimeTopologyError } from './errors';
 export {
   InProcessTransport,

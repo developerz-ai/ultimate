@@ -959,10 +959,11 @@ made it — a key already queued collapses as always, and nothing queued is ever
 
 ## Device sockets
 
-`deviceSocket({ path, resolveToken, onFrame, maxSocketsPerActor?, heartbeatMs?, allowedOrigins? })`
+`deviceSocket({ path, resolveToken, onFrame, onOpen?, onClose?, maxSocketsPerActor?, heartbeatMs?, allowedOrigins? })`
 — a declared socket for a non-browser client, from `./server`. A factory over `route`: the value is
 a websocket mount plus `request(ctx, deviceId, frame, { deadlineMs })`, which reaches one connected
-device from any process over the bus, scoped to `ctx.actor.orgId`. `deviceAgent({ url, token,
+device from any process over the bus, scoped to `ctx.actor.orgId`, and `disconnect(ctx, deviceId,
+reason)`, which closes one from any process. `deviceAgent({ url, token,
 onRequest })` is the Bun client. Every rule (credential, caps, frame limit, beat, drain, codes):
 [wiki/Realtime.md#device-sockets](../../wiki/Realtime.md#device-sockets).
 
@@ -970,7 +971,9 @@ onRequest })` is the Bun client. Every rule (credential, caps, frame limit, beat
 |---|---|
 | `device-socket.ts` | the declaration, its screen, the registry, `request()` and `attach()` |
 | `device-upgrade.ts` | the upgrade decision: origin, bearer token under a deadline, expiry, cap |
-| `device-host.ts` | the sockets one node holds: frames, the lane, the sweep, the drain |
+| `device-host.ts` | the sockets one node holds: frames, the lane, the sweep, the drain, a `disconnect()` |
+| `device-hooks.ts` | `onOpen` / `onClose`, beside the socket path, one lane per socket |
+| `device-ledger.ts` | the open sockets in the bus's shared set, so a dead node's still close |
 | `device-bus.ts` | where a device is and how a request reaches it and comes back |
 | `device-wire.ts` | both hops' frames and the frame limit |
 | `device-agent.ts` | the device's half, on Bun |
