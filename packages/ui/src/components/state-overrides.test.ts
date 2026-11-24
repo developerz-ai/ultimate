@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { byTag, renderNodes } from '@ultimat3/core/render-nodes';
+import { renderNodes } from '@ultimat3/core/render-nodes';
 import { Alert } from './Alert';
 import { AsyncRegion } from './AsyncRegion';
 import { EmptyState } from './EmptyState';
@@ -51,15 +51,18 @@ describe('AsyncRegion · failed', () => {
 });
 
 describe('EmptyState and Alert · level', () => {
-  test('EmptyState titles itself with the heading asked for; a paragraph by default', () => {
-    expect(byTag(renderNodes(EmptyState, { title: 'None', level: 3 }), 'h3')).toHaveLength(1);
-    expect(byTag(renderNodes(EmptyState, { title: 'None' }), 'h3')).toHaveLength(0);
-    expect(byTag(renderNodes(EmptyState, { title: 'None' }), 'p').length).toBeGreaterThan(0);
+  const headings = (nodes: ReturnType<typeof renderNodes>) =>
+    nodes
+      .filter((node) => node.props['role'] === 'heading')
+      .map((node) => node.props['aria-level']);
+
+  test('EmptyState titles itself with the heading asked for; a plain paragraph by default', () => {
+    expect(headings(renderNodes(EmptyState, { title: 'None', level: 3 }))).toEqual([3]);
+    expect(headings(renderNodes(EmptyState, { title: 'None' }))).toEqual([]);
   });
 
   test('Alert titles itself with the heading asked for; a paragraph by default', () => {
-    const titled = renderNodes(Alert, { title: 'Saved', level: 2, children: 'ok' });
-    expect(byTag(titled, 'h2')).toHaveLength(1);
-    expect(byTag(renderNodes(Alert, { title: 'Saved', children: 'ok' }), 'h2')).toHaveLength(0);
+    expect(headings(renderNodes(Alert, { title: 'Saved', level: 2, children: 'ok' }))).toEqual([2]);
+    expect(headings(renderNodes(Alert, { title: 'Saved', children: 'ok' }))).toEqual([]);
   });
 });

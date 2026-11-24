@@ -6,8 +6,7 @@ import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
 import styles from './EmptyState.module.scss';
-import { type HeadingLevel, headingTag } from './heading-level';
-import { headingNode } from './heading-node';
+import type { HeadingLevel } from './heading-level';
 
 export interface EmptyStateProps {
   /** Already-translated. Falls back to the `ui.empty` catalog key. */
@@ -25,9 +24,7 @@ export interface EmptyStateProps {
 
 export function EmptyState(props: EmptyStateProps): JSX.Element {
   const ui = useUi();
-  // Resolved once, so an off-scale level throws `X_UI_INVALID_VALUE` here, as PageHeader's does.
-  const heading = props.level === undefined ? undefined : headingTag(props.level);
-  const title = (): string => props.title ?? ui.t(UI_KEYS.empty);
+
   return (
     <div class={cx(styles['empty'], props.class)}>
       {props.icon === undefined ? null : (
@@ -35,10 +32,15 @@ export function EmptyState(props: EmptyStateProps): JSX.Element {
           {props.icon}
         </span>
       )}
-      {heading === undefined ? (
-        <p class={styles['title']}>{title()}</p>
+      {/* A heading by role, not by tag: the same outline entry for a screen reader, and no
+          per-tag markup shipped in every island that renders an empty state. */}
+      {props.level === undefined ? (
+        <p class={styles['title']}>{props.title ?? ui.t(UI_KEYS.empty)}</p>
       ) : (
-        headingNode(heading, { class: styles['title'] }, title)
+        // biome-ignore lint/a11y/useSemanticElements: an <h1>-<h6> per level is six templates in every island that renders this; the role is the same outline entry.
+        <p class={styles['title']} role="heading" aria-level={props.level}>
+          {props.title ?? ui.t(UI_KEYS.empty)}
+        </p>
       )}
       {props.description === undefined ? null : (
         <p class={styles['description']}>{props.description}</p>

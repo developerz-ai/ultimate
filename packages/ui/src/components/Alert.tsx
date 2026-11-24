@@ -5,8 +5,7 @@
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
 import styles from './Alert.module.scss';
-import { type HeadingLevel, headingTag } from './heading-level';
-import { headingNode } from './heading-node';
+import type { HeadingLevel } from './heading-level';
 import { IconButton } from './IconButton';
 import type { Tone } from './variants';
 
@@ -27,9 +26,6 @@ export interface AlertProps {
 export function Alert(props: AlertProps): JSX.Element {
   const tone = (): Tone => props.tone ?? 'info';
   const assertive = (): boolean => tone() === 'danger' || tone() === 'warning';
-  // Resolved once, so an off-scale level throws `X_UI_INVALID_VALUE` here, as PageHeader's does.
-  const heading = props.level === undefined ? undefined : headingTag(props.level);
-  const title = (): string => props.title ?? '';
 
   return (
     <div
@@ -43,10 +39,14 @@ export function Alert(props: AlertProps): JSX.Element {
         </span>
       )}
       <div class={styles['content']}>
-        {props.title === undefined ? null : heading === undefined ? (
-          <p class={styles['title']}>{title()}</p>
+        {/* A heading by role, as EmptyState's: an outline entry with no per-tag markup shipped. */}
+        {props.title === undefined ? null : props.level === undefined ? (
+          <p class={styles['title']}>{props.title}</p>
         ) : (
-          headingNode(heading, { class: styles['title'] }, title)
+          // biome-ignore lint/a11y/useSemanticElements: as EmptyState's — the role, not six per-level templates in every island.
+          <p class={styles['title']} role="heading" aria-level={props.level}>
+            {props.title}
+          </p>
         )}
         <div class={styles['body']}>{props.children}</div>
       </div>
