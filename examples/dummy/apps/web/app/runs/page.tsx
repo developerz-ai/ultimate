@@ -220,7 +220,10 @@ export const config = defineRoute({
   // (29,955 → 31,904): a soft visit to a `stream` page reads the answer as it arrives, swaps
   // the shell in at the server's flush mark and fills each hole as its chunk lands, so the page
   // paints before its slowest hole (65 ms p95 against 2,041 ms). Raised 244.3kb → 246.2kb.
-  budget: { js: '246.2kb' },
+  // measured: 252126 B (2026-11-24; x build --target static, against origin/main's 252,080) — why:
+  // +46 B, `AsyncRegion`'s `failed` branch can be the app's own and `EmptyState` / `Alert` take a
+  // heading level, which the run console's states render through. Raised 246.2kb → 246.3kb.
+  budget: { js: '246.3kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),
