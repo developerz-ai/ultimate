@@ -90,18 +90,19 @@ function frontMatter(text: string): {
 function aliasList(value: string): readonly string[] {
   const entries: string[] = [];
   let entry = '';
+  let started = false;
   let quote: string | undefined;
   for (const char of value.replace(/^\[(.*)\]$/, '$1')) {
     if (quote === undefined && char === ',') {
       entries.push(entry);
       entry = '';
+      started = false;
       continue;
     }
     // A quote opens only at an entry's start: `customer's invoice` is one plain alias.
     if (char === quote) quote = undefined;
-    else if (quote === undefined && (char === '"' || char === "'") && entry.trim() === '') {
-      quote = char;
-    }
+    else if (quote === undefined && (char === '"' || char === "'") && !started) quote = char;
+    if (char.trim() !== '') started = true;
     entry += char;
   }
   entries.push(entry);

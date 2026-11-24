@@ -30,8 +30,9 @@ export const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * closes it (brackets, quotes, `*` emphasis, a table's `|`): `docs://ref/errors/old`, `.html`,
  * `%65rrors` and `errors+old` are not `docs://ref/errors`. Less a sentence's end (`LINK_TAIL`).
  */
-const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([^\s()<>[\]{}"'`*|]+)/g;
-const LINK_TAIL = new Set(['.', ',', ';', ':', '!', '?']);
+const SECTIONED_LINK = /(\]\()?docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([^\s()<>[\]{}"'`*|]+)/g;
+/** Trimmed from a link in prose only: a `[text](…)` destination is taken whole. */
+const LINK_TAIL = new Set(['.', ',', ';', ':', '!', '?', '…']);
 
 /** `path` less its trailing sentence punctuation, in one backward pass (no regex backtracking). */
 function withoutLinkTail(path: string): string {
@@ -152,10 +153,10 @@ export const sectionsOf = (recipes: readonly McpRecipe[]): ReadonlySet<string> =
 export function recipeLinks(recipe: McpRecipe, sections: ReadonlySet<string>): readonly string[] {
   const text = `${recipe.body ?? ''}\n${recipe.notes ?? ''}`;
   return [...text.matchAll(SECTIONED_LINK)]
-    .filter((match) => sections.has(match[1] as string))
+    .filter((match) => sections.has(match[2] as string))
     .map((match) => ({
-      section: match[1] as string,
-      path: withoutLinkTail(match[2] as string),
+      section: match[2] as string,
+      path: match[1] === undefined ? withoutLinkTail(match[3] as string) : (match[3] as string),
     }))
     .filter((link) => link.path !== '')
     .map((link) => recipeUri(link.path, link.section));
