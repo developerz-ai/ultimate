@@ -50,7 +50,7 @@ import type { RowsOverride } from './rows-override';
 import { rowsOverrideOf, setRowsOverride } from './rows-override';
 import { composeScope } from './scope-compose';
 import type { SqlSource } from './source';
-import { from } from './source';
+import { boundTo, from } from './source';
 import { parsedOrNothing, parseQueryInput } from './validate';
 
 /**
@@ -150,14 +150,16 @@ export function builtFor(
     const audit = auditFor(target, ctx, options);
     // A source handed out is executed by its caller — `@ultimat3/mcp`'s served tool among them —
     // so an audited read records per `execute()`, and a build that refuses records here.
-    if (audit === null) return admitAndBuild(target, raw, ctx, options, null);
+    // Built as a named actor, it executes as that actor: the actor lives in this frame alone.
+    const bind = options.actor === undefined ? undefined : ctx;
+    if (audit === null) return boundTo(bind, await admitAndBuild(target, raw, ctx, options, null));
     let input: unknown;
     const source = await auditedBuild(audit, async () => {
       const built = await admitAndBuild(target, raw, ctx, options, audit.trace);
       input = built.input;
       return built.source;
     });
-    return { source, input };
+    return boundTo(bind, { source, input });
   });
 }
 
