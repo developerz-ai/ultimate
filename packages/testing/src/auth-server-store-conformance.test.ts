@@ -66,11 +66,12 @@ describe(testName('unit', 'a store that breaks the contract fails conformance'),
     const inner = memoryAuthServerStore();
     const subjectWide: AuthServerStore = {
       ...inner,
+      // Atomic on the asked grant, so only the sibling assertion can catch it.
       revokeLiveGrant: async (id, at) => {
+        const won = (await inner.revokeLiveGrant?.(id, at)) === true;
         const grant = await inner.getGrant(id);
-        if (grant === null || grant.revokedAt !== null) return false;
-        await inner.revokeGrants({ subject: grant.subject }, at);
-        return true;
+        if (won && grant !== null) await inner.revokeGrants({ subject: grant.subject }, at);
+        return won;
       },
     };
     await expect(check('revokeLiveGrant answers true only').run(subjectWide)).rejects.toThrow();

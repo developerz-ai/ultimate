@@ -90,7 +90,9 @@ export interface AuthorizationServer {
   /**
    * The live grants of `subject` (of one client when named), oldest first: not revoked and
    * holding a stored token neither expired nor retired. Not a promise the next refresh succeeds:
-   * a client since denied refresh still lists until those tokens expire. Copies, never the rows. Each `grantId` is what `resolve` answers and `revokeGrant` takes.
+   * a client since denied refresh can stay listed while its grant row and an unexpired, unretired
+   * token remain (`purge` may remove the row sooner). Copies, never the rows. Each `grantId` is
+   * what `resolve` answers and `revokeGrant` takes.
    * Always set by `authorizationServer()`; optional only as `revokeGrant` is.
    */
   grants?(input: {
