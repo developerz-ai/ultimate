@@ -315,5 +315,7 @@
  * one on `SERVING_ROLE_CEILING`. Nothing web-only.
  * raised 1769 → 1770, measured 1770 (2026-11-23, tenant discovery): `mcp/src/tenant-discover.ts`,
  * which calls of a `tenant` MCP server may name no tenant — split from `tenant.ts`, web-only.
+ * raised 1770 → 1771, measured 1771 (2026-11-23, the stricter door): `mcp/src/meta-split-options.ts`,
+ * an app's own fields and `stricter` hook on the `'meta-split'` dispatchers — web-only.
  */
-export const WEB_ROLE_CEILING = 1770;
+export const WEB_ROLE_CEILING = 1771;
