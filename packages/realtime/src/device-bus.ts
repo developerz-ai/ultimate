@@ -7,6 +7,7 @@ import { type Clock, logger, systemClock } from '@ultimat3/core';
 import { DeviceOfflineError, DeviceRequestTimeoutError } from './device-errors';
 import {
   type BusClaim,
+  type BusDisconnect,
   type BusMessage,
   type BusReply,
   type BusRequest,
@@ -23,6 +24,8 @@ export interface DeviceBusHandlers {
   onRequest(request: BusRequest): void;
   /** A newer socket for a device opened on `claim.node`. */
   onClaim(claim: BusClaim): void;
+  /** Close the device's socket, if this node holds it; answer through `reply`. */
+  onDisconnect(order: BusDisconnect): void;
 }
 
 export interface DeviceBusOptions {
@@ -165,6 +168,56 @@ export class DeviceBus {
     frame: JsonValue,
     deadlineMs: number,
   ): Promise<JsonValue> {
+    return await this.#ask(tenant, deviceId, deadlineMs, 'request', (id) => ({
+      kind: 'request',
+      id,
+      from: this.#options.nodeId,
+      tenant,
+      deviceId,
+      deadlineMs,
+      frame,
+    }));
+  }
+
+  /**
+   * The device's socket closed by the node holding it, with `reason`. `true` once the holder
+   * closed it; `false` when no node holds one under this tenant — the same answer for a device of
+   * another tenant. A holder that never answers is `X_DEVICE_REQUEST_TIMEOUT`.
+   */
+  async disconnect(
+    tenant: string,
+    deviceId: string,
+    reason: string,
+    deadlineMs: number,
+  ): Promise<boolean> {
+    try {
+      await this.#ask(tenant, deviceId, deadlineMs, 'disconnect', (id) => ({
+        kind: 'disconnect',
+        id,
+        from: this.#options.nodeId,
+        tenant,
+        deviceId,
+        reason,
+      }));
+      return true;
+    } catch (error) {
+      if (error instanceof DeviceOfflineError) return false;
+      throw error;
+    }
+  }
+
+  /**
+   * One message to the node holding a device, and its reply. Located first, so a device nobody
+   * holds is `X_DEVICE_OFFLINE` at once; a holder that finds no socket says so, and one that never
+   * answers is `X_DEVICE_REQUEST_TIMEOUT` with its pending entry gone.
+   */
+  async #ask(
+    tenant: string,
+    deviceId: string,
+    deadlineMs: number,
+    operation: 'request' | 'disconnect',
+    message: (id: string) => BusRequest | BusDisconnect,
+  ): Promise<JsonValue> {
     const holder = await this.#locate(tenant, deviceId);
     if (holder === null) {
       throw new DeviceOfflineError({
@@ -177,21 +230,19 @@ export class DeviceBus {
     const answer = new Promise<JsonValue>((resolve, reject) => {
       const cancel = this.#options.schedule(() => {
         if (!this.#pending.delete(id)) return;
-        reject(new DeviceRequestTimeoutError({ path: this.#options.path, deviceId, deadlineMs }));
+        reject(
+          new DeviceRequestTimeoutError({
+            path: this.#options.path,
+            deviceId,
+            deadlineMs,
+            operation,
+          }),
+        );
       }, deadlineMs);
       this.#pending.set(id, { deviceId, resolve, reject, cancel });
     });
-    const request: BusRequest = {
-      kind: 'request',
-      id,
-      from: this.#options.nodeId,
-      tenant,
-      deviceId,
-      deadlineMs,
-      frame,
-    };
     try {
-      await this.#options.transport.publish(this.#nodeSubject(holder), JSON.stringify(request));
+      await this.#options.transport.publish(this.#nodeSubject(holder), JSON.stringify(message(id)));
     } catch (error) {
       const pending = this.#pending.get(id);
       this.#pending.delete(id);
@@ -234,7 +285,11 @@ export class DeviceBus {
       return;
     }
     if (message.kind === 'request') handlers?.onRequest(message);
-    else if (message.kind === 'claim') handlers?.onClaim(message);
+    // This node's own claim: `open` already closed the socket it replaced, and a claim that lands
+    // after a newer socket opened here would close that one instead.
+    else if (message.kind === 'claim') {
+      if (message.node !== this.#options.nodeId) handlers?.onClaim(message);
+    } else if (message.kind === 'disconnect') handlers?.onDisconnect(message);
     else {
       const pending = this.#pending.get(message.id);
       if (pending !== undefined) this.#settle(message.id, pending, message);
