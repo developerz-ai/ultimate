@@ -196,8 +196,8 @@ export const config = defineRoute({
   // (29,955 → 31,904): a soft visit to a `stream` page reads the answer as it arrives, swaps
   // the shell in at the server's flush mark and fills each hole as its chunk lands, so the page
   // paints before its slowest hole (65 ms p95 against 2,041 ms). Raised 107.8kb → 109.7kb.
-  // measured: 113080 B (2026-11-24; x build --target static) — why: the client router +823 B
-  // (31,904 → 32,727): a streamed soft visit scrolls to a fragment its hole brings, holds its
+  // measured: 113091 B (2026-11-24; x build --target static) — why: the client router +834 B
+  // (31,904 → 32,738): a streamed soft visit scrolls to a fragment its hole brings, holds its
   // recovery while the next visit is on its way, reloads a fragment URL it must load for real,
   // and drops keep-alive frames as they arrive. Raised 109.7kb → 110.5kb.
   budget: { js: '110.5kb' },

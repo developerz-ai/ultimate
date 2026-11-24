@@ -5,6 +5,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { click, currentRouter, page, stopRouter, tab } from './navigation-controller-fixture';
 import { type FakeDocument, htmlAnswer, parsed, settle } from './navigation-dom-fixture';
+import { NAVIGATED_EVENT } from './navigation-rules';
 import { STREAM_FLUSH_MARK } from './stream-scripts';
 
 afterEach(stopRouter);
@@ -140,4 +141,24 @@ test('broken after the visitor moved to another fragment: the page asked for is 
     3,
     ['reload'],
   ]);
+});
+
+test('a streamed POST for another principal, left by a GET its navigated listener starts: never filled', async () => {
+  const s = streamed('page:Other', page('Other', { scope: 'member:2' }));
+  const { win, doc } = tab({ '/send': () => s.response });
+  // The tab is no longer trusted to swap: the GET is the browser's, and the POST's holes go with it.
+  doc.addEventListener(NAVIGATED_EVENT, () => void currentRouter()?.navigate('https://app.test/b'));
+  await currentRouter()?.navigate('https://app.test/send', {
+    method: 'POST',
+    body: new FormData(),
+  });
+  await settle();
+  expect([doc.title, win.assigned, s.seen.cancelled]).toEqual([
+    'Other',
+    ['https://app.test/b'],
+    true,
+  ]);
+  s.breakIt();
+  await settle();
+  expect(win.assigned).toEqual(['https://app.test/b']);
 });

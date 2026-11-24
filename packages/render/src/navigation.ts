@@ -166,7 +166,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   };
 
   // Back/Forward put `url` in the address bar already: `assign` of it would only scroll (loadForReal).
+  // The visit in flight goes too: a POST whose `ultimate:navigated` listener started this never fills.
   const loadInstead = (url: string): void => {
+    inflight?.abort();
     abandon();
     loadForReal(win, url);
   };

@@ -116,11 +116,11 @@ export const config = defineRoute({
   // reconciled to `value`, the native mixed state, per-list memos) are 952 B of it. The selection
   // stays in a board that never sets it: its no-script boxes render in the same synchronous pass,
   // and the barrel is the one import path. Raised 113.1kb → 120.6kb.
-  // measured: 124308 B (2026-11-24; x build --target static) — why: the client router +823 B
-  // (31,904 → 32,727): a streamed soft visit scrolls to a fragment its hole brings, holds its
+  // measured: 124319 B (2026-11-24; x build --target static) — why: the client router +834 B
+  // (31,904 → 32,738): a streamed soft visit scrolls to a fragment its hole brings, holds its
   // recovery while the next visit is on its way, reloads a fragment URL it must load for real,
-  // and drops keep-alive frames as they arrive. Raised 120.6kb → 121.4kb.
-  budget: { js: '121.4kb' },
+  // and drops keep-alive frames as they arrive. Raised 120.6kb → 121.5kb.
+  budget: { js: '121.5kb' },
   load: () => memberQueries.orgPosts({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.board.metaTitle'), robots: { index: false } }),
 });
