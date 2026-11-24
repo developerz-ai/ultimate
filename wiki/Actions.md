@@ -134,19 +134,27 @@ export const callTool = action({
 Work measured after the fact — tokens a model spent, bytes exported, rows synced — is drawn with `drawMeter(ctx, { meter, period, amount, limit, key })` from `@ultimat3/action`, inside the handler that measured it. Same counters, same store, same caller as `meter:`. `As of 2026-11`.
 
 ```ts
-import { drawMeter } from '@ultimat3/action';
+import { action, drawMeter, t } from '@ultimat3/action';
+import { allow } from '@ultimat3/policy';
 
 const PLAN_TOKENS = new Map([['org-free', 100_000]]);
 
-// inside a handler, once the run's usage is known
-const drawn = await drawMeter(ctx, {
-  meter: 'tokens',
-  period: 'day',
-  amount: usage.totalTokens,
-  limit: ({ ctx }) => PLAN_TOKENS.get(ctx.actor.orgId ?? '') ?? 0,
-  key: run.id,
+export const recordRun = action({
+  input: t.object({ runId: t.string, totalTokens: t.number.int() }),
+  output: t.object({ used: t.number.int(), replayed: t.boolean }),
+  policy: allow(),
+  handle: async ({ input, ctx }) => {
+    // once the run's usage is known
+    const drawn = await drawMeter(ctx, {
+      meter: 'tokens',
+      period: 'day',
+      amount: input.totalTokens,
+      limit: ({ ctx }) => PLAN_TOKENS.get(ctx.actor.orgId ?? '') ?? 0,
+      key: input.runId,
+    });
+    return { used: drawn.used, replayed: drawn.replayed }; // also: limit, resetsAt
+  },
 });
-// drawn: { used, limit, replayed, resetsAt }
 ```
 
 | Use | When |
