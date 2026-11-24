@@ -11,7 +11,7 @@ import type { KnownPermission } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { McpCatalogUnresolvedError } from './catalog-errors';
 import { McpToolUnsafeError } from './errors';
-import { toolFrom } from './from-action';
+import { throughDoor, toolFrom } from './from-action';
 import type { AnyMcpTool, McpDoor, McpToolAnnotations } from './registry';
 import { runtimeInputSchema } from './runtime-schema';
 import type { JsonSchema } from './wire';
@@ -97,7 +97,7 @@ export function runtimeTool(def: RuntimeToolDefinition): McpRuntimeTool {
         const ctx = useContext();
         guardActionBeforeInput(policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
       }),
-    run: ({ input, actor, door }) =>
+    ...throughDoor(({ input, actor, door }) =>
       // The caller is the actor for the whole call, exactly as `app-tool.ts` runs one.
       asCallerContext(actor, async () => {
         const ctx = useContext();
@@ -106,6 +106,7 @@ export function runtimeTool(def: RuntimeToolDefinition): McpRuntimeTool {
         guardAction(policy, { actor: actorOf(ctx), input: args, ctx, action: name }, 'mcp');
         return def.run({ input: args, ctx, ...(door === undefined ? {} : { door }) });
       }),
+    ),
   });
   const handle: McpRuntimeTool = Object.freeze({ name, scope: def.scope });
   BUILT.set(handle, tool);
