@@ -87,12 +87,6 @@ interface DataTableBaseProps<Row> {
   /** What a table narrower than `sm` becomes. Default `cards`. */
   narrow?: DataTableNarrow | undefined;
   density?: 'comfortable' | 'compact' | undefined;
-  /**
-   * Row selection: a native checkbox per row posting its `rowKey` under `selection.name`, a
-   * tick-all box in the header (callback mode), and a `BulkBar` holding `selection.actions` under
-   * the table. Set for the table's life: a table does not grow a column mid-render.
-   */
-  selection?: ListSelection<Row> | undefined;
   /** Placeholder row count while loading. Match the usual page size. */
   skeletonRows?: number | undefined;
   class?: string | undefined;
@@ -106,6 +100,12 @@ export interface DataTableCallbackProps<Row> extends DataTableBaseProps<Row> {
   onSortChange?: ((sort: SortState | undefined) => void) | undefined;
   /** Back to the first page: the pager's "First" button. Pass it only past the first page. */
   onFirst?: (() => void) | undefined;
+  /**
+   * Row selection — declared on each mode, the same in both: a native checkbox per row posting its `rowKey` under `selection.name`, a
+   * tick-all box in the header (callback mode), and a `BulkBar` holding `selection.actions` under
+   * the table. Set for the table's life: a table does not grow a column mid-render.
+   */
+  selection?: ListSelection<Row> | undefined;
   hrefFor?: undefined;
   sortHrefFor?: undefined;
   firstHref?: undefined;
@@ -122,6 +122,8 @@ export interface DataTableLinkProps<Row> extends DataTableBaseProps<Row> {
   sortHrefFor?: ((sort: SortState | undefined) => string) | undefined;
   /** The first page's URL, for the pager's "First" anchor — `listUrl().firstHref`. */
   firstHref?: string | undefined;
+  /** Row selection, the same in both modes: `ListSelection`. */
+  selection?: ListSelection<Row> | undefined;
   onCursor?: undefined;
   onSortChange?: undefined;
   onFirst?: undefined;

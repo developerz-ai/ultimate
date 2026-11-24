@@ -389,12 +389,12 @@ Data-driven table: sortable headers, cursor pagination, and the four states a re
 | `stickyFirstColumn` | `boolean` | — | Pins the first column while the table scrolls sideways. |
 | `narrow` | `DataTableNarrow` | — | What a table narrower than `sm` becomes. Default `cards`. |
 | `density` | `'comfortable' \| 'compact'` | — |  |
-| `selection` | `ListSelection<Row>` | — | Row selection: a native checkbox per row posting its `rowKey` under `selection.name`, a tick-all box in the header (callback mode), and a `BulkBar` holding `selection.actions` under the table. Set for the table's life: a table does not grow a column mid-render. |
 | `skeletonRows` | `number` | — | Placeholder row count while loading. Match the usual page size. |
 | `class` | `string` | — |  |
 | `onCursor` | `((cursor: string, direction: 'next' \| 'prev') => void)` | — | Callback paging. Never beside `hrefFor` — the type refuses the pair. |
 | `onSortChange` | `((sort: SortState \| undefined) => void)` | — | Callback sorting. Never beside `sortHrefFor` — the type refuses the pair. |
 | `onFirst` | `(() => void)` | — | Back to the first page: the pager's "First" button. Pass it only past the first page. |
+| `selection` | `ListSelection<Row>` | — | Row selection — declared on each mode, the same in both: a native checkbox per row posting its `rowKey` under `selection.name`, a tick-all box in the header (callback mode), and a `BulkBar` holding `selection.actions` under the table. Set for the table's life: a table does not grow a column mid-render. |
 | `hrefFor` | `(cursor: string, direction: 'next' \| 'prev') => string` | — | Link paging: the URL of the page a cursor names, handed to `<Pagination hrefFor>`. |
 | `sortHrefFor` | `((sort: SortState \| undefined) => string)` | — | Link sorting: the URL of the list under the NEXT sort state of a header's cycle (`undefined` is "unsorted"). Absent, a sortable header is plain text — never a button with no handler. |
 | `firstHref` | `string` | — | The first page's URL, for the pager's "First" anchor — `listUrl().firstHref`. |
