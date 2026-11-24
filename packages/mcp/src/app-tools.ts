@@ -33,7 +33,7 @@ import type { ListedPrimitive } from './projectable';
 import { asProjectable } from './projectable';
 import type { McpRecipe } from './recipes';
 import { withRecipes } from './recipes-surface';
-import type { ExtraRecipes } from './recipes-tool';
+import type { DocsToolOptions, ExtraRecipes } from './recipes-tool';
 import type { AnyMcpTool } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { toPrompts } from './resources';
@@ -72,10 +72,11 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
   /** App-specific readable documents (a catalog export, a report). */
   readonly resources?: readonly McpResource[];
   /**
-   * How-to recipes, each served as `docs://recipes/<name>` and through a read-only `docs` tool.
-   * Every step names a tool of THIS server and its example must pass that tool's input — checked
-   * here, so a renamed tool fails the boot instead of sending an agent to nothing. With recipes
-   * declared, `resources:` may not hold a `docs://recipes/` URI (`X_MCP_RECIPE_URI_RESERVED`).
+   * How-to recipes, each served as `docs://<section>/<name>` (section `recipes` unless set) and
+   * through a read-only `docs` tool. Every step names a tool of THIS server and its example must
+   * pass that tool's input — checked here, so a renamed tool fails the boot instead of sending an
+   * agent to nothing. With recipes declared, `resources:` may not hold a URI under a section they
+   * use, `docs://recipes/` always included (`X_MCP_RECIPE_URI_RESERVED`).
    */
   readonly recipes?: readonly McpRecipe[];
   /**
@@ -84,6 +85,11 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * boot (they do not exist yet): one naming a tool the caller cannot call is simply not shown.
    */
   readonly extraRecipes?: ExtraRecipes;
+  /**
+   * The `docs` tool's presentation: `description` replaces its default one, `index: 'map'` makes
+   * `docs({})` answer a text map grouped by section instead of JSON. Only with recipes.
+   */
+  readonly docsTool?: DocsToolOptions;
   /** Prompts the app ships: a path to a versioned artifact, or the full descriptor. */
   readonly prompts?: readonly (string | McpPrompt)[];
   /**
@@ -316,7 +322,13 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     tools: projected,
     resources,
     resourceSources,
-  } = withRecipes(confirmed, input.resources ?? [], input.recipes, input.extraRecipes);
+  } = withRecipes(
+    confirmed,
+    input.resources ?? [],
+    input.recipes,
+    input.extraRecipes,
+    input.docsTool,
+  );
 
   const config: McpServerInput = {
     tools: projected,

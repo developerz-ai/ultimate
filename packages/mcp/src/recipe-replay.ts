@@ -1,6 +1,6 @@
 /**
  * `replayRecipes()` — a recipe's contract test: every step's example CALLED through the real server
- * as `caller` (placeholders filled), every `docs://recipes/` link read. No such tool, refused
+ * as `caller` (placeholders filled), every recipe link read. No such tool, refused
  * arguments, a refusing policy or a dangling link fail it; a tool's own refusal is the tool working.
  */
 
@@ -8,7 +8,7 @@ import { isJsonObject, renderCauseValue } from '@ultimat3/core';
 import { McpRecipeExampleInvalidError, McpRecipeLinkDanglingError } from './recipe-errors';
 import { fillPlaceholders } from './recipe-markdown';
 import type { McpRecipe } from './recipes';
-import { recipeLinks, recipeUri } from './recipes';
+import { recipeKey, recipeLinks, sectionsOf } from './recipes';
 import type { McpCaller } from './registry';
 import type { McpServer } from './server';
 
@@ -47,6 +47,7 @@ export async function replayRecipes(
   const links: string[] = [];
   const failed: string[] = [];
   const dangling: string[] = [];
+  const sections = sectionsOf(recipes);
   let id = 0;
   const rpc = async (method: string, params: Record<string, unknown>) => {
     id += 1;
@@ -62,8 +63,7 @@ export async function replayRecipes(
       const reason = unreached(answer);
       if (reason !== undefined) failed.push(`${at}: ${reason}`);
     }
-    for (const name of recipeLinks(recipe)) {
-      const uri = recipeUri(name);
+    for (const uri of recipeLinks(recipe, sections)) {
       const answer = await rpc('resources/read', { uri });
       links.push(uri);
       if (answer === null || 'error' in answer) {
@@ -75,7 +75,7 @@ export async function replayRecipes(
   if (dangling.length > 0) {
     throw new McpRecipeLinkDanglingError({
       offenders: dangling,
-      recipes: recipes.map((recipe) => recipe.name).sort(),
+      recipes: recipes.map(recipeKey).sort(),
     });
   }
   return { calls, links };
