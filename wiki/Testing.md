@@ -454,7 +454,10 @@ unitTest('the dashboard counts the posts of the org that is looking', async () =
 | `view.data` · `view.meta` | what `load` resolved, and what `meta` answered for that same object |
 | `view.islands` | the islands the render emitted. Empty on a page that ships no JavaScript |
 
-`actor` runs `load` and the page inside a request context holding that actor. `renderView` refuses
+`actor` runs `load` and the page inside a request context holding that actor. A `url` whose first
+segment is a routed locale (`https://example.test/es/precios`) renders `load`, `meta` and the page
+in that locale, as the router reads the prefix. Unprefixed and with no `actor`, no request context is
+opened: standalone that is the default locale, inside your own `runWithContext` it is that context's. `renderView` refuses
 a component that renders an `island()` — its hydration timing is a route's. `As of 2026-10`.
 
 ## Asserting on what an element carries

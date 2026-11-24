@@ -4,6 +4,7 @@
 
 import type { Actor } from '@ultimat3/core';
 import { assert, ctxOf, runWithContext } from '@ultimat3/core';
+import { splitLocalePrefix } from '@ultimat3/i18n';
 import type { AssetPath, IslandDirective, RouteConfig, RouteParams } from '@ultimat3/render';
 import { decodeHtmlEntities } from './html-entities';
 
@@ -50,7 +51,13 @@ export interface RouteModule<TData> {
 }
 
 export interface RouteRequest {
-  /** Absolute, as a request's is. Its search string becomes the page's `query`. */
+  /**
+   * Absolute, as a request's is. Its search string becomes the page's `query`, and a leading
+   * routed locale segment (`https://x/es/precios`, `es` among the app's locales) is the locale
+   * `load`, `meta` and the page render in, as the router reads it. Unprefixed, and with no
+   * `actor`, the render opens no request context: standalone it is the default locale, and inside
+   * a caller's own `runWithContext` it is that context's.
+   */
   readonly url?: string;
   readonly params?: RouteParams;
   /** Who is asking. `load` and the page run inside a request context holding this actor. */
@@ -157,6 +164,16 @@ export async function renderRoute<TData>(
     return { ...viewOf(html), data, meta, islands: islands.directives, favicon };
   };
 
-  if (request.actor === undefined) return run();
-  return runWithContext(ctxOf({ actor: request.actor }), run);
+  // The locale a request for this URL would render in: a leading routed `/<locale>/` segment, as
+  // the router splits it. Unprefixed, the default — which `currentLocale()` answers outside a
+  // context too, so neither a locale nor an actor means no request context at all.
+  const locale = splitLocalePrefix(new URL(url).pathname)?.locale;
+  if (request.actor === undefined && locale === undefined) return run();
+  return runWithContext(
+    ctxOf({
+      ...(request.actor === undefined ? {} : { actor: request.actor }),
+      ...(locale === undefined ? {} : { locale }),
+    }),
+    run,
+  );
 }
