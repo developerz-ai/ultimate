@@ -144,8 +144,7 @@ describeLive('live · pg connection session pins', () => {
   // The goodbye `stop()` now reads (`awaitCopyEnd`): a real walsender answers a CopyDone with
   // CopyDone, CommandComplete and ReadyForQuery. Closed over them unread, the socket was reset and
   // the server logged `Connection reset by peer` on every replicator shutdown.
-  const walTest = walReady ? test : test.skip;
-  walTest(
+  test.skipIf(!walReady)(
     'a walsender answers CopyDone through ReadyForQuery, so close() leaves nothing unread',
     async () => {
       const target = parsePgUrl(url ?? '');
