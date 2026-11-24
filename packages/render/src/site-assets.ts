@@ -6,6 +6,7 @@
 // ships no sync stat or sync read; `join`/`relative` because Bun ships no path API either.
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path'; // why: Bun ships no path API.
+import { renderFixShellArg } from '@ultimat3/core';
 import { ASSET_DIR, type AssetExtension, type AssetPath, assetPathProblem } from './asset';
 import { AssetMissingError } from './errors';
 import { contentHash } from './render-static';
@@ -79,7 +80,7 @@ export interface SiteAssetTable {
 const missing = (path: string, cause: string): AssetMissingError =>
   new AssetMissingError(
     `asset(${JSON.stringify(path)}): ${cause}`,
-    `x build --target static --json   # after adding the file at ${SITE_ASSETS_SOURCE}/${path.slice(ASSET_DIR.length + 1)}, or correcting the path passed to asset()`,
+    `ls ${renderFixShellArg(SITE_ASSETS_SOURCE, '<assets>')}   # add ${SITE_ASSETS_SOURCE}/${path.slice(ASSET_DIR.length + 1)} there, or correct the path passed to asset(); then x build --target static --json`,
   );
 
 /**
