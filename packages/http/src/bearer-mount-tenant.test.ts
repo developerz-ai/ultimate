@@ -6,7 +6,11 @@ import { describe, expect, test } from 'bun:test';
 import { type Actor, agentActor, successorLink, successorPathOf, userActor } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import { type BearerMountRateLimit, bearerMount } from './bearer-mount';
-import { type BearerMountTenant, isTenantValue } from './bearer-mount-tenant';
+import {
+  type BearerMountTenant,
+  type BearerTenantEntry,
+  isTenantValue,
+} from './bearer-mount-tenant';
 import { defineHttpConfig } from './config';
 import { useRequestContext } from './context';
 import { bearerMountInvalid } from './errors';
@@ -335,6 +339,19 @@ describe('bearerMount({ tenant })', () => {
       expect(refused.status).toBe(500);
       expect(refused.body['code']).toBe('X_BEARER_TENANT_LIST_INVALID');
       expect(JSON.stringify(refused.body)).not.toContain('org_a');
+    }
+    // A hole (`new Array(1)`) and an entry that is no object are refused, never listed as `null`.
+    const unlisted: readonly (readonly BearerTenantEntry[])[] = [
+      new Array<BearerTenantEntry>(1),
+      [{ value: 'org_a' }, null as unknown as BearerTenantEntry],
+    ];
+    for (const entries of unlisted) {
+      const refused = await answer(
+        pipelineFor(tenant({ list: () => entries })),
+        call('GET', '/v1/tenants'),
+      );
+      expect(refused.status).toBe(500);
+      expect(refused.body['code']).toBe('X_BEARER_TENANT_LIST_INVALID');
     }
     // The cap counts characters, so 256 astral ones are listed.
     const astral = '\u{1F600}'.repeat(256);

@@ -156,16 +156,24 @@ export async function tenantListing(
   person: Actor,
 ): Promise<{ readonly tenants: readonly BearerTenantEntry[] }> {
   const listed = await tenant.list({ person });
-  const unusable = listed.filter((entry) => !isTenantValue(entry.value)).length;
+  // One indexed pass: `filter` and `map` skip a sparse array's holes, so `new Array(1)` was listed
+  // as `[null]`. A hole, a non-object entry and an unsendable value are all refused the same way.
+  const tenants: BearerTenantEntry[] = [];
+  let unusable = 0;
+  for (let index = 0; index < listed.length; index += 1) {
+    const entry: unknown = listed[index];
+    const value =
+      typeof entry === 'object' && entry !== null ? (entry as BearerTenantEntry).value : undefined;
+    if (!isTenantValue(value)) unusable += 1;
+    else {
+      const { name } = entry as BearerTenantEntry;
+      tenants.push({ value, ...(name === undefined ? {} : { name }) });
+    }
+  }
   if (unusable > 0) {
     throw bearerTenantListInvalid(
-      `tenant.list answered ${unusable} value(s) that are not well-formed strings of 1 to ${MAX_TENANT_VALUE} characters`,
+      `tenant.list answered ${unusable} entr(ies) with no well-formed value of 1 to ${MAX_TENANT_VALUE} characters`,
     );
   }
-  return {
-    tenants: listed.map((entry) => ({
-      value: entry.value,
-      ...(entry.name === undefined ? {} : { name: entry.name }),
-    })),
-  };
+  return { tenants };
 }
