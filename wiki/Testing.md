@@ -454,7 +454,9 @@ unitTest('the dashboard counts the posts of the org that is looking', async () =
 | `view.data` · `view.meta` | what `load` resolved, and what `meta` answered for that same object |
 | `view.islands` | the islands the render emitted. Empty on a page that ships no JavaScript |
 
-`actor` runs `load` and the page inside a request context holding that actor. `renderView` refuses
+`actor` runs `load` and the page inside a request context holding that actor. A `url` whose first
+segment is a routed locale (`https://example.test/es/precios`) renders `load`, `meta` and the page
+in that locale, as the router reads the prefix; unprefixed, the default. `renderView` refuses
 a component that renders an `island()` — its hydration timing is a route's. `As of 2026-10`.
 
 ## Asserting on what an element carries

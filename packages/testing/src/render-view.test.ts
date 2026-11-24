@@ -1,8 +1,9 @@
 // `renderView` / `renderRoute`: the markup and the visible text a test asserts on, and — for a
 // route — that `load`, `meta` and the page are one resolution under one actor.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { tryUseContext, userActor } from '@ultimat3/core';
+import { configureLocales, currentLocale, localeConfig } from '@ultimat3/i18n';
 import { defineRoute, h, island, setAssetResolver } from '@ultimat3/render';
 import { renderRoute, renderView } from './render-view';
 
@@ -176,6 +177,40 @@ describe('renderRoute', () => {
     const refused = await renderRoute({ config }).catch((error: unknown) => error);
     expect((refused as { code?: string }).code).toBe('X_INVARIANT');
     expect((refused as { cause?: string }).cause).toContain('exports no page component');
+  });
+});
+
+describe('renderRoute · the locale prefix', () => {
+  // The locale config is process-global: put back what this file found.
+  const before = localeConfig();
+  beforeEach(() => configureLocales({ supported: ['en', 'es'], fallback: 'en' }));
+  afterEach(() => configureLocales(before));
+
+  const config = defineRoute({
+    render: 'ssr',
+    offline: 'runtime',
+    meta: ({ locale }) => ({ title: `meta in ${locale}` }),
+  });
+  const Page = (): unknown => h('p', null, `page in ${currentLocale()}`);
+
+  test('a routed `/<locale>/` prefix renders the page and its meta in that locale', async () => {
+    const view = await renderRoute({ config, Page }, { url: 'https://example.test/es/' });
+    expect(view.text).toBe('page in es');
+    expect(view.meta.title).toBe('meta in es');
+  });
+
+  test('the prefix and the actor share one request context', async () => {
+    const actor = userActor({ id: 'member-7', orgId: 'org-1' });
+    const Who = (): unknown => h('p', null, `${tryUseContext()?.actor.id} ${currentLocale()}`);
+    const view = await renderRoute({ config, Who }, { url: 'https://example.test/es/a', actor });
+    expect(view.text).toBe('member-7 es');
+  });
+
+  test('an unprefixed URL, or a segment that is no routed locale, is the default', async () => {
+    const plain = await renderRoute({ config, Page }, { url: 'https://example.test/precios' });
+    expect(plain.text).toBe('page in en');
+    const unrouted = await renderRoute({ config, Page }, { url: 'https://example.test/fr/' });
+    expect(unrouted.text).toBe('page in en');
   });
 });
 
