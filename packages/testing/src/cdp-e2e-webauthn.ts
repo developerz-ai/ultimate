@@ -32,7 +32,7 @@ export interface VirtualAuthenticator {
   credentials(): Promise<readonly VirtualCredential[]>;
   /** The person's verification from here on: `false` makes the next ceremony fail UV. */
   setUserVerified(verified: boolean): Promise<void>;
-  /** Detach it: the tab answers no ceremony again until another is added. */
+  /** Detaches this authenticator only: another added to the same tab keeps answering ceremonies. */
   remove(): Promise<void>;
 }
 

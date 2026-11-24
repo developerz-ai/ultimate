@@ -413,7 +413,7 @@ await invitee.close();
 
 | Call | Is |
 |---|---|
-| `addVirtualAuthenticator(tab, { transport?, residentKey?, userVerified? })` | CDP `WebAuthn` on that tab: `{ id, credentials(), setUserVerified(verified), remove() }`. Per tab, presence simulated; `userVerified: false` makes every user-verification fail. The rp id is the page's host: serve on `localhost`, never an IP |
+| `addVirtualAuthenticator(tab, { transport?, residentKey?, userVerified? })` | CDP `WebAuthn` on that tab: `{ id, credentials(), setUserVerified(verified), remove() }`. Per tab, presence simulated; `userVerified: false` makes every user-verification fail. The rp id the ceremony names must be the page's host or a parent domain of it (`login.example.com` may register for `example.com`) and never an IP; locally, serve on `localhost`. `remove()` detaches that authenticator only |
 | `newBrowserContext(session)` | `Target.createBrowserContext`: `{ id, newTab(), close() }`. Its tabs are attached, configured (offline switch, init scripts, `Accept-Language`) and audited as `session.newTab()`'s are; `close()` disposes every tab in it |
 | a tab or session the harness did not build | `X_TEST_FIXTURE_UNAVAILABLE`, naming what it needs |
 
