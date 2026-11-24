@@ -29,7 +29,7 @@ export const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * A `docs://<section>/` link and its whole path — `docs://ref/errors/old` and
  * `docs://ref/errors.html` are not `docs://ref/errors` — less the full stop that ends a sentence.
  */
-const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([A-Za-z0-9](?:[\w./~-]*[\w/~-])?)/g;
+const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([A-Za-z0-9](?:[\w./~%-]*[\w/~%-])?)/g;
 /** The section a `docs://<section>/…` URI sits in. */
 const SECTION_OF_URI = /^docs:\/\/([^/]*)\//;
 

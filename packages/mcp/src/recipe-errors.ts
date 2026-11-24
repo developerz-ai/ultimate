@@ -79,7 +79,7 @@ export class McpRecipeLinkDanglingError extends UltimateError {
         ? `a recipe links to a docs://<section>/ URI its replay caller could not read — no recipe serves it, or one does that this caller cannot see: ${input.offenders.join('; ')} (replayed: ${input.recipes.join(', ') || 'none'})`
         : `a recipe links to a docs://<section>/ URI, in a section this server's recipes serve, that no recipe serves: ${input.offenders.join('; ')} (served: ${input.recipes.join(', ') || 'none'})`,
       fix: unread
-        ? 'replayRecipes(server, recipes, { caller: <one who can follow every linked recipe> })   # or correct the link in the recipe the cause names'
+        ? 'replayRecipes(server, recipes, { ...options, caller: <one who can follow every linked recipe> })   # keep sections and placeholders; or correct the link in the recipe the cause names'
         : 'recipes: [...(await markdownRecipes({ dir })), <the missing recipe>]   # or correct the link in the recipe the cause names',
       meta: { offenders: [...input.offenders] },
     });

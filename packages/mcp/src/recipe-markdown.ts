@@ -57,9 +57,17 @@ export function recipeFromMarkdown(name: string, text: string, section?: string)
     title: fields.get('title') ?? heading ?? name,
     description: fields.get('description') ?? paragraph ?? '',
     steps: fencedCalls(name, body),
-    // Whole blank lines only: a first line's indentation is Markdown (an indented code block).
-    body: body.trim() === '' ? '' : `${body.replace(/^(?:[ \t]*\n)+/, '').trimEnd()}\n`,
+    body: withoutOuterBlankLines(body),
   };
+}
+
+/** Whole blank lines only: a content line's own spaces are Markdown (an indented code block). */
+function withoutOuterBlankLines(body: string): string {
+  const lines = body.split('\n');
+  const blank = (line: string | undefined) => line !== undefined && line.trim() === '';
+  while (blank(lines[0])) lines.shift();
+  while (blank(lines.at(-1))) lines.pop();
+  return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
 }
 
 function frontMatter(text: string): {
@@ -88,8 +96,11 @@ function aliasList(value: string): readonly string[] {
       entry = '';
       continue;
     }
+    // A quote opens only at an entry's start: `customer's invoice` is one plain alias.
     if (char === quote) quote = undefined;
-    else if (quote === undefined && (char === '"' || char === "'")) quote = char;
+    else if (quote === undefined && (char === '"' || char === "'") && entry.trim() === '') {
+      quote = char;
+    }
     entry += char;
   }
   entries.push(entry);

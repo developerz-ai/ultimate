@@ -130,7 +130,7 @@ const row = (entry: SourcedRecipe) => ({
 
 /** A line-per-entry answer: a title's own line breaks would split its entry. */
 const oneLine = (title: string): string =>
-  title.replace(/\s+/g, (space) => (/[\r\n]/.test(space) ? ' ' : space));
+  title.replace(/\s+/g, (space) => (/[\r\n\u2028\u2029]/.test(space) ? ' ' : space));
 
 const yours = (entry: SourcedRecipe): string => (entry.source === 'caller' ? ' (yours)' : '');
 
