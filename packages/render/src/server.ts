@@ -99,4 +99,14 @@ export {
 } from './render-stream';
 // ---- the Sass compile cache: where it lives, and how often this process ran Sass instead --------
 export { sassCompilations, setSassCacheDir } from './sass-cache';
+export type { SiteAsset, SiteAssetTable } from './site-assets';
+export {
+  ASSET_CONTENT_TYPES,
+  createSiteAssetTable,
+  hashedAssetUrl,
+  parseHashedAssetUrl,
+  SITE_ASSET_BASE_PATH,
+  SITE_ASSETS_SOURCE,
+  siteAssetTable,
+} from './site-assets';
 export { serverTsxBuildPlugin } from './tsx-build-plugin';

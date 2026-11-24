@@ -76,6 +76,7 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `matchers.ts` | `toBeUltimateError` `toDenyPolicy` `toEmitSteps` `toMatchOpenApi` `toBeWithinBudget` `toRejectInput` `toAcceptInput` `toEqualRow` `toBeVisible` |
 | `matchers-steps.ts` | `recordSteps` — behind `toEmitSteps`: the job's real arguments (a worker `ctx`, ambient too, `attempt` 1, `progress`, `runId`), a never-aborted signal per step body; `waitForEvent` is a recorded step that times out (`undefined`, or `X_JOB_TIMEOUT` when `required`); `sleep` returns at once and is no step |
 | `matcher-row.ts` | `toEqualRow` — equality over every OWN property, so a `.sealed()` column (not enumerable on a repository row) is compared; a server-only difference is named, never printed |
+| `app-assets.ts` | the app's site asset table installed into `asset()` (Sass `asset()` included) when the run's root is an app, again at every file boundary — installed by the preload, exported from nowhere |
 | `test-seal-key.ts` | the throwaway master key a test process seals under when the app has none — installed by the preload, handed to the app `startE2eApp` spawns, exported from nowhere |
 | `local-tx.ts` | `memoryLocalTx()` — the client store a mutator's `local()` half writes into under test, with the record store's own rules |
 | `render-view.ts` | `renderView()` / `renderRoute()` — what the server renders, for a unit test: one component, or a whole route module with its `load`, `meta` and islands |
