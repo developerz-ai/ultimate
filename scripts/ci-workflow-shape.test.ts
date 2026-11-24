@@ -223,6 +223,20 @@ describe('unit · ci.yml · every reader of a job name still finds it', () => {
         name,
       ).toHaveLength(1);
     }
+    // Before the tests that read it: after them, the parallel workers would each fetch it again
+    // and race on `.git/shallow.lock` (run 42941773147).
+    const runners: Readonly<Record<string, string>> = {
+      flaky: 'bun test --parallel --rerun-each',
+      'release-rehearsal': 'scripts/release-rehearse.ts --suites',
+      gate: 'scripts/verify.ts --only',
+      packages: 'scripts/coverage-gate.ts --all',
+    };
+    for (const [name, runner] of Object.entries(runners)) {
+      const steps = job(name).steps ?? [];
+      const fetched = steps.findIndex((step) => text(step.uses) === FETCH_BASE);
+      const tested = steps.findIndex((step) => text(step.run).includes(runner));
+      expect([name, tested > -1, fetched > -1 && fetched < tested]).toEqual([name, true, true]);
+    }
     const action = await Bun.file(`${repoRoot()}/.github/actions/fetch-base/action.yml`).text();
     expect(action).toContain('if [ "$GITHUB_EVENT_NAME" = pull_request ]; then');
     expect(action).toContain(`base="$(git cat-file -p HEAD | sed -n 's/^parent //p' | head -1)"`);
