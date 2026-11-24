@@ -90,9 +90,8 @@ export function guardSources(
       const source = await textOf(path);
       // Imported here, not at the top: Sass loads on the first compile, and a gate run whose
       // guards compile nothing must not pay for the compiler (`sass-lazy.test.ts`).
-      const { compileStylesheet } = await import('@ultimat3/render/server');
+      const { compileStylesheet, siteAssetTable } = await import('@ultimat3/render/server');
       const { setAssetResolver } = await import('@ultimat3/render');
-      const { siteAssetTable } = await import('./site-assets');
       // A sheet's `asset()` resolves through the table `loadApp` installs for the build — the same
       // table, so a file the app holds compiles and one it does not is `X_ASSET_MISSING`. Installed
       // around the one synchronous compile and handed back after: no await runs in between, so no

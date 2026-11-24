@@ -6,13 +6,21 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove.
 import { join } from 'node:path'; // why: Bun ships no path API.
-import { clearStylesheets, stylesFor } from '@ultimat3/render/server';
+import { clearStylesheets, siteAssetTable, stylesFor } from '@ultimat3/render/server';
 import { loadApp } from './app-load';
 import { resetRegistries } from './cmd-dev-fixture';
 import { processRoot } from './process-root-fixture';
-import { siteAssetTable } from './site-assets';
 
-const ROOT = processRoot(join(import.meta.dir, '..', '.site-assets-scss-fixture'));
+// One directory per EVALUATION of this file, as `app-manifest.test.ts` keeps: `--rerun-each`
+// evaluates it again in the same process, Bun serves `fonts.scss` from its cache by path, and the
+// stylesheet `clearStylesheets()` dropped is then never registered again. The count lives on
+// `globalThis`, which outlives the module.
+const EVALUATIONS = Symbol.for('ultimate.test.site-assets-scss.evaluations');
+const counter = globalThis as unknown as Record<symbol, number | undefined>;
+counter[EVALUATIONS] = (counter[EVALUATIONS] ?? 0) + 1;
+const ROOT = processRoot(
+  join(import.meta.dir, '..', '.site-assets-scss-fixture', `eval-${counter[EVALUATIONS]}`),
+);
 
 beforeAll(async () => {
   resetRegistries();
