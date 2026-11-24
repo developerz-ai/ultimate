@@ -6,11 +6,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove.
 import { join } from 'node:path'; // why: Bun ships no path API.
-import { clearStylesheets, stylesFor } from '@ultimat3/render/server';
+import { clearStylesheets, siteAssetTable, stylesFor } from '@ultimat3/render/server';
 import { loadApp } from './app-load';
 import { resetRegistries } from './cmd-dev-fixture';
 import { processRoot } from './process-root-fixture';
-import { siteAssetTable } from './site-assets';
 
 const ROOT = processRoot(join(import.meta.dir, '..', '.site-assets-scss-fixture'));
 

@@ -10,14 +10,14 @@ import { join } from 'node:path'; // why: Bun ships no path join.
 import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import type { AssetPath } from '@ultimat3/render';
 import { asset, setAssetResolver } from '@ultimat3/render';
-import { siteAssetRoutes } from './site-asset-routes';
 import {
   hashedAssetUrl,
   parseHashedAssetUrl,
   SITE_ASSETS_SOURCE,
   siteAssetTable,
-  writeSiteAssets,
-} from './site-assets';
+} from '@ultimat3/render/server';
+import { siteAssetRoutes } from './site-asset-routes';
+import { writeSiteAssets } from './site-assets';
 
 const root = mkdtempSync(join(tmpdir(), 'x-site-assets-'));
 const source = join(root, SITE_ASSETS_SOURCE);

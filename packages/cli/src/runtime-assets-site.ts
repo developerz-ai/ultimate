@@ -6,6 +6,8 @@
 import { finiteCount, probeImage, sniffImageFormat } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders, jsonResponse } from '@ultimat3/http';
+import type { SiteAsset, SiteAssetTable } from '@ultimat3/render/server';
+import { parseHashedAssetUrl } from '@ultimat3/render/server';
 import type { ImageQuery, ImageTransformDriver } from '@ultimat3/seo';
 import {
   builtinImageDriver,
@@ -16,8 +18,6 @@ import {
 } from '@ultimat3/seo';
 import { variantLru } from './runtime-assets-site-cache';
 import { SITE_ASSET_CACHE, siteAssetRoutes } from './site-asset-routes';
-import type { SiteAsset, SiteAssetTable } from './site-assets';
-import { parseHashedAssetUrl } from './site-assets';
 
 /** What one process holds of decoded variants. Bounded: an edited asset in `x dev` adds entries. */
 export const SITE_VARIANT_CACHE_BYTES = 64 * 1024 * 1024;

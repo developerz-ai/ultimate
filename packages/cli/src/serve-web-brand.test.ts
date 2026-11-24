@@ -13,11 +13,11 @@ import { mkdir, rm } from 'node:fs/promises'; // why: Bun has no recursive remov
 import { join } from 'node:path';
 import { resetLifecycle } from '@ultimat3/core';
 import { cspHashSource } from '@ultimat3/http';
+import { siteAssetTable } from '@ultimat3/render/server';
 import { brandStyleCspSource, defineTheme } from '@ultimat3/ui';
 import { inlineStyleBodies } from './error-page-csp';
 import { processRoot } from './process-root-fixture';
 import { serveApp } from './serve';
-import { siteAssetTable } from './site-assets';
 import { setBrandStyles } from './style-bundle';
 import { APP_THEME_MODULE } from './theme-brand';
 

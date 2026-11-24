@@ -10,12 +10,12 @@ import { tmpdir } from 'node:os'; // why: Bun exposes no tmpdir().
 import { join } from 'node:path'; // why: Bun ships no path join.
 import { defineConfig, isUltimateError } from '@ultimat3/core';
 import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
+import { SITE_ASSETS_SOURCE } from '@ultimat3/render/server';
 import { defineStorage, memoryStorageDriver } from '@ultimat3/storage';
 import type { IslandBundle } from './island-bundle';
 import { buildAssetsOf, retainBuildAssets } from './retained-assets-boot';
 import { manifestKey, retainedFileKey, retainedPrefix } from './retained-assets-layout';
 import { warnedPrefix } from './retained-assets-warned';
-import { SITE_ASSETS_SOURCE } from './site-assets';
 import { styleBundleOf } from './style-bundle';
 
 const root = mkdtempSync(join(tmpdir(), 'x-retained-boot-'));

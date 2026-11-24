@@ -30,12 +30,12 @@ import {
 } from '@ultimat3/pwa';
 import type { AssetPath } from '@ultimat3/render';
 import { assetPathProblem } from '@ultimat3/render';
+import { parseHashedAssetUrl, siteAssetTable } from '@ultimat3/render/server';
 import { loadAppConfig } from './app-config-load';
 import { assetRouteMeta } from './asset-route-meta';
 import { hasSourceIcon, iconPlan, iconRenderer } from './icon-assets';
 import type { AppLocales } from './pwa-manifest-locales';
 import { appLocales, localeMembers, spellIn } from './pwa-manifest-locales';
-import { parseHashedAssetUrl, siteAssetTable } from './site-assets';
 
 /** What a browser fetches from `<link rel="manifest">`. The spec's own extension, not `.json`. */
 export const WEB_MANIFEST_PATH = '/manifest.webmanifest';

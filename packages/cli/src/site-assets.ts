@@ -1,21 +1,10 @@
 // The static export's half of the site asset table: every asset copied under its hashed URL. The
-// table itself is `@ultimat3/render/server`'s (`site-assets.ts` there), shared with the test
-// preload; re-exported here so the CLI's modules keep one import for the whole surface.
+// table itself is `@ultimat3/render/server`'s, shared with the test preload.
 
 // why: Bun ships no sync copy or mkdir, and the export walks the table synchronously.
 import { copyFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path'; // why: Bun ships no path API.
 import { siteAssetTable } from '@ultimat3/render/server';
-
-export type { SiteAsset, SiteAssetTable } from '@ultimat3/render/server';
-export {
-  ASSET_CONTENT_TYPES,
-  hashedAssetUrl,
-  parseHashedAssetUrl,
-  SITE_ASSET_BASE_PATH,
-  SITE_ASSETS_SOURCE,
-  siteAssetTable,
-} from '@ultimat3/render/server';
 
 /**
  * Every asset, copied into the static export under its hashed URL — a static host serves with no
