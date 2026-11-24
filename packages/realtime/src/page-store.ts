@@ -9,6 +9,7 @@ import type { queryClientMethodFor } from '@ultimat3/query/client';
 import type { LiveClient } from './client';
 import { RealtimeUninstalledError } from './page-errors';
 import type { RecordStore } from './record-store';
+import { pageSyncTarget } from './sync-meta';
 
 /** Where the page's one socket dials. Resolved on the server and handed to the island bootstrap. */
 export interface SyncTarget {
@@ -237,6 +238,16 @@ export function installedPage(hook: string): InstalledPage {
  */
 export function hasPageSocket(): boolean {
   return peekPageRealtime()?.socket !== undefined;
+}
+
+/**
+ * Whether a live hook on this page could reach a sync node: a target `installRealtime` was given,
+ * or the document's `<meta name="ultimate-sync">`. Unlike `hasPageSocket` it is answered before any
+ * hook ran, and asking opens nothing — so an island can choose `useChannel` or its static
+ * fallback instead of meeting `X_SYNC_UNCONFIGURED`. `false` on a server render.
+ */
+export function hasSyncTarget(): boolean {
+  return peekPageRealtime()?.sync !== undefined || pageSyncTarget() !== undefined;
 }
 
 /** The page's record store, from its installed runtime. */

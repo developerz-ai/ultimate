@@ -142,6 +142,15 @@ export function channel<K extends string>(
     );
   }
   assertCatchUpPolicy(name, catchUpReadOf(ref), policy);
+  // Rows are replayed after a gap by the catch-up read; a ref that names none can carry events only.
+  // By the read declared, never its name: a declared query's name is stamped at boot, after this.
+  if ((init.records ?? []).length > 0 && catchUpReadOf(ref) === undefined) {
+    refuseChannel(
+      name,
+      'carries records and names no catchUp read, so a client that misses a frame could never be brought back up to date',
+      `channelRef('${name}', { params: [/* … */], catchUp: rowsQuery }) // catchUp: the query that re-reads these rows — or drop records from channel() for an events-only channel`,
+    );
+  }
   const records = (init.records ?? []).map((entity) => {
     const projection = projectionFor(name, entity);
     for (const param of ref.params) {
