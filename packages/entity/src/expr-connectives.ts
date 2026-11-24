@@ -38,7 +38,9 @@ export const operandPaths = (sides: readonly Expr[]): readonly (readonly string[
   const seen = new Set<string>();
   const paths: (readonly string[])[] = [];
   for (const path of sides.flatMap((side) => side.paths)) {
-    const key = path.join('.');
+    // The whole segment list, never `join('.')`: a property literally named `amount.minor` and the
+    // `minor` part of a money `amount` are two columns, and the dot would make them one.
+    const key = JSON.stringify(path);
     if (seen.has(key)) continue;
     seen.add(key);
     paths.push(path);
@@ -52,10 +54,15 @@ export const operandPaths = (sides: readonly Expr[]): readonly (readonly string[
  */
 const assertOperands = (combinator: string, sides: readonly Expr[]): void => {
   if (sides.length >= 2) return;
+  // The fix names only what the author already wrote: their one operand's own columns, never a
+  // column this generator would be inventing for an entity it cannot see.
+  const column = sides[0]?.paths[0]?.join('.');
   refuseInvariant(
     combinator,
     `takes two or more predicates, got ${sides.length}`,
-    `${combinator}(c.a.isNull(), c.b.isNull())   # or write the one predicate on its own`,
+    column === undefined
+      ? `${combinator}(first, second)   # two predicates over this entity's columns, or none: drop the ${combinator}() call`
+      : `unwrap ${combinator}(…) and pass its one predicate on ${JSON.stringify(column)} directly   # or add the second condition beside it inside ${combinator}(…)`,
   );
 };
 

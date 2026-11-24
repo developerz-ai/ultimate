@@ -154,7 +154,10 @@ migration or a psql session can violate.
 
 **A rule over a nullable column passes `NULL`, in the app as in the CHECK.** Every operator but
 `isNull()`/`isNotNull()` answers SQL's *unknown* for a NULL operand, in TypeScript too, and a rule
-holds unless it is false — so `c.slug.matches(SLUG_PATTERN)` on a `.nullable()` slug accepts a
+holds unless its FINAL verdict is false. That is per comparison: a composite decides by its own
+three-valued logic, so `allOf(c.a.eq(1), c.b.eq(1))` refuses `a = NULL, b = 2` (false beats
+unknown) while `anyOf(c.a.eq(1), c.b.eq(1))` passes it (no operand true, one unknown) — in both
+halves. So `c.slug.matches(SLUG_PATTERN)` on a `.nullable()` slug accepts a
 NULL in `$assert`, the memory driver and Postgres alike (`invariant-null.test.ts`, every operator on
 PGlite). To refuse NULL, declare the column NOT NULL or add `.isNotNull()`. As of 31.3; before it
 the app refused the NULL its CHECK stored.
