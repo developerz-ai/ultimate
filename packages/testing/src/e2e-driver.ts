@@ -7,6 +7,7 @@ import type { A11yOptions, A11yRun } from './e2e-a11y-run';
 import { checkAllow, startA11yRun } from './e2e-a11y-run';
 import type { E2eBrowserPage, E2ePageOptions } from './e2e-page';
 import { e2ePage } from './e2e-page';
+import { markConsoleStart } from './e2e-page-input';
 import { FixtureUnavailableError } from './errors';
 import { withFailureContext } from './failure-context';
 import { unavailableFixture } from './fixture-drivers';
@@ -99,6 +100,8 @@ export function e2eRunner(options: E2eDriverOptions): E2eRunner {
       try {
         const current = startA11yRun(options.page, checkAllow(a11y), reported);
         audit = current;
+        // The console a test reads begins with the test: a tab shared by the suite carries the last one's.
+        markConsoleStart(page);
         await body(e2eFixtures(page, options.page, options.newBuild));
         await current.check();
         current.verdict();

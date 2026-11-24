@@ -11,6 +11,8 @@ import type { CdpConnection } from '@ultimat3/scraping/cdp';
 import { CdpCallFailedError, CdpTimeoutError } from '@ultimat3/scraping/cdp';
 import type { AxTreeNode } from './ax-node';
 import { axRecord, toAxTreeNodes } from './ax-node';
+import { captureConsole } from './cdp-console-capture';
+import { MODIFIER_NAMES, parseKeyChord, SHIFT } from './cdp-key-chord';
 import { registerTabPort } from './cdp-ports';
 import type { AxTreeRequest, E2eBrowserPage } from './e2e-page';
 
@@ -81,7 +83,8 @@ export interface E2eTab extends E2eBrowserPage {
   /**
    * A REAL key press (`Input.dispatchKeyEvent`, down then up) at whatever has focus, so its default
    * action runs: Tab moves focus, which a dispatched `KeyboardEvent` never does. A name in
-   * `PRESS_KEYS` or one printable character.
+   * `PRESS_KEYS` or one printable character, optionally after modifiers held for it:
+   * `Shift+Tab`, `Control+k`, `Meta+Shift+Enter` (`Alt`, `Control`, `Meta`, `Shift`).
    */
   press(key: string): Promise<void>;
   /** Required on a tab: the audit of every `e2eTest` reads it (`e2e-a11y-run.ts`). */
@@ -197,6 +200,8 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
   let current = 'about:blank';
   // Touch emulation is per tab and stays on: switched on by the first `touchDrag`, once.
   let touchOn = false;
+  // Heard from construction: the session enabled `Runtime` before handing the tab out.
+  const consoleCapture = captureConsole(options.connection, sessionId);
 
   const evaluateRaw = (expression: string) =>
     send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId);
@@ -394,16 +399,31 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
       }
       await touch('touchEnd', []);
     },
-    async press(key: string): Promise<void> {
-      const code = (Object.hasOwn(PRESS_KEYS, key) ? PRESS_KEYS[key] : undefined) ?? charCode(key);
-      if (code === undefined) {
+    async press(chord: string): Promise<void> {
+      const parsed = parseKeyChord(chord);
+      // Shift types the upper case of a letter, as a keyboard does; any other modifier types none.
+      const key =
+        parsed !== undefined && parsed.modifiers === SHIFT && /^[a-z]$/.test(parsed.key)
+          ? parsed.key.toUpperCase()
+          : parsed?.key;
+      const code =
+        key === undefined
+          ? undefined
+          : ((Object.hasOwn(PRESS_KEYS, key) ? PRESS_KEYS[key] : undefined) ?? charCode(key));
+      if (parsed === undefined || key === undefined || code === undefined) {
         throw new CdpCallFailedError({
-          method: `press(${key})`,
-          detail: `not a key press() knows: one of ${Object.keys(PRESS_KEYS).join(', ')}, or one letter or digit`,
+          method: `press(${chord})`,
+          detail: `not a key press() knows: one of ${Object.keys(PRESS_KEYS).join(', ')}, or one letter or digit, optionally after ${MODIFIER_NAMES.join('+, ')}+`,
         });
       }
-      const text = typedText(key);
-      const common = { key, code: keyCodeName(key), windowsVirtualKeyCode: code };
+      const { modifiers } = parsed;
+      const text = modifiers === 0 || modifiers === SHIFT ? typedText(key) : undefined;
+      const common = {
+        key,
+        code: keyCodeName(key),
+        windowsVirtualKeyCode: code,
+        ...(modifiers === 0 ? {} : { modifiers }),
+      };
       await send(
         'Input.dispatchKeyEvent',
         {
@@ -415,6 +435,7 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
       );
       await send('Input.dispatchKeyEvent', { type: 'keyUp', ...common }, sessionId);
     },
+    consoleMessages: () => consoleCapture.messages(),
     offline: (enabled: boolean) => options.offline(enabled),
     async accessibilityTree(request: AxTreeRequest): Promise<readonly AxTreeNode[]> {
       const nodes = toAxTreeNodes((await send(FULL_AX_TREE, {}, sessionId)).result);
@@ -446,6 +467,7 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
         : [];
     },
     async close(): Promise<void> {
+      consoleCapture.stop();
       await send('Target.closeTarget', { targetId: options.targetId });
       options.audit?.closed();
     },

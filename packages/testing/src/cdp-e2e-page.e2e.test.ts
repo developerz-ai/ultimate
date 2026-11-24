@@ -1,4 +1,5 @@
-// `press()` in a REAL browser: a key that types runs its default action, the way a keyboard does.
+// `press()` and the console in a REAL browser: a key that types runs its default action, the way a
+// keyboard does, a chord holds its modifiers, and the page's console errors are kept.
 // Enter on a focused submit button submits its form; Tab moves focus. A `rawKeyDown` with no text
 // raises no character event, so Enter submitted nothing — this file is that pin.
 //
@@ -16,6 +17,10 @@ const FORM = `<!doctype html><html lang="en"><head><title>press</title></head><b
 <button type="button" id="next">Next</button>
 <script>
 window.__submits = 0;
+window.__shortcut = 0;
+document.addEventListener('keydown', (event) => {
+  if (event.ctrlKey && event.key === 'k') window.__shortcut += 1;
+});
 document.getElementById('f').addEventListener('submit', (event) => {
   event.preventDefault();
   window.__submits += 1;
@@ -69,6 +74,36 @@ describe.skipIf(noBrowser)('press() runs the default action of a real key', () =
       await page().press('a');
       await page().press('7');
       expect(await page().evaluate(`document.querySelector('input').value`)).toBe('a7');
+    },
+    E2E_BROWSER_OPEN_MS,
+  );
+
+  test(
+    'Shift+Tab moves focus back, and Control+k reaches a keydown listener with ctrlKey',
+    async () => {
+      await page().goto(baseUrl);
+      await page().evaluate(`document.getElementById('next').focus()`);
+      await page().press('Shift+Tab');
+      expect(await page().evaluate('document.activeElement.id')).toBe('go');
+      await page().press('Control+k');
+      expect(await page().evaluate('window.__shortcut')).toBe(1);
+    },
+    E2E_BROWSER_OPEN_MS,
+  );
+
+  test(
+    'the console keeps a console.error and an uncaught throw from the page',
+    async () => {
+      await page().goto(baseUrl);
+      const before = page().consoleMessages?.().length ?? 0;
+      await page().evaluate(
+        `console.error('broken', 2); setTimeout(() => { throw new Error('late'); })`,
+      );
+      await page().waitFor('new Promise((r) => setTimeout(() => r(true), 50))', 'a tick', 5_000);
+      const seen = (page().consoleMessages?.() ?? []).slice(before);
+      expect(seen[0]).toEqual({ level: 'error', text: 'broken 2', source: 'console' });
+      expect(seen[1]?.source).toBe('exception');
+      expect(seen[1]?.text).toContain('late');
     },
     E2E_BROWSER_OPEN_MS,
   );

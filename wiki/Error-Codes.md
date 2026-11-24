@@ -427,6 +427,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_DURATION_INVALID | [time](Error-Codes-time) |
 | X_E2E_A11Y_VIOLATION | [testing](Error-Codes-testing) |
 | X_E2E_APP_FAILED | [testing](Error-Codes-testing) |
+| X_E2E_CONSOLE_ERRORS | [testing](Error-Codes-testing) |
 | X_E2E_EVALUATE_CAPTURED | [testing](Error-Codes-testing) |
 | X_E2E_EVALUATE_THREW | [testing](Error-Codes-testing) |
 | X_E2E_EVALUATE_UNSUPPORTED | [testing](Error-Codes-testing) |

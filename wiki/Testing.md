@@ -653,6 +653,27 @@ What the rendered result is then held to: [Interface rules](Interface-Rules).
 | `subscribe` | one subscriber's `rows()` `patches()` `settled()` `lsn()` | a replicator |
 | `seed`, and anything else | the app's own graph | the app's `scripts/test-setup.ts` |
 
+**Keys and the console: `pressKey(page, key)`, `consoleMessages(page)`, `expectNoConsoleErrors(page)`** (`@ultimat3/testing`). Free functions over the `page` an `e2eTest` or the `{ page }` fixture hands you, so `PageLike` itself does not grow:
+
+```ts
+e2eTest('the dialog is keyboard-reachable and the page logs no error', async ({ page }) => {
+  await page.goto('/settings');
+  await pressKey(page, 'Tab');                // a real key: focus moves, Enter submits
+  await pressKey(page, 'Control+k');          // a chord: Alt, Control, Meta, Shift held
+  await pressKey(page, 'Escape');
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe('search');
+  await expectNoConsoleErrors(page);          // X_E2E_CONSOLE_ERRORS, quoting each
+});
+```
+
+| Call | Answers |
+|---|---|
+| `pressKey(page, key)` | a trusted key press at the focused element: a name in `PRESS_KEYS` (`Tab` `Enter` `Escape` `Backspace` `Delete` `Home` `End` `PageUp` `PageDown` the arrows, `' '`), one letter or digit, or a chord `Mod+…+key` (`Shift+Tab`, `Control+k`). An unknown key is `X_CDP_CALL_FAILED` |
+| `consoleMessages(page)` | `readonly E2eConsoleMessage[]`, `{ level: 'debug' \| 'log' \| 'info' \| 'warning' \| 'error', text, source: 'console' \| 'exception' }`, since the running test began, after one round trip so a line printed just before is in it |
+| `expectNoConsoleErrors(page)` | resolves when no `error` arrived since the test began (`console.error`, a failed `console.assert`, an uncaught throw); else `X_E2E_CONSOLE_ERRORS` listing them all. Warnings pass; filter `consoleMessages` for another rule |
+
+A page no e2e driver built, or a hand-rolled `E2eBrowserPage` without `press` / `consoleMessages`, is refused by name (`X_TEST_FIXTURE_UNAVAILABLE`). `As of 2026-11`.
+
 **`waitForServiceWorker({ timeoutMs? })` hands the first page over** (25.0.0, #678). The framework's register script runs on `load`, so the first page of a run is committed before its worker activates and `clients.claim()` can miss it: `ready` resolves and no `controllerchange` ever fires. The wait answers `ready`, gives the claim a second (`CLAIM_GRACE_MS`), and reloads an uncontrolled page ONCE — that navigation is answered by the worker — within one budget (`serviceWorkerTimeoutMs`, 10 s, or this call's `timeoutMs`). A page with no worker is refused without a reload, and a reload still uncontrolled is refused saying so (`X_E2E_SERVICE_WORKER_ABSENT`). Proven against a real worker that never claims: `packages/testing/e2e/service-worker-handover.e2e.test.ts`.
 
 The last five are **declared, not built**. The framework does not bundle a browser, so the name resolves and asking for it without a driver fails as `X_TEST_FIXTURE_UNAVAILABLE` naming what is missing — different from `X_TEST_FIXTURE_UNKNOWN`, whose fix ("register it") would have the app inventing its own idea of what a page is. A driver installs through the same registry:

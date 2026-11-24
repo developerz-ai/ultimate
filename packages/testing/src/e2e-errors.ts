@@ -164,3 +164,18 @@ export class E2eAppFailedError extends UltimateError {
     this.inner = inner;
   }
 }
+
+/**
+ * The page printed an error, or threw one nothing caught, while the test ran. Every such line is
+ * quoted back at once, so one run shows them all rather than one per fix.
+ */
+export class E2eConsoleErrorsError extends UltimateError {
+  constructor(input: { readonly errors: readonly string[]; readonly url: string }) {
+    const listed = input.errors.map((text) => renderCauseValue(text)).join('; ');
+    super({
+      code: 'X_E2E_CONSOLE_ERRORS',
+      cause: `the page printed ${String(input.errors.length)} console error(s) during this test: ${listed}`,
+      fix: `x dev — then open ${renderFixLiteral(input.url, URL_PLACEHOLDER)} with the browser console open; each error is the page's to fix`,
+    });
+  }
+}
