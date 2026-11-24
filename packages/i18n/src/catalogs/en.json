@@ -708,6 +708,13 @@
       "remove": "Remove {label}",
       "clear": "Clear"
     },
+    "selection": {
+      "page": "Select every row on this page",
+      "bar": "Selection",
+      "count": "{count} selected",
+      "matching": "Select all {count} matching",
+      "clear": "Clear selection"
+    },
     "shortcuts": "Keyboard shortcuts",
     "skip": "Skip to content",
     "sort": {

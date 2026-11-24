@@ -1,0 +1,43 @@
+@use '../tokens' as t;
+
+// The selection's bar: a row of count, scope and actions. It sticks to the bottom of the scroll box
+// while something is selected, so the actions stay in reach past a long page.
+.bar {
+  @include t.row(t.space(3), center);
+  @include t.surface('surface', 'xs');
+  flex-wrap: wrap;
+  padding-block: t.space(2);
+  padding-inline: t.space(4);
+
+  &:not([data-count='0']) {
+    position: sticky;
+    inset-block-end: 0;
+    z-index: t.z(sticky);
+  }
+}
+
+.count {
+  margin: 0;
+  color: t.role('fg-strong');
+  font-weight: t.weight(semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.matching {
+  @include t.row(t.space(2), center);
+  cursor: pointer;
+}
+
+.clear {
+  @include t.focus-ring;
+  border-radius: t.radius(sm);
+  color: t.role('accent');
+  font: inherit;
+  cursor: pointer;
+}
+
+.actions {
+  @include t.row(t.space(2), center, flex-end);
+  flex-wrap: wrap;
+  margin-inline-start: auto;
+}

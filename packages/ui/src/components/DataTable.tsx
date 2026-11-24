@@ -31,6 +31,7 @@ import { EmptyState } from './EmptyState';
 import { ErrorState } from './ErrorState';
 import { Pagination } from './Pagination';
 import { Skeleton } from './Skeleton';
+import { type ListSelection, selectionControls } from './selection-control';
 import { ariaSortFor, nextSortState, type SortState } from './sort-state';
 import { Table } from './Table';
 
@@ -86,6 +87,12 @@ interface DataTableBaseProps<Row> {
   /** What a table narrower than `sm` becomes. Default `cards`. */
   narrow?: DataTableNarrow | undefined;
   density?: 'comfortable' | 'compact' | undefined;
+  /**
+   * Row selection: a native checkbox per row posting its `rowKey` under `selection.name`, a
+   * tick-all box in the header (callback mode), and a `BulkBar` holding `selection.actions` under
+   * the table. Set for the table's life: a table does not grow a column mid-render.
+   */
+  selection?: ListSelection<Row> | undefined;
   /** Placeholder row count while loading. Match the usual page size. */
   skeletonRows?: number | undefined;
   class?: string | undefined;
@@ -151,6 +158,22 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
 
   const branch = (): AsyncBranch<readonly Row[]> => asyncBranch(state());
 
+  /** Read once: the selection column is part of the table's shape, like its columns. */
+  const selectable = props.selection !== undefined;
+  const select = selectionControls<Row>(
+    () => props.selection,
+    () => props.rows.map((row) => props.rowKey(row)),
+    // A first page in flight has no rows yet, and that is not every row leaving the list.
+    () => props.loading !== true && (props.error === undefined || props.error === null),
+  );
+  /** The selection's cell at the inline start of a row; `content` is empty for a placeholder. */
+  const selectCell = (content: JSX.Element): JSX.Element =>
+    selectable ? (
+      <td role={TABLE_ROLES.cell} class={styles['select']}>
+        {content}
+      </td>
+    ) : null;
+
   const cards = (): boolean => (props.narrow ?? 'cards') === 'cards';
   /** Read through the validator on every render, so a bad priority is refused, never shown. */
   const priorityOf = (column: Column<Row>): string | undefined =>
@@ -194,6 +217,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
     const more = moreColumn(props.columns);
     return (
       <tr role={TABLE_ROLES.row} class={styles['row']} data-row={key}>
+        {selectCell(select.box(row, key))}
         {props.columns.map((column) => (
           <td
             role={TABLE_ROLES.cell}
@@ -223,6 +247,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
       const more = moreColumn(props.columns);
       return Array.from({ length: placeholders }, () => (
         <tr role={TABLE_ROLES.row} class={styles['row']}>
+          {selectCell(null)}
           {props.columns.map((column) => (
             <td role={TABLE_ROLES.cell} class={styles['cell']} data-priority={priorityOf(column)}>
               <Skeleton height="1.1em" />
@@ -323,6 +348,11 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
         data-sortable={props.columns.some(hasSortControl) ? '' : undefined}
       >
         <tr role={TABLE_ROLES.row}>
+          {selectable ? (
+            <th scope="col" role={TABLE_ROLES.columnheader} class={styles['select']}>
+              {props.selection?.onChange === undefined ? null : select.pageBox()}
+            </th>
+          ) : null}
           {props.columns.map((column) => (
             <th
               scope="col"
@@ -410,9 +440,18 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
   /** Beside the table and outside its memo: a new cursor redraws the pager and nothing else. */
   const pagerSlot = (): JSX.Element => (view() === 'table' && hasPager() ? pager() : null);
 
+  /** Built once and kept: a new selection updates the bar, never rebuilds it under the focus. */
+  const bar = selectable ? select.bar() : null;
+  const barSlot = (): JSX.Element => (view() === 'table' ? bar : null);
+
   return (
-    <div class={cx(styles['wrap'], props.class)} data-narrow={props.narrow ?? 'cards'}>
+    <div
+      class={cx(styles['wrap'], props.class)}
+      data-narrow={props.narrow ?? 'cards'}
+      data-selection-scope={selectable ? '' : undefined}
+    >
       {content()}
+      {barSlot()}
       {pagerSlot()}
     </div>
   );

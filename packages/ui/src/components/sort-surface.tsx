@@ -14,7 +14,9 @@ import { solid } from '../theme/solid-adapter';
 import boardStyles from './Board.module.scss';
 import { keyedRows } from './data-table-rows';
 import { Icon } from './Icon';
+import { bindLongPress } from './long-press';
 import styles from './SortableList.module.scss';
+import { type ListSelection, selectionControls } from './selection-control';
 import { bindSortRow, placeRows, type SortGeometry, sortGeometry } from './sort-pointer';
 
 /** The form field names the no-script controls post. `null` leaves that field out. */
@@ -38,6 +40,8 @@ export interface SortSurfaceInput<T> {
   readonly action?: string | undefined;
   readonly fields?: SortFields | undefined;
   readonly layout: 'list' | 'board';
+  /** Read through on every use; whether it is set at all is read once, as the board's shape. */
+  readonly selection?: (() => ListSelection<T> | undefined) | undefined;
   readonly label: string;
   readonly class?: string | undefined;
 }
@@ -71,6 +75,17 @@ export function sortSurface<T>(input: SortSurfaceInput<T>): JSX.Element {
   });
   const geometry: SortGeometry = sortGeometry();
   const names = input.fields ?? {};
+  const selectionOf = (): ListSelection<T> | undefined => input.selection?.();
+  const selectable = selectionOf() !== undefined;
+  const select = selectionControls<T>(
+    selectionOf,
+    () => input.groups().flatMap((group) => group.items.map(input.itemKey)),
+    () => true,
+  );
+  /** Touch has no Shift+click: a finger held on a card ticks its box. Callback mode only. */
+  const bindPress = (id: string, el: HTMLElement): void => {
+    if (selectionOf()?.onChange !== undefined) bindLongPress(el, () => select.toggle(id));
+  };
 
   const hidden = (name: string | null, value: string): JSX.Element =>
     name === null ? null : <input type="hidden" name={name} value={value} />;
@@ -139,6 +154,7 @@ export function sortSurface<T>(input: SortSurfaceInput<T>): JSX.Element {
       data-lifted={controller.lifted() === id ? 'true' : undefined}
       ref={(el: HTMLLIElement) => geometry.row(id, el)}
     >
+      {selectable ? select.box(row, id) : null}
       <button
         type="button"
         class={styles['handle']}
@@ -157,7 +173,9 @@ export function sortSurface<T>(input: SortSurfaceInput<T>): JSX.Element {
       >
         <Icon glyph={iconGripVertical} size="sm" />
       </button>
-      <div class={styles['body']}>{input.renderItem(row())}</div>
+      <div class={styles['body']} ref={(el: HTMLDivElement) => bindPress(id, el)}>
+        {input.renderItem(row())}
+      </div>
       {fallback(row(), id)}
     </li>
   ));
@@ -215,7 +233,7 @@ export function sortSurface<T>(input: SortSurfaceInput<T>): JSX.Element {
   const single =
     input.layout === 'list' ? list(input.groups()[0]?.id ?? '', () => undefined) : null;
 
-  return (
+  const surface = (
     // biome-ignore lint/a11y/useSemanticElements: the list or board as one named group, not a form's fieldset
     <div
       class={cx(styles['root'], input.layout === 'board' && boardStyles['board'], input.class)}
@@ -224,8 +242,12 @@ export function sortSurface<T>(input: SortSurfaceInput<T>): JSX.Element {
       role="group"
       aria-label={input.label}
       ref={(el: HTMLDivElement) => geometry.root(el)}
+      data-selection-scope={selectable ? '' : undefined}
     >
       {single ?? columns(input.groups())}
     </div>
   );
+  // An array, not a fragment, as `DataTable`'s header: the bar sits under the board, never in its
+  // grid, where it would be one more column.
+  return selectable ? [surface, select.bar()] : surface;
 }

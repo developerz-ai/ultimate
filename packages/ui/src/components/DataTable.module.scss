@@ -230,3 +230,15 @@ $lg: map.get(t.$breakpoints, 'lg');
     }
   }
 }
+
+// --- Selection -----------------------------------------------------------------------------------
+// The box column: as narrow as its box. A selected row is tinted off the box's own `:checked`, so
+// the tint follows a tick with scripting off too.
+.select {
+  inline-size: 1%;
+  white-space: nowrap;
+}
+
+.row:has(.select :checked) {
+  background: t.role('accent', 0.12);
+}
