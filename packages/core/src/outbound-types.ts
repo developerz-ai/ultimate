@@ -71,7 +71,10 @@ export interface OutboundRefusalRead {
    * JSON, does not fit, or passes `maxBytes` leaves `meta.fields` unset.
    */
   readonly schema?: Schema<unknown, unknown> | undefined;
-  /** `false`: `meta.detail` is `''`, the body's free text never kept. Default `true`. */
+  /**
+   * `false`: `meta.detail` is `''`, the raw-body excerpt never kept. Default `true`. It does not
+   * filter `meta.fields`: a schema declares only fields that are safe to log.
+   */
   readonly detail?: boolean | undefined;
 }
 
@@ -103,7 +106,7 @@ export interface OutboundRequest {
   readonly read?: 'bytes' | 'stream' | undefined;
   /**
    * How a non-2xx body is read for the coded error. Unset: a redacted 200-character excerpt of
-   * its first KiB, `meta.detail`. `{ schema }`: the whole body (within `maxBytes`) through the
+   * the chunks that decode its first 1,024 characters, `meta.detail`. `{ schema }`: the whole body (within `maxBytes`) through the
    * schema, its answer at `meta.fields`. `{ detail: false }`: `meta.detail` stays `''`.
    */
   readonly refusal?: OutboundRefusalRead | undefined;

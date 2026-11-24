@@ -1,5 +1,5 @@
-// How `outbound()` reads a refusal's body: by default a redacted 200-character excerpt of its
-// first KiB, `meta.detail`; with `refusal: { schema }` the whole body, its declared fields at
+// How `outbound()` reads a refusal's body: by default a redacted 200-character excerpt of the
+// chunks that decode its first 1,024 characters, `meta.detail`; with `refusal: { schema }` the whole body, its declared fields at
 // `meta.fields`; with `refusal: { detail: false }` no excerpt at all.
 
 import { describe, expect, test } from 'bun:test';
@@ -42,6 +42,26 @@ const chunked = (body: string): ReadableStream<Uint8Array> => {
   });
 };
 
+/** The same chunks, counting what was pulled and whether the reader cancelled. */
+const tracked = (body: string) => {
+  const bytes = new TextEncoder().encode(body);
+  const state = { pulled: 0, cancelled: false, total: bytes.length };
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        if (state.pulled >= bytes.length) return controller.close();
+        controller.enqueue(bytes.slice(state.pulled, state.pulled + 256));
+        state.pulled += 256;
+      },
+      cancel() {
+        state.cancelled = true;
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  return { stream, state };
+};
+
 const refusing = (status: number, body: string) =>
   recordingFetch(() => new Response(chunked(body), { status })).fetch;
 
@@ -71,8 +91,10 @@ describe('unit · outbound · refusal body', () => {
     );
     expect(error.code).toBe('X_OUTBOUND_REFUSED');
     expect(error.meta?.['fields']).toEqual({ error: { decline_code: 'insufficient_funds' } });
-    // Undeclared keys never reach meta: the schema is the whole of what is kept.
+    // Undeclared keys never reach meta.fields: the schema is the whole of what it keeps.
     expect(JSON.stringify(error.meta?.['fields'])).not.toContain('xxxx');
+    // meta.detail is the excerpt of the WHOLE body, not of its first KiB (which does not parse).
+    expect(error.meta?.['detail']).toBe(LARGE_DECLINE.slice(0, 200));
   });
 
   test('a declared field with a credential name is still redacted', async () => {
@@ -98,15 +120,18 @@ describe('unit · outbound · refusal body', () => {
     }
   });
 
-  test('a body past the call maxBytes carries no fields: the read stays bounded', async () => {
+  test('a body past the call maxBytes carries no fields: the read stops at the cap', async () => {
+    const { stream, state } = tracked(LARGE_DECLINE);
     const error = await caught(
       outbound(call({ maxBytes: 512, refusal: { schema: declineSchema } }), {
-        fetch: refusing(402, LARGE_DECLINE),
+        fetch: recordingFetch(() => new Response(stream, { status: 402 })).fetch,
         timer: manualTimer(),
       }),
     );
     expect(error.code).toBe('X_OUTBOUND_REFUSED');
     expect(error.meta !== undefined && 'fields' in error.meta).toBe(false);
+    expect(state.cancelled).toBe(true);
+    expect(state.pulled).toBeLessThan(state.total);
   });
 
   test('default: a short body keeps free text in meta.detail', async () => {
@@ -126,6 +151,17 @@ describe('unit · outbound · refusal body', () => {
       }),
     );
     expect(plain.meta?.['detail']).toBe('');
+    const { stream, state } = tracked(LARGE_DECLINE);
+    const unread = await caught(
+      outbound(call({ refusal: { detail: false } }), {
+        fetch: recordingFetch(() => new Response(stream, { status: 400 })).fetch,
+        timer: manualTimer(),
+      }),
+    );
+    expect(unread.meta?.['detail']).toBe('');
+    // With no schema to answer, the body is cancelled, not drained.
+    expect(state.cancelled).toBe(true);
+    expect(state.pulled).toBeLessThan(state.total);
     const picked = await caught(
       outbound(call({ refusal: { detail: false, schema: declineSchema } }), {
         fetch: refusing(400, body),
@@ -139,15 +175,23 @@ describe('unit · outbound · refusal body', () => {
 
   test('a retried 503 and a throttled 429 carry the fields too', async () => {
     const body = JSON.stringify({ error: { decline_code: 'try_later' } });
+    // A different code per attempt: the error carries the LAST attempt's fields.
+    const { fetch, calls } = recordingFetch(
+      (_call, n) =>
+        new Response(chunked(JSON.stringify({ error: { decline_code: `attempt_${String(n)}` } })), {
+          status: 503,
+        }),
+    );
     const unavailable = await caught(
       outbound(call({ method: 'GET', refusal: { schema: declineSchema } }), {
-        fetch: refusing(503, body),
+        fetch,
         ...recordedSleep(),
         timer: manualTimer(),
       }),
     );
     expect(unavailable.code).toBe('X_OUTBOUND_UNAVAILABLE');
-    expect(unavailable.meta?.['fields']).toEqual({ error: { decline_code: 'try_later' } });
+    expect(calls).toHaveLength(3);
+    expect(unavailable.meta?.['fields']).toEqual({ error: { decline_code: 'attempt_3' } });
     const throttled = await caught(
       outbound(call({ refusal: { schema: declineSchema } }), {
         fetch: recordingFetch(

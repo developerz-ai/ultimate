@@ -128,9 +128,9 @@ the call's `refusal`:
 
 | `refusal` | Read | On the error |
 |---|---|---|
-| unset (default) | the first 1,024 bytes, the rest cancelled | `meta.detail`: a JSON object, credential-named fields redacted, 200 characters; else `''`. A large error object is `''` |
+| unset (default) | chunks until 1,024 characters are decoded, the rest cancelled (a whole chunk is kept, so one large chunk is read whole) | `meta.detail`: a JSON object, credential-named fields redacted, 200 characters; else `''`. A large error object that arrives in pieces is cut, does not parse, and is `''` |
 | `{ schema }` | the whole body, up to the call's `maxBytes` | `meta.fields`: the schema's answer, credential-named fields redacted at any depth; absent when the body is not JSON, does not fit or passes `maxBytes`. `meta.detail` is the 200-character excerpt of that whole body |
-| `{ detail: false }` | nothing for the excerpt | `meta.detail: ''`: a body's free text (an address, a name) never kept. Combines with `schema` |
+| `{ detail: false }` | nothing for the excerpt | `meta.detail: ''`: the excerpt, and the free text it carries (an address, a name), never kept. Combines with `schema`; it does not filter `meta.fields`, so a schema keeps only fields that are safe to log |
 
 ```ts
 import { isUltimateError } from '@ultimat3/core';
@@ -152,7 +152,7 @@ try {
 }
 ```
 
-The schema is the whole of what is kept: undeclared keys never reach `meta`.
+The schema is the whole of what `meta.fields` keeps: undeclared keys never reach it. `meta.detail` is a separate excerpt of the raw body and may still carry an undeclared field (an `error.message` holding an email): set `detail: false` to keep only what the schema declares.
 
 **A 401 is `X_OUTBOUND_REFUSED` with `meta.status: 401`.** There is no refresh hook: the app's own
 wrapper refreshes its token and calls again. Token storage and single-flight stay the app's.
