@@ -138,9 +138,16 @@ export {
   McpGroupConflictError,
   McpGroupUnknownError,
   McpListParamsInvalidError,
+  McpSplitInvalidError,
   McpSurfaceInvalidError,
 } from './meta-errors';
 export type { McpEffectClass } from './meta-split';
+export type {
+  McpSplitCall,
+  McpSplitDispatcher,
+  McpSplitField,
+  McpSplitOptions,
+} from './meta-split-options';
 export type {
   McpResourceGroup,
   McpResourceGroups,
@@ -170,6 +177,7 @@ export type {
   AnyMcpTool,
   ContentBlock,
   McpCaller,
+  McpDoor,
   McpRole,
   McpTool,
   McpToolAnnotations,

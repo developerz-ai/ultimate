@@ -43,7 +43,7 @@ import. The CLI wires it.
 | `query-page.ts` | a list query tool's ONE bounded page, `_after` cursor |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
 | `meta-surface.ts` · `meta-catalog-render.ts` | `surface: 'meta'` catalog, `groups:` boot checks (dispatch: `server.ts`) · its text, `catalogDetail` |
-| `meta-split.ts` · `meta-split-call.ts` · `meta-host.ts` | `surface: 'meta-split'`: the three dispatchers, the effect boot check · their dispatch (wrong tool, preview, `confirmed_by_user`) · the server half both meta doors call |
+| `meta-split*.ts` · `meta-host.ts` | `'meta-split'`: dispatchers, effect boot check · `split:` (fields, `stricter`) · dispatch (wrong tool, stricter door, preview) · the server half both meta doors call |
 | `list-params.ts` | `listParams` whitelist → the schema `manage_resource` enforces (flat keys: `status_eq`) |
 | `meta-errors.ts` · `framework-error.ts` | meta boot refusals · a thrown value read and rendered (split from `server.ts`) |
 | `server-voice.ts` · `surface-budget.ts` | `instructions`, `errorAudience`, the invalid-args RESULT · `tools/list`/`list_resources` size, measured and budgeted |

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d8dbf9ffdde004522dc3a241e0fc37cbad8079cc3454b327a70d02420cef341d",
+  "buildId": "d3dbd4cb8d80168ee0d88d58913698083192eefd8dfa272a6aeff57a4793653a",
   "tiers": {
     "0": [
       "core",
@@ -3731,6 +3731,11 @@
     },
     {
       "code": "X_MCP_SCOPE_UNKNOWN",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_SPLIT_INVALID",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

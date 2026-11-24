@@ -3,7 +3,8 @@
 //
 // A client decides whether to ask its user from a TOOL's annotations alone, and a directory refuses
 // a tool that both reads and writes — so the split is by tool, never by a flag inside the envelope.
-// Catalog and boot check here; the dispatch is `meta-split-call.ts`, on the shared path.
+// Catalog and boot check here; the dispatch is `meta-split-call.ts`, on the shared path. What an
+// app adds to the envelopes is `meta-split-options.ts`.
 
 import type { McpEffect } from '@ultimat3/core';
 import { McpEffectConflictError, McpEffectUndeclaredError } from './meta-errors';
@@ -96,7 +97,7 @@ export const SPLIT_TOOL_ENTRIES: readonly ToolListEntry[] = [
     name: DELETE_RESOURCE,
     title: 'Delete, send or spend',
     description:
-      "Runs one action that archives, cancels or deletes, sends something outside the app, or commits money: { resource, action, params, live, confirmed_by_user }. live: false or absent answers a preview — the framework's, which runs nothing, or the action's own when its input declares live; live: true runs it, only with confirmed_by_user: true. Runs the actions list_resources tags (delete).",
+      "Runs one action that archives, cancels or deletes, sends something outside the app, or commits money: { resource, action, params, live, confirmed_by_user }. live: false or absent answers a preview — the framework's, which runs nothing, or the action's own when its input declares live; live: true runs it, only with confirmed_by_user: true. Runs the actions list_resources tags (delete), and a (write) action sent here for the same preview and confirmation.",
     inputSchema: envelope(
       {
         live: {

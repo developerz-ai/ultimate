@@ -24,12 +24,17 @@ import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, toValidationIssues, toWireSchema, validateAsync } from '@ultimat3/schema';
 import { McpToolUnsafeError } from './errors';
 import type { ProjectablePrimitive } from './from-action';
-import type { McpRole, McpToolAnnotations } from './registry';
+import type { McpDoor, McpRole, McpToolAnnotations } from './registry';
 
 export interface AppToolArgs<TInput extends StandardSchemaV1> {
   readonly input: InferOutput<TInput>;
   /** The ambient request context, with `actor` set to the MCP caller. */
   readonly ctx: Ctx;
+  /**
+   * The `'meta-split'` dispatcher this call came through, and the `split.fields` its envelope
+   * carried. Absent on every other path.
+   */
+  readonly door?: McpDoor;
 }
 
 export interface AppToolDefinition<TInput extends StandardSchemaV1 = StandardSchemaV1> {
@@ -118,7 +123,7 @@ export function appToolPrimitive(name: string, def: AnyAppToolDefinition): Proje
         const ctx = useContext();
         guardActionBeforeInput(policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
       }),
-    run: ({ input, actor }) =>
+    run: ({ input, actor, door }) =>
       // The caller is the actor for the WHOLE call. A child context is how the framework
       // impersonates, so the policy subject and whatever `handle` reads off `ctx.actor` are
       // the same identity by construction rather than by two call sites agreeing.
@@ -135,7 +140,7 @@ export function appToolPrimitive(name: string, def: AnyAppToolDefinition): Proje
         // input by another name: one code, X_INPUT_INVALID, whichever surface the call came in on.
         const parsed = await parseInput(def.input, input, name);
         guardAction(policy, { actor: actorOf(ctx), input: parsed, ctx, action: name }, 'mcp');
-        return def.handle({ input: parsed, ctx });
+        return def.handle({ input: parsed, ctx, ...(door === undefined ? {} : { door }) });
       }),
   };
 }

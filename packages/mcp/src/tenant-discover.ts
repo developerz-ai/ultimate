@@ -26,6 +26,8 @@ export interface TenantDoors {
 export interface TenantSurface {
   readonly surface?: McpSurfaceOption | undefined;
   readonly groups?: McpResourceGroups | undefined;
+  /** The dispatcher envelopes' own fields: the arg is stripped from those too. */
+  readonly split?: { readonly fields?: Readonly<Record<string, unknown>> | undefined } | undefined;
 }
 
 /**
@@ -66,6 +68,11 @@ export function assertTenantDoors(
   tools: readonly AnyMcpTool[],
   meta: TenantSurface,
 ): void {
+  if (Object.hasOwn(meta.split?.fields ?? {}, tenant.arg)) {
+    throw new McpTenantInvalidError({
+      cause: `split.fields declares "${tenant.arg}", which tenant.arg strips from every call`,
+    });
+  }
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
   const grouped = new Set(Object.values(meta.groups ?? {}).flatMap((group) => group.tools));
   const discover: unknown = tenant.discover;

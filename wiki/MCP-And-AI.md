@@ -198,7 +198,13 @@ confirmed_by_user }` — without `live: true` it answers a preview (the framewor
 only on `confirmed_by_user: true`) replace `manage_resource`, for clients and directories that
 refuse a dispatcher which both reads and writes. A grouped write without an effect fails boot
 (`X_MCP_EFFECT_UNDECLARED`); an action called on the wrong dispatcher is `X_MCP_WRONG_TOOL`
-naming the right one; an unconfirmed commit is `X_MCP_USER_CONFIRMATION_REQUIRED`. Full contract:
+naming the right one; an unconfirmed commit is `X_MCP_USER_CONFIRMATION_REQUIRED`.
+`delete_resource` is the stricter door (`As of 2026-11`): a `write` action sent to it is previewed
+and confirmed the same way, and `write_resource` is never widened. `split: { fields, stricter }`
+adds the app's own string fields to the dispatcher envelopes (a `reason`: validated there, handed
+to a tool as `door.fields`, never in the action input) and a hook that sends one call to
+`delete_resource` by its arguments — `X_MCP_WRONG_TOOL` naming it on the other two, and the one
+way a read runs there. The audit line carries `door`. `X_MCP_SPLIT_INVALID` at boot. Full contract:
 [`packages/mcp/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/mcp/README.md).
 
 **What the model reads is compact.** A tool's text block is one-line JSON (the 2-space form until

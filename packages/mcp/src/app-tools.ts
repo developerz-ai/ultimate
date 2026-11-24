@@ -26,6 +26,7 @@ import { noteIncluded } from './include-early';
 import { jobStatusPrimitive } from './job-status-tool';
 import { jobToolBrand } from './job-tool';
 import type { McpCatalogDetail } from './meta-catalog-render';
+import type { McpSplitOptions } from './meta-split-options';
 import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
 import type { McpOAuth } from './oauth-metadata';
 import type { ListedPrimitive } from './projectable';
@@ -115,6 +116,13 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * a tool that lists the tenants in its place, `optional` the tools a call may reach with none.
    */
   readonly tenant?: McpTenant;
+  /**
+   * What this app adds to the `'meta-split'` dispatchers. `fields`: string fields of its own on
+   * their envelopes (a `reason`), validated there and handed to a tool as `door.fields`, never
+   * as input. `stricter`: sends one call to `delete_resource` by its arguments — preview, then
+   * `confirmed_by_user`. `X_MCP_SPLIT_INVALID` at boot on a surface that is never `'meta-split'`.
+   */
+  readonly split?: McpSplitOptions;
   /**
    * Scope name → the tools that capability covers, by tool name. The connection gate, and the
    * second of the three outcomes: a caller that may SEE a tool but whose token does not carry
@@ -326,6 +334,7 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
       ? {}
       : { catalog: appCatalogSource(input.catalog, input.scopes) }),
     ...(input.tenant === undefined ? {} : { tenant: input.tenant }),
+    ...(input.split === undefined ? {} : { split: input.split }),
   };
   const server = mcpServer(config);
 

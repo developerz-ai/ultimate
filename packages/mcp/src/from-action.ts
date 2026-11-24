@@ -35,6 +35,7 @@ import { pageFactsOf, truncatedResult } from './query-page';
 import type {
   AnyMcpTool,
   McpCaller,
+  McpDoor,
   McpToolAnnotations,
   McpToolResult,
   ToolArgs,
@@ -70,8 +71,11 @@ export interface ProjectablePrimitive {
    * answer is a list and whose `outputSchema` is `{ rows: [<row>] }`. Absent: the answer IS the object.
    */
   readonly outputWrap?: string;
-  /** The one server-authoritative entry point. Runs policy, then the handler. */
-  run(args: { input: unknown; actor: Actor }): Promise<unknown>;
+  /**
+   * The one server-authoritative entry point. Runs policy, then the handler. `door`: the
+   * `'meta-split'` dispatcher the call came through, for a tool that reads its envelope fields.
+   */
+  run(args: { input: unknown; actor: Actor; door?: McpDoor }): Promise<unknown>;
   /**
    * The policy's actor half, alone: throws the denial `run` would raise for this actor whatever
    * the input, returns otherwise. Becomes the tool's `admit`. Absent: no before-args gate.
@@ -130,7 +134,11 @@ export function toolFrom(listed: ListedPrimitive): AnyMcpTool {
       // same `invoke` with an actor of kind 'user', MCP arrives with kind 'agent'. Same
       // policy, same decision.
       const output = await withSignal(signal, () =>
-        primitive.run({ input: args, actor: caller.actor }),
+        primitive.run({
+          input: args,
+          actor: caller.actor,
+          ...(caller.door === undefined ? {} : { door: caller.door }),
+        }),
       );
       const result =
         outputSchema === undefined ? jsonResult(output) : structuredResult(output, wrap);

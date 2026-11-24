@@ -2,6 +2,9 @@
 // visibility gate) → the tool its effect names, else `X_MCP_WRONG_TOOL` → the shared resolver →
 // for `delete_resource`, preview unless `live: true`, and commit only with `confirmed_by_user:
 // true` → the server's `dispatch`. Every call that runs goes through the flat path's one dispatch.
+//
+// `delete_resource` is the STRICTER door, so it also takes a write, and a read the app's
+// `stricter` hook demands it for (`meta-split-options.ts`). The other two are never widened.
 
 import { isJsonObject } from '@ultimat3/core';
 import {
@@ -12,6 +15,7 @@ import {
 import type { MetaHost } from './meta-host';
 import { resolveAddressed } from './meta-host';
 import { DELETE_RESOURCE, effectOf, toolForEffect } from './meta-split';
+import { demandsStricter, fieldsOf } from './meta-split-options';
 import type { MetaSurface } from './meta-surface';
 import { schemaOf } from './meta-surface';
 import type { AnyMcpTool, McpCaller, ToolArgs } from './registry';
@@ -38,24 +42,54 @@ export async function splitCall(
   meta: MetaSurface,
   request: SplitRequest,
 ): Promise<JsonRpcResponse> {
-  const { id, name, caller, args } = request;
+  const { id, name, args } = request;
   const resource = args['resource'] as string;
   const action = args['action'] as string;
+  // The door rides on the caller from here on, so every audit entry of this call names it and a
+  // handler can read the envelope's declared fields — which are never part of the action input.
+  const door = { tool: name, fields: fieldsOf(meta.split, name, args) };
+  const caller: McpCaller = { ...request.caller, door };
   const tool = meta.locate(resource, action, caller);
   if (tool === undefined) return host.notFound(id, action, caller, META_UNKNOWN_FIX);
   // `assertEffects` refused an undeclared write at boot, so `effectOf` answers for a served tool.
   const effect = effectOf(tool) ?? 'delete';
   const useTool = toolForEffect(effect);
-  if (useTool !== name) {
+  const wrongTool = (use: string, demanded = false): JsonRpcResponse =>
     // Visibility already passed, and the effect is what `list_resources` shows this caller: the
     // refusal names nothing the catalog did not.
-    const wrong = new McpWrongToolError({ resource, action, called: name, useTool });
-    return host.refuse(id, action, wrong, caller);
-  }
+    host.refuse(
+      id,
+      action,
+      new McpWrongToolError({ resource, action, called: name, useTool: use, demanded }),
+      caller,
+    );
   const params = isJsonObject(args['params']) ? args['params'] : {};
+  const hooked = meta.split?.stricter !== undefined;
+  /** Whether the app sends THIS call to `delete_resource`; its throw is the call's refusal. */
+  const demanded = async (valid: ToolArgs): Promise<boolean | JsonRpcResponse> => {
+    try {
+      const asking = { caller, tool: name, resource, action, effect, params: valid };
+      return await demandsStricter(meta.split, { ...asking, fields: door.fields });
+    } catch (thrown) {
+      return host.refuse(id, action, thrown, caller);
+    }
+  };
   if (name !== DELETE_RESOURCE) {
-    return host.dispatch(id, action, resolveAddressed(host, tool, params, caller), caller);
+    if (useTool !== name) return wrongTool(useTool);
+    const resolved = resolveAddressed(host, tool, params, caller);
+    if (!hooked || resolved.kind !== 'ok') return host.dispatch(id, action, resolved, caller);
+    // The hook is asked only about a call that would otherwise run: in scope, valid, admitted.
+    const refused = admitted(tool, caller);
+    if (refused !== undefined) return host.refuse(id, action, refused, caller);
+    const stricter = await demanded(resolved.args);
+    if (typeof stricter !== 'boolean') return stricter;
+    return stricter
+      ? wrongTool(DELETE_RESOURCE, true)
+      : host.dispatch(id, action, resolved, caller);
   }
+  // The stricter door: a delete's own, a write's whenever it is sent here, and a read's only when
+  // the app demands it for this call — a read nobody gated has one door, `read_resource`.
+  if (effect === 'read' && !hooked) return wrongTool(useTool);
   const lifted = liftToolArgs(args, params, tool);
   const resolved = resolveAddressed(host, tool, lifted.params, caller);
   if (resolved.kind !== 'ok') return host.dispatch(id, action, resolved, caller);
@@ -63,6 +97,11 @@ export async function splitCall(
   // this gets the denial, never an answer that rehearses the call.
   const refused = admitted(tool, caller);
   if (refused !== undefined) return host.refuse(id, action, refused, caller);
+  if (effect === 'read') {
+    const stricter = await demanded(resolved.args);
+    if (typeof stricter !== 'boolean') return stricter;
+    if (!stricter) return wrongTool(useTool);
+  }
   if (lifted.live && lifted.confirmed !== true) {
     return host.refuse(
       id,
