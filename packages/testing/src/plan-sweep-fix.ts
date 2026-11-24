@@ -1,8 +1,7 @@
-// From the oracle's red nodes to what an author pastes: the entity, and the `indexes: [{ on }]`
-// entry by property. Pure. Also where a red node is argued away by the declaration itself: a
-// lookup that pins a unique key reads one row whatever the planner walked to find it, and a whole
-// read a keyed join side could probe by a declared index — or a walk an index the entity holds
-// would serve, keys and order — is one the planner declined on a small seed's costs.
+// From the oracle's red nodes to what an author pastes: the entity and the `indexes: [{ on }]`
+// entry by property. Pure. Also where the declaration argues a red node away: a unique key pinned
+// reads one row, and a keyed join side's probe or a walk a held index serves (keys, then order)
+// is one the planner declined on a small seed's costs.
 
 import { trigramDeclaration } from '@ultimat3/entity';
 import type { PlanVerdict, PlanVerdictCode } from './plan-oracle';
