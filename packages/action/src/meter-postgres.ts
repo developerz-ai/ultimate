@@ -32,7 +32,8 @@ create table if not exists x_meter (
 
 /**
  * The keys of the keyed draws that COUNTED (`drawMeter`'s `key`): one row per counted draw, this
- * period's and the last's. A keyed draw that counts deletes its counter's older ones, so an active
+ * period's and the last's. A refusal's probe may leave a `-infinity` placeholder only if its
+ * process dies before deleting it; it never counts, and the counter's next charge purges it. A keyed draw that counts deletes its counter's older ones, so an active
  * counter holds about two periods of draws; a counter that stops receiving keyed draws keeps its
  * last rows until its next one. Size it as draws per period × 2 for the active counters, plus the
  * idle counters' last two periods. Applied by the boot beside `SQL_METER_TABLE`.
@@ -86,10 +87,15 @@ returning used, warned
  * The counter row is locked FIRST (`for update`, which hands back its latest committed version),
  * so every draw on one counter — every replica's — runs one at a time from here. Under that lock
  * the key is claimed only within the limit, and the count moves only when the claim landed: a key
- * that already counted (this period or the last) conflicts, and nothing is added. A refused draw
- * claims nothing, so its key is never left behind. The row must exist: `SQL_METER_OPEN_KEYED`
- * when no row comes back. `version` is the locked row's `xmin`, which `SQL_METER_KEY_COUNTED`
- * compares to decide a refusal against this same state.
+ * that already counted (this period or the last) conflicts, and nothing is added. The row must
+ * exist: `SQL_METER_OPEN_KEYED` when no row comes back.
+ *
+ * A draw past the limit still asks whether its key counted, and asks the UNIQUE INDEX (`probe`),
+ * never a read: a draw that held the lock first and counted this very key committed after this
+ * statement's snapshot, so a `select` cannot see its row, while `on conflict` judges the latest
+ * committed one. So replay or refusal is decided under the same lock as the count it answers. A
+ * probe that meets no row inserts a placeholder (`-infinity`, older than any period, so it never
+ * counts and any claim takes it over), which the caller deletes with `SQL_METER_KEY_UNPROBE`.
  *
  * Every period here is the COUNTER's after the draw — `greatest` of its own and the request's — so
  * a lagging replica's draw is stamped with, and judged by, the period it is really counted in. Only
@@ -98,7 +104,7 @@ returning used, warned
  */
 const SQL_METER_DRAW_KEYED = `
 with counter as (
-  select xmin::text as version, used, warned, period_start,
+  select used, warned, period_start,
          greatest(period_start, $4::timestamptz) as effective,
          case when period_start <= $4::timestamptz then $8::timestamptz
               when $9::interval is null then period_start
@@ -121,6 +127,13 @@ claim as (
   where x_meter_key.period_start < (select kept_since from spent)
   returning draw_key
 ),
+probe as (
+  insert into x_meter_key (subject, meter, period, draw_key, period_start)
+  select $1, $2, $3, $7, '-infinity'::timestamptz from spent where used + $6::bigint > $5::bigint
+  on conflict (subject, meter, period, draw_key) do update set period_start = x_meter_key.period_start
+  where x_meter_key.period_start >= (select kept_since from spent)
+  returning period_start = '-infinity'::timestamptz as placeholder
+),
 counted as (
   update x_meter set
     used = case when $4::timestamptz > period_start then $6::bigint else used + $6::bigint end,
@@ -136,10 +149,11 @@ purged as (
     and period_start < (select kept_since from spent)
     and draw_key <> $7 and exists (select 1 from claim)
 )
-select counter.version, spent.used, spent.warned, spent.used + $6::bigint <= $5::bigint as within,
-       spent.effective, spent.kept_since, counted.used as counted_used,
-       counted.warned as counted_warned
-from counter cross join spent left join counted on true
+select spent.used, spent.warned, spent.used + $6::bigint <= $5::bigint as within,
+       (extract(epoch from spent.effective) * 1000)::bigint as effective_ms,
+       counted.used as counted_used, counted.warned as counted_warned,
+       (select placeholder from probe) as placeholder
+from spent left join counted on true
 `;
 
 /**
@@ -164,25 +178,11 @@ claimed as (
 select used, warned from opened
 `;
 
-/**
- * A refused keyed draw: whether its key had already counted — a FRESH statement, so it sees the key
- * of a draw that took the counter's lock first and spent the allowance under this very key, which
- * the refusal's own snapshot predates. It locks the counter again and answers its `version`: the
- * answer stands only when that is the version the refusal was decided on, as every key write moves
- * the counter in the same statement. `$4` the draw key, `$5` the refusal's `kept_since`.
- */
-const SQL_METER_KEY_COUNTED = `
-with counter as (
-  select xmin::text as version from x_meter
-  where subject = $1 and meter = $2 and period = $3
-  for update
-)
-select counter.version, exists (
-  select 1 from x_meter_key
-  where subject = $1 and meter = $2 and period = $3 and draw_key = $4
-    and period_start >= $5::timestamptz
-) as counted
-from counter
+/** A refused draw's probe placeholder, gone: `$4` the draw key. A claim that took it over keeps it. */
+const SQL_METER_KEY_UNPROBE = `
+delete from x_meter_key
+where subject = $1 and meter = $2 and period = $3 and draw_key = $4
+  and period_start = '-infinity'::timestamptz
 `;
 
 /** What a refused draw is told it had used — read only on a refusal, never before a draw. */
@@ -204,14 +204,15 @@ where subject = $1 and meter = $2 and period = $3 and period_start = $4::timesta
 `;
 
 interface KeyedRow {
-  readonly version: string;
   readonly used: number | string;
   readonly warned: boolean | string;
   readonly within: boolean | string;
-  readonly effective: Date | string;
-  readonly kept_since: Date | string;
+  /** Epoch ms, never a timestamp: a text-mode client renders those in the session's `DateStyle`. */
+  readonly effective_ms: number | string;
   readonly counted_used: number | string | null;
   readonly counted_warned: boolean | string | null;
+  /** The refusal's probe: null met an uncounted key, `true` left a placeholder, `false` met a counted key. */
+  readonly placeholder: boolean | string | null;
 }
 
 interface CounterRow {
@@ -226,8 +227,6 @@ export interface PostgresMeterStoreOptions {
 }
 
 const isTrue = (value: boolean | string): boolean => value === true || value === 't';
-const msOf = (value: Date | string): number =>
-  value instanceof Date ? value.getTime() : Date.parse(value);
 /** A period's length as a Postgres interval; null for a period key no shipped period spells. */
 const periodInterval = (periodKey: string): string | null => {
   const period = periodOfKey(periodKey);
@@ -289,42 +288,35 @@ export function postgresMeterStore(options: PostgresMeterStoreOptions): MeterSto
   };
 
   const drawKeyed = async (request: MeterDraw, drawKey: string): Promise<MeterDrawResult> => {
-    const params = [
+    const row = await lockedDraw(request, drawKey, [
       ...keyParams(request, request.periodStartMs),
       request.limit,
       request.amount ?? 1,
       drawKey,
       iso(previousPeriodStart(request.period, request.periodStartMs)),
       periodInterval(request.period),
-    ];
-    // Repeats only when another draw CHARGED this counter between a refusal and its key lookup —
-    // a refused draw moves no row — so each round is somebody else's progress, never a spin.
-    for (;;) {
-      const row = await lockedDraw(request, drawKey, params);
-      if (!('version' in row)) return row;
-      const periodStartMs = msOf(row.effective);
-      if (row.counted_used !== null) {
-        return {
-          allowed: true,
-          used: Number(row.counted_used),
-          warned: row.counted_warned !== null && isTrue(row.counted_warned),
-          periodStartMs,
-        };
-      }
-      const at = { used: Number(row.used), warned: isTrue(row.warned), periodStartMs };
-      if (isTrue(row.within)) return { allowed: true, ...at, replayed: true };
-      const lookup = (
-        await exec.query<{ readonly version: string; readonly counted: boolean | string }>(
-          SQL_METER_KEY_COUNTED,
-          [request.subject, request.meter, request.period, drawKey, iso(msOf(row.kept_since))],
-        )
-      )[0];
-      // The counter moved since the refusal: judge the draw again against what it is now.
-      if (lookup === undefined || lookup.version !== row.version) continue;
-      return isTrue(lookup.counted)
-        ? { allowed: true, ...at, replayed: true }
-        : { allowed: false, ...at };
+    ]);
+    if (!('effective_ms' in row)) return row;
+    const periodStartMs = Number(row.effective_ms);
+    if (row.counted_used !== null) {
+      return {
+        allowed: true,
+        used: Number(row.counted_used),
+        warned: row.counted_warned !== null && isTrue(row.counted_warned),
+        periodStartMs,
+      };
     }
+    const at = { used: Number(row.used), warned: isTrue(row.warned), periodStartMs };
+    // Within the limit yet not counted: the claim met this key, already counted. Past it: the probe
+    // says the same by meeting a counted key (`false`).
+    if (isTrue(row.within) || (row.placeholder !== null && !isTrue(row.placeholder))) {
+      return { allowed: true, ...at, replayed: true };
+    }
+    if (row.placeholder !== null) {
+      const key = [request.subject, request.meter, request.period, drawKey];
+      await exec.query(SQL_METER_KEY_UNPROBE, key);
+    }
+    return { allowed: false, ...at };
   };
 
   return {

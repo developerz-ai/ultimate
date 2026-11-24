@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import type { PgExecutor } from '@ultimat3/core';
 import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
-import { dbExecutor, postgresClient, raw } from '@ultimat3/db';
+import { dbExecutor, postgresClient, raw, withTransaction } from '@ultimat3/db';
 import { postgresMeterStore, SQL_METER_KEY_TABLE, SQL_METER_TABLE } from './meter-postgres';
 import type { MeterStore } from './meter-store';
 
@@ -139,6 +139,48 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
     };
   };
 
+  /**
+   * The counter row held by another transaction, so draws queue on its lock in the order they
+   * start: each one's snapshot is taken before the ones ahead of it commit. `queued(n)` waits until
+   * `n` statements are blocked on it; `release()` commits the holder.
+   */
+  const holdCounter = async () => {
+    let release = (): void => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let lock = (): void => undefined;
+    const locked = new Promise<void>((resolve) => {
+      lock = resolve;
+    });
+    const held = withTransaction(
+      async (tx) => {
+        await tx.execute(raw(`select 1 from x_meter where subject = '${key.subject}' for update`));
+        lock();
+        await released;
+      },
+      { client },
+    );
+    await locked;
+    return {
+      async queued(n: number): Promise<void> {
+        for (;;) {
+          const rows = await dbExecutor(() => admin).query<{ n: number }>(
+            "select count(*)::int as n from pg_stat_activity where datname = $1 and wait_event_type = 'Lock'",
+            [PROBE_DB],
+          );
+          if ((rows[0]?.n ?? 0) >= n) return;
+          // real-clock: polls Postgres for other backends to block on the lock; no timer of ours to move
+          await Bun.sleep(5);
+        }
+      },
+      async release(): Promise<void> {
+        release();
+        await held;
+      },
+    };
+  };
+
   test('N parallel draws under one key over 8 connections add it once, on a fresh row too', async () => {
     const results = await Promise.all(Array.from({ length: 40 }, () => keyed(1000, 7, 'run-1')));
     expect(results.filter((result) => result.replayed !== true)).toHaveLength(1);
@@ -174,17 +216,15 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
   // count it was refused at.
   test('a refusal that finds its key counted by a racing draw answers the count after it', async () => {
     await keyed(10, 4, 'base');
-    const low = heldAfter(1);
-    const refusing = low.keyed(4, 2, 'k');
-    // Refused at 4 by its first statement, and held before it looks the key up.
-    await low.reached;
-    expect(await keyed(10, 2, 'k')).toEqual({
-      allowed: true,
-      used: 6,
-      warned: false,
-      periodStartMs: START,
-    });
-    low.release();
+    const holder = await holdCounter();
+    const counting = keyed(10, 2, 'k');
+    await holder.queued(1);
+    // Queued behind it: this statement's snapshot predates that draw's commit, and its own limit
+    // of 4 refuses the count it then finds — only the key's index can tell it the key counted.
+    const refusing = keyed(4, 2, 'k');
+    await holder.queued(2);
+    await holder.release();
+    expect(await counting).toEqual({ allowed: true, used: 6, warned: false, periodStartMs: START });
     expect(await refusing).toEqual({
       allowed: true,
       used: 6,
@@ -192,25 +232,96 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
       replayed: true,
       periodStartMs: START,
     });
+    // The refusal's probe left no placeholder behind.
+    const keys = await dbExecutor(() => client).query<{ draw_key: string }>(
+      'select draw_key from x_meter_key order by draw_key',
+      [],
+    );
+    expect(keys.map((row) => row.draw_key)).toEqual(['base', 'k']);
   });
 
-  // Day two is full and owes the retry of day one's key a replay; day three, landing between the
-  // refusal and its key lookup, purges that key and has room. Judged against day three, the retry
-  // counts there — never refused by a lookup that no longer matches the counter it was refused on.
-  test('a refusal whose counter moves before its key lookup is judged again', async () => {
+  // Day two is full and owes the retry of day one's key a replay; a day-three draw ahead of it in
+  // the lock queue purges that key and leaves room. Judged against day three, the retry counts
+  // there — one statement, one lock, never a refusal decided on a counter that has since moved.
+  test('a refusal judged behind a draw that moved the counter is judged on the moved counter', async () => {
     await keyed(2, 1, 'k', START);
     await keyed(2, 2, 'fill', START + DAY);
-    const retry = heldAfter(1);
-    const retrying = retry.keyed(2, 1, 'k', START + DAY);
-    await retry.reached;
-    expect((await keyed(2, 1, 'other', START + 2 * DAY)).used).toBe(1);
-    retry.release();
+    const holder = await holdCounter();
+    const dayThree = keyed(2, 1, 'other', START + 2 * DAY);
+    await holder.queued(1);
+    const retrying = keyed(2, 1, 'k', START + DAY);
+    await holder.queued(2);
+    await holder.release();
+    expect((await dayThree).used).toBe(1);
     expect(await retrying).toEqual({
       allowed: true,
       used: 2,
       warned: false,
       periodStartMs: START + 2 * DAY,
     });
+  });
+
+  // A refusal that looked its key up in a second statement restarted whenever another draw charged
+  // the counter in between, so steady traffic on one tenant could keep a large draw from ever
+  // answering. Here a charge lands after every statement the refused draw sends.
+  test('a refusal answers in one statement while other draws keep charging around it', async () => {
+    await keyed(1000, 990, 'base');
+    const base = dbExecutor(() => client);
+    let statements = 0;
+    const executor: PgExecutor = {
+      async query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> {
+        const rows = await base.query<R>(sql, params);
+        statements += 1;
+        if (statements <= 5) await keyed(1000, 1, `around-${statements}`);
+        return rows;
+      },
+    };
+    const big = postgresMeterStore({ executor });
+    const refused = await big.draw({
+      ...key,
+      periodStartMs: START,
+      limit: 1000,
+      amount: 50,
+      drawKey: 'big',
+    });
+    expect(refused).toEqual({ allowed: false, used: 990, warned: false, periodStartMs: START });
+    // One decision, plus the delete of the probe's placeholder.
+    expect(statements).toBe(2);
+  });
+
+  // A text-mode client renders a timestamp in the session's DateStyle (`German`: 07.11.2026), which
+  // `Date.parse` cannot read: every period the store reads back is epoch ms, never a timestamp.
+  test('a text-mode client in any DateStyle reads every period back', async () => {
+    const base = dbExecutor(() => client);
+    const german = (value: unknown): unknown =>
+      value instanceof Date
+        ? `${value.getUTCDate()}.${value.getUTCMonth() + 1}.${value.getUTCFullYear()} 00:00:00 UTC`
+        : value;
+    const executor: PgExecutor = {
+      async query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> {
+        const rows = await base.query<Record<string, unknown>>(sql, params);
+        return rows.map(
+          (row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, german(v)])) as R,
+        );
+      },
+    };
+    const text = postgresMeterStore({ executor });
+    const at = (limit: number, drawKey: string, periodStartMs: number) =>
+      text.draw({ ...key, periodStartMs, limit, amount: 2, drawKey });
+    await at(4, 'a', START + DAY);
+    expect(await at(4, 'b', START)).toMatchObject({ allowed: true, periodStartMs: START + DAY });
+    expect(await at(4, 'c', START)).toMatchObject({ allowed: false, periodStartMs: START + DAY });
+    expect(await at(4, 'a', START)).toMatchObject({ replayed: true, periodStartMs: START + DAY });
+  });
+
+  test('a refused keyed draw leaves no row in x_meter_key', async () => {
+    await keyed(2, 2, 'fill');
+    expect((await keyed(2, 1, 'refused')).allowed).toBe(false);
+    const keys = await dbExecutor(() => client).query<{ draw_key: string }>(
+      'select draw_key from x_meter_key',
+      [],
+    );
+    expect(keys.map((row) => row.draw_key)).toEqual(['fill']);
   });
 
   // The first draw on a counter opens it charged: a zero row opened first let a lagging day-one

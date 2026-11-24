@@ -158,6 +158,9 @@ export const summarise = action({
   handle: async ({ input, ctx }) => {
     // The handler does the work, so it measures the usage: never a count or an id the caller sent,
     // which would let any member spend the tenant's allowance without running anything.
+    // Accounting after the fact, NOT a spend cap: the model has run before the draw is judged, so a
+    // tenant past its tokens still costs one run per admitted call, refused here and unrecorded.
+    // Bound that with the admission meter's call count and the model's own max-tokens setting.
     const run = await model.complete(input.text);
     const drawn = await drawMeter(ctx, {
       meter: 'tokens',
@@ -174,7 +177,7 @@ export const summarise = action({
 | Use | When |
 |---|---|
 | `meter:` on the action | the unit is **the call**, known before the handler runs: refused before any work starts — also the admission gate in front of a costly handler, a limit of 0 for a caller with no allowance |
-| `drawMeter` | the unit is an **amount known only after the work**, or one action draws several meters |
+| `drawMeter` | the unit is an **amount known only after the work**, or one action draws several meters. It records and refuses what was spent; it cannot stop work already done, so it bounds spend only together with a pre-work gate (a `meter:`, a per-call cap on the work) |
 
 | Rule | What happens |
 |---|---|
