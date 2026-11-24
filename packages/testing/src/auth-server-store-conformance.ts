@@ -136,8 +136,10 @@ export const AUTH_SERVER_STORE_CHECKS: readonly AuthServerStoreCheck[] = [
     async run(store) {
       if (store.revokeLiveGrant === undefined) return;
       const subject = idOf('subject');
-      const [live, gone] = [idOf('live'), idOf('gone')];
+      const [live, gone, sibling] = [idOf('live'), idOf('gone'), idOf('sibling')];
       await store.putGrant(grantRecord(live, subject));
+      // The subject's other grant: ending one by id must leave it live.
+      await store.putGrant(grantRecord(sibling, subject));
       const ended = [
         await store.revokeLiveGrant(live, at(1)),
         await store.revokeLiveGrant(live, at(5)),
@@ -150,9 +152,13 @@ export const AUTH_SERVER_STORE_CHECKS: readonly AuthServerStoreCheck[] = [
       await store.putGrant(grantRecord(raced, subject));
       const both = await Promise.all([
         store.revokeLiveGrant(raced, at(7)),
-        store.revokeLiveGrant(raced, at(7)),
+        store.revokeLiveGrant(raced, at(8)),
       ]);
       expect(both.filter(Boolean)).toHaveLength(1);
+      // The losing call writes nothing: the stored time is the winner's.
+      const winner = both[0] ? at(7) : at(8);
+      expect((await store.getGrant(raced))?.revokedAt?.getTime()).toBe(winner.getTime());
+      expect((await store.getGrant(sibling))?.revokedAt).toBeNull();
     },
   },
   {

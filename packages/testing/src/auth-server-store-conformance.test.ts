@@ -62,6 +62,34 @@ describe(testName('unit', 'a store that breaks the contract fails conformance'),
     await answers.run(memoryAuthServerStore());
   });
 
+  test('a revokeLiveGrant that ends every grant of the subject', async () => {
+    const inner = memoryAuthServerStore();
+    const subjectWide: AuthServerStore = {
+      ...inner,
+      revokeLiveGrant: async (id, at) => {
+        const grant = await inner.getGrant(id);
+        if (grant === null || grant.revokedAt !== null) return false;
+        await inner.revokeGrants({ subject: grant.subject }, at);
+        return true;
+      },
+    };
+    await expect(check('revokeLiveGrant answers true only').run(subjectWide)).rejects.toThrow();
+  });
+
+  test('a revokeLiveGrant whose losing call still overwrites the time', async () => {
+    const inner = memoryAuthServerStore();
+    const overwrites: AuthServerStore = {
+      ...inner,
+      revokeLiveGrant: async (id, at) => {
+        const grant = await inner.getGrant(id);
+        const won = await inner.revokeLiveGrant?.(id, at);
+        if (grant !== null) await inner.putGrant({ ...grant, revokedAt: at });
+        return won === true;
+      },
+    };
+    await expect(check('revokeLiveGrant answers true only').run(overwrites)).rejects.toThrow();
+  });
+
   test('a revokeLiveGrant that reads, then writes in a separate step', async () => {
     const inner = memoryAuthServerStore();
     const readThenWrite: AuthServerStore = {

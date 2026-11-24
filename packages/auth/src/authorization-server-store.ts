@@ -46,7 +46,9 @@ export interface AuthServerStore {
    * `revokeGrant` that answers, in one conditional write: `true` when this call ended the grant,
    * `false` when it was unknown or already revoked — so two racing revokes count it once. Optional
    * for a hand-rolled store only: the memory and Postgres stores implement it; without it, a
-   * per-grant revoke counts on its read before the write. Required waits on `next`.
+   * per-grant revoke counts on its read before the write. A store wrapping another's `revokeGrant`
+   * (to audit, say) wraps this too: `revokeGrant({ subject, grantId })` calls this one when set.
+   * Required waits on `next`.
    */
   revokeLiveGrant?(id: string, at: Date): Promise<boolean>;
   /** Every live grant of `subject` (of one client when named). Answers how many. */
