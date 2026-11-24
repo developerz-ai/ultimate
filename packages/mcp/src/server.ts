@@ -40,9 +40,15 @@ import type { CatalogRefused, CatalogView, McpCatalogSource, PerCall } from './s
 import { catalogRefusal, viewOf } from './server-catalog';
 import { resourcesList, resourcesRead } from './server-resources';
 import type { McpInstructions, McpServerVoice } from './server-voice';
-import { instructionsFor, invalidArgsResult, screenCatalogDetail } from './server-voice';
+import {
+  instructionsFor,
+  invalidArgsResult,
+  protocolRefusal,
+  screenCatalogDetail,
+} from './server-voice';
 import type { McpTenant } from './tenant';
-import { assertTenant, LIST_TENANTS, listTenantsTool, tenantStep, withTenantArg } from './tenant';
+import { assertTenant, listTenantsTool, tenantStep, withTenantArg } from './tenant';
+import { tenantDoor, tenantsCall } from './tenant-discover';
 import { admitted, thrownResponse } from './tool-thrown';
 import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, McpWire, ServerInfo } from './wire';
 import {
@@ -105,9 +111,11 @@ export interface McpServerInput {
 
 export function mcpServer(input: McpServerInput = {}): McpServer {
   const tenant = input.tenant;
-  if (tenant !== undefined) assertTenant(tenant, input.tools ?? []);
+  if (tenant !== undefined) assertTenant(tenant, input.tools ?? [], input);
   // `list_tenants` is a boot tool like any other, so every surface lists it and nothing shadows it.
-  const all = [...(input.tools ?? []), ...(tenant === undefined ? [] : [listTenantsTool(tenant)])];
+  // A `discover` tool takes its place, and it is then not registered.
+  const lists = tenant === undefined || tenant.discover !== undefined;
+  const all = [...(input.tools ?? []), ...(lists ? [] : [listTenantsTool(tenant)])];
   const tools = new ToolRegistry(tenant?.arg).registerAll(all);
   const resources = new ResourceRegistry().registerAll(input.resources ?? []);
   for (const source of input.resourceSources ?? []) resources.addSource(source);
@@ -287,9 +295,9 @@ export class McpServer {
   private listIn(view: CatalogView, caller: McpCaller): readonly ToolListEntry[] {
     const flat = view.tools.list(caller);
     const meta = metaServed(view.meta, caller);
-    const arg = this.perCall?.tenant?.arg;
+    const tenant = this.perCall?.tenant;
     const withArg = (entries: readonly ToolListEntry[]) =>
-      arg === undefined ? entries : withTenantArg(entries, arg);
+      tenant === undefined ? entries : withTenantArg(entries, tenant);
     if (meta === undefined) return withArg(flat);
     // Constant: the meta tools plus whatever the app left ungrouped (`docs`, `whoami`).
     const entries = MetaSurface.entriesFor(
@@ -342,8 +350,14 @@ export class McpServer {
     // answers exactly as a hidden tool — `notFound`, the same call the dispatch below makes.
     let who = caller;
     let rawArgs: unknown = params['arguments'];
+    // A call naming none meets a door first (`tenant-discover.ts`): the tenant list, or the person.
     const tenant = this.perCall?.tenant;
-    if (tenant !== undefined && name !== LIST_TENANTS) {
+    const door = tenant === undefined ? 'person' : tenantDoor(tenant, name, rawArgs);
+    if (tenant !== undefined && door === 'tenants') {
+      const resolved = tenantsCall(listTenantsTool(tenant), this.tools.get(name), name, caller);
+      return this.dispatch(id, name, resolved, caller, signal);
+    }
+    if (tenant !== undefined && door === 'step') {
       const step = await tenantStep(tenant, rawArgs, caller);
       if (step.kind === 'not-member') {
         return this.notFound(
@@ -475,20 +489,6 @@ export class McpServer {
     if (result.isError === true) payload['isError'] = true;
     return resultResponse(id, payload);
   }
-}
-
-/**
- * The envelope refusals — no id to answer on, so `null` — rendered the way the scope refusal
- * already is: a `message` a client library surfaces verbatim, and `data: { code, fix, docs }`
- * built by the error class that owns the wording. Every other refusal on this surface carried its
- * instruction; these two answered a bare `-32600` and left the caller to guess.
- */
-function protocolRefusal(message: string, error: McpProtocolError): JsonRpcResponse {
-  return errorResponse(null, INVALID_REQUEST, message, {
-    code: error.code,
-    fix: error.fix,
-    docs: error.docs,
-  });
 }
 
 /** `meta` when this caller is served it, else `undefined` — one rule for the boot and a resolved view. */

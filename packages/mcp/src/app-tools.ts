@@ -111,7 +111,8 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * One token across tenants: `resolveToken` answers the PERSON, and every `tools/call` names its
    * tenant under `arg` — stripped before validation, checked by `resolve` (`null` answers as a
    * hidden tool), and the actor `resolve` answers is the caller for every gate and the policy.
-   * `list_tenants` serves `list`; a call naming none is `X_MCP_TENANT_REQUIRED`.
+   * `list_tenants` serves `list`; a call naming none is `X_MCP_TENANT_REQUIRED`. `discover` names
+   * a tool that lists the tenants in its place, `optional` the tools a call may reach with none.
    */
   readonly tenant?: McpTenant;
   /**

@@ -33,7 +33,7 @@ import. The CLI wires it.
 | `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve`: ≤ 16 calls run, ≤ 64 queued; the reader keeps reading at the cap, so `notifications/cancelled` and `ping` are always heard |
 | `stdio-lines.ts` | raw chunks → lines, the cap in bytes |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
-| `runtime-*` · `*-catalog.ts` · `tenant.ts` | `catalog:` (`runtimeTool()`, checked, merged per request) · `tenant:` (`list_tenants`); codes in `catalog-errors.ts` |
+| `runtime-*` · `*-catalog.ts` · `tenant*.ts` | `catalog:` (`runtimeTool()`, checked, merged per request) · `tenant:` (`list_tenants`); codes in `catalog-errors.ts` |
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
 | `projectable.ts` | a real `action`/`query` → `ProjectablePrimitive`; the ONE adapter both the sweep and the written-out list use |
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
