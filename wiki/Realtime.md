@@ -11,7 +11,7 @@ rather than a convention — the barrels are disjoint, and a test asserts it.
 
 | Entry | Holds | Reaches |
 |---|---|---|
-| `@ultimat3/realtime` | `useQuery`, `useRecord`, `useMutation`, `useConnection`, `installRealtime`, `hasPageSocket`, `RecordStore`, `channel()` and `topic()`, the offline queue, the wire protocol, cursors | an island, a browser bundle |
+| `@ultimat3/realtime` | `useQuery`, `useRecord`, `useMutation`, `useConnection`, `installRealtime`, `hasPageSocket`, `hasSyncTarget`, `RecordStore`, `channel()` and `topic()`, the offline queue, the wire protocol, cursors | an island, a browser bundle |
 | `@ultimat3/realtime/server` | `syncNode`, `ChannelHub`, `SocketRegistry`, `LiveQueryRegistry`, `NatsTransport`, `openNatsClient`, the replicator, the change feed, pg replication | a `sync` node, a worker, `server.ts` |
 
 ```ts
@@ -19,7 +19,7 @@ import { useQuery } from '@ultimat3/realtime';             // island
 import { syncNode } from '@ultimat3/realtime/server'; // sync node
 ```
 
-A server render is not a missing install. With no DOM, every read hook answers `pending` with no subscription, and `useMutation()` refuses with `X_LIVE_SERVER_RENDER`. `hasPageSocket()` answers `false` there, every time, so it is **not** a guard that makes a page-body read safe: a browser-only read in code no island imports is `X_LIVE_ROUTE_NO_ISLAND` at the `budgets` step, `hasPageSocket()` included. In a **browser**, a hook in a bundle that never called `installRealtime()` is `X_REALTIME_UNINSTALLED`.
+A server render is not a missing install. With no DOM, every read hook answers `pending` with no subscription, and `useMutation()` refuses with `X_LIVE_SERVER_RENDER`. `hasPageSocket()` answers `false` there, every time, so it is **not** a guard that makes a page-body read safe: a browser-only read in code no island imports is `X_LIVE_ROUTE_NO_ISLAND` at the `budgets` step, `hasPageSocket()` included. In a **browser**, a hook in a bundle that never called `installRealtime()` is `X_REALTIME_UNINSTALLED`. To ask, before any hook ran, whether a live hook could reach a sync node at all, call `hasSyncTarget()`: `true` when `installRealtime` was given a target or the document carries `<meta name="ultimate-sync">`; asking dials nothing. A page without one would answer `useChannel` with `X_SYNC_UNCONFIGURED`, so an island renders its static fallback instead. An events-only channel names no read: `channelRef('typing', { params: ['orgId'] })`.
 
 A file that needs both writes both imports. **Nothing was deleted in the split** — if an import
 stops resolving after upgrading to 8.0.0, the name moved to `./server`.
@@ -216,7 +216,7 @@ kept) until it mounts over the restored store.
 |---|---|---|
 | takes `useQuery`, `useRecord`, `useRecords`, `useMutation`, `useMutationQueue`, `useOutbox`, or any other name not listed below, anywhere in its own graph | yes — until it mounts, 3 s at most | yes, 1 s at most (`FIRST_PAINT_HOLD_MS`) |
 | takes `useQuery` or `useRecord` (and otherwise only the follow list below), in an app that declares no `persist: true` entity | **no** — the boot restores no record they could show | no |
-| takes only `useChannel`, `usePresence`, `useConnection`, `hasPageSocket`, `useRecordChanges`, `pollEvery`, `readPresence`, `channel`, `channelRef`, `topic` | **no** — its server markup is on screen from the first byte | no — it mounts as soon as the page runtime is there |
+| takes only `useChannel`, `usePresence`, `useConnection`, `hasPageSocket`, `hasSyncTarget`, `useRecordChanges`, `pollEvery`, `readPresence`, `channel`, `channelRef`, `topic` | **no** — its server markup is on screen from the first byte | no — it mounts as soon as the page runtime is there |
 | takes the barrel with no list of names (`import * as`, `export *`, `import()`) | yes | yes |
 | reaches no realtime | no | no |
 

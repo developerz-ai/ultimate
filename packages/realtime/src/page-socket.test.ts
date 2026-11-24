@@ -9,7 +9,7 @@ import { isUltimateError } from '@ultimat3/core';
 import { pageClient, rescope } from '@ultimat3/core/page';
 import { FakeSocket, resetPage, signal } from './hooks-fixture';
 import { installPageRuntime } from './page-runtime';
-import { hasPageSocket, pageSocket, resetPageSocket } from './page-socket';
+import { hasPageSocket, hasSyncTarget, pageSocket, resetPageSocket } from './page-socket';
 import { BOOT_KEY, type BootHost, pageRealtime } from './page-store';
 import { installRealtime } from './reactivity';
 import type { SocketHost, SocketHostOptions } from './socket-host';
@@ -228,5 +228,16 @@ describe('pageSocket over the real in-page engine', () => {
     mine()?.onopen?.();
     await until(() => client.connected);
     expect(client.connected).toBe(true);
+  });
+});
+
+describe('hasSyncTarget', () => {
+  test('answers whether a live hook could reach a sync node, before any hook ran', () => {
+    browserPage(undefined);
+    expect(hasSyncTarget()).toBe(false);
+    browserPage(TARGET);
+    expect(hasSyncTarget()).toBe(true);
+    // Asking dials nothing: no socket is seated by the question.
+    expect(hasPageSocket()).toBe(false);
   });
 });
