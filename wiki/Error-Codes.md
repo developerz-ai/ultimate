@@ -37,7 +37,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/action` | [Error-Codes-action](Error-Codes-action) | 34 |
 | `@ultimat3/admin` | [Error-Codes-admin](Error-Codes-admin) | 16 |
 | `@ultimat3/ai` | [Error-Codes-ai](Error-Codes-ai) | 36 |
-| `@ultimat3/auth` | [Error-Codes-auth](Error-Codes-auth) | 30 |
+| `@ultimat3/auth` | [Error-Codes-auth](Error-Codes-auth) | 31 |
 | `@ultimat3/cache` | [Error-Codes-cache](Error-Codes-cache) | 8 |
 | `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 237 |
 | `@ultimat3/core` | [Error-Codes-core](Error-Codes-core) | 76 |
@@ -157,6 +157,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_AUDIT_SINK_MISSING | [action](Error-Codes-action) |
 | X_AUTH_CLIENT_INVALID | [auth](Error-Codes-auth) |
 | X_AUTH_CONSENT_INVALID | [auth](Error-Codes-auth) |
+| X_AUTH_GRANTS_UNSUPPORTED | [auth](Error-Codes-auth) |
 | X_AUTH_GRANT_DISABLED | [auth](Error-Codes-auth) |
 | X_AUTH_LIMITER_NOT_SHARED | [auth](Error-Codes-auth) |
 | X_AUTH_LIMITER_POLICY_MISMATCH | [auth](Error-Codes-auth) |

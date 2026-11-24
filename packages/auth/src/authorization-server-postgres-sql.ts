@@ -48,6 +48,17 @@ with revoked as (
 select count(*)::int as n from revoked
 `;
 
+/** Byte order on the id breaks a tie, as the memory store does: no collation decides the list. */
+export const SQL_OAUTH_GRANTS_LIVE = `
+select g.* from x_oauth_grants g
+where g.subject = $1 and ($2::text is null or g.client_id = $2) and g.revoked_at is null
+  and exists (
+    select 1 from x_oauth_tokens t
+    where t.grant_id = g.id and t.retired_at is null and t.expires_at > $3
+  )
+order by g.created_at, g.id collate "C"
+`;
+
 export const SQL_OAUTH_TOKEN_PUT = `
 insert into x_oauth_tokens (token_hash, kind, grant_id, created_at, expires_at)
 values ($1, $2, $3, $4, $5)

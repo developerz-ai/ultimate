@@ -10,6 +10,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+### Added
+- `@ultimat3/auth`'s authorization server names one grant: `resolve(token)` answers `grantId`, kept across every refresh rotation; `grants({ subject, clientId? })` lists a subject's live grants (`grantId`, `clientId`, `scopes`, `resource`, `createdAt`, `refreshedAt`), oldest first; `revoke({ subject, grantId })` ends that grant alone, refresh tokens included, and answers 0 for another subject's id. `AuthServerStore` gains an optional `liveGrants(filter, at)`, implemented by the memory and Postgres stores; a store without it makes `grants()` `X_AUTH_GRANTS_UNSUPPORTED` (501). No schema change: every grant row already had its id.
+
 ### Fixed
 - The client scope id names the tenant: an actor with an `orgId` gets a different `<meta name="ultimate-scope">` per org, so the same person in two orgs no longer shares the page's record store, persisted rows or queued writes across them, and the router no longer swaps a page rendered in one org into a document of the other. An actor with no `orgId`, and the anonymous page, keep the id they had. After the upgrade, each signed-in tab whose actor carries an `orgId` makes one full load on its next navigation, because its scope changed; that load is a principal change, so rows and offline writes the tab stored under the old scope are wiped, and a replay naming the old scope is refused with `X_REPLAY_PRINCIPAL_MISMATCH`. Two tabs of one browser in two orgs are now two principals, with the trade-off [Realtime](https://github.com/developerz-ai/ultimate/wiki/Realtime) states for two principals in two tabs.
 - Isolated test runs no longer retain one global object per file on Bun 1.4.6+: the runtime now clears finished files' plugins at the isolation swap, so the framework's `Bun.plugin.clearAll()` workaround is skipped from that version on while older Bun keeps it.
