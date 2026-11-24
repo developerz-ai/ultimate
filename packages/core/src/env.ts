@@ -31,8 +31,9 @@ export interface EnvStringVar extends EnvVarCommon {
   /**
    * With `required: false`: optional, EXCEPT in these environments (`ULTIMATE_ENV`, else
    * `NODE_ENV`) — `requiredIn: ['staging', 'production']` is a key every deploy must set and a
-   * laptop or a test run may leave unset. An environment no reader can name counts as listed.
-   * Without `required: false` the key is required everywhere already, and this changes nothing.
+   * laptop or a test run may leave unset. An environment no reader can name counts as listed. A
+   * declared `default` still answers an absent key first, and a `role` still narrows it. Without
+   * `required: false` the key is required everywhere already, and this changes nothing.
    */
   readonly requiredIn?: readonly Environment[] | undefined;
   readonly type: 'string' | 'url';
@@ -44,8 +45,9 @@ export interface EnvNumberVar extends EnvVarCommon {
   /**
    * With `required: false`: optional, EXCEPT in these environments (`ULTIMATE_ENV`, else
    * `NODE_ENV`) — `requiredIn: ['staging', 'production']` is a key every deploy must set and a
-   * laptop or a test run may leave unset. An environment no reader can name counts as listed.
-   * Without `required: false` the key is required everywhere already, and this changes nothing.
+   * laptop or a test run may leave unset. An environment no reader can name counts as listed. A
+   * declared `default` still answers an absent key first, and a `role` still narrows it. Without
+   * `required: false` the key is required everywhere already, and this changes nothing.
    */
   readonly requiredIn?: readonly Environment[] | undefined;
   readonly type: 'number' | 'integer' | 'port';
@@ -58,8 +60,9 @@ export interface EnvBooleanVar extends EnvVarCommon {
   /**
    * With `required: false`: optional, EXCEPT in these environments (`ULTIMATE_ENV`, else
    * `NODE_ENV`) — `requiredIn: ['staging', 'production']` is a key every deploy must set and a
-   * laptop or a test run may leave unset. An environment no reader can name counts as listed.
-   * Without `required: false` the key is required everywhere already, and this changes nothing.
+   * laptop or a test run may leave unset. An environment no reader can name counts as listed. A
+   * declared `default` still answers an absent key first, and a `role` still narrows it. Without
+   * `required: false` the key is required everywhere already, and this changes nothing.
    */
   readonly requiredIn?: readonly Environment[] | undefined;
   readonly type: 'boolean';
@@ -70,8 +73,9 @@ export interface EnvEnumVar<V extends string = string> extends EnvVarCommon {
   /**
    * With `required: false`: optional, EXCEPT in these environments (`ULTIMATE_ENV`, else
    * `NODE_ENV`) — `requiredIn: ['staging', 'production']` is a key every deploy must set and a
-   * laptop or a test run may leave unset. An environment no reader can name counts as listed.
-   * Without `required: false` the key is required everywhere already, and this changes nothing.
+   * laptop or a test run may leave unset. An environment no reader can name counts as listed. A
+   * declared `default` still answers an absent key first, and a `role` still narrows it. Without
+   * `required: false` the key is required everywhere already, and this changes nothing.
    */
   readonly requiredIn?: readonly Environment[] | undefined;
   readonly type: 'enum';
@@ -139,10 +143,13 @@ function requiredInEnvironment(decl: EnvVarDecl, environment: Environment | unde
   return environment === undefined || decl.requiredIn.includes(environment);
 }
 
+/** The role is asked first: a key another role needs is never this process's, whatever the environment. */
 function requiredForRole(decl: EnvVarDecl, role: Role, environment?: Environment): boolean {
-  if (decl.required === false) return requiredInEnvironment(decl, environment);
-  if (decl.role === undefined) return true;
-  return typeof decl.role === 'string' ? decl.role === role : decl.role.includes(role);
+  if (decl.role !== undefined) {
+    const matches = typeof decl.role === 'string' ? decl.role === role : decl.role.includes(role);
+    if (!matches) return false;
+  }
+  return decl.required !== false || requiredInEnvironment(decl, environment);
 }
 
 function expectation(decl: EnvVarDecl): string {

@@ -81,11 +81,11 @@ function checkOrigin(rpId: string, origin: unknown): string {
   }
   // A browser sends ONE exact origin, so a pattern matches nothing and every ceremony would fail
   // `X_PASSKEY_INVALID` in production: `*` parses as a host character, and is refused here.
-  if (!HOST.test(url.hostname)) {
+  if (!HOST.test(url.hostname) || IPV4.test(url.hostname)) {
     throw passkeyConfigInvalid(
       'origins',
       origin,
-      'its host is not a DNS name — a wildcard (*) matches no origin: list each one',
+      'its host is not a DNS name — a wildcard (*) matches no origin and an IP is no rp id: list each one',
     );
   }
   if (url.hostname !== rpId && !url.hostname.endsWith(`.${rpId}`)) {

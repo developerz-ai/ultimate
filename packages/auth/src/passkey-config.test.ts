@@ -48,7 +48,11 @@ describe('defineAuth({ passkeys })', () => {
     ['an origin with a path', { rpId: 'example.com', origins: ['https://example.com/login'] }],
     // A browser sends one exact origin, so `*` matches nothing: every ceremony would fail.
     ['a wildcard origin', { rpId: 'example.com', origins: ['https://*.example.com'] }],
-    ['a wildcard host', { rpId: 'localhost', origins: ['http://*:3000'] }],
+    [
+      'a host with an invalid DNS label',
+      { rpId: 'example.com', origins: ['https://-app.example.com'] },
+    ],
+    ['an IP origin under a numeric rp id', { rpId: '0.1', origins: ['https://127.0.0.1'] }],
     ['an origin with a trailing slash', { rpId: 'example.com', origins: ['https://example.com/'] }],
     [
       'a NaN ttl',

@@ -76,7 +76,8 @@ export interface RouteRequest {
   /**
    * The cookies the request carries, by name: `load` and the page read them with
    * `useRequestCookie(name)`, as a browser's request is read. Given, the render runs inside a GET
-   * request for `url`. Absent, no request: a cookie read is `X_NO_REQUEST`, as outside one.
+   * request for `url`. Absent, no request is made: the render runs in whatever context it was called
+   * from — outside any request, a cookie read is `X_NO_REQUEST`.
    */
   readonly cookies?: Readonly<Record<string, string>> | undefined;
 }
