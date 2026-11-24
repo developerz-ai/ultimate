@@ -3,6 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { tryUseContext, userActor } from '@ultimat3/core';
+import { useRequestContext, useRequestCookie } from '@ultimat3/http';
 import { configureLocales, currentLocale, localeConfig } from '@ultimat3/i18n';
 import { defineRoute, h, island, setAssetResolver } from '@ultimat3/render';
 import { renderRoute, renderView } from './render-view';
@@ -257,5 +258,60 @@ describe('renderRoute · the app-wide favicon', () => {
     const view = await renderRoute({ config, Page });
     expect(view.favicon).toBeUndefined();
     expect(view.html).toContain('<h1>favicon</h1>');
+  });
+});
+
+describe('renderRoute · the cookies a request carries', () => {
+  const config = defineRoute<{
+    readonly session: string;
+    readonly actorId: string;
+    readonly request: string;
+  }>({
+    render: 'ssr',
+    offline: 'runtime',
+    // What a page that reads a cookie does: `useRequestCookie`, the one reader app code has.
+    load: async () => {
+      const request = useRequestContext('the render under test');
+      return {
+        session: useRequestCookie('sid') ?? 'no cookie',
+        actorId: tryUseContext()?.actor.id ?? 'no context',
+        request: `${request.method} ${request.url.href}`,
+      };
+    },
+    meta: () => ({ title: 'cookie' }),
+  });
+  const Page = (props: { readonly data: { readonly session: string } }): unknown =>
+    h('p', null, props.data.session);
+
+  test('load reads the cookie, decoded, under the url asked for', async () => {
+    const view = await renderRoute(
+      { config, Page },
+      { url: 'https://example.test/account', cookies: { sid: 'a b;c' } },
+    );
+    expect(view.data.session).toBe('a b;c');
+    expect(view.data.request).toBe('GET https://example.test/account');
+    expect(view.text).toContain('a b;c');
+  });
+
+  test('cookies and an actor together: the actor still acts', async () => {
+    const actor = userActor({ id: 'member-9', orgId: 'org-1' });
+    const view = await renderRoute({ config, Page }, { actor, cookies: { sid: 's-1' } });
+    expect([view.data.session, view.data.actorId]).toEqual(['s-1', 'member-9']);
+  });
+
+  test('cookies under a routed locale prefix: the locale still holds', async () => {
+    const before = localeConfig();
+    configureLocales({ supported: ['en', 'es'], fallback: 'en' });
+    try {
+      const Where = (props: { readonly data: { readonly session: string } }): unknown =>
+        h('p', null, `${props.data.session} ${currentLocale()}`);
+      const view = await renderRoute(
+        { config, Where },
+        { url: 'https://example.test/es/account', cookies: { sid: 's-2' } },
+      );
+      expect(view.text).toBe('s-2 es');
+    } finally {
+      configureLocales(before);
+    }
   });
 });

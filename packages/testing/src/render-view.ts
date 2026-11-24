@@ -3,7 +3,8 @@
 // them. No browser, no server, no cast: a test asserts on markup and on visible text.
 
 import type { Actor } from '@ultimat3/core';
-import { assert, ctxOf, runWithContext } from '@ultimat3/core';
+import { assert, ctxOf, runWithContext, tryUseContext } from '@ultimat3/core';
+import { asCtx, defineHttpConfig, requestContext } from '@ultimat3/http';
 import { splitLocalePrefix } from '@ultimat3/i18n';
 import type { AssetPath, IslandDirective, RouteConfig, RouteParams } from '@ultimat3/render';
 import { decodeHtmlEntities } from './html-entities';
@@ -72,6 +73,13 @@ export interface RouteRequest {
    * for a route with no favicon to resolve.
    */
   readonly favicon?: AssetPath | undefined;
+  /**
+   * The cookies the request carries, by name: `load` and the page read them with
+   * `useRequestCookie(name)`, as a browser's request is read. Given, the render runs inside a GET
+   * request for `url`. Absent, no request is made: the render runs in whatever context it was called
+   * from — outside any request, a cookie read is `X_NO_REQUEST`.
+   */
+  readonly cookies?: Readonly<Record<string, string>> | undefined;
 }
 
 const DEFAULT_URL = 'http://localhost/';
@@ -168,12 +176,41 @@ export async function renderRoute<TData>(
   // the router splits it. Unprefixed, the default — which `currentLocale()` answers outside a
   // context too, so neither a locale nor an actor means no request context at all.
   const locale = splitLocalePrefix(new URL(url).pathname)?.locale;
-  if (request.actor === undefined && locale === undefined) return run();
+  const rendered = request.cookies === undefined ? run : () => inRequest(url, request.cookies, run);
+  if (request.actor === undefined && locale === undefined) return rendered();
   return runWithContext(
     ctxOf({
       ...(request.actor === undefined ? {} : { actor: request.actor }),
       ...(locale === undefined ? {} : { locale }),
     }),
-    run,
+    rendered,
   );
+}
+
+/**
+ * `fn` inside a GET request for `url` carrying `cookies`, each percent-encoded as `useRequestCookie`
+ * (core's `readCookie`) decodes it. The context it was called in keeps its actor and locale: the
+ * request's fields go over it, never its principal.
+ */
+function inRequest<T>(
+  url: string,
+  cookies: Readonly<Record<string, string>> | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const pairs = Object.entries(cookies ?? {}).map(
+    ([name, value]) => `${name}=${encodeURIComponent(value)}`,
+  );
+  const request = requestContext({
+    url: new URL(url),
+    method: 'GET',
+    role: 'web',
+    config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
+    requestHeaders: pairs.length === 0 ? {} : { cookie: pairs.join('; ') },
+  });
+  const outer = tryUseContext();
+  const scope =
+    outer === undefined
+      ? request
+      : { ...outer, ...request, actor: outer.actor, locale: outer.locale };
+  return runWithContext(asCtx(scope), fn);
 }

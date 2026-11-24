@@ -429,6 +429,8 @@ export {
   sessionExpiry,
   verifySession,
 } from './session';
+export type { VerifiedSession } from './session-user';
+export { verifySessionWithUser } from './session-user';
 /** A sign-out response's headers: the session cookie expired, and `Clear-Site-Data`. */
 export type { SignOutHeadersOptions } from './sign-out';
 export { SIGN_OUT_CLEAR_SITE_DATA, signOutHeaders } from './sign-out';

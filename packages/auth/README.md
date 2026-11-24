@@ -947,7 +947,10 @@ one `idleSlideMs`.
 `getSessionWithUser` joins `x_sessions` to `x_users` by the session id, and the secret half and
 both clocks are checked on the row it returns exactly as `verifySession` checks them
 (`admitSession`, one copy). A request that slides the idle window adds the one write above.
-Counted on PGlite by `authenticate-statements.test.ts`.
+Counted on PGlite by `authenticate-statements.test.ts`. A hook that needs the session and the user
+rather than an actor calls the same read: `verifySessionWithUser(auth.sessions, auth.adapter, token)`
+answers `{ session, user }` (`user: null` when the session outlived its user — delete the session and
+refuse), one join on an adapter with `getSessionWithUser`, else `verifySession` then `findUserById`.
 
 **Revocation is unaffected, and deliberately so.** `authenticate` re-reads the *user* row on every
 request — in that same join — so a revoked role takes effect on the very next one with no token-expiry lag — a better
