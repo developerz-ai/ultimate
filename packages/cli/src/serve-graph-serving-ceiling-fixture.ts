@@ -368,5 +368,7 @@
  * raised 1568 → 1569, measured 1569 (2026-11-19, integration): `cli/src/messages-processes.ts` —
  * `x doctor`'s processes rows, spread into the one CLI catalog (`messages.ts`) every role loads;
  * unspread, the doctor printed `⟦cli.doctor.processes…⟧`.
+ * raised 1569 → 1570, measured 1570 (2026-11-23, per-call tenant on bearer mounts): the one on
+ * `MIGRATE_CEILING`, `http/src/bearer-mount-tenant.ts`.
  */
-export const SERVING_ROLE_CEILING = 1569;
+export const SERVING_ROLE_CEILING = 1570;

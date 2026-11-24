@@ -374,8 +374,12 @@
  * supervised child reads, reached through `logger.ts` on the core barrel, so every line carries
  * its `child`) and `cli/src/runtime-jobs-share.ts` (a queue's slots split across the children).
  * The supervisor itself is `await import()`ed by `runRole`: none of it is on this graph.
+ * raised 1005 → 1006, measured 1006 (2026-11-23, per-call tenant on bearer mounts, metafile walk):
+ * `http/src/bearer-mount-tenant.ts` (the tenant step, its listing and the `BearerMountTenant`
+ * shape), reached through `bearer-mount.ts` on the http barrel — a split that keeps
+ * `bearer-mount.ts` one job, worth its one module.
  */
-export const MIGRATE_CEILING = 1005;
+export const MIGRATE_CEILING = 1006;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';
