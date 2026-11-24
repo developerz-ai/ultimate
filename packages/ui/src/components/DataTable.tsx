@@ -31,6 +31,7 @@ import { EmptyState } from './EmptyState';
 import { ErrorState } from './ErrorState';
 import { Pagination } from './Pagination';
 import { Skeleton } from './Skeleton';
+import { type ListSelection, selectionControls } from './selection-control';
 import { ariaSortFor, nextSortState, type SortState } from './sort-state';
 import { Table } from './Table';
 
@@ -99,6 +100,12 @@ export interface DataTableCallbackProps<Row> extends DataTableBaseProps<Row> {
   onSortChange?: ((sort: SortState | undefined) => void) | undefined;
   /** Back to the first page: the pager's "First" button. Pass it only past the first page. */
   onFirst?: (() => void) | undefined;
+  /**
+   * Row selection — declared on each mode, the same in both: a native checkbox per row posting its `rowKey` under `selection.name`, a
+   * tick-all box in the header (callback mode), and a `BulkBar` holding `selection.actions` under
+   * the table. Set for the table's life: a table does not grow a column mid-render.
+   */
+  selection?: ListSelection<Row> | undefined;
   hrefFor?: undefined;
   sortHrefFor?: undefined;
   firstHref?: undefined;
@@ -115,6 +122,8 @@ export interface DataTableLinkProps<Row> extends DataTableBaseProps<Row> {
   sortHrefFor?: ((sort: SortState | undefined) => string) | undefined;
   /** The first page's URL, for the pager's "First" anchor — `listUrl().firstHref`. */
   firstHref?: string | undefined;
+  /** Row selection, the same in both modes: `ListSelection`. */
+  selection?: ListSelection<Row> | undefined;
   onCursor?: undefined;
   onSortChange?: undefined;
   onFirst?: undefined;
@@ -150,6 +159,23 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
   };
 
   const branch = (): AsyncBranch<readonly Row[]> => asyncBranch(state());
+
+  /** Read once: the selection column is part of the table's shape, like its columns. */
+  const selectable = props.selection !== undefined;
+  const select = selectionControls<Row>(
+    () => props.selection,
+    () => props.rows.map((row) => props.rowKey(row)),
+    // A first page in flight has no rows yet, and that is not every row leaving the list.
+    () => props.loading !== true && (props.error === undefined || props.error === null),
+  );
+  /** The tick-all box: callback mode only, since scripting off it could tick nothing. */
+  const pageBoxShown = selectable && props.selection?.onChange !== undefined;
+  /** The selection's cell at the inline start of a row; `content` is empty for a placeholder. */
+  const selectCell = (content: JSX.Element): JSX.Element => (
+    <td role={TABLE_ROLES.cell} class={styles['select']}>
+      {content}
+    </td>
+  );
 
   const cards = (): boolean => (props.narrow ?? 'cards') === 'cards';
   /** Read through the validator on every render, so a bad priority is refused, never shown. */
@@ -194,6 +220,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
     const more = moreColumn(props.columns);
     return (
       <tr role={TABLE_ROLES.row} class={styles['row']} data-row={key}>
+        {selectable ? selectCell(select.box(row, key)) : null}
         {props.columns.map((column) => (
           <td
             role={TABLE_ROLES.cell}
@@ -223,6 +250,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
       const more = moreColumn(props.columns);
       return Array.from({ length: placeholders }, () => (
         <tr role={TABLE_ROLES.row} class={styles['row']}>
+          {selectable ? selectCell(null) : null}
           {props.columns.map((column) => (
             <td role={TABLE_ROLES.cell} class={styles['cell']} data-priority={priorityOf(column)}>
               <Skeleton height="1.1em" />
@@ -320,9 +348,16 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
       <thead
         role={TABLE_ROLES.rowgroup}
         class={styles['head']}
-        data-sortable={props.columns.some(hasSortControl) ? '' : undefined}
+        // A narrow card list shows the header only when it holds a control — a sort chip or the
+        // tick-all box — and hides it otherwise, where a control would be an invisible Tab stop.
+        data-controls={pageBoxShown || props.columns.some(hasSortControl) ? '' : undefined}
       >
         <tr role={TABLE_ROLES.row}>
+          {selectable ? (
+            <th scope="col" role={TABLE_ROLES.columnheader} class={styles['select']}>
+              {pageBoxShown ? select.pageBox() : null}
+            </th>
+          ) : null}
           {props.columns.map((column) => (
             <th
               scope="col"
@@ -410,9 +445,14 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
   /** Beside the table and outside its memo: a new cursor redraws the pager and nothing else. */
   const pagerSlot = (): JSX.Element => (view() === 'table' && hasPager() ? pager() : null);
 
+  /** Built once and kept: a new selection updates the bar, never rebuilds it under the focus. */
+  const bar = selectable ? select.bar() : null;
+  const barSlot = (): JSX.Element => (view() === 'table' ? bar : null);
+
   return (
     <div class={cx(styles['wrap'], props.class)} data-narrow={props.narrow ?? 'cards'}>
       {content()}
+      {barSlot()}
       {pagerSlot()}
     </div>
   );

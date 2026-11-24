@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-99 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Board` · `BottomNav` · `Breadcrumb` · `Button` · `Calendar` · `Card` · `ChartFrame` · `Checkbox` · `CodeBlock` · `Combobox` · `CommandPalette` · `ConfirmDialog` · `Container` · `CopyButton` · `DataTable` · `DatePicker` · `DateRangePicker` · `DateTime` · `DescriptionList` · `Dialog` · `DiffView` · `Divider` · `DonutChart` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Gauge` · `Grid` · `HeatStrip` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `InlineBar` · `Input` · `JsonView` · `Kbd` · `LineChart` · `AreaChart` · `Link` · `LiveIndicator` · `LocaleSwitcher` · `LogViewer` · `Markdown` · `Menu` · `Meter` · `Money` · `NavList` · `PageHeader` · `Pagination` · `Popover` · `PullToRefresh` · `QrCode` · `Radio` · `RelativeTime` · `SearchableSelect` · `SearchableSelectChips` · `SearchableSelectNative` · `Section` · `Select` · `ShortcutSheet` · `Skeleton` · `Slider` · `SortableList` · `Sparkline` · `Spinner` · `SplitPane` · `Stack` · `StatTile` · `Stepper` · `Switch` · `Table` · `Tabs` · `TerminalView` · `Text` · `Textarea` · `ThemeToggle` · `TimeRangePicker` · `Timeline` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip` · `Tree` · `VirtualList` · `TreeLinkNode` · `TreeSelectNode`
+100 components: `Accordion` · `Alert` · `AppShell` · `AsyncRegion` · `Avatar` · `Badge` · `BarChart` · `Board` · `BottomNav` · `Breadcrumb` · `BulkBar` · `Button` · `Calendar` · `Card` · `ChartFrame` · `Checkbox` · `CodeBlock` · `Combobox` · `CommandPalette` · `ConfirmDialog` · `Container` · `CopyButton` · `DataTable` · `DatePicker` · `DateRangePicker` · `DateTime` · `DescriptionList` · `Dialog` · `DiffView` · `Divider` · `DonutChart` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Gauge` · `Grid` · `HeatStrip` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `InlineBar` · `Input` · `JsonView` · `Kbd` · `LineChart` · `AreaChart` · `Link` · `LiveIndicator` · `LocaleSwitcher` · `LogViewer` · `Markdown` · `Menu` · `Meter` · `Money` · `NavList` · `PageHeader` · `Pagination` · `Popover` · `PullToRefresh` · `QrCode` · `Radio` · `RelativeTime` · `SearchableSelect` · `SearchableSelectChips` · `SearchableSelectNative` · `Section` · `Select` · `ShortcutSheet` · `Skeleton` · `Slider` · `SortableList` · `Sparkline` · `Spinner` · `SplitPane` · `Stack` · `StatTile` · `Stepper` · `Switch` · `Table` · `Tabs` · `TerminalView` · `Text` · `Textarea` · `ThemeToggle` · `TimeRangePicker` · `Timeline` · `ToastRegion` · `Toast` · `Toaster` · `Toolbar` · `Tooltip` · `Tree` · `VirtualList` · `TreeLinkNode` · `TreeSelectNode`
 
 ## Vocabulary
 
@@ -125,7 +125,7 @@ A bar chart of one series — clicks per day, signups per week — two stacked (
 
 ### Board
 
-Columns of sortable groups sharing one gesture: a card moves within a column or across to another by pointer, touch, the arrow keys, or — with scripting off — a target `select` per card. No card look and no column rules: `renderItem` and `canDrop` are the caller's.
+Columns of sortable groups sharing one gesture: a card moves within a column or across to another by pointer, touch, the arrow keys, or — with scripting off — a target `select` per card. With `selection`, cards are also ticked for a bulk action, as `DataTable` rows are. No card look and no column rules: `renderItem` and `canDrop` are the caller's.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -137,6 +137,7 @@ Columns of sortable groups sharing one gesture: a card moves within a column or 
 | `canDrop` | `CanDrop<T>` | — | The one seam for a business rule — a WIP limit, a status machine. |
 | `action` | `string` | — | The action URL the no-script target select posts to. |
 | `fields` | `SortFields` | — |  |
+| `selection` | `ListSelection<T>` | — | Card selection: a native checkbox per card posting its `itemKey`, Shift+click and the keyboard ranging in reading order, a held finger on touch, and a `BulkBar` under the board. Set for the board's life. |
 | `class` | `string` | — |  |
 
 ### BottomNav
@@ -158,6 +159,21 @@ Ancestor trail. The last item is the current page: rendered as text, never a lin
 |---|---|---|---|
 | `items` | `readonly BreadcrumbItem[]` | yes |  |
 | `label` | `string` | — | Overrides the translated `ui.breadcrumb` landmark name. |
+| `class` | `string` | — |  |
+
+### BulkBar
+
+The bar under a selection: how many rows it names, the caller's actions in a slot, and — when the list's filter matches more than the page — the "all matching" box. The count is a status region, so a screen reader hears each change without moving focus; a no-script form has no count.  "All matching" is a native checkbox posting the FILTER under its own name, never a list of ids: with scripting off it is the same control in the same form as the row boxes.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `count` | `number` | — | Rows selected now. Absent — a scripting-off form, whose boxes change with nothing to recount them — the bar shows no count and stays in reach as if something were selected. |
+| `children` | `JSX.Element` | — | The bulk actions: buttons that submit the selection's form or call back. |
+| `matching` | `SelectionMatching` | — | Present when the filter matches more rows than the page shows. |
+| `allMatching` | `boolean` | — | Whether "all matching" is the selection. |
+| `onAllMatching` | `((on: boolean) => void)` | — | Callback mode for the "all matching" box: once it answers, the box shows `allMatching` again, so a change the caller declines is not left ticked. Absent, it is a plain form control. |
+| `onClear` | `(() => void)` | — | Callback mode: the clear button. Absent, no clear button — a no-script page reloads instead. |
+| `form` | `string` | — | The id of the `<form>` the "all matching" box submits with. |
 | `class` | `string` | — |  |
 
 ### Button
@@ -378,6 +394,7 @@ Data-driven table: sortable headers, cursor pagination, and the four states a re
 | `onCursor` | `((cursor: string, direction: 'next' \| 'prev') => void)` | — | Callback paging. Never beside `hrefFor` — the type refuses the pair. |
 | `onSortChange` | `((sort: SortState \| undefined) => void)` | — | Callback sorting. Never beside `sortHrefFor` — the type refuses the pair. |
 | `onFirst` | `(() => void)` | — | Back to the first page: the pager's "First" button. Pass it only past the first page. |
+| `selection` | `ListSelection<Row>` | — | Row selection — declared on each mode, the same in both: a native checkbox per row posting its `rowKey` under `selection.name`, a tick-all box in the header (callback mode), and a `BulkBar` holding `selection.actions` under the table. Set for the table's life: a table does not grow a column mid-render. |
 | `hrefFor` | `(cursor: string, direction: 'next' \| 'prev') => string` | — | Link paging: the URL of the page a cursor names, handed to `<Pagination hrefFor>`. |
 | `sortHrefFor` | `((sort: SortState \| undefined) => string)` | — | Link sorting: the URL of the list under the NEXT sort state of a header's cycle (`undefined` is "unsorted"). Absent, a sortable header is plain text — never a button with no handler. |
 | `firstHref` | `string` | — | The first page's URL, for the pager's "First" anchor — `listUrl().firstHref`. |
