@@ -16,7 +16,10 @@ import type { Repo } from './repo';
 
 const ranges = entity('check_refusal_ranges', {
   columns: { id: uuid().primaryKey(), low: integer(), high: integer() },
-  invariants: (c) => [invariant('low_non_negative', c.low.atLeast(0))],
+  invariants: (c) => [
+    invariant('low_non_negative', c.low.atLeast(0)),
+    invariant('high_non_negative', c.high.atLeast(0)),
+  ],
 });
 
 type Range = { id: string; low: number; high: number };
@@ -73,6 +76,33 @@ describe('a CHECK refusing an update answers as insert does', () => {
     const refused = await refusal(() => repo.updateWhere({ id: ID }, { low: -1 }));
     expect(refused.code).toBe('X_INVARIANT_VIOLATED');
     expect(refused.cause).toContain('check_refusal_ranges.low_non_negative');
+  });
+
+  test.each(drivers)('%s: the rule the CHECK names, not the first declared', async (_, open) => {
+    const repo = open();
+    await repo.insert({ id: ID, low: 1, high: 5 });
+    const inserted = await refusal(() => repo.insert({ id: ID, low: 1, high: -1 }));
+    const updated = await refusal(() => repo.update(ID, { high: -1 }));
+    expect(updated).toEqual(inserted);
+    expect(updated.cause).toContain('check_refusal_ranges.high_non_negative');
+  });
+
+  test("a CHECK a migration named after the rule itself answers as the rule's", async () => {
+    const generated = 'check_refusal_ranges_low_non_negative_check';
+    const rename = (from: string, to: string) =>
+      client.execute(
+        raw(`alter table "check_refusal_ranges" rename constraint "${from}" to "${to}"`),
+      );
+    await rename(generated, 'low_non_negative');
+    try {
+      const repo = postgresRepo(ranges, { client }) as unknown as Repo<Range>;
+      await repo.insert({ id: ID, low: 1, high: 5 });
+      const refused = await refusal(() => repo.update(ID, { low: -1 }));
+      expect(refused.code).toBe('X_INVARIANT_VIOLATED');
+      expect(refused.cause).toContain('check_refusal_ranges.low_non_negative');
+    } finally {
+      await rename('low_non_negative', generated);
+    }
   });
 
   test('a CHECK no invariant declares stays the statement failure it was', async () => {
