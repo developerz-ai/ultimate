@@ -253,3 +253,43 @@ describe('defineEnv', () => {
     expect((best / CHECKS_PER_ROUND) * 1000).toBeLessThan(BUDGET_US_PER_CHECK);
   });
 });
+
+describe('a key required only in some environments', () => {
+  const deployed = {
+    PAYMENTS_KEY: {
+      type: 'string',
+      secret: true,
+      required: false,
+      requiredIn: ['staging', 'production'],
+    },
+  } as const satisfies EnvSchema;
+  const issuesIn = (env: Record<string, string>): readonly string[] =>
+    checkEnv(deployed, { env: { ROLE: 'web', ...env }, redact: false }).issues.map(
+      (issue) => issue.key,
+    );
+
+  test('unset in development and test: undefined, no issue', () => {
+    expect(issuesIn({ ULTIMATE_ENV: 'development' })).toEqual([]);
+    expect(issuesIn({ NODE_ENV: 'test' })).toEqual([]);
+    const env: { readonly PAYMENTS_KEY: string | undefined } = defineEnv(deployed, {
+      env: { ROLE: 'web', ULTIMATE_ENV: 'test' },
+      redact: false,
+    });
+    expect(env.PAYMENTS_KEY).toBeUndefined();
+  });
+
+  test('unset in a deploy: missing, as any required key is', () => {
+    expect(issuesIn({ ULTIMATE_ENV: 'production' })).toEqual(['PAYMENTS_KEY']);
+    expect(issuesIn({ ULTIMATE_ENV: 'staging' })).toEqual(['PAYMENTS_KEY']);
+  });
+
+  test('an environment no reader can name fails closed: required', () => {
+    expect(issuesIn({ ULTIMATE_ENV: 'prod' })).toEqual(['PAYMENTS_KEY']);
+  });
+
+  test('describeEnv names the environments, and only when declared', () => {
+    const [summary] = describeEnv({ ...deployed, OTHER: { type: 'string' } });
+    expect(summary?.requiredIn).toEqual(['staging', 'production']);
+    expect('requiredIn' in (describeEnv({ OTHER: { type: 'string' } })[0] ?? {})).toBe(false);
+  });
+});

@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { tryUseContext, userActor } from '@ultimat3/core';
 import { configureLocales, currentLocale, localeConfig } from '@ultimat3/i18n';
+import { useRequestCookie } from '@ultimat3/http';
 import { defineRoute, h, island, setAssetResolver } from '@ultimat3/render';
 import { renderRoute, renderView } from './render-view';
 
@@ -257,5 +258,35 @@ describe('renderRoute · the app-wide favicon', () => {
     const view = await renderRoute({ config, Page });
     expect(view.favicon).toBeUndefined();
     expect(view.html).toContain('<h1>favicon</h1>');
+  });
+});
+
+describe('renderRoute · the cookies a request carries', () => {
+  const config = defineRoute<{ readonly session: string; readonly actorId: string }>({
+    render: 'ssr',
+    offline: 'runtime',
+    // What a page that reads a cookie does: `useRequestCookie`, the one reader app code has.
+    load: async () => ({
+      session: useRequestCookie('sid') ?? 'no cookie',
+      actorId: tryUseContext()?.actor.id ?? 'no context',
+    }),
+    meta: () => ({ title: 'cookie' }),
+  });
+  const Page = (props: { readonly data: { readonly session: string } }): unknown =>
+    h('p', null, props.data.session);
+
+  test('load reads the cookie, decoded, under the url asked for', async () => {
+    const view = await renderRoute(
+      { config, Page },
+      { url: 'https://example.test/account', cookies: { sid: 'a b;c' } },
+    );
+    expect(view.data.session).toBe('a b;c');
+    expect(view.text).toContain('a b;c');
+  });
+
+  test('cookies and an actor together: the actor still acts', async () => {
+    const actor = userActor({ id: 'member-9', orgId: 'org-1' });
+    const view = await renderRoute({ config, Page }, { actor, cookies: { sid: 's-1' } });
+    expect([view.data.session, view.data.actorId]).toEqual(['s-1', 'member-9']);
   });
 });

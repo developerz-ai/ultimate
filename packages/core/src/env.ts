@@ -3,7 +3,7 @@
 // discover six missing variables.
 
 import { numeric } from '@ultimat3/schema';
-import { tryResolveEnvironment } from './environment';
+import { type Environment, tryResolveEnvironment } from './environment';
 import { describeValue, renderFixShellArg } from './error-render';
 import { EnvMissingError } from './errors';
 import { isRedactedKey, REDACTED, redactKeys } from './logger';
@@ -28,12 +28,26 @@ interface EnvVarCommon {
 }
 
 export interface EnvStringVar extends EnvVarCommon {
+  /**
+   * With `required: false`: optional, EXCEPT in these environments (`ULTIMATE_ENV`, else
+   * `NODE_ENV`) — `requiredIn: ['staging', 'production']` is a key every deploy must set and a
+   * laptop or a test run may leave unset. An environment no reader can name counts as listed.
+   * Without `required: false` the key is required everywhere already, and this changes nothing.
+   */
+  readonly requiredIn?: readonly Environment[] | undefined;
   readonly type: 'string' | 'url';
   readonly default?: string | undefined;
   readonly pattern?: RegExp | undefined;
 }
 
 export interface EnvNumberVar extends EnvVarCommon {
+  /**
+   * With `required: false`: optional, EXCEPT in these environments (`ULTIMATE_ENV`, else
+   * `NODE_ENV`) — `requiredIn: ['staging', 'production']` is a key every deploy must set and a
+   * laptop or a test run may leave unset. An environment no reader can name counts as listed.
+   * Without `required: false` the key is required everywhere already, and this changes nothing.
+   */
+  readonly requiredIn?: readonly Environment[] | undefined;
   readonly type: 'number' | 'integer' | 'port';
   readonly default?: number | undefined;
   readonly min?: number | undefined;
@@ -41,11 +55,25 @@ export interface EnvNumberVar extends EnvVarCommon {
 }
 
 export interface EnvBooleanVar extends EnvVarCommon {
+  /**
+   * With `required: false`: optional, EXCEPT in these environments (`ULTIMATE_ENV`, else
+   * `NODE_ENV`) — `requiredIn: ['staging', 'production']` is a key every deploy must set and a
+   * laptop or a test run may leave unset. An environment no reader can name counts as listed.
+   * Without `required: false` the key is required everywhere already, and this changes nothing.
+   */
+  readonly requiredIn?: readonly Environment[] | undefined;
   readonly type: 'boolean';
   readonly default?: boolean | undefined;
 }
 
 export interface EnvEnumVar<V extends string = string> extends EnvVarCommon {
+  /**
+   * With `required: false`: optional, EXCEPT in these environments (`ULTIMATE_ENV`, else
+   * `NODE_ENV`) — `requiredIn: ['staging', 'production']` is a key every deploy must set and a
+   * laptop or a test run may leave unset. An environment no reader can name counts as listed.
+   * Without `required: false` the key is required everywhere already, and this changes nothing.
+   */
+  readonly requiredIn?: readonly Environment[] | undefined;
   readonly type: 'enum';
   readonly values: readonly V[];
   readonly default?: V | undefined;
@@ -102,8 +130,17 @@ export interface EnvOptions {
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const FALSE_VALUES = new Set(['0', 'false', 'no', 'off']);
 
-function requiredForRole(decl: EnvVarDecl, role: Role): boolean {
-  if (decl.required === false) return false;
+/**
+ * `required: false` with `requiredIn`: required in a listed environment, and in one no reader can
+ * name (`undefined`) — a deploy whose name is a typo fails closed.
+ */
+function requiredInEnvironment(decl: EnvVarDecl, environment: Environment | undefined): boolean {
+  if (decl.requiredIn === undefined) return false;
+  return environment === undefined || decl.requiredIn.includes(environment);
+}
+
+function requiredForRole(decl: EnvVarDecl, role: Role, environment?: Environment): boolean {
+  if (decl.required === false) return requiredInEnvironment(decl, environment);
   if (decl.role === undefined) return true;
   return typeof decl.role === 'string' ? decl.role === role : decl.role.includes(role);
 }
@@ -231,6 +268,7 @@ function generatedFix(
 export function checkEnv(schema: EnvSchema, options?: EnvOptions): EnvCheckReport {
   const source = options?.env ?? (process.env as Record<string, string | undefined>);
   const role = options?.role ?? resolveRole({ env: source });
+  const environment = tryResolveEnvironment({ env: source });
   const issues: EnvIssue[] = [];
   const values: Record<string, unknown> = {};
 
@@ -241,7 +279,7 @@ export function checkEnv(schema: EnvSchema, options?: EnvOptions): EnvCheckRepor
         values[key] = decl.default;
         continue;
       }
-      if (requiredForRole(decl, role)) {
+      if (requiredForRole(decl, role, environment)) {
         issues.push({
           key,
           reason: 'missing',
@@ -346,6 +384,8 @@ export interface EnvVarSummary {
   readonly secret: boolean;
   readonly hasDefault: boolean;
   readonly roles: readonly Role[] | 'all';
+  /** `requiredIn`, when an optional key names the environments that require it. */
+  readonly requiredIn?: readonly Environment[];
   readonly description: string | undefined;
 }
 
@@ -362,6 +402,7 @@ export function describeEnv(schema: EnvSchema): readonly EnvVarSummary[] {
     secret: decl.secret === true,
     hasDefault: decl.default !== undefined,
     roles: decl.role === undefined ? 'all' : rolesOf(decl.role),
+    ...(decl.requiredIn === undefined ? {} : { requiredIn: decl.requiredIn }),
     description: decl.description,
   }));
 }
