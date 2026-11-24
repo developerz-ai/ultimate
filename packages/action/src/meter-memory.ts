@@ -11,8 +11,12 @@ import type { MeterDraw, MeterDrawResult, MeterKey, MeterStore } from './meter-s
 /** One entry per tenant × meter × period declaration — the bound, not a cache size. */
 export const DEFAULT_MAX_METER_KEYS = 20_000;
 
+/** Draw keys remembered across every counter — the bound on keyed draws, not a cache size. */
+export const DEFAULT_MAX_METER_DRAW_KEYS = 200_000;
+
 export interface MemoryMeterStoreOptions {
   readonly maxKeys?: number;
+  readonly maxDrawKeys?: number;
 }
 
 interface Counter {
@@ -21,8 +25,10 @@ interface Counter {
   periodEndMs: number;
   used: number;
   warned: boolean;
-  /** Draw keys that counted → the period start they counted in; this period's and the last's. */
-  keys: Map<string, number>;
+  /** Draw keys that counted in THIS counter's period, oldest first. */
+  keys: Set<string>;
+  /** Draw keys of the period just before, kept only when the counter rolled over from it. */
+  previous: Set<string>;
 }
 
 /** `day@UTC` → the end of the period starting at `startMs`; the zone is UTC, the only one. */
@@ -34,6 +40,18 @@ function periodEnd(period: string, startMs: number): number {
 /** A JSON tuple, never a joined string: no subject or meter can forge another's key. */
 const keyOf = (key: MeterKey): string => JSON.stringify([key.subject, key.meter, key.period]);
 
+/**
+ * Whether `drawKey` already counted on `counter`, judged from the period `effectiveMs` the draw
+ * lands in: a key counted in that period or the one before it repeats, an older one does not.
+ */
+function counted(counter: Counter, period: string, drawKey: string, effectiveMs: number): boolean {
+  const keptSince = previousPeriodStart(period, effectiveMs);
+  if (counter.keys.has(drawKey)) return counter.periodStartMs >= keptSince;
+  return (
+    counter.previous.has(drawKey) && previousPeriodStart(period, counter.periodStartMs) >= keptSince
+  );
+}
+
 export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterStore {
   const maxKeys = finiteCount(
     'memoryMeterStore',
@@ -41,7 +59,15 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
     options.maxKeys ?? DEFAULT_MAX_METER_KEYS,
     1,
   );
+  const maxDrawKeys = finiteCount(
+    'memoryMeterStore',
+    'maxDrawKeys',
+    options.maxDrawKeys ?? DEFAULT_MAX_METER_DRAW_KEYS,
+    1,
+  );
   const counters = new Map<string, Counter>();
+  /** Every counter's `keys` and `previous` together: kept exact so the bound costs no scan. */
+  let drawKeys = 0;
 
   /** The latest period start any draw named: a moment known to have passed, with no clock read. */
   let passedMs = Number.NEGATIVE_INFINITY;
@@ -68,11 +94,47 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
         victimStart = counter.periodStartMs;
       }
     }
-    if (victim !== undefined) counters.delete(victim);
+    if (victim === undefined) return;
+    const gone = counters.get(victim);
+    drawKeys -= (gone?.keys.size ?? 0) + (gone?.previous.size ?? 0);
+    counters.delete(victim);
+  };
+
+  /**
+   * Past the draw-key bound, a period-before set goes first — this counter's, else any — then the
+   * oldest key of this counter, else of any. Forgetting a key lets its retry count again: a weaker
+   * guarantee in one process, as forgetting a counter is, never a refusal of a draw within limit.
+   * A durable, shared memory of keys is the Postgres store's.
+   */
+  const forgetKey = (counter: Counter): void => {
+    if (drawKeys < maxDrawKeys) return;
+    const withPrevious =
+      counter.previous.size > 0
+        ? counter
+        : [...counters.values()].find((one) => one.previous.size > 0);
+    if (withPrevious !== undefined) {
+      drawKeys -= withPrevious.previous.size;
+      withPrevious.previous = new Set();
+      return;
+    }
+    const holder =
+      counter.keys.size > 0 ? counter : [...counters.values()].find((one) => one.keys.size > 0);
+    const oldest = holder?.keys.values().next().value;
+    if (holder === undefined || oldest === undefined) return;
+    holder.keys.delete(oldest);
+    drawKeys -= 1;
+  };
+
+  const remember = (counter: Counter, drawKey: string | undefined): void => {
+    if (drawKey === undefined || counter.keys.has(drawKey)) return;
+    forgetKey(counter);
+    counter.keys.add(drawKey);
+    drawKeys += 1;
   };
 
   return {
     scope: 'process',
+    keyedDraws: true,
 
     async draw(request: MeterDraw): Promise<MeterDrawResult> {
       if (Number.isFinite(request.periodStartMs))
@@ -85,39 +147,51 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
         existing === undefined || request.periodStartMs > existing.periodStartMs
           ? undefined
           : existing;
+      // The counter's period after this draw, answered to a keyed draw (`drawMeter` reads its reset
+      // off it); a `meter:` gate's call always draws its own period, so it is left off there.
+      const at =
+        request.drawKey === undefined
+          ? {}
+          : { periodStartMs: current?.periodStartMs ?? request.periodStartMs };
       const spent = current?.used ?? 0;
       const warned = current?.warned ?? false;
-      const keptSince = previousPeriodStart(request.period, request.periodStartMs);
       const drawKey = request.drawKey;
-      const counted = drawKey === undefined ? undefined : existing?.keys.get(drawKey);
-      if (counted !== undefined && counted >= keptSince) {
-        return { allowed: true, used: spent, warned, replayed: true };
+      if (
+        drawKey !== undefined &&
+        existing !== undefined &&
+        counted(existing, request.period, drawKey, current?.periodStartMs ?? request.periodStartMs)
+      ) {
+        return { allowed: true, used: spent, warned, replayed: true, ...at };
       }
       const used = spent + (request.amount ?? 1);
-      if (used > request.limit) return { allowed: false, used: spent, warned };
+      if (used > request.limit) return { allowed: false, used: spent, warned, ...at };
       if (current === undefined) {
         if (existing === undefined) evict();
-        // A rolled-over counter keeps the keys of the period before: a retry just after the reset
-        // must still find the draw it repeats.
-        const keys = new Map<string, number>();
-        for (const [one, startMs] of existing?.keys ?? []) {
-          if (startMs >= keptSince) keys.set(one, startMs);
+        // A rollover keeps the keys of the period just before, whole: a retry just after the reset
+        // must still find the draw it repeats. Older ones are dropped as one set, never scanned.
+        const adjacent =
+          existing !== undefined &&
+          existing.periodStartMs === previousPeriodStart(request.period, request.periodStartMs);
+        if (existing !== undefined) {
+          drawKeys -= existing.previous.size + (adjacent ? 0 : existing.keys.size);
         }
-        if (drawKey !== undefined) keys.set(drawKey, request.periodStartMs);
-        counters.set(id, {
+        const counter: Counter = {
           periodStartMs: request.periodStartMs,
           periodEndMs: periodEnd(request.period, request.periodStartMs),
           used,
           warned: false,
-          keys,
-        });
-        return { allowed: true, used, warned: false };
+          keys: new Set(),
+          previous: adjacent ? existing.keys : new Set(),
+        };
+        counters.set(id, counter);
+        remember(counter, drawKey);
+        return { allowed: true, used, warned: false, ...at };
       }
       current.used = used;
-      if (drawKey !== undefined) current.keys.set(drawKey, request.periodStartMs);
-      return { allowed: true, used, warned: current.warned };
+      // Stamped with the counter's period, not the request's: a lagging draw counted in this one.
+      remember(current, drawKey);
+      return { allowed: true, used, warned: current.warned, ...at };
     },
-
     async claimWarning(key, periodStartMs): Promise<boolean> {
       const counter = counters.get(keyOf(key));
       if (counter === undefined || counter.periodStartMs !== periodStartMs || counter.warned) {

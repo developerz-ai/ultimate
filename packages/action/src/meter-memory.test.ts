@@ -98,4 +98,23 @@ describe('memoryMeterStore', () => {
     await store.draw(hour('org:c', 9));
     expect((await store.draw({ ...month, periodStartMs: MONTH_START })).allowed).toBe(false);
   });
+
+  // One counter can take any number of distinct keys in one period: `maxKeys` bounds counters, so
+  // the keys need a bound of their own, or a busy tenant's day grows the process without limit.
+  test('remembers at most maxDrawKeys keys, forgetting the period before first, then the oldest', async () => {
+    const store = memoryMeterStore({ maxDrawKeys: 3 });
+    const keyed = (drawKey: string, periodStartMs = 0) =>
+      store.draw({ ...draw(1000, periodStartMs), amount: 1, drawKey });
+    await keyed('yesterday', 0);
+    await keyed('a', DAY);
+    await keyed('b', DAY);
+    await keyed('c', DAY);
+    // Reaching the bound dropped the period-before set first: today's three are all kept.
+    for (const one of ['a', 'b', 'c']) expect((await keyed(one, DAY)).replayed).toBe(true);
+    expect((await keyed('yesterday', DAY)).replayed).toBeUndefined();
+    // Counting it again needed room among today's keys: the oldest, 'a', was forgotten.
+    expect((await keyed('a', DAY)).replayed).toBeUndefined();
+    expect((await keyed('yesterday', DAY)).replayed).toBe(true);
+    expect(() => memoryMeterStore({ maxDrawKeys: 0 })).toThrow();
+  });
 });

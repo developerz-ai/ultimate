@@ -138,21 +138,27 @@ import { action, drawMeter, t } from '@ultimat3/action';
 import { allow } from '@ultimat3/policy';
 
 const PLAN_TOKENS = new Map([['org-free', 100_000]]);
+// The app's own model client, whatever it is: it answers the run's id, its text and its usage.
+declare const model: {
+  complete(text: string): Promise<{ id: string; text: string; usage: { totalTokens: number } }>;
+};
 
-export const recordRun = action({
-  input: t.object({ runId: t.string, totalTokens: t.number.int() }),
-  output: t.object({ used: t.number.int(), replayed: t.boolean }),
+export const summarise = action({
+  input: t.object({ text: t.string }),
+  output: t.object({ summary: t.string, used: t.number.int() }),
   policy: allow(),
   handle: async ({ input, ctx }) => {
-    // once the run's usage is known
+    // The handler does the work, so it measures the usage: never a count or an id the caller sent,
+    // which would let any member spend the tenant's allowance without running anything.
+    const run = await model.complete(input.text);
     const drawn = await drawMeter(ctx, {
       meter: 'tokens',
       period: 'day',
-      amount: input.totalTokens,
+      amount: run.usage.totalTokens,
       limit: ({ ctx }) => PLAN_TOKENS.get(ctx.actor.orgId ?? '') ?? 0,
-      key: input.runId,
+      key: run.id, // the run's own id: a retry of this draw for the same run counts once
     });
-    return { used: drawn.used, replayed: drawn.replayed }; // also: limit, resetsAt
+    return { summary: run.text, used: drawn.used }; // also: limit, replayed, resetsAt
   },
 });
 ```
@@ -164,11 +170,11 @@ export const recordRun = action({
 
 | Rule | What happens |
 |---|---|
-| amount | a whole number ≥ 1, added whole or not at all: an amount that would pass `limit` counts nothing and throws `X_METER_EXCEEDED` (429, the same `meta` and `Retry-After`) |
-| key | required, 1–255 chars: the unit of work's own id. A second draw under it — a retry, a duplicate on another replica, a parallel one — adds nothing and answers `replayed: true`. Remembered for the period it counted in and the next, so a retry just after the reset still counts once. A refused draw leaves no key |
+| amount | a positive safe integer, added whole or not at all: an amount that would pass `limit` counts nothing and throws `X_METER_EXCEEDED` (429, the same `meta` and `Retry-After`). One larger than the whole limit fits no period, and its refusal says so. `limit` judges new charges: a remembered key replays even after its limit drops below its amount |
+| key | required, 1–255 chars, no NUL: the unit of work's own id, never one the caller made up. A second draw under it — a retry, a duplicate on another replica, a parallel one — adds nothing and answers `replayed: true`. Remembered for the period it counted in and the next, so a retry just after the reset still counts once; a lagging replica's draw counts in, and is remembered by, the counter's period. A refused draw leaves no key. Replicas share keys only through a shared store: `memoryMeterStore()` remembers per process, up to `maxDrawKeys` (default 200,000, the period before dropped first), so a durable guarantee is the Postgres store's |
 | counter | a `meter:` with the same name and period counts on the same counter; units are the app's to keep consistent |
 | transaction | the draw is written outside the caller's transaction and stays counted if it rolls back — retry with the same `key` |
-| store | the installed `MeterStore` with `amount` and `drawKey` on `MeterDraw`: memory in one process, `x_meter` + `x_meter_key` in Postgres (the counter row locked, then the key claimed under it). A store of your own passes `meterStoreConformance` |
+| store | the installed `MeterStore` with `amount` and `drawKey` on `MeterDraw`, declaring `keyedDraws: true` (one that does not is `X_METER_INVALID` before it is drawn on: a store written before keyed draws would count one call and never replay): memory in one process, `x_meter` + `x_meter_key` in Postgres (the counter row locked, then the key claimed under it). A store of your own passes `meterStoreConformance` |
 | no warning | `warnAt`/`onWarn` are `meter:`'s; read `used` and `limit` off the answer |
 | malformed | a bad name, period, amount, key or resolved limit is `X_METER_INVALID`, its fix naming the `drawMeter` call |
 

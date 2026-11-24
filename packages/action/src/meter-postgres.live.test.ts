@@ -114,12 +114,37 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
   });
 
   test('N parallel keyed draws at the edge admit exactly what fits, each key once', async () => {
-    const results = await Promise.all(
-      Array.from({ length: 40 }, (_, i) => keyed(10, 2, `run-${i % 20}`)),
-    );
+    const keys = Array.from({ length: 40 }, (_, i) => `run-${i % 20}`);
+    const results = await Promise.all(keys.map((drawKey) => keyed(10, 2, drawKey)));
     const counted = results.filter((result) => result.allowed && result.replayed !== true);
     expect(counted).toHaveLength(5);
     expect(results.filter((result) => !result.allowed).every((r) => r.used === 10)).toBe(true);
+    // Key by key: a counted key's twin replays it, and a key that never counted is refused twice.
+    const byKey = new Map<string, string[]>();
+    results.forEach((result, i) => {
+      const outcome = !result.allowed ? 'refused' : result.replayed === true ? 'replay' : 'fresh';
+      byKey.set(keys[i] ?? '', [...(byKey.get(keys[i] ?? '') ?? []), outcome]);
+    });
+    for (const outcomes of byKey.values()) {
+      expect([
+        ['fresh', 'replay'],
+        ['refused', 'refused'],
+      ]).toContainEqual(outcomes.sort());
+    }
+  });
+
+  // A draw refused under a low limit races one under a higher limit with the same key: when the
+  // refusal learns the key counted after all, it answers the count that key left, never the stale
+  // count it was refused at.
+  test('a refusal that finds its key counted by a racing draw answers the count after it', async () => {
+    for (let round = 0; round < 25; round += 1) {
+      await client.execute(raw('truncate x_meter, x_meter_key'));
+      await keyed(10, 4, 'base');
+      const results = await Promise.all([keyed(4, 2, 'k'), keyed(10, 2, 'k')]);
+      for (const result of results) {
+        if (result.allowed) expect(result.used).toBe(6);
+      }
+    }
   });
 
   test("a counter keeps this period's keys and the last's, and no older ones", async () => {
