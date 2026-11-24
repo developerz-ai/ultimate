@@ -165,9 +165,10 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     filling?.abort();
   };
 
+  // Back/Forward put `url` in the address bar already: `assign` of it would only scroll (loadForReal).
   const loadInstead = (url: string): void => {
     abandon();
-    win.location.assign(url);
+    loadForReal(win, url);
   };
 
   /** Cancelable; its default is a GET of the page the visitor is on. Nothing is re-sent. */

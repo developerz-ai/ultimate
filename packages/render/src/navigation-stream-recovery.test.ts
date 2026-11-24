@@ -111,3 +111,15 @@ test('a load handed to the browser is never overridden by the page it left break
   await settle();
   expect(win.assigned).toEqual(['https://app.test/c']);
 });
+
+test('Back to a fragment URL whose soft fetch fails is a full load: the address bar already holds it', async () => {
+  const { win, doc } = tab({ '/b': () => htmlAnswer('page:B', page('B')) });
+  win.history.replaceState(null, '', 'https://app.test/a#filled');
+  click(win, 'to-b');
+  await settle();
+  expect(doc.title).toBe('B');
+  // `/a` has no answer: the fetch fails, and `assign` to the URL on screen would only scroll.
+  win.go(-1);
+  await settle();
+  expect([win.location.href, win.assigned]).toEqual(['https://app.test/a#filled', ['reload']]);
+});
