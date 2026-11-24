@@ -43,6 +43,7 @@ Inline message bound to the page, not the viewport. `danger`/`warning` use `role
 | `icon` | `JSX.Element` | — |  |
 | `onDismiss` | `(() => void)` | — | Provide both to make the alert dismissible; the label is the a11y name. |
 | `dismissLabel` | `string` | — |  |
+| `level` | `HeadingLevel` | — | Titles the alert with a heading of this level; absent, a paragraph, as before. |
 | `class` | `string` | — |  |
 
 ### AppShell
@@ -65,7 +66,7 @@ The page frame every app screen sits in: skip link, banner, navigation, main, co
 
 ### AsyncRegion
 
-The one way to render a region whose content has to arrive. Four branches, decided by `asyncBranch` and never by the caller: a skeleton while it loads, the error report when it fails, the empty state when a completed result held nothing, and the content.  `empty` and `ready` are REQUIRED props, so a region that forgot what "nothing here" looks like is a type error rather than a review comment. `pending` and `failed` are not props at all — the placeholder is derived from `reserve` so it cannot mismatch the loaded box, and the failure renders through `ErrorState`, which is the one thing allowed to phrase an error.
+The one way to render a region whose content has to arrive. Four branches, decided by `asyncBranch` and never by the caller: a skeleton while it loads, the error report when it fails, the empty state when a completed result held nothing, and the content.  `empty` and `ready` are REQUIRED props, so a region that forgot what "nothing here" looks like is a type error rather than a review comment. `pending` is not a prop — the placeholder is derived from `reserve` so it cannot mismatch the loaded box. The failure renders through `ErrorState` (code, cause, fix: the developer's report) unless `failed` hands it to the app's own screen for the person in front of it, who should never read a shell command.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -74,7 +75,8 @@ The one way to render a region whose content has to arrive. Four branches, decid
 | `ready` | `(data: T) => JSX.Element` | yes | The content. Called only with data a completed result actually carried. |
 | `empty` | `() => JSX.Element` | yes | Required with no default: "nothing here yet" is a screen, not an oversight, and `EmptyState` is one line of it — `empty={() => <EmptyState title={t('posts.none')} />}`. |
 | `isEmpty` | `((data: T) => boolean)` | — | Emptiness for a shape that is not a list. Defaults to `isEmptyData`. |
-| `onRetry` | `(() => void)` | — | Passed straight to `ErrorState` on the failed branch. |
+| `onRetry` | `(() => void)` | — | Passed straight to `ErrorState` on the failed branch, and to `failed` when given. |
+| `failed` | `((error: unknown, retry: (() => void) \| undefined) => JSX.Element)` | — | The failed branch, when it is a person's screen and not a developer's report: `failed={(error, retry) => <EmptyState title={t('feed.unavailable')} action={…} />}`. Handed the error (to branch on its code) and `onRetry`. Absent: `ErrorState`. |
 | `class` | `string` | — |  |
 
 ### Avatar
@@ -569,6 +571,7 @@ The "nothing here yet" surface. Title and description arrive as already translat
 | `description` | `string` | — |  |
 | `icon` | `JSX.Element` | — |  |
 | `action` | `JSX.Element` | — |  |
+| `level` | `HeadingLevel` | — | Titles the state with a heading of this level, so a screen reader's heading list reaches it. Absent: a paragraph, as before — the state is not part of the page outline. |
 | `class` | `string` | — |  |
 
 ### ErrorState
