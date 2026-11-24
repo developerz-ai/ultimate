@@ -4,79 +4,27 @@
 // factor was whatever that hand remembered.
 
 import { describe, expect, test } from 'bun:test';
-import { type FrozenClock, frozenClock, isUltimateError } from '@ultimat3/core';
-import { type Auth, authenticate, defineAuth, login, register } from './auth';
-import { caught, FAST_PARAMS, PASSWORD } from './auth-fixture';
+import { isUltimateError } from '@ultimat3/core';
+import { authenticate, login, register } from './auth';
+import { caught, PASSWORD } from './auth-fixture';
 import { signInWithLink } from './link-login';
-import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
-import { TOTP_STEP_SECONDS, totpCode, totpStep } from './mfa';
+import {
+  EMAIL,
+  emailChange,
+  freshName,
+  mailed,
+  redeem,
+  SECRET,
+  signInLink,
+  TTL_MS,
+  verifiedUser,
+  world,
+} from './link-login-fixture';
+import { totpCode, totpStep } from './mfa';
 import { completeMfa } from './mfa-challenge';
 import { saveTotpSecret } from './mfa-secret';
 import { disableUser, enableUser, revokeUserSessions } from './revocation';
-import {
-  defineVerificationPurpose,
-  emailVerification,
-  passwordReset,
-  type VerificationRuntime,
-} from './verify';
-
-const EMAIL = 'ada@corp.test';
-const SECRET = 'JBSWY3DPEHPK3PXP';
-const START = 1_700_000_000_000;
-const TTL_MS = 15 * 60 * 1000;
-
-/**
- * A fresh name per evaluation: the registry is process-wide and refuses a repeat, and this file
- * may be evaluated more than once in one process (`bun test --rerun-each`).
- */
-const freshName = (base: string): string => `${base}-${crypto.randomUUID()}`;
-
-const signInLink = defineVerificationPurpose({
-  name: freshName('link-login-test'),
-  template: 'auth.sign-in-link',
-  ttlMs: TTL_MS,
-  signIn: true,
-});
-
-/** Keys on the address as a sign-in link does, and was mailed to do another job. */
-const emailChange = defineVerificationPurpose({
-  name: freshName('link-login-test-email-change'),
-  template: 'auth.email-change',
-  ttlMs: TTL_MS,
-});
-
-interface World {
-  readonly auth: Auth;
-  readonly adapter: MemoryAuthAdapter;
-  readonly clock: FrozenClock;
-  readonly runtime: VerificationRuntime;
-}
-
-const world = (): World => {
-  const clock = frozenClock(START);
-  const adapter = memoryAuthAdapter(clock);
-  const auth = defineAuth({
-    adapter,
-    clock,
-    password: { minLength: 12, params: FAST_PARAMS },
-    rateLimit: { maxAttempts: 5, orgMaxAttempts: 10_000 },
-  });
-  const runtime = { store: adapter, clock, mail: { send: async () => {} } };
-  return { auth, adapter, clock, runtime };
-};
-
-/** A registered account that proved its address — the one a link may sign in. */
-const verifiedUser = async ({ auth }: World, email = EMAIL): Promise<string> => {
-  const user = await register(auth, { email, password: PASSWORD, orgId: 'org-1' });
-  await auth.adapter.updateUser(user.id, { emailVerifiedAt: auth.clock.now() });
-  return user.id;
-};
-
-const mailed = async ({ runtime }: World, identifier = EMAIL): Promise<string> =>
-  (await signInLink.issue(runtime, { identifier, locale: 'en' })).token;
-
-const redeem = (auth: Auth, token: string, identifier = EMAIL) =>
-  signInWithLink(auth, { purpose: signInLink.name, identifier, token });
+import { defineVerificationPurpose, emailVerification, passwordReset } from './verify';
 
 describe('signInWithLink: the second factor still applies', () => {
   test('with TOTP on, a link sign-in yields a challenge and no session', async () => {
@@ -136,50 +84,6 @@ describe('signInWithLink: the second factor still applies', () => {
     const right = totpCode(SECRET, totpStep(w.clock.now()));
     expect((await caught(() => completeMfa(w.auth, second, right)))?.code).toBe('X_ACCOUNT_LOCKED');
     expect(await w.adapter.listSessions(userId)).toHaveLength(0);
-  });
-});
-
-describe('signInWithLink: the second leg', () => {
-  test('wrong passwords and wrong codes after a link spend one budget for the account', async () => {
-    const w = world();
-    const userId = await verifiedUser(w);
-    await saveTotpSecret(w.auth, userId, SECRET);
-    for (let guess = 0; guess < 3; guess += 1) {
-      expect(
-        (await caught(() => login(w.auth, { email: EMAIL, password: `${PASSWORD}-wrong` })))?.code,
-      ).toBe('X_UNAUTHENTICATED');
-    }
-    const error = await caught(async () => redeem(w.auth, await mailed(w)));
-    const challenge = String(error?.meta?.['challenge']);
-    const live = [-1, 0, 1].map((offset) => totpCode(SECRET, totpStep(w.clock.now()) + offset));
-    const wrong = live.includes('000000') ? '111111' : '000000';
-    for (let guess = 0; guess < 2; guess += 1) {
-      expect((await caught(() => completeMfa(w.auth, challenge, wrong)))?.code).toBe(
-        'X_UNAUTHENTICATED',
-      );
-    }
-    // 3 + 2 = maxAttempts: the next guess on either door is held.
-    expect((await caught(() => completeMfa(w.auth, challenge, wrong)))?.code).toBe(
-      'X_ACCOUNT_LOCKED',
-    );
-    expect((await caught(() => login(w.auth, { email: EMAIL, password: PASSWORD })))?.code).toBe(
-      'X_ACCOUNT_LOCKED',
-    );
-  });
-
-  test("with TOTP, the session's address and agent come from the leg that writes it", async () => {
-    const w = world();
-    const userId = await verifiedUser(w);
-    await saveTotpSecret(w.auth, userId, SECRET);
-    const error = await caught(async () => redeem(w.auth, await mailed(w)));
-    const result = await completeMfa(
-      w.auth,
-      String(error?.meta?.['challenge']),
-      totpCode(SECRET, totpStep(w.clock.now())),
-      { ip: '203.0.113.9', userAgent: 'second-leg' },
-    );
-    expect(result.session.ip).toBe('203.0.113.9');
-    expect(result.session.userAgent).toBe('second-leg');
   });
 });
 
@@ -428,84 +332,6 @@ describe('signInWithLink: what a link is not', () => {
     expect((await emailChange.consume(w.runtime, { identifier: EMAIL, token })).identifier).toBe(
       EMAIL,
     );
-  });
-});
-
-describe('signInWithLink: declared sign-up', () => {
-  test('a proven address with no account becomes a verified, passwordless one', async () => {
-    const w = world();
-    const result = await signInWithLink(w.auth, {
-      purpose: signInLink.name,
-      identifier: 'New@Corp.test',
-      token: await mailed(w, 'new@corp.test'),
-      signUp: { orgId: 'org-9', roles: ['member'] },
-    });
-    const user = await w.adapter.findUserByEmail('new@corp.test');
-    expect(user?.id).toBe(result.session.userId);
-    expect(user?.passwordHash).toBeNull();
-    expect(user?.emailVerifiedAt).toEqual(w.clock.now());
-    expect(user?.orgId).toBe('org-9');
-    expect([...(user?.roles ?? [])]).toEqual(['member']);
-    expect(result.session.mfaSatisfied).toBe(true);
-  });
-
-  test('a bad link with sign-up declared creates no account', async () => {
-    const w = world();
-    const token = await mailed(w, 'new@corp.test');
-    const error = await caught(() =>
-      signInWithLink(w.auth, {
-        purpose: signInLink.name,
-        identifier: 'new@corp.test',
-        token: `${token}x`,
-        signUp: {},
-      }),
-    );
-    expect(error?.code).toBe('X_UNAUTHENTICATED');
-    expect(await w.adapter.findUserByEmail('new@corp.test')).toBeNull();
-  });
-
-  test('the account is created verified in one write: no later write can strand it', async () => {
-    const w = world();
-    // A store whose every later user write fails: the creating write is the only one that lands.
-    w.adapter.updateUser = async () => null;
-    const result = await signInWithLink(w.auth, {
-      purpose: signInLink.name,
-      identifier: 'new@corp.test',
-      token: await mailed(w, 'new@corp.test'),
-      signUp: {},
-    });
-    const user = await w.adapter.findUserByEmail('new@corp.test');
-    expect(user?.emailVerifiedAt).toEqual(w.clock.now());
-    expect(result.session.userId).toBe(user?.id ?? '');
-    // And the next link signs the same account in.
-    expect(
-      (await redeem(w.auth, await mailed(w, 'new@corp.test'), 'new@corp.test')).session.userId,
-    ).toBe(user?.id ?? '');
-  });
-
-  test('sign-up never rewrites an account that exists', async () => {
-    const w = world();
-    const userId = await verifiedUser(w);
-    const result = await signInWithLink(w.auth, {
-      purpose: signInLink.name,
-      identifier: EMAIL,
-      token: await mailed(w),
-      signUp: { orgId: 'org-9', roles: ['owner'] },
-    });
-    expect(result.session.userId).toBe(userId);
-    const user = await w.adapter.findUserById(userId);
-    expect(user?.orgId).toBe('org-1');
-    expect([...(user?.roles ?? [])]).toEqual([]);
-  });
-
-  test('a link issued before the account enrolled a second factor still owes it', async () => {
-    const w = world();
-    const userId = await verifiedUser(w);
-    const token = await mailed(w);
-    await saveTotpSecret(w.auth, userId, SECRET);
-    w.clock.advance(TOTP_STEP_SECONDS * 1000);
-    expect((await caught(() => redeem(w.auth, token)))?.code).toBe('X_MFA_REQUIRED');
-    expect(await w.adapter.listSessions(userId)).toHaveLength(0);
   });
 });
 
