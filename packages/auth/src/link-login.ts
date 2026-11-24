@@ -12,7 +12,7 @@ import { mfaChallengeRequired } from './mfa-challenge';
 import { resolveActor } from './policy-bridge';
 import { createSession, sessionCookie } from './session';
 import { verificationPurpose } from './verification-purposes';
-import { consumeVerification, VERIFICATION_PURPOSES, type VerificationPurpose } from './verify';
+import { consumeWith, VERIFICATION_PURPOSES, type VerificationPurpose } from './verify';
 
 /** What a proven address with no account becomes. Business convention, so the app states it. */
 export interface LinkSignUp {
@@ -116,7 +116,7 @@ async function signUpWith(auth: Auth, email: string, signUp: LinkSignUp): Promis
  */
 export async function signInWithLink(auth: Auth, input: LinkSignInInput): Promise<LoginResult> {
   assertSignInPurpose(input.purpose);
-  const record = await consumeVerification(
+  const record = await consumeWith(
     { store: auth.adapter, clock: auth.clock },
     { purpose: input.purpose, identifier: input.identifier, token: input.token },
   );
