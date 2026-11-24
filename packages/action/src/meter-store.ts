@@ -21,6 +21,14 @@ export interface MeterDraw extends MeterKey {
   readonly periodStartMs: number;
   /** The allowance for THIS call, resolved by the caller: a plan change applies at once. */
   readonly limit: number;
+  /** Units this draw adds, a whole number of 1 or more; absent is `1`: a `meter:` counts calls. */
+  readonly amount?: number;
+  /**
+   * The draw's idempotency key (`drawMeter`'s `key`). A second draw under it, in the period it
+   * counted in or the next, adds nothing and answers `replayed: true`; a refused draw leaves no
+   * key behind, so its retry is judged afresh.
+   */
+  readonly drawKey?: string;
 }
 
 export interface MeterDrawResult {
@@ -30,14 +38,17 @@ export interface MeterDrawResult {
   readonly used: number;
   /** Whether this period's warning was already claimed. */
   readonly warned: boolean;
+  /** `true` when `drawKey` had already counted: `allowed`, and nothing was added. */
+  readonly replayed?: boolean;
 }
 
 export interface MeterStore {
   /** Declared, never inferred: a driver knows where its counters live. */
   readonly scope: 'process' | 'shared';
   /**
-   * Count one call, atomically, only while the count stays within `limit`: never a read followed
-   * by a write, so N parallel draws at the edge admit exactly the remainder.
+   * Count `amount` (one call when absent), atomically, only while the count stays within `limit`:
+   * never a read followed by a write, so N parallel draws at the edge admit exactly the remainder.
+   * Under a `drawKey`, N parallel draws with that key — on any replica — add it once.
    */
   draw(request: MeterDraw): Promise<MeterDrawResult>;
   /** Claim this period's warning. `true` for exactly one caller per period. */

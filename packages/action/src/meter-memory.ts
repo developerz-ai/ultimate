@@ -5,9 +5,7 @@
  */
 
 import { finiteCount } from '@ultimat3/core';
-import type { MeterPeriod } from './meter';
-import { METER_PERIODS } from './meter';
-import { meterWindow } from './meter-period';
+import { meterWindow, periodOfKey, previousPeriodStart } from './meter-period';
 import type { MeterDraw, MeterDrawResult, MeterKey, MeterStore } from './meter-store';
 
 /** One entry per tenant × meter × period declaration — the bound, not a cache size. */
@@ -23,16 +21,14 @@ interface Counter {
   periodEndMs: number;
   used: number;
   warned: boolean;
+  /** Draw keys that counted → the period start they counted in; this period's and the last's. */
+  keys: Map<string, number>;
 }
-
-const PERIODS: ReadonlySet<string> = new Set<string>(METER_PERIODS);
 
 /** `day@UTC` → the end of the period starting at `startMs`; the zone is UTC, the only one. */
 function periodEnd(period: string, startMs: number): number {
-  const name = period.split('@')[0] ?? '';
-  return PERIODS.has(name)
-    ? meterWindow(name as MeterPeriod, startMs).endMs
-    : Number.POSITIVE_INFINITY;
+  const name = periodOfKey(period);
+  return name === undefined ? Number.POSITIVE_INFINITY : meterWindow(name, startMs).endMs;
 }
 
 /** A JSON tuple, never a joined string: no subject or meter can forge another's key. */
@@ -89,21 +85,36 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
         existing === undefined || request.periodStartMs > existing.periodStartMs
           ? undefined
           : existing;
-      const used = (current?.used ?? 0) + 1;
-      if (used > request.limit) {
-        return { allowed: false, used: current?.used ?? 0, warned: current?.warned ?? false };
+      const spent = current?.used ?? 0;
+      const warned = current?.warned ?? false;
+      const keptSince = previousPeriodStart(request.period, request.periodStartMs);
+      const drawKey = request.drawKey;
+      const counted = drawKey === undefined ? undefined : existing?.keys.get(drawKey);
+      if (counted !== undefined && counted >= keptSince) {
+        return { allowed: true, used: spent, warned, replayed: true };
       }
+      const used = spent + (request.amount ?? 1);
+      if (used > request.limit) return { allowed: false, used: spent, warned };
       if (current === undefined) {
         if (existing === undefined) evict();
+        // A rolled-over counter keeps the keys of the period before: a retry just after the reset
+        // must still find the draw it repeats.
+        const keys = new Map<string, number>();
+        for (const [one, startMs] of existing?.keys ?? []) {
+          if (startMs >= keptSince) keys.set(one, startMs);
+        }
+        if (drawKey !== undefined) keys.set(drawKey, request.periodStartMs);
         counters.set(id, {
           periodStartMs: request.periodStartMs,
           periodEndMs: periodEnd(request.period, request.periodStartMs),
           used,
           warned: false,
+          keys,
         });
         return { allowed: true, used, warned: false };
       }
       current.used = used;
+      if (drawKey !== undefined) current.keys.set(drawKey, request.periodStartMs);
       return { allowed: true, used, warned: current.warned };
     },
 

@@ -2,7 +2,7 @@
 // pool of eight connections: the parallel draws really do race on the row.
 
 import { afterAll, beforeAll, describe } from 'bun:test';
-import { postgresMeterStore, SQL_METER_TABLE } from '@ultimat3/action';
+import { postgresMeterStore, SQL_METER_KEY_TABLE, SQL_METER_TABLE } from '@ultimat3/action';
 import type { MeterStore } from '@ultimat3/action/adapter';
 import type { PostgresClient } from '@ultimat3/db';
 import { dbExecutor, postgresClient, raw } from '@ultimat3/db';
@@ -24,6 +24,7 @@ describe.skipIf(adminUrl === '')(testName('live', 'the postgres meter store'), (
     const pool = postgresClient({ url: db.url, role: 'web', profile: { max: 8 } });
     client = pool;
     await pool.execute(raw(SQL_METER_TABLE));
+    await pool.execute(raw(SQL_METER_KEY_TABLE));
     store = postgresMeterStore({ executor: dbExecutor(() => pool) });
   });
 

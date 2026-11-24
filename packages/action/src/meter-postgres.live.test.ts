@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { dbExecutor, postgresClient, raw } from '@ultimat3/db';
-import { postgresMeterStore, SQL_METER_TABLE } from './meter-postgres';
+import { postgresMeterStore, SQL_METER_KEY_TABLE, SQL_METER_TABLE } from './meter-postgres';
 import type { MeterStore } from './meter-store';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -38,6 +38,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
     await admin.execute(raw(`create database ${PROBE_DB}`));
     client = postgresClient({ url: probeUrl(), role: 'web', profile: { max: 8 } });
     await client.execute(raw(SQL_METER_TABLE));
+    await client.execute(raw(SQL_METER_KEY_TABLE));
     store = postgresMeterStore({ executor: dbExecutor(() => client) });
   });
 
@@ -48,7 +49,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
   });
 
   beforeEach(async () => {
-    await client.execute(raw('truncate x_meter'));
+    await client.execute(raw('truncate x_meter, x_meter_key'));
   });
 
   const draw = (limit: number, periodStartMs = START, subject: string = key.subject) =>
@@ -56,6 +57,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
 
   test('the table is idempotent to apply', async () => {
     await client.execute(raw(SQL_METER_TABLE));
+    await client.execute(raw(SQL_METER_KEY_TABLE));
   });
 
   test('N parallel draws over 8 connections admit exactly the limit, on a fresh row too', async () => {
@@ -96,5 +98,38 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
     await draw(1);
     expect((await draw(1, START, 'org:o2')).allowed).toBe(true);
     expect((await draw(1)).allowed).toBe(false);
+  });
+
+  const keyed = (limit: number, amount: number, drawKey: string, periodStartMs = START) =>
+    store.draw({ ...key, periodStartMs, limit, amount, drawKey });
+
+  test('N parallel draws under one key over 8 connections add it once, on a fresh row too', async () => {
+    const results = await Promise.all(Array.from({ length: 40 }, () => keyed(1000, 7, 'run-1')));
+    expect(results.filter((result) => result.replayed !== true)).toHaveLength(1);
+    const rows = await dbExecutor(() => client).query<{ used: string }>(
+      'select used from x_meter',
+      [],
+    );
+    expect(rows.map((row) => Number(row.used))).toEqual([7]);
+  });
+
+  test('N parallel keyed draws at the edge admit exactly what fits, each key once', async () => {
+    const results = await Promise.all(
+      Array.from({ length: 40 }, (_, i) => keyed(10, 2, `run-${i % 20}`)),
+    );
+    const counted = results.filter((result) => result.allowed && result.replayed !== true);
+    expect(counted).toHaveLength(5);
+    expect(results.filter((result) => !result.allowed).every((r) => r.used === 10)).toBe(true);
+  });
+
+  test("a counter keeps this period's keys and the last's, and no older ones", async () => {
+    await keyed(100, 1, 'a', START);
+    await keyed(100, 1, 'b', START + DAY);
+    await keyed(100, 1, 'c', START + 2 * DAY);
+    const rows = await dbExecutor(() => client).query<{ draw_key: string }>(
+      'select draw_key from x_meter_key order by draw_key',
+      [],
+    );
+    expect(rows.map((row) => row.draw_key)).toEqual(['b', 'c']);
   });
 });

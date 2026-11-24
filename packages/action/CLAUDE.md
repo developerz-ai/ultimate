@@ -60,7 +60,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `cache-gate.ts` | the post-COMMIT bust — **the only** file that calls `invalidateTags` |
 | `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust), `liveTransaction` (the settle), `completeTransaction`, and `inRolledBackScope`, the exercise's always-rolled-back scope and the memory transaction it opens always |
 | `rate-limit-gate.ts` | **the one place** a declared `rateLimit:` is spent (a `limit` resolved per call from `ctx`, through `toBucket`) |
-| `meter*.ts`, `errors-meter.ts` | `meter:` — declaration (`meter.ts`), UTC window, store seam + memory + Postgres (`x_meter`), and `meter-gate.ts`, **the one place** it is drawn |
+| `meter*.ts`, `errors-meter.ts` | `meter:` — declaration (`meter.ts`), UTC window, store seam + memory + Postgres (`x_meter`, `x_meter_key`), and `meter-gate.ts`, **the one place** a declared meter is drawn; `meter-draw.ts` is `drawMeter`, an amount under a key on the same counters |
 | `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
 | `audit.ts` | the audit seam's TYPES, re-exported from `@ultimat3/core` (shared with `query`); the slot (`installAuditSink`, `@ultimat3/core/adapter`) is core's alone |
 | `audit-memory.ts` | the process default: a bounded ring that DROPS, counting the drops |

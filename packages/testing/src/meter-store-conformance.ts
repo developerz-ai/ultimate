@@ -34,6 +34,12 @@ const drawOf =
   (limit: number, periodStartMs = START, over: Partial<MeterKey> = {}) =>
     store.draw({ ...key, ...over, periodStartMs, limit });
 
+/** A draw of `amount` under `drawKey` — `drawMeter`'s shape at the port. */
+const keyedOf =
+  (store: MeterStore, key: MeterKey) =>
+  (limit: number, amount: number, drawKey: string, periodStartMs = START) =>
+    store.draw({ ...key, periodStartMs, limit, amount, drawKey });
+
 export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
   {
     name: 'declares its scope',
@@ -101,6 +107,72 @@ export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
       expect((await draw(1, START, { meter: 'exports' })).allowed).toBe(true);
       expect((await draw(1, START, { period: 'month@UTC' })).allowed).toBe(true);
       expect((await draw(1)).allowed).toBe(false);
+    },
+  },
+  {
+    name: 'an amount counts whole, and one that would pass the limit counts nothing',
+    async run(store) {
+      const key = keyOf();
+      const draw = (limit: number, amount: number) =>
+        store.draw({ ...key, periodStartMs: START, limit, amount });
+      expect(await draw(10, 7)).toEqual({ allowed: true, used: 7, warned: false });
+      expect(await draw(10, 4)).toEqual({ allowed: false, used: 7, warned: false });
+      expect(await draw(10, 3)).toEqual({ allowed: true, used: 10, warned: false });
+      expect((await draw(10, 1)).allowed).toBe(false);
+    },
+  },
+  {
+    name: `${RACERS} parallel draws under one key add it once`,
+    async run(store) {
+      const keyed = keyedOf(store, keyOf());
+      const results = await Promise.all(Array.from({ length: RACERS }, () => keyed(100, 3, 'k1')));
+      expect(results.every((result) => result.allowed)).toBe(true);
+      expect(results.filter((result) => result.replayed !== true)).toHaveLength(1);
+      expect(await keyed(100, 3, 'k2')).toEqual({ allowed: true, used: 6, warned: false });
+      expect(await keyed(100, 3, 'k1')).toEqual({
+        allowed: true,
+        used: 6,
+        warned: false,
+        replayed: true,
+      });
+    },
+  },
+  {
+    name: 'a refused keyed draw leaves its key unspent, and a replay answers a spent allowance',
+    async run(store) {
+      const keyed = keyedOf(store, keyOf());
+      expect((await keyed(5, 5, 'k1')).allowed).toBe(true);
+      expect(await keyed(5, 1, 'k2')).toEqual({ allowed: false, used: 5, warned: false });
+      expect(await keyed(5, 5, 'k1')).toEqual({
+        allowed: true,
+        used: 5,
+        warned: false,
+        replayed: true,
+      });
+      expect(await keyed(6, 1, 'k2')).toEqual({ allowed: true, used: 6, warned: false });
+    },
+  },
+  {
+    name: 'a key is remembered into the next period and forgotten in the one after',
+    async run(store) {
+      const keyed = keyedOf(store, keyOf());
+      await keyed(10, 4, 'k1');
+      expect(await keyed(10, 4, 'k1', START + DAY)).toEqual({
+        allowed: true,
+        used: 0,
+        warned: false,
+        replayed: true,
+      });
+      expect(await keyed(10, 2, 'k2', START + DAY)).toEqual({
+        allowed: true,
+        used: 2,
+        warned: false,
+      });
+      expect(await keyed(10, 4, 'k1', START + 2 * DAY)).toEqual({
+        allowed: true,
+        used: 4,
+        warned: false,
+      });
     },
   },
   {
