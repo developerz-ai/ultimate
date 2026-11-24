@@ -656,6 +656,8 @@ What the rendered result is then held to: [Interface rules](Interface-Rules).
 **Keys and the console: `pressKey(page, key)`, `consoleMessages(page)`, `expectNoConsoleErrors(page)`** (`@ultimat3/testing`). Free functions over the `page` an `e2eTest` or the `{ page }` fixture hands you, so `PageLike` itself does not grow:
 
 ```ts
+import { e2eTest, expect, expectNoConsoleErrors, pressKey } from '@ultimat3/testing';
+
 e2eTest('the dialog is keyboard-reachable and the page logs no error', async ({ page }) => {
   await page.goto('/settings');
   await pressKey(page, 'Tab');                // a real key: focus moves, Enter submits
