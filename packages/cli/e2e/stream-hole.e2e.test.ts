@@ -266,6 +266,7 @@ describe.skipIf(noBrowser)('stream · a hole open, in a browser, under the enfor
     });
   };
 
+  // was: "a soft visit waits for the whole answer, then its holes fill and its islands hydrate"
   test(
     'a soft visit paints its shell while the hole is open; the hole then fills and hydrates',
     async () => {

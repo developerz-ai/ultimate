@@ -66,8 +66,8 @@ An opted-in document (every page of the surface except a `'document'` one) carri
 | `<script src="/_x/assets/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
 | `<meta name="ultimate-modals" content='{"routes":[…],"close":"…","loading":"…"}'>` | only on a surface with a `'modal'` route: the modal patterns, most specific first, with `!<pattern>` for a page that outranks one (`/runs/new/peek` over `/runs/:id/peek`), and the frame's two words in the document's locale (`ui.close`, `ui.loading` — override them in the app's catalog). What lets a click open the dialog before the answer ([Modals](#opening-on-the-click)) |
 
-**Budget:** the router is 31,894 B minified (11,508 B gzip) `As of 2026-11` — 29,955 B (10,817 B
-gzip) before a soft visit read as it streams (+1,939 B); 27,845 B (10,094 B gzip) at 29.1.0, 24,448 B (9,028 B
+**Budget:** the router is 31,904 B minified (11,508 B gzip) `As of 2026-11` — 29,955 B (10,817 B
+gzip) before a soft visit read as it streams (+1,949 B); 27,845 B (10,094 B gzip) at 29.1.0, 24,448 B (9,028 B
 gzip) before the modal that opens on the click and its popover opening (+3,397 B), and 19,966 B
 before route-presented modals and navigating from code (+4,092 B, 26.1.0). It is **charged** to
 every route on the surface, like realtime's page boot, because it is interactivity the app opted
