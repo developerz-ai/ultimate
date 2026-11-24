@@ -19,6 +19,9 @@ import type { CheckDescription } from './introspect';
 import { constraintNameUnsafe } from './invariant-errors';
 import { identifier, MAX_IDENTIFIER_BYTES } from './sql';
 
+/** The two fields a constraint's name is spelled from. */
+type InvariantNaming = Pick<InvariantDescriptionLike, 'name' | 'kind'>;
+
 /**
  * `NAMEDATALEN - 1`. Postgres truncates a longer identifier and says nothing, so two constraints
  * sharing their first 63 bytes are ONE constraint on the server while both names still differ in
@@ -34,7 +37,7 @@ import { identifier, MAX_IDENTIFIER_BYTES } from './sql';
  * and `namesConstraint` can never disagree about what a rule's constraint is called — the two
  * questions "what do I emit" and "is this recorded constraint that rule's" are the same string.
  */
-function spellConstraintName(table: string, invariant: InvariantDescriptionLike): string {
+function spellConstraintName(table: string, invariant: InvariantNaming): string {
   return `${table}_${invariant.name}_${invariant.kind === 'unique' ? 'key' : 'check'}`;
 }
 
@@ -51,7 +54,7 @@ function spellConstraintName(table: string, invariant: InvariantDescriptionLike)
  */
 export function namesConstraint(
   table: string,
-  invariant: InvariantDescriptionLike,
+  invariant: InvariantNaming,
   recorded: string,
 ): boolean {
   if (!isIdentifier(recorded)) return false;

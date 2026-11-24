@@ -17,6 +17,7 @@ import {
   withStatementAttribution,
 } from '@ultimat3/db';
 import { appendOnlyRepo } from './append-only';
+import { asInvariantRefusal } from './check-refusal';
 import { entityNow } from './clock';
 import { coalesceFindById } from './coalesce';
 import { cursorFor, seekFrom } from './cursor';
@@ -191,12 +192,17 @@ export const postgresRepo = <Row>(
    * before the statement, not after), and where a keyed request's write names itself in the WAL
    * (`write-tag.ts`). The one funnel for an autocommit repository write, so it is also where a scope
    * whose caller was already answered stops: the pool does not refuse, and must not (`runOn`).
+   * A CHECK refusing the row is the entity's invariant answering, as `insert` answers it.
    */
   const writing = async <T>(send: () => Promise<T>): Promise<T> => {
     refuseAbandoned();
     forgetPreloaded();
     await stampHistoryActor(entity, config.client !== undefined);
-    return taggedWrite(config.client !== undefined, send);
+    try {
+      return await taggedWrite(config.client !== undefined, send);
+    } catch (error) {
+      throw asInvariantRefusal(entity as EntityCore<unknown>, error);
+    }
   };
 
   /**

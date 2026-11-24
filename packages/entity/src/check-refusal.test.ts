@@ -1,0 +1,150 @@
+// `insert` judges a row against its invariants before the statement and answers
+// `X_INVARIANT_VIOLATED`; `update` sends a patch, so the stored row is only known to Postgres and
+// its CHECK answered `23514` — an unclassified `X_DB_STATEMENT_FAILED`, a 500. Both drivers, one
+// answer: the rule's own code, its name and its message.
+
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
+import { generateMigration, pgliteClient, raw, statementsOf } from '@ultimat3/db';
+import { integer, uuid } from './columns';
+import { entity } from './entity';
+import { invariant } from './invariants';
+import { memoryRepo } from './memory-repo';
+import { postgresRepo } from './pg-driver';
+import { clearRegistry } from './registry';
+import type { Repo } from './repo';
+
+const ranges = entity('check_refusal_ranges', {
+  columns: { id: uuid().primaryKey(), low: integer(), high: integer() },
+  invariants: (c) => [
+    invariant('low_non_negative', c.low.atLeast(0)),
+    invariant('high_non_negative', c.high.atLeast(0)),
+  ],
+});
+
+type Range = { id: string; low: number; high: number };
+const ID = '00000000-0000-7000-8000-000000000001';
+const client = pgliteClient();
+
+const refusal = async (work: () => Promise<unknown>): Promise<{ code: string; cause: string }> => {
+  try {
+    await work();
+  } catch (error) {
+    if (isUltimateError(error)) return { code: error.code, cause: error.cause };
+    return { code: `not coded: ${String(error)}`, cause: '' };
+  }
+  return expect.unreachable('a row breaking the CHECK is refused');
+};
+
+beforeAll(async () => {
+  const migration = generateMigration({
+    entities: [ranges.$describe()],
+    name: 'check refusal',
+    now: new Date('2026-11-24T00:00:00.000Z'),
+  });
+  for (const statement of statementsOf(migration.up)) await client.execute(raw(statement));
+}, 30_000);
+
+beforeEach(async () => {
+  await client.execute(raw('delete from "check_refusal_ranges"'));
+});
+
+afterAll(async () => {
+  await client.close();
+  clearRegistry();
+});
+
+describe('a CHECK refusing an update answers as insert does', () => {
+  const drivers: readonly (readonly [string, () => Repo<Range>])[] = [
+    ['postgres', () => postgresRepo(ranges, { client }) as unknown as Repo<Range>],
+    ['memory', () => memoryRepo(ranges) as unknown as Repo<Range>],
+  ];
+
+  test.each(drivers)('%s: update', async (_, open) => {
+    const repo = open();
+    await repo.insert({ id: ID, low: 1, high: 5 });
+    const inserted = await refusal(() => repo.insert({ id: ID, low: -1, high: 5 }));
+    const updated = await refusal(() => repo.update(ID, { low: -1 }));
+    expect(updated.code).toBe('X_INVARIANT_VIOLATED');
+    expect(updated).toEqual(inserted);
+    expect(await repo.findById(ID)).toEqual({ id: ID, low: 1, high: 5 });
+  });
+
+  test.each(drivers)('%s: updateWhere', async (_, open) => {
+    const repo = open();
+    await repo.insert({ id: ID, low: 1, high: 5 });
+    const refused = await refusal(() => repo.updateWhere({ id: ID }, { low: -1 }));
+    expect(refused.code).toBe('X_INVARIANT_VIOLATED');
+    expect(refused.cause).toContain('check_refusal_ranges.low_non_negative');
+  });
+
+  test.each(drivers)('%s: the rule the CHECK names, not the first declared', async (_, open) => {
+    const repo = open();
+    await repo.insert({ id: ID, low: 1, high: 5 });
+    const inserted = await refusal(() => repo.insert({ id: ID, low: 1, high: -1 }));
+    const updated = await refusal(() => repo.update(ID, { high: -1 }));
+    expect(updated).toEqual(inserted);
+    expect(updated.cause).toContain('check_refusal_ranges.high_non_negative');
+  });
+
+  test("a CHECK a migration named after the rule itself answers as the rule's", async () => {
+    const generated = 'check_refusal_ranges_low_non_negative_check';
+    const rename = (from: string, to: string) =>
+      client.execute(
+        raw(`alter table "check_refusal_ranges" rename constraint "${from}" to "${to}"`),
+      );
+    await rename(generated, 'low_non_negative');
+    try {
+      const repo = postgresRepo(ranges, { client }) as unknown as Repo<Range>;
+      await repo.insert({ id: ID, low: 1, high: 5 });
+      const refused = await refusal(() => repo.update(ID, { low: -1 }));
+      expect(refused.code).toBe('X_INVARIANT_VIOLATED');
+      expect(refused.cause).toContain('check_refusal_ranges.low_non_negative');
+    } finally {
+      await rename('low_non_negative', generated);
+    }
+  });
+
+  test("another table's CHECK sharing a rule's name, failed by a trigger, stays that table's failure", async () => {
+    const statements = [
+      'create table "check_refusal_audit" ("low" integer constraint "low_non_negative" check ("low" > 100))',
+      `create function "check_refusal_audit_write"() returns trigger language plpgsql as $$
+        begin insert into "check_refusal_audit" values (new."low"); return new; end $$`,
+      'create trigger "check_refusal_audit_on_update" after update on "check_refusal_ranges" for each row execute function "check_refusal_audit_write"()',
+    ];
+    for (const statement of statements) await client.execute(raw(statement));
+    try {
+      const repo = postgresRepo(ranges, { client }) as unknown as Repo<Range>;
+      await repo.insert({ id: ID, low: 1, high: 5 });
+      // The row itself is valid (low 2 ≥ 0); only the audit row (2 ≤ 100) breaks its own CHECK.
+      const refused = await refusal(() => repo.update(ID, { low: 2 }));
+      expect(refused.code).toBe('X_DB_STATEMENT_FAILED');
+      expect(refused.cause).toContain('check_refusal_audit');
+    } finally {
+      await client.execute(
+        raw('drop trigger "check_refusal_audit_on_update" on "check_refusal_ranges"'),
+      );
+      await client.execute(raw('drop function "check_refusal_audit_write"()'));
+      await client.execute(raw('drop table "check_refusal_audit"'));
+    }
+  });
+
+  test('a CHECK no invariant declares stays the statement failure it was', async () => {
+    await client.execute(
+      raw(
+        'alter table "check_refusal_ranges" add constraint "hand_written_check" check (high < 100)',
+      ),
+    );
+    try {
+      const repo = postgresRepo(ranges, { client }) as unknown as Repo<Range>;
+      await repo.insert({ id: ID, low: 1, high: 5 });
+      expect((await refusal(() => repo.update(ID, { high: 500 }))).code).toBe(
+        'X_DB_STATEMENT_FAILED',
+      );
+    } finally {
+      await client.execute(
+        raw('alter table "check_refusal_ranges" drop constraint "hand_written_check"'),
+      );
+    }
+  });
+});

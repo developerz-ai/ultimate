@@ -325,5 +325,6 @@
  * one on `SERVING_ROLE_CEILING`. Nothing web-only.
  * raised 1774 → 1775, measured 1775 (2026-11-24, passkey label): the one on `SERVING_ROLE_CEILING`, `auth/src/passkey-label.ts`).
  * raised 1775 → 1776, measured 1776 (2026-11-24, allOf and anyOf): the one on `MIGRATE_CEILING`, `entity/src/expr-connectives.ts`).
+ * raised 1776 → 1777, measured 1777 (2026-11-24, a CHECK refusing an update): the one on `MIGRATE_CEILING`, `entity/src/check-refusal.ts`).
  */
-export const WEB_ROLE_CEILING = 1776;
+export const WEB_ROLE_CEILING = 1777;

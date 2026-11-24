@@ -152,6 +152,12 @@ migration or a psql session can violate.
 | `c.slug.matches(isValidSlug)` — a **function** | **no** | `sql: null` |
 | `c.satisfies(fn, ['status', 'publishedAt'])` | **no** | `sql: null`, by construction — a JS function over several columns |
 
+**A patch is refused as the row would be.** `insert` judges the whole row before its statement; an
+`update` or `updateWhere` patch only becomes a row on the server, so there the CHECK judges first,
+and its `23514` on a rule this entity declares answers `X_INVARIANT_VIOLATED` naming that rule (a
+422), the same as `insert`. A CHECK no invariant declares stays `X_DB_STATEMENT_FAILED`. As of
+2026-11; before it a refused patch was a 500.
+
 **A rule over a nullable column passes `NULL`, in the app as in the CHECK.** Every operator but
 `isNull()`/`isNotNull()` answers SQL's *unknown* for a NULL operand, in TypeScript too, and a rule
 holds unless its FINAL verdict is false. That is per comparison: a composite decides by its own
