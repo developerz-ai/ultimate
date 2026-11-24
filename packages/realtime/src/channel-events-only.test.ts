@@ -43,9 +43,19 @@ describe('an events-only channel ref', () => {
       report: () => undefined,
     });
     const membership = book.hold(feed, { orgId: 'o1' });
-    book.gap({ type: 'replay-gap', v: PROTOCOL_VERSION, channel: 'typing-gap.o1', epoch: 'e1' });
+    // A cursor to restart: one frame seats it at seq 7 of epoch e1.
+    book.records({
+      type: 'records',
+      v: PROTOCOL_VERSION,
+      channel: 'typing-gap.o1',
+      seq: 7,
+      epoch: 'e1',
+    });
+    expect(book.since('typing-gap.o1')).toEqual({ epoch: 'e1', seq: 7 });
+    book.gap({ type: 'replay-gap', v: PROTOCOL_VERSION, channel: 'typing-gap.o1', epoch: 'e2' });
     for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
     expect(reads).toEqual([]);
+    expect(book.since('typing-gap.o1')).toBeUndefined();
     expect(membership.state()).toBe('live');
   });
 
@@ -61,12 +71,22 @@ describe('an events-only channel ref', () => {
       'X_CHANNEL_DECLARATION_INVALID',
     );
     expect(isUltimateError(caught) ? caught.cause : '').toContain('names no catchUp read');
+    // Pasteable TypeScript: the declaration with `catchUp` in it, the note a `//` comment.
+    const fix = isUltimateError(caught) ? caught.fix : '';
+    expect(fix.startsWith("channelRef('typing-records', { params: [")).toBe(true);
+    expect(fix).toContain('catchUp: rowsQuery }) // ');
+    expect(fix).not.toContain('#');
   });
 });
 
-test('a catch-up query not yet named (stamped at boot) still carries records', () => {
+test('a catch-up query not yet named (stamped at boot) still carries records, and reads its name', () => {
   const read = { name: '' };
   const feed = channelRef('typing-unnamed', { params: ['orgId'], catchUp: read });
-  expect(channel(feed, { policy: OPEN_POLICY, records: [rows] }).records).toHaveLength(1);
+  const declared = channel(feed, { policy: OPEN_POLICY, records: [rows] });
+  expect(declared.records).toHaveLength(1);
   expect(catchUpReadOf(feed)).toBe(read);
+  // Boot stamps the name after the declaration: both halves read it then, never the empty one.
+  read.name = 'typingUnnamedRows';
+  expect(feed.catchUp).toBe('typingUnnamedRows');
+  expect(declared.catchUp).toBe('typingUnnamedRows');
 });

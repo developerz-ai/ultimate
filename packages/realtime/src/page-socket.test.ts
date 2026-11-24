@@ -240,4 +240,30 @@ describe('hasSyncTarget', () => {
     // Asking dials nothing: no socket is seated by the question.
     expect(hasPageSocket()).toBe(false);
   });
+
+  test('a page whose only target is the ultimate-sync meta (`x build`) has one, and dials nothing', () => {
+    browserPage(undefined);
+    const had = {
+      document: Reflect.has(globalThis, 'document'),
+      location: Reflect.has(globalThis, 'location'),
+    };
+    const saved = {
+      document: Reflect.get(globalThis, 'document'),
+      location: Reflect.get(globalThis, 'location'),
+    };
+    Reflect.set(globalThis, 'document', {
+      querySelector: (selector: string) =>
+        selector === 'meta[name="ultimate-sync"]' ? { getAttribute: () => '/_x/sync' } : null,
+    });
+    Reflect.set(globalThis, 'location', { href: 'https://app.test/inbox' });
+    try {
+      expect(hasSyncTarget()).toBe(true);
+      expect(hasPageSocket()).toBe(false);
+    } finally {
+      for (const key of ['document', 'location'] as const) {
+        if (had[key]) Reflect.set(globalThis, key, saved[key]);
+        else Reflect.deleteProperty(globalThis, key);
+      }
+    }
+  });
 });

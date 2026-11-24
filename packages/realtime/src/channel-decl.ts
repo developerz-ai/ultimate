@@ -148,7 +148,7 @@ export function channel<K extends string>(
     refuseChannel(
       name,
       'carries records and names no catchUp read, so a client that misses a frame could never be brought back up to date',
-      `channelRef("${name}", { params, catchUp: { name: '…' } })   # name the query that reads these rows — or drop records for an events-only channel`,
+      `channelRef('${name}', { params: [/* … */], catchUp: rowsQuery }) // catchUp: the query that re-reads these rows — or drop records from channel() for an events-only channel`,
     );
   }
   const records = (init.records ?? []).map((entity) => {
