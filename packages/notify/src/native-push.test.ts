@@ -465,9 +465,11 @@ describe('unit · nativePush — the report', () => {
     await device('ios', IOS, 'es');
     const reports = memoryErrorReporter();
     const uninstall = installErrorReporter(reports);
+    // The sink's failure is the test's input, a foreign error handed to `nativePush`.
+    const sinkDown = new Error('the report sink is down');
     try {
       const push = pusher(keys.env, () => {
-        throw new Error('the report sink is down');
+        throw sinkDown;
       });
       await push.send({ to: 'ana', message, signal });
     } finally {
