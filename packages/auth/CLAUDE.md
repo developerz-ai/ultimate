@@ -196,7 +196,7 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 | `jwt-bearer-resolver.ts` | an external bearer JWT → `{ actor, scopes } \| null` |
 | `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` (sessions and api keys) |
 | `member-invite.ts` / `member-invite-marks.ts` | `defineMemberInvite`: a verification purpose keyed on (tenant, address), accept into `orgId` via `updatePrivileges`; revoke = link, plus membership + sessions only where a `joined` mark proves an invite granted it. The `joined`/`revoked` marks make a racing revoke win without a transaction |
-| `link-login.ts` | `signInWithLink`: a consumed link → `LoginResult`, or `X_MFA_REQUIRED` and no session. Refuses the built-in purposes and an unverified account |
+| `link-login.ts` | `signInWithLink`: a consumed link → `LoginResult`, or `X_MFA_REQUIRED` and no session. Refuses a purpose not declared `signIn: true` (the built-ins never are) and an unverified account |
 | `mfa-challenge.ts` | the sealed challenge `X_MFA_REQUIRED` carries, and `completeMfa` |
 | `mfa-handoff.ts` | `mfaPath`: the challenge from a built-in callback to the app's page — path check, `__Host-x_mfa` cookie, reader |
 | `mfa-replay-postgres.ts` | the shared replay guard: the claim and the sweep. Its DDL is in `tables.ts` |

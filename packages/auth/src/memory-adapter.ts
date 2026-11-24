@@ -128,7 +128,7 @@ export class MemoryAuthAdapter implements AuthAdapter {
       id: input.id,
       // Stored as handed over, exactly as the `insert into x_users` binds it.
       email: input.email,
-      emailVerifiedAt: null,
+      emailVerifiedAt: input.emailVerifiedAt ?? null,
       passwordHash: input.passwordHash,
       orgId: input.orgId,
       roles: [...input.roles],

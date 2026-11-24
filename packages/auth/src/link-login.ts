@@ -27,13 +27,18 @@ export interface LinkSignUp {
 export interface LinkSignInInput {
   /**
    * The purpose the link was issued under: one the app declared for signing in
-   * (`defineVerificationPurpose`). Never `'email-verify'` or `'password-reset'` — a token mailed
-   * to do one job is not a session.
+   * (`defineVerificationPurpose({ …, signIn: true })`). Never `'email-verify'`,
+   * `'password-reset'` or any purpose not declared `signIn` — a token mailed to do one job is not
+   * a session.
    */
   readonly purpose: VerificationPurpose;
   /** The address the link was mailed to. */
   readonly identifier: string;
   readonly token: string;
+  /**
+   * Stamped on the session this call writes. With TOTP enrolled it writes none: hand them to
+   * `completeMfa(auth, challenge, code, { ip, userAgent })`, the leg that does.
+   */
   readonly ip?: string | null | undefined;
   readonly userAgent?: string | null | undefined;
   /**
@@ -51,20 +56,22 @@ const linkSignInRefused = (purpose: string): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause: 'the sign-in link was valid, and its address has no account that may sign in',
-    fix: `signInWithLink(auth, { purpose: ${renderFixLiteral(purpose, "'<purpose>'")}, identifier, token, signUp: {} })   // only where a proven address with no account should become one — a disabled account stays refused`,
+    fix: `signInWithLink(auth, { purpose: ${renderFixLiteral(purpose, "'<purpose>'")}, identifier, token, signUp: {} })   // only where a proven address with no account should become one, and with a freshly mailed link: this one is spent. A disabled account stays refused`,
   });
 
 /**
  * An account holds the address and never proved it, so whoever registered it chose its password.
- * Signing the inbox's owner into that account hands them a session somebody else can also open.
- * Named, because this caller owns the address — the rule `oauthAccountNotLinked` follows.
+ * Signing the inbox's owner into that account hands them a session somebody else can also open —
+ * and so does merely verifying it: the registrant's password, second factor and sessions survive
+ * a stamp. The remedy is the reset link, whose consume replaces all three before the account is
+ * trusted. Named, because this caller owns the address — the rule `oauthAccountNotLinked` follows.
  */
 const linkAccountUnverified = (): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause:
-      'an account holds this address but never verified it, so a sign-in link may not claim it',
-    fix: 'await emailVerification.issue(runtime, { identifier: email, locale })   // the account confirms that link (emailVerification.consume, then updateUser(id, { emailVerifiedAt })), then signs in by link',
+      'an account holds this address but never verified it, so whoever registered it may hold its password, and a sign-in link may not claim it',
+    fix: "await passwordReset.issue(runtime, { identifier: email, locale })   // on its consume: updateUser(id, { passwordHash: null, mfaSecret: null, recoveryCodeHashes: [], emailVerifiedAt: now }) and revokeUserSessions(auth, id, 'address proven by reset'), then sign in by link",
   });
 
 /** Before the store is asked, so a refused purpose leaves its token live for its own job. */
@@ -72,12 +79,23 @@ function assertSignInPurpose(name: string): void {
   if ((VERIFICATION_PURPOSES as readonly string[]).includes(name)) {
     throw new ConfigInvalidError({
       cause: `signInWithLink() was given the built-in purpose '${name}', whose token is mailed to do that one job and is not a sign-in credential`,
-      fix: "defineVerificationPurpose({ name: 'sign-in', template: 'auth.sign-in', ttlMs: 15 * 60 * 1000 })   // a purpose of its own, then signInWithLink(auth, { purpose: 'sign-in', identifier, token })",
+      fix: "defineVerificationPurpose({ name: 'sign-in', template: 'auth.sign-in', ttlMs: 15 * 60 * 1000, signIn: true })   // a purpose of its own, then signInWithLink(auth, { purpose: 'sign-in', identifier, token })",
       meta: { purpose: name },
     });
   }
-  // The stored identifier is looked up as `x_users.email`, so it must be keyed the way that is.
-  if (verificationPurpose(name).identifier !== normaliseEmail) {
+  const purpose = verificationPurpose(name);
+  // Opt-in, never inferred from the identifier: an email-change or account-deletion link keys on
+  // the address too, and was mailed to do that one job.
+  if (purpose.signIn !== true) {
+    throw new ConfigInvalidError({
+      cause: `the verification purpose ${renderFixLiteral(name, "'<purpose>'")} is not declared a sign-in credential, so its link was mailed to do another job`,
+      fix: `defineVerificationPurpose({ name: ${renderFixLiteral(name, "'<purpose>'")}, template, ttlMs, signIn: true })   // only for the purpose whose link signs its holder in`,
+      meta: { purpose: name },
+    });
+  }
+  // The stored identifier is looked up as `x_users.email`, so it must be keyed the way that is:
+  // the exported `normaliseEmail` itself, the default, not a function that happens to agree.
+  if (purpose.identifier !== normaliseEmail) {
     throw new ConfigInvalidError({
       cause: `the verification purpose ${renderFixLiteral(name, "'<purpose>'")} declares its own identifier, so what its link proves is not known to be an account's address`,
       fix: `defineVerificationPurpose({ name: ${renderFixLiteral(name, "'<purpose>'")}, template, ttlMs })   // no identifier: — the default keys on the address, as x_users.email is`,
@@ -97,10 +115,13 @@ async function signUpWith(auth: Auth, email: string, signUp: LinkSignUp): Promis
     roles: signUp.roles ?? [],
     scopes: signUp.scopes ?? [],
     externalId: signUp.externalId ?? null,
+    // In the creating write: a stamp written second could fail after the row landed, leaving an
+    // account this same door refuses on every later link.
+    emailVerifiedAt: auth.clock.now(),
     createdAt: auth.clock.now(),
   });
-  // `CreateUserInput` has no `emailVerifiedAt`: the stamp is a second write, and a row that says
-  // unverified would be refused by this same door on the next link. Fail closed.
+  if (created.emailVerifiedAt !== null) return created;
+  // An app's own adapter that predates the field: the second write, failing closed.
   const stamped = await auth.adapter.updateUser(created.id, { emailVerifiedAt: auth.clock.now() });
   if (stamped === null) throw authWriteFailed('updateUser', 'x_users');
   return stamped;

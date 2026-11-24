@@ -46,6 +46,11 @@ export interface CreateUserInput {
   readonly roles: readonly string[];
   readonly scopes?: readonly string[] | undefined;
   readonly externalId?: string | null | undefined;
+  /**
+   * The address proven at creation (a sign-in link's sign-up), in the same write as the row, so
+   * no failure can leave an account that exists but was never stamped. Absent is unverified.
+   */
+  readonly emailVerifiedAt?: Date | null | undefined;
   readonly createdAt: Date;
 }
 

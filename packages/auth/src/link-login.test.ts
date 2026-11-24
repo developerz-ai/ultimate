@@ -12,7 +12,7 @@ import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 import { TOTP_STEP_SECONDS, totpCode, totpStep } from './mfa';
 import { completeMfa } from './mfa-challenge';
 import { saveTotpSecret } from './mfa-secret';
-import { disableUser } from './revocation';
+import { disableUser, enableUser, revokeUserSessions } from './revocation';
 import {
   defineVerificationPurpose,
   emailVerification,
@@ -34,6 +34,14 @@ const freshName = (base: string): string => `${base}-${crypto.randomUUID()}`;
 const signInLink = defineVerificationPurpose({
   name: freshName('link-login-test'),
   template: 'auth.sign-in-link',
+  ttlMs: TTL_MS,
+  signIn: true,
+});
+
+/** Keys on the address as a sign-in link does, and was mailed to do another job. */
+const emailChange = defineVerificationPurpose({
+  name: freshName('link-login-test-email-change'),
+  template: 'auth.email-change',
   ttlMs: TTL_MS,
 });
 
@@ -131,6 +139,50 @@ describe('signInWithLink: the second factor still applies', () => {
   });
 });
 
+describe('signInWithLink: the second leg', () => {
+  test('wrong passwords and wrong codes after a link spend one budget for the account', async () => {
+    const w = world();
+    const userId = await verifiedUser(w);
+    await saveTotpSecret(w.auth, userId, SECRET);
+    for (let guess = 0; guess < 3; guess += 1) {
+      expect(
+        (await caught(() => login(w.auth, { email: EMAIL, password: `${PASSWORD}-wrong` })))?.code,
+      ).toBe('X_UNAUTHENTICATED');
+    }
+    const error = await caught(async () => redeem(w.auth, await mailed(w)));
+    const challenge = String(error?.meta?.['challenge']);
+    const live = [-1, 0, 1].map((offset) => totpCode(SECRET, totpStep(w.clock.now()) + offset));
+    const wrong = live.includes('000000') ? '111111' : '000000';
+    for (let guess = 0; guess < 2; guess += 1) {
+      expect((await caught(() => completeMfa(w.auth, challenge, wrong)))?.code).toBe(
+        'X_UNAUTHENTICATED',
+      );
+    }
+    // 3 + 2 = maxAttempts: the next guess on either door is held.
+    expect((await caught(() => completeMfa(w.auth, challenge, wrong)))?.code).toBe(
+      'X_ACCOUNT_LOCKED',
+    );
+    expect((await caught(() => login(w.auth, { email: EMAIL, password: PASSWORD })))?.code).toBe(
+      'X_ACCOUNT_LOCKED',
+    );
+  });
+
+  test("with TOTP, the session's address and agent come from the leg that writes it", async () => {
+    const w = world();
+    const userId = await verifiedUser(w);
+    await saveTotpSecret(w.auth, userId, SECRET);
+    const error = await caught(async () => redeem(w.auth, await mailed(w)));
+    const result = await completeMfa(
+      w.auth,
+      String(error?.meta?.['challenge']),
+      totpCode(SECRET, totpStep(w.clock.now())),
+      { ip: '203.0.113.9', userAgent: 'second-leg' },
+    );
+    expect(result.session.ip).toBe('203.0.113.9');
+    expect(result.session.userAgent).toBe('second-leg');
+  });
+});
+
 describe('signInWithLink: one link, one sign-in', () => {
   test('without a second factor the link mints the session login() mints', async () => {
     const w = world();
@@ -164,6 +216,9 @@ describe('signInWithLink: one link, one sign-in', () => {
     const token = await mailed(w);
     const settled = await Promise.allSettled([redeem(w.auth, token), redeem(w.auth, token)]);
     expect(settled.filter((one) => one.status === 'fulfilled')).toHaveLength(1);
+    const lost = settled.find((one) => one.status === 'rejected');
+    const reason: unknown = lost?.status === 'rejected' ? lost.reason : undefined;
+    expect(isUltimateError(reason) ? reason.code : undefined).toBe('X_UNAUTHENTICATED');
     expect(await w.adapter.listSessions(userId)).toHaveLength(1);
   });
 
@@ -247,16 +302,50 @@ describe('signInWithLink: what a link is not', () => {
     const w = world();
     const userId = await verifiedUser(w);
     await disableUser(w.auth, userId, 'link-login test');
-    const error = await caught(async () => redeem(w.auth, await mailed(w)));
+    const token = await mailed(w);
+    const error = await caught(() => redeem(w.auth, token));
     expect(error?.code).toBe('X_UNAUTHENTICATED');
     expect(error?.meta).toBeUndefined();
+    expect(await w.adapter.listSessions(userId)).toHaveLength(0);
+    // The refusal spent the link: re-enabled, the account still needs a fresh one.
+    await enableUser(w.auth, userId);
+    expect((await caught(() => redeem(w.auth, token)))?.code).toBe('X_UNAUTHENTICATED');
+    expect((await redeem(w.auth, await mailed(w))).session.userId).toBe(userId);
+  });
+
+  test('a disabled account is refused with sign-up declared too, and answers as no account does', async () => {
+    const w = world();
+    const userId = await verifiedUser(w);
+    await disableUser(w.auth, userId, 'link-login test');
+    const withSignUp = await caught(async () =>
+      signInWithLink(w.auth, {
+        purpose: signInLink.name,
+        identifier: EMAIL,
+        token: await mailed(w),
+        signUp: {},
+      }),
+    );
+    const nobody = await caught(async () =>
+      redeem(w.auth, await mailed(w, 'nobody@corp.test'), 'nobody@corp.test'),
+    );
+    expect(withSignUp?.code).toBe('X_UNAUTHENTICATED');
+    expect(withSignUp?.message).toBe(nobody?.message);
+    expect(withSignUp?.fix).toBe(nobody?.fix);
     expect(await w.adapter.listSessions(userId)).toHaveLength(0);
   });
 
   test('an address no account holds is refused unless the call declares sign-up', async () => {
     const w = world();
-    const error = await caught(async () => redeem(w.auth, await mailed(w)));
+    const token = await mailed(w);
+    const error = await caught(() => redeem(w.auth, token));
     expect(error?.code).toBe('X_UNAUTHENTICATED');
+    // The fix asks for a fresh link: this one is spent, sign-up or not.
+    expect(error?.fix).toContain('freshly mailed link');
+    expect(await w.adapter.findUserByEmail(EMAIL)).toBeNull();
+    const retried = await caught(() =>
+      signInWithLink(w.auth, { purpose: signInLink.name, identifier: EMAIL, token, signUp: {} }),
+    );
+    expect(retried?.code).toBe('X_UNAUTHENTICATED');
     expect(await w.adapter.findUserByEmail(EMAIL)).toBeNull();
   });
 
@@ -264,14 +353,80 @@ describe('signInWithLink: what a link is not', () => {
     const w = world();
     // The pre-registration: somebody else chose this account's password.
     const user = await register(w.auth, { email: EMAIL, password: PASSWORD });
-    const error = await caught(async () => redeem(w.auth, await mailed(w)));
+    const token = await mailed(w);
+    const error = await caught(() => redeem(w.auth, token));
     expect(error?.code).toBe('X_UNAUTHENTICATED');
-    expect(error?.fix).toContain('emailVerification');
+    expect(error?.fix).toContain('passwordReset.issue');
     expect(await w.adapter.listSessions(user.id)).toHaveLength(0);
     expect((await w.adapter.findUserById(user.id))?.emailVerifiedAt).toBeNull();
     // And the password it was registered with is not what changed.
     expect((await login(w.auth, { email: EMAIL, password: PASSWORD })).session.userId).toBe(
       user.id,
+    );
+    // Sign-up declared changes nothing: the address is held.
+    const withSignUp = await caught(async () =>
+      signInWithLink(w.auth, {
+        purpose: signInLink.name,
+        identifier: EMAIL,
+        token: await mailed(w),
+        signUp: {},
+      }),
+    );
+    expect(withSignUp?.code).toBe('X_UNAUTHENTICATED');
+    expect(await w.adapter.listSessions(user.id)).toHaveLength(1);
+    // The refusal spent the link.
+    await w.adapter.updateUser(user.id, { emailVerifiedAt: w.clock.now() });
+    expect((await caught(() => redeem(w.auth, token)))?.code).toBe('X_UNAUTHENTICATED');
+  });
+
+  test("the remedy the refusal names takes the registrant's password and sessions with it", async () => {
+    const w = world();
+    // The pre-registration, signed in and holding a second factor of its own.
+    const user = await register(w.auth, { email: EMAIL, password: PASSWORD });
+    const registrant = await login(w.auth, { email: EMAIL, password: PASSWORD });
+    await saveTotpSecret(w.auth, user.id, SECRET);
+    const error = await caught(async () => redeem(w.auth, await mailed(w)));
+    expect(error?.fix).toContain('passwordReset.issue');
+    expect(error?.fix).toContain('revokeUserSessions');
+
+    // The inbox's owner follows it: the reset link proves the address, and its consume replaces
+    // every credential the registrant set before the account is trusted.
+    const { token } = await passwordReset.issue(w.runtime, { identifier: EMAIL, locale: 'en' });
+    await passwordReset.consume(w.runtime, { identifier: EMAIL, token });
+    await w.adapter.updateUser(user.id, {
+      passwordHash: null,
+      mfaSecret: null,
+      recoveryCodeHashes: [],
+      emailVerifiedAt: w.clock.now(),
+    });
+    await revokeUserSessions(w.auth, user.id, 'address proven by reset');
+
+    const result = await redeem(w.auth, await mailed(w));
+    expect(result.session.userId).toBe(user.id);
+    expect(result.session.mfaSatisfied).toBe(true);
+    expect((await caught(() => authenticate(w.auth, registrant.token)))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+    expect((await caught(() => login(w.auth, { email: EMAIL, password: PASSWORD })))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+  });
+
+  test('a purpose that keys on the address but is not declared sign-in is refused, and its token stays live', async () => {
+    const w = world();
+    const userId = await verifiedUser(w);
+    const { token } = await emailChange.issue(w.runtime, { identifier: EMAIL, locale: 'en' });
+    let thrown: unknown;
+    try {
+      await signInWithLink(w.auth, { purpose: emailChange.name, identifier: EMAIL, token });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_CONFIG_INVALID');
+    expect(isUltimateError(thrown) ? thrown.fix : '').toContain('signIn: true');
+    expect(await w.adapter.listSessions(userId)).toHaveLength(0);
+    expect((await emailChange.consume(w.runtime, { identifier: EMAIL, token })).identifier).toBe(
+      EMAIL,
     );
   });
 });
@@ -292,6 +447,40 @@ describe('signInWithLink: declared sign-up', () => {
     expect(user?.orgId).toBe('org-9');
     expect([...(user?.roles ?? [])]).toEqual(['member']);
     expect(result.session.mfaSatisfied).toBe(true);
+  });
+
+  test('a bad link with sign-up declared creates no account', async () => {
+    const w = world();
+    const token = await mailed(w, 'new@corp.test');
+    const error = await caught(() =>
+      signInWithLink(w.auth, {
+        purpose: signInLink.name,
+        identifier: 'new@corp.test',
+        token: `${token}x`,
+        signUp: {},
+      }),
+    );
+    expect(error?.code).toBe('X_UNAUTHENTICATED');
+    expect(await w.adapter.findUserByEmail('new@corp.test')).toBeNull();
+  });
+
+  test('the account is created verified in one write: no later write can strand it', async () => {
+    const w = world();
+    // A store whose every later user write fails: the creating write is the only one that lands.
+    w.adapter.updateUser = async () => null;
+    const result = await signInWithLink(w.auth, {
+      purpose: signInLink.name,
+      identifier: 'new@corp.test',
+      token: await mailed(w, 'new@corp.test'),
+      signUp: {},
+    });
+    const user = await w.adapter.findUserByEmail('new@corp.test');
+    expect(user?.emailVerifiedAt).toEqual(w.clock.now());
+    expect(result.session.userId).toBe(user?.id ?? '');
+    // And the next link signs the same account in.
+    expect(
+      (await redeem(w.auth, await mailed(w, 'new@corp.test'), 'new@corp.test')).session.userId,
+    ).toBe(user?.id ?? '');
   });
 
   test('sign-up never rewrites an account that exists', async () => {
@@ -326,6 +515,7 @@ describe('signInWithLink: the purpose keys on the address', () => {
     template: 'auth.sign-in-link',
     ttlMs: TTL_MS,
     identifier: (raw) => raw.replaceAll(' ', ''),
+    signIn: true,
   });
 
   test('a purpose with its own identifier is refused, and its token stays live', async () => {
