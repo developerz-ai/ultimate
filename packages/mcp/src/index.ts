@@ -182,6 +182,7 @@ export type {
   McpTool,
   McpToolAnnotations,
   McpToolResult,
+  McpUrlElicitation,
   McpVerbClass,
   McpVisibility,
   ToolArgs,
@@ -256,6 +257,7 @@ export { MCP_RATE_LIMITS, MCP_UNAUTHENTICATED_LIMIT, mcpHttpRoute } from './tran
 export { mcpHostRefused } from './transport-http-answers';
 export type { StdioTransportInput } from './transport-stdio';
 export { serveStdio } from './transport-stdio';
+export { URL_ELICITATION_KEY, withUrlElicitation } from './url-elicitation';
 export type { ArgIssue, ArgValidation } from './validate-args';
 export { validateArgs } from './validate-args';
 export type {

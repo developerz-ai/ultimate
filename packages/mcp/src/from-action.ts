@@ -41,6 +41,7 @@ import type {
   ToolArgs,
 } from './registry';
 import { jsonResult, structuredResult } from './registry';
+import { urlElicitationOf } from './url-elicitation';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
 
@@ -158,7 +159,10 @@ export function toolFrom(listed: ListedPrimitive): AnyMcpTool {
         outputSchema === undefined ? jsonResult(output) : structuredResult(output, wrap);
       // A list query's page that was cut says so, and where the next one starts (`query-page.ts`).
       const page = pageFactsOf(output);
-      return page === undefined ? result : truncatedResult(result, page);
+      const answer = page === undefined ? result : truncatedResult(result, page);
+      // A handler that asked the person to open a page (`withUrlElicitation`) says so beside it.
+      const urlElicitation = urlElicitationOf(output);
+      return urlElicitation === undefined ? answer : { ...answer, urlElicitation };
     },
   };
 }

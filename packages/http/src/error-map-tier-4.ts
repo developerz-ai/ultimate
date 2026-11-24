@@ -199,4 +199,6 @@ export const TIER_4_ERROR_STATUS = {
   X_MAIL_INBOUND_MALFORMED: 422,
   // @ultimat3/mail — an inbound message crosses a declared bound
   X_MAIL_INBOUND_TOO_LARGE: 413,
+  // @ultimat3/mcp — a tool asked for a URL prompt no client may be shown
+  X_MCP_ELICITATION_URL_INVALID: 500,
 } satisfies Readonly<Record<string, number>>;

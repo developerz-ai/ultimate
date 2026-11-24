@@ -20,6 +20,8 @@ export const MCP_LEGACY_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'] as
 /** The `_meta` keys a modern request and result carry. */
 export const META_PROTOCOL_VERSION = 'io.modelcontextprotocol/protocolVersion';
 export const META_SERVER_INFO = 'io.modelcontextprotocol/serverInfo';
+/** Where a modern request declares what its client can do: there is no handshake to keep it. */
+export const META_CLIENT_CAPABILITIES = 'io.modelcontextprotocol/clientCapabilities';
 
 /**
  * Identity advertised on `initialize` unless the host overrides it. A call and not a constant:

@@ -561,6 +561,40 @@ today's legacy dispatch; `initialize` echoes an offered legacy revision, else `2
 other version is `-32022` `X_MCP_PROTOCOL_UNSUPPORTED` with `data: { supported, requested }`.
 There is no `MCP_PROTOCOL_VERSION`: name the era, `MCP_MODERN_VERSIONS[0]` or `MCP_LEGACY_VERSIONS`.
 
+**URL-mode elicitation, `As of 2026-11`** (`url-elicitation.ts`; MCP 2026-07-28 `client/elicitation`,
+`basic/patterns/mrtr`). A handler that needs the person to open a page returns
+`withUrlElicitation(output, { url, message })`. `output` is unchanged and is the whole answer for
+every client that cannot show a prompt, so it says the same in its own fields.
+
+```ts
+import { withUrlElicitation } from '@ultimat3/mcp';
+
+declare const appOrigin: string;
+
+// What a tool's `handle` (or an action's handler) returns when the person has a page to open.
+export function notConnected() {
+  const link = new URL('/connect', appOrigin).href;
+  return withUrlElicitation(
+    { status: 'not_connected', open: link },
+    { url: link, message: 'Open this page to finish connecting.' },
+  );
+}
+```
+
+| `tools/call` | Answer |
+|---|---|
+| modern, `_meta["io.modelcontextprotocol/clientCapabilities"].elicitation.url` an object | `{ resultType: 'input_required', inputRequests: { url_elicitation: { method: 'elicitation/create', params: { mode: 'url', url, message } } } }` — no `content`, no `requestState` |
+| the retry, `params.inputResponses.url_elicitation.action` `accept`, `decline` or `cancel` | the tool runs again and its result is the answer: asked once per call. `accept` is consent to open the page, not proof it was finished |
+| modern without the capability (`elicitation: {}` is form mode only) | the tool's result |
+| legacy | the tool's result. `-32042` is not sent: its capability is declared on `initialize`, and no handshake is kept |
+| the ask is not an absolute `https:` URL (`http:` on `localhost`, `127.0.0.1`, `[::1]`), carries `user:password@`, or has an empty message | `isError`, `X_MCP_ELICITATION_URL_INVALID` — for every caller, capable or not |
+
+The client retries the same call, so a handler that asks is safe to run again. The spec's rules a
+value cannot show stay the app's: nothing about the person and no pre-authenticated link in the
+URL, and the page verifies that whoever opened it is the caller the ask was made for (its
+session against the MCP caller's subject) before it accepts anything. A hand-built `McpTool` sets
+`urlElicitation` on its `McpToolResult`.
+
 | HTTP refusal | Status | Code |
 |---|---|---|
 | `Origin` present and core's `proveSameOrigin` cannot show it is this app — not `seen.origin` (else the request URL's), not `seen.listed` (`http.cors.origins` on a mounted app) — before `resolveToken`. A DNS-rebound name passes it (Host and Origin agree) | 403 | `X_MCP_ORIGIN_REFUSED` |

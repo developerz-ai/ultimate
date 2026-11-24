@@ -18,7 +18,7 @@ import. The CLI wires it.
 | `audit.ts` | one structured line per `tools/call` and per `resources/read`, outcome → level |
 | `validate-args.ts` | JSON-Schema-subset arg validation, applies defaults |
 | `server.ts` | JSON-RPC dispatch; `classify` delegates to `protocol-era.ts` |
-| `protocol-era.ts` | one request's era (`_meta` version), `METHODS` per era, `classifyBody`, `initialize` negotiation, `server/discover`, the modern stamp, the HTTP mirrored-header check and each answer's status |
+| `protocol-era.ts` | one request's era (`_meta` version), `METHODS`, `classifyBody`, `initialize`, `server/discover`, the modern stamp, the HTTP header check, each answer's status |
 | `server-resources.ts` | `resources/read`'s three outcomes, audited, provider in a `try` |
 | `from-action.ts` | action/query → tool; the "one authz system" projection; `toolsFrom` (sweep, skips) vs `toolsListed` (written out, refuses) |
 | `resources.ts` | resources + prompts, stable `ultimate://` URIs |
@@ -30,8 +30,7 @@ import. The CLI wires it.
 | `confirmations.ts` · `confirmation-*.ts` | `mcpConfirmations`: a factory over `action` (view/decide) · the gate on `handle` · stores · DDL · codes. `confirmation-installed.ts` is the `mcpConfirmationStore` slot a declaration with no `store` reads; `adapter.ts` (`./adapter`) its interface, error and installer |
 | `oauth-metadata.ts` | RFC 9728 protected-resource metadata + the 401 `resource_metadata` challenge (`defineAppMcp({ oauth })`) |
 | `oauth-server.ts` | `mcpAuthorizationServer`: `@ultimat3/auth`'s `authorizationServer` bound to one endpoint's `resource` (default and required by `resolveToken`), its `oauth` block, `mcp.auth.<event>` lines. No protocol rule lives here |
-| `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve`: ≤ 16 calls run, ≤ 64 queued; the reader keeps reading at the cap, so `notifications/cancelled` and `ping` are always heard |
-| `stdio-lines.ts` | raw chunks → lines, the cap in bytes |
+| `transport-stdio.ts` · `stdio-lines.ts` | NDJSON on stdin/stdout for `x mcp serve`: ≤ 16 calls run, ≤ 64 queued; the reader keeps reading at the cap, so `notifications/cancelled` and `ping` are always heard |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
 | `runtime-*` · `*-catalog.ts` · `tenant*.ts` | `catalog:` (`runtimeTool()`, checked, merged per request) · `tenant:` (`list_tenants`); codes in `catalog-errors.ts` |
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
@@ -41,6 +40,7 @@ import. The CLI wires it.
 | `scopes.ts` | the `scopes:` map — outcome 2's declaration surface and its three boot refusals |
 | `readonly-sql.ts` · `readonly-sql-calls.ts` · `explain-sql.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families · `db.explain`'s screen |
 | `query-page.ts` | a list query tool's ONE bounded page, `_after` cursor |
+| `url-elicitation.ts` | `withUrlElicitation`, `input_required` |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
 | `meta-surface.ts` · `meta-catalog-render.ts` | `surface: 'meta'` catalog, `groups:` boot checks (dispatch: `server.ts`) · its text, `catalogDetail` |
 | `meta-split*.ts` · `meta-host.ts` | `'meta-split'`: dispatchers, effect boot check · `split:` (fields, `stricter`) · dispatch (wrong tool, stricter door, preview) · the server half both meta doors call |

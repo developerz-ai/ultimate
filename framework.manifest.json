@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "9386c65f78f63b7df7cc44374cc7b52d975a2adf98978610ec4eac0c7b4f4077",
+  "buildId": "69a12473c3c1ea388e7ff0a8767cadf917ed0a56925b5efe8967d79e9f1e354e",
   "tiers": {
     "0": [
       "core",
@@ -3586,6 +3586,11 @@
     },
     {
       "code": "X_MCP_EFFECT_UNDECLARED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_ELICITATION_URL_INVALID",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
