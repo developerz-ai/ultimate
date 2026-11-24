@@ -1,8 +1,7 @@
 // Single responsibility: ONE attempt of an `outbound()` call — its signal, its hops, its status
-// read as a coded answer (a refusal's body read as the call's `refusal` asks), and its body under
-// the idle watchdog and the cap. Every way it can end
-// is classified here, so `retry()` above it reads a code and never an unclassified throw (which
-// it retries: measured, an unclassified throw from a POST ran three attempts).
+// read as a coded answer (a refusal's body as the call's `refusal` asks), and its body under the
+// idle watchdog and the cap. Every way it ends is classified here, so `retry()` above it reads a
+// code, never an unclassified throw (measured: one from a POST ran three attempts).
 
 import type { Schema } from '@ultimat3/schema';
 import { retryAfterSecondsOf } from './client-retry-after';

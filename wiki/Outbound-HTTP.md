@@ -133,6 +133,13 @@ the call's `refusal`:
 | `{ detail: false }` | nothing for the excerpt | `meta.detail: ''`: a body's free text (an address, a name) never kept. Combines with `schema` |
 
 ```ts
+import { isUltimateError } from '@ultimat3/core';
+import { outbound } from '@ultimat3/core/outbound';
+import { t } from '@ultimat3/schema';
+
+declare const url: string;
+declare const body: string;
+
 const decline = t.object({ error: t.object({ decline_code: t.string }) });
 try {
   await outbound({ url, vendor: 'payments', dial: 'named', deadlineMs: 10_000, method: 'POST',
@@ -140,7 +147,7 @@ try {
 } catch (error) {
   // meta.fields is unknown on the error: the schema that declared it reads it back typed.
   if (isUltimateError(error) && error.code === 'X_OUTBOUND_REFUSED') {
-    const code = decline.safeParse(error.meta?.['fields']);
+    console.log(decline.safeParse(error.meta?.['fields']));
   }
 }
 ```
