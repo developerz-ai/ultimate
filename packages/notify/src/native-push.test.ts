@@ -4,8 +4,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { FrozenClock } from '@ultimat3/core';
-import { frozenClock, installLogSink } from '@ultimat3/core';
-import type { NativePusher } from './native-push';
+import { frozenClock, installLogSink, memoryErrorReporter } from '@ultimat3/core';
+import { installErrorReporter } from '@ultimat3/core/adapter';
+import type { NativePusher, NativePushOptions, NativePushReport } from './native-push';
 import { nativePush } from './native-push';
 import type { FakeProviders, ProviderKeys } from './native-push-fixture';
 import {
@@ -40,9 +41,13 @@ let releaseLogSink: () => void;
 
 const signal = new AbortController().signal;
 
-const pusher = (env: Readonly<Record<string, string>> = keys.env): NativePusher =>
+const pusher = (
+  env: Readonly<Record<string, string>> = keys.env,
+  onReport?: NativePushOptions['onReport'],
+): NativePusher =>
   nativePush({
     devices,
+    onReport,
     apns: APNS_OPTIONS,
     fcm: FCM_OPTIONS,
     fetch: fake.fetch,
@@ -393,18 +398,22 @@ describe('unit · nativePush — sound, interruption level, category, channel', 
 });
 
 describe('unit · nativePush — the report', () => {
-  test('each device the provider took is counted as accepted', async () => {
+  /** One pusher whose `onReport` collects what each settled send reported, in order. */
+  const reporting = () => {
+    const reports: { to: string; kind: 'alert' | 'data'; report: NativePushReport }[] = [];
+    return { reports, push: pusher(keys.env, (sent) => reports.push(sent)) };
+  };
+
+  test('each device the provider took is counted as accepted, per send and its kind', async () => {
     await device('ios', IOS, 'es');
     await device('android', ANDROID, 'de');
-    expect(await pusher().send({ to: 'ana', message, signal })).toEqual({
-      accepted: 2,
-      refused: 0,
-      removed: 0,
-      skipped: 0,
-    });
-    expect(await pusher().sendData({ to: 'ana', data: { id: '1' }, signal })).toMatchObject({
-      accepted: 2,
-    });
+    const { reports, push } = reporting();
+    await push.send({ to: 'ana', message, signal });
+    await push.sendData({ to: 'ana', data: { id: '1' }, signal });
+    expect(reports).toEqual([
+      { to: 'ana', kind: 'alert', report: { accepted: 2, refused: 0, removed: 0, skipped: 0 } },
+      { to: 'ana', kind: 'data', report: { accepted: 2, refused: 0, removed: 0, skipped: 0 } },
+    ]);
   });
 
   test('every device refused as gone: zero accepted, both removed, and the send settles', async () => {
@@ -412,37 +421,61 @@ describe('unit · nativePush — the report', () => {
     await device('android', ANDROID, 'de');
     fake.answer(APNS, apnsRefusal(410, 'Unregistered'));
     fake.answer(FCM, fcmRefusal(404, 'UNREGISTERED', 'NOT_FOUND'));
-    expect(await pusher().send({ to: 'ana', message, signal })).toEqual({
-      accepted: 0,
-      refused: 0,
-      removed: 2,
-      skipped: 0,
-    });
+    const { reports, push } = reporting();
+    await push.send({ to: 'ana', message, signal });
+    expect(reports.map((sent) => sent.report)).toEqual([
+      { accepted: 0, refused: 0, removed: 2, skipped: 0 },
+    ]);
   });
 
   test('a refusal beside an acceptance, and a platform with no provider, are counted apart', async () => {
     await device('ios', IOS, 'es');
     await device('android', ANDROID, 'de');
     fake.answer(APNS, apnsRefusal(400, 'BadDeviceToken'));
-    expect(await pusher().send({ to: 'ana', message, signal })).toEqual({
-      accepted: 1,
-      refused: 1,
-      removed: 0,
-      skipped: 0,
-    });
+    const { reports, push } = reporting();
+    await push.send({ to: 'ana', message, signal });
+    const seen: NativePushReport[] = [];
     const iosOnly = nativePush({
       devices,
       apns: APNS_OPTIONS,
       fetch: fake.fetch,
       env: keys.env,
       clock,
+      onReport: (sent) => seen.push(sent.report),
     });
     fake.answer(APNS, ok());
-    expect(await iosOnly.send({ to: 'ana', message, signal })).toEqual({
-      accepted: 1,
-      refused: 0,
-      removed: 0,
-      skipped: 1,
-    });
+    await iosOnly.send({ to: 'ana', message, signal });
+    expect(reports.map((sent) => sent.report)).toEqual([
+      { accepted: 1, refused: 1, removed: 0, skipped: 0 },
+    ]);
+    expect(seen).toEqual([{ accepted: 1, refused: 0, removed: 0, skipped: 1 }]);
+  });
+
+  test('a send that rejects reports nothing', async () => {
+    await device('ios', IOS, 'es');
+    fake.answer(APNS, apnsRefusal(400, 'BadDeviceToken'));
+    const { reports, push } = reporting();
+    expect(await codeOf(() => push.send({ to: 'ana', message, signal }))).toStartWith(
+      'X_NOTIFY_PUSH_',
+    );
+    expect(reports).toEqual([]);
+  });
+
+  test('a throwing onReport is reported, and the send still settles: no retry pushes it twice', async () => {
+    await device('ios', IOS, 'es');
+    const reports = memoryErrorReporter();
+    const uninstall = installErrorReporter(reports);
+    // The sink's failure is the test's input, a foreign error handed to `nativePush`.
+    const sinkDown = new Error('the report sink is down');
+    try {
+      const push = pusher(keys.env, () => {
+        throw sinkDown;
+      });
+      await push.send({ to: 'ana', message, signal });
+    } finally {
+      uninstall();
+    }
+    expect(fake.sent).toHaveLength(1);
+    expect(reports.events.map((event) => event.scope.operation)).toEqual(['notify.push.on_report']);
   });
 });

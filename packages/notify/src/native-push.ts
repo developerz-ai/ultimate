@@ -4,7 +4,7 @@
 // one, which `webPush()` cannot (a browser push always shows) — so that mistake is a type error.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteCount, isUltimateError, logger, systemClock } from '@ultimat3/core';
+import { finiteCount, isUltimateError, logger, reportError, systemClock } from '@ultimat3/core';
 import type { OutboundFetch } from '@ultimat3/core/outbound';
 import { translatorFor } from '@ultimat3/i18n';
 import type { ApnsOptions } from './apns';
@@ -41,6 +41,18 @@ export interface NativePushOptions {
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
   readonly clock?: Clock | undefined;
   readonly translate?: ((locale: string) => PushTranslate) | undefined;
+  /**
+   * Each settled send's report, once every device was tried — `kind` names `send` (`'alert'`) or
+   * `sendData` (`'data'`). A send that rejects reports nothing. A throw here is reported and the
+   * send still settles: the providers already took it, and a retry would push it twice.
+   */
+  readonly onReport?:
+    | ((sent: {
+        readonly to: string;
+        readonly kind: 'alert' | 'data';
+        readonly report: NativePushReport;
+      }) => void)
+    | undefined;
 }
 
 /**
@@ -58,12 +70,12 @@ export interface NativePushReport {
 }
 
 /**
- * Both seams, each settling once every device was tried, with the report. A send nothing accepted
- * and something refused still rejects with the first refusal, as a delivery must.
+ * Both seams, each settling once every device was tried (its report to `onReport`). A send nothing
+ * accepted and something refused still rejects with the first refusal, as a delivery must.
  */
 export interface NativePusher extends Pusher, DataPusher {
-  send(push: Parameters<Pusher['send']>[0]): Promise<NativePushReport>;
-  sendData(push: Parameters<DataPusher['sendData']>[0]): Promise<NativePushReport>;
+  send(push: Parameters<Pusher['send']>[0]): Promise<void>;
+  sendData(push: Parameters<DataPusher['sendData']>[0]): Promise<void>;
 }
 
 /** The message for one device, in that device's locale. */
@@ -181,6 +193,14 @@ export function nativePush(options: NativePushOptions): NativePusher {
   if (options.apns !== undefined) senders.set('ios', apnsSender(options.apns, deps));
   if (options.fcm !== undefined) senders.set('android', fcmSender(options.fcm, deps));
   const translate = options.translate ?? ((locale: string) => translatorFor(locale));
+  const settle = (to: string, kind: 'alert' | 'data', report: NativePushReport): void => {
+    if (options.onReport === undefined) return;
+    try {
+      options.onReport({ to, kind, report });
+    } catch (error) {
+      reportError(error, { source: 'job', scope: { operation: 'notify.push.on_report' } });
+    }
+  };
   return {
     async send({
       to,
@@ -193,7 +213,7 @@ export function nativePush(options: NativePushOptions): NativePusher {
     }) {
       // Screened once, before any device, as `sendData` screens its ids.
       screenNativeFields(message);
-      return await eachDevice(options.devices, senders, {
+      const report = await eachDevice(options.devices, senders, {
         to,
         signal,
         message: (locale) => ({
@@ -201,15 +221,17 @@ export function nativePush(options: NativePushOptions): NativePusher {
           push: renderNativePush(message, translate(locale)),
         }),
       });
+      settle(to, 'alert', report);
     },
-    sendData({ to, data, signal }: { to: string; data: PushData; signal: AbortSignal }) {
+    async sendData({ to, data, signal }: { to: string; data: PushData; signal: AbortSignal }) {
       // Screened once, before any device: a refusal here is the notifier's, not a provider's.
       const screened = screenPushData(data);
-      return eachDevice(options.devices, senders, {
+      const report = await eachDevice(options.devices, senders, {
         to,
         signal,
         message: () => ({ kind: 'data', data: screened }),
       });
+      settle(to, 'data', report);
     },
   };
 }

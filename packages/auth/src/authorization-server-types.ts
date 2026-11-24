@@ -115,7 +115,7 @@ export interface DeviceCodeRecord {
 export interface ResolvedGrant {
   /**
    * The grant the token belongs to: one consent, kept across every refresh rotation — what
-   * `revoke({ subject, grantId })` ends. `resolve` always sets it; optional only so a
+   * `revokeGrant({ subject, grantId })` ends. `resolve` always sets it; optional only so a
    * `ResolvedGrant` built by hand (a test's fake source) still compiles. Required waits on `next`.
    */
   readonly grantId?: string | undefined;

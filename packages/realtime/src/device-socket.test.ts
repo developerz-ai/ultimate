@@ -15,7 +15,12 @@ import {
 } from './device-fixture';
 import type { DeviceCloseHandler, DeviceOpenHandler } from './device-hooks';
 import type { DeviceFrameHandler } from './device-host';
-import { type DeviceAttachment, deviceSocket, forgetDeviceSockets } from './device-socket';
+import {
+  type DeviceAttachment,
+  type DeviceSocket,
+  deviceSocket,
+  forgetDeviceSockets,
+} from './device-socket';
 import type { DeviceGrant } from './device-upgrade';
 import { DEVICE_FRAME_MAX_BYTES } from './device-wire';
 import { InProcessTransport } from './fanout';
@@ -40,6 +45,13 @@ const codeOf = async (work: Promise<unknown>): Promise<string> => {
   }
   return expect.unreachable('the request resolved');
 };
+
+/** `deviceSocket()` sets it; it is optional only in the type (`DeviceSocket`). */
+function disconnectOf(link: DeviceSocket) {
+  const { disconnect } = link;
+  if (disconnect === undefined) return expect.unreachable('deviceSocket() sets disconnect');
+  return disconnect;
+}
 
 async function node(
   options: {
@@ -318,7 +330,7 @@ describe('unit · deviceSocket open, close and disconnect', () => {
       },
     });
     const ws = await dial('tok-a');
-    expect(await link.disconnect(caller, 'dev-1', 'revoked')).toBe(true);
+    expect(await disconnectOf(link)(caller, 'dev-1', 'revoked')).toBe(true);
     expect(ws.closed).toEqual({ code: 1008, reason: 'revoked' });
     await flush();
     expect(events).toEqual(['open dev-1 as dev-owner', 'close dev-1: revoked']);
@@ -328,16 +340,25 @@ describe('unit · deviceSocket open, close and disconnect', () => {
   test("another tenant's device is not disconnected: false, as for an unknown one", async () => {
     const { link, dial, caller } = await node();
     const foreign = await dial('tok-b');
-    expect(await link.disconnect(caller, 'dev-9', 'revoked')).toBe(false);
-    expect(await link.disconnect(caller, 'nope', 'revoked')).toBe(false);
+    expect(await disconnectOf(link)(caller, 'dev-9', 'revoked')).toBe(false);
+    expect(await disconnectOf(link)(caller, 'nope', 'revoked')).toBe(false);
     expect(foreign.closed).toBeNull();
+  });
+
+  test('a DeviceSocket built without disconnect still compiles', async () => {
+    const { link } = await node();
+    const { disconnect: _disconnect, ...older } = link;
+    const own: DeviceSocket = older;
+    expect(own.disconnect).toBeUndefined();
   });
 
   test('a reason no websocket close frame can carry is X_CONFIG_INVALID, before any send', async () => {
     const { link, dial, caller } = await node();
     const ws = await dial('tok-a');
-    expect(await codeOf(link.disconnect(caller, 'dev-1', ''))).toBe('X_CONFIG_INVALID');
-    expect(await codeOf(link.disconnect(caller, 'dev-1', 'é'.repeat(62)))).toBe('X_CONFIG_INVALID');
+    expect(await codeOf(disconnectOf(link)(caller, 'dev-1', ''))).toBe('X_CONFIG_INVALID');
+    expect(await codeOf(disconnectOf(link)(caller, 'dev-1', 'é'.repeat(62)))).toBe(
+      'X_CONFIG_INVALID',
+    );
     expect(ws.closed).toBeNull();
   });
 });

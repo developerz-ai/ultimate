@@ -69,21 +69,28 @@ export interface AuthorizationServer {
   registerClient(input: RegisterClientInput): Promise<RegisteredClient>;
   /** A live access token's grant, or `null`: unknown, expired and revoked look alike. */
   resolve(token: string): Promise<ResolvedGrant | null>;
-  /**
-   * Every grant of `subject` (of one client when named), dead on the next lookup — or, with
-   * `grantId`, that one grant alone, refresh tokens included. A `grantId` another subject (or
-   * another client than the one named) holds revokes nothing, as an unknown one: answers 0.
-   */
+  /** Every grant of `subject` (of one client when named), dead on the next lookup. */
   revoke(input: {
     readonly subject: string;
     readonly clientId?: string | undefined;
-    readonly grantId?: string | undefined;
+  }): Promise<number>;
+  /**
+   * One grant of `subject` by its `grantId`, refresh tokens included: 1, or 0 when it is unknown,
+   * already revoked, or another subject's (or another client's than the one named) — alike.
+   * `authorizationServer()` always sets it; optional only so an `AuthorizationServer` of an app's
+   * own (a test's fake) still compiles. Required waits on `next`.
+   */
+  revokeGrant?(input: {
+    readonly subject: string;
+    readonly grantId: string;
+    readonly clientId?: string | undefined;
   }): Promise<number>;
   /**
    * The live grants of `subject` (of one client when named), oldest first: not revoked and
-   * holding a token still usable. Each `grantId` is what `resolve` answers and `revoke` takes.
+   * holding a token still usable. Each `grantId` is what `resolve` answers and `revokeGrant` takes.
+   * Always set by `authorizationServer()`; optional only as `revokeGrant` is.
    */
-  grants(input: {
+  grants?(input: {
     readonly subject: string;
     readonly clientId?: string | undefined;
   }): Promise<readonly LiveGrant[]>;
@@ -201,16 +208,17 @@ export function authorizationServer(options: AuthorizationServerOptions): Author
       const live = await resolveAccess(config, token);
       return live === null ? null : resolvedGrant(live.grant);
     },
-    async revoke(input) {
-      const now = config.clock.now();
-      if (input.grantId === undefined) {
-        return config.store.revokeGrants({ subject: input.subject, clientId: input.clientId }, now);
-      }
+    revoke: (input) =>
+      config.store.revokeGrants(
+        { subject: input.subject, clientId: input.clientId },
+        config.clock.now(),
+      ),
+    async revokeGrant(input) {
       const grant = await config.store.getGrant(input.grantId);
       // Another subject's grant answers as an unknown one: an id is no proof of ownership.
       if (grant === null || grant.revokedAt !== null || grant.subject !== input.subject) return 0;
       if (input.clientId !== undefined && grant.clientId !== input.clientId) return 0;
-      await config.store.revokeGrant(grant.id, now);
+      await config.store.revokeGrant(grant.id, config.clock.now());
       return 1;
     },
     async grants(input) {
