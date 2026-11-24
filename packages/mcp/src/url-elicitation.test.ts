@@ -12,7 +12,7 @@ import { mcpServer } from './server';
 import {
   McpElicitationUrlError,
   URL_ELICITATION_KEY,
-  urlElicitationOf,
+  withCallAsk,
   withUrlElicitation,
 } from './url-elicitation';
 import type { JsonRpcRequest } from './wire';
@@ -264,15 +264,17 @@ describe('withUrlElicitation: how a projected tool asks', () => {
       ],
     });
 
-  test('the value a handler returns is the value it is given back, with the ask recorded', () => {
+  test('the value a handler returns is the value it is given back, with the ask recorded', async () => {
     const output = { status: 'not_connected', link: ASK.url };
-    expect(withUrlElicitation(output, ASK)).toBe(output);
-    expect(urlElicitationOf(output)).toEqual(ASK);
+    const { value, ask } = await withCallAsk(async () => withUrlElicitation(output, ASK));
+    expect(value).toBe(output);
+    expect(ask).toEqual(ASK);
     expect(JSON.stringify(output)).toBe(
       '{"status":"not_connected","link":"https://app.test/connect"}',
     );
-    expect(urlElicitationOf({ ...output })).toBeUndefined();
-    expect(urlElicitationOf('text')).toBeUndefined();
+    // Outside a call it is checked and kept nowhere; a call that did not ask carries none.
+    expect(withUrlElicitation(output, ASK)).toBe(output);
+    expect((await withCallAsk(async () => output)).ask).toBeUndefined();
   });
 
   test('a capable client is asked; any other reads the output the handler returned', async () => {

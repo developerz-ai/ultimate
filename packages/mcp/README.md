@@ -555,7 +555,9 @@ did not.
 **Dual-era, `As of 2026-11`** (`protocol-era.ts`). A request whose
 `params._meta["io.modelcontextprotocol/protocolVersion"]` is in `MCP_MODERN_VERSIONS` (`2026-07-28`)
 is served statelessly: `server/discover`, no `initialize` or `ping`, every result stamped
-`resultType: 'complete'` + `_meta` `serverInfo`, lists and reads `ttlMs: 0`, `cacheScope: 'private'`.
+`resultType: 'complete'` + `_meta` `serverInfo` — except a `tools/call` answered
+`resultType: 'input_required'` (the URL prompt below), so a client branches on `resultType` before
+reading `content` — lists and reads `ttlMs: 0`, `cacheScope: 'private'`.
 No `_meta` version, or one in `MCP_LEGACY_VERSIONS` (`2025-11-25`, `2025-06-18`, `2025-03-26`), is
 today's legacy dispatch; `initialize` echoes an offered legacy revision, else `2025-11-25`. Any
 other version is `-32022` `X_MCP_PROTOCOL_UNSUPPORTED` with `data: { supported, requested }`.
@@ -571,7 +573,7 @@ import { withUrlElicitation } from '@ultimat3/mcp';
 
 declare const appOrigin: string;
 
-// What a tool's `handle` (or an action's handler) returns when the person has a page to open.
+// What a projected handler (an action's or a query's) returns when the person has a page to open.
 export function notConnected() {
   const link = new URL('/connect', appOrigin).href;
   return withUrlElicitation(
@@ -583,17 +585,42 @@ export function notConnected() {
 
 | `tools/call` | Answer |
 |---|---|
-| modern, `_meta["io.modelcontextprotocol/clientCapabilities"].elicitation.url` an object | `{ resultType: 'input_required', inputRequests: { url_elicitation: { method: 'elicitation/create', params: { mode: 'url', url, message } } } }` — no `content`, no `requestState` |
-| the retry, `params.inputResponses.url_elicitation.action` `accept`, `decline` or `cancel` | the tool runs again and its result is the answer: asked once per call. `accept` is consent to open the page, not proof it was finished |
+| modern, `_meta["io.modelcontextprotocol/clientCapabilities"].elicitation.url` an object | `{ resultType: 'input_required', inputRequests: { url_elicitation: { method: 'elicitation/create', params: { mode: 'url', url, message } } } }` — no `content`, no `requestState`. `url` is the checked URL in its parsed spelling (`new URL(url).href`) |
+| the retry, `params.inputResponses.url_elicitation.action` `accept`, `decline` or `cancel` | the tool runs again and its result is the answer: asked once per call. `accept` is consent to open the page, not proof it was finished. Any other `action` is no answer, and the person is asked again |
+| the tool failed (`isError`, a result that is not JSON) | the failure, to every caller: a prompt never hides it |
 | modern without the capability (`elicitation: {}` is form mode only) | the tool's result |
 | legacy | the tool's result. `-32042` is not sent: its capability is declared on `initialize`, and no handshake is kept |
 | the ask is not an absolute `https:` URL (`http:` on `localhost`, `127.0.0.1`, `[::1]`), carries `user:password@`, or has an empty message | `isError`, `X_MCP_ELICITATION_URL_INVALID` — for every caller, capable or not |
 
-The client retries the same call, so a handler that asks is safe to run again. The spec's rules a
+The ask belongs to the call whose handler made it — an output object returned again by a later
+call carries nothing — and an action's `output` parse does not drop it.
+
+The handler runs again on the retry whatever the person answered (`decline` and `cancel`
+included), so it must be replay-safe: a write before the ask runs twice. Keep the write behind a
+completion check the handler makes itself — read whether the page was finished, and ask only when
+it was not. Asked once per call: a rerun that asks again inside the retry (a second page, a fresh
+nonce in the URL) is answered with its content, which says what is still needed, and the next call
+asks. An action with an `idempotencyKey` replays its first result to a retry under the same key, so
+it can never see the page finished: the completion check goes in a call without that key.
+
+The spec's rules a
 value cannot show stay the app's: nothing about the person and no pre-authenticated link in the
 URL, and the page verifies that whoever opened it is the caller the ask was made for (its
-session against the MCP caller's subject) before it accepts anything. A hand-built `McpTool` sets
-`urlElicitation` on its `McpToolResult`.
+session against the MCP caller's subject) before it accepts anything.
+
+A hand-built `McpTool` sets the field on its `McpToolResult` instead, beside its `content`:
+
+```ts
+import type { McpToolResult } from '@ultimat3/mcp';
+import { textResult } from '@ultimat3/mcp';
+
+declare const link: string;
+
+const answer: McpToolResult = {
+  ...textResult(`Not connected yet. Open ${link} to finish.`),
+  urlElicitation: { url: link, message: 'Open this page to finish connecting.' },
+};
+```
 
 | HTTP refusal | Status | Code |
 |---|---|---|

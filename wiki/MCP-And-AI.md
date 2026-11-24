@@ -108,7 +108,7 @@ None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose l
 
 | Request | Era | Answered |
 |---|---|---|
-| `params._meta["io.modelcontextprotocol/protocolVersion"]` in `MCP_MODERN_VERSIONS` (`2026-07-28`) | modern, stateless | `server/discover` and the seven shared methods. Every result carries `resultType: 'complete'` and `_meta["io.modelcontextprotocol/serverInfo"]`; the lists, `resources/read` and `server/discover` add `ttlMs: 0`, `cacheScope: 'private'`. No `initialize`, no `ping` |
+| `params._meta["io.modelcontextprotocol/protocolVersion"]` in `MCP_MODERN_VERSIONS` (`2026-07-28`) | modern, stateless | `server/discover` and the seven shared methods. Every result carries `resultType: 'complete'` — or `'input_required'` for a `tools/call` answered with the URL prompt below, so branch on `resultType` before reading `content` — and `_meta["io.modelcontextprotocol/serverInfo"]`; the lists, `resources/read` and `server/discover` add `ttlMs: 0`, `cacheScope: 'private'`. No `initialize`, no `ping` |
 | no `_meta` version, or one in `MCP_LEGACY_VERSIONS` (`2025-11-25`, `2025-06-18`, `2025-03-26`) | legacy | `initialize` echoes an offered legacy revision, else answers `2025-11-25`; `ping`; the seven shared methods |
 | any other `_meta` version | — | `-32022` `X_MCP_PROTOCOL_UNSUPPORTED`, `data: { supported, requested }` |
 
@@ -118,12 +118,13 @@ A tool asks the person to open a page with `withUrlElicitation(output, { url, me
 
 | `tools/call` | Answer |
 |---|---|
-| modern, and the request's `_meta["io.modelcontextprotocol/clientCapabilities"].elicitation.url` is an object | `resultType: 'input_required'` with `inputRequests.url_elicitation`: `elicitation/create`, `mode: 'url'`, `url`, `message`. No `content`, no `requestState` |
-| its retry, carrying `inputResponses.url_elicitation.action` | the tool runs again and its result is the answer — asked once per call, whether the person accepted, declined or cancelled |
+| modern, and the request's `_meta["io.modelcontextprotocol/clientCapabilities"].elicitation.url` is an object | `resultType: 'input_required'` with `inputRequests.url_elicitation`: `elicitation/create`, `mode: 'url'`, `url` (parsed, `new URL(url).href`), `message`. No `content`, no `requestState` |
+| its retry, carrying `inputResponses.url_elicitation.action` of `accept`, `decline` or `cancel` | the tool runs again and its result is the answer — asked once per call, whichever of the three the person chose. Any other `action` is no answer: asked again |
+| the tool failed (`isError`) | the failure, for every caller: never hidden behind a prompt |
 | modern without the capability, and every legacy request | the tool's result: `output` says in text what the prompt would have. `-32042` is never sent, since a legacy capability is declared on `initialize` and no handshake is kept |
-| a URL that is not absolute `https:` (`http:` on this machine), carries credentials, or has no message | `X_MCP_ELICITATION_URL_INVALID`, for every caller |
+| a URL that is not absolute `https:` (`http:` on `localhost`, `127.0.0.1` or `[::1]`), carries credentials, or has no message | `X_MCP_ELICITATION_URL_INVALID`, for every caller |
 
-The handler is safe to run again. Nothing about the person goes in the URL, and the page checks that whoever opened it is the caller the tool asked.
+The ask belongs to the call that made it. The handler reruns on the retry whatever the answer, so a write before the ask runs twice: keep writes behind a completion check the handler makes itself. A retry under the same `idempotencyKey` replays the first result and never sees the page finished; check completion in a call without that key. Nothing about the person goes in the URL, and the page checks that whoever opened it is the caller the tool asked.
 
 Over HTTP:
 Over HTTP:

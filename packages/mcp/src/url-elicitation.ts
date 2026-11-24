@@ -3,7 +3,7 @@
 // it. A modern request that declared `elicitation.url` gets an `InputRequiredResult`; every other
 // caller gets the tool's `content`. Stateless: no `requestState` goes out, so none is trusted back.
 
-import { isJsonObject, UltimateError } from '@ultimat3/core';
+import { asyncContext, isJsonObject, UltimateError } from '@ultimat3/core';
 // why a side-effect import: the code this class raises is REGISTERED by `errors.ts`.
 import './errors';
 import { eraOf } from './protocol-era';
@@ -30,7 +30,7 @@ export class McpElicitationUrlError extends UltimateError {
     super({
       code: 'X_MCP_ELICITATION_URL_INVALID',
       cause: `a tool asked for a URL prompt that ${DEFECT[input.defect]}`,
-      fix: "withUrlElicitation(output, { url: new URL('/connect', appOrigin).href, message: 'Open this page to finish connecting.' })   // an absolute https URL (http only on localhost), no user:password@, a non-empty message",
+      fix: "withUrlElicitation(output, { url: new URL('/connect', appOrigin).href, message: 'Open this page to finish connecting.' })   // in a hand-built McpTool, the same value as the result's urlElicitation field; an absolute https URL (http only on localhost, 127.0.0.1 or [::1]), no user:password@, a non-empty message",
       callerFix:
         'this is a fault in the tool, not in the call: report it to the server operator, and do not retry — the same call is refused the same way',
       meta: { defect: input.defect },
@@ -59,32 +59,47 @@ function checked(ask: unknown): McpUrlElicitation {
   if (parsed.username !== '' || parsed.password !== '') {
     throw new McpElicitationUrlError({ defect: 'credentials' });
   }
-  return { url, message };
+  // The parsed spelling: `https:app.test/x` passes the parser by repair, and a client resolving
+  // the raw string as a link could land somewhere the check never saw.
+  return { url: parsed.href, message };
 }
 
-// Keyed on the returned value, as `query-page.ts` keys a cut page: the output stays what the
-// handler returned, on every surface, and only the MCP projection reads the ask beside it.
-const asks = new WeakMap<object, McpUrlElicitation>();
+/** The ask of the tool call in flight, if its handler made one. */
+interface CallAsk {
+  ask: McpUrlElicitation | undefined;
+}
+
+// Scoped to the invocation, never keyed on the returned value: an action's output is parsed into a
+// copy before the projection sees it, and an object a handler returns on every call would carry
+// one caller's ask into the next caller's answer.
+const inFlight = asyncContext<CallAsk>('the URL elicitation of a tool call');
 
 /**
  * From a tool's or an action's handler: `return withUrlElicitation(output, { url, message })`.
  * `output` is returned as it is and must still say, in its own fields, what the person has to do —
- * it is the whole answer for every client that cannot show the prompt. The call is retried by the
- * client after the person answers, so a handler that asks must be safe to run again.
+ * it is the whole answer for every client that cannot show the prompt. The ask belongs to the MCP
+ * call running the handler; outside one (the HTTP route of the same action) it is checked and
+ * otherwise ignored. The client retries the call after the person answers, so the handler runs again.
  */
 export function withUrlElicitation<T extends object>(output: T, ask: McpUrlElicitation): T {
-  asks.set(output, checked(ask));
+  const valid = checked(ask);
+  const call = inFlight.get();
+  if (call !== undefined) call.ask = valid;
   return output;
 }
 
-/** The ask recorded for this output, or `undefined`. */
-export function urlElicitationOf(output: unknown): McpUrlElicitation | undefined {
-  return typeof output === 'object' && output !== null ? asks.get(output) : undefined;
+/** Run one tool call's handler; the ask it made, if any, comes back beside its value. */
+export async function withCallAsk<T>(
+  fn: () => Promise<T>,
+): Promise<{ readonly value: T; readonly ask: McpUrlElicitation | undefined }> {
+  const call: CallAsk = { ask: undefined };
+  const value = await inFlight.run(call, fn);
+  return { value, ask: call.ask };
 }
 
 /** `elicitation.url` is an object on THIS request. `elicitation: {}` is form mode only. */
 function declaresUrlMode(params: Record<string, unknown> | null): boolean {
-  const meta = params?.['_meta'];
+  const meta = params === null ? undefined : own(params, '_meta');
   const capabilities = isJsonObject(meta) ? own(meta, META_CLIENT_CAPABILITIES) : undefined;
   const elicitation = isJsonObject(capabilities) ? own(capabilities, 'elicitation') : undefined;
   return isJsonObject(elicitation) && isJsonObject(own(elicitation, 'url'));
@@ -98,7 +113,7 @@ const ACTIONS: ReadonlySet<unknown> = new Set(['accept', 'decline', 'cancel']);
  * knows which — so the rerun's `content` is the answer, and a decline is never asked again.
  */
 function answered(params: Record<string, unknown> | null): boolean {
-  const responses = params?.['inputResponses'];
+  const responses = params === null ? undefined : own(params, 'inputResponses');
   const response = isJsonObject(responses) ? own(responses, URL_ELICITATION_KEY) : undefined;
   return isJsonObject(response) && ACTIONS.has(own(response, 'action'));
 }
@@ -122,6 +137,8 @@ export function inputRequiredFor(
 ): Record<string, unknown> | undefined {
   if (result.urlElicitation === undefined) return undefined;
   const ask = checked(result.urlElicitation);
+  // A tool that failed answers its failure: a prompt in its place would hide it from the client.
+  if (result.isError === true) return undefined;
   const params = paramsOf(request);
   if (eraOf(request) !== 'modern' || !declaresUrlMode(params) || answered(params)) return undefined;
   return {
