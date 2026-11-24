@@ -709,8 +709,6 @@ unauthenticated POST with any token cannot kill the victim's live link.
 
 ### Signing in with a mailed link
 
-Not exported in this release: `signInWithLink` is internal to the package. A mailed credential today uses `defineVerificationPurpose` and `consumeVerification`, as above.
-
 `As of 2026-11`. `signInWithLink(auth, { purpose, identifier, token, ip?, userAgent?, signUp? })`
 consumes a link issued under a purpose declared `signIn: true` and answers what `login()` answers.
 With TOTP enrolled it answers `X_MFA_REQUIRED` and writes no session:
@@ -721,7 +719,6 @@ Redemption needs the address as well as the token. The mailed URL carries the to
 page it opens asks for the address (prefilled where the same browser asked for the link) and posts
 both: an address in the URL lands in every log and referrer the link passes through.
 
-
 | Case | Answer |
 |---|---|
 | valid link, no second factor | `LoginResult`, the session `mfaSatisfied` |
@@ -730,7 +727,7 @@ both: an address in the URL lands in every log and referrer the link passes thro
 | unknown, expired, mismatched or another purpose's token | `X_UNAUTHENTICATED`, and a wrong guess leaves the mailed link live |
 | no account at the address | `X_UNAUTHENTICATED`, and the link is spent: enabling `signUp` takes a freshly mailed one. With `signUp: { id?, orgId?, roles?, scopes?, externalId? }` a passwordless account is created verified: in the creating write on an adapter that stores `CreateUserInput.emailVerifiedAt` (both built-in ones do). An app adapter that drops it gets a second `updateUser` stamp; if that write fails the call is `X_AUTH_WRITE_FAILED`, the account exists unverified, and the next link is refused as one that never verified its address. `signUp` never changes an account that exists |
 | a disabled account | `X_UNAUTHENTICATED`, naming nothing |
-| an account that never verified its address | `X_UNAUTHENTICATED`, named: whoever registered it chose its password. Verifying it is not enough — the registrant's password, second factor, passkeys, API keys and sessions survive a stamp. The fix is a `passwordReset` link. Its consume only proves the inbox; the app then calls `reclaimAccount(auth, id, reason)`, which shuts the account for the whole sweep, so a live session cannot enrol a passkey after the passkeys were listed, and publishes verification only in the write that reopens it, so a failed sweep never leaves it verified with the registrant inside. Only then does a link sign in |
+| an account that never verified its address | `X_UNAUTHENTICATED`, named: whoever registered it chose its password. Verifying it is not enough: the registrant's password, second factor, passkeys, API keys and sessions survive a stamp. The remedy is an operator's, run after a `passwordReset` consume proved the inbox and only while `emailVerifiedAt` is still null: `disableUser` first (every door re-reads `disabledAt`, so nothing can be enrolled after it), then clear `passwordHash`, `mfaSecret` and `recoveryCodeHashes`, `deletePasskey` each of `listPasskeys(id)`, and last one `updateUser(id, { emailVerifiedAt, disabledAt: null })`. A step that fails leaves the account shut and unverified, and the recipe runs again; the operator who runs it is the one who disabled it, so no other disable is overwritten. Only then does a link sign in |
 | `purpose` is `'email-verify'` or `'password-reset'`, is not declared `signIn: true`, or declares an `identifier` other than the exported `normaliseEmail` | `X_CONFIG_INVALID`, before the store is asked: the token stays live for its own job |
 | `purpose` names nothing `defineVerificationPurpose` declared | `X_VERIFICATION_PURPOSE_UNKNOWN`, before the store is asked |
 
@@ -840,7 +837,6 @@ show it beside `name`. Full table and the rule each test holds:
 | `revokeOrgSessions(auth, orgId, reason)` | one tenant, at 03:00, without touching another |
 | `revokeSessionsCreatedBefore(auth, at, reason)` | everything minted under a rotated secret |
 | `disableUser(auth, userId, reason)` | stamps `disabledAt`, kills the sessions **and** revokes the user's live api keys — `{ user, sessionsRevoked, apiKeysRevoked }`. Re-enabling restores neither |
-| `reclaimAccount(auth, userId, reason)` | an account handed to its inbox's owner after a reset link proved the address — `{ user, sessionsRevoked, apiKeysRevoked, passkeysDeleted }`. It CLAIMS the account with one compare-and-set (`updateUserWhere`), only while the row is still unverified and as it was read: `disabledAt` becomes the claim (the call's own instant mirrored before the epoch, which no clock stamps) and the password and second factor are cleared. Sessions, api keys and passkeys go while the claim holds, re-read between sweeps; then a second compare-and-set, only while the claim is still this call's, stamps `emailVerifiedAt` and lifts it. Refused with `X_UNAUTHENTICATED` and nothing written: an account already verified (a late second reset), one an operator disabled, and one another reclaim claimed less than `RECLAIM_LEASE_MS` (10 minutes) ago — so two reclaims of one account never sweep at once, on any number of replicas. A claim older than the lease is taken over, and the call that held it stops at its next check. A failure leaves the account shut and unverified until a reclaim past the lease. An adapter without `updateUserWhere` is `X_CONFIG_INVALID` |
 | `listOrgUsers(auth, orgId, { role })` | the quarterly access review, as safe summaries — in byte (code-point) order of `email` on both adapters, whatever the database collation |
 | `updatePrivileges(auth, userId, patch, session?)` | the grant, plus the session rotation it requires. A `passwordHash` change ends every OTHER session of that user (`sessionsRevoked`) — all of them when no session of theirs was passed, as in a reset |
 
@@ -883,11 +879,7 @@ refusal — except `getSessionWithUser(id)` (`As of 2026-11`): the session and i
 `{ session, user | null }` or `null`. `authenticate` uses it when present and makes the two reads
 it replaces (`getSession`, then `findUserById`) when not, so an adapter written before it still
 binds. Both shipped adapters carry it; `authAdapterConformance` holds one that does to answering
-exactly what the two reads answer. And `updateUserWhere(id, expected, patch)` (`As of 2026-11`):
-the `updateUser` patch, written only while the row still holds `expected`
-(`{ emailVerifiedAt?, disabledAt? }`, a field left out unchecked) in one atomic step, else `null`.
-`reclaimAccount` writes through it and refuses an adapter without it (`X_CONFIG_INVALID`), never
-falling back to a plain write; both shipped adapters carry it.
+exactly what the two reads answer.
 
 `x_users` gained two columns in 1.3.0 — `scopes text[]` and `external_id text unique` — plus an
 `org_id` index.

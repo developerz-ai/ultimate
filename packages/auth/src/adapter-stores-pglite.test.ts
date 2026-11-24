@@ -89,34 +89,6 @@ describe.each(ADAPTERS)('%s', (_name, make) => {
     expect((await adapter.findUserById(ADA))?.emailVerifiedAt).toBeNull();
   });
 
-  test('updateUserWhere writes only while the row still holds what was expected', async () => {
-    const adapter = await make();
-    expect(typeof adapter.updateUserWhere).toBe('function');
-    const write = async (...args: Parameters<NonNullable<AuthAdapter['updateUserWhere']>>) =>
-      (await adapter.updateUserWhere?.(...args)) ?? null;
-    const epoch = new Date(0);
-    const shut = await write(
-      ADA,
-      { emailVerifiedAt: null, disabledAt: null },
-      { disabledAt: epoch },
-    );
-    expect(shut?.disabledAt).toEqual(epoch);
-    // The row moved on: neither a stale `null` nor a stale instant matches it any more.
-    expect(await write(ADA, { disabledAt: null }, { passwordHash: 'stale' })).toBeNull();
-    expect(await write(ADA, { disabledAt: NOW }, { passwordHash: 'stale' })).toBeNull();
-    expect(await write(ADA, { emailVerifiedAt: NOW }, { passwordHash: 'stale' })).toBeNull();
-    expect((await adapter.findUserById(ADA))?.passwordHash).toBeNull();
-    // A field left out is not checked; the one that matches lets the patch through.
-    const opened = await write(
-      ADA,
-      { disabledAt: epoch },
-      { disabledAt: null, emailVerifiedAt: NOW },
-    );
-    expect(opened?.disabledAt).toBeNull();
-    expect(opened?.emailVerifiedAt).toEqual(NOW);
-    expect(await write('00000000-0000-7000-8000-00000000ffff', {}, { disabledAt: NOW })).toBeNull();
-  });
-
   test('the second factor: enumerate, compare-and-set, count unsealed, consume once', async () => {
     const adapter = await make();
     await adapter.updateUser(GRACE, { mfaSecret: 'JBSWY3DPEHPK3PXP' });

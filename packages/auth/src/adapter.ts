@@ -69,15 +69,6 @@ export interface UserPatch {
   readonly externalId?: string | null | undefined;
 }
 
-/**
- * What `updateUserWhere` requires the row to still hold. A field left out is not checked; `null`
- * is a value (the column must be empty).
- */
-export interface UserExpectation {
-  readonly emailVerifiedAt?: Date | null | undefined;
-  readonly disabledAt?: Date | null | undefined;
-}
-
 /** What `listUsersByOrg` filters on. Absent means every member of the org. */
 export interface UserQuery {
   readonly role?: string | undefined;
@@ -89,20 +80,6 @@ export interface UserStore {
   findUserById(id: string): Promise<AuthUser | null>;
   createUser(input: CreateUserInput): Promise<AuthUser>;
   updateUser(id: string, patch: UserPatch): Promise<AuthUser | null>;
-  /**
-   * `updateUser`, written only while the row still holds `expected`, in ONE atomic step; `null`
-   * when it does not, or there is no such row. What `reclaimAccount` writes through: a reset that
-   * arrives after another already verified the account, or an operator's `disableUser` landing
-   * mid-reclaim, must win, and a read followed by a plain write lets either be overwritten.
-   *
-   * Optional, so an adapter written before it still binds: absent, `reclaimAccount` refuses
-   * (`X_CONFIG_INVALID`) rather than fall back to the plain write. Both built-in adapters have it.
-   */
-  updateUserWhere?(
-    id: string,
-    expected: UserExpectation,
-    patch: UserPatch,
-  ): Promise<AuthUser | null>;
   /**
    * Required, like every member of the seam: an adapter that lacks one is a compile error at the
    * `defineAuth({ adapter })` it is handed to, never an `X_NOT_IMPLEMENTED` at the first SCIM

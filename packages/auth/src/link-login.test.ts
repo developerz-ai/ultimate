@@ -23,7 +23,7 @@ import {
 import { totpCode, totpStep } from './mfa';
 import { completeMfa } from './mfa-challenge';
 import { saveTotpSecret } from './mfa-secret';
-import { disableUser, enableUser, reclaimAccount } from './revocation';
+import { disableUser, enableUser } from './revocation';
 import { defineVerificationPurpose, emailVerification, passwordReset } from './verify';
 
 describe('signInWithLink: the second factor still applies', () => {
@@ -186,6 +186,9 @@ describe('signInWithLink: what a link is not', () => {
         thrown = error;
       }
       expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_CONFIG_INVALID');
+      // The fix is a purpose of its own and a fresh link: this token cannot match another purpose.
+      expect(isUltimateError(thrown) ? thrown.fix : '').toContain("name: 'sign-in'");
+      expect(isUltimateError(thrown) ? thrown.fix : '').toContain('issue a fresh link');
       expect(await w.adapter.listSessions(userId)).toHaveLength(0);
       // Refused before the store was asked: the token still does the one job it was mailed for.
       const record = await builtin.consume(w.runtime, { identifier: EMAIL, token });
@@ -309,13 +312,29 @@ describe('signInWithLink: what a link is not', () => {
     });
     const error = await caught(async () => redeem(w.auth, await mailed(w)));
     expect(error?.fix).toContain('passwordReset.issue');
-    expect(error?.fix).toContain('reclaimAccount');
+    expect(error?.fix).toContain('disableUser');
 
-    // The inbox's owner follows it: the reset link only proves the address; `reclaimAccount`
-    // takes every credential the registrant set before the account is trusted.
+    // The inbox's owner follows it: the reset link only proves the address, then the account is
+    // shut, every credential the registrant set goes, and the stamp reopens it last.
     const { token } = await passwordReset.issue(w.runtime, { identifier: EMAIL, locale: 'en' });
     await passwordReset.consume(w.runtime, { identifier: EMAIL, token });
-    await reclaimAccount(w.auth, user.id, 'address proven by reset');
+    await disableUser(w.auth, user.id, 'address proven by reset');
+    await w.adapter.updateUser(user.id, {
+      passwordHash: null,
+      mfaSecret: null,
+      recoveryCodeHashes: [],
+    });
+    for (const passkey of await w.adapter.listPasskeys(user.id)) {
+      await w.adapter.deletePasskey(user.id, passkey.id);
+    }
+    // Mid-recipe the account is shut and unverified: neither the registrant nor a link gets in.
+    expect((await caught(() => authenticate(w.auth, registrant.token)))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+    expect((await caught(async () => redeem(w.auth, await mailed(w))))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+    await w.adapter.updateUser(user.id, { emailVerifiedAt: w.clock.now(), disabledAt: null });
 
     const result = await redeem(w.auth, await mailed(w));
     expect(result.session.userId).toBe(user.id);
@@ -326,9 +345,9 @@ describe('signInWithLink: what a link is not', () => {
     expect((await caught(() => login(w.auth, { email: EMAIL, password: PASSWORD })))?.code).toBe(
       'X_UNAUTHENTICATED',
     );
-    const reclaimed = await w.adapter.findUserById(user.id);
-    expect(reclaimed?.recoveryCodeHashes).toEqual([]);
-    expect(reclaimed?.mfaSecret).toBeNull();
+    const handedOver = await w.adapter.findUserById(user.id);
+    expect(handedOver?.recoveryCodeHashes).toEqual([]);
+    expect(handedOver?.mfaSecret).toBeNull();
     expect(await w.adapter.listPasskeys(user.id)).toEqual([]);
   });
 
@@ -343,7 +362,10 @@ describe('signInWithLink: what a link is not', () => {
       thrown = error;
     }
     expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_CONFIG_INVALID');
+    // Never "declare the same name signIn": that would promote links already mailed for another job.
+    expect(isUltimateError(thrown) ? thrown.fix : '').toContain("name: 'sign-in'");
     expect(isUltimateError(thrown) ? thrown.fix : '').toContain('signIn: true');
+    expect(isUltimateError(thrown) ? thrown.fix : '').toContain('issue a fresh link');
     expect(await w.adapter.listSessions(userId)).toHaveLength(0);
     expect((await emailChange.consume(w.runtime, { identifier: EMAIL, token })).identifier).toBe(
       EMAIL,
@@ -375,8 +397,10 @@ describe('signInWithLink: the purpose keys on the address', () => {
       thrown = error;
     }
     expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_CONFIG_INVALID');
-    // The fix's replacement declaration keeps the purpose a sign-in one, so following it works.
-    expect(isUltimateError(thrown) ? thrown.fix : '').toContain('ttlMs, signIn: true })');
+    // The fix names a dedicated sign-in purpose, so following it works.
+    expect(isUltimateError(thrown) ? thrown.fix : '').toContain(
+      'ttlMs: 15 * 60 * 1000, signIn: true })',
+    );
     expect(await w.adapter.findUserByEmail('+40700')).toBeNull();
     expect((await byPhone.consume(w.runtime, { identifier: '+40700', token })).identifier).toBe(
       '+40700',

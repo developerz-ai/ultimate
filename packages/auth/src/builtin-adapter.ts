@@ -17,7 +17,6 @@ import type {
   SessionPatch,
   SessionWithUser,
   StoredMfaSecret,
-  UserExpectation,
   UserPatch,
   UserQuery,
 } from './adapter';
@@ -115,34 +114,8 @@ export class PostgresAuthAdapter implements AuthAdapter {
   }
 
   async updateUser(id: string, patch: UserPatch): Promise<AuthUser | null> {
-    return await this.#patchUser('updateUser', id, patch, sql`true`);
-  }
-
-  /** The expectation is part of the UPDATE's `where`: re-checked on the row it locks. */
-  async updateUserWhere(
-    id: string,
-    expected: UserExpectation,
-    patch: UserPatch,
-  ): Promise<AuthUser | null> {
-    return await this.#patchUser(
-      'updateUserWhere',
-      id,
-      patch,
-      sql`(${expected.emailVerifiedAt === undefined}
-             or email_verified_at is not distinct from ${expected.emailVerifiedAt ?? null}::timestamptz)
-          and (${expected.disabledAt === undefined}
-             or disabled_at is not distinct from ${expected.disabledAt ?? null}::timestamptz)`,
-    );
-  }
-
-  async #patchUser(
-    operation: string,
-    id: string,
-    patch: UserPatch,
-    holds: Parameters<DbClient['one']>[0],
-  ): Promise<AuthUser | null> {
     const row = await this.#writeUser(
-      operation,
+      'updateUser',
       sql`
       update x_users set
         password_hash = case when ${patch.passwordHash !== undefined}
@@ -165,7 +138,7 @@ export class PostgresAuthAdapter implements AuthAdapter {
           then ${patch.orgId ?? null} else org_id end,
         external_id = case when ${patch.externalId !== undefined}
           then ${patch.externalId ?? null} else external_id end
-      where id = ${id} and ${holds}
+      where id = ${id}
       returning *`,
     );
     return row === null ? null : toUser(row);

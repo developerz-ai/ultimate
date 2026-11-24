@@ -63,25 +63,30 @@ const linkSignInRefused = (purpose: string): AuthError =>
  * An account holds the address and never proved it, so whoever registered it chose its password.
  * Signing the inbox's owner into that account hands them a session somebody else can also open —
  * and so does merely verifying it: the registrant's password, second factor, passkeys, API keys and
- * sessions survive a stamp. The remedy is the reset link: its consume only proves the inbox, and
- * `reclaimAccount` then shuts the account, takes every one of those and marks it verified in the
- * write that reopens it. Named, because this caller owns the address — the rule
- * `oauthAccountNotLinked` follows.
+ * sessions survive a stamp. The remedy is an operator's: the reset link only proves the inbox, then
+ * the account is shut (`disableUser`: every door re-reads it, so nothing can be enrolled after),
+ * every credential is cleared, and the stamp and the reopening are one write, last. A step that
+ * fails leaves the account shut and unverified, never verified with the registrant inside. Named,
+ * because this caller owns the address — the rule `oauthAccountNotLinked` follows.
  */
 const linkAccountUnverified = (): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause:
       'an account holds this address but never verified it, so whoever registered it may hold its password, and a sign-in link may not claim it',
-    fix: "await passwordReset.issue(runtime, { identifier: email, locale })   // its consume only proves the inbox; then reclaimAccount(auth, id, 'address proven by reset') shuts the account, revokes the registrant's sessions, API keys, passkeys, password and second factor, and marks it verified in the write that reopens it — then sign in by link",
+    fix: 'await passwordReset.issue(runtime, { identifier: email, locale })   // its consume only proves the inbox; then, while emailVerifiedAt is still null: disableUser(auth, id, reason); updateUser(id, { passwordHash: null, mfaSecret: null, recoveryCodeHashes: [] }); deletePasskey(id, passkey.id) for every listPasskeys(id); and last updateUser(id, { emailVerifiedAt: now, disabledAt: null }) — never a bare stamp. Then a freshly mailed link signs in',
   });
+
+/** The one purpose a refusal's fix names: its own, so no outstanding link of another job is promoted. */
+const SIGN_IN_PURPOSE_FIX =
+  "defineVerificationPurpose({ name: 'sign-in', template: 'auth.sign-in', ttlMs: 15 * 60 * 1000, signIn: true })   // a purpose of its own, never one that already mails another job's links; then issue a fresh link under it and signInWithLink(auth, { purpose: 'sign-in', identifier, token })";
 
 /** Before the store is asked, so a refused purpose leaves its token live for its own job. */
 function assertSignInPurpose(name: string): void {
   if ((VERIFICATION_PURPOSES as readonly string[]).includes(name)) {
     throw new ConfigInvalidError({
       cause: `signInWithLink() was given the built-in purpose '${name}', whose token is mailed to do that one job and is not a sign-in credential`,
-      fix: "defineVerificationPurpose({ name: 'sign-in', template: 'auth.sign-in', ttlMs: 15 * 60 * 1000, signIn: true })   // a purpose of its own, then signInWithLink(auth, { purpose: 'sign-in', identifier, token })",
+      fix: SIGN_IN_PURPOSE_FIX,
       meta: { purpose: name },
     });
   }
@@ -91,7 +96,7 @@ function assertSignInPurpose(name: string): void {
   if (purpose.signIn !== true) {
     throw new ConfigInvalidError({
       cause: `the verification purpose ${renderFixLiteral(name, "'<purpose>'")} is not declared a sign-in credential, so its link was mailed to do another job`,
-      fix: `defineVerificationPurpose({ name: ${renderFixLiteral(name, "'<purpose>'")}, template, ttlMs, signIn: true })   // only for the purpose whose link signs its holder in`,
+      fix: SIGN_IN_PURPOSE_FIX,
       meta: { purpose: name },
     });
   }
@@ -100,7 +105,7 @@ function assertSignInPurpose(name: string): void {
   if (purpose.identifier !== normaliseEmail) {
     throw new ConfigInvalidError({
       cause: `the verification purpose ${renderFixLiteral(name, "'<purpose>'")} declares its own identifier, so what its link proves is not known to be an account's address`,
-      fix: `defineVerificationPurpose({ name: ${renderFixLiteral(name, "'<purpose>'")}, template, ttlMs, signIn: true })   // no identifier: — the default keys on the address, as x_users.email is`,
+      fix: SIGN_IN_PURPOSE_FIX,
       meta: { purpose: name },
     });
   }

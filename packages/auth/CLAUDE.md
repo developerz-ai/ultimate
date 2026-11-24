@@ -194,9 +194,9 @@ A rule marked `†` has its full text in [`docs/history/auth-rules.md`](../../do
 | `jwks.ts` | `crypto.subtle` signature verification, cached by `kid`, one shared in-flight refresh. No dependency |
 | `workload.ts` | a workload JWT (K8s SA / SPIFFE / IMDS / RFC 8693) → a `ServiceIdentity`; `checkWorkloadToken`, the verdict form |
 | `jwt-bearer-resolver.ts` | an external bearer JWT → `{ actor, scopes } \| null` |
-| `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` (sessions and api keys); `reclaimAccount` (a compare-and-set claim in `disabledAt` that excludes a second reclaim for `RECLAIM_LEASE_MS`, the sweep, then verify in the reopening compare-and-set) |
+| `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` (sessions and api keys) |
 | `member-invite.ts` / `member-invite-marks.ts` | `defineMemberInvite`: a verification purpose keyed on (tenant, address), accept into `orgId` via `updatePrivileges`; revoke = link, plus membership + sessions only where a `joined` mark proves an invite granted it. The `joined`/`revoked` marks make a racing revoke win without a transaction |
-| `link-login.ts` | `signInWithLink` (internal, not on the barrel until the next minor): a consumed link → `LoginResult`, or `X_MFA_REQUIRED` and no session. Refuses a purpose not declared `signIn: true` (the built-ins never are) and an unverified account |
+| `link-login.ts` | `signInWithLink`: a consumed link → `LoginResult`, or `X_MFA_REQUIRED` and no session. Refuses a purpose not declared `signIn: true` (the built-ins never are) and an unverified account |
 | `mfa-challenge.ts` | the sealed challenge `X_MFA_REQUIRED` carries, and `completeMfa` |
 | `mfa-handoff.ts` | `mfaPath`: the challenge from a built-in callback to the app's page — path check, `__Host-x_mfa` cookie, reader |
 | `mfa-replay-postgres.ts` | the shared replay guard: the claim and the sweep. Its DDL is in `tables.ts` |
