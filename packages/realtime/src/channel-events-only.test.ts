@@ -4,11 +4,11 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import { allow } from '@ultimat3/policy';
 import { channel } from './channel-decl';
 import { channelRef } from './channel-ref';
 import { clearChannels } from './channel-registry';
 import { ChannelBook } from './client-channels';
+import { OPEN_POLICY } from './policy-fake-fixture';
 import { RecordStore } from './record-store';
 import { PROTOCOL_VERSION } from './sync-protocol';
 
@@ -18,8 +18,8 @@ describe('an events-only channel ref', () => {
   test('declares with params alone, and answers no catch-up name', () => {
     const feed = channelRef('typing-feed', { params: ['orgId'] });
     expect(feed.catchUp).toBe('');
-    expect(feed.topic({ orgId: 'o1' })).toBe('typing-feed.o1');
-    const declared = channel(feed, { policy: allow('public'), events: true });
+    expect(String(feed.topic({ orgId: 'o1' }))).toBe('typing-feed.o1');
+    const declared = channel(feed, { policy: OPEN_POLICY, events: true });
     expect(declared.events).toBe(true);
   });
 
@@ -47,7 +47,7 @@ describe('an events-only channel ref', () => {
     const feed = channelRef('typing-records', { params: ['orgId'] });
     let caught: unknown;
     try {
-      channel(feed, { policy: allow('public'), records: [{} as never] });
+      channel(feed, { policy: OPEN_POLICY, records: [{} as never] });
     } catch (error) {
       caught = error;
     }
