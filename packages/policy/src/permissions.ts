@@ -42,7 +42,10 @@ const sites = new Map<string, Set<string>>();
 
 export const knownPermissions = (): readonly string[] => [...declared].sort();
 
-/** Whether any `definePermissions` has run — `can()`'s deferred check asks it per decision. */
+/**
+ * Whether the declared set is nonempty — `can()`'s deferred check asks it per decision. A
+ * `definePermissions([])` leaves it empty, so it is not the same as "a declaration ran".
+ */
 export const permissionSetDeclared = (): boolean => declared.size > 0;
 
 /**

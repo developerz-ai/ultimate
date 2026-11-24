@@ -48,6 +48,23 @@ describe('can() built before the permission set', () => {
     expect(evaluate(early, { input: {}, actor: member }).allowed).toBe(true);
   });
 
+  test('decided before the set exists, then after one that lacks it: unknown the second time', () => {
+    const early = can('post:raed' as never);
+    const actor = { ...member, permissions: ['post:raed'] };
+    expect(evaluate(early, { input: {}, actor }).allowed).toBe(true);
+    definePermissions(['post:read']);
+    expect(codeOf(() => evaluate(early, { input: {}, actor }))).toBe('X_PERMISSION_UNKNOWN');
+  });
+
+  test('an empty declared set checks nothing; the first nonempty one does', () => {
+    const early = can('post:raed' as never);
+    definePermissions([]);
+    const actor = { ...member, permissions: ['post:raed'] };
+    expect(evaluate(early, { input: {}, actor }).allowed).toBe(true);
+    definePermissions(['post:read']);
+    expect(codeOf(() => evaluate(early, { input: {}, actor }))).toBe('X_PERMISSION_UNKNOWN');
+  });
+
   test('with no set ever declared it still decides, as before', () => {
     const early = can('post:read' as never);
     expect(

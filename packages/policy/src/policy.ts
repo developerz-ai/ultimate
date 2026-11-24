@@ -137,10 +137,11 @@ export const can = <I = unknown, R = unknown>(
 ): Policy<I, R> => {
   assertPermission(permission);
   const label = permission;
-  // Built before any `definePermissions` ran — a rule at module scope imported ahead of the app's
+  // Built while no permission was declared — a rule at module scope imported ahead of the app's
   // permission module — the check above had nothing to check against and let the name through.
-  // So it is made again where the rule is decided, until a set exists to answer it: a name that set
-  // lacks is `X_PERMISSION_UNKNOWN` there, never a deny for every actor with no reason given.
+  // So it is made again at the first decision after the declared set becomes nonempty (an empty
+  // `definePermissions([])` does not count): a name that set lacks is `X_PERMISSION_UNKNOWN` there,
+  // never a deny for every actor with no reason given. Decisions before that stay unchecked.
   let vetted = permissionSetDeclared();
   const vet = (): void => {
     if (vetted || !permissionSetDeclared()) return;
