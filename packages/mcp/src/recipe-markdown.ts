@@ -1,11 +1,12 @@
 /**
- * Recipes from a folder of markdown, one file per recipe, body verbatim: file name = name, a
+ * Recipes from a folder of markdown, one file per recipe, body as written (LF line ends, outer
+ * blank lines trimmed): file name = name, a
  * sub-folder = section, `---` sets `title:`/`description:`/`aliases:` (else heading, paragraph).
  * Its ```call fences — `tool {json}` — are its steps, boot-checked like a structured recipe's.
  */
 
-// why: Bun exposes no path-join primitive; the folder is the app's.
-import { join } from 'node:path';
+// why: Bun exposes no path-join primitive; `sep` says whether `\` separates paths here.
+import { join, sep } from 'node:path';
 import { McpRecipeExampleInvalidError } from './recipe-errors';
 import type { McpRecipe, McpRecipeStep } from './recipes';
 
@@ -17,22 +18,23 @@ const FENCE = /^```call[^\S\n]*\n([\s\S]*?)\n```[^\S\n]*$/gm;
 /**
  * Every `*.md` in `dir` (section `recipes`), then every `<section>/*.md` one folder down, each
  * sorted by path: the same folder is the same recipes, in order. `recipes/<name>.md` and
- * `<name>.md` are one URI. A folder name outside `[a-z0-9-]` is refused at boot, like a name.
+ * `<name>.md` are one URI. A folder name that is not lowercase letters and digits in
+ * `-`-separated groups is refused at boot, like a name. The file opened is the path the glob
+ * returned: on POSIX `\` is a file-name character, so only Windows' separator is normalised.
  */
 export async function markdownRecipes(input: { readonly dir: string }): Promise<McpRecipe[]> {
   const top = [...new Bun.Glob('*.md').scanSync({ cwd: input.dir })].sort();
-  const nested = [...new Bun.Glob('*/*.md').scanSync({ cwd: input.dir })]
-    .map((file) => file.replaceAll('\\', '/'))
-    .sort();
+  const nested = [...new Bun.Glob('*/*.md').scanSync({ cwd: input.dir })].sort();
   const recipes: McpRecipe[] = [];
   for (const file of [...top, ...nested]) {
     const text = await Bun.file(join(input.dir, file)).text();
-    const slash = file.indexOf('/');
-    const name = file.slice(slash + 1).replace(/\.md$/, '');
+    const path = sep === '\\' ? file.replaceAll('\\', '/') : file;
+    const slash = path.indexOf('/');
+    const name = path.slice(slash + 1).replace(/\.md$/, '');
     recipes.push(
       slash === -1
         ? recipeFromMarkdown(name, text)
-        : recipeFromMarkdown(name, text, file.slice(0, slash)),
+        : recipeFromMarkdown(name, text, path.slice(0, slash)),
     );
   }
   return recipes;
@@ -74,11 +76,10 @@ function frontMatter(text: string): {
   return { fields, body: text.slice(end + 5) };
 }
 
-/** `aliases: refund, money back` or `aliases: [refund, "money back"]`. */
+/** `aliases: refund, money back` or `aliases: [refund, "money, back"]`: a quoted comma stays. */
 function aliasList(value: string): readonly string[] {
-  return value
-    .replace(/^\[(.*)\]$/, '$1')
-    .split(',')
+  const entries = value.replace(/^\[(.*)\]$/, '$1').match(/\s*(?:"[^"]*"|'[^']*'|[^,]+)/g) ?? [];
+  return entries
     .map((alias) => alias.trim().replace(/^(["'])(.*)\1$/, '$2'))
     .filter((alias) => alias !== '');
 }

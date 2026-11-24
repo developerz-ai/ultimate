@@ -92,6 +92,11 @@ const codeOf = (fn: () => unknown): string | undefined => {
   return undefined;
 };
 
+/** A boot that must succeed: `codeOf` cannot tell success from an uncoded crash. */
+const boots = (fn: () => unknown): void => {
+  expect(fn).not.toThrow();
+};
+
 async function withFolder<T>(
   files: Record<string, string>,
   run: (dir: string) => Promise<T>,
@@ -130,7 +135,7 @@ describe('recipes: sections from a folder', () => {
           expect(await docsText(server, { uri })).toBe(body);
         }
         expect(await docsText(server, { name: 'ref/error-codes' })).toBe(
-          await docsText(server, { uri: 'docs://ref/error-codes' }),
+          CODES.slice(CODES.indexOf('Every')),
         );
         expect(await docsText(server, { name: 'refund-an-invoice' })).toContain('Find the invoice');
         const replayed = await runWithContext(ctxOf({}), () =>
@@ -184,9 +189,10 @@ describe('recipes: sections from a folder', () => {
         ],
       }),
     );
-    expect(await docsText(server, { uri: 'docs://recipes/read-an-invoice' })).toBe(
-      await docsText(server, { name: 'read-an-invoice' }),
-    );
+    const body = `${(READ.split('The codes')[0] ?? '').trim()}\n`;
+    expect(body).toStartWith('# Read an invoice');
+    expect(await docsText(server, { uri: 'docs://recipes/read-an-invoice' })).toBe(body);
+    expect(await docsText(server, { name: 'read-an-invoice' })).toBe(body);
   });
 });
 
@@ -196,6 +202,11 @@ describe('recipes: aliases', () => {
       recipeFromMarkdown('read-an-invoice', READ),
       recipeFromMarkdown('error-codes', CODES, 'ref'),
       recipeFromMarkdown('refund-an-invoice', REFUND),
+      // The same words in a description only: an alias hit (3) must outrank it (2).
+      recipeFromMarkdown(
+        'a-policy',
+        '---\ntitle: Policy\ndescription: When we reimburse, and the refusals we answer.\n---\nPolicy.\n',
+      ),
     ];
     expect(recipes[2]?.aliases).toEqual(['reimburse', 'credit note']);
     expect(recipes[1]?.aliases).toEqual(['refusals', '[ignored]']);
@@ -228,7 +239,19 @@ describe('recipes: a caller’s own section', () => {
       '# notes\ndocs://notes/my-runbook  My runbook (yours)',
     );
     expect(await readText(server, 'docs://notes/my-runbook')).toContain('# My runbook');
+    for (const args of [{ uri: 'docs://notes/my-runbook' }, { name: 'notes/my-runbook' }]) {
+      expect(await docsText(server, args)).toStartWith('# My runbook');
+    }
+    const listed = async (who: McpCaller) =>
+      (
+        (await rpc(server, 'resources/list', {}, who))?.result as
+          | { resources: { uri: string }[] }
+          | undefined
+      )?.resources.map((resource) => resource.uri) ?? [];
+    expect(await listed(caller('a1'))).toContain('docs://notes/my-runbook');
     const other = caller('a2');
+    expect(await listed(other)).toContain('docs://recipes/read-an-invoice');
+    expect(await listed(other)).not.toContain('docs://notes/my-runbook');
     expect(await docsText(server, {}, other)).not.toContain('notes');
     const bare = serve([recipeFromMarkdown('read-an-invoice', READ.split('The codes')[0] ?? '')], {
       docsTool: { index: 'map' },
@@ -267,8 +290,19 @@ describe('recipes: a section is a closed name', () => {
     });
   });
 
-  test('one name in two sections is two recipes; one URI twice is a duplicate', () => {
-    expect(codeOf(() => serve([plain, { ...plain, section: 'ref' }]))).toBeUndefined();
+  test('one name in two sections is two recipes; one URI twice is a duplicate', async () => {
+    const own = { ...plain, body: 'The recipes one.\n' };
+    const ref = { ...plain, section: 'ref', body: 'The ref one.\n' };
+    boots(() => serve([own, ref]));
+    const server = serve([own, ref]);
+    for (const [name, uri, body] of [
+      ['error-codes', 'docs://recipes/error-codes', own.body],
+      ['ref/error-codes', 'docs://ref/error-codes', ref.body],
+    ] as const) {
+      expect(await docsText(server, { name })).toBe(body);
+      expect(await docsText(server, { uri })).toBe(body);
+      expect(await readText(server, uri)).toBe(body);
+    }
     expect(
       codeOf(() =>
         serve([
@@ -290,7 +324,7 @@ describe('recipes: a section is a closed name', () => {
     const boot = (section: string) => () =>
       defineAppMcp({ tools, recipes: [{ ...plain, section }], resources: [resource] });
     expect(codeOf(boot('ref'))).toBe('X_MCP_RECIPE_URI_RESERVED');
-    expect(codeOf(boot('guides'))).toBeUndefined();
+    boots(boot('guides'));
   });
 
   test('a link into a served section must resolve; another docs:// prefix is not judged', () => {
@@ -299,7 +333,7 @@ describe('recipes: a section is a closed name', () => {
     expect(codeOf(() => serve([ref, linking('See docs://ref/nope.')]))).toBe(
       'X_MCP_RECIPE_LINK_DANGLING',
     );
-    expect(codeOf(() => serve([ref, linking('See docs://ref/error-codes.')]))).toBeUndefined();
-    expect(codeOf(() => serve([ref, linking('See docs://elsewhere/x.')]))).toBeUndefined();
+    boots(() => serve([ref, linking('See docs://ref/error-codes.')]));
+    boots(() => serve([ref, linking('See docs://elsewhere/x.')]));
   });
 });

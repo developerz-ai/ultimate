@@ -20,9 +20,15 @@ import { validateArgs } from './validate-args';
 export const RECIPE_URI_PREFIX = 'docs://recipes/';
 /** The section a recipe that names none is served under. */
 export const DEFAULT_SECTION = 'recipes';
-/** A name and a section alike: closed, so neither can step out of `docs://<section>/`. */
+/**
+ * A name and a section alike: lowercase letters and digits in groups joined by single `-`
+ * (`ref-v2`, never `-ref`, `ref-` or `ref--v2`) — closed, so neither steps out of `docs://<section>/`.
+ */
 export const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([a-z0-9]+(?:-[a-z0-9]+)*)/g;
+/** A `docs://<section>/` link and its whole path: `docs://ref/errors/old` is not `docs://ref/errors`. */
+const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([a-z0-9][a-z0-9/-]*)/g;
+/** The section a `docs://<section>/…` URI sits in. */
+const SECTION_OF_URI = /^docs:\/\/([^/]*)\//;
 
 export interface McpRecipeStep {
   /** A tool THIS server projects, by name. Checked at boot. */
@@ -34,9 +40,9 @@ export interface McpRecipeStep {
 }
 
 export interface McpRecipe {
-  /** `[a-z0-9-]+`; the URI is `docs://<section>/<name>`. */
+  /** Lowercase letters and digits in `-`-joined groups (`NAME`); the URI is `docs://<section>/<name>`. */
   readonly name: string;
-  /** `[a-z0-9-]+`, `recipes` when unset: one `docs({})` group and one `docs://<section>/` prefix. */
+  /** Spelled like `name`, `recipes` when unset: one `docs({})` group and one `docs://<section>/` prefix. */
   readonly section?: string;
   /** Other words for it: `docs({ q })` scores each as it scores the title. */
   readonly aliases?: readonly string[];
@@ -46,8 +52,9 @@ export interface McpRecipe {
   /** Free text, unchecked: where a tool is named, it is a step. */
   readonly notes?: string;
   /**
-   * Markdown served VERBATIM in place of the rendered steps — what `markdownRecipes({ dir })`
-   * builds from a file, its ```call fences becoming `steps`, so they are checked all the same.
+   * Markdown served as given in place of the rendered steps — what `markdownRecipes({ dir })`
+   * builds from a file (LF line ends, outer blank lines trimmed), its ```call fences becoming
+   * `steps`, so they are checked all the same.
    */
   readonly body?: string;
 }
@@ -134,7 +141,7 @@ export function recipeLinks(recipe: McpRecipe, sections: ReadonlySet<string>): r
   const text = `${recipe.body ?? ''}\n${recipe.notes ?? ''}`;
   return [...text.matchAll(SECTIONED_LINK)]
     .filter((match) => sections.has(match[1] as string))
-    .map((match) => recipeUri(match[2] as string, match[1] as string));
+    .map((match) => `docs://${match[1] as string}/${match[2] as string}`);
 }
 
 /** A recipe pointing at one that does not exist is the stale link this whole file refuses. */
@@ -159,10 +166,11 @@ export function assertNoRecipeResources(
   resources: readonly McpResource[],
   recipes: readonly McpRecipe[],
 ): void {
-  const prefixes = [...sectionsOf(recipes)].map((section) => `docs://${section}/`);
-  const taken = resources.find((resource) =>
-    prefixes.some((prefix) => resource.uri.startsWith(prefix)),
-  );
+  const sections = sectionsOf(recipes);
+  const taken = resources.find((resource) => {
+    const section = SECTION_OF_URI.exec(resource.uri)?.[1];
+    return section !== undefined && sections.has(section);
+  });
   if (taken !== undefined)
     throw new McpRecipeUriReservedError({ uri: taken.uri, reason: 'resource' });
 }

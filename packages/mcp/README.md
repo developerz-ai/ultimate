@@ -865,9 +865,9 @@ A driver without `introspect` is `X_MCP_JOB_TOOL_INVALID`.
 | Declare | What it does |
 |---|---|
 | `recipes: [{ name, title, description, steps: [{ tool, why, example? }], notes? }]` | each served as `docs://recipes/<name>` (`text/markdown`) and through a read-only `docs` tool. Every step's tool must be in the catalog (`X_MCP_RECIPE_TOOL_UNKNOWN`), every example must pass its input (`X_MCP_RECIPE_EXAMPLE_INVALID`), at boot, all offenders at once |
-| `recipes: [{ ..., section: 'ref', aliases: ['refusals'] }]` | served as `docs://ref/<name>` instead of `docs://recipes/<name>`; `section` is `[a-z0-9-]` (`X_MCP_RECIPE_URI_RESERVED`), one URI per recipe, and every section a recipe uses is owned by `recipes:` — a `resources:` URI under it is refused. `aliases` score in `docs({ q })` like the title |
-| `recipes: await markdownRecipes({ dir })` | one `*.md` per recipe, body served verbatim. Name = file name; a sub-folder one level down is its section (`ref/errors.md` → `docs://ref/errors`; `recipes/<name>.md` is `<name>.md`). `---` `title:` / `description:` / `aliases: a, b` frontmatter, else the first `# ` heading and paragraph. A ```` ```call ```` fence — `tool {"arg": "value"}` — is a step, checked like one; a whole `"<name>"` value is a placeholder, any value at boot. A `docs://<section>/` link into a section this server serves that names no recipe is `X_MCP_RECIPE_LINK_DANGLING`; another `docs://` prefix is not judged |
-| `extraRecipes: (caller) => recipes` | the caller's own (a tenant's runbooks), asked per request: on `docs` as `source: 'caller'`, on `resources/list` and `resources/read` to that caller alone (a throw is `-32603` on all three, audited `failed`). Not boot-checked; one naming a tool the caller cannot call is not shown. May add a section of its own; a section outside `[a-z0-9-]` is `X_MCP_RECIPE_URI_RESERVED` |
+| `recipes: [{ ..., section: 'ref', aliases: ['refusals'] }]` | served as `docs://ref/<name>` instead of `docs://recipes/<name>`; `section`, like a name, is lowercase letters and digits in groups joined by single `-` (`ref-v2`; never `-ref`, `ref-` or `ref--v2`) (`X_MCP_RECIPE_URI_RESERVED`), one URI per recipe, and every section a recipe uses is owned by `recipes:` — a `resources:` URI under it is refused. `aliases` score in `docs({ q })` like the title |
+| `recipes: await markdownRecipes({ dir })` | one `*.md` per recipe, body served as written (line ends normalised to LF, outer blank lines trimmed). Name = file name; a sub-folder one level down is its section (`ref/errors.md` → `docs://ref/errors`; `recipes/<name>.md` is `<name>.md`). `---` `title:` / `description:` / `aliases: a, b` frontmatter, else the first `# ` heading and paragraph. A ```` ```call ```` fence — `tool {"arg": "value"}` — is a step, checked like one; a whole `"<name>"` value is a placeholder, any value at boot. A `docs://<section>/` link into a section this server serves that names no recipe is `X_MCP_RECIPE_LINK_DANGLING`, the link's whole path checked (`docs://ref/errors/old` is not `docs://ref/errors`); another `docs://` prefix is not judged |
+| `extraRecipes: (caller) => recipes` | the caller's own (a tenant's runbooks), asked per request: on `docs` as `source: 'caller'`, on `resources/list` and `resources/read` to that caller alone (a throw is `-32603` on all three, audited `failed`). Not boot-checked; one naming a tool the caller cannot call is not shown. May add a section of its own; a section outside that grammar is `X_MCP_RECIPE_URI_RESERVED` |
 | `docsTool: { description?, index?: 'json' \| 'map' }` | `description` replaces the `docs` tool's own. `index: 'map'` makes `docs({})` plain text: a `# <section>` line per section, then `<uri>  <title>` per recipe (` (yours)` for a caller's own). Default `'json'`: `{ recipes: [{ name, title, description, uri, source }] }` |
 
 `docs({})` lists what this caller can follow; `docs({ name })` / `docs({ uri })` reads one —
@@ -878,8 +878,9 @@ is at most 1000 characters (`X_INPUT_INVALID` beyond); a miss compares its first
 recipe is visible only when every step's tool is visible to the caller and its scope is on the
 token; hidden and unknown are the same not-found. An `UltimateError`'s `docs://recipes/<name>` is
 checked at load (`X_MCP_RECIPE_UNKNOWN`). In a contract test, `replayRecipes(server, recipes, {
-caller, placeholders })` CALLS every fenced example through the server and reads every link: no
-such tool, refused arguments, a refusing policy or a dangling link fails it.
+caller, placeholders, sections? })` CALLS every fenced example through the server and reads every
+link into a section `recipes` uses or `sections` names — replaying a subset, name the server's
+other sections. No such tool, refused arguments, a refusing policy or a dangling link fails it.
 
 `McpResource.read(caller)` takes the caller the gates admitted, and `mcpServer({ resourceSources })`
 lists resources per caller — what `extraRecipes` is built on.

@@ -11,7 +11,6 @@ import type { McpRecipe } from './recipes';
 import {
   assertSection,
   recipeKey,
-  recipeNameOf,
   recipeVisible,
   renderRecipe,
   sectionOf,
@@ -77,8 +76,14 @@ export function recipesTool(
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'A recipe name from docs({}).' },
-        uri: { type: 'string', description: 'A docs://recipes/ URI, as an error links one.' },
+        name: {
+          type: 'string',
+          description: 'A recipe name from docs({}): bare, or <section>/<name> outside recipes.',
+        },
+        uri: {
+          type: 'string',
+          description: 'A docs://<section>/<name> URI exactly as docs({}) or an error gives it.',
+        },
         // A miss quotes `q` back and ranks every recipe against it: a megabyte of it is refused.
         q: {
           type: 'string',
@@ -96,7 +101,7 @@ export function recipesTool(
         typeof args['name'] === 'string'
           ? args['name']
           : typeof args['uri'] === 'string'
-            ? (recipeNameOf(args['uri']) ?? args['uri'])
+            ? args['uri']
             : undefined;
       if (named !== undefined) {
         const uri = uriOfKey(named);
@@ -121,6 +126,9 @@ const row = (entry: SourcedRecipe) => ({
   source: entry.source,
 });
 
+/** A line-per-entry answer: a title's own line breaks would split its entry. */
+const oneLine = (title: string): string => title.replace(/\s*[\r\n]+\s*/g, ' ');
+
 const yours = (entry: SourcedRecipe): string => (entry.source === 'caller' ? ' (yours)' : '');
 
 /** Sections in first-seen order, each its `<uri>  <title>` lines: no tables, no nesting. */
@@ -129,7 +137,7 @@ function renderMap(visible: readonly SourcedRecipe[]): string {
   const sections = new Map<string, string[]>();
   for (const entry of visible) {
     const lines = sections.get(sectionOf(entry.recipe)) ?? [];
-    lines.push(`${uriOf(entry.recipe)}  ${entry.recipe.title}${yours(entry)}`);
+    lines.push(`${uriOf(entry.recipe)}  ${oneLine(entry.recipe.title)}${yours(entry)}`);
     sections.set(sectionOf(entry.recipe), lines);
   }
   return `${[...sections].map(([section, lines]) => `# ${section}\n${lines.join('\n')}`).join('\n\n')}\n`;
@@ -143,7 +151,7 @@ function answerQuery(visible: readonly SourcedRecipe[], q: string): string {
     q,
   );
   const line = (recipe: McpRecipe) =>
-    `- docs({ name: '${recipeKey(recipe)}' }) — ${recipe.title}${sources.get(uriOf(recipe)) === 'caller' ? ' (yours)' : ''}`;
+    `- docs({ name: '${recipeKey(recipe)}' }) — ${oneLine(recipe.title)}${sources.get(uriOf(recipe)) === 'caller' ? ' (yours)' : ''}`;
   const [best, ...rest] = matches;
   if (best !== undefined) {
     const related = rest.slice(0, 4);
