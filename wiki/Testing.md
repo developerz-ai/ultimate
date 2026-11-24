@@ -398,7 +398,7 @@ An entry covers the reads after the call and ends with the test; a blank `becaus
 `As of 2026-11`. Two free functions over the harness's own objects — `e2eBrowser()` in an app's e2e suite, `openE2eBrowser()` beside it — never a member a hand-rolled tab would lack:
 
 ```ts
-import { addVirtualAuthenticator, e2eBaseUrl, e2eBrowser, newBrowserContext } from '@ultimat3/testing';
+import { addVirtualAuthenticator, e2eBaseUrl, e2eBrowser, expect, newBrowserContext } from '@ultimat3/testing';
 
 const { page, session } = e2eBrowser();
 const passkey = await addVirtualAuthenticator(page); // CTAP2, resident key, user verified
