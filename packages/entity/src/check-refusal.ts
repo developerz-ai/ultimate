@@ -4,9 +4,15 @@
 // same refusal — `X_INVARIANT_VIOLATED`, a 422, never `X_DB_STATEMENT_FAILED`, a 500.
 
 import { isUltimateError } from '@ultimat3/core';
-import { namesConstraint, SQLSTATE, sqlState } from '@ultimat3/db';
+import { namesConstraint, sqlState } from '@ultimat3/db';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
+
+/**
+ * `check_violation`. Not a row of `@ultimat3/db`'s `SQLSTATE`: that table is the states the db
+ * layer classifies into its own codes, and this one it leaves to the entity that declared the CHECK.
+ */
+const CHECK_VIOLATION = '23514';
 
 /**
  * The invariant refusal `error` stands for, or `error` itself. Only a check this entity declares
@@ -14,7 +20,7 @@ import { invariantViolated } from './errors';
  * verdict, because no rule here can name what it means.
  */
 export const asInvariantRefusal = (entity: EntityCore<unknown>, error: unknown): unknown => {
-  if (sqlState(error) !== SQLSTATE.checkViolation || !isUltimateError(error)) return error;
+  if (sqlState(error) !== CHECK_VIOLATION || !isUltimateError(error)) return error;
   const constraint = error.meta?.['constraint'];
   if (typeof constraint !== 'string') return error;
   const rule = entity.$invariants.find(
