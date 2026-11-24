@@ -1,58 +1,79 @@
 // A tenant mount's document: every operation takes the tenant as a required query parameter, says
-// the 400 a call without one is answered, and the listing a caller learns its tenants from is a
-// path of its own. Applied by `mountOpenApi` only when the mount declares `tenant`.
+// the 400 a call without one is answered and the 500 a failed lookup is, and the listing a caller
+// learns its tenants from is a path of its own. Applied by `mountOpenApi` only when the mount
+// declares `tenant`.
 
-import { PROBLEM_SCHEMA_NAME, schemaRef } from './naming';
+import {
+  problem,
+  RATE_LIMIT_HEADERS,
+  RETRY_AFTER_HEADER,
+  tooManyDescription,
+} from './openapi-problem';
 
 type Operation = Record<string, unknown>;
+type Responses = Record<string, Record<string, unknown> | undefined>;
 
 const TENANT_REQUIRED = 'X_BEARER_TENANT_REQUIRED — the call named no tenant';
-
-const problem = (description: string) => ({
-  description,
-  content: { 'application/problem+json': { schema: { $ref: schemaRef(PROBLEM_SCHEMA_NAME) } } },
-});
+const TENANT_UNRESOLVED = 'X_BEARER_TENANT_UNRESOLVED — the tenant lookup failed';
 
 /**
- * The operation with `arg` as a required `in: query` parameter — replacing a read's own parameter
- * of that name, which then carries the tenant's value — and the 400 its absence is answered.
+ * The listing's operationId. Kebab case on purpose: a primitive's id is its export name, a JS
+ * identifier, which can never contain a hyphen, so no mounted operation can share it.
+ */
+export const TENANT_LISTING_OPERATION_ID = 'tenants-of-token';
+
+/** `code` added to the operation's own response of that status, which keeps its words. */
+const joined = (responses: Responses, status: string, description: string) => {
+  const own = responses[status];
+  return own === undefined
+    ? problem(description)
+    : { ...own, description: `${String(own['description'])}; or ${description}` };
+};
+
+/**
+ * The operation with `arg` as a required `in: query` parameter, the 400 its absence is answered
+ * and the 500 a failed lookup is. A read that already declares a query parameter of that name keeps
+ * its own declaration, schema and all — its handler still validates the value — made required.
  */
 export function withTenantParameter(operation: Operation, arg: string): Operation {
   const declared = Array.isArray(operation['parameters'])
     ? (operation['parameters'] as readonly Record<string, unknown>[])
     : [];
-  const others = declared.filter(
-    (parameter) => !(parameter['in'] === 'query' && parameter['name'] === arg),
-  );
-  const responses = operation['responses'] as Record<string, Record<string, unknown> | undefined>;
-  const invalid = responses['400'];
+  const isTenant = (parameter: Record<string, unknown>) =>
+    parameter['in'] === 'query' && parameter['name'] === arg;
+  const own = declared.find(isTenant);
+  const responses = operation['responses'] as Responses;
   return {
     ...operation,
     parameters: [
-      {
-        name: arg,
-        in: 'query',
-        required: true,
-        description: 'The tenant this call acts in: a value from the tenants listing.',
-        schema: { type: 'string' },
-      },
-      ...others,
+      own === undefined
+        ? {
+            name: arg,
+            in: 'query',
+            required: true,
+            description: 'The tenant this call acts in: a value from the tenants listing.',
+            schema: { type: 'string' },
+          }
+        : { ...own, required: true },
+      ...declared.filter((parameter) => !isTenant(parameter)),
     ],
     responses: {
       ...responses,
       // The operation's own 400 (an action's `X_INPUT_INVALID`) keeps its words, and gains these.
-      '400':
-        invalid === undefined
-          ? problem(TENANT_REQUIRED)
-          : { ...invalid, description: `${String(invalid['description'])}; or ${TENANT_REQUIRED}` },
+      '400': joined(responses, '400', TENANT_REQUIRED),
+      '500': joined(responses, '500', TENANT_UNRESOLVED),
     },
   };
 }
 
-/** `GET <prefix>/tenants`: the tenants the token's person may name, any valid token, no tenant. */
-export function tenantsOperation(scheme: string): Operation {
+/**
+ * `GET <prefix>/tenants`: the tenants the token's person may name, any valid token, no tenant. Its
+ * authenticator spends the mount's per-token allowance like every mounted route, so it documents
+ * the same 401 challenge and 429.
+ */
+export function tenantsOperation(scheme: string, ownAllowance: boolean): Operation {
   return {
-    operationId: 'tenantsOfToken',
+    operationId: TENANT_LISTING_OPERATION_ID,
     summary: 'The tenants this token may act in',
     security: [{ [scheme]: [] }],
     responses: {
@@ -77,7 +98,16 @@ export function tenantsOperation(scheme: string): Operation {
           },
         },
       },
-      '401': problem('X_UNAUTHENTICATED — no credential, or one that did not resolve'),
+      '401': problem('X_UNAUTHENTICATED — no credential, or one that did not resolve', {
+        'WWW-Authenticate': { description: 'Bearer', schema: { type: 'string' } },
+      }),
+      '429': problem(
+        tooManyDescription(true, false),
+        ownAllowance ? { ...RETRY_AFTER_HEADER, ...RATE_LIMIT_HEADERS } : RETRY_AFTER_HEADER,
+      ),
+      '500': problem(
+        'X_BEARER_TENANT_LIST_INVALID — the listing named a value no call could send back',
+      ),
     },
   };
 }

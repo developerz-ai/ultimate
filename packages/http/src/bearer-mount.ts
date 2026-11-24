@@ -219,8 +219,10 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       if (scope === null || !caller.scopes.has(scope)) {
         throw routeNotFound(ctx.method, ctx.url.pathname);
       }
-      // After the cut, so a hidden primitive is the same 404 whatever tenant it names; before
-      // every gate, so the rate limit, the policy and the handler all see the tenant's actor.
+      // After the cut and the per-token spend above, so a hidden primitive is the same 404 whatever
+      // tenant it names, and an exhausted token is 429 before its tenant is read. Before every
+      // pipeline gate, so the tenant-aware rate-limit stage, the policy and the handler all see the
+      // tenant's actor.
       const actor =
         input.tenant === undefined
           ? caller.actor
@@ -284,7 +286,13 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
             return await route.handler(request, ctx);
           } finally {
             // A `finally`: a deprecated route that refuses still announces its retirement.
-            followableSuccessor(ctx.headers, prefix, cut, resolved.caller.scopes);
+            followableSuccessor(
+              ctx.headers,
+              prefix,
+              cut,
+              resolved.caller.scopes,
+              tenantQuery(input.tenant, ctx.url),
+            );
           }
         },
       });
@@ -339,23 +347,36 @@ const tenantsRoute = (
 type Cut = Map<string, Set<string>>;
 
 /**
+ * On a tenant mount, the `?<arg>=<value>` the call named, which its successor needs to be
+ * followable as given; `''` on a plain mount.
+ */
+const tenantQuery = (tenant: BearerMountTenant | undefined, url: URL): string => {
+  const value = tenant === undefined ? null : url.searchParams.get(tenant.arg);
+  return tenant === undefined || value === null
+    ? ''
+    : `?${encodeURIComponent(tenant.arg)}=${encodeURIComponent(value)}`;
+};
+
+/**
  * A successor link the route rendered names the `/api` door, which refuses a bearer caller. In the
- * cut, under a scope this token holds, it becomes the mounted path. Otherwise it goes: the caller
- * cannot follow it, and naming a primitive outside its scopes confirms what the cut answers 404
- * for. Any other `Link` is the handler's own and is not this mount's to touch.
+ * cut, under a scope this token holds, it becomes the mounted path, with the tenant the call named.
+ * Otherwise it goes: the caller cannot follow it, and naming a primitive outside its scopes
+ * confirms what the cut answers 404 for. Any other `Link` is the handler's own and is not this
+ * mount's to touch.
  */
 const followableSuccessor = (
   headers: Headers,
   prefix: string,
   cut: Cut,
   held: ReadonlySet<string>,
+  query: string,
 ): void => {
   const link = headers.get('link');
   const served = link === null ? undefined : successorPathOf(link);
   if (served === undefined) return;
   const reaching = cut.get(served);
   if (reaching !== undefined && [...reaching].some((scope) => held.has(scope))) {
-    headers.set('link', successorLink(mountedPath(prefix, served)));
+    headers.set('link', successorLink(`${mountedPath(prefix, served)}${query}`));
   } else {
     headers.delete('link');
   }

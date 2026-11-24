@@ -4,8 +4,14 @@
 // meter. Its two refusals live here too, so `errors.ts` stays under its ceiling.
 
 import type { Actor } from '@ultimat3/core';
-import { renderFixShellArg, renderThrowable } from '@ultimat3/core';
+import { isActorKind, renderFixShellArg, renderThrowable } from '@ultimat3/core';
 import { bearerMountInvalid, HttpError } from './errors';
+
+/** The listing's path segment under the prefix: `GET /v1/tenants`. */
+export const TENANTS_SEGMENT = '/tenants';
+
+/** A value longer than this names no tenant anyone issues; answered as a non-member, unasked. */
+export const MAX_TENANT_VALUE = 256;
 
 /**
  * A tenant mount's call named no tenant. The fix is the caller's: the listing route every valid
@@ -16,7 +22,7 @@ export const bearerTenantRequired = (prefix: string, arg: string): HttpError =>
   new HttpError({
     code: 'X_BEARER_TENANT_REQUIRED',
     cause: `this mount acts every call in the tenant the call names, and the query string carries no "${arg}"`,
-    fix: `curl -H 'authorization: Bearer <token>' <origin>${renderFixShellArg(prefix, '<prefix>')}/tenants   # then send the call again with ?${arg}=<one of its values>`,
+    fix: `curl -H 'authorization: Bearer <token>' <origin>${renderFixShellArg(`${prefix}${TENANTS_SEGMENT}`, '<prefix>/tenants')}   # then send the call again with ?${arg}=<one of its values>`,
   });
 
 /**
@@ -27,12 +33,26 @@ export const bearerTenantUnresolved = (cause: string, thrown?: unknown): HttpErr
   new HttpError({
     code: 'X_BEARER_TENANT_UNRESOLVED',
     cause: thrown === undefined ? cause : `${cause}: ${renderThrowable(thrown)}`,
-    fix: 'tenant: { resolve: ({ person, value }) => actorIn(person, value) ?? null }   // in defineApi({ http: { mounts } }) — an actor, or null for a tenant the person is not in; a throw is a fault, never a non-member',
+    fix: 'tenant: { resolve: async ({ person, value }) => (await actorIn(person, value)) ?? null }   // in defineApi({ http: { mounts } }) — an actor, or null for a tenant the person is not in; a throw is a fault, never a non-member',
+  });
+
+/**
+ * `tenant.list` answered a value no call could send back: empty is `X_BEARER_TENANT_REQUIRED`, past
+ * `MAX_TENANT_VALUE` a non-member. Refused whole rather than filtered, so the lookup gets fixed.
+ */
+export const bearerTenantListInvalid = (cause: string): HttpError =>
+  new HttpError({
+    code: 'X_BEARER_TENANT_LIST_INVALID',
+    cause,
+    fix: `tenant: { list: async ({ person }) => (await tenantsOf(person)).filter((entry) => entry.value !== '' && entry.value.length <= ${MAX_TENANT_VALUE}) }   // in defineApi({ http: { mounts } }) — every listed value is one a call can name`,
   });
 
 /** One tenant the person may act in, as `GET <prefix>/tenants` lists it. */
 export interface BearerTenantEntry {
-  /** What a call sends as `?<arg>=<value>`. */
+  /**
+   * What a call sends as `?<arg>=<value>`: 1 to 256 characters, the range a call is resolved for.
+   * A listing outside it is `X_BEARER_TENANT_LIST_INVALID`.
+   */
   readonly value: string;
   /** A label for whoever is choosing between them. */
   readonly name?: string;
@@ -58,13 +78,7 @@ export interface BearerMountTenant {
   }): Promise<readonly BearerTenantEntry[]> | readonly BearerTenantEntry[];
 }
 
-/** The listing's path segment under the prefix: `GET /v1/tenants`. */
-export const TENANTS_SEGMENT = '/tenants';
-
 const ARG_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
-
-/** A value longer than this names no tenant anyone issues; answered as a non-member, unasked. */
-const MAX_TENANT_VALUE = 256;
 
 /** Construction: the arg is a plain parameter name. */
 export function assertBearerTenant(prefix: string, tenant: BearerMountTenant): void {
@@ -97,8 +111,9 @@ export async function tenantActorOf(
     throw bearerTenantUnresolved('tenant.resolve threw', thrown);
   }
   if (actor === null) return null;
-  // `undefined` (a `Map.get` miss) is neither the member `null` nor an actor.
-  if (typeof actor !== 'object' || typeof (actor as { kind?: unknown }).kind !== 'string') {
+  // `undefined` (a `Map.get` miss) is neither the member `null` nor an actor, and an object with an
+  // unknown kind or no id is not one either: it would reach every gate as a caller nobody is.
+  if (!isActorShaped(actor)) {
     throw bearerTenantUnresolved(
       'tenant.resolve answered something that is neither an actor nor null',
     );
@@ -106,12 +121,29 @@ export async function tenantActorOf(
   return actor;
 }
 
+const isActorShaped = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null) return false;
+  const { kind, id } = value as { kind?: unknown; id?: unknown };
+  return isActorKind(kind) && typeof id === 'string';
+};
+
 /** The listing's body: the person's own tenants, nothing else. */
 export async function tenantListing(
   tenant: BearerMountTenant,
   person: Actor,
 ): Promise<{ readonly tenants: readonly BearerTenantEntry[] }> {
   const listed = await tenant.list({ person });
+  const unusable = listed.filter(
+    (entry) =>
+      typeof entry.value !== 'string' ||
+      entry.value === '' ||
+      entry.value.length > MAX_TENANT_VALUE,
+  ).length;
+  if (unusable > 0) {
+    throw bearerTenantListInvalid(
+      `tenant.list answered ${unusable} value(s) that are not 1 to ${MAX_TENANT_VALUE} characters`,
+    );
+  }
   return {
     tenants: listed.map((entry) => ({
       value: entry.value,

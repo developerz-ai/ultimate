@@ -3,7 +3,8 @@
 // or unknown tenant answers before any route code runs.
 
 import { describe, expect, test } from 'bun:test';
-import { type Actor, agentActor, userActor } from '@ultimat3/core';
+import { type Actor, agentActor, successorLink, userActor } from '@ultimat3/core';
+import { t } from '@ultimat3/schema';
 import { bearerMount } from './bearer-mount';
 import type { BearerMountTenant } from './bearer-mount-tenant';
 import { defineHttpConfig } from './config';
@@ -15,13 +16,19 @@ import { jsonResponse } from './response';
 import { httpRouter, type Route } from './router';
 
 const person: Actor = userActor({ id: 'person_1' });
+const other: Actor = userActor({ id: 'person_2' });
 const ROLES: Readonly<Record<string, string>> = { org_a: 'admin', org_b: 'member' };
 
 let ran = 0;
 const seenActor = (): Response => {
   ran += 1;
   const actor = useRequestContext()?.actor;
-  return jsonResponse({ id: actor?.id ?? null, orgId: actor?.orgId ?? null });
+  return jsonResponse({
+    id: actor?.id ?? null,
+    orgId: actor?.orgId ?? null,
+    kind: actor?.kind ?? null,
+    roles: actor?.roles ?? null,
+  });
 };
 
 const api: readonly Route[] = [
@@ -37,6 +44,26 @@ const api: readonly Route[] = [
     meta: { name: 'caseList', auth: 'required', enforcedBy: 'handler' },
     handler: seenActor,
   },
+  {
+    method: 'POST',
+    path: '/api/rename-case',
+    meta: {
+      name: 'renameCase',
+      auth: 'required',
+      enforcedBy: 'handler',
+      input: t.object({ title: t.string }),
+    },
+    handler: seenActor,
+  },
+  {
+    method: 'GET',
+    path: '/_x/query/old-case-list',
+    meta: { name: 'oldCaseList', auth: 'required', enforcedBy: 'handler' },
+    handler: (_request, ctx) => {
+      ctx.headers.set('link', successorLink('/_x/query/case-list'));
+      return seenActor();
+    },
+  },
 ];
 
 const tenant = (over: Partial<BearerMountTenant> = {}): BearerMountTenant => ({
@@ -45,7 +72,10 @@ const tenant = (over: Partial<BearerMountTenant> = {}): BearerMountTenant => ({
     const role = ROLES[value];
     return role === undefined ? null : agentActor({ id: who.id, orgId: value, roles: [role] });
   },
-  list: () => [{ value: 'org_a', name: 'A' }, { value: 'org_b' }],
+  list: ({ person: who }) =>
+    who.id === 'person_1'
+      ? [{ value: 'org_a', name: 'A' }, { value: 'org_b' }]
+      : [{ value: 'org_c' }],
   ...over,
 });
 
@@ -59,13 +89,18 @@ const pipelineFor = (
       ...bearerMount({
         prefix: '/v1',
         routes: api,
-        scopes: { 'cases:read': ['caseList'], 'cases:write': ['createCase'] },
+        scopes: {
+          'cases:read': ['caseList', 'oldCaseList'],
+          'cases:write': ['createCase', 'renameCase'],
+        },
         resolveToken: (token) =>
           token === 'tok-read'
             ? { actor: person, scopes: new Set(['cases:read']) }
             : token === 'tok-all'
               ? { actor: person, scopes: new Set(['cases:read', 'cases:write']) }
-              : null,
+              : token === 'tok-other'
+                ? { actor: other, scopes: new Set(['cases:read']) }
+                : null,
         ...(mountTenant === null ? {} : { tenant: mountTenant }),
         rateLimitStore: memoryRateLimitStore(),
       }),
@@ -90,13 +125,14 @@ const answer = async (pipeline: ReturnType<typeof pipelineFor>, request: Request
 describe('bearerMount({ tenant })', () => {
   test('the call acts as the tenant actor resolve answered, on a write and a read alike', async () => {
     const pipeline = pipelineFor();
+    // The resolver's actor whole — its kind and its roles in THAT tenant — not the token's.
     expect(await answer(pipeline, call('POST', '/v1/create-case?org=org_a'))).toEqual({
       status: 200,
-      body: { id: 'person_1', orgId: 'org_a' },
+      body: { id: 'person_1', orgId: 'org_a', kind: 'agent', roles: ['admin'] },
     });
     expect(await answer(pipeline, call('GET', '/v1/case-list?org=org_b'))).toEqual({
       status: 200,
-      body: { id: 'person_1', orgId: 'org_b' },
+      body: { id: 'person_1', orgId: 'org_b', kind: 'agent', roles: ['member'] },
     });
   });
 
@@ -112,7 +148,67 @@ describe('bearerMount({ tenant })', () => {
       headers: { 'content-type': 'application/json', authorization: 'Bearer tok-all' },
       body: JSON.stringify({ org: 'org_a' }),
     });
-    expect((await answer(pipelineFor(), both)).body).toEqual({ id: 'person_1', orgId: 'org_b' });
+    expect((await answer(pipelineFor(), both)).body).toMatchObject({
+      id: 'person_1',
+      orgId: 'org_b',
+    });
+  });
+
+  test('the tenant is read before the body stage: a malformed body naming none is X_BEARER_TENANT_REQUIRED', async () => {
+    ran = 0;
+    const malformed = (path: string) =>
+      new Request(`http://localhost${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer tok-all' },
+        body: '{"title":',
+      });
+    const refused = await answer(pipelineFor(), malformed('/v1/rename-case'));
+    expect(refused.status).toBe(400);
+    expect(refused.body['code']).toBe('X_BEARER_TENANT_REQUIRED');
+    // The same body with a tenant named reaches the body stage, which refuses it on its own terms.
+    const parsed = await answer(pipelineFor(), malformed('/v1/rename-case?org=org_a'));
+    expect(parsed.body['code']).not.toBe('X_BEARER_TENANT_REQUIRED');
+    expect(parsed.status).toBe(422);
+    expect(ran).toBe(0);
+  });
+
+  test('resolve is asked only after the cut and the length cap', async () => {
+    const asked: string[] = [];
+    const spied = tenant({
+      resolve: ({ person: who, value }) => {
+        asked.push(value);
+        return agentActor({ id: who.id, orgId: value, roles: ['admin'] });
+      },
+    });
+    const pipeline = pipelineFor(spied);
+    // Out of scope, naming a tenant the spy would admit: the cut answers first.
+    const hidden = await answer(pipeline, call('POST', '/v1/create-case?org=org_a', 'tok-read'));
+    expect(hidden.status).toBe(404);
+    // Past the cap: a non-member, unasked.
+    const long = await answer(pipeline, call('POST', `/v1/create-case?org=${'x'.repeat(257)}`));
+    expect(long).toEqual(hidden);
+    expect(asked).toEqual([]);
+    // At the cap, it is asked.
+    const atCap = 'x'.repeat(256);
+    expect((await answer(pipeline, call('GET', `/v1/case-list?org=${atCap}`))).status).toBe(200);
+    expect(asked).toEqual([atCap]);
+  });
+
+  test('a successor link keeps the tenant the call named, so following it as given works', async () => {
+    // A value that needs escaping, so the link is proven to carry it re-encoded, not raw.
+    const anyTenant = tenant({
+      resolve: ({ person: who, value }) => agentActor({ id: who.id, orgId: value, roles: [] }),
+    });
+    const response = await pipelineFor(anyTenant).handle(
+      call('GET', '/v1/old-case-list?org=org%20a%26b'),
+      { role: 'web' },
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('link')).toBe(successorLink('/v1/case-list?org=org%20a%26b'));
+    const plain = await pipelineFor(null).handle(call('GET', '/v1/old-case-list'), {
+      role: 'web',
+    });
+    expect(plain.headers.get('link')).toBe(successorLink('/v1/case-list'));
   });
 
   test('no tenant named is X_BEARER_TENANT_REQUIRED, whose fix names the listing', async () => {
@@ -152,6 +248,15 @@ describe('bearerMount({ tenant })', () => {
     const shapeless = tenant({ resolve: () => undefined as unknown as null });
     const odd = await answer(pipelineFor(shapeless), call('GET', '/v1/case-list?org=org_a'));
     expect(odd.body['code']).toBe('X_BEARER_TENANT_UNRESOLVED');
+    // An object with a string `kind` is not yet an actor: an unknown kind, or no id, never runs.
+    ran = 0;
+    for (const malformed of [{ kind: 'robot', id: 'r' }, { kind: 'agent' }]) {
+      const loose = tenant({ resolve: () => malformed as unknown as Actor });
+      const refused = await answer(pipelineFor(loose), call('GET', '/v1/case-list?org=org_a'));
+      expect(refused.status).toBe(500);
+      expect(refused.body['code']).toBe('X_BEARER_TENANT_UNRESOLVED');
+    }
+    expect(ran).toBe(0);
   });
 
   test('GET <prefix>/tenants lists the person own tenants, with any valid token and no tenant', async () => {
@@ -160,10 +265,25 @@ describe('bearerMount({ tenant })', () => {
       status: 200,
       body: { tenants: [{ value: 'org_a', name: 'A' }, { value: 'org_b' }] },
     });
+    // `list` is asked about the token's own person: another token's person gets their own list.
+    expect(await answer(pipelineFor(), call('GET', '/v1/tenants', 'tok-other'))).toEqual({
+      status: 200,
+      body: { tenants: [{ value: 'org_c' }] },
+    });
     const anonymous = await pipelineFor().handle(new Request('http://localhost/v1/tenants'), {
       role: 'web',
     });
     expect(anonymous.status).toBe(401);
+  });
+
+  test('a listed value no call could send back is X_BEARER_TENANT_LIST_INVALID, never published', async () => {
+    for (const value of ['', 'x'.repeat(257)]) {
+      const lying = tenant({ list: () => [{ value: 'org_a' }, { value }] });
+      const refused = await answer(pipelineFor(lying), call('GET', '/v1/tenants'));
+      expect(refused.status).toBe(500);
+      expect(refused.body['code']).toBe('X_BEARER_TENANT_LIST_INVALID');
+      expect(JSON.stringify(refused.body)).not.toContain('org_a');
+    }
   });
 
   test('the tenant is the rate-limit subject: one tenant spent leaves another its allowance', async () => {
@@ -189,7 +309,7 @@ describe('bearerMount({ tenant })', () => {
     const pipeline = pipelineFor(null);
     expect(await answer(pipeline, call('GET', '/v1/case-list'))).toEqual({
       status: 200,
-      body: { id: 'person_1', orgId: null },
+      body: { id: 'person_1', orgId: null, kind: 'user', roles: person.roles },
     });
     expect((await answer(pipeline, call('GET', '/v1/tenants'))).status).toBe(404);
   });
