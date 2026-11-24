@@ -378,8 +378,9 @@
  * `http/src/bearer-mount-tenant.ts` (the tenant step, its listing and the `BearerMountTenant`
  * shape), reached through `bearer-mount.ts` on the http barrel — a split that keeps
  * `bearer-mount.ts` one job, worth its one module.
+ * raised 1006 → 1007, measured 1007 (2026-11-24, allOf and anyOf): `entity/src/expr-connectives.ts` — the connectives and the operand rules `iff` now imports, on the entity barrel).
  */
-export const MIGRATE_CEILING = 1006;
+export const MIGRATE_CEILING = 1007;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';
