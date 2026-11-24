@@ -7,6 +7,7 @@
 import type { Ctx } from '@ultimat3/core';
 import { renderCauseValue } from '@ultimat3/core';
 import { type Infer, t } from '@ultimat3/schema';
+import type { MeterSite } from './errors-meter';
 import { MeterInvalidError } from './errors-meter';
 
 /** The periods a meter resets on. Boundaries are UTC (`meter-period.ts`), and the key says so. */
@@ -86,16 +87,27 @@ const isMeterPeriod = (value: unknown): value is MeterPeriod =>
 export const isMeterLimit = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
+/** The counter's name and period, checked where either is written: `action()` or `drawMeter`. */
+export function assertMeterCounter(
+  name: unknown,
+  period: unknown,
+  site: MeterSite,
+): asserts name is string {
+  if (typeof name !== 'string' || name.length > METER_NAME_MAX || !METER_NAME.test(name)) {
+    const shown = typeof name === 'string' ? name : renderCauseValue(name);
+    const expected = 'a camelCase identifier of at most 64 chars';
+    throw new MeterInvalidError(shown, 'name', expected, undefined, site);
+  }
+  if (!isMeterPeriod(period)) {
+    const expected = `one of ${METER_PERIODS.join(' | ')}`;
+    throw new MeterInvalidError(name, 'period', expected, undefined, site);
+  }
+}
+
 /** At `action()`: a meter that could not be counted is refused where it is written. */
 export function assertMeterDeclaration(meter: ActionMeter): void {
   const name: unknown = meter.name;
-  if (typeof name !== 'string' || name.length > METER_NAME_MAX || !METER_NAME.test(name)) {
-    const shown = typeof name === 'string' ? name : renderCauseValue(name);
-    throw new MeterInvalidError(shown, 'name', 'a camelCase identifier of at most 64 chars');
-  }
-  if (!isMeterPeriod(meter.period)) {
-    throw new MeterInvalidError(name, 'period', `one of ${METER_PERIODS.join(' | ')}`);
-  }
+  assertMeterCounter(name, meter.period, 'action');
   if (typeof meter.limit !== 'function' && !isMeterLimit(meter.limit)) {
     throw new MeterInvalidError(name, 'limit', 'a whole number of calls, 0 or more');
   }

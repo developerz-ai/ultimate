@@ -57,7 +57,7 @@ Declared one per file in a feature's `actions/` (`actions/publish-post.ts`, what
 | `mcp.description` | `string` | no | the tool description an agent reads, and the OpenAPI `summary`. Contract text, so it stays outside `t()` — `openapi.json` must not depend on a locale. Write it for a stranger |
 | `mcp.visibleTo` | `readonly string[]` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
 | `rateLimit` | `{ limit: number \| (({ ctx }) => number \| Promise<number>); windowMs: number }` | no | `limit` may be resolved **per call** from `ctx` (the tenant's plan, read by the app), before any bucket is touched; a resolver answering `NaN`, `0`, `Infinity` or a non-number is `X_RATE_LIMIT_INVALID`, never allow-all. A per-call limit publishes as `rateLimit: null` + `rateLimitPerCall: { windowMs }` in `describe()` and `x-ultimate.rateLimit.limit: 'per-call'` in `openapi.json`. Spent **inside `invoke`**, so the HTTP route, the MCP tool, the in-app agent's tool call and `.job()` draw on ONE bucket — the third call to a `limit: 2` action is `X_RATE_LIMITED` whichever surface it came through; a direct in-process call spends nothing. Keyed actor → org → IP; counted in `@ultimat3/http`'s installed store — the `rateLimitStore` adapter port, filled by the boot on every role, `postgresRateLimitStore` unless `apps/<app>/runtime.ts` names one ([Adapters](Adapters#ratelimitstore)). Over HTTP the refusal is `429` + `Retry-After` and `RateLimit-*`, and the route is not also capped by the `default` bucket; the same `toBucket` conversion feeds `openapi.json`, so the published numbers are the enforced ones. `/mcp` additionally buckets by verb class (`MCP_RATE_LIMITS`, read 120/min, write 20/min per token) |
-| `meter` | `{ name, period: 'hour' \| 'day' \| 'month', limit, warnAt?, onWarn? }` | no | a durable per-period allowance — see [Usage meters](#usage-meters-meter). Drawn on **every** surface, `server` included, after the policy and before `handle`; spent, `X_METER_EXCEEDED` (429) |
+| `meter` | `{ name, period: 'hour' \| 'day' \| 'month', limit, warnAt?, onWarn? }` | no | a durable per-period allowance — see [Usage meters](#usage-meters-meter); an amount measured after the work is [`drawMeter`](#programmatic-draws-drawmeter). Drawn on **every** surface, `server` included, after the policy and before `handle`; spent, `X_METER_EXCEEDED` (429) |
 | `idempotent` | `boolean` | no — **required `true` on a `mutator`** | marks the action safe to retry with an `Idempotency-Key` header — over MCP, the tool's optional `idempotencyKey` argument. Inside a transaction the Postgres store settles the record with the write's own `COMMIT`, so a rollback never leaves a `settled` record behind. A field core redacts by name (`apiKey`, `password`, `*Token`…) or a `Secret` is stored as `[redacted]`, and the replay of such an answer is `X_IDEMPOTENT_REPLAY_REDACTED` |
 | `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a caller already holds (`'/api/uploads/signed'`) or a resource-shaped one (`'/orders/:id/refund'`). Lowercase static segments and `:param`s, never `/_x`; each `:param` a REQUIRED `t.string` key of `input:`, else `X_ACTION_HTTP_PATH_INVALID` at registration. The URL's value joins the body before the input is parsed, so the schema, the policy, `row` and the handler read one object; a body naming the key with another value is **400** `X_HTTP_PATH_INPUT_CONFLICT`, never overridden. Under a bearer mount the pin is served at the prefix (`/v1/orders/:id/refund`) — and still at its own path, with the cookie session, as every pin is; the policy decides both. `derivePath(name)` refuses a template; `actionHttpPath(name, { id })` fills it. A `deprecated.replacedBy` naming one is `X_ACTION_DEPRECATION_INVALID`. An inbound webhook is not this door: it is `webhookReceiver()` ([Jobs and workflows](Jobs-And-Workflows#inbound-webhooks)) |
 | `http.method` | `'POST'` · `'PUT'` · `'PATCH'` · `'DELETE'` | no — `'POST'` | the verb the pin answers; needs `http.path`. `X_ACTION_PATH_DUPLICATE` keys on method and path, so `PUT /orders/:id` and `DELETE /orders/:id` are two actions. `action.client()` sends it and fills the URL from the input (each value one encoded segment, the key left out of the body); `rpc()` by name cannot see a pin. In `openapi.json`: `{id}`, an `in: path` required parameter, the key gone from the request body, the operation under the declared verb. `x.manifest.json` writes `http: { path, method }` for a pin only; moving it is breaking. `As of 2026-11` |
@@ -128,6 +128,49 @@ export const callTool = action({
 | published | `describe().meter` (`{ name, period, timeZone: 'UTC', limit, warnAt }`, `limit: null` for a resolver), `x-ultimate.meter` in `openapi.json` (absent when undeclared) — with `defineApi({ openapi })`, a 429 naming `X_METER_EXCEEDED` with `Retry-After`, public operation or not — and `actions[].meter` in `x.manifest.json`, the same shape |
 | contract diff | breaking when a call pattern the old meter admitted is refused: a meter introduced, a lower limit, a longer period not covering the old one at full use (100/day → month needs ≥ 3,100), a rename (`meta.meter` is on the wire), a move to or from a per-call limit. A shorter period at the same limit admits MORE (100/day → 100/hour): additive, as are a higher limit and a removed meter. `warnAt` is internal. `As of 2026-11` |
 | tests | the app preload resets the meter store at every file boundary, as it does the rate-limit store: a test file never resets it itself |
+
+### Programmatic draws: `drawMeter`
+
+Work measured after the fact — tokens a model spent, bytes exported, rows synced — is drawn with `drawMeter(ctx, { meter, period, amount, limit, key })` from `@ultimat3/action`, inside the handler that measured it. Same counters, same store, same caller as `meter:`. `As of 2026-11`.
+
+```ts
+import { action, drawMeter, t } from '@ultimat3/action';
+import { allow } from '@ultimat3/policy';
+
+const PLAN_TOKENS = new Map([['org-free', 100_000]]);
+
+export const recordRun = action({
+  input: t.object({ runId: t.string, totalTokens: t.number.int() }),
+  output: t.object({ used: t.number.int(), replayed: t.boolean }),
+  policy: allow(),
+  handle: async ({ input, ctx }) => {
+    // once the run's usage is known
+    const drawn = await drawMeter(ctx, {
+      meter: 'tokens',
+      period: 'day',
+      amount: input.totalTokens,
+      limit: ({ ctx }) => PLAN_TOKENS.get(ctx.actor.orgId ?? '') ?? 0,
+      key: input.runId,
+    });
+    return { used: drawn.used, replayed: drawn.replayed }; // also: limit, resetsAt
+  },
+});
+```
+
+| Use | When |
+|---|---|
+| `meter:` on the action | the unit is **the call**, known before the handler runs: refused before any work starts |
+| `drawMeter` | the unit is an **amount known only after the work**, or one action draws several meters |
+
+| Rule | What happens |
+|---|---|
+| amount | a whole number ≥ 1, added whole or not at all: an amount that would pass `limit` counts nothing and throws `X_METER_EXCEEDED` (429, the same `meta` and `Retry-After`) |
+| key | required, 1–255 chars: the unit of work's own id. A second draw under it — a retry, a duplicate on another replica, a parallel one — adds nothing and answers `replayed: true`. Remembered for the period it counted in and the next, so a retry just after the reset still counts once. A refused draw leaves no key |
+| counter | a `meter:` with the same name and period counts on the same counter; units are the app's to keep consistent |
+| transaction | the draw is written outside the caller's transaction and stays counted if it rolls back — retry with the same `key` |
+| store | the installed `MeterStore` with `amount` and `drawKey` on `MeterDraw`: memory in one process, `x_meter` + `x_meter_key` in Postgres (the counter row locked, then the key claimed under it). A store of your own passes `meterStoreConformance` |
+| no warning | `warnAt`/`onWarn` are `meter:`'s; read `used` and `limit` off the answer |
+| malformed | a bad name, period, amount, key or resolved limit is `X_METER_INVALID`, its fix naming the `drawMeter` call |
 
 ## Streaming: `stream:` and an async generator
 
