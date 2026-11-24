@@ -12,7 +12,10 @@ type Data = { who: string; agent: string };
 const register = (file: string, permission?: string): void => {
   registerRoute<Data>({
     file,
-    component: (props: { data: Data }) => h('p', {}, `${props.data.who}|${props.data.agent}`),
+    component: (props) => {
+      const data = props['data'] as Data;
+      return h('p', {}, `${data.who}|${data.agent}`);
+    },
     config: defineRoute<Data>({
       render: 'ssr',
       offline: 'network-only',
