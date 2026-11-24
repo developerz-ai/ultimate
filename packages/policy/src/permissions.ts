@@ -42,6 +42,9 @@ const sites = new Map<string, Set<string>>();
 
 export const knownPermissions = (): readonly string[] => [...declared].sort();
 
+/** Whether any `definePermissions` has run — `can()`'s deferred check asks it per decision. */
+export const permissionSetDeclared = (): boolean => declared.size > 0;
+
 /**
  * Where each permission was declared: one stack frame per distinct declaring call, as
  * `roleDeclarationSites()` answers for roles. ALL of them rather than the first, because the
