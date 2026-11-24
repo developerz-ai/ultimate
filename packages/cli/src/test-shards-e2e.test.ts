@@ -48,7 +48,11 @@ const FILES = [
 
 /** A browser `findChrome` accepts: a declared `CHROME_PATH` that exists. */
 const withBrowser = { ...Bun.env, [CHROME_PATH_ENV]: process.execPath };
-const noBrowser = { ...Bun.env, [CHROME_PATH_ENV]: join(tmpdir(), 'no-such-browser') };
+/** A declared `CHROME_PATH` that names nothing: inside the run's own root, never a shared one. */
+const noBrowser = (dir: string) => ({
+  ...Bun.env,
+  [CHROME_PATH_ENV]: join(dir, 'no-such-browser'),
+});
 
 const run = async (dir: string, env: Readonly<Record<string, string | undefined>>) => {
   const { calls, runner } = recorder();
@@ -71,7 +75,8 @@ describe('x test: the e2e pass drives a browser, as the gate does', () => {
   });
 
   test('no browser: the suite runs as before, its browser cases skipping', async () => {
-    const { e2e } = await run(root(true), noBrowser);
+    const dir = root(true);
+    const { e2e } = await run(dir, noBrowser(dir));
     expect(e2e?.command).not.toContain('--preload');
     expect(e2e?.env?.[E2E_ROOT_ENV]).toBeUndefined();
   });
