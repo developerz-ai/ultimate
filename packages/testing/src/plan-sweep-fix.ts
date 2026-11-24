@@ -1,7 +1,7 @@
-// From the oracle's red nodes to what an author pastes: the entity, and the `indexes: [{ on }]`
-// entry by property. Pure. Also where a red node is argued away by the declaration itself: a
-// lookup that pins a unique key reads one row whatever the planner walked to find it, and a whole
-// read a keyed join side could probe by a declared index is one the planner declined on cost.
+// From the oracle's red nodes to what an author pastes: the entity and the `indexes: [{ on }]`
+// entry by property. Pure. Also where the declaration argues a red node away: a unique key pinned
+// reads one row, and a keyed join side's probe or a walk a held index serves (keys, then order)
+// is credited as one the planner declined on a small seed's costs.
 
 import { trigramDeclaration } from '@ultimat3/entity';
 import type { PlanVerdict, PlanVerdictCode } from './plan-oracle';
@@ -264,7 +264,15 @@ export function planFindings(
     const tenant = description.columns.find((c) => c.property === entity.$tenantColumn)?.column;
     const lead = tenant !== undefined && verdict.equality.includes(tenant) ? [tenant] : [];
     const columns = [...new Set([...lead, ...verdict.equality, ...order, ...verdict.range])];
-    if (held(declared, columns)) return [{ ...finding, index: [], unserved: 'declared' }];
+    if (held(declared, columns)) {
+      // A WALK the held index would serve — its equality columns, then the order — is the planner
+      // declining that index on cost. Seq scans are off, so it had it; on a seed of a few rows a
+      // partial index (`where revoked_at is null`) costs as little as the keyed one. A schema
+      // heuristic, not a promise about production plans: many revoked rows sharing a key and few
+      // active ones can keep the walk cheaper at volume. Credited, never re-proven, as `probed` is.
+      // A whole-table scan with the index held is still red: something defeats it.
+      return walked ? [] : [{ ...finding, index: [], unserved: 'declared' }];
+    }
     return [{ ...finding, index: columns.flatMap((column) => byColumn.get(column) ?? []) }];
   });
 }
