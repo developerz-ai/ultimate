@@ -408,6 +408,22 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     ).toBe(true);
   });
 
+  test('updateWhereReturning gives the row to exactly one of two concurrent claims', async () => {
+    const org = await newOrg('update-where-returning');
+    const target = await write(org, 'CLAIM-a');
+    const claim = async () => {
+      const claimed = repo().updateWhereReturning;
+      if (claimed === undefined) throw new Error('postgresRepo has no updateWhereReturning');
+      return claimed.call(repo(), { id: target.id, paid: false }, { paid: true }, { orgId: org });
+    };
+
+    const results = await Promise.all([claim(), claim()]);
+
+    expect(results.map((rows) => rows.length).sort()).toEqual([0, 1]);
+    expect(results.flat()[0]).toMatchObject({ id: target.id, paid: true });
+    expect((await repo().findById(target.id, { orgId: org }))?.paid).toBe(true);
+  });
+
   test('deleteWhere soft-deletes where delete(id) would, and rolls back with its transaction', async () => {
     const org = await newOrg('delete-where-soft');
     for (const reference of ['SOFT-a', 'SOFT-b']) await write(org, reference);

@@ -168,6 +168,24 @@ describe.each(DRIVERS)('unit · a sealed column on %s', (name, driver) => {
     }
   });
 
+  test('updateWhereReturning seals what it writes and opens what it answers', async () => {
+    const table = db().connections;
+    const made = await table.insert({ label: 'rt', password: 'p', email: mail('rt') });
+    const [row, ...rest] = await table.updateWhereReturning(
+      { label: 'rt' },
+      { token: 'secret-token', label: 'rt2' },
+    );
+    expect(rest).toEqual([]);
+    expect([row?.id, row?.label, row?.token]).toEqual([made.id, 'rt2', 'secret-token']);
+    expect(await table.updateWhereReturning({ label: 'nobody-has-this' }, { label: 'x' })).toEqual(
+      [],
+    );
+    // A sealed filter, lookup column included, is refused as `updateWhere` refuses it.
+    expect(
+      await codeOf(() => table.updateWhereReturning({ email: mail('rt') }, { label: 'y' })),
+    ).toBe('X_ENTITY_SEALED_PREDICATE');
+  });
+
   test('presence is not a secret: a NULL test reads any sealed column', async () => {
     const table = db().connections;
     const without = await table.insert({ label: 'n', password: 'p', email: mail('null') });

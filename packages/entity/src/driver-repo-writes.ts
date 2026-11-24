@@ -29,6 +29,7 @@ import { writtenRowsSink } from './search-written-rows';
 import { assertRowTenant, type QueryPlan } from './tenancy';
 import type { RowPatch, RowWrite } from './types';
 import { judgeUpdateMany, updateManyPlan } from './update-many';
+import { updatedRows } from './updated-rows';
 import { assertVersionedUpdate, versionOf } from './version-lock';
 import { updateWherePlan, writeWherePlan } from './write-where';
 
@@ -41,6 +42,7 @@ export type DriverWrites<Row> = Pick<
   | 'delete'
   | 'deleteWhere'
   | 'updateWhere'
+  | 'updateWhereReturning'
   | 'insertAllCount'
   | 'upsertAllCount'
   | 'copyAll'
@@ -270,6 +272,10 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
       return patched(op, plan, patch, options);
     },
+
+    // The store has no `returning`: the rows are the ones the write read back for the search mirror.
+    updateWhereReturning: (filter, given, options) =>
+      updatedRows(entity.$name, () => writes.updateWhere(filter, given, options)),
 
     // A store answers rows from every insert, so the count is their length: one judging path.
     insertAllCount: async (given, options) => (await writes.insertAll(given, options)).length,

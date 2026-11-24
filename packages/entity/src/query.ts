@@ -43,6 +43,7 @@ import type {
   SealedKeySet,
   SealedKeysOf,
 } from './types';
+import { updatedRows } from './updated-rows';
 
 /**
  * What a preloaded relation adds to a row. `unknown` because the name is a string resolved at
@@ -206,6 +207,21 @@ export interface Table<Row, C extends ColumnMap = ColumnMap>
    * `X_PATCH_EMPTY`. `onUpdateNow()` columns are stamped exactly as `update(id, patch)` stamps them.
    */
   updateWhere(filter: RowPatch<Row>, patch: RowPatch<Row>, options?: RepoOptions): Promise<number>;
+  /**
+   * `updateWhere` that resolves with the rows it wrote, as stored — one `update … where … returning *`,
+   * so "update if it is still open" and "which rows did THIS call move" are one statement, with no
+   * row lock and no read before it. A filter matching nothing (the row was already moved, deleted or
+   * is another tenant's) resolves `[]`, never `X_NOT_FOUND`. Every guard `updateWhere` has is this
+   * call's: the filter and patch refusals (`X_WRITE_UNFILTERED`, `X_PATCH_EMPTY`), tenancy,
+   * soft-delete, invariants, the `onUpdateNow()` stamp and the version column, sealing, the search
+   * mirror and the `entity.bulk` report. An entity with an invariant only the app can judge is
+   * bounded as `updateWhere` is (`X_INVARIANT_VIOLATED` past `MAX_ASSERTED_ROWS`).
+   */
+  updateWhereReturning(
+    filter: RowPatch<Row>,
+    patch: RowPatch<Row>,
+    options?: RepoOptions,
+  ): Promise<readonly Row[]>;
 }
 
 interface State {
@@ -423,6 +439,13 @@ export const tableFor = <Row, C extends ColumnMap>(
   deleteWhere: async (filter, options) => repo.deleteWhere(filter, options),
   updateWhere: async (filter, patch, options) =>
     repo.updateWhere(filter, touch(entity, patch), options),
+  updateWhereReturning: async (filter, patch, options) => {
+    const touched = touch(entity, patch);
+    // A hand-written repository without it answers through `updateWhere`'s own rows.
+    return repo.updateWhereReturning === undefined
+      ? updatedRows<Row>(entity.$name, () => repo.updateWhere(filter, touched, options))
+      : repo.updateWhereReturning(filter, touched, options);
+  },
   // `touch` is passed rather than applied here: a transition IS an update, so an `onUpdateNow()`
   // column has to move exactly as `update(id, patch)` moves it — which is also the audit of WHEN
   // the row moved, using the stamp already declared instead of a second one beside it.

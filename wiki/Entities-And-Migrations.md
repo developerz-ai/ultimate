@@ -1021,6 +1021,7 @@ export const parkUnpublished = (authorId: string): Promise<number> =>
 | Unbounded | no predicate is `X_WRITE_UNFILTERED`. So is a chain predicate whose value is `undefined` — dropped, it would widen the write to everything the rest of the chain matches; `.andWhere('<col>', 'is-null')` is SQL NULL. In `updateWhere`'s filter an `undefined` is dropped, as it always was |
 | No page | `limit()`, `after()` and `search()` on a write chain are `X_INVARIANT_VIOLATED`: a write reaches every match, and a search index answers a bounded sample of ids. `orderBy`, `select` and `preload` are ignored |
 | Sealed columns | a lookup column matched as a read matches it; a null test passes; any other predicate on a sealed column is refused |
+| The rows back | `updateWhereReturning(filter, patch)` is `updateWhere` resolving `readonly Row[]` from one `update … returning *` (no lock, no read first); `[]` when nothing matched, every guard above unchanged. It takes the equality filter, not a chain. On a hand-written `Repo` it is optional: absent, the typed handle answers from the rows `updateWhere` reports, and refuses (`X_INVARIANT_VIOLATED`) a repository that writes rows and names none |
 
 ### A different value per row is `updateMany`
 

@@ -1001,6 +1001,8 @@ db.posts.update(id, { title });                             // ditto; named colu
 db.likes.deleteWhere({ postId, userId });                   // -> 1  · the only way to unlike
 db.likes.deleteWhere({ postId });                           // -> n  · every like on that post
 db.participants.updateWhere({ conversationId, userId }, { lastReadAt });   // -> 1 · mark read
+// The rows it wrote, in the same ONE statement (`update … returning *`): no row lock, no read first
+const claimed = await db.jobs.updateWhereReturning({ id, status: 'open' }, { status: 'claimed' });   // -> Row[]; [] when it was no longer open
 
 db.likes.deleteWhere({});                                   // X_WRITE_UNFILTERED, never every row
 db.participants.updateWhere({ conversationId }, {});        // X_PATCH_EMPTY, never a silent no-op
@@ -1020,6 +1022,17 @@ soft delete, invariant judging, `onUpdateNow()`, sealing (a lookup column matche
 it), the search mirror and the `entity.bulk` report cannot differ. No predicate is
 `X_WRITE_UNFILTERED`; `limit()`, `after()` and `search()` are refused. `updateMany` is `Repo`-optional:
 a hand-written repository without it gets one `updateWhere` per row from the typed handle.
+
+`updateWhereReturning(filter, patch, options?)` is `updateWhere` answering `readonly Row[]`, the rows as
+stored, in one `update … where … returning *`: "update if it is still open" and "which rows did this call
+move" are one decision, made without a row lock or a read first. A filter that matches nothing (already
+moved, soft-deleted, another tenant's) answers `[]`, never `X_NOT_FOUND`. It shares `updateWhere`'s plan
+and judging, so `X_WRITE_UNFILTERED`, `X_PATCH_EMPTY`, tenancy, soft delete, invariants, the
+`onUpdateNow()` stamp, the version column, sealing, append-only and view refusals, the search mirror and
+the `entity.bulk` report are the same. An entity with a rule only the app can judge is bounded as
+`updateWhere` is (`X_INVARIANT_VIOLATED` past `MAX_ASSERTED_ROWS`). It takes the equality filter, not a
+chain. `Repo.updateWhereReturning` is optional: a `defineDriver` store, or a hand-written repository that
+reports the rows `updateWhere` wrote, answers from them; one that names none is `X_INVARIANT_VIOLATED`.
 
 | Bulk insert | Resolves | Statement |
 |---|---|---|

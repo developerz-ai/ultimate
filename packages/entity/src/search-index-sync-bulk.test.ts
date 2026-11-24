@@ -176,6 +176,25 @@ describe('the search index write path, for writes that name no id', () => {
     expect(await hits(index, notes.$name, 'zebra')).toEqual([idAt(3)]);
   });
 
+  const drivers = [
+    ['the memory driver', memoryDriver],
+    ['a custom store', mapStore],
+  ] as const;
+  for (const [name, driver] of drivers) {
+    test(`updateWhereReturning indexes each written row's new text on ${name}`, async () => {
+      const index = installed();
+      const db = database({ notes }, { driver: driver() });
+      await seedNotes(db);
+      const rows = await asMember(() =>
+        db.notes.updateWhereReturning({ shelf: 'old' }, { title: 'quokka' }),
+      );
+      await settle();
+      expect(rows.map((row) => row.id).sort()).toEqual([idAt(1), idAt(2)]);
+      expect(await hits(index, notes.$name, 'quokka')).toEqual([idAt(1), idAt(2)]);
+      expect(await hits(index, notes.$name, 'zebra')).toEqual([idAt(3)]);
+    });
+  }
+
   test('a soft deleteWhere removes the stamped rows', async () => {
     const index = installed();
     const db = database({ drafts }, { driver: memoryDriver() });

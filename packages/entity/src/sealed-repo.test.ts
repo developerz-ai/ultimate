@@ -76,6 +76,10 @@ describe('unit · the sealing seam', () => {
         seen.push(patch);
         return 1;
       },
+      updateWhereReturning: async (_filter: unknown, patch: unknown) => {
+        seen.push(patch);
+        return [patch];
+      },
       count: async () => 0,
       countBy: async () => new Map(),
       aggregate: async () => null,
@@ -101,10 +105,14 @@ describe('unit · the sealing seam', () => {
     await sealing.upsertAll([row], { onConflict: ['email'] });
     await sealing.update('i', { password: 'next' });
     await sealing.updateWhere({ label: 'l' }, { token: 'tok' });
+    const [answered] =
+      (await sealing.updateWhereReturning?.({ label: 'l' }, { password: 'again' })) ?? [];
+    // The driver answered ciphertext; the caller gets the plaintext back.
+    expect(answered?.['password']).toBe('again');
     expect(row.password).toBe('hunter2');
-    expect(seen).toHaveLength(5);
+    expect(seen).toHaveLength(6);
     for (const reached of seen) {
-      expect(JSON.stringify(reached)).not.toMatch(/hunter2|next|"tok"|e@example\.com/);
+      expect(JSON.stringify(reached)).not.toMatch(/hunter2|next|again|"tok"|e@example\.com/);
     }
     const [inserted] = seen as readonly Record<string, unknown>[];
     expect(isSealed(inserted?.['password'])).toBe(true);

@@ -98,6 +98,10 @@ describe('every write to a view is refused, on both drivers', () => {
     ['delete', (db) => db.totals.delete(POST)],
     ['deleteWhere', (db) => db.totals.deleteWhere({ postId: POST })],
     ['updateWhere', (db) => db.totals.updateWhere({ postId: POST }, { total: '2' })],
+    [
+      'updateWhereReturning',
+      (db) => db.totals.updateWhereReturning({ postId: POST }, { total: '2' }),
+    ],
   ] as const satisfies readonly (readonly [
     string,
     (db: ReturnType<typeof open>) => Promise<unknown>,

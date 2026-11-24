@@ -39,13 +39,14 @@ import { countStatement, type ReadShape, selectStatement } from './pg-sql';
 import { postgresTransactor } from './pg-transactor';
 import { deleteStatement, updateStatement } from './pg-write-sql';
 import { idPlan, readPlan } from './plan';
-import type { FindManyArgs, Repo } from './repo';
+import type { FilteredWriteOptions, FindManyArgs, Repo } from './repo';
 import { rowKey } from './row-key';
 import { sealedRepo } from './sealed-repo';
 import { deletionStamp } from './search-index-version';
 import { writtenRowsSink } from './search-written-rows';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
+import type { RowPatch } from './types';
 import { assertVersionedUpdate, staleOrNotFound, versionOf } from './version-lock';
 import { taggedWrite } from './write-tag';
 import { updateWherePlan, writeWherePlan } from './write-where';
@@ -215,7 +216,7 @@ export const postgresRepo = <Row>(
     plan: QueryPlan,
     values: ReadonlyMap<string, unknown>,
     shape: ReadShape,
-  ): Promise<number> => {
+  ): Promise<Row[]> => {
     const matched = await attributed(op, () =>
       client().one<{ count: unknown }>(countStatement(entity, plan, shape)),
     );
@@ -227,7 +228,7 @@ export const postgresRepo = <Row>(
       const decoded = written.map((row) => decodeRow(entity, row));
       for (const row of decoded) entity.$assert(row);
       writtenRowsSink()?.(decoded);
-      return written.length;
+      return decoded;
     });
   };
 
@@ -237,8 +238,27 @@ export const postgresRepo = <Row>(
    */
   const removed = (op: string, plan: QueryPlan): Promise<number> =>
     entity.$softDelete && hasJsOnlyInvariant(entity.$invariants)
-      ? judgedRows(op, plan, softDeletion(), shapeOf({}))
+      ? judgedRows(op, plan, softDeletion(), shapeOf({})).then((rows) => rows.length)
       : counted(op, plan, removalShape(), (returning) => removal(plan, returning));
+
+  /**
+   * What `updateWhere` and `updateWhereReturning` share before a statement exists: the plan (filter
+   * and patch refused as `updateWherePlan` refuses them), the tenant the patch may hand rows to, and
+   * the bound values. `shapeOf({})` keeps the `deleted_at is null` clause `update(id, patch)`
+   * already carries, so a soft-deleted row is not silently patched back into shape.
+   */
+  const filteredPatch = (
+    filter: RowPatch<Row>,
+    given: RowPatch<Row>,
+    options: FilteredWriteOptions | undefined,
+  ) => {
+    const patch = entity.$parsePatch(given);
+    const op = 'updateWhere';
+    const plan = updateWherePlan(entity, filter, patch, options, op);
+    // The same move, filtered: one statement can hand away every row it matches.
+    assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
+    return { op, plan, values: bindValues(entity, patch), shape: shapeOf({}) };
+  };
 
   const repo: Repo<Row> = {
     async findById(id, options) {
@@ -366,15 +386,7 @@ export const postgresRepo = <Row>(
     },
 
     async updateWhere(filter, given, options) {
-      const patch = entity.$parsePatch(given);
-      const op = 'updateWhere';
-      const plan = updateWherePlan(entity, filter, patch, options, op);
-      // The same move, filtered: one statement can hand away every row it matches.
-      assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
-      const values = bindValues(entity, patch);
-      // `shapeOf({})` keeps the `deleted_at is null` clause `update(id, patch)` already carries,
-      // so a soft-deleted row is not silently patched back into shape.
-      const shape = shapeOf({});
+      const write = filteredPatch(filter, given, options);
       // The rows come back only when something here can still refuse them. A `check` or a `unique`
       // invariant is a constraint Postgres enforced on the statement itself, so the answer is
       // already a count; only a JS-only rule (`kind: 'assert'`, `sql: null`) has to be judged on
@@ -383,11 +395,28 @@ export const postgresRepo = <Row>(
       // decoded each one, asserted nothing about any of them, and answered with a number.
       // `deleteWhere` was the tell: same predicate, same table, `execute()` and a count.
       if (!hasJsOnlyInvariant(entity.$invariants)) {
-        return counted(op, plan, shape, (returning) =>
-          updateStatement(entity, plan, values, shape, returning),
+        return counted(write.op, write.plan, write.shape, (returning) =>
+          updateStatement(entity, write.plan, write.values, write.shape, returning),
         );
       }
-      return judgedRows(op, plan, values, shape);
+      return (await judgedRows(write.op, write.plan, write.values, write.shape)).length;
+    },
+
+    // The same plan, patch and judging as `updateWhere`, and the rows ARE the answer: one
+    // `update … returning *`, with no count before it and no lock around it. Only a JS-only rule
+    // counts first, as `updateWhere` does, so that the bound a refusal needs holds here too.
+    async updateWhereReturning(filter, given, options) {
+      const write = filteredPatch(filter, given, options);
+      if (hasJsOnlyInvariant(entity.$invariants)) {
+        return judgedRows(write.op, write.plan, write.values, write.shape);
+      }
+      const statement = updateStatement(entity, write.plan, write.values, write.shape, true);
+      const rows = await attributed(write.op, () =>
+        writing(() => client().query<PhysicalRow>(statement)),
+      );
+      const decoded = rows.map((row) => decodeRow(entity, row));
+      writtenRowsSink()?.(decoded);
+      return decoded;
     },
 
     async count(args = {}) {

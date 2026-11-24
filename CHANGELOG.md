@@ -10,7 +10,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `updateWhereReturning(filter, patch)` on a table handle (`@ultimat3/entity`): `updateWhere` that resolves the rows it wrote, in one `update â€¦ returning *` with no row lock and no read first, so "update if it is still open" returns what this call moved (`[]` when nothing matched). Same plan and guards as `updateWhere`. `Repo.updateWhereReturning` is optional, so a hand-written repository still compiles.
 
 ## Releases
 
