@@ -3,6 +3,7 @@
 // document is the one it was.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { MAX_TENANT_VALUE } from '@ultimat3/http';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -10,7 +11,7 @@ import { defineApi } from './define-api';
 import { toRoute } from './http';
 import { buildOpenApi } from './openapi';
 import { mountOpenApi } from './openapi-complete';
-import { withTenantParameter } from './openapi-mount-tenant';
+import { TENANT_LISTING_OPERATION_ID, withTenantParameter } from './openapi-mount-tenant';
 import { listActions, resetActions } from './registry';
 
 beforeEach(() => {
@@ -80,6 +81,12 @@ describe('mountOpenApi with tenant', () => {
   test('every served operation requires the tenant in the query string, and documents its 400', () => {
     const created = op(documentFor(TENANT), '/v1/cases/create');
     expect(created.parameters?.[0]).toMatchObject({ name: 'org', in: 'query', required: true });
+    // The bounds the mount resolves a value within, in JSON Schema's own unit (code points).
+    expect(created.parameters?.[0]?.schema).toEqual({
+      type: 'string',
+      minLength: 1,
+      maxLength: MAX_TENANT_VALUE,
+    });
     expect(created.responses['400']?.description).toContain('X_BEARER_TENANT_REQUIRED');
     // The action's own 400 is still named beside it.
     expect(created.responses['400']?.description).toContain('X_INPUT_INVALID');
@@ -117,12 +124,23 @@ describe('mountOpenApi with tenant', () => {
     expect(Object.keys(listing.responses['401']?.headers ?? {})).toEqual(['WWW-Authenticate']);
     expect(Object.keys(listing.responses['429']?.headers ?? {})).toContain('Retry-After');
     expect(listing.responses['500']?.description).toContain('X_BEARER_TENANT_LIST_INVALID');
+    expect(listing.responses['200']?.headers).toBeUndefined();
+    // A listed value is documented within the bounds a call naming it is resolved for.
+    expect(JSON.stringify(listing.responses['200'])).toContain(
+      JSON.stringify({ type: 'string', minLength: 1, maxLength: MAX_TENANT_VALUE }),
+    );
     const limited = op(
       documentFor(TENANT, undefined, { limit: 10, windowMs: 60_000 }),
       '/v1/tenants',
       'get',
     );
     expect(Object.keys(limited.responses['429']?.headers ?? {})).toContain('RateLimit-Remaining');
+    // The mount's allowance is spent on every answer, so a 200 carries its headers too.
+    expect(Object.keys(limited.responses['200']?.headers ?? {}).sort()).toEqual([
+      'RateLimit-Limit',
+      'RateLimit-Remaining',
+      'RateLimit-Reset',
+    ]);
   });
 
   test('the listing joins a mounted POST at the same path instead of replacing it', () => {
@@ -141,6 +159,8 @@ describe('mountOpenApi with tenant', () => {
       Object.values(item as Record<string, Op>).map((operation) => operation.operationId),
     );
     expect(new Set(ids).size).toBe(ids.length);
+    expect(op(doc, '/v1/tenants', 'get').operationId).toBe(TENANT_LISTING_OPERATION_ID);
+    expect(TENANT_LISTING_OPERATION_ID).toBe('tenants-of-token');
   });
 
   test('the scheme states that the listing needs no scope and names no tenant', () => {
@@ -149,9 +169,11 @@ describe('mountOpenApi with tenant', () => {
         (doc.components as { readonly securitySchemes?: Record<string, { description?: string }> })
           .securitySchemes?.['bearer']?.description,
       );
-    expect(schemeOf(documentFor(TENANT))).toContain(
-      'GET /v1/tenants needs no scope and names no tenant',
-    );
+    const described = schemeOf(documentFor(TENANT));
+    expect(described).toContain('GET /v1/tenants needs no scope and names no tenant');
+    // The one-scope rule is the mounted primitives', so it cannot contradict the listing's.
+    expect(described).toContain('Each mounted primitive operation lists the one scope');
+    expect(described).not.toContain('Each operation lists');
     expect(schemeOf(documentFor(undefined))).not.toContain('/tenants');
   });
 

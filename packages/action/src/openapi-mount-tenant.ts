@@ -3,6 +3,7 @@
 // learns its tenants from is a path of its own. Applied by `mountOpenApi` only when the mount
 // declares `tenant`.
 
+import { MAX_TENANT_VALUE } from '@ultimat3/http';
 import {
   problem,
   RATE_LIMIT_HEADERS,
@@ -15,6 +16,9 @@ type Responses = Record<string, Record<string, unknown> | undefined>;
 
 const TENANT_REQUIRED = 'X_BEARER_TENANT_REQUIRED — the call named no tenant';
 const TENANT_UNRESOLVED = 'X_BEARER_TENANT_UNRESOLVED — the tenant lookup failed';
+
+/** The values a call is resolved for: JSON Schema counts code points, as the mount does. */
+const TENANT_VALUE_SCHEMA = { type: 'string', minLength: 1, maxLength: MAX_TENANT_VALUE };
 
 /**
  * The listing's operationId. Kebab case on purpose: a primitive's id is its export name, a JS
@@ -52,7 +56,7 @@ export function withTenantParameter(operation: Operation, arg: string): Operatio
             in: 'query',
             required: true,
             description: 'The tenant this call acts in: a value from the tenants listing.',
-            schema: { type: 'string' },
+            schema: TENANT_VALUE_SCHEMA,
           }
         : { ...own, required: true },
       ...declared.filter((parameter) => !isTenant(parameter)),
@@ -69,7 +73,8 @@ export function withTenantParameter(operation: Operation, arg: string): Operatio
 /**
  * `GET <prefix>/tenants`: the tenants the token's person may name, any valid token, no tenant. Its
  * authenticator spends the mount's per-token allowance like every mounted route, so it documents
- * the same 401 challenge and 429.
+ * the same 401 challenge and 429, and with an allowance of its own the `RateLimit-*` every answer
+ * carries.
  */
 export function tenantsOperation(scheme: string, ownAllowance: boolean): Operation {
   return {
@@ -79,6 +84,7 @@ export function tenantsOperation(scheme: string, ownAllowance: boolean): Operati
     responses: {
       '200': {
         description: 'Each value is what a call sends as the tenant query parameter.',
+        ...(ownAllowance ? { headers: RATE_LIMIT_HEADERS } : {}),
         content: {
           'application/json': {
             schema: {
@@ -90,7 +96,7 @@ export function tenantsOperation(scheme: string, ownAllowance: boolean): Operati
                   items: {
                     type: 'object',
                     required: ['value'],
-                    properties: { value: { type: 'string' }, name: { type: 'string' } },
+                    properties: { value: TENANT_VALUE_SCHEMA, name: { type: 'string' } },
                   },
                 },
               },

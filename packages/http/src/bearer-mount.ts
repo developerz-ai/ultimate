@@ -182,7 +182,7 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
   const nowMs = (): number => (input.clock ?? liveClock).now().getTime();
   // The caller each request resolved to, keyed by ITS context — never a module-level slot two
   // concurrent requests could share.
-  const callers = new WeakMap<RequestContext, { caller: BearerCaller }>();
+  const callers = new WeakMap<RequestContext, ResolvedCall>();
 
   // One authenticator per mounted route, closed over ITS scope, so the cut is decided in the `auth`
   // stage — before `body` and `authz`. Decided in the handler, an out-of-scope token was answered
@@ -213,7 +213,7 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       // 404 but not another would tell hidden from unknown.
       await spend(tokenKey(token), ctx);
       if (scope === LISTING_GATE) {
-        callers.set(ctx, { caller });
+        callers.set(ctx, { caller, tenantQuery: '' });
         return caller.actor;
       }
       if (scope === null || !caller.scopes.has(scope)) {
@@ -228,7 +228,9 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
           ? caller.actor
           : await tenantActorOf(prefix, input.tenant, ctx.url, caller.actor);
       if (actor === null) throw routeNotFound(ctx.method, ctx.url.pathname);
-      callers.set(ctx, { caller });
+      // The tenant as authenticated, snapshotted: a handler that rewrites `ctx.url` must not move
+      // the successor link to another tenant, or drop it.
+      callers.set(ctx, { caller, tenantQuery: tenantQuery(input.tenant, ctx.url) });
       return actor;
     };
 
@@ -291,7 +293,7 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
               prefix,
               cut,
               resolved.caller.scopes,
-              tenantQuery(input.tenant, ctx.url),
+              resolved.tenantQuery,
             );
           }
         },
@@ -322,7 +324,7 @@ const tenantsRoute = (
   prefix: string,
   tenant: BearerMountTenant,
   authenticate: NonNullable<RouteMeta['authenticate']>,
-  callers: WeakMap<RequestContext, { caller: BearerCaller }>,
+  callers: WeakMap<RequestContext, ResolvedCall>,
   /** The mount spends its own allowance, so the stage spends no `default` beside it. */
   ownAllowance: boolean,
 ): Route => ({
@@ -342,6 +344,13 @@ const tenantsRoute = (
     return jsonResponse(await tenantListing(tenant, resolved.caller.actor));
   },
 });
+
+/** What the authenticator settled for one request, read by the handler it admitted. */
+interface ResolvedCall {
+  readonly caller: BearerCaller;
+  /** The `?<arg>=<value>` the call was authenticated in, `''` without a tenant. */
+  readonly tenantQuery: string;
+}
 
 /** The mount's cut: a route's `/api` path → the scopes that reach it. */
 type Cut = Map<string, Set<string>>;

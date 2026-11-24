@@ -3,10 +3,10 @@
 // or unknown tenant answers before any route code runs.
 
 import { describe, expect, test } from 'bun:test';
-import { type Actor, agentActor, successorLink, userActor } from '@ultimat3/core';
+import { type Actor, agentActor, successorLink, successorPathOf, userActor } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
-import { bearerMount } from './bearer-mount';
-import type { BearerMountTenant } from './bearer-mount-tenant';
+import { type BearerMountRateLimit, bearerMount } from './bearer-mount';
+import { type BearerMountTenant, isTenantValue } from './bearer-mount-tenant';
 import { defineHttpConfig } from './config';
 import { useRequestContext } from './context';
 import { bearerMountInvalid } from './errors';
@@ -64,6 +64,17 @@ const api: readonly Route[] = [
       return seenActor();
     },
   },
+  {
+    method: 'GET',
+    path: '/_x/query/old-case-feed',
+    meta: { name: 'oldCaseFeed', auth: 'required', enforcedBy: 'handler' },
+    // A handler that strips the tenant off the URL it was handed, after authentication.
+    handler: (_request, ctx) => {
+      ctx.url.searchParams.delete('org');
+      ctx.headers.set('link', successorLink('/_x/query/case-list'));
+      return seenActor();
+    },
+  },
 ];
 
 const tenant = (over: Partial<BearerMountTenant> = {}): BearerMountTenant => ({
@@ -82,6 +93,7 @@ const tenant = (over: Partial<BearerMountTenant> = {}): BearerMountTenant => ({
 const pipelineFor = (
   mountTenant: BearerMountTenant | null = tenant(),
   config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false }),
+  mountLimit?: BearerMountRateLimit,
 ) =>
   httpPipeline({
     table: httpRouter([
@@ -90,7 +102,7 @@ const pipelineFor = (
         prefix: '/v1',
         routes: api,
         scopes: {
-          'cases:read': ['caseList', 'oldCaseList'],
+          'cases:read': ['caseList', 'oldCaseList', 'oldCaseFeed'],
           'cases:write': ['createCase', 'renameCase'],
         },
         resolveToken: (token) =>
@@ -100,9 +112,12 @@ const pipelineFor = (
               ? { actor: person, scopes: new Set(['cases:read', 'cases:write']) }
               : token === 'tok-other'
                 ? { actor: other, scopes: new Set(['cases:read']) }
-                : null,
+                : token === 'tok-none'
+                  ? { actor: other, scopes: new Set<string>() }
+                  : null,
         ...(mountTenant === null ? {} : { tenant: mountTenant }),
         rateLimitStore: memoryRateLimitStore(),
+        ...(mountLimit === undefined ? {} : { rateLimit: mountLimit }),
       }),
     ]),
     config,
@@ -192,6 +207,27 @@ describe('bearerMount({ tenant })', () => {
     const atCap = 'x'.repeat(256);
     expect((await answer(pipeline, call('GET', `/v1/case-list?org=${atCap}`))).status).toBe(200);
     expect(asked).toEqual([atCap]);
+    // The cap is in characters: 256 astral code points are 512 UTF-16 units, and still asked.
+    const astral = '\u{1F600}'.repeat(256);
+    const named = `/v1/case-list?org=${encodeURIComponent(astral)}`;
+    expect((await answer(pipeline, call('GET', named))).status).toBe(200);
+    expect(asked).toEqual([atCap, astral]);
+  });
+
+  test('resolve is asked only after the per-token allowance: an exhausted token is 429, unasked', async () => {
+    const asked: string[] = [];
+    const spied = tenant({
+      resolve: ({ person: who, value }) => {
+        asked.push(value);
+        return agentActor({ id: who.id, orgId: value, roles: ['admin'] });
+      },
+    });
+    const pipeline = pipelineFor(spied, undefined, { limit: 1, windowMs: 60_000 });
+    expect((await answer(pipeline, call('GET', '/v1/case-list?org=org_a'))).status).toBe(200);
+    const exhausted = await answer(pipeline, call('GET', '/v1/case-list?org=org_a'));
+    expect(exhausted.status).toBe(429);
+    expect(exhausted.body['code']).toBe('X_RATE_LIMITED');
+    expect(asked).toEqual(['org_a']);
   });
 
   test('a successor link keeps the tenant the call named, so following it as given works', async () => {
@@ -204,7 +240,16 @@ describe('bearerMount({ tenant })', () => {
       { role: 'web' },
     );
     expect(response.status).toBe(200);
-    expect(response.headers.get('link')).toBe(successorLink('/v1/case-list?org=org%20a%26b'));
+    const link = response.headers.get('link') ?? '';
+    expect(link).toBe('</v1/case-list?org=org%20a%26b>; rel="successor-version"');
+    // Followed as given, with the same token, the successor acts in the tenant the call named.
+    const followed = await answer(pipelineFor(anyTenant), call('GET', successorPathOf(link) ?? ''));
+    expect(followed).toMatchObject({ status: 200, body: { orgId: 'org a&b' } });
+    // The tenant authenticated, not whatever the handler left in the URL afterwards.
+    const stripped = await pipelineFor().handle(call('GET', '/v1/old-case-feed?org=org_a'), {
+      role: 'web',
+    });
+    expect(stripped.headers.get('link')).toBe('</v1/case-list?org=org_a>; rel="successor-version"');
     const plain = await pipelineFor(null).handle(call('GET', '/v1/old-case-list'), {
       role: 'web',
     });
@@ -270,6 +315,11 @@ describe('bearerMount({ tenant })', () => {
       status: 200,
       body: { tenants: [{ value: 'org_c' }] },
     });
+    // No scope at all still lists: discovery is not any primitive's scope.
+    expect(await answer(pipelineFor(), call('GET', '/v1/tenants', 'tok-none'))).toEqual({
+      status: 200,
+      body: { tenants: [{ value: 'org_c' }] },
+    });
     const anonymous = await pipelineFor().handle(new Request('http://localhost/v1/tenants'), {
       role: 'web',
     });
@@ -277,13 +327,28 @@ describe('bearerMount({ tenant })', () => {
   });
 
   test('a listed value no call could send back is X_BEARER_TENANT_LIST_INVALID, never published', async () => {
-    for (const value of ['', 'x'.repeat(257)]) {
-      const lying = tenant({ list: () => [{ value: 'org_a' }, { value }] });
+    // Empty, past the cap, a lone surrogate (no call can encode it), and no string at all.
+    const unsendable: readonly unknown[] = ['', 'x'.repeat(257), 'org_\uD800', []];
+    for (const value of unsendable) {
+      const lying = tenant({ list: () => [{ value: 'org_a' }, { value: value as string }] });
       const refused = await answer(pipelineFor(lying), call('GET', '/v1/tenants'));
       expect(refused.status).toBe(500);
       expect(refused.body['code']).toBe('X_BEARER_TENANT_LIST_INVALID');
       expect(JSON.stringify(refused.body)).not.toContain('org_a');
     }
+    // The cap counts characters, so 256 astral ones are listed.
+    const astral = '\u{1F600}'.repeat(256);
+    const wide = await answer(
+      pipelineFor(tenant({ list: () => [{ value: astral }] })),
+      call('GET', '/v1/tenants'),
+    );
+    expect(wide).toEqual({ status: 200, body: { tenants: [{ value: astral }] } });
+  });
+
+  test('isTenantValue is the listing rule an app filters with', () => {
+    expect(['org_a', 'x'.repeat(256), '\u{1F600}'].every(isTenantValue)).toBe(true);
+    const refused: readonly unknown[] = ['', 'x'.repeat(257), '\uDC00', 'a\uD800b', [], 7, null];
+    expect(refused.filter(isTenantValue)).toEqual([]);
   });
 
   test('the tenant is the rate-limit subject: one tenant spent leaves another its allowance', async () => {

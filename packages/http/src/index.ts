@@ -22,7 +22,7 @@ export type {
 } from './bearer-mount';
 export { bearerMount, bearerTokenOf, mountedPath } from './bearer-mount';
 export type { BearerMountTenant, BearerTenantEntry } from './bearer-mount-tenant';
-export { TENANTS_SEGMENT } from './bearer-mount-tenant';
+export { isTenantValue, MAX_TENANT_VALUE, TENANTS_SEGMENT } from './bearer-mount-tenant';
 /** One `Range:` reader for every route that answers bytes — `/_storage`, site assets, a download. */
 export type { RequestedRange } from './byte-range';
 export { byteWindow, contentRangeOf, parseByteRange, RANGE_UNSATISFIABLE } from './byte-range';

@@ -309,7 +309,7 @@ function scopedBearerScheme(
     ...BEARER_SECURITY_SCHEME,
     description: [
       BEARER_SECURITY_SCHEME.description,
-      'Each operation lists the one scope a token needs in its security requirement; a token without it is answered 404.',
+      'Each mounted primitive operation lists the one scope a token needs in its security requirement; a token without it is answered 404.',
       ...(listing === undefined
         ? []
         : [

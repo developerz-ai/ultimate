@@ -10,8 +10,29 @@ import { bearerMountInvalid, HttpError } from './errors';
 /** The listing's path segment under the prefix: `GET /v1/tenants`. */
 export const TENANTS_SEGMENT = '/tenants';
 
-/** A value longer than this names no tenant anyone issues; answered as a non-member, unasked. */
+/**
+ * A value longer than this many characters (code points, JSON Schema's `maxLength` unit) names no
+ * tenant anyone issues; answered as a non-member, unasked.
+ */
 export const MAX_TENANT_VALUE = 256;
+
+/**
+ * A lone UTF-16 surrogate: `encodeURIComponent` throws on it and `URLSearchParams` sends U+FFFD in
+ * its place, so no call can name it. Spelled out because `String#isWellFormed` is ES2024 and the lib
+ * is ES2023.
+ */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/** 1 to `MAX_TENANT_VALUE` code points; the UTF-16 bound first, so a huge value is never spread. */
+const withinTenantLength = (value: string): boolean =>
+  value !== '' && value.length <= MAX_TENANT_VALUE * 2 && [...value].length <= MAX_TENANT_VALUE;
+
+/**
+ * A value a call can name its tenant by and be resolved for: a well-formed string of 1 to
+ * `MAX_TENANT_VALUE` characters. What every `tenant.list` value must be.
+ */
+export const isTenantValue = (value: unknown): value is string =>
+  typeof value === 'string' && !LONE_SURROGATE.test(value) && withinTenantLength(value);
 
 /**
  * A tenant mount's call named no tenant. The fix is the caller's: the listing route every valid
@@ -38,20 +59,22 @@ export const bearerTenantUnresolved = (cause: string, thrown?: unknown): HttpErr
 
 /**
  * `tenant.list` answered a value no call could send back: empty is `X_BEARER_TENANT_REQUIRED`, past
- * `MAX_TENANT_VALUE` a non-member. Refused whole rather than filtered, so the lookup gets fixed.
+ * `MAX_TENANT_VALUE` a non-member, a lone surrogate unsendable, a non-string no value at all.
+ * Refused whole rather than filtered, so the lookup gets fixed.
  */
 export const bearerTenantListInvalid = (cause: string): HttpError =>
   new HttpError({
     code: 'X_BEARER_TENANT_LIST_INVALID',
     cause,
-    fix: `tenant: { list: async ({ person }) => (await tenantsOf(person)).filter((entry) => entry.value !== '' && entry.value.length <= ${MAX_TENANT_VALUE}) }   // in defineApi({ http: { mounts } }) — every listed value is one a call can name`,
+    fix: `tenant: { list: async ({ person }) => (await tenantsOf(person)).filter((entry) => isTenantValue(entry.value)) }   // isTenantValue from '@ultimat3/http', in defineApi({ http: { mounts } }) — every listed value is a well-formed string of 1 to ${MAX_TENANT_VALUE} characters`,
   });
 
 /** One tenant the person may act in, as `GET <prefix>/tenants` lists it. */
 export interface BearerTenantEntry {
   /**
-   * What a call sends as `?<arg>=<value>`: 1 to 256 characters, the range a call is resolved for.
-   * A listing outside it is `X_BEARER_TENANT_LIST_INVALID`.
+   * What a call sends as `?<arg>=<value>`: 1 to 256 characters (code points) with no lone
+   * surrogate, the range a call is resolved for (`isTenantValue`). A listing outside it is
+   * `X_BEARER_TENANT_LIST_INVALID`.
    */
   readonly value: string;
   /** A label for whoever is choosing between them. */
@@ -103,7 +126,7 @@ export async function tenantActorOf(
 ): Promise<Actor | null> {
   const value = url.searchParams.get(tenant.arg);
   if (value === null || value === '') throw bearerTenantRequired(prefix, tenant.arg);
-  if (value.length > MAX_TENANT_VALUE) return null;
+  if (!withinTenantLength(value)) return null;
   let actor: Actor | null;
   try {
     actor = await tenant.resolve({ person, value });
@@ -133,15 +156,10 @@ export async function tenantListing(
   person: Actor,
 ): Promise<{ readonly tenants: readonly BearerTenantEntry[] }> {
   const listed = await tenant.list({ person });
-  const unusable = listed.filter(
-    (entry) =>
-      typeof entry.value !== 'string' ||
-      entry.value === '' ||
-      entry.value.length > MAX_TENANT_VALUE,
-  ).length;
+  const unusable = listed.filter((entry) => !isTenantValue(entry.value)).length;
   if (unusable > 0) {
     throw bearerTenantListInvalid(
-      `tenant.list answered ${unusable} value(s) that are not 1 to ${MAX_TENANT_VALUE} characters`,
+      `tenant.list answered ${unusable} value(s) that are not well-formed strings of 1 to ${MAX_TENANT_VALUE} characters`,
     );
   }
   return {
