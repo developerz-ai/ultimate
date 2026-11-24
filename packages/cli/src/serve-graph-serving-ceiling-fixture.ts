@@ -372,5 +372,6 @@
  * `MIGRATE_CEILING`, `http/src/bearer-mount-tenant.ts`.
  * raised 1570 → 1571, measured 1571 (2026-11-23, sign-in by mailed link): `auth/src/link-login.ts`
  * (`signInWithLink`: a consumed link to a session or the second-factor challenge), on the auth barrel.
+ * raised 1571 → 1572, measured 1572 (2026-11-24, passkey label): `auth/src/passkey-label.ts` — `renamePasskey` and the label reader, on the auth barrel).
  */
-export const SERVING_ROLE_CEILING = 1571;
+export const SERVING_ROLE_CEILING = 1572;

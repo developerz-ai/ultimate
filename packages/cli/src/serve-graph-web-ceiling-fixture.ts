@@ -323,5 +323,6 @@
  * `SERVING_ROLE_CEILING`, `http/src/bearer-mount-tenant.ts`. Nothing web-only.
  * raised 1773 → 1774, measured 1774 (2026-11-23, sign-in by mailed link): `auth/src/link-login.ts`, the
  * one on `SERVING_ROLE_CEILING`. Nothing web-only.
+ * raised 1774 → 1775, measured 1775 (2026-11-24, passkey label): the one on `SERVING_ROLE_CEILING`, `auth/src/passkey-label.ts`).
  */
-export const WEB_ROLE_CEILING = 1774;
+export const WEB_ROLE_CEILING = 1775;
