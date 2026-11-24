@@ -62,10 +62,41 @@ const closeHole = (): void => {
 const Press = island({ src: './press.island.tsx' });
 const Late = island({ src: './late.island.tsx' });
 
+// A foreign failure handed to the renderer: test input, never its verdict.
+const READ_FAILED = new TypeError('the read under the hole failed');
+
+/** Set by a test: the held read then fails, and the hole shows its error branch. */
+let failing = false;
+/** Waiting for the client to cancel a streamed answer, by path. */
+const cancels = new Map<string, () => void>();
+const cancelOf = (path: string): Promise<void> =>
+  new Promise<void>((resolve) => {
+    cancels.set(path, resolve);
+  });
+
 /** Under the hole: waits on the test, then renders an island the first flush knew nothing of. */
 const HeldRead = async (): Promise<unknown> => {
   await gate;
+  if (failing) throw READ_FAILED;
   return h('section', { id: 'filled' }, h(Late, {}, 'late island shell'));
+};
+
+/** The answer, passed through unchanged, noting when the client cancels its body. */
+const watched = (path: string, response: Response): Response => {
+  if (response.body === null) return response;
+  const reader = response.body.getReader();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+    cancel(reason) {
+      cancels.get(path)?.();
+      return reader.cancel(reason);
+    },
+  });
+  return new Response(body, response);
 };
 
 // At file scope: a skipped suite's hooks do not run, and the registry is process-global.
@@ -100,7 +131,15 @@ describe.skipIf(noBrowser)('stream · a hole open, in a browser, under the enfor
           'main',
           {},
           h(Press, {}, h('button', { id: 'press', type: 'button' }, 'press me')),
-          h(Hole, { fallback: h('p', { id: 'waiting' }, 'waiting') }, h(HeldRead as never, {})),
+          h('a', { id: 'back', href: '/before' }, 'back'),
+          h(
+            Hole,
+            {
+              fallback: h('p', { id: 'waiting' }, 'waiting'),
+              error: h('p', { id: 'failed' }, 'could not load'),
+            },
+            h(HeldRead as never, {}),
+          ),
         )) as never,
     });
     registerRoute({
@@ -150,7 +189,11 @@ describe.skipIf(noBrowser)('stream · a hole open, in a browser, under the enfor
         },
       }),
     });
-    server = Bun.serve({ port: 0, fetch: (request) => pipeline.fetch(request) });
+    server = Bun.serve({
+      port: 0,
+      fetch: async (request) =>
+        watched(new URL(request.url).pathname, await pipeline.fetch(request)),
+    });
     base = `http://localhost:${String(server.port)}`;
     lease = leaseE2eBrowser('cli:stream-hole', () =>
       required ? openE2eBrowser() : openE2eBrowserIfAvailable(),
@@ -209,19 +252,42 @@ describe.skipIf(noBrowser)('stream · a hole open, in a browser, under the enfor
     TIMEOUT_MS,
   );
 
+  /** A fresh `/before`, marked, with the router listening: a full load is what loses the mark. */
+  const before = async (): Promise<void> => {
+    await tab.goto(`${base}/before`);
+    await tab.waitFor('window.__xNavigation !== undefined', 'the router to start', WAIT_MS);
+    await tab.evaluate('window.__kept = "same-document"');
+  };
+
+  const holdHole = (): void => {
+    failing = false;
+    gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+  };
+
   test(
-    'a soft visit waits for the whole answer, then its holes fill and its islands hydrate',
+    'a soft visit paints its shell while the hole is open; the hole then fills and hydrates',
     async () => {
-      gate = Promise.resolve();
-      await tab.goto(`${base}/before`);
-      await tab.waitFor('window.__xNavigation !== undefined', 'the router to start', WAIT_MS);
-      await tab.evaluate('window.__kept = "same-document"');
+      holdHole();
+      await before();
       await tab.pointerClick('#go');
       await tab.waitFor(
-        'document.getElementById("filled") !== null',
-        'the swapped document’s hole to fill through its re-run scripts',
+        'document.title === "streamed" && document.getElementById("waiting") !== null',
+        'the shell to be swapped in with the hole still open',
         WAIT_MS,
       );
+      expect(await tab.evaluate('document.getElementById("filled") === null')).toBe(true);
+      await tab.pointerClick('#press');
+      await tab.waitFor(
+        'document.getElementById("press").textContent === "answered"',
+        'the shell island to answer while the hole is open',
+        WAIT_MS,
+      );
+
+      closeHole();
+      await tab.waitFor('document.getElementById("filled") !== null', 'the hole to fill', WAIT_MS);
+      expect(await tab.evaluate('document.getElementById("waiting") === null')).toBe(true);
       expect(await tab.evaluate('document.querySelector("template[data-x-hole]") === null')).toBe(
         true,
       );
@@ -230,13 +296,47 @@ describe.skipIf(noBrowser)('stream · a hole open, in a browser, under the enfor
         'the hole’s island to hydrate after the swap',
         WAIT_MS,
       );
-      await tab.pointerClick('#press');
+      // The same document all along: a full load would have proved none of the above.
+      expect(await tab.evaluate('window.__kept')).toBe('same-document');
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    'a failed hole shows its error branch after a soft visit, not a blank box',
+    async () => {
+      holdHole();
+      failing = true;
+      await before();
+      await tab.pointerClick('#go');
+      await tab.waitFor('document.getElementById("waiting") !== null', 'the shell', WAIT_MS);
+      closeHole();
       await tab.waitFor(
-        'document.getElementById("press").textContent === "answered"',
-        'the shell island to answer after the swap',
+        'document.getElementById("failed")?.textContent === "could not load"',
+        'the hole’s error branch',
         WAIT_MS,
       );
-      // The same document all along: a full load would have proved none of the above.
+      expect(await tab.evaluate('document.getElementById("waiting") === null')).toBe(true);
+      expect(await tab.evaluate('window.__kept')).toBe('same-document');
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    'a second navigation cancels the first one’s open holes: nothing of it lands',
+    async () => {
+      holdHole();
+      await before();
+      await tab.pointerClick('#go');
+      await tab.waitFor('document.getElementById("waiting") !== null', 'the shell', WAIT_MS);
+      const cut = cancelOf('/streamed');
+      await tab.pointerClick('#back');
+      await tab.waitFor('document.title === "before"', 'the second page', WAIT_MS);
+      // The server hears it: the open hole's request is cancelled, so its work stops. Never
+      // cancelled, this waits out the test's own deadline, which names it.
+      await cut;
+      closeHole();
+      expect(await tab.evaluate('document.getElementById("filled") === null')).toBe(true);
       expect(await tab.evaluate('window.__kept')).toBe('same-document');
     },
     TIMEOUT_MS,

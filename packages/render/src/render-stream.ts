@@ -22,7 +22,7 @@ import {
 } from '@ultimat3/core';
 import { finiteStatus } from './finite-status';
 import type { RenderResult } from './route';
-import { REVEAL_BODY, REVEAL_CALL } from './stream-scripts';
+import { REVEAL_BODY, REVEAL_CALL, STREAM_FLUSH_MARK } from './stream-scripts';
 
 export interface StreamHole {
   /** Stable within a response; becomes the DOM id, so keep it short. */
@@ -233,8 +233,12 @@ export function renderStreamHtml(
         controller.close();
       };
 
-      // No holes, no reveal script: a page that streams nothing pays nothing.
-      write(plan.head + (plan.holes.length > 0 ? REVEAL_SCRIPT : '') + plan.shell);
+      // No holes, no reveal script and no mark: a page that streams nothing pays nothing.
+      write(
+        plan.holes.length > 0
+          ? plan.head + REVEAL_SCRIPT + plan.shell + STREAM_FLUSH_MARK
+          : plan.head + plan.shell,
+      );
 
       let pending = plan.holes.length;
       if (pending === 0) {
@@ -268,7 +272,7 @@ export function renderStreamHtml(
           if (revealed) return;
           revealed = true;
           if (timer !== undefined) clearTimeout(timer);
-          write(revealChunk(hole.id, html, after));
+          write(revealChunk(hole.id, html, after) + STREAM_FLUSH_MARK);
           settle();
         };
         const failed = (): string => hole.error ?? fallbackOf(errorFallback, hole.id);

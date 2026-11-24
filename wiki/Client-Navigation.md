@@ -66,7 +66,8 @@ An opted-in document (every page of the surface except a `'document'` one) carri
 | `<script src="/_x/assets/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
 | `<meta name="ultimate-modals" content='{"routes":[…],"close":"…","loading":"…"}'>` | only on a surface with a `'modal'` route: the modal patterns, most specific first, with `!<pattern>` for a page that outranks one (`/runs/new/peek` over `/runs/:id/peek`), and the frame's two words in the document's locale (`ui.close`, `ui.loading` — override them in the app's catalog). What lets a click open the dialog before the answer ([Modals](#opening-on-the-click)) |
 
-**Budget:** the router is 27,845 B minified (10,094 B gzip) `As of 29.1.0` — 24,448 B (9,028 B
+**Budget:** the router is 31,894 B minified (11,508 B gzip) `As of 2026-11` — 29,955 B (10,817 B
+gzip) before a soft visit read as it streams (+1,939 B); 27,845 B (10,094 B gzip) at 29.1.0, 24,448 B (9,028 B
 gzip) before the modal that opens on the click and its popover opening (+3,397 B), and 19,966 B
 before route-presented modals and navigating from code (+4,092 B, 26.1.0). It is **charged** to
 every route on the surface, like realtime's page boot, because it is interactivity the app opted
@@ -175,6 +176,16 @@ In one order, so no frame is unstyled and no island runs twice:
    full load would), never when the current head already has it (the theme boot, on every page);
    one only the previous page had is removed. Every inline script, head or body, still needs its
    CSP hash — the router re-inserts the same text, and the policy judges it as on a full load.
+
+**A `stream` page paints before its slowest hole** (`As of 2026-11`). A soft visit reads the
+answer as it arrives: the swap above runs once the shell is in (the server ends it with a flush
+mark), with each hole's fallback on screen, and `ultimate:navigated` fires then. Each hole's chunk
+is appended to the body as it lands and its scripts run — the `$X()` reveal and the hole's own
+islands — so a hole fills, or shows its `error` markup, as on a full load. The next swap, or
+`stop()`, cancels the request, and the server stops the holes' work: nothing of a page left lands
+in the next one. A stream that breaks under the page on screen is loaded for real (a GET) or
+reported as `ultimate:navigation-error` (a POST). A prefetch still reads the whole answer; a modal
+is shown whole. Measured: [Known gaps](Known-Gaps).
 
 Inside `document.startViewTransition` when the browser has it and `prefers-reduced-motion` is not
 `reduce`. Style the transition with the standard `::view-transition-*` pseudo-elements. While it
@@ -516,6 +527,7 @@ names and attributes are exported from `@ultimat3/render` (`NAVIGATE_EVENT`,
 | the server gate and the redirect hand-over, counting handler runs | `packages/http/src/navigation.test.ts` |
 | speculation rules: which pages are candidates, the tag on a router-less document only, the CSP hash of the served bytes | `packages/cli/src/page-speculation.test.ts`, `packages/render/src/speculation-rules.test.ts` |
 | real pages: prefetch and `'document'` run no `load`, another principal or app is refused, a misplaced key refuses the boot | `packages/cli/src/page-navigation.test.ts` |
+| a soft visit to a `stream` page: the shell before an open hole, the hole filling and hydrating, its error branch, a second navigation cancelling the first | `packages/cli/e2e/stream-hole.e2e.test.ts`, `packages/render/src/navigation-stream.test.ts` |
 | writes announced after they settle | `packages/core/src/client-writes.test.ts` |
 | in a real Chrome, through the real pipeline under an enforced CSP: every rule above, counted in route executions | `packages/cli/e2e/client-navigation-*.e2e.test.ts` |
 | the reference app, opted in: real pages, sign-out, a like after a round trip, the editor as a modal over the feed, scripting off | `examples/dummy/apps/web/e2e/client-navigation.e2e.test.ts` |

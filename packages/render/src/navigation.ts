@@ -51,6 +51,7 @@ import {
   responseVerdict,
 } from './navigation-rules';
 import { scrollKeeper } from './navigation-scroll';
+import { drain, fillHoles, type PageRest } from './navigation-stream';
 import {
   documentHead,
   loadStylesheets,
@@ -116,6 +117,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   let untrusted = false;
   let backing = false; // a Back this router started is traversing: the URL is still the one left
   let inflight: AbortController | undefined;
+  /** The page on screen still filling its holes; aborted by the next swap and by `stop()`. */
+  let filling: AbortController | undefined;
   const live = announcer(doc);
   const owned = documentHead(doc);
   notePersisted(doc);
@@ -200,6 +203,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       () => doc.documentElement.setAttribute(NAVIGATING_ATTRIBUTE, ''),
       NAVIGATION_PROGRESS_DELAY_MS,
     );
+    /** A streamed answer's rest no page took: cancelled on the way out, so its request ends. */
+    let unread: PageRest | null = null;
     try {
       let answer: Answer;
       try {
@@ -211,6 +216,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         else failed(url, method, 'the request failed on the network');
         return;
       }
+      unread = answer.rest;
       if (mine.signal.aborted) return;
       const next =
         answer.html === null ? null : new DOMParser().parseFromString(answer.html, 'text/html');
@@ -275,7 +281,14 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
           }
         }
         if (shown === 'modal') {
-          await modal.present(next, addressOf(landed), landed, modalHistory(method, history));
+          // A modal is shown whole: its holes are read to the end first.
+          let whole = next;
+          if (unread !== null) {
+            const rest = await drain(unread);
+            if (mine.signal.aborted) return;
+            whole = new DOMParser().parseFromString(`${answer.html ?? ''}${rest}`, 'text/html');
+          }
+          await modal.present(whole, addressOf(landed), landed, modalHistory(method, history));
           doc.dispatchEvent(new CustomEvent(NAVIGATED_EVENT, { detail: { url: landed } }));
           return;
         }
@@ -294,6 +307,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
           () => {
             // A newer navigation started while the sheets loaded: this answer is no longer asked for.
             if (mine.signal.aborted) return;
+            // The page leaving stops reading its holes: nothing of it lands in this one.
+            filling?.abort();
             swapped = swapDocument(doc, next, owned, sheetsLoaded);
             // Emptied here and filled after the scripts, so a page with the same title still reads out.
             if (hold === undefined) live.textContent = '';
@@ -321,6 +336,10 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         landFocus(doc, live, hold);
         doc.dispatchEvent(new CustomEvent(NAVIGATED_EVENT, { detail: { url: landed } }));
         reconcile();
+        if (unread !== null) {
+          fill(unread, landed, method);
+          unread = null;
+        }
       } catch {
         // A swap that failed part-way leaves a page nobody rendered: a GET is loaded for real; a
         // POST's answer cannot be asked for again, so the visitor is told and shown this page.
@@ -328,6 +347,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         else failed(url, method, 'the answer could not be shown');
       }
     } finally {
+      unread?.cancel();
       win.clearTimeout(progress);
       if (inflight === mine) {
         inflight = undefined;
@@ -338,6 +358,21 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       }
     }
   };
+
+  /**
+   * The holes of the page just shown, filled as they arrive: the shell painted without them. A
+   * stream that breaks under the page is a page nobody rendered — a GET is loaded for real, a POST
+   * (never re-sent) is reported. One the next swap cut short is nobody's failure.
+   */
+  function fill(rest: PageRest, landed: string, method: 'GET' | 'POST'): void {
+    const own = new AbortController();
+    filling = own;
+    fillHoles(doc, rest, ran, own.signal).catch(() => {
+      if (own.signal.aborted) return;
+      if (method === 'GET') win.location.assign(landed);
+      else failed(landed, method, 'the answer could not be shown');
+    });
+  }
 
   /**
    * The modal follows the URL's hash, once the page on screen is the URL's: opened (fetched, as a
@@ -395,6 +430,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     closeModal: () => modal.close(),
     stop() {
       stopListening();
+      filling?.abort();
       modal.dismiss();
       scroll.stop();
       tabs.stop();
