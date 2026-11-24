@@ -59,6 +59,8 @@ export async function markConsoleStart(page: PageLike): Promise<void> {
  */
 export async function consoleMessages(page: PageLike): Promise<readonly E2eConsoleMessage[]> {
   const port = portOf(page, 'consoleMessages', 'consoleMessages');
+  // Without a reset the log is the whole tab's, and a previous test's error would fail this one.
+  portOf(page, 'consoleMessages', 'clearConsole');
   await port.evaluate('0');
   return port.consoleMessages?.() ?? [];
 }

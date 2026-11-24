@@ -1,12 +1,18 @@
 // One tab's console over a raw CDP session: every `Runtime.consoleAPICalled` and
 // `Runtime.exceptionThrown` its session, or a cross-site frame attached under it, sends — kept
-// since the last `clear()`, newest `CONSOLE_KEEP` at most, until the tab closes.
+// since the last `clear()`, bounded in lines and in characters per line, until the tab closes.
 
 import type { CdpConnection } from '@ultimat3/scraping/cdp';
 import type { E2eConsoleLevel, E2eConsoleMessage } from './e2e-console';
 
 /** The most lines one capture holds: a tab nobody clears logs for a whole suite. */
 export const CONSOLE_KEEP = 1_000;
+
+/** The most characters one line keeps, so the bound above is a bound on memory too. */
+export const CONSOLE_LINE_CHARS = 2_000;
+
+const clipped = (text: string): string =>
+  text.length > CONSOLE_LINE_CHARS ? `${text.slice(0, CONSOLE_LINE_CHARS)}…` : text;
 
 export interface ConsoleCapture {
   messages(): readonly E2eConsoleMessage[];
@@ -45,9 +51,13 @@ export function captureConsole(connection: CdpConnection, sessionId: string): Co
   // The tab's own session and the out-of-process frames attached under it: a cross-site iframe
   // reports its console on its own session, and its errors are this page's errors.
   const sessions = new Set([sessionId]);
+  // Past the bound the oldest NON-error goes first, so an error is never what makes room while
+  // anything else is held: `expectNoConsoleErrors` keeps its verdict on a noisy page.
   const keep = (message: E2eConsoleMessage): void => {
-    messages.push(message);
-    if (messages.length > CONSOLE_KEEP) messages.splice(0, messages.length - CONSOLE_KEEP);
+    messages.push({ ...message, text: clipped(message.text) });
+    if (messages.length <= CONSOLE_KEEP) return;
+    const quieter = messages.findIndex((held) => held.level !== 'error');
+    messages.splice(quieter === -1 ? 0 : quieter, 1);
   };
   const offs = [
     connection.on('Target.attachedToTarget', (params, on) => {

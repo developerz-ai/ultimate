@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { CdpConnection, CdpEventListener, CdpResult } from '@ultimat3/scraping/cdp';
-import { CONSOLE_KEEP } from './cdp-console-capture';
+import { CONSOLE_KEEP, CONSOLE_LINE_CHARS } from './cdp-console-capture';
 import { cdpE2eTab } from './cdp-e2e-page';
 
 interface Call {
@@ -206,6 +206,23 @@ describe('cdpE2eTab · console', () => {
     const kept = tab.consoleMessages?.() ?? [];
     expect(kept).toHaveLength(CONSOLE_KEEP);
     expect(kept[0]?.text).toBe('6');
+  });
+
+  test('past the bound an error outlives the noise, and a huge line is clipped', () => {
+    const { connection, emit } = fakeConnection();
+    const tab = tabOn(connection);
+    emit(
+      'Runtime.consoleAPICalled',
+      { type: 'error', args: [{ value: 'x'.repeat(5_000) }] },
+      'session-1',
+    );
+    for (let n = 0; n < CONSOLE_KEEP * 2; n += 1) {
+      emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: String(n) }] }, 'session-1');
+    }
+    const kept = tab.consoleMessages?.() ?? [];
+    expect(kept).toHaveLength(CONSOLE_KEEP);
+    expect(kept[0]?.level).toBe('error');
+    expect(kept[0]?.text).toHaveLength(CONSOLE_LINE_CHARS + 1);
   });
 
   test('close stops listening', async () => {

@@ -15,7 +15,7 @@ import {
 import type { PageLike } from './test-types';
 
 /** A port with both members, or without the one `missing` names, as a hand-rolled port may be. */
-const portWith = (missing?: 'press' | 'consoleMessages') => {
+const portWith = (missing?: 'press' | 'consoleMessages' | 'clearConsole') => {
   const pressed: string[] = [];
   const evaluated: string[] = [];
   const messages: E2eConsoleMessage[] = [];
@@ -85,9 +85,11 @@ describe('consoleMessages', () => {
     expect(evaluated).toHaveLength(2);
   });
 
-  test('a port with no consoleMessages() refuses by name', async () => {
-    const { page } = portWith('consoleMessages');
-    expect(await codeOf(() => consoleMessages(page))).toBe('X_TEST_FIXTURE_UNAVAILABLE');
+  test('a port with no consoleMessages(), or none to clear it per test, refuses by name', async () => {
+    for (const missing of ['consoleMessages', 'clearConsole'] as const) {
+      const { page } = portWith(missing);
+      expect(await codeOf(() => consoleMessages(page))).toBe('X_TEST_FIXTURE_UNAVAILABLE');
+    }
   });
 });
 
