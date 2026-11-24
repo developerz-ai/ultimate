@@ -23,6 +23,7 @@ import {
 import { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
 import { entity } from './entity';
 import { iff, invariantColumns } from './expr';
+import { allOf } from './expr-connectives';
 import { clearRegistry } from './registry';
 
 afterAll(() => {
@@ -118,6 +119,8 @@ const SITES: readonly (readonly [string, () => unknown])[] = [
   ['invariant matches construct', () => c.slug.matches(/\bfoo/)],
   // A column list where a predicate belongs — the one operand `iff` cannot render.
   ['invariant iff unique', () => iff(c.unique(['slug']), c.title.isNotNull())],
+  // A connective over one operand combines nothing: the second condition was left out.
+  ['invariant connective of one', () => allOf(c.title.isNotNull())],
   // `col >= NaN` names a column Postgres does not have, so the bound is refused where written.
   ['invariant non-finite operand', () => c.slug.atLeast(Number.NaN)],
   ['searchable kind', () => uuid().searchable()],
