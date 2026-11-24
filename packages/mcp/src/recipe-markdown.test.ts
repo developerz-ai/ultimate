@@ -44,6 +44,7 @@ describe('recipeFromMarkdown: aliases', () => {
     expect(aliasesOf('refund, money back')).toEqual(['refund', 'money back']);
     expect(aliasesOf('[reimburse, "credit note"]')).toEqual(['reimburse', 'credit note']);
     expect(aliasesOf('"credit note" policy, refunds')).toEqual(['"credit note" policy', 'refunds']);
+    expect(aliasesOf("customer's invoice, refund")).toEqual(["customer's invoice", 'refund']);
   });
 });
 
@@ -52,5 +53,9 @@ describe('recipeFromMarkdown: body', () => {
     expect(recipeFromMarkdown('x', '\n\n    echo hi\n\nAfter.\n\n\n').body).toBe(
       '    echo hi\n\nAfter.\n',
     );
+    // An unclosed fence's last line keeps its trailing spaces; only blank lines go.
+    expect(recipeFromMarkdown('x', '```\nkeep  \n  \n\n').body).toBe('```\nkeep  \n');
+    // A no-break space is content, not blank: only spaces and tabs make a line blank.
+    expect(recipeFromMarkdown('x', '\n\u00a0\nText.\n\n').body).toBe('\u00a0\nText.\n');
   });
 });

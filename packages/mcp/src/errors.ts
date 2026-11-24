@@ -121,7 +121,8 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_RECIPE_UNKNOWN: 'an error links to a docs://recipes/ URI no recipe serves',
   X_MCP_RECIPE_URI_RESERVED: 'docs://recipes/ is owned by recipes:',
   X_MCP_REMOTE_AUTH_REQUIRED: 'a remote MCP server needs authorization this app does not hold',
-  X_MCP_RECIPE_LINK_DANGLING: 'a recipe links to a docs://<section>/ URI no recipe serves',
+  X_MCP_RECIPE_LINK_DANGLING:
+    "a recipe links to a docs://<section>/ URI no recipe serves, or replay's caller cannot read",
   X_MCP_CONFIRMATION_QUORUM_PENDING:
     'an MCP confirmation needs more approvers before the call runs',
   X_MCP_CONFIRMATION_EVIDENCE_INVALID:

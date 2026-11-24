@@ -57,9 +57,18 @@ export function recipeFromMarkdown(name: string, text: string, section?: string)
     title: fields.get('title') ?? heading ?? name,
     description: fields.get('description') ?? paragraph ?? '',
     steps: fencedCalls(name, body),
-    // Whole blank lines only: a first line's indentation is Markdown (an indented code block).
-    body: body.trim() === '' ? '' : `${body.replace(/^(?:[ \t]*\n)+/, '').trimEnd()}\n`,
+    body: withoutOuterBlankLines(body),
   };
+}
+
+/** Whole blank lines only: a content line's own spaces are Markdown (an indented code block). */
+function withoutOuterBlankLines(body: string): string {
+  const lines = body.split('\n');
+  // Spaces and tabs only: a no-break space is content.
+  const blank = (line: string | undefined) => line !== undefined && /^[ \t]*$/.test(line);
+  while (blank(lines[0])) lines.shift();
+  while (blank(lines.at(-1))) lines.pop();
+  return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
 }
 
 function frontMatter(text: string): {
@@ -81,15 +90,19 @@ function frontMatter(text: string): {
 function aliasList(value: string): readonly string[] {
   const entries: string[] = [];
   let entry = '';
+  let started = false;
   let quote: string | undefined;
   for (const char of value.replace(/^\[(.*)\]$/, '$1')) {
     if (quote === undefined && char === ',') {
       entries.push(entry);
       entry = '';
+      started = false;
       continue;
     }
+    // A quote opens only at an entry's start: `customer's invoice` is one plain alias.
     if (char === quote) quote = undefined;
-    else if (quote === undefined && (char === '"' || char === "'")) quote = char;
+    else if (quote === undefined && (char === '"' || char === "'") && !started) quote = char;
+    if (char.trim() !== '') started = true;
     entry += char;
   }
   entries.push(entry);

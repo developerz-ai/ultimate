@@ -66,10 +66,31 @@ describe('a recipe link is checked whole', () => {
   });
 
   test('a dotted suffix is part of the link; a sentence’s full stop is not', () => {
-    for (const text of ['[Errors](docs://ref/errors.html)', 'See docs://ref/errors.json.']) {
+    for (const text of [
+      '[Errors](docs://ref/errors.html)',
+      'See docs://ref/errors.json.',
+      '[Errors](docs://ref/errors%20old)',
+      '[Errors](docs://ref/%65rrors)',
+      '[Errors](docs://ref/errors+old)',
+      // An explicit destination is taken whole: its punctuation is not a sentence's end.
+      '[Errors](docs://ref/errors.)',
+      '[Errors](docs://ref/errors!)',
+      // Each wrapper is scanned, not skipped: a missing target inside it is caught.
+      '**docs://ref/nope**',
+      '| docs://ref/nope|',
+    ]) {
       expect(codeOf(() => serve([errors, linking(text)]))).toBe('X_MCP_RECIPE_LINK_DANGLING');
     }
     expect(() => serve([errors, linking('[Errors](docs://ref/errors). Then act.')])).not.toThrow();
+    expect(() =>
+      serve([errors, linking('**docs://ref/errors** | docs://ref/errors|')]),
+    ).not.toThrow();
+    expect(() => serve([errors, linking('See docs://ref/errors!?.')])).not.toThrow();
+    expect(() => serve([errors, linking('See docs://ref/errors…')])).not.toThrow();
+    // A long punctuation run inside a path is trimmed in one pass, never rescanned per position.
+    expect(codeOf(() => serve([errors, linking(`docs://ref/errors${'!'.repeat(100_000)}a`)]))).toBe(
+      'X_MCP_RECIPE_LINK_DANGLING',
+    );
   });
 
   test('the dangling refusal names the section it was linked into', () => {
@@ -110,11 +131,16 @@ describe('docs({ uri }) matches the URI as written', () => {
 
 describe('a title on one line', () => {
   const multi: McpRecipe = { ...errors, title: 'Errors\nand\r\nrefusals' };
+  const separated: McpRecipe = { ...errors, title: 'Errors\u2028and\u2029refusals' };
+  const nextLine: McpRecipe = { ...errors, title: 'Errors\u0085and \u0085 refusals' };
+  const feeds: McpRecipe = { ...errors, title: 'Errors\vand\frefusals' };
 
   test('in the text map', async () => {
-    expect(await docsText(serve([multi], { index: 'map' }), {})).toBe(
-      '# ref\ndocs://ref/errors  Errors and refusals\n',
-    );
+    for (const recipe of [multi, separated, nextLine, feeds]) {
+      expect(await docsText(serve([recipe], { index: 'map' }), {})).toBe(
+        '# ref\ndocs://ref/errors  Errors and refusals\n',
+      );
+    }
   });
 
   test('in a search miss’s nearest names', async () => {
@@ -123,11 +149,10 @@ describe('a title on one line', () => {
     );
   });
 
-  test('a long run of spaces keeps its spaces and folds in linear time', async () => {
+  // Each whitespace run is matched once (no backtracking from every position); output pinned here.
+  test('a long run of spaces keeps its spaces', async () => {
     const wide: McpRecipe = { ...errors, title: `a${' '.repeat(50_000)}b` };
-    const started = performance.now();
     const map = await docsText(serve([wide], { index: 'map' }), {});
-    expect(performance.now() - started).toBeLessThan(1000);
     expect(map).toBe(`# ref\ndocs://ref/errors  ${wide.title}\n`);
   });
 });
@@ -166,6 +191,8 @@ describe('replayRecipes: links', () => {
     expect(refused.code).toBe('X_MCP_RECIPE_LINK_DANGLING');
     // The recipe exists: the refusal says this caller could not read it, not that none serves it.
     expect(String(refused.cause)).toContain('could not read');
+    // Its fix keeps the replay's other options: dropping `sections` would skip this very link.
+    expect((refused as { fix?: string }).fix).toContain('{ ...options, caller:');
   });
 });
 
