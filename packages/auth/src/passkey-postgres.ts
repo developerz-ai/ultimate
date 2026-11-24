@@ -49,6 +49,8 @@ const toCredential = (row: Row): PasskeyCredential => ({
   transports: strings(row, 'transports'),
   createdAt: when(row, 'created_at') ?? new Date(0),
   lastUsedAt: when(row, 'last_used_at'),
+  // Absent for none, as the memory store reads: a label is the one optional field of the row.
+  ...(strOrNull(row, 'label') === null ? {} : { label: str(row, 'label') }),
 });
 
 const toChallenge = (row: Row, ceremony: PasskeyCeremony): PasskeyChallengeRecord => ({
@@ -78,17 +80,17 @@ const toEvidence = (row: Row): PasskeyEvidence => ({
 });
 
 /** The members, over a client resolved per call — the adapter's ambient `db()` rule. */
-export function postgresPasskeyStore(client: () => DbClient): PasskeyStore {
+export function postgresPasskeyStore(client: () => DbClient): Required<PasskeyStore> {
   return {
     async putPasskey(credential) {
       let row: Row | null;
       try {
         row = await client().one<Row>(sql`
           insert into x_passkeys (id, user_id, public_key, algorithm, sign_count, transports,
-                                  created_at)
+                                  created_at, label)
           values (${credential.id}, ${credential.userId}, ${credential.publicKey},
                   ${credential.algorithm}, ${credential.signCount}, ${[...credential.transports]},
-                  ${credential.createdAt})
+                  ${credential.createdAt}, ${credential.label ?? null})
           returning *`);
       } catch (error) {
         throw usersUniqueViolation('putPasskey', error) ?? error;
@@ -111,6 +113,13 @@ export function postgresPasskeyStore(client: () => DbClient): PasskeyStore {
          where id = ${id} and sign_count = ${expected}
         returning id`);
       return row !== null;
+    },
+    async renamePasskey(userId, id, label) {
+      const row = await client().one<Row>(sql`
+        update x_passkeys set label = ${label}
+         where id = ${id} and user_id = ${userId}
+        returning *`);
+      return row === null ? null : toCredential(row);
     },
     async deletePasskey(userId, id) {
       const removed = await client().execute(

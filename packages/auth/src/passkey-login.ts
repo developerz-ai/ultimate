@@ -11,6 +11,7 @@ import { acceptAssertion } from './passkey-assertion';
 import { issuePasskeyChallenge, redeemPasskeyChallenge } from './passkey-challenge';
 import { passkeyPolicyOf } from './passkey-config';
 import { refusePasskey } from './passkey-errors';
+import { passkeyLabel } from './passkey-label';
 import { readEnvelope, verifyAttestation } from './passkey-verify';
 import type { PasskeyCreationOptions, PasskeyRequestOptions } from './passkey-wire';
 import { resolveActor } from './policy-bridge';
@@ -19,10 +20,15 @@ import { createSession, sessionCookie } from './session';
 export interface PasskeyLogin {
   /** For a signed-in user adding a passkey: hand the result to `newPasskey` in the browser. */
   registerOptions(input: { readonly userId: string }): Promise<PasskeyCreationOptions>;
-  /** Verifies `newPasskey`'s answer and stores the credential under `userId`. */
+  /**
+   * Verifies `newPasskey`'s answer and stores the credential under `userId`, named `label` when
+   * given (trimmed; `X_PASSKEY_LABEL_INVALID` when blank, past 64 characters or holding a control
+   * character). `renamePasskey` changes it later.
+   */
   register(input: {
     readonly userId: string;
     readonly response: unknown;
+    readonly label?: string | null | undefined;
   }): Promise<PasskeyCredential>;
   /** Usernameless: no account is named, so nothing here enumerates one. */
   loginOptions(): Promise<PasskeyRequestOptions>;
@@ -70,7 +76,9 @@ export function passkeyLogin(auth: Auth): PasskeyLogin {
       };
     },
 
-    async register({ userId, response }) {
+    async register({ userId, response, label }) {
+      // Before the challenge is spent: a refused label leaves the ceremony to run again as sent.
+      const named = passkeyLabel(label);
       const envelope = readEnvelope(policy, response, 'webauthn.create');
       if (!envelope.ok) throw refusePasskey('register', envelope.check);
       const issued = await redeemPasskeyChallenge(auth, 'register', envelope.value.challenge);
@@ -84,6 +92,7 @@ export function passkeyLogin(auth: Auth): PasskeyLogin {
         userId,
         createdAt: auth.clock.now(),
         lastUsedAt: null,
+        ...(named === null ? {} : { label: named }),
       });
     },
 

@@ -15,14 +15,19 @@ const byCreated = <T extends { readonly createdAt: Date; readonly id: string }>(
   a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 /** The members over three maps, as closures — `MemoryAuthAdapter` binds each one as a field. */
-export function memoryPasskeyStore(): PasskeyStore {
+export function memoryPasskeyStore(): Required<PasskeyStore> {
   const passkeys = new Map<string, PasskeyCredential>();
   const challenges = new Map<string, PasskeyChallengeRecord>();
   const evidence = new Map<string, PasskeyEvidence>();
   return {
     async putPasskey(credential) {
       if (passkeys.has(credential.id)) throw authUniqueViolation('putPasskey', 'x_passkeys', 'id');
-      const stored = { ...credential, transports: [...credential.transports] };
+      const { label, ...rest } = credential;
+      const stored: PasskeyCredential = {
+        ...rest,
+        transports: [...credential.transports],
+        ...(label === undefined ? {} : { label }),
+      };
       passkeys.set(credential.id, stored);
       return stored;
     },
@@ -41,6 +46,15 @@ export function memoryPasskeyStore(): PasskeyStore {
     async deletePasskey(userId, id) {
       if (passkeys.get(id)?.userId !== userId) return false;
       return passkeys.delete(id);
+    },
+    async renamePasskey(userId, id, label) {
+      const row = passkeys.get(id);
+      if (row === undefined || row.userId !== userId) return null;
+      // Absent, never `undefined` or `null`: a stored row reads as Postgres' does, field for field.
+      const { label: _previous, ...rest } = row;
+      const renamed: PasskeyCredential = label === null ? rest : { ...rest, label };
+      passkeys.set(id, renamed);
+      return renamed;
     },
     async putPasskeyChallenge(record) {
       // Swept from the oldest put, stopping at the first live one: insertion order is issue order,

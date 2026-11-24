@@ -331,7 +331,9 @@ export type {
   PasskeyPolicyInput,
   PasskeyRelyingParty,
 } from './passkey-config';
+export { PASSKEY_LABEL_MAX } from './passkey-errors';
 export { verifyPasskeyEvidence } from './passkey-evidence';
+export { renamePasskey } from './passkey-label';
 export type { PasskeyLogin } from './passkey-login';
 export { passkeyLogin } from './passkey-login';
 export type { PasskeyStepUp, PasskeyStepUpOptions } from './passkey-step-up';

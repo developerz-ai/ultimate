@@ -87,3 +87,25 @@ export const stepUpDigestInvalid = (length: number): AuthError =>
 
 /** A SHA-512 in hex is 128 bytes; this leaves room for a versioned, prefixed one. */
 export const MAX_STEP_UP_DIGEST_BYTES = 1024;
+
+/** At `register` and at `renamePasskey`: a label is shown back to its owner, so it must read as one. */
+export const passkeyLabelInvalid = (reason: string): AuthError =>
+  new AuthError({
+    code: 'X_PASSKEY_LABEL_INVALID',
+    cause: `the passkey label is ${reason}: a label is 1-${PASSKEY_LABEL_MAX} characters after trimming, with no control characters`,
+    fix: "renamePasskey(auth, { userId, id, label: 'Work laptop' })   // or label: null to clear it",
+    callerFix: `name the passkey in 1 to ${PASSKEY_LABEL_MAX} characters`,
+    meta: { reason },
+  });
+
+/** An adapter written before `renamePasskey`: the member is optional, so this is asked per call. */
+export const passkeyRenameUnsupported = (adapter: string): AuthError =>
+  new AuthError({
+    code: 'X_PASSKEY_RENAME_UNSUPPORTED',
+    cause: `the auth adapter ${renderCauseValue(adapter)} has no renamePasskey method, so a passkey label cannot be written`,
+    fix: 'defineAuth({ adapter: postgresAuthAdapter() })   // or memoryAuthAdapter(); an adapter of your own implements renamePasskey(userId, id, label), held by authAdapterConformance',
+    meta: { adapter },
+  });
+
+/** Longest label a person can give a passkey, in characters (UTF-16 code units are not a person's). */
+export const PASSKEY_LABEL_MAX = 64;

@@ -791,12 +791,13 @@ const erase = passkeyStepUp<{ readonly memberId: string }>(auth, {
 
 | Export | What |
 |---|---|
-| `passkeyLogin(auth)` | `{ registerOptions({ userId }), register({ userId, response }), loginOptions(), login({ response, ip?, userAgent? }) }` — `login` answers `login()`'s `LoginResult`, MFA-satisfied |
+| `passkeyLogin(auth)` | `{ registerOptions({ userId }), register({ userId, response, label? }), loginOptions(), login({ response, ip?, userAgent? }) }` — `login` answers `login()`'s `LoginResult`, MFA-satisfied |
+| `renamePasskey(auth, { userId, id, label })` | the owner's passkey renamed (`label: null` clears it): the updated `PasskeyCredential`, or `null` when `userId` holds no passkey with that id. A label is 1-`PASSKEY_LABEL_MAX` (64) characters after trimming, no control characters, else `X_PASSKEY_LABEL_INVALID` (422) — at `register` too. An adapter with no `renamePasskey` member is `X_PASSKEY_RENAME_UNSUPPORTED` (501) |
 | `passkeyStepUp(auth, { digest, ttlMs? })` | `{ options({ userId, input }), verify({ userId, input, response }) }`; `verify` answers the stored `PasskeyEvidence` or throws `X_PASSKEY_STEP_UP_REQUIRED` (no proof, a proof for other bytes, no passkey registered) |
 | `verifyPasskeyEvidence(evidence, { rpId, origins })` | `true` only when the row is a user-verified signature, by its own key, over the challenge its nonce, digest and user derive — no adapter, no clock: a separate process re-checks it |
 | `@ultimat3/auth/client` | `newPasskey`, `getPasskey`, `passkeysSupported`: outcomes `ok` / `cancelled` / `unsupported` / `failed`, never a throw. Two modules, ~2.3 kB minified (`client-bundle.test.ts`) |
 | testing a ceremony | `softAuthenticator({ origin })` from `@ultimat3/auth/soft-authenticator`: real WebCrypto keys answering `create` / `get` — this package's own suites and an app's share the one implementation and the one path |
-| `PasskeyStore` | the nine `AuthAdapter` members over `x_passkeys`, `x_passkey_challenges` (sha256 of the challenge, TTL, taken by `DELETE … RETURNING`) and `x_passkey_evidence`; both adapters, one suite (`passkey-store.test.ts`, PGlite) |
+| `PasskeyStore` | the nine `AuthAdapter` members, and the optional `renamePasskey`, over `x_passkeys` (its `label` column added at every boot), `x_passkey_challenges` (sha256 of the challenge, TTL, taken by `DELETE … RETURNING`) and `x_passkey_evidence`; both adapters, one suite (`passkey-store.test.ts`, PGlite) |
 
 Every ceremony checks `clientDataJSON`'s type, the origin exactly, `rpIdHash`, UP **and** UV, the
 signature under the stored key's algorithm, and a counter that must move forward unless both are
