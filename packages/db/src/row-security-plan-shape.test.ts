@@ -27,7 +27,7 @@ describe('the tenant policy keeps a keyset page on its index', () => {
     return typeof node['Node Type'] === 'string' ? [node['Node Type'], ...children] : children;
   };
 
-  const planAs = async (role: string): Promise<string[]> => {
+  const planAs = async (role: typeof APP_ROLE | typeof MIGRATOR_ROLE): Promise<string[]> => {
     await assumeRole(client, role);
     await client.execute(raw('begin'));
     try {
