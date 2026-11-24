@@ -701,11 +701,59 @@ const verification = await consumeVerification(runtime, {
 | `DEFAULT_VERIFICATION_TTL_MS` | 24 h for `email-verify`, 1 h for `password-reset` — a reset link is a password |
 | `MailSender` | the injected port: `send(template, to, data, locale)`. `@ultimat3/mail` is tier 4 and this package is tier 2, so the app wires it |
 | `issueVerification(runtime, input)` | `{ token, expiresAt }`. The token comes back for a test or a CLI; production only ever mails it |
-| `consumeVerification(runtime, input)` | the `AuthVerification` row, or `X_UNAUTHENTICATED`. Unknown, spent, expired and mismatched are one answer. An undeclared purpose on either door is `X_VERIFICATION_PURPOSE_UNKNOWN` |
+| `consumeVerification(runtime, input)` | the `AuthVerification` row, or `X_UNAUTHENTICATED`. Unknown, spent, expired and mismatched are one answer. Reads only `{ store, clock }` of the runtime. An undeclared purpose on either door is `X_VERIFICATION_PURPOSE_UNKNOWN` |
 
 One live token per `(purpose, identifier)`. A wrong guess destroys nothing: the store's
 `takeVerification(purpose, identifier, tokenHash)` matches before it consumes, so an
 unauthenticated POST with any token cannot kill the victim's live link.
+
+### Signing in with a mailed link
+
+`As of 2026-11`. `signInWithLink(auth, { purpose, identifier, token, ip?, userAgent?, signUp? })`
+consumes a link issued under a purpose the app declared for signing in and answers what `login()`
+answers. With TOTP enrolled it answers `X_MFA_REQUIRED` and writes no session:
+`completeMfa(auth, challenge, code)` finishes it, as after a password.
+
+```ts
+import {
+  type Auth,
+  defineVerificationPurpose,
+  signInWithLink,
+  type VerificationRuntime,
+} from '@ultimat3/auth';
+
+declare const auth: Auth;
+declare const runtime: VerificationRuntime;
+declare const email: string;
+
+export const signInLink = defineVerificationPurpose({
+  name: 'sign-in',
+  template: 'auth.sign-in',
+  ttlMs: 15 * 60 * 1000,
+});
+
+const { token } = await signInLink.issue(runtime, {
+  identifier: email,
+  locale: 'en',
+  link: (token) => `https://acme.test/sign-in?token=${token}`,   // production only mails it
+});
+export const result = await signInWithLink(auth, {
+  purpose: signInLink.name,
+  identifier: email,
+  token,                                  // in production this arrives off the link
+});
+```
+
+| Case | Answer |
+|---|---|
+| valid link, no second factor | `LoginResult`, the session `mfaSatisfied` |
+| valid link, TOTP enrolled | `X_MFA_REQUIRED` with `meta.challenge`; no session row. A fresh link never clears the count of wrong codes |
+| the same link again, whatever the first attempt ended in | `X_UNAUTHENTICATED`: the link is spent before anything else is read |
+| unknown, expired, mismatched or another purpose's token | `X_UNAUTHENTICATED`, and a wrong guess leaves the mailed link live |
+| no account at the address | `X_UNAUTHENTICATED`; with `signUp: { id?, orgId?, roles?, scopes?, externalId? }` a verified, passwordless account is created. `signUp` never changes an account that exists |
+| a disabled account | `X_UNAUTHENTICATED`, naming nothing |
+| an account that never verified its address | `X_UNAUTHENTICATED`, named: whoever registered it chose its password, so it confirms `emailVerification` first |
+| `purpose` is `'email-verify'` or `'password-reset'`, or declares its own `identifier` | `X_CONFIG_INVALID`, before the store is asked: the token stays live for its own job |
 
 ## Passkeys — WebAuthn sign-in and digest-bound step-up
 

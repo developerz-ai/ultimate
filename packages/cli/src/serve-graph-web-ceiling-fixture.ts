@@ -321,5 +321,7 @@
  * (`withUrlElicitation` and the `input_required` answer), web-only: the MCP endpoint is the web role's.
  * raised 1772 → 1773, measured 1773 (2026-11-23, per-call tenant on bearer mounts): the one on
  * `SERVING_ROLE_CEILING`, `http/src/bearer-mount-tenant.ts`. Nothing web-only.
+ * raised 1773 → 1774, measured 1774 (2026-11-23, sign-in by mailed link): `auth/src/link-login.ts`, the
+ * one on `SERVING_ROLE_CEILING`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1773;
+export const WEB_ROLE_CEILING = 1774;

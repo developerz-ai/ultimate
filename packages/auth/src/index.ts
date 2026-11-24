@@ -172,6 +172,8 @@ export { boundedKdfGate, kdfGate } from './kdf-gate';
 // The installers and their factory types are `@ultimat3/auth/adapter`'s, and only its: the boot
 // calls them with what `apps/<app>/runtime.ts` named.
 export { purgeAuthLimits } from './limiter-install';
+export type { LinkSignInInput, LinkSignUp } from './link-login';
+export { signInWithLink } from './link-login';
 export type { HandleDirectory } from './login-identity';
 export { normaliseHandle } from './login-identity';
 export type {

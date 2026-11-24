@@ -148,6 +148,17 @@ export async function consumeVerification(
   runtime: VerificationRuntime,
   input: ConsumeVerificationInput,
 ): Promise<AuthVerification> {
+  return consumeWith(runtime, input);
+}
+
+/**
+ * `consumeVerification` without the mailer: consuming sends nothing, so a caller with no mailer in
+ * hand (`signInWithLink`) needs none. Internal, so the exported signature stays as it shipped.
+ */
+export async function consumeWith(
+  runtime: Pick<VerificationRuntime, 'store' | 'clock'>,
+  input: ConsumeVerificationInput,
+): Promise<AuthVerification> {
   const purpose = verificationPurpose(input.purpose);
   const tokenHash = sha256Hex(input.token);
   // Normalised on the way OUT as well as in, or a link issued for `ada@x.test` is unredeemable by
