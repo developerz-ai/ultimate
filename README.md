@@ -58,7 +58,7 @@ A number written into a file goes stale on the next commit; the command does not
 | steps in the gate, `x verify` | 21 | `bun run x -- verify --json` |
 | coverage, per package and `create-ultimate` | ≥ 95% lines and functions; `cli/` pinned at 95% / 94.5%; `scripts/` pinned at 86% / 91% | `bun run coverage` |
 | test files beside their source | 4,700+ | `git ls-files '*.test.ts' '*.test.tsx' \| grep -cE '^(packages\|scripts)/'` |
-| `X_*` codes, each with a cause and a `fix:` | 1,300+ | `jq '.errorCodes \| length' framework.manifest.json` |
+| `X_*` codes, each with a cause and a `fix:` | 1,400+ | `jq '.errorCodes \| length' framework.manifest.json` |
 <!-- end generated -->
 
 **What those numbers do not say:**
