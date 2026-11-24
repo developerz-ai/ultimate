@@ -5,7 +5,7 @@
  */
 
 import { runScripts } from './navigation-swap';
-import { STREAM_FLUSH_MARK } from './stream-scripts';
+import { STREAM_FLUSH_MARK, STREAM_KEEPALIVE_CHUNK } from './stream-scripts';
 
 /** `Node.ELEMENT_NODE`, without reading a global the router's tests do not have. */
 const ELEMENT_NODE = 1;
@@ -14,7 +14,7 @@ const ELEMENT_NODE = 1;
 export interface PageRest {
   /** The next run of whole chunks; `null` once the document ended (its tail is dropped). */
   next(): Promise<string | null>;
-  /** Stops reading: the request is cancelled, and the server stops the holes' work. */
+  /** Stops reading: the request is cancelled, and the server aborts each open hole's signal. */
   cancel(): void;
 }
 
@@ -45,7 +45,7 @@ function restOf(
   decoder: TextDecoder,
   start: string,
 ): PageRest {
-  let buffer = start;
+  let buffer = withoutKeepAlives(start);
   return {
     async next() {
       for (;;) {
@@ -57,7 +57,7 @@ function restOf(
         }
         const { done, value } = await reader.read();
         if (done) return null;
-        buffer += decoder.decode(value, { stream: true });
+        buffer = withoutKeepAlives(buffer + decoder.decode(value, { stream: true }));
       }
     },
     cancel() {
@@ -65,6 +65,17 @@ function restOf(
       reader.cancel().catch(() => undefined);
     },
   };
+}
+
+/**
+ * The buffer with the keep-alive frames at its head dropped. The server writes one between two whole
+ * chunks every second a hole is open, so this is the only place one can stand: kept, a hole with no
+ * deadline grew the buffer for as long as it stayed open.
+ */
+function withoutKeepAlives(buffer: string): string {
+  let start = 0;
+  while (buffer.startsWith(STREAM_KEEPALIVE_CHUNK, start)) start += STREAM_KEEPALIVE_CHUNK.length;
+  return start === 0 ? buffer : buffer.slice(start);
 }
 
 /** Everything left, for an answer shown whole (a modal): the chunks joined, the tail dropped. */
@@ -78,13 +89,16 @@ export async function drain(rest: PageRest): Promise<string> {
  * Each chunk into the live body, in arrival order, then its scripts: the hole's `$X()` reveal and
  * whatever its `after` carries (a hole's islands). Stops at `signal` — a newer page took the body —
  * and cancels the request either way. Rejects when the stream broke under a page still on screen.
+ * `landed`, after each chunk, until it answers `true`: what waits on a hole's content (a fragment).
  */
 export async function fillHoles(
   doc: Document,
   rest: PageRest,
   ran: Set<string>,
   signal: AbortSignal,
+  landed?: () => boolean,
 ): Promise<void> {
+  let waiting = landed;
   const stop = (): void => rest.cancel();
   signal.addEventListener('abort', stop, { once: true });
   try {
@@ -99,6 +113,7 @@ export async function fillHoles(
           el.tagName === 'SCRIPT' ? [el as HTMLScriptElement] : [...el.querySelectorAll('script')],
         );
       await runScripts(scripts, ran, (fresh, inert) => inert.replaceWith(fresh));
+      if (waiting?.() === true) waiting = undefined;
     }
   } catch (error) {
     if (!signal.aborted) throw error;

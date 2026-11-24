@@ -23,3 +23,9 @@ export const STREAM_REVEAL_BODIES: readonly string[] = Object.freeze([REVEAL_BOD
  * mark, then fills each hole at the next; a full load's parser reads it as an empty comment.
  */
 export const STREAM_FLUSH_MARK = '<!--x:flush-->';
+
+/**
+ * Written every `keepAliveMs` while a hole is open, always between two whole chunks: a comment the
+ * parser reads as nothing, and the client router drops as it arrives (`navigation-stream.ts`).
+ */
+export const STREAM_KEEPALIVE_CHUNK = '<!---->';

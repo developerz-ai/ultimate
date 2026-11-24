@@ -2,10 +2,13 @@
 // is still open, the rest comes back whole chunk by whole chunk however the bytes were split, a page
 // with no mark is read whole, and a cancel reaches the request.
 import { describe, expect, test } from 'bun:test';
+import { escapeHtml } from '@ultimat3/core';
+import { escapeJsonContent, escapeRawTextContent } from './html';
 import { drain, readShell } from './navigation-stream';
-import { STREAM_FLUSH_MARK } from './stream-scripts';
+import { STREAM_FLUSH_MARK, STREAM_KEEPALIVE_CHUNK } from './stream-scripts';
 
 const MARK = STREAM_FLUSH_MARK;
+const KEEPALIVE = STREAM_KEEPALIVE_CHUNK;
 
 /** A body the test writes into, byte run by byte run, and whether the reader cancelled it. */
 function body() {
@@ -24,6 +27,7 @@ function body() {
     stream,
     seen,
     write: (text: string) => controller?.enqueue(encoder.encode(text)),
+    bytes: (run: Uint8Array) => controller?.enqueue(run),
     close: () => controller?.close(),
   };
 }
@@ -52,9 +56,9 @@ describe('readShell', () => {
     page.write(`${CHUNK_A.slice(9)}${MARK.slice(0, 5)}`);
     page.write(`${MARK.slice(5)}`);
     expect(await first).toBe(CHUNK_A);
-    page.write(`<!---->${CHUNK_B}${MARK}</body></html>`);
+    page.write(`${KEEPALIVE}${CHUNK_B}${MARK}</body></html>`);
     page.close();
-    expect(await head.rest?.next()).toBe(`<!---->${CHUNK_B}`);
+    expect(await head.rest?.next()).toBe(CHUNK_B);
     expect(await head.rest?.next()).toBeNull();
   });
 
@@ -80,6 +84,38 @@ describe('readShell', () => {
     });
   });
 
+  test('a character split across reads survives, in the shell and in a chunk', async () => {
+    const encoder = new TextEncoder();
+    const shell = encoder.encode(`${SHELL.replace('…', 'café ✓')}${MARK}`);
+    const chunk = encoder.encode(`<p>naïve 🙂</p>${MARK}`);
+    // Every cut lands inside a multibyte character: `é`, `✓` and `🙂` are 2, 3 and 4 bytes.
+    const cutShell = SHELL.indexOf('…') + 4;
+    const cutChunk = 9;
+    const page = body();
+    page.bytes(shell.slice(0, cutShell));
+    page.bytes(shell.slice(cutShell));
+    const head = await readShell(page.stream);
+    expect(head.html).toBe(SHELL.replace('…', 'café ✓'));
+    const next = head.rest?.next();
+    page.bytes(chunk.slice(0, cutChunk));
+    page.bytes(chunk.slice(cutChunk));
+    expect(await next).toBe('<p>naïve 🙂</p>');
+    page.close();
+  });
+
+  test('a hole held open for long holds no keep-alive frames in memory', async () => {
+    const page = body();
+    page.write(`${SHELL}${MARK}`);
+    const head = await readShell(page.stream);
+    const next = head.rest?.next();
+    // A keep-alive split across two reads is still dropped once it is whole.
+    for (let i = 0; i < 1_000; i += 1) page.write(KEEPALIVE);
+    page.write(KEEPALIVE.slice(0, 3));
+    page.write(`${KEEPALIVE.slice(3)}${CHUNK_A}${MARK}`);
+    expect(await next).toBe(CHUNK_A);
+    page.close();
+  });
+
   test('a cancel reaches the request, and the rest ends', async () => {
     const page = body();
     page.write(`${SHELL}${MARK}`);
@@ -90,4 +126,19 @@ describe('readShell', () => {
     expect(await waiting).toBeNull();
     expect(page.seen.cancelled).toBe(true);
   });
+});
+
+// The reader ends the shell at the first mark it sees. That is sound only while no data the page
+// renders can spell one: text and attributes, script and style bodies, JSON blocks — every way a
+// value reaches the markup is escaped, so only an author's own `innerHTML` could carry it.
+test('no rendered value spells the flush mark, however it was escaped', () => {
+  const hostile = `{"note":"${MARK}"}</script>${MARK}`;
+  for (const escaped of [
+    escapeHtml(hostile),
+    escapeRawTextContent(hostile),
+    escapeJsonContent(hostile),
+  ]) {
+    expect(escaped).not.toContain(MARK);
+    expect(escaped).not.toContain(KEEPALIVE);
+  }
 });
