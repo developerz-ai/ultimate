@@ -312,6 +312,7 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
       '`serverNonce.startsWith(this.#clientNonce)`, the RFC 5802 check that the SCRAM server echoed our own nonce back. A nonce is public by construction (it travels in clear in `client-first`); the credential comparison is the client proof, computed and never compared here.',
   },
   'packages/render/src/navigation-history.ts: win.location.hash !== at[2]': {
+    // why: a new site, a late hole's fragment scroll: the name is `hash`, the value a URL fragment.
     count: 1,
     reason:
       "The address bar's `location.hash`, the URL fragment (`#post-7`), against the one read when a streamed page was swapped in: whether the visitor moved before a hole brought the fragment's element. A fragment is part of a URL anyone can see.",
