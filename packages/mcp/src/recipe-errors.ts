@@ -54,12 +54,12 @@ export class McpRecipeUriReservedError extends UltimateError {
         : input.reason === 'duplicate'
           ? 'two recipes share that URI'
           : input.reason === 'section'
-            ? 'a recipe section is lowercase letters, digits and -'
-            : 'a recipe name is lowercase letters, digits and -';
+            ? 'a recipe section is lowercase letters and digits in groups joined by single -'
+            : 'a recipe name is lowercase letters and digits in groups joined by single -';
     super({
       code: 'X_MCP_RECIPE_URI_RESERVED',
       cause: `${renderCauseValue(input.uri)}: ${why}`,
-      fix: "recipes: [{ name: 'issue-a-credit-note', section?: 'billing', title, description, steps }]   # one URI each, name and section [a-z0-9-]; move a hand-written docs://<section>/ resource here",
+      fix: "recipes: [{ name: 'issue-a-credit-note', section: 'billing', title, description, steps }]   # one URI each; section is optional (default recipes); name and section are a-z0-9 groups joined by single -; move a hand-written docs://<section>/ resource here",
       meta: { uri: input.uri },
     });
   }
@@ -69,11 +69,18 @@ export class McpRecipeLinkDanglingError extends UltimateError {
   constructor(input: {
     readonly offenders: readonly string[];
     readonly recipes: readonly string[];
+    /** `unread`: replay could not read it as its caller — missing, or hidden from that caller. */
+    readonly at?: 'boot' | 'unread';
   }) {
+    const unread = input.at === 'unread';
     super({
       code: 'X_MCP_RECIPE_LINK_DANGLING',
-      cause: `a recipe links to a docs://recipes/ URI no recipe on this server serves: ${input.offenders.join('; ')} (served: ${input.recipes.join(', ') || 'none'})`,
-      fix: 'recipes: [...(await markdownRecipes({ dir })), <the missing recipe>]   # or correct the link in the recipe the cause names',
+      cause: unread
+        ? `a recipe links to a docs://<section>/ URI its replay caller could not read — no recipe serves it, or one does that this caller cannot see: ${input.offenders.join('; ')} (replayed: ${input.recipes.join(', ') || 'none'})`
+        : `a recipe links to a docs://<section>/ URI, in a section this server's recipes serve, that no recipe serves: ${input.offenders.join('; ')} (served: ${input.recipes.join(', ') || 'none'})`,
+      fix: unread
+        ? 'replayRecipes(server, recipes, { caller: <one who can follow every linked recipe> })   # or correct the link in the recipe the cause names'
+        : 'recipes: [...(await markdownRecipes({ dir })), <the missing recipe>]   # or correct the link in the recipe the cause names',
       meta: { offenders: [...input.offenders] },
     });
   }

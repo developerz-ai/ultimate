@@ -1,6 +1,7 @@
 /**
  * `replayRecipes()` — a recipe's contract test: every step's example CALLED through the real server
- * as `caller` (placeholders filled), every recipe link read. No such tool, refused
+ * as `caller` (placeholders filled), every link into `recipes`, the sections of `recipes` or
+ * `sections` read — replaying a subset, pass the server's other sections. No such tool, refused
  * arguments, a refusing policy or a dangling link fail it; a tool's own refusal is the tool working.
  */
 
@@ -16,6 +17,11 @@ export interface ReplayOptions {
   readonly caller: McpCaller;
   /** `"<postId>"` in an example becomes `placeholders.postId`. */
   readonly placeholders?: Readonly<Record<string, unknown>>;
+  /**
+   * More sections the server's recipes serve, beyond those `recipes` holds: links into them are
+   * read too. Replaying a subset, a link into a section only the rest use is otherwise unread.
+   */
+  readonly sections?: readonly string[];
 }
 
 export interface ReplayReport {
@@ -47,7 +53,7 @@ export async function replayRecipes(
   const links: string[] = [];
   const failed: string[] = [];
   const dangling: string[] = [];
-  const sections = sectionsOf(recipes);
+  const sections = new Set([...sectionsOf(recipes), ...(options.sections ?? [])]);
   let id = 0;
   const rpc = async (method: string, params: Record<string, unknown>) => {
     id += 1;
@@ -76,6 +82,7 @@ export async function replayRecipes(
     throw new McpRecipeLinkDanglingError({
       offenders: dangling,
       recipes: recipes.map(recipeKey).sort(),
+      at: 'unread',
     });
   }
   return { calls, links };
