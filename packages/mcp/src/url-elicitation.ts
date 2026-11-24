@@ -125,7 +125,8 @@ const own = (value: Record<string, unknown>, key: string): unknown =>
 /**
  * What `tools/call` answers instead of the tool's result, or `undefined` for "the result itself".
  * Throws `X_MCP_ELICITATION_URL_INVALID` for a bad ask whoever called: a fault that showed only
- * to a capable client would ship unseen.
+ * to a capable client would ship unseen. A tool that failed is not asked about at all: its
+ * failure is the answer, and a malformed ask beside it must not replace it.
  *
  * Legacy revisions get the plain answer. 2025-11-25 defines `URLElicitationRequiredError`
  * (`-32042`) for a JSON answer, but its capability is declared once, on `initialize`, and this
@@ -135,10 +136,9 @@ export function inputRequiredFor(
   request: JsonRpcRequest,
   result: McpToolResult,
 ): Record<string, unknown> | undefined {
-  if (result.urlElicitation === undefined) return undefined;
+  // A tool that failed answers its failure: a prompt — or a refused prompt — would hide it.
+  if (result.urlElicitation === undefined || result.isError === true) return undefined;
   const ask = checked(result.urlElicitation);
-  // A tool that failed answers its failure: a prompt in its place would hide it from the client.
-  if (result.isError === true) return undefined;
   const params = paramsOf(request);
   if (eraOf(request) !== 'modern' || !declaresUrlMode(params) || answered(params)) return undefined;
   return {

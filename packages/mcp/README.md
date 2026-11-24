@@ -586,8 +586,8 @@ export function notConnected() {
 | `tools/call` | Answer |
 |---|---|
 | modern, `_meta["io.modelcontextprotocol/clientCapabilities"].elicitation.url` an object | `{ resultType: 'input_required', inputRequests: { url_elicitation: { method: 'elicitation/create', params: { mode: 'url', url, message } } } }` — no `content`, no `requestState`. `url` is the checked URL in its parsed spelling (`new URL(url).href`) |
-| the retry, `params.inputResponses.url_elicitation.action` `accept`, `decline` or `cancel` | the tool runs again and its result is the answer: asked once per call. `accept` is consent to open the page, not proof it was finished. Any other `action` is no answer, and the person is asked again |
-| the tool failed (`isError`, a result that is not JSON) | the failure, to every caller: a prompt never hides it |
+| the retry, `params.inputResponses.url_elicitation.action` `accept`, `decline` or `cancel` | the tool runs again and its result is the answer: asked once per call. `accept` is consent to open the page, not proof it was finished. Any other `action` is no answer: the tool runs again, and an ask it makes is sent, not suppressed; a rerun that no longer asks answers its result |
+| the tool failed (`isError`, a result that is not JSON) | the failure, to every caller: a prompt never hides it, and an ask beside it is not checked |
 | modern without the capability (`elicitation: {}` is form mode only) | the tool's result |
 | legacy | the tool's result. `-32042` is not sent: its capability is declared on `initialize`, and no handshake is kept |
 | the ask is not an absolute `https:` URL (`http:` on `localhost`, `127.0.0.1`, `[::1]`), carries `user:password@`, or has an empty message | `isError`, `X_MCP_ELICITATION_URL_INVALID` — for every caller, capable or not |

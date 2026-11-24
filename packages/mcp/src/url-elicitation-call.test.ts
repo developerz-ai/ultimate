@@ -1,5 +1,5 @@
-// URL-mode elicitation, one call at a time: an ask belongs to the invocation that made it, the URL a
-// client is shown is the one that was checked, the wire key is the documented literal, and a tool
+// URL-mode elicitation per call: an ask belongs to the invocation that made it, overlapping ones
+// included, the URL a client is shown is the one that was checked, the wire key is the documented literal, and a tool
 // that failed is never hidden behind a prompt. The real action pipeline is driven where a
 // projection could lose the ask.
 
@@ -129,6 +129,33 @@ describe('an ask belongs to the call that made it', () => {
     expect(later['content']).toEqual([{ type: 'text', text: '{"status":"not_connected"}' }]);
   });
 
+  test('two overlapping calls each answer the URL their own handler asked for', async () => {
+    const first = { ...ASK, url: 'https://app.test/connect/a' };
+    const second = { ...ASK, url: 'https://app.test/connect/b' };
+    // The first handler asks, then waits until the second has asked: both asks are live at once.
+    const secondAsked = Promise.withResolvers<void>();
+    let started = 0;
+    const server = projected(async () => {
+      started += 1;
+      if (started === 1) {
+        const output = withUrlElicitation({ status: 'a' }, first);
+        await secondAsked.promise;
+        return output;
+      }
+      const output = withUrlElicitation({ status: 'b' }, second);
+      secondAsked.resolve();
+      return output;
+    });
+    const urlOf = (result: Record<string, unknown>): string | undefined =>
+      (result['inputRequests'] as Record<string, { params: { url: string } }>)['url_elicitation']
+        ?.params.url;
+    const [a, b] = await Promise.all([
+      resultOf(server, call('connect')),
+      resultOf(server, call('connect')),
+    ]);
+    expect([urlOf(a), urlOf(b)]).toEqual([first.url, second.url]);
+  });
+
   test('a capability or an answer inherited by params is not one the request sent', async () => {
     const server = projected(() => withUrlElicitation({ status: 'not_connected' }, ASK));
     const inheritedMeta = Object.create({
@@ -219,6 +246,30 @@ describe('a tool that failed is never hidden behind a prompt', () => {
     });
     const result = await resultOf(server, call('connect'));
     expect(result['isError']).toBe(true);
+    expect(result['inputRequests']).toBeUndefined();
+  });
+
+  test('a malformed ask beside an isError result never replaces the failure', async () => {
+    const server = mcpServer({
+      tools: [
+        {
+          name: 'connect',
+          description: 'fails',
+          inputSchema: NO_ARGS,
+          async handle(): Promise<McpToolResult> {
+            return {
+              ...textResult('the upstream refused', true),
+              urlElicitation: { url: 'http://app.test/connect', message: '' },
+            };
+          },
+        },
+      ],
+    });
+    const result = await resultOf(server, call('connect'));
+    expect(result).toMatchObject({
+      isError: true,
+      content: [{ type: 'text', text: 'the upstream refused' }],
+    });
     expect(result['inputRequests']).toBeUndefined();
   });
 });

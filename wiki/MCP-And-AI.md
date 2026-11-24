@@ -119,8 +119,8 @@ A tool asks the person to open a page with `withUrlElicitation(output, { url, me
 | `tools/call` | Answer |
 |---|---|
 | modern, and the request's `_meta["io.modelcontextprotocol/clientCapabilities"].elicitation.url` is an object | `resultType: 'input_required'` with `inputRequests.url_elicitation`: `elicitation/create`, `mode: 'url'`, `url` (parsed, `new URL(url).href`), `message`. No `content`, no `requestState` |
-| its retry, carrying `inputResponses.url_elicitation.action` of `accept`, `decline` or `cancel` | the tool runs again and its result is the answer — asked once per call, whichever of the three the person chose. Any other `action` is no answer: asked again |
-| the tool failed (`isError`) | the failure, for every caller: never hidden behind a prompt |
+| its retry, carrying `inputResponses.url_elicitation.action` of `accept`, `decline` or `cancel` | the tool runs again and its result is the answer — asked once per call, whichever of the three the person chose. Any other `action` is no answer: an ask the rerun makes is sent, not suppressed; a rerun that no longer asks answers its result |
+| the tool failed (`isError`) | the failure, for every caller: never hidden behind a prompt, and an ask beside it is not checked |
 | modern without the capability, and every legacy request | the tool's result: `output` says in text what the prompt would have. `-32042` is never sent, since a legacy capability is declared on `initialize` and no handshake is kept |
 | a URL that is not absolute `https:` (`http:` on `localhost`, `127.0.0.1` or `[::1]`), carries credentials, or has no message | `X_MCP_ELICITATION_URL_INVALID`, for every caller |
 
