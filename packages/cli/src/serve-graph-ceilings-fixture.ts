@@ -381,8 +381,11 @@
  * raised 1006 → 1007, measured 1007 (2026-11-24, allOf and anyOf): `entity/src/expr-connectives.ts` — the connectives and the operand rules `iff` now imports, on the entity barrel).
  * raised 1007 → 1008, measured 1008 (2026-11-24, a CHECK refusing an update): `entity/src/check-refusal.ts` — `asInvariantRefusal`, the 23514-to-invariant map the postgres write funnel runs, on the entity barrel graph).
  * raised 1008 → 1009, measured 1009 (2026-11-24, form bodies coerced): `http/src/form-fields.ts` — `coerceFormFields`, which `UltimateRequest#bodyCoerced` reads, on the http barrel).
+ * raised 1009 → 1010, measured 1010 (2026-11-24, keyed meter draws, review round 4):
+ * `action/src/meter-fifo.ts`, the first-in-first-out queue the memory meter store keeps its key
+ * order in, so a busy counter forgets its oldest key in constant time.
  */
-export const MIGRATE_CEILING = 1009;
+export const MIGRATE_CEILING = 1010;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

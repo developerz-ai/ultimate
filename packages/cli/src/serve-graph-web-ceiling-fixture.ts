@@ -329,5 +329,6 @@
  * raised 1777 → 1778, measured 1778 (2026-11-24, form bodies coerced): the one on `MIGRATE_CEILING`, `http/src/form-fields.ts`).
  * lowered 1778 → 1777, measured 1777 (2026-11-24, mailed-link sign-in held back): the one off
  * `SERVING_ROLE_CEILING`, `auth/src/link-login.ts`.
+ * raised 1777 → 1778, measured 1778 (2026-11-24, keyed meter draws): the one on `SERVING_ROLE_CEILING`, `action/src/meter-fifo.ts`.
  */
-export const WEB_ROLE_CEILING = 1777;
+export const WEB_ROLE_CEILING = 1778;
