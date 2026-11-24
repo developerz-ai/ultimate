@@ -103,7 +103,7 @@ async function explain(
 }
 
 /** One statement's verdicts: its access path planned as is, its limited sort with sorts off. */
-async function judge(
+export async function judgeStatement(
   client: DbClient,
   statement: string,
   tables: PlanTableColumns,
@@ -157,7 +157,7 @@ export async function sweepPlans(
     if (entity === undefined) continue;
     const declared = entity.$describe().scan;
     const exemptBy = scan ?? declared;
-    const planned = exemptBy === undefined ? await judge(client, statement, judged) : {};
+    const planned = exemptBy === undefined ? await judgeStatement(client, statement, judged) : {};
     for (const name of primitives) {
       const proof = proofOf(name);
       proof.planned += 1;
