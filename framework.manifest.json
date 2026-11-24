@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f7552c98029de8673078dba03d3163df64bfb8026de05bafde8c7f3fa974487d",
+  "buildId": "9386c65f78f63b7df7cc44374cc7b52d975a2adf98978610ec4eac0c7b4f4077",
   "tiers": {
     "0": [
       "core",
@@ -4242,7 +4242,7 @@
     {
       "code": "X_OUTBOUND_TRANSPORT_REDIRECTED",
       "owner": "core",
-      "at": "packages/core/src/core-error-codes.ts"
+      "at": "packages/core/src/outbound-errors.ts"
     },
     {
       "code": "X_OUTBOUND_UNAVAILABLE",

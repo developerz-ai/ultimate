@@ -2,6 +2,7 @@
 // redacted label. Never a query string, never a header: a cause reaches a log store and a
 // problem document, and a signed URL's query is the credential.
 
+import { registerErrorCodes } from './error-codes';
 import { renderFixShellArg, renderThrowable } from './error-render';
 import { registerErrorRetry } from './error-retry';
 import { UltimateError } from './errors';
@@ -26,6 +27,14 @@ registerErrorRetry({
   X_OUTBOUND_RETRY_UNSAFE: 'terminal',
   X_OUTBOUND_BODY_INVALID: 'terminal',
   X_OUTBOUND_PROXY_INVALID: 'terminal',
+});
+
+/**
+ * Registered here, not in `core-error-codes.ts`: that table rides every browser page, and only
+ * this server-only module throws it — the code and the module that throws it ship together.
+ */
+registerErrorCodes({
+  X_OUTBOUND_TRANSPORT_REDIRECTED: { title: 'an outbound transport followed a redirect itself' },
 });
 
 /** What a failure may say about the call: who, how, and where, never the query or a header. */
