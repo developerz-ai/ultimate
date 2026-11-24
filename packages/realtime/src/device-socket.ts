@@ -12,14 +12,21 @@ import {
   DeviceFrameTooLargeError,
   DeviceOfflineError,
 } from './device-errors';
+import { type DeviceCloseHandler, DeviceHooks, type DeviceOpenHandler } from './device-hooks';
 import { type DeviceFrameHandler, DeviceHost, type DeviceWs } from './device-host';
+import { DeviceLedger } from './device-ledger';
 import {
   answerDeviceUpgrade,
   type DeviceTokenResolver,
   type DeviceUpgradeTarget,
   tenantOf,
 } from './device-upgrade';
-import { bytesOverLimit, DEVICE_FRAME_MAX_BYTES } from './device-wire';
+import {
+  bytesOverLimit,
+  DEVICE_CLOSE_REASON_MAX_BYTES,
+  DEVICE_FRAME_MAX_BYTES,
+  isCloseReason,
+} from './device-wire';
 import type { Transport } from './fanout';
 import type { JsonValue } from './json';
 import { PrincipalSockets } from './principal-sockets';
@@ -28,6 +35,8 @@ import { AcceptBudget, type Rng, type Scheduler, timeoutScheduler } from './thun
 export const DEFAULT_DEVICE_HEARTBEAT_MS = 15_000;
 export const DEFAULT_DEVICE_SOCKETS_PER_ACTOR = 10;
 export const DEFAULT_DEVICE_REQUEST_DEADLINE_MS = 30_000;
+/** How long `disconnect()` waits for the holding node to say it closed the socket. */
+export const DEVICE_DISCONNECT_DEADLINE_MS = 5_000;
 /** How long `resolveToken` may hold an upgrade before it is answered 503. */
 export const DEVICE_AUTH_DEADLINE_MS = 5_000;
 /** Upgrades parked in `resolveToken` at once, per declaration per node; past it, shed. */
@@ -45,6 +54,14 @@ export interface DeviceSocketOptions {
   readonly path: string;
   readonly resolveToken: DeviceTokenResolver;
   readonly onFrame: DeviceFrameHandler;
+  /** A socket opened. Runs beside the socket, never in its path: a throw is reported, nothing else. */
+  readonly onOpen?: DeviceOpenHandler | undefined;
+  /**
+   * A socket closed — at least once per socket, with its reason, on the node that held it; or, when
+   * that node died, on whichever serving node leads the next beat (`reason: 'node lost'`). Runs
+   * after its `onOpen` settles, beside the socket path, a throw reported and nothing else.
+   */
+  readonly onClose?: DeviceCloseHandler | undefined;
   readonly maxSocketsPerActor?: number | undefined;
   /** How often a device must send a frame (a `{ type: 'beat' }` is free); silent for two, it is closed. */
   readonly heartbeatMs?: number | undefined;
@@ -94,6 +111,14 @@ export interface DeviceSocket {
     frame: JsonValue,
     options?: DeviceRequestOptions,
   ): Promise<JsonValue>;
+  /**
+   * Close one device's socket from any role, on whichever node holds it, with `reason` (what the
+   * device's close frame and `onClose` read). `true` once it is closed; `false` when no socket is
+   * open for it under the caller's tenant — the same answer for another tenant's device.
+   * `deviceSocket()` always sets it; optional only so a `DeviceSocket` of an app's own (a test's
+   * fake) still compiles. Required waits on `next`.
+   */
+  disconnect?(ctx: { readonly actor: Actor }, deviceId: string, reason: string): Promise<boolean>;
   attach(options: DeviceAttachOptions): Promise<DeviceAttachment>;
   /** Sockets this process holds for this declaration. */
   readonly connected: number;
@@ -284,6 +309,29 @@ export function deviceSocket(options: DeviceSocketOptions): DeviceSocket {
       }
       return await bus.request(tenantOf(ctx.actor), deviceId, frame, deadlineMs);
     },
+    async disconnect(ctx, deviceId, reason) {
+      if (!isCloseReason(reason)) {
+        throw invalid(
+          path,
+          `disconnect's reason must be 1 to ${DEVICE_CLOSE_REASON_MAX_BYTES} UTF-8 bytes, a websocket close frame's room`,
+          `deviceLink.disconnect(ctx, deviceId, 'revoked')`,
+        );
+      }
+      if (bus === null) {
+        throw new DeviceOfflineError({
+          path,
+          deviceId,
+          reason:
+            'this process never attached the declaration to a bus (the boot attaches every declared deviceSocket)',
+        });
+      }
+      return await bus.disconnect(
+        tenantOf(ctx.actor),
+        deviceId,
+        reason,
+        DEVICE_DISCONNECT_DEADLINE_MS,
+      );
+    },
     async attach(attachOptions) {
       if (bus !== null) {
         throw invalid(
@@ -309,6 +357,10 @@ export function deviceSocket(options: DeviceSocketOptions): DeviceSocket {
         clock,
         newId,
       });
+      const ledger =
+        attachOptions.serve && options.onClose !== undefined
+          ? new DeviceLedger({ transport: attachOptions.transport, path, nodeId, heartbeatMs })
+          : null;
       const ownHost = attachOptions.serve
         ? new DeviceHost({
             path,
@@ -319,8 +371,11 @@ export function deviceSocket(options: DeviceSocketOptions): DeviceSocket {
             clock,
             rng,
             schedule,
+            hooks: new DeviceHooks({ onOpen: options.onOpen, onClose: options.onClose, ledger }),
           })
         : null;
+      // On the roster before the first socket, so no leader reaps this node's records as a dead one's.
+      await ledger?.join();
       await ownBus.start(ownHost);
       bus = ownBus;
       host = ownHost;

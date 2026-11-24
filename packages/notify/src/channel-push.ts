@@ -48,6 +48,21 @@ export interface NotifyPushMessage {
   readonly urgency?: 'very-low' | 'low' | 'normal' | 'high' | undefined;
   /** Collapse key AT THE PUSH SERVICE, for a device that is offline. */
   readonly topic?: string | undefined;
+  /**
+   * NATIVE ONLY — a browser push has no such field and `webPush()` sends none of these. The sound
+   * an iOS or Android device plays: `'default'` for the platform's own, or one the app bundles —
+   * APNs reads its file name (`chime.caf`), FCM its `res/raw` resource name without the extension
+   * (`chime`), so one string names a bundled sound on both only when the two agree. On Android 8
+   * and later the notification channel sets the sound. Unset, none is requested: APNs shows the
+   * alert silently.
+   */
+  readonly sound?: string | undefined;
+  /** iOS: how far the alert may break through Focus. `critical` needs Apple's entitlement. */
+  readonly interruptionLevel?: 'passive' | 'active' | 'time-sensitive' | 'critical' | undefined;
+  /** iOS: the notification category the app registered, which names its action buttons. */
+  readonly category?: string | undefined;
+  /** Android: the notification channel the app created, which sets importance and sound. */
+  readonly channelId?: string | undefined;
 }
 
 /** The seam. `@ultimat3/pwa`'s `webPush()` is the framework's; a vendor SDK fits it too. */

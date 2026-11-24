@@ -138,9 +138,16 @@ export {
   McpGroupConflictError,
   McpGroupUnknownError,
   McpListParamsInvalidError,
+  McpSplitInvalidError,
   McpSurfaceInvalidError,
 } from './meta-errors';
 export type { McpEffectClass } from './meta-split';
+export type {
+  McpSplitCall,
+  McpSplitDispatcher,
+  McpSplitField,
+  McpSplitOptions,
+} from './meta-split-options';
 export type {
   McpResourceGroup,
   McpResourceGroups,
@@ -165,15 +172,17 @@ export { markdownRecipes } from './recipe-markdown';
 export type { ReplayOptions, ReplayReport } from './recipe-replay';
 export { replayRecipes } from './recipe-replay';
 export type { McpRecipe, McpRecipeStep } from './recipes';
-export type { ExtraRecipes } from './recipes-tool';
+export type { DocsToolOptions, ExtraRecipes } from './recipes-tool';
 export type {
   AnyMcpTool,
   ContentBlock,
   McpCaller,
+  McpDoor,
   McpRole,
   McpTool,
   McpToolAnnotations,
   McpToolResult,
+  McpUrlElicitation,
   McpVerbClass,
   McpVisibility,
   ToolArgs,
@@ -248,6 +257,7 @@ export { MCP_RATE_LIMITS, MCP_UNAUTHENTICATED_LIMIT, mcpHttpRoute } from './tran
 export { mcpHostRefused } from './transport-http-answers';
 export type { StdioTransportInput } from './transport-stdio';
 export { serveStdio } from './transport-stdio';
+export { URL_ELICITATION_KEY, withUrlElicitation } from './url-elicitation';
 export type { ArgIssue, ArgValidation } from './validate-args';
 export { validateArgs } from './validate-args';
 export type {

@@ -1,14 +1,15 @@
-// Single responsibility: the eleven refusals `outbound()` can end on, each built from the call's
+// Single responsibility: the twelve refusals `outbound()` can end on, each built from the call's
 // redacted label. Never a query string, never a header: a cause reaches a log store and a
 // problem document, and a signed URL's query is the credential.
 
+import { registerErrorCodes } from './error-codes';
 import { renderFixShellArg, renderThrowable } from './error-render';
 import { registerErrorRetry } from './error-retry';
 import { UltimateError } from './errors';
 import { replaceUrlUserinfo } from './url-userinfo';
 
 /**
- * The eleven codes' retry classes, registered HERE and not in `error-retry.ts`'s core table: that
+ * The twelve codes' retry classes, registered HERE and not in `error-retry.ts`'s core table: that
  * table rides every browser page, and these are server-only (axiom 6). The transport faults are
  * retryable, a stated delay is `retry-after`, and every answer the same request gets again is
  * terminal — unclassified, `retry()` would replay a 401 three times.
@@ -22,9 +23,18 @@ registerErrorRetry({
   X_OUTBOUND_TOO_LARGE: 'terminal',
   X_OUTBOUND_HOST_BLOCKED: 'terminal',
   X_OUTBOUND_REDIRECTED: 'terminal',
+  X_OUTBOUND_TRANSPORT_REDIRECTED: 'terminal',
   X_OUTBOUND_RETRY_UNSAFE: 'terminal',
   X_OUTBOUND_BODY_INVALID: 'terminal',
   X_OUTBOUND_PROXY_INVALID: 'terminal',
+});
+
+/**
+ * Registered here, not in `core-error-codes.ts`: that table rides every browser page, and only
+ * this server-only module throws it — the code and the module that throws it ship together.
+ */
+registerErrorCodes({
+  X_OUTBOUND_TRANSPORT_REDIRECTED: { title: 'an outbound transport followed a redirect itself' },
 });
 
 /** What a failure may say about the call: who, how, and where, never the query or a header. */
@@ -108,17 +118,22 @@ export function outboundUnreachable(site: OutboundSite, error: unknown): Ultimat
   });
 }
 
+/** `meta.fields` only when the caller's refusal schema answered: absent, never `undefined`. */
+const fieldsMeta = (fields: unknown): { readonly fields?: unknown } =>
+  fields === undefined ? {} : { fields };
+
 export function outboundThrottled(
   site: OutboundSite,
   status: number,
   retryAfterSeconds: number,
   detail = '',
+  fields?: unknown,
 ): UltimateError {
   return new UltimateError({
     code: 'X_OUTBOUND_THROTTLED',
     cause: `${siteLabel(site)} answered ${String(status)} and asked to wait ${String(retryAfterSeconds)} s`,
     fix: `await Bun.sleep(${String(retryAfterSeconds * 1000)})   # then call ${site.vendor} again, or lower the call rate at the site that calls outbound()`,
-    meta: { ...siteMeta(site), status, retryAfterSeconds, detail },
+    meta: { ...siteMeta(site), status, retryAfterSeconds, detail, ...fieldsMeta(fields) },
   });
 }
 
@@ -126,16 +141,22 @@ export function outboundUnavailable(
   site: OutboundSite,
   status: number,
   detail = '',
+  fields?: unknown,
 ): UltimateError {
   return new UltimateError({
     code: 'X_OUTBOUND_UNAVAILABLE',
     cause: `${siteLabel(site)} answered ${String(status)} on every attempt: the vendor's fault, not the request's`,
     fix: `curl -sS -m 5 -o /dev/null -w '%{http_code}\\n' ${renderFixShellArg(site.origin, '<vendor origin>')}   # the vendor's fault: re-run the call; if ${String(status)} persists, check ${site.vendor}'s status page`,
-    meta: { ...siteMeta(site), status, detail },
+    meta: { ...siteMeta(site), status, detail, ...fieldsMeta(fields) },
   });
 }
 
-export function outboundRefused(site: OutboundSite, status: number, detail: string): UltimateError {
+export function outboundRefused(
+  site: OutboundSite,
+  status: number,
+  detail: string,
+  fields?: unknown,
+): UltimateError {
   return new UltimateError({
     code: 'X_OUTBOUND_REFUSED',
     cause: `${siteLabel(site)} answered ${String(status)}, and the same request will get it again`,
@@ -143,7 +164,7 @@ export function outboundRefused(site: OutboundSite, status: number, detail: stri
       status === 401
         ? `outbound({ url, vendor: '${site.vendor}', headers: { authorization } })   # with a refreshed credential, then call again`
         : `outbound({ url, vendor: '${site.vendor}', body })   # with the request fixed from meta.detail and meta.status`,
-    meta: { ...siteMeta(site), status, detail },
+    meta: { ...siteMeta(site), status, detail, ...fieldsMeta(fields) },
   });
 }
 
@@ -175,6 +196,19 @@ export function outboundRedirected(
     cause: `${siteLabel(site)} answered ${String(status)} towards ${location}, and redirects are not followed by default`,
     fix: `outbound({ url, vendor: '${site.vendor}', redirect: 'follow' })   # or call the Location the cause names directly`,
     meta: { ...siteMeta(site), status, location },
+  });
+}
+
+/**
+ * The app's transport (`deps.fetch`) followed a hop itself: no screen saw it, so its answer is not
+ * the vendor's to trust. No `status` in `meta`, so `outboundResponse()` never rebuilds it as that 2xx.
+ */
+export function outboundTransportRedirected(site: OutboundSite, reached: string): UltimateError {
+  return new UltimateError({
+    code: 'X_OUTBOUND_TRANSPORT_REDIRECTED',
+    cause: `${siteLabel(site)}: the transport passed as deps.fetch followed a redirect itself, towards ${reached}, ignoring init.redirect ('manual')`,
+    fix: `fetch(url, init)   # in the transport given to outbound(): pass init through unchanged, and let outbound({ url, vendor: '${site.vendor}', redirect: 'follow' }) take each hop`,
+    meta: { ...siteMeta(site), location: reached },
   });
 }
 

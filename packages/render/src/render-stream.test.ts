@@ -9,7 +9,7 @@ import {
   revealChunk,
   streamResult,
 } from './render-stream';
-import { STREAM_REVEAL_BODIES } from './stream-scripts';
+import { STREAM_FLUSH_MARK, STREAM_REVEAL_BODIES } from './stream-scripts';
 
 // A foreign failure handed to the subject: test input, never its verdict.
 const THREW_BEFORE_PROMISE = new RangeError('threw before it returned a promise');
@@ -149,6 +149,28 @@ describe('out-of-order streaming', () => {
     expect(html).toContain('<div data-x-hole-error="feed" hidden></div>');
     expect(html.endsWith('</body></html>')).toBe(true);
   }, 1_000);
+
+  // The client router swaps a soft visit's shell at the first mark and fills each hole at the next:
+  // a write the mark does not end would be cut mid-element.
+  test('the shell and every reveal end with the flush mark, in the same write', async () => {
+    const slow = deferred();
+    const plan: StreamPlan = {
+      head: '<body>',
+      shell: holeMarker('feed', 'skeleton'),
+      holes: [{ id: 'feed', fallback: 'skeleton', resolve: () => slow.promise }],
+    };
+    const reader = renderStreamHtml(plan, { buildId: 'b1' }).getReader();
+    const decode = (bytes: Uint8Array | undefined): string => new TextDecoder().decode(bytes);
+
+    expect(decode((await reader.read()).value)).toBe(
+      `<body>${REVEAL_SCRIPT}${holeMarker('feed', 'skeleton')}${STREAM_FLUSH_MARK}`,
+    );
+    slow.resolve('<p>rows</p>');
+    expect(decode((await reader.read()).value)).toBe(
+      `${revealChunk('feed', '<p>rows</p>')}${STREAM_FLUSH_MARK}`,
+    );
+    expect(decode((await reader.read()).value)).toBe('</body></html>');
+  });
 
   test('a plan with no holes still closes the document', async () => {
     const html = await collectStream(

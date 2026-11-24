@@ -15,11 +15,17 @@
 
 import { toOpenApiPath } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
-import { mountedPath } from '@ultimat3/http';
+import { mountedPath, TENANTS_SEGMENT } from '@ultimat3/http';
 import type { ApiMount, ApiOpenApi } from './api-declaration';
 import type { JsonSchemaObject } from './json-schema';
-import { PROBLEM_SCHEMA_NAME, schemaRef } from './naming';
 import type { OpenApiDocument } from './openapi';
+import { listingOperationId, tenantsOperation, withTenantParameter } from './openapi-mount-tenant';
+import {
+  problem,
+  RATE_LIMIT_HEADERS,
+  RETRY_AFTER_HEADER,
+  tooManyDescription,
+} from './openapi-problem';
 
 /** `components.securitySchemes` keys. */
 export const COOKIE_SCHEME = 'cookie';
@@ -32,36 +38,6 @@ const BEARER_SECURITY_SCHEME = {
   scheme: 'bearer',
   description: 'A token issued by the app, sent as Authorization: Bearer <token>.',
 };
-
-const RATE_LIMIT_HEADERS: Record<string, unknown> = {
-  'RateLimit-Limit': {
-    description: 'Requests the bucket admits per window.',
-    schema: { type: 'integer' },
-  },
-  'RateLimit-Remaining': {
-    description: 'Requests left in the current window.',
-    schema: { type: 'integer' },
-  },
-  'RateLimit-Reset': {
-    description: 'Seconds until the bucket is full again.',
-    schema: { type: 'integer' },
-  },
-};
-
-const RETRY_AFTER_HEADER: Record<string, unknown> = {
-  'Retry-After': {
-    description: 'Seconds to wait before retrying.',
-    schema: { type: 'integer', minimum: 1 },
-  },
-};
-
-function problem(description: string, headers?: Record<string, unknown>): Record<string, unknown> {
-  return {
-    description,
-    ...(headers === undefined ? {} : { headers }),
-    content: { 'application/problem+json': { schema: { $ref: schemaRef(PROBLEM_SCHEMA_NAME) } } },
-  };
-}
 
 const lower = (method: string): string => method.toLowerCase();
 
@@ -107,15 +83,6 @@ function declares(operation: Operation, key: 'rateLimit' | 'meter'): boolean {
   if (typeof extensions !== 'object' || extensions === null) return false;
   const declared = (extensions as Record<string, unknown>)[key];
   return declared !== undefined && declared !== null;
-}
-
-/** The codes a 429 can carry here, named so a client knows which refusal it is reading. */
-function tooManyDescription(throttled: boolean, metered: boolean): string {
-  const codes = [
-    ...(throttled ? ['X_RATE_LIMITED'] : []),
-    ...(metered ? ['X_METER_EXCEEDED'] : []),
-  ].join(' or ');
-  return `${codes} — retry after Retry-After seconds`;
 }
 
 /** One operation, with its route's refusals and security added. Never mutates `operation`. */
@@ -287,15 +254,39 @@ export function mountOpenApi(
     );
     const responses = {
       ...(completed['responses'] as Record<string, unknown>),
-      '404': problem('X_ROUTE_NOT_FOUND — also the answer for a token without this scope'),
+      '404': problem(
+        mount.tenant === undefined
+          ? 'X_ROUTE_NOT_FOUND — also the answer for a token without this scope'
+          : 'X_ROUTE_NOT_FOUND — also the answer for a token without this scope, or a tenant its person is not in',
+      ),
     };
     const extensions = (completed['x-ultimate'] as Record<string, unknown> | undefined) ?? {};
     for (const tag of (completed['tags'] as readonly string[] | undefined) ?? []) tags.add(tag);
     unlocks.set(scope, [...(unlocks.get(scope) ?? []), route.meta.name]);
     const mounted = toOpenApiPath(mountedPath(mount.prefix, route.path));
+    const served = { ...completed, responses, 'x-ultimate': { ...extensions, scope } };
     mountedItems.set(mounted, {
       ...mountedItems.get(mounted),
-      [method]: { ...completed, responses, 'x-ultimate': { ...extensions, scope } },
+      [method]: mount.tenant === undefined ? served : withTenantParameter(served, mount.tenant.arg),
+    });
+  }
+  const listing = mount.tenant === undefined ? undefined : `${mount.prefix}${TENANTS_SEGMENT}`;
+  if (listing !== undefined) {
+    // Joined, never replacing: an app's own POST at that path is served, so it stays documented.
+    const taken = new Set(
+      [...mountedItems.values()].flatMap((item) =>
+        Object.values(item as Record<string, Operation>).map(
+          (operation) => operation['operationId'],
+        ),
+      ),
+    );
+    mountedItems.set(listing, {
+      ...mountedItems.get(listing),
+      get: tenantsOperation(
+        BEARER_SCHEME,
+        mount.rateLimit !== undefined,
+        listingOperationId(taken),
+      ),
     });
   }
   const paths = Object.fromEntries(mountedItems);
@@ -307,7 +298,7 @@ export function mountOpenApi(
     paths,
     components: {
       schemas,
-      securitySchemes: { [BEARER_SCHEME]: scopedBearerScheme(unlocks) },
+      securitySchemes: { [BEARER_SCHEME]: scopedBearerScheme(unlocks, listing) },
     },
     tags: [...tags].sort().map((name) => ({ name })),
   };
@@ -318,7 +309,10 @@ export function mountOpenApi(
  * is OAuth's `flows`), so they are in the description for a reader and in `x-ultimate.scopes` —
  * scope → operation names, both sorted — for a generator; each operation's requirement names one.
  */
-function scopedBearerScheme(unlocks: ReadonlyMap<string, readonly string[]>) {
+function scopedBearerScheme(
+  unlocks: ReadonlyMap<string, readonly string[]>,
+  listing: string | undefined,
+) {
   const scopes = [...unlocks.keys()].sort();
   const table = scopes.map((scope) => [scope, [...(unlocks.get(scope) ?? [])].sort()] as const);
   const lines = table.map(([scope, names]) => `- \`${scope}\`: ${names.join(', ')}`);
@@ -326,7 +320,12 @@ function scopedBearerScheme(unlocks: ReadonlyMap<string, readonly string[]>) {
     ...BEARER_SECURITY_SCHEME,
     description: [
       BEARER_SECURITY_SCHEME.description,
-      'Each operation lists the one scope a token needs in its security requirement; a token without it is answered 404.',
+      'Each mounted primitive operation lists the one scope a token needs in its security requirement; a token without it is answered 404.',
+      ...(listing === undefined
+        ? []
+        : [
+            `Every operation but one names its tenant in the query string; GET ${listing} needs no scope and names no tenant: any valid token lists the tenants it may name.`,
+          ]),
       ...(lines.length === 0 ? [] : ['', 'Scopes:', ...lines]),
     ].join('\n'),
     'x-ultimate': { scopes: Object.fromEntries(table) },

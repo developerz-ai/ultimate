@@ -113,7 +113,7 @@ export {
   RpcFailedError,
 } from './errors';
 export { ActionDeprecationSuccessorInvalidError } from './errors-http';
-export type { MeterExceededInput } from './errors-meter';
+export type { MeterDrawRefusal, MeterExceededInput } from './errors-meter';
 export { MeterExceededError } from './errors-meter';
 export { ActionStreamInvalidError } from './errors-stream';
 export type {
@@ -178,7 +178,8 @@ export type { JsonSchemaObject } from './json-schema';
 export { jsonSchemaOf } from './json-schema';
 /**
  * The meter seam: `meter: { name, period, limit, warnAt, onWarn }` on an action, drawn inside
- * `invoke` on every surface. The draw itself (`meter-gate.ts`) stays unexported — one caller.
+ * `invoke` on every surface (`meter-gate.ts`, unexported — its one caller). `drawMeter(ctx, …)`
+ * counts work measured after the fact — an amount, idempotent by key — on the same counters.
  * `MeterWarning` is the schema an app's warning `job()` declares as its input.
  */
 export type {
@@ -191,10 +192,12 @@ export type {
   ResolvedLimit,
 } from './meter';
 export { MeterWarning } from './meter';
+export type { MeterDrawInput, MeterDrawOutcome } from './meter-draw';
+export { drawMeter } from './meter-draw';
 export type { MemoryMeterStoreOptions } from './meter-memory';
 export { memoryMeterStore } from './meter-memory';
 export type { PostgresMeterStoreOptions } from './meter-postgres';
-export { postgresMeterStore, SQL_METER_TABLE } from './meter-postgres';
+export { postgresMeterStore, SQL_METER_KEY_TABLE, SQL_METER_TABLE } from './meter-postgres';
 export type { MeterDraw, MeterDrawResult, MeterKey, MeterStore } from './meter-store';
 export { getMeterStore } from './meter-store';
 export type {

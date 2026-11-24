@@ -11,7 +11,7 @@ rather than a convention — the barrels are disjoint, and a test asserts it.
 
 | Entry | Holds | Reaches |
 |---|---|---|
-| `@ultimat3/realtime` | `useQuery`, `useRecord`, `useMutation`, `useConnection`, `installRealtime`, `hasPageSocket`, `RecordStore`, `channel()` and `topic()`, the offline queue, the wire protocol, cursors | an island, a browser bundle |
+| `@ultimat3/realtime` | `useQuery`, `useRecord`, `useMutation`, `useConnection`, `installRealtime`, `hasPageSocket`, `hasSyncTarget`, `RecordStore`, `channel()` and `topic()`, the offline queue, the wire protocol, cursors | an island, a browser bundle |
 | `@ultimat3/realtime/server` | `syncNode`, `ChannelHub`, `SocketRegistry`, `LiveQueryRegistry`, `NatsTransport`, `openNatsClient`, the replicator, the change feed, pg replication | a `sync` node, a worker, `server.ts` |
 
 ```ts
@@ -19,7 +19,7 @@ import { useQuery } from '@ultimat3/realtime';             // island
 import { syncNode } from '@ultimat3/realtime/server'; // sync node
 ```
 
-A server render is not a missing install. With no DOM, every read hook answers `pending` with no subscription, and `useMutation()` refuses with `X_LIVE_SERVER_RENDER`. `hasPageSocket()` answers `false` there, every time, so it is **not** a guard that makes a page-body read safe: a browser-only read in code no island imports is `X_LIVE_ROUTE_NO_ISLAND` at the `budgets` step, `hasPageSocket()` included. In a **browser**, a hook in a bundle that never called `installRealtime()` is `X_REALTIME_UNINSTALLED`.
+A server render is not a missing install. With no DOM, every read hook answers `pending` with no subscription, and `useMutation()` refuses with `X_LIVE_SERVER_RENDER`. `hasPageSocket()` answers `false` there, every time, so it is **not** a guard that makes a page-body read safe: a browser-only read in code no island imports is `X_LIVE_ROUTE_NO_ISLAND` at the `budgets` step, `hasPageSocket()` included. In a **browser**, a hook in a bundle that never called `installRealtime()` is `X_REALTIME_UNINSTALLED`. To ask, before any hook ran, whether a live hook could reach a sync node at all, call `hasSyncTarget()`: `true` when `installRealtime` was given a target or the document carries `<meta name="ultimate-sync">`; asking dials nothing. A page without one would answer `useChannel` with `X_SYNC_UNCONFIGURED`, so an island renders its static fallback instead. An events-only channel names no read: `channelRef('typing', { params: ['orgId'] })`.
 
 A file that needs both writes both imports. **Nothing was deleted in the split** — if an import
 stops resolving after upgrading to 8.0.0, the name moved to `./server`.
@@ -216,7 +216,7 @@ kept) until it mounts over the restored store.
 |---|---|---|
 | takes `useQuery`, `useRecord`, `useRecords`, `useMutation`, `useMutationQueue`, `useOutbox`, or any other name not listed below, anywhere in its own graph | yes — until it mounts, 3 s at most | yes, 1 s at most (`FIRST_PAINT_HOLD_MS`) |
 | takes `useQuery` or `useRecord` (and otherwise only the follow list below), in an app that declares no `persist: true` entity | **no** — the boot restores no record they could show | no |
-| takes only `useChannel`, `usePresence`, `useConnection`, `hasPageSocket`, `useRecordChanges`, `pollEvery`, `readPresence`, `channel`, `channelRef`, `topic` | **no** — its server markup is on screen from the first byte | no — it mounts as soon as the page runtime is there |
+| takes only `useChannel`, `usePresence`, `useConnection`, `hasPageSocket`, `hasSyncTarget`, `useRecordChanges`, `pollEvery`, `readPresence`, `channel`, `channelRef`, `topic` | **no** — its server markup is on screen from the first byte | no — it mounts as soon as the page runtime is there |
 | takes the barrel with no list of names (`import * as`, `export *`, `import()`) | yes | yes |
 | reaches no realtime | no | no |
 
@@ -721,8 +721,8 @@ A client on build `A` connecting to a `sync` node on build `B` is **accepted**, 
 
 A long-lived socket for a client that is **not a browser** — a device agent that dials out and
 receives work. `deviceSocket()` is a factory over `route`: the value is a websocket mount (`path`,
-`fetch`, `websocket`) plus `request()`, which reaches one connected device from any process.
-From `@ultimat3/realtime/server`, `As of 2026-11-06`.
+`fetch`, `websocket`) plus `request()`, which reaches one connected device from any process, and
+`disconnect()`, which closes one from any process. From `@ultimat3/realtime/server`, `As of 2026-11-23`.
 
 ```ts
 import { userActor } from '@ultimat3/core';
@@ -735,11 +735,16 @@ export const deviceLink = deviceSocket({
   maxSocketsPerActor: 10,
   heartbeatMs: 15_000,
   onFrame: ({ frame, device }) => ({ ack: device.deviceId, received: frame }),
+  onOpen: ({ device, ctx }) => ctx.logger.info('device.online', { device: device.deviceId }),
+  onClose: ({ device, ctx, reason }) =>
+    ctx.logger.info('device.offline', { device: device.deviceId, reason }),
 });
 
 // From any action or job, on any node — scoped to the caller's tenant:
 export const ask = (ctx: { readonly actor: ReturnType<typeof userActor> }) =>
   deviceLink.request(ctx, 'desk-7', { job: 'sync' }, { deadlineMs: 30_000 });
+export const revoke = (ctx: { readonly actor: ReturnType<typeof userActor> }) =>
+  deviceLink.disconnect?.(ctx, 'desk-7', 'revoked'); // true: closed; false: no socket under this tenant
 ```
 
 | Concern | Rule |
@@ -751,6 +756,9 @@ export const ask = (ctx: { readonly actor: ReturnType<typeof userActor> }) =>
 | Frames | JSON text. `DEVICE_FRAME_MAX_BYTES` (256 KiB) is the framework's and is not an option: Bun's `maxPayloadLength` and the handler both enforce it (`1009 X_DEVICE_FRAME_TOO_LARGE`); a `request()` over it throws before sending. `onFrame` runs one frame at a time per socket, as the device's actor; past 32 queued the socket closes `X_FRAME_RATE_LIMIT` |
 | Heartbeat | the node names `heartbeatMs` in its `hello`; a device silent for two beats is closed `4001` |
 | Addressing | the holder registers the device in the bus's shared set (TTL three beats) under `(tenant, deviceId)`; `request()` looks it up and publishes to that node. Nobody holds it, or another tenant does: `X_DEVICE_OFFLINE` at once. No answer in `deadlineMs` (default 30 s, max 600 s): `X_DEVICE_REQUEST_TIMEOUT`. A socket that closes answers its open requests `X_DEVICE_OFFLINE` |
+| Open and close | `onOpen({ device, ctx })` and `onClose({ device, ctx, reason })` run as the device's actor, beside the socket and never in its path: a throw is reported (`device.on_open` / `device.on_close`) and the socket goes on. A socket's `onClose` runs after its `onOpen` settles. `reason` is the node's own close reason (`replaced`, `no beat`, `grant expired`, `drain`, a `disconnect()` reason, …) or `disconnected` when the device or its network ended it. At least once: a duplicate is possible, a missing close is not |
+| A node that dies | with `onClose` declared, each socket is a record in the bus's shared set, kept on the holder's beat. Each beat the serving node with the lowest live id reads them, and a record whose node left the roster (three beats silent) is dropped and closed there: `reason: 'node lost'` (`DEVICE_NODE_LOST`), `ctx.actor` carrying kind, id and org only. A holder whose record was dropped while alive writes it again, with a second `onOpen`. No `onClose`, no record and no write |
+| Disconnect | `disconnect(ctx, deviceId, reason)` from any role: the holding node closes the socket `1008` with `reason` (1 to 123 UTF-8 bytes, `DEVICE_CLOSE_REASON_MAX_BYTES`, else `X_CONFIG_INVALID`). `true` once closed; `false` when nobody holds it under the caller's tenant, as for another tenant's device. A holder that does not confirm within `DEVICE_DISCONNECT_DEADLINE_MS` (5 s): `X_DEVICE_REQUEST_TIMEOUT`. The device may redial: revoke its token first. Optional in the `DeviceSocket` type only, so an app's own implementation still compiles; `deviceSocket()` always sets it |
 | Drain | SIGTERM: stop accepting, then the sync node's own `drainPlan` + `reconnect` frame per socket, then close `1001` |
 | Reconnect | `deviceAgent()` (a Bun client) redials on realtime's one jittered backoff, or at the slot a `reconnect` frame assigned |
 
@@ -800,7 +808,7 @@ the listener's websocket paths are fixed when it binds. A container scans once, 
 | `X_TRANSPORT_UNAVAILABLE` | the fanout bus is down. At boot only for `sync` and the replicator, after a bounded wait; on `web`, `worker` and `scheduler` it is what a publish rejects with while the bus is away ([what each role needs](#what-each-role-needs-from-the-bus)); on a socket it is the one refusal a client treats as transient ([a bus outage, seen from an open page](#a-bus-outage-seen-from-an-open-page)) | `x doctor — then check NATS_URL points at a reachable nats-server` |
 | `X_TRANSPORT_PROTOCOL` | the bus answers in a protocol this build does not speak | `the bus must be nats-server >= 2.11 with JetStream enabled (nats-server -js)` |
 | `X_DEVICE_OFFLINE` | `deviceLink.request()` named a device no node holds a socket for under the caller's tenant | `x doctor --json`, then retry once the device redials |
-| `X_DEVICE_REQUEST_TIMEOUT` | the device took the request and sent no `response` with its id before `deadlineMs` | a longer `deadlineMs`, or answer every request the node sends the device |
+| `X_DEVICE_REQUEST_TIMEOUT` | the device took the request and sent no `response` with its id before `deadlineMs`; or the holding node did not confirm a `disconnect()` | a longer `deadlineMs`, or answer every request the node sends the device; a disconnect: retry, a dead holder closes on its own |
 | `X_DEVICE_FRAME_TOO_LARGE` | a device frame, or a `request()` frame, past `DEVICE_FRAME_MAX_BYTES` | split the payload, or store the bytes and send their key |
 | `X_BUILD_SKEW` | client build's contract is incompatible with the server's | reload the client; see the fix line on the error |
 

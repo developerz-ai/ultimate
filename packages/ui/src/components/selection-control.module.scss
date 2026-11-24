@@ -1,0 +1,12 @@
+@use '../tokens' as t;
+
+// A row's selection box: the native checkbox, sized to the row and tinted with the accent. Native
+// on purpose — it is the no-script form control, and its checked state needs no ARIA mirror.
+.box {
+  @include t.focus-ring;
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+  margin: 0;
+  accent-color: t.role('accent');
+  cursor: pointer;
+}

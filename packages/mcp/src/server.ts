@@ -3,16 +3,14 @@
 // and an already-resolved caller, and returns a response or `null` for a notification.
 // Both transports (http, stdio) and every test drive this one function.
 
-import type { Clock, ErrorAudience } from '@ultimat3/core';
 import { fixFor } from '@ultimat3/core';
 import { outcomeForResult } from './audit';
-import type { McpAuditHook, McpAuditor } from './audit-hook';
+import type { McpAuditor } from './audit-hook';
 import { LOG_ONLY_AUDITOR, mcpAuditor } from './audit-hook';
 import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './errors';
 import { metaCall } from './meta-call';
-import type { McpCatalogDetail } from './meta-catalog-render';
 import { META_UNKNOWN_FIX } from './meta-errors';
-import type { McpResourceGroups, McpSurfaceOption, MetaResource } from './meta-surface';
+import type { MetaResource } from './meta-surface';
 import { MetaSurface } from './meta-surface';
 import { promptListEntry, promptsGet, visiblePrompts } from './prompts-get';
 import type { McpEra } from './protocol-era';
@@ -26,7 +24,6 @@ import {
   unsupportedVersion,
 } from './protocol-era';
 import type {
-  AnyMcpTool,
   McpCaller,
   McpToolResult,
   McpVerbClass,
@@ -34,16 +31,23 @@ import type {
   ToolResolution,
 } from './registry';
 import { ToolRegistry } from './registry';
-import type { McpPrompt, McpResource, McpResourceSource } from './resources';
+import type { McpPrompt } from './resources';
 import { ResourceRegistry } from './resources';
-import type { CatalogRefused, CatalogView, McpCatalogSource, PerCall } from './server-catalog';
+import type { CatalogRefused, CatalogView, PerCall } from './server-catalog';
 import { catalogRefusal, viewOf } from './server-catalog';
+import type { McpServerInput } from './server-input';
 import { resourcesList, resourcesRead } from './server-resources';
-import type { McpInstructions, McpServerVoice } from './server-voice';
-import { instructionsFor, invalidArgsResult, screenCatalogDetail } from './server-voice';
-import type { McpTenant } from './tenant';
-import { assertTenant, LIST_TENANTS, listTenantsTool, tenantStep, withTenantArg } from './tenant';
+import type { McpServerVoice } from './server-voice';
+import {
+  instructionsFor,
+  invalidArgsResult,
+  protocolRefusal,
+  screenCatalogDetail,
+} from './server-voice';
+import { assertTenant, listTenantsTool, tenantStep, withTenantArg } from './tenant';
+import { tenantDoor, tenantsCall } from './tenant-discover';
 import { admitted, thrownResponse } from './tool-thrown';
+import { inputRequiredFor } from './url-elicitation';
 import type { JsonRpcId, JsonRpcRequest, JsonRpcResponse, McpWire, ServerInfo } from './wire';
 import {
   defaultServerInfo,
@@ -58,56 +62,16 @@ import {
   resultResponse,
 } from './wire';
 
+export type { McpServerInput } from './server-input';
 export type { McpWire } from './wire';
-
-export interface McpServerInput {
-  readonly tools?: readonly AnyMcpTool[];
-  readonly resources?: readonly McpResource[];
-  /** Resources listed per caller (a tenant's own docs), after the fixed ones. */
-  readonly resourceSources?: readonly McpResourceSource[];
-  readonly prompts?: readonly McpPrompt[];
-  readonly serverInfo?: ServerInfo;
-  /** `'flat'` (the default): one tool per primitive. See `McpSurfaceOption`. */
-  readonly surface?: McpSurfaceOption | undefined;
-  /** The meta catalog's resources. Required with a surface that can be `'meta'`. */
-  readonly groups?: McpResourceGroups | undefined;
-  /**
-   * How much of each action `list_resources` says: `'full'` (the default) or `'compact'` — names
-   * and tags, the rest in `describe_resource`. Needs a surface that can be `'meta'`.
-   */
-  readonly catalogDetail?: McpCatalogDetail | undefined;
-  /**
-   * `initialize`'s `instructions`: how to use this server, for a client that injects it into the
-   * model's context (Claude Code does; many clients do not — never load-bear on it). A function
-   * answers per caller population — a staff surface and a customer one read different advice —
-   * and a function that throws or answers anything but a non-empty string sends none.
-   */
-  readonly instructions?: McpInstructions | undefined;
-  /**
-   * Whose `fix:` line a refusal carries. `'developer'` (the default, and the dev server's): the
-   * fix the author wrote — `x policy explain …`, a declaration to edit. `'caller'`: the error's
-   * `callerFix` where it declares one — what a REMOTE agent can do about it. `defineAppMcp`
-   * serves `'caller'`.
-   */
-  readonly errorAudience?: ErrorAudience | undefined;
-  /** Every gate decision as data, after its log line — see `audit-hook.ts`. The route reads it too. */
-  readonly onAudit?: McpAuditHook | undefined;
-  /** Stamps each `onAudit` event's `at`. */
-  readonly clock?: Clock | undefined;
-  /**
-   * The per-caller catalog, resolved per request for `tools/list` and every `tools/call` and merged
-   * with `tools`/`groups` (`server-catalog.ts`). `defineAppMcp({ catalog })` builds it.
-   */
-  readonly catalog?: McpCatalogSource | undefined;
-  /** One token across tenants, the tenant named per call — see `tenant.ts`. */
-  readonly tenant?: McpTenant | undefined;
-}
 
 export function mcpServer(input: McpServerInput = {}): McpServer {
   const tenant = input.tenant;
-  if (tenant !== undefined) assertTenant(tenant, input.tools ?? []);
+  if (tenant !== undefined) assertTenant(tenant, input.tools ?? [], input);
   // `list_tenants` is a boot tool like any other, so every surface lists it and nothing shadows it.
-  const all = [...(input.tools ?? []), ...(tenant === undefined ? [] : [listTenantsTool(tenant)])];
+  // A `discover` tool takes its place, and it is then not registered.
+  const lists = tenant === undefined || tenant.discover !== undefined;
+  const all = [...(input.tools ?? []), ...(lists ? [] : [listTenantsTool(tenant)])];
   const tools = new ToolRegistry(tenant?.arg).registerAll(all);
   const resources = new ResourceRegistry().registerAll(input.resources ?? []);
   for (const source of input.resourceSources ?? []) resources.addSource(source);
@@ -115,6 +79,7 @@ export function mcpServer(input: McpServerInput = {}): McpServer {
     surface: input.surface,
     groups: input.groups,
     tools: all,
+    split: input.split,
   });
   const catalogDetail = screenCatalogDetail(input.catalogDetail, input.surface);
   return new McpServer(
@@ -137,6 +102,7 @@ export function mcpServer(input: McpServerInput = {}): McpServer {
       tools: all,
       surface: input.surface,
       groups: input.groups,
+      split: input.split,
     },
   );
 }
@@ -287,14 +253,12 @@ export class McpServer {
   private listIn(view: CatalogView, caller: McpCaller): readonly ToolListEntry[] {
     const flat = view.tools.list(caller);
     const meta = metaServed(view.meta, caller);
-    const arg = this.perCall?.tenant?.arg;
+    const tenant = this.perCall?.tenant;
     const withArg = (entries: readonly ToolListEntry[]) =>
-      arg === undefined ? entries : withTenantArg(entries, arg);
+      tenant === undefined ? entries : withTenantArg(entries, tenant);
     if (meta === undefined) return withArg(flat);
     // Constant: the meta tools plus whatever the app left ungrouped (`docs`, `whoami`).
-    const entries = MetaSurface.entriesFor(
-      meta.surfaceFor(caller) === 'meta' ? 'meta' : 'meta-split',
-    );
+    const entries = meta.entries(meta.surfaceFor(caller) === 'meta' ? 'meta' : 'meta-split');
     return withArg(
       [...flat.filter((tool) => !meta.isGrouped(tool.name)), ...entries].sort((a, b) =>
         a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
@@ -342,8 +306,14 @@ export class McpServer {
     // answers exactly as a hidden tool — `notFound`, the same call the dispatch below makes.
     let who = caller;
     let rawArgs: unknown = params['arguments'];
+    // A call naming none meets a door first (`tenant-discover.ts`): the tenant list, or the person.
     const tenant = this.perCall?.tenant;
-    if (tenant !== undefined && name !== LIST_TENANTS) {
+    const door = tenant === undefined ? 'person' : tenantDoor(tenant, name, rawArgs);
+    if (tenant !== undefined && door === 'tenants') {
+      const resolved = tenantsCall(listTenantsTool(tenant), this.tools.get(name), name, caller);
+      return this.dispatch(id, name, resolved, caller, signal);
+    }
+    if (tenant !== undefined && door === 'step') {
       const step = await tenantStep(tenant, rawArgs, caller);
       if (step.kind === 'not-member') {
         return this.notFound(
@@ -370,7 +340,8 @@ export class McpServer {
           tools: view.tools,
           audit: this.audit,
           catalogDetail: this.voice.catalogDetail ?? 'full',
-          dispatch: (at, tool, resolved, who) => this.dispatch(at, tool, resolved, who, signal),
+          dispatch: (at, tool, resolved, who) =>
+            this.dispatch(at, tool, resolved, who, signal, req),
           notFound: (at, tool, who, fix) => this.notFound(at, tool, who, fix),
           refuse: (at, tool, error, who) =>
             thrownResponse(at, tool, error, who, this.voice.errorAudience, this.audit),
@@ -380,7 +351,7 @@ export class McpServer {
       );
       if (answered !== undefined) return answered;
     }
-    return this.dispatch(id, name, view.tools.resolve(name, rawArgs ?? {}, who), who, signal);
+    return this.dispatch(id, name, view.tools.resolve(name, rawArgs ?? {}, who), who, signal, req);
   }
 
   /** OUTCOME 1, the one answer for absent and hidden alike. See `dispatch`. */
@@ -399,6 +370,7 @@ export class McpServer {
     resolved: ToolResolution,
     caller: McpCaller,
     signal?: AbortSignal,
+    request?: JsonRpcRequest,
   ): Promise<JsonRpcResponse> {
     const audience = this.voice.errorAudience;
     // Three outcomes, deliberately different — and every one of them audited, including the
@@ -450,8 +422,11 @@ export class McpServer {
     }
 
     let result: McpToolResult;
+    // A page the tool asked the person to open, for a client that can show one (`url-elicitation.ts`).
+    let asked: Record<string, unknown> | undefined;
     try {
       result = await resolved.tool.handle(resolved.args, caller, signal);
+      asked = request === undefined ? undefined : inputRequiredFor(request, result);
     } catch (error) {
       return thrownResponse(id, name, error, caller, audience, this.audit);
     }
@@ -465,6 +440,7 @@ export class McpServer {
       caller,
       ...(result.code === undefined ? {} : { code: result.code }),
     });
+    if (asked !== undefined) return resultResponse(id, asked);
     // `code` is audit-only and never reaches the wire: it is already inside the rendered body.
     const payload: Record<string, unknown> = { content: result.content };
     // Through `manage_resource` too, byte for byte: the meta door answers what the flat one does,
@@ -475,20 +451,6 @@ export class McpServer {
     if (result.isError === true) payload['isError'] = true;
     return resultResponse(id, payload);
   }
-}
-
-/**
- * The envelope refusals — no id to answer on, so `null` — rendered the way the scope refusal
- * already is: a `message` a client library surfaces verbatim, and `data: { code, fix, docs }`
- * built by the error class that owns the wording. Every other refusal on this surface carried its
- * instruction; these two answered a bare `-32600` and left the caller to guess.
- */
-function protocolRefusal(message: string, error: McpProtocolError): JsonRpcResponse {
-  return errorResponse(null, INVALID_REQUEST, message, {
-    code: error.code,
-    fix: error.fix,
-    docs: error.docs,
-  });
 }
 
 /** `meta` when this caller is served it, else `undefined` — one rule for the boot and a resolved view. */

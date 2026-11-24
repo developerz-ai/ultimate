@@ -123,7 +123,26 @@ export interface BusClaim {
   readonly socketId: string;
 }
 
-export type BusMessage = BusRequest | BusReply | BusClaim;
+/** `disconnect()` on its way to the node that holds the device: close it, with this reason. */
+export interface BusDisconnect {
+  readonly kind: 'disconnect';
+  readonly id: string;
+  readonly from: string;
+  readonly tenant: string;
+  readonly deviceId: string;
+  readonly reason: string;
+}
+
+/** The longest close reason, in UTF-8 bytes: what a websocket close frame has room for. */
+export const DEVICE_CLOSE_REASON_MAX_BYTES = 123;
+
+/** A close reason a websocket can carry: some text, and no more than its close frame holds. */
+export const isCloseReason = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.length > 0 &&
+  encoder.encode(value).length <= DEVICE_CLOSE_REASON_MAX_BYTES;
+
+export type BusMessage = BusRequest | BusReply | BusClaim | BusDisconnect;
 
 const isText = (value: unknown): value is string => typeof value === 'string';
 
@@ -145,6 +164,11 @@ export function decodeBusMessage(text: string): BusMessage | undefined {
   }
   if (kind === 'offline' && isId(id) && isText(raw['reason'])) {
     return { kind, id, reason: raw['reason'] };
+  }
+  if (kind === 'disconnect') {
+    const { from, reason } = raw;
+    if (!isId(id) || !isId(from) || !isText(tenant) || !isText(deviceId)) return undefined;
+    return isCloseReason(reason) ? { kind, id, from, tenant, deviceId, reason } : undefined;
   }
   if (kind === 'claim') {
     const { node, socketId } = raw;

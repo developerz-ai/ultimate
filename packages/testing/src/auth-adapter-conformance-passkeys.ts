@@ -1,6 +1,7 @@
 // `PasskeyStore`, for `authAdapterConformance`: a credential id is globally unique, the counter
 // advances by compare-and-set (two racing assertions must not both move it — the cloned-
-// authenticator signal), a delete is the owner's, and a challenge is single-use for its ceremony.
+// authenticator signal), a delete and a rename are the owner's, and a challenge is single-use for
+// its ceremony.
 
 import { expect } from 'bun:test';
 import type { PasskeyChallengeRecord, PasskeyCredential, PasskeyEvidence } from '@ultimat3/auth';
@@ -95,6 +96,28 @@ export const AUTH_ADAPTER_PASSKEY_CHECKS: readonly AuthAdapterCheck[] = [
       expect(await adapter.deletePasskey(grace, row.id)).toBe(false);
       expect(await adapter.deletePasskey(ada, row.id)).toBe(true);
       expect(await adapter.findPasskey(row.id)).toBeNull();
+    },
+  },
+  {
+    // `renamePasskey` and the label are optional on the seam: an adapter written before them is
+    // refused per call (`X_PASSKEY_RENAME_UNSUPPORTED`), so nothing here is asked of it at all.
+    name: 'a label round-trips, and a passkey is renamed only by its owner, its use kept',
+    async run({ adapter }) {
+      if (adapter.renamePasskey === undefined) return;
+      const [ada, grace] = [await seedUser(adapter), await seedUser(adapter)];
+      const seeded = { ...credential(ada, 3), label: 'Work laptop' };
+      await adapter.putPasskey(seeded);
+      expect(await adapter.findPasskey(seeded.id)).toEqual(seeded);
+      // A use recorded first, so a rename that rewrote the counter or the last use shows.
+      expect(await adapter.advancePasskeyCounter(seeded.id, 3, 4, later(5))).toBe(true);
+      const row = { ...seeded, signCount: 4, lastUsedAt: later(5) };
+      expect(await adapter.renamePasskey(grace, row.id, 'Mine')).toBeNull();
+      expect(await adapter.findPasskey(row.id)).toEqual(row);
+      expect(await adapter.renamePasskey(ada, row.id, 'Phone')).toEqual({ ...row, label: 'Phone' });
+      expect(await adapter.findPasskey(row.id)).toEqual({ ...row, label: 'Phone' });
+      const { label: _cleared, ...unnamed } = row;
+      expect(await adapter.renamePasskey(ada, row.id, null)).toEqual(unnamed);
+      expect(await adapter.findPasskey(row.id)).toEqual(unnamed);
     },
   },
   {

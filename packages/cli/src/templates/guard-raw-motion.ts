@@ -66,6 +66,47 @@ const MOTION_PROPERTY = /^(?:transition|animation)(?:-|$)|^--/;
 const TOKEN_CALL = /(?<![\\w-])(?:var|(?:[\\w-]+\\.)[\\w-]+|duration|easing)\\([^()]*\\)/g;
 const TIME = /(?<![\\w.#-])(\\d*\\.?\\d+)(ms|s)\\b/g;
 const CURVE = /cubic-bezier\\(([^)]*)\\)/g;
+/** A property the scale itself declares: \`--duration-base\`, \`--easing-in-out\`. */
+const SCALE_PROPERTY = /^--(duration|easing)-([\\w-]+)$/;
+
+/**
+ * The scale rung a custom property re-declares, or \`undefined\`. Rewriting its value to a token
+ * would make the property read itself; the app's tempo is the theme's \`motion\` slot instead.
+ */
+const scaleRung = (property: string): { scale: string; name: string } | undefined => {
+  const [, scale = '', name = ''] = SCALE_PROPERTY.exec(property) ?? [];
+  const names = scale === 'duration' ? DURATIONS.map(([rung]) => rung) : Object.values(EASINGS);
+  return names.includes(name) ? { scale, name } : undefined;
+};
+
+/** \`defineTheme\`'s own grammar for a duration; it refuses any other spelling at boot. */
+const THEME_TIME = /^(0|\\d+(\\.\\d+)?(ms|s))$/;
+const CSS_NUMBER = /^-?\\d*\\.?\\d+$/;
+/** \`.5\` and \`+0.5\` are valid CSS; the theme spells both \`0.5\`. */
+const themeNumber = (text: string): string =>
+  text.replace(/^\\+/, '').replace(/^(-?)\\./, (_match, sign: string) => \`\${sign}0.\`);
+
+/** The value as \`defineTheme\` takes it, or \`undefined\` when no spelling of it is one. */
+const themeValue = (scale: string, value: string): string | undefined => {
+  if (scale === 'duration') {
+    const time = themeNumber(value);
+    return THEME_TIME.test(time) ? time : undefined;
+  }
+  const points = /^cubic-bezier\\(([^()]*)\\)$/
+    .exec(value)?.[1]
+    ?.split(',')
+    .map((n) => themeNumber(n.trim()));
+  if (points?.length !== 4 || !points.every((n) => CSS_NUMBER.test(n))) return undefined;
+  // x1 and x2 are points in time: the theme refuses a curve with either outside [0, 1].
+  const inTime = [points[0], points[2]].every((x) => Number(x) >= 0 && Number(x) <= 1);
+  return inTime ? \`cubic-bezier(\${points.join(', ')})\` : undefined;
+};
+
+/** The value the scale ships for a rung — a call that always boots. */
+const shippedValue = (scale: string, name: string): string =>
+  scale === 'duration'
+    ? \`\${DURATIONS.find(([rung]) => rung === name)?.[1] ?? 0}ms\`
+    : \`cubic-bezier(\${(Object.entries(EASINGS).find(([, rung]) => rung === name)?.[0] ?? '').split(',').join(', ')})\`;
 
 /** The step a duration means: exact where it is one, the nearest where it is not. */
 const durationFor = (ms: number): string => {
@@ -124,6 +165,38 @@ export function rawMotion(files: readonly StyleFile[]): readonly Finding[] {
       if (literals.length === 0) continue;
       written += value.slice(cursor);
       const line = lineOf(scss, match.index);
+      const rung = scaleRung(property);
+      if (rung !== undefined) {
+        const key = /^\\w+$/.test(rung.name) ? rung.name : \`'\${rung.name}'\`;
+        // \`!important\` is the declaration's priority, not its value: the theme takes the time.
+        const important = /\\s*!important$/i.exec(value);
+        const accepted = themeValue(rung.scale, value.slice(0, important?.index));
+        const priority = important
+          ? ' (the theme sets it without !important, so a later declaration of the property wins)'
+          : '';
+        const call = (themed: string): string =>
+          \`defineTheme({ motion: { \${rung.scale}: { \${key}: '\${themed}' } } }) in apps/web/shared/theme.ts\`;
+        if (accepted === undefined) {
+          const grammar =
+            rung.scale === 'duration'
+              ? "a time such as '180ms' or '0.3s'"
+              : "cubic-bezier() of four numbers, x1 and x2 between 0 and 1, such as 'cubic-bezier(0.2, 0, 0, 1)'";
+          findings.push({
+            code: CODE,
+            cause: \`\${file.path}:\${line} re-declares \\\`\${property}: \${value}\\\`, which a theme cannot hold — a \${rung.scale} rung takes \${grammar}\`,
+            fix: \`\${call(shippedValue(rung.scale, rung.name))} — the shipped value; change it to \${grammar}, delete the line at \${file.path}:\${line}, then: x verify --only boundaries\`,
+            at: \`\${file.path}:\${line}\`,
+          });
+          continue;
+        }
+        findings.push({
+          code: CODE,
+          cause: \`\${file.path}:\${line} re-declares \\\`\${property}: \${value}\\\` — the motion scale's own property, set from a stylesheet\`,
+          fix: \`\${call(accepted)} — every \${ns}.\${rung.scale}(\${rung.name}) then moves at it\${priority}; delete the line at \${file.path}:\${line}, then: x verify --only boundaries\`,
+          at: \`\${file.path}:\${line}\`,
+        });
+        continue;
+      }
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} writes \\\`\${property}: \${value}\\\` — \${literals.join(' and ')} off the motion scale, a tempo of this file's own\`,
@@ -198,6 +271,29 @@ unitTest('a custom property holding a raw curve or time is refused, the fix inte
     '--ease: #{tokens.easing(out)} — ',
   );
   expect(fixes(':root { --wait: 0.4s; --gap: 12px; --ok: var(--duration-fast); }')).toHaveLength(1);
+});
+
+unitTest('re-declaring a property of the scale itself is sent to the theme slot', () => {
+  expect(fixes(':root { --duration-base: 180ms; }')[0]).toStartWith(
+    "defineTheme({ motion: { duration: { base: '180ms' } } }) in apps/web/shared/theme.ts",
+  );
+  expect(fixes(':root { --easing-in-out: cubic-bezier(0.4, 0, 0.2, 1); }')[0]).toStartWith(
+    "defineTheme({ motion: { easing: { 'in-out': 'cubic-bezier(0.4, 0, 0.2, 1)' } } })",
+  );
+});
+
+unitTest('a rung the theme spells differently is normalized; one it cannot hold says so', () => {
+  expect(fixes(':root { --duration-base: .5s; }')[0]).toStartWith(
+    "defineTheme({ motion: { duration: { base: '0.5s' } } })",
+  );
+  expect(fixes(':root { --easing-out: cubic-bezier(0,0,1,1); }')[0]).toStartWith(
+    "defineTheme({ motion: { easing: { out: 'cubic-bezier(0, 0, 1, 1)' } } })",
+  );
+  const refused = rawMotion(sheet(':root { --easing-out: cubic-bezier(1.5, 0, 0, 1); }'));
+  expect(refused[0]?.cause).toContain('which a theme cannot hold');
+  expect(refused[0]?.fix).toStartWith(
+    "defineTheme({ motion: { easing: { out: 'cubic-bezier(0.16, 1, 0.3, 1)' } } })",
+  );
 });
 
 unitTest('the fix speaks the namespace the sheet uses the tokens under', () => {

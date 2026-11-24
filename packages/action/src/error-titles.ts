@@ -50,8 +50,8 @@ export const ACTION_ERROR_TITLES: Readonly<Record<string, string>> = {
   X_CONTRACT_EXERCISE_UNREACHED: 'no generated run reached the handler',
   X_CONTRACT_EXERCISE_UNDECLARED: '.contract() on a non-public action names no exercise',
   X_ACTION_STREAM_INVALID: 'a streaming action broke its stream contract',
-  X_METER_EXCEEDED: "an action's usage meter is spent for this period",
-  X_METER_INVALID: "an action's meter cannot be counted against",
+  X_METER_EXCEEDED: 'a usage meter is spent for this period',
+  X_METER_INVALID: 'a usage meter cannot be counted against',
   X_REPLAY_PRINCIPAL_MISMATCH:
     'a queued offline write was replayed under a session that did not queue it',
 };

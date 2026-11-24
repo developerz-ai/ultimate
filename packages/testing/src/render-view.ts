@@ -3,16 +3,21 @@
 // them. No browser, no server, no cast: a test asserts on markup and on visible text.
 
 import type { Actor } from '@ultimat3/core';
-import { assert, ctxOf, runWithContext } from '@ultimat3/core';
+import { assert, ctxOf, runWithContext, tryUseContext } from '@ultimat3/core';
+import { asCtx, defineHttpConfig, requestContext } from '@ultimat3/http';
+import { splitLocalePrefix } from '@ultimat3/i18n';
 import type { AssetPath, IslandDirective, RouteConfig, RouteParams } from '@ultimat3/render';
+import { decodeHtmlEntities } from './html-entities';
 
 /** What a component rendered. */
 export interface RenderedView {
   /** The markup, exactly as the document would carry it. */
   readonly html: string;
   /**
-   * What a reader sees: tags, scripts and styles removed, entities decoded, whitespace collapsed
-   * to single spaces. Compare it with `t('<key>')` — the markup escapes what the catalog does not.
+   * What a reader sees: tags, scripts and styles removed, character references decoded (every
+   * numeric one, and the common named ones: `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`, `&nbsp;`,
+   * typographic quotes and dashes, `&hellip;`, `&copy;` …), whitespace collapsed to single spaces.
+   * Compare it with `t('<key>')` — the markup escapes what the catalog does not.
    */
   readonly text: string;
 }
@@ -47,7 +52,13 @@ export interface RouteModule<TData> {
 }
 
 export interface RouteRequest {
-  /** Absolute, as a request's is. Its search string becomes the page's `query`. */
+  /**
+   * Absolute, as a request's is. Its search string becomes the page's `query`, and a leading
+   * routed locale segment (`https://x/es/precios`, `es` among the app's locales) is the locale
+   * `load`, `meta` and the page render in, as the router reads it. Unprefixed, and with no
+   * `actor`, the render opens no request context: standalone it is the default locale, and inside
+   * a caller's own `runWithContext` it is that context's.
+   */
   readonly url?: string;
   readonly params?: RouteParams;
   /** Who is asking. `load` and the page run inside a request context holding this actor. */
@@ -62,25 +73,27 @@ export interface RouteRequest {
    * for a route with no favicon to resolve.
    */
   readonly favicon?: AssetPath | undefined;
+  /**
+   * The cookies the request carries, by name: `load` and the page read them with
+   * `useRequestCookie(name)`, as a browser's request is read. Given, the render runs inside a GET
+   * request for `url`. Absent, no request is made: the render runs in whatever context it was called
+   * from — outside any request, a cookie read is `X_NO_REQUEST`.
+   */
+  readonly cookies?: Readonly<Record<string, string>> | undefined;
 }
 
 const DEFAULT_URL = 'http://localhost/';
 
 const SCRIPT_OR_STYLE = /<(script|style)\b[^>]*>[\s\S]*?<\/\1>/g;
 
-/**
- * `&amp;` last: decoding it first would turn the text `&amp;lt;` — an author's literal `&lt;` —
- * into `<`, a character the page never showed.
- */
+/** HTML's collapsible whitespace: never U+00A0, which a translation may carry (`10&nbsp;€`). */
+const COLLAPSIBLE = /[ \t\n\f\r]+/g;
+
+/** Tags dropped before references are decoded, so a decoded `<` never reads as a tag. */
 const visibleText = (html: string): string =>
-  html
-    .replace(SCRIPT_OR_STYLE, ' ')
-    .replace(/<[^>]*>/g, ' ')
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&amp;', '&')
-    .replace(/\s+/g, ' ')
-    .trim();
+  decodeHtmlEntities(html.replace(SCRIPT_OR_STYLE, ' ').replace(/<[^>]*>/g, ' '))
+    .replace(COLLAPSIBLE, ' ')
+    .replace(/^[ ]+|[ ]+$/g, '');
 
 const viewOf = (html: string): RenderedView => ({ html, text: visibleText(html) });
 
@@ -159,6 +172,45 @@ export async function renderRoute<TData>(
     return { ...viewOf(html), data, meta, islands: islands.directives, favicon };
   };
 
-  if (request.actor === undefined) return run();
-  return runWithContext(ctxOf({ actor: request.actor }), run);
+  // The locale a request for this URL would render in: a leading routed `/<locale>/` segment, as
+  // the router splits it. Unprefixed, the default — which `currentLocale()` answers outside a
+  // context too, so neither a locale nor an actor means no request context at all.
+  const locale = splitLocalePrefix(new URL(url).pathname)?.locale;
+  const rendered = request.cookies === undefined ? run : () => inRequest(url, request.cookies, run);
+  if (request.actor === undefined && locale === undefined) return rendered();
+  return runWithContext(
+    ctxOf({
+      ...(request.actor === undefined ? {} : { actor: request.actor }),
+      ...(locale === undefined ? {} : { locale }),
+    }),
+    rendered,
+  );
+}
+
+/**
+ * `fn` inside a GET request for `url` carrying `cookies`, each percent-encoded as `useRequestCookie`
+ * (core's `readCookie`) decodes it. The context it was called in keeps its actor and locale: the
+ * request's fields go over it, never its principal.
+ */
+function inRequest<T>(
+  url: string,
+  cookies: Readonly<Record<string, string>> | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const pairs = Object.entries(cookies ?? {}).map(
+    ([name, value]) => `${name}=${encodeURIComponent(value)}`,
+  );
+  const request = requestContext({
+    url: new URL(url),
+    method: 'GET',
+    role: 'web',
+    config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
+    requestHeaders: pairs.length === 0 ? {} : { cookie: pairs.join('; ') },
+  });
+  const outer = tryUseContext();
+  const scope =
+    outer === undefined
+      ? request
+      : { ...outer, ...request, actor: outer.actor, locale: outer.locale };
+  return runWithContext(asCtx(scope), fn);
 }

@@ -128,9 +128,16 @@ const X_PASSKEYS_TABLE = `create table if not exists x_passkeys (
   sign_count            bigint not null default 0,
   transports            text[] not null default '{}',
   created_at            timestamptz not null default now(),
-  last_used_at          timestamptz
+  last_used_at          timestamptz,
+  label                 text
 );
 create index if not exists x_passkeys_user_id_idx on x_passkeys (user_id)`;
+
+/**
+ * What `x_passkeys` gained with passkey labels, applied at every boot right after the create, on
+ * `X_USERS_UPGRADE`'s rule: idempotent, additive, nullable — a catalog update on a live table.
+ */
+const X_PASSKEYS_UPGRADE = 'alter table x_passkeys add column if not exists label text';
 
 const X_PASSKEY_CHALLENGES_TABLE = `create table if not exists x_passkey_challenges (
   id                    text primary key,
@@ -167,6 +174,7 @@ export const AUTH_TABLES: readonly string[] = Object.freeze([
   X_VERIFICATIONS_TABLE,
   X_API_KEYS_TABLE,
   X_PASSKEYS_TABLE,
+  X_PASSKEYS_UPGRADE,
   X_PASSKEY_CHALLENGES_TABLE,
   X_PASSKEY_EVIDENCE_TABLE,
 ]);

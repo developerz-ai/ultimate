@@ -1,8 +1,10 @@
 // `renderView` / `renderRoute`: the markup and the visible text a test asserts on, and — for a
 // route — that `load`, `meta` and the page are one resolution under one actor.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { tryUseContext, userActor } from '@ultimat3/core';
+import { useRequestContext, useRequestCookie } from '@ultimat3/http';
+import { configureLocales, currentLocale, localeConfig } from '@ultimat3/i18n';
 import { defineRoute, h, island, setAssetResolver } from '@ultimat3/render';
 import { renderRoute, renderView } from './render-view';
 
@@ -44,6 +46,37 @@ describe('renderView', () => {
     const view = await renderView(Greeting, { name: '&lt;' });
     expect(view.html).toContain('&amp;lt;');
     expect(view.text).toBe('Hello &lt;');
+  });
+
+  test('text decodes what the renderer escapes: an apostrophe and a quote read as typed', async () => {
+    const view = await renderView(Greeting, { name: `Tom's "cat"` });
+    expect(view.html).toContain('Tom&#39;s &quot;cat&quot;');
+    expect(view.text).toBe(`Hello Tom's "cat"`);
+  });
+
+  test('text decodes numeric references, decimal and hex, and the common named ones', async () => {
+    const Raw = (): unknown =>
+      h('p', { innerHTML: 'a&#39;b&#x2019;c&#X41;&nbsp;&copy;&hellip;&mdash;&rsquo;&apos;' });
+    const view = await renderView(Raw, {});
+    expect(view.text).toBe("a'b\u2019cA\u00a0\u00a9\u2026\u2014\u2019'");
+  });
+
+  test('an unknown or malformed reference stays as written; a null or out-of-range one is U+FFFD', async () => {
+    const Raw = (): unknown => h('p', { innerHTML: '&bogus; &#xZZ; &#0; &#1114112;' });
+    const view = await renderView(Raw, {});
+    expect(view.text).toBe('&bogus; &#xZZ; \ufffd \ufffd');
+  });
+
+  test('text decodes what a browser shows: `&amp`, `&#39` with no semicolon, `&#128;`', async () => {
+    const Raw = (): unknown => h('p', { innerHTML: 'Tom&#39s &amp Jerry &#128;5' });
+    const view = await renderView(Raw, {});
+    expect(view.text).toBe("Tom's & Jerry \u20ac5");
+  });
+
+  test('text keeps a no-break space: a translation may carry one', async () => {
+    const Raw = (): unknown => h('p', { innerHTML: '10&nbsp;€' });
+    const view = await renderView(Raw, {});
+    expect(view.text).toBe('10\u00a0€');
   });
 
   test('a component that renders an island is refused here: it belongs to a route', async () => {
@@ -148,6 +181,49 @@ describe('renderRoute', () => {
   });
 });
 
+describe('renderRoute · the locale prefix', () => {
+  // The locale config is process-global: put back what this file found.
+  const before = localeConfig();
+  beforeEach(() => configureLocales({ supported: ['en', 'es'], fallback: 'en' }));
+  afterEach(() => configureLocales(before));
+
+  const config = defineRoute({
+    render: 'ssr',
+    offline: 'runtime',
+    meta: ({ locale }) => ({ title: `meta in ${locale}` }),
+  });
+  const Page = (): unknown => h('p', null, `page in ${currentLocale()}`);
+
+  test('a routed `/<locale>/` prefix renders load, the page and its meta in that locale', async () => {
+    const loading = defineRoute({
+      render: 'ssr',
+      offline: 'runtime',
+      load: () => ({ locale: currentLocale() }),
+      meta: ({ locale }) => ({ title: `meta in ${locale}` }),
+    });
+    const view = await renderRoute({ config: loading, Page }, { url: 'https://example.test/es/' });
+    expect(view.data).toEqual({ locale: 'es' });
+    expect(view.text).toBe('page in es');
+    expect(view.meta.title).toBe('meta in es');
+  });
+
+  test('the prefix and the actor share one request context', async () => {
+    const actor = userActor({ id: 'member-7', orgId: 'org-1' });
+    const Who = (): unknown => h('p', null, `${tryUseContext()?.actor.id} ${currentLocale()}`);
+    const view = await renderRoute({ config, Who }, { url: 'https://example.test/es/a', actor });
+    expect(view.text).toBe('member-7 es');
+  });
+
+  test('an unprefixed URL, or a segment that is no routed locale, is the default, context-free', async () => {
+    const Where = (): unknown =>
+      h('p', null, `page in ${currentLocale()} ${tryUseContext() === undefined ? 'bare' : 'ctx'}`);
+    const plain = await renderRoute({ config, Where }, { url: 'https://example.test/precios' });
+    expect(plain.text).toBe('page in en bare');
+    const unrouted = await renderRoute({ config, Where }, { url: 'https://example.test/fr/' });
+    expect(unrouted.text).toBe('page in en bare');
+  });
+});
+
 describe('renderRoute · the app-wide favicon', () => {
   // The site asset table is process-global, like every other registry this run touches: a
   // resolver left installed would answer the NEXT file's `asset()` with this one's table.
@@ -182,5 +258,60 @@ describe('renderRoute · the app-wide favicon', () => {
     const view = await renderRoute({ config, Page });
     expect(view.favicon).toBeUndefined();
     expect(view.html).toContain('<h1>favicon</h1>');
+  });
+});
+
+describe('renderRoute · the cookies a request carries', () => {
+  const config = defineRoute<{
+    readonly session: string;
+    readonly actorId: string;
+    readonly request: string;
+  }>({
+    render: 'ssr',
+    offline: 'runtime',
+    // What a page that reads a cookie does: `useRequestCookie`, the one reader app code has.
+    load: async () => {
+      const request = useRequestContext('the render under test');
+      return {
+        session: useRequestCookie('sid') ?? 'no cookie',
+        actorId: tryUseContext()?.actor.id ?? 'no context',
+        request: `${request.method} ${request.url.href}`,
+      };
+    },
+    meta: () => ({ title: 'cookie' }),
+  });
+  const Page = (props: { readonly data: { readonly session: string } }): unknown =>
+    h('p', null, props.data.session);
+
+  test('load reads the cookie, decoded, under the url asked for', async () => {
+    const view = await renderRoute(
+      { config, Page },
+      { url: 'https://example.test/account', cookies: { sid: 'a b;c' } },
+    );
+    expect(view.data.session).toBe('a b;c');
+    expect(view.data.request).toBe('GET https://example.test/account');
+    expect(view.text).toContain('a b;c');
+  });
+
+  test('cookies and an actor together: the actor still acts', async () => {
+    const actor = userActor({ id: 'member-9', orgId: 'org-1' });
+    const view = await renderRoute({ config, Page }, { actor, cookies: { sid: 's-1' } });
+    expect([view.data.session, view.data.actorId]).toEqual(['s-1', 'member-9']);
+  });
+
+  test('cookies under a routed locale prefix: the locale still holds', async () => {
+    const before = localeConfig();
+    configureLocales({ supported: ['en', 'es'], fallback: 'en' });
+    try {
+      const Where = (props: { readonly data: { readonly session: string } }): unknown =>
+        h('p', null, `${props.data.session} ${currentLocale()}`);
+      const view = await renderRoute(
+        { config, Where },
+        { url: 'https://example.test/es/account', cookies: { sid: 's-2' } },
+      );
+      expect(view.text).toBe('s-2 es');
+    } finally {
+      configureLocales(before);
+    }
   });
 });

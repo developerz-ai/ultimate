@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import type { PgExecutor } from '@ultimat3/core';
 import { pgliteClient, raw } from '@ultimat3/db';
 import { refreshAfterNarrowing, serverFixture } from './authorization-server-fixture';
+import { oneGrantRevokedCase } from './authorization-server-grants-fixture';
 import { postgresAuthServerStore } from './authorization-server-postgres';
 import { dynamicClientPurgeCase } from './authorization-server-purge-fixture';
 import { SQL_AUTH_SERVER_TABLES } from './authorization-server-schema';
@@ -226,5 +227,9 @@ describe('postgresAuthServerStore on PGlite', () => {
     expect(code.body['refresh_token']).toBeUndefined();
     expect(device.body['refresh_token']).toBeUndefined();
     expect(refreshed.body['error']).toBe('unauthorized_client');
+  });
+
+  test('two grants on one client: listed, one revoked by id, the other still refreshes', async () => {
+    await oneGrantRevokedCase(await serverFixture({ store }));
   });
 });

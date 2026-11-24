@@ -131,6 +131,77 @@ export const AUTH_SERVER_STORE_CHECKS: readonly AuthServerStoreCheck[] = [
     },
   },
   {
+    // Optional on the port: a store without it counts a per-grant revoke on its read.
+    name: 'revokeLiveGrant answers true only for the write that ended a live grant',
+    async run(store) {
+      if (store.revokeLiveGrant === undefined) return;
+      const subject = idOf('subject');
+      const [live, gone, sibling] = [idOf('live'), idOf('gone'), idOf('sibling')];
+      await store.putGrant(grantRecord(live, subject));
+      // The subject's other grant: ending one by id must leave it live.
+      await store.putGrant(grantRecord(sibling, subject));
+      const ended = [
+        await store.revokeLiveGrant(live, at(1)),
+        await store.revokeLiveGrant(live, at(5)),
+      ];
+      expect(ended).toEqual([true, false]);
+      expect((await store.getGrant(live))?.revokedAt?.getTime()).toBe(at(1).getTime());
+      expect(await store.revokeLiveGrant(gone, at(6))).toBe(false);
+      // Overlapping calls: one conditional write wins, so exactly one answers true.
+      const raced = idOf('raced');
+      await store.putGrant(grantRecord(raced, subject));
+      const both = await Promise.all([
+        store.revokeLiveGrant(raced, at(7)),
+        store.revokeLiveGrant(raced, at(8)),
+      ]);
+      expect(both.filter(Boolean)).toHaveLength(1);
+      // The losing call writes nothing: the stored time is the winner's.
+      const winner = both[0] ? at(7) : at(8);
+      expect((await store.getGrant(raced))?.revokedAt?.getTime()).toBe(winner.getTime());
+      expect((await store.getGrant(sibling))?.revokedAt).toBeNull();
+    },
+  },
+  {
+    // Optional on the port: a store without `liveGrants` answers `grants()` with a refusal of its
+    // own, so there is nothing here to hold it to.
+    name: "liveGrants lists a subject's grants holding a usable token, oldest first, one client or all",
+    async run(store) {
+      if (store.liveGrants === undefined) return;
+      const subject = idOf('subject');
+      const [older, newer, other, bare, revoked, spent] = [
+        idOf('older'),
+        idOf('newer'),
+        idOf('other'),
+        idOf('bare'),
+        idOf('revoked'),
+        idOf('spent'),
+      ];
+      await store.putGrant({ ...grantRecord(newer, subject), createdAt: at(5) });
+      await store.putGrant(grantRecord(older, subject));
+      await store.putGrant({ ...grantRecord(other, subject, 'c2'), createdAt: at(7) });
+      await store.putGrant(grantRecord(bare, subject));
+      await store.putGrant(grantRecord(revoked, subject));
+      await store.putGrant(grantRecord(spent, subject));
+      for (const grant of [older, newer, other, revoked]) {
+        await store.putToken(tokenRecord(idOf('token'), grant));
+      }
+      const retired = idOf('retired');
+      await store.putToken(tokenRecord(retired, spent));
+      await store.rotateRefresh(
+        retired,
+        { ...tokenRecord(idOf('next'), spent), expiresAt: at(1) },
+        at(1),
+      );
+      await store.revokeGrant(revoked, at(1));
+      const ids = async (clientId?: string) =>
+        (await store.liveGrants?.({ subject, clientId }, at(10)))?.map((grant) => grant.id);
+      expect(await ids()).toEqual([older, newer, other]);
+      expect(await ids('c2')).toEqual([other]);
+      expect(await store.liveGrants({ subject: idOf('nobody') }, at(10))).toEqual([]);
+      expect(await store.liveGrants({ subject }, at(3600))).toEqual([]);
+    },
+  },
+  {
     name: 'touchGrant restarts the idle window',
     async run(store) {
       const id = idOf('touch');

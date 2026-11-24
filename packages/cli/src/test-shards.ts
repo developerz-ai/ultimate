@@ -64,6 +64,7 @@ import type { TestFile } from './test-select';
 import { loadTimings, SLOWEST_KEPT, slowestOf } from './test-timings';
 import { allSkippedFinding, failingFiles } from './test-verdict';
 import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
+import { appE2eRun, drivesBrowser, type E2eRun, isAppRoot } from './verify-e2e';
 import type { TestType } from './verify-tests';
 
 /**
@@ -340,6 +341,15 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
           isolatedRun(options) ? BATCH_FILES_PER_WORKER : SHARED_BATCH_FILES_PER_WORKER,
         )
       : [files];
+    // The e2e pass runs as the gate's `e2e` step does: in an app with a browser, under the e2e
+    // preload that spawns the app (`verify-e2e.ts`). Elsewhere its browser cases skip, as there.
+    const launch =
+      pass.type === 'e2e' && (await drivesBrowser(isAppRoot(options.root), options.env ?? Bun.env));
+    const passRun = (command: readonly string[]): E2eRun =>
+      launch
+        ? appE2eRun({ root: options.root, command, env: envOverrides })
+        : { command, env: envOverrides };
+    const passEnv = passRun([]).env;
     const result = await runBatches({
       runner: options.runner,
       batches,
@@ -347,16 +357,18 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       workers: pass.workers,
       ...(options.lease === undefined ? {} : { lease: options.lease }),
       argsFor: (batch, width) =>
-        testArgs({
-          files: batch,
-          workers: width,
-          ...(options.passthrough === undefined ? {} : { passthrough: options.passthrough }),
-          ...(options.isolate === undefined ? {} : { isolate: options.isolate }),
-          timings: join(options.root, TEST_TIMINGS_FILE),
-        }),
+        passRun(
+          testArgs({
+            files: batch,
+            workers: width,
+            ...(options.passthrough === undefined ? {} : { passthrough: options.passthrough }),
+            ...(options.isolate === undefined ? {} : { isolate: options.isolate }),
+            timings: join(options.root, TEST_TIMINGS_FILE),
+          }),
+        ).command,
       options: {
         cwd: options.root,
-        ...(Object.keys(envOverrides).length === 0 ? {} : { env: envOverrides }),
+        ...(Object.keys(passEnv).length === 0 ? {} : { env: passEnv }),
       },
     });
     batchCount += batches.length;

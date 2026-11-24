@@ -11,8 +11,8 @@ import type { KnownPermission } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { McpCatalogUnresolvedError } from './catalog-errors';
 import { McpToolUnsafeError } from './errors';
-import { toolFrom } from './from-action';
-import type { AnyMcpTool, McpToolAnnotations } from './registry';
+import { throughDoor, toolFrom } from './from-action';
+import type { AnyMcpTool, McpDoor, McpToolAnnotations } from './registry';
 import { runtimeInputSchema } from './runtime-schema';
 import type { JsonSchema } from './wire';
 
@@ -21,6 +21,11 @@ export interface RuntimeToolArgs {
   readonly input: Readonly<Record<string, unknown>>;
   /** The ambient request context, `actor` set to the MCP caller — the tenant's, on a `tenant` server. */
   readonly ctx: Ctx;
+  /**
+   * The `'meta-split'` dispatcher this call came through, and the `split.fields` its envelope
+   * carried. Absent on every other path.
+   */
+  readonly door?: McpDoor;
 }
 
 export interface RuntimeToolDefinition {
@@ -92,15 +97,16 @@ export function runtimeTool(def: RuntimeToolDefinition): McpRuntimeTool {
         const ctx = useContext();
         guardActionBeforeInput(policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
       }),
-    run: ({ input, actor }) =>
+    ...throughDoor(({ input, actor, door }) =>
       // The caller is the actor for the whole call, exactly as `app-tool.ts` runs one.
       asCallerContext(actor, async () => {
         const ctx = useContext();
         guardActionBeforeInput(policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
         const args = input as Readonly<Record<string, unknown>>;
         guardAction(policy, { actor: actorOf(ctx), input: args, ctx, action: name }, 'mcp');
-        return def.run({ input: args, ctx });
+        return def.run({ input: args, ctx, ...(door === undefined ? {} : { door }) });
       }),
+    ),
   });
   const handle: McpRuntimeTool = Object.freeze({ name, scope: def.scope });
   BUILT.set(handle, tool);

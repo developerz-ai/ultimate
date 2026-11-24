@@ -93,15 +93,39 @@ export class McpEffectConflictError extends UltimateError {
   }
 }
 
-/** The right action, the wrong dispatcher. Names the dispatcher that runs it; nothing ran. */
+/** `split:` cannot be served as declared — see `meta-split-options.ts`. */
+export class McpSplitInvalidError extends UltimateError {
+  constructor(input: { cause: string }) {
+    super({
+      code: 'X_MCP_SPLIT_INVALID',
+      cause: input.cause,
+      fix: "defineAppMcp({ surface: 'meta-split', split: { fields: { reason: { description: 'Why this call is made.' } }, stricter: (call) => false } }) — the cause names the entry to fix; a field is a plain name other than resource, action, params, live and confirmed_by_user",
+    });
+  }
+}
+
+/**
+ * The right action, the wrong dispatcher. Names the dispatcher that runs it; nothing ran.
+ * `demanded`: the app's `stricter` hook sent THIS call to the stricter door, by its arguments.
+ */
 export class McpWrongToolError extends UltimateError {
   readonly useTool: string;
 
-  constructor(input: { resource: string; action: string; called: string; useTool: string }) {
+  constructor(input: {
+    resource: string;
+    action: string;
+    called: string;
+    useTool: string;
+    demanded?: boolean;
+  }) {
     const call = `${input.useTool}({ resource: "${input.resource}", action: "${input.action}", params })`;
+    const subject =
+      input.demanded === true
+        ? `this call of ${input.resource}.${input.action}`
+        : `${input.resource}.${input.action}`;
     super({
       code: 'X_MCP_WRONG_TOOL',
-      cause: `${input.resource}.${input.action} is not run by ${input.called}; it is run by ${input.useTool} (wrong_tool_for_action). Nothing ran`,
+      cause: `${subject} is not run by ${input.called}; it is run by ${input.useTool} (wrong_tool_for_action). Nothing ran`,
       fix: `${call}   # the same params, on ${input.useTool}`,
       callerFix: `call ${call} with the same params`,
       meta: {

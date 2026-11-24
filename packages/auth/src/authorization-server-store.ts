@@ -42,11 +42,32 @@ export interface AuthServerStore {
   /** Restarts the idle window. */
   touchGrant(id: string, at: Date): Promise<void>;
   revokeGrant(id: string, at: Date): Promise<void>;
+  /**
+   * `revokeGrant` that answers, in one conditional write: `true` when this call ended the grant,
+   * `false` when it was unknown or already revoked — so two racing revokes count it once. Optional
+   * for a hand-rolled store only: the memory and Postgres stores implement it; without it, a
+   * per-grant revoke counts on its read before the write. A store wrapping another's `revokeGrant`
+   * (to audit, say) wraps this too: `revokeGrant({ subject, grantId })` calls this one when set.
+   * Required waits on `next`.
+   */
+  revokeLiveGrant?(id: string, at: Date): Promise<boolean>;
   /** Every live grant of `subject` (of one client when named). Answers how many. */
   revokeGrants(
     filter: { subject: string; clientId?: string | undefined },
     at: Date,
   ): Promise<number>;
+  /**
+   * The grants of `subject` (of one client when named) that are not revoked and hold a stored
+   * token neither expired nor retired at `at` — a consent never redeemed, or one whose tokens all
+   * passed their stored expiry, holds none. Token rows only: no lifetime is recomputed and no
+   * client permission is re-read. Oldest first. Optional for a hand-rolled store only: the memory and Postgres
+   * stores implement it, and without it `grants()` is `X_AUTH_GRANTS_UNSUPPORTED`. Required
+   * waits on `next`.
+   */
+  liveGrants?(
+    filter: { subject: string; clientId?: string | undefined },
+    at: Date,
+  ): Promise<readonly AuthGrantRecord[]>;
   putToken(token: AuthTokenRecord): Promise<void>;
   getToken(tokenHash: string): Promise<AuthTokenRecord | null>;
   /** Retire the live refresh token `tokenHash` and store `next`, atomically. */
@@ -125,6 +146,12 @@ export function memoryAuthServerStore(): AuthServerStore {
         grants.set(id, { ...grant, revokedAt: at });
       }
     },
+    async revokeLiveGrant(id, at) {
+      const grant = grants.get(id);
+      if (grant === undefined || grant.revokedAt !== null) return false;
+      grants.set(id, { ...grant, revokedAt: at });
+      return true;
+    },
     async revokeGrants(filter, at) {
       let revoked = 0;
       for (const grant of grants.values()) {
@@ -134,6 +161,29 @@ export function memoryAuthServerStore(): AuthServerStore {
         revoked += 1;
       }
       return revoked;
+    },
+    async liveGrants(filter, at) {
+      // The subject's grants first: an unknown subject never walks the tokens.
+      const own = [...grants.values()].filter(
+        (grant) =>
+          grant.revokedAt === null &&
+          grant.subject === filter.subject &&
+          (filter.clientId === undefined || grant.clientId === filter.clientId),
+      );
+      if (own.length === 0) return [];
+      const ids = new Set(own.map((grant) => grant.id));
+      const holding = new Set<string>();
+      for (const token of tokens.values()) {
+        const live = token.retiredAt === null && token.expiresAt.getTime() > at.getTime();
+        if (live && ids.has(token.grantId)) holding.add(token.grantId);
+      }
+      return own
+        .filter((grant) => holding.has(grant.id))
+        .sort(
+          (a, b) =>
+            a.createdAt.getTime() - b.createdAt.getTime() ||
+            (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+        );
     },
     async putToken(token) {
       tokens.set(token.tokenHash, token);

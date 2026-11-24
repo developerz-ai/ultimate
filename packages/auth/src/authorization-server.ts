@@ -13,7 +13,7 @@ import {
   type AuthorizationServerOptions,
   resolveAuthServerConfig,
 } from './authorization-server-config';
-import { consentInvalid } from './authorization-server-errors';
+import { consentInvalid, grantsUnsupported } from './authorization-server-errors';
 import {
   type ReadRequestResult,
   redirectWith,
@@ -21,7 +21,7 @@ import {
 } from './authorization-server-request';
 import { authServerMetadata, authServerRoutes } from './authorization-server-routes';
 import { resolveAccess, resolvedGrant } from './authorization-server-tokens';
-import type { AuthorizationRequest, ResolvedGrant } from './authorization-server-types';
+import type { AuthorizationRequest, LiveGrant, ResolvedGrant } from './authorization-server-types';
 import type { AuthServerRoute } from './authorization-server-wire';
 import { type DeviceReading, decideDevice, readDevice } from './grant-device';
 import { randomToken, sha256Hex } from './tokens';
@@ -74,6 +74,31 @@ export interface AuthorizationServer {
     readonly subject: string;
     readonly clientId?: string | undefined;
   }): Promise<number>;
+  /**
+   * One grant of `subject` by its `grantId`, refresh tokens included: 1, or 0 when it is unknown,
+   * already revoked, or another subject's (or another client's than the one named) — alike. Two
+   * racing calls on one grant count it once on a store implementing `revokeLiveGrant`; on one
+   * without it, both may answer 1.
+   * `authorizationServer()` always sets it; optional only so an `AuthorizationServer` of an app's
+   * own (a test's fake) still compiles. Required waits on `next`.
+   */
+  revokeGrant?(input: {
+    readonly subject: string;
+    readonly grantId: string;
+    readonly clientId?: string | undefined;
+  }): Promise<number>;
+  /**
+   * The live grants of `subject` (of one client when named), oldest first: not revoked and
+   * holding a stored token neither expired nor retired. Not a promise the next refresh succeeds:
+   * a client since denied refresh can stay listed while its grant row and an unexpired, unretired
+   * token remain (`purge` may remove the row sooner). Copies, never the rows. Each `grantId` is
+   * what `resolve` answers and `revokeGrant` takes.
+   * Always set by `authorizationServer()`; optional only as `revokeGrant` is.
+   */
+  grants?(input: {
+    readonly subject: string;
+    readonly clientId?: string | undefined;
+  }): Promise<readonly LiveGrant[]>;
   /** Run from the app's own `task`: nothing here runs on a timer. */
   purge(input: { readonly before: Date }): Promise<number>;
 }
@@ -193,6 +218,35 @@ export function authorizationServer(options: AuthorizationServerOptions): Author
         { subject: input.subject, clientId: input.clientId },
         config.clock.now(),
       ),
+    async revokeGrant(input) {
+      const grant = await config.store.getGrant(input.grantId);
+      // Another subject's grant answers as an unknown one: an id is no proof of ownership.
+      if (grant === null || grant.revokedAt !== null || grant.subject !== input.subject) return 0;
+      if (input.clientId !== undefined && grant.clientId !== input.clientId) return 0;
+      // The store's conditional write decides a race: only the call that ended it counts it.
+      const at = config.clock.now();
+      if (config.store.revokeLiveGrant !== undefined) {
+        return (await config.store.revokeLiveGrant(grant.id, at)) ? 1 : 0;
+      }
+      await config.store.revokeGrant(grant.id, at);
+      return 1;
+    },
+    async grants(input) {
+      if (config.store.liveGrants === undefined) throw grantsUnsupported();
+      const live = await config.store.liveGrants(
+        { subject: input.subject, clientId: input.clientId },
+        config.clock.now(),
+      );
+      return live.map((grant) => ({
+        grantId: grant.id,
+        clientId: grant.clientId,
+        // Copies: a caller editing its listing must not edit a memory store's rows.
+        scopes: [...grant.scopes],
+        resource: grant.resource,
+        createdAt: new Date(grant.createdAt.getTime()),
+        refreshedAt: new Date(grant.refreshedAt.getTime()),
+      }));
+    },
     purge: ({ before }) =>
       config.store.purge(before, new Date(before.getTime() - config.refreshIdleMs)),
   };

@@ -5,6 +5,8 @@
  */
 
 import type { PgExecutor } from '@ultimat3/core';
+import { InternalError } from '@ultimat3/core';
+import { previousPeriodStart } from './meter-period';
 import type { MeterDraw, MeterDrawResult, MeterKey, MeterStore } from './meter-store';
 
 /**
@@ -29,7 +31,26 @@ create table if not exists x_meter (
 `;
 
 /**
- * `$1` subject, `$2` meter, `$3` period key, `$4` the period start, `$5` the limit.
+ * The keys of the keyed draws that COUNTED (`drawMeter`'s `key`), this period's and the last's:
+ * every keyed draw deletes its counter's older ones, so the table is bounded as `x_meter` is.
+ * Applied by the boot beside `SQL_METER_TABLE`.
+ */
+export const SQL_METER_KEY_TABLE = `
+create table if not exists x_meter_key (
+  subject      text        not null,
+  meter        text        not null,
+  period       text        not null,
+  draw_key     text        not null,
+  period_start timestamptz not null,
+  primary key (subject, meter, period, draw_key)
+);
+
+create index if not exists x_meter_key_period_start_idx
+  on x_meter_key (subject, meter, period, period_start);
+`;
+
+/**
+ * `$1` subject, `$2` meter, `$3` period key, `$4` the period start, `$5` the limit, `$6` the amount.
  *
  * Atomic and conditional in ONE statement: the `insert … select … where` admits a first draw only
  * within the limit, and `do update … where` re-checks against the row AFTER its lock is taken — a
@@ -41,16 +62,81 @@ create table if not exists x_meter (
  */
 const SQL_METER_DRAW = `
 insert into x_meter (subject, meter, period, period_start, used, warned)
-select $1, $2, $3, $4::timestamptz, 1, false
-where 1 <= $5::bigint
+select $1, $2, $3, $4::timestamptz, $6::bigint, false
+where $6::bigint <= $5::bigint
 on conflict (subject, meter, period) do update set
-  used = case when excluded.period_start > x_meter.period_start then 1 else x_meter.used + 1 end,
+  used = case when excluded.period_start > x_meter.period_start then $6::bigint
+              else x_meter.used + $6::bigint end,
   warned = case when excluded.period_start > x_meter.period_start then false else x_meter.warned end,
   period_start = greatest(x_meter.period_start, excluded.period_start),
   updated_at = now()
-where (case when excluded.period_start > x_meter.period_start then 0 else x_meter.used end) + 1
-  <= $5::bigint
+where (case when excluded.period_start > x_meter.period_start then 0 else x_meter.used end)
+  + $6::bigint <= $5::bigint
 returning used, warned
+`;
+
+/**
+ * A KEYED draw: `$1`–`$6` as above, `$7` the draw key, `$8` the start of the period before.
+ *
+ * The counter row is locked FIRST (`for update`, which hands back its latest committed version),
+ * so every draw on one counter — every replica's — runs one at a time from here. Under that lock
+ * the key is claimed only within the limit, and the count moves only when the claim landed: a key
+ * that already counted (this period or the last) conflicts, and nothing is added. A refused draw
+ * claims nothing, so its key is never left behind. The row must exist: `SQL_METER_ENSURE` first
+ * when no row comes back. The same statement deletes the counter's keys older than `$8`.
+ */
+const SQL_METER_DRAW_KEYED = `
+with counter as (
+  select used, warned, period_start from x_meter
+  where subject = $1 and meter = $2 and period = $3
+  for update
+),
+spent as (
+  select case when $4::timestamptz > period_start then 0 else used end as used,
+         case when $4::timestamptz > period_start then false else warned end as warned
+  from counter
+),
+claim as (
+  insert into x_meter_key (subject, meter, period, draw_key, period_start)
+  select $1, $2, $3, $7, $4::timestamptz from spent where used + $6::bigint <= $5::bigint
+  on conflict (subject, meter, period, draw_key) do update set period_start = excluded.period_start
+  where x_meter_key.period_start < $8::timestamptz
+  returning draw_key
+),
+counted as (
+  update x_meter set
+    used = case when $4::timestamptz > period_start then $6::bigint else used + $6::bigint end,
+    warned = case when $4::timestamptz > period_start then false else warned end,
+    period_start = greatest(period_start, $4::timestamptz),
+    updated_at = now()
+  where subject = $1 and meter = $2 and period = $3 and exists (select 1 from claim)
+  returning used, warned
+),
+purged as (
+  delete from x_meter_key
+  where subject = $1 and meter = $2 and period = $3 and period_start < $8::timestamptz
+    and draw_key <> $7
+)
+select spent.used, spent.warned, spent.used + $6::bigint <= $5::bigint as within,
+       counted.used as counted_used, counted.warned as counted_warned
+from spent left join counted on true
+`;
+
+/** A zero counter for a keyed draw to lock — the conditional insert above cannot lock a row. */
+const SQL_METER_ENSURE = `
+insert into x_meter (subject, meter, period, period_start, used, warned)
+values ($1, $2, $3, $4::timestamptz, 0, false)
+on conflict (subject, meter, period) do nothing
+`;
+
+/**
+ * Whether a refused keyed draw's key had already counted — a fresh statement, so it sees the draw
+ * that took the counter's lock first and spent the allowance under this very key.
+ */
+const SQL_METER_KEY_COUNTED = `
+select 1 from x_meter_key
+where subject = $1 and meter = $2 and period = $3 and draw_key = $4
+  and period_start >= $5::timestamptz
 `;
 
 /** What a refused draw is told it had used — read only on a refusal, never before a draw. */
@@ -70,6 +156,14 @@ const SQL_METER_RELEASE = `
 update x_meter set warned = false
 where subject = $1 and meter = $2 and period = $3 and period_start = $4::timestamptz
 `;
+
+interface KeyedRow {
+  readonly used: number | string;
+  readonly warned: boolean | string;
+  readonly within: boolean | string;
+  readonly counted_used: number | string | null;
+  readonly counted_warned: boolean | string | null;
+}
 
 interface CounterRow {
   /** `bigint`, which a client hands back as a string. */
@@ -98,13 +192,61 @@ const keyParams = (key: MeterKey, periodStartMs: number): readonly unknown[] => 
  */
 export function postgresMeterStore(options: PostgresMeterStoreOptions): MeterStore {
   const exec = options.executor;
+
+  const drawKeyed = async (request: MeterDraw, drawKey: string): Promise<MeterDrawResult> => {
+    const keptSince = iso(previousPeriodStart(request.period, request.periodStartMs));
+    const params = [
+      ...keyParams(request, request.periodStartMs),
+      request.limit,
+      request.amount ?? 1,
+      drawKey,
+      keptSince,
+    ];
+    let row = (await exec.query<KeyedRow>(SQL_METER_DRAW_KEYED, params))[0];
+    if (row === undefined) {
+      await exec.query(SQL_METER_ENSURE, keyParams(request, request.periodStartMs));
+      row = (await exec.query<KeyedRow>(SQL_METER_DRAW_KEYED, params))[0];
+    }
+    if (row === undefined) {
+      throw new InternalError({
+        cause: `x_meter lost the counter row for meter "${request.meter}" right after it was inserted; something outside the meter store deletes x_meter rows`,
+        fix: 'grep -rnE "(delete from|truncate) x_meter" .   # the boot owns x_meter: remove the statement that deletes its rows',
+      });
+    }
+    if (row.counted_used !== null) {
+      return {
+        allowed: true,
+        used: Number(row.counted_used),
+        warned: row.counted_warned !== null && isTrue(row.counted_warned),
+      };
+    }
+    const used = Number(row.used);
+    const warned = isTrue(row.warned);
+    const replayed =
+      isTrue(row.within) ||
+      (
+        await exec.query(SQL_METER_KEY_COUNTED, [
+          request.subject,
+          request.meter,
+          request.period,
+          drawKey,
+          keptSince,
+        ])
+      ).length === 1;
+    return replayed
+      ? { allowed: true, used, warned, replayed: true }
+      : { allowed: false, used, warned };
+  };
+
   return {
     scope: 'shared',
 
     async draw(request: MeterDraw): Promise<MeterDrawResult> {
+      if (request.drawKey !== undefined) return drawKeyed(request, request.drawKey);
       const rows = await exec.query<CounterRow>(SQL_METER_DRAW, [
         ...keyParams(request, request.periodStartMs),
         request.limit,
+        request.amount ?? 1,
       ]);
       const row = rows[0];
       if (row !== undefined) {

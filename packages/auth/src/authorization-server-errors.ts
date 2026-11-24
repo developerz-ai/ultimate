@@ -37,3 +37,12 @@ export const clientInvalid = (field: ClientListField, value: string): AuthError 
     fix: `server.registerClient({ name, ${field}: ['<one value per element, no whitespace>'] })   # split a space-separated string into its values before registering`,
     meta: { field },
   });
+
+/** 501: `grants({ subject })` on a store of the app's own that ships no `liveGrants`. */
+export const grantsUnsupported = (): AuthError =>
+  new AuthError({
+    code: 'X_AUTH_GRANTS_UNSUPPORTED',
+    cause:
+      'the store handed to authorizationServer({ store }) has no liveGrants method, so grants({ subject }) has nothing to read',
+    fix: 'authorizationServer({ store: postgresAuthServerStore({ executor }) })   # or memoryAuthServerStore(); a store of your own implements liveGrants(filter, at)',
+  });

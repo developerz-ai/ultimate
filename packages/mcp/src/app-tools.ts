@@ -26,13 +26,14 @@ import { noteIncluded } from './include-early';
 import { jobStatusPrimitive } from './job-status-tool';
 import { jobToolBrand } from './job-tool';
 import type { McpCatalogDetail } from './meta-catalog-render';
+import type { McpSplitOptions } from './meta-split-options';
 import type { McpResourceGroups, McpSurfaceOption } from './meta-surface';
 import type { McpOAuth } from './oauth-metadata';
 import type { ListedPrimitive } from './projectable';
 import { asProjectable } from './projectable';
 import type { McpRecipe } from './recipes';
 import { withRecipes } from './recipes-surface';
-import type { ExtraRecipes } from './recipes-tool';
+import type { DocsToolOptions, ExtraRecipes } from './recipes-tool';
 import type { AnyMcpTool } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { toPrompts } from './resources';
@@ -71,10 +72,11 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
   /** App-specific readable documents (a catalog export, a report). */
   readonly resources?: readonly McpResource[];
   /**
-   * How-to recipes, each served as `docs://recipes/<name>` and through a read-only `docs` tool.
-   * Every step names a tool of THIS server and its example must pass that tool's input — checked
-   * here, so a renamed tool fails the boot instead of sending an agent to nothing. With recipes
-   * declared, `resources:` may not hold a `docs://recipes/` URI (`X_MCP_RECIPE_URI_RESERVED`).
+   * How-to recipes, each served as `docs://<section>/<name>` (section `recipes` unless set) and
+   * through a read-only `docs` tool. Every step names a tool of THIS server and its example must
+   * pass that tool's input — checked here, so a renamed tool fails the boot instead of sending an
+   * agent to nothing. With recipes declared, `resources:` may not hold a URI under a section they
+   * use, `docs://recipes/` always included (`X_MCP_RECIPE_URI_RESERVED`).
    */
   readonly recipes?: readonly McpRecipe[];
   /**
@@ -83,6 +85,11 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * boot (they do not exist yet): one naming a tool the caller cannot call is simply not shown.
    */
   readonly extraRecipes?: ExtraRecipes;
+  /**
+   * The `docs` tool's presentation: `description` replaces its default one, `index: 'map'` makes
+   * `docs({})` answer a text map grouped by section instead of JSON. Only with recipes.
+   */
+  readonly docsTool?: DocsToolOptions;
   /** Prompts the app ships: a path to a versioned artifact, or the full descriptor. */
   readonly prompts?: readonly (string | McpPrompt)[];
   /**
@@ -111,9 +118,17 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * One token across tenants: `resolveToken` answers the PERSON, and every `tools/call` names its
    * tenant under `arg` — stripped before validation, checked by `resolve` (`null` answers as a
    * hidden tool), and the actor `resolve` answers is the caller for every gate and the policy.
-   * `list_tenants` serves `list`; a call naming none is `X_MCP_TENANT_REQUIRED`.
+   * `list_tenants` serves `list`; a call naming none is `X_MCP_TENANT_REQUIRED`. `discover` names
+   * a tool that lists the tenants in its place, `optional` the tools a call may reach with none.
    */
   readonly tenant?: McpTenant;
+  /**
+   * What this app adds to the `'meta-split'` dispatchers. `fields`: string fields of its own on
+   * their envelopes (a `reason`), validated there and handed to a tool as `door.fields`, never
+   * as input. `stricter`: sends one call to `delete_resource` by its arguments — preview, then
+   * `confirmed_by_user`. `X_MCP_SPLIT_INVALID` at boot on a surface that is never `'meta-split'`.
+   */
+  readonly split?: McpSplitOptions;
   /**
    * Scope name → the tools that capability covers, by tool name. The connection gate, and the
    * second of the three outcomes: a caller that may SEE a tool but whose token does not carry
@@ -307,7 +322,13 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     tools: projected,
     resources,
     resourceSources,
-  } = withRecipes(confirmed, input.resources ?? [], input.recipes, input.extraRecipes);
+  } = withRecipes(
+    confirmed,
+    input.resources ?? [],
+    input.recipes,
+    input.extraRecipes,
+    input.docsTool,
+  );
 
   const config: McpServerInput = {
     tools: projected,
@@ -325,6 +346,7 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
       ? {}
       : { catalog: appCatalogSource(input.catalog, input.scopes) }),
     ...(input.tenant === undefined ? {} : { tenant: input.tenant }),
+    ...(input.split === undefined ? {} : { split: input.split }),
   };
   const server = mcpServer(config);
 

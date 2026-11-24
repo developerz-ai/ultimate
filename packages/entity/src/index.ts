@@ -72,6 +72,7 @@ export {
 } from './errors';
 export type { ColumnExpr, Expr, InvariantColumns, Resolve } from './expr';
 export { iff } from './expr';
+export { allOf, anyOf } from './expr-connectives';
 /** The two DECLARED capabilities' refusals — a third-party driver raises the same ones. */
 export type { HistoryColumns, HistoryEntity, HistoryInit } from './history';
 export type { HistoryRecord, HistoryVersion } from './history-order';

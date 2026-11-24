@@ -61,11 +61,12 @@ export class McpCatalogUnresolvedError extends UltimateError {
 
 /** A call on a `tenant` server whose arguments carry no tenant value. */
 export class McpTenantRequiredError extends UltimateError {
-  constructor(input: { readonly arg: string }) {
+  /** `lister`: the tool that lists the tenants — `list_tenants`, or the server's `tenant.discover`. */
+  constructor(input: { readonly arg: string; readonly lister?: string }) {
     super({
       code: 'X_MCP_TENANT_REQUIRED',
       cause: `this server acts every call in the tenant the call names, and this call's arguments carry no "${input.arg}"`,
-      fix: 'list_tenants({}) — then send one of its values as the tenant argument of every tools/call',
+      fix: `${input.lister ?? 'list_tenants'}({}) — then send one of its values as the tenant argument of every tools/call`,
     });
   }
 }
@@ -85,13 +86,18 @@ export class McpTenantUnresolvedError extends UltimateError {
   }
 }
 
-/** `tenant.arg` is unusable: not a plain name, or a tool's own input already declares it. */
+/**
+ * The `tenant` option is unusable: `arg` is not a plain name or a tool's own input already declares
+ * it, or `discover` / `optional` names a tool some caller cannot reach by that name.
+ */
 export class McpTenantInvalidError extends UltimateError {
-  constructor(input: { readonly cause: string }) {
+  constructor(input: { readonly cause: string; readonly fix?: string }) {
     super({
       code: 'X_MCP_TENANT_INVALID',
       cause: input.cause,
-      fix: "defineAppMcp({ tenant: { arg: 'tenant', resolve, list } }) — pick an argument name no tool's input declares",
+      fix:
+        input.fix ??
+        "defineAppMcp({ tenant: { arg: 'tenant', resolve, list } }) — pick an argument name no tool's input declares",
     });
   }
 }

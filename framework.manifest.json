@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "92cea4907bce639fe9a861c4bfb25d9be7f3114b1c0577ea8f8662d0e3252b61",
+  "buildId": "be046d1f8354cd029ab61c9d579f75a9596c13dcd05643551de24bb04aa2d8c0",
   "tiers": {
     "0": [
       "core",
@@ -675,6 +675,11 @@
       "at": "packages/auth/src/errors.ts"
     },
     {
+      "code": "X_AUTH_GRANTS_UNSUPPORTED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
       "code": "X_AUTH_LIMITER_NOT_SHARED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
@@ -746,6 +751,21 @@
     },
     {
       "code": "X_BEARER_MOUNT_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_BEARER_TENANT_LIST_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_BEARER_TENANT_REQUIRED",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_BEARER_TENANT_UNRESOLVED",
       "owner": "http",
       "at": "packages/http/src/error-titles.ts"
     },
@@ -2001,6 +2021,11 @@
     },
     {
       "code": "X_E2E_APP_FAILED",
+      "owner": "testing",
+      "at": "packages/testing/src/e2e-error-codes.ts"
+    },
+    {
+      "code": "X_E2E_CONSOLE_ERRORS",
       "owner": "testing",
       "at": "packages/testing/src/e2e-error-codes.ts"
     },
@@ -3585,6 +3610,11 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_ELICITATION_URL_INVALID",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_GROUP_CONFLICT",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -3726,6 +3756,11 @@
     },
     {
       "code": "X_MCP_SCOPE_UNKNOWN",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_SPLIT_INVALID",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },
@@ -4230,6 +4265,11 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_OUTBOUND_TRANSPORT_REDIRECTED",
+      "owner": "core",
+      "at": "packages/core/src/outbound-errors.ts"
+    },
+    {
       "code": "X_OUTBOUND_UNAVAILABLE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -4296,6 +4336,16 @@
     },
     {
       "code": "X_PASSKEY_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_LABEL_INVALID",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PASSKEY_RENAME_UNSUPPORTED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },

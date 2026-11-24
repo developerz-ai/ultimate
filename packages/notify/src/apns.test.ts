@@ -58,4 +58,25 @@ describe('unit · apnsRequest golden payloads', () => {
     const { body } = apnsRequest({ kind: 'data', data: { aps: 'x' } }, TOPIC, NOW);
     expect(JSON.parse(body)).toEqual({ aps: { 'content-available': 1 } });
   });
+
+  test('sound, category and interruption level ride inside aps, after the alert', () => {
+    const { body } = apnsRequest(
+      {
+        kind: 'alert',
+        push: alert({ sound: 'default', category: 'reply', interruptionLevel: 'passive' }),
+      },
+      TOPIC,
+      NOW,
+    );
+    expect(body).toBe(
+      '{"aps":{"alert":{"title":"New reply","body":"Ada answered your post"},"sound":"default",' +
+        '"category":"reply","interruption-level":"passive"},"url":"/posts/42"}',
+    );
+  });
+
+  test('a channel id is Android-only: the APNs request is byte identical without it', () => {
+    expect(
+      apnsRequest({ kind: 'alert', push: alert({ channelId: 'mentions' }) }, TOPIC, NOW),
+    ).toEqual(apnsRequest({ kind: 'alert', push: alert() }, TOPIC, NOW));
+  });
 });

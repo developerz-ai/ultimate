@@ -7,7 +7,10 @@
 // `x.verify.json` requires `e2e` and ran nothing for want of a browser is red by `judgeE2eBrowser`,
 // with the command that installs one.
 
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+// why: Bun ships no synchronous existence check, and `isAppRoot` answers inside a sync predicate.
+import { existsSync } from 'node:fs';
+import { join } from 'node:path'; // why: Bun exposes no path-join primitive.
+import { APP_CONFIG_FILE, ERROR_DOCS_URL } from '@ultimat3/core';
 import { CHROME_PATH_ENV, chromeCandidates, findChrome } from '@ultimat3/scraping/cdp';
 import { E2E_ROOT_ENV } from '@ultimat3/testing';
 import type { ExecResult } from './exec';
@@ -61,9 +64,24 @@ export async function withE2eApp(
   },
   run: (e2e: E2eRun) => Promise<ExecResult>,
 ): Promise<ExecResult> {
-  const chrome = input.isApp ? await findChrome(input.hostEnv) : undefined;
-  if (chrome === undefined) return run({ command: input.command, env: input.env });
+  if (!(await drivesBrowser(input.isApp, input.hostEnv))) {
+    return run({ command: input.command, env: input.env });
+  }
   return run(appE2eRun({ root: input.root, command: input.command, env: input.env }));
+}
+
+/** Whether `root` is an app: its `app.config.ts` is what the e2e preload boots. */
+export const isAppRoot = (root: string): boolean => existsSync(join(root, APP_CONFIG_FILE));
+
+/**
+ * Whether an e2e run drives a browser: an app, on a machine with one. The ONE answer
+ * `x verify`'s `e2e` step and `x test`'s e2e pass launch on, so the two never disagree.
+ */
+export async function drivesBrowser(
+  isApp: boolean,
+  hostEnv: Readonly<Record<string, string | undefined>>,
+): Promise<boolean> {
+  return isApp && (await findChrome(hostEnv)) !== undefined;
 }
 
 /** The floored e2e step that ran nothing because this machine has no browser to drive. */

@@ -36,7 +36,7 @@ export const SQL_OAUTH_GRANT_GET = 'select * from x_oauth_grants where id = $1';
 export const SQL_OAUTH_GRANT_TOUCH = 'update x_oauth_grants set refreshed_at = $2 where id = $1';
 
 export const SQL_OAUTH_GRANT_REVOKE = `
-update x_oauth_grants set revoked_at = $2 where id = $1 and revoked_at is null
+update x_oauth_grants set revoked_at = $2 where id = $1 and revoked_at is null returning 1
 `;
 
 export const SQL_OAUTH_GRANTS_REVOKE = `
@@ -46,6 +46,17 @@ with revoked as (
   returning 1
 )
 select count(*)::int as n from revoked
+`;
+
+/** Byte order on the id breaks a tie, as the memory store does: no collation decides the list. */
+export const SQL_OAUTH_GRANTS_LIVE = `
+select g.* from x_oauth_grants g
+where g.subject = $1 and ($2::text is null or g.client_id = $2) and g.revoked_at is null
+  and exists (
+    select 1 from x_oauth_tokens t
+    where t.grant_id = g.id and t.retired_at is null and t.expires_at > $3
+  )
+order by g.created_at, g.id collate "C"
 `;
 
 export const SQL_OAUTH_TOKEN_PUT = `

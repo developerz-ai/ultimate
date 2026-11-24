@@ -10,6 +10,7 @@
 import { probeImage } from '@ultimat3/core';
 import type { ObjectSource, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders, notModified, objectResponse } from '@ultimat3/http';
+import { siteAssetTable } from '@ultimat3/render/server';
 import type { ImageQuery, ImageTransformDriver } from '@ultimat3/seo';
 import { builtinImageDriver, DEFAULT_WIDTHS, parseImageQuery, usableWidths } from '@ultimat3/seo';
 import type { ImageTransform, Storage, StorageObject, VariantFormat } from '@ultimat3/storage';
@@ -40,7 +41,6 @@ import {
   readStorageObject,
   STORAGE_READ_PERMISSION,
 } from './runtime-storage';
-import { siteAssetTable } from './site-assets';
 
 /**
  * Storage-backed images. `responsiveImage({ src: '/media/<key>' })` mints its variants under it.

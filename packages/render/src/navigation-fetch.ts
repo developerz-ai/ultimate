@@ -4,8 +4,9 @@
  *
  * The headers: purpose, the document's `<app>:<surface>`, its principal, its build on a GET.
  * `redirect: 'manual'` so no redirect is followed behind the router's back; `cache: 'no-cache'` so
- * the browser's HTTP cache never answers. The `Answer` is the page's text, or a non-page's bytes to
- * hand over (a prefetch's are dropped unread).
+ * the browser's HTTP cache never answers. The `Answer` is the page's text (a soft visit's streamed
+ * page: its shell, and the rest to read), or a non-page's bytes to hand over (a prefetch's are
+ * dropped unread).
  */
 
 import {
@@ -18,6 +19,7 @@ import {
 } from '@ultimat3/core/page';
 import type { NavigationCache } from './navigation-cache';
 import { NAVIGATION_META, type ResponseFacts, reusable } from './navigation-rules';
+import { type PageRest, readShell } from './navigation-stream';
 
 /** One fetched answer, read once — a prefetch and the click after it share it. */
 export interface Answer {
@@ -28,6 +30,11 @@ export interface Answer {
   readonly contentType: string;
   readonly build: string | null;
   readonly html: string | null;
+  /**
+   * A soft visit's page that streams holes: `html` is its shell, and this the rest, read by the
+   * router once the shell is on screen. `null` for a page read whole (and every prefetch).
+   */
+  readonly rest: PageRest | null;
   readonly noStore: boolean;
   /** A non-page answer's bytes, kept to hand over — never for a prefetch. */
   readonly body: Blob | null;
@@ -68,7 +75,14 @@ export function fetchDocument(
       const contentType = response.headers.get('content-type') ?? '';
       const opaqueRedirect = response.type === 'opaqueredirect';
       const isHtml = /^\s*text\/html\b/i.test(contentType);
-      const html = !opaqueRedirect && isHtml ? await response.text() : null;
+      // A prefetch is read whole: it is held for a click that may never come, and a held stream
+      // would keep its request open until its slowest hole closed.
+      const page =
+        opaqueRedirect || !isHtml
+          ? { html: null, rest: null }
+          : purpose === 'soft' && response.body !== null
+            ? await readShell(response.body)
+            : { html: await response.text(), rest: null };
       let body: Blob | null = null;
       if (!opaqueRedirect && !isHtml && response.status !== 204) {
         if (purpose === 'prefetch') await response.body?.cancel();
@@ -81,7 +95,8 @@ export function fetchDocument(
         location: location === null ? null : new URL(location, url).href,
         contentType,
         build: response.headers.get(CLIENT_BUILD_META),
-        html,
+        html: page.html,
+        rest: page.rest,
         noStore: /\bno-store\b/i.test(response.headers.get('cache-control') ?? ''),
         body,
         disposition: response.headers.get('content-disposition') ?? '',

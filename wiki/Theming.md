@@ -228,8 +228,9 @@ brandStyleTag(brand);       // '<style>…</style>' — for a page you render yo
 | `shadows` | `Partial<Record<'light' \| 'dark', Partial<Record<ShadowName, string>>>>` | elevation is themed like colour |
 | `radius` | `Partial<Record<RadiusName, string>>` | `none sm md lg xl pill full` |
 | `font` | `Partial<Record<'sans' \| 'mono' \| 'data', string>>` | the font slots |
+| `motion` | `{ duration?: Partial<Record<DurationName, string>>; easing?: Partial<Record<EasingName, string>> }` | the app's own tempo: `t.duration(base)` reads `--duration-base`, so one rung re-times every component. Declaring `--duration-base` with a literal time (`180ms`, `.5s`; lowercase `ms` or `s`) or `cubic-bezier(…)` in a stylesheet is `X_RAW_MOTION`, whose fix names this slot with the value spelled as the slot takes it; a zero (`0ms`) or a plain `var(--…)` read is not reported, but a literal nested in one (`var(--x, calc(180ms * 2))`) is |
 
-Returns a frozen `{ css: string }`. It emits `:root`, `html[data-theme='light']`, the `prefers-color-scheme: dark` block and `html[data-theme='dark']` — radius and font ride `:root` only. Output is ordered by the canonical scale arrays rather than by your object, so re-rendering the same input is byte-identical. Empty input gives `css: ''`, which the framework emits nothing for.
+Returns a frozen `{ css: string }`. It emits `:root`, `html[data-theme='light']`, the `prefers-color-scheme: dark` block and `html[data-theme='dark']` — radius, font and motion ride `:root` only. Output is ordered by the canonical scale arrays rather than by your object, so re-rendering the same input is byte-identical. Empty input gives `css: ''`, which the framework emits nothing for.
 
 ### Values are validated, never escaped
 
@@ -239,12 +240,14 @@ The output can land in a `<style>` element (`brandStyleTag`), so a value that co
 |---|---|---|
 | colour | `^\d{1,3} \d{1,3} \d{1,3}$`, each channel ≤ 255 | `#1e6eb2`, `rgb(1,2,3)`, `1 1 1; } html { display: none }` |
 | radius | `^(0\|\d+(\.\d+)?(px\|rem\|em\|ch\|%))$` | `calc(…)`, `var(…)`, `1` with no unit |
+| duration | `^(0\|\d+(\.\d+)?(ms\|s))$`; `0` is emitted as `0ms`, a unitless zero being no CSS time | `180`, `calc(…)`, `-10ms` |
+| easing | `cubic-bezier(x1, y1, x2, y2)`, numbers only, x1 and x2 in [0, 1] | `ease-in`, `steps(4)`, `cubic-bezier(1.2, 0, 0, 1)` |
 | font | `^[\w\s,'"-]{1,200}$` | anything with `;` `}` `<` `>` `(` `)` `/` `:` — so `Menlo</style><script>` cannot get through |
 
 | Failure | Code | Means |
 |---|---|---|
-| unknown role, radius name or font slot | `X_TOKEN_UNKNOWN` | the key is not in the scale; `cause` lists every name that is |
-| known key, unusable value | `X_UI_INVALID_VALUE` | `cause` names the slot and what was expected |
+| unknown role, radius name, font slot, motion scale or rung | `X_TOKEN_UNKNOWN` | the key is not in the scale; `cause` lists every name that is |
+| known key, unusable value — or a `motion`, `duration` or `easing` that is not an object (`null` from JSON) | `X_UI_INVALID_VALUE` | `cause` names the slot and what was expected |
 
 ## Resolution and first paint
 

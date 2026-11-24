@@ -34,8 +34,10 @@ export interface ChannelRefInit<K extends string> {
   /**
    * The read a client re-runs on `replay-gap` or a new epoch — a query, by name. Read on every
    * access, never at declaration: `registerQueries()` stamps a declared query's name at boot.
+   * Omitted on an events-only channel: with no `records` nothing is replayed, so a gap restarts
+   * the cursor and reads nothing — and `channel(ref, { records })` refuses a ref without one.
    */
-  readonly catchUp: CatchUpRead;
+  readonly catchUp?: CatchUpRead | undefined;
 }
 
 /**
@@ -53,6 +55,7 @@ export interface ChannelHandle<K extends string = string> {
   readonly kind: 'channel-ref';
   readonly name: string;
   readonly params: readonly K[];
+  /** The catch-up query's name; `''` for an events-only ref, which reads nothing on a gap. */
   readonly catchUp: string;
   /** The topic for one set of params — the one spelling both halves use. */
   topic(params: ChannelParams<K>): Topic;
@@ -94,10 +97,10 @@ export function channelRef<const K extends string>(
     name,
     params: init.params,
     get catchUp(): string {
-      return init.catchUp.name;
+      return init.catchUp?.name ?? '';
     },
     topic: topicOf,
   });
-  READS.set(ref, init.catchUp);
+  if (init.catchUp !== undefined) READS.set(ref, init.catchUp);
   return ref;
 }

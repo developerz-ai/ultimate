@@ -70,9 +70,12 @@ function parseShape(value: unknown): ApiShape | undefined {
     return { kind, head, members, ...(ctor === undefined ? {} : { ctor: [...ctor] }) };
   }
   if (kind === 'declaration' && typeof keyword === 'string') {
-    if (value['locals'] === undefined) return { kind, keyword, head };
+    const exports = codes(value['exports']);
+    if (value['exports'] !== undefined && exports === undefined) return undefined;
+    const named = exports === undefined ? {} : { exports };
+    if (value['locals'] === undefined) return { kind, keyword, head, ...named };
     const locals = parseLocals(value['locals']);
-    return locals === undefined ? undefined : { kind, keyword, head, locals };
+    return locals === undefined ? undefined : { kind, keyword, head, locals, ...named };
   }
   return undefined;
 }
@@ -149,6 +152,7 @@ function shapeBody(shape: ApiShape): unknown {
                 byKey(shape.locals).map(([name, local]) => [name, symbolBody(local)]),
               ),
             }),
+        ...(shape.exports === undefined ? {} : { exports: sortedCodes(shape.exports) }),
       };
     case 'overloads':
       return { kind: shape.kind, signatures: shape.signatures.map(shapeBody) };

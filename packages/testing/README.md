@@ -76,6 +76,7 @@ unitTest('the clock moves only when the test moves it', ({ clock }) => {
 | `matchers.ts` | `toBeUltimateError` `toDenyPolicy` `toEmitSteps` `toMatchOpenApi` `toBeWithinBudget` `toRejectInput` `toAcceptInput` `toEqualRow` `toBeVisible` |
 | `matchers-steps.ts` | `recordSteps` — behind `toEmitSteps`: the job's real arguments (a worker `ctx`, ambient too, `attempt` 1, `progress`, `runId`), a never-aborted signal per step body; `waitForEvent` is a recorded step that times out (`undefined`, or `X_JOB_TIMEOUT` when `required`); `sleep` returns at once and is no step |
 | `matcher-row.ts` | `toEqualRow` — equality over every OWN property, so a `.sealed()` column (not enumerable on a repository row) is compared; a server-only difference is named, never printed |
+| `app-assets.ts` | the app's site asset table installed into `asset()` (Sass `asset()` included) when the run's root is an app, again at every file boundary — installed by the preload, exported from nowhere |
 | `test-seal-key.ts` | the throwaway master key a test process seals under when the app has none — installed by the preload, handed to the app `startE2eApp` spawns, exported from nowhere |
 | `local-tx.ts` | `memoryLocalTx()` — the client store a mutator's `local()` half writes into under test, with the record store's own rules |
 | `render-view.ts` | `renderView()` / `renderRoute()` — what the server renders, for a unit test: one component, or a whole route module with its `load`, `meta` and islands |
@@ -367,7 +368,11 @@ fixture that silently no-opped would make the assertion after it read as proof.
 **Real input, `As of 2026-11`.** A raw-CDP tab (`cdpE2eTab`, the `E2eTab` the framework implements)
 sends trusted input the page cannot forge: `tab.touchDrag(from, to, steps)` is a finger
 (`Input.dispatchTouchEvent`, touch emulation on once per tab) and `tab.press(key)` a key
-(`Input.dispatchKeyEvent`, so Tab really moves focus) — a key from `PRESS_KEYS`, a letter or a digit.
+(`Input.dispatchKeyEvent`, so Tab really moves focus) — a key from `PRESS_KEYS`, a letter or a digit,
+optionally a chord with `Alt`, `Control`, `Meta` or `Shift` held (`Shift+Tab`, `Control+k`). The tab
+also keeps its console (`tab.consoleMessages()`, `tab.clearConsole()`: every `console.*` call and uncaught exception, cross-site iframes included; 1,000 lines of 2,000 characters at most, oldest non-error dropped first).
+An app's e2e test reaches both through its `page`: `pressKey(page, key)`, `consoleMessages(page)`
+(since the running test began) and `expectNoConsoleErrors(page)` (`X_E2E_CONSOLE_ERRORS`).
 A touch `PointerEvent` dispatched from page script is refused by `setPointerCapture`, so a drag
 proven that way proves nothing; `TouchPoint` is the `{ x, y }` both ends take.
 
@@ -789,11 +794,11 @@ unitTest('the shell keeps the page in <main>', async () => {
 
 | | |
 |---|---|
-| **`renderRoute(module, { url?, params?, actor? })`** | the route module passed WHOLE (`import * as page`), so the page is found by the router's own rule (`pageComponentOf`). `load` runs once; `meta` and the page are handed that one object; islands are collected under the route's own `hydrate` |
+| **`renderRoute(module, { url?, params?, actor? })`** | the route module passed WHOLE (`import * as page`), so the page is found by the router's own rule (`pageComponentOf`). `load` runs once; `meta` and the page are handed that one object; islands are collected under the route's own `hydrate`. A `url` whose first segment is a routed locale (`/es/…`) renders in that locale, as the router reads the prefix |
 | **`renderView(Component, props)`** | one component. `props` is the component's own type — a renamed prop is a compile error in the test. A component that renders an `island()` is refused here: its timing is a route's |
 | **`view.html`** | the markup as the document carries it |
-| **`view.text`** | what a reader sees: tags, `<script>` and `<style>` bodies removed, entities decoded, whitespace collapsed. Compare with `t('<key>')` — markup escapes what the catalog does not |
-| **`actor`** | `load` and the page run inside `runWithContext(ctxOf({ actor }))`. Without one they run outside any request context, as a static page does |
+| **`view.text`** | what a reader sees: tags, `<script>` and `<style>` bodies removed, character references decoded (every numeric one, and the common named ones: `&quot;`, `&apos;`, `&nbsp;`, typographic quotes and dashes, `&hellip;` …) as a browser reads them (`&#39` and `&amp` with no semicolon, `&#128;` as `€`), whitespace collapsed but a no-break space kept. Compare with `t('<key>')` — markup escapes what the catalog does not |
+| **`actor`** | `load` and the page run inside `runWithContext(ctxOf({ actor }))`. With neither an actor nor a routed locale prefix in `url`, they run outside any request context, as a static page does; a `/es/…` prefix alone opens one holding that locale |
 | **the file stays `.test.ts`** | no JSX in a test: the registry-leak guard's loader covers `.test.ts` only, and children that need markup are a string |
 
 `@ultimat3/render` is imported inside the two functions, so the barrel still loads no renderer.

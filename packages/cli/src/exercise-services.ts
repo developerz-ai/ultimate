@@ -1,10 +1,12 @@
 // The runtime services a server's boot installs (`runtime-services.ts`) that `x exercise` stands in
-// for: a storage disk, a fleet-wide rate-limit store and the Web Push runtime, over the pass's
-// scratch database. Without them every primitive reading one stopped on a boot-only refusal and
+// for: a storage disk, a fleet-wide rate-limit store, the fleet-wide auth limiter and the Web Push
+// runtime, over the pass's scratch database. Without them every primitive reading one stopped on a boot-only refusal and
 // the app had to declare `{ off }` for it — the pass's job, not the app's.
 
+import { postgresAuthLimiter } from '@ultimat3/auth';
+import { installAuthLimiters } from '@ultimat3/auth/adapter';
 import type { AppConfig, PgExecutor } from '@ultimat3/core';
-import { ENVIRONMENT_KEY } from '@ultimat3/core';
+import { ENVIRONMENT_KEY, systemClock } from '@ultimat3/core';
 import { postgresRateLimitStore } from '@ultimat3/http';
 import { installRateLimitStore } from '@ultimat3/http/adapter';
 import {
@@ -76,6 +78,14 @@ export async function installExerciseServices(inputs: ExerciseServiceInputs): Pr
     // `scope: 'shared'`, as the boot's: a `rateLimit: { scope: 'shared' }` declaration is judged
     // against the installed store, and one process' memory refused it with X_RATE_LIMIT_NOT_SHARED.
     released.push(installRateLimitStore(postgresRateLimitStore({ executor: inputs.executor })));
+    // The boot's auth limiter for the same reason: `defineAuth({ rateLimit: { scope: 'shared' } })`
+    // judged against one process' memory refused every action that reserves an attempt with
+    // X_AUTH_LIMITER_NOT_SHARED. Built per declared policy, over the scratch `x_auth_lockouts`.
+    released.push(
+      installAuthLimiters((policy) =>
+        postgresAuthLimiter({ executor: inputs.executor, clock: systemClock, policy }),
+      ),
+    );
     // Last, and the one that can refuse (a half VAPID pair): what is already in is undone first.
     released.push(await installPush(inputs));
   } catch (error) {

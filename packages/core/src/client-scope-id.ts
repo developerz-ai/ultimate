@@ -24,15 +24,22 @@ export interface ClientScopeIdOptions {
 /** Minted on first need when no `SESSION_SECRET` exists: stable per process, never per request. */
 let processKey: string | undefined;
 
-/** `''` for the anonymous actor; otherwise the principal AND who is really acting. */
+/**
+ * `''` for the anonymous actor; otherwise the principal, who is really acting, and the tenant. One
+ * person in two orgs is two scopes: a page, a store or a queued write rendered under one org must
+ * never be reused under the other. No org leaves the material, and so the id, as it always was.
+ */
 export function clientScopeId(actor: Actor, options: ClientScopeIdOptions = {}): string {
   if (actor.kind === 'anonymous') return '';
-  const material = JSON.stringify([
+  const principal = [
     actor.kind,
     actor.id,
     actor.onBehalfOf?.actorKind ?? null,
     actor.onBehalfOf?.actorId ?? null,
-  ]);
+  ];
+  const material = JSON.stringify(
+    actor.orgId === undefined ? principal : [...principal, actor.orgId],
+  );
   return hmac('sha256', scopeKey(options), material, 'hex').slice(0, SCOPE_HEX_CHARS);
 }
 

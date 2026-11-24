@@ -145,15 +145,25 @@ migration or a psql session can violate.
 | Written as | Reaches SQL | Note |
 |---|---|---|
 | `c.title.trimmed().minLength(1)` · `c.likeCount.atLeast(0)` · `c.email.contains('@')` · `c.a.eq(c.b)` · `c.flag.isTrue()` · `c.publishedAt.isNull()` / `.isNotNull()` | yes | `CHECK`. `trimmed()` strips leading and trailing **spaces** only, as one-argument `btrim` does — a tab is a character on both sides. `atLeast` / `eq(<number>)` compare the number the column holds, so a `bigint()` or `decimal()` row (a decimal string) is judged by its digits |
-| `iff(c.status.eq('published'), c.publishedAt.isNotNull())` | yes | `(a) = (b)` — a rule that holds *exactly when* another does. The **one** combinator: `and`/`or`/`not` are deliberately absent |
+| `iff(c.status.eq('published'), c.publishedAt.isNotNull())` | yes | `(a) = (b)` — a rule that holds *exactly when* another does |
+| `allOf(c.a.isNull(), c.b.isNull())` · `anyOf(c.a.isNull(), c.b.isNull())` | yes | `(a) and (b)` / `(a) or (b)`, two or more operands, three-valued as SQL's (`As of 2026-11`): "both unset", "at most one set". Two invariants are already a conjunction; `allOf` is for where ONE predicate must say it — an index `where: (c) => allOf(…)`, or inside `anyOf`/`iff`. One app-only operand makes the whole rule `sql: null`; a `unique` operand, or fewer than two, is `X_INVARIANT_VIOLATED`. `not` stays absent: `isNull`/`isNotNull` are the negations a CHECK needs |
 | `c.unique(['orgId', 'userId'])` | yes | `UNIQUE`, not a CHECK — a single row cannot see a duplicate |
 | `c.slug.matches(SLUG_PATTERN)` — a **`RegExp`** | yes | `slug ~ '…'` |
 | `c.slug.matches(isValidSlug)` — a **function** | **no** | `sql: null` |
 | `c.satisfies(fn, ['status', 'publishedAt'])` | **no** | `sql: null`, by construction — a JS function over several columns |
 
+**A patch is refused as the row would be.** `insert` judges the whole row before its statement; an
+`update` or `updateWhere` patch only becomes a row on the server, so there the CHECK judges first,
+and its `23514` on a rule this entity declares answers `X_INVARIANT_VIOLATED` naming that rule (a
+422), the same as `insert`. A CHECK no invariant declares stays `X_DB_STATEMENT_FAILED`. As of
+2026-11; before it a refused patch was a 500.
+
 **A rule over a nullable column passes `NULL`, in the app as in the CHECK.** Every operator but
 `isNull()`/`isNotNull()` answers SQL's *unknown* for a NULL operand, in TypeScript too, and a rule
-holds unless it is false — so `c.slug.matches(SLUG_PATTERN)` on a `.nullable()` slug accepts a
+holds unless its FINAL verdict is false. That is per comparison: a composite decides by its own
+three-valued logic, so `allOf(c.a.eq(1), c.b.eq(1))` refuses `a = NULL, b = 2` (false beats
+unknown) while `anyOf(c.a.eq(1), c.b.eq(1))` passes it (no operand true, one unknown) — in both
+halves. So `c.slug.matches(SLUG_PATTERN)` on a `.nullable()` slug accepts a
 NULL in `$assert`, the memory driver and Postgres alike (`invariant-null.test.ts`, every operator on
 PGlite). To refuse NULL, declare the column NOT NULL or add `.isNotNull()`. As of 31.3; before it
 the app refused the NULL its CHECK stored.

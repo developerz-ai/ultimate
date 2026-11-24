@@ -43,6 +43,12 @@ const sites = new Map<string, Set<string>>();
 export const knownPermissions = (): readonly string[] => [...declared].sort();
 
 /**
+ * Whether the declared set is nonempty — `can()`'s deferred check asks it per decision. A
+ * `definePermissions([])` leaves it empty, so it is not the same as "a declaration ran".
+ */
+export const permissionSetDeclared = (): boolean => declared.size > 0;
+
+/**
  * Where each permission was declared: one stack frame per distinct declaring call, as
  * `roleDeclarationSites()` answers for roles. ALL of them rather than the first, because the
  * question asked of it is provenance — the `policy` step flags an app rule that holds only because

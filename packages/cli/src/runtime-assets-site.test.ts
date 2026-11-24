@@ -10,12 +10,12 @@ import { join } from 'node:path'; // why: Bun ships no path join.
 import { blankRaster, encodeImage, probeImage } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
+import { SITE_ASSETS_SOURCE, siteAssetTable } from '@ultimat3/render/server';
 import type { ImageTransformDriver } from '@ultimat3/seo';
 import { responsiveImage } from '@ultimat3/seo';
 import { defineStorage, memoryStorageDriver } from '@ultimat3/storage';
 import { assetRoutes } from './runtime-assets';
 import { siteAssetVariantRoutes } from './runtime-assets-site';
-import { SITE_ASSETS_SOURCE, siteAssetTable } from './site-assets';
 
 const root = mkdtempSync(join(tmpdir(), 'x-site-variants-'));
 mkdirSync(join(root, SITE_ASSETS_SOURCE), { recursive: true });

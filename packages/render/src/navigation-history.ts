@@ -78,3 +78,42 @@ export function scrollAfter(win: Window, doc: Document, url: string, mode: Histo
   else if (target !== null) target.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
   else to(0, 0);
 }
+
+/**
+ * `url` loaded for real. One that differs from the page on screen only by its fragment is reloaded:
+ * `assign` there is a same-document fragment navigation, which scrolls and leaves the page as it is.
+ * An empty fragment (`/a#`) is one too, though `URL.hash` reads it as none. Another fragment is
+ * pushed first, as `assign` would: a reload of the address bar's own would land on that anchor.
+ */
+export function loadForReal(win: Window, url: string): void {
+  const here = win.location.href;
+  if (url.includes('#') && withoutFragment(url) === withoutFragment(here)) {
+    if (url !== here) win.history.pushState(null, '', url);
+    win.location.reload();
+  } else win.location.assign(url);
+}
+
+/**
+ * The fragment's element, scrolled to once a hole brings it — when the swap found none to scroll to
+ * and the visitor has not moved since: `true` once there is nothing left to wait for. Back/Forward
+ * restored a saved offset, which a late element never overrides.
+ */
+export function lateFragment(
+  win: Window,
+  doc: Document,
+  url: string,
+  mode: HistoryMode,
+): (() => boolean) | undefined {
+  const raw = new URL(url).hash.slice(1);
+  if (raw === '' || mode === 'none') return undefined;
+  const id = decodeSegment(raw) ?? raw;
+  if (doc.getElementById(id) !== null) return undefined;
+  const at = [win.scrollX, win.scrollY, win.location.hash] as const;
+  return () => {
+    if (win.scrollX !== at[0] || win.scrollY !== at[1] || win.location.hash !== at[2]) return true;
+    const target = doc.getElementById(id);
+    if (target === null) return false;
+    target.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+    return true;
+  };
+}

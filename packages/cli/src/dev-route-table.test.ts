@@ -14,6 +14,7 @@ import { defineHttpConfig, httpServer, requestContext, UltimateRequest } from '@
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import type { AssetPath } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
+import { siteAssetTable } from '@ultimat3/render/server';
 import type { ImageTransformDriver } from '@ultimat3/seo';
 import { defineStorage, localDriver, resetStorage } from '@ultimat3/storage';
 import type { DevDashboardInput } from './dev-dashboard';
@@ -21,7 +22,6 @@ import { devRouteTable } from './dev-route-table';
 import { islandBundle } from './island-bundle';
 import { MEDIA_BASE_PATH } from './runtime-assets';
 import { STORAGE_READ_PERMISSION } from './runtime-storage';
-import { siteAssetTable } from './site-assets';
 import { setBrandStyles, styleBundle } from './style-bundle';
 import { APP_THEME_MODULE } from './theme-brand';
 

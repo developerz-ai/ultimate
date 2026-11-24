@@ -6,6 +6,7 @@
 
 import type { Ctx } from '@ultimat3/core';
 import { isAnonymous, logger } from '@ultimat3/core';
+import type { MeterSite } from './errors-meter';
 import { MeterExceededError, MeterInvalidError } from './errors-meter';
 import type { ActionMeter, MeterWarning, ResolvedLimit } from './meter';
 import { isMeterLimit } from './meter';
@@ -32,16 +33,19 @@ export async function resolveMeterLimit(
   meter: string,
   limit: ResolvedLimit,
   ctx: Ctx,
+  site: MeterSite = 'action',
 ): Promise<number> {
   const resolved: unknown = typeof limit === 'function' ? await limit({ ctx }) : limit;
   if (!isMeterLimit(resolved)) {
-    throw new MeterInvalidError(meter, 'limit', 'a whole number of calls, 0 or more', resolved);
+    const expected =
+      site === 'draw' ? 'a whole number, 0 or more' : 'a whole number of calls, 0 or more';
+    throw new MeterInvalidError(meter, 'limit', expected, resolved, site);
   }
   return resolved;
 }
 
-/** Draw one call from `meter` for this caller, or throw `X_METER_EXCEEDED`. */
-export async function drawMeter(
+/** Draw one call from an action's `meter:` for this caller, or throw `X_METER_EXCEEDED`. */
+export async function drawActionMeter(
   action: string,
   meter: ActionMeter,
   ctx: Ctx,

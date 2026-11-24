@@ -75,7 +75,9 @@ export async function loadNavigation(root: string): Promise<NavigationDeclaratio
 
 /**
  * A page declaring `navigation` on a surface with no client navigation says something no process
- * can honour — refused at boot, before a single request, for every route in the table.
+ * can honour — refused at boot, before a single request, for every route in the table. Except
+ * `'document'`: it asks for a real document load, which is what every page of such a surface
+ * already gets, so it is honoured there as declared.
  */
 export function assertRouteNavigation(
   surfaces: readonly NavigationSurface[],
@@ -83,7 +85,8 @@ export function assertRouteNavigation(
 ): void {
   for (const entry of entries) {
     const mode = navigationModeOf(entry.config.navigation);
-    if (mode === undefined || surfaces.some((surface) => surface === entry.surface)) continue;
+    if (mode === undefined || mode === 'document') continue;
+    if (surfaces.some((surface) => surface === entry.surface)) continue;
     throw new RouteNavigationInvalidError(
       `${entry.file} declares navigation: '${mode}', and its surface (${entry.surface}) is not in app.config.ts navigation.client`,
     );

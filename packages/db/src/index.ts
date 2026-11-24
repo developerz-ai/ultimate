@@ -144,6 +144,7 @@ export {
   constraintNameFor,
   declaredIndexes,
   invariantChecks,
+  namesConstraint,
   uniqueColumns,
 } from './invariant-ddl';
 export { constraintNameUnsafe } from './invariant-errors';

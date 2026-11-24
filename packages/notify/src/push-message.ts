@@ -72,11 +72,59 @@ export interface RenderedNativePush {
   readonly collapse: string | undefined;
   readonly ttlSeconds: number;
   readonly urgent: boolean;
+  /**
+   * Both providers. Absent, no sound is requested: APNs shows the alert silently, and on Android 8
+   * and later the notification channel's sound plays. `'default'` asks for the platform's sound.
+   */
+  readonly sound?: string | undefined;
+  /** APNs only. */
+  readonly interruptionLevel?: NativeInterruptionLevel | undefined;
+  /** APNs only. */
+  readonly category?: string | undefined;
+  /** FCM only. */
+  readonly channelId?: string | undefined;
+}
+
+export type NativeInterruptionLevel = 'passive' | 'active' | 'time-sensitive' | 'critical';
+
+const INTERRUPTION_LEVELS: ReadonlySet<string> = new Set([
+  'passive',
+  'active',
+  'time-sensitive',
+  'critical',
+]);
+
+/** A sound file, a category or a channel id: a short name, never text a person reads. */
+const NATIVE_NAME = /^[A-Za-z0-9._-]{1,64}$/;
+
+/**
+ * The native-only fields of a visible push, screened once before any device: a name each provider
+ * takes as it is, or `X_NOTIFY_PUSH_MESSAGE_INVALID` naming the field.
+ */
+export function screenNativeFields(message: NotifyPushMessage): void {
+  for (const field of ['sound', 'category', 'channelId'] as const) {
+    const value: unknown = message[field];
+    if (value !== undefined && (typeof value !== 'string' || !NATIVE_NAME.test(value))) {
+      throw new NotifyPushMessageInvalidError({
+        field,
+        problem: `is not a name of 1 to 64 letters, digits, '.', '_' or '-' (${String(NATIVE_NAME)})`,
+      });
+    }
+  }
+  const level: unknown = message.interruptionLevel;
+  if (level !== undefined && (typeof level !== 'string' || !INTERRUPTION_LEVELS.has(level))) {
+    throw new NotifyPushMessageInvalidError({
+      field: 'interruptionLevel',
+      problem: `is not one of ${[...INTERRUPTION_LEVELS].join(', ')}`,
+    });
+  }
 }
 
 /**
  * The web-only fields (`icon`, `badge`, `actions`, `requireInteraction`, `renotify`) have no
- * native meaning here and are not sent: an app's native shell decides how its alerts look.
+ * native meaning here and are not sent: an app's native shell decides how its alerts look. The
+ * native-only ones (`sound`, `interruptionLevel`, `category`, `channelId`) pass through as given,
+ * screened by `screenNativeFields`.
  */
 export function renderNativePush(
   message: NotifyPushMessage,
@@ -95,6 +143,13 @@ export function renderNativePush(
     ),
     urgent:
       message.urgency === undefined || message.urgency === 'normal' || message.urgency === 'high',
+    // Only the fields set: an alert without them renders exactly as it did before they existed.
+    ...(message.sound === undefined ? {} : { sound: message.sound }),
+    ...(message.interruptionLevel === undefined
+      ? {}
+      : { interruptionLevel: message.interruptionLevel }),
+    ...(message.category === undefined ? {} : { category: message.category }),
+    ...(message.channelId === undefined ? {} : { channelId: message.channelId }),
   };
 }
 
