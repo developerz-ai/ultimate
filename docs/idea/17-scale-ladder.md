@@ -34,7 +34,7 @@ Costs are order-of-magnitude, not quotes. No price in this table is verified aga
 
 | Rung | What was measured | Figure | Result |
 |---|---|---|---|
-| 0 | `x dev` on a fresh scaffold, `/` | 1,147 req/s median, p99 26.86 ms, on a 4-core CI runner, `As of 2026-11-18` | [`http-hello.json`](../../scripts/bench/results/http-hello.json) |
+| 0 | `x dev` on a fresh scaffold, `/` | 1,125 req/s median, p99 33.2 ms, on a 4-core CI runner, `As of 2026-11-23` | [`http-hello.json`](../../scripts/bench/results/http-hello.json) |
 | 0 | a 5,124-file app (the reference app + 150 generated resources), `x dev` to the first 200: 5.7 s | meets the 10 s target on a restart; a fresh clone (no `.x/`: no island cache, a new embedded Postgres) is 29.3 s | [`boot-large-app.json`](../../scripts/bench/results/boot-large-app.json) |
 | 0–3 | the same app, a `web` pod from the prebuilt registry to the first 200: 2.4 s | meets the 3 s target; on the host, the image's entry and store, not inside a container | [`boot-large-app.json`](../../scripts/bench/results/boot-large-app.json) |
 | 0–3 | module load against file count | 5,000 modules batched vs serial on the claims page | [`boot-vs-files.json`](../../scripts/bench/results/boot-vs-files.json) |

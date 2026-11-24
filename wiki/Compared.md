@@ -28,20 +28,20 @@ Who uses it:
 
 ## Measured, and how to reproduce it
 
-Medians of five runs on a 4-core GitHub `ubuntu-latest` runner, `As of 2026-11-18`; the method, the
+Medians of five runs on a 4-core GitHub `ubuntu-latest` runner, `As of 2026-11-23`; the method, the
 box and the caveats are [`scripts/bench/results/README.md`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/README.md),
 and every number below is held to the committed JSON by `bun run scripts/bench-claims.ts`
 (`X_BENCH_CLAIM_STALE`).
 
 | Figure | Measured |
 |---|---|
-| scaffold, published `create-ultimate` (31.46.0) | 1.5 s |
-| `bun run setup`, cold Bun cache | 8.0 s |
-| `node_modules` after setup | 197 MB |
-| first `bun run verify` | green in all five runs, median 23.1 s |
-| `/` under `x dev`, one client, concurrency 16 | median 1,147 req/s, p99 26.86 ms |
-| a typed read, `/_x/query/post-list` | median 875 req/s, p99 35.3 ms |
-| cold start to the first 2xx (`x dev`) | 1.1 s |
+| scaffold, published `create-ultimate` (31.49.0) | 1.8 s |
+| `bun run setup`, cold Bun cache | 9.0 s |
+| `node_modules` after setup | 196 MB |
+| first `bun run verify` | green in all five runs, median 29.5 s |
+| `/` under `x dev`, one client, concurrency 16 | median 1,125 req/s, p99 33.2 ms |
+| a typed read, `/_x/query/post-list` | median 889 req/s, p99 45.13 ms |
+| cold start to the first 2xx (`x dev`) | 1.6 s |
 
 `x dev` is the development server — every role and an embedded Postgres in one process — so these
 are a CI runner's first-hour numbers, not a production capacity claim. The previous figures came from
