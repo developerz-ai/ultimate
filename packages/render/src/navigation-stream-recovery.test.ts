@@ -3,7 +3,7 @@
 // once a newer visit stays, and never over a load the router already handed to the browser.
 // Chrome: `packages/cli/e2e/stream-hole-recovery.e2e.test.ts`.
 import { afterEach, expect, test } from 'bun:test';
-import { click, page, stopRouter, tab } from './navigation-controller-fixture';
+import { click, currentRouter, page, stopRouter, tab } from './navigation-controller-fixture';
 import { type FakeDocument, htmlAnswer, parsed, settle } from './navigation-dom-fixture';
 import { STREAM_FLUSH_MARK } from './stream-scripts';
 
@@ -122,4 +122,22 @@ test('Back to a fragment URL whose soft fetch fails is a full load: the address 
   win.go(-1);
   await settle();
   expect([win.location.href, win.assigned]).toEqual(['https://app.test/a#filled', ['reload']]);
+});
+
+test('broken after the visitor moved to another fragment: the page asked for is the one reloaded', async () => {
+  const s = streamed('page:S', page('S'));
+  const { win, doc } = tab({ '/b': () => s.response });
+  await currentRouter()?.navigate('https://app.test/b#part');
+  await settle();
+  expect(doc.title).toBe('S');
+  // A fragment link of the page on screen is the browser's: it pushes, and the router never sees it.
+  win.history.pushState(null, '', 'https://app.test/b#other');
+  s.breakIt();
+  await settle();
+  // A reload of `/b#other` would never reach `#part`: the requested URL is pushed, as `assign` would.
+  expect([win.location.href, win.index, win.assigned]).toEqual([
+    'https://app.test/b#part',
+    3,
+    ['reload'],
+  ]);
 });

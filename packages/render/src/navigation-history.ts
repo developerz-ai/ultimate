@@ -82,11 +82,13 @@ export function scrollAfter(win: Window, doc: Document, url: string, mode: Histo
 /**
  * `url` loaded for real. One that differs from the page on screen only by its fragment is reloaded:
  * `assign` there is a same-document fragment navigation, which scrolls and leaves the page as it is.
- * An empty fragment (`/a#`) is one too, though `URL.hash` reads it as none.
+ * An empty fragment (`/a#`) is one too, though `URL.hash` reads it as none. Another fragment is
+ * pushed first, as `assign` would: a reload of the address bar's own would land on that anchor.
  */
 export function loadForReal(win: Window, url: string): void {
   const here = win.location.href;
   if (url.includes('#') && withoutFragment(url) === withoutFragment(here)) {
+    if (url !== here) win.history.pushState(null, '', url);
     win.location.reload();
   } else win.location.assign(url);
 }
