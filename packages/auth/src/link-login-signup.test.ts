@@ -98,8 +98,12 @@ describe('signInWithLink: declared sign-up', () => {
 
   test('the account is created verified in one write: no later write can strand it', async () => {
     const w = world();
-    // A store whose every later user write fails: the creating write is the only one that lands.
-    w.adapter.updateUser = async () => null;
+    // A store whose every later user write fails, counted: the creating write is the only one.
+    let updates = 0;
+    w.adapter.updateUser = async () => {
+      updates += 1;
+      return null;
+    };
     const result = await signInWithLink(w.auth, {
       purpose: signInLink.name,
       identifier: 'new@corp.test',
@@ -113,6 +117,46 @@ describe('signInWithLink: declared sign-up', () => {
     expect(
       (await redeem(w.auth, await mailed(w, 'new@corp.test'), 'new@corp.test')).session.userId,
     ).toBe(user?.id ?? '');
+    expect(updates).toBe(0);
+  });
+
+  test('an adapter that drops the creation stamp gets it in a second write, and stays reachable', async () => {
+    const w = world();
+    // An app adapter written before `CreateUserInput.emailVerifiedAt`: it stores the row unstamped.
+    const create = w.adapter.createUser.bind(w.adapter);
+    w.adapter.createUser = (input) => create({ ...input, emailVerifiedAt: undefined });
+    const result = await signInWithLink(w.auth, {
+      purpose: signInLink.name,
+      identifier: 'new@corp.test',
+      token: await mailed(w, 'new@corp.test'),
+      signUp: {},
+    });
+    const user = await w.adapter.findUserByEmail('new@corp.test');
+    expect(user?.emailVerifiedAt).toEqual(w.clock.now());
+    expect(result.session.userId).toBe(user?.id ?? '');
+    expect(
+      (await redeem(w.auth, await mailed(w, 'new@corp.test'), 'new@corp.test')).session.userId,
+    ).toBe(user?.id ?? '');
+  });
+
+  test('a failed second stamp is X_AUTH_WRITE_FAILED, never a session on an unverified account', async () => {
+    const w = world();
+    const create = w.adapter.createUser.bind(w.adapter);
+    w.adapter.createUser = (input) => create({ ...input, emailVerifiedAt: undefined });
+    w.adapter.updateUser = async () => null;
+    const token = await mailed(w, 'new@corp.test');
+    const error = await caught(() =>
+      signInWithLink(w.auth, {
+        purpose: signInLink.name,
+        identifier: 'new@corp.test',
+        token,
+        signUp: {},
+      }),
+    );
+    expect(error?.code).toBe('X_AUTH_WRITE_FAILED');
+    const user = await w.adapter.findUserByEmail('new@corp.test');
+    expect(user?.emailVerifiedAt).toBeNull();
+    expect(await w.adapter.listSessions(user?.id ?? '')).toHaveLength(0);
   });
 
   test('sign-up never rewrites an account that exists', async () => {

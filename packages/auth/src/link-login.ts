@@ -62,16 +62,16 @@ const linkSignInRefused = (purpose: string): AuthError =>
 /**
  * An account holds the address and never proved it, so whoever registered it chose its password.
  * Signing the inbox's owner into that account hands them a session somebody else can also open —
- * and so does merely verifying it: the registrant's password, second factor and sessions survive
- * a stamp. The remedy is the reset link, whose consume replaces all three before the account is
- * trusted. Named, because this caller owns the address — the rule `oauthAccountNotLinked` follows.
+ * and so does merely verifying it: the registrant's password, second factor, passkeys, API keys and
+ * sessions survive a stamp. The remedy is the reset link: its consume only proves the inbox, and
+ * the app revokes every one of those before the account is trusted. Named, because this caller owns the address — the rule `oauthAccountNotLinked` follows.
  */
 const linkAccountUnverified = (): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause:
       'an account holds this address but never verified it, so whoever registered it may hold its password, and a sign-in link may not claim it',
-    fix: "await passwordReset.issue(runtime, { identifier: email, locale })   // on its consume: updateUser(id, { passwordHash: null, mfaSecret: null, recoveryCodeHashes: [], emailVerifiedAt: now }) and revokeUserSessions(auth, id, 'address proven by reset'), then sign in by link",
+    fix: "await passwordReset.issue(runtime, { identifier: email, locale })   // its consume only proves the inbox; then, before trusting the account: deletePasskey for every listPasskeys(id), revokeApiKey for every listApiKeys(id), updateUser(id, { passwordHash: null, mfaSecret: null, recoveryCodeHashes: [], emailVerifiedAt: now }) and revokeUserSessions(auth, id, 'address proven by reset'), then sign in by link",
   });
 
 /** Before the store is asked, so a refused purpose leaves its token live for its own job. */
@@ -98,7 +98,7 @@ function assertSignInPurpose(name: string): void {
   if (purpose.identifier !== normaliseEmail) {
     throw new ConfigInvalidError({
       cause: `the verification purpose ${renderFixLiteral(name, "'<purpose>'")} declares its own identifier, so what its link proves is not known to be an account's address`,
-      fix: `defineVerificationPurpose({ name: ${renderFixLiteral(name, "'<purpose>'")}, template, ttlMs })   // no identifier: — the default keys on the address, as x_users.email is`,
+      fix: `defineVerificationPurpose({ name: ${renderFixLiteral(name, "'<purpose>'")}, template, ttlMs, signIn: true })   // no identifier: — the default keys on the address, as x_users.email is`,
       meta: { purpose: name },
     });
   }

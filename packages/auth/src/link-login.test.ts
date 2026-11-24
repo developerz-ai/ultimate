@@ -267,36 +267,58 @@ describe('signInWithLink: what a link is not', () => {
     expect((await login(w.auth, { email: EMAIL, password: PASSWORD })).session.userId).toBe(
       user.id,
     );
-    // Sign-up declared changes nothing: the address is held.
-    const withSignUp = await caught(async () =>
+    // The refusal spent the link: made eligible, with no link issued in between, it is still refused.
+    await w.adapter.updateUser(user.id, { emailVerifiedAt: w.clock.now() });
+    expect((await caught(() => redeem(w.auth, token)))?.code).toBe('X_UNAUTHENTICATED');
+
+    // Sign-up declared changes nothing: the address is held. Its own token, spent the same way.
+    await w.adapter.updateUser(user.id, { emailVerifiedAt: null });
+    const signUpToken = await mailed(w);
+    const withSignUp = await caught(() =>
       signInWithLink(w.auth, {
         purpose: signInLink.name,
         identifier: EMAIL,
-        token: await mailed(w),
+        token: signUpToken,
         signUp: {},
       }),
     );
     expect(withSignUp?.code).toBe('X_UNAUTHENTICATED');
     expect(await w.adapter.listSessions(user.id)).toHaveLength(1);
-    // The refusal spent the link.
     await w.adapter.updateUser(user.id, { emailVerifiedAt: w.clock.now() });
-    expect((await caught(() => redeem(w.auth, token)))?.code).toBe('X_UNAUTHENTICATED');
+    expect((await caught(() => redeem(w.auth, signUpToken)))?.code).toBe('X_UNAUTHENTICATED');
+    // The control: the account is eligible now, so a fresh link signs in.
+    expect((await redeem(w.auth, await mailed(w))).session.userId).toBe(user.id);
   });
 
-  test("the remedy the refusal names takes the registrant's password and sessions with it", async () => {
+  test('the remedy the refusal names takes every credential the registrant set with it', async () => {
     const w = world();
-    // The pre-registration, signed in and holding a second factor of its own.
+    // The pre-registration, signed in and holding a second factor, recovery codes and a passkey.
     const user = await register(w.auth, { email: EMAIL, password: PASSWORD });
     const registrant = await login(w.auth, { email: EMAIL, password: PASSWORD });
     await saveTotpSecret(w.auth, user.id, SECRET);
+    await w.adapter.updateUser(user.id, { recoveryCodeHashes: ['registrant-recovery-digest'] });
+    await w.adapter.putPasskey({
+      id: 'registrant-passkey',
+      userId: user.id,
+      publicKey: 'cose-key',
+      algorithm: -7,
+      signCount: 0,
+      transports: [],
+      createdAt: w.clock.now(),
+      lastUsedAt: null,
+    });
     const error = await caught(async () => redeem(w.auth, await mailed(w)));
     expect(error?.fix).toContain('passwordReset.issue');
     expect(error?.fix).toContain('revokeUserSessions');
+    expect(error?.fix).toContain('deletePasskey');
 
-    // The inbox's owner follows it: the reset link proves the address, and its consume replaces
+    // The inbox's owner follows it: the reset link only proves the address; the app then revokes
     // every credential the registrant set before the account is trusted.
     const { token } = await passwordReset.issue(w.runtime, { identifier: EMAIL, locale: 'en' });
     await passwordReset.consume(w.runtime, { identifier: EMAIL, token });
+    for (const passkey of await w.adapter.listPasskeys(user.id)) {
+      await w.adapter.deletePasskey(user.id, passkey.id);
+    }
     await w.adapter.updateUser(user.id, {
       passwordHash: null,
       mfaSecret: null,
@@ -314,6 +336,10 @@ describe('signInWithLink: what a link is not', () => {
     expect((await caught(() => login(w.auth, { email: EMAIL, password: PASSWORD })))?.code).toBe(
       'X_UNAUTHENTICATED',
     );
+    const reclaimed = await w.adapter.findUserById(user.id);
+    expect(reclaimed?.recoveryCodeHashes).toEqual([]);
+    expect(reclaimed?.mfaSecret).toBeNull();
+    expect(await w.adapter.listPasskeys(user.id)).toEqual([]);
   });
 
   test('a purpose that keys on the address but is not declared sign-in is refused, and its token stays live', async () => {
@@ -359,6 +385,8 @@ describe('signInWithLink: the purpose keys on the address', () => {
       thrown = error;
     }
     expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_CONFIG_INVALID');
+    // The fix's replacement declaration keeps the purpose a sign-in one, so following it works.
+    expect(isUltimateError(thrown) ? thrown.fix : '').toContain('ttlMs, signIn: true })');
     expect(await w.adapter.findUserByEmail('+40700')).toBeNull();
     expect((await byPhone.consume(w.runtime, { identifier: '+40700', token })).identifier).toBe(
       '+40700',
