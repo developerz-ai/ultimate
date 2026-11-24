@@ -2,6 +2,7 @@
 // and value grammar, then rendered as custom-property lines in that list's order — never the
 // caller's — so a brand rendered twice is byte-identical and its CSP hash does not churn.
 
+import { isJsonObject } from '@ultimat3/core';
 import { invalidBrandTokenError, unknownTokenError } from '../errors';
 import { parseChannels } from '../tokens/contrast';
 import {
@@ -144,22 +145,18 @@ function isCurve(value: string): boolean {
 
 const SCALE_EXPECTED = 'an object of rungs such as { base: "180ms" }';
 
-/** A theme read from JSON can carry `null` or an array where the type says an object. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 export function motionDeclarations(overrides: MotionInput | undefined): string[] {
   if (overrides === undefined) return [];
-  // Checked as `unknown`, so the typed slot below keeps its scale keys.
+  // Checked as `unknown`, so the typed slot below keeps its scale keys: a theme read from JSON can
+  // carry `null` or an array where the type says an object.
   const slot: unknown = overrides;
-  if (!isRecord(slot)) {
+  if (!isJsonObject(slot)) {
     throw invalidBrandTokenError('theme', 'motion', slot, 'an object with duration or easing');
   }
   assertKnown('motion', overrides, MOTION_SCALES, '_motion.scss');
   for (const scale of MOTION_SCALES) {
     const rungs: unknown = overrides[scale];
-    if (rungs !== undefined && !isRecord(rungs)) {
+    if (rungs !== undefined && !isJsonObject(rungs)) {
       throw invalidBrandTokenError('motion', scale, rungs, SCALE_EXPECTED);
     }
   }

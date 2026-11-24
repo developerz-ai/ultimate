@@ -175,7 +175,8 @@ describe('defineTheme', () => {
     const transition = /transition: ([^;]+);/.exec(css)?.[1] ?? '';
     const resolved = transition.replaceAll(/var\((--[\w-]+)\)/g, (_, name: string) => {
       const value = declared.get(name);
-      if (value === undefined) throw new TypeError(`${name} is not a property the brand sets`);
+      if (value === undefined)
+        return expect.unreachable(`${name} is not a property the brand sets`);
       return value;
     });
     expect(resolved).toBe('opacity 180ms cubic-bezier(0.2, 0, 0, 1)');
