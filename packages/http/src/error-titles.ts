@@ -44,6 +44,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_BODY_TOO_LARGE',
   'X_BEARER_TENANT_REQUIRED',
   'X_BEARER_TENANT_UNRESOLVED',
+  'X_BEARER_TENANT_LIST_INVALID',
 ] as const;
 
 export type HttpOwnedErrorCode = (typeof HTTP_OWNED_ERROR_CODES)[number];
@@ -83,6 +84,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_BODY_TOO_LARGE: 'request body over the transport ceiling',
   X_BEARER_TENANT_REQUIRED: 'a bearer mount call named no tenant',
   X_BEARER_TENANT_UNRESOLVED: 'a bearer mount could not resolve the tenant a call named',
+  X_BEARER_TENANT_LIST_INVALID: 'a bearer mount listed a tenant no call could name',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title
