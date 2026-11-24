@@ -84,18 +84,35 @@ export type RowProvider<TRow> =
 /**
  * `source`, executing under `ctx` — the context it was BUILT in. A `from()` source produces its
  * rows at `execute()` (a tenant-scoped repository call, which derives its tenant from
- * `tryUseContext()`), after the build's frame returned. `seek` and `total` are bound the same way.
+ * `tryUseContext()`), after the build's frame returned. Every method runs under `ctx`, so a source
+ * of the app's own that reads `useContext()` in `seek` or `total` does too, and what those two
+ * return is bound the same way.
  */
 export function executingAs<TRow>(ctx: Ctx, source: SqlSource<TRow>): SqlSource<TRow> {
   const { total, seek } = source;
+  const as = <T>(run: () => T): T => runWithContext(ctx, run);
   return {
-    toSQL: () => source.toSQL(),
-    shape: () => source.shape(),
-    execute: () => runWithContext(ctx, () => source.execute()),
-    ...(total === undefined ? {} : { total: () => executingAs(ctx, total.call(source)) }),
+    toSQL: () => as(() => source.toSQL()),
+    shape: () => as(() => source.shape()),
+    execute: () => as(() => source.execute()),
+    ...(total === undefined
+      ? {}
+      : {
+          total: () =>
+            executingAs(
+              ctx,
+              as(() => total.call(source)),
+            ),
+        }),
     ...(seek === undefined
       ? {}
-      : { seek: (after, limit) => executingAs(ctx, seek.call(source, after, limit)) }),
+      : {
+          seek: (after, limit) =>
+            executingAs(
+              ctx,
+              as(() => seek.call(source, after, limit)),
+            ),
+        }),
   };
 }
 
