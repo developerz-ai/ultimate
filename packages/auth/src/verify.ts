@@ -145,7 +145,8 @@ export interface ConsumeVerificationInput {
  * address for permanent password-reset denial.
  */
 export async function consumeVerification(
-  runtime: VerificationRuntime,
+  // Consuming sends nothing, so a caller with no mailer in hand (`signInWithLink`) needs none.
+  runtime: Pick<VerificationRuntime, 'store' | 'clock'>,
   input: ConsumeVerificationInput,
 ): Promise<AuthVerification> {
   const purpose = verificationPurpose(input.purpose);
