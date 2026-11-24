@@ -19,7 +19,7 @@ import { mountedPath, TENANTS_SEGMENT } from '@ultimat3/http';
 import type { ApiMount, ApiOpenApi } from './api-declaration';
 import type { JsonSchemaObject } from './json-schema';
 import type { OpenApiDocument } from './openapi';
-import { tenantsOperation, withTenantParameter } from './openapi-mount-tenant';
+import { listingOperationId, tenantsOperation, withTenantParameter } from './openapi-mount-tenant';
 import {
   problem,
   RATE_LIMIT_HEADERS,
@@ -273,9 +273,20 @@ export function mountOpenApi(
   const listing = mount.tenant === undefined ? undefined : `${mount.prefix}${TENANTS_SEGMENT}`;
   if (listing !== undefined) {
     // Joined, never replacing: an app's own POST at that path is served, so it stays documented.
+    const taken = new Set(
+      [...mountedItems.values()].flatMap((item) =>
+        Object.values(item as Record<string, Operation>).map(
+          (operation) => operation['operationId'],
+        ),
+      ),
+    );
     mountedItems.set(listing, {
       ...mountedItems.get(listing),
-      get: tenantsOperation(BEARER_SCHEME, mount.rateLimit !== undefined),
+      get: tenantsOperation(
+        BEARER_SCHEME,
+        mount.rateLimit !== undefined,
+        listingOperationId(taken),
+      ),
     });
   }
   const paths = Object.fromEntries(mountedItems);

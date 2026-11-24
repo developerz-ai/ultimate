@@ -11,7 +11,11 @@ import { defineApi } from './define-api';
 import { toRoute } from './http';
 import { buildOpenApi } from './openapi';
 import { mountOpenApi } from './openapi-complete';
-import { TENANT_LISTING_OPERATION_ID, withTenantParameter } from './openapi-mount-tenant';
+import {
+  TENANT_LISTING_COLLIDED_ID,
+  TENANT_LISTING_OPERATION_ID,
+  withTenantParameter,
+} from './openapi-mount-tenant';
 import { listActions, resetActions } from './registry';
 
 beforeEach(() => {
@@ -153,14 +157,21 @@ describe('mountOpenApi with tenant', () => {
     expect(item['post']?.operationId).toBe('addTenant');
   });
 
-  test("the listing's operationId is one no primitive can carry", () => {
+  test('the listing keeps its operationId, tenantsOfToken, beside mounts that do not carry it', () => {
+    const doc = documentFor(TENANT);
+    expect(op(doc, '/v1/tenants', 'get').operationId).toBe('tenantsOfToken');
+    expect(TENANT_LISTING_OPERATION_ID).toBe('tenantsOfToken');
+  });
+
+  test('a mounted primitive named tenantsOfToken keeps its id; the listing takes the one no primitive can', () => {
     const doc = documentFor(TENANT, { 'cases:write': ['createCase', 'tenantsOfToken'] });
     const ids = Object.values(doc.paths).flatMap((item) =>
       Object.values(item as Record<string, Op>).map((operation) => operation.operationId),
     );
     expect(new Set(ids).size).toBe(ids.length);
-    expect(op(doc, '/v1/tenants', 'get').operationId).toBe(TENANT_LISTING_OPERATION_ID);
-    expect(TENANT_LISTING_OPERATION_ID).toBe('tenants-of-token');
+    expect(ids).toContain('tenantsOfToken');
+    expect(op(doc, '/v1/tenants', 'get').operationId).toBe(TENANT_LISTING_COLLIDED_ID);
+    expect(TENANT_LISTING_COLLIDED_ID).toBe('tenants-of-token');
   });
 
   test('the scheme states that the listing needs no scope and names no tenant', () => {

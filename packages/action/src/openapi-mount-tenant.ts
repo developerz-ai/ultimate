@@ -20,11 +20,17 @@ const TENANT_UNRESOLVED = 'X_BEARER_TENANT_UNRESOLVED — the tenant lookup fail
 /** The values a call is resolved for: JSON Schema counts code points, as the mount does. */
 const TENANT_VALUE_SCHEMA = { type: 'string', minLength: 1, maxLength: MAX_TENANT_VALUE };
 
+/** The listing's operationId, as every document before this one named it: a client looks it up. */
+export const TENANT_LISTING_OPERATION_ID = 'tenantsOfToken';
 /**
- * The listing's operationId. Kebab case on purpose: a primitive's id is its export name, a JS
- * identifier, which can never contain a hyphen, so no mounted operation can share it.
+ * Its id when a mounted primitive is already named `tenantsOfToken`. Kebab case on purpose: a
+ * primitive's id is its export name, a JS identifier, which can never contain a hyphen.
  */
-export const TENANT_LISTING_OPERATION_ID = 'tenants-of-token';
+export const TENANT_LISTING_COLLIDED_ID = 'tenants-of-token';
+
+/** The listing's id beside the mounted operations' `taken` ids: its own, unless one carries it. */
+export const listingOperationId = (taken: ReadonlySet<unknown>): string =>
+  taken.has(TENANT_LISTING_OPERATION_ID) ? TENANT_LISTING_COLLIDED_ID : TENANT_LISTING_OPERATION_ID;
 
 /** `code` added to the operation's own response of that status, which keeps its words. */
 const joined = (responses: Responses, status: string, description: string) => {
@@ -76,9 +82,13 @@ export function withTenantParameter(operation: Operation, arg: string): Operatio
  * the same 401 challenge and 429, and with an allowance of its own the `RateLimit-*` every answer
  * carries.
  */
-export function tenantsOperation(scheme: string, ownAllowance: boolean): Operation {
+export function tenantsOperation(
+  scheme: string,
+  ownAllowance: boolean,
+  operationId: string,
+): Operation {
   return {
-    operationId: TENANT_LISTING_OPERATION_ID,
+    operationId,
     summary: 'The tenants this token may act in',
     security: [{ [scheme]: [] }],
     responses: {
