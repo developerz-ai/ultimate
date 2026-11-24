@@ -237,6 +237,7 @@ export const load = async (): Promise<{ readonly answer: ActionAnswer | null }> 
 | `static` / `isr` pages read `null` | a shared document is rendered as nobody, with no inbound cookie |
 | outside a request (the `llms.txt` build runs `load` with none) reads `null`, never `X_NO_REQUEST` | no request, no answer |
 | translate on `code` and `issues[].rule` with `t()` | the flash carries no prose, so no locale |
+| a field's text reaches its declared type | a form posts text; the route coerces it toward `input` as a query route coerces a query string — `ok=on` is `true` for `t.boolean`, `count=7` is `7`, one value fills a `t.array`, the last of a repeated scalar wins (a hidden `false` before its checkbox). A JSON body is never coerced. `As of 2026-11` |
 | field values are not carried back | a password or a card number does not belong in a cookie; the form re-renders empty, or the page keeps a draft |
 
 **Enforced.** The `manifest` step of `x verify` reads every `page.tsx` for a `<form method="post">` whose `action` names an action — a literal path, `derivePath(name).path`, `actionHttpPath(name, …).path`, or a `const` in the same file holding one — and reports one with no `native` as `X_NATIVE_FORM_UNANSWERED`, the page's `file:line` and the fix. On `main` it is a **warning** — listed under the step's `warnings` in `--json`, the step stays green — because refusing it would turn an app's gate red between two minors (`X_BREAKING_ON_MAIN`); the refusal is planned for `next`. A form inside a component other than the page is not read. `As of 2026-11`.

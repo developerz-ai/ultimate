@@ -68,11 +68,13 @@ export function toRoute(target: AnyAction): Route {
   // A `:param` pin's values come from the router's DECODED params and join the body before
   // `invoke` parses it: one input for the schema, the policy, the row loader and the handler. A
   // body naming the same key differently is refused (`X_HTTP_PATH_INPUT_CONFLICT`), never overridden.
+  // A form's fields are text: coerced toward the input as a query route's are (`bodyCoerced`).
+  const body = (req: UltimateRequest): Promise<unknown> => req.bodyCoerced(target.input);
   const readInput =
     templateParams(path).length === 0
-      ? (req: UltimateRequest) => req.bodyRaw()
+      ? body
       : async (req: UltimateRequest) =>
-          mergePathParams({ owner, template: path, params: req.params, raw: await req.bodyRaw() });
+          mergePathParams({ owner, template: path, params: req.params, raw: await body(req) });
   return projectRoute(target, path, readInput, methodOfHttp(http));
 }
 
@@ -88,7 +90,7 @@ export function toPostBinding(target: AnyAction, path: string): Route {
     target,
     path,
     async (req) => {
-      const body = await req.bodyRaw();
+      const body = await req.bodyCoerced(target.input);
       const fields = typeof body === 'object' && body !== null && !Array.isArray(body) ? body : {};
       return { ...fields, ...req.queryRaw() };
     },
