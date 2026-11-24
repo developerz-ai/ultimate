@@ -16,7 +16,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - **Selection and theming:** `DataTable` and `Board` select rows, and `defineTheme({ motion })` sets an app's own durations and curves.
 - **Agent surface:** MCP recipes take sections and aliases, `mcpClient` caps one answer, and a JSON answer can ask for a URL-mode elicitation.
 - **Native push and device sockets:** richer visible pushes, per-send reports, and `deviceSocket` open and close hooks.
-- **Test tooling:** virtual authenticators, key presses and console checks in e2e tests, and `asset()` resolves in unit tests.
+- **Test tooling:** virtual authenticators, key presses and console checks in e2e tests, and the testing preload installs an app's asset table, so a unit test importing a stylesheet that calls `asset()` no longer hits `X_ASSET_MISSING`.
 
 ### Added
 - `@ultimat3/auth`: a passkey label. `renamePasskey(auth, { userId, id, label })` names or renames a passkey â€” right after `register`, or later (`null` clears; owner-scoped, `null` for another user's id). `PasskeyCredential.label`, the optional `PasskeyStore.renamePasskey` (both shipped adapters implement it; `authAdapterConformance` holds it), and `x_passkeys.label`, added at every boot. A label blank, over 64 characters, or holding a control character or a lone surrogate after trimming is `X_PASSKEY_LABEL_INVALID`; an adapter without the member is `X_PASSKEY_RENAME_UNSUPPORTED`.
