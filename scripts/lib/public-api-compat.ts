@@ -1,7 +1,8 @@
 // Whether a changed declaration still compiles every caller the recorded one did, by shape kind.
 // Interfaces and functions: `public-api-compat-rules.ts`. Output-only kinds — a literal set that
-// only grew, a `const` object or a class instance that only gained members — are compatible; a
-// `declaration` is judged by its own text and the shapes of its locals. The rest is a break.
+// only grew, a `const` object, a class instance or a namespace that only gained members — are
+// compatible; a `declaration` is judged by its own text and the shapes of its locals. The rest is
+// a break.
 
 import { timingSafeEqual } from '../../packages/core/src/timing-safe-equal';
 import type { ApiChange, ApiSymbol } from './public-api-compat-rules';
@@ -77,11 +78,41 @@ function classChange(
   );
 }
 
+/**
+ * A namespace (`import * as X`, re-exported) is a module object callers only read: an export added
+ * is compatible, one removed or changed is a break. Judged by name only when both sides recorded
+ * their exports; a lock entry written before they were stays judged by its text.
+ */
+function namespaceChange(
+  was: Readonly<Record<string, string>>,
+  now: Readonly<Record<string, string>>,
+): ApiChange {
+  for (const [name, digest] of Object.entries(was)) {
+    const next = own(now, name);
+    if (next === undefined) return breaks(`its export \`${name}\` was removed`);
+    if (next !== digest) return breaks(`its export \`${name}\` changed`);
+  }
+  const added = Object.keys(now).filter((name) => own(was, name) === undefined);
+  return compatible(
+    added.length === 0
+      ? 'exports reordered only'
+      : `${added.length} export(s) added to a namespace callers only read`,
+  );
+}
+
 /** A declaration: its own text unchanged, and every local it names judged by its own shape. */
 function declarationChange(
   was: Extract<ApiShape, { kind: 'declaration' }>,
   now: Extract<ApiShape, { kind: 'declaration' }>,
 ): ApiChange {
+  if (
+    was.keyword === 'namespace' &&
+    now.keyword === 'namespace' &&
+    was.exports !== undefined &&
+    now.exports !== undefined
+  ) {
+    return namespaceChange(was.exports, now.exports);
+  }
   if (was.keyword !== now.keyword || was.head !== now.head) {
     return breaks(
       `its ${was.keyword} declaration changed, and one of this form is judged by its text`,

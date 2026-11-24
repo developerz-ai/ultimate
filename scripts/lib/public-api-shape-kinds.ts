@@ -88,6 +88,11 @@ export type ApiShape =
       readonly keyword: string;
       readonly head: string;
       readonly locals?: Readonly<Record<string, LocalShape>>;
+      /**
+       * A `namespace` (`import * as X` re-exported): each export's name and the digest of its text.
+       * A module object is only read, so an export added to it is compatible, not a changed text.
+       */
+      readonly exports?: Readonly<Record<string, string>>;
     }
   | {
       /** A held lock entry no release tag reproduced: the lock knows its hash and nothing else. */

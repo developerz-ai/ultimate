@@ -50,7 +50,7 @@ describe('public-api-lock', () => {
     expect(parseLock(JSON.parse(renderLock(lock)))).toEqual(lock);
   });
 
-  test('every shape kind survives the round trip, a declaration with its locals', () => {
+  test('every shape kind survives the round trip, a declaration with its locals or exports', () => {
     const shapes: ApiSymbol[] = [
       { hash: 'l', shape: { kind: 'literals', head: 'a', values: ['1', '2'] } },
       { hash: 'v', shape: { kind: 'value', head: 'a', members: { a: '1' } } },
@@ -83,6 +83,15 @@ describe('public-api-lock', () => {
         },
       },
       { hash: 'e', shape: { kind: 'declaration', keyword: 'enum', head: 'a' } },
+      {
+        hash: 'n',
+        shape: {
+          kind: 'declaration',
+          keyword: 'namespace',
+          head: 'a',
+          exports: { x: '1', y: '2' },
+        },
+      },
     ];
     const entries = { a: Object.fromEntries(shapes.map((one) => [one.hash, one])) };
     const lock: ApiLock = { format: 2, version: '1', entries };
