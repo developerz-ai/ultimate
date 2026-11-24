@@ -374,5 +374,6 @@
  * (`signInWithLink`: a consumed link to a session or the second-factor challenge), on the auth barrel.
  * raised 1571 → 1572, measured 1572 (2026-11-24, passkey label): `auth/src/passkey-label.ts` — `renamePasskey` and the label reader, on the auth barrel).
  * raised 1572 → 1573, measured 1573 (2026-11-24, allOf and anyOf): the one on `MIGRATE_CEILING`, `entity/src/expr-connectives.ts`).
+ * raised 1573 → 1574, measured 1574 (2026-11-24, a CHECK refusing an update): the one on `MIGRATE_CEILING`, `entity/src/check-refusal.ts`).
  */
-export const SERVING_ROLE_CEILING = 1573;
+export const SERVING_ROLE_CEILING = 1574;
