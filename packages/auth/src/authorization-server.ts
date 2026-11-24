@@ -77,7 +77,8 @@ export interface AuthorizationServer {
   /**
    * One grant of `subject` by its `grantId`, refresh tokens included: 1, or 0 when it is unknown,
    * already revoked, or another subject's (or another client's than the one named) — alike. Two
-   * racing calls on one grant count it once, on a store whose `revokeGrant` answers.
+   * racing calls on one grant count it once on a store implementing `revokeLiveGrant`; on one
+   * without it, both may answer 1.
    * `authorizationServer()` always sets it; optional only so an `AuthorizationServer` of an app's
    * own (a test's fake) still compiles. Required waits on `next`.
    */

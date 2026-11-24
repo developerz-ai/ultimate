@@ -145,6 +145,14 @@ export const AUTH_SERVER_STORE_CHECKS: readonly AuthServerStoreCheck[] = [
       expect(ended).toEqual([true, false]);
       expect((await store.getGrant(live))?.revokedAt?.getTime()).toBe(at(1).getTime());
       expect(await store.revokeLiveGrant(gone, at(6))).toBe(false);
+      // Overlapping calls: one conditional write wins, so exactly one answers true.
+      const raced = idOf('raced');
+      await store.putGrant(grantRecord(raced, subject));
+      const both = await Promise.all([
+        store.revokeLiveGrant(raced, at(7)),
+        store.revokeLiveGrant(raced, at(7)),
+      ]);
+      expect(both.filter(Boolean)).toHaveLength(1);
     },
   },
   {

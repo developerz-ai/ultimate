@@ -48,6 +48,8 @@ export async function oneGrantRevokedCase(fixture: ServerFixture): Promise<void>
     firstId,
     null,
   ]);
+  // Unexpired too, so its refusal after the revoke is the revoke's doing, not its age.
+  expect(successorRow?.expiresAt.getTime()).toBeGreaterThan(fixture.clock.now().getTime());
   expect((await grants({ subject: 'user-1' })).map((grant) => grant.grantId)).toEqual([
     firstId,
     secondId,
@@ -91,11 +93,14 @@ export async function oneGrantRevokedCase(fixture: ServerFixture): Promise<void>
   // A listing is a snapshot: changing what it answers changes nothing stored.
   const [snapshot] = listed;
   if (snapshot === undefined) return expect.unreachable('one grant is listed');
+  const refreshedAt = new Date(snapshot.refreshedAt.getTime());
   snapshot.createdAt.setTime(0);
+  snapshot.refreshedAt.setTime(0);
   (snapshot.scopes as string[]).push('admin');
   const relisted = await grants({ subject: 'user-1', clientId: fixture.client.clientId });
-  expect([relisted[0]?.createdAt, relisted[0]?.scopes]).toEqual([
+  expect([relisted[0]?.createdAt, relisted[0]?.refreshedAt, relisted[0]?.scopes]).toEqual([
     secondCreatedAt,
+    refreshedAt,
     ['read', 'write'],
   ]);
 }

@@ -62,6 +62,20 @@ describe(testName('unit', 'a store that breaks the contract fails conformance'),
     await answers.run(memoryAuthServerStore());
   });
 
+  test('a revokeLiveGrant that reads, then writes in a separate step', async () => {
+    const inner = memoryAuthServerStore();
+    const readThenWrite: AuthServerStore = {
+      ...inner,
+      revokeLiveGrant: async (id, at) => {
+        const grant = await inner.getGrant(id);
+        if (grant === null || grant.revokedAt !== null) return false;
+        await inner.revokeGrant(id, at);
+        return true;
+      },
+    };
+    await expect(check('revokeLiveGrant answers true only').run(readThenWrite)).rejects.toThrow();
+  });
+
   test('a revokeGrants that ignores the client', async () => {
     const revoke = check('revokes by id and by subject');
     await expect(revoke.run(clientBlind())).rejects.toThrow();

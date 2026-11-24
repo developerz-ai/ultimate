@@ -816,8 +816,9 @@ OAuth 2.1 server: authorization code + PKCE (S256 only), refresh rotation with r
 `callerKey` shares one bucket with every other unkeyed read. `oauthBearerResolver(server, { actor, resource? })` is
 the `resolveToken`. `resolve` answers the token's `grantId` (the grant it was issued under — a user's consent, or a
 `client_credentials` client's own — kept across refresh rotation); `grants({ subject, clientId? })`
-lists a subject's grants holding a stored token neither expired nor retired, and
-`revokeGrant({ subject, grantId })` ends one of them alone, counted once under racing calls. Stores: `memoryAuthServerStore()`, `postgresAuthServerStore({ executor })`
+lists a subject's unrevoked grants holding at least one stored token neither expired nor retired,
+and `revokeGrant({ subject, grantId })` ends one of them alone — counted once under racing calls
+when the store implements `revokeLiveGrant` (the memory and Postgres stores do). Stores: `memoryAuthServerStore()`, `postgresAuthServerStore({ executor })`
 over `SQL_AUTH_SERVER_TABLES`, which the boot applies. A code is spent only by a request that could
 redeem it: client, PKCE verifier, `redirect_uri` and `resource` are checked on `getCode` before
 `takeCode` marks it used, so a request without the verifier neither burns a login nor trips the
