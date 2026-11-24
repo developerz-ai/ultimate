@@ -215,7 +215,7 @@ describe('the stricter hook', () => {
   });
 
   test('anything but the literal false demands the stricter door, and a throw runs nothing', async () => {
-    const lax = server({ stricter: (() => undefined) as unknown as McpSplitOptions['stricter'] });
+    const lax = server({ stricter: (() => undefined) as unknown as () => boolean });
     const answer = await via(lax, 'write_resource', { action: 'update', params: {} });
     expect(text(answer)).toStartWith('X_MCP_WRONG_TOOL: ');
     const throwing = server({
