@@ -11,7 +11,16 @@ import { loadApp } from './app-load';
 import { resetRegistries } from './cmd-dev-fixture';
 import { processRoot } from './process-root-fixture';
 
-const ROOT = processRoot(join(import.meta.dir, '..', '.site-assets-scss-fixture'));
+// One directory per EVALUATION of this file, as `app-manifest.test.ts` keeps: `--rerun-each`
+// evaluates it again in the same process, Bun serves `fonts.scss` from its cache by path, and the
+// stylesheet `clearStylesheets()` dropped is then never registered again. The count lives on
+// `globalThis`, which outlives the module.
+const EVALUATIONS = Symbol.for('ultimate.test.site-assets-scss.evaluations');
+const counter = globalThis as unknown as Record<symbol, number | undefined>;
+counter[EVALUATIONS] = (counter[EVALUATIONS] ?? 0) + 1;
+const ROOT = processRoot(
+  join(import.meta.dir, '..', '.site-assets-scss-fixture', `eval-${counter[EVALUATIONS]}`),
+);
 
 beforeAll(async () => {
   resetRegistries();
