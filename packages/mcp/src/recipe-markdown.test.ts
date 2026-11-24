@@ -43,5 +43,14 @@ describe('recipeFromMarkdown: aliases', () => {
   test('the plain forms split as before', () => {
     expect(aliasesOf('refund, money back')).toEqual(['refund', 'money back']);
     expect(aliasesOf('[reimburse, "credit note"]')).toEqual(['reimburse', 'credit note']);
+    expect(aliasesOf('"credit note" policy, refunds')).toEqual(['"credit note" policy', 'refunds']);
+  });
+});
+
+describe('recipeFromMarkdown: body', () => {
+  test('outer blank lines go; a first line’s indentation stays', () => {
+    expect(recipeFromMarkdown('x', '\n\n    echo hi\n\nAfter.\n\n\n').body).toBe(
+      '    echo hi\n\nAfter.\n',
+    );
   });
 });

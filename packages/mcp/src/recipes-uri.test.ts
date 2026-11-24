@@ -65,6 +65,13 @@ describe('a recipe link is checked whole', () => {
     expect(() => serve([errors, linking('See docs://ref/errors, then act.')])).not.toThrow();
   });
 
+  test('a dotted suffix is part of the link; a sentence’s full stop is not', () => {
+    for (const text of ['[Errors](docs://ref/errors.html)', 'See docs://ref/errors.json.']) {
+      expect(codeOf(() => serve([errors, linking(text)]))).toBe('X_MCP_RECIPE_LINK_DANGLING');
+    }
+    expect(() => serve([errors, linking('[Errors](docs://ref/errors). Then act.')])).not.toThrow();
+  });
+
   test('the dangling refusal names the section it was linked into', () => {
     let cause = '';
     try {
@@ -101,12 +108,27 @@ describe('docs({ uri }) matches the URI as written', () => {
   });
 });
 
-describe('the text map', () => {
-  test('a title with line breaks stays on its URI’s line', async () => {
-    const multi: McpRecipe = { ...errors, title: 'Errors\nand\r\nrefusals' };
+describe('a title on one line', () => {
+  const multi: McpRecipe = { ...errors, title: 'Errors\nand\r\nrefusals' };
+
+  test('in the text map', async () => {
     expect(await docsText(serve([multi], { index: 'map' }), {})).toBe(
       '# ref\ndocs://ref/errors  Errors and refusals\n',
     );
+  });
+
+  test('in a search miss’s nearest names', async () => {
+    expect(await docsText(serve([multi]), { q: 'zzzz' })).toBe(
+      'No recipe matches "zzzz". Nearest:\n- docs({ name: \'ref/errors\' }) — Errors and refusals\n',
+    );
+  });
+
+  test('a long run of spaces keeps its spaces and folds in linear time', async () => {
+    const wide: McpRecipe = { ...errors, title: `a${' '.repeat(50_000)}b` };
+    const started = performance.now();
+    const map = await docsText(serve([wide], { index: 'map' }), {});
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(map).toBe(`# ref\ndocs://ref/errors  ${wide.title}\n`);
   });
 });
 
@@ -133,15 +155,17 @@ describe('replayRecipes: links', () => {
       recipes: [hidden, link],
       scopes: { 'invoice:read': ['findInvoice'] },
     }).server;
-    let code: string | undefined;
+    let refused: { code?: string; cause?: unknown } = {};
     try {
       await runWithContext(ctxOf({}), () =>
         replayRecipes(server, [link], { caller: caller('a1'), sections: ['ref'] }),
       );
     } catch (error) {
-      code = (error as { code?: string }).code;
+      refused = error as { code?: string; cause?: unknown };
     }
-    expect(code).toBe('X_MCP_RECIPE_LINK_DANGLING');
+    expect(refused.code).toBe('X_MCP_RECIPE_LINK_DANGLING');
+    // The recipe exists: the refusal says this caller could not read it, not that none serves it.
+    expect(String(refused.cause)).toContain('could not read');
   });
 });
 
@@ -149,6 +173,7 @@ describe('the reserved-URI fix', () => {
   test('its object literal parses', () => {
     const fix = new McpRecipeUriReservedError({ uri: 'docs://x/Y', reason: 'name' }).fix ?? '';
     const literal = fix.split('#')[0] ?? '';
+    expect(literal).toStartWith('recipes: [{');
     expect(() =>
       new Bun.Transpiler({ loader: 'ts' }).transformSync(`({ ${literal} });`),
     ).not.toThrow();

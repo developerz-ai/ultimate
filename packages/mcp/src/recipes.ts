@@ -25,8 +25,11 @@ export const DEFAULT_SECTION = 'recipes';
  * (`ref-v2`, never `-ref`, `ref-` or `ref--v2`) — closed, so neither steps out of `docs://<section>/`.
  */
 export const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-/** A `docs://<section>/` link and its whole path: `docs://ref/errors/old` is not `docs://ref/errors`. */
-const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([a-z0-9][a-z0-9/-]*)/g;
+/**
+ * A `docs://<section>/` link and its whole path — `docs://ref/errors/old` and
+ * `docs://ref/errors.html` are not `docs://ref/errors` — less the full stop that ends a sentence.
+ */
+const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([A-Za-z0-9](?:[\w./~-]*[\w/~-])?)/g;
 /** The section a `docs://<section>/…` URI sits in. */
 const SECTION_OF_URI = /^docs:\/\/([^/]*)\//;
 
@@ -53,7 +56,7 @@ export interface McpRecipe {
   readonly notes?: string;
   /**
    * Markdown served as given in place of the rendered steps — what `markdownRecipes({ dir })`
-   * builds from a file (LF line ends, outer blank lines trimmed), its ```call fences becoming
+   * builds from a file (LF line ends, outer blank lines dropped), its ```call fences becoming
    * `steps`, so they are checked all the same.
    */
   readonly body?: string;
@@ -141,7 +144,7 @@ export function recipeLinks(recipe: McpRecipe, sections: ReadonlySet<string>): r
   const text = `${recipe.body ?? ''}\n${recipe.notes ?? ''}`;
   return [...text.matchAll(SECTIONED_LINK)]
     .filter((match) => sections.has(match[1] as string))
-    .map((match) => `docs://${match[1] as string}/${match[2] as string}`);
+    .map((match) => recipeUri(match[2] as string, match[1] as string));
 }
 
 /** A recipe pointing at one that does not exist is the stale link this whole file refuses. */

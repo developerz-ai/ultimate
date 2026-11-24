@@ -82,6 +82,7 @@ export async function replayRecipes(
     throw new McpRecipeLinkDanglingError({
       offenders: dangling,
       recipes: recipes.map(recipeKey).sort(),
+      at: 'unread',
     });
   }
   return { calls, links };

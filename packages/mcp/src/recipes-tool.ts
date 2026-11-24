@@ -31,7 +31,8 @@ export interface DocsToolOptions {
   /** Replaces the default tool description. */
   readonly description?: string;
   /**
-   * `'json'` (default): `{ recipes: [{ name, title, description, uri, source }] }`. `'map'`: plain
+   * `'json'` (default): `{ recipes: [{ name, title, description, uri, source }] }` — `name` is the
+   * bare name, so outside `recipes` read by `uri` or `<section>/<name>`. `'map'`: plain
    * text, one `# <section>` heading per section, then one `<uri>  <title>` line per recipe.
    */
   readonly index?: 'json' | 'map';
@@ -78,7 +79,8 @@ export function recipesTool(
       properties: {
         name: {
           type: 'string',
-          description: 'A recipe name from docs({}): bare, or <section>/<name> outside recipes.',
+          description:
+            'A recipe name: bare in the recipes section, <section>/<name> in any other. The uri docs({}) lists always works.',
         },
         uri: {
           type: 'string',
@@ -127,7 +129,8 @@ const row = (entry: SourcedRecipe) => ({
 });
 
 /** A line-per-entry answer: a title's own line breaks would split its entry. */
-const oneLine = (title: string): string => title.replace(/\s*[\r\n]+\s*/g, ' ');
+const oneLine = (title: string): string =>
+  title.replace(/\s+/g, (space) => (/[\r\n]/.test(space) ? ' ' : space));
 
 const yours = (entry: SourcedRecipe): string => (entry.source === 'caller' ? ' (yours)' : '');
 

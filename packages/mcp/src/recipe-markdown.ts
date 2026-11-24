@@ -57,7 +57,8 @@ export function recipeFromMarkdown(name: string, text: string, section?: string)
     title: fields.get('title') ?? heading ?? name,
     description: fields.get('description') ?? paragraph ?? '',
     steps: fencedCalls(name, body),
-    body: body.trim() === '' ? '' : `${body.trim()}\n`,
+    // Whole blank lines only: a first line's indentation is Markdown (an indented code block).
+    body: body.trim() === '' ? '' : `${body.replace(/^(?:[ \t]*\n)+/, '').trimEnd()}\n`,
   };
 }
 
@@ -78,7 +79,20 @@ function frontMatter(text: string): {
 
 /** `aliases: refund, money back` or `aliases: [refund, "money, back"]`: a quoted comma stays. */
 function aliasList(value: string): readonly string[] {
-  const entries = value.replace(/^\[(.*)\]$/, '$1').match(/\s*(?:"[^"]*"|'[^']*'|[^,]+)/g) ?? [];
+  const entries: string[] = [];
+  let entry = '';
+  let quote: string | undefined;
+  for (const char of value.replace(/^\[(.*)\]$/, '$1')) {
+    if (quote === undefined && char === ',') {
+      entries.push(entry);
+      entry = '';
+      continue;
+    }
+    if (char === quote) quote = undefined;
+    else if (quote === undefined && (char === '"' || char === "'")) quote = char;
+    entry += char;
+  }
+  entries.push(entry);
   return entries
     .map((alias) => alias.trim().replace(/^(["'])(.*)\1$/, '$2'))
     .filter((alias) => alias !== '');
