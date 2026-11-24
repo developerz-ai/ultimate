@@ -27,10 +27,23 @@ document.getElementById('f').addEventListener('submit', (event) => {
 });
 </script></main></body></html>`;
 
+/** Served cross-site (`localhost` against the page's `127.0.0.1`): Chrome runs it out of process. */
+const FRAME = `<!doctype html><html lang="en"><head><title>frame</title></head><body>
+<script>console.error('frame broke');</script></body></html>`;
+
 const server = Bun.serve({
   port: 0,
   hostname: '127.0.0.1',
-  fetch: () => new Response(FORM, { headers: { 'content-type': 'text/html; charset=utf-8' } }),
+  fetch: (request) => {
+    const { pathname, port } = new URL(request.url);
+    const html =
+      pathname === '/frame'
+        ? FRAME
+        : pathname === '/embeds'
+          ? `<!doctype html><html lang="en"><head><title>embeds</title></head><body><main><iframe title="frame" src="http://localhost:${port}/frame"></iframe></main></body></html>`
+          : FORM;
+    return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  },
 });
 const baseUrl = `http://127.0.0.1:${String(server.port)}/`;
 
@@ -95,15 +108,31 @@ describe.skipIf(noBrowser)('press() runs the default action of a real key', () =
     'the console keeps a console.error and an uncaught throw from the page',
     async () => {
       await page().goto(baseUrl);
-      const before = page().consoleMessages?.().length ?? 0;
+      page().clearConsole?.();
       await page().evaluate(
-        `console.error('broken', 2); setTimeout(() => { throw new Error('late'); })`,
+        `addEventListener('error', () => { window.__thrown = true; }); console.error('broken', 2); setTimeout(() => { throw new Error('late'); })`,
       );
-      await page().waitFor('new Promise((r) => setTimeout(() => r(true), 50))', 'a tick', 5_000);
-      const seen = (page().consoleMessages?.() ?? []).slice(before);
+      // The page's own signal that the throw happened, then one round trip so its event is in.
+      await page().waitFor('window.__thrown === true', 'the uncaught throw', 5_000);
+      await page().evaluate('0');
+      const seen = page().consoleMessages?.() ?? [];
       expect(seen[0]).toEqual({ level: 'error', text: 'broken 2', source: 'console' });
       expect(seen[1]?.source).toBe('exception');
       expect(seen[1]?.text).toContain('late');
+    },
+    E2E_BROWSER_OPEN_MS,
+  );
+
+  test(
+    'a console error in a cross-site iframe is the page’s console error',
+    async () => {
+      await page().goto(baseUrl);
+      page().clearConsole?.();
+      await page().goto(`${baseUrl}embeds`);
+      const heard = async (): Promise<boolean> =>
+        (page().consoleMessages?.() ?? []).some((message) => message.text === 'frame broke');
+      for (let tries = 0; tries < 50 && !(await heard()); tries += 1) await Bun.sleep(100);
+      expect(await heard()).toBe(true);
     },
     E2E_BROWSER_OPEN_MS,
   );

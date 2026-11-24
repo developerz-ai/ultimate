@@ -1,26 +1,34 @@
 // One tab's console over a raw CDP session: every `Runtime.consoleAPICalled` and
-// `Runtime.exceptionThrown` its session sends, from the moment the tab is built until it closes.
-// The session enables `Runtime` before the tab is handed out (`cdp-e2e-session.ts`).
+// `Runtime.exceptionThrown` its session, or a cross-site frame attached under it, sends — kept
+// since the last `clear()`, newest `CONSOLE_KEEP` at most, until the tab closes.
 
 import type { CdpConnection } from '@ultimat3/scraping/cdp';
 import type { E2eConsoleLevel, E2eConsoleMessage } from './e2e-console';
 
+/** The most lines one capture holds: a tab nobody clears logs for a whole suite. */
+export const CONSOLE_KEEP = 1_000;
+
 export interface ConsoleCapture {
   messages(): readonly E2eConsoleMessage[];
+  /** Forget everything held so far. Constant time. */
+  clear(): void;
   stop(): void;
 }
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined;
 
-/** A `Runtime.RemoteObject` as the console prints it: a primitive's value, else its description. */
-const shown = (arg: unknown): string => {
+/**
+ * A `Runtime.RemoteObject` as its raw argument: a primitive's value, else its description. No
+ * format substitution — `console.log('n: %d', 2)` is `n: %d 2`, not what DevTools prints.
+ */
+const shown = (arg: unknown): string | undefined => {
   const remote = record(arg);
   const value = remote?.['value'];
   if (typeof value === 'string') return value;
   if (value !== undefined) return JSON.stringify(value);
   const described = remote?.['description'] ?? remote?.['unserializableValue'] ?? remote?.['type'];
-  return typeof described === 'string' ? described : '';
+  return typeof described === 'string' ? described : undefined;
 };
 
 /** Chrome's `consoleAPICalled.type` folded onto the five levels a console filter shows. */
@@ -33,32 +41,62 @@ const levelOf = (type: unknown): E2eConsoleLevel => {
 };
 
 export function captureConsole(connection: CdpConnection, sessionId: string): ConsoleCapture {
-  const messages: E2eConsoleMessage[] = [];
-  const offCall = connection.on('Runtime.consoleAPICalled', (params, on) => {
-    if (on !== sessionId) return;
-    const args = Array.isArray(params['args']) ? params['args'] : [];
-    messages.push({
-      level: levelOf(params['type']),
-      text: args.map(shown).join(' '),
-      source: 'console',
-    });
-  });
-  const offThrow = connection.on('Runtime.exceptionThrown', (params, on) => {
-    if (on !== sessionId) return;
-    const details = record(params['exceptionDetails']);
-    const described = record(details?.['exception'])?.['description'];
-    const text = typeof described === 'string' ? described : details?.['text'];
-    messages.push({
-      level: 'error',
-      text: typeof text === 'string' ? text : 'an uncaught exception',
-      source: 'exception',
-    });
-  });
+  let messages: E2eConsoleMessage[] = [];
+  // The tab's own session and the out-of-process frames attached under it: a cross-site iframe
+  // reports its console on its own session, and its errors are this page's errors.
+  const sessions = new Set([sessionId]);
+  const keep = (message: E2eConsoleMessage): void => {
+    messages.push(message);
+    if (messages.length > CONSOLE_KEEP) messages.splice(0, messages.length - CONSOLE_KEEP);
+  };
+  const offs = [
+    connection.on('Target.attachedToTarget', (params, on) => {
+      const child = params['sessionId'];
+      const type = record(params['targetInfo'])?.['type'];
+      if (on !== undefined && sessions.has(on) && type === 'iframe' && typeof child === 'string') {
+        sessions.add(child);
+      }
+    }),
+    connection.on('Target.detachedFromTarget', (params, on) => {
+      const child = params['sessionId'];
+      if (
+        on !== undefined &&
+        sessions.has(on) &&
+        child !== sessionId &&
+        typeof child === 'string'
+      ) {
+        sessions.delete(child);
+      }
+    }),
+    connection.on('Runtime.consoleAPICalled', (params, on) => {
+      if (on === undefined || !sessions.has(on)) return;
+      const args = Array.isArray(params['args']) ? params['args'] : [];
+      keep({
+        level: levelOf(params['type']),
+        text: args.map((arg) => shown(arg) ?? '').join(' '),
+        source: 'console',
+      });
+    }),
+    connection.on('Runtime.exceptionThrown', (params, on) => {
+      if (on === undefined || !sessions.has(on)) return;
+      const details = record(params['exceptionDetails']);
+      // `throw 'broken'` carries its payload as the exception's value, with no description.
+      const thrown = shown(details?.['exception']);
+      const label = details?.['text'];
+      keep({
+        level: 'error',
+        text: thrown ?? (typeof label === 'string' ? label : 'an uncaught exception'),
+        source: 'exception',
+      });
+    }),
+  ];
   return {
     messages: () => [...messages],
+    clear: () => {
+      messages = [];
+    },
     stop: () => {
-      offCall();
-      offThrow();
+      for (const off of offs) off();
     },
   };
 }

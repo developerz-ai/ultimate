@@ -6,7 +6,10 @@ export type E2eConsoleLevel = 'debug' | 'log' | 'info' | 'warning' | 'error';
 
 export interface E2eConsoleMessage {
   readonly level: E2eConsoleLevel;
-  /** The call's arguments as the console shows them, joined by one space. */
+  /**
+   * The call's raw arguments joined by one space: a primitive's value, an object's description. No
+   * format substitution — `console.log('n: %d', 2)` is `n: %d 2` — so assert on a fragment.
+   */
   readonly text: string;
   /** `console` for a `console.*` call; `exception` for a throw nothing caught (always `error`). */
   readonly source: 'console' | 'exception';

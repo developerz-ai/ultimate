@@ -128,6 +128,9 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
         );
       }
       if (cut) configured.push(condition(session));
+      // A cross-site frame runs in its own process and reports its console on its own session:
+      // `Runtime` on, so its tab's console capture hears it (`cdp-console-capture.ts`).
+      if (type === 'iframe') configured.push(send('Runtime.enable', {}, session));
       if (type === 'page') {
         configured.push(send('Page.enable', {}, session), send('Runtime.enable', {}, session));
         pageSessions.add(session);

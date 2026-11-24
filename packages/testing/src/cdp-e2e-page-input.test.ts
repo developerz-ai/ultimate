@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { CdpConnection, CdpEventListener, CdpResult } from '@ultimat3/scraping/cdp';
+import { CONSOLE_KEEP } from './cdp-console-capture';
 import { cdpE2eTab } from './cdp-e2e-page';
 
 interface Call {
@@ -60,7 +61,6 @@ describe('cdpE2eTab · key chords', () => {
     await tab.press('Control+k');
     await tab.press('Shift+Tab');
     await tab.press('Meta+Shift+Enter');
-    await tab.press('Shift+a');
     expect(keyEvents(calls)).toEqual([
       ['rawKeyDown', 'k', 2, undefined],
       ['keyUp', 'k', 2, undefined],
@@ -68,8 +68,28 @@ describe('cdpE2eTab · key chords', () => {
       ['keyUp', 'Tab', 8, undefined],
       ['rawKeyDown', 'Enter', 12, undefined],
       ['keyUp', 'Enter', 12, undefined],
-      ['keyDown', 'A', 8, 'A'],
-      ['keyUp', 'A', 8, undefined],
+    ]);
+  });
+
+  test('Shift makes the key a US keyboard makes, typed or not; the code stays physical', async () => {
+    const { connection, calls } = fakeConnection();
+    const tab = tabOn(connection);
+    await tab.press('Shift+a');
+    await tab.press('Control+Shift+k');
+    await tab.press('Shift+1');
+    const downs = calls
+      .filter((call) => call.method === 'Input.dispatchKeyEvent' && call.params['type'] !== 'keyUp')
+      .map((call) => [
+        call.params['key'],
+        call.params['code'],
+        call.params['windowsVirtualKeyCode'],
+        call.params['modifiers'],
+        call.params['text'],
+      ]);
+    expect(downs).toEqual([
+      ['A', 'KeyA', 65, 8, 'A'],
+      ['K', 'KeyK', 75, 10, undefined],
+      ['!', 'Digit1', 49, 8, '!'],
     ]);
   });
 
@@ -82,13 +102,22 @@ describe('cdpE2eTab · key chords', () => {
     ]);
   });
 
-  test('an unknown modifier, or a chord with no key, refuses by name', async () => {
+  test('a chord the grammar refuses, or a key press() does not know, refuses by name', async () => {
     const { connection } = fakeConnection();
     const tab = tabOn(connection);
-    for (const chord of ['Hyper+k', 'Control+', 'Control+Hyper']) {
-      const thrown = await tab.press(chord).catch((error: unknown) => error);
-      expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');
+    const codes: unknown[] = [];
+    for (const chord of ['Hyper+k', 'Control+', '+', 'Control+Hyper', 'é']) {
+      codes.push(
+        ((await tab.press(chord).catch((error: unknown) => error)) as { code?: string }).code,
+      );
     }
+    expect(codes).toEqual([
+      'X_SCRAPE_KEY_INVALID',
+      'X_SCRAPE_KEY_INVALID',
+      'X_SCRAPE_KEY_INVALID',
+      'X_CDP_CALL_FAILED',
+      'X_CDP_CALL_FAILED',
+    ]);
   });
 });
 
@@ -113,11 +142,17 @@ describe('cdpE2eTab · console', () => {
       { type: 'warning', args: [{ value: 'careful' }] },
       'session-1',
     );
+    emit('Runtime.consoleAPICalled', { type: 'assert', args: [{ value: 'held' }] }, 'session-1');
     emit(
       'Runtime.exceptionThrown',
       {
         exceptionDetails: { text: 'Uncaught', exception: { description: 'TypeError: x is null' } },
       },
+      'session-1',
+    );
+    emit(
+      'Runtime.exceptionThrown',
+      { exceptionDetails: { text: 'Uncaught', exception: { type: 'string', value: 'broken' } } },
       'session-1',
     );
     emit(
@@ -128,9 +163,49 @@ describe('cdpE2eTab · console', () => {
     expect(tab.consoleMessages?.()).toEqual([
       { level: 'error', text: 'boom 2', source: 'console' },
       { level: 'warning', text: 'careful', source: 'console' },
+      { level: 'error', text: 'held', source: 'console' },
       { level: 'error', text: 'TypeError: x is null', source: 'exception' },
+      { level: 'error', text: 'broken', source: 'exception' },
       { level: 'log', text: 'Object', source: 'console' },
     ]);
+  });
+
+  test('a cross-site frame attached under the tab is heard; an unrelated session is not', () => {
+    const { connection, emit } = fakeConnection();
+    const tab = tabOn(connection);
+    const frameError = { type: 'error', args: [{ value: 'frame broke' }] };
+    emit('Runtime.consoleAPICalled', frameError, 'frame-1');
+    emit(
+      'Target.attachedToTarget',
+      { sessionId: 'frame-1', targetInfo: { type: 'iframe' } },
+      'session-1',
+    );
+    emit(
+      'Target.attachedToTarget',
+      { sessionId: 'frame-2', targetInfo: { type: 'iframe' } },
+      'session-2',
+    );
+    emit('Runtime.consoleAPICalled', frameError, 'frame-1');
+    emit('Runtime.consoleAPICalled', frameError, 'frame-2');
+    emit('Target.detachedFromTarget', { sessionId: 'frame-1' }, 'session-1');
+    emit('Runtime.consoleAPICalled', frameError, 'frame-1');
+    expect(tab.consoleMessages?.()).toEqual([
+      { level: 'error', text: 'frame broke', source: 'console' },
+    ]);
+  });
+
+  test('clear forgets what was held; the capture keeps the newest CONSOLE_KEEP lines', () => {
+    const { connection, emit } = fakeConnection();
+    const tab = tabOn(connection);
+    const line = (n: number) =>
+      emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: String(n) }] }, 'session-1');
+    line(0);
+    tab.clearConsole?.();
+    expect(tab.consoleMessages?.()).toEqual([]);
+    for (let n = 1; n <= CONSOLE_KEEP + 5; n += 1) line(n);
+    const kept = tab.consoleMessages?.() ?? [];
+    expect(kept).toHaveLength(CONSOLE_KEEP);
+    expect(kept[0]?.text).toBe('6');
   });
 
   test('close stops listening', async () => {
@@ -138,7 +213,13 @@ describe('cdpE2eTab · console', () => {
     const tab = tabOn(connection);
     expect(listening('Runtime.consoleAPICalled')).toBe(1);
     await tab.close();
-    expect(listening('Runtime.consoleAPICalled')).toBe(0);
-    expect(listening('Runtime.exceptionThrown')).toBe(0);
+    for (const event of [
+      'Runtime.consoleAPICalled',
+      'Runtime.exceptionThrown',
+      'Target.attachedToTarget',
+      'Target.detachedFromTarget',
+    ]) {
+      expect(listening(event)).toBe(0);
+    }
   });
 });

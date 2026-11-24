@@ -48,10 +48,13 @@ export interface E2eBrowserPage {
    */
   press?(key: string): Promise<void>;
   /**
-   * Every console line and uncaught exception the page has printed since this port was built, in
-   * order: what `consoleMessages(page)` reads. OPTIONAL as `offline` is; absent, it refuses by name.
+   * Every console line and uncaught exception the page has printed since `clearConsole()` (or since
+   * this port was built), in order: what `consoleMessages(page)` reads. OPTIONAL as `offline` is;
+   * absent, it refuses by name.
    */
   consoleMessages?(): readonly E2eConsoleMessage[];
+  /** Forget the console held so far: the e2e driver calls it as each test starts. */
+  clearConsole?(): void;
 }
 
 /** What the audit asks of one tree read: which nodes to describe, and the selectors to test. */

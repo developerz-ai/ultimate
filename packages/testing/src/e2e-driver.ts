@@ -101,7 +101,7 @@ export function e2eRunner(options: E2eDriverOptions): E2eRunner {
         const current = startA11yRun(options.page, checkAllow(a11y), reported);
         audit = current;
         // The console a test reads begins with the test: a tab shared by the suite carries the last one's.
-        markConsoleStart(page);
+        await markConsoleStart(page);
         await body(e2eFixtures(page, options.page, options.newBuild));
         await current.check();
         current.verdict();
@@ -135,7 +135,11 @@ export function installE2eDriver(options: E2eDriverOptions): () => void {
   const { page, run } = e2eRunner(options);
   const newBuild = options.newBuild;
   defineFixtures({
-    page: () => page,
+    // Built once per test: the plain `{ page }` fixture's console begins with its test too.
+    page: async () => {
+      await markConsoleStart(page);
+      return page;
+    },
     ...(newBuild === undefined ? {} : { deploy: () => ({ newBuild }) }),
   });
   useE2eDriver((name, body: E2eBody, test) => {

@@ -8,32 +8,26 @@ import type { E2eBrowserPage } from './e2e-page';
 import { FixtureUnavailableError } from './errors';
 import type { PageLike } from './test-types';
 
-interface Binding {
-  readonly port: E2eBrowserPage;
-  /** Where the running test's console starts in the port's whole log. */
-  from: number;
-}
-
 /** A WeakMap, so a page nobody holds any more is not kept alive by having been bound. */
-const bindings = new WeakMap<PageLike, Binding>();
+const bindings = new WeakMap<PageLike, E2eBrowserPage>();
 
 const DRIVER_PAGE = "the page e2eTest or a test's `{ page }` fixture hands you";
 
 /** Called by `e2ePage()`: the page it answers, and the port behind it. */
 export function bindPagePort(page: PageLike, port: E2eBrowserPage): void {
-  bindings.set(page, { port, from: port.consoleMessages?.().length ?? 0 });
+  bindings.set(page, port);
 }
 
 const portOf = (page: PageLike, call: string, member: string): E2eBrowserPage => {
-  const binding = bindings.get(page);
-  if (binding === undefined) throw new FixtureUnavailableError({ name: call, needs: DRIVER_PAGE });
-  if (binding.port[member as keyof E2eBrowserPage] === undefined) {
+  const port = bindings.get(page);
+  if (port === undefined) throw new FixtureUnavailableError({ name: call, needs: DRIVER_PAGE });
+  if (port[member as keyof E2eBrowserPage] === undefined) {
     throw new FixtureUnavailableError({
       name: call,
       needs: `a page whose driver implements ${member}() — cdpE2eTab does; a hand-rolled E2eBrowserPage may not`,
     });
   }
-  return binding.port;
+  return port;
 };
 
 /**
@@ -46,11 +40,16 @@ export async function pressKey(page: PageLike, key: string): Promise<void> {
   await port.press?.(key);
 }
 
-/** Marks where the running test's console begins: the e2e driver calls it as each test starts. */
-export function markConsoleStart(page: PageLike): void {
-  const binding = bindings.get(page);
-  if (binding === undefined) return;
-  binding.from = binding.port.consoleMessages?.().length ?? 0;
+/**
+ * Starts the running test's console: the e2e driver calls it as each test starts, on `e2eTest` and
+ * on the `{ page }` fixture alike. One round trip first, so a line the previous test printed that
+ * is still in flight lands before the clear, never in this test.
+ */
+export async function markConsoleStart(page: PageLike): Promise<void> {
+  const port = bindings.get(page);
+  if (port?.clearConsole === undefined) return;
+  await port.evaluate('0');
+  port.clearConsole();
 }
 
 /**
@@ -61,7 +60,7 @@ export function markConsoleStart(page: PageLike): void {
 export async function consoleMessages(page: PageLike): Promise<readonly E2eConsoleMessage[]> {
   const port = portOf(page, 'consoleMessages', 'consoleMessages');
   await port.evaluate('0');
-  return (port.consoleMessages?.() ?? []).slice(bindings.get(page)?.from ?? 0);
+  return port.consoleMessages?.() ?? [];
 }
 
 /**

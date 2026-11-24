@@ -19,23 +19,30 @@ const portWith = (missing?: 'press' | 'consoleMessages') => {
   const pressed: string[] = [];
   const evaluated: string[] = [];
   const messages: E2eConsoleMessage[] = [];
+  // What the browser sends before it answers the NEXT evaluate: in flight until that round trip.
+  const inFlight: E2eConsoleMessage[] = [];
   const port: E2eBrowserPage = {
     url: () => 'http://127.0.0.1:3000/',
     goto: () => Promise.resolve(undefined),
-    evaluate: (expression) => {
+    evaluate: async (expression) => {
       evaluated.push(expression);
-      return Promise.resolve(undefined);
+      await Promise.resolve();
+      messages.push(...inFlight.splice(0));
+      return undefined;
     },
     click: () => Promise.resolve(),
     press: (key) => {
       pressed.push(key);
       return Promise.resolve();
     },
-    consoleMessages: () => messages,
+    consoleMessages: () => [...messages],
+    clearConsole: () => {
+      messages.length = 0;
+    },
   };
   if (missing !== undefined) delete port[missing];
   const page = e2ePage({ page: port, baseUrl: 'http://127.0.0.1:3000' });
-  return { page, pressed, evaluated, messages };
+  return { page, pressed, evaluated, messages, inFlight };
 };
 
 const codeOf = async (work: () => Promise<unknown>): Promise<string | undefined> => {
@@ -65,15 +72,17 @@ describe('pressKey', () => {
 
 describe('consoleMessages', () => {
   test('answers what arrived since the test began, after one round trip to the page', async () => {
-    const { page, messages, evaluated } = portWith();
+    const { page, messages, inFlight, evaluated } = portWith();
     messages.push({ level: 'error', text: 'an earlier test', source: 'console' });
-    markConsoleStart(page);
-    messages.push({ level: 'log', text: 'hello', source: 'console' });
+    // Printed by the earlier test, still in flight as this one starts: the start flushes it first.
+    inFlight.push({ level: 'error', text: 'an earlier test, late', source: 'console' });
+    await markConsoleStart(page);
+    // Printed by this test just before the read: only the read's round trip brings it in.
+    inFlight.push({ level: 'log', text: 'hello', source: 'console' });
     expect(await consoleMessages(page)).toEqual([
       { level: 'log', text: 'hello', source: 'console' },
     ]);
-    // Events sent before the reply arrive before it: the round trip is what makes the read whole.
-    expect(evaluated).toHaveLength(1);
+    expect(evaluated).toHaveLength(2);
   });
 
   test('a port with no consoleMessages() refuses by name', async () => {
@@ -90,8 +99,8 @@ describe('expectNoConsoleErrors', () => {
   });
 
   test('refuses with every error, console and uncaught alike', async () => {
-    const { page, messages } = portWith();
-    messages.push(
+    const { page, inFlight } = portWith();
+    inFlight.push(
       { level: 'error', text: 'failed to load', source: 'console' },
       { level: 'log', text: 'fine', source: 'console' },
       { level: 'error', text: 'TypeError: x is null', source: 'exception' },

@@ -12,7 +12,7 @@ import { CdpCallFailedError, CdpTimeoutError } from '@ultimat3/scraping/cdp';
 import type { AxTreeNode } from './ax-node';
 import { axRecord, toAxTreeNodes } from './ax-node';
 import { captureConsole } from './cdp-console-capture';
-import { MODIFIER_NAMES, parseKeyChord, SHIFT } from './cdp-key-chord';
+import { keyEvents } from './cdp-key-press';
 import { registerTabPort } from './cdp-ports';
 import type { AxTreeRequest, E2eBrowserPage } from './e2e-page';
 
@@ -83,8 +83,9 @@ export interface E2eTab extends E2eBrowserPage {
   /**
    * A REAL key press (`Input.dispatchKeyEvent`, down then up) at whatever has focus, so its default
    * action runs: Tab moves focus, which a dispatched `KeyboardEvent` never does. A name in
-   * `PRESS_KEYS` or one printable character, optionally after modifiers held for it:
-   * `Shift+Tab`, `Control+k`, `Meta+Shift+Enter` (`Alt`, `Control`, `Meta`, `Shift`).
+   * `PRESS_KEYS` or one ASCII letter or digit, optionally after modifiers held for it:
+   * `Shift+Tab`, `Control+k`, `Meta+Shift+Enter` (`Alt`, `Control`, `Meta`, `Shift`). Shift makes
+   * the key a US keyboard would (`Shift+a` is `A`, `Shift+1` is `!`).
    */
   press(key: string): Promise<void>;
   /** Required on a tab: the audit of every `e2eTest` reads it (`e2e-a11y-run.ts`). */
@@ -104,45 +105,7 @@ export interface TouchPoint {
   readonly y: number;
 }
 
-/** Named keys `press()` knows, with the Windows virtual key code Chrome routes them by. */
-export const PRESS_KEYS: Readonly<Record<string, number>> = {
-  Tab: 9,
-  Enter: 13,
-  Escape: 27,
-  ' ': 32,
-  PageUp: 33,
-  PageDown: 34,
-  End: 35,
-  Home: 36,
-  ArrowLeft: 37,
-  ArrowUp: 38,
-  ArrowRight: 39,
-  ArrowDown: 40,
-  Backspace: 8,
-  Delete: 46,
-};
-
-/** The key code of a printable character: its upper-case code point for a letter or digit. */
-const charCode = (key: string): number | undefined =>
-  key.length === 1 && /[a-z0-9]/i.test(key) ? key.toUpperCase().charCodeAt(0) : undefined;
-
-/**
- * The text a key TYPES, as puppeteer's key table has it. A key with text goes down as `keyDown`
- * carrying it, so Chrome raises the character event — what makes Enter submit a focused button's
- * form. A key with none (Tab, the arrows) goes down as `rawKeyDown`.
- */
-const typedText = (key: string): string | undefined =>
-  key === 'Enter' ? '\r' : key.length === 1 ? key : undefined;
-
-/** `KeyboardEvent.code`: `KeyA`, `Digit7`, `Space`; a named key is its own code. */
-const keyCodeName = (key: string): string =>
-  key === ' '
-    ? 'Space'
-    : /^[a-z]$/i.test(key)
-      ? `Key${key.toUpperCase()}`
-      : /^[0-9]$/.test(key)
-        ? `Digit${key}`
-        : key;
+export { PRESS_KEYS } from './cdp-key-press';
 
 export interface CdpE2eTabOptions {
   readonly connection: CdpConnection;
@@ -400,42 +363,12 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
       await touch('touchEnd', []);
     },
     async press(chord: string): Promise<void> {
-      const parsed = parseKeyChord(chord);
-      // Shift types the upper case of a letter, as a keyboard does; any other modifier types none.
-      const key =
-        parsed !== undefined && parsed.modifiers === SHIFT && /^[a-z]$/.test(parsed.key)
-          ? parsed.key.toUpperCase()
-          : parsed?.key;
-      const code =
-        key === undefined
-          ? undefined
-          : ((Object.hasOwn(PRESS_KEYS, key) ? PRESS_KEYS[key] : undefined) ?? charCode(key));
-      if (parsed === undefined || key === undefined || code === undefined) {
-        throw new CdpCallFailedError({
-          method: `press(${chord})`,
-          detail: `not a key press() knows: one of ${Object.keys(PRESS_KEYS).join(', ')}, or one letter or digit, optionally after ${MODIFIER_NAMES.join('+, ')}+`,
-        });
-      }
-      const { modifiers } = parsed;
-      const text = modifiers === 0 || modifiers === SHIFT ? typedText(key) : undefined;
-      const common = {
-        key,
-        code: keyCodeName(key),
-        windowsVirtualKeyCode: code,
-        ...(modifiers === 0 ? {} : { modifiers }),
-      };
-      await send(
-        'Input.dispatchKeyEvent',
-        {
-          type: text === undefined ? 'rawKeyDown' : 'keyDown',
-          ...common,
-          ...(text === undefined ? {} : { text }),
-        },
-        sessionId,
-      );
-      await send('Input.dispatchKeyEvent', { type: 'keyUp', ...common }, sessionId);
+      const { down, up } = keyEvents(chord);
+      await send('Input.dispatchKeyEvent', down, sessionId);
+      await send('Input.dispatchKeyEvent', up, sessionId);
     },
     consoleMessages: () => consoleCapture.messages(),
+    clearConsole: () => consoleCapture.clear(),
     offline: (enabled: boolean) => options.offline(enabled),
     async accessibilityTree(request: AxTreeRequest): Promise<readonly AxTreeNode[]> {
       const nodes = toAxTreeNodes((await send(FULL_AX_TREE, {}, sessionId)).result);
