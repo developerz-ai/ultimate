@@ -64,14 +64,16 @@ const linkSignInRefused = (purpose: string): AuthError =>
  * Signing the inbox's owner into that account hands them a session somebody else can also open —
  * and so does merely verifying it: the registrant's password, second factor, passkeys, API keys and
  * sessions survive a stamp. The remedy is the reset link: its consume only proves the inbox, and
- * the app revokes every one of those before the account is trusted. Named, because this caller owns the address — the rule `oauthAccountNotLinked` follows.
+ * `reclaimAccount` then shuts the account, takes every one of those and marks it verified in the
+ * write that reopens it. Named, because this caller owns the address — the rule
+ * `oauthAccountNotLinked` follows.
  */
 const linkAccountUnverified = (): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause:
       'an account holds this address but never verified it, so whoever registered it may hold its password, and a sign-in link may not claim it',
-    fix: "await passwordReset.issue(runtime, { identifier: email, locale })   // its consume only proves the inbox; then, before trusting the account: deletePasskey for every listPasskeys(id), revokeApiKey for every listApiKeys(id), updateUser(id, { passwordHash: null, mfaSecret: null, recoveryCodeHashes: [], emailVerifiedAt: now }) and revokeUserSessions(auth, id, 'address proven by reset'), then sign in by link",
+    fix: "await passwordReset.issue(runtime, { identifier: email, locale })   // its consume only proves the inbox; then reclaimAccount(auth, id, 'address proven by reset') shuts the account, revokes the registrant's sessions, API keys, passkeys, password and second factor, and marks it verified in the write that reopens it — then sign in by link",
   });
 
 /** Before the store is asked, so a refused purpose leaves its token live for its own job. */

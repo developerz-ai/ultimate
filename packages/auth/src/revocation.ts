@@ -88,15 +88,77 @@ export async function disableUser(
   // Both mean the account is not known to be disabled, and reporting success would be a lie.
   if (user === null) throw authWriteFailed('updateUser', 'x_users');
   const sessionsRevoked = await auth.adapter.deleteSessionsForUser(userId);
-  let apiKeysRevoked = 0;
+  const apiKeysRevoked = await revokeOwnedApiKeys(auth, userId, now);
+  return { user, sessionsRevoked, apiKeysRevoked };
+}
+
+/** Every live key the user owns, revoked at `now`. Returns how many were. */
+async function revokeOwnedApiKeys(auth: Auth, userId: string, now: Date): Promise<number> {
+  let revoked = 0;
   for (const key of await auth.adapter.listApiKeys(userId)) {
     if (key.revokedAt !== null) continue;
-    if (await auth.adapter.revokeApiKey(key.id, now)) apiKeysRevoked += 1;
+    if (await auth.adapter.revokeApiKey(key.id, now)) revoked += 1;
   }
-  return { user, sessionsRevoked, apiKeysRevoked };
+  return revoked;
 }
 
 /** The inverse. No sessions are restored — a re-enabled account signs in again, deliberately. */
 export async function enableUser(auth: Auth, userId: string): Promise<AuthUser | null> {
   return await auth.adapter.updateUser(userId, { disabledAt: null });
+}
+
+export interface ReclaimedAccount extends DisabledUser {
+  readonly passkeysDeleted: number;
+}
+
+/**
+ * An account handed to the owner of its inbox, once a reset link proved the address: every
+ * authenticator the registrant set is taken, then the address is marked proven.
+ *
+ * Revoking them one by one while the account still opens races the registrant — a live session
+ * enrols a passkey after the sweep listed them — and a stamp written before a sweep that then fails
+ * publishes the account as verified with the registrant still inside. So:
+ *
+ * 1. ONE write stamps `disabledAt` and clears the password and the second factor. `login`,
+ *    `authenticate`, `verifyApiKey`, passkey register and sign-in, the OAuth path and `completeMfa`
+ *    all re-read `disabledAt`, so a request racing the sweep finds the account shut and can enrol
+ *    nothing.
+ * 2. Sessions, API keys and passkeys go while it is shut.
+ * 3. ONE write stamps `emailVerifiedAt` and lifts the `disabledAt` this call set. Verification is
+ *    never published apart from the reopening: a call that fails before it leaves the account
+ *    disabled and unverified.
+ *
+ * Only a disable this call set is lifted. An account found disabled — an operator's, or a
+ * reclaim that failed part-way — is swept and verified and stays disabled: a reset link is not
+ * how a disable ends. Once this returns nothing of the registrant's remains, so `enableUser` is
+ * then safe.
+ */
+export async function reclaimAccount(
+  auth: Auth,
+  userId: string,
+  reason: string,
+): Promise<ReclaimedAccount> {
+  record('reclaimAccount', userId, reason);
+  const found = await auth.adapter.findUserById(userId);
+  if (found === null) throw authWriteFailed('findUserById', 'x_users');
+  const now = auth.clock.now();
+  const shut = await auth.adapter.updateUser(userId, {
+    disabledAt: found.disabledAt ?? now,
+    passwordHash: null,
+    mfaSecret: null,
+    recoveryCodeHashes: [],
+  });
+  if (shut === null) throw authWriteFailed('updateUser', 'x_users');
+  const sessionsRevoked = await auth.adapter.deleteSessionsForUser(userId);
+  const apiKeysRevoked = await revokeOwnedApiKeys(auth, userId, now);
+  let passkeysDeleted = 0;
+  for (const passkey of await auth.adapter.listPasskeys(userId)) {
+    if (await auth.adapter.deletePasskey(userId, passkey.id)) passkeysDeleted += 1;
+  }
+  const user = await auth.adapter.updateUser(userId, {
+    emailVerifiedAt: now,
+    disabledAt: found.disabledAt,
+  });
+  if (user === null) throw authWriteFailed('updateUser', 'x_users');
+  return { user, sessionsRevoked, apiKeysRevoked, passkeysDeleted };
 }

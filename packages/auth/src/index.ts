@@ -393,10 +393,11 @@ export {
 } from './rate-limit';
 export type { PostgresAuthLimiter, PostgresAuthLimiterOptions } from './rate-limit-postgres';
 export { postgresAuthLimiter } from './rate-limit-postgres';
-export type { DisabledUser } from './revocation';
+export type { DisabledUser, ReclaimedAccount } from './revocation';
 export {
   disableUser,
   enableUser,
+  reclaimAccount,
   revokeOrgSessions,
   revokeSessionsCreatedBefore,
   revokeUserSessions,

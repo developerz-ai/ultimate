@@ -23,7 +23,7 @@ import {
 import { totpCode, totpStep } from './mfa';
 import { completeMfa } from './mfa-challenge';
 import { saveTotpSecret } from './mfa-secret';
-import { disableUser, enableUser, revokeUserSessions } from './revocation';
+import { disableUser, enableUser, reclaimAccount } from './revocation';
 import { defineVerificationPurpose, emailVerification, passwordReset } from './verify';
 
 describe('signInWithLink: the second factor still applies', () => {
@@ -309,23 +309,13 @@ describe('signInWithLink: what a link is not', () => {
     });
     const error = await caught(async () => redeem(w.auth, await mailed(w)));
     expect(error?.fix).toContain('passwordReset.issue');
-    expect(error?.fix).toContain('revokeUserSessions');
-    expect(error?.fix).toContain('deletePasskey');
+    expect(error?.fix).toContain('reclaimAccount');
 
-    // The inbox's owner follows it: the reset link only proves the address; the app then revokes
-    // every credential the registrant set before the account is trusted.
+    // The inbox's owner follows it: the reset link only proves the address; `reclaimAccount`
+    // takes every credential the registrant set before the account is trusted.
     const { token } = await passwordReset.issue(w.runtime, { identifier: EMAIL, locale: 'en' });
     await passwordReset.consume(w.runtime, { identifier: EMAIL, token });
-    for (const passkey of await w.adapter.listPasskeys(user.id)) {
-      await w.adapter.deletePasskey(user.id, passkey.id);
-    }
-    await w.adapter.updateUser(user.id, {
-      passwordHash: null,
-      mfaSecret: null,
-      recoveryCodeHashes: [],
-      emailVerifiedAt: w.clock.now(),
-    });
-    await revokeUserSessions(w.auth, user.id, 'address proven by reset');
+    await reclaimAccount(w.auth, user.id, 'address proven by reset');
 
     const result = await redeem(w.auth, await mailed(w));
     expect(result.session.userId).toBe(user.id);
