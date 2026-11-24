@@ -351,6 +351,16 @@ describe('signInWithLink: what a link is not', () => {
     expect(await w.adapter.listPasskeys(user.id)).toEqual([]);
   });
 
+  test('an interrupted account cleanup cannot be reopened while credentials remain', async () => {
+    const w = world();
+    const user = await register(w.auth, { email: EMAIL, password: PASSWORD });
+    await saveTotpSecret(w.auth, user.id, SECRET);
+    await disableUser(w.auth, user.id, 'address proven by reset');
+    await w.adapter.updateUser(user.id, { passwordHash: null });
+    await enableUser(w.auth, user.id);
+    expect((await w.adapter.findUserById(user.id))?.disabledAt).not.toBeNull();
+  });
+
   test('a purpose that keys on the address but is not declared sign-in is refused, and its token stays live', async () => {
     const w = world();
     const userId = await verifiedUser(w);
