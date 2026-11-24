@@ -72,7 +72,10 @@ export interface RenderedNativePush {
   readonly collapse: string | undefined;
   readonly ttlSeconds: number;
   readonly urgent: boolean;
-  /** Both providers. Absent, the device's default for the app. */
+  /**
+   * Both providers. Absent, no sound is requested: APNs shows the alert silently, and on Android 8
+   * and later the notification channel's sound plays. `'default'` asks for the platform's sound.
+   */
   readonly sound?: string | undefined;
   /** APNs only. */
   readonly interruptionLevel?: NativeInterruptionLevel | undefined;
@@ -92,7 +95,7 @@ const INTERRUPTION_LEVELS: ReadonlySet<string> = new Set([
 ]);
 
 /** A sound file, a category or a channel id: a short name, never text a person reads. */
-const NATIVE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const NATIVE_NAME = /^[A-Za-z0-9._-]{1,64}$/;
 
 /**
  * The native-only fields of a visible push, screened once before any device: a name each provider
