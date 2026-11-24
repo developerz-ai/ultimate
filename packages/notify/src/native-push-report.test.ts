@@ -60,24 +60,40 @@ beforeEach(async () => {
 });
 
 describe('unit · nativePush — native field names', () => {
-  test('a bad field is refused for a recipient with no device, too: screened before the lookup', async () => {
+  test('a bad field is refused before the device lookup, for a recipient with no device too', async () => {
+    const looked: string[] = [];
+    const listFor = devices.listFor.bind(devices);
+    devices = {
+      ...devices,
+      listFor: (actorId) => {
+        looked.push(actorId);
+        return listFor(actorId);
+      },
+    };
     const refused = await refusalOf(() =>
       pusher().send({ to: 'nobody', message: { ...message, sound: 'my sound' }, signal }),
     );
     expect(refused.code).toBe('X_NOTIFY_PUSH_MESSAGE_INVALID');
+    expect(looked).toEqual([]);
     expect(fake.sent).toEqual([]);
   });
 
   test("every documented character is taken in every position, a leading '_', '.' or '-' too", async () => {
     await device('android', ANDROID);
-    for (const name of ['_mentions', '.chime', '-reply', 'a', 'x'.repeat(64)]) {
+    const names = ['_mentions', '.chime', '-reply', 'a', 'x'.repeat(64)];
+    for (const name of names) {
       await pusher().send({ to: 'ana', message: { ...message, channelId: name }, signal });
     }
-    expect(fake.sent.filter((sent) => sent.url === FCM)).toHaveLength(5);
+    const sentIds = fake.sent
+      .filter((sent) => sent.url === FCM)
+      .map((sent) => JSON.parse(sent.body).message.android.notification.channel_id);
+    expect(sentIds).toEqual(names);
   });
 
-  test("each refused field's fix parses as code and names the field", async () => {
+  test("each refused field's fix is a pushChannel() call that keeps the message and sets a valid field", async () => {
+    await device('ios', IOS);
     const transpiler = new Bun.Transpiler({ loader: 'ts' });
+    const own = (args: { readonly n: number }) => ({ ...message, url: `/p/${String(args.n)}` });
     for (const [field, value] of [
       ['sound', 'my sound'],
       ['category', ''],
@@ -89,8 +105,17 @@ describe('unit · nativePush — native field names', () => {
       );
       const [code = ''] = refused.fix.split('   # ');
       expect(code).not.toContain('…');
-      expect(code).toContain(`${field}: '`);
-      expect(() => transpiler.transformSync(`void ${code};`)).not.toThrow();
+      // The snippet run as written: `pushChannel` hands back its options, `message` is the app's own.
+      const run = new Function('pushChannel', 'pusher', 'message', `return ${code};`);
+      transpiler.transformSync(`void ${code};`);
+      const options = run((opts: unknown) => opts, undefined, own) as {
+        message: (args: { readonly n: number }) => Record<string, unknown>;
+      };
+      const repaired = options.message({ n: 7 });
+      expect(repaired).toEqual({ ...own({ n: 7 }), [field]: repaired[field] });
+      expect(repaired[field]).toBeString();
+      expect(repaired[field]).not.toBe('');
+      await pusher().send({ to: 'ana', message: { ...message, ...repaired }, signal });
     }
   });
 
@@ -113,6 +138,7 @@ describe('unit · nativePush — what the report counts as removed', () => {
     await device('android', ANDROID);
     await pusher().send({ to: 'ana', message, signal });
     expect(reports).toEqual([{ accepted: 1, refused: 0, removed: 1, skipped: 0 }]);
+    expect((await devices.listFor('ana')).map((row) => row.token)).toEqual([ANDROID]);
   });
 
   test(`a bad token is refused, then removed on its answer ${String(PUSH_BAD_TOKEN_LIMIT)}`, async () => {
@@ -122,6 +148,7 @@ describe('unit · nativePush — what the report counts as removed', () => {
     for (let i = 0; i < PUSH_BAD_TOKEN_LIMIT; i += 1) {
       await pusher().send({ to: 'ana', message, signal });
     }
+    expect((await devices.listFor('ana')).map((row) => row.token)).toEqual([IOS]);
     const kept = { accepted: 1, refused: 1, removed: 0, skipped: 0 };
     expect(reports).toEqual([
       ...Array.from({ length: PUSH_BAD_TOKEN_LIMIT - 1 }, () => kept),
