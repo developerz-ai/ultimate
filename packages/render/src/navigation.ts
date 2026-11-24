@@ -18,7 +18,7 @@
 
 import { navigationCache } from './navigation-cache';
 import { withinDeadline } from './navigation-deadline';
-import { announcer, handOver } from './navigation-dom';
+import { announcer, handOver, isAttachment } from './navigation-dom';
 import {
   type Answer,
   fetchDocument,
@@ -26,7 +26,13 @@ import {
   metaOf,
   responseFactsOf,
 } from './navigation-fetch';
-import { recordEntry, scrollAfter, withoutFragment } from './navigation-history';
+import {
+  lateFragment,
+  loadForReal,
+  recordEntry,
+  scrollAfter,
+  withoutFragment,
+} from './navigation-history';
 import { interceptNavigation } from './navigation-intercept';
 import { modalController } from './navigation-modal';
 import { addressOf, modalAddress, modalHistory } from './navigation-modal-rules';
@@ -119,6 +125,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   let inflight: AbortController | undefined;
   /** The page on screen still filling its holes; aborted by the next swap and by `stop()`. */
   let filling: AbortController | undefined;
+  /** A broken stream's recovery, held while a newer navigation is on its way (`fill`). */
+  let recoverOnSettle: (() => void) | undefined;
   const live = announcer(doc);
   const owned = documentHead(doc);
   notePersisted(doc);
@@ -147,14 +155,33 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     cache.set(url, request(url, 'prefetch'));
   };
 
+  /**
+   * The tab is about to be the browser's: the page on screen stops reading its holes and a held
+   * recovery (`fill`) is dropped. Either would otherwise load the page being left, over the load the
+   * browser has not committed yet.
+   */
+  const abandon = (): void => {
+    recoverOnSettle = undefined;
+    filling?.abort();
+  };
+
+  // Back/Forward put `url` in the address bar already: `assign` of it would only scroll (loadForReal).
+  // The visit in flight goes too: a POST whose `ultimate:navigated` listener started this never fills.
+  const loadInstead = (url: string): void => {
+    inflight?.abort();
+    abandon();
+    loadForReal(win, url);
+  };
+
   /** Cancelable; its default is a GET of the page the visitor is on. Nothing is re-sent. */
   const failed = (url: string, method: string, reason: string): void => {
     const detail = { url, method, reason };
     const event = new CustomEvent(NAVIGATION_ERROR_EVENT, { detail, cancelable: true });
     if (!doc.dispatchEvent(event)) return;
+    abandon();
     // Under a modal the URL differs only by its hash, which `assign` merely scrolls to: reloaded,
     // the page and its modal are both asked for again (the entry is the router's own GET).
-    if (modal.address === undefined) win.location.assign(win.location.href);
+    if (modal.address === undefined) loadForReal(win, win.location.href);
     else win.location.reload();
   };
 
@@ -184,7 +211,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     // trusted to swap: every navigation is a real load (`answerMovesTab`).
     if (untrusted && method === 'GET') {
       if (options.fromHash === true) modal.clear();
-      else win.location.assign(url);
+      else loadInstead(url);
       return;
     }
     if (refreshYields(options.refresh, inflight)) return;
@@ -212,7 +239,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       } catch {
         if (mine.signal.aborted || refreshFailsQuietly(options.refresh)) return;
         // A GET that never arrived is the browser's to try; a POST that failed is never re-sent.
-        if (method === 'GET') win.location.assign(url);
+        if (method === 'GET') loadInstead(url);
         else failed(url, method, 'the request failed on the network');
         return;
       }
@@ -245,7 +272,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
           // A principal change the router saw, or one the server may have signalled by handing
           // over the very URL it was asked for (it cannot say which): every tab forgets.
           if (verdict.reason === 'another principal' || verdict.url === url) forget();
-          win.location.assign(verdict.url);
+          loadInstead(verdict.url);
           return;
         case 'follow':
           await navigate(verdict.url, {
@@ -255,6 +282,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
           });
           return;
         case 'hand-over':
+          // A download leaves the page on screen, still filling; anything else is shown by the
+          // browser in its place.
+          if (!isAttachment(answer.disposition)) abandon();
           if (answer.body !== null) handOver(win, answer.body, answer.disposition);
           return;
         default:
@@ -276,7 +306,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         if (!sheetsLoaded) {
           if (refreshFailsQuietly(options.refresh)) return;
           if (method === 'GET') {
-            win.location.assign(url);
+            loadInstead(url);
             return;
           }
         }
@@ -299,6 +329,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         modal.release();
         modal.dismiss();
         let swapped: ReturnType<typeof swapDocument> | undefined;
+        let scrolled: (() => boolean) | undefined;
         const hold = holdFor(doc, options.refresh);
         if (hold === null) return;
         await swapIn(
@@ -317,6 +348,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
             recordEntry(win, landed, rendered, history);
             // Inside the swap, so a view transition's "after" frame is already where the page lands.
             scrollAfter(win, doc, landed, history);
+            // Where the visitor is now, before any script or listener moves them.
+            scrolled = lateFragment(win, doc, landed, history);
           },
           press.track,
         );
@@ -336,15 +369,20 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         landFocus(doc, live, hold);
         doc.dispatchEvent(new CustomEvent(NAVIGATED_EVENT, { detail: { url: landed } }));
         reconcile();
+        // Scripts and listeners ran since the swap: a newer navigation, or `stop()`, may have
+        // taken the body. The holes left unread are then cancelled below, never filled.
+        if (mine.signal.aborted) return;
         if (unread !== null) {
-          fill(unread, landed, method);
+          fill(unread, landed, method, scrolled);
           unread = null;
         }
       } catch {
         // A swap that failed part-way leaves a page nobody rendered: a GET is loaded for real; a
         // POST's answer cannot be asked for again, so the visitor is told and shown this page.
-        if (method === 'GET') win.location.assign(landed);
-        else failed(url, method, 'the answer could not be shown');
+        if (method === 'GET') {
+          abandon();
+          loadForReal(win, landed);
+        } else failed(url, method, 'the answer could not be shown');
       }
     } finally {
       unread?.cancel();
@@ -355,6 +393,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         // Whatever the answer was, a frame nothing filled goes; an open modal is no longer busy.
         modal.settle();
         doc.documentElement.removeAttribute(NAVIGATING_ATTRIBUTE);
+        const recover = recoverOnSettle;
+        recoverOnSettle = undefined;
+        recover?.();
       }
     }
   };
@@ -362,15 +403,26 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   /**
    * The holes of the page just shown, filled as they arrive: the shell painted without them. A
    * stream that breaks under the page is a page nobody rendered — a GET is loaded for real, a POST
-   * (never re-sent) is reported. One the next swap cut short is nobody's failure.
+   * (never re-sent) is reported. One the next swap cut short is nobody's failure; one that breaks
+   * while the visitor's next page is on its way waits for it, and recovers only if that visit
+   * stayed or failed quietly — one that took the body, or handed the tab to the browser, drops it.
    */
-  function fill(rest: PageRest, landed: string, method: 'GET' | 'POST'): void {
+  function fill(
+    rest: PageRest,
+    landed: string,
+    method: 'GET' | 'POST',
+    scrolled: (() => boolean) | undefined,
+  ): void {
     const own = new AbortController();
     filling = own;
-    fillHoles(doc, rest, ran, own.signal).catch(() => {
-      if (own.signal.aborted) return;
-      if (method === 'GET') win.location.assign(landed);
-      else failed(landed, method, 'the answer could not be shown');
+    fillHoles(doc, rest, ran, own.signal, scrolled).catch(() => {
+      const recover = (): void => {
+        if (own.signal.aborted) return;
+        if (method === 'GET') loadForReal(win, landed);
+        else failed(landed, method, 'the answer could not be shown');
+      };
+      if (inflight === undefined) recover();
+      else recoverOnSettle = recover;
     });
   }
 
@@ -430,6 +482,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     closeModal: () => modal.close(),
     stop() {
       stopListening();
+      // The answer still being read, too: a stopped router mutates nothing after this.
+      inflight?.abort();
       filling?.abort();
       modal.dismiss();
       scroll.stop();

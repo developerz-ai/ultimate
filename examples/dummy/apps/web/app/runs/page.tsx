@@ -223,7 +223,11 @@ export const config = defineRoute({
   // measured: 252126 B (2026-11-24; x build --target static, against origin/main's 252,080) — why:
   // +46 B, `AsyncRegion`'s `failed` branch can be the app's own and `EmptyState` / `Alert` take a
   // heading level, which the run console's states render through. Raised 246.2kb → 246.3kb.
-  budget: { js: '246.3kb' },
+  // measured: 252960 B (2026-11-24; x build --target static) — why: the client router +834 B
+  // (31,904 → 32,738): a streamed soft visit scrolls to a fragment its hole brings, holds its
+  // recovery while the next visit is on its way, reloads a fragment URL it must load for real,
+  // and drops keep-alive frames as they arrive. Raised 246.3kb → 247.1kb.
+  budget: { js: '247.1kb' },
   // The URL rides along: the "created between" filter is read off it, in the member's zone.
   load: async ({ url }) => ({
     connections: await memberQueries.runConnections({ orgId: useActor().orgId }),

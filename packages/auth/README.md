@@ -709,6 +709,8 @@ unauthenticated POST with any token cannot kill the victim's live link.
 
 ### Signing in with a mailed link
 
+Not exported in this release: `signInWithLink` is internal to the package. A mailed credential today uses `defineVerificationPurpose` and `consumeVerification`, as above.
+
 `As of 2026-11`. `signInWithLink(auth, { purpose, identifier, token, ip?, userAgent?, signUp? })`
 consumes a link issued under a purpose declared `signIn: true` and answers what `login()` answers.
 With TOTP enrolled it answers `X_MFA_REQUIRED` and writes no session:
@@ -719,36 +721,6 @@ Redemption needs the address as well as the token. The mailed URL carries the to
 page it opens asks for the address (prefilled where the same browser asked for the link) and posts
 both: an address in the URL lands in every log and referrer the link passes through.
 
-```ts
-import {
-  type Auth,
-  defineVerificationPurpose,
-  signInWithLink,
-  type VerificationRuntime,
-} from '@ultimat3/auth';
-
-declare const auth: Auth;
-declare const runtime: VerificationRuntime;
-declare const email: string;
-
-export const signInLink = defineVerificationPurpose({
-  name: 'sign-in',
-  template: 'auth.sign-in',
-  ttlMs: 15 * 60 * 1000,
-  signIn: true,
-});
-
-const { token } = await signInLink.issue(runtime, {
-  identifier: email,
-  locale: 'en',
-  link: (token) => `https://acme.test/sign-in?token=${token}`,   // production only mails it
-});
-export const result = await signInWithLink(auth, {
-  purpose: signInLink.name,
-  identifier: email,                      // in production the callback page's form posts it
-  token,                                  // in production this arrives off the link
-});
-```
 
 | Case | Answer |
 |---|---|

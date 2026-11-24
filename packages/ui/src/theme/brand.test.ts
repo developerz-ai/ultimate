@@ -7,6 +7,8 @@ import { UI_ERROR_CODES } from '../errors';
 import { colorTokens } from '../tokens/tokens';
 import { brandStyleCspSource, brandStyleTag, defineTheme } from './brand';
 
+const RENDER_DIR = Bun.fileURLToPath(new URL('../../../render', import.meta.url));
+
 function codeOf(run: () => unknown): string | undefined {
   try {
     run();
@@ -123,6 +125,64 @@ describe('defineTheme', () => {
       () => defineTheme({ motion: { duration: { base: '1s; } html { display: none }' } } }),
     ];
     for (const run of bad) expect(codeOf(run)).toBe(UI_ERROR_CODES.invalidValue);
+  });
+
+  test('a zero duration is emitted with its unit, so `var(--duration-*)` stays a valid <time>', () => {
+    // `transition-duration: 0` is invalid CSS: a unitless zero is a length, never a time, and a
+    // custom property substituted into it makes the whole declaration invalid at computed time.
+    expect(defineTheme({ motion: { duration: { instant: '0', base: '0s' } } }).css).toBe(
+      ':root {\n  --duration-instant: 0ms;\n  --duration-base: 0s;\n}',
+    );
+  });
+
+  test('a curve whose x2 alone is out of range is refused like one whose x1 is', () => {
+    const run = () => defineTheme({ motion: { easing: { out: 'cubic-bezier(0.2, 0, 1.5, 1)' } } });
+    expect(codeOf(run)).toBe(UI_ERROR_CODES.invalidValue);
+  });
+
+  test('a motion slot or scale that is not an object is X_UI_INVALID_VALUE, never a TypeError', () => {
+    // A theme loaded from JSON can carry `null` where the type says an object.
+    const malformed: readonly unknown[] = [
+      { motion: null },
+      { motion: [] },
+      { motion: 'fast' },
+      { motion: { duration: null } },
+      { motion: { easing: null } },
+      { motion: { duration: ['180ms'] } },
+      { motion: { easing: 'cubic-bezier(0.2, 0, 0, 1)' } },
+    ];
+    for (const input of malformed) {
+      expect(codeOf(() => defineTheme(input as Parameters<typeof defineTheme>[0]))).toBe(
+        UI_ERROR_CODES.invalidValue,
+      );
+    }
+  });
+
+  test("compiled Sass's t.duration() and t.easing() read the exact properties a brand overrides", async () => {
+    const sass = (await import(Bun.resolveSync('sass', RENDER_DIR))) as {
+      compileString(source: string, options: { url: URL }): { css: string };
+    };
+    const css = sass.compileString(
+      // Relative to `url`, never an interpolated path: Sass reads a Windows `\` as an escape.
+      `@use './tokens' as t;\n.a { transition: opacity t.duration(base) t.easing(out); }`,
+      { url: new URL('../brand-motion.scss', import.meta.url) },
+    ).css;
+    const brand = defineTheme({
+      motion: { duration: { base: '180ms' }, easing: { out: 'cubic-bezier(0.2, 0, 0, 1)' } },
+    }).css;
+    const declared = new Map(
+      [...brand.matchAll(/(--[\w-]+): ([^;]+);/g)].map((m) => [m[1] ?? '', m[2] ?? '']),
+    );
+    const transition = /transition: ([^;]+);/.exec(css)?.[1] ?? '';
+    // The token functions read the brand's properties; an inlined literal would also resolve below.
+    expect(transition).toBe('opacity var(--duration-base) var(--easing-out)');
+    const resolved = transition.replaceAll(/var\((--[\w-]+)\)/g, (_, name: string) => {
+      const value = declared.get(name);
+      if (value === undefined)
+        return expect.unreachable(`${name} is not a property the brand sets`);
+      return value;
+    });
+    expect(resolved).toBe('opacity 180ms cubic-bezier(0.2, 0, 0, 1)');
   });
 
   test('output is ordered by the canonical scales, not by the input object', () => {

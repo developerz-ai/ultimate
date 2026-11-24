@@ -3,7 +3,7 @@
 // check-and-add, and a store that reads then writes admits past the limit under parallel calls.
 
 import { expect, test } from 'bun:test';
-import type { MeterKey, MeterStore } from '@ultimat3/action/adapter';
+import type { MeterDrawResult, MeterKey, MeterStore } from '@ultimat3/action/adapter';
 import type { SharedExamples } from './shared-examples';
 import { sharedExamples } from './shared-examples';
 
@@ -39,6 +39,24 @@ const keyedOf =
   (store: MeterStore, key: MeterKey) =>
   (limit: number, amount: number, drawKey: string, periodStartMs = START) =>
     store.draw({ ...key, periodStartMs, limit, amount, drawKey });
+
+/**
+ * A draw's answer, judged on what the port requires: `replayed` must be `true` on a replay, and on
+ * anything else may be `false` or absent; `periodStartMs` is checked by the check that names it,
+ * where it differs from the request's and is therefore required.
+ */
+function expectDraw(
+  result: MeterDrawResult,
+  expected: { allowed: boolean; used: number; warned: boolean; replayed?: true },
+): void {
+  expect({ allowed: result.allowed, used: result.used, warned: result.warned }).toEqual({
+    allowed: expected.allowed,
+    used: expected.used,
+    warned: expected.warned,
+  });
+  if (expected.replayed === true) expect(result.replayed).toBe(true);
+  else expect(result.replayed === undefined || result.replayed === false).toBe(true);
+}
 
 export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
   {
@@ -85,7 +103,7 @@ export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
       expect((await draw(2, START + DAY)).allowed).toBe(false);
       // A replica a period behind cannot reset today's count by drawing against yesterday.
       expect((await draw(2, START)).allowed).toBe(false);
-      expect(await draw(2, START + 2 * DAY)).toEqual({ allowed: true, used: 1, warned: false });
+      expectDraw(await draw(2, START + 2 * DAY), { allowed: true, used: 1, warned: false });
     },
   },
   {
@@ -94,7 +112,7 @@ export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
       const draw = drawOf(store, keyOf());
       await draw(1);
       expect((await draw(1)).allowed).toBe(false);
-      expect(await draw(5)).toEqual({ allowed: true, used: 2, warned: false });
+      expectDraw(await draw(5), { allowed: true, used: 2, warned: false });
     },
   },
   {
@@ -115,9 +133,9 @@ export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
       const key = keyOf();
       const draw = (limit: number, amount: number) =>
         store.draw({ ...key, periodStartMs: START, limit, amount });
-      expect(await draw(10, 7)).toEqual({ allowed: true, used: 7, warned: false });
-      expect(await draw(10, 4)).toEqual({ allowed: false, used: 7, warned: false });
-      expect(await draw(10, 3)).toEqual({ allowed: true, used: 10, warned: false });
+      expectDraw(await draw(10, 7), { allowed: true, used: 7, warned: false });
+      expectDraw(await draw(10, 4), { allowed: false, used: 7, warned: false });
+      expectDraw(await draw(10, 3), { allowed: true, used: 10, warned: false });
       expect((await draw(10, 1)).allowed).toBe(false);
     },
   },
@@ -128,8 +146,8 @@ export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
       const results = await Promise.all(Array.from({ length: RACERS }, () => keyed(100, 3, 'k1')));
       expect(results.every((result) => result.allowed)).toBe(true);
       expect(results.filter((result) => result.replayed !== true)).toHaveLength(1);
-      expect(await keyed(100, 3, 'k2')).toEqual({ allowed: true, used: 6, warned: false });
-      expect(await keyed(100, 3, 'k1')).toEqual({
+      expectDraw(await keyed(100, 3, 'k2'), { allowed: true, used: 6, warned: false });
+      expectDraw(await keyed(100, 3, 'k1'), {
         allowed: true,
         used: 6,
         warned: false,
@@ -142,14 +160,14 @@ export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
     async run(store) {
       const keyed = keyedOf(store, keyOf());
       expect((await keyed(5, 5, 'k1')).allowed).toBe(true);
-      expect(await keyed(5, 1, 'k2')).toEqual({ allowed: false, used: 5, warned: false });
-      expect(await keyed(5, 5, 'k1')).toEqual({
+      expectDraw(await keyed(5, 1, 'k2'), { allowed: false, used: 5, warned: false });
+      expectDraw(await keyed(5, 5, 'k1'), {
         allowed: true,
         used: 5,
         warned: false,
         replayed: true,
       });
-      expect(await keyed(6, 1, 'k2')).toEqual({ allowed: true, used: 6, warned: false });
+      expectDraw(await keyed(6, 1, 'k2'), { allowed: true, used: 6, warned: false });
     },
   },
   {
@@ -157,20 +175,90 @@ export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
     async run(store) {
       const keyed = keyedOf(store, keyOf());
       await keyed(10, 4, 'k1');
-      expect(await keyed(10, 4, 'k1', START + DAY)).toEqual({
+      expectDraw(await keyed(10, 4, 'k1', START + DAY), {
         allowed: true,
         used: 0,
         warned: false,
         replayed: true,
       });
-      expect(await keyed(10, 2, 'k2', START + DAY)).toEqual({
+      expectDraw(await keyed(10, 2, 'k2', START + DAY), {
         allowed: true,
         used: 2,
         warned: false,
       });
-      expect(await keyed(10, 4, 'k1', START + 2 * DAY)).toEqual({
+      expectDraw(await keyed(10, 4, 'k1', START + 2 * DAY), {
         allowed: true,
         used: 4,
+        warned: false,
+      });
+    },
+  },
+  {
+    name: 'declares that it counts amounts and remembers draw keys',
+    async run(store) {
+      expect(store.keyedDraws).toBe(true);
+    },
+  },
+  {
+    name: 'a lagging keyed draw counts in the open period, and its key lasts as long as that period',
+    async run(store) {
+      const key = keyOf();
+      const keyed = keyedOf(store, key);
+      await drawOf(store, key)(100, START + DAY);
+      const late = await keyed(100, 3, 'late', START);
+      expectDraw(late, { allowed: true, used: 4, warned: false });
+      // Required here, where it differs from the request's: absent, `drawMeter` would answer day
+      // one's reset for a charge made on day two.
+      expect(late.periodStartMs).toBe(START + DAY);
+      // Charged on day two, so day three still remembers it: a retry adds nothing.
+      expectDraw(await keyed(100, 3, 'late', START + 2 * DAY), {
+        allowed: true,
+        used: 0,
+        warned: false,
+        replayed: true,
+      });
+    },
+  },
+  {
+    name: "a lagging retry of a key the counter's own period has forgotten is counted again",
+    async run(store) {
+      const key = keyOf();
+      const keyed = keyedOf(store, key);
+      await keyed(100, 3, 'k', START);
+      await drawOf(store, key)(100, START + 2 * DAY);
+      // The counter is on day three, which remembers day two's keys and no older ones — the refusal
+      // too: judged by the request's day two, it would find day one's key and replay it.
+      expectDraw(await keyed(3, 3, 'k', START + DAY), { allowed: false, used: 1, warned: false });
+      expectDraw(await keyed(100, 3, 'k', START + DAY), { allowed: true, used: 4, warned: false });
+    },
+  },
+  {
+    name: 'a refused draw of a later period forgets no key the open period still remembers',
+    async run(store) {
+      const key = keyOf();
+      const keyed = keyedOf(store, key);
+      await keyed(10, 1, 'k', START);
+      await drawOf(store, key)(10, START + DAY);
+      expect((await keyed(10, 11, 'too-big', START + 2 * DAY)).allowed).toBe(false);
+      expectDraw(await keyed(10, 1, 'k', START + DAY), {
+        allowed: true,
+        used: 1,
+        warned: false,
+        replayed: true,
+      });
+    },
+  },
+  {
+    name: 'a refused first draw leaves no counter a lagging draw could spend',
+    async run(store) {
+      const key = keyOf();
+      const keyed = keyedOf(store, key);
+      expect((await keyed(10, 11, 'too-big', START + DAY)).allowed).toBe(false);
+      expectDraw(await keyed(10, 10, 'k', START), { allowed: true, used: 10, warned: false });
+      // Day two never admitted a draw, so its allowance is whole.
+      expectDraw(await drawOf(store, key)(10, START + DAY), {
+        allowed: true,
+        used: 1,
         warned: false,
       });
     },

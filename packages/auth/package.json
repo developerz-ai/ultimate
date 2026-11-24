@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/auth",
-  "version": "31.49.0",
+  "version": "31.50.0",
   "description": "Sessions, passwords, OAuth, MFA and api keys — resolved to one Actor",
   "keywords": [
     "ultimate",
@@ -38,6 +38,7 @@
     "src",
     "!src/**/*.test.ts",
     "!src/**/*-fixture.ts",
+    "!src/link-login.ts",
     "CLAUDE.md",
     "README.md",
     "LICENSE"
@@ -50,8 +51,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "31.49.0",
-    "@ultimat3/db": "31.49.0",
-    "@ultimat3/schema": "31.49.0"
+    "@ultimat3/core": "31.50.0",
+    "@ultimat3/db": "31.50.0",
+    "@ultimat3/schema": "31.50.0"
   }
 }

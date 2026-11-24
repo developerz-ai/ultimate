@@ -2,6 +2,7 @@
 // and value grammar, then rendered as custom-property lines in that list's order — never the
 // caller's — so a brand rendered twice is byte-identical and its CSP hash does not churn.
 
+import { isJsonObject } from '@ultimat3/core';
 import { invalidBrandTokenError, unknownTokenError } from '../errors';
 import { parseChannels } from '../tokens/contrast';
 import {
@@ -142,9 +143,23 @@ function isCurve(value: string): boolean {
   return [match[1], match[3]].every((x) => Number(x) >= 0 && Number(x) <= 1);
 }
 
+const SCALE_EXPECTED = 'an object of rungs such as { base: "180ms" }';
+
 export function motionDeclarations(overrides: MotionInput | undefined): string[] {
   if (overrides === undefined) return [];
+  // Checked as `unknown`, so the typed slot below keeps its scale keys: a theme read from JSON can
+  // carry `null` or an array where the type says an object.
+  const slot: unknown = overrides;
+  if (!isJsonObject(slot)) {
+    throw invalidBrandTokenError('theme', 'motion', slot, 'an object with duration or easing');
+  }
   assertKnown('motion', overrides, MOTION_SCALES, '_motion.scss');
+  for (const scale of MOTION_SCALES) {
+    const rungs: unknown = overrides[scale];
+    if (rungs !== undefined && !isJsonObject(rungs)) {
+      throw invalidBrandTokenError('motion', scale, rungs, SCALE_EXPECTED);
+    }
+  }
   const out: string[] = [];
   const durations = overrides.duration ?? {};
   const durationNames = Object.keys(durationTokens) as DurationName[];
@@ -155,7 +170,9 @@ export function motionDeclarations(overrides: MotionInput | undefined): string[]
     if (!TIME_PATTERN.test(value)) {
       throw invalidBrandTokenError('motion.duration', name, value, TIME_EXPECTED);
     }
-    out.push(`--duration-${name}: ${value};`);
+    // A unitless `0` is a length, not a <time>: `transition-duration: var(--duration-x)` would be
+    // invalid at computed time, so the zero carries its unit.
+    out.push(`--duration-${name}: ${value === '0' ? '0ms' : value};`);
   }
   const easings = overrides.easing ?? {};
   const easingNames = Object.keys(easingTokens) as EasingName[];

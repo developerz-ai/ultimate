@@ -1,6 +1,7 @@
 // The process meter store: a draw counts only inside the limit, a later period resets the count, an
 // earlier one (a lagging replica) adds to the current, and one period's warning is claimed once.
 
+import { heapStats } from 'bun:jsc';
 import { describe, expect, test } from 'bun:test';
 import { memoryMeterStore } from './meter-memory';
 
@@ -97,5 +98,101 @@ describe('memoryMeterStore', () => {
     await store.draw(hour('org:b', 5));
     await store.draw(hour('org:c', 9));
     expect((await store.draw({ ...month, periodStartMs: MONTH_START })).allowed).toBe(false);
+  });
+
+  // One counter can take any number of distinct keys in one period: `maxKeys` bounds counters, so
+  // the keys need a bound of their own, or a busy tenant's day grows the process without limit.
+  test('remembers at most maxDrawKeys keys, forgetting the period before first, then the oldest', async () => {
+    const store = memoryMeterStore({ maxDrawKeys: 3 });
+    const keyed = (drawKey: string, periodStartMs = 0) =>
+      store.draw({ ...draw(1000, periodStartMs), amount: 1, drawKey });
+    await keyed('yesterday', 0);
+    await keyed('a', DAY);
+    await keyed('b', DAY);
+    await keyed('c', DAY);
+    // Reaching the bound dropped the period-before set first: today's three are all kept.
+    for (const one of ['a', 'b', 'c']) expect((await keyed(one, DAY)).replayed).toBe(true);
+    expect((await keyed('yesterday', DAY)).replayed).toBeUndefined();
+    // Counting it again needed room among today's keys: the oldest, 'a', was forgotten.
+    expect((await keyed('a', DAY)).replayed).toBeUndefined();
+    expect((await keyed('yesterday', DAY)).replayed).toBe(true);
+    expect(() => memoryMeterStore({ maxDrawKeys: 0 })).toThrow();
+  });
+
+  // A busy counter at the bound forgets its oldest key on every new one: the order lives in a queue,
+  // so the oldest is found in O(1) however many keys came and went before it.
+  test('at the bound, one busy counter forgets its keys oldest first, over many rotations', async () => {
+    const store = memoryMeterStore({ maxDrawKeys: 100 });
+    const keyed = (drawKey: string) => store.draw({ ...draw(1_000_000, DAY), amount: 1, drawKey });
+    for (let i = 0; i < 5000; i += 1) await keyed(`k${i}`);
+    expect((await keyed('k4900')).replayed).toBe(true);
+    expect((await keyed('k4999')).replayed).toBe(true);
+    // k4899 was the last key forgotten: it counts again, and forgets the oldest kept one, k4900.
+    expect(await keyed('k4899')).toMatchObject({ used: 5001 });
+    expect((await keyed('k4900')).replayed).toBeUndefined();
+  });
+
+  // Below both bounds nothing is forgotten, so a counter retired by its rollover must not stay
+  // reachable from the eviction order: one counter rolling over every hour held each hour's keys
+  // forever. Measured as live `Set`s after a full collection, which every retired hour adds two of.
+  test('a counter rolled over many times retains only its open period and the one before', async () => {
+    const HOUR = 3_600_000;
+    const store = memoryMeterStore();
+    const hourly = (hour: number, drawKey: string) =>
+      store.draw({
+        ...key,
+        period: 'hour@UTC',
+        periodStartMs: hour * HOUR,
+        limit: 100,
+        amount: 1,
+        drawKey,
+      });
+    const liveSets = (): number => {
+      Bun.gc(true);
+      return heapStats().objectTypeCounts['Set'] ?? 0;
+    };
+    await hourly(0, 'warm');
+    const before = liveSets();
+    for (let hour = 1; hour <= 2000; hour += 1) {
+      await hourly(hour, `a-${hour}`);
+      await hourly(hour, `b-${hour}`);
+    }
+    // Two thousand retired hours held at least 2,000 Sets; the open hour and the last hold two.
+    expect(liveSets() - before).toBeLessThan(100);
+    expect((await hourly(2000, 'a-1999')).replayed).toBe(true);
+    expect((await hourly(2000, 'a-1998')).replayed).toBeUndefined();
+  });
+
+  // No counter here reaches the bound alone: only their sum does, so a cap held per counter would
+  // forget nothing. A counter with keys gives up its own oldest; one with none, the counter that
+  // filled first.
+  test('maxDrawKeys bounds the keys of every counter together, and forgetting keeps each count', async () => {
+    const store = memoryMeterStore({ maxDrawKeys: 3 });
+    const keyed = (subject: string, drawKey: string) =>
+      store.draw({ ...draw(1000, DAY), subject, amount: 1, drawKey });
+    await keyed('org:a', 'a1');
+    await keyed('org:a', 'a2');
+    await keyed('org:b', 'b1');
+    await keyed('org:b', 'b2');
+    await keyed('org:c', 'c1');
+    for (const [subject, drawKey, used] of [
+      ['org:a', 'a2', 2],
+      ['org:b', 'b2', 2],
+      ['org:c', 'c1', 1],
+    ] as const) {
+      expect(await keyed(subject, drawKey)).toMatchObject({ replayed: true, used });
+    }
+    expect(await keyed('org:a', 'a1')).toEqual({
+      allowed: true,
+      used: 3,
+      warned: false,
+      periodStartMs: DAY,
+    });
+    expect(await keyed('org:b', 'b1')).toEqual({
+      allowed: true,
+      used: 3,
+      warned: false,
+      periodStartMs: DAY,
+    });
   });
 });

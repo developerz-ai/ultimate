@@ -21,12 +21,13 @@ export interface MeterDraw extends MeterKey {
   readonly periodStartMs: number;
   /** The allowance for THIS call, resolved by the caller: a plan change applies at once. */
   readonly limit: number;
-  /** Units this draw adds, a whole number of 1 or more; absent is `1`: a `meter:` counts calls. */
+  /** Units this draw adds, a positive safe integer; absent is `1`: a `meter:` counts calls. */
   readonly amount?: number;
   /**
    * The draw's idempotency key (`drawMeter`'s `key`). A second draw under it, in the period it
    * counted in or the next, adds nothing and answers `replayed: true`; a refused draw leaves no
-   * key behind, so its retry is judged afresh.
+   * key behind, so its retry is judged afresh. "The period it counted in" is the counter's: a
+   * lagging draw added to a counter already in the next period counted in that one.
    */
   readonly drawKey?: string;
 }
@@ -40,11 +41,24 @@ export interface MeterDrawResult {
   readonly warned: boolean;
   /** `true` when `drawKey` had already counted: `allowed`, and nothing was added. */
   readonly replayed?: boolean;
+  /**
+   * The effective period for the returned count and reset: the later of the request's period and
+   * the stored counter's. A replay or a refusal need not advance the stored counter. Required on a
+   * keyed draw whose effective period is later than the request's (a lagging replica drawing on a
+   * counter already in the next period); absent, callers use the request's `periodStartMs`.
+   */
+  readonly periodStartMs?: number;
 }
 
 export interface MeterStore {
   /** Declared, never inferred: a driver knows where its counters live. */
   readonly scope: 'process' | 'shared';
+  /**
+   * `true` when `draw` adds `amount` and remembers `drawKey`, as `drawMeter` needs. A store written
+   * before either field existed counts one call per draw and never replays, so `drawMeter` refuses
+   * a store that does not declare it (`X_METER_INVALID`) rather than undercount in silence.
+   */
+  readonly keyedDraws?: boolean;
   /**
    * Count `amount` (one call when absent), atomically, only while the count stays within `limit`:
    * never a read followed by a write, so N parallel draws at the edge admit exactly the remainder.
