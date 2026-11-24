@@ -70,14 +70,30 @@ export class NotifyPushProviderRefusedError extends UltimateError {
   }
 }
 
-/** A data-only push carrying more than an id: a reserved key, too many keys, a long value. */
+/**
+ * A data-only push carrying more than an id: a reserved key, too many keys, a long value. Or, with
+ * `field`, a visible native push whose sound, category, channel or interruption level no provider
+ * would take.
+ */
 export class NotifyPushMessageInvalidError extends UltimateError {
-  constructor(input: { problem: string }) {
+  constructor(input: {
+    problem: string;
+    field?: 'sound' | 'category' | 'channelId' | 'interruptionLevel' | undefined;
+  }) {
+    const { field } = input;
     super({
       code: 'X_NOTIFY_PUSH_MESSAGE_INVALID',
-      cause: `the data of a data-only push ${input.problem}; it travels through the provider, so it carries ids and nothing a person would read`,
-      fix: 'pushChannel({ pusher, data: ({ event }) => ({ id: event.params.id }) })   # in the notifier: one id per push, the app fetches the rest over its API',
-      meta: { problem: input.problem },
+      cause:
+        field === undefined
+          ? `the data of a data-only push ${input.problem}; it travels through the provider, so it carries ids and nothing a person would read`
+          : `the ${field} of a native push ${input.problem}; the provider takes it as a name the app registered or bundles`,
+      fix:
+        field === undefined
+          ? 'pushChannel({ pusher, data: ({ event }) => ({ id: event.params.id }) })   # in the notifier: one id per push, the app fetches the rest over its API'
+          : field === 'interruptionLevel'
+            ? "pushChannel({ pusher: nativePush({ … }), message: () => ({ …, interruptionLevel: 'time-sensitive' }) })   # passive, active, time-sensitive or critical"
+            : `pushChannel({ pusher: nativePush({ … }), message: () => ({ …, ${field}: '${field === 'sound' ? 'default' : 'reply'}' }) })   # the name the app registered or bundles`,
+      meta: field === undefined ? { problem: input.problem } : { problem: input.problem, field },
     });
   }
 }
