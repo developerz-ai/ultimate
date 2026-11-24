@@ -15,6 +15,8 @@ const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
 const PROBE_DB = probeDatabaseName('x_action_meter_live');
 const DAY = 86_400_000;
+/** How long a draw may take to block on a held lock: milliseconds when healthy, a verdict if not. */
+const QUEUE_DEADLINE_MS = 10_000;
 const START = Date.parse('2026-11-06T00:00:00.000Z');
 const key = { subject: 'org:o1', meter: 'calls', period: 'day@UTC' } as const;
 
@@ -142,7 +144,9 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
   /**
    * The counter row held by another transaction, so draws queue on its lock in the order they
    * start: each one's snapshot is taken before the ones ahead of it commit. `queued(n)` waits until
-   * `n` statements are blocked on it; `release()` commits the holder.
+   * `n` statements are blocked on it, or fails the test past `QUEUE_DEADLINE_MS`; `release()`
+   * commits the holder, and `withHeldCounter` calls it again in `finally`, so a failed wait never
+   * leaves the row locked for the next test.
    */
   const holdCounter = async () => {
     let release = (): void => undefined;
@@ -164,12 +168,19 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
     await locked;
     return {
       async queued(n: number): Promise<void> {
+        const deadline = performance.now() + QUEUE_DEADLINE_MS;
         for (;;) {
           const rows = await dbExecutor(() => admin).query<{ n: number }>(
             "select count(*)::int as n from pg_stat_activity where datname = $1 and wait_event_type = 'Lock'",
             [PROBE_DB],
           );
-          if ((rows[0]?.n ?? 0) >= n) return;
+          const waiting = rows[0]?.n ?? 0;
+          if (waiting >= n) return;
+          if (performance.now() > deadline) {
+            expect.unreachable(
+              `${n} draw(s) should block on the held counter within ${QUEUE_DEADLINE_MS} ms; ${waiting} did`,
+            );
+          }
           // real-clock: polls Postgres for other backends to block on the lock; no timer of ours to move
           await Bun.sleep(5);
         }
@@ -179,6 +190,17 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
         await held;
       },
     };
+  };
+
+  const withHeldCounter = async (
+    body: (holder: Awaited<ReturnType<typeof holdCounter>>) => Promise<void>,
+  ): Promise<void> => {
+    const holder = await holdCounter();
+    try {
+      await body(holder);
+    } finally {
+      await holder.release();
+    }
   };
 
   test('N parallel draws under one key over 8 connections add it once, on a fresh row too', async () => {
@@ -216,21 +238,27 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
   // count it was refused at.
   test('a refusal that finds its key counted by a racing draw answers the count after it', async () => {
     await keyed(10, 4, 'base');
-    const holder = await holdCounter();
-    const counting = keyed(10, 2, 'k');
-    await holder.queued(1);
-    // Queued behind it: this statement's snapshot predates that draw's commit, and its own limit
-    // of 4 refuses the count it then finds — only a fresh snapshot, under the lock, sees the key.
-    const refusing = keyed(4, 2, 'k');
-    await holder.queued(2);
-    await holder.release();
-    expect(await counting).toEqual({ allowed: true, used: 6, warned: false, periodStartMs: START });
-    expect(await refusing).toEqual({
-      allowed: true,
-      used: 6,
-      warned: false,
-      replayed: true,
-      periodStartMs: START,
+    await withHeldCounter(async (holder) => {
+      const counting = keyed(10, 2, 'k');
+      await holder.queued(1);
+      // Queued behind it: this statement's snapshot predates that draw's commit, and its own limit
+      // of 4 refuses the count it then finds — only a fresh snapshot, under the lock, sees the key.
+      const refusing = keyed(4, 2, 'k');
+      await holder.queued(2);
+      await holder.release();
+      expect(await counting).toEqual({
+        allowed: true,
+        used: 6,
+        warned: false,
+        periodStartMs: START,
+      });
+      expect(await refusing).toEqual({
+        allowed: true,
+        used: 6,
+        warned: false,
+        replayed: true,
+        periodStartMs: START,
+      });
     });
     // The refusal wrote no key.
     const keys = await dbExecutor(() => client).query<{ draw_key: string }>(
@@ -246,18 +274,19 @@ describe.skipIf(!hasPostgres)('live · postgres · the meter store', () => {
   test('a refusal judged behind a draw that moved the counter is judged on the moved counter', async () => {
     await keyed(2, 1, 'k', START);
     await keyed(2, 2, 'fill', START + DAY);
-    const holder = await holdCounter();
-    const dayThree = keyed(2, 1, 'other', START + 2 * DAY);
-    await holder.queued(1);
-    const retrying = keyed(2, 1, 'k', START + DAY);
-    await holder.queued(2);
-    await holder.release();
-    expect((await dayThree).used).toBe(1);
-    expect(await retrying).toEqual({
-      allowed: true,
-      used: 2,
-      warned: false,
-      periodStartMs: START + 2 * DAY,
+    await withHeldCounter(async (holder) => {
+      const dayThree = keyed(2, 1, 'other', START + 2 * DAY);
+      await holder.queued(1);
+      const retrying = keyed(2, 1, 'k', START + DAY);
+      await holder.queued(2);
+      await holder.release();
+      expect((await dayThree).used).toBe(1);
+      expect(await retrying).toEqual({
+        allowed: true,
+        used: 2,
+        warned: false,
+        periodStartMs: START + 2 * DAY,
+      });
     });
   });
 

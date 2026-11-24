@@ -1,6 +1,7 @@
 // The process meter store: a draw counts only inside the limit, a later period resets the count, an
 // earlier one (a lagging replica) adds to the current, and one period's warning is claimed once.
 
+import { heapStats } from 'bun:jsc';
 import { describe, expect, test } from 'bun:test';
 import { memoryMeterStore } from './meter-memory';
 
@@ -129,6 +130,37 @@ describe('memoryMeterStore', () => {
     // k4899 was the last key forgotten: it counts again, and forgets the oldest kept one, k4900.
     expect(await keyed('k4899')).toMatchObject({ used: 5001 });
     expect((await keyed('k4900')).replayed).toBeUndefined();
+  });
+
+  // Below both bounds nothing is forgotten, so a counter retired by its rollover must not stay
+  // reachable from the eviction order: one counter rolling over every hour held each hour's keys
+  // forever. Measured as live `Set`s after a full collection, which every retired hour adds two of.
+  test('a counter rolled over many times retains only its open period and the one before', async () => {
+    const HOUR = 3_600_000;
+    const store = memoryMeterStore();
+    const hourly = (hour: number, drawKey: string) =>
+      store.draw({
+        ...key,
+        period: 'hour@UTC',
+        periodStartMs: hour * HOUR,
+        limit: 100,
+        amount: 1,
+        drawKey,
+      });
+    const liveSets = (): number => {
+      Bun.gc(true);
+      return heapStats().objectTypeCounts['Set'] ?? 0;
+    };
+    await hourly(0, 'warm');
+    const before = liveSets();
+    for (let hour = 1; hour <= 2000; hour += 1) {
+      await hourly(hour, `a-${hour}`);
+      await hourly(hour, `b-${hour}`);
+    }
+    // Two thousand retired hours held at least 2,000 Sets; the open hour and the last hold two.
+    expect(liveSets() - before).toBeLessThan(100);
+    expect((await hourly(2000, 'a-1999')).replayed).toBe(true);
+    expect((await hourly(2000, 'a-1998')).replayed).toBeUndefined();
   });
 
   // No counter here reaches the bound alone: only their sum does, so a cap held per counter would

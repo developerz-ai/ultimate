@@ -1,7 +1,8 @@
-// The eviction queue: first in, first out, across the compaction that keeps its head O(1).
+// The eviction orders: a FIFO across the compaction that keeps its head O(1), and a chain any
+// entry leaves in O(1) with its order intact.
 
 import { describe, expect, test } from 'bun:test';
-import { Fifo } from './meter-fifo';
+import { Chain, Fifo } from './meter-fifo';
 
 describe('Fifo', () => {
   test('answers in insertion order, through every compaction', () => {
@@ -26,5 +27,22 @@ describe('Fifo', () => {
     expect(queue.shift()).toBeUndefined();
     queue.push('b');
     expect([queue.size, queue.peek()]).toEqual([1, 'b']);
+  });
+
+  test('a Chain keeps insertion order as entries leave from the head, the middle and the tail', () => {
+    const chain = new Chain<string>();
+    const [a, b, c, d] = ['a', 'b', 'c', 'd'].map((one) => chain.push(one));
+    if (a === undefined || b === undefined || c === undefined || d === undefined) {
+      expect.unreachable('push answers a link for each entry');
+    }
+    chain.unlink(b);
+    expect([chain.size, chain.first()]).toEqual([3, 'a']);
+    chain.unlink(a);
+    expect(chain.first()).toBe('c');
+    chain.unlink(d);
+    chain.unlink(c);
+    expect([chain.size, chain.first()]).toEqual([0, undefined]);
+    chain.push('e');
+    expect([chain.size, chain.first()]).toEqual([1, 'e']);
   });
 });
