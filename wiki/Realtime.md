@@ -744,7 +744,7 @@ export const deviceLink = deviceSocket({
 export const ask = (ctx: { readonly actor: ReturnType<typeof userActor> }) =>
   deviceLink.request(ctx, 'desk-7', { job: 'sync' }, { deadlineMs: 30_000 });
 export const revoke = (ctx: { readonly actor: ReturnType<typeof userActor> }) =>
-  deviceLink.disconnect(ctx, 'desk-7', 'revoked'); // true: closed; false: no socket under this tenant
+  deviceLink.disconnect?.(ctx, 'desk-7', 'revoked'); // true: closed; false: no socket under this tenant
 ```
 
 | Concern | Rule |
@@ -758,7 +758,7 @@ export const revoke = (ctx: { readonly actor: ReturnType<typeof userActor> }) =>
 | Addressing | the holder registers the device in the bus's shared set (TTL three beats) under `(tenant, deviceId)`; `request()` looks it up and publishes to that node. Nobody holds it, or another tenant does: `X_DEVICE_OFFLINE` at once. No answer in `deadlineMs` (default 30 s, max 600 s): `X_DEVICE_REQUEST_TIMEOUT`. A socket that closes answers its open requests `X_DEVICE_OFFLINE` |
 | Open and close | `onOpen({ device, ctx })` and `onClose({ device, ctx, reason })` run as the device's actor, beside the socket and never in its path: a throw is reported (`device.on_open` / `device.on_close`) and the socket goes on. A socket's `onClose` runs after its `onOpen` settles. `reason` is the node's own close reason (`replaced`, `no beat`, `grant expired`, `drain`, a `disconnect()` reason, …) or `disconnected` when the device or its network ended it. At least once: a duplicate is possible, a missing close is not |
 | A node that dies | with `onClose` declared, each socket is a record in the bus's shared set, kept on the holder's beat. Each beat the serving node with the lowest live id reads them, and a record whose node left the roster (three beats silent) is dropped and closed there: `reason: 'node lost'` (`DEVICE_NODE_LOST`), `ctx.actor` carrying kind, id and org only. A holder whose record was dropped while alive writes it again, with a second `onOpen`. No `onClose`, no record and no write |
-| Disconnect | `disconnect(ctx, deviceId, reason)` from any role: the holding node closes the socket `1008` with `reason` (1 to 123 UTF-8 bytes, `DEVICE_CLOSE_REASON_MAX_BYTES`, else `X_CONFIG_INVALID`). `true` once closed; `false` when nobody holds it under the caller's tenant, as for another tenant's device. A holder that does not confirm within `DEVICE_DISCONNECT_DEADLINE_MS` (5 s): `X_DEVICE_REQUEST_TIMEOUT`. The device may redial: revoke its token first |
+| Disconnect | `disconnect(ctx, deviceId, reason)` from any role: the holding node closes the socket `1008` with `reason` (1 to 123 UTF-8 bytes, `DEVICE_CLOSE_REASON_MAX_BYTES`, else `X_CONFIG_INVALID`). `true` once closed; `false` when nobody holds it under the caller's tenant, as for another tenant's device. A holder that does not confirm within `DEVICE_DISCONNECT_DEADLINE_MS` (5 s): `X_DEVICE_REQUEST_TIMEOUT`. The device may redial: revoke its token first. Optional in the `DeviceSocket` type only, so an app's own implementation still compiles; `deviceSocket()` always sets it |
 | Drain | SIGTERM: stop accepting, then the sync node's own `drainPlan` + `reconnect` frame per socket, then close `1001` |
 | Reconnect | `deviceAgent()` (a Bun client) redials on realtime's one jittered backoff, or at the slot a `reconnect` frame assigned |
 

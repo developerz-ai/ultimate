@@ -310,7 +310,7 @@ export const approvalRequested = notifier({
 | data-only | `pushChannel({ pusher, data })`: APNs `background` at priority 5 with `content-available: 1`, FCM with no `notification` block. At most 8 string keys, 256 characters each, no provider-reserved key (`aps`, `notification`, `google.*`…) — else `X_NOTIFY_PUSH_MESSAGE_INVALID` before a request. `webPush()` has no `sendData`, so handing it a `data` channel is a type error |
 | visible | `pushChannel({ pusher, message })` as for the web: title and body rendered per device locale; `url` travels as data; `topic ?? tag` is the collapse id; `urgency` low/very-low sends at the lower priority. `icon`, `badge`, `actions`, `requireInteraction`, `renotify` have no native meaning and are not sent |
 | native-only | `sound` (both), `interruptionLevel` and `category` (APNs `aps`), `channelId` (FCM `android.notification`) on the same message; `webPush()` ignores them. Names of 1–64 `A-Za-z0-9._-`, else `X_NOTIFY_PUSH_MESSAGE_INVALID` with `meta.field` before a request. Unset, the wire is unchanged |
-| report | `send()`/`sendData()` resolve `NativePushReport { accepted, refused, removed, skipped }`, per device. `accepted` = the provider took it, never "delivered" |
+| report | `nativePush({ onReport })` gets `{ to, kind, report }` per settled send — `NativePushReport { accepted, refused, removed, skipped }`, per device. `accepted` = the provider took it, never "delivered" |
 
 | Provider answer | What happens |
 |---|---|

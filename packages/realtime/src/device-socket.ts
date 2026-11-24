@@ -115,8 +115,10 @@ export interface DeviceSocket {
    * Close one device's socket from any role, on whichever node holds it, with `reason` (what the
    * device's close frame and `onClose` read). `true` once it is closed; `false` when no socket is
    * open for it under the caller's tenant — the same answer for another tenant's device.
+   * `deviceSocket()` always sets it; optional only so a `DeviceSocket` of an app's own (a test's
+   * fake) still compiles. Required waits on `next`.
    */
-  disconnect(ctx: { readonly actor: Actor }, deviceId: string, reason: string): Promise<boolean>;
+  disconnect?(ctx: { readonly actor: Actor }, deviceId: string, reason: string): Promise<boolean>;
   attach(options: DeviceAttachOptions): Promise<DeviceAttachment>;
   /** Sockets this process holds for this declaration. */
   readonly connected: number;

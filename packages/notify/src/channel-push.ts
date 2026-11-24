@@ -61,17 +61,14 @@ export interface NotifyPushMessage {
   readonly channelId?: string | undefined;
 }
 
-/**
- * The seam. `@ultimat3/pwa`'s `webPush()` is the framework's; a vendor SDK fits it too. What a send
- * resolves with is the pusher's own (`nativePush()`'s report); the channel reads none of it.
- */
+/** The seam. `@ultimat3/pwa`'s `webPush()` is the framework's; a vendor SDK fits it too. */
 export interface Pusher {
   send(push: {
     /** The recipient's id — the actor whose subscriptions receive it. */
     readonly to: string;
     readonly message: NotifyPushMessage;
     readonly signal: AbortSignal;
-  }): Promise<unknown> | void;
+  }): Promise<void> | void;
 }
 
 /**
@@ -86,7 +83,7 @@ export interface DataPusher {
     /** String ids only; screened by the transport (`X_NOTIFY_PUSH_MESSAGE_INVALID`). */
     readonly data: Readonly<Record<string, string>>;
     readonly signal: AbortSignal;
-  }): Promise<unknown> | void;
+  }): Promise<void> | void;
 }
 
 export const PUSH_CHANNEL = 'push';
