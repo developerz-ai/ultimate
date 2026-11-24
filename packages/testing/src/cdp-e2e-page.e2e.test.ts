@@ -29,19 +29,14 @@ document.getElementById('f').addEventListener('submit', (event) => {
 
 /** Served cross-site (`localhost` against the page's `127.0.0.1`): Chrome runs it out of process. */
 const FRAME = `<!doctype html><html lang="en"><head><title>frame</title></head><body>
-<script>console.error('frame broke');</script></body></html>`;
+<script>console.error('frame broke'); parent.postMessage('logged', '*');</script></body></html>`;
 
 const server = Bun.serve({
   port: 0,
   hostname: '127.0.0.1',
   fetch: (request) => {
-    const { pathname, port } = new URL(request.url);
-    const html =
-      pathname === '/frame'
-        ? FRAME
-        : pathname === '/embeds'
-          ? `<!doctype html><html lang="en"><head><title>embeds</title></head><body><main><iframe title="frame" src="http://localhost:${port}/frame"></iframe></main></body></html>`
-          : FORM;
+    const { pathname } = new URL(request.url);
+    const html = pathname === '/frame' ? FRAME : FORM;
     return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
   },
 });
@@ -128,11 +123,14 @@ describe.skipIf(noBrowser)('press() runs the default action of a real key', () =
     async () => {
       await page().goto(baseUrl);
       page().clearConsole?.();
-      await page().goto(`${baseUrl}embeds`);
-      const heard = async (): Promise<boolean> =>
-        (page().consoleMessages?.() ?? []).some((message) => message.text === 'frame broke');
-      for (let tries = 0; tries < 50 && !(await heard()); tries += 1) await Bun.sleep(100);
-      expect(await heard()).toBe(true);
+      // The frame posts once it has logged; then one round trip so its console event is in.
+      await page().evaluate(
+        `addEventListener('message', () => { window.__frameLogged = true; }); document.body.insertAdjacentHTML('beforeend', '<iframe title="frame" src="http://localhost:' + location.port + '/frame"></iframe>')`,
+      );
+      await page().waitFor('window.__frameLogged === true', 'the cross-site frame to log', 10_000);
+      await page().evaluate('0');
+      const heard = (page().consoleMessages?.() ?? []).some((m) => m.text === 'frame broke');
+      expect(heard).toBe(true);
     },
     E2E_BROWSER_OPEN_MS,
   );

@@ -46,12 +46,12 @@ const keyCodeName = (key: string): string =>
         : key;
 
 /** CDP's `modifiers` bits (`Input.dispatchKeyEvent`). */
-const MODIFIER_BITS: Readonly<Record<KeyModifier, number>> = {
-  Alt: 1,
-  Control: 2,
-  Meta: 4,
-  Shift: 8,
-};
+const MODIFIER_BITS: ReadonlyMap<KeyModifier, number> = new Map([
+  ['Alt', 1],
+  ['Control', 2],
+  ['Meta', 4],
+  ['Shift', 8],
+]);
 
 /** What Shift turns a digit into on a US layout; its `code` and key code stay the digit's. */
 const SHIFTED_DIGITS = ')!@#$%^&*(';
@@ -83,7 +83,10 @@ export function keyEvents(chord: string): KeyEvents {
       detail: `not a key press() knows: one of ${Object.keys(PRESS_KEYS).join(', ')}, or one ASCII letter or digit, optionally after Alt, Control, Meta or Shift joined by +`,
     });
   }
-  const modifiers = parsed.modifiers.reduce((bits, name) => bits | MODIFIER_BITS[name], 0);
+  const modifiers = parsed.modifiers.reduce(
+    (bits, name) => bits | (MODIFIER_BITS.get(name) ?? 0),
+    0,
+  );
   const key = parsed.modifiers.includes('Shift') ? shifted(base) : base;
   // Control, Meta and Alt make a shortcut, not a character: no text, so nothing is typed.
   const typing = parsed.modifiers.every((name) => name === 'Shift');
