@@ -139,7 +139,8 @@ export function stamped(
   const meta = isJsonObject(result['_meta']) ? result['_meta'] : {};
   return resultResponse(response.id, {
     ...result,
-    resultType: 'complete',
+    // `input_required` is the one other type this server answers (`url-elicitation.ts`).
+    resultType: result['resultType'] === 'input_required' ? 'input_required' : 'complete',
     _meta: { ...meta, [META_SERVER_INFO]: serverInfo },
     ...(CACHEABLE.has(method) ? { ttlMs: 0, cacheScope: 'private' } : {}),
   });

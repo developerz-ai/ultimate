@@ -112,8 +112,20 @@ None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose l
 | no `_meta` version, or one in `MCP_LEGACY_VERSIONS` (`2025-11-25`, `2025-06-18`, `2025-03-26`) | legacy | `initialize` echoes an offered legacy revision, else answers `2025-11-25`; `ping`; the seven shared methods |
 | any other `_meta` version | — | `-32022` `X_MCP_PROTOCOL_UNSUPPORTED`, `data: { supported, requested }` |
 
-`MCP_PROTOCOL_VERSION` is gone (`As of 2026-11`): name the era — `MCP_MODERN_VERSIONS[0]`, or `MCP_LEGACY_VERSIONS`. `resources/templates/list` is `{ resourceTemplates: [] }` on both eras. A resource not found, hidden or absent, is one answer: `-32601` legacy, `-32602` modern. Not served and not advertised: `subscriptions/listen`, multi-round-trip input, the tasks extension, `x-mcp-header`, SSE responses; every `listChanged` is `false`.
+`MCP_PROTOCOL_VERSION` is gone (`As of 2026-11`): name the era — `MCP_MODERN_VERSIONS[0]`, or `MCP_LEGACY_VERSIONS`. `resources/templates/list` is `{ resourceTemplates: [] }` on both eras. A resource not found, hidden or absent, is one answer: `-32601` legacy, `-32602` modern. Not served and not advertised: `subscriptions/listen`, multi-round-trip input other than the URL prompt below, the tasks extension, `x-mcp-header`, SSE responses; every `listChanged` is `false`.
 
+A tool asks the person to open a page with `withUrlElicitation(output, { url, message })` (`As of 2026-11`; spec `client/elicitation`, `basic/patterns/mrtr`):
+
+| `tools/call` | Answer |
+|---|---|
+| modern, and the request's `_meta["io.modelcontextprotocol/clientCapabilities"].elicitation.url` is an object | `resultType: 'input_required'` with `inputRequests.url_elicitation`: `elicitation/create`, `mode: 'url'`, `url`, `message`. No `content`, no `requestState` |
+| its retry, carrying `inputResponses.url_elicitation.action` | the tool runs again and its result is the answer — asked once per call, whether the person accepted, declined or cancelled |
+| modern without the capability, and every legacy request | the tool's result: `output` says in text what the prompt would have. `-32042` is never sent, since a legacy capability is declared on `initialize` and no handshake is kept |
+| a URL that is not absolute `https:` (`http:` on this machine), carries credentials, or has no message | `X_MCP_ELICITATION_URL_INVALID`, for every caller |
+
+The handler is safe to run again. Nothing about the person goes in the URL, and the page checks that whoever opened it is the caller the tool asked.
+
+Over HTTP:
 Over HTTP:
 
 | Request | Answer |

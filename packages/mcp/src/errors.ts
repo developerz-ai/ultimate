@@ -63,6 +63,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_TENANT_INVALID',
   'X_MCP_INCLUDE_EARLY',
   'X_MCP_SPLIT_INVALID',
+  'X_MCP_ELICITATION_URL_INVALID',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -135,6 +136,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_INCLUDE_EARLY:
     "include: 'exposed' projected before the scan registered every exposed primitive",
   X_MCP_SPLIT_INVALID: 'defineAppMcp declares its meta-split options inconsistently',
+  X_MCP_ELICITATION_URL_INVALID: 'a tool asked for a URL prompt no client may be shown',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

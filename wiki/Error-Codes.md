@@ -49,7 +49,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/jobs` | [Error-Codes-jobs](Error-Codes-jobs) | 72 |
 | `@ultimat3/mail` | [Error-Codes-mail](Error-Codes-mail) | 18 |
 | `@ultimat3/manifest` | [Error-Codes-manifest](Error-Codes-manifest) | 5 |
-| `@ultimat3/mcp` | [Error-Codes-mcp](Error-Codes-mcp) | 59 |
+| `@ultimat3/mcp` | [Error-Codes-mcp](Error-Codes-mcp) | 60 |
 | `@ultimat3/money` | [Error-Codes-money](Error-Codes-money) | 10 |
 | `@ultimat3/notify` | [Error-Codes-notify](Error-Codes-notify) | 12 |
 | `@ultimat3/policy` | [Error-Codes-policy](Error-Codes-policy) | 6 |
@@ -741,6 +741,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_MCP_CONFIRMATION_UNKNOWN | [mcp](Error-Codes-mcp) |
 | X_MCP_EFFECT_CONFLICT | [mcp](Error-Codes-mcp) |
 | X_MCP_EFFECT_UNDECLARED | [mcp](Error-Codes-mcp) |
+| X_MCP_ELICITATION_URL_INVALID | [mcp](Error-Codes-mcp) |
 | X_MCP_GROUP_CONFLICT | [mcp](Error-Codes-mcp) |
 | X_MCP_GROUP_UNKNOWN | [mcp](Error-Codes-mcp) |
 | X_MCP_HEADER_MISMATCH | [mcp](Error-Codes-mcp) |

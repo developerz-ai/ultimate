@@ -317,5 +317,7 @@
  * which calls of a `tenant` MCP server may name no tenant — split from `tenant.ts`, web-only.
  * raised 1770 → 1771, measured 1771 (2026-11-23, the stricter door): `mcp/src/meta-split-options.ts`,
  * an app's own fields and `stricter` hook on the `'meta-split'` dispatchers — web-only.
+ * raised 1771 → 1772, measured 1772 (2026-11-23, URL-mode elicitation): `mcp/src/url-elicitation.ts`
+ * (`withUrlElicitation` and the `input_required` answer), web-only: the MCP endpoint is the web role's.
  */
-export const WEB_ROLE_CEILING = 1771;
+export const WEB_ROLE_CEILING = 1772;
