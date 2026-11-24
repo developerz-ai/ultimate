@@ -144,14 +144,15 @@ describe('mountOpenApi with tenant', () => {
   });
 
   test('the scheme states that the listing needs no scope and names no tenant', () => {
-    const scheme = documentFor(TENANT).components.securitySchemes['bearer'] as {
-      readonly description: string;
-    };
-    expect(scheme.description).toContain('GET /v1/tenants needs no scope and names no tenant');
-    expect(
-      (documentFor(undefined).components.securitySchemes['bearer'] as { description: string })
-        .description,
-    ).not.toContain('/tenants');
+    const schemeOf = (doc: ReturnType<typeof documentFor>): string =>
+      String(
+        (doc.components as { readonly securitySchemes?: Record<string, { description?: string }> })
+          .securitySchemes?.['bearer']?.description,
+      );
+    expect(schemeOf(documentFor(TENANT))).toContain(
+      'GET /v1/tenants needs no scope and names no tenant',
+    );
+    expect(schemeOf(documentFor(undefined))).not.toContain('/tenants');
   });
 
   test('a mount without tenant documents no tenant at all', () => {
