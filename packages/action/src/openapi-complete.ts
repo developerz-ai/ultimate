@@ -20,6 +20,7 @@ import type { ApiMount, ApiOpenApi } from './api-declaration';
 import type { JsonSchemaObject } from './json-schema';
 import { PROBLEM_SCHEMA_NAME, schemaRef } from './naming';
 import type { OpenApiDocument } from './openapi';
+import { tenantsOperation, withTenantParameter } from './openapi-mount-tenant';
 
 /** `components.securitySchemes` keys. */
 export const COOKIE_SCHEME = 'cookie';
@@ -287,16 +288,24 @@ export function mountOpenApi(
     );
     const responses = {
       ...(completed['responses'] as Record<string, unknown>),
-      '404': problem('X_ROUTE_NOT_FOUND — also the answer for a token without this scope'),
+      '404': problem(
+        mount.tenant === undefined
+          ? 'X_ROUTE_NOT_FOUND — also the answer for a token without this scope'
+          : 'X_ROUTE_NOT_FOUND — also the answer for a token without this scope, or a tenant its person is not in',
+      ),
     };
     const extensions = (completed['x-ultimate'] as Record<string, unknown> | undefined) ?? {};
     for (const tag of (completed['tags'] as readonly string[] | undefined) ?? []) tags.add(tag);
     unlocks.set(scope, [...(unlocks.get(scope) ?? []), route.meta.name]);
     const mounted = toOpenApiPath(mountedPath(mount.prefix, route.path));
+    const served = { ...completed, responses, 'x-ultimate': { ...extensions, scope } };
     mountedItems.set(mounted, {
       ...mountedItems.get(mounted),
-      [method]: { ...completed, responses, 'x-ultimate': { ...extensions, scope } },
+      [method]: mount.tenant === undefined ? served : withTenantParameter(served, mount.tenant.arg),
     });
+  }
+  if (mount.tenant !== undefined) {
+    mountedItems.set(`${mount.prefix}/tenants`, { get: tenantsOperation(BEARER_SCHEME) });
   }
   const paths = Object.fromEntries(mountedItems);
   const schemas = referencedSchemas(paths, document.components.schemas);

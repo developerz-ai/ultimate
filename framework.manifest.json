@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "69a12473c3c1ea388e7ff0a8767cadf917ed0a56925b5efe8967d79e9f1e354e",
+  "buildId": "4bc5e3ba1fd34599e11a0cadff1e2aae24a41221bb9c350b119549871419ef1c",
   "tiers": {
     "0": [
       "core",
@@ -751,6 +751,16 @@
     },
     {
       "code": "X_BEARER_MOUNT_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_BEARER_TENANT_REQUIRED",
+      "owner": "http",
+      "at": "packages/http/src/error-titles.ts"
+    },
+    {
+      "code": "X_BEARER_TENANT_UNRESOLVED",
       "owner": "http",
       "at": "packages/http/src/error-titles.ts"
     },

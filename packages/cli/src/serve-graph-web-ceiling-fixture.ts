@@ -319,5 +319,7 @@
  * an app's own fields and `stricter` hook on the `'meta-split'` dispatchers — web-only.
  * raised 1771 → 1772, measured 1772 (2026-11-23, URL-mode elicitation): `mcp/src/url-elicitation.ts`
  * (`withUrlElicitation` and the `input_required` answer), web-only: the MCP endpoint is the web role's.
+ * raised 1772 → 1773, measured 1773 (2026-11-23, per-call tenant on bearer mounts): the one on
+ * `SERVING_ROLE_CEILING`, `http/src/bearer-mount-tenant.ts`. Nothing web-only.
  */
-export const WEB_ROLE_CEILING = 1772;
+export const WEB_ROLE_CEILING = 1773;
