@@ -182,7 +182,8 @@ describe('webhookReceiver: the job', () => {
     const [row] = await queued(h.receiver.name);
     const shown = await inspectJob(driver, row?.id ?? '');
     expect(shown?.input).toMatchObject({ eventId: 'evt_card', payload: REDACTED });
-    expect(JSON.stringify(shown)).not.toContain('4111');
+    // The whole number: a random trace id can end in "4111", the card's first four digits.
+    expect(JSON.stringify(shown)).not.toContain('4111111111111111');
   });
 });
 
