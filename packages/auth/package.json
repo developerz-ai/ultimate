@@ -38,6 +38,7 @@
     "src",
     "!src/**/*.test.ts",
     "!src/**/*-fixture.ts",
+    "!src/link-login.ts",
     "CLAUDE.md",
     "README.md",
     "LICENSE"

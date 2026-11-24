@@ -15,6 +15,11 @@ export interface ShippedPackage {
   readonly dir: string;
   /** Package-relative (`src/index.ts`), and may be a glob (`src/icons/glyphs/*.ts`). */
   readonly entries: readonly string[];
+  /**
+   * The `files` negations, without their `!` (`src/link-login.ts`): a module one matches is not in
+   * the tarball, so it ships nothing whoever imports it.
+   */
+  readonly excluded?: readonly string[];
 }
 
 export interface TestOnlyModule {
@@ -135,11 +140,18 @@ export function testOnlyModules(
       pkg.entries.map((entry) => new Bun.Glob(`packages/${pkg.dir}/${entry}`)),
     ]),
   );
+  const excludedGlobs = new Map(
+    packages.map((pkg) => [
+      pkg.dir,
+      (pkg.excluded ?? []).map((pattern) => new Bun.Glob(`packages/${pkg.dir}/${pattern}`)),
+    ]),
+  );
   const referrers = new Map<string, ReadonlySet<string>>();
   for (const path of sources.keys()) {
     const dir = /^packages\/([^/]+)\/src\//.exec(path)?.[1];
     const globs = dir === undefined ? undefined : entryGlobs.get(dir);
     if (globs === undefined || !path.endsWith('.ts') || isGenerated(path)) continue;
+    if ((excludedGlobs.get(dir ?? '') ?? []).some((glob) => glob.match(path))) continue;
     if (isTest(path) || isFixture(path) || globs.some((glob) => glob.match(path))) continue;
     const from = new Set([...(imports.get(path) ?? []), ...(named.get(baseName(path)) ?? [])]);
     from.delete(path);

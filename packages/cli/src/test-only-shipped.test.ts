@@ -146,6 +146,17 @@ describe('testOnlyModules', () => {
     expect(paths(sources, packages)).toEqual([]);
   });
 
+  test('a module a `files` negation keeps out of the tarball ships nothing, whoever imports it', () => {
+    const sources = tree({
+      'packages/p/src/index.ts': 'export const x = 1;\n',
+      'packages/p/src/held.ts': 'export const held = 1;\n',
+      'packages/p/src/held.test.ts': "import { held } from './held';\n",
+    });
+    expect(paths(sources)).toEqual(['packages/p/src/held.ts']);
+    const holding = [{ dir: 'p', entries: ['src/index.ts'], excluded: ['src/held.ts'] }];
+    expect(paths(sources, holding)).toEqual([]);
+  });
+
   test('a shipped importer anywhere in the repo counts — a script, another package', () => {
     const sources = tree({
       'packages/p/src/index.ts': 'export const x = 1;\n',
