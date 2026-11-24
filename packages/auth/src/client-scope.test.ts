@@ -70,11 +70,23 @@ describe('clientScopeOf', () => {
 
   // Known answer: an actor with no org keeps the id it had before the org joined the material, so
   // an app without tenants sees no rescope on upgrade.
-  test('no org: the same id as before the org joined the material', () => {
-    const material = JSON.stringify(['user', 'alice', null, null]);
-    const before = new Bun.CryptoHasher('sha256', SECRET)
-      .update(material)
-      .digest('hex')
+  test('no org: the same id as before the org joined the material', async () => {
+    // WebCrypto, not core's `hmac`: a known answer from a second implementation of the same MAC.
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(SECRET),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const mac = await crypto.subtle.sign(
+      'HMAC',
+      key,
+      encoder.encode(JSON.stringify(['user', 'alice', null, null])),
+    );
+    const before = Array.from(new Uint8Array(mac), (byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
       .slice(0, 32);
 
     expect(clientScopeOf(userActor({ id: 'alice' }), { secret: SECRET })).toBe(before);
