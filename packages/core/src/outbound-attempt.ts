@@ -24,6 +24,7 @@ import type { HopCall } from './outbound-hops';
 import { redactedLocation, sendHops } from './outbound-hops';
 import type { WatchedFailure } from './outbound-read';
 import { watchedBody } from './outbound-read';
+import { refusalHeadersOf } from './outbound-refusal-headers';
 import type { OutboundRefusalRead } from './outbound-types';
 import { readWithinLimit } from './read-capped';
 import { isRetryableStatus } from './retryable-status';
@@ -39,6 +40,8 @@ export interface AttemptCall extends HopCall {
   readonly read: 'bytes' | 'stream';
   /** How a non-2xx body is read for the error; `undefined` is the default excerpt. */
   readonly refusal: OutboundRefusalRead | undefined;
+  /** The `refusal.headers` names, validated and lowercased (`refusalHeaderNames`); none asked: `undefined`. */
+  readonly refusalHeaders: readonly string[] | undefined;
   readonly now: () => number;
   readonly timer: DeadlineTimer;
 }
@@ -155,6 +158,8 @@ async function refusalOf(
 ): Promise<unknown> {
   const { site, url } = call;
   const { status, headers } = response;
+  const kept =
+    call.refusalHeaders === undefined ? undefined : refusalHeadersOf(call.refusalHeaders, headers);
   if (status >= 300 && status < 400) {
     await body.cancel().catch(() => undefined);
     const location = headers.get('location');
@@ -165,11 +170,11 @@ async function refusalOf(
     const after = retryAfterSecondsOf(headers.get('retry-after'), headers.get('date'));
     const { detail, fields } = await refusalBodyOf(body, call.refusal, call.maxBytes);
     return after === undefined
-      ? outboundUnavailable(site, status, detail, fields)
-      : outboundThrottled(site, status, after, detail, fields);
+      ? outboundUnavailable(site, status, detail, fields, kept)
+      : outboundThrottled(site, status, after, detail, fields, kept);
   }
   const { detail, fields } = await refusalBodyOf(body, call.refusal, call.maxBytes);
-  return outboundRefused(site, status, detail, fields);
+  return outboundRefused(site, status, detail, fields, kept);
 }
 
 export async function runAttempt(call: AttemptCall, attempt: number): Promise<AttemptAnswer> {

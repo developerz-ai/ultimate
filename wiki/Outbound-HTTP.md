@@ -131,6 +131,7 @@ the call's `refusal`:
 | unset (default) | chunks until 1,024 characters are decoded, the rest cancelled (a whole chunk is kept, so one large chunk is read whole) | `meta.detail`: a JSON object, credential-named fields redacted, 200 characters; else `''`. A large error object that arrives in pieces is cut, does not parse, and is `''` |
 | `{ schema }` | the whole body, up to the call's `maxBytes` | `meta.fields`: the schema's answer, credential-named fields redacted at any depth; absent when the body is not JSON, does not fit or passes `maxBytes`. `meta.detail` is the 200-character excerpt of that whole body |
 | `{ detail: false }` | nothing for the excerpt | `meta.detail: ''`: the excerpt, and the free text it carries (an address, a name), never kept. Combines with `schema`; it does not filter `meta.fields`, so a schema keeps only fields that are safe to log |
+| `{ headers: ['x-request-id'] }` | the answer's headers, never its body | `meta.headers`: a record of lowercased name to value for each asked-for header the answer carries (`{}` when none), each value redacted and cut at 200 characters. Names are case-insensitive, at most 16. A credential-named header (`set-cookie`, `authorization`, `www-authenticate`, `x-api-key` …) or a name that is not a header is `X_INVARIANT` at the call, before a byte is sent. Combines with `schema` and `detail`; unset, no header is kept (`As of 2026-11`) |
 
 ```ts
 import { isUltimateError } from '@ultimat3/core';
