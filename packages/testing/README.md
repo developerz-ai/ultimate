@@ -794,7 +794,7 @@ unitTest('the shell keeps the page in <main>', async () => {
 | **`renderView(Component, props)`** | one component. `props` is the component's own type — a renamed prop is a compile error in the test. A component that renders an `island()` is refused here: its timing is a route's |
 | **`view.html`** | the markup as the document carries it |
 | **`view.text`** | what a reader sees: tags, `<script>` and `<style>` bodies removed, character references decoded (every numeric one, and the common named ones: `&quot;`, `&apos;`, `&nbsp;`, typographic quotes and dashes, `&hellip;` …) as a browser reads them (`&#39` and `&amp` with no semicolon, `&#128;` as `€`), whitespace collapsed but a no-break space kept. Compare with `t('<key>')` — markup escapes what the catalog does not |
-| **`actor`** | `load` and the page run inside `runWithContext(ctxOf({ actor }))`. Without one they run outside any request context, as a static page does |
+| **`actor`** | `load` and the page run inside `runWithContext(ctxOf({ actor }))`. With neither an actor nor a routed locale prefix in `url`, they run outside any request context, as a static page does; a `/es/…` prefix alone opens one holding that locale |
 | **the file stays `.test.ts`** | no JSX in a test: the registry-leak guard's loader covers `.test.ts` only, and children that need markup are a string |
 
 `@ultimat3/render` is imported inside the two functions, so the barrel still loads no renderer.

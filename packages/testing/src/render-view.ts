@@ -54,7 +54,9 @@ export interface RouteRequest {
   /**
    * Absolute, as a request's is. Its search string becomes the page's `query`, and a leading
    * routed locale segment (`https://x/es/precios`, `es` among the app's locales) is the locale
-   * `load`, `meta` and the page render in, as the router reads it. Unprefixed, the default.
+   * `load`, `meta` and the page render in, as the router reads it. Unprefixed, and with no
+   * `actor`, the render opens no request context: standalone it is the default locale, and inside
+   * a caller's own `runWithContext` it is that context's.
    */
   readonly url?: string;
   readonly params?: RouteParams;

@@ -193,8 +193,15 @@ describe('renderRoute · the locale prefix', () => {
   });
   const Page = (): unknown => h('p', null, `page in ${currentLocale()}`);
 
-  test('a routed `/<locale>/` prefix renders the page and its meta in that locale', async () => {
-    const view = await renderRoute({ config, Page }, { url: 'https://example.test/es/' });
+  test('a routed `/<locale>/` prefix renders load, the page and its meta in that locale', async () => {
+    const loading = defineRoute({
+      render: 'ssr',
+      offline: 'runtime',
+      load: () => ({ locale: currentLocale() }),
+      meta: ({ locale }) => ({ title: `meta in ${locale}` }),
+    });
+    const view = await renderRoute({ config: loading, Page }, { url: 'https://example.test/es/' });
+    expect(view.data).toEqual({ locale: 'es' });
     expect(view.text).toBe('page in es');
     expect(view.meta.title).toBe('meta in es');
   });
@@ -206,11 +213,13 @@ describe('renderRoute · the locale prefix', () => {
     expect(view.text).toBe('member-7 es');
   });
 
-  test('an unprefixed URL, or a segment that is no routed locale, is the default', async () => {
-    const plain = await renderRoute({ config, Page }, { url: 'https://example.test/precios' });
-    expect(plain.text).toBe('page in en');
-    const unrouted = await renderRoute({ config, Page }, { url: 'https://example.test/fr/' });
-    expect(unrouted.text).toBe('page in en');
+  test('an unprefixed URL, or a segment that is no routed locale, is the default, context-free', async () => {
+    const Where = (): unknown =>
+      h('p', null, `page in ${currentLocale()} ${tryUseContext() === undefined ? 'bare' : 'ctx'}`);
+    const plain = await renderRoute({ config, Where }, { url: 'https://example.test/precios' });
+    expect(plain.text).toBe('page in en bare');
+    const unrouted = await renderRoute({ config, Where }, { url: 'https://example.test/fr/' });
+    expect(unrouted.text).toBe('page in en bare');
   });
 });
 
