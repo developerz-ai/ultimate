@@ -308,6 +308,32 @@ async function adminCatalog(locale: string, seeded: boolean): Promise<Catalog> {
   return Object.fromEntries(keys.map((key) => [key, label(key)]));
 }
 
+/**
+ * The admin keys just written to a second locale that the default locale's FILE lacks, written
+ * there too. The default locale answers them already — the framework's own `en` holds the admin
+ * chrome (`admin.brand.name`, `admin.x_jobs.title`), so its registry is green with no such key in
+ * the app's catalog — and syncing only the second locale left the app's catalogs with two key sets,
+ * the scaffold's own "same keys as the default" test red on the command the gate prescribed. The
+ * value is the string the default locale already renders, never a marker, so its page is unchanged.
+ */
+async function backfillDefault(
+  root: string,
+  catalogs: Readonly<Record<string, Catalog>>,
+  from: string,
+  adminKeys: readonly string[],
+): Promise<readonly string[]> {
+  const target = catalogs[from] ?? {};
+  const rendered = catalogFor(from);
+  const real = (key: string): string => {
+    const value = rendered[key];
+    return value === undefined || isLoudMiss(value) ? adminKeyLabel(key) : value;
+  };
+  const source = Object.fromEntries(adminKeys.map((key) => [key, real(key)]));
+  const { merged, added } = syncCatalog(target, source);
+  if (added.length > 0) await Bun.write(join(root, catalogPath(from)), serializeCatalog(merged));
+  return added;
+}
+
 async function runSync(root: string, ctx: CommandContext): Promise<CommandResult> {
   const locale = resolveOneLocale(ctx, 'sync');
   const catalogs = await loadCatalogs(root);
@@ -330,14 +356,17 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
   const seeded = from === undefined || from === locale;
   // The admin's keys first, so a value the default locale already carries for one (copied, marked)
   // wins over a label read off the key.
+  const admin = await adminCatalog(locale, seeded);
   const source = {
-    ...(await adminCatalog(locale, seeded)),
+    ...admin,
     ...(seeded
       ? placeholderCatalog(await untranslatedKeys(root, catalogs, locale))
       : seedCatalog(catalogs[from] ?? {})),
   };
   const { merged, added } = syncCatalog(target, source);
   if (added.length > 0) await Bun.write(join(root, catalogPath(locale)), serializeCatalog(merged));
+  const adminAdded = added.filter((key) => Object.hasOwn(admin, key));
+  const defaultAdded = seeded ? [] : await backfillDefault(root, catalogs, from, adminAdded);
   // Unconditional, and not only when keys moved: a catalog that reached disk some other way — a
   // hand-created file, a `git merge` — is exactly the unregistered locale the gate refuses, and
   // this is the command its `fix:` names. Re-deriving an index that is already correct writes the
@@ -367,6 +396,9 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
       // both are what `x i18n check` counts as missing until replaced, so `--json` never reports a
       // copy as a translation.
       placeholders: added.filter((key) => isLoudMiss(merged[key])),
+      // The admin keys also written to the default locale's catalog, so every app catalog keeps one
+      // key set (`backfillDefault`). Empty when the default locale is the one synced.
+      defaultAdded,
     },
   };
 }
