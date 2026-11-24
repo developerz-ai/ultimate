@@ -44,7 +44,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/db` | [Error-Codes-db](Error-Codes-db) | 42 |
 | `@ultimat3/entity` | [Error-Codes-entity](Error-Codes-entity) | 44 |
 | `@ultimat3/flags` | [Error-Codes-flags](Error-Codes-flags) | 6 |
-| `@ultimat3/http` | [Error-Codes-http](Error-Codes-http) | 31 |
+| `@ultimat3/http` | [Error-Codes-http](Error-Codes-http) | 33 |
 | `@ultimat3/i18n` | [Error-Codes-i18n](Error-Codes-i18n) | 5 |
 | `@ultimat3/jobs` | [Error-Codes-jobs](Error-Codes-jobs) | 72 |
 | `@ultimat3/mail` | [Error-Codes-mail](Error-Codes-mail) | 18 |
@@ -174,6 +174,8 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_BACKFILL_STALLED | [jobs](Error-Codes-jobs) |
 | X_BACKFILL_UNKNOWN | [jobs](Error-Codes-jobs) |
 | X_BEARER_MOUNT_INVALID | [http](Error-Codes-http) |
+| X_BEARER_TENANT_REQUIRED | [http](Error-Codes-http) |
+| X_BEARER_TENANT_UNRESOLVED | [http](Error-Codes-http) |
 | X_BENCH_CLAIM_STALE | [scripts](Error-Codes-scripts) |
 | X_BENCH_RUN_FAILED | [scripts](Error-Codes-scripts) |
 | X_BENCH_RUN_TOO_SHORT | [scripts](Error-Codes-scripts) |

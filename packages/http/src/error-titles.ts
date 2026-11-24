@@ -42,6 +42,8 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_RATE_LIMIT_STORE_TIMEOUT',
   'X_EXERCISE_REQUEST_INVALID',
   'X_BODY_TOO_LARGE',
+  'X_BEARER_TENANT_REQUIRED',
+  'X_BEARER_TENANT_UNRESOLVED',
 ] as const;
 
 export type HttpOwnedErrorCode = (typeof HTTP_OWNED_ERROR_CODES)[number];
@@ -79,6 +81,8 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_RATE_LIMIT_STORE_TIMEOUT: 'the shared rate-limit store did not answer inside its own deadline',
   X_EXERCISE_REQUEST_INVALID: "an exercise entry's request is not one a browser could send",
   X_BODY_TOO_LARGE: 'request body over the transport ceiling',
+  X_BEARER_TENANT_REQUIRED: 'a bearer mount call named no tenant',
+  X_BEARER_TENANT_UNRESOLVED: 'a bearer mount could not resolve the tenant a call named',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title

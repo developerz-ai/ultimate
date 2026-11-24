@@ -377,7 +377,7 @@ mount that upgraded it, keyed by the `data` object it upgraded with (`As of 2026
 
 ### A second door: `bearerMount` (`/v1/*`)
 
-`As of 22.6.0`. `bearerMount({ prefix, routes, scopes, resolveToken, rateLimit?, rateLimitStore? })`
+`As of 22.6.0`. `bearerMount({ prefix, routes, scopes, resolveToken, rateLimit?, rateLimitStore?, tenant? })`
 re-serves routes the app already projects under a prefix — same handler, same policy — and changes
 exactly three things. Apps declare it through `defineApi({ http: { mounts } })` (`@ultimat3/action`);
 `@ultimat3/cli` builds it in both boots over `apiRoutes()`.
@@ -391,6 +391,7 @@ exactly three things. Apps declare it through `defineApi({ http: { mounts } })` 
 | paths | `/api/<x>` → `<prefix>/<x>`, `/_x/query/<x>` → `GET <prefix>/<x>` (`mountedPath`); a pinned `:param` template keeps its params — `/orders/:id/refund` → `<prefix>/orders/:id/refund`. Only the prefix is parameter-free |
 | `rateLimit` declared | spent once per request in the mount's authenticator, before `body` and `authz`, so a 422 or a 403 pays too; it REPLACES `default` on the mount's routes (`rateLimitedBy: 'handler'`); a route's own `meta.rateLimit` and the tenant allowance still apply. Not declared: `default` stands |
 | `Link: rel="successor-version"` | the mounted path when the successor is in the cut and this token holds its scope, success or refusal; otherwise removed. Any other `Link` is the handler's |
+| `tenant: { arg, resolve, list }` | `As of 2026-11-23`. The token resolves to a person; every call names its tenant as `?<arg>=<value>`, read in the authenticator — after the cut, before `rate-limit`, `body` and `authz`, never from the body — and `resolve({ person, value })`'s actor IS the caller from there on (rate limit, policy, meter, `ctx.actor.orgId`). No value: 400 `X_BEARER_TENANT_REQUIRED`, fix `GET <prefix>/tenants`. `null` (not a member, or a value over 256 characters): the out-of-scope 404, byte for byte. A throw, or an answer that is no actor: 500 `X_BEARER_TENANT_UNRESOLVED`. `GET <prefix>/tenants` answers `{ tenants: list({ person }) }` to any valid token. The shape `defineAppMcp({ tenant })` takes; a bad `arg`, or a primitive already at `GET <prefix>/tenants`, is `X_BEARER_MOUNT_INVALID` |
 
 `RouteMeta.authenticate` is the mechanism: a route that states one is reached only through it.
 

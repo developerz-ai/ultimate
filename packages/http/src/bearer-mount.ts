@@ -18,6 +18,13 @@ import {
   successorLink,
   successorPathOf,
 } from '@ultimat3/core';
+import {
+  assertBearerTenant,
+  type BearerMountTenant,
+  TENANTS_SEGMENT,
+  tenantActorOf,
+  tenantListing,
+} from './bearer-mount-tenant';
 import type { RequestContext } from './context';
 import { bearerMountInvalid, routeNotFound } from './errors';
 import type { RateLimitDecision, RateLimitStore } from './rate-limit';
@@ -28,6 +35,7 @@ import { rateLimitHeaders } from './rate-limit-headers';
 import type { UltimateRequest } from './request';
 import type { RequestFacts } from './request-facts';
 import { requestFacts } from './request-facts';
+import { jsonResponse } from './response';
 import type { Route, RouteMeta } from './router';
 import { HTTP_METHODS } from './router';
 
@@ -78,7 +86,17 @@ export interface BearerMountInput {
   /** Where the per-token buckets live. Defaults to per-process memory; a fleet passes a shared one. */
   readonly rateLimitStore?: RateLimitStore | undefined;
   readonly clock?: Clock | undefined;
+  /**
+   * The token resolves to a person, and every call names the tenant it acts in as
+   * `?<arg>=<value>`: `resolve`'s actor is the caller from the `auth` stage on. No tenant named is
+   * `X_BEARER_TENANT_REQUIRED`; one the person is not in answers the out-of-scope 404. Adds
+   * `GET <prefix>/tenants`, `list`'s answer, to every valid token. Absent, the token's actor acts.
+   */
+  readonly tenant?: BearerMountTenant | undefined;
 }
+
+/** The listing route's gate: any valid token, no scope, no tenant. */
+const EVERY_TOKEN = Symbol('every token');
 
 /** A mount prefix: `/v1`, `/public/v2`. Lowercase segments, no parameters, no trailing slash. */
 const PREFIX = /^(\/[a-z0-9][a-z0-9._~-]*)+$/;
@@ -122,6 +140,7 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
   if (!PREFIX.test(prefix)) {
     throw bearerMountInvalid(prefix, 'the prefix is not a lowercase path like /v1');
   }
+  if (input.tenant !== undefined) assertBearerTenant(prefix, input.tenant);
   for (const reserved of RESERVED) {
     if (prefix === reserved || prefix.startsWith(`${reserved}/`)) {
       throw bearerMountInvalid(
@@ -170,8 +189,9 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
   // 422 with the schema's issues or 403 with the policy's reason, both confirming the primitive.
   // `null` is the catch-all's: a scope no token holds, so a valid token is told 404 exactly where
   // an out-of-scope one is, and a missing or bad one gets the same challenge as on a served path.
+  // `EVERY_TOKEN` is the tenant listing's: any valid token, asked in no tenant.
   const authenticatorOf =
-    (scope: string | null): NonNullable<RouteMeta['authenticate']> =>
+    (scope: string | null | typeof EVERY_TOKEN): NonNullable<RouteMeta['authenticate']> =>
     async (request, ctx) => {
       const token = bearerTokenOf(request.header('authorization'));
       if (token === null) {
@@ -192,11 +212,22 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       // Out of scope, a token walking the cut would go unmetered too, and `RateLimit-*` on one
       // 404 but not another would tell hidden from unknown.
       await spend(tokenKey(token), ctx);
+      if (scope === EVERY_TOKEN) {
+        callers.set(ctx, { caller });
+        return caller.actor;
+      }
       if (scope === null || !caller.scopes.has(scope)) {
         throw routeNotFound(ctx.method, ctx.url.pathname);
       }
+      // After the cut, so a hidden primitive is the same 404 whatever tenant it names; before
+      // every gate, so the rate limit, the policy and the handler all see the tenant's actor.
+      const actor =
+        input.tenant === undefined
+          ? caller.actor
+          : await tenantActorOf(prefix, input.tenant, ctx.url, caller.actor);
+      if (actor === null) throw routeNotFound(ctx.method, ctx.url.pathname);
       callers.set(ctx, { caller });
-      return caller.actor;
+      return actor;
     };
 
   const spend = async (key: string, ctx: RequestContext): Promise<void> => {
@@ -259,8 +290,50 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       });
     }
   }
+  if (input.tenant !== undefined) {
+    const slot = `GET ${prefix}${TENANTS_SEGMENT}`;
+    const owner = seen.get(slot);
+    if (owner !== undefined) {
+      throw bearerMountInvalid(prefix, `${owner} is served at ${slot}, where tenant lists tenants`);
+    }
+    mounted.push(
+      tenantsRoute(
+        prefix,
+        input.tenant,
+        authenticatorOf(EVERY_TOKEN),
+        callers,
+        bucket !== undefined,
+      ),
+    );
+  }
   return [...mounted, ...opaquePrefix(prefix, authenticatorOf(null))];
 }
+
+/** `GET <prefix>/tenants`: the token's person's own tenants, so a caller learns what to name. */
+const tenantsRoute = (
+  prefix: string,
+  tenant: BearerMountTenant,
+  authenticate: NonNullable<RouteMeta['authenticate']>,
+  callers: WeakMap<RequestContext, { caller: BearerCaller }>,
+  /** The mount spends its own allowance, so the stage spends no `default` beside it. */
+  ownAllowance: boolean,
+): Route => ({
+  method: 'GET',
+  path: `${prefix}${TENANTS_SEGMENT}`,
+  meta: {
+    name: `bearer-mount:${prefix}:tenants`,
+    auth: 'required',
+    authenticate,
+    cache: { mode: 'no-store' },
+    ...(ownAllowance ? { rateLimitedBy: 'handler' as const } : {}),
+  },
+  handler: async (_request: UltimateRequest, ctx: RequestContext) => {
+    const resolved = callers.get(ctx);
+    // Fail closed for a handler driven without the `auth` stage, as every mounted route does.
+    if (resolved === undefined) throw routeNotFound(ctx.method, ctx.url.pathname);
+    return jsonResponse(await tenantListing(tenant, resolved.caller.actor));
+  },
+});
 
 /** The mount's cut: a route's `/api` path → the scopes that reach it. */
 type Cut = Map<string, Set<string>>;
