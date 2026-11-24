@@ -118,17 +118,22 @@ export function outboundUnreachable(site: OutboundSite, error: unknown): Ultimat
   });
 }
 
+/** `meta.fields` only when the caller's refusal schema answered: absent, never `undefined`. */
+const fieldsMeta = (fields: unknown): { readonly fields?: unknown } =>
+  fields === undefined ? {} : { fields };
+
 export function outboundThrottled(
   site: OutboundSite,
   status: number,
   retryAfterSeconds: number,
   detail = '',
+  fields?: unknown,
 ): UltimateError {
   return new UltimateError({
     code: 'X_OUTBOUND_THROTTLED',
     cause: `${siteLabel(site)} answered ${String(status)} and asked to wait ${String(retryAfterSeconds)} s`,
     fix: `await Bun.sleep(${String(retryAfterSeconds * 1000)})   # then call ${site.vendor} again, or lower the call rate at the site that calls outbound()`,
-    meta: { ...siteMeta(site), status, retryAfterSeconds, detail },
+    meta: { ...siteMeta(site), status, retryAfterSeconds, detail, ...fieldsMeta(fields) },
   });
 }
 
@@ -136,16 +141,22 @@ export function outboundUnavailable(
   site: OutboundSite,
   status: number,
   detail = '',
+  fields?: unknown,
 ): UltimateError {
   return new UltimateError({
     code: 'X_OUTBOUND_UNAVAILABLE',
     cause: `${siteLabel(site)} answered ${String(status)} on every attempt: the vendor's fault, not the request's`,
     fix: `curl -sS -m 5 -o /dev/null -w '%{http_code}\\n' ${renderFixShellArg(site.origin, '<vendor origin>')}   # the vendor's fault: re-run the call; if ${String(status)} persists, check ${site.vendor}'s status page`,
-    meta: { ...siteMeta(site), status, detail },
+    meta: { ...siteMeta(site), status, detail, ...fieldsMeta(fields) },
   });
 }
 
-export function outboundRefused(site: OutboundSite, status: number, detail: string): UltimateError {
+export function outboundRefused(
+  site: OutboundSite,
+  status: number,
+  detail: string,
+  fields?: unknown,
+): UltimateError {
   return new UltimateError({
     code: 'X_OUTBOUND_REFUSED',
     cause: `${siteLabel(site)} answered ${String(status)}, and the same request will get it again`,
@@ -153,7 +164,7 @@ export function outboundRefused(site: OutboundSite, status: number, detail: stri
       status === 401
         ? `outbound({ url, vendor: '${site.vendor}', headers: { authorization } })   # with a refreshed credential, then call again`
         : `outbound({ url, vendor: '${site.vendor}', body })   # with the request fixed from meta.detail and meta.status`,
-    meta: { ...siteMeta(site), status, detail },
+    meta: { ...siteMeta(site), status, detail, ...fieldsMeta(fields) },
   });
 }
 
