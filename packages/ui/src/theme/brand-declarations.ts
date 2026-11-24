@@ -7,6 +7,10 @@ import { parseChannels } from '../tokens/contrast';
 import {
   COLOR_ROLES,
   type ColorRole,
+  type DurationName,
+  durationTokens,
+  type EasingName,
+  easingTokens,
   type RadiusName,
   radiusTokens,
   SHADOW_NAMES,
@@ -26,6 +30,17 @@ const LENGTH_PATTERN = /^(0|\d+(\.\d+)?(px|rem|em|ch|%))$/;
  */
 const FONT_STACK_PATTERN = /^[\w ,'"-]{1,200}$/;
 
+/** A non-negative time with its unit — `t.duration()` hands it to `transition` as written. */
+const TIME_PATTERN = /^(0|\d+(\.\d+)?(ms|s))$/;
+const NUMBER = '-?\\d+(?:\\.\\d+)?';
+/** Four numbers and nothing else: no keyword, no `steps()`, no `var()` — a curve is a value. */
+const CURVE_PATTERN = new RegExp(
+  `^cubic-bezier\\((${NUMBER}), (${NUMBER}), (${NUMBER}), (${NUMBER})\\)$`,
+);
+
+const TIME_EXPECTED = 'a CSS time such as "180ms", "0.3s" or "0"';
+const CURVE_EXPECTED =
+  'a curve such as "cubic-bezier(0.2, 0, 0, 1)", its two x values between 0 and 1';
 const LENGTH_EXPECTED = 'a bare CSS length such as "0.5rem", "4px" or "0"';
 const STACK_EXPECTED = 'a font-family list such as "Inter, system-ui, sans-serif"';
 const CHANNELS_EXPECTED = 'space-separated RGB channels such as "31 110 178"';
@@ -108,6 +123,48 @@ export function fontDeclarations(
       throw invalidBrandTokenError('font', slot, value, STACK_EXPECTED);
     }
     out.push(`--font-${slot}: ${value};`);
+  }
+  return out;
+}
+
+/** The motion slot: the two scales `_motion.scss` emits, each overridden rung by rung. */
+export interface MotionInput {
+  duration?: Partial<Record<DurationName, string>> | undefined;
+  easing?: Partial<Record<EasingName, string>> | undefined;
+}
+
+const MOTION_SCALES = ['duration', 'easing'] as const;
+
+/** A curve CSS keeps: x1 and x2 are points in time, and outside [0, 1] the declaration is dropped. */
+function isCurve(value: string): boolean {
+  const match = CURVE_PATTERN.exec(value);
+  if (match === null) return false;
+  return [match[1], match[3]].every((x) => Number(x) >= 0 && Number(x) <= 1);
+}
+
+export function motionDeclarations(overrides: MotionInput | undefined): string[] {
+  if (overrides === undefined) return [];
+  assertKnown('motion', overrides, MOTION_SCALES, '_motion.scss');
+  const out: string[] = [];
+  const durations = overrides.duration ?? {};
+  const durationNames = Object.keys(durationTokens) as DurationName[];
+  assertKnown('duration', durations, durationNames, '_motion.scss');
+  for (const name of durationNames) {
+    const value = durations[name];
+    if (value === undefined) continue;
+    if (!TIME_PATTERN.test(value)) {
+      throw invalidBrandTokenError('motion.duration', name, value, TIME_EXPECTED);
+    }
+    out.push(`--duration-${name}: ${value};`);
+  }
+  const easings = overrides.easing ?? {};
+  const easingNames = Object.keys(easingTokens) as EasingName[];
+  assertKnown('easing', easings, easingNames, '_motion.scss');
+  for (const name of easingNames) {
+    const value = easings[name];
+    if (value === undefined) continue;
+    if (!isCurve(value)) throw invalidBrandTokenError('motion.easing', name, value, CURVE_EXPECTED);
+    out.push(`--easing-${name}: ${value};`);
   }
   return out;
 }

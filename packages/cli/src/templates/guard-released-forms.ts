@@ -79,6 +79,7 @@ export const RELEASED_GUARD_FORMS: Readonly<
   ],
   'raw-motion': [
     ['14c1bs20ysc1u', 'error'],
+    ['3azasze78buvt', 'error'],
     ['u6julhh0et2k', 'error'],
     ['w8aw0q20tfsz', 'error'],
   ],
@@ -176,7 +177,7 @@ export const RELEASED_GUARD_TEST_FORMS: Readonly<Record<string, readonly string[
   'raw-fetch': ['2lips924uo00f'],
   'raw-interval': ['1z55givy4sst0'],
   'raw-length': ['1hpgz9jowk5qu'],
-  'raw-motion': ['6420344uhv97', 'g6cs0de9jmr7'],
+  'raw-motion': ['2kg7ezhf8u7a9', '6420344uhv97', 'g6cs0de9jmr7'],
   'raw-shadow': ['3kg8ft6y3ia0y'],
   'raw-z-index': ['3fb40f6bwp8kq'],
   'repo-await-in-loop': ['2axgbb82wldt4'],

@@ -45,4 +45,20 @@ describe('unit · shipped guard · raw-motion', () => {
     expect(findings[0]?.fix).toStartWith('--my-ease: #{tokens.easing(out)} — ');
     expect(findings[1]?.fix).toStartWith('--my-wait: #{tokens.duration(base)} — ');
   });
+
+  test('re-declaring a property of the scale itself names the theme slot, never another rung', async () => {
+    // `--duration-base: #{tokens.duration(base)}` is a property reading itself: the app's tempo
+    // lives in `defineTheme({ motion })`, which every `tokens.duration(base)` then moves at.
+    const findings = await shippedGuardFindings('raw-motion', {
+      [SHEET]:
+        ':root {\n  --duration-base: 180ms;\n  --easing-out: cubic-bezier(0.2, 0, 0, 1);\n}\n',
+    });
+    expect(findings.map((finding) => finding.code)).toEqual(['X_RAW_MOTION', 'X_RAW_MOTION']);
+    expect(findings[0]?.fix).toStartWith(
+      "defineTheme({ motion: { duration: { base: '180ms' } } }) in apps/web/shared/theme.ts",
+    );
+    expect(findings[1]?.fix).toStartWith(
+      "defineTheme({ motion: { easing: { out: 'cubic-bezier(0.2, 0, 0, 1)' } } }) in apps/web/shared/theme.ts",
+    );
+  });
 });

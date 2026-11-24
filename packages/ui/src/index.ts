@@ -369,7 +369,14 @@ export type { ColourVision } from './tokens/colour-vision';
 export type { Channels } from './tokens/contrast';
 export { AA_LARGE, AA_TEXT, contrastRatio, roleContrast } from './tokens/contrast';
 export { CONTRAST_PAIRS } from './tokens/contrast-pairs';
-export type { ColorRole, RadiusName, ShadowName, Theme } from './tokens/tokens';
+export type {
+  ColorRole,
+  DurationName,
+  EasingName,
+  RadiusName,
+  ShadowName,
+  Theme,
+} from './tokens/tokens';
 // --- tokens ------------------------------------------------------------------
 export { COLOR_ROLES, color, colorRgb, colorTokens, colorVar } from './tokens/tokens';
 export { uiCatalog } from './ui-catalog';

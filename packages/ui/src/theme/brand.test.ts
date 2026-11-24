@@ -84,6 +84,47 @@ describe('defineTheme', () => {
     );
   });
 
+  test('motion rides :root only, in scale order, and the scale functions read it back', () => {
+    // `t.duration(base)` is `var(--duration-base)`: an app re-tempos every component by naming the
+    // rung, never by declaring the property in a stylesheet (`X_RAW_MOTION`).
+    const css = defineTheme({
+      motion: {
+        easing: { out: 'cubic-bezier(0.2, 0, 0, 1)' },
+        duration: { slow: '0.3s', base: '180ms' },
+      },
+    }).css;
+    expect(css).toBe(
+      ':root {\n' +
+        '  --duration-base: 180ms;\n' +
+        '  --duration-slow: 0.3s;\n' +
+        '  --easing-out: cubic-bezier(0.2, 0, 0, 1);\n' +
+        '}',
+    );
+  });
+
+  test('a motion rung or curve off the scale, or not a motion value, is refused', () => {
+    // @ts-expect-error 'glacial' is not a DurationName
+    const badRung = () => defineTheme({ motion: { duration: { glacial: '2s' } } });
+    // @ts-expect-error 'bounce' is not an EasingName
+    const badCurve = () => defineTheme({ motion: { easing: { bounce: 'ease' } } });
+    // @ts-expect-error 'delay' is not a motion scale
+    const badScale = () => defineTheme({ motion: { delay: { base: '1s' } } });
+    expect(codeOf(badRung)).toBe(UI_ERROR_CODES.tokenUnknown);
+    expect(fixOf(badRung)).toContain('_motion.scss');
+    expect(codeOf(badCurve)).toBe(UI_ERROR_CODES.tokenUnknown);
+    expect(codeOf(badScale)).toBe(UI_ERROR_CODES.tokenUnknown);
+    const bad = [
+      () => defineTheme({ motion: { duration: { base: '180' } } }),
+      () => defineTheme({ motion: { duration: { base: 'calc(1s * 2)' } } }),
+      () => defineTheme({ motion: { duration: { base: '-10ms' } } }),
+      () => defineTheme({ motion: { easing: { out: 'ease-in' } } }),
+      // x1 and x2 are times: CSS drops the whole declaration outside [0, 1].
+      () => defineTheme({ motion: { easing: { out: 'cubic-bezier(1.2, 0, 0, 1)' } } }),
+      () => defineTheme({ motion: { duration: { base: '1s; } html { display: none }' } } }),
+    ];
+    for (const run of bad) expect(codeOf(run)).toBe(UI_ERROR_CODES.invalidValue);
+  });
+
   test('output is ordered by the canonical scales, not by the input object', () => {
     // A READABLE pair: `defineTheme` measures every pairing this brand can have changed against
     // WCAG 2.2 AA, so a fixture of two arbitrary near-black channels is now a refusal rather than
