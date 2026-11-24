@@ -70,10 +70,15 @@ describe('a recipe link is checked whole', () => {
       '[Errors](docs://ref/errors.html)',
       'See docs://ref/errors.json.',
       '[Errors](docs://ref/errors%20old)',
+      '[Errors](docs://ref/%65rrors)',
+      '[Errors](docs://ref/errors+old)',
     ]) {
       expect(codeOf(() => serve([errors, linking(text)]))).toBe('X_MCP_RECIPE_LINK_DANGLING');
     }
     expect(() => serve([errors, linking('[Errors](docs://ref/errors). Then act.')])).not.toThrow();
+    expect(() =>
+      serve([errors, linking('**docs://ref/errors** | docs://ref/errors|')]),
+    ).not.toThrow();
   });
 
   test('the dangling refusal names the section it was linked into', () => {
@@ -115,9 +120,10 @@ describe('docs({ uri }) matches the URI as written', () => {
 describe('a title on one line', () => {
   const multi: McpRecipe = { ...errors, title: 'Errors\nand\r\nrefusals' };
   const separated: McpRecipe = { ...errors, title: 'Errors\u2028and\u2029refusals' };
+  const nextLine: McpRecipe = { ...errors, title: 'Errors\u0085and \u0085 refusals' };
 
   test('in the text map', async () => {
-    for (const recipe of [multi, separated]) {
+    for (const recipe of [multi, separated, nextLine]) {
       expect(await docsText(serve([recipe], { index: 'map' }), {})).toBe(
         '# ref\ndocs://ref/errors  Errors and refusals\n',
       );
@@ -173,7 +179,7 @@ describe('replayRecipes: links', () => {
     // The recipe exists: the refusal says this caller could not read it, not that none serves it.
     expect(String(refused.cause)).toContain('could not read');
     // Its fix keeps the replay's other options: dropping `sections` would skip this very link.
-    expect((refused as { fix?: string }).fix).toContain('...options');
+    expect((refused as { fix?: string }).fix).toContain('{ ...options, caller:');
   });
 });
 

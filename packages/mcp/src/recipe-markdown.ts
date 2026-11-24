@@ -64,7 +64,8 @@ export function recipeFromMarkdown(name: string, text: string, section?: string)
 /** Whole blank lines only: a content line's own spaces are Markdown (an indented code block). */
 function withoutOuterBlankLines(body: string): string {
   const lines = body.split('\n');
-  const blank = (line: string | undefined) => line !== undefined && line.trim() === '';
+  // Spaces and tabs only: a no-break space is content.
+  const blank = (line: string | undefined) => line !== undefined && /^[ \t]*$/.test(line);
   while (blank(lines[0])) lines.shift();
   while (blank(lines.at(-1))) lines.pop();
   return lines.length === 0 ? '' : `${lines.join('\n')}\n`;

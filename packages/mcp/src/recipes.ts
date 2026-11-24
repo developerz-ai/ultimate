@@ -26,10 +26,12 @@ export const DEFAULT_SECTION = 'recipes';
  */
 export const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**
- * A `docs://<section>/` link and its whole path — `docs://ref/errors/old` and
- * `docs://ref/errors.html` are not `docs://ref/errors` — less the full stop that ends a sentence.
+ * A `docs://<section>/` link and its whole destination, up to whitespace or the Markdown that
+ * closes it (brackets, quotes, `*` emphasis, a table's `|`): `docs://ref/errors/old`, `.html`,
+ * `%65rrors` and `errors+old` are not `docs://ref/errors`. Less a sentence's end (`LINK_TAIL`).
  */
-const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([A-Za-z0-9](?:[\w./~%-]*[\w/~%-])?)/g;
+const SECTIONED_LINK = /docs:\/\/([a-z0-9]+(?:-[a-z0-9]+)*)\/([^\s()<>[\]{}"'`*|]+)/g;
+const LINK_TAIL = /[.,;:!?]+$/;
 /** The section a `docs://<section>/…` URI sits in. */
 const SECTION_OF_URI = /^docs:\/\/([^/]*)\//;
 
@@ -144,7 +146,12 @@ export function recipeLinks(recipe: McpRecipe, sections: ReadonlySet<string>): r
   const text = `${recipe.body ?? ''}\n${recipe.notes ?? ''}`;
   return [...text.matchAll(SECTIONED_LINK)]
     .filter((match) => sections.has(match[1] as string))
-    .map((match) => recipeUri(match[2] as string, match[1] as string));
+    .map((match) => ({
+      section: match[1] as string,
+      path: (match[2] as string).replace(LINK_TAIL, ''),
+    }))
+    .filter((link) => link.path !== '')
+    .map((link) => recipeUri(link.path, link.section));
 }
 
 /** A recipe pointing at one that does not exist is the stale link this whole file refuses. */

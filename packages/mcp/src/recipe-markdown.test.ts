@@ -55,5 +55,7 @@ describe('recipeFromMarkdown: body', () => {
     );
     // An unclosed fence's last line keeps its trailing spaces; only blank lines go.
     expect(recipeFromMarkdown('x', '```\nkeep  \n  \n\n').body).toBe('```\nkeep  \n');
+    // A no-break space is content, not blank: only spaces and tabs make a line blank.
+    expect(recipeFromMarkdown('x', '\n\u00a0\nText.\n\n').body).toBe('\u00a0\nText.\n');
   });
 });
