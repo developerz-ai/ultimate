@@ -93,6 +93,31 @@ describe('unit · the services x exercise installs', () => {
     expect(codeOf(() => auth().limiter)).toBe('X_AUTH_LIMITER_NOT_SHARED');
   });
 
+  test('an attempt is reserved through the scratch executor the pass hands in', async () => {
+    const sent: { readonly text: string; readonly key: unknown }[] = [];
+    const scratch: PgExecutor = {
+      query: async <T>(text: string, values?: readonly unknown[]): Promise<T[]> => {
+        sent.push({ text, key: values?.[0] });
+        return [{ admitted: true, locked_until_ms: 0 }] as T[];
+      },
+    };
+    const release = await installExerciseServices({
+      config: undefined,
+      env: {},
+      executor: scratch,
+    });
+    const auth = defineAuth({
+      adapter: memoryAuthAdapter(),
+      rateLimit: { ...DEFAULT_AUTH_RATE_LIMIT, scope: 'shared' },
+    });
+    const reserved = await auth.limiter.reserve('account:ada@example.test');
+    release();
+    expect(reserved.key).toBe('account:ada@example.test');
+    expect(sent.map((one) => [one.text.includes('x_auth_lockouts'), one.key])).toEqual([
+      [true, 'account:ada@example.test'],
+    ]);
+  });
+
   test('an app with push wired gets a runtime whose sends are captured, never sent', async () => {
     const release = await installExerciseServices({ config: pushApp(), env: {}, executor });
     const runtime = webPushRuntime('exercise');
