@@ -12,6 +12,7 @@ import type {
 } from './adapter';
 import { usersUniqueViolation } from './builtin-adapter-violation';
 import { authWriteFailed } from './errors';
+import { passkeyLabel } from './passkey-label';
 
 type Row = Readonly<Record<string, unknown>>;
 
@@ -90,7 +91,7 @@ export function postgresPasskeyStore(client: () => DbClient): Required<PasskeySt
                                   created_at, label)
           values (${credential.id}, ${credential.userId}, ${credential.publicKey},
                   ${credential.algorithm}, ${credential.signCount}, ${[...credential.transports]},
-                  ${credential.createdAt}, ${credential.label ?? null})
+                  ${credential.createdAt}, ${passkeyLabel(credential.label)})
           returning *`);
       } catch (error) {
         throw usersUniqueViolation('putPasskey', error) ?? error;

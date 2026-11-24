@@ -10,6 +10,7 @@ import type {
   PasskeyStore,
 } from './adapter';
 import { authUniqueViolation } from './errors';
+import { passkeyLabel } from './passkey-label';
 
 const byCreated = <T extends { readonly createdAt: Date; readonly id: string }>(a: T, b: T) =>
   a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -22,11 +23,13 @@ export function memoryPasskeyStore(): Required<PasskeyStore> {
   return {
     async putPasskey(credential) {
       if (passkeys.has(credential.id)) throw authUniqueViolation('putPasskey', 'x_passkeys', 'id');
-      const { label, ...rest } = credential;
+      // Through the one label reader, as a rename is: trimmed, refused when no label at all.
+      const { label: given, ...rest } = credential;
+      const label = passkeyLabel(given);
       const stored: PasskeyCredential = {
         ...rest,
         transports: [...credential.transports],
-        ...(label === undefined ? {} : { label }),
+        ...(label === null ? {} : { label }),
       };
       passkeys.set(credential.id, stored);
       return stored;

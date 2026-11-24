@@ -92,7 +92,7 @@ export const MAX_STEP_UP_DIGEST_BYTES = 1024;
 export const passkeyLabelInvalid = (reason: string): AuthError =>
   new AuthError({
     code: 'X_PASSKEY_LABEL_INVALID',
-    cause: `the passkey label is ${reason}: a label is 1-${PASSKEY_LABEL_MAX} characters after trimming, with no control characters`,
+    cause: `the passkey label is ${reason}: a label is 1-${PASSKEY_LABEL_MAX} characters after trimming, then no control character or lone surrogate`,
     fix: "renamePasskey(auth, { userId, id, label: 'Work laptop' })   // or label: null to clear it",
     callerFix: `name the passkey in 1 to ${PASSKEY_LABEL_MAX} characters`,
     meta: { reason },

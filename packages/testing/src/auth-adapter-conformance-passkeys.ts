@@ -99,20 +99,25 @@ export const AUTH_ADAPTER_PASSKEY_CHECKS: readonly AuthAdapterCheck[] = [
     },
   },
   {
-    // `renamePasskey` is optional on the seam: an adapter without it is refused per call
-    // (`X_PASSKEY_RENAME_UNSUPPORTED`), so there is nothing here for it to answer.
-    name: 'a label round-trips, and a passkey is renamed only by its owner',
+    // `renamePasskey` and the label are optional on the seam: an adapter written before them is
+    // refused per call (`X_PASSKEY_RENAME_UNSUPPORTED`), so nothing here is asked of it at all.
+    name: 'a label round-trips, and a passkey is renamed only by its owner, its use kept',
     async run({ adapter }) {
-      const [ada, grace] = [await seedUser(adapter), await seedUser(adapter)];
-      const row = { ...credential(ada), label: 'Work laptop' };
-      await adapter.putPasskey(row);
-      expect(await adapter.findPasskey(row.id)).toEqual(row);
       if (adapter.renamePasskey === undefined) return;
+      const [ada, grace] = [await seedUser(adapter), await seedUser(adapter)];
+      const seeded = { ...credential(ada, 3), label: 'Work laptop' };
+      await adapter.putPasskey(seeded);
+      expect(await adapter.findPasskey(seeded.id)).toEqual(seeded);
+      // A use recorded first, so a rename that rewrote the counter or the last use shows.
+      expect(await adapter.advancePasskeyCounter(seeded.id, 3, 4, later(5))).toBe(true);
+      const row = { ...seeded, signCount: 4, lastUsedAt: later(5) };
       expect(await adapter.renamePasskey(grace, row.id, 'Mine')).toBeNull();
+      expect(await adapter.findPasskey(row.id)).toEqual(row);
       expect(await adapter.renamePasskey(ada, row.id, 'Phone')).toEqual({ ...row, label: 'Phone' });
+      expect(await adapter.findPasskey(row.id)).toEqual({ ...row, label: 'Phone' });
       const { label: _cleared, ...unnamed } = row;
       expect(await adapter.renamePasskey(ada, row.id, null)).toEqual(unnamed);
-      expect((await adapter.findPasskey(row.id))?.label).toBeUndefined();
+      expect(await adapter.findPasskey(row.id)).toEqual(unnamed);
     },
   },
   {

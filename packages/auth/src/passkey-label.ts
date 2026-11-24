@@ -8,17 +8,31 @@ import { PASSKEY_LABEL_MAX, passkeyLabelInvalid, passkeyRenameUnsupported } from
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it finds.
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+/** A surrogate half with no partner: memory would keep it, Postgres' UTF-8 `text` cannot. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/** Counted by code point and stopped at the first one past the limit: no array of a huge input. */
+const longerThan = (text: string, max: number): boolean => {
+  let length = 0;
+  for (const _character of text) {
+    length += 1;
+    if (length > max) return true;
+  }
+  return false;
+};
 
 /**
- * The label as stored: trimmed, `null` for none. Blank, longer than `PASSKEY_LABEL_MAX` characters
- * or holding a control character (a newline in a list row, an escape in a log line) is refused.
+ * The label as stored: trimmed, `null` for none. Judged AFTER the trim: blank, longer than
+ * `PASSKEY_LABEL_MAX` characters, holding a control character (a newline in a list row, an escape in
+ * a log line) or a lone surrogate (text no adapter can store as written) is refused.
  */
 export function passkeyLabel(label: string | null | undefined): string | null {
   if (label === undefined || label === null) return null;
   const trimmed = label.trim();
   if (trimmed === '') throw passkeyLabelInvalid('blank');
-  if ([...trimmed].length > PASSKEY_LABEL_MAX) throw passkeyLabelInvalid('too long');
+  if (longerThan(trimmed, PASSKEY_LABEL_MAX)) throw passkeyLabelInvalid('too long');
   if (CONTROL.test(trimmed)) throw passkeyLabelInvalid('holding a control character');
+  if (LONE_SURROGATE.test(trimmed)) throw passkeyLabelInvalid('not well-formed text');
   return trimmed;
 }
 
