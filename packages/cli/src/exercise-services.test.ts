@@ -3,6 +3,8 @@
 // reads one runs instead of needing `{ off }` — and each handed back as found.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { DEFAULT_AUTH_RATE_LIMIT, defineAuth, memoryAuthAdapter } from '@ultimat3/auth';
+import { resetAuthLimiters } from '@ultimat3/auth/adapter';
 import type { AppConfig, PgExecutor } from '@ultimat3/core';
 import { defineConfig, isUltimateError } from '@ultimat3/core';
 import { installedRateLimitStore } from '@ultimat3/http';
@@ -47,6 +49,7 @@ const pushApp = (): AppConfig =>
 beforeEach(() => resetStorage());
 
 afterEach(() => {
+  resetAuthLimiters();
   resetStorage();
   resetRateLimitStore();
   resetWebPush();
@@ -75,6 +78,44 @@ describe('unit · the services x exercise installs', () => {
     expect(installedRateLimitStore().scope).toBe('shared');
     release();
     expect(installedRateLimitStore().scope).toBe('process');
+  });
+
+  test("the auth limiter is fleet-wide for the pass: a 'shared' lockout is judged, never refused", async () => {
+    const auth = () =>
+      defineAuth({
+        adapter: memoryAuthAdapter(),
+        rateLimit: { ...DEFAULT_AUTH_RATE_LIMIT, scope: 'shared' },
+      });
+    expect(codeOf(() => auth().limiter)).toBe('X_AUTH_LIMITER_NOT_SHARED');
+    const release = await installExerciseServices({ config: undefined, env: {}, executor });
+    expect(auth().limiter.policy.scope).toBe('shared');
+    release();
+    expect(codeOf(() => auth().limiter)).toBe('X_AUTH_LIMITER_NOT_SHARED');
+  });
+
+  test('an attempt is reserved through the scratch executor the pass hands in', async () => {
+    const sent: { readonly text: string; readonly key: unknown }[] = [];
+    const scratch: PgExecutor = {
+      query: async <T>(text: string, values?: readonly unknown[]): Promise<T[]> => {
+        sent.push({ text, key: values?.[0] });
+        return [{ admitted: true, locked_until_ms: 0 }] as T[];
+      },
+    };
+    const release = await installExerciseServices({
+      config: undefined,
+      env: {},
+      executor: scratch,
+    });
+    const auth = defineAuth({
+      adapter: memoryAuthAdapter(),
+      rateLimit: { ...DEFAULT_AUTH_RATE_LIMIT, scope: 'shared' },
+    });
+    const reserved = await auth.limiter.reserve('account:ada@example.test');
+    release();
+    expect(reserved.key).toBe('account:ada@example.test');
+    expect(sent.map((one) => [one.text.includes('x_auth_lockouts'), one.key])).toEqual([
+      [true, 'account:ada@example.test'],
+    ]);
   });
 
   test('an app with push wired gets a runtime whose sends are captured, never sent', async () => {
