@@ -313,5 +313,7 @@
  * `SERVING_ROLE_CEILING`. Nothing web-only.
  * raised 1768 → 1769, measured 1769 (2026-11-19, integration): `cli/src/messages-processes.ts`, the
  * one on `SERVING_ROLE_CEILING`. Nothing web-only.
+ * raised 1769 → 1770, measured 1770 (2026-11-23, tenant discovery): `mcp/src/tenant-discover.ts`,
+ * which calls of a `tenant` MCP server may name no tenant — split from `tenant.ts`, web-only.
  */
-export const WEB_ROLE_CEILING = 1769;
+export const WEB_ROLE_CEILING = 1770;
