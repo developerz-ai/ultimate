@@ -42,9 +42,10 @@ export interface MeterDrawResult {
   /** `true` when `drawKey` had already counted: `allowed`, and nothing was added. */
   readonly replayed?: boolean;
   /**
-   * The start of the period the counter is in after this draw: later than `periodStartMs` when a
-   * lagging replica drew against a counter already in the next period. Absent reads as the
-   * request's own `periodStartMs`.
+   * The effective period for the returned count and reset: the later of the request's period and
+   * the stored counter's. A replay or a refusal need not advance the stored counter. Required on a
+   * keyed draw whose effective period is later than the request's (a lagging replica drawing on a
+   * counter already in the next period); absent, callers use the request's `periodStartMs`.
    */
   readonly periodStartMs?: number;
 }

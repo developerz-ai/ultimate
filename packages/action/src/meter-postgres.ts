@@ -87,8 +87,9 @@ returning used, warned
  * so every draw on one counter — every replica's — runs one at a time from here. Under that lock
  * the key is claimed only within the limit, and the count moves only when the claim landed: a key
  * that already counted (this period or the last) conflicts, and nothing is added. A refused draw
- * claims nothing, so its key is never left behind. The row must exist: `SQL_METER_ENSURE` first
- * when no row comes back.
+ * claims nothing, so its key is never left behind. The row must exist: `SQL_METER_OPEN_KEYED`
+ * when no row comes back. `version` is the locked row's `xmin`, which `SQL_METER_KEY_COUNTED`
+ * compares to decide a refusal against this same state.
  *
  * Every period here is the COUNTER's after the draw — `greatest` of its own and the request's — so
  * a lagging replica's draw is stamped with, and judged by, the period it is really counted in. Only
@@ -97,7 +98,7 @@ returning used, warned
  */
 const SQL_METER_DRAW_KEYED = `
 with counter as (
-  select used, warned, period_start,
+  select xmin::text as version, used, warned, period_start,
          greatest(period_start, $4::timestamptz) as effective,
          case when period_start <= $4::timestamptz then $8::timestamptz
               when $9::interval is null then period_start
@@ -135,34 +136,53 @@ purged as (
     and period_start < (select kept_since from spent)
     and draw_key <> $7 and exists (select 1 from claim)
 )
-select spent.used, spent.warned, spent.used + $6::bigint <= $5::bigint as within,
-       spent.effective, counted.used as counted_used, counted.warned as counted_warned
-from spent left join counted on true
-`;
-
-/** A zero counter for a keyed draw to lock — the conditional insert above cannot lock a row. */
-const SQL_METER_ENSURE = `
-insert into x_meter (subject, meter, period, period_start, used, warned)
-values ($1, $2, $3, $4::timestamptz, 0, false)
-on conflict (subject, meter, period) do nothing
+select counter.version, spent.used, spent.warned, spent.used + $6::bigint <= $5::bigint as within,
+       spent.effective, spent.kept_since, counted.used as counted_used,
+       counted.warned as counted_warned
+from counter cross join spent left join counted on true
 `;
 
 /**
- * A refused keyed draw: whether its key had already counted, and the count beside it — ONE fresh
- * statement, so it sees the draw that took the counter's lock first and spent the allowance under
- * this very key, and the count that draw left, never the stale one the refusal read. `$5` the
- * request's period start, `$6` the start of the period before it, `$7` the period's length.
+ * A keyed draw's FIRST counter: the row is inserted already charged, its key beside it, in one
+ * statement — a zero row inserted first opened the request's period for a lagging draw to spend
+ * before this draw charged it. `$1`–`$4` the counter and its period, `$5` the amount, `$6` the
+ * draw key; the caller has checked the amount fits the limit. No row back: a racing draw created
+ * the counter first, and the keyed draw above runs against it.
+ */
+const SQL_METER_OPEN_KEYED = `
+with opened as (
+  insert into x_meter (subject, meter, period, period_start, used, warned)
+  values ($1, $2, $3, $4::timestamptz, $5::bigint, false)
+  on conflict (subject, meter, period) do nothing
+  returning used, warned
+),
+claimed as (
+  insert into x_meter_key (subject, meter, period, draw_key, period_start)
+  select $1, $2, $3, $6, $4::timestamptz from opened
+  on conflict (subject, meter, period, draw_key) do update set period_start = excluded.period_start
+)
+select used, warned from opened
+`;
+
+/**
+ * A refused keyed draw: whether its key had already counted — a FRESH statement, so it sees the key
+ * of a draw that took the counter's lock first and spent the allowance under this very key, which
+ * the refusal's own snapshot predates. It locks the counter again and answers its `version`: the
+ * answer stands only when that is the version the refusal was decided on, as every key write moves
+ * the counter in the same statement. `$4` the draw key, `$5` the refusal's `kept_since`.
  */
 const SQL_METER_KEY_COUNTED = `
-select case when $5::timestamptz > m.period_start then 0 else m.used end as used,
-       case when $5::timestamptz > m.period_start then false else m.warned end as warned,
-       greatest(m.period_start, $5::timestamptz) as effective
-from x_meter m
-join x_meter_key k on k.subject = m.subject and k.meter = m.meter and k.period = m.period
-where m.subject = $1 and m.meter = $2 and m.period = $3 and k.draw_key = $4
-  and k.period_start >= case when m.period_start <= $5::timestamptz then $6::timestamptz
-    when $7::interval is null then m.period_start
-    else ((m.period_start at time zone 'UTC') - $7::interval) at time zone 'UTC' end
+with counter as (
+  select xmin::text as version from x_meter
+  where subject = $1 and meter = $2 and period = $3
+  for update
+)
+select counter.version, exists (
+  select 1 from x_meter_key
+  where subject = $1 and meter = $2 and period = $3 and draw_key = $4
+    and period_start >= $5::timestamptz
+) as counted
+from counter
 `;
 
 /** What a refused draw is told it had used — read only on a refusal, never before a draw. */
@@ -184,10 +204,12 @@ where subject = $1 and meter = $2 and period = $3 and period_start = $4::timesta
 `;
 
 interface KeyedRow {
+  readonly version: string;
   readonly used: number | string;
   readonly warned: boolean | string;
   readonly within: boolean | string;
   readonly effective: Date | string;
+  readonly kept_since: Date | string;
   readonly counted_used: number | string | null;
   readonly counted_warned: boolean | string | null;
 }
@@ -227,73 +249,82 @@ const keyParams = (key: MeterKey, periodStartMs: number): readonly unknown[] => 
 export function postgresMeterStore(options: PostgresMeterStoreOptions): MeterStore {
   const exec = options.executor;
 
-  const drawKeyed = async (request: MeterDraw, drawKey: string): Promise<MeterDrawResult> => {
-    const keptSince = iso(previousPeriodStart(request.period, request.periodStartMs));
-    const length = periodInterval(request.period);
+  /** The locked keyed draw, opening the counter charged when there is none yet. */
+  const lockedDraw = async (
+    request: MeterDraw,
+    drawKey: string,
+    params: readonly unknown[],
+  ): Promise<KeyedRow | MeterDrawResult> => {
+    const row = (await exec.query<KeyedRow>(SQL_METER_DRAW_KEYED, params))[0];
+    if (row !== undefined) return row;
     const amount = request.amount ?? 1;
-    const params = [
-      ...keyParams(request, request.periodStartMs),
-      request.limit,
-      amount,
-      drawKey,
-      keptSince,
-      length,
-    ];
-    let row = (await exec.query<KeyedRow>(SQL_METER_DRAW_KEYED, params))[0];
-    if (row === undefined) {
-      // No counter yet. A draw that cannot fit even an empty one is refused here, with no row: a
-      // zero counter for it would open its period, and a lagging draw would then spend that one.
-      if (amount > request.limit) {
-        return { allowed: false, used: 0, warned: false, periodStartMs: request.periodStartMs };
-      }
-      await exec.query(SQL_METER_ENSURE, keyParams(request, request.periodStartMs));
-      row = (await exec.query<KeyedRow>(SQL_METER_DRAW_KEYED, params))[0];
+    // No counter yet. A draw that cannot fit even an empty one is refused here, with no row: a
+    // zero counter for it would open its period, and a lagging draw would then spend that one.
+    if (amount > request.limit) {
+      return { allowed: false, used: 0, warned: false, periodStartMs: request.periodStartMs };
     }
-    if (row === undefined) {
+    const opened = (
+      await exec.query<CounterRow>(SQL_METER_OPEN_KEYED, [
+        ...keyParams(request, request.periodStartMs),
+        amount,
+        drawKey,
+      ])
+    )[0];
+    if (opened !== undefined) {
+      return {
+        allowed: true,
+        used: Number(opened.used),
+        warned: isTrue(opened.warned),
+        periodStartMs: request.periodStartMs,
+      };
+    }
+    const raced = (await exec.query<KeyedRow>(SQL_METER_DRAW_KEYED, params))[0];
+    if (raced === undefined) {
       throw new InternalError({
         cause: `x_meter lost the counter row for meter "${request.meter}" right after it was inserted; something outside the meter store deletes x_meter rows`,
         fix: 'grep -rnE "(delete from|truncate) x_meter" .   # the boot owns x_meter: remove the statement that deletes its rows',
       });
     }
-    const periodStartMs = msOf(row.effective);
-    if (row.counted_used !== null) {
-      return {
-        allowed: true,
-        used: Number(row.counted_used),
-        warned: row.counted_warned !== null && isTrue(row.counted_warned),
-        periodStartMs,
-      };
+    return raced;
+  };
+
+  const drawKeyed = async (request: MeterDraw, drawKey: string): Promise<MeterDrawResult> => {
+    const params = [
+      ...keyParams(request, request.periodStartMs),
+      request.limit,
+      request.amount ?? 1,
+      drawKey,
+      iso(previousPeriodStart(request.period, request.periodStartMs)),
+      periodInterval(request.period),
+    ];
+    // Repeats only when another draw CHARGED this counter between a refusal and its key lookup —
+    // a refused draw moves no row — so each round is somebody else's progress, never a spin.
+    for (;;) {
+      const row = await lockedDraw(request, drawKey, params);
+      if (!('version' in row)) return row;
+      const periodStartMs = msOf(row.effective);
+      if (row.counted_used !== null) {
+        return {
+          allowed: true,
+          used: Number(row.counted_used),
+          warned: row.counted_warned !== null && isTrue(row.counted_warned),
+          periodStartMs,
+        };
+      }
+      const at = { used: Number(row.used), warned: isTrue(row.warned), periodStartMs };
+      if (isTrue(row.within)) return { allowed: true, ...at, replayed: true };
+      const lookup = (
+        await exec.query<{ readonly version: string; readonly counted: boolean | string }>(
+          SQL_METER_KEY_COUNTED,
+          [request.subject, request.meter, request.period, drawKey, iso(msOf(row.kept_since))],
+        )
+      )[0];
+      // The counter moved since the refusal: judge the draw again against what it is now.
+      if (lookup === undefined || lookup.version !== row.version) continue;
+      return isTrue(lookup.counted)
+        ? { allowed: true, ...at, replayed: true }
+        : { allowed: false, ...at };
     }
-    if (isTrue(row.within)) {
-      return {
-        allowed: true,
-        used: Number(row.used),
-        warned: isTrue(row.warned),
-        replayed: true,
-        periodStartMs,
-      };
-    }
-    const replay = (
-      await exec.query<CounterRow & { readonly effective: Date | string }>(SQL_METER_KEY_COUNTED, [
-        request.subject,
-        request.meter,
-        request.period,
-        drawKey,
-        iso(request.periodStartMs),
-        keptSince,
-        length,
-      ])
-    )[0];
-    if (replay !== undefined) {
-      return {
-        allowed: true,
-        used: Number(replay.used),
-        warned: isTrue(replay.warned),
-        replayed: true,
-        periodStartMs: msOf(replay.effective),
-      };
-    }
-    return { allowed: false, used: Number(row.used), warned: isTrue(row.warned), periodStartMs };
   };
 
   return {

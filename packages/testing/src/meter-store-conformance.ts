@@ -42,8 +42,8 @@ const keyedOf =
 
 /**
  * A draw's answer, judged on what the port requires: `replayed` must be `true` on a replay, and on
- * anything else may be `false` or absent; `periodStartMs`, when a store returns it, is checked by
- * the check that names it.
+ * anything else may be `false` or absent; `periodStartMs` is checked by the check that names it,
+ * where it differs from the request's and is therefore required.
  */
 function expectDraw(
   result: MeterDrawResult,
@@ -207,7 +207,9 @@ export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
       await drawOf(store, key)(100, START + DAY);
       const late = await keyed(100, 3, 'late', START);
       expectDraw(late, { allowed: true, used: 4, warned: false });
-      if (late.periodStartMs !== undefined) expect(late.periodStartMs).toBe(START + DAY);
+      // Required here, where it differs from the request's: absent, `drawMeter` would answer day
+      // one's reset for a charge made on day two.
+      expect(late.periodStartMs).toBe(START + DAY);
       // Charged on day two, so day three still remembers it: a retry adds nothing.
       expectDraw(await keyed(100, 3, 'late', START + 2 * DAY), {
         allowed: true,
@@ -224,7 +226,9 @@ export const METER_STORE_CHECKS: readonly MeterStoreCheck[] = [
       const keyed = keyedOf(store, key);
       await keyed(100, 3, 'k', START);
       await drawOf(store, key)(100, START + 2 * DAY);
-      // The counter is on day three, which remembers day two's keys and no older ones.
+      // The counter is on day three, which remembers day two's keys and no older ones — the refusal
+      // too: judged by the request's day two, it would find day one's key and replay it.
+      expectDraw(await keyed(3, 3, 'k', START + DAY), { allowed: false, used: 1, warned: false });
       expectDraw(await keyed(100, 3, 'k', START + DAY), { allowed: true, used: 4, warned: false });
     },
   },

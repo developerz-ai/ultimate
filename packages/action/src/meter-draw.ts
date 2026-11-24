@@ -5,6 +5,7 @@
  */
 
 import type { Ctx } from '@ultimat3/core';
+import { t, validate } from '@ultimat3/schema';
 import { MeterExceededError, MeterInvalidError } from './errors-meter';
 import { MAX_IDEMPOTENCY_KEY_LENGTH } from './idempotency-key';
 import type { MeterPeriod, ResolvedLimit } from './meter';
@@ -22,10 +23,11 @@ export interface MeterDrawInput {
   /** Units allowed per period, or resolved per call from `{ ctx }` — the tenant's plan. */
   readonly limit: ResolvedLimit;
   /**
-   * The unit of work's own id, 1–255 chars with no NUL. A second draw under it — a retry, on any
-   * replica sharing one store — adds nothing while the key is remembered: the period it counted in
-   * and the next one. `memoryMeterStore()` remembers per process and up to its `maxDrawKeys`; the
-   * Postgres store the boot installs remembers across replicas and restarts.
+   * The unit of work's own id, 1–255 chars with no NUL or lone surrogate. A second draw under it —
+   * a retry, on any replica sharing one store — adds nothing while the key is remembered: the
+   * period it counted in and the next one. `memoryMeterStore()` remembers per process, and either
+   * of its bounds ends that early — `maxDrawKeys`, or `maxKeys` evicting the counter with its keys;
+   * the Postgres store the boot installs remembers across replicas and restarts.
    */
   readonly key: string;
 }
@@ -43,12 +45,16 @@ export interface MeterDrawOutcome {
 
 const isAmount = (value: unknown): value is number => isMeterLimit(value) && value >= 1;
 
-/** No NUL: Postgres `text` cannot hold one, so the shared store could never remember the key. */
+/**
+ * Storable as written: `t.string`'s own rule refuses a NUL and a lone surrogate, which Postgres
+ * `text` refuses or rewrites — the shared store would then fail, or alias two keys the memory store
+ * keeps apart.
+ */
 const isDrawKey = (value: unknown): value is string =>
   typeof value === 'string' &&
   value.length > 0 &&
   value.length <= MAX_IDEMPOTENCY_KEY_LENGTH &&
-  !value.includes('\u0000');
+  validate(t.string, value).issues === undefined;
 
 /**
  * Count `amount` against `meter` for this caller (`ctx`'s org, else actor), or throw
@@ -65,7 +71,7 @@ export async function drawMeter(ctx: Ctx, input: MeterDrawInput): Promise<MeterD
     throw new MeterInvalidError(name, 'amount', 'a positive safe integer', amount, 'draw');
   }
   if (!isDrawKey(key)) {
-    const expected = `a non-empty string of at most ${MAX_IDEMPOTENCY_KEY_LENGTH} chars, with no NUL`;
+    const expected = `a non-empty string of at most ${MAX_IDEMPOTENCY_KEY_LENGTH} chars, with no NUL or lone surrogate`;
     throw new MeterInvalidError(name, 'key', expected, key, 'draw');
   }
   const store = getMeterStore();

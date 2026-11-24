@@ -117,4 +117,37 @@ describe('memoryMeterStore', () => {
     expect((await keyed('yesterday', DAY)).replayed).toBe(true);
     expect(() => memoryMeterStore({ maxDrawKeys: 0 })).toThrow();
   });
+
+  // No counter here reaches the bound alone: only their sum does, so a cap held per counter would
+  // forget nothing. A counter with keys gives up its own oldest; one with none, the counter that
+  // filled first.
+  test('maxDrawKeys bounds the keys of every counter together, and forgetting keeps each count', async () => {
+    const store = memoryMeterStore({ maxDrawKeys: 3 });
+    const keyed = (subject: string, drawKey: string) =>
+      store.draw({ ...draw(1000, DAY), subject, amount: 1, drawKey });
+    await keyed('org:a', 'a1');
+    await keyed('org:a', 'a2');
+    await keyed('org:b', 'b1');
+    await keyed('org:b', 'b2');
+    await keyed('org:c', 'c1');
+    for (const [subject, drawKey, used] of [
+      ['org:a', 'a2', 2],
+      ['org:b', 'b2', 2],
+      ['org:c', 'c1', 1],
+    ] as const) {
+      expect(await keyed(subject, drawKey)).toMatchObject({ replayed: true, used });
+    }
+    expect(await keyed('org:a', 'a1')).toEqual({
+      allowed: true,
+      used: 3,
+      warned: false,
+      periodStartMs: DAY,
+    });
+    expect(await keyed('org:b', 'b1')).toEqual({
+      allowed: true,
+      used: 3,
+      warned: false,
+      periodStartMs: DAY,
+    });
+  });
 });

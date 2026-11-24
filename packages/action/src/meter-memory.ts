@@ -68,6 +68,18 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
   const counters = new Map<string, Counter>();
   /** Every counter's `keys` and `previous` together: kept exact so the bound costs no scan. */
   let drawKeys = 0;
+  /**
+   * The counters holding a nonempty `previous` / `keys`, in the order each became nonempty: kept as
+   * the sets fill and empty, so a saturated draw finds another counter's keys without a scan.
+   */
+  const holdingPrevious = new Set<Counter>();
+  const holdingKeys = new Set<Counter>();
+  const firstOf = (holding: Set<Counter>): Counter | undefined => holding.values().next().value;
+  /** A counter leaving the map — evicted, or replaced by its next period — leaves both sets. */
+  const release = (counter: Counter): void => {
+    holdingPrevious.delete(counter);
+    holdingKeys.delete(counter);
+  };
 
   /** The latest period start any draw named: a moment known to have passed, with no clock read. */
   let passedMs = Number.NEGATIVE_INFINITY;
@@ -94,9 +106,10 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
         victimStart = counter.periodStartMs;
       }
     }
-    if (victim === undefined) return;
-    const gone = counters.get(victim);
-    drawKeys -= (gone?.keys.size ?? 0) + (gone?.previous.size ?? 0);
+    const gone = victim === undefined ? undefined : counters.get(victim);
+    if (victim === undefined || gone === undefined) return;
+    drawKeys -= gone.keys.size + gone.previous.size;
+    release(gone);
     counters.delete(victim);
   };
 
@@ -108,27 +121,26 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
    */
   const forgetKey = (counter: Counter): void => {
     if (drawKeys < maxDrawKeys) return;
-    const withPrevious =
-      counter.previous.size > 0
-        ? counter
-        : [...counters.values()].find((one) => one.previous.size > 0);
+    const withPrevious = counter.previous.size > 0 ? counter : firstOf(holdingPrevious);
     if (withPrevious !== undefined) {
       drawKeys -= withPrevious.previous.size;
       withPrevious.previous = new Set();
+      holdingPrevious.delete(withPrevious);
       return;
     }
-    const holder =
-      counter.keys.size > 0 ? counter : [...counters.values()].find((one) => one.keys.size > 0);
+    const holder = counter.keys.size > 0 ? counter : firstOf(holdingKeys);
     const oldest = holder?.keys.values().next().value;
     if (holder === undefined || oldest === undefined) return;
     holder.keys.delete(oldest);
     drawKeys -= 1;
+    if (holder.keys.size === 0) holdingKeys.delete(holder);
   };
 
   const remember = (counter: Counter, drawKey: string | undefined): void => {
     if (drawKey === undefined || counter.keys.has(drawKey)) return;
     forgetKey(counter);
     counter.keys.add(drawKey);
+    holdingKeys.add(counter);
     drawKeys += 1;
   };
 
@@ -174,6 +186,7 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
           existing.periodStartMs === previousPeriodStart(request.period, request.periodStartMs);
         if (existing !== undefined) {
           drawKeys -= existing.previous.size + (adjacent ? 0 : existing.keys.size);
+          release(existing);
         }
         const counter: Counter = {
           periodStartMs: request.periodStartMs,
@@ -184,6 +197,7 @@ export function memoryMeterStore(options: MemoryMeterStoreOptions = {}): MeterSt
           previous: adjacent ? existing.keys : new Set(),
         };
         counters.set(id, counter);
+        if (counter.previous.size > 0) holdingPrevious.add(counter);
         remember(counter, drawKey);
         return { allowed: true, used, warned: false, ...at };
       }

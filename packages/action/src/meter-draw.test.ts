@@ -137,6 +137,22 @@ describe('drawMeter', () => {
     expect(refused.message).toContain('larger than the whole');
     expect(refused.fix).not.toContain('retry after');
     expect(refused.callerFix).not.toContain('retry after');
+    // No delay to wait out: a job dead-letters it rather than retry it uncounted after the reset.
+    expect(refused).toMatchObject({ retry: 'terminal' });
+    expect(refused).not.toHaveProperty('meta.retryAfterSeconds');
+    expect(refused.fix).toContain('split the work into draws of at most 1000');
+    await drawMeter(caller('o1'), tokens(600, 'run-2'));
+    const spent = await codeOf(drawMeter(caller('o1'), tokens(600, 'run-3')));
+    expect(spent).toMatchObject({ retry: 'retry-after', meta: { retryAfterSeconds: 2 } });
+  });
+
+  test('at a limit of 0 the fix only raises the limit: no draw is small enough to split into', async () => {
+    const refused = (await codeOf(drawMeter(caller('o1'), tokens(1, 'run-1', 0)))) as {
+      readonly fix: string;
+    };
+    expect(refused).toMatchObject({ code: 'X_METER_EXCEEDED', retry: 'terminal' });
+    expect(refused.fix).toContain('raise what its limit resolves to');
+    expect(refused.fix).not.toContain('split');
   });
 
   test('reads its input once: a limit resolver that edits the input changes nothing', async () => {
@@ -175,6 +191,8 @@ describe('drawMeter', () => {
       const error = await codeOf(drawMeter(caller('o1'), tokens(300, 'run-1')));
       expect(error).toMatchObject({ code: 'X_METER_INVALID', meta: { field: 'store' } });
       expect((error as { readonly fix: string }).fix).toContain('keyedDraws: true');
+      // The store keeps its own scope: a process store declared shared would claim a fleet counter.
+      expect((error as { readonly fix: string }).fix).not.toContain("scope: 'shared'");
       expect(drawn).toBe(0);
     } finally {
       release();
@@ -203,6 +221,9 @@ describe('drawMeter', () => {
       tokens(1, ''),
       tokens(1, 'k'.repeat(256)),
       tokens(1, 'run\u0000one'),
+      // A lone surrogate: Postgres text holds it as U+FFFD, so two keys would alias in the store.
+      tokens(1, 'run\uD800one'),
+      tokens(1, 'run\uDC00'),
       { ...tokens(1, 'k'), meter: 'not a name' },
       { ...tokens(1, 'k'), period: 'week' as MeterDrawInput['period'] },
       { ...tokens(1, 'k'), limit: () => -1 },

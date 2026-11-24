@@ -23,19 +23,25 @@ export type MeterDrawRefusal = Omit<MeterExceededInput, 'action'> & { readonly a
 
 /**
  * `meta.retryAfterSeconds` is the framework's one spelling of a stated delay: `@ultimat3/http`
- * renders it onto `Retry-After`, and a job's retry waits the same number.
+ * renders it onto `Retry-After`, and a job's retry waits the same number. A draw larger than the
+ * whole limit states none and is `terminal`: no reset admits it, so a job dead-letters it at once
+ * instead of waiting out a period to be refused again.
  */
 export class MeterExceededError extends UltimateError {
   constructor(input: MeterExceededInput | MeterDrawRefusal) {
     const resetsAt = new Date(input.resetsAtMs).toISOString();
     const retryAfterSeconds = Math.max(1, Math.ceil((input.resetsAtMs - input.nowMs) / 1000));
     const meterArg = renderFixShellArg(input.meter, '<meter>');
+    const oversizedBy = 'action' in input ? undefined : input.amount;
+    const oversized = oversizedBy !== undefined;
+    // At a limit of 0 no draw is small enough: splitting is advice only above it.
+    const split = input.limit > 0 ? `, or split the work into draws of at most ${input.limit}` : '';
     super({
       code: 'X_METER_EXCEEDED',
-      ...(!('action' in input) && input.amount !== undefined
+      ...(oversized
         ? {
-            cause: `the "${input.meter}" meter allows ${input.limit} units per ${input.period} (UTC), and this draw of ${input.amount} is larger than the whole allowance: nothing was counted, and no reset makes room for it`,
-            fix: `grep -rn "drawMeter(" apps/   # the call drawing "${meterArg}": raise what its limit resolves to for this tenant, or split the work into draws of at most ${input.limit}`,
+            cause: `the "${input.meter}" meter allows ${input.limit} units per ${input.period} (UTC), and this draw of ${oversizedBy} is larger than the whole allowance: nothing was counted, and no reset makes room for it`,
+            fix: `grep -rn "drawMeter(" apps/   # the call drawing "${meterArg}": raise what its limit resolves to for this tenant${split}`,
           }
         : !('action' in input)
           ? {
@@ -47,12 +53,18 @@ export class MeterExceededError extends UltimateError {
               fix: `x actions show ${renderFixShellArg(input.action, '<action>')} --json   # names the meter and its period; raise what meter.limit resolves to for this tenant in the action file, or retry after meta.resetsAt`,
             }),
       callerFix: `retry after ${resetsAt} (the Retry-After header): the "${input.meter}" allowance resets then, and a larger one is the application's to grant`,
-      ...(!('action' in input) && input.amount !== undefined
+      ...(oversized
         ? {
             callerFix: `this request needs more of "${input.meter}" than one ${input.period} allows; the application has to grant a larger allowance`,
+            retry: 'terminal' as const,
           }
         : {}),
-      meta: { meter: input.meter, limit: input.limit, resetsAt, retryAfterSeconds },
+      meta: {
+        meter: input.meter,
+        limit: input.limit,
+        resetsAt,
+        ...(oversized ? {} : { retryAfterSeconds }),
+      },
     });
   }
 }
@@ -77,7 +89,7 @@ export class MeterInvalidError extends UltimateError {
       ...(field === 'store'
         ? {
             cause: `meter "${meter}" is drawn on an installed meter store that is not ${expected}: a store written before keyed draws counts one call per draw and never replays, so nothing was counted`,
-            fix: `meterStore: { scope: 'shared', keyedDraws: true, draw, claimWarning, releaseWarning }, // apps/<app>/runtime.ts: add amount and drawKey to draw(), declare keyedDraws: true, and pass meterStoreConformance from @ultimat3/testing`,
+            fix: `meterStore: { ...store, keyedDraws: true }, // apps/<app>/runtime.ts: keep the store's own scope, add amount and drawKey to its draw(), and pass meterStoreConformance from @ultimat3/testing`,
           }
         : {
             cause: `meter "${meter}" declares ${field}${value === undefined ? '' : ` = ${renderCauseValue(value)}`}, which is not ${expected}`,
