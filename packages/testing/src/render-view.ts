@@ -5,14 +5,17 @@
 import type { Actor } from '@ultimat3/core';
 import { assert, ctxOf, runWithContext } from '@ultimat3/core';
 import type { AssetPath, IslandDirective, RouteConfig, RouteParams } from '@ultimat3/render';
+import { decodeHtmlEntities } from './html-entities';
 
 /** What a component rendered. */
 export interface RenderedView {
   /** The markup, exactly as the document would carry it. */
   readonly html: string;
   /**
-   * What a reader sees: tags, scripts and styles removed, entities decoded, whitespace collapsed
-   * to single spaces. Compare it with `t('<key>')` — the markup escapes what the catalog does not.
+   * What a reader sees: tags, scripts and styles removed, character references decoded (every
+   * numeric one, and the common named ones: `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`, `&nbsp;`,
+   * typographic quotes and dashes, `&hellip;`, `&copy;` …), whitespace collapsed to single spaces.
+   * Compare it with `t('<key>')` — the markup escapes what the catalog does not.
    */
   readonly text: string;
 }
@@ -68,17 +71,9 @@ const DEFAULT_URL = 'http://localhost/';
 
 const SCRIPT_OR_STYLE = /<(script|style)\b[^>]*>[\s\S]*?<\/\1>/g;
 
-/**
- * `&amp;` last: decoding it first would turn the text `&amp;lt;` — an author's literal `&lt;` —
- * into `<`, a character the page never showed.
- */
+/** Tags dropped before references are decoded, so a decoded `<` never reads as a tag. */
 const visibleText = (html: string): string =>
-  html
-    .replace(SCRIPT_OR_STYLE, ' ')
-    .replace(/<[^>]*>/g, ' ')
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&amp;', '&')
+  decodeHtmlEntities(html.replace(SCRIPT_OR_STYLE, ' ').replace(/<[^>]*>/g, ' '))
     .replace(/\s+/g, ' ')
     .trim();
 

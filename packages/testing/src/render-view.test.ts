@@ -46,6 +46,25 @@ describe('renderView', () => {
     expect(view.text).toBe('Hello &lt;');
   });
 
+  test('text decodes what the renderer escapes: an apostrophe and a quote read as typed', async () => {
+    const view = await renderView(Greeting, { name: `Tom's "cat"` });
+    expect(view.html).toContain('Tom&#39;s &quot;cat&quot;');
+    expect(view.text).toBe(`Hello Tom's "cat"`);
+  });
+
+  test('text decodes numeric references, decimal and hex, and the common named ones', async () => {
+    const Raw = (): unknown =>
+      h('p', { innerHTML: 'a&#39;b&#x2019;c&#X41;&nbsp;&copy;&hellip;&mdash;&rsquo;&apos;' });
+    const view = await renderView(Raw, {});
+    expect(view.text).toBe("a'b\u2019cA \u00a9\u2026\u2014\u2019'");
+  });
+
+  test('an unknown or malformed reference stays as written; a null or out-of-range one is U+FFFD', async () => {
+    const Raw = (): unknown => h('p', { innerHTML: '&bogus; &#xZZ; &amp &#0; &#1114112;' });
+    const view = await renderView(Raw, {});
+    expect(view.text).toBe('&bogus; &#xZZ; &amp \ufffd \ufffd');
+  });
+
   test('a component that renders an island is refused here: it belongs to a route', async () => {
     const Toggle = island({ src: './toggle.island.tsx', props: [] });
     const WithIsland = (): unknown => h(Toggle, null, 'shell');
