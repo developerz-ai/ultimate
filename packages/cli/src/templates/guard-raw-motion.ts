@@ -66,6 +66,18 @@ const MOTION_PROPERTY = /^(?:transition|animation)(?:-|$)|^--/;
 const TOKEN_CALL = /(?<![\\w-])(?:var|(?:[\\w-]+\\.)[\\w-]+|duration|easing)\\([^()]*\\)/g;
 const TIME = /(?<![\\w.#-])(\\d*\\.?\\d+)(ms|s)\\b/g;
 const CURVE = /cubic-bezier\\(([^)]*)\\)/g;
+/** A property the scale itself declares: \`--duration-base\`, \`--easing-in-out\`. */
+const SCALE_PROPERTY = /^--(duration|easing)-([\\w-]+)$/;
+
+/**
+ * The scale rung a custom property re-declares, or \`undefined\`. Rewriting its value to a token
+ * would make the property read itself; the app's tempo is the theme's \`motion\` slot instead.
+ */
+const scaleRung = (property: string): { scale: string; name: string } | undefined => {
+  const [, scale = '', name = ''] = SCALE_PROPERTY.exec(property) ?? [];
+  const names = scale === 'duration' ? DURATIONS.map(([rung]) => rung) : Object.values(EASINGS);
+  return names.includes(name) ? { scale, name } : undefined;
+};
 
 /** The step a duration means: exact where it is one, the nearest where it is not. */
 const durationFor = (ms: number): string => {
@@ -124,6 +136,17 @@ export function rawMotion(files: readonly StyleFile[]): readonly Finding[] {
       if (literals.length === 0) continue;
       written += value.slice(cursor);
       const line = lineOf(scss, match.index);
+      const rung = scaleRung(property);
+      if (rung !== undefined) {
+        const key = /^\\w+$/.test(rung.name) ? rung.name : \`'\${rung.name}'\`;
+        findings.push({
+          code: CODE,
+          cause: \`\${file.path}:\${line} re-declares \\\`\${property}: \${value}\\\` — the motion scale's own property, set from a stylesheet\`,
+          fix: \`defineTheme({ motion: { \${rung.scale}: { \${key}: '\${value}' } } }) in apps/web/shared/theme.ts — every \${ns}.\${rung.scale}(\${rung.name}) then moves at it; delete the line at \${file.path}:\${line}, then: x verify --only boundaries\`,
+          at: \`\${file.path}:\${line}\`,
+        });
+        continue;
+      }
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} writes \\\`\${property}: \${value}\\\` — \${literals.join(' and ')} off the motion scale, a tempo of this file's own\`,
@@ -198,6 +221,15 @@ unitTest('a custom property holding a raw curve or time is refused, the fix inte
     '--ease: #{tokens.easing(out)} — ',
   );
   expect(fixes(':root { --wait: 0.4s; --gap: 12px; --ok: var(--duration-fast); }')).toHaveLength(1);
+});
+
+unitTest('re-declaring a property of the scale itself is sent to the theme slot', () => {
+  expect(fixes(':root { --duration-base: 180ms; }')[0]).toStartWith(
+    "defineTheme({ motion: { duration: { base: '180ms' } } }) in apps/web/shared/theme.ts",
+  );
+  expect(fixes(':root { --easing-in-out: cubic-bezier(0.4, 0, 0.2, 1); }')[0]).toStartWith(
+    "defineTheme({ motion: { easing: { 'in-out': 'cubic-bezier(0.4, 0, 0.2, 1)' } } })",
+  );
 });
 
 unitTest('the fix speaks the namespace the sheet uses the tokens under', () => {

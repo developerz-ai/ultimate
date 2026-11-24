@@ -70,6 +70,9 @@ export const easingTokens = {
   spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
 } as const;
 
+export type DurationName = keyof typeof durationTokens;
+export type EasingName = keyof typeof easingTokens;
+
 /**
  * The elevation rungs, then the two accent-drawn families: `glow-*` (a halo, no offset — a focused
  * or live edge) and `tinted-*` (a lift whose shadow carries the accent hue — coloured elevation).

@@ -19,6 +19,8 @@ import {
 import {
   colorDeclarations,
   fontDeclarations,
+  type MotionInput,
+  motionDeclarations,
   radiusDeclarations,
   shadowDeclarations,
 } from './brand-declarations';
@@ -42,6 +44,11 @@ export interface BrandInput {
   shadows?: Themed<ShadowName> | undefined;
   radius?: Partial<Record<RadiusName, string>> | undefined;
   font?: Partial<Record<FontSlot, string>> | undefined;
+  /**
+   * Durations and curves by rung (`durationTokens`, `easingTokens`): the app's own tempo, read by
+   * every `t.duration()` and `t.easing()`. Not themed — motion is the same in light and dark.
+   */
+  motion?: MotionInput | undefined;
 }
 
 export interface Brand {
@@ -83,6 +90,7 @@ export function defineTheme(input: BrandInput): Brand {
     ...light,
     ...radiusDeclarations(layer(base?.radius, input.radius)),
     ...fontDeclarations(layer(base?.font, input.font)),
+    ...motionDeclarations(input.motion),
   ];
   const blocks: string[] = [];
   if (root.length > 0) blocks.push(rule(':root', root));
