@@ -9,6 +9,7 @@ import type { E2eTab } from './cdp-e2e-page';
 import { cdpE2eTab } from './cdp-e2e-page';
 import { isNetworkProbe, networkAgrees } from './cdp-network-probe';
 import { offlineScripts } from './cdp-offline-script';
+import { registerSessionPort } from './cdp-ports';
 import type { AuditedTab } from './e2e-a11y-tabs';
 import { auditTab } from './e2e-a11y-tabs';
 
@@ -302,40 +303,46 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
     });
   };
 
-  return {
-    async newTab(): Promise<E2eTab> {
-      const created = await send('Target.createTarget', { url: 'about:blank' });
-      const targetId = field(created.result, 'targetId');
-      if (targetId === undefined) {
-        throw new CdpCallFailedError({
-          method: 'Target.createTarget',
-          detail: 'the browser created a tab and answered no targetId',
-        });
-      }
-      const sessionId = await attached(targetId);
-      // Every tab is audited: built here, so no suite can hold one the audit does not see. The
-      // tab is alive while the browser still knows its target — a closed one has no page to read.
-      let audit: AuditedTab | undefined;
-      const tab = cdpE2eTab({
-        connection,
-        sessionId,
-        targetId,
-        loadTimeoutMs: options.loadTimeoutMs,
-        offline,
-        audit: {
-          navigated: () => audit?.navigated() ?? Promise.resolve(),
-          used: () => audit?.used(),
-          closed: () => audit?.closed(),
-        },
+  /** A tab in the first profile, or in `browserContextId`'s (`newBrowserContext`). */
+  const openTab = async (browserContextId?: string): Promise<E2eTab> => {
+    const created = await send('Target.createTarget', {
+      url: 'about:blank',
+      ...(browserContextId === undefined ? {} : { browserContextId }),
+    });
+    const targetId = field(created.result, 'targetId');
+    if (targetId === undefined) {
+      throw new CdpCallFailedError({
+        method: 'Target.createTarget',
+        detail: 'the browser created a tab and answered no targetId',
       });
-      audit = auditTab(tab, () =>
-        send('Target.getTargetInfo', { targetId }).then(
-          () => true,
-          () => false,
-        ),
-      );
-      return tab;
-    },
+    }
+    const sessionId = await attached(targetId);
+    // Every tab is audited: built here, so no suite can hold one the audit does not see. The
+    // tab is alive while the browser still knows its target — a closed one has no page to read.
+    let audit: AuditedTab | undefined;
+    const tab = cdpE2eTab({
+      connection,
+      sessionId,
+      targetId,
+      loadTimeoutMs: options.loadTimeoutMs,
+      offline,
+      audit: {
+        navigated: () => audit?.navigated() ?? Promise.resolve(),
+        used: () => audit?.used(),
+        closed: () => audit?.closed(),
+      },
+    });
+    audit = auditTab(tab, () =>
+      send('Target.getTargetInfo', { targetId }).then(
+        () => true,
+        () => false,
+      ),
+    );
+    return tab;
+  };
+
+  const handle: E2eSession = {
+    newTab: () => openTab(),
     async addInitScript(source: string): Promise<void> {
       scripts.push(source);
       // A closed tab refuses every call; it is dropped rather than taking the open tabs down with
@@ -355,4 +362,10 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
     sockets: () => [...sockets],
     requests: () => [...requests],
   };
+  // What `newBrowserContext(session)` drives: a tab opened into another profile, attached as these.
+  registerSessionPort(handle, {
+    connection,
+    openTab: (browserContextId) => openTab(browserContextId),
+  });
+  return handle;
 }
