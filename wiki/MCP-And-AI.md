@@ -465,8 +465,12 @@ gates as every other tool:
 |---|---|---|
 | `catalog: (caller) => ({ tools, groups? })` | tools that exist per caller (a tenant's connectors), each a `runtimeTool({ name, description, inputSchema, permission, run })` borrowing a **declared** permission; asked on every `tools/list` and `tools/call`, never cached | `X_MCP_CATALOG_TOOL_DUPLICATE` (a name taken twice), `X_MCP_CATALOG_UNRESOLVED` (the resolver threw, or answered something unservable) — the request fails, never a smaller list |
 | `tenant: { arg, resolve, list }` | the token resolves to a person; every call names its tenant under `arg`, stripped before validation; `resolve` builds the call's actor, so policy and tenancy guards see one org per call; `list_tenants` lists them | `X_MCP_TENANT_REQUIRED` (no tenant named — fix `list_tenants({})`), `X_MCP_TENANT_UNRESOLVED` (the lookup threw), `X_MCP_TENANT_INVALID` (boot: a tool declares the arg) |
+| `tenant: { …, discover: 'list_resources' }` | the named tool lists the tenants in place of `list_tenants`, which is then not registered: called with no `arg` it answers `{ tenants, next }` as the person, called with one it is the tool it always was. `list_resources` (surface `'meta'` or `'meta-split'`, never a function) or an ungrouped tool of `tools:` with no `visibleTo` | `X_MCP_TENANT_INVALID` (boot: the name is no such tool); `X_MCP_TENANT_REQUIRED` then points at the discover tool |
+| `tenant: { …, optional: ['docs'] }` | the named ungrouped tools run as the person when a call names no tenant, and as the tenant actor when it names one; `tools/list` publishes the arg on them, not as required | `X_MCP_TENANT_INVALID` (boot: a name that is not an ungrouped tool of `tools:`, or the discover tool) |
 
-A tenant the person is not in (`resolve` answers `null`) gets exactly the answer a hidden tool gets.
+A tenant the person is not in (`resolve` answers `null`) gets exactly the answer a hidden tool gets,
+on the discover and the optional tools too. Only an absent `arg` reaches the tenant list or the
+person: a present, unusable one is `X_MCP_TENANT_REQUIRED`.
 Another caller's runtime tool is an absent tool. The audit line carries `tenant`.
 
 **`tools/list` is person-scoped, and not a promise.** MCP's `tools/list` names no tenant, so `visibleTo` (function form), `can()` and `catalog` run there as the person; `tools/call` runs them as the tenant actor and is authoritative. A tool visible to the person but not the tenant actor is listed and answers as a hidden tool; one visible only through a tenant role or a tenant's catalog row is unlisted and still runs when called by name.

@@ -376,7 +376,7 @@ defineAppMcp({
 tenant it acts in under `tenant.arg`. The step runs first on a call:
 
 1. the arg is read and **stripped** — no tool's schema or handler ever sees it (`X_MCP_TENANT_INVALID`
-   at boot for a tool declaring it). Missing or empty: `X_MCP_TENANT_REQUIRED`, whose fix is `list_tenants({})`.
+   at boot for a tool declaring it). Missing or empty: `X_MCP_TENANT_REQUIRED`, whose fix is `list_tenants({})` (or the `discover` tool).
 2. `resolve({ person, value })` answers the call's actor, a `kind: 'agent'` — or `null`, which is
    **byte-for-byte the hidden-tool answer**: no 403, no echo of the value. A throw (or a non-agent
    actor) is `X_MCP_TENANT_UNRESOLVED`, never "not a member".
@@ -385,6 +385,20 @@ tenant it acts in under `tenant.arg`. The step runs first on a call:
 
 `list_tenants` (no arg, no scope) serves `list({ person })`; `tools/list` publishes the arg as a
 required string on every other tool.
+
+**Which calls may name no tenant** (`tenant-discover.ts`, `As of 2026-11`). By default one tool,
+`list_tenants`. Two options change that, both checked at boot (`X_MCP_TENANT_INVALID`):
+
+| option | names | a call with no `tenant.arg` | a call with one |
+|---|---|---|---|
+| `discover: '<tool>'` | `list_resources` (with `surface: 'meta'` or `'meta-split'`, never a function), or an ungrouped tool of `tools:` with no `visibleTo` | answers `{ tenants, next }` as the person, behind the tool's own scope, whatever else it sends | the tool itself, in that tenant |
+| `optional: ['<tool>', …]` | ungrouped tools of `tools:` (`docs`), never the `discover` tool | runs as the person: no `orgId`, `caller.tenant` absent | runs as the tenant actor |
+
+With `discover`, `list_tenants` is not registered — the tool list keeps its size — and
+`X_MCP_TENANT_REQUIRED` points at the discover tool. `tools/list` publishes the arg on those tools
+too, but not as required. Only an ABSENT arg opens either door: a present, unusable one (`''`,
+`null`, a number) is `X_MCP_TENANT_REQUIRED`, and a tenant the person is not in is the hidden-tool
+answer on these tools as on every other. A per-caller `catalog` tool can be named by neither.
 
 **`tools/list` is person-scoped, and not a promise.** It names no tenant (MCP's `tools/list` takes
 only a `cursor`), so `visibleTo`, `can()` and `catalog` run there as the PERSON. `tools/call` runs
@@ -821,7 +835,7 @@ lists resources per caller — what `extraRecipes` is built on.
 | `X_MCP_SURFACE_OVER_BUDGET` | `assertMcpSurfaceBudget` measured a surface over its declared ceiling |
 | `X_MCP_TENANT_REQUIRED` | a call on a `tenant:` server names no tenant (missing or empty `tenant.arg`); refused before dispatch, `list_tenants({})` names the values — `refused`, at `warn` |
 | `X_MCP_TENANT_UNRESOLVED` | `tenant.resolve` threw or answered a non-agent actor — never "not a member", which is the hidden-tool answer |
-| `X_MCP_TENANT_INVALID` | `tenant.arg` is not a plain name, or a tool's own input already declares it — at boot |
+| `X_MCP_TENANT_INVALID` | `tenant.arg` is not a plain name, or a tool's own input already declares it; or `tenant.discover` / `tenant.optional` names a tool some caller cannot reach by that name — at boot |
 | `X_MCP_IDEMPOTENCY_KEY_SHADOWED` | an idempotent action's input declares `idempotencyKey`, the reserved retry-key argument |
 | `X_MCP_PROTOCOL` | malformed envelope, unknown method, bad auth header |
 | `X_MCP_PROTOCOL_UNSUPPORTED` | the request names a protocol version this server does not serve (`-32022`, 400) |

@@ -6,11 +6,14 @@ import { InputInvalidError } from '@ultimat3/action';
 import type { ErrorAudience } from '@ultimat3/core';
 import { renderCauseValue } from '@ultimat3/core';
 import { formatIssues } from '@ultimat3/schema';
+import type { McpProtocolError } from './errors';
 import type { McpCatalogDetail } from './meta-catalog-render';
 import { McpSurfaceInvalidError } from './meta-errors';
 import type { McpSurfaceOption } from './meta-surface';
 import type { McpCaller, McpToolResult } from './registry';
 import type { ArgIssue } from './validate-args';
+import type { JsonRpcResponse } from './wire';
+import { errorResponse, INVALID_REQUEST } from './wire';
 
 /** See `McpServerInput.instructions`. */
 export type McpInstructions = string | ((caller: McpCaller) => string | undefined);
@@ -95,4 +98,18 @@ export function screenCatalogDetail(
     });
   }
   return detail;
+}
+
+/**
+ * The envelope refusals — no id to answer on, so `null` — rendered the way the scope refusal
+ * already is: a `message` a client library surfaces verbatim, and `data: { code, fix, docs }`
+ * built by the error class that owns the wording. Every other refusal on this surface carried its
+ * instruction; these two answered a bare `-32600` and left the caller to guess.
+ */
+export function protocolRefusal(message: string, error: McpProtocolError): JsonRpcResponse {
+  return errorResponse(null, INVALID_REQUEST, message, {
+    code: error.code,
+    fix: error.fix,
+    docs: error.docs,
+  });
 }
