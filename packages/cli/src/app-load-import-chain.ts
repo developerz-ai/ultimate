@@ -7,7 +7,8 @@
 import { resolve } from 'node:path';
 import type { UnresolvedImport } from './app-load-unresolved';
 import { realPath, unresolvedImport } from './app-load-unresolved';
-import { devOnlyImportFix, isDevOnlySpecifier } from './dev-only-imports';
+import type { DevOnlyCut } from './dev-only-imports';
+import { devOnlyCut, devOnlyFix, isDevOnlySpecifier, scannedModules } from './dev-only-imports';
 import type { ChainStep } from './evaluated-walk';
 import { createEvaluatedGraph } from './evaluated-walk';
 import type { Finding } from './output';
@@ -22,32 +23,54 @@ const shown = (path: string): string => path.replace(/^.*\bnode_modules\//, '');
 interface Entry {
   readonly at: string;
   readonly specifier: string;
-  /** App-root-relative: the app module first, the failing module last. */
+  /** App-root-relative: the module to edit first, the failing module last. */
   readonly chain: readonly string[];
+  /** The import by which the chain leaves the app: `specifier`, unless the edit is further up. */
+  readonly leavesBy: string;
+  /** The gate's own cut, when the import that leaves the app is one no role may load. */
+  readonly cut?: DevOnlyCut;
 }
 
-/** The last module of the app's own on the chain, and what it imports out of the app. */
-function entryOf(steps: readonly ChainStep[], root: string): Entry | undefined {
+/**
+ * The last module of the app's own on the chain, and what it imports out of the app. When that is a
+ * development entry the edit is the gate's (`devOnlyCut`): a kit outside the scan is not what moves.
+ */
+async function entryOf(
+  steps: readonly ChainStep[],
+  root: string,
+  scanned: () => Promise<ReadonlySet<string>>,
+): Promise<Entry | undefined> {
   const paths = steps.map((step) => posixRelative(root, step.path));
   const own = steps.findLastIndex(
     (step, index) =>
       isPathUnder(root, step.path) && !hasPathSegment(paths[index] ?? '', 'node_modules'),
   );
-  const specifier = steps[own + 1]?.specifier;
-  const at = paths[own];
-  if (at === undefined || specifier === undefined) return undefined;
-  return { at, specifier, chain: paths.slice(own) };
+  const leavesBy = steps[own + 1]?.specifier;
+  if (own === -1 || leavesBy === undefined) return undefined;
+  const cut = isDevOnlySpecifier(leavesBy)
+    ? devOnlyCut(steps.slice(0, own + 1), await scanned())
+    : undefined;
+  const from = cut?.index ?? own;
+  return {
+    at: paths[from] ?? '',
+    specifier: cut?.into ?? leavesBy,
+    chain: paths.slice(from),
+    leavesBy,
+    ...(cut === undefined ? {} : { cut }),
+  };
 }
 
 /** The finding told from `entry`: the install's fix, unless the app's import is the defect. */
 function retold(found: UnresolvedImport, entry: Entry): Finding {
-  const devOnly = isDevOnlySpecifier(entry.specifier);
+  const { at, specifier, leavesBy, cut } = entry;
+  const brings = specifier === leavesBy ? '' : `, which brings in "${leavesBy}"`;
+  const refused = cut === undefined ? '' : ', a development entry no role may load';
   const chain = [...entry.chain.map(shown), found.specifier].join(' → ');
   return {
     code: 'X_APP_IMPORT_UNRESOLVED',
-    cause: `${entry.at} imports "${entry.specifier}"${devOnly ? ', a development entry no role may load' : ''}, and that reaches ${found.missing}: ${chain}`,
-    fix: devOnly ? devOnlyImportFix(entry.at, entry.specifier) : found.fix,
-    at: entry.at,
+    cause: `${at} imports "${specifier}"${brings}${refused}, and that reaches ${found.missing}: ${chain}`,
+    fix: cut === undefined ? found.fix : devOnlyFix(at, cut, leavesBy),
+    at,
     meta: { specifier: found.specifier, chain: [...entry.chain] },
   };
 }
@@ -61,6 +84,12 @@ export function dependencyImports(
 ): (error: unknown, file: string) => Promise<Finding> {
   const base = realPath(resolve(root));
   const graph = createEvaluatedGraph();
+  let modules: Promise<ReadonlySet<string>> | undefined;
+  // Globbed at most once, however many modules fail.
+  const scanned = (): Promise<ReadonlySet<string>> => {
+    modules ??= scannedModules(base);
+    return modules;
+  };
   return async (error, file) => {
     const found = unresolvedImport(error, root);
     if (found?.referrer === undefined) return { ...findingFrom(error), at: file };
@@ -68,7 +97,7 @@ export function dependencyImports(
     const walk = await graph.walk([realPath(resolve(base, file))], (edge) =>
       edge.target() === target ? 'stop' : 'follow',
     );
-    const entry = entryOf(walk.chainTo(target), base);
+    const entry = await entryOf(walk.chainTo(target), base, scanned);
     if (entry !== undefined) return retold(found, entry);
     // Reached through an import no source spells (`import(variable)`): the module the load was
     // importing is still the one its reader can open.

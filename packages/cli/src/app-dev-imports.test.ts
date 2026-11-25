@@ -83,7 +83,7 @@ describe('a module the boot scan imports', () => {
     expect(await devImportFindings(root)).toEqual([]);
   });
 
-  test('a helper outside the scan is found through the module that reaches it, with the chain', async () => {
+  test('a helper outside the scan is found at the scanned module that reaches it, with the chain', async () => {
     await write(
       'apps/web/test/kit.ts',
       "import { migratedDatabase } from '@ultimat3/cli';\nexport const kit = migratedDatabase;\n",
@@ -92,13 +92,68 @@ describe('a module the boot scan imports', () => {
     await write('apps/web/app/board/a.ts', "export { kit } from '../../shared/mid';\n");
     const findings = await devImportFindings(root);
     expect(findings.map((one) => [one.at, one.meta?.['chain']])).toEqual([
-      ['apps/web/test/kit.ts', ['apps/web/shared/mid.ts', 'apps/web/test/kit.ts']],
+      ['apps/web/shared/mid.ts', ['apps/web/shared/mid.ts', 'apps/web/test/kit.ts']],
     ]);
     expect(findings[0]?.cause).toStartWith(
       'the boot scan imports apps/web/test/kit.ts (apps/web/shared/mid.ts → apps/web/test/kit.ts), and it imports "@ultimat3/cli"',
     );
     // Moving a helper that is already outside the scan clears nothing: the edge into it is the cut.
     expect(findings[0]?.fix).toStartWith('grep -nF -- ../test/kit apps/web/shared/mid.ts   # ');
+  });
+
+  test('two scanned modules sharing one helper are two cuts, and making both clears it', async () => {
+    await write('apps/web/test/deep.ts', "import '@ultimat3/cli';\nexport const deep = 1;\n");
+    await write('apps/web/test/mid.ts', "export { deep } from './deep';\n");
+    await write('apps/web/test/kit.ts', "export { deep } from './mid';\n");
+    await write('apps/web/app/a.ts', "export { deep } from '../test/kit';\n");
+    await write('apps/web/app/b.ts', "export { deep } from '../test/kit';\n");
+    // Straight to the deeper one: another edge of a module that already has a cut.
+    await write(
+      'apps/web/app/c.ts',
+      "import '../test/kit';\nexport { deep } from '../test/deep';\n",
+    );
+    const viaKit = ['apps/web/test/kit.ts', 'apps/web/test/mid.ts', 'apps/web/test/deep.ts'];
+    expect((await devImportFindings(root)).map((one) => [one.at, one.meta?.['chain']])).toEqual([
+      ['apps/web/app/a.ts', ['apps/web/app/a.ts', ...viaKit]],
+      ['apps/web/app/b.ts', ['apps/web/app/b.ts', ...viaKit]],
+      ['apps/web/app/c.ts', ['apps/web/app/c.ts', 'apps/web/test/deep.ts']],
+      ['apps/web/app/c.ts', ['apps/web/app/c.ts', ...viaKit]],
+    ]);
+    await write('apps/web/app/a.ts', 'export {};\n');
+    expect((await devImportFindings(root)).map((one) => one.at)).toEqual([
+      'apps/web/app/b.ts',
+      'apps/web/app/c.ts',
+      'apps/web/app/c.ts',
+    ]);
+    await write('apps/web/app/b.ts', 'export {};\n');
+    await write('apps/web/app/c.ts', 'export {};\n');
+    expect(await devImportFindings(root)).toEqual([]);
+  });
+
+  test('helpers that import each other end, and one import written twice is one finding', async () => {
+    await write(
+      'apps/web/test/a.ts',
+      "import './b';\nimport '@ultimat3/cli';\nimport '@ultimat3/cli';\n",
+    );
+    await write('apps/web/test/b.ts', "import './a';\n");
+    await write('apps/web/app/x.ts', "import '../test/b';\n");
+    expect((await devImportFindings(root)).map((one) => one.meta?.['chain'])).toEqual([
+      ['apps/web/app/x.ts', 'apps/web/test/b.ts', 'apps/web/test/a.ts'],
+    ]);
+  });
+
+  // Executed, because the comment is where an unescaped name ends the line it sits on.
+  test.each([
+    ['apps/w\ntouch pwned\n#/app/a.ts', "import '@ultimat3/cli';\n"],
+    ['packages/p\ntouch pwned\n#/src/a.ts', "import '@ultimat3/cli';\n"],
+  ])('a workspace name holding a newline runs nothing: %j', async (path, source) => {
+    await write(path, source);
+    const [finding] = await devImportFindings(root);
+    expect(finding?.at).toBe(path);
+    const shown = await exec(['sh', '-c', finding?.fix ?? ''], { cwd: root });
+    expect([shown.code, shown.stdout]).toEqual([0, "1:import '@ultimat3/cli';\n"]);
+    expect(await Bun.file(join(root, 'pwned')).exists()).toBe(false);
+    expect(finding?.fix.split('   # ')[1]).not.toContain('\n');
   });
 
   test('an installed package is not walked, and a workspace package is', async () => {

@@ -34,8 +34,9 @@ core's error machinery would make tier 0 a cycle.
 
 ## Generated-app rules — `packages/cli/src/app-boundaries.ts`
 
-Ten, each with its own code (`BOUNDARY_CODES`, `As of 2026-11`). `x verify` reports them as findings and `x fix boundary` re-reports the
-same violation as a cut, off one rule → code table.
+Ten, each with its own code (`BOUNDARY_CODES`, `As of 2026-11`). Nine are refusals: `x verify` reports them
+in the step's `findings`, and `x fix boundary` re-reports a surface or layer violation as a cut, off one rule → code table.
+`X_BOUNDARY_DEV_IMPORT` is advice on `main`: a line in the step's `warnings`, never in `findings`, and the step stays green.
 
 | Rule id | Code | Forbids | Prevents concretely |
 |---|---|---|---|
@@ -48,7 +49,7 @@ same violation as a cut, off one rule → code table.
 | app → adapter | `X_BOUNDARY_ADAPTER_IMPORT` | a `site/`, `app/`, `api/` or `shared/` module importing `@ultimat3/<pkg>/adapter` at runtime. `import type` is allowed; `apps/<app>/runtime.ts`, tests and `packages/db/factories.ts` are not scanned | an installer or override (`overrideHandler`, an `install*`) called at import time, silently replacing a production port — the port goes in `apps/<app>/runtime.ts` |
 | app → loader | `X_BOUNDARY_LOADER_IMPORT` | a `site/`, `app/`, `api/` or `shared/` module importing `@ultimat3/action/loader` or `@ultimat3/query/loader` — `registerAction(s)`/`registerQuery(ies)`, `x`'s module scan's. The one rule that reads the surfaces' `.test.` files too (`app-loader-imports.ts`) | a second registration path beside `defineApi`, and a name stamped outside `apps/<app>/api/index.ts` |
 | package → app | `X_BOUNDARY_PACKAGE_TO_APP` | a file under `packages/` importing `apps/` at runtime, relative or by workspace name (`package-boundaries.ts`). `import type` is allowed, and `packages/db/src/` may read an entity module: that is the typed handle `x g entity` writes | a shared package silently depending on one app. No per-package tiers: an app's `packages/` layout is its own |
-| role → development entry | `X_BOUNDARY_DEV_IMPORT` | a module the boot scan imports reaching `@ultimat3/cli` (the barrel), `@ultimat3/testing` or `bun:test` through static imports, whatever files lie between (`app-dev-imports.ts`). Types, `import()`, tests, `*.island.states.ts`, `server.ts`, `prerender.ts`, `exercise.ts` and `apps/*/test/` are outside the scan. A **warning** on `main`, a refusal on `next` | a shared test helper under `app/` (`board.fixture.ts`) loading every command and the test harness into each role, until an image without `@ultimat3/testing` boots none |
+| role → development entry | `X_BOUNDARY_DEV_IMPORT` | a module the boot scan imports reaching `@ultimat3/cli` (the barrel), `@ultimat3/testing` or `bun:test` through static imports, followed through the app's own files and never into an installed package (`app-dev-imports.ts`). Types and `import()` are no edge; tests, islands, `*.island.states.ts`, `server.ts`, `prerender.ts`, `exercise.ts` and `apps/*/test/` are outside the scan, and a kit there counts at each scanned module that imports it. A **warning** on `main`, a refusal on `next` | a shared test helper under `app/` (`board.fixture.ts`) loading every command and the test harness into each role, until an image without `@ultimat3/testing` boots none |
 
 **Four rules this page claimed and no checker implements**, `As of 2026-10`: `component-holds-logic`,
 `cross-feature-repo`, `site-emits-js`, `raw-img`. Three it once listed here ship as guards in every

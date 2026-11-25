@@ -33,6 +33,9 @@ export interface EvaluatedGraph {
   ): Promise<EvaluatedWalk>;
 }
 
+/** What names an import at all: a dataset or a stylesheet is a target, and never read as source. */
+const CODE = /\.[cm]?[jt]sx?$/;
+
 /** One graph, however many walks: a module is read and parsed once, whoever reaches it. */
 export function createEvaluatedGraph(): EvaluatedGraph {
   const edges = new Map<string, readonly EvaluatedImport[]>();
@@ -40,6 +43,7 @@ export function createEvaluatedGraph(): EvaluatedGraph {
   async function edgesOf(path: string): Promise<readonly EvaluatedImport[]> {
     const known = edges.get(path);
     if (known !== undefined) return known;
+    if (!CODE.test(path)) return [];
     // Unreadable (a builtin, an asset Bun resolves elsewhere): no edge, as an unparseable file has.
     const source = await Bun.file(path)
       .text()
@@ -85,13 +89,13 @@ export function createEvaluatedGraph(): EvaluatedGraph {
           const chain: ChainStep[] = [];
           for (let at: string | undefined = path; at !== undefined; ) {
             const edge: EvaluatedImport | undefined = via.get(at);
-            chain.unshift({
+            chain.push({
               path: at,
               ...(edge === undefined ? {} : { specifier: edge.specifier }),
             });
             at = edge?.from;
           }
-          return chain;
+          return chain.reverse();
         },
       };
     },

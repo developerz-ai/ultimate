@@ -4,7 +4,7 @@
 
 // why: a synchronous probe and read of an installed package's manifest; Bun ships no path helpers.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { isJsonObject, stringField } from '@ultimat3/core';
 import type { Finding } from './output';
 import { hasPathSegment, isPathUnder } from './path-segments';
@@ -32,41 +32,60 @@ const isInstalled = (pkg: string, referrer: string): boolean => {
   }
 };
 
-/** Whether `path` is not the app's own source: an installed package, or a linked one beside it. */
-const isOutsideApp = (root: string, path: string): boolean => {
+/**
+ * Whose module it is. `installed`: under a `node_modules`, so an install is what writes it. `linked`:
+ * neither the app's nor installed — a checkout a link reaches, which its owner edits and installs.
+ */
+type Place = 'app' | 'installed' | 'linked';
+
+function placeOf(root: string, path: string): Place {
   const base = realPath(resolve(root));
   const real = realPath(path);
-  return !isPathUnder(base, real) || hasPathSegment(posixRelative(base, real), 'node_modules');
-};
-
-/** `path` with its links followed, as Bun reports a referrer — or itself when it is not on disk. */
-export const realPath = (path: string): string => (existsSync(path) ? realpathSync(path) : path);
-
-/** The manifest of the package `file` belongs to: the nearest one above it that has a name. */
-function ownerManifest(file: string): Readonly<Record<string, unknown>> | undefined {
-  for (let dir = dirname(file); dirname(dir) !== dir; dir = dirname(dir)) {
-    const path = join(dir, 'package.json');
-    if (!existsSync(path)) continue;
-    const manifest = parsedObject(readFileSync(path, 'utf8'));
-    if (manifest !== undefined && typeof manifest['name'] === 'string') return manifest;
-  }
-  return undefined;
+  // Relative to the app, so one that itself sits under some `node_modules` is still an app.
+  if (hasPathSegment(posixRelative(base, real), 'node_modules')) return 'installed';
+  return isPathUnder(base, real) ? 'app' : 'linked';
 }
 
-/** The JSON object `text` holds, or `undefined`: a manifest half-written by an install is no answer. */
-function parsedObject(text: string): Readonly<Record<string, unknown>> | undefined {
+/**
+ * `path` with its links followed, as Bun reports a referrer — or itself when they cannot be: this
+ * runs while a failure is being reported, over a tree an install may be rewriting.
+ */
+export function realPath(path: string): string {
   try {
-    const parsed: unknown = JSON.parse(text);
-    return isJsonObject(parsed) ? parsed : undefined;
+    return realpathSync(path);
   } catch {
-    return undefined;
+    return path;
   }
 }
 
-/** Whether the package `referrer` belongs to declares `pkg`, so the install itself is incomplete. */
-function declaresDependency(referrer: string, pkg: string): boolean {
-  const declared = ownerManifest(referrer)?.['dependencies'];
-  return isJsonObject(declared) && Object.hasOwn(declared, pkg);
+/** The package a module belongs to. `manifest` is absent when there is none that can be read. */
+interface Owner {
+  readonly dir: string;
+  readonly manifest?: Readonly<Record<string, unknown>>;
+}
+
+/** The nearest named manifest above `file`, and never one above the package's own directory. */
+function ownerOf(file: string): Owner {
+  for (let dir = dirname(file); ; dir = dirname(dir)) {
+    const manifest = readManifest(join(dir, 'package.json'));
+    if (manifest === 'unreadable') return { dir };
+    if (manifest !== 'absent' && typeof manifest['name'] === 'string') return { dir, manifest };
+    const above = dirname(dir);
+    if (above === dir || basename(above) === 'node_modules') return { dir };
+  }
+}
+
+/**
+ * Best effort by design: the caller is reporting a failed import, and a manifest an install is
+ * replacing — gone, half-written, a directory — must not become the failure that is reported.
+ */
+function readManifest(path: string): Readonly<Record<string, unknown>> | 'absent' | 'unreadable' {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+    return isJsonObject(parsed) ? parsed : 'unreadable';
+  } catch (error) {
+    return stringField(error, 'code') === 'ENOENT' ? 'absent' : 'unreadable';
+  }
 }
 
 /** An import that resolved to nothing, as the runtime reported it. */
@@ -74,7 +93,7 @@ export interface UnresolvedImport {
   readonly specifier: string;
   /** Absolute, when the runtime named it. */
   readonly referrer?: string;
-  /** `referrer` is an installed package's module: no edit of the app's is in it. */
+  /** `referrer` is a package's module, installed or linked: not a file of the app's. */
   readonly outside: boolean;
   /** The package nobody installed; absent for a path, and for a subpath of an installed one. */
   readonly pkg?: string;
@@ -83,51 +102,84 @@ export interface UnresolvedImport {
   readonly fix: string;
 }
 
-/** The fix inside an installed package, where the app has no line to edit. */
-function outsideFix(
-  pkg: string | undefined,
+/** The line that shows the import to edit, in the file that holds it. */
+const editFix = (specifier: string, where: string): string =>
+  `grep -nF -- ${quoteArg(specifier)} ${quoteArg(where)}   # the import no file resolves: edit it`;
+
+const declares = (owner: Owner, pkg: string): boolean => {
+  const declared = owner.manifest?.['dependencies'];
+  return isJsonObject(declared) && Object.hasOwn(declared, pkg);
+};
+
+/** Inside an installed package: the app has no line to edit, and an install is what writes it. */
+function installedFix(
+  referrer: string,
   named: string | undefined,
-  referrer: string | undefined,
+  pkg: string | undefined,
 ): string {
-  if (pkg === undefined) {
+  const owner = ownerOf(referrer);
+  if (pkg === undefined || owner.manifest === undefined) {
     return `bun install --force   # the installed copy lacks what it imports: reinstall it${named === undefined ? '' : `; still so: bun why ${named}, then align the two versions`}`;
   }
   // A dependency the importing package DECLARES is missing from the install, not from the app's
   // manifest: `bun add` would copy it into the app and leave the pruned install as it was.
-  return referrer !== undefined && declaresDependency(referrer, pkg)
+  return declares(owner, pkg)
     ? `bun install --frozen-lockfile   # ${pkg} is a declared dependency of an installed package: restore it, and prune no declared dependency from an image`
     : `bun add ${quoteArg(pkg)}`;
 }
 
 /**
+ * Inside a linked checkout: no install of the app's writes it, and nothing installed in the app
+ * resolves from it — a module resolves from its real path.
+ */
+function linkedFix(
+  specifier: string,
+  where: string,
+  referrer: string,
+  pkg: string | undefined,
+): string {
+  const owner = ownerOf(realPath(referrer));
+  // No manifest to install from: what is left is the import itself.
+  if (pkg === undefined || owner.manifest === undefined) return editFix(specifier, where);
+  return declares(owner, pkg)
+    ? `bun install --cwd ${quoteArg(owner.dir)}`
+    : `bun add ${quoteArg(pkg)} --cwd ${quoteArg(owner.dir)}`;
+}
+
+/**
  * Bun's `ResolveMessage`, read through `stringField`: a caught value this process did not build. The
  * `specifier` and `referrer` are the failing import's own, however many modules were importing the
- * file that holds it, which is what makes one finding per specifier true.
+ * file that holds it.
  */
 export function unresolvedImport(error: unknown, root: string): UnresolvedImport | undefined {
   if (stringField(error, 'code') !== 'ERR_MODULE_NOT_FOUND') return undefined;
   const specifier = stringField(error, 'specifier');
   if (specifier === undefined) return undefined;
   const referrer = stringField(error, 'referrer');
-  const outside = referrer !== undefined && isOutsideApp(root, referrer);
+  const place = referrer === undefined ? 'app' : placeOf(root, referrer);
   const where = referrer === undefined ? 'an app module' : posixRelative(root, referrer);
   const named = installablePackage(specifier);
   // Installed, and missing only the subpath: `bun add` would exit 0 and change nothing.
   const installed = named !== undefined && referrer !== undefined && isInstalled(named, referrer);
   const pkg = installed ? undefined : named;
-  const edit = `grep -nF -- ${quoteArg(specifier)} ${quoteArg(where)}   # the import no file resolves: edit it`;
-  const ownFix = pkg === undefined ? edit : `bun add ${quoteArg(pkg)}`;
+  const ownFix = pkg === undefined ? editFix(specifier, where) : `bun add ${quoteArg(pkg)}`;
+  const fixAt = (from: string): string =>
+    place === 'linked'
+      ? linkedFix(specifier, where, from, pkg)
+      : place === 'installed'
+        ? installedFix(from, named, pkg)
+        : ownFix;
   return {
     specifier,
     ...(referrer === undefined ? {} : { referrer }),
-    outside,
+    outside: place !== 'app',
     ...(pkg === undefined ? {} : { pkg }),
     missing: installed
       ? `"${specifier}", and ${String(named)} is installed with no such subpath`
       : pkg === undefined
         ? `"${specifier}", which resolves to no file`
         : `${pkg}, which is not installed`,
-    fix: outside ? outsideFix(pkg, named, referrer) : ownFix,
+    fix: referrer === undefined ? ownFix : fixAt(referrer),
   };
 }
 

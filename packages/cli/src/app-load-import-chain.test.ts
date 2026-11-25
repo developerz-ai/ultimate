@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
+import { devImportFindings } from './app-dev-imports';
 import { dependencyImports } from './app-load-import-chain';
 import { exec } from './exec';
 import type { Finding } from './output';
@@ -142,6 +143,13 @@ describe('an import that fails inside an installed package', () => {
     await write('apps/web/app/board/a.ts', "export { buildIslands } from '@ultimat3/cli';\n");
     const [finding] = await load({ file: 'role-load.ts', name: 'scanBackground' });
     expect(finding?.at).toBe('apps/web/app/board/a.ts');
+    expect(finding?.meta?.['chain']).toEqual([
+      'apps/web/app/board/a.ts',
+      'node_modules/@ultimat3/cli/src/index.ts',
+      'node_modules/@ultimat3/cli/src/verify.ts',
+      'node_modules/@ultimat3/cli/src/test-shards.ts',
+    ]);
+    expect(finding?.fix).toStartWith('grep -nF -- @ultimat3/cli apps/web/app/board/a.ts   # ');
   });
 
   test('two app modules that each import the package are two findings, one edit each', async () => {
@@ -152,6 +160,29 @@ describe('an import that fails inside an installed package', () => {
     expect(findings.map((one) => one.at)).toEqual([
       'apps/web/app/two/a.ts',
       'apps/web/app/two/b.ts',
+    ]);
+  });
+
+  test('a helper outside the scan: the edge into it, the one the gate names', async () => {
+    await prunedFramework();
+    await write('apps/web/test/kit.ts', "export { buildIslands } from '@ultimat3/cli';\n");
+    await write('apps/web/app/kit/a.ts', "export { buildIslands } from '../../test/kit';\n");
+    await write('apps/web/app/kit/b.ts', "export { buildIslands } from '../../test/kit';\n");
+    await write('apps/web/app/kit/c.ts', "export { buildIslands } from './b';\n");
+    const boot = collapseFindings(await load());
+    const gate = await devImportFindings(root);
+    expect(boot.map((one) => [one.at, one.fix])).toEqual(gate.map((one) => [one.at, one.fix]));
+    expect(boot.map((one) => one.at)).toEqual(['apps/web/app/kit/a.ts', 'apps/web/app/kit/b.ts']);
+    expect(boot[0]?.fix).toStartWith('grep -nF -- ../../test/kit apps/web/app/kit/a.ts   # ');
+    expect(boot[0]?.cause).toBe(
+      'apps/web/app/kit/a.ts imports "../../test/kit", which brings in "@ultimat3/cli", a development entry no role may load, and that reaches @ultimat3/testing, which is not installed: apps/web/app/kit/a.ts → apps/web/test/kit.ts → @ultimat3/cli/src/index.ts → @ultimat3/cli/src/verify.ts → @ultimat3/cli/src/test-shards.ts → @ultimat3/testing',
+    );
+    expect(boot[0]?.meta?.['chain']).toEqual([
+      'apps/web/app/kit/a.ts',
+      'apps/web/test/kit.ts',
+      'node_modules/@ultimat3/cli/src/index.ts',
+      'node_modules/@ultimat3/cli/src/verify.ts',
+      'node_modules/@ultimat3/cli/src/test-shards.ts',
     ]);
   });
 
@@ -168,6 +199,8 @@ describe('an import that fails inside an installed package', () => {
     const [finding] = await load();
     expect(finding?.at).toBe('apps/web/app/lazy/a.ts');
     expect(finding?.cause).toContain('node_modules/lazy-pkg/part.js');
+    // No static import spells the way there, so there is no chain to name.
+    expect(finding?.meta).toEqual({ specifier: 'gone-pkg' });
     expect(finding?.fix).toStartWith('bun install --frozen-lockfile   # ');
   });
 });

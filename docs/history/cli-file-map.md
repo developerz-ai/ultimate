@@ -392,10 +392,11 @@ The worker's LISTEN session (`@ultimat3/jobs`' `startQueueWake`) — worker role
 - `app-load-unresolved.ts`: `X_APP_IMPORT_UNRESOLVED`, read by the scan, `findingFrom` and `x doctor`'s
   `snapshots` probe. In the boot graph, so it walks nothing.
 - `app-load-import-chain.ts`: the same finding when the import failed inside an installed package,
-  re-told at the app module that reached it. Imported only after a load failed: the serve-graph
+  re-told at the app module that reached it (a computed import leaves no chain). Imported only after a load failed: the serve-graph
   ceilings did not move.
-- `app-dev-imports.ts`: `boundaries` warns `X_BOUNDARY_DEV_IMPORT`, the same defect before a deploy.
-- `evaluated-walk.ts` is the walk both use; `dev-only-imports.ts` is the one list of specifiers and
-  the one edit, so the boot and the gate cannot disagree.
+- `app-dev-imports.ts`: `boundaries` warns `X_BOUNDARY_DEV_IMPORT`, the same defect before a deploy;
+  one finding per scanned edge, so a kit two modules share is two cuts.
+- `evaluated-walk.ts` is the walk both use; `dev-only-imports.ts` is the one list of specifiers, the
+  one cut and the one edit, so the boot and the gate cannot disagree.
 - `apps/*/prerender.ts` importing the barrel is fine and stays: the scan excludes it
   (`ENTRY_POINT`), and only `x build --target static` runs it, so no role evaluates it.

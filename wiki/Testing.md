@@ -53,7 +53,7 @@ export function useMigratedDatabase(): void {
 }
 ```
 
-**Shared test support lives in `apps/<app>/test/`** (a package's in `packages/<pkg>/test/`), never under `site/`, `app/`, `api/` or `shared/`. The boot scan imports every module there but a `.test.ts` and a `*.island.states.ts`, so a helper named `board.fixture.ts` beside its tests is evaluated by each role, `@ultimat3/cli` and `@ultimat3/testing` with it. The `boundaries` step warns `X_BOUNDARY_DEV_IMPORT`, naming the module and the chain.
+**Shared test support lives in `apps/<app>/test/`** (a package's in `packages/<pkg>/test/`), never under `site/`, `app/`, `api/` or `shared/`. The boot scan imports the modules there, all but tests, client islands (`*.island.tsx`) and their `*.island.states.ts`, so a helper named `board.fixture.ts` beside its tests is evaluated by a role, `@ultimat3/cli` and `@ultimat3/testing` with it. Tests alone import what is in `test/`. The `boundaries` step warns `X_BOUNDARY_DEV_IMPORT`, naming the import to cut and the chain.
 
 | Scope | What it gets |
 |---|---|
