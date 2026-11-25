@@ -487,6 +487,29 @@ opened: standalone that is the default locale, inside your own `runWithContext` 
 the actor still acts and the locale still holds. `renderView` refuses
 a component that renders an `island()` — its hydration timing is a route's. `As of 2026-10`.
 
+### A page's own GET
+
+`renderRoute` says what a page renders. To see what a visitor RECEIVES (status, headers, cookies
+set, a redirect, the document) through the real pipeline, import `pageRoute` from `@ultimat3/cli`,
+the package that owns the page handler:
+
+```ts
+import { pageRoute } from '@ultimat3/cli';
+import { expect, unitTest } from '@ultimat3/testing';
+
+unitTest('the dashboard refuses an anonymous visitor', async () => {
+  expect((await pageRoute('/dashboard')).status).toBe(401);
+  const seen = await pageRoute('/dashboard', { cookies: { sid: 's-1' } });
+  expect(seen.status).toBe(200);
+});
+```
+
+`pageRoute(path, { headers?, cookies?, buildId? }): Promise<Response>` sends `GET <path>` (URL path
+and query, starting with `/`) through `httpPipeline` over the pages registered in the process
+(`registerRoute`, or `loadApp`). `cookies` are percent-encoded as `useRequestCookie` decodes them;
+give `cookies` or a `cookie` header, not both. A path no page claims is the pipeline's 404; a path
+without a leading `/` is `X_INVARIANT`, naming the fix. `As of 2026-11`.
+
 ## Asserting on what an element carries
 
 A string cannot say whether a node carries `aria-live`, or what its `onKeyDown` does. Walk the tree

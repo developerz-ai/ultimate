@@ -344,19 +344,28 @@ describe.skipIf(!hasPostgres)('live · pgvector · PostgresVectorStore', () => {
 
     beforeAll(async () => {
       if (!available) return;
-      await client.execute(
-        raw(`insert into "${TABLE}" ("tenant", "id", "embedding", "content")
-             select 'bulk', 'bulk-' || i,
-               ('[' || sin(i)::text || ',' || cos(i)::text || ',' ||
-                       sin(i * 2)::text || ',' || cos(i * 2)::text || ']')::vector,
-               'bulk document ' || i
-             from generate_series(1, 5000) i
-             on conflict do nothing`),
-      );
-      // Without stats the planner sizes every tenant at the default guess and picks the exact
-      // path for all of them, which is a correct answer and a slow one. `x db migrate` analyzes;
-      // a bulk backfill that skips it is why a search that used the index yesterday scans today.
-      await client.execute(raw(`analyze "${TABLE}"`));
+      // The 5,000-row hnsw build is server work, not an HTTP handler: the default `web` role
+      // puts a 10s statement bound on this client, which cancels the insert mid-graph on a busy
+      // runner. The `migrate` role has no statement bound at all, the mode a backfill of this
+      // shape runs under.
+      const bulk = postgresClient({ url: url ?? '', role: 'migrate' });
+      try {
+        await bulk.execute(
+          raw(`insert into "${TABLE}" ("tenant", "id", "embedding", "content")
+               select 'bulk', 'bulk-' || i,
+                 ('[' || sin(i)::text || ',' || cos(i)::text || ',' ||
+                         sin(i * 2)::text || ',' || cos(i * 2)::text || ']')::vector,
+                 'bulk document ' || i
+               from generate_series(1, 5000) i
+               on conflict do nothing`),
+        );
+        // Without stats the planner sizes every tenant at the default guess and picks the exact
+        // path for all of them, which is a correct answer and a slow one. `x db migrate` analyzes;
+        // a bulk backfill that skips it is why a search that used the index yesterday scans today.
+        await bulk.execute(raw(`analyze "${TABLE}"`));
+      } finally {
+        await bulk.close();
+      }
       // 30s, not Bun's 5s default: 5,000 inserts each maintain the hnsw graph, which is pure server
       // work — measured 3.6s on a 12-core laptop against pgvector:pg16 with no other load, so a
       // shared CI runner crosses 5s on a busy day (PR #504's `verify` job: 5,012ms, twice).

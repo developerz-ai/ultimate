@@ -178,11 +178,12 @@ describe('webhookReceiver: the job', () => {
 
   test('x jobs show masks the stored payload', async () => {
     const h = receiverHarness();
-    await h.post(PATH, '{"card":"4111111111111111"}', { eventId: 'evt_card' });
+    await h.post(PATH, '{"card":"4111-1111-1111-1111"}', { eventId: 'evt_card' });
     const [row] = await queued(h.receiver.name);
     const shown = await inspectJob(driver, row?.id ?? '');
     expect(shown?.input).toMatchObject({ eventId: 'evt_card', payload: REDACTED });
-    expect(JSON.stringify(shown)).not.toContain('4111');
+    // Dashes keep the number out of the hex alphabet a random trace or span id draws from.
+    expect(JSON.stringify(shown)).not.toContain('4111-1111');
   });
 });
 

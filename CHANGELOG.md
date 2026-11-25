@@ -11,7 +11,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 ## [Unreleased]
 
 ### Added
+
 - `@ultimat3/auth`: sign-in by mailed link is exported. `signInWithLink(auth, { purpose, identifier, token, ip?, userAgent?, signUp? })` (with `LinkSignInInput` and `LinkSignUp`) consumes a link issued under a purpose the app declared a sign-in credential, `defineVerificationPurpose({ â€¦, signIn: true })`, and answers what `login()` answers; with TOTP enrolled it answers `X_MFA_REQUIRED` with the sealed challenge and writes no session, and `completeMfa` finishes it. A declared purpose without `signIn` or with its own `identifier`, and the built-in `email-verify` and `password-reset`, are `X_CONFIG_INVALID` before the link is spent, and an undeclared name is `X_VERIFICATION_PURPOSE_UNKNOWN`; the fix names a dedicated sign-in purpose and a freshly issued link, so an email-change or deletion link is never promoted to a session. An account that never verified its address is refused (`X_UNAUTHENTICATED`): the registrant's password, second factor, passkeys, API keys and sessions survive a bare stamp, so recovery needs an app-owned flow that proves the inbox, clears all credentials while disabled, and atomically checks ownership before reopening, coordinated with administrative disables. A sign-up account is created verified in one write on an adapter that stores the new optional `CreateUserInput.emailVerifiedAt` (both built-in adapters do); an app adapter that drops it gets a second `updateUser` stamp, whose failure leaves the account unverified (`X_AUTH_WRITE_FAILED`).
+- `pageRoute(path, { headers?, cookies?, buildId? })` in `@ultimat3/cli`: a unit test GETs a registered page through the real `httpPipeline` and gets the `Response`. See [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#a-pages-own-get).
 
 ## Releases
 
