@@ -12,7 +12,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
-- `updateWhereReturning(filter, patch)` on a table handle (`@ultimat3/entity`): `updateWhere` that resolves the rows it wrote, in one `update … returning *` with no row lock and no read first, so "update if it is still open" returns what this call moved (`[]` when nothing matched). Same plan and guards as `updateWhere`. `Repo.updateWhereReturning` is optional, so a hand-written repository still compiles.
+- `updateWhereReturning(filter, patch)` on a table handle (`@ultimat3/entity`): `updateWhere` that resolves the rows it wrote, so "update if it is still open" returns what this call moved (`[]` when nothing matched). On Postgres one `update … returning *` decides it, with no explicit lock; a filter that does not name the whole primary key is counted first, and a match past `MAX_ASSERTED_ROWS` is refused before the write. A `defineDriver` store reads the rows, then writes them by key. Same plan and guards as `updateWhere`. `Repo.updateWhereReturning` is optional, so a hand-written repository still compiles; the call on one without it is refused with nothing written.
 
 ## Releases
 

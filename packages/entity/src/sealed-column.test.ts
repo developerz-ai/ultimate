@@ -177,6 +177,12 @@ describe.each(DRIVERS)('unit · a sealed column on %s', (name, driver) => {
     );
     expect(rest).toEqual([]);
     expect([row?.id, row?.label, row?.token]).toEqual([made.id, 'rt2', 'secret-token']);
+    // Read by name only: no serialiser carries a secret out, patched or already stored.
+    expect(row?.email).toBe(mail('rt'));
+    for (const out of [JSON.stringify([row]), JSON.stringify({ ...row }), Object.keys(row ?? {})]) {
+      expect(String(out)).not.toMatch(/token|password|email/);
+      expect(String(out)).not.toContain(mail('rt'));
+    }
     expect(await table.updateWhereReturning({ label: 'nobody-has-this' }, { label: 'x' })).toEqual(
       [],
     );

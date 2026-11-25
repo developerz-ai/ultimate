@@ -4,9 +4,16 @@
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import type { EntityBulkEvent } from '@ultimat3/core';
-import { ctxOf, resetInstrumentation, runWithContext, subscribe, userActor } from '@ultimat3/core';
+import {
+  ctxOf,
+  frozenClock,
+  resetInstrumentation,
+  runWithContext,
+  subscribe,
+  userActor,
+} from '@ultimat3/core';
 import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
-import { text, timestamp, uuid } from './columns';
+import { boolean, text, timestamp, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
 import type { EntityError } from './errors';
@@ -37,11 +44,13 @@ const slugs = entity('uwr_slugs', {
     id: uuid().primaryKey(),
     orgId: uuid().tenant(),
     slug: text({ max: 40 }),
+    locked: boolean().default(false),
   },
   invariants: (c) => [
+    // Two columns, so ONE patch is fine on one row and refused on another.
     invariant(
-      'slug_shape',
-      c.slug.matches((v: string) => /^[a-z-]+$/.test(v)),
+      'locked_keeps_slug',
+      c.satisfies((slug, locked) => locked !== true || slug === 'kept', ['slug', 'locked']),
     ),
   ],
 });
@@ -78,8 +87,18 @@ const updating = <R>(repo: Repo<R>): NonNullable<Repo<R>['updateWhereReturning']
   return write.bind(repo);
 };
 
+const NOW = new Date('2026-03-04T05:06:07.000Z');
 const asMember = <T>(work: () => Promise<T>): Promise<T> =>
-  runWithContext(ctxOf({ actor: userActor({ id: 'm1', orgId: ORG, roles: [] }) }), work);
+  runWithContext(
+    ctxOf({ actor: userActor({ id: 'm1', orgId: ORG, roles: [] }), clock: frozenClock(NOW) }),
+    work,
+  );
+
+/** One row past the bound, every one matched by `{ orgId: ORG }`. */
+const tooMany = <T>(row: (id: string) => T): T[] =>
+  Array.from({ length: MAX_ASSERTED_ROWS + 1 }, (_, n) =>
+    row(`00000000-0000-7000-8000-${String(n).padStart(12, '0')}`),
+  );
 
 describe('memory driver', () => {
   test('answers the rows it wrote, as stored, and writes only the matching ones', async () => {
@@ -117,37 +136,54 @@ describe('memory driver', () => {
 
   test('refuses what updateWhere refuses: no filter, no columns', async () => {
     const repo = memoryRepo(tasks, [task(1)]);
-    expect(await caught(updating(repo)({}, { note: 'x' }, { orgId: ORG }))).toBeUltimateError(
-      'X_WRITE_UNFILTERED',
-    );
-    expect(await caught(updating(repo)({ status: 'open' }, {}, { orgId: ORG }))).toBeUltimateError(
-      'X_PATCH_EMPTY',
-    );
+    const unfiltered = await caught(updating(repo)({}, { note: 'x' }, { orgId: ORG }));
+    const empty = await caught(updating(repo)({ status: 'open' }, {}, { orgId: ORG }));
+    expect(unfiltered).toBeUltimateError('X_WRITE_UNFILTERED');
+    expect(empty).toBeUltimateError('X_PATCH_EMPTY');
+    // Each names the call the author wrote, not the one it shares its plan with.
+    for (const refused of [unfiltered, empty]) {
+      expect(String(refused?.cause)).toContain('uwr_tasks.updateWhereReturning()');
+    }
   });
 
-  test('an invariant refuses the whole write: no row lands', async () => {
+  test('one row an invariant refuses refuses the whole write: the row before it does not land', async () => {
     const repo = memoryRepo(slugs, [
-      { id: id(1), orgId: ORG, slug: 'a' },
-      { id: id(2), orgId: ORG, slug: 'b' },
+      { id: id(1), orgId: ORG, slug: 'a', locked: false },
+      { id: id(2), orgId: ORG, slug: 'kept', locked: true },
     ]);
+    // The same patch alone is fine on the first row, so only the second can be what refuses it.
     expect(
-      await caught(updating(repo)({ orgId: ORG }, { slug: 'Not A Slug' }, { orgId: ORG })),
+      await caught(updating(repo)({ orgId: ORG }, { slug: 'moved' }, { orgId: ORG })),
     ).toBeUltimateError('X_INVARIANT_VIOLATED');
-    expect((await repo.findMany({ orgId: ORG })).rows.map((row) => row.slug)).toEqual(['a', 'b']);
+    const held = (await repo.findMany({ orgId: ORG })).rows.map((row) => row.slug);
+    expect(held.sort()).toEqual(['a', 'kept']);
+    expect(await updating(repo)({ id: id(1) }, { slug: 'moved' }, { orgId: ORG })).toHaveLength(1);
   });
 
   test('a rule only the app can judge is bounded as updateWhere is', async () => {
-    const many = Array.from({ length: MAX_ASSERTED_ROWS + 1 }, (_, n) => ({
-      id: `00000000-0000-7000-8000-${String(n).padStart(12, '0')}`,
-      orgId: ORG,
-      slug: 'a',
-    }));
+    const many = tooMany((each) => ({ id: each, orgId: ORG, slug: 'a', locked: false }));
     const repo = memoryRepo(slugs, many);
     const patch = { slug: 'b' };
     const counted = await caught(repo.updateWhere({ orgId: ORG }, patch, { orgId: ORG }));
     const returning = await caught(updating(repo)({ orgId: ORG }, patch, { orgId: ORG }));
     expect(counted).toBeUltimateError('X_INVARIANT_VIOLATED');
     expect(returning).toBeUltimateError('X_INVARIANT_VIOLATED');
+  });
+
+  test('a result past the bound is refused with nothing written, with no rule to judge', async () => {
+    const repo = memoryRepo(
+      tasks,
+      tooMany((each) => task(1, { id: each })),
+    );
+    const refused = await caught(updating(repo)({ orgId: ORG }, { note: 'x' }, { orgId: ORG }));
+    expect(refused).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(String(refused?.cause)).toContain('.inBatches(1000)');
+    const wrote = [{ column: 'note', op: 'eq' as const, value: 'x' }];
+    expect(await repo.count({ orgId: ORG, where: wrote })).toBe(0);
+    // `updateWhere` answers a count and holds no rows: it has no such bound.
+    expect(await repo.updateWhere({ orgId: ORG }, { note: 'x' }, { orgId: ORG })).toBe(
+      MAX_ASSERTED_ROWS + 1,
+    );
   });
 });
 
@@ -165,7 +201,10 @@ describe('the typed handle', () => {
     });
 
     expect(rows).toHaveLength(2);
-    expect(rows.every((row) => row.status === 'closed' && row.updatedAt > stamp)).toBe(true);
+    expect(rows.map((row) => [row.status, row.updatedAt])).toEqual([
+      ['closed', NOW],
+      ['closed', NOW],
+    ]);
     expect(bulk).toEqual([{ entity: 'uwr_tasks', op: 'update', rows: 2 }]);
   });
 
@@ -178,26 +217,27 @@ describe('the typed handle', () => {
     ).toBeUltimateError('X_TENANCY_ACTOR_MISMATCH');
   });
 
-  test('a hand-written repository without it answers from updateWhere, and says so when it cannot', async () => {
+  test('a hand-written repository without it is refused before anything is written', async () => {
     const { updateWhereReturning: _dropped, ...bare } = memoryRepo(tasks, [task(1), task(2)]);
-    const rows = await tableFor(tasks, bare).updateWhereReturning(
-      { status: 'open' },
-      { note: 'x' },
-      { orgId: ORG },
-    );
-    expect(rows.map((row) => row.note)).toEqual(['x', 'x']);
-
-    // A repository that wrote rows and named none has nothing to hand back: refused, not guessed.
-    const silent: Repo<typeof tasks.$row> = { ...bare, updateWhere: async () => 3 };
-    expect(
-      await caught(
-        tableFor(tasks, silent).updateWhereReturning(
-          { status: 'open' },
-          { note: 'x' },
-          { orgId: ORG },
-        ),
+    let writes = 0;
+    const counting: Repo<typeof tasks.$row> = {
+      ...bare,
+      updateWhere: async (filter, patch, options) => {
+        writes += 1;
+        return bare.updateWhere(filter, patch, options);
+      },
+    };
+    const refused = await caught(
+      tableFor(tasks, counting).updateWhereReturning(
+        { status: 'open' },
+        { note: 'x' },
+        { orgId: ORG },
       ),
-    ).toBeUltimateError('X_INVARIANT_VIOLATED');
+    );
+    expect(refused).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(refused?.fix).toContain('implement updateWhereReturning');
+    expect(writes).toBe(0);
+    expect((await bare.findById(id(1), { orgId: ORG }))?.note).toBeNull();
   });
 });
 
@@ -217,11 +257,11 @@ describe('postgres statement', () => {
     setDbClient(client);
   };
 
-  test('is ONE update … returning * — no count before it, no lock, no select', async () => {
+  test('naming the primary key is ONE update … returning * — no count before it, no lock, no select', async () => {
     use();
     client.on('update', { rows: [physical()] });
     const rows = await updating(postgresRepo(tasks))(
-      { status: 'open' },
+      { id: id(1), status: 'open' },
       { status: 'closed' },
       { orgId: ORG },
     );
@@ -233,27 +273,48 @@ describe('postgres statement', () => {
     expect(client.texts[0]).not.toContain('for update');
   });
 
-  test('carries the tenant, the soft-delete clause and the updated_at stamp, like updateWhere', async () => {
+  test('a filter that could match many is counted first; past the bound no update is sent', async () => {
     use();
-    client.on('update', { rows: [] });
-    const repo = postgresRepo(tasks);
-    await repo.updateWhere({ status: 'open' }, { status: 'closed' }, { orgId: ORG });
-    const counted = client.texts.at(-1) ?? '';
-    client.on('update', { rows: [] });
-    expect(await updating(repo)({ status: 'open' }, { status: 'closed' }, { orgId: ORG })).toEqual(
+    const claim = () =>
+      updating(postgresRepo(tasks))({ status: 'open' }, { status: 'closed' }, { orgId: ORG });
+    client.on('count(*)', { rows: [{ count: String(MAX_ASSERTED_ROWS + 1) }] });
+    const refused = await caught(claim());
+    expect(refused).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(String(refused?.cause)).toContain('.inBatches(1000)');
+    expect(client.texts).toHaveLength(1);
+    expect(client.texts[0]).toContain('count(*)');
+
+    use();
+    client.on('count(*)', { rows: [{ count: String(MAX_ASSERTED_ROWS) }] });
+    client.on('update', { rows: [physical()] });
+    expect(await claim()).toHaveLength(1);
+    expect(client.texts.map((each) => each.split(' ')[0])).toEqual(['select', 'update']);
+  });
+
+  test('carries the tenant, the soft-delete clause and the bound updated_at stamp, like updateWhere', async () => {
+    use();
+    const table = tableFor(tasks, postgresRepo(tasks));
+    const filter = { id: id(1), status: 'open' };
+    client.on('update', { rows: [], affected: 0 });
+    await asMember(() => table.updateWhere(filter, { status: 'closed' }));
+    const counted = client.statements.at(-1);
+    expect(await asMember(() => table.updateWhereReturning(filter, { status: 'closed' }))).toEqual(
       [],
     );
-    const returning = client.texts.at(-1) ?? '';
+    const returning = client.statements.at(-1);
 
-    expect(returning).toBe(`${counted} returning *`);
-    expect(returning).toContain('"org_id" = $');
-    expect(returning).toContain('"deleted_at" is null');
+    expect(returning?.text).toBe(`${counted?.text} returning *`);
+    expect(returning?.values).toEqual(counted?.values ?? []);
+    expect(returning?.text).toContain('"org_id" = $');
+    expect(returning?.text).toContain('"deleted_at" is null');
+    const placed = /set .*"updated_at" = \$(\d+).* where/.exec(returning?.text ?? '')?.[1];
+    expect(returning?.values[Number(placed) - 1]).toEqual(NOW);
   });
 
   test('an entity with a rule only the app can judge reads and judges the rows it wrote', async () => {
     use();
     client.on('count(*)', { rows: [{ count: 1 }] });
-    client.on('update', { rows: [{ id: id(1), org_id: ORG, slug: 'ok' }] });
+    client.on('update', { rows: [{ id: id(1), org_id: ORG, slug: 'ok', locked: false }] });
     const rows = await updating(postgresRepo(slugs))(
       { orgId: ORG },
       { slug: 'ok' },
@@ -261,7 +322,7 @@ describe('postgres statement', () => {
     );
     expect(rows).toHaveLength(1);
 
-    client.on('update', { rows: [{ id: id(1), org_id: ORG, slug: 'Not A Slug' }] });
+    client.on('update', { rows: [{ id: id(1), org_id: ORG, slug: 'x', locked: true }] });
     expect(
       await caught(updating(postgresRepo(slugs))({ orgId: ORG }, { slug: 'x' }, { orgId: ORG })),
     ).toBeUltimateError('X_INVARIANT_VIOLATED');

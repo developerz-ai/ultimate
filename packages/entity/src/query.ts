@@ -12,6 +12,7 @@ import { assertBatchable, type BatchIterator, batchIterator } from './batch';
 import { shrinkingPages } from './batch-bytes';
 import type { EntityCore } from './entity';
 import { searchUndeclared } from './feature-errors';
+import { returningUnsupported } from './invariants';
 import { latestByRows, type ReadLatest } from './latest-by';
 import { checkedPredicate, type Operator } from './operator';
 import { assertFinitePageSize, DEFAULT_PAGE_SIZE } from './plan';
@@ -29,7 +30,6 @@ import type { Repo, RepoOptions } from './repo';
 import { pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
 import { searchedRepo } from './search-repo';
-import { updatedRows } from './search-written-rows';
 import { type TableLocks, tableLocks } from './table-locks';
 import type { Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 import { touch } from './touch';
@@ -208,14 +208,17 @@ export interface Table<Row, C extends ColumnMap = ColumnMap>
    */
   updateWhere(filter: RowPatch<Row>, patch: RowPatch<Row>, options?: RepoOptions): Promise<number>;
   /**
-   * `updateWhere` that resolves with the rows it wrote, as stored — one `update … where … returning *`,
-   * so "update if it is still open" and "which rows did THIS call move" are one statement, with no
-   * row lock and no read before it. A filter matching nothing (the row was already moved, deleted or
-   * is another tenant's) resolves `[]`, never `X_NOT_FOUND`. Every guard `updateWhere` has is this
-   * call's: the filter and patch refusals (`X_WRITE_UNFILTERED`, `X_PATCH_EMPTY`), tenancy,
-   * soft-delete, invariants, the `onUpdateNow()` stamp and the version column, sealing, the search
-   * mirror and the `entity.bulk` report. An entity with an invariant only the app can judge is
-   * bounded as `updateWhere` is (`X_INVARIANT_VIOLATED` past `MAX_ASSERTED_ROWS`).
+   * `updateWhere` that resolves with the rows it wrote, as stored — on Postgres one `update … where
+   * … returning *`, so "update if it is still open" and "which rows did THIS call move" are decided
+   * by one statement and need no explicit lock. A filter matching nothing (the row was already
+   * moved, deleted or is another tenant's) resolves `[]`, never `X_NOT_FOUND`. Every guard
+   * `updateWhere` has is this call's: the filter and patch refusals (`X_WRITE_UNFILTERED`,
+   * `X_PATCH_EMPTY`), tenancy, soft-delete, invariants, the `onUpdateNow()` stamp and the version
+   * column, sealing, the search mirror and the `entity.bulk` report. The rows are held at once, so a
+   * match past `MAX_ASSERTED_ROWS` is refused before the write (`X_INVARIANT_VIOLATED`): a filter
+   * that does not name the whole primary key is counted first, and so is a write under an invariant
+   * only the app can judge. A `defineDriver` store reads the rows first; a repository without
+   * `updateWhereReturning` is refused with nothing written.
    */
   updateWhereReturning(
     filter: RowPatch<Row>,
@@ -440,11 +443,9 @@ export const tableFor = <Row, C extends ColumnMap>(
   updateWhere: async (filter, patch, options) =>
     repo.updateWhere(filter, touch(entity, patch), options),
   updateWhereReturning: async (filter, patch, options) => {
-    const touched = touch(entity, patch);
-    // A hand-written repository without it answers through `updateWhere`'s own rows.
-    return repo.updateWhereReturning === undefined
-      ? updatedRows<Row>(entity.$name, () => repo.updateWhere(filter, touched, options))
-      : repo.updateWhereReturning(filter, touched, options);
+    // No fallback through `updateWhere`: its count names no rows, and by then they are written.
+    if (repo.updateWhereReturning === undefined) throw returningUnsupported(entity.$name);
+    return repo.updateWhereReturning(filter, touch(entity, patch), options);
   },
   // `touch` is passed rather than applied here: a transition IS an update, so an `onUpdateNow()`
   // column has to move exactly as `update(id, patch)` moves it — which is also the audit of WHEN

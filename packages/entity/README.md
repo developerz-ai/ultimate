@@ -1001,7 +1001,7 @@ db.posts.update(id, { title });                             // ditto; named colu
 db.likes.deleteWhere({ postId, userId });                   // -> 1  · the only way to unlike
 db.likes.deleteWhere({ postId });                           // -> n  · every like on that post
 db.participants.updateWhere({ conversationId, userId }, { lastReadAt });   // -> 1 · mark read
-// The rows it wrote, in the same ONE statement (`update … returning *`): no row lock, no read first
+// The rows it wrote, decided by the one `update … returning *`: no explicit lock
 const claimed = await db.posts.updateWhereReturning({ id, status: 'open' }, { status: 'claimed' });   // -> Row[]; [] when it was no longer open
 
 db.likes.deleteWhere({});                                   // X_WRITE_UNFILTERED, never every row
@@ -1024,15 +1024,19 @@ it), the search mirror and the `entity.bulk` report cannot differ. No predicate 
 a hand-written repository without it gets one `updateWhere` per row from the typed handle.
 
 `updateWhereReturning(filter, patch, options?)` is `updateWhere` answering `readonly Row[]`, the rows as
-stored, in one `update … where … returning *`: "update if it is still open" and "which rows did this call
-move" are one decision, made without a row lock or a read first. A filter that matches nothing (already
-moved, soft-deleted, another tenant's) answers `[]`, never `X_NOT_FOUND`. It shares `updateWhere`'s plan
-and judging, so `X_WRITE_UNFILTERED`, `X_PATCH_EMPTY`, tenancy, soft delete, invariants, the
-`onUpdateNow()` stamp, the version column, sealing, append-only and view refusals, the search mirror and
-the `entity.bulk` report are the same. An entity with a rule only the app can judge is bounded as
-`updateWhere` is (`X_INVARIANT_VIOLATED` past `MAX_ASSERTED_ROWS`). It takes the equality filter, not a
-chain. `Repo.updateWhereReturning` is optional: a `defineDriver` store, or a hand-written repository that
-reports the rows `updateWhere` wrote, answers from them; one that names none is `X_INVARIANT_VIOLATED`.
+stored. On Postgres one `update … where … returning *` is the decision: "update if it is still open" and
+"which rows did this call move" need no explicit lock. A filter that matches nothing (already moved,
+soft-deleted, another tenant's) answers `[]`, never `X_NOT_FOUND`. It takes the equality filter, not a
+chain, and shares `updateWhere`'s plan and judging: `X_WRITE_UNFILTERED`, `X_PATCH_EMPTY`, tenancy, soft
+delete, invariants, the `onUpdateNow()` stamp, the version column, sealing, append-only and view refusals,
+the search mirror and the `entity.bulk` report are the same.
+
+| `updateWhereReturning` | |
+|---|---|
+| Bound | the rows are held at once, so a match past `MAX_ASSERTED_ROWS` is `X_INVARIANT_VIOLATED` before the write, on every driver. Sweep with `.where(filter).inBatches(1000)`, or use `updateWhere`, which answers a count and has no such bound |
+| Statements on Postgres | one when the filter names the whole primary key. Otherwise, and whenever a rule only the app can judge is declared, a `count(*)` goes first: a memory bound only, never which rows are written |
+| `defineDriver` store | reads the matching rows, writes them by key under the same filter, reads them back. A row another writer moved in between is not answered as this call's: none written is `[]`, some written is `X_INVARIANT_VIOLATED` naming how many |
+| `Repo` without it | optional on the contract: the call is `X_INVARIANT_VIOLATED` with nothing written |
 
 | Bulk insert | Resolves | Statement |
 |---|---|---|

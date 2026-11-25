@@ -156,11 +156,11 @@ export interface Repo<T = unknown> {
     options?: FilteredWriteOptions,
   ): Promise<number>;
   /**
-   * `updateWhere` answering the rows it wrote, as stored, in ONE statement — no row lock, no read
-   * first: `update … where <filter> returning *`. The call for "update if it is still open" that
-   * must learn which rows this call (not a concurrent one) moved. Every guard `updateWhere` has
-   * applies unchanged, and a filter matching nothing resolves `[]`. Optional: the typed handle
-   * reads the rows through the write's own result for a repository without it.
+   * `updateWhere` answering the rows it wrote, as stored: `update … where <filter> returning *`, so
+   * no explicit lock. The call for "update if it is still open" that must learn which rows this
+   * call (not a concurrent one) moved. Every guard `updateWhere` has applies unchanged, a match past
+   * `MAX_ASSERTED_ROWS` is refused before the write, and a filter matching nothing resolves `[]`.
+   * Optional: the typed handle refuses the call, before any write, on a repository without it.
    */
   updateWhereReturning?(
     filter: RowPatch<T>,

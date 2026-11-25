@@ -109,6 +109,7 @@ describe('unit · the sealing seam', () => {
       (await sealing.updateWhereReturning?.({ label: 'l' }, { password: 'again' })) ?? [];
     // The driver answered ciphertext; the caller gets the plaintext back.
     expect(answered?.['password']).toBe('again');
+    expect(JSON.stringify(answered)).not.toContain('password');
     expect(row.password).toBe('hunter2');
     expect(seen).toHaveLength(6);
     for (const reached of seen) {
