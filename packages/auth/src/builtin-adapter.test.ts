@@ -113,6 +113,7 @@ describe('PostgresAuthAdapter — users', () => {
       ['owner'],
       ['tenancy:cross'],
       'okta|00u1',
+      null,
       new Date('2026-01-02T03:04:05.000Z'),
     ]);
     expect(user.roles).toEqual(['owner']);

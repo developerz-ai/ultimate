@@ -94,9 +94,9 @@ describe('a prop named __proto__', () => {
     const bag = check({ row: parsed() }, ['row']);
     const row = bag['row'] as Record<string, unknown>;
     expect(Object.hasOwn(row, '__proto__')).toBe(true);
-    expect(JSON.parse(JSON.stringify(bag))).toEqual({
-      row: { name: 'ok', __proto__: { admin: true }, tail: 1 },
-    });
+    // The expected row must come from `JSON.parse` too: an object literal's `__proto__:` would
+    // re-prototype it instead of minting the own key the bag (and the browser) really carries.
+    expect(JSON.parse(JSON.stringify(bag))).toEqual({ row: parsed() });
   });
 
   test('never becomes the returned record’s prototype', () => {

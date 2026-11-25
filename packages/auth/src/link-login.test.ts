@@ -4,71 +4,27 @@
 // factor was whatever that hand remembered.
 
 import { describe, expect, test } from 'bun:test';
-import { type FrozenClock, frozenClock, isUltimateError } from '@ultimat3/core';
-import { type Auth, authenticate, defineAuth, login, register } from './auth';
-import { caught, FAST_PARAMS, PASSWORD } from './auth-fixture';
+import { isUltimateError } from '@ultimat3/core';
+import { authenticate, login, register } from './auth';
+import { caught, PASSWORD } from './auth-fixture';
 import { signInWithLink } from './link-login';
-import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
-import { TOTP_STEP_SECONDS, totpCode, totpStep } from './mfa';
+import {
+  EMAIL,
+  emailChange,
+  freshName,
+  mailed,
+  redeem,
+  SECRET,
+  signInLink,
+  TTL_MS,
+  verifiedUser,
+  world,
+} from './link-login-fixture';
+import { totpCode, totpStep } from './mfa';
 import { completeMfa } from './mfa-challenge';
 import { saveTotpSecret } from './mfa-secret';
-import { disableUser } from './revocation';
-import {
-  defineVerificationPurpose,
-  emailVerification,
-  passwordReset,
-  type VerificationRuntime,
-} from './verify';
-
-const EMAIL = 'ada@corp.test';
-const SECRET = 'JBSWY3DPEHPK3PXP';
-const START = 1_700_000_000_000;
-const TTL_MS = 15 * 60 * 1000;
-
-/**
- * A fresh name per evaluation: the registry is process-wide and refuses a repeat, and this file
- * may be evaluated more than once in one process (`bun test --rerun-each`).
- */
-const freshName = (base: string): string => `${base}-${crypto.randomUUID()}`;
-
-const signInLink = defineVerificationPurpose({
-  name: freshName('link-login-test'),
-  template: 'auth.sign-in-link',
-  ttlMs: TTL_MS,
-});
-
-interface World {
-  readonly auth: Auth;
-  readonly adapter: MemoryAuthAdapter;
-  readonly clock: FrozenClock;
-  readonly runtime: VerificationRuntime;
-}
-
-const world = (): World => {
-  const clock = frozenClock(START);
-  const adapter = memoryAuthAdapter(clock);
-  const auth = defineAuth({
-    adapter,
-    clock,
-    password: { minLength: 12, params: FAST_PARAMS },
-    rateLimit: { maxAttempts: 5, orgMaxAttempts: 10_000 },
-  });
-  const runtime = { store: adapter, clock, mail: { send: async () => {} } };
-  return { auth, adapter, clock, runtime };
-};
-
-/** A registered account that proved its address — the one a link may sign in. */
-const verifiedUser = async ({ auth }: World, email = EMAIL): Promise<string> => {
-  const user = await register(auth, { email, password: PASSWORD, orgId: 'org-1' });
-  await auth.adapter.updateUser(user.id, { emailVerifiedAt: auth.clock.now() });
-  return user.id;
-};
-
-const mailed = async ({ runtime }: World, identifier = EMAIL): Promise<string> =>
-  (await signInLink.issue(runtime, { identifier, locale: 'en' })).token;
-
-const redeem = (auth: Auth, token: string, identifier = EMAIL) =>
-  signInWithLink(auth, { purpose: signInLink.name, identifier, token });
+import { disableUser, enableUser } from './revocation';
+import { defineVerificationPurpose, emailVerification, passwordReset } from './verify';
 
 describe('signInWithLink: the second factor still applies', () => {
   test('with TOTP on, a link sign-in yields a challenge and no session', async () => {
@@ -164,6 +120,9 @@ describe('signInWithLink: one link, one sign-in', () => {
     const token = await mailed(w);
     const settled = await Promise.allSettled([redeem(w.auth, token), redeem(w.auth, token)]);
     expect(settled.filter((one) => one.status === 'fulfilled')).toHaveLength(1);
+    const lost = settled.find((one) => one.status === 'rejected');
+    const reason: unknown = lost?.status === 'rejected' ? lost.reason : undefined;
+    expect(isUltimateError(reason) ? reason.code : undefined).toBe('X_UNAUTHENTICATED');
     expect(await w.adapter.listSessions(userId)).toHaveLength(1);
   });
 
@@ -227,6 +186,9 @@ describe('signInWithLink: what a link is not', () => {
         thrown = error;
       }
       expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_CONFIG_INVALID');
+      // The fix is a purpose of its own and a fresh link: this token cannot match another purpose.
+      expect(isUltimateError(thrown) ? thrown.fix : '').toContain("name: 'sign-in'");
+      expect(isUltimateError(thrown) ? thrown.fix : '').toContain('issue a fresh link');
       expect(await w.adapter.listSessions(userId)).toHaveLength(0);
       // Refused before the store was asked: the token still does the one job it was mailed for.
       const record = await builtin.consume(w.runtime, { identifier: EMAIL, token });
@@ -247,16 +209,50 @@ describe('signInWithLink: what a link is not', () => {
     const w = world();
     const userId = await verifiedUser(w);
     await disableUser(w.auth, userId, 'link-login test');
-    const error = await caught(async () => redeem(w.auth, await mailed(w)));
+    const token = await mailed(w);
+    const error = await caught(() => redeem(w.auth, token));
     expect(error?.code).toBe('X_UNAUTHENTICATED');
     expect(error?.meta).toBeUndefined();
+    expect(await w.adapter.listSessions(userId)).toHaveLength(0);
+    // The refusal spent the link: re-enabled, the account still needs a fresh one.
+    await enableUser(w.auth, userId);
+    expect((await caught(() => redeem(w.auth, token)))?.code).toBe('X_UNAUTHENTICATED');
+    expect((await redeem(w.auth, await mailed(w))).session.userId).toBe(userId);
+  });
+
+  test('a disabled account is refused with sign-up declared too, and answers as no account does', async () => {
+    const w = world();
+    const userId = await verifiedUser(w);
+    await disableUser(w.auth, userId, 'link-login test');
+    const withSignUp = await caught(async () =>
+      signInWithLink(w.auth, {
+        purpose: signInLink.name,
+        identifier: EMAIL,
+        token: await mailed(w),
+        signUp: {},
+      }),
+    );
+    const nobody = await caught(async () =>
+      redeem(w.auth, await mailed(w, 'nobody@corp.test'), 'nobody@corp.test'),
+    );
+    expect(withSignUp?.code).toBe('X_UNAUTHENTICATED');
+    expect(withSignUp?.message).toBe(nobody?.message);
+    expect(withSignUp?.fix).toBe(nobody?.fix);
     expect(await w.adapter.listSessions(userId)).toHaveLength(0);
   });
 
   test('an address no account holds is refused unless the call declares sign-up', async () => {
     const w = world();
-    const error = await caught(async () => redeem(w.auth, await mailed(w)));
+    const token = await mailed(w);
+    const error = await caught(() => redeem(w.auth, token));
     expect(error?.code).toBe('X_UNAUTHENTICATED');
+    // The fix asks for a fresh link: this one is spent, sign-up or not.
+    expect(error?.fix).toContain('freshly mailed link');
+    expect(await w.adapter.findUserByEmail(EMAIL)).toBeNull();
+    const retried = await caught(() =>
+      signInWithLink(w.auth, { purpose: signInLink.name, identifier: EMAIL, token, signUp: {} }),
+    );
+    expect(retried?.code).toBe('X_UNAUTHENTICATED');
     expect(await w.adapter.findUserByEmail(EMAIL)).toBeNull();
   });
 
@@ -264,59 +260,124 @@ describe('signInWithLink: what a link is not', () => {
     const w = world();
     // The pre-registration: somebody else chose this account's password.
     const user = await register(w.auth, { email: EMAIL, password: PASSWORD });
-    const error = await caught(async () => redeem(w.auth, await mailed(w)));
+    const token = await mailed(w);
+    const error = await caught(() => redeem(w.auth, token));
     expect(error?.code).toBe('X_UNAUTHENTICATED');
-    expect(error?.fix).toContain('emailVerification');
+    expect(error?.fix).toContain('passwordReset.issue');
     expect(await w.adapter.listSessions(user.id)).toHaveLength(0);
     expect((await w.adapter.findUserById(user.id))?.emailVerifiedAt).toBeNull();
     // And the password it was registered with is not what changed.
     expect((await login(w.auth, { email: EMAIL, password: PASSWORD })).session.userId).toBe(
       user.id,
     );
-  });
-});
+    // The refusal spent the link: made eligible, with no link issued in between, it is still refused.
+    await w.adapter.updateUser(user.id, { emailVerifiedAt: w.clock.now() });
+    expect((await caught(() => redeem(w.auth, token)))?.code).toBe('X_UNAUTHENTICATED');
 
-describe('signInWithLink: declared sign-up', () => {
-  test('a proven address with no account becomes a verified, passwordless one', async () => {
+    // Sign-up declared changes nothing: the address is held. Its own token, spent the same way.
+    await w.adapter.updateUser(user.id, { emailVerifiedAt: null });
+    const signUpToken = await mailed(w);
+    const withSignUp = await caught(() =>
+      signInWithLink(w.auth, {
+        purpose: signInLink.name,
+        identifier: EMAIL,
+        token: signUpToken,
+        signUp: {},
+      }),
+    );
+    expect(withSignUp?.code).toBe('X_UNAUTHENTICATED');
+    expect(await w.adapter.listSessions(user.id)).toHaveLength(1);
+    await w.adapter.updateUser(user.id, { emailVerifiedAt: w.clock.now() });
+    expect((await caught(() => redeem(w.auth, signUpToken)))?.code).toBe('X_UNAUTHENTICATED');
+    // The control: the account is eligible now, so a fresh link signs in.
+    expect((await redeem(w.auth, await mailed(w))).session.userId).toBe(user.id);
+  });
+
+  test('credential cleanup leaves the account disabled until app-owned recovery reopens it', async () => {
     const w = world();
-    const result = await signInWithLink(w.auth, {
-      purpose: signInLink.name,
-      identifier: 'New@Corp.test',
-      token: await mailed(w, 'new@corp.test'),
-      signUp: { orgId: 'org-9', roles: ['member'] },
+    // The pre-registration, signed in and holding a second factor, recovery codes and a passkey.
+    const user = await register(w.auth, { email: EMAIL, password: PASSWORD });
+    const registrant = await login(w.auth, { email: EMAIL, password: PASSWORD });
+    await saveTotpSecret(w.auth, user.id, SECRET);
+    await w.adapter.updateUser(user.id, { recoveryCodeHashes: ['registrant-recovery-digest'] });
+    await w.adapter.putPasskey({
+      id: 'registrant-passkey',
+      userId: user.id,
+      publicKey: 'cose-key',
+      algorithm: -7,
+      signCount: 0,
+      transports: [],
+      createdAt: w.clock.now(),
+      lastUsedAt: null,
     });
-    const user = await w.adapter.findUserByEmail('new@corp.test');
-    expect(user?.id).toBe(result.session.userId);
-    expect(user?.passwordHash).toBeNull();
-    expect(user?.emailVerifiedAt).toEqual(w.clock.now());
-    expect(user?.orgId).toBe('org-9');
-    expect([...(user?.roles ?? [])]).toEqual(['member']);
-    expect(result.session.mfaSatisfied).toBe(true);
+    const error = await caught(async () => redeem(w.auth, await mailed(w)));
+    expect(error?.fix).toContain('passwordReset.issue');
+    expect(error?.fix).toContain('disableUser');
+
+    // The reset proves only the address. Cleanup alone must not reopen the account.
+    const { token } = await passwordReset.issue(w.runtime, { identifier: EMAIL, locale: 'en' });
+    await passwordReset.consume(w.runtime, { identifier: EMAIL, token });
+    await disableUser(w.auth, user.id, 'address proven by reset');
+    await w.adapter.updateUser(user.id, {
+      passwordHash: null,
+      mfaSecret: null,
+      recoveryCodeHashes: [],
+    });
+    for (const passkey of await w.adapter.listPasskeys(user.id)) {
+      await w.adapter.deletePasskey(user.id, passkey.id);
+    }
+    // Mid-recipe the account is shut and unverified: neither the registrant nor a link gets in.
+    expect((await caught(() => authenticate(w.auth, registrant.token)))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+    expect((await caught(async () => redeem(w.auth, await mailed(w))))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+    expect((await w.adapter.findUserById(user.id))?.disabledAt).not.toBeNull();
+    expect((await caught(() => authenticate(w.auth, registrant.token)))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+    expect((await caught(() => login(w.auth, { email: EMAIL, password: PASSWORD })))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+    const handedOver = await w.adapter.findUserById(user.id);
+    expect(handedOver?.recoveryCodeHashes).toEqual([]);
+    expect(handedOver?.mfaSecret).toBeNull();
+    expect(await w.adapter.listPasskeys(user.id)).toEqual([]);
   });
 
-  test('sign-up never rewrites an account that exists', async () => {
+  test('an interrupted account cleanup leaves sign-in refused while credentials remain', async () => {
+    const w = world();
+    const user = await register(w.auth, { email: EMAIL, password: PASSWORD });
+    await saveTotpSecret(w.auth, user.id, SECRET);
+    await disableUser(w.auth, user.id, 'address proven by reset');
+    await w.adapter.updateUser(user.id, { passwordHash: null });
+    expect((await w.adapter.findUserById(user.id))?.disabledAt).not.toBeNull();
+    expect((await caught(async () => redeem(w.auth, await mailed(w))))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+    expect((await w.adapter.findUserById(user.id))?.mfaSecret).not.toBeNull();
+  });
+
+  test('a purpose that keys on the address but is not declared sign-in is refused, and its token stays live', async () => {
     const w = world();
     const userId = await verifiedUser(w);
-    const result = await signInWithLink(w.auth, {
-      purpose: signInLink.name,
-      identifier: EMAIL,
-      token: await mailed(w),
-      signUp: { orgId: 'org-9', roles: ['owner'] },
-    });
-    expect(result.session.userId).toBe(userId);
-    const user = await w.adapter.findUserById(userId);
-    expect(user?.orgId).toBe('org-1');
-    expect([...(user?.roles ?? [])]).toEqual([]);
-  });
-
-  test('a link issued before the account enrolled a second factor still owes it', async () => {
-    const w = world();
-    const userId = await verifiedUser(w);
-    const token = await mailed(w);
-    await saveTotpSecret(w.auth, userId, SECRET);
-    w.clock.advance(TOTP_STEP_SECONDS * 1000);
-    expect((await caught(() => redeem(w.auth, token)))?.code).toBe('X_MFA_REQUIRED');
+    const { token } = await emailChange.issue(w.runtime, { identifier: EMAIL, locale: 'en' });
+    let thrown: unknown;
+    try {
+      await signInWithLink(w.auth, { purpose: emailChange.name, identifier: EMAIL, token });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_CONFIG_INVALID');
+    // Never "declare the same name signIn": that would promote links already mailed for another job.
+    expect(isUltimateError(thrown) ? thrown.fix : '').toContain("name: 'sign-in'");
+    expect(isUltimateError(thrown) ? thrown.fix : '').toContain('signIn: true');
+    expect(isUltimateError(thrown) ? thrown.fix : '').toContain('issue a fresh link');
     expect(await w.adapter.listSessions(userId)).toHaveLength(0);
+    expect((await emailChange.consume(w.runtime, { identifier: EMAIL, token })).identifier).toBe(
+      EMAIL,
+    );
   });
 });
 
@@ -326,6 +387,7 @@ describe('signInWithLink: the purpose keys on the address', () => {
     template: 'auth.sign-in-link',
     ttlMs: TTL_MS,
     identifier: (raw) => raw.replaceAll(' ', ''),
+    signIn: true,
   });
 
   test('a purpose with its own identifier is refused, and its token stays live', async () => {
@@ -343,6 +405,10 @@ describe('signInWithLink: the purpose keys on the address', () => {
       thrown = error;
     }
     expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_CONFIG_INVALID');
+    // The fix names a dedicated sign-in purpose, so following it works.
+    expect(isUltimateError(thrown) ? thrown.fix : '').toContain(
+      'ttlMs: 15 * 60 * 1000, signIn: true })',
+    );
     expect(await w.adapter.findUserByEmail('+40700')).toBeNull();
     expect((await byPhone.consume(w.runtime, { identifier: '+40700', token })).identifier).toBe(
       '+40700',

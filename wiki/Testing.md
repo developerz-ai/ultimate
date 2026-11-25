@@ -53,6 +53,8 @@ export function useMigratedDatabase(): void {
 }
 ```
 
+**Shared test support lives in `apps/<app>/test/`** (a package's in `packages/<pkg>/test/`), never under `site/`, `app/`, `api/` or `shared/`. The boot scan imports the modules there, all but tests, client islands (`*.island.tsx`) and their `*.island.states.ts`, so a helper named `board.fixture.ts` beside its tests is evaluated by a role, `@ultimat3/cli` and `@ultimat3/testing` with it. Tests alone import what is in `test/`. The `boundaries` step warns `X_BOUNDARY_DEV_IMPORT`, naming the import to cut and the chain.
+
 | Scope | What it gets |
 |---|---|
 | a test **file** | the worker's database with its DATA reset to the template's — every table truncated and re-filled, every sequence reset, triggers off meanwhile (`reusableDatabase`) |
@@ -486,6 +488,29 @@ opened: standalone that is the default locale, inside your own `runWithContext` 
 `useRequestCookie(name)` as a browser's are (`As of 2026-11`); with `actor` or a locale prefix too,
 the actor still acts and the locale still holds. `renderView` refuses
 a component that renders an `island()` — its hydration timing is a route's. `As of 2026-10`.
+
+### A page's own GET
+
+`renderRoute` says what a page renders. To see what a visitor RECEIVES (status, headers, cookies
+set, a redirect, the document) through the real pipeline, import `pageRoute` from `@ultimat3/cli`,
+the package that owns the page handler:
+
+```ts
+import { pageRoute } from '@ultimat3/cli';
+import { expect, unitTest } from '@ultimat3/testing';
+
+unitTest('the dashboard refuses an anonymous visitor', async () => {
+  expect((await pageRoute('/dashboard')).status).toBe(401);
+  const seen = await pageRoute('/dashboard', { cookies: { sid: 's-1' } });
+  expect(seen.status).toBe(200);
+});
+```
+
+`pageRoute(path, { headers?, cookies?, buildId? }): Promise<Response>` sends `GET <path>` (URL path
+and query, starting with `/`) through `httpPipeline` over the pages registered in the process
+(`registerRoute`, or `loadApp`). `cookies` are percent-encoded as `useRequestCookie` decodes them;
+give `cookies` or a `cookie` header, not both. A path no page claims is the pipeline's 404; a path
+without a leading `/` is `X_INVARIANT`, naming the fix. `As of 2026-11`.
 
 ## Asserting on what an element carries
 

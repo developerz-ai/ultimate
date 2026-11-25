@@ -18,6 +18,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.51.0](docs/changelog/31.51.0.md) | 2026-11-25 | **Sign-in by mailed link:** an app can sign a user in from a link issued under a purpose it declared for that. |
 | [31.50.0](docs/changelog/31.50.0.md) | 2026-11-24 | **Tenant-aware bearer mounts and meters:** one token can act across tenants, `drawMeter` counts work measured after the fact, and a keyed draw judges every key by its counter's own period. |
 | [31.49.0](docs/changelog/31.49.0.md) | 2026-11-20 | **Processes per container:** a production container can run several processes on one port, so `web`, `sync` and `worker` roles use the cores they are given. Set by `ULTIMATE_PROCESSES`; an upgrade changes nothing until a container declares a CPU budget. |
 | [31.48.0](docs/changelog/31.48.0.md) | 2026-11-19 | **Many agents, one machine:** heavy commands reserve their measured memory in one machine-wide ledger and share a local core cap, so parallel agents queue instead of swamping the box. `x heavy status` shows who runs and who waits. |

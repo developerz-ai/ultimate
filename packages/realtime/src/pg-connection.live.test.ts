@@ -3,9 +3,11 @@
 // takes it over a role default — on a walsender too — and that the text it then writes is the
 // text `pg-values.ts` reads as the instant Bun's driver hands the repository.
 //
-// Skips unless a server is configured: `set -a; . docker/test-services.env; set +a`.
+// Skips unless a server is configured: `set -a; . docker/test-services.env; set +a`. The
+// walsender case also needs `wal_level = logical`, as every other replication suite here does.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { UltimateError } from '@ultimat3/core';
 import { PgConnection } from './pg-connection';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 import { decodeValue } from './pg-values';
@@ -41,6 +43,44 @@ const admin = (): Promise<PgConnection> => {
 };
 
 const describeLive = url === undefined ? describe.skip : describe;
+
+/** Only a successful nonlogical answer permits the replication test to skip. */
+const logicalWal = async (): Promise<boolean> => {
+  if (url === undefined || url === '') return false;
+  const probe = (async () => {
+    const connection = await admin();
+    try {
+      const [row] = await connection.query('SHOW wal_level');
+      expect(row?.[0] === 'minimal' || row?.[0] === 'replica' || row?.[0] === 'logical').toBe(true);
+      return row?.[0] === 'logical';
+    } finally {
+      await connection.close();
+    }
+  })();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<boolean>((_resolve, reject) => {
+    // real-clock: bounds a TCP dial to a database host that may never answer
+    timer = setTimeout(
+      () =>
+        reject(
+          new UltimateError({
+            code: 'X_INVARIANT',
+            cause: 'SHOW wal_level probe timed out after 2000 ms',
+            fix: 'check the configured test database connection',
+          }),
+        ),
+      2_000,
+    );
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([probe, expiry]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const walReady = url !== undefined && url !== '' && (await logicalWal());
 
 describeLive('live · pg connection session pins', () => {
   beforeAll(async () => {
@@ -117,34 +157,45 @@ describeLive('live · pg connection session pins', () => {
   // The goodbye `stop()` now reads (`awaitCopyEnd`): a real walsender answers a CopyDone with
   // CopyDone, CommandComplete and ReadyForQuery. Closed over them unread, the socket was reset and
   // the server logged `Connection reset by peer` on every replicator shutdown.
-  test('a walsender answers CopyDone through ReadyForQuery, so close() leaves nothing unread', async () => {
-    const target = parsePgUrl(url ?? '');
-    const setup = await admin();
-    await setup.query('DROP PUBLICATION IF EXISTS x_live_drain_pub');
-    await setup.query('CREATE PUBLICATION x_live_drain_pub');
-    const session = await connect(
-      { user: target.user, password: target.password ?? '' },
-      'database',
-    );
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await session.query('CREATE_REPLICATION_SLOT x_live_drain_slot TEMPORARY LOGICAL pgoutput');
-      await session.startCopyBoth(
-        "START_REPLICATION SLOT x_live_drain_slot LOGICAL 0/0 (proto_version '1', " +
-          "publication_names 'x_live_drain_pub')",
-      );
-      await session.endCopy();
-      const deadline = new Promise<void>((resolve) => {
-        // real-clock: only a bound — a real walsender answers in one round trip, on its own time.
-        timer = setTimeout(resolve, 10_000);
-      });
-      expect(await session.awaitCopyEnd(deadline)).toBe(true);
-      expect(session.inCopyBoth).toBe(false);
-    } finally {
-      clearTimeout(timer);
-      await session.close();
-      await setup.query('DROP PUBLICATION IF EXISTS x_live_drain_pub');
-      await setup.close();
-    }
-  });
+  test.skipIf(!walReady)(
+    'a walsender answers CopyDone through ReadyForQuery, so close() leaves nothing unread',
+    async () => {
+      const target = parsePgUrl(url ?? '');
+      const setup = await admin();
+      try {
+        await setup.query('DROP PUBLICATION IF EXISTS x_live_drain_pub');
+        await setup.query('CREATE PUBLICATION x_live_drain_pub');
+        const session = await connect(
+          { user: target.user, password: target.password ?? '' },
+          'database',
+        );
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await session.query(
+            'CREATE_REPLICATION_SLOT x_live_drain_slot TEMPORARY LOGICAL pgoutput',
+          );
+          await session.startCopyBoth(
+            "START_REPLICATION SLOT x_live_drain_slot LOGICAL 0/0 (proto_version '1', " +
+              "publication_names 'x_live_drain_pub')",
+          );
+          await session.endCopy();
+          const deadline = new Promise<void>((resolve) => {
+            // real-clock: only a bound, a real walsender answers in one round trip.
+            timer = setTimeout(resolve, 10_000);
+          });
+          expect(await session.awaitCopyEnd(deadline)).toBe(true);
+          expect(session.inCopyBoth).toBe(false);
+        } finally {
+          clearTimeout(timer);
+          await session.close();
+        }
+      } finally {
+        try {
+          await setup.query('DROP PUBLICATION IF EXISTS x_live_drain_pub');
+        } finally {
+          await setup.close();
+        }
+      }
+    },
+  );
 });
