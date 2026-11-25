@@ -112,16 +112,16 @@ const declares = (owner: Owner, pkg: string): boolean => {
 };
 
 /**
- * The directory whose install wrote `file`, when that is not the app's: the one above the outermost
- * `node_modules` on the way there — a linked checkout's own. `undefined` is the app's install,
- * wherever its linker put the package: in the app, a workspace of it, or the workspace root above.
+ * The directory whose install wrote `file`, when the app's own line does not reach it: the one above
+ * the outermost `node_modules` on the way there. `undefined` is the app's install, in the app or in
+ * the workspace root above it. A directory INSIDE the app is named whichever it is: a checkout
+ * standing alone there has its own lockfile, and from a workspace `bun` finds the root's.
  */
 function foreignInstall(root: string, file: string): string | undefined {
   const base = realPath(resolve(root));
   const parts = posixRelative(base, realPath(file)).split('/');
   const dir = resolve(base, parts.slice(0, parts.indexOf('node_modules')).join('/'));
-  const ours = dir === base || isPathUnder(base, dir) || isPathUnder(dir, base);
-  return ours ? undefined : dir;
+  return dir === base || isPathUnder(dir, base) ? undefined : dir;
 }
 
 /** Inside an installed package: nobody has a line to edit, and an install is what writes it. */

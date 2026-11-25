@@ -8,11 +8,8 @@ import type { ChainStep, EvaluatedImport } from './evaluated-walk';
 /** A set of holders, one bit each: what reached a module together is moved and compared at once. */
 type Holders = bigint;
 
-/** The holders exactly `distance` imports below a module. */
-interface Below {
-  readonly distance: number;
-  readonly holders: Holders;
-}
+/** The holders below a module, by how many imports below it they are. */
+type Below = ReadonlyMap<number, Holders>;
 
 /** One import of a module's, and the holders it is the first step of the shortest way to. */
 interface Hop {
@@ -25,33 +22,43 @@ interface Hop {
 function indexed(
   edges: readonly EvaluatedImport[],
   key: (edge: EvaluatedImport) => string | undefined,
-): ReadonlyMap<string, readonly EvaluatedImport[]> {
-  const index = new Map<string, EvaluatedImport[]>();
+): ReadonlyMap<string | undefined, readonly EvaluatedImport[]> {
+  const index = new Map<string | undefined, EvaluatedImport[]>();
   for (const edge of edges) {
-    const at = key(edge);
-    if (at === undefined) continue;
-    const known = index.get(at);
-    if (known === undefined) index.set(at, [edge]);
-    else known.push(edge);
+    const known = index.get(key(edge)) ?? [];
+    known.push(edge);
+    index.set(key(edge), known);
   }
   return index;
+}
+
+const together = (below: Below | undefined): Holders =>
+  [...(below?.values() ?? [])].reduce((all, holders) => all | holders, 0n);
+
+/** Which bits are set, read off the digits: the clear ones between them cost no step each. */
+function bitsOf(holders: Holders): readonly number[] {
+  const digits = holders.toString(2);
+  const found: number[] = [];
+  for (let at = digits.indexOf('1'); at !== -1; at = digits.indexOf('1', at + 1)) {
+    found.push(digits.length - 1 - at);
+  }
+  return found;
 }
 
 /** How far below each module outside the scan every holder is, shortest way. */
 function distances(
   bits: ReadonlyMap<string, Holders>,
   scanned: ReadonlySet<string>,
-  into: ReadonlyMap<string, readonly EvaluatedImport[]>,
-): ReadonlyMap<string, readonly Below[]> {
-  const below = new Map<string, Below[]>();
+  into: ReadonlyMap<string | undefined, readonly EvaluatedImport[]>,
+): ReadonlyMap<string, Below> {
+  const below = new Map<string, Map<number, Holders>>();
   const reached = new Map(bits);
   let frontier: ReadonlyMap<string, Holders> = bits;
   for (let distance = 0; frontier.size > 0; distance += 1) {
     const next = new Map<string, Holders>();
     for (const [path, holders] of frontier) {
-      const known = below.get(path);
-      if (known === undefined) below.set(path, [{ distance, holders }]);
-      else known.push({ distance, holders });
+      const known = below.get(path) ?? new Map<number, Holders>();
+      below.set(path, known.set(distance, holders));
       for (const { from } of into.get(path) ?? []) {
         if (scanned.has(from)) continue;
         const had = reached.get(from) ?? 0n;
@@ -79,11 +86,8 @@ export function scanWays(
   const bits = new Map(
     outside.map((holder, index): [string, Holders] => [holder, 1n << BigInt(index)]),
   );
-  const below = distances(
-    bits,
-    scanned,
-    indexed(edges, (edge) => edge.target()),
-  );
+  const into = indexed(edges, (edge) => edge.target());
+  const below = distances(bits, scanned, into);
   const onward = indexed(edges, (edge) => edge.from);
   const hops = new Map<string, readonly Hop[]>();
 
@@ -91,18 +95,16 @@ export function scanWays(
   function hopsOf(path: string): readonly Hop[] {
     const known = hops.get(path);
     if (known !== undefined) return known;
-    let left = (below.get(path) ?? []).reduce((all, one) => all | one.holders, 0n);
+    const here = below.get(path);
+    let left = together(here);
     const found: Hop[] = [];
     for (const edge of onward.get(path) ?? []) {
       if (left === 0n) break;
       const target = edge.target();
       if (target === undefined) continue;
-      const closer = below.get(target) ?? [];
+      const closer = below.get(target);
       let nearer = 0n;
-      for (const { distance, holders: here } of below.get(path) ?? []) {
-        const there = closer.find((one) => one.distance === distance - 1);
-        if (there !== undefined) nearer |= here & there.holders;
-      }
+      for (const [distance, at] of here ?? []) nearer |= at & (closer?.get(distance - 1) ?? 0n);
       // A holder an earlier import already leads to is that one's.
       if ((nearer & left) === 0n) continue;
       left &= ~nearer;
@@ -123,24 +125,21 @@ export function scanWays(
     return steps;
   }
 
-  /** The scanned edges into the modules each holder is below. */
-  const cuts = edges.flatMap((edge): (Hop & { readonly from: string })[] => {
-    const { from } = edge;
-    const target = scanned.has(from) ? edge.target() : undefined;
-    const reach = target === undefined ? [] : (below.get(target) ?? []);
-    const all = reach.reduce((sum, one) => sum | one.holders, 0n);
-    return target === undefined || all === 0n ? [] : [{ from, edge, target, holders: all }];
-  });
+  /** The scanned edges into the modules each holder is below, in the order given. */
+  const cuts = new Map(outside.map((holder): [string, Hop[]] => [holder, []]));
+  for (const edge of edges) {
+    const target = (scanned.has(edge.from) ? edge.target() : undefined) ?? '';
+    const holders = together(below.get(target));
+    for (const bit of bitsOf(holders))
+      cuts.get(outside[bit] ?? '')?.push({ edge, target, holders });
+  }
 
-  return (holder) => {
-    if (scanned.has(holder)) return [[{ path: holder }]];
-    const bit = bits.get(holder) ?? 0n;
-    return cuts
-      .filter((cut) => (cut.holders & bit) !== 0n)
-      .map(({ from, edge, target }) => [
-        { path: from },
-        { path: target, specifier: edge.specifier },
-        ...down(target, bit),
-      ]);
-  };
+  return (holder) =>
+    scanned.has(holder)
+      ? [[{ path: holder }]]
+      : (cuts.get(holder) ?? []).map(({ edge, target }) => [
+          { path: edge.from },
+          { path: target, specifier: edge.specifier },
+          ...down(target, bits.get(holder) ?? 0n),
+        ]);
 }

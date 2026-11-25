@@ -306,4 +306,103 @@ describe('the printed install', () => {
       for (const path of [dir, checkout]) rmSync(path, { recursive: true, force: true });
     }
   }, 30_000);
+
+  // Both under the app, and one line for both: `--cwd` names the install that wrote the package. A
+  // checkout with a lockfile of its own is repaired there; from a workspace `bun` finds the app's.
+  test.each([
+    ['a standalone checkout', 'vendor/x', [] as string[], 'vendor/x/bun.lock'],
+    ['a workspace', 'packages/x', ['packages/*'], 'bun.lock'],
+  ])(
+    '%s inside the app is repaired where it was installed',
+    async (_what, inside, workspaces, lock) => {
+      const dir = join(root, 'apps/web/app/inside');
+      const own = realpathSync(root);
+      const at = quoteArg(join(own, inside));
+      const reset = (): void => {
+        for (const path of [
+          'node_modules',
+          'bun.lock',
+          'bunfig.toml',
+          inside,
+          'local',
+          'apps/web/app/inside',
+        ]) {
+          rmSync(join(root, path), { recursive: true, force: true });
+        }
+      };
+      const inner = { 'inner-pkg': '1.0.0' };
+      const source = "export { x } from './part.js';\nexport { x as y } from 'inner-pkg';\n";
+      const part: readonly [string, string] = ['part.js', 'export const x = 1;\n'];
+      const plain = await packageTarball('inner-pkg', 'export const x = 1;\n');
+      const registry = registryOf({
+        'hurt-pkg': {
+          tarball: await packageTarball('hurt-pkg', source, inner, [part]),
+          dependencies: inner,
+        },
+        'inner-pkg': { tarball: plain },
+        'host-pkg': { tarball: await packageTarball('host-pkg', 'export const x = 1;\n') },
+      });
+      try {
+        reset();
+        // The app's own copies, so a workspace's cannot be hoisted: it is installed in the workspace.
+        for (const name of ['hurt-pkg', 'inner-pkg']) {
+          const local = { name, version: '9.0.0', main: 'index.js' };
+          await Bun.write(join(root, 'local', name, 'package.json'), JSON.stringify(local));
+          await Bun.write(join(root, 'local', name, 'index.js'), 'export {};\n');
+        }
+        const manifest = JSON.stringify({
+          name: 'fixture',
+          version: '0.0.0',
+          workspaces,
+          dependencies: {
+            'hurt-pkg': 'file:./local/hurt-pkg',
+            'inner-pkg': 'file:./local/inner-pkg',
+          },
+        });
+        await Bun.write(join(root, 'package.json'), manifest);
+        const owes = { 'hurt-pkg': '1.0.0', ...inner };
+        const member = { name: 'x', version: '1.0.0', main: 'index.js', dependencies: owes };
+        await Bun.write(join(root, inside, 'package.json'), JSON.stringify(member));
+        await Bun.write(join(root, inside, 'index.js'), "export { x, y } from 'hurt-pkg';\n");
+        await Bun.write(
+          join(dir, 'a.ts'),
+          `export { x, y } from '../../../../${inside}/index.js';\n`,
+        );
+        // Nested, not in the isolated linker's store at the root: the shape a `--cwd` is for.
+        const hoisted = '[install]\nlinker = "hoisted"\n';
+        await Bun.write(join(root, 'bunfig.toml'), hoisted);
+        await Bun.write(join(root, inside, 'bunfig.toml'), hoisted);
+        await runFix('bun install', registry.url.href);
+        await runFix(`bun install --cwd ${at}`, registry.url.href);
+        expect(await load()).toEqual([]);
+
+        const torn = join(root, inside, 'node_modules/hurt-pkg/part.js');
+        rmSync(torn);
+        const [damaged] = await load();
+        expect(damaged?.fix).toStartWith(`bun install --force --cwd ${at}   # `);
+        await runFix(damaged?.fix, registry.url.href);
+        expect(await Bun.file(torn).exists()).toBe(true);
+        expect(await load()).toEqual([]);
+
+        await Bun.write(
+          join(root, inside, 'node_modules/hurt-pkg/index.js'),
+          "export { x, x as y } from 'host-pkg';\n",
+        );
+        const [owed] = await load();
+        expect(owed?.fix).toBe(`bun add host-pkg --cwd ${at}`);
+        await runFix(owed?.fix, registry.url.href);
+        expect(await load()).toEqual([]);
+        // Added to the package that brought the importer in, and recorded in the one lockfile it has.
+        const added = (await Bun.file(join(root, inside, 'package.json')).json()) as typeof member;
+        expect(Object.keys(added.dependencies)).toContain('host-pkg');
+        expect(await Bun.file(join(root, 'package.json')).text()).toBe(manifest);
+        expect(await Bun.file(join(root, lock)).text()).toContain('host-pkg');
+        expect(await Bun.file(join(root, inside, 'bun.lock')).exists()).toBe(lock !== 'bun.lock');
+      } finally {
+        registry.stop(true);
+        reset();
+      }
+    },
+    60_000,
+  );
 });

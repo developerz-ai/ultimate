@@ -205,7 +205,6 @@ describe('the reading', () => {
   // The app's own install, wherever its linker put the package: run where the app is.
   test.each([
     ['the app', 'mono/apps/web', 'mono/apps/web/node_modules/outer'],
-    ['a workspace of it', 'mono/apps/web', 'mono/apps/web/packages/p/node_modules/outer'],
     ['the workspace root above it', 'mono/apps/web', 'mono/node_modules/outer'],
     ['an isolated store', 'mono/apps/web', 'mono/node_modules/.bun/outer@1/node_modules/outer'],
     [
