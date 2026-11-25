@@ -293,7 +293,7 @@ describe('signInWithLink: what a link is not', () => {
     expect((await redeem(w.auth, await mailed(w))).session.userId).toBe(user.id);
   });
 
-  test('the remedy the refusal names takes every credential the registrant set with it', async () => {
+  test('credential cleanup leaves the account disabled until app-owned recovery reopens it', async () => {
     const w = world();
     // The pre-registration, signed in and holding a second factor, recovery codes and a passkey.
     const user = await register(w.auth, { email: EMAIL, password: PASSWORD });
@@ -314,8 +314,7 @@ describe('signInWithLink: what a link is not', () => {
     expect(error?.fix).toContain('passwordReset.issue');
     expect(error?.fix).toContain('disableUser');
 
-    // The inbox's owner follows it: the reset link only proves the address, then the account is
-    // shut, every credential the registrant set goes, and the stamp reopens it last.
+    // The reset proves only the address. Cleanup alone must not reopen the account.
     const { token } = await passwordReset.issue(w.runtime, { identifier: EMAIL, locale: 'en' });
     await passwordReset.consume(w.runtime, { identifier: EMAIL, token });
     await disableUser(w.auth, user.id, 'address proven by reset');
@@ -334,11 +333,7 @@ describe('signInWithLink: what a link is not', () => {
     expect((await caught(async () => redeem(w.auth, await mailed(w))))?.code).toBe(
       'X_UNAUTHENTICATED',
     );
-    await w.adapter.updateUser(user.id, { emailVerifiedAt: w.clock.now(), disabledAt: null });
-
-    const result = await redeem(w.auth, await mailed(w));
-    expect(result.session.userId).toBe(user.id);
-    expect(result.session.mfaSatisfied).toBe(true);
+    expect((await w.adapter.findUserById(user.id))?.disabledAt).not.toBeNull();
     expect((await caught(() => authenticate(w.auth, registrant.token)))?.code).toBe(
       'X_UNAUTHENTICATED',
     );
@@ -351,14 +346,17 @@ describe('signInWithLink: what a link is not', () => {
     expect(await w.adapter.listPasskeys(user.id)).toEqual([]);
   });
 
-  test('an interrupted account cleanup cannot be reopened while credentials remain', async () => {
+  test('an interrupted account cleanup leaves sign-in refused while credentials remain', async () => {
     const w = world();
     const user = await register(w.auth, { email: EMAIL, password: PASSWORD });
     await saveTotpSecret(w.auth, user.id, SECRET);
     await disableUser(w.auth, user.id, 'address proven by reset');
     await w.adapter.updateUser(user.id, { passwordHash: null });
-    await enableUser(w.auth, user.id);
     expect((await w.adapter.findUserById(user.id))?.disabledAt).not.toBeNull();
+    expect((await caught(async () => redeem(w.auth, await mailed(w))))?.code).toBe(
+      'X_UNAUTHENTICATED',
+    );
+    expect((await w.adapter.findUserById(user.id))?.mfaSecret).not.toBeNull();
   });
 
   test('a purpose that keys on the address but is not declared sign-in is refused, and its token stays live', async () => {
