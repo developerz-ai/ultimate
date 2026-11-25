@@ -386,3 +386,16 @@ The `supervise*.ts` row's cell before 2026-11-19's cut: "`ULTIMATE_PROCESSES`: t
 ## `role-wake.ts` (moved 2026-11-19)
 
 The worker's LISTEN session (`@ultimat3/jobs`' `startQueueWake`) — worker role only, only over a client that `canListen` — and `queue_wake_live`. One session per process, outside the pool: a container running N worker processes holds N (`x doctor`'s connections fact counts them).
+
+## `app-load-unresolved.ts` / `app-load-import-chain.ts` / `app-dev-imports.ts` (2026-11-25)
+
+- `app-load-unresolved.ts`: `X_APP_IMPORT_UNRESOLVED`, read by the scan, `findingFrom` and `x doctor`'s
+  `snapshots` probe. In the boot graph, so it walks nothing.
+- `app-load-import-chain.ts`: the same finding when the import failed inside an installed package,
+  re-told at the app module that reached it. Imported only after a load failed: the serve-graph
+  ceilings did not move.
+- `app-dev-imports.ts`: `boundaries` warns `X_BOUNDARY_DEV_IMPORT`, the same defect before a deploy.
+- `evaluated-walk.ts` is the walk both use; `dev-only-imports.ts` is the one list of specifiers and
+  the one edit, so the boot and the gate cannot disagree.
+- `apps/*/prerender.ts` importing the barrel is fine and stays: the scan excludes it
+  (`ENTRY_POINT`), and only `x build --target static` runs it, so no role evaluates it.

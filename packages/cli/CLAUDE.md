@@ -87,7 +87,7 @@ Commands: `bun test ./packages/cli/` (repo root: the preload),
 | `i18n-app-key-shapes.ts` | every shape whose literal is a catalog key; `i18n-app-key-shapes.test.ts` reads `blocks`, so a new block reds until listed |
 | `job-budget.ts` | `X_JOB_OUTLASTS_DRAIN` (`manifest`): `timeout` vs `workerBudgetMs(drain)`, from the registry † |
 | `output-findings.ts` | render layer only: `runnableFix` (`bunx x`, decided by `dispatch.ts`'s `readerFor`) and `collapseFindings`. Throw sites keep `x …` |
-| `app-load-unresolved.ts` | `X_APP_IMPORT_UNRESOLVED`, read by the scan, `findingFrom` and `x doctor`'s `snapshots` probe |
+| `app-load-{unresolved,import-chain}.ts` / `app-dev-imports.ts` | `X_APP_IMPORT_UNRESOLVED`; `X_BOUNDARY_DEV_IMPORT` † |
 | `fix-truth*.ts` / `db-fix-truth.job.test.ts` | a printed fix, executed against a broken scaffold † |
 
 ### Generators (`x g`, `x new`)

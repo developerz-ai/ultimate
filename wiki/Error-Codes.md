@@ -39,7 +39,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | `@ultimat3/ai` | [Error-Codes-ai](Error-Codes-ai) | 36 |
 | `@ultimat3/auth` | [Error-Codes-auth](Error-Codes-auth) | 33 |
 | `@ultimat3/cache` | [Error-Codes-cache](Error-Codes-cache) | 8 |
-| `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 237 |
+| `@ultimat3/cli` | [Error-Codes-cli](Error-Codes-cli) | 238 |
 | `@ultimat3/core` | [Error-Codes-core](Error-Codes-core) | 77 |
 | `@ultimat3/db` | [Error-Codes-db](Error-Codes-db) | 42 |
 | `@ultimat3/entity` | [Error-Codes-entity](Error-Codes-entity) | 44 |
@@ -186,6 +186,7 @@ Generated from the owner pages by `bun run scripts/error-code-pages.ts --write`;
 | X_BODY_TOO_LARGE | [http](Error-Codes-http) |
 | X_BOUNDARY_ADAPTER_IMPORT | [cli](Error-Codes-cli) |
 | X_BOUNDARY_APP_TO_API | [cli](Error-Codes-cli) |
+| X_BOUNDARY_DEV_IMPORT | [cli](Error-Codes-cli) |
 | X_BOUNDARY_LOADER_IMPORT | [cli](Error-Codes-cli) |
 | X_BOUNDARY_PACKAGE_TO_APP | [cli](Error-Codes-cli) |
 | X_BOUNDARY_ROUTE_TO_DB | [cli](Error-Codes-cli) |

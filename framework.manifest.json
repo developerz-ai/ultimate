@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "fba86765039e4b3a09c7936a71fe8a8c63749832bcbdab8f8c45113369659452",
+  "buildId": "3ecdd2497c43d85add3a46dfd12e2d9f8e6e45c7ab3a7b6def7891fe9f9e1c99",
   "tiers": {
     "0": [
       "core",
@@ -811,6 +811,11 @@
     },
     {
       "code": "X_BOUNDARY_APP_TO_API",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes-boundary.ts"
+    },
+    {
+      "code": "X_BOUNDARY_DEV_IMPORT",
       "owner": "cli",
       "at": "packages/cli/src/error-codes-boundary.ts"
     },

@@ -25,7 +25,7 @@ import { setStylesheetRoot, siteAssetTable } from '@ultimat3/render/server';
 import { asyncModules } from './app-load-async';
 import { importInOrder } from './app-load-batch';
 import { isFirstPass, registeredAny, registerModule } from './app-load-register';
-import { unresolvedImportFinding } from './app-load-unresolved';
+import { unresolvedImport, unresolvedImportFinding } from './app-load-unresolved';
 import { evictChanged, trackModule, trackStylesheets } from './app-reload-graph';
 import { API_INDEX } from './app-root';
 import { collectDeclaredCodes } from './error-contract';
@@ -239,8 +239,23 @@ export async function scannedModulePaths(root: string): Promise<readonly string[
 }
 
 /** A module that would not import, keyed by its file. */
-const importFinding = (error: unknown, root: string, file: string): Finding =>
-  unresolvedImportFinding(error, root) ?? { ...findingFrom(error), at: file };
+type ImportFinding = (error: unknown, file: string) => Promise<Finding>;
+
+/**
+ * One per scan. An import that failed inside an installed package is explained by the app module
+ * that reached it (`app-load-import-chain.ts`), loaded then: a boot that imports everything never
+ * evaluates the walk.
+ */
+function importFindings(root: string): ImportFinding {
+  let explain: Promise<ImportFinding> | undefined;
+  return async (error, file) => {
+    if (unresolvedImport(error, root)?.outside === true) {
+      explain ??= import('./app-load-import-chain').then((one) => one.dependencyImports(root));
+      return (await explain)(error, file);
+    }
+    return unresolvedImportFinding(error, root) ?? { ...findingFrom(error), at: file };
+  };
+}
 
 /** Reads at most this many sources at once: a 12k-module app opened 12k descriptors otherwise. */
 const READ_BATCH = 64;
@@ -277,12 +292,13 @@ async function scanBatched(
   const alone = await asyncModules(root, candidates);
   const imported = await importInOrder(candidates, alone, register);
   const result: ScanResult = { files: [], findings: [] };
+  const importFinding = importFindings(root);
   for (const [index, absolute] of candidates.entries()) {
     const file = posixRelative(root, absolute);
     const one = imported[index];
     if (one === undefined) continue;
     if (!one.ok) {
-      result.findings.push(importFinding(one.error, root, file));
+      result.findings.push(await importFinding(one.error, file));
       continue;
     }
     result.files.push(file);
@@ -299,6 +315,7 @@ async function scanSerial(
   options: ScanOptions,
 ): Promise<ScanResult> {
   const result: ScanResult = { files: [], findings: [] };
+  const importFinding = importFindings(root);
   for (const absolute of candidates) {
     const file = posixRelative(root, absolute);
     if (options.include !== undefined && !(await options.include(absolute))) continue;
@@ -315,7 +332,7 @@ async function scanSerial(
     try {
       module = (await import(absolute)) as Record<string, unknown>;
     } catch (error) {
-      result.findings.push(importFinding(error, root, file));
+      result.findings.push(await importFinding(error, file));
       continue;
     }
     result.files.push(file);

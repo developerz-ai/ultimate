@@ -53,6 +53,8 @@ export function useMigratedDatabase(): void {
 }
 ```
 
+**Shared test support lives in `apps/<app>/test/`** (a package's in `packages/<pkg>/test/`), never under `site/`, `app/`, `api/` or `shared/`. The boot scan imports every module there but a `.test.ts` and a `*.island.states.ts`, so a helper named `board.fixture.ts` beside its tests is evaluated by each role, `@ultimat3/cli` and `@ultimat3/testing` with it. The `boundaries` step warns `X_BOUNDARY_DEV_IMPORT`, naming the module and the chain.
+
 | Scope | What it gets |
 |---|---|
 | a test **file** | the worker's database with its DATA reset to the template's — every table truncated and re-filled, every sequence reset, triggers off meanwhile (`reusableDatabase`) |
