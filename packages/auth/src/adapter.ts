@@ -46,6 +46,13 @@ export interface CreateUserInput {
   readonly roles: readonly string[];
   readonly scopes?: readonly string[] | undefined;
   readonly externalId?: string | null | undefined;
+  /**
+   * The address proven at creation (a sign-in link's sign-up). An adapter that stores it in the
+   * same write as the row leaves no failure between the account and its stamp. Absent is
+   * unverified. An adapter that drops it gets a second `updateUser` stamp, and if that write fails
+   * the account exists unverified (`X_AUTH_WRITE_FAILED`), refused by every later link.
+   */
+  readonly emailVerifiedAt?: Date | null | undefined;
   readonly createdAt: Date;
 }
 

@@ -101,10 +101,10 @@ export class PostgresAuthAdapter implements AuthAdapter {
       'createUser',
       sql`
       insert into x_users (id, email, password_hash, org_id, roles, scopes, external_id,
-                           created_at)
+                           email_verified_at, created_at)
       values (${input.id}, ${input.email}, ${input.passwordHash}, ${input.orgId},
               ${[...input.roles]}, ${[...(input.scopes ?? [])]}, ${input.externalId ?? null},
-              ${input.createdAt})
+              ${input.emailVerifiedAt ?? null}, ${input.createdAt})
       returning *`,
     );
     // An empty `returning` means no row landed. A user fabricated from `{}` would travel back
