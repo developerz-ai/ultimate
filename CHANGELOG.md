@@ -10,7 +10,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `pageRoute(path, { headers?, cookies?, buildId? })` in `@ultimat3/cli`: a unit test GETs a registered page through the real `httpPipeline` and gets the `Response`. See [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#a-pages-own-get).
 
 ## Releases
 
