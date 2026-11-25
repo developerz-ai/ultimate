@@ -695,7 +695,7 @@ const verification = await consumeVerification(runtime, {
 | Name | Is |
 |---|---|
 | `VERIFICATION_PURPOSES` | `['email-verify', 'password-reset']` — the two built in. `VerificationPurpose` is `string` (`As of 2026-11`): any declared name |
-| `defineVerificationPurpose({ name, template, ttlMs, identifier? })` | `{ name, issue, consume }` on the same code path — an invite, an email change, an account deletion. Twice or with no template: `X_VERIFICATION_PURPOSE_INVALID`. `emailVerification` and `passwordReset` are the built-in instances |
+| `defineVerificationPurpose({ name, template, ttlMs, identifier?, signIn? })` | `{ name, issue, consume }` on the same code path — an invite, an email change, an account deletion. `signIn: true` declares the one purpose whose link signs its holder in (`signInWithLink`); absent, it never does. Twice or with no template: `X_VERIFICATION_PURPOSE_INVALID`. `emailVerification` and `passwordReset` are the built-in instances |
 | `defineMemberInvite({ name?, template, ttlMs })` | `{ purpose, invite, accept, revoke }`: a single-use invite keyed on (tenant, address). `accept` consumes it under the signed-in account's own address, sets `orgId`/`roles` and rotates the session; `revoke` kills the link and, only where this flow granted it, the membership and that account's sessions; a revoke racing an accept wins. Every bad link is `X_UNAUTHENTICATED`; a member of another tenant is `X_FORBIDDEN`. Functions, not actions (tier 2): the app wraps each in its own `action()` — `x g invite` writes them |
 | `VERIFICATION_TEMPLATES` | purpose → **catalog key** (`auth.email-verify`, `auth.password-reset`), never copy: the body lives in the app's i18n catalog |
 | `DEFAULT_VERIFICATION_TTL_MS` | 24 h for `email-verify`, 1 h for `password-reset` — a reset link is a password |
@@ -709,9 +709,27 @@ unauthenticated POST with any token cannot kill the victim's live link.
 
 ### Signing in with a mailed link
 
-Not exported in this release: `signInWithLink` stays internal to the package until its account
-reclaim path settles, and ships in the next minor. Until then a mailed credential is
-`defineVerificationPurpose` + `consumeVerification`, as above.
+`As of 2026-11`. `signInWithLink(auth, { purpose, identifier, token, ip?, userAgent?, signUp? })`
+consumes a link issued under a purpose declared `signIn: true` and answers what `login()` answers.
+With TOTP enrolled it answers `X_MFA_REQUIRED` and writes no session:
+`completeMfa(auth, challenge, code, { ip, userAgent })` finishes it, as after a password. `ip` and
+`userAgent` go on the session the call writes: the link's, or with TOTP the second leg's.
+
+Redemption needs the address as well as the token. The mailed URL carries the token only, so the
+page it opens asks for the address (prefilled where the same browser asked for the link) and posts
+both: an address in the URL lands in every log and referrer the link passes through.
+
+| Case | Answer |
+|---|---|
+| valid link, no second factor | `LoginResult`, the session `mfaSatisfied` |
+| valid link, TOTP enrolled | `X_MFA_REQUIRED` with `meta.challenge`; no session row. A fresh link never clears the count of wrong codes |
+| a link already consumed (its own address and token), whatever that attempt ended in | `X_UNAUTHENTICATED`: the link is spent before anything else is read. A try with the wrong address consumes nothing, so the link stays live for the right one |
+| unknown, expired, mismatched or another purpose's token | `X_UNAUTHENTICATED`, and a wrong guess leaves the mailed link live |
+| no account at the address | `X_UNAUTHENTICATED`, and the link is spent: enabling `signUp` takes a freshly mailed one. With `signUp: { id?, orgId?, roles?, scopes?, externalId? }` a passwordless account is created verified: in the creating write on an adapter that stores `CreateUserInput.emailVerifiedAt` (both built-in ones do). An app adapter that drops it gets a second `updateUser` stamp; if that write fails the call is `X_AUTH_WRITE_FAILED`, the account exists unverified, and the next link is refused as one that never verified its address. `signUp` never changes an account that exists |
+| a disabled account | `X_UNAUTHENTICATED`, naming nothing |
+| an account that never verified its address | `X_UNAUTHENTICATED`, named: whoever registered it chose its password. A verification stamp alone leaves their credentials intact. Recovery requires an app-owned flow: consume a `passwordReset` to prove the inbox, keep the account disabled while clearing every credential and session, and atomically verify recovery still owns the disable before stamping and reopening. Coordinate every administrative disable with that ownership check; `updateUser` and `enableUser` do not provide it. If ownership is lost or cleanup fails, leave the account disabled |
+| `purpose` is `'email-verify'` or `'password-reset'`, is not declared `signIn: true`, or declares an `identifier` other than the exported `normaliseEmail` | `X_CONFIG_INVALID`, before the store is asked: the token stays live for its own job |
+| `purpose` names nothing `defineVerificationPurpose` declared | `X_VERIFICATION_PURPOSE_UNKNOWN`, before the store is asked |
 
 ## Passkeys — WebAuthn sign-in and digest-bound step-up
 

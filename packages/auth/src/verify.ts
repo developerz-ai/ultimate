@@ -190,6 +190,11 @@ export interface DefineVerificationPurposeInput {
   readonly ttlMs: number;
   /** The identifier's one normalisation. Defaults to `normaliseEmail`, the address door's. */
   readonly identifier?: ((raw: string) => string) | undefined;
+  /**
+   * `true`: this purpose's link signs its holder in (`signInWithLink`). Stated, never inferred:
+   * an email-change or account-deletion link proves the same inbox but was mailed to do one job.
+   */
+  readonly signIn?: boolean | undefined;
 }
 
 export interface VerificationPurposeHandle {
@@ -223,6 +228,7 @@ export function defineVerificationPurpose(
     template: input.template,
     ttlMs,
     identifier: input.identifier ?? normaliseEmail,
+    signIn: input.signIn === true,
   });
   const name = input.name;
   return {

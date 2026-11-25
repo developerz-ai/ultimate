@@ -13,6 +13,8 @@ export interface VerificationPurposeDef {
   readonly ttlMs: number;
   /** How the identifier becomes the store key and the mail address. */
   readonly identifier: (raw: string) => string;
+  /** Declared a sign-in credential: the one thing `signInWithLink` consumes. Absent is no. */
+  readonly signIn?: boolean | undefined;
 }
 
 // A Map, never a record keyed by an attacker-reachable string: `consumeVerification` looks a

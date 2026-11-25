@@ -379,7 +379,8 @@
  * lowered 1575 → 1574, measured 1574 (2026-11-24, mailed-link sign-in held back): `auth/src/link-login.ts`
  * leaves the auth barrel until the next minor, so no role loads it.
  * raised 1574 → 1575, measured 1575 (2026-11-24, keyed meter draws): the one on `MIGRATE_CEILING`, `action/src/meter-fifo.ts`.
- * raised 1575 → 1576, measured 1576 (2026-11-24, outbound refusal headers):
+ * raised 1575 → 1576, measured 1576 (2026-11-24, mailed-link sign-in exported): `auth/src/link-login.ts` returns to the auth barrel.
+ * raised 1576 → 1577, measured 1577 (2026-11-24, outbound refusal headers):
  * `core/src/outbound-refusal-headers.ts` keeps selected, redacted response headers on refusals.
  */
-export const SERVING_ROLE_CEILING = 1576;
+export const SERVING_ROLE_CEILING = 1577;
