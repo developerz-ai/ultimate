@@ -63,10 +63,8 @@ const linkSignInRefused = (purpose: string): AuthError =>
  * An account holds the address and never proved it, so whoever registered it chose its password.
  * Signing the inbox's owner into that account hands them a session somebody else can also open —
  * and so does merely verifying it: the registrant's password, second factor, passkeys, API keys and
- * sessions survive a stamp. The remedy is an operator's: the reset link only proves the inbox, then
- * the account is shut (`disableUser`: every door re-reads it, so nothing can be enrolled after),
- * every credential is cleared, and the stamp and the reopening are one write, last. A step that
- * fails leaves the account shut and unverified, never verified with the registrant inside. Named,
+ * sessions survive a stamp. Recovery needs app-owned coordination with every administrative
+ * disable, including an atomic ownership check when reopening. Named,
  * because this caller owns the address — the rule `oauthAccountNotLinked` follows.
  */
 const linkAccountUnverified = (): AuthError =>
@@ -74,7 +72,7 @@ const linkAccountUnverified = (): AuthError =>
     code: 'X_UNAUTHENTICATED',
     cause:
       'an account holds this address but never verified it, so whoever registered it may hold its password, and a sign-in link may not claim it',
-    fix: 'await passwordReset.issue(runtime, { identifier: email, locale })   // its consume only proves the inbox; then, while emailVerifiedAt is still null: disableUser(auth, id, reason); updateUser(id, { passwordHash: null, mfaSecret: null, recoveryCodeHashes: [] }); deletePasskey(id, passkey.id) for every listPasskeys(id); and last updateUser(id, { emailVerifiedAt: now, disabledAt: null }) — never a bare stamp. Then a freshly mailed link signs in',
+    fix: 'await passwordReset.issue(runtime, { identifier: email, locale })   // consuming the reset proves only the inbox; use an app-owned recovery flow that coordinates disableUser and every administrative disable, clears all credentials, and atomically verifies ownership before reopening',
   });
 
 /** The one purpose a refusal's fix names: its own, so no outstanding link of another job is promoted. */
