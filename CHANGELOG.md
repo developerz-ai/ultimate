@@ -10,20 +10,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-### Added
-
-- `@ultimat3/auth`: sign-in by mailed link is exported. `signInWithLink(auth, { purpose, identifier, token, ip?, userAgent?, signUp? })` (with `LinkSignInInput` and `LinkSignUp`) consumes a link issued under a purpose the app declared a sign-in credential, `defineVerificationPurpose({ â€¦, signIn: true })`, and answers what `login()` answers; with TOTP enrolled it answers `X_MFA_REQUIRED` with the sealed challenge and writes no session, and `completeMfa` finishes it. A declared purpose without `signIn` or with its own `identifier`, and the built-in `email-verify` and `password-reset`, are `X_CONFIG_INVALID` before the link is spent, and an undeclared name is `X_VERIFICATION_PURPOSE_UNKNOWN`; the fix names a dedicated sign-in purpose and a freshly issued link, so an email-change or deletion link is never promoted to a session. An account that never verified its address is refused (`X_UNAUTHENTICATED`): the registrant's password, second factor, passkeys, API keys and sessions survive a bare stamp, so recovery needs an app-owned flow that proves the inbox, clears all credentials while disabled, and atomically checks ownership before reopening, coordinated with administrative disables. A sign-up account is created verified in one write on an adapter that stores the new optional `CreateUserInput.emailVerifiedAt` (both built-in adapters do); an app adapter that drops it gets a second `updateUser` stamp, whose failure leaves the account unverified (`X_AUTH_WRITE_FAILED`).
-- `pageRoute(path, { headers?, cookies?, buildId? })` in `@ultimat3/cli`: a unit test GETs a registered page through the real `httpPipeline` and gets the `Response`. See [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#a-pages-own-get).
-- `@ultimat3/cli`: the `boundaries` step of `x verify` warns `X_BOUNDARY_DEV_IMPORT` for a module the boot scan imports that reaches `@ultimat3/cli` (the barrel), `@ultimat3/testing` or `bun:test` through static imports of the app's own files, one line per import to cut, with the chain. A warning on `main` (`warnings` in `--json`, the step stays green); the refusal is planned for `next`. Shared test support lives in `apps/<app>/test/`, outside the scan ([Testing](https://github.com/developerz-ai/ultimate/wiki/Testing)).
-
-### Fixed
-
-- `X_APP_IMPORT_UNRESOLVED` for an import that failed inside an installed package names the app module that reached it, with the chain (`meta.chain`) when static imports spell it (a computed `import()` has none), in `x doctor`, `x manifest` and the boot log, and `X_APP_MODULE_LOAD_FAILED` lists that module. One deployed app pruned `@ultimat3/testing` from its image and every role refused to boot over a finding that named `@ultimat3/cli/src/test-shards.ts` and said `bun add @ultimat3/testing`; the cause was its own test helper under `app/`, a `.fixture.ts`, importing `@ultimat3/cli`. The fix is the edit to that module, `bun install --frozen-lockfile` for a dependency the package declares, `bun install --force` for a damaged copy, `bun add` for a peer, and for a linked package its own import or install, in its checkout.
+Nothing yet.
 
 ## Releases
 
 | Version | Date | Summary |
 |---|---|---|
+| [31.51.0](docs/changelog/31.51.0.md) | 2026-11-25 | **Sign-in by mailed link:** an app can sign a user in from a link issued under a purpose it declared for that. |
 | [31.50.0](docs/changelog/31.50.0.md) | 2026-11-24 | **Tenant-aware bearer mounts and meters:** one token can act across tenants, `drawMeter` counts work measured after the fact, and a keyed draw judges every key by its counter's own period. |
 | [31.49.0](docs/changelog/31.49.0.md) | 2026-11-20 | **Processes per container:** a production container can run several processes on one port, so `web`, `sync` and `worker` roles use the cores they are given. Set by `ULTIMATE_PROCESSES`; an upgrade changes nothing until a container declares a CPU budget. |
 | [31.48.0](docs/changelog/31.48.0.md) | 2026-11-19 | **Many agents, one machine:** heavy commands reserve their measured memory in one machine-wide ledger and share a local core cap, so parallel agents queue instead of swamping the box. `x heavy status` shows who runs and who waits. |
