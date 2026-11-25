@@ -20,28 +20,39 @@ const transpilers = {
   tsx: new Bun.Transpiler({ loader: 'tsx' }),
 };
 
+/** Every specifier `source` names, as written and in source order. Unparseable: it names none yet. */
+export function importedSpecifiers(
+  path: string,
+  source: string,
+  edges: ImportEdges,
+): readonly string[] {
+  const transpiler = path.endsWith('x') ? transpilers.tsx : transpilers.ts;
+  try {
+    const imports =
+      edges === 'referenced'
+        ? transpiler.scanImports(source)
+        : transpiler.scan(source).imports.filter((one) => one.kind !== 'dynamic-import');
+    return imports.map((one) => one.path);
+  } catch {
+    return [];
+  }
+}
+
+/** The file `specifier` is from `path`, as Bun resolves it — `undefined` when it resolves to none. */
+export function resolveImport(specifier: string, path: string): string | undefined {
+  try {
+    return Bun.resolveSync(specifier, dirname(path));
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Absolute paths, in source order. A file that will not parse imports nothing yet, and a
  * specifier that will not resolve contributes no edge: the module's own import reports both.
  */
 export function resolvedImports(path: string, source: string, edges: ImportEdges): string[] {
-  const transpiler = path.endsWith('x') ? transpilers.tsx : transpilers.ts;
-  let specifiers: readonly { readonly path: string; readonly kind: string }[];
-  try {
-    specifiers =
-      edges === 'referenced'
-        ? transpiler.scanImports(source)
-        : transpiler.scan(source).imports.filter((one) => one.kind !== 'dynamic-import');
-  } catch {
-    return [];
-  }
-  const found: string[] = [];
-  for (const { path: specifier } of specifiers) {
-    try {
-      found.push(Bun.resolveSync(specifier, dirname(path)));
-    } catch {
-      // Unresolvable: no edge.
-    }
-  }
-  return found;
+  return importedSpecifiers(path, source, edges).flatMap(
+    (specifier) => resolveImport(specifier, path) ?? [],
+  );
 }

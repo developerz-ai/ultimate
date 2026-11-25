@@ -40,6 +40,8 @@ export const BOUNDARY_CODES = [
   'X_BOUNDARY_LOADER_IMPORT',
   // `package-boundaries.ts`'s: it reads `packages/`, which this module's surface graph never holds.
   'X_BOUNDARY_PACKAGE_TO_APP',
+  // `app-dev-imports.ts`'s: a warning on `main`, over what the boot scan imports.
+  'X_BOUNDARY_DEV_IMPORT',
 ] as const;
 
 export type BoundaryCode = (typeof BOUNDARY_CODES)[number];
