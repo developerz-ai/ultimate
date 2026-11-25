@@ -40,15 +40,15 @@ const cookieHeader = (cookies: Readonly<Record<string, string>>): string =>
 export async function pageRoute(path: string, options: PageRouteOptions = {}): Promise<Response> {
   assert(
     path.startsWith('/'),
-    `pageRoute was handed '${path}', which is not a path`,
-    "pageRoute('/dashboard?tab=2')   # the URL path and query, starting with '/'",
+    'pageRoute requires a URL path starting with a slash',
+    "pageRoute('/dashboard?tab=2')",
   );
   const headers = new Headers(options.headers);
   if (options.cookies !== undefined) {
     assert(
       !headers.has('cookie'),
       'pageRoute was handed both `cookies` and a `cookie` header',
-      "pageRoute('/dashboard', { cookies: { sid: 's-1' } })   # the cookies once: as `cookies` or as a `cookie` header, not both",
+      "pageRoute('/dashboard', { cookies: { sid: 's-1' } })",
     );
     if (Object.keys(options.cookies).length > 0) {
       headers.set('cookie', cookieHeader(options.cookies));
