@@ -25,11 +25,10 @@ import { idPlan, namedColumns, singleKeyOf } from './plan';
 import type { Repo, RepoOptions, Tx } from './repo';
 import { rowKey } from './row-key';
 import { advancingVersionColumn, deletionStamp, VERSION_STEP_MS } from './search-index-version';
-import { writtenRowsSink } from './search-written-rows';
+import { updatedRows, writtenRowsSink } from './search-written-rows';
 import { assertRowTenant, type QueryPlan } from './tenancy';
 import type { RowPatch, RowWrite } from './types';
 import { judgeUpdateMany, updateManyPlan } from './update-many';
-import { updatedRows } from './updated-rows';
 import { assertVersionedUpdate, versionOf } from './version-lock';
 import { updateWherePlan, writeWherePlan } from './write-where';
 

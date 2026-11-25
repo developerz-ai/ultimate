@@ -74,7 +74,7 @@ afterAll(() => {
 /** The method every shipped driver has; its absence is a failure of the test's setup, not a result. */
 const updating = <R>(repo: Repo<R>): NonNullable<Repo<R>['updateWhereReturning']> => {
   const write = repo.updateWhereReturning;
-  if (write === undefined) throw new Error('this repository has no updateWhereReturning');
+  if (write === undefined) expect.unreachable('this repository has no updateWhereReturning');
   return write.bind(repo);
 };
 

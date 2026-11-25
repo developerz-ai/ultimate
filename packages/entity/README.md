@@ -1002,7 +1002,7 @@ db.likes.deleteWhere({ postId, userId });                   // -> 1  · the only
 db.likes.deleteWhere({ postId });                           // -> n  · every like on that post
 db.participants.updateWhere({ conversationId, userId }, { lastReadAt });   // -> 1 · mark read
 // The rows it wrote, in the same ONE statement (`update … returning *`): no row lock, no read first
-const claimed = await db.jobs.updateWhereReturning({ id, status: 'open' }, { status: 'claimed' });   // -> Row[]; [] when it was no longer open
+const claimed = await db.posts.updateWhereReturning({ id, status: 'open' }, { status: 'claimed' });   // -> Row[]; [] when it was no longer open
 
 db.likes.deleteWhere({});                                   // X_WRITE_UNFILTERED, never every row
 db.participants.updateWhere({ conversationId }, {});        // X_PATCH_EMPTY, never a silent no-op

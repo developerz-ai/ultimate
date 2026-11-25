@@ -1,8 +1,8 @@
-// The rows a delete or a filtered write touched, handed up to the search mirror. A driver hands
-// them over only while `collectWrittenRows` runs — the mirror opens it for a searchable entity
-// under an external index, and nowhere else — so every other write sends no `returning *`.
+// Collect rows touched by a delete or filtered write for the search mirror or a returning update.
+// Drivers hand them over only while `collectWrittenRows` runs, so other writes need no `returning *`.
 
 import { asyncContext } from '@ultimat3/core';
+import { describeCommand, EntityError } from './errors';
 
 /** What one write answered: its rows, or nothing — a store that cannot say which rows it touched. */
 interface WrittenRows {
@@ -33,4 +33,21 @@ export const collectWrittenRows = async <T>(
   const open: WrittenRows = { rows: undefined };
   const result = await collecting.run(open, write);
   return { result, rows: open.rows };
+};
+
+/** Answer the rows a filtered write reported, refusing an incomplete result. */
+export const updatedRows = async <Row>(
+  entityName: string,
+  write: () => Promise<number>,
+): Promise<readonly Row[]> => {
+  const { result, rows } = await collectWrittenRows(write);
+  if (result === 0) return [];
+  if (rows === undefined || rows.length !== result) {
+    throw new EntityError({
+      code: 'X_INVARIANT_VIOLATED',
+      cause: `${entityName}.updateWhereReturning() wrote ${result} rows and this repository named ${rows?.length ?? 0} of them — a write that matches that many rows (or a store that cannot report them) has no rows to hand back`,
+      fix: `${describeCommand(entityName)}   # then write by a narrower filter, or sweep it with .where(filter).inBatches(1000) and write each page`,
+    });
+  }
+  return rows as readonly Row[];
 };

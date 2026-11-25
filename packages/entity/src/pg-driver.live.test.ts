@@ -413,7 +413,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     const target = await write(org, 'CLAIM-a');
     const claim = async () => {
       const claimed = repo().updateWhereReturning;
-      if (claimed === undefined) throw new Error('postgresRepo has no updateWhereReturning');
+      if (claimed === undefined) expect.unreachable('postgresRepo has no updateWhereReturning');
       return claimed.call(repo(), { id: target.id, paid: false }, { paid: true }, { orgId: org });
     };
 

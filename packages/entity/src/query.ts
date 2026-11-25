@@ -29,6 +29,7 @@ import type { Repo, RepoOptions } from './repo';
 import { pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
 import { searchedRepo } from './search-repo';
+import { updatedRows } from './search-written-rows';
 import { type TableLocks, tableLocks } from './table-locks';
 import type { Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 import { touch } from './touch';
@@ -43,7 +44,6 @@ import type {
   SealedKeySet,
   SealedKeysOf,
 } from './types';
-import { updatedRows } from './updated-rows';
 
 /**
  * What a preloaded relation adds to a row. `unknown` because the name is a string resolved at
