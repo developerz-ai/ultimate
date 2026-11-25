@@ -330,5 +330,7 @@
  * lowered 1778 → 1777, measured 1777 (2026-11-24, mailed-link sign-in held back): the one off
  * `SERVING_ROLE_CEILING`, `auth/src/link-login.ts`.
  * raised 1777 → 1778, measured 1778 (2026-11-24, keyed meter draws): the one on `SERVING_ROLE_CEILING`, `action/src/meter-fifo.ts`.
+ * raised 1778 → 1779, measured 1779 (2026-11-24, outbound refusal headers): the one on
+ * `SERVING_ROLE_CEILING`, `core/src/outbound-refusal-headers.ts`.
  */
-export const WEB_ROLE_CEILING = 1778;
+export const WEB_ROLE_CEILING = 1779;
