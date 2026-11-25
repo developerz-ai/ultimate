@@ -13,6 +13,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 ### Added
 
 - `outbound({ refusal: { headers: string[] } })`: names response headers (case-insensitive, at most 16) whose values a refusal keeps at `meta.headers`, lowercased, redacted and cut at 200 characters, so a caller can quote a vendor's request id. A credential-named header or a malformed list is `X_INVARIANT` before a byte is sent; unset, nothing changes. See [Outbound HTTP](https://github.com/developerz-ai/ultimate/wiki/Outbound-HTTP#refusal-what-a-non-2xx-body-becomes).
+- `pageRoute(path, { headers?, cookies?, buildId? })` in `@ultimat3/cli`: a unit test GETs a registered page through the real `httpPipeline` and gets the `Response`. See [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#a-pages-own-get).
 
 ## Releases
 
