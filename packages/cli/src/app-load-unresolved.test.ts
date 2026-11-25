@@ -3,60 +3,21 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun has no temp-directory API, no symlink API and no recursive remove.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 // why: Bun exposes no tmpdir().
 import { tmpdir } from 'node:os';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
+import { childLoad } from './app-load-child-fixture';
 import { installablePackage, unresolvedImportFinding } from './app-load-unresolved';
+import { exec } from './exec';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { collapseFindings } from './output-findings';
 
 let root = '';
 
-/** A one-file npm tarball, by hand: a tar header is 512 bytes of fields and a checksum. */
-const packageTarball = async (name: string, source: string): Promise<Uint8Array<ArrayBuffer>> => {
-  const encoder = new TextEncoder();
-  const entry = (path: string, text: string): Uint8Array<ArrayBuffer> => {
-    const body = encoder.encode(text);
-    const padded = new Uint8Array(512 + Math.ceil(body.length / 512) * 512);
-    const field = (at: number, value: string) => padded.set(encoder.encode(value), at);
-    field(0, path);
-    field(100, '0000644');
-    field(108, '0000000');
-    field(116, '0000000');
-    field(124, body.length.toString(8).padStart(11, '0'));
-    field(136, '00000000000');
-    field(148, '        ');
-    field(156, '0');
-    field(257, 'ustar');
-    field(263, '00');
-    const sum = padded.subarray(0, 512).reduce((total, byte) => total + byte, 0);
-    field(148, `${sum.toString(8).padStart(6, '0')}\0 `);
-    padded.set(body, 512);
-    return padded;
-  };
-  const tar = new Blob([
-    entry('package/package.json', JSON.stringify({ name, version: '1.0.0', main: 'index.js' })),
-    entry('package/index.js', source),
-    new Uint8Array(1024),
-  ]);
-  return new Uint8Array(Bun.gzipSync(new Uint8Array(await tar.arrayBuffer())));
-};
-
-const load = async (): Promise<readonly Finding[]> => {
-  const script = `import { loadApp } from ${JSON.stringify(join(import.meta.dir, 'app-load.ts'))};
-const app = await loadApp(${JSON.stringify(root)});
-process.stdout.write(JSON.stringify(app.findings));`;
-  const child = Bun.spawn(['bun', '-e', script], { cwd: root, stdout: 'pipe', stderr: 'pipe' });
-  const [out, err] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  if ((await child.exited) !== 0) return expect.unreachable(`the load crashed: ${err}`);
-  return JSON.parse(out) as readonly Finding[];
-};
+const load = (): Promise<readonly Finding[]> => childLoad(root);
 
 beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), 'x-app-load-unresolved-'));
@@ -91,53 +52,6 @@ describe('the app load', () => {
     expect(await load()).toEqual([]);
     rmSync(dir, { recursive: true, force: true });
   });
-
-  // Executed, not read. A local registry, because the line goes to one: `bun add` asks it for the
-  // package's metadata and its tarball, and the next load finds it in `node_modules`.
-  test('the printed bun add runs, and the next load passes', async () => {
-    const dir = join(root, 'apps/web/app/installed');
-    await Bun.write(join(dir, 'a.ts'), "export { x } from 'fix-truth-pkg';\n");
-    await Bun.write(join(root, 'package.json'), '{ "name": "fixture", "version": "0.0.0" }\n');
-    const [finding] = await load();
-    expect(finding?.fix).toBe('bun add fix-truth-pkg');
-    const tarball = await packageTarball('fix-truth-pkg', 'export const x = 1;\n');
-    const registry = Bun.serve({
-      port: 0,
-      fetch(request) {
-        const { pathname, origin } = new URL(request.url);
-        if (pathname.endsWith('.tgz')) return new Response(tarball);
-        return Response.json({
-          name: 'fix-truth-pkg',
-          'dist-tags': { latest: '1.0.0' },
-          versions: {
-            '1.0.0': {
-              name: 'fix-truth-pkg',
-              version: '1.0.0',
-              dist: { tarball: `${origin}/fix-truth-pkg-1.0.0.tgz` },
-            },
-          },
-        });
-      },
-    });
-    try {
-      const child = Bun.spawn(['sh', '-c', finding?.fix ?? ''], {
-        cwd: root,
-        env: {
-          ...Bun.env,
-          BUN_CONFIG_REGISTRY: registry.url.href,
-          BUN_INSTALL_CACHE_DIR: join(root, '.bun-cache'),
-        },
-        stdout: 'ignore',
-        stderr: 'pipe',
-      });
-      const said = await new Response(child.stderr).text();
-      expect({ code: await child.exited, said }).toEqual({ code: 0, said: expect.any(String) });
-      expect(await load()).toEqual([]);
-    } finally {
-      registry.stop(true);
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }, 30_000);
 });
 
 describe('the reading', () => {
@@ -189,6 +103,178 @@ describe('the reading', () => {
         '/app',
       )?.fix;
     expect(fixOf('./[')).toStartWith("grep -nF -- './[' x.ts");
+  });
+
+  test("outside a scan, an installed package's own import is told as that, not as the app's", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'x-unresolved-outside-'));
+    try {
+      const referrer = join(dir, 'node_modules/outer/src/deep/a.ts');
+      await Bun.write(referrer, '');
+      // A nameless manifest between (`{"type":"module"}`) is not the package's.
+      await Bun.write(join(dir, 'node_modules/outer/src/package.json'), '{"type":"module"}');
+      const manifest = join(dir, 'node_modules/outer/package.json');
+      const find = () =>
+        unresolvedImportFinding(
+          { code: 'ERR_MODULE_NOT_FOUND', specifier: '@acme/inner/sub', referrer },
+          dir,
+        );
+      await Bun.write(manifest, '{"name":"outer","dependencies":{"@acme/inner":"1.0.0"}}');
+      expect(find()?.cause).toBe(
+        'node_modules/outer/src/deep/a.ts imports @acme/inner, which is not installed',
+      );
+      expect(find()?.fix).toStartWith('bun install --frozen-lockfile   # ');
+      // A peer or an undeclared import: the install is as complete as it was asked to be.
+      await Bun.write(manifest, '{"name":"outer","peerDependencies":{"@acme/inner":"1.0.0"}}');
+      expect(find()?.fix).toBe('bun add @acme/inner');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The app above declares it, and an app's manifest says nothing about what `outer` was owed.
+  test.each([
+    ['half-written', (path: string) => Bun.write(path, '{"name":"outer","dependencies":')],
+    ['a list', (path: string) => Bun.write(path, '[]')],
+    ['null', (path: string) => Bun.write(path, 'null')],
+    ['a directory', (path: string) => Bun.write(join(path, 'x'), '')],
+    ['gone', () => Promise.resolve(0)],
+  ])(
+    'a manifest that is %s keeps the finding, and the package is reinstalled',
+    async (_what, make) => {
+      const dir = mkdtempSync(join(tmpdir(), 'x-unresolved-manifest-'));
+      try {
+        await Bun.write(
+          join(dir, 'package.json'),
+          '{"name":"app","dependencies":{"inner":"1.0.0"}}',
+        );
+        for (const outer of ['node_modules/outer', 'node_modules/@acme/scoped']) {
+          const referrer = join(dir, outer, 'a.ts');
+          await Bun.write(referrer, '');
+          await make(join(dir, outer, 'package.json'));
+          const finding = unresolvedImportFinding(
+            { code: 'ERR_MODULE_NOT_FOUND', specifier: 'inner', referrer },
+            dir,
+          );
+          expect([finding?.code, finding?.cause]).toEqual([
+            'X_APP_IMPORT_UNRESOLVED',
+            `${outer}/a.ts imports inner, which is not installed`,
+          ]);
+          expect(finding?.fix).toStartWith('bun install --force   # ');
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test('a referrer whose link cannot be followed keeps the finding', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'x-unresolved-loop-'));
+    try {
+      const referrer = join(dir, 'a.ts');
+      symlinkSync(join(dir, 'b.ts'), referrer);
+      symlinkSync(referrer, join(dir, 'b.ts'));
+      const finding = unresolvedImportFinding(
+        { code: 'ERR_MODULE_NOT_FOUND', specifier: 'gone', referrer },
+        dir,
+      );
+      expect([finding?.at, finding?.fix]).toEqual(['a.ts', 'bun add gone']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('inside an installed package nothing is an edit: a missing file or subpath is a reinstall', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'x-unresolved-damaged-'));
+    try {
+      const referrer = join(dir, 'node_modules/outer/a.ts');
+      await Bun.write(referrer, '');
+      await Bun.write(join(dir, 'node_modules/inner/package.json'), '{"name":"inner"}');
+      const find = (specifier: string) =>
+        unresolvedImportFinding({ code: 'ERR_MODULE_NOT_FOUND', specifier, referrer }, dir);
+      expect([find('./gone')?.cause, find('./gone')?.fix]).toEqual([
+        'node_modules/outer/a.ts imports "./gone", which resolves to no file',
+        'bun install --force   # the installed copy lacks what it imports: reinstall it',
+      ]);
+      expect(find('inner/gone')?.cause).toContain('inner is installed with no such subpath');
+      expect(find('inner/gone')?.fix).toEndWith('bun why inner, then align the two versions');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The app's own install, wherever its linker put the package: run where the app is.
+  test.each([
+    ['the app', 'mono/apps/web', 'mono/apps/web/node_modules/outer'],
+    ['the workspace root above it', 'mono/apps/web', 'mono/node_modules/outer'],
+    ['an isolated store', 'mono/apps/web', 'mono/node_modules/.bun/outer@1/node_modules/outer'],
+    [
+      'an app that is itself installed',
+      'x/node_modules/app',
+      'x/node_modules/app/node_modules/outer',
+    ],
+  ])('installed by %s: no --cwd', async (_what, app, outer) => {
+    const dir = mkdtempSync(join(tmpdir(), 'x-unresolved-root-'));
+    try {
+      const referrer = join(dir, outer, 'a.ts');
+      await Bun.write(referrer, '');
+      await Bun.write(
+        join(dir, outer, 'package.json'),
+        '{"name":"outer","dependencies":{"in":"1"}}',
+      );
+      await Bun.write(join(dir, app, 'app.config.ts'), '');
+      const fixOf = (specifier: string) =>
+        unresolvedImportFinding(
+          { code: 'ERR_MODULE_NOT_FOUND', specifier, referrer },
+          join(dir, app),
+        )?.fix;
+      for (const specifier of ['./gone', 'in', 'peer']) {
+        expect(fixOf(specifier)).not.toContain('--cwd');
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a checkout whose name holds a newline ends no comment, and no line', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'x-unresolved-newline-')));
+    try {
+      const checkout = join(dir, 'c\ntouch pwned\n#');
+      const referrer = join(checkout, 'node_modules/outer/a.ts');
+      await Bun.write(referrer, '');
+      const outer = join(checkout, 'node_modules/outer/package.json');
+      await Bun.write(outer, '{"name":"outer","dependencies":{"in":"1"}}');
+      await Bun.write(join(checkout, 'node_modules/has/package.json'), '{"name":"has"}');
+      await Bun.write(join(dir, 'app/app.config.ts'), '');
+      for (const specifier of ['./gone', 'in', 'peer', 'has/nope']) {
+        const error = { code: 'ERR_MODULE_NOT_FOUND', specifier, referrer };
+        const fix = unresolvedImportFinding(error, join(dir, 'app'))?.fix ?? '';
+        expect(fix).toContain('--cwd ');
+        // `bun` as a no-op: the line is parsed and every command in it is run.
+        await exec(['sh', '-c', `bun() { :; }; ${fix}`], { cwd: dir });
+        expect(await Bun.file(join(dir, 'pwned')).exists()).toBe(false);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the app's own manifest declaring it is not an installed package declaring it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'x-unresolved-own-'));
+    try {
+      await Bun.write(join(dir, 'package.json'), '{"name":"app","dependencies":{"gone":"1.0.0"}}');
+      const referrer = join(dir, 'apps/web/app/a.ts');
+      await Bun.write(referrer, '');
+      const finding = unresolvedImportFinding(
+        { code: 'ERR_MODULE_NOT_FOUND', specifier: 'gone', referrer },
+        dir,
+      );
+      expect([finding?.cause, finding?.fix]).toEqual([
+        'an app module imports gone, which is not installed',
+        'bun add gone',
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('any other failure is not this one', () => {

@@ -14,6 +14,7 @@ export const CLI_BOUNDARY_ERROR_CODES = [
   'X_BOUNDARY_PACKAGE_TO_APP',
   'X_BOUNDARY_ADAPTER_IMPORT',
   'X_BOUNDARY_LOADER_IMPORT',
+  'X_BOUNDARY_DEV_IMPORT',
 ] as const;
 
 export type CliBoundaryErrorCode = (typeof CLI_BOUNDARY_ERROR_CODES)[number];
@@ -29,4 +30,5 @@ export const CLI_BOUNDARY_ERROR_TITLES: Readonly<Record<CliBoundaryErrorCode, st
   X_BOUNDARY_PACKAGE_TO_APP: 'packages/ imported apps/ at runtime',
   X_BOUNDARY_ADAPTER_IMPORT: 'an app module imports an adapter installer',
   X_BOUNDARY_LOADER_IMPORT: 'an app module imports a registration loader',
+  X_BOUNDARY_DEV_IMPORT: 'a module a role loads imports a development entry',
 };

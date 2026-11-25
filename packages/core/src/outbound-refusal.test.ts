@@ -85,7 +85,11 @@ describe('unit · outbound · refusal body', () => {
       );
       expect(error.code).toBe('X_OUTBOUND_RETRY_UNSAFE');
       expect(error.fix).toContain('remove retry');
-      expect(error.fix).toContain(`method: '${method}'`);
+      // An edit of the caller's own call, never a replacement: a rewritten call drops its headers
+      // (an Authorization a vendor requires) and every other option it did not spell (PR #1367 review).
+      expect(error.fix).not.toContain('outbound({');
+      expect(error.fix).toContain('keep every other option');
+      expect(error.fix).toContain(`the ${method}`);
       expect(error.fix).not.toContain('idempotency-key');
       expect(sent.calls).toHaveLength(0);
     }
