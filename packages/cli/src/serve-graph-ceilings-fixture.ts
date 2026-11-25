@@ -384,8 +384,11 @@
  * raised 1009 → 1010, measured 1010 (2026-11-24, keyed meter draws, review round 4):
  * `action/src/meter-fifo.ts`, the first-in-first-out queue the memory meter store keeps its key
  * order in, so a busy counter forgets its oldest key in constant time.
+ * raised 1010 → 1011, measured 1011 (2026-11-24, outbound refusal headers):
+ * `core/src/outbound-refusal-headers.ts`, the check and the read of `refusal.headers`, on the core
+ * barrel graph `outbound()` is reached through.
  */
-export const MIGRATE_CEILING = 1010;
+export const MIGRATE_CEILING = 1011;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';
