@@ -15,7 +15,7 @@ const NAME_CHARS = 64;
 export const REFUSAL_HEADER_VALUE_CHARS = 200;
 
 /** An RFC 9110 field name: a token. */
-const TOKEN = /^[!#$%&'*+.^_`|~0-9a-z-]+$/;
+const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
 /**
  * Credential carriers `isRedactedKey` does not name: a challenge repeats a realm and a nonce, and
@@ -46,28 +46,34 @@ export function refusalHeaderNames(
     return invalid(
       site,
       `is not an array of header names (${typeof names})`,
-      "outbound({ …, refusal: { headers: ['x-request-id'] } })   # an array of header names",
+      "refusal: { headers: ['x-request-id'] }",
     );
   if (names.length > REFUSAL_HEADERS_MAX)
     return invalid(
       site,
       `names ${String(names.length)} headers, more than the ${String(REFUSAL_HEADERS_MAX)} a refusal keeps`,
-      "outbound({ …, refusal: { headers: ['x-request-id'] } })   # list only what a person needs from the vendor's error, such as its request id",
+      "refusal: { headers: ['x-request-id'] }",
     );
   const kept = new Set<string>();
   for (const name of names as readonly unknown[]) {
-    const lower = typeof name === 'string' ? name.toLowerCase() : '';
-    if (lower === '' || lower.length > NAME_CHARS || !TOKEN.test(lower))
+    if (typeof name !== 'string' || !TOKEN.test(name))
       return invalid(
         site,
         'holds an entry that is not a header name',
-        "outbound({ …, refusal: { headers: ['x-request-id'] } })   # each entry a header name, as the vendor sends it",
+        "refusal: { headers: ['x-request-id'] }",
       );
+    if (name.length > NAME_CHARS)
+      return invalid(
+        site,
+        `holds a header name longer than ${String(NAME_CHARS)} characters`,
+        "refusal: { headers: ['x-request-id'] }",
+      );
+    const lower = name.toLowerCase();
     if (isRedactedKey(lower) || NEVER.has(lower))
       return invalid(
         site,
         `asks for '${lower}', a credential-carrying header, and a refusal never keeps one`,
-        `outbound({ …, refusal: { headers: ['x-request-id'] } })   # without '${lower}': a refusal never keeps a credential-carrying header`,
+        "refusal: { headers: ['x-request-id'] }",
       );
     kept.add(lower);
   }
@@ -79,10 +85,11 @@ export function refusalHeadersOf(
   names: readonly string[],
   received: Headers,
 ): Record<string, string> {
-  const out: Record<string, string> = {};
+  const entries: [string, string][] = [];
   for (const name of names) {
     const value = received.get(name);
-    if (value !== null) out[name] = redactedValue(value).slice(0, REFUSAL_HEADER_VALUE_CHARS);
+    if (value !== null)
+      entries.push([name, redactedValue(value).slice(0, REFUSAL_HEADER_VALUE_CHARS)]);
   }
-  return out;
+  return Object.fromEntries(entries);
 }

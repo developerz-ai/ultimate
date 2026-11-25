@@ -80,9 +80,9 @@ export interface OutboundRefusalRead {
    * Response header names (case-insensitive) kept on the error: the ones the answer carries go to
    * `meta.headers`, a record of lowercased name to value, each value redacted and cut at 200
    * characters. Unset: no header is kept. For the vendor's request id, to quote in a support
-   * ticket. At most 16 names; a credential-named one (`set-cookie`, `authorization`,
-   * `www-authenticate`, `x-api-key` …) or a name that is not a header is `X_INVARIANT` at the
-   * call, before a byte is sent.
+   * ticket. At most 16 names, each at most 64 characters; a credential-named one (`set-cookie`,
+   * `authorization`, `www-authenticate`, `x-api-key` …), an overlong name or a name that is not a
+   * header is `X_INVARIANT` at the call, before a byte is sent.
    */
   readonly headers?: readonly string[] | undefined;
 }

@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { t } from '@ultimat3/schema';
 import { isUltimateError, type UltimateError } from './errors';
+import { redactValues } from './logger-redact';
 import { outbound } from './outbound';
 import { manualTimer, recordedSleep, recordingFetch } from './outbound-fixture';
 import type { OutboundRequest } from './outbound-types';
@@ -221,15 +222,19 @@ describe('unit · outbound · refusal headers', () => {
     // Only what was asked and present: `server` was not named, `x-absent` is not there.
     expect(refused.meta?.['headers']).toEqual({ 'x-request-id': 'req_123', 'cf-ray': 'ray-9' });
 
+    const attempts = recordingFetch(
+      (_call, n) => new Response('{}', { status: 503, headers: { 'x-request-id': `req_${n}` } }),
+    );
     const unavailable = await caught(
       outbound(call({ method: 'GET', refusal: { headers: ['x-request-id'] } }), {
-        fetch: answering(503, headers),
+        fetch: attempts.fetch,
         ...recordedSleep(),
         timer: manualTimer(),
       }),
     );
     expect(unavailable.code).toBe('X_OUTBOUND_UNAVAILABLE');
-    expect(unavailable.meta?.['headers']).toEqual({ 'x-request-id': 'req_123' });
+    expect(attempts.calls).toHaveLength(3);
+    expect(unavailable.meta?.['headers']).toEqual({ 'x-request-id': 'req_3' });
 
     const throttled = await caught(
       outbound(call({ refusal: { headers: ['x-request-id'] } }), {
@@ -294,6 +299,50 @@ describe('unit · outbound · refusal headers', () => {
     expect(error.meta?.['headers']).toEqual({ 'x-trace': 'a'.repeat(200) });
   });
 
+  test('registered value redaction applies to captured headers', async () => {
+    redactValues([{ pattern: /private-refusal-value/g, replace: '[redacted]' }]);
+    const error = await caught(
+      outbound(call({ refusal: { headers: ['x-trace'] } }), {
+        fetch: answering(400, { 'x-trace': 'id private-refusal-value' }),
+        timer: manualTimer(),
+      }),
+    );
+    expect(error.meta?.['headers']).toEqual({ 'x-trace': 'id [redacted]' });
+    expect(JSON.stringify(error.meta?.['headers'])).not.toContain('private-refusal-value');
+  });
+
+  test('prototype-named headers are captured as own properties', async () => {
+    const error = await caught(
+      outbound(call({ refusal: { headers: ['__proto__'] } }), {
+        fetch: answering(400, Object.fromEntries([['__proto__', 'trace']])),
+        timer: manualTimer(),
+      }),
+    );
+    const headers = error.meta?.['headers'];
+    expect(Object.hasOwn(headers as object, '__proto__')).toBe(true);
+    expect(JSON.stringify(headers)).toBe('{"__proto__":"trace"}');
+  });
+
+  test('valid names at the length limit are kept, longer tokens have a distinct diagnostic', async () => {
+    const name = 'x'.repeat(64);
+    const accepted = await caught(
+      outbound(call({ refusal: { headers: [name] } }), {
+        fetch: answering(400, { [name]: 'ok' }),
+        timer: manualTimer(),
+      }),
+    );
+    expect(accepted.meta?.['headers']).toEqual({ [name]: 'ok' });
+    const sent = recordingFetch(() => new Response('{}', { status: 400 }));
+    const refused = await caught(
+      outbound(call({ refusal: { headers: ['x'.repeat(65)] } }), {
+        fetch: sent.fetch,
+        timer: manualTimer(),
+      }),
+    );
+    expect(refused.cause).toContain('64');
+    expect(sent.calls).toHaveLength(0);
+  });
+
   test('a credential-named header is refused at the call, before a byte is sent', async () => {
     for (const name of ['Set-Cookie', 'authorization', 'x-api-key', 'WWW-Authenticate']) {
       const sent = recordingFetch(() => new Response('{}', { status: 400 }));
@@ -316,6 +365,7 @@ describe('unit · outbound · refusal headers', () => {
       Array.from({ length: 17 }, (_, i) => `x-h-${String(i)}`),
       [''],
       ['bad name'],
+      ['x-Key'],
       [42],
       ['x'.repeat(65)],
     ];
