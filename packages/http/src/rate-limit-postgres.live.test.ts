@@ -132,15 +132,30 @@ describeLive('live · postgres · the rate-limit table writes no WAL', () => {
   });
 
   test('a take writes no WAL record', async () => {
-    await store.take('wal', bucket, 1, 1_000);
-    const plan = (await sql.unsafe(`explain (analyze, wal, format json) ${SQL_RATE_LIMIT_TAKE}`, [
-      'wal',
-      bucket.capacity,
-      bucket.refillPerSecond,
-      1,
-      2_000,
-    ])) as { 'QUERY PLAN': { Plan: { 'WAL Records'?: number } }[] }[];
-    expect(plan[0]?.['QUERY PLAN'][0]?.Plan['WAL Records']).toBe(0);
+    // One connection for the take, the EXPLAIN and the flush: the HOT counter tests below read
+    // cluster-wide table stats, and stats pending on an idle pooled backend flush LATER. That late
+    // update used to land inside the HOT measurement and made 3,000 takes read as 3,001.
+    const one = connect(1);
+    try {
+      const single = postgresRateLimitStore({
+        executor: {
+          query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+            (await one.unsafe(text, [...values])) as readonly R[],
+        },
+      });
+      await single.take('wal', bucket, 1, 1_000);
+      const plan = (await one.unsafe(`explain (analyze, wal, format json) ${SQL_RATE_LIMIT_TAKE}`, [
+        'wal',
+        bucket.capacity,
+        bucket.refillPerSecond,
+        1,
+        2_000,
+      ])) as { 'QUERY PLAN': { Plan: { 'WAL Records'?: number } }[] }[];
+      expect(plan[0]?.['QUERY PLAN'][0]?.Plan['WAL Records']).toBe(0);
+      await one.unsafe('select pg_stat_force_next_flush()', []);
+    } finally {
+      await one.end();
+    }
   });
 
   /**
@@ -157,6 +172,11 @@ describeLive('live · postgres · the rate-limit table writes no WAL', () => {
     const one = connect(1);
     try {
       await untilHorizonClear(one);
+      // A fresh table isolates its statistics from every other test without privileged resets.
+      await one.unsafe('drop table if exists x_rate_limit', []);
+      for (const piece of SQL_RATE_LIMIT_TABLE.split(';')) {
+        if (piece.trim().length > 0) await one.unsafe(piece, []);
+      }
       const single = postgresRateLimitStore({
         executor: {
           query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
@@ -165,6 +185,7 @@ describeLive('live · postgres · the rate-limit table writes no WAL', () => {
       });
       const roomy = { capacity: 1_000_000, refillPerSecond: 1 };
       for (let key = 0; key < keys; key += 1) await single.take(`hot-${key}`, roomy, 1, 10_000);
+      // Keep the inserted rows: full pages are what this test measures.
       await one.unsafe('select pg_stat_force_next_flush()', []);
       const before = await hotCounts(one);
       for (let take = 0; take < takes; take += 1) {
