@@ -74,6 +74,23 @@ const LARGE_DECLINE = JSON.stringify({
 const declineSchema = t.object({ error: t.object({ decline_code: t.string }) });
 
 describe('unit · outbound · refusal body', () => {
+  test('unsafe write retry guidance removes retry instead of suggesting a shared key', async () => {
+    for (const method of ['POST', 'PATCH'] as const) {
+      const sent = recordingFetch(() => new Response('{}'));
+      const error = await caught(
+        outbound(call({ method, retry: { attempts: 3, base: 1, max: 10, jitter: 'none' } }), {
+          fetch: sent.fetch,
+          timer: manualTimer(),
+        }),
+      );
+      expect(error.code).toBe('X_OUTBOUND_RETRY_UNSAFE');
+      expect(error.fix).toContain('remove retry');
+      expect(error.fix).toContain(`method: '${method}'`);
+      expect(error.fix).not.toContain('idempotency-key');
+      expect(sent.calls).toHaveLength(0);
+    }
+  });
+
   test('default: a JSON body past the first KiB leaves meta.detail empty, and no fields', async () => {
     const error = await caught(
       outbound(call(), { fetch: refusing(402, LARGE_DECLINE), timer: manualTimer() }),

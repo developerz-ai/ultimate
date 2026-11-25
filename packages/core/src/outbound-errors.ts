@@ -232,7 +232,7 @@ export function outboundRetryUnsafe(site: OutboundSite): UltimateError {
   return new UltimateError({
     code: 'X_OUTBOUND_RETRY_UNSAFE',
     cause: `${siteLabel(site)} was given a retry policy, and a ${site.method} replayed is a second write`,
-    fix: "idempotent: true, headers: { 'idempotency-key': 'your-idempotency-key' }",
+    fix: `outbound({ url, vendor, dial, deadlineMs, method: '${site.method}', body })   # remove retry from this write`,
     meta: siteMeta(site),
   });
 }
