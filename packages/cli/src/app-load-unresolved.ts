@@ -111,21 +111,39 @@ const declares = (owner: Owner, pkg: string): boolean => {
   return isJsonObject(declared) && Object.hasOwn(declared, pkg);
 };
 
-/** Inside an installed package: the app has no line to edit, and an install is what writes it. */
+/**
+ * The directory whose install wrote `file`, when that is not the app's: the one above the outermost
+ * `node_modules` on the way there — a linked checkout's own. `undefined` is the app's install,
+ * wherever its linker put the package: in the app, a workspace of it, or the workspace root above.
+ */
+function foreignInstall(root: string, file: string): string | undefined {
+  const base = realPath(resolve(root));
+  const parts = posixRelative(base, realPath(file)).split('/');
+  const dir = resolve(base, parts.slice(0, parts.indexOf('node_modules')).join('/'));
+  const ours = dir === base || isPathUnder(base, dir) || isPathUnder(dir, base);
+  return ours ? undefined : dir;
+}
+
+/** Inside an installed package: nobody has a line to edit, and an install is what writes it. */
 function installedFix(
+  root: string,
   referrer: string,
   named: string | undefined,
   pkg: string | undefined,
 ): string {
   const owner = ownerOf(referrer);
+  const foreign = foreignInstall(root, referrer);
+  const cwd = foreign === undefined ? '' : ` --cwd ${quoteArg(foreign)}`;
   if (pkg === undefined || owner.manifest === undefined) {
-    return `bun install --force   # the installed copy lacks what it imports: reinstall it${named === undefined ? '' : `; still so: bun why ${named}, then align the two versions`}`;
+    const why = `bun why ${String(named)}${foreign === undefined ? '' : ' there'}`;
+    return `bun install --force${cwd}   # the installed copy lacks what it imports: reinstall it${named === undefined ? '' : `; still so: ${why}, then align the two versions`}`;
   }
+  if (!declares(owner, pkg)) return `bun add ${quoteArg(pkg)}${cwd}`;
   // A dependency the importing package DECLARES is missing from the install, not from the app's
   // manifest: `bun add` would copy it into the app and leave the pruned install as it was.
-  return declares(owner, pkg)
+  return foreign === undefined
     ? `bun install --frozen-lockfile   # ${pkg} is a declared dependency of an installed package: restore it, and prune no declared dependency from an image`
-    : `bun add ${quoteArg(pkg)}`;
+    : `bun install${cwd}   # ${pkg} is a declared dependency of a package installed there: restore it`;
 }
 
 /**
@@ -167,7 +185,7 @@ export function unresolvedImport(error: unknown, root: string): UnresolvedImport
     place === 'linked'
       ? linkedFix(specifier, where, from, pkg)
       : place === 'installed'
-        ? installedFix(from, named, pkg)
+        ? installedFix(root, from, named, pkg)
         : ownFix;
   return {
     specifier,

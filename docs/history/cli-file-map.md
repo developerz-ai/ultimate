@@ -396,6 +396,8 @@ The worker's LISTEN session (`@ultimat3/jobs`' `startQueueWake`) — worker role
   ceilings did not move.
 - `app-dev-imports.ts`: `boundaries` warns `X_BOUNDARY_DEV_IMPORT`, the same defect before a deploy;
   one finding per scanned edge, so a kit two modules share is two cuts.
+- `scan-ways.ts`: every scanned edge into each holder, in one pass over the followed edges; shortest, and
+  a tie goes to the first import.
 - `evaluated-walk.ts` is the walk both use; `dev-only-imports.ts` is the one list of specifiers, the
   one cut and the one edit, so the boot and the gate cannot disagree.
 - `apps/*/prerender.ts` importing the barrel is fine and stays: the scan excludes it

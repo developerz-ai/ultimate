@@ -11,6 +11,8 @@ import { tmpdir } from 'node:os';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
 import { devImportFindings } from './app-dev-imports';
+import type { ChildLoader } from './app-load-child-fixture';
+import { childLoad } from './app-load-child-fixture';
 import { dependencyImports } from './app-load-import-chain';
 import { exec } from './exec';
 import type { Finding } from './output';
@@ -31,24 +33,8 @@ const installed = async (
   for (const [file, text] of Object.entries(files)) await write(`${dir}/${file}`, text);
 };
 
-/** `loader` answers findings: the tool's load, or a background role's. */
-const load = async (
-  loader: { readonly file: string; readonly name: string } = {
-    file: 'app-load.ts',
-    name: 'loadApp',
-  },
-): Promise<readonly Finding[]> => {
-  const script = `import { ${loader.name} as load } from ${JSON.stringify(join(import.meta.dir, loader.file))};
-const app = await load(${JSON.stringify(root)});
-process.stdout.write(JSON.stringify(app.findings));`;
-  const child = Bun.spawn(['bun', '-e', script], { cwd: root, stdout: 'pipe', stderr: 'pipe' });
-  const [out, err] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  if ((await child.exited) !== 0) return expect.unreachable(`the load crashed: ${err}`);
-  return JSON.parse(out) as readonly Finding[];
-};
+/** The tool's load, or a background role's. */
+const load = (loader?: ChildLoader): Promise<readonly Finding[]> => childLoad(root, loader);
 
 /** The incident's shape: `@ultimat3/cli`'s barrel reaching `@ultimat3/testing`, which is pruned. */
 const prunedFramework = (): Promise<void> =>
