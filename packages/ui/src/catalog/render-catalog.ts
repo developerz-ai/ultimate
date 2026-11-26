@@ -5,15 +5,17 @@
 import { BUTTON_VARIANTS, SIZES, TONES } from '../components/variants';
 import {
   breakpointTokens,
-  COLOR_ROLES,
+  colorVar,
   durationTokens,
   easingTokens,
   fontSizeTokens,
   fontWeightTokens,
+  isAliasRole,
   lineHeightTokens,
   radiusTokens,
   spaceTokens,
   strokeTokens,
+  THEME_ROLES,
   zTokens,
 } from '../tokens/tokens';
 import type { ComponentDoc } from './parse-component';
@@ -93,7 +95,12 @@ charts and email.
 
 ${table(
   ['Role', 'Custom property'],
-  COLOR_ROLES.map((role) => [`\`${role}\``, `\`--color-${role}\``]),
+  THEME_ROLES.map((role) => [
+    `\`${role}\``,
+    isAliasRole(role)
+      ? `\`--color-${role}\`, unset by default: read it as \`${colorVar(role)}\``
+      : `\`--color-${role}\``,
+  ]),
 )}
 
 ${scaleTable('Space — `--space-*`', spaceTokens)}

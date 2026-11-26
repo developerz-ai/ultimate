@@ -37,7 +37,7 @@ export const useT = (): Translator<AppCatalog> => useI18n<AppCatalog>();
 | One call | Because |
 |---|---|
 | validates + flattens every locale before registering any | a malformed catalog fails the boot whole, never half |
-| registers the framework catalog under `en` first, the app's second | later wins, so app strings override framework strings |
+| stands each locale on the framework catalog in its language, the app's strings second | later wins, so app strings override framework strings |
 | `configureLocales({ supported, fallback })` | the locale set is declared once, not twice |
 | returns `{ default, locales, catalogs, keys() }` | the app's key space, for tests and tooling |
 
@@ -94,14 +94,15 @@ non-string leaf with `X_CATALOG_INVALID`. Registration order is framework then a
 wins, which is how an app overrides `errors.notFound.title` without forking the framework.
 
 `src/catalogs/en.json` ships the framework's own strings: `errors.*`, `auth.*`,
-`pagination.*`, `admin.*`, `validation.*`, `common.*`, `time.cron.*`.
+`pagination.*`, `admin.*`, `validation.*`, `common.*`, `time.cron.*`, `ui.*` — and
+`ro.json`, `es.json`, `pt-BR.json` the same keys translated (`FRAMEWORK_CATALOGS`).
 
-**It is registered under `en` and no other locale** — the golden rule applies to framework strings
-too. An app shipping `es` that has not translated `errors.notFound.title` renders
-`⟦errors.notFound.title⟧` there, not `Page not found`: filling every locale with the English
-catalog is a fallback chain, it reads as `isMiss === false`, and `auditCatalogs()` cannot
-see it because `CatalogSet.catalogs` carries app strings only. Translate the framework keys your
-app renders into your own catalog — that is the one path, and it is the same merge an override is.
+**Each is registered under the language it is written in** — the golden rule applies to framework
+strings too. An app's `ro`, `pt-br` or `es-MX` catalog stands on the shipped Romanian, Portuguese or
+Spanish one, its own strings on top. A language the framework does not ship (`de`) renders
+`⟦errors.notFound.title⟧` for a key the app has not translated, never `Page not found`: filling
+every locale with the English catalog is a fallback chain, it reads as `isMiss === false`, and
+`auditCatalogs()` cannot see it because `CatalogSet.catalogs` carries app strings only.
 
 ## A catalog slice for an island
 

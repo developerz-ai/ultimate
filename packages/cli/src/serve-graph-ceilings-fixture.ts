@@ -387,8 +387,11 @@
  * raised 1010 → 1011, measured 1011 (2026-11-24, outbound refusal headers):
  * `core/src/outbound-refusal-headers.ts`, the check and the read of `refusal.headers`, on the core
  * barrel graph `outbound()` is reached through.
+ * raised 1011 → 1014, measured 1014 (2026-11-26, framework strings in ro, es and pt-BR):
+ * `i18n/src/catalogs/{ro,es,pt-BR}.json`, the framework's own translations `framework.ts` installs
+ * at import on the i18n barrel, so every role renders `ui.*` and `errors.*` in an app's language.
  */
-export const MIGRATE_CEILING = 1011;
+export const MIGRATE_CEILING = 1014;
 
 // One import site for the test, which reads both pins from here.
 export { SERVING_ROLE_CEILING } from './serve-graph-serving-ceiling-fixture';

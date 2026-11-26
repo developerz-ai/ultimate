@@ -1588,6 +1588,10 @@ charts and email.
 | `chart-6` | `--color-chart-6` |
 | `chart-7` | `--color-chart-7` |
 | `chart-8` | `--color-chart-8` |
+| `link` | `--color-link`, unset by default: read it as `var(--color-link, var(--color-accent))` |
+| `link-strong` | `--color-link-strong`, unset by default: read it as `var(--color-link-strong, var(--color-accent-strong))` |
+| `nav-active` | `--color-nav-active`, unset by default: read it as `var(--color-nav-active, var(--color-accent))` |
+| `focus` | `--color-focus`, unset by default: read it as `var(--color-focus, var(--color-accent))` |
 
 ### Space — `--space-*`
 

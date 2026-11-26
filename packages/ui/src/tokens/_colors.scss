@@ -6,6 +6,8 @@
 // lifted for the dark one until each clears 3:1 on every surface and every pair stays apart under
 // protan/deutan/tritan simulation (`contrast.test.ts`, `colour-vision.test.ts`).
 
+@use 'sass:map';
+
 $light: (
   bg: 253 246 240,
   bg-soft: 245 237 230,
@@ -76,6 +78,17 @@ $dark: (
   chart-8: 181 181 180,
 );
 
+/// Roles that DEFAULT to a palette role and are never emitted here: `role(link)` compiles to
+/// `rgb(var(--color-link, var(--color-accent)))`, so until a brand sets `--color-link` a link IS
+/// the accent — the brand's accent too, and an accent a subtree overrides. Mirrors `COLOR_ALIASES`
+/// in `color-tokens.ts`; `tokens.test.ts` fails if the two drift.
+$aliases: (
+  link: accent,
+  link-strong: accent-strong,
+  nav-active: accent,
+  focus: accent,
+);
+
 /// The tone vocabulary, in the order components expose it. Mirrors `TONES` in
 /// `components/variants.ts`; `variants.test.ts` fails if the two drift.
 $tones: (neutral, accent, success, warning, danger, info);
@@ -115,5 +128,8 @@ $tones: (neutral, accent, success, warning, danger, info);
 
 /// `rgb()` wrapper so components never touch the raw channel list.
 @function role($name, $alpha: 1) {
+  @if map.has-key($aliases, $name) {
+    @return rgb(var(--color-#{$name}, var(--color-#{map.get($aliases, $name)})) / #{$alpha});
+  }
   @return rgb(var(--color-#{$name}) / #{$alpha});
 }

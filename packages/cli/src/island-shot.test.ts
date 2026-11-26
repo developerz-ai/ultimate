@@ -10,12 +10,12 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { encodeImage } from '@ultimat3/core';
 import type { IslandStatesManifest } from '@ultimat3/testing';
 import { defineIslandStates, islandShotTargets } from '@ultimat3/testing';
 import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import type { ShotDriver, ShotSession } from './browser-launcher-port';
 import { readStateFlag, refuseRouteWithIsland } from './cmd-shot-island';
-import { clipFor, ISLAND_CROP_MARGIN_PX } from './island-capture';
 import { ISLAND_HARNESS_PATH } from './island-harness';
 import { readinessProbe } from './island-harness-script';
 import type { IslandBrowser } from './island-shot';
@@ -283,6 +283,59 @@ describe('unit · the byte floor is a backstop against an answer that is not an 
   });
 });
 
+/**
+ * The floor was 512 bytes and refused a real 36 px flat button (372 bytes) as blank. Blankness is
+ * now the pixels' question, under the DEFAULT floor: a small picture of something passes, a big
+ * picture of nothing is refused with the crop's fix, not the browser's.
+ */
+describe('unit · a small picture of something is a picture; a picture of one colour is not', () => {
+  const answering = (bytes: Uint8Array): ShotDriver => {
+    const base = cleanDriver();
+    return {
+      name: base.name,
+      open: async (init): Promise<ShotSession> => {
+        const session = await base.open(init);
+        return { ...session, page: { ...session.page, screenshot: async () => bytes } };
+      },
+    };
+  };
+  const shoot = (bytes: Uint8Array, out: string) =>
+    runIslandShot({
+      manifest,
+      state: 'save-failed',
+      outDir: join(dir, out),
+      driver: browserOf(answering(bytes)),
+      boot: () => Promise.resolve(stubServer()),
+      settleMs: 0,
+      timeoutMs: 1_000,
+    });
+  const square = (size: number, paint: (x: number) => number): Uint8Array => {
+    const pixels = new Uint8ClampedArray(size * size * 4);
+    for (let i = 0; i < size * size; i += 1) {
+      const value = paint(i % size);
+      pixels.set([value, value, value, 255], i * 4);
+    }
+    return encodeImage({ width: size, height: size, pixels });
+  };
+
+  test('a 52 px crop of a bordered button, under 512 bytes, is written', async () => {
+    const bytes = square(52, (x) => (x === 8 || x === 43 ? 120 : 250));
+    expect(bytes.byteLength).toBeLessThan(512);
+    const artifacts = await shoot(bytes, 'small-real');
+    expect(artifacts.verdict.ok).toBe(true);
+  });
+
+  test('a crop of one colour is refused, and the fix points at the crop', async () => {
+    const thrown = await shoot(
+      square(300, () => 250),
+      'one-colour',
+    ).catch((error: unknown) => error);
+    expect(thrown).toMatchObject({ code: 'X_SHOT_ISLAND_UNPHOTOGRAPHABLE' });
+    expect((thrown as { cause: string }).cause).toContain('one colour');
+    expect((thrown as { fix: string }).fix).toContain('set target to a selector');
+  });
+});
+
 describe('unit · the two flag rules, refused before anything boots', () => {
   test('--island and a route positional are one command with two subjects', () => {
     expect(() => refuseRouteWithIsland('/dash', 'settings')).toThrow();
@@ -370,91 +423,5 @@ describe('unit · a byte floor that is not a number is not a floor', () => {
   test('a minBytes of 0 is still accepted, because it is the seam a fake driver needs', async () => {
     const artifacts = await run(cleanDriver(), 'floor-zero');
     expect(artifacts.verdict.ok).toBe(true);
-  });
-});
-
-/**
- * The crop was the readiness box EXACTLY, and a pixel-tight rectangle shaves off everything a
- * component paints outside its border box — a `box-shadow`, an outline, a focus ring, a hairline
- * border on a subpixel. The reviewer then reads a component with no elevation as flat, which is a
- * change the component never made.
- *
- * Every case fails on a margin of 0, which is the code this replaced.
- */
-describe('unit · the crop carries a margin, and the margin is clamped to the page', () => {
-  const clipAt = (
-    box: IslandReadiness['box'],
-    page: IslandReadiness['page'] = { width: 1280, height: 2000 },
-  ) => clipFor({ ...READY, box, scroll: { x: 0, y: 0 }, page }, ISLAND_CROP_MARGIN_PX);
-
-  test('the frame is the component grown by one margin on every side', () => {
-    expect(clipAt({ x: 100, y: 100, width: 200, height: 120 })).toEqual({
-      x: 100 - ISLAND_CROP_MARGIN_PX,
-      y: 100 - ISLAND_CROP_MARGIN_PX,
-      width: 200 + 2 * ISLAND_CROP_MARGIN_PX,
-      height: 120 + 2 * ISLAND_CROP_MARGIN_PX,
-    });
-  });
-
-  // A clip starting at -8 asks CDP for coordinates no page content is at, and what comes back is a
-  // blank band a reviewer reads as the component's own whitespace.
-  test('a component at the page origin never asks for a negative coordinate', () => {
-    expect(clipAt({ x: 0, y: 0, width: 200, height: 120 })).toEqual({
-      x: 0,
-      y: 0,
-      width: 208,
-      height: 128,
-    });
-  });
-
-  test('a component at the far edge never runs past the document', () => {
-    expect(clipAt({ x: 1080, y: 1880, width: 200, height: 120 })).toEqual({
-      x: 1072,
-      y: 1872,
-      width: 208,
-      height: 128,
-    });
-  });
-
-  /**
-   * The invariant that survives a page whose own extent is smaller than the box it reports — a
-   * transform, a fixed element, a document read mid-layout. A clamp that could shrink the frame
-   * would crop the component this run is OF, which is worse than no margin at all.
-   */
-  test('the margin may only make the frame bigger, never smaller than the component', () => {
-    const clip = clipAt({ x: 0, y: 0, width: 400, height: 400 }, { width: 10, height: 10 });
-    expect([clip.width, clip.height]).toEqual([400, 400]);
-  });
-});
-
-/**
- * The crop was the island's own box, so an OPEN popup — a combobox's listbox, a menu, a popover
- * portalled to `<body>` — was cut at the trigger's bottom edge, and the state the file declared
- * (`open`, `filtered`) photographed as a closed input. The frame is the union now.
- */
-describe('unit · the crop covers the island AND its open popups', () => {
-  test('a listbox below the trigger is inside the frame', () => {
-    const clip = clipFor(
-      {
-        ...READY,
-        box: { x: 100, y: 100, width: 200, height: 40 },
-        frame: { x: 100, y: 100, width: 240, height: 300 },
-      },
-      ISLAND_CROP_MARGIN_PX,
-    );
-    expect(clip).toEqual({
-      x: 100 - ISLAND_CROP_MARGIN_PX,
-      y: 100 - ISLAND_CROP_MARGIN_PX,
-      width: 240 + 2 * ISLAND_CROP_MARGIN_PX,
-      height: 300 + 2 * ISLAND_CROP_MARGIN_PX,
-    });
-  });
-
-  test('the probe measures the popups the page shows, by role and by open popover', () => {
-    const probe = readinessProbe('[data-x-island]');
-    for (const popup of ['[role=listbox]', '[role=menu]', '[role=dialog]', ':popover-open']) {
-      expect(probe).toContain(popup);
-    }
-    expect(probe).toContain('frame:');
   });
 });

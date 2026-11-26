@@ -254,16 +254,43 @@ export function registerBaseCatalog(locale: Locale, catalog: Catalog): void {
 }
 
 /**
+ * The base a registered locale stands on: its LANGUAGE's layer, then its own tag's, matched on the
+ * canonical key — so `pt-br` stands on the shipped `pt-BR`, and `es-MX` on `es`. `undefined` when
+ * the framework ships nothing in that language.
+ */
+function baseFor(locale: Locale): Catalog | undefined {
+  const key = translatorKey(locale);
+  const language = key.split('-')[0] ?? key;
+  const byKey = new Map<string, Catalog[]>();
+  for (const [tag, catalog] of base) {
+    const at = translatorKey(tag);
+    byKey.set(at, [...(byKey.get(at) ?? []), catalog]);
+  }
+  const layers = (language === key ? [key] : [language, key]).flatMap(
+    (wanted) => byKey.get(wanted) ?? [],
+  );
+  return layers.length === 0 ? undefined : mergeCatalogs(...layers);
+}
+
+/**
  * Base UNDER app, never over it — `mergeCatalogs` takes the later argument, so the registered
  * catalog goes second and an app's override of `errors.notFound.title` survives every install.
  * Merging rather than skipping an occupied locale is what makes this order-independent: a base
  * registered after an app's `defineCatalogs()` still lands, and a repeat is a no-op because the
  * app's value already won the same key.
+ *
+ * Only `DEFAULT_LOCALE` is seated on its own. Every other shipped language (`ro`, `es`, `pt-BR`)
+ * lands under a locale the APP registered, never beside it: seated alone, `ro` would be in
+ * `registeredLocales()` — the app's manifest — of an app that never offered Romanian.
  */
 function installBase(): void {
-  for (const [locale, catalog] of base) {
+  const seated = new Set<Locale>(registry.keys());
+  if (base.has(DEFAULT_LOCALE)) seated.add(DEFAULT_LOCALE);
+  for (const locale of seated) {
+    const layer = baseFor(locale);
+    if (layer === undefined) continue;
     const existing = registry.get(locale);
-    registry.set(locale, existing === undefined ? catalog : mergeCatalogs(catalog, existing));
+    registry.set(locale, existing === undefined ? layer : mergeCatalogs(layer, existing));
     translators.delete(translatorKey(locale));
   }
 }
@@ -273,7 +300,9 @@ function installBase(): void {
  * key, because the merge takes the argument last.
  */
 export function registerCatalog(locale: Locale, catalog: Catalog): void {
-  const existing = registry.get(locale);
+  // A first registration stands on the framework's strings in its language, so `ro` gets the
+  // shipped `ui.*` in Romanian rather than `⟦ui.dismiss⟧`.
+  const existing = registry.get(locale) ?? baseFor(locale);
   registry.set(locale, existing === undefined ? catalog : mergeCatalogs(existing, catalog));
   translators.delete(translatorKey(locale));
 }

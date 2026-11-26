@@ -15,17 +15,21 @@ import { IslandRequestUnstubbedError, IslandUnphotographableError } from './isla
 import type { IslandReadiness, IslandStateShot } from './island-verdict';
 import { parseReadiness } from './island-verdict';
 import { quoteArg } from './shell-quote';
+import { blankShotReason } from './shot-blank';
 import { type ShotCookiePair, shotCookies } from './shot-cookie';
 import type { ShotServer } from './shot-server';
 import { allowHostsFrom } from './shot-server';
 import { SETTLE_POLL_MS, settleReadiness } from './shot-settle';
 
 /**
- * A backstop and not a quality bar: it catches the answers that are not an image at all — a driver
- * that hands back a handshake, an empty buffer, a PNG signature with nothing behind it. A real
- * capture of any viewport clears it by an order of magnitude.
+ * The smallest complete PNG (signature, IHDR, one IDAT, IEND) — a cheap backstop ahead of the
+ * pixel judgement in `shot-blank.ts`, for an answer that cannot be an image at all: a handshake,
+ * an empty buffer, a signature with nothing behind it. Never a quality bar: a flat 36 px button is
+ * a few hundred honest bytes, and a floor of 512 refused it as blank (2077pc's theme toggle,
+ * 372 bytes). Whether the picture shows anything is the PIXELS' question. `0` turns the whole
+ * judgement off — the seam a fake driver needs.
  */
-export const MIN_SHOT_BYTES = 512;
+export const MIN_SHOT_BYTES = 67;
 
 /**
  * Page pixels kept on every side of the crop target.
@@ -119,6 +123,31 @@ export function photographFault(
     };
   }
   return undefined;
+}
+
+const browserFix = (target: IslandShotTarget): string =>
+  `x shot --island ${quoteArg(target.name)} --browser /usr/bin/chromium --json   # macOS: --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; Windows: --browser "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"`;
+
+/**
+ * The assertion AFTER the shutter: the bytes are an image, and the image shows something. Under
+ * the byte floor or undecodable is the browser's fault; one colour or nothing opaque is the crop's.
+ * A `floor` of 0 asserts nothing — the seam a fake driver's 8-byte answer needs.
+ */
+export async function pictureFault(
+  target: IslandShotTarget,
+  bytes: Uint8Array,
+  floor: number,
+): Promise<Refusal | undefined> {
+  if (floor === 0) return undefined;
+  if (bytes.byteLength < floor) {
+    return {
+      reason: `produced ${bytes.byteLength} bytes, under the ${floor}-byte floor — that is not an image`,
+      fix: browserFix(target),
+    };
+  }
+  const blank = await blankShotReason(bytes);
+  if (blank === undefined) return undefined;
+  return { reason: blank.reason, fix: blank.undecodable ? browserFix(target) : cropFix(target) };
 }
 
 /**
@@ -260,13 +289,13 @@ export async function captureIslandState(
       finiteCount('x shot --island', 'cropMarginPx', options.cropMarginPx ?? ISLAND_CROP_MARGIN_PX),
     );
     const bytes = await page.screenshot({ clip });
-    if (bytes.byteLength < floor) {
+    const empty = await pictureFault(target, bytes, floor);
+    if (empty !== undefined) {
       throw new IslandUnphotographableError({
         island: target.island,
         state: target.state,
         theme: target.theme,
-        reason: `produced ${bytes.byteLength} bytes, under the ${floor}-byte floor — that is not an image`,
-        fix: `x shot --island ${quoteArg(target.name)} --browser /usr/bin/chromium --json   # macOS: --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; Windows: --browser "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"`,
+        ...empty,
       });
     }
     await Bun.write(join(options.outDir, target.file), bytes);

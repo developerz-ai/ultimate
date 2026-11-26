@@ -2,14 +2,18 @@
 // overrides — the same slots `defineTheme()` takes, with colours made total so a preset is measured
 // alone and never leans on the default palette to pass.
 
-import type { ColorRole, RadiusName, ShadowName, Theme } from '../tokens/tokens';
+import type { AliasRole, ColorRole, RadiusName, ShadowName, Theme } from '../tokens/tokens';
 
 /** The font slots `_typography.scss` emits — `defineTheme()` validates against this list. */
 export const FONT_SLOTS = ['sans', 'mono', 'data'] as const;
 export type FontSlot = (typeof FONT_SLOTS)[number];
 
+/** Total over the palette; an alias (`link`, `focus`, …) only when the preset splits it off. */
+export type PresetPalette = Readonly<Record<ColorRole, string>> &
+  Readonly<Partial<Record<AliasRole, string>>>;
+
 export interface ThemePreset {
-  readonly colors: Readonly<Record<Theme, Readonly<Record<ColorRole, string>>>>;
+  readonly colors: Readonly<Record<Theme, PresetPalette>>;
   readonly shadows?: Readonly<
     Partial<Record<Theme, Readonly<Partial<Record<ShadowName, string>>>>>
   >;

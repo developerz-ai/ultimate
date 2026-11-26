@@ -64,6 +64,36 @@ describe('defineTheme', () => {
     expect(css).toContain("html[data-theme='dark'] {\n  --color-accent: 200 210 220;\n}");
   });
 
+  test('the link, nav and focus roles follow the accent until a brand splits them off', () => {
+    // Unset, an alias is never declared: `role(link)` falls back to the accent at run time.
+    const accentOnly = defineTheme({ colors: { light: { accent: '10 20 120' } } }).css;
+    expect(accentOnly).not.toContain('--color-link');
+    expect(accentOnly).not.toContain('--color-focus');
+    const split = defineTheme({ colors: { light: { link: '10 60 20', focus: '120 10 10' } } }).css;
+    expect(split).toContain(':root {\n  --color-link: 10 60 20;\n  --color-focus: 120 10 10;\n}');
+    // Light-only: the OS-dark document answers with the accent's PROPERTY, not its shipped channels.
+    expect(split).toContain('--color-link: var(--color-accent);');
+    expect(split).toContain('--color-focus: var(--color-accent);');
+  });
+
+  test('an accent alone is measured as the link and the focus ring it becomes', () => {
+    // 1.0:1 on every surface as text — caught on the accent pairing and, named, on the link one.
+    expect(codeOf(() => defineTheme({ colors: { light: { accent: '250 245 241' } } }))).toBe(
+      UI_ERROR_CODES.contrastInsufficient,
+    );
+    // A link the brand set unreadably is refused even though its accent is fine.
+    let what = '';
+    try {
+      defineTheme({ colors: { light: { link: '240 236 232' } } });
+    } catch (error) {
+      what = String((error as { cause?: string }).cause);
+    }
+    expect(what).toContain('a Link or plain <a> on a surface');
+    expect(codeOf(() => defineTheme({ colors: { light: { focus: '240 236 232' } } }))).toBe(
+      UI_ERROR_CODES.contrastInsufficient,
+    );
+  });
+
   test('dark colours land behind the media query AND the attribute rule', () => {
     const css = defineTheme({ colors: { dark: { accent: '200 210 220' } } }).css;
     expect(css).toContain('@media (prefers-color-scheme: dark) {\n  :root {');
