@@ -159,7 +159,8 @@ export interface Repo<T = unknown> {
    * `updateWhere` answering the rows it wrote, as stored: `update … where <filter> returning *`, so
    * no explicit lock. The call for "update if it is still open" that must learn which rows this
    * call (not a concurrent one) moved. Every guard `updateWhere` has applies unchanged, a match past
-   * `MAX_ASSERTED_ROWS` is refused before the write, and a filter matching nothing resolves `[]`.
+   * `MAX_ASSERTED_ROWS` is refused, including when concurrent changes increase the Postgres result
+   * after its pre-write count. A filter matching nothing resolves `[]`.
    * Optional: the typed handle refuses the call, before any write, on a repository without it.
    */
   updateWhereReturning?(

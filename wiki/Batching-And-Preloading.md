@@ -141,7 +141,7 @@ const removed = await db.likes.deleteWhere({ orgId, postId, memberId });
 | `insertAll(rows)` | one multi-row `insert`, every row parsed through `$parse` exactly as `insert(row)` parses one |
 | `upsertAll(rows, { onConflict, onMatch })` | `on conflict (…) do update` / `do nothing`; a collision overwrites every column the batch names except the conflict target, the primary key, and the soft-delete stamp |
 | `updateWhere(filter, patch)` | the bulk form of `update(id, patch)` — and the only write path for a composite-key entity (`likes`, `blocks`, any join table) with no single-column id to address |
-| `updateWhereReturning(filter, patch)` | `updateWhere` answering the rows it wrote (one `update … returning *` decides, no explicit lock; past `MAX_ASSERTED_ROWS` matches it is refused before the write): `updateWhereReturning({ id, status: 'open' }, { status: 'claimed' })` is `[]` when another caller got there first |
+| `updateWhereReturning(filter, patch)` | `updateWhere` answering the rows it wrote. On Postgres one `update … returning *` decides, with no explicit lock; a pre-write count past `MAX_ASSERTED_ROWS` is refused, and a transaction rolls back if concurrent changes increase the result past the bound. A custom store refuses before writing. `updateWhereReturning({ id, status: 'open' }, { status: 'claimed' })` is `[]` when another caller got there first |
 | `deleteWhere(filter)` | the bulk form of `delete(id)`, same reason |
 | `countBy(column)` | one grouped count, the aggregate a `count()` per row is the N+1 of — see [Entities and migrations → A count per row is one grouped count](Entities-And-Migrations#a-count-per-row-is-one-grouped-count) |
 

@@ -19,12 +19,7 @@ import {
 } from './driver-write-scope';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
-import {
-  assertedRowsTooMany,
-  MAX_ASSERTED_ROWS,
-  returnedBound,
-  returnedRowsUnknown,
-} from './invariants';
+import { assertedRowsTooMany, MAX_ASSERTED_ROWS, returningUnsupported } from './invariants';
 import { mergedRow } from './memory-update';
 import { idPlan, namedColumns, singleKeyOf } from './plan';
 import type { FilteredWriteOptions, Repo, RepoOptions, Tx } from './repo';
@@ -95,17 +90,12 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
    * rows the store wrote. A searchable entity's version is the STORE's to advance, per row and
    * atomically (`DriverRepo.update`'s `advance`): a value the kit computed from a read would let a
    * second process's newer version be written over.
-   *
-   * `answer` is `updateWhereReturning`'s: handed the rows THIS call wrote. A store reports a count,
-   * so the write then names the keys it read beside the filter — a row that entered the filter since
-   * is not written, and one that left it is a count short, refused rather than guessed.
    */
   const patched = async (
     op: string,
     plan: QueryPlan,
     patch: object,
     options: RepoOptions | undefined,
-    answer?: (rows: readonly Row[]) => void,
   ): Promise<number> => {
     const tx = scope.txOf(op, options);
     // Nothing to judge: no read-back and no cap — one store call, as Postgres sends one statement.
@@ -126,38 +116,18 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     // A declared version lock is per row (`v = stored + 1`), which one store patch cannot say: the
     // judged path below, one write per row (`driver-versioned-write.ts`).
     const lock = versionOf(entity);
-    const answered = async (rows: readonly Row[], written: number): Promise<number> => {
-      if (written === 0) return 0;
-      if (written !== rows.length) throw returnedRowsUnknown(entity.$name, rows.length, written);
-      // Read back under the key the patch left the row with, when it names one.
-      const keys = entity.$primaryKey.filter((key) => Object.hasOwn(narrowed, key));
-      const moved = Object.fromEntries(keys.map((key) => [key, narrowed[key]]));
-      const left = rows.map((row) => Object.assign({}, row, moved));
-      answer?.(await writtenBack(op, plan, left, tx));
-      return written;
-    };
-    /** One store call, or for `answer` one per set of keys read. */
-    const update = async (found: readonly Row[], values: Readonly<Record<string, unknown>>) => {
-      if (answer === undefined) return raw.update({ plan, tx }, values, advance);
-      let written = 0;
-      for (const keyed of found.length === 0 ? [] : byKeys(scope, plan, found)) {
-        written += await raw.update({ plan: keyed, tx }, values, advance);
-      }
-      return answered(found, written);
-    };
     if (entity.$invariants.length === 0 && !movesReference && lock === null) {
       // The search mirror asked for the rows: read them first, as the judged path does. Past the
       // judged bound they are not handed over — the mirror logs the write it could not name.
       const before =
-        sink === undefined && answer === undefined
+        sink === undefined
           ? []
           : scope.checked(
               op,
               plan,
               await raw.select({ plan, after: undefined, limit: MAX_ASSERTED_ROWS + 1, tx }),
             );
-      if (answer !== undefined) returnedBound(entity.$name, before.length);
-      const written = await update(before, narrowed);
+      const written = await raw.update({ plan, tx }, narrowed, advance);
       if (sink !== undefined && before.length <= MAX_ASSERTED_ROWS) {
         sink(await writtenBack(op, plan, before, tx));
       }
@@ -179,7 +149,6 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     }
     await references(results);
     if (lock !== null) {
-      const wrote: Row[] = [];
       const written = await versionedWrites(scope, {
         op,
         plan,
@@ -191,9 +160,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
         narrowed,
         tx,
         references,
-        wrote: (row) => void wrote.push(row),
       });
-      if (answer !== undefined) return answered(wrote, written);
       if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
       return written;
     }
@@ -203,7 +170,7 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     const merged = mergedRow(entity, first, patch) as Record<string, unknown>;
     const values = Object.fromEntries(namedColumns(patch).map(([key]) => [key, merged[key]]));
     if (advance !== undefined) values[advance.property] = narrowed[advance.property];
-    const written = await update(found, values);
+    const written = await raw.update({ plan, tx }, values, advance);
     if (sink !== undefined) sink(await writtenBack(op, plan, found, tx));
     return written;
   };
@@ -220,17 +187,16 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
       : checkedDelete(scope, op, plan, options);
 
   const updated = async (
-    op: 'updateWhere' | 'updateWhereReturning',
+    op: 'updateWhere',
     filter: RowPatch<Row>,
     given: RowPatch<Row>,
     options: FilteredWriteOptions | undefined,
-    answer?: (rows: readonly Row[]) => void,
   ): Promise<number> => {
     refuseAbandoned();
     const patch = entity.$parsePatch(given) as RowPatch<Row>;
     const plan = scope.storePlan(op, updateWherePlan(entity, filter, patch, options, op));
     assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
-    return patched(op, plan, patch, options, answer);
+    return patched(op, plan, patch, options);
   };
 
   const writes: DriverWrites<Row> = {
@@ -312,13 +278,9 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
 
     updateWhere: async (filter, given, options) => updated('updateWhere', filter, given, options),
 
-    // The store has no `returning`: the rows are the ones `patched` read, wrote and read back.
-    async updateWhereReturning(filter, given, options) {
-      let rows: readonly Row[] = [];
-      await updated('updateWhereReturning', filter, given, options, (wrote) => {
-        rows = wrote;
-      });
-      return rows;
+    // A count-only store cannot identify this call's rows under concurrent writes.
+    async updateWhereReturning() {
+      throw returningUnsupported(entity.$name);
     },
 
     // A store answers rows from every insert, so the count is their length: one judging path.

@@ -1033,9 +1033,9 @@ the search mirror and the `entity.bulk` report are the same.
 
 | `updateWhereReturning` | |
 |---|---|
-| Bound | the rows are held at once, so a match past `MAX_ASSERTED_ROWS` is `X_INVARIANT_VIOLATED` before the write, on every driver. Sweep with `.where(filter).inBatches(1000)`, or use `updateWhere`, which answers a count and has no such bound |
-| Statements on Postgres | one when the filter names the whole primary key. Otherwise, and whenever a rule only the app can judge is declared, a `count(*)` goes first: a memory bound only, never which rows are written |
-| `defineDriver` store | reads the matching rows, writes them by key under the same filter, reads them back. A row another writer moved in between is not answered as this call's: none written is `[]`, some written is `X_INVARIANT_VIOLATED` naming how many |
+| Bound | a pre-write count past `MAX_ASSERTED_ROWS` is `X_INVARIANT_VIOLATED`. Postgres also bounds returned rows inside a transaction, rolling back if the count drifts. Sweep with `.where(filter).inBatches(1000)`, or use `updateWhere`, which answers a count |
+| Statements on Postgres | one when the filter names the whole primary key and no rule only the app can judge is declared. Otherwise a `count(*)` goes first, without an explicit lock |
+| `defineDriver` store | refuses before writing: the store reports only a count, not the rows it wrote. Use `updateWhere` for a count or a repository implementing atomic `updateWhereReturning` |
 | `Repo` without it | optional on the contract: the call is `X_INVARIANT_VIOLATED` with nothing written |
 
 | Bulk insert | Resolves | Statement |

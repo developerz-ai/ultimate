@@ -169,6 +169,16 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     expect(statementsOf(migration.up).length).toBeGreaterThan(0);
   });
 
+  test('a broad returning update executes its bounded statement on Postgres', async () => {
+    const orgId = await newOrg('returning-bounded');
+    await write(orgId, 'returning-bounded');
+    const rows = await inRequestFor(orgId, () =>
+      db().invoices.updateWhereReturning({ paid: false }, { paid: true }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.paid).toBe(true);
+  });
+
   test('a row survives the round trip through real column types', async () => {
     const written = await write(acme, 'INV-round-trip', {
       total: { minor: 12_500, currency: 'EUR' },

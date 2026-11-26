@@ -132,19 +132,7 @@ export const returningUnsupported = (entityName: string): EntityError =>
   new EntityError({
     code: 'X_INVARIANT_VIOLATED',
     cause: `${entityName}.${CALL}() reached a repository that does not implement it: the contract lets a hand-written Repo omit it, and its updateWhere answers a count, never the rows. Nothing was written`,
-    fix: `${describeCommand(entityName)}   # then implement ${CALL} on that Repo, or serve ${entityName} with postgresDriver(), memoryDriver() or defineDriver(), which have it`,
-  });
-
-/** A custom store's race: rows this call read were moved by another writer before its update. */
-export const returnedRowsUnknown = (
-  entityName: string,
-  read: number,
-  written: number,
-): EntityError =>
-  new EntityError({
-    code: 'X_INVARIANT_VIOLATED',
-    cause: `${entityName}.${CALL}() wrote ${written} of the ${read} rows it read, and the store cannot say which: another writer moved the rest in between. The ${written} stay written unless the transaction they are in rolls back`,
-    fix: `${describeCommand(entityName)}   # read the rows back to see which hold the patch before retrying; one row per call (a filter naming the primary key) cannot be half written`,
+    fix: `${describeCommand(entityName)}   # then implement ${CALL} on that Repo, or serve ${entityName} with postgresDriver() or memoryDriver()`,
   });
 
 /** Runs on every write. Reports every violation at once so one round trip fixes all. */

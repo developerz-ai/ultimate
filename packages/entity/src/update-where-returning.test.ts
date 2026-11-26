@@ -288,7 +288,24 @@ describe('postgres statement', () => {
     client.on('count(*)', { rows: [{ count: String(MAX_ASSERTED_ROWS) }] });
     client.on('update', { rows: [physical()] });
     expect(await claim()).toHaveLength(1);
-    expect(client.texts.map((each) => each.split(' ')[0])).toEqual(['select', 'update']);
+    expect(client.texts.map((each) => each.split(' ')[0])).toEqual([
+      'select',
+      'BEGIN',
+      'with',
+      'COMMIT',
+    ]);
+  });
+
+  test('a count that drifts past the bound rolls the update back', async () => {
+    use();
+    client.on('count(*)', { rows: [{ count: '1' }] });
+    client.on('update', { rows: tooMany(() => physical()) });
+    const refused = await caught(
+      updating(postgresRepo(tasks))({ status: 'open' }, { status: 'closed' }, { orgId: ORG }),
+    );
+    expect(refused).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(client.texts.at(-1)).toBe('ROLLBACK');
+    expect(client.texts.find((text) => text.includes('returning *'))).toContain('limit');
   });
 
   test('carries the tenant, the soft-delete clause and the bound updated_at stamp, like updateWhere', async () => {

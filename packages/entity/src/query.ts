@@ -215,10 +215,11 @@ export interface Table<Row, C extends ColumnMap = ColumnMap>
    * `updateWhere` has is this call's: the filter and patch refusals (`X_WRITE_UNFILTERED`,
    * `X_PATCH_EMPTY`), tenancy, soft-delete, invariants, the `onUpdateNow()` stamp and the version
    * column, sealing, the search mirror and the `entity.bulk` report. The rows are held at once, so a
-   * match past `MAX_ASSERTED_ROWS` is refused before the write (`X_INVARIANT_VIOLATED`): a filter
+   * result past `MAX_ASSERTED_ROWS` is refused (`X_INVARIANT_VIOLATED`), including when concurrent
+   * changes increase it after the pre-write count. A filter
    * that does not name the whole primary key is counted first, and so is a write under an invariant
-   * only the app can judge. A `defineDriver` store reads the rows first; a repository without
-   * `updateWhereReturning` is refused with nothing written.
+   * only the app can judge. A `defineDriver` store and a repository without
+   * `updateWhereReturning` refuse the call with nothing written.
    */
   updateWhereReturning(
     filter: RowPatch<Row>,

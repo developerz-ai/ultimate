@@ -15,6 +15,7 @@ import {
   type SqlFragment,
   sql,
   withStatementAttribution,
+  withTransaction,
 } from '@ultimat3/db';
 import { appendOnlyRepo } from './append-only';
 import { asInvariantRefusal } from './check-refusal';
@@ -213,8 +214,8 @@ export const postgresRepo = <Row>(
 
   /**
    * Only an entity with a JS-only rule comes here: rows ARE needed, so how many is a memory bound.
-   * Counted BEFORE the write, because a refusal after `returning *` has already allocated what it
-   * refuses; a concurrent writer can drift the count, which moves a bound, never a decision.
+   * Counted before the write. Returning updates also cap the rows sent back and judge the cap in
+   * the transaction, because concurrent changes can invalidate the preliminary count.
    */
   const judgedRows = async (
     op: string,
@@ -224,9 +225,14 @@ export const postgresRepo = <Row>(
   ): Promise<Row[]> => {
     const rows = await matching(op, plan, shape);
     if (rows > MAX_ASSERTED_ROWS) throw assertedRowsTooMany(entity.$name, op, rows);
-    const statement = updateStatement(entity, plan, values, shape, true);
+    const update = updateStatement(entity, plan, values, shape, true);
+    const statement =
+      op === 'updateWhereReturning'
+        ? sql`with updated as (${update}) select * from updated limit ${MAX_ASSERTED_ROWS + 1}`
+        : update;
     return judged(async (send) => {
       const written = await attributed(op, () => writing(() => send.query<PhysicalRow>(statement)));
+      if (op === 'updateWhereReturning') returnedBound(entity.$name, written.length);
       const decoded = written.map((row) => decodeRow(entity, row));
       for (const row of decoded) entity.$assert(row);
       writtenRowsSink()?.(decoded);
@@ -407,8 +413,8 @@ export const postgresRepo = <Row>(
 
     // The same plan, patch and judging as `updateWhere`, and the rows ARE the answer: the one
     // `update … returning *` decides them, with no lock around it. They are also all held at once,
-    // so how many is a memory bound, counted first as `judgedRows` counts and with its drift — but
-    // not where the filter names the whole primary key, which one row at most can match.
+    // so how many is a memory bound. A non-keyed write checks it again inside its transaction:
+    // the preliminary count can drift. A primary key names at most one row.
     async updateWhereReturning(filter, given, options) {
       const op = 'updateWhereReturning';
       const { plan, values, shape } = filteredPatch(op, filter, given, options);
@@ -418,10 +424,22 @@ export const postgresRepo = <Row>(
       );
       if (!keyed) returnedBound(entity.$name, await matching(op, plan, shape));
       const statement = updateStatement(entity, plan, values, shape, true);
-      const rows = await attributed(op, () =>
-        writing(() => client().query<PhysicalRow>(statement)),
+      if (keyed) {
+        const rows = await attributed(op, () =>
+          writing(() => client().query<PhysicalRow>(statement)),
+        );
+        return rows.map((row) => decodeRow(entity, row));
+      }
+      client();
+      return withTransaction(
+        async (tx) => {
+          const bounded = sql`with updated as (${statement}) select * from updated limit ${MAX_ASSERTED_ROWS + 1}`;
+          const rows = await attributed(op, () => writing(() => tx.query<PhysicalRow>(bounded)));
+          returnedBound(entity.$name, rows.length);
+          return rows.map((row) => decodeRow(entity, row));
+        },
+        config.client === undefined ? {} : { client: config.client },
       );
-      return rows.map((row) => decodeRow(entity, row));
     },
 
     async count(args = {}) {
