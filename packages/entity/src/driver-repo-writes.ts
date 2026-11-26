@@ -19,7 +19,7 @@ import {
 } from './driver-write-scope';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
-import { assertedRowsTooMany, MAX_ASSERTED_ROWS, returningUnsupported } from './invariants';
+import { assertedRowsTooMany, MAX_ASSERTED_ROWS } from './invariants';
 import { mergedRow } from './memory-update';
 import { idPlan, namedColumns, singleKeyOf } from './plan';
 import type { FilteredWriteOptions, Repo, RepoOptions, Tx } from './repo';
@@ -41,7 +41,6 @@ export type DriverWrites<Row> = Pick<
   | 'delete'
   | 'deleteWhere'
   | 'updateWhere'
-  | 'updateWhereReturning'
   | 'insertAllCount'
   | 'upsertAllCount'
   | 'copyAll'
@@ -277,11 +276,6 @@ export const driverWrites = <Row>(scope: DriverScope<Row>): DriverWrites<Row> =>
     },
 
     updateWhere: async (filter, given, options) => updated('updateWhere', filter, given, options),
-
-    // A count-only store cannot identify this call's rows under concurrent writes.
-    async updateWhereReturning() {
-      throw returningUnsupported(entity.$name);
-    },
 
     // A store answers rows from every insert, so the count is their length: one judging path.
     insertAllCount: async (given, options) => (await writes.insertAll(given, options)).length,

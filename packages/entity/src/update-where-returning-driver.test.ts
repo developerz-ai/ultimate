@@ -2,19 +2,30 @@
 // returning writes before mutation while retaining count-only updates.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { text, uuid } from './columns';
+import { boolean, text, uuid } from './columns';
 import { database } from './database';
 import { defineDriver } from './define-driver';
 import type { DriverRepo } from './driver-kit-types';
 import { selectRows } from './driver-rows';
 import { type EntityCore, entity } from './entity';
 import type { EntityError } from './errors';
+import { invariant } from './invariants';
 import { clearRegistry } from './registry';
 
 const id = (n: number): string => `00000000-0000-7000-8000-${String(n).padStart(12, '0')}`;
 
 const jobs = entity('uwrd_jobs', {
   columns: { id: uuid().primaryKey(), status: text({ max: 20 }), worker: text().nullable() },
+});
+
+const guarded = entity('uwrd_guarded', {
+  columns: { id: uuid().primaryKey(), slug: text(), locked: boolean() },
+  invariants: (c) => [
+    invariant(
+      'locked_keeps_slug',
+      c.satisfies((slug, locked) => !locked || slug === 'kept', ['slug', 'locked']),
+    ),
+  ],
 });
 
 type Job = typeof jobs.$row;
@@ -83,8 +94,23 @@ afterAll(() => {
 });
 
 describe('updateWhereReturning on a custom store', () => {
+  test('rejudges an unversioned row changed between read and update', async () => {
+    const db = database({ guarded }, { driver: store() });
+    await db.guarded.insert({ id: id(1), slug: 'kept', locked: false });
+    between = () => {
+      stores.get(guarded.$name)?.set(id(1), { id: id(1), slug: 'kept', locked: true });
+    };
+    const error = await caught(db.guarded.updateWhere({ id: id(1) }, { slug: 'changed' }));
+    expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect((await db.guarded.where({ id: id(1) }).all())[0]).toMatchObject({
+      slug: 'kept',
+      locked: true,
+    });
+  });
   test('a count-only store refuses before any update, including a multi-row match', async () => {
-    const db = database({ jobs }, { driver: store() });
+    const driver = store();
+    expect(driver.repo(jobs).updateWhereReturning).toBeUndefined();
+    const db = database({ jobs }, { driver });
     await db.jobs.insertAll([job(1), job(2)]);
     const refused = await caught(
       db.jobs.updateWhereReturning({ status: 'open' }, { status: 'taken' }),
