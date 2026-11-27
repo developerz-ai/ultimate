@@ -142,7 +142,17 @@ export function subjectReader<I>(
     }
     for (const via of steps.get(entity)?.via ?? []) {
       for await (const values of parentKeys(via)) {
-        yield* table(entity).andWhere(via.property, 'in', values).inBatches(size);
+        // One key is the subject's own (an org, when the subject IS the tenant): `eq`, because the
+        // tenant guard refuses any predicate on the tenant column but `eq` the actor's org, and
+        // `in [<org id>]` on it was X_TENANCY_ACTOR_MISMATCH for every child of a tenant subject.
+        // Several keys never reach the tenant column: only the subject's own row has a tenant's id as
+        // its key, so a foreign key to any other parent is not the tenant column and `in` is allowed.
+        const [only] = values;
+        yield* (
+          values.length === 1
+            ? table(entity).where({ [via.property]: only })
+            : table(entity).andWhere(via.property, 'in', values)
+        ).inBatches(size);
       }
     }
   }
