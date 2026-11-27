@@ -4,101 +4,101 @@
   "concurrency": 16,
   "box": {
     "os": "linux-x64",
-    "cpu": "Intel(R) Xeon(R) 6975P-C",
+    "cpu": "AMD EPYC 9V45 96-Core Processor",
     "cores": 4,
-    "memoryGb": 15,
+    "memoryGb": 16,
     "bun": "1.4.4",
     "runner": "ubuntu26"
   },
-  "coldStartMs": 1086,
-  "rssMb": 598,
+  "coldStartMs": 1419,
+  "rssMb": 683,
   "spread": {
     "rps": {
-      "min": 837.07,
-      "median": 875.23,
+      "min": 818.11,
+      "median": 889.12,
       "n": 5
     },
     "p50Ms": {
-      "min": 16.44,
-      "median": 16.55,
+      "min": 15.48,
+      "median": 15.86,
       "n": 5
     },
     "p99Ms": {
-      "min": 35.02,
-      "median": 35.3,
+      "min": 42.71,
+      "median": 45.13,
       "n": 5
     }
   },
   "runs": [
     {
-      "requests": 25126,
-      "ok": 25126,
+      "requests": 24565,
+      "ok": 24565,
       "non2xx": 0,
       "errors": 0,
       "statuses": {
-        "200": 25126
+        "200": 24565
       },
-      "durationMs": 30016.74,
-      "rps": 837.07,
-      "p50Ms": 17.09,
-      "p99Ms": 38.96,
-      "bytes": 9799140
+      "durationMs": 30026.61,
+      "rps": 818.11,
+      "p50Ms": 16.58,
+      "p99Ms": 52.69,
+      "bytes": 7271240
     },
     {
-      "requests": 26432,
-      "ok": 26432,
+      "requests": 26685,
+      "ok": 26685,
       "non2xx": 0,
       "errors": 0,
       "statuses": {
-        "200": 26432
+        "200": 26685
       },
-      "durationMs": 30025.11,
-      "rps": 880.33,
-      "p50Ms": 16.45,
-      "p99Ms": 35.06,
-      "bytes": 10308480
+      "durationMs": 30012.85,
+      "rps": 889.12,
+      "p50Ms": 15.86,
+      "p99Ms": 45.13,
+      "bytes": 7898760
     },
     {
-      "requests": 26129,
-      "ok": 26129,
+      "requests": 26448,
+      "ok": 26448,
       "non2xx": 0,
       "errors": 0,
       "statuses": {
-        "200": 26129
+        "200": 26448
       },
-      "durationMs": 30016.94,
-      "rps": 870.48,
-      "p50Ms": 16.63,
-      "p99Ms": 35.78,
-      "bytes": 10190310
+      "durationMs": 30015.26,
+      "rps": 881.15,
+      "p50Ms": 16.02,
+      "p99Ms": 43.73,
+      "bytes": 7828608
     },
     {
-      "requests": 26276,
-      "ok": 26276,
+      "requests": 27137,
+      "ok": 27137,
       "non2xx": 0,
       "errors": 0,
       "statuses": {
-        "200": 26276
+        "200": 27137
       },
-      "durationMs": 30021.67,
-      "rps": 875.23,
-      "p50Ms": 16.55,
-      "p99Ms": 35.3,
-      "bytes": 10247640
+      "durationMs": 30017.98,
+      "rps": 904.02,
+      "p50Ms": 15.5,
+      "p99Ms": 42.71,
+      "bytes": 8032552
     },
     {
-      "requests": 26415,
-      "ok": 26415,
+      "requests": 27020,
+      "ok": 27020,
       "non2xx": 0,
       "errors": 0,
       "statuses": {
-        "200": 26415
+        "200": 27020
       },
-      "durationMs": 30016.21,
-      "rps": 880.02,
-      "p50Ms": 16.44,
-      "p99Ms": 35.02,
-      "bytes": 10301850
+      "durationMs": 30016.81,
+      "rps": 900.16,
+      "p50Ms": 15.48,
+      "p99Ms": 45.79,
+      "bytes": 7997920
     }
   ]
 }
