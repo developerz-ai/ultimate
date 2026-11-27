@@ -12,6 +12,7 @@ import { assertBatchable, type BatchIterator, batchIterator } from './batch';
 import { shrinkingPages } from './batch-bytes';
 import type { EntityCore } from './entity';
 import { searchUndeclared } from './feature-errors';
+import { returningUnsupported } from './invariants';
 import { latestByRows, type ReadLatest } from './latest-by';
 import { checkedPredicate, type Operator } from './operator';
 import { assertFinitePageSize, DEFAULT_PAGE_SIZE } from './plan';
@@ -206,6 +207,25 @@ export interface Table<Row, C extends ColumnMap = ColumnMap>
    * `X_PATCH_EMPTY`. `onUpdateNow()` columns are stamped exactly as `update(id, patch)` stamps them.
    */
   updateWhere(filter: RowPatch<Row>, patch: RowPatch<Row>, options?: RepoOptions): Promise<number>;
+  /**
+   * `updateWhere` that resolves with the rows it wrote, as stored — on Postgres one `update … where
+   * … returning *`, so "update if it is still open" and "which rows did THIS call move" are decided
+   * by one statement and need no explicit lock. A filter matching nothing (the row was already
+   * moved, deleted or is another tenant's) resolves `[]`, never `X_NOT_FOUND`. Every guard
+   * `updateWhere` has is this call's: the filter and patch refusals (`X_WRITE_UNFILTERED`,
+   * `X_PATCH_EMPTY`), tenancy, soft-delete, invariants, the `onUpdateNow()` stamp and the version
+   * column, sealing, the search mirror and the `entity.bulk` report. The rows are held at once, so a
+   * result past `MAX_ASSERTED_ROWS` is refused (`X_INVARIANT_VIOLATED`), including when concurrent
+   * changes increase it after the pre-write count. A filter
+   * that does not name the whole primary key is counted first, and so is a write under an invariant
+   * only the app can judge. A `defineDriver` store and a repository without
+   * `updateWhereReturning` refuse the call with nothing written.
+   */
+  updateWhereReturning(
+    filter: RowPatch<Row>,
+    patch: RowPatch<Row>,
+    options?: RepoOptions,
+  ): Promise<readonly Row[]>;
 }
 
 interface State {
@@ -423,6 +443,11 @@ export const tableFor = <Row, C extends ColumnMap>(
   deleteWhere: async (filter, options) => repo.deleteWhere(filter, options),
   updateWhere: async (filter, patch, options) =>
     repo.updateWhere(filter, touch(entity, patch), options),
+  updateWhereReturning: async (filter, patch, options) => {
+    // No fallback through `updateWhere`: its count names no rows, and by then they are written.
+    if (repo.updateWhereReturning === undefined) throw returningUnsupported(entity.$name);
+    return repo.updateWhereReturning(filter, touch(entity, patch), options);
+  },
   // `touch` is passed rather than applied here: a transition IS an update, so an `onUpdateNow()`
   // column has to move exactly as `update(id, patch)` moves it — which is also the audit of WHEN
   // the row moved, using the stamp already declared instead of a second one beside it.

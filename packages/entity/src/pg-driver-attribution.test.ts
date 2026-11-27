@@ -176,6 +176,10 @@ const calls: readonly (readonly [string, () => Promise<unknown>])[] = [
     'updateWhere',
     () => memberRepo().updateWhere({ role: 'admin' }, { role: 'owner' }, { orgId: ORG }),
   ],
+  [
+    'updateWhereReturning',
+    async () => memberRepo().updateWhereReturning?.({ id: ANA }, { role: 'owner' }, { orgId: ORG }),
+  ],
   // `aggregate` names itself by the FUNCTION, not by the method: a diagnostic reporting "50x
   // aggregate on members" would not say which one, and `min` and `sum` are different statements
   // with different costs. `deletedAt` because it is the one column here `min` accepts.

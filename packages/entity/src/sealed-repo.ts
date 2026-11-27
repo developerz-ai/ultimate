@@ -263,7 +263,24 @@ export const sealedRepo = <Row, R extends Repo<Row>>(entity: SealedSource, repo:
   // where the inner repository has them, so the typed handle's fallback still sees an absence.
   const sealAll = <T>(rows: readonly T[], keys: SealKeys): Promise<T[]> =>
     Promise.all(rows.map((row) => sealRow(entity, fields, row, keys, true)));
-  const { insertAllCount, upsertAllCount, copyAll, updateMany } = repo;
+  const { insertAllCount, upsertAllCount, copyAll, updateMany, updateWhereReturning } = repo;
+  if (updateWhereReturning !== undefined) {
+    // `updateWhere`'s refusals and sealing, then the rows opened as `update`'s are.
+    sealing.updateWhereReturning = async (filter, patch, options) => {
+      refuseNamed(entity, fields, filterOf(filter), "a filtered write's filter");
+      const keys = sealKeysOnce();
+      return openRows(
+        fields,
+        await updateWhereReturning.call(
+          repo,
+          filter,
+          await sealRow(entity, fields, patch, keys),
+          await chainArgs(options, keys),
+        ),
+        keys,
+      );
+    };
+  }
   if (insertAllCount !== undefined) {
     sealing.insertAllCount = async (rows, options) =>
       insertAllCount.call(repo, await sealAll(rows, sealKeysOnce()), options);
