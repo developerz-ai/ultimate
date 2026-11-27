@@ -11,10 +11,13 @@ import { database, memoryDriver } from './database';
 import { type DriverRepo, defineDriver } from './define-driver';
 import type { EntityCore } from './entity';
 import { entity } from './entity';
+import { memoryRepo } from './memory-repo';
+import { tableFor } from './query';
 import { clearRegistry } from './registry';
 import type { SearchIndex } from './search-index';
 import { installSearchIndex } from './search-index-installed';
 import { memorySearchIndex } from './search-index-memory';
+import { searchMirroredRepo } from './search-mirrored-repo';
 
 afterAll(() => {
   clearRegistry();
@@ -174,6 +177,51 @@ describe('the search index write path, for writes that name no id', () => {
     await settle();
     expect(await hits(index, notes.$name, 'quokka')).toEqual([idAt(1), idAt(2)]);
     expect(await hits(index, notes.$name, 'zebra')).toEqual([idAt(3)]);
+  });
+
+  test("updateWhereReturning indexes each written row's new text on the memory driver", async () => {
+    const index = installed();
+    const db = database({ notes }, { driver: memoryDriver() });
+    await seedNotes(db);
+    const rows = await asMember(() =>
+      db.notes.updateWhereReturning({ shelf: 'old' }, { title: 'quokka' }),
+    );
+    await settle();
+    expect(rows.map((row) => row.id).sort()).toEqual([idAt(1), idAt(2)]);
+    expect(await hits(index, notes.$name, 'quokka')).toEqual([idAt(1), idAt(2)]);
+    expect(await hits(index, notes.$name, 'zebra')).toEqual([idAt(3)]);
+  });
+
+  test('a custom store refuses returning before changing rows or the search index', async () => {
+    const index = installed();
+    const db = database({ notes }, { driver: mapStore() });
+    await seedNotes(db);
+    await expect(
+      asMember(() => db.notes.updateWhereReturning({ shelf: 'old' }, { title: 'quokka' })),
+    ).rejects.toMatchObject({ code: 'X_INVARIANT_VIOLATED' });
+    await settle();
+    expect(await hits(index, notes.$name, 'quokka')).toEqual([]);
+    expect(await hits(index, notes.$name, 'zebra')).toEqual([idAt(1), idAt(2), idAt(3)]);
+  });
+
+  test('a legacy repository with a search mirror refuses returning before mutation', async () => {
+    installed();
+    const { updateWhereReturning: _omitted, ...legacy } = memoryRepo(notes);
+    let writes = 0;
+    const mirrored = searchMirroredRepo(notes, {
+      ...legacy,
+      updateWhere: async (filter, patch, options) => {
+        writes += 1;
+        return legacy.updateWhere(filter, patch, options);
+      },
+    });
+    const table = tableFor(notes, mirrored);
+    await asMember(() => table.insert({ id: idAt(1), orgId: ORG, title: 'zebra', shelf: 'old' }));
+    await expect(
+      asMember(() => table.updateWhereReturning({ shelf: 'old' }, { title: 'quokka' })),
+    ).rejects.toMatchObject({ code: 'X_INVARIANT_VIOLATED' });
+    expect(writes).toBe(0);
+    expect((await asMember(() => table.where({ id: idAt(1) }).one()))?.title).toBe('zebra');
   });
 
   test('a soft deleteWhere removes the stamped rows', async () => {

@@ -78,7 +78,13 @@ export const appendOnlyRepo = <Row, R extends Repo<Row>>(entity: AppendOnlySourc
   const name = entity.$name;
   const refusing: Pick<
     Repo<Row>,
-    'update' | 'delete' | 'updateWhere' | 'deleteWhere' | 'upsertAll' | 'updateMany'
+    | 'update'
+    | 'delete'
+    | 'updateWhere'
+    | 'updateWhereReturning'
+    | 'deleteWhere'
+    | 'upsertAll'
+    | 'updateMany'
   > = {
     update: async () => {
       throw appendOnlyRefused(name, 'update');
@@ -88,6 +94,9 @@ export const appendOnlyRepo = <Row, R extends Repo<Row>>(entity: AppendOnlySourc
     },
     updateWhere: async () => {
       throw appendOnlyRefused(name, 'updateWhere');
+    },
+    updateWhereReturning: async () => {
+      throw appendOnlyRefused(name, 'updateWhereReturning');
     },
     // The one door out of a history table: a subject's erase, inside `purgingHistory` naming it.
     deleteWhere: async (filter, options) => {

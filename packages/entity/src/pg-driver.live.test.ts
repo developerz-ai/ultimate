@@ -169,6 +169,16 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     expect(statementsOf(migration.up).length).toBeGreaterThan(0);
   });
 
+  test('a broad returning update executes its bounded statement on Postgres', async () => {
+    const orgId = await newOrg('returning-bounded');
+    await write(orgId, 'returning-bounded');
+    const rows = await inRequestFor(orgId, () =>
+      db().invoices.updateWhereReturning({ paid: false }, { paid: true }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.paid).toBe(true);
+  });
+
   test('a row survives the round trip through real column types', async () => {
     const written = await write(acme, 'INV-round-trip', {
       total: { minor: 12_500, currency: 'EUR' },
@@ -406,6 +416,22 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     expect(
       (await repo().findMany({ orgId: org })).rows.every((row) => row.note === 'live only'),
     ).toBe(true);
+  });
+
+  test('updateWhereReturning gives the row to exactly one of two concurrent claims', async () => {
+    const org = await newOrg('update-where-returning');
+    const target = await write(org, 'CLAIM-a');
+    const claim = async () => {
+      const claimed = repo().updateWhereReturning;
+      if (claimed === undefined) expect.unreachable('postgresRepo has no updateWhereReturning');
+      return claimed.call(repo(), { id: target.id, paid: false }, { paid: true }, { orgId: org });
+    };
+
+    const results = await Promise.all([claim(), claim()]);
+
+    expect(results.map((rows) => rows.length).sort()).toEqual([0, 1]);
+    expect(results.flat()[0]).toMatchObject({ id: target.id, paid: true });
+    expect((await repo().findById(target.id, { orgId: org }))?.paid).toBe(true);
   });
 
   test('deleteWhere soft-deletes where delete(id) would, and rolls back with its transaction', async () => {
