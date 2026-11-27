@@ -15,6 +15,7 @@ import {
   type SqlFragment,
   sql,
   withStatementAttribution,
+  withTransaction,
 } from '@ultimat3/db';
 import { appendOnlyRepo } from './append-only';
 import { asInvariantRefusal } from './check-refusal';
@@ -26,7 +27,12 @@ import { noteDriverStore } from './driver-registry';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound, repoClientPinned } from './errors';
 import { stampHistoryActor } from './history-actor';
-import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
+import {
+  assertedRowsTooMany,
+  hasJsOnlyInvariant,
+  MAX_ASSERTED_ROWS,
+  returnedBound,
+} from './invariants';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
 import { judgedWrite } from './judged-write';
 import { assertPageBytes } from './page-bytes';
@@ -39,13 +45,14 @@ import { countStatement, type ReadShape, selectStatement } from './pg-sql';
 import { postgresTransactor } from './pg-transactor';
 import { deleteStatement, updateStatement } from './pg-write-sql';
 import { idPlan, readPlan } from './plan';
-import type { FindManyArgs, Repo } from './repo';
+import type { FilteredWriteOptions, FindManyArgs, Repo } from './repo';
 import { rowKey } from './row-key';
 import { sealedRepo } from './sealed-repo';
 import { deletionStamp } from './search-index-version';
 import { writtenRowsSink } from './search-written-rows';
 import type { QueryPlan } from './tenancy';
 import { assertRowTenant } from './tenancy';
+import type { RowPatch } from './types';
 import { assertVersionedUpdate, staleOrNotFound, versionOf } from './version-lock';
 import { taggedWrite } from './write-tag';
 import { updateWherePlan, writeWherePlan } from './write-where';
@@ -151,6 +158,14 @@ export const postgresRepo = <Row>(
         ? sql`${deleteStatement(entity, plan)} returning *`
         : deleteStatement(entity, plan);
 
+  /** How many rows a plan matches now: what bounds a write that answers or judges its rows. */
+  const matching = async (op: string, plan: QueryPlan, shape: ReadShape): Promise<number> => {
+    const matched = await attributed(op, () =>
+      client().one<{ count: unknown }>(countStatement(entity, plan, shape)),
+    );
+    return Number(matched?.count ?? 0);
+  };
+
   /**
    * A count, or — when the search mirror asked (`search-written-rows.ts`) — the same statement with
    * `returning *`, its rows handed over and counted. The rows ride only for a searchable entity
@@ -165,15 +180,7 @@ export const postgresRepo = <Row>(
     statement: (returning: boolean) => SqlFragment,
   ): Promise<number> => {
     const sink = writtenRowsSink();
-    const fits =
-      sink !== undefined &&
-      Number(
-        (
-          await attributed(op, () =>
-            client().one<{ count: unknown }>(countStatement(entity, plan, shape)),
-          )
-        )?.count ?? 0,
-      ) <= MAX_ASSERTED_ROWS;
+    const fits = sink !== undefined && (await matching(op, plan, shape)) <= MAX_ASSERTED_ROWS;
     if (sink === undefined || !fits) {
       return attributed(op, () => writing(() => client().execute(statement(false))));
     }
@@ -207,27 +214,29 @@ export const postgresRepo = <Row>(
 
   /**
    * Only an entity with a JS-only rule comes here: rows ARE needed, so how many is a memory bound.
-   * Counted BEFORE the write, because a refusal after `returning *` has already allocated what it
-   * refuses; a concurrent writer can drift the count, which moves a bound, never a decision.
+   * Counted before the write. Returning updates also cap the rows sent back and judge the cap in
+   * the transaction, because concurrent changes can invalidate the preliminary count.
    */
   const judgedRows = async (
     op: string,
     plan: QueryPlan,
     values: ReadonlyMap<string, unknown>,
     shape: ReadShape,
-  ): Promise<number> => {
-    const matched = await attributed(op, () =>
-      client().one<{ count: unknown }>(countStatement(entity, plan, shape)),
-    );
-    const rows = Number(matched?.count ?? 0);
+  ): Promise<Row[]> => {
+    const rows = await matching(op, plan, shape);
     if (rows > MAX_ASSERTED_ROWS) throw assertedRowsTooMany(entity.$name, op, rows);
-    const statement = updateStatement(entity, plan, values, shape, true);
+    const update = updateStatement(entity, plan, values, shape, true);
+    const statement =
+      op === 'updateWhereReturning'
+        ? sql`with updated as (${update}) select * from updated limit ${MAX_ASSERTED_ROWS + 1}`
+        : update;
     return judged(async (send) => {
       const written = await attributed(op, () => writing(() => send.query<PhysicalRow>(statement)));
+      if (op === 'updateWhereReturning') returnedBound(entity.$name, written.length);
       const decoded = written.map((row) => decodeRow(entity, row));
       for (const row of decoded) entity.$assert(row);
       writtenRowsSink()?.(decoded);
-      return written.length;
+      return decoded;
     });
   };
 
@@ -237,8 +246,27 @@ export const postgresRepo = <Row>(
    */
   const removed = (op: string, plan: QueryPlan): Promise<number> =>
     entity.$softDelete && hasJsOnlyInvariant(entity.$invariants)
-      ? judgedRows(op, plan, softDeletion(), shapeOf({}))
+      ? judgedRows(op, plan, softDeletion(), shapeOf({})).then((rows) => rows.length)
       : counted(op, plan, removalShape(), (returning) => removal(plan, returning));
+
+  /**
+   * What `updateWhere` and `updateWhereReturning` share before a statement exists: the plan (filter
+   * and patch refused as `updateWherePlan` refuses them), the tenant the patch may hand rows to, and
+   * the bound values. `shapeOf({})` keeps the `deleted_at is null` clause `update(id, patch)`
+   * already carries, so a soft-deleted row is not silently patched back into shape.
+   */
+  const filteredPatch = (
+    op: 'updateWhere' | 'updateWhereReturning',
+    filter: RowPatch<Row>,
+    given: RowPatch<Row>,
+    options: FilteredWriteOptions | undefined,
+  ) => {
+    const patch = entity.$parsePatch(given);
+    const plan = updateWherePlan(entity, filter, patch, options, op);
+    // The same move, filtered: one statement can hand away every row it matches.
+    assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
+    return { plan, values: bindValues(entity, patch), shape: shapeOf({}) };
+  };
 
   const repo: Repo<Row> = {
     async findById(id, options) {
@@ -366,15 +394,8 @@ export const postgresRepo = <Row>(
     },
 
     async updateWhere(filter, given, options) {
-      const patch = entity.$parsePatch(given);
       const op = 'updateWhere';
-      const plan = updateWherePlan(entity, filter, patch, options, op);
-      // The same move, filtered: one statement can hand away every row it matches.
-      assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
-      const values = bindValues(entity, patch);
-      // `shapeOf({})` keeps the `deleted_at is null` clause `update(id, patch)` already carries,
-      // so a soft-deleted row is not silently patched back into shape.
-      const shape = shapeOf({});
+      const { plan, values, shape } = filteredPatch(op, filter, given, options);
       // The rows come back only when something here can still refuse them. A `check` or a `unique`
       // invariant is a constraint Postgres enforced on the statement itself, so the answer is
       // already a count; only a JS-only rule (`kind: 'assert'`, `sql: null`) has to be judged on
@@ -387,7 +408,38 @@ export const postgresRepo = <Row>(
           updateStatement(entity, plan, values, shape, returning),
         );
       }
-      return judgedRows(op, plan, values, shape);
+      return (await judgedRows(op, plan, values, shape)).length;
+    },
+
+    // The same plan, patch and judging as `updateWhere`, and the rows ARE the answer: the one
+    // `update … returning *` decides them, with no lock around it. They are also all held at once,
+    // so how many is a memory bound. A non-keyed write checks it again inside its transaction:
+    // the preliminary count can drift. A primary key names at most one row.
+    async updateWhereReturning(filter, given, options) {
+      const op = 'updateWhereReturning';
+      const { plan, values, shape } = filteredPatch(op, filter, given, options);
+      if (hasJsOnlyInvariant(entity.$invariants)) return judgedRows(op, plan, values, shape);
+      const keyed = entity.$primaryKey.every((key) =>
+        plan.where.some(({ column, op: test }) => column === key && test === 'eq'),
+      );
+      if (!keyed) returnedBound(entity.$name, await matching(op, plan, shape));
+      const statement = updateStatement(entity, plan, values, shape, true);
+      if (keyed) {
+        const rows = await attributed(op, () =>
+          writing(() => client().query<PhysicalRow>(statement)),
+        );
+        return rows.map((row) => decodeRow(entity, row));
+      }
+      client();
+      return withTransaction(
+        async (tx) => {
+          const bounded = sql`with updated as (${statement}) select * from updated limit ${MAX_ASSERTED_ROWS + 1}`;
+          const rows = await attributed(op, () => writing(() => tx.query<PhysicalRow>(bounded)));
+          returnedBound(entity.$name, rows.length);
+          return rows.map((row) => decodeRow(entity, row));
+        },
+        config.client === undefined ? {} : { client: config.client },
+      );
     },
 
     async count(args = {}) {

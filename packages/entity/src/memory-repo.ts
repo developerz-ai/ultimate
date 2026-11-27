@@ -17,7 +17,12 @@ import { cursorFor, kindOf, valueAt } from './cursor';
 import { projectRow } from './driver-rows';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { invariantViolated, notFound } from './errors';
-import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
+import {
+  assertedRowsTooMany,
+  hasJsOnlyInvariant,
+  MAX_ASSERTED_ROWS,
+  returnedBound,
+} from './invariants';
 import { holdInOrder, lockKeyInput, lockKeysInput } from './lock-key';
 import { memoryAggregates } from './memory-aggregates';
 import { undoingBatch } from './memory-batch';
@@ -35,7 +40,7 @@ import { memoryUpsertAll } from './memory-upsert';
 import { registerMemoryScan, resolveMemoryVias } from './memory-via';
 import { assertPageBytes } from './page-bytes';
 import { idPlan, readPlan, singleKeyOf } from './plan';
-import type { FindManyArgs, MemoryRepo, RepoOptions } from './repo';
+import type { FilteredWriteOptions, FindManyArgs, MemoryRepo, RepoOptions } from './repo';
 import { rowKey } from './row-key';
 import { sealedFields } from './sealed';
 import { sealedRepo } from './sealed-repo';
@@ -235,6 +240,47 @@ export const memoryRepo = <Row>(
     if (rows > MAX_ASSERTED_ROWS) throw assertedRowsTooMany(entity.$name, operation, rows);
   };
 
+  /** `updateWhere`'s whole path, answering the rows it wrote: the count is their length. */
+  const updated = async (
+    op: 'updateWhere' | 'updateWhereReturning',
+    filter: RowPatch<Row>,
+    given: RowPatch<Row>,
+    options: FilteredWriteOptions | undefined,
+  ): Promise<Row[]> => {
+    const patch = entity.$parsePatch(given);
+    const plan = updateWherePlan(entity, filter, patch, options, op);
+    // The PATCH, judged whole and before the rows are read — the same call `postgresRepo` makes
+    // before its statement exists. Inside the loop below it is judged only where a row was
+    // matched, so a patch handing rows to another tenant was refused or accepted depending on
+    // what the table happened to hold: `updateWhere(filter, { orgId: theirs })` over a filter
+    // matching nothing answered `0` here and threw there, from one call.
+    assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
+    // `rowsOf` again, so a soft-deleted row is as unreachable here as it is through
+    // `addressed()` — patching a row the app has already deleted is not an update, it is a
+    // resurrection nobody asked for. `write` re-asserts the invariants on each result.
+    const found = rowsOf(plan, {});
+    // The same ceiling `postgresRepo` applies from its own count, and for the same reason: this
+    // is the one write whose result size is the caller's FILTER rather than a page, and a rule
+    // only the app can judge is what forces every matched row through `$assert`. Without it a
+    // sweep of twelve million rows was green here and `X_INVARIANT_VIOLATED` there, from one
+    // call — a test proving a call production refuses. Before the loop, so a refusal never
+    // writes the rows it declined to judge.
+    if (hasJsOnlyInvariant(entity.$invariants)) assertedBound(found.length, op);
+    if (op === 'updateWhereReturning') returnedBound(entity.$name, found.length);
+    // The WHOLE batch is judged before any row of it lands — the same statement Postgres sends,
+    // which refuses as one. A row this batch refuses used to leave the rows before it stored:
+    // the write was a loop, and the loop stopped half way through.
+    const merged = judgeUpdate(entity, found, patch, untouched(found), storeKey);
+    for (const row of merged) judgeReferences(row);
+    // Judged whole, yet each row still meets the rows stored as it lands: one refused undoes the
+    // rows before it, as `deleteWhere`'s loop does and as Postgres rolls its statement back.
+    const written = undoingBatch(options?.tx, (tx) =>
+      merged.map((row, at) => write(row, { ...options, tx }, op, storeKey(found[at]))),
+    );
+    if (written.length <= MAX_ASSERTED_ROWS) writtenRowsSink()?.(written);
+    return written;
+  };
+
   // Every method is async: a repository call that fails must reject, never throw
   // synchronously, or half the call sites would need two error paths. Every write asks
   // `refuseAbandoned()` first, as `postgresRepo`'s `writing()` does (`write-abandon.test.ts`).
@@ -369,39 +415,8 @@ export const memoryRepo = <Row>(
       return doomed.length;
     }),
 
-    updateWhere: writing(async (filter, given, options) => {
-      const patch = entity.$parsePatch(given);
-      const plan = updateWherePlan(entity, filter, patch, options, 'updateWhere');
-      // The PATCH, judged whole and before the rows are read — the same call `postgresRepo` makes
-      // before its statement exists. Inside the loop below it is judged only where a row was
-      // matched, so a patch handing rows to another tenant was refused or accepted depending on
-      // what the table happened to hold: `updateWhere(filter, { orgId: theirs })` over a filter
-      // matching nothing answered `0` here and threw there, from one call.
-      assertRowTenant(entity.$name, entity.$tenantColumn, 'updateWhere', patch);
-      // `rowsOf` again, so a soft-deleted row is as unreachable here as it is through
-      // `addressed()` — patching a row the app has already deleted is not an update, it is a
-      // resurrection nobody asked for. `write` re-asserts the invariants on each result.
-      const found = rowsOf(plan, {});
-      // The same ceiling `postgresRepo` applies from its own count, and for the same reason: this
-      // is the one write whose result size is the caller's FILTER rather than a page, and a rule
-      // only the app can judge is what forces every matched row through `$assert`. Without it a
-      // sweep of twelve million rows was green here and `X_INVARIANT_VIOLATED` there, from one
-      // call — a test proving a call production refuses. Before the loop, so a refusal never
-      // writes the rows it declined to judge.
-      if (hasJsOnlyInvariant(entity.$invariants)) assertedBound(found.length, 'updateWhere');
-      // The WHOLE batch is judged before any row of it lands — the same statement Postgres sends,
-      // which refuses as one. A row this batch refuses used to leave the rows before it stored:
-      // the write was a loop, and the loop stopped half way through.
-      const merged = judgeUpdate(entity, found, patch, untouched(found), storeKey);
-      for (const row of merged) judgeReferences(row);
-      // Judged whole, yet each row still meets the rows stored as it lands: one refused undoes the
-      // rows before it, as `deleteWhere`'s loop does and as Postgres rolls its statement back.
-      const written = undoingBatch(options?.tx, (tx) =>
-        merged.map((row, at) => write(row, { ...options, tx }, 'updateWhere', storeKey(found[at]))),
-      );
-      if (written.length <= MAX_ASSERTED_ROWS) writtenRowsSink()?.(written);
-      return found.length;
-    }),
+    updateWhere: writing(async (...args) => (await updated('updateWhere', ...args)).length),
+    updateWhereReturning: writing((...args) => updated('updateWhereReturning', ...args)),
 
     // Nothing is decoded in memory, so a count is the rows' length: the same judging, one answer.
     insertAllCount: async (given, options) => (await repo.insertAll(given, options)).length,

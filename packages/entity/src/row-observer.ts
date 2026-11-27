@@ -370,7 +370,16 @@ export function observedRepo<Row>(
    * Each is present only where the repository has it, so the typed handle's fallback still sees
    * an absence.
    */
-  const { insertAllCount, upsertAllCount, copyAll, updateMany } = repo;
+  const { insertAllCount, upsertAllCount, copyAll, updateMany, updateWhereReturning } = repo;
+  if (updateWhereReturning !== undefined) {
+    // `updateWhere`'s report, over the rows it answered.
+    observed.updateWhereReturning = async (filter, patch, options) => {
+      const rows = await updateWhereReturning.call(repo, filter, patch, options);
+      bulk('update', rows.length, options);
+      await counted?.filtered(asRecord(filter), asRecord(patch) ?? {}, rows.length, options);
+      return rows;
+    };
+  }
   if (insertAllCount !== undefined) {
     observed.insertAllCount = async (rows, options) =>
       subscribed(ROW)

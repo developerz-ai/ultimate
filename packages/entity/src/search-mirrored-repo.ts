@@ -65,8 +65,17 @@ export function searchMirroredRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>
    * installed it runs as its returning counterpart — the same judging, the rows mirrored, their
    * length answered. With none installed it is the count path, untouched.
    */
-  const { insertAllCount, upsertAllCount, copyAll, updateMany } = repo;
+  const { insertAllCount, upsertAllCount, copyAll, updateMany, updateWhereReturning } = repo;
   const counts: Partial<Repo<Row>> = {
+    // Its rows are its answer, so the mirror is told them directly: no collecting context.
+    ...(updateWhereReturning === undefined
+      ? {}
+      : {
+          updateWhereReturning: (filter, patch, options) =>
+            stored(core, 'updateWhereReturning', options, () =>
+              updateWhereReturning.call(repo, filter, patch, options),
+            ),
+        }),
     ...(insertAllCount === undefined
       ? {}
       : {

@@ -114,6 +114,10 @@ describe('appendOnly · every write path a repository exposes', () => {
     ['update(id, patch)', () => db.events.update(ID, { note: 'edited' })],
     ['delete(id)', () => db.events.delete(ID)],
     ['updateWhere(filter, patch)', () => db.events.updateWhere({ kind: 'opened' }, { note: 'x' })],
+    [
+      'updateWhereReturning(filter, patch)',
+      () => db.events.updateWhereReturning({ kind: 'opened' }, { note: 'x' }),
+    ],
     ['deleteWhere(filter)', () => db.events.deleteWhere({ kind: 'opened' })],
     [
       "upsertAll(…, { onMatch: 'update' })",
