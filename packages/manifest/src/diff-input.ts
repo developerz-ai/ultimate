@@ -43,6 +43,15 @@ const SCHEMA_KEYWORDS = new Set(['items', 'additionalProperties', 'prefixItems',
 /** Keywords whose value maps names to schemas, each one a positive position too. */
 const SCHEMA_MAP_KEYWORDS = new Set(['properties', 'patternProperties']);
 
+/** A reference keyword: it can reach a widened node from anywhere, a negative position too. */
+const REF_KEYWORDS = new Set(['$ref', '$dynamicRef', '$recursiveRef']);
+
+const refers = (value: unknown): boolean =>
+  Array.isArray(value)
+    ? value.some(refers)
+    : isJsonObject(value) &&
+      Object.keys(value).some((key) => REF_KEYWORDS.has(key) || refers(value[key]));
+
 const joined = (results: readonly EnumWidening[]): EnumWidening =>
   results.includes('other') ? 'other' : results.includes('wider') ? 'wider' : 'same';
 
@@ -65,7 +74,8 @@ const schemaOrList = (before: unknown, after: unknown): EnumWidening => {
  * positive position is followed — `properties`, `items`, `anyOf`, `allOf` and their like — where
  * accepting more at the node accepts more overall. `oneOf`, `not`, `if`, `const` and every other
  * keyword must match exactly: widening inside one can refuse a payload the old schema took. An
- * enum holding the same values in another order is `same`.
+ * enum holding the same values in another order is `same`. A schema that refers (`$ref`) is never
+ * judged wider by `diffInput`: the reference can reach the widened node from a negative position.
  */
 export function enumWidening(before: unknown, after: unknown): EnumWidening {
   if (!isJsonObject(before) || !isJsonObject(after)) {
@@ -106,7 +116,8 @@ export function diffInput(
   }
   const widening = enumWidening(before, after);
   if (widening === 'same') return [];
-  if (widening === 'wider') {
+  // A `$ref` may reach the widened enum from a `not` or a `oneOf`: not judged, so breaking.
+  if (widening === 'wider' && !refers(before)) {
     return [{ kind: 'additive', path, detail: 'input accepts more enum values' }];
   }
   return [{ kind: 'breaking', path, detail: breakingDetail }];

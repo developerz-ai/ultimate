@@ -115,6 +115,11 @@ describe('an input enum change', () => {
         JSON.parse('{"if":{"enum":["a"]},"then":{"const":"a"}}'),
         JSON.parse('{"if":{"enum":["a","b"]},"then":{"const":"a"}}'),
       ],
+      // a reference reaching the widened node from a `not`.
+      [
+        { anyOf: [{ enum: ['a'] }, { type: 'string' }], not: { $ref: '#/anyOf/0' } },
+        { anyOf: [{ enum: ['a', 'b'] }, { type: 'string' }], not: { $ref: '#/anyOf/0' } },
+      ],
       // a widening beside a new constraint on the same node.
       [
         { enum: ['a'], type: 'string' },
