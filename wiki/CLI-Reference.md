@@ -707,13 +707,14 @@ below on `--workers` and batching describe 22.6 and earlier where they differ.
 | `x.verify.json` key | What it sets |
 |---|---|
 | `steps` | steps this repo may never report as skipped (`X_VERIFY_SUITE_VANISHED`) |
-| `coverage` | `{ "lines", "funcs", "why"?, "exclude"?: [{ "glob", "why" }] }` — the floor the `unit` step holds an app's whole source tree to (`X_COVERAGE_BELOW_FLOOR`, `X_COVERAGE_FLOOR_UNSTATED`, `X_COVERAGE_FLOOR_STALE`) → [Testing](Testing#coverage). `x doctor` prints every `exclude` |
-| `stepTimeoutMs` | `{ "<step>": milliseconds }` — a step's own deadline. Default 8 minutes for the six suites, 5 for every other step; past it the step is `X_VERIFY_STEP_TIMEOUT` and its processes are killed |
-| `exercise` | `{ "unprovenMax"?: <0–1>, "statementsMax"?: <whole ≥ 1> }` — what the `exercise` step's pass may leave unproven, and statements per call (`X_EXERCISE_UNPROVEN_ABOVE_FLOOR`, `X_STATEMENTS_OVER_BUDGET`); absent, each is a warning line → [`x exercise`](#x-exercise), `As of 31.16.0` |
+| `coverage` | `{ "lines", "funcs", "why"?, "exclude"?: [{ "glob", "why" }] }` — the `unit` step's floor for the app's whole source tree (`X_COVERAGE_BELOW_FLOOR`, `X_COVERAGE_FLOOR_UNSTATED`, `X_COVERAGE_FLOOR_STALE`) → [Testing](Testing#coverage). `x doctor` prints every `exclude` |
+| `stepTimeoutMs` | `{ "<step>": milliseconds }` — a step's own deadline. Default 8 minutes for the six suites, 5 otherwise; past it, `X_VERIFY_STEP_TIMEOUT`, its processes killed |
+| `localOnly` | `{ "<step>": "<why>" }` — steps a `CI` run leaves out, each why in a line and `data.localOnly`; run locally and by `--only`. An unknown step or empty why is a `manifest`-step problem |
+| `exercise` | `{ "unprovenMax"?: <0–1>, "statementsMax"?: <whole ≥ 1> }` — what the `exercise` step's pass may leave unproven, and statements per call (`X_EXERCISE_UNPROVEN_ABOVE_FLOOR`, `X_STATEMENTS_OVER_BUDGET`); absent, a warning → [`x exercise`](#x-exercise), `As of 31.16.0` |
 | `isolate` · `typecheckBin` · `agentsMdMaxBytes` | a fresh global per test file · the `tsc`-compatible binary · the `AGENTS.md` byte budget |
-| `strict` | `true`: every one of the 21 steps runs a check or carries a `skip` why — an unexcused one is red, `X_VERIFY_STRICT_UNRUN`. Absent or `false`: a warning line and `data.unwaived` name the steps that ran none. `As of 2026-11-15`; the default flips to `true` on `next` |
-| `skip` | `{ "<step>": "<why>" }` — the written reason a step runs no check in this repo: a step the gate runs, not one `steps` lists, a non-empty reason. A why over a step that ran is a warning on that step (`drop its entry`) |
-| `guardBaseline` | `{ "<guard>": n }` — a `guards/<guard>.ts` may still report `n` findings: up to `n` they are notices on `boundaries`, above it red (`X_GUARD_OVER_BASELINE`), under it red too, naming the lower number (`X_GUARD_BASELINE_STALE`) — the baseline only falls. A baseline for a guard the app no longer has is stale; a report-only guard (`severity: 'warning'`) is never judged |
+| `strict` | `true`: each step the run selects runs a check or has a `skip` why, else red (`X_VERIFY_STRICT_UNRUN`). Otherwise a warning line and `data.unwaived` name the steps that ran none. `As of 2026-11-15`; the default flips to `true` on `next` |
+| `skip` | `{ "<step>": "<why>" }` — why a step runs no check here: a gate step not in `steps`, a non-empty why. A why over a step that ran warns `drop its entry` |
+| `guardBaseline` | `{ "<guard>": n }` — a `guards/<guard>.ts` may still report `n` findings: up to `n` notices on `boundaries`, above it red (`X_GUARD_OVER_BASELINE`), below it red naming the lower number (`X_GUARD_BASELINE_STALE`): it only falls. A baseline for a removed guard is stale; a report-only guard (`severity: 'warning'`) is never judged |
 
 Either render prints one line per finished step on **stderr** as each finishes — under `--json`
 `{"step":"lint","ok":true,"ms":21987}`, otherwise (`As of 31.22`) `✓ lint 22.0s`, `○ seo 0.0s` for a
