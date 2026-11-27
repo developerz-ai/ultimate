@@ -57,7 +57,9 @@ describe('unit · the merge rules', () => {
   test('every registry a generator edits takes the registry driver', () => {
     const lines = rules(rootGitattributesFile().contents);
     for (const path of REGISTRY_FILES) expect(lines).toContain(`${path} merge=x-registry`);
-    expect(lines).toContain('packages/i18n/catalogs/*.json merge=x-registry');
+    // A flat `<locale>.json` and a split locale's namespace files alike, and the barrel beside them.
+    expect(lines).toContain('packages/i18n/catalogs/**/*.json merge=x-registry');
+    expect(lines).toContain('packages/i18n/catalogs/*/index.ts merge=x-registry');
   });
 
   test('the two projections x manifest rebuilds keep our side', () => {

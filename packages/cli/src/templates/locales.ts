@@ -13,6 +13,12 @@ export const CATALOG_ROOT = 'packages/i18n/catalogs';
 /** The catalog layout, written down once: `x g route` and `x g resource` both merge into it. */
 export const catalogPath = (locale: string): string => `${CATALOG_ROOT}/${locale}.json`;
 
+/** A split locale's directory: one `<namespace>.json` per namespace (`catalog-layout.ts`). */
+export const catalogDir = (locale: string): string => `${CATALOG_ROOT}/${locale}`;
+
+/** The generated module in a split locale's directory that joins its files into one catalog. */
+export const CATALOG_BARREL = 'index.ts';
+
 /** The runnable form of the flag, used as the fix on every rejection below. */
 const LOCALES_FIX = 'x g resource <name> --locales=en,es';
 

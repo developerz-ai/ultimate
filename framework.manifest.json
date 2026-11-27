@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "5bd05c4d7f6b45ce0360deb6ec770e25e9192297635a54f7a4a4845152887b2e",
+  "buildId": "aa2db0383b6924bd3231e6185f9229af3e26d1077fa8562a8aac4386dc57e740",
   "tiers": {
     "0": [
       "core",
@@ -1015,9 +1015,19 @@
       "at": "packages/i18n/src/errors.ts"
     },
     {
+      "code": "X_CATALOG_KEY_DUPLICATE",
+      "owner": "i18n",
+      "at": "packages/i18n/src/errors.ts"
+    },
+    {
       "code": "X_CATALOG_KEY_UNREACHABLE",
       "owner": "scripts",
       "at": "scripts/i18n-catalog.ts"
+    },
+    {
+      "code": "X_CATALOG_LAYOUT_MIXED",
+      "owner": "i18n",
+      "at": "packages/i18n/src/errors.ts"
     },
     {
       "code": "X_CATALOG_MISSING_KEYS",

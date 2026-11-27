@@ -4,13 +4,16 @@
 // with `x i18n add <locale>`, the one command that starts a catalog holding every existing key.
 
 import { renderFixShellArg } from '@ultimat3/core';
-import { type Catalog, loadCatalog } from '@ultimat3/i18n';
+import { type Catalog, loadCatalog, partitionCatalog } from '@ultimat3/i18n';
 import { loadAppCatalogs } from '@ultimat3/i18n/app-catalogs';
+import type { CatalogLayout } from './catalog-layout';
+import { readCatalogLayout } from './catalog-layout';
 import { BadFlagError } from './errors';
 import { resolveDefaultLocale, seedCatalog, serializeCatalog } from './i18n-audit';
 import { catalogLocales } from './i18n-index';
 import type { GeneratedFile } from './templates';
 import { CATALOG_ROOT, catalogPath } from './templates';
+import { catalogDir } from './templates/locales';
 
 /** The locale a `merge: 'json'` file is the catalog of, or `undefined` for any other file. */
 const localeOf = (file: GeneratedFile): string | undefined => {
@@ -69,13 +72,33 @@ export async function localiseCatalogs(
       });
     }
   }
-  return files.map((file) => {
+  const localised = files.map((file) => {
     const locale = localeOf(file);
     if (file.merge !== 'json' || locale === undefined || locale === fallback) return file;
     if (fallback === undefined) return file;
     const generated: unknown = JSON.parse(file.contents);
     return { ...file, contents: serializeCatalog(seedCatalog(loadCatalog(generated))) };
   });
+  const layout = await readCatalogLayout(root);
+  return localised.flatMap((file) => intoLayout(file, layout));
+}
+
+/**
+ * A template's `catalogs/<locale>.json` landed where the app keeps that locale: as is for a flat
+ * one, and for a split one as one `merge: 'json'` file per namespace — each key in the existing
+ * file of its longest prefix, else in its namespace's own, created. Written as `<locale>.json`
+ * beside the directory, it would be `X_CATALOG_LAYOUT_MIXED` on the next read.
+ */
+function intoLayout(file: GeneratedFile, layout: CatalogLayout): readonly GeneratedFile[] {
+  const locale = localeOf(file);
+  const entry = locale === undefined ? undefined : layout[locale];
+  if (file.merge !== 'json' || locale === undefined || entry?.form !== 'split') return [file];
+  const parts = partitionCatalog(loadCatalog(JSON.parse(file.contents)), entry.files);
+  return [...parts].map(([name, part]) => ({
+    ...file,
+    path: `${catalogDir(locale)}/${name}`,
+    contents: serializeCatalog(part),
+  }));
 }
 
 /**

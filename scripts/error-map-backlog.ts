@@ -90,6 +90,8 @@ export const OFF_SOCKET: Pins = {
     'X_CATALOG_MISSING_KEYS',
     'X_CATALOG_UNREGISTERED',
     'X_I18N_FAMILY_INCOMPLETE',
+    'X_CATALOG_LAYOUT_MIXED',
+    'X_CATALOG_KEY_DUPLICATE',
   ],
   // tier 1 — `registerCurrency`'s refusals and nothing else raises them. `REGISTERED` is per
   // PROCESS: a request-driven registration lands on one replica and leaves the others answering

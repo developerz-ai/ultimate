@@ -310,4 +310,23 @@ export const TEMPLATE_CODEMOD_ROWS: readonly TemplateCodemodRow[] = [
     since: '31.49.0',
     none: "x g sign-in now holds the second-factor challenge in auth's own cookie for both shapes; an existing app's sign-in-challenge.ts is its own code and keeps working with its own cookie, so x upgrade leaves it alone",
   },
+  ...[
+    'packages/cli/src/templates/catalog-barrel.ts',
+    'packages/cli/src/templates/locales.ts',
+    'packages/cli/src/templates/scaffold-i18n.ts',
+  ].map((template) => ({
+    template,
+    since: '31.52.0',
+    none: 'x new still writes flat catalogs and the same index; the split form (catalogs/<locale>/ with its barrel) is opt-in, and x i18n split writes it and rewrites the index import for the app that asks, so x upgrade leaves a flat app alone',
+  })),
+  {
+    template: 'packages/cli/src/templates/scaffold-gitattributes.ts',
+    since: '31.52.0',
+    none: "the catalog merge rule widened to catalogs/**/*.json plus each split locale's barrel; an existing app's catalogs/*.json rule still covers its flat files, and x i18n split widens that line in the app that splits, so x upgrade leaves .gitattributes alone",
+  },
+  {
+    template: '.gitattributes',
+    since: '31.52.0',
+    none: "the catalog merge rule widened to catalogs/**/*.json plus each split locale's barrel; an existing app's catalogs/*.json rule still covers its flat files, and x i18n split widens that line in the app that splits, so x upgrade leaves .gitattributes alone",
+  },
 ];
