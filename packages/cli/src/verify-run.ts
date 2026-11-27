@@ -16,6 +16,7 @@ import {
   skippedSuiteFinding,
   vanishedSuiteFinding,
 } from './verify-floor';
+import { leftOutOfCi } from './verify-local-only';
 import { inCi, judgeSkips } from './verify-skip-ceiling';
 import { appliesReason, ranNothingReason, skipLines } from './verify-skip-reason';
 import { stalledOutput, stepTimeoutFinding } from './verify-stalled';
@@ -48,7 +49,13 @@ export async function runVerify(
   resetTestDiscovery();
   const floor = await readVerifyFloor(ctx.root);
   const only = onlyList(ctx.only);
-  const selected = only === undefined ? steps : steps.filter((step) => only.includes(step.name));
+  const ci = inCi(ctx.env ?? Bun.env);
+  // A step the floor's `localOnly` names is a developer's, not CI's (`verify-local-only.ts`).
+  const selected = steps.filter(
+    (step) =>
+      (only === undefined || only.includes(step.name)) &&
+      !leftOutOfCi(floor?.localOnly, step.name, ci, only),
+  );
   const byName = new Map<string, StepResult>();
   // Per step: the numbers a judged run measured, or — under `--shard`, which cannot judge — the
   // `facts` its slice covered, for `x verify merge` to fold.

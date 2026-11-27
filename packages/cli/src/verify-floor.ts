@@ -17,6 +17,8 @@ import type { StepTimeouts } from './verify-deadline';
 import { readStepTimeouts, STEP_TIMEOUT_FIELD } from './verify-deadline';
 import type { GuardBaseline } from './verify-guard-baseline';
 import { GUARD_BASELINE_FIELD, readGuardBaseline } from './verify-guard-baseline';
+import type { LocalOnlyReasons } from './verify-local-only';
+import { readLocalOnly } from './verify-local-only';
 import type { SkipCeiling } from './verify-skip-ceiling';
 import { readSkipCeiling, SKIP_CEILING_FIELD } from './verify-skip-ceiling';
 import { GATE_COMMAND, VERIFY_STEP_NAMES } from './verify-step';
@@ -92,6 +94,8 @@ export interface VerifyFloor {
   readonly strict?: boolean;
   /** Step → the written reason it runs no check in this repository (`verify-strict.ts`). */
   readonly skip?: SkipReasons;
+  /** Step → why CI leaves it out; it runs on a developer's machine (`verify-local-only.ts`). */
+  readonly localOnly?: LocalOnlyReasons;
   /** Guard → the findings it may still report as notices (`verify-guard-baseline.ts`). */
   readonly guardBaseline?: GuardBaseline;
   /** Why part of the file is not a floor. The `manifest` step reports these; nothing swallows them. */
@@ -216,6 +220,7 @@ export function parseVerifyFloor(
   const exercise = readExerciseFloor(record);
   const strict = readStrict(record, declared);
   const guards = readGuardBaseline(record);
+  const local = readLocalOnly(record, declared);
   const rest = {
     ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
     ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
@@ -227,9 +232,10 @@ export function parseVerifyFloor(
     ...(exercise.floor === undefined ? {} : { exercise: exercise.floor }),
     ...(strict.strict === undefined ? {} : { strict: strict.strict }),
     ...(strict.skip === undefined ? {} : { skip: strict.skip }),
+    ...(local.localOnly === undefined ? {} : { localOnly: local.localOnly }),
     ...(guards.baseline === undefined ? {} : { guardBaseline: guards.baseline }),
   };
-  const later = [...strict.problems, ...guards.problems];
+  const later = [...strict.problems, ...guards.problems, ...local.problems];
   const steps = record?.['steps'];
   if (!Array.isArray(steps)) {
     return {
